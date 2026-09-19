@@ -40,7 +40,7 @@ def test_release_slice_accepts_stable_compatibility_lane_registry(tmp_path) -> N
         "\n".join(
             [
                 "Stable lane keys:",
-                "cid_nl_default_product_activation_v1",
+                "cid_nl_default_product_activation",
                 "broad_backfill_autowrite",
             ]
         ),

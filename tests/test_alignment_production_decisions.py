@@ -12,7 +12,7 @@ from xic_extractor.alignment.matrix import (
 )
 from xic_extractor.alignment.owner_backfill_peak_fact_provenance import (
     OWNER_BACKFILL_PROVENANCE_WRITER_SCHEMA_VERSION,
-    OwnerBackfillCellProjectionV2,
+    OwnerBackfillCellProjection,
 )
 from xic_extractor.alignment.production_decisions import (
     ALIGNMENT_DECISION_CONFIG_FIELDS,
@@ -144,16 +144,16 @@ def test_production_cell_projection_binds_live_cell_config_value_and_source() ->
         decision,
         cell=matrix.cells[0],
         config=config,
-        owner_backfill_cell_content_id=("owner-backfill-authority-cell.v2:" + "0" * 64),
+        owner_backfill_cell_content_id=("owner-backfill-authority-cell:" + "0" * 64),
     )
 
     assert projection.production_cell_decision_id.startswith(
         PRODUCTION_CELL_DECISION_ID_PREFIX
     )
     assert PRODUCTION_CELL_DECISION_SCHEMA_VERSION == (
-        "production_cell_decision_projection_v2"
+        "production_cell_decision_projection"
     )
-    assert PRODUCTION_CELL_DECISION_ID_PREFIX == "production-cell-decision.v2:"
+    assert PRODUCTION_CELL_DECISION_ID_PREFIX == "production-cell-decision:"
     assert projection.matrix_value == matrix.cells[0].matrix_area
     assert projection.matrix_value_source == matrix.cells[0].matrix_area_source
     assert tuple(field.name for field in fields(projection)) == (
@@ -173,21 +173,21 @@ def test_production_cell_projection_binds_live_cell_config_value_and_source() ->
 
 
 def test_final_cell_projection_identity_covers_every_field_and_writer_version() -> None:
-    projection = OwnerBackfillCellProjectionV2(
+    projection = OwnerBackfillCellProjection(
         group_hypothesis_id="group-hypothesis:1",
         public_family_id="public-family:1",
         sample_stem="sample-1",
-        profile_id="signal-profile.v1:" + "1" * 64,
+        profile_id="signal-profile:" + "1" * 64,
         selected_work_unit_key="work-unit:1",
-        selected_fact_content_id="physical-facts.v1:" + "2" * 64,
-        owner_backfill_cell_content_id=("owner-backfill-authority-cell.v2:" + "3" * 64),
-        production_cell_decision_id="production-cell-decision.v2:" + "4" * 64,
+        selected_fact_content_id="physical-facts:" + "2" * 64,
+        owner_backfill_cell_content_id=("owner-backfill-authority-cell:" + "3" * 64),
+        production_cell_decision_id="production-cell-decision:" + "4" * 64,
         cell_status="detected",
         consolidation_state="not_consolidated",
         consolidation_winner_group_hypothesis_id="",
         consolidation_source_group_hypothesis_id="",
         matrix_value_counts_seconds=123.5,
-        matrix_value_source="trapezoid_counts_seconds_on_canonical_signal_v1",
+        matrix_value_source="trapezoid_counts_seconds_on_canonical_signal",
     )
 
     assert projection.writer_schema_version == (

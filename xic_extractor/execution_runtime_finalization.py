@@ -660,7 +660,7 @@ def canonical_coordinator_terminal_record_bytes(
     state = coordinator.state
     integrity_failure = state.runtime.integrity_failure
     payload = {
-        "schema_version": "execution_runtime_coordinator_terminal_v4",
+        "schema_version": "execution_runtime_coordinator_terminal",
         "processing_request_id": state.runtime.manifest.attempt.processing_request_id,
         "processing_attempt_id": state.runtime.manifest.attempt.processing_attempt_id,
         "manifest_work_unit_keys": state.runtime.manifest.work_unit_keys,

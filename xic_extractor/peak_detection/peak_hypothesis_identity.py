@@ -35,14 +35,14 @@ from xic_extractor.peak_detection.observations import (
 from xic_extractor.processing_identity import ProcessingOwnerReferences
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 
-SCHEMA_VERSION = "peak_hypothesis_v1"
+SCHEMA_VERSION = "peak_hypothesis"
 HYPOTHESIS_METHOD_DDA_CID_NL = "dda_cid_nl"
 HYPOTHESIS_METHOD_MS1_OBSERVATION = "ms1_physical_observation"
 ANALYSIS_MODE_WORKFLOW_NEUTRAL = OWNER_BACKED_ANALYSIS_MODE
 ARTIFACT_SEMANTIC_ROLE = "owner_backed_peak_hypothesis"
 VALIDATION_STATUS = "diagnostic_only"
 MEDIA_TYPE = "application/json"
-SERIALIZATION_FORMAT = "canonical-json-utf8-lf-v1"
+SERIALIZATION_FORMAT = "canonical-json-utf8-lf"
 
 _HYPOTHESIS_ID_PREFIX = OWNER_BACKED_HYPOTHESIS_ID_PREFIX
 _ARTIFACT_SEMANTIC_CONTRACT = _mint_artifact_semantic_contract_ref(
@@ -56,7 +56,7 @@ _ARTIFACT_SEMANTIC_CONTRACT = _mint_artifact_semantic_contract_ref(
 _OBSERVATION_ARTIFACT_SEMANTIC_CONTRACT = _mint_artifact_semantic_contract_ref(
     owner_namespace="xic_extractor.peak_detection.peak_hypothesis_identity",
     semantic_role="owner_backed_ms1_observation_hypothesis",
-    schema_version="peak_hypothesis_ms1_observation_v1",
+    schema_version="peak_hypothesis_ms1_observation",
     validation_status=VALIDATION_STATUS,
     media_type=MEDIA_TYPE,
     serialization_format=SERIALIZATION_FORMAT,
@@ -382,7 +382,7 @@ def canonical_ms1_observation_peak_hypothesis_bytes(
         )
     return _canonical_json_bytes(
         {
-            "schema_version": "peak_hypothesis_ms1_observation_v1",
+            "schema_version": "peak_hypothesis_ms1_observation",
             "validation_status": VALIDATION_STATUS,
             "hypothesis_id": hypothesis_id,
             "content": _observation_hypothesis_content_basis(peak_observation),
@@ -475,7 +475,7 @@ def _observation_hypothesis_content_basis(
     peak_observation: PeakObservationRef,
 ) -> dict[str, object]:
     return {
-        "schema": "peak_hypothesis_ms1_observation_content_v1",
+        "schema": "peak_hypothesis_ms1_observation_content",
         "hypothesis_method": HYPOTHESIS_METHOD_MS1_OBSERVATION,
         "canonical_sample_identity_id": (
             peak_observation.content.canonical_sample_identity_id
@@ -652,7 +652,7 @@ def _hypothesis_content_basis(
     chromatographic_support: CidNlChromatographicSupportRef,
 ) -> dict[str, object]:
     return {
-        "schema": "peak_hypothesis_content_v1",
+        "schema": "peak_hypothesis_content",
         "hypothesis_method": HYPOTHESIS_METHOD_DDA_CID_NL,
         "canonical_sample_identity_id": (
             peak_observation.content.canonical_sample_identity_id

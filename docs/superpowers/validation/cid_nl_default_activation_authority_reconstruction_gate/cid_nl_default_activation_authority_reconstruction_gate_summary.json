@@ -1,0 +1,84 @@
+{
+  "accepted_authority_cell_count": 511,
+  "artifacts": {
+    "expected_diff_tsv": {
+      "path": "docs/superpowers/validation/quant_matrix_real_bundle/inputs/expected_diff.tsv",
+      "sha256": "4E4589A06870C3DA300DB9627FB6E920D26230F7322B1252B83A475DEC6E9A8E",
+      "size_bytes": 70989
+    },
+    "new_matrix_identity_tsv": {
+      "path": "output/discovery/cid_nl_product_ready_alignment_85raw_20260620_fix3/alignment_matrix_identity.tsv",
+      "sha256": "5B84E027254C1058413CCDEC089AC8975D6A575346525AE62FF8FADA3DBC1D28",
+      "size_bytes": 727392
+    },
+    "new_quant_matrix_tsv": {
+      "path": "output/discovery/cid_nl_product_ready_alignment_85raw_20260620_fix3/alignment_matrix.tsv",
+      "sha256": "36D12B9FCC30F53742C7E2ECFF73F66057BFD9ACA1362723C01DF72FE3374F08",
+      "size_bytes": 668590
+    },
+    "old_matrix_identity_tsv": {
+      "path": "docs/superpowers/validation/quant_matrix_real_bundle/inputs/alignment_matrix_identity.tsv",
+      "sha256": "599E4D33C2582D7F35733BBAC18102B0E3D55E54939CE434049F4E4716971A48",
+      "size_bytes": 210449
+    },
+    "production_acceptance_manifest_tsv": {
+      "path": "docs/superpowers/validation/quant_matrix_real_bundle/inputs/production_acceptance_manifest.tsv",
+      "sha256": "BFF67E9441646B22EFCBD0AF9468876560B08FBF4A90F7B340B0DF614325FD8E",
+      "size_bytes": 472502
+    }
+  },
+  "authority_statement": "This gate classifies the existing 511-cell authority against the new CID-NL baseline. Detected-baseline supersession is resolved as a no-write state and is not Backfill writer authority.",
+  "backfill_writer_authority_changed": false,
+  "blockers": [
+    "unresolved_authority_cell_count:101"
+  ],
+  "bridge_gate": {
+    "blocker_counts": {
+      "new_baseline_already_has_value": 263,
+      "new_identity_ambiguous": 82,
+      "new_identity_missing": 19
+    },
+    "cell_bridge_status_counts": {
+      "blocked": 364,
+      "pass": 147
+    },
+    "expected_diff_content_problem_count": 0,
+    "overall_status": "blocked",
+    "readiness_label": "production_candidate_blocked",
+    "target_preflight": {
+      "overall_status": "blocked",
+      "path": "docs/superpowers/validation/cid_nl_default_activation_preflight/cid_nl_default_activation_preflight_summary.json",
+      "reason": "",
+      "status": "pass",
+      "target_alignment_evidence_status": "pass"
+    }
+  },
+  "candidate_backfill_write_count": 147,
+  "candidate_replay": {
+    "reason": "",
+    "status": "pass",
+    "written_backfill_count": "147"
+  },
+  "default_quant_matrix_changed": false,
+  "detected_baseline_superseded_count": 263,
+  "detected_baseline_supersession_is_backfill_authority": false,
+  "expected_authority_cell_count": 511,
+  "expected_diff_row_count": 511,
+  "next_step": "resolve_missing_or_ambiguous_canonical_identity",
+  "outputs": {
+    "reconstruction_audit_tsv": "output/validation/cid_nl_default_activation_authority_reconstruction_gate/cid_nl_default_activation_authority_reconstruction_audit.tsv"
+  },
+  "overall_status": "blocked",
+  "product_surface_changed": false,
+  "product_writer_changed": false,
+  "readiness_label": "production_candidate_blocked",
+  "resolution_counts": {
+    "blocked_identity_ambiguous": 82,
+    "blocked_identity_missing": 19,
+    "superseded_by_detected_baseline": 263,
+    "write_ready_blank": 147
+  },
+  "schema_version": "cid_nl_default_activation_authority_reconstruction_gate",
+  "unresolved_authority_cell_count": 101,
+  "workbook_or_gui_changed": false
+}

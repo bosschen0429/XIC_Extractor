@@ -49,7 +49,7 @@ from xic_extractor.processing_identity import ProcessingAttemptIdentity
 
 _ALIGNMENT_WORK_UNIT_KEY = "processing-identity:alignment-method"
 _TARGETED_WORK_UNIT_KEY = "processing-identity:targeted-method"
-_RUNTIME_CONTRACT = "targeted-diagnostic-application:v1"
+_RUNTIME_CONTRACT = "targeted-diagnostic-application"
 
 
 class _RuntimeJob(Protocol):

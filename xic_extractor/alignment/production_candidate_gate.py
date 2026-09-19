@@ -59,16 +59,16 @@ _STRUCTURAL_EXCLUDE_FLAGS = frozenset(
     {"family_consolidation_loser", "duplicate_only", "rescue_only", "zero_present"}
 )
 TIER2_SUPPORT_COMPONENT = "validated_tier2_trace_evidence"
-TIER2_CRITERIA_V0 = "tier2_trace_identity_rescued_coherence_v0"
-TIER2_CRITERIA_V0_1 = "tier2_trace_identity_rescued_coherence_v0_1_diagnostic"
-TIER2_DIAGNOSTIC_ONLY_CRITERIA_VERSIONS = frozenset({TIER2_CRITERIA_V0_1})
-TIER2_ALLOWED_CRITERIA_VERSIONS = frozenset(
-    {TIER2_CRITERIA_V0, TIER2_CRITERIA_V0_1}
+TIER2_CRITERIA = "tier2_trace_identity_rescued_coherence"
+TIER2_DIAGNOSTIC_CRITERIA = "tier2_trace_identity_diagnostic"
+TIER2_DIAGNOSTIC_ONLY_CRITERIA = frozenset({TIER2_DIAGNOSTIC_CRITERIA})
+TIER2_ALLOWED_CRITERIA = frozenset(
+    {TIER2_CRITERIA, TIER2_DIAGNOSTIC_CRITERIA}
 )
-TIER2_RECOGNIZED_PRODUCER_VERSIONS = frozenset(
-    {"raw_trace_reread_tier2_v0", "raw_trace_reread_tier2_v0_1"}
+TIER2_RECOGNIZED_PRODUCERS = frozenset(
+    {"raw_trace_reread_tier2"}
 )
-TIER2_TRACE_EVIDENCE_V0_COLUMNS = (
+TIER2_TRACE_EVIDENCE_COLUMNS = (
     "feature_family_id",
     "evidence_status",
     "support_component",
@@ -102,9 +102,6 @@ TIER2_TRACE_EVIDENCE_V0_COLUMNS = (
     "dll_dir",
     "producer_command",
     "generated_at_utc",
-)
-TIER2_TRACE_EVIDENCE_V0_1_COLUMNS = (
-    *TIER2_TRACE_EVIDENCE_V0_COLUMNS,
     "scan_availability_score",
     "trace_apex_intensity",
     "trace_baseline_noise",
@@ -118,7 +115,7 @@ TIER2_TRACE_EVIDENCE_V0_1_COLUMNS = (
     "rescued_only_apex_span_sec",
     "neighbor_interference_status",
 )
-TIER2_TRACE_EVIDENCE_REQUIRED_COLUMNS = TIER2_TRACE_EVIDENCE_V0_1_COLUMNS
+TIER2_TRACE_EVIDENCE_REQUIRED_COLUMNS = TIER2_TRACE_EVIDENCE_COLUMNS
 TIER2_GATE_JOIN_COLUMNS = (
     "feature_family_id",
     "evidence_status",
@@ -246,7 +243,7 @@ def load_tier2_trace_evidence(
     candidate_rows: Sequence[Mapping[str, object]],
     source_context: GateSourceContext,
 ) -> dict[str, Tier2TraceEvidence]:
-    sidecar_rows = _read_tsv_versioned_tier2_sidecar(sidecar_path)
+    sidecar_rows = _read_tsv_tier2_sidecar(sidecar_path)
     _read_tsv_required(raw_manifest_path, TIER2_RAW_MANIFEST_REQUIRED_COLUMNS)
     raw_manifest_sha256 = _sha256_file(raw_manifest_path)
     subset = tier2_candidate_subset_signature(candidate_rows)
@@ -400,7 +397,7 @@ def summarize_gate_decisions(
 ) -> dict[str, object]:
     status_counts = Counter(decision.candidate_gate_status for decision in decisions)
     return {
-        "schema_version": "production-candidate-gate-v1",
+        "schema_version": "production-candidate-gate",
         "readiness_label": "diagnostic_only",
         "row_count": len(decisions),
         "production_candidate_count": status_counts["production_candidate"],
@@ -546,9 +543,9 @@ def _tier2_evidence_from_row(
         blockers.append("candidate_subset_hash_mismatch")
     criteria_version = row.get("criteria_version", "")
     producer_version = row.get("producer_version", "")
-    if criteria_version not in TIER2_ALLOWED_CRITERIA_VERSIONS:
+    if criteria_version not in TIER2_ALLOWED_CRITERIA:
         blockers.append("criteria_version_not_allowlisted")
-    if producer_version not in TIER2_RECOGNIZED_PRODUCER_VERSIONS:
+    if producer_version not in TIER2_RECOGNIZED_PRODUCERS:
         blockers.append("producer_version_not_recognized")
     source_expected_sample_count = _int_value(row.get("source_expected_sample_count"))
     if (
@@ -572,11 +569,11 @@ def _tier2_evidence_from_row(
         challenge_blockers=tuple(sorted(_split_tokens(row.get("challenge_blockers")))),
         dependent_context=tuple(sorted(_split_tokens(row.get("dependent_context")))),
         provenance_blockers=tuple(blockers),
-        metric_blockers=_tier2_v0_metric_blockers(row),
+        metric_blockers=_tier2_metric_blockers(row),
     )
 
 
-def _tier2_v0_metric_blockers(row: Mapping[str, str]) -> tuple[str, ...]:
+def _tier2_metric_blockers(row: Mapping[str, str]) -> tuple[str, ...]:
     if row.get("evidence_status") != "validated":
         return ()
     blockers: list[str] = []
@@ -639,7 +636,7 @@ def _tier2_v0_metric_blockers(row: Mapping[str, str]) -> tuple[str, ...]:
     elif scan_support_score < 0.50:
         blockers.append("weak_scan_support")
     if apex_delta_sec > 30.0:
-        blockers.append("apex_delta_exceeds_v0_threshold")
+        blockers.append("apex_delta_exceeds_threshold")
     if boundary_width_sec <= 0.0 or boundary_width_sec > 180.0:
         blockers.append("boundary_width_out_of_range")
     if (
@@ -690,8 +687,8 @@ def _tier2_blockers(
         *evidence.metric_blockers,
         *evidence.challenge_blockers,
     ]
-    if evidence.criteria_version in TIER2_DIAGNOSTIC_ONLY_CRITERIA_VERSIONS:
-        blockers.append("tier2_v0_1_diagnostic_only")
+    if evidence.criteria_version in TIER2_DIAGNOSTIC_ONLY_CRITERIA:
+        blockers.append("tier2_diagnostic_only")
     if evidence.evidence_status == "validated":
         if evidence.feature_family_id != review_feature_family_id:
             blockers.append("tier2_feature_family_id_mismatch")
@@ -768,7 +765,7 @@ def _sha256_file(path: Path) -> str:
     return digest.hexdigest().upper()
 
 
-def _read_tsv_versioned_tier2_sidecar(path: Path) -> tuple[dict[str, str], ...]:
+def _read_tsv_tier2_sidecar(path: Path) -> tuple[dict[str, str], ...]:
     if not path.exists():
         raise FileNotFoundError(str(path))
     with path.open(newline="", encoding="utf-8-sig") as handle:
@@ -779,7 +776,7 @@ def _read_tsv_versioned_tier2_sidecar(path: Path) -> tuple[dict[str, str], ...]:
         fieldname_set = set(fieldnames)
         base_missing = [
             column
-            for column in TIER2_TRACE_EVIDENCE_V0_COLUMNS
+            for column in TIER2_TRACE_EVIDENCE_COLUMNS
             if column not in fieldname_set
         ]
         if base_missing:
@@ -787,20 +784,8 @@ def _read_tsv_versioned_tier2_sidecar(path: Path) -> tuple[dict[str, str], ...]:
                 f"{path}: missing required columns: {', '.join(base_missing)}"
             )
         rows = tuple({key: value or "" for key, value in row.items()} for row in reader)
-    for row in rows:
-        required = _tier2_required_columns_for_row(row)
-        missing = [column for column in required if column not in fieldname_set]
-        if missing:
-            raise ValueError(
-                f"{path}: missing required columns: {', '.join(missing)}"
-            )
     return rows
 
-
-def _tier2_required_columns_for_row(row: Mapping[str, str]) -> tuple[str, ...]:
-    if row.get("criteria_version") == TIER2_CRITERIA_V0_1:
-        return TIER2_TRACE_EVIDENCE_V0_1_COLUMNS
-    return TIER2_TRACE_EVIDENCE_V0_COLUMNS
 
 
 def _read_tsv_required(

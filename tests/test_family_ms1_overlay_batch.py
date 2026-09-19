@@ -313,7 +313,7 @@ def test_batch_evidence_only_reuses_content_keyed_cache_across_output_dirs(
     cache_dir = tmp_path / "overlay_cache"
     alignment_cells.write_text("feature_family_id\nFAM001\n", encoding="utf-8")
     _write_queue(queue_tsv, [_queue_row("FAM001")])
-    _write_raw_identity_file(raw_dir, "S1", "raw-v1")
+    _write_raw_identity_file(raw_dir, "S1", "raw")
 
     monkeypatch.setattr(
         batch.overlay_plot,
@@ -409,18 +409,18 @@ def test_batch_evidence_only_reuses_content_keyed_cache_across_output_dirs(
     assert payload["provenance"]["output_prefix"] == "fam001_overlay"
 
 
-def test_batch_evidence_cache_v6_rejects_v5_scalar_semantics(
+def test_batch_evidence_cache_rejects_scalar_semantics(
     tmp_path: Path,
 ) -> None:
-    assert batch.OVERLAY_BATCH_SOURCE == "family_ms1_overlay_batch_v2"
-    assert batch.OVERLAY_EVIDENCE_CACHE_SCHEMA == "family_ms1_overlay_evidence_cache_v6"
+    assert batch.OVERLAY_BATCH_SOURCE == "family_ms1_overlay_batch"
+    assert batch.OVERLAY_EVIDENCE_CACHE_SCHEMA == "family_ms1_overlay_evidence_cache"
     cache_dir = tmp_path / "overlay_cache"
     cache_dir.mkdir()
     batch._cache_index_path(cache_dir).write_text(
         json.dumps(
             {
-                "schema_version": "family_ms1_overlay_evidence_cache_v5",
-                "entries": {"OLD": {"schema_version": "v5"}},
+                "schema_version": "unsupported_scalar_cache",
+                "entries": {"OLD": {"schema_version": "scalar"}},
             },
         ),
         encoding="utf-8",
@@ -450,12 +450,12 @@ def test_batch_evidence_cache_v6_rejects_v5_scalar_semantics(
     )
     stale_payload = {
         **current_payload,
-        "schema_version": "family_ms1_overlay_evidence_cache_v5",
+        "schema_version": "unsupported_scalar_cache",
     }
     assert batch._cache_key(stale_payload) != batch._cache_key(current_payload)
     assert not batch._cache_index_entry_matches(
         {
-            "schema_version": "family_ms1_overlay_evidence_cache_v5",
+            "schema_version": "family_ms1_overlay_evidence_cache",
             "cache_key": batch._cache_key(stale_payload),
             "key_payload": stale_payload,
         },
@@ -464,7 +464,7 @@ def test_batch_evidence_cache_v6_rejects_v5_scalar_semantics(
     )
     assert not batch._existing_provenance_matches_request(
         {
-            "overlay_batch_source": "family_ms1_overlay_batch_v1",
+            "overlay_batch_source": "unsupported_scalar_overlay",
             "alignment_cells_sha256": "ABC",
             "raw_dir": "raw",
             "dll_dir": "dll",
@@ -494,7 +494,7 @@ def test_batch_evidence_cache_stale_index_entry_falls_back(
     cache_dir = tmp_path / "overlay_cache"
     alignment_cells.write_text("feature_family_id\nFAM001\n", encoding="utf-8")
     _write_queue(queue_tsv, [_queue_row("FAM001")])
-    _write_raw_identity_file(raw_dir, "S1", "raw-v1")
+    _write_raw_identity_file(raw_dir, "S1", "raw")
 
     monkeypatch.setattr(
         batch.overlay_plot,
@@ -594,7 +594,7 @@ def test_batch_evidence_cache_rejects_same_size_trace_payload_mismatch(
     cache_dir = tmp_path / "overlay_cache"
     alignment_cells.write_text("feature_family_id\nFAM001\n", encoding="utf-8")
     _write_queue(queue_tsv, [_queue_row("FAM001")])
-    _write_raw_identity_file(raw_dir, "S1", "raw-v1")
+    _write_raw_identity_file(raw_dir, "S1", "raw")
 
     monkeypatch.setattr(
         batch.overlay_plot,
@@ -697,7 +697,7 @@ def test_batch_evidence_cache_rejects_same_size_summary_payload_mismatch(
     cache_dir = tmp_path / "overlay_cache"
     alignment_cells.write_text("feature_family_id\nFAM001\n", encoding="utf-8")
     _write_queue(queue_tsv, [_queue_row("FAM001")])
-    _write_raw_identity_file(raw_dir, "S1", "raw-v1")
+    _write_raw_identity_file(raw_dir, "S1", "raw")
 
     render_count = _install_fake_cache_renderer(monkeypatch)
 
@@ -759,7 +759,7 @@ def test_batch_evidence_cache_reuses_same_request_across_copied_inputs(
     cells_b.write_text(cells_a.read_text(encoding="utf-8"), encoding="utf-8")
     _write_queue(queue_a, [_queue_row("FAM001")])
     queue_b.write_text(queue_a.read_text(encoding="utf-8"), encoding="utf-8")
-    _write_raw_identity_file(raw_dir, "S1", "raw-v1")
+    _write_raw_identity_file(raw_dir, "S1", "raw")
 
     monkeypatch.setattr(
         batch.overlay_plot,
@@ -854,7 +854,7 @@ def test_batch_evidence_cache_rejects_replaced_raw_file_identity(
     cache_dir = tmp_path / "overlay_cache"
     alignment_cells.write_text("feature_family_id\nFAM001\n", encoding="utf-8")
     _write_queue(queue_tsv, [_queue_row("FAM001")])
-    _write_raw_identity_file(raw_dir, "S1", "raw-v1")
+    _write_raw_identity_file(raw_dir, "S1", "raw")
 
     render_count = _install_fake_cache_renderer(monkeypatch)
 
@@ -870,7 +870,7 @@ def test_batch_evidence_cache_rejects_replaced_raw_file_identity(
     )
     assert render_count() == 1
 
-    _write_raw_identity_file(raw_dir, "S1", "raw-v2-replaced")
+    _write_raw_identity_file(raw_dir, "S1", "raw-replaced")
     metrics: dict[str, object] = {}
     rows = batch.run_overlay_batch(
         review_queue_tsv=queue_tsv,
@@ -905,7 +905,7 @@ def test_batch_evidence_cache_manifest_fallback_rejects_replaced_raw_file_identi
     cache_dir = tmp_path / "overlay_cache"
     alignment_cells.write_text("feature_family_id\nFAM001\n", encoding="utf-8")
     _write_queue(queue_tsv, [_queue_row("FAM001")])
-    _write_raw_identity_file(raw_dir, "S1", "raw-v1")
+    _write_raw_identity_file(raw_dir, "S1", "raw")
 
     render_count = _install_fake_cache_renderer(monkeypatch)
 
@@ -922,7 +922,7 @@ def test_batch_evidence_cache_manifest_fallback_rejects_replaced_raw_file_identi
     assert render_count() == 1
 
     batch._cache_index_path(cache_dir).unlink()
-    _write_raw_identity_file(raw_dir, "S1", "raw-v2-replaced")
+    _write_raw_identity_file(raw_dir, "S1", "raw-replaced")
     metrics: dict[str, object] = {}
     rows = batch.run_overlay_batch(
         review_queue_tsv=queue_tsv,
@@ -958,7 +958,7 @@ def test_seed_evidence_cache_from_existing_overlay_summary(
     overlay_dir.mkdir()
     alignment_cells.write_text("feature_family_id\nFAM001\n", encoding="utf-8")
     _write_queue(queue_tsv, [_queue_row("FAM001")])
-    _write_raw_identity_file(raw_dir, "S1", "raw-v1")
+    _write_raw_identity_file(raw_dir, "S1", "raw")
     (overlay_dir / "fam001_overlay_trace_summary.tsv").write_text(
         "sample_stem\tstatus\nS1\trescued\n",
         encoding="utf-8",

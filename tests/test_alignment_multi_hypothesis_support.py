@@ -80,7 +80,7 @@ def test_one_assessment_preserves_two_individually_supported_peaks(
         processing_owners=fixture.owners,
         sample=sample,
         target=fixture.target,
-        detector_invocation_id="gaussian15:dual:v1",
+        detector_invocation_id="gaussian15:dual",
         evaluation_receipt=CidNlEvaluationReceipt(
             query_rt_min=7.5,
             query_rt_max=8.5,
@@ -128,8 +128,8 @@ def test_one_assessment_preserves_two_individually_supported_peaks(
             sample_assessments=((sample, assessment),),
             alignment_config=AlignmentConfig(),
             trajectory_policy=ModeTrackTrajectoryPolicy(
-                trajectory_policy_version="anchor-trajectory-v1",
-                band_policy_version="fixed-band-v1",
+                trajectory_policy_version="anchor-trajectory",
+                band_policy_version="fixed-band",
                 prediction_half_width_min=0.1,
                 max_interpolation_gap=10,
                 max_extrapolation_gap=10,
@@ -177,8 +177,8 @@ def test_identity_membership_is_geometry_not_group_center_reclassification(
             sample_assessments=sample_assessments,
             alignment_config=AlignmentConfig(anchor_min_seed_events=1),
             trajectory_policy=ModeTrackTrajectoryPolicy(
-                trajectory_policy_version="anchor-trajectory-v1",
-                band_policy_version="fixed-band-v1",
+                trajectory_policy_version="anchor-trajectory",
+                band_policy_version="fixed-band",
                 prediction_half_width_min=0.1,
                 max_interpolation_gap=10,
                 max_extrapolation_gap=10,
@@ -265,7 +265,7 @@ def _assessment_with_observation_only_peak(
         processing_owners=fixture.owners,
         sample=sample,
         target=fixture.target,
-        detector_invocation_id=f"gaussian15:{sample_stem}:v1",
+        detector_invocation_id=f"gaussian15:{sample_stem}",
         evaluation_receipt=CidNlEvaluationReceipt(
             query_rt_min=7.5,
             query_rt_max=9.2,

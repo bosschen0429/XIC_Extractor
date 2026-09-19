@@ -14,25 +14,25 @@ from scripts.build_quant_matrix_product_ready_closeout import (
     validate_quant_matrix_product_ready_closeout,
 )
 from tests.test_quant_matrix_default_activation_dry_run import (
-    _build_synthetic_packet_v2,
+    _build_synthetic_packet,
 )
 
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_PATH = (
     ROOT
     / "docs/superpowers/schemas/"
-    / "quant_matrix_product_ready_closeout_schema.v1.json"
+    / "quant_matrix_product_ready_closeout_schema.json"
 )
 
 
 def test_product_ready_closeout_schema_matches_builder_contract() -> None:
     schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
 
-    assert schema["schema_version"] == "quant_matrix_product_ready_closeout_schema_v1"
+    assert schema["schema_version"] == "quant_matrix_product_ready_closeout_schema"
     assert schema["product_ready_closeout_schema"] == PRODUCT_READY_CLOSEOUT_SCHEMA
     assert schema["check_schema"] == PRODUCT_READY_CLOSEOUT_CHECK_SCHEMA
     assert schema["check_columns"] == list(CHECK_COLUMNS)
-    assert schema["binding_rules"]["promotion_packet_v2_must_validate"] is True
+    assert schema["binding_rules"]["promotion_packet_must_validate"] is True
     assert schema["binding_rules"]["default_activation_dry_run_must_validate"] is True
     assert schema["binding_rules"]["checks_tsv_must_match_inputs"] is True
     assert schema["authority_rules"]["write_authority"] is False
@@ -154,7 +154,7 @@ def test_product_ready_closeout_script_check_only_round_trip(
             str(output_dir),
             "--source-root",
             str(tmp_path),
-            "--promotion-packet-v2-summary-json",
+            "--promotion-packet-summary-json",
             str(inputs["packet_summary"]),
             "--activation-dry-run-summary-json",
             str(inputs["dry_run_summary"]),
@@ -202,7 +202,7 @@ def _build_synthetic_closeout(tmp_path: Path) -> dict[str, Path]:
         build_quant_matrix_product_ready_closeout(
             output_dir=tmp_path / "product_ready_closeout",
             source_root=tmp_path,
-            promotion_packet_v2_summary_json=inputs["packet_summary"],
+            promotion_packet_summary_json=inputs["packet_summary"],
             activation_dry_run_summary_json=inputs["dry_run_summary"],
             expected_source_run_id="synthetic-current-511-authority-replay",
             expected_downstream_scope="synthetic_current_authority_replay",
@@ -212,12 +212,12 @@ def _build_synthetic_closeout(tmp_path: Path) -> dict[str, Path]:
 
 
 def _build_synthetic_promotion_and_replay(tmp_path: Path) -> dict[str, Path]:
-    inputs = _build_synthetic_packet_v2(tmp_path)
+    inputs = _build_synthetic_packet(tmp_path)
     dry_run = build_quant_matrix_default_activation_dry_run(
         output_dir=tmp_path / "dry_run_gate",
         source_root=tmp_path,
         real_bundle_summary_json=inputs["real_bundle_summary"],
-        promotion_packet_v2_summary_json=inputs["packet_summary"],
+        promotion_packet_summary_json=inputs["packet_summary"],
         expected_source_run_id="synthetic-current-511-authority-replay",
         expected_downstream_scope="synthetic_current_authority_replay",
         expected_accepted_backfill_count=1,

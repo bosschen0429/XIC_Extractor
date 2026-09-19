@@ -906,7 +906,7 @@ def _write_dual_csvs(
     output_dir.mkdir(parents=True, exist_ok=True)
     candidates_path = output_dir / "discovery_candidates.csv"
     review_path = output_dir / "discovery_review.csv"
-    physical_facts_member_path = output_dir / "discovery_physical_facts.v1.json"
+    physical_facts_member_path = output_dir / "discovery_physical_facts.json"
     physical_facts_path = None if run_spec is None else physical_facts_member_path
     if (run_spec is None) != (acquisition_input is None):
         raise ValueError("Discovery physical persistence binding is partial")

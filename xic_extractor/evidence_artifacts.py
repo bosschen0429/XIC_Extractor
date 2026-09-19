@@ -24,11 +24,11 @@ class EvidenceArtifactContractError(ValueError):
     """Raised when an immutable evidence-artifact reference is inconsistent."""
 
 
-_ARTIFACT_CONTENT_ID_PREFIX = "xic.artifact-content.v1:"
-_ARTIFACT_SEMANTIC_CONTRACT_ID_PREFIX = "xic.artifact-semantic-contract.v1:"
-_EVIDENCE_ARTIFACT_ID_PREFIX = "xic.evidence-artifact.v1:"
-_PROCESSING_REQUEST_ID_PREFIX = "xic.processing-request.v1:"
-_PROCESSING_ATTEMPT_ID_PREFIX = "xic.processing-attempt.v1:"
+_ARTIFACT_CONTENT_ID_PREFIX = "xic.artifact-content:"
+_ARTIFACT_SEMANTIC_CONTRACT_ID_PREFIX = "xic.artifact-semantic-contract:"
+_EVIDENCE_ARTIFACT_ID_PREFIX = "xic.evidence-artifact:"
+_PROCESSING_REQUEST_ID_PREFIX = "xic.processing-request:"
+_PROCESSING_ATTEMPT_ID_PREFIX = "xic.processing-attempt:"
 
 
 @dataclass(frozen=True, slots=True)
@@ -362,7 +362,7 @@ def _semantic_contract_basis(
     serialization_format: str,
 ) -> dict[str, object]:
     return {
-        "schema": "artifact_semantic_contract_v1",
+        "schema": "artifact_semantic_contract",
         "owner_namespace": owner_namespace,
         "semantic_role": semantic_role,
         "schema_version": schema_version,
@@ -380,7 +380,7 @@ def _content_identity_basis(
     serialization_format: str,
 ) -> dict[str, object]:
     return {
-        "schema": "artifact_content_identity_v1",
+        "schema": "artifact_content_identity",
         "content_sha256": content_sha256,
         "byte_size": byte_size,
         "media_type": media_type,
@@ -397,7 +397,7 @@ def _evidence_artifact_basis(
     upstream_artifact_ids: tuple[str, ...],
 ) -> dict[str, object]:
     return {
-        "schema": "evidence_artifact_reference_v1",
+        "schema": "evidence_artifact_reference",
         "producer_processing_request_id": producer_processing_request_id,
         "producer_processing_attempt_id": producer_processing_attempt_id,
         "semantic_contract_id": semantic_contract.semantic_contract_id,

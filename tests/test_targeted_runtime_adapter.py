@@ -364,7 +364,7 @@ def test_targeted_preflight_failure_skips_runner_and_finalizes_marker(
         start_runtime_attempt(
             attempt=attempt,
             work_unit_keys=(),
-            owner_completeness_attestation="targeted-runtime-adapter:v1",
+            owner_completeness_attestation="targeted-runtime-adapter",
         ),
         resource_reservations=(_reservation(attempt),),
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
@@ -397,7 +397,7 @@ def test_targeted_accepted_cancellation_skips_successful_provider_projection(
         start_runtime_attempt(
             attempt=attempt,
             work_unit_keys=("raw:a",),
-            owner_completeness_attestation="targeted-runtime-adapter:v1",
+            owner_completeness_attestation="targeted-runtime-adapter",
             cancellation_request=RuntimeCancellationRequest(attempt=attempt),
         ),
         (_reservation(attempt),),
@@ -907,7 +907,7 @@ def _runtime(
     return start_runtime_attempt(
         attempt=attempt,
         work_unit_keys=work_unit_keys,
-        owner_completeness_attestation="targeted-runtime-adapter:v1",
+        owner_completeness_attestation="targeted-runtime-adapter",
     )
 
 
@@ -918,7 +918,7 @@ def _reservation(attempt: ProcessingAttemptIdentity) -> RuntimeResourceReservati
         resource_key="session:a",
         worker_key="worker:1",
         source_reference="source:a",
-        compatibility_token="targeted-runtime-test:v1",
+        compatibility_token="targeted-runtime-test",
     )
 
 
@@ -943,9 +943,9 @@ def _request(tmp_path: Path) -> ProcessingRequestIdentity:
                 injection_order=1,
             ),
         ),
-        scientific_input_schema_version="targeted_runtime_adapter_test_v1",
-        processing_algorithm_version="targeted_runtime_adapter_test_v1",
-        processing_contract_version="processing_identity_v1",
+        scientific_input_schema_version="targeted_runtime_adapter_test",
+        processing_algorithm_version="targeted_runtime_adapter_test",
+        processing_contract_version="processing_identity",
         scientific_inputs={"method": "cid_nl", "neutral_loss_da": 116.0},
     )
 

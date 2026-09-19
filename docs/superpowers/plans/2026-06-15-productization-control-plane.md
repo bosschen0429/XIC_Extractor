@@ -17,10 +17,10 @@ owner route changes.
 
 ## Authority routes
 
-- [Lane-state index](../validation/productization_status_index_v1.tsv)
-- [Writer-authority manifest](../schemas/productization_authority_manifest.v1.json)
-- [Dependent quantitative-effect authority manifest](../schemas/quantitative_projection_authority_manifest.v1.json)
-- [Structured control schema](../schemas/productization_control_plane_schema.v3.json)
+- [Lane-state index](../validation/productization_status_index.tsv)
+- [Writer-authority manifest](../schemas/productization_authority_manifest.json)
+- [Dependent quantitative-effect authority manifest](../schemas/quantitative_projection_authority_manifest.json)
+- [Structured control schema](../schemas/productization_control_plane_schema.json)
 - [Readiness and promotion contract](../../agent/product-validation-contract.md)
 - [Stable capability map](../../product/productization.md)
 
@@ -37,92 +37,92 @@ byte-for-byte identical to the retired body.
 
 ## Lane anchor index
 
-### QuantMatrix Default Product Activation v1
+### QuantMatrix Default Product Activation
 
 Lane key: `backfill_current_write_ready_scope`
 
-Routes: [state](../validation/productization_status_index_v1.tsv), [writer authority](../schemas/productization_authority_manifest.v1.json), [stable capability](../../product/productization.md).
+Routes: [state](../validation/productization_status_index.tsv), [writer authority](../schemas/productization_authority_manifest.json), [stable capability](../../product/productization.md).
 
-### CID-NL Default Product Activation v1
+### CID-NL Default Product Activation
 
-Lane key: `cid_nl_default_product_activation_v1`
+Lane key: `cid_nl_default_product_activation`
 
-Routes: [state](../validation/productization_status_index_v1.tsv), [writer authority](../schemas/productization_authority_manifest.v1.json), [stable capability](../../product/productization.md).
+Routes: [state](../validation/productization_status_index.tsv), [writer authority](../schemas/productization_authority_manifest.json), [stable capability](../../product/productization.md).
 
 ### park_broad_backfill
 
 Lane key: `broad_backfill_autowrite`
 
-Routes: [state](../validation/productization_status_index_v1.tsv), [writer authority](../schemas/productization_authority_manifest.v1.json), [stable capability](../../product/productization.md).
+Routes: [state](../validation/productization_status_index.tsv), [writer authority](../schemas/productization_authority_manifest.json), [stable capability](../../product/productization.md).
 
-### productization_authority_manifest_v1
+### productization_authority_manifest
 
-Lane key: `productization_authority_firewall_v1`
+Lane key: `productization_authority_firewall`
 
-Routes: [state](../validation/productization_status_index_v1.tsv), [writer authority](../schemas/productization_authority_manifest.v1.json), [stable capability](../../product/productization.md).
+Routes: [state](../validation/productization_status_index.tsv), [writer authority](../schemas/productization_authority_manifest.json), [stable capability](../../product/productization.md).
 
 ### quality_explanations and quality_blockers are explanation and triage inputs only
 
-Lane key: `quality_explanation_sidecar_v1`
+Lane key: `quality_explanation_sidecar`
 
-Routes: [state](../validation/productization_status_index_v1.tsv), [writer authority](../schemas/productization_authority_manifest.v1.json), [stable capability](../../product/productization.md).
+Routes: [state](../validation/productization_status_index.tsv), [writer authority](../schemas/productization_authority_manifest.json), [stable capability](../../product/productization.md).
 
 ### Targeted MS1 shape identity limited rescue remains production-ready
 
-Lane key: `targeted_ms1_shape_identity_limited_rescue_v1`
+Lane key: `targeted_ms1_shape_identity_limited_rescue`
 
-Routes: [state](../validation/productization_status_index_v1.tsv), [writer authority](../schemas/productization_authority_manifest.v1.json), [stable capability](../../product/productization.md).
+Routes: [state](../validation/productization_status_index.tsv), [writer authority](../schemas/productization_authority_manifest.json), [stable capability](../../product/productization.md).
 
 ### GUI and broader targets remain blocked
 
 Lane key: `targeted_ms1_shape_identity_broader_targets`
 
-Routes: [state](../validation/productization_status_index_v1.tsv), [writer authority](../schemas/productization_authority_manifest.v1.json), [stable capability](../../product/productization.md).
+Routes: [state](../validation/productization_status_index.tsv), [writer authority](../schemas/productization_authority_manifest.json), [stable capability](../../product/productization.md).
 
 ### sample_metadata cross-module parity
 
-Lane key: `sample_metadata_order_projection_v1`
+Lane key: `sample_metadata_order_projection`
 
-Routes: [state](../validation/productization_status_index_v1.tsv), [writer authority](../schemas/productization_authority_manifest.v1.json), [stable capability](../../product/productization.md).
+Routes: [state](../validation/productization_status_index.tsv), [writer authority](../schemas/productization_authority_manifest.json), [stable capability](../../product/productization.md).
 
 ### role/value behavior remains blocked
 
 Lane key: `sample_metadata_role_value_behavior`
 
-Routes: [state](../validation/productization_status_index_v1.tsv), [writer authority](../schemas/productization_authority_manifest.v1.json), [stable capability](../../product/productization.md).
+Routes: [state](../validation/productization_status_index.tsv), [writer authority](../schemas/productization_authority_manifest.json), [stable capability](../../product/productization.md).
 
 ### candidate-sidecar verifier is now production_candidate
 
-Lane key: `review_action_candidate_sidecar_v1`
+Lane key: `review_action_candidate_sidecar`
 
-Routes: [state](../validation/productization_status_index_v1.tsv), [writer authority](../schemas/productization_authority_manifest.v1.json), [stable capability](../../product/productization.md).
+Routes: [state](../validation/productization_status_index.tsv), [writer authority](../schemas/productization_authority_manifest.json), [stable capability](../../product/productization.md).
 
 ### selected candidate / manual boundary writer parked
 
 Lane key: `review_action_selected_candidate_switch`
 
-Routes: [state](../validation/productization_status_index_v1.tsv), [writer authority](../schemas/productization_authority_manifest.v1.json), [stable capability](../../product/productization.md).
+Routes: [state](../validation/productization_status_index.tsv), [writer authority](../schemas/productization_authority_manifest.json), [stable capability](../../product/productization.md).
 
 ### manual-boundary area writer parked
 
 Lane key: `review_action_manual_boundary_area_writer`
 
-Routes: [state](../validation/productization_status_index_v1.tsv), [writer authority](../schemas/productization_authority_manifest.v1.json), [stable capability](../../product/productization.md).
+Routes: [state](../validation/productization_status_index.tsv), [writer authority](../schemas/productization_authority_manifest.json), [stable capability](../../product/productization.md).
 
 ### calibration/normalization activation
 
 Lane key: `calibration_normalization_activation`
 
-Routes: [state](../validation/productization_status_index_v1.tsv), [writer authority](../schemas/productization_authority_manifest.v1.json), [stable capability](../../product/productization.md).
+Routes: [state](../validation/productization_status_index.tsv), [writer authority](../schemas/productization_authority_manifest.json), [stable capability](../../product/productization.md).
 
 ### GUI replay / GUI parity is out of scope
 
 Lane key: `gui_replay_parity`
 
-Routes: [state](../validation/productization_status_index_v1.tsv), [writer authority](../schemas/productization_authority_manifest.v1.json), [stable capability](../../product/productization.md).
+Routes: [state](../validation/productization_status_index.tsv), [writer authority](../schemas/productization_authority_manifest.json), [stable capability](../../product/productization.md).
 
-### Untargeted Owner Backfill Canonical Quantitative Projection v1
+### Untargeted Owner Backfill Canonical Quantitative Projection
 
-Lane key: `untargeted_owner_backfill_canonical_quantitative_projection_v1`
+Lane key: `untargeted_owner_backfill_canonical_quantitative_projection`
 
-Routes: [state](../validation/productization_status_index_v1.tsv), [dependent-effect authority](../schemas/quantitative_projection_authority_manifest.v1.json), [stable capability](../../product/productization.md).
+Routes: [state](../validation/productization_status_index.tsv), [dependent-effect authority](../schemas/quantitative_projection_authority_manifest.json), [stable capability](../../product/productization.md).

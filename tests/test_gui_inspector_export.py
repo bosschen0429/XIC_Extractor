@@ -15,13 +15,14 @@ from gui.workers.inspector_report_worker import (
     InspectorJob,
     InspectorReportWorker,
 )
-from tests.test_xic_inspector_api import _create_mock_v2_db
+from tests.test_xic_inspector_api import _create_mock_db
+from xic_extractor.diagnostics.alignment_explanation import SCHEMA_VERSION
 from xic_inspector.api import EvidenceLocator, InspectorCancelled, SelectionRequest
 
 
 def _source(tmp_path: Path) -> EvidenceLocator:
-    db, matrix, digest = _create_mock_v2_db(tmp_path)
-    return EvidenceLocator(db, matrix, digest, "req-01", "att-01", 2)
+    db, matrix, digest = _create_mock_db(tmp_path)
+    return EvidenceLocator(db, matrix, digest, "req-01", "att-01", SCHEMA_VERSION)
 
 
 def _summary(source: EvidenceLocator) -> dict:
@@ -64,6 +65,13 @@ def test_results_only_enable_export_for_valid_current_locator(qtbot, tmp_path):
     assert not section._export_inspector.isEnabled()
     assert "無效" in section._inspector_status.text()
     assert section._open_matrix.isEnabled()
+
+    for unsupported_schema in (2, "unsupported_explanation"):
+        invalid = _summary(source)
+        invalid["evidence"]["schema_version"] = unsupported_schema
+        section.update_results(invalid)
+        assert not section._export_inspector.isEnabled()
+        assert section._evidence is None
 
     section.update_results(_summary(source))
     section.clear_results()
@@ -185,7 +193,7 @@ def test_export_and_open_announces_success_before_browser_event_reentry(
     assert opened == [str(tmp_path / "opened.html")]
     assert (tmp_path / "opened.html").is_file()
     assert "selected 1" in section._inspector_status.text()
-    assert "retained_curves_v1" in section._inspector_status.text()
+    assert "retained_curves" in section._inspector_status.text()
     assert statuses and "selected 1" in statuses[-1]
 
 

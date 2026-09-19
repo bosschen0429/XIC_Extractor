@@ -7,7 +7,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_PATH = (
     ROOT
     / "docs/superpowers/schemas/"
-    "cid_nl_tested_tracer_proposal_manifest_schema.v1.json"
+    "cid_nl_tested_tracer_proposal_manifest_schema.json"
 )
 
 
@@ -16,7 +16,7 @@ def test_cid_nl_tested_tracer_proposal_manifest_schema_is_fail_closed() -> None:
 
     assert (
         schema["schema_version"]
-        == "cid_nl_tested_tracer_proposal_manifest_schema_v1"
+        == "cid_nl_tested_tracer_proposal_manifest_schema"
     )
     assert schema["validation_status"] == "diagnostic_only"
     assert schema["row_unit"] == (
@@ -72,7 +72,7 @@ def test_cid_nl_proposal_denominator_is_separate_from_reference_recovery() -> No
     schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
     denominator = schema["precision_denominator_rules"]
 
-    assert denominator["rule_id"] == "cid_nl_tested_tracer_select_value_v1"
+    assert denominator["rule_id"] == "cid_nl_tested_tracer_select_value"
     assert denominator["hold_and_leave_missing_are_not_positive_proposals"]
     assert denominator["reference_recovery_uses_this_manifest"] is False
 

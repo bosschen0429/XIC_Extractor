@@ -9,7 +9,7 @@ from typing import Any, Sequence
 
 from tools.diagnostics.diagnostic_io import write_tsv
 
-GATE_VERSION = "ms1_peak_group_nl_scope_gate_v1"
+GATE_VERSION = "ms1_peak_group_nl_scope_gate"
 CHROM_SOURCE = "chrom_peak_segment"
 MS1_PEAK_GROUP_SOURCE = "gaussian15_ms1_peak_group"
 REQUIRED_COLUMNS = (

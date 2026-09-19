@@ -51,18 +51,9 @@ from xic_extractor.peak_detection.physical_peak_models import (
     _PHYSICAL_PEAK_OPERATION_ORDER,
     _PHYSICAL_PEAK_SELECTION_POLICIES,
     DISCOVERY_PHYSICAL_PEAK_POINT_POLICY,
-    LEGACY_ORIGINAL_CONTINUITY_POINT_POLICY,
-    LEGACY_ORIGINAL_CONTINUITY_WINDOW_POLICY,
-    LEGACY_ORIGINAL_EDGE_RETURN_POINT_POLICY,
-    LEGACY_ORIGINAL_EDGE_RETURN_WINDOW_POLICY,
-    LEGACY_ORIGINAL_FRAGMENTATION_POINT_POLICY,
-    LEGACY_ORIGINAL_FRAGMENTATION_WINDOW_POLICY,
-    LEGACY_ORIGINAL_SUPPORT_POINT_POLICY,
-    LEGACY_ORIGINAL_SUPPORT_WINDOW_POLICY,
-    LEGACY_PHYSICAL_PEAK_SELECTION_POLICY,
-    LEGACY_PHYSICAL_PEAK_WINDOW_POLICY,
     PHYSICAL_PEAK_POINT_POLICY,
     PHYSICAL_PEAK_WINDOW_POLICY,
+    PHYSICAL_SEGMENT_UNIVERSE_SCHEMA,
     PhysicalPeakAnswer,
     PhysicalPeakEvaluation,
     PhysicalPeakFacts,
@@ -108,7 +99,7 @@ def prepare_physical_signal(
         if trace_content_id != actual_trace_id:
             raise ValueError("trace_content_id does not match exact RT/raw content")
     prepared_id = _typed_physical_id(
-        "prepared-signal.v1:",
+        "prepared-signal:",
         canonical_prepared_signal_identity_bytes(actual_trace_id, profile.profile_id),
     )
     projection_profile_id = profile.profile_id
@@ -118,7 +109,7 @@ def prepare_physical_signal(
         *, state: PhysicalPeakState, reason: str
     ) -> PreparedSignalProjection:
         return PreparedSignalProjection(
-            schema_version="prepared_signal_projection_v1",
+            schema_version="prepared_signal_projection",
             trace_content_id=actual_trace_id,
             profile_id=projection_profile_id,
             prepared_signal_id=prepared_id,
@@ -232,22 +223,6 @@ def prepare_physical_signal(
     )
 
 
-def _physical_boundary_universe_schema(selection_policy_version: str) -> str:
-    if selection_policy_version == LEGACY_PHYSICAL_PEAK_SELECTION_POLICY:
-        return "physical_segment_universe_v1"
-    if selection_policy_version in {
-        LEGACY_ORIGINAL_EDGE_RETURN_POINT_POLICY,
-        LEGACY_ORIGINAL_EDGE_RETURN_WINDOW_POLICY,
-        LEGACY_ORIGINAL_FRAGMENTATION_POINT_POLICY,
-        LEGACY_ORIGINAL_FRAGMENTATION_WINDOW_POLICY,
-        PHYSICAL_PEAK_POINT_POLICY,
-        PHYSICAL_PEAK_WINDOW_POLICY,
-        DISCOVERY_PHYSICAL_PEAK_POINT_POLICY,
-    }:
-        return "physical_segment_universe_v3"
-    return "physical_segment_universe_v2"
-
-
 def enumerate_physical_segment_universe(
     prepared_result: PreparedSignalResult,
     *,
@@ -260,8 +235,7 @@ def enumerate_physical_segment_universe(
     validate_prepared_signal_identity(prepared_result.projection)
     if selection_policy_version not in _PHYSICAL_PEAK_SELECTION_POLICIES:
         raise ValueError("unsupported physical peak selection policy")
-    legacy = selection_policy_version == LEGACY_PHYSICAL_PEAK_SELECTION_POLICY
-    universe_schema = _physical_boundary_universe_schema(selection_policy_version)
+    universe_schema = PHYSICAL_SEGMENT_UNIVERSE_SCHEMA
     context_start, context_end = _physical_owner_context(
         prepared_result,
         request_context_rt_start_min=request_context_rt_start_min,
@@ -284,9 +258,9 @@ def enumerate_physical_segment_universe(
         segment_policy = ChromPeakSegmentPolicy(
             morphology_trace_method="canonical_signal",
             morphology_trace_window_points=prepared.profile.window_points,
-            baseline_return_fraction=0.02 if legacy else 0.0,
-            baseline_return_min_residual=1.0 if legacy else 0.0,
-            include_baseline_return_samples=not legacy,
+            baseline_return_fraction=0.0,
+            baseline_return_min_residual=0.0,
+            include_baseline_return_samples=True,
         )
         enumeration = enumerate_chrom_peak_segments(
             rt,
@@ -298,7 +272,7 @@ def enumerate_physical_segment_universe(
         )
         if enumeration.status == "OK":
             segments = enumeration.segments
-            if universe_schema == "physical_segment_universe_v3" and any(
+            if any(
                 s.interval.start_index == 0 or s.interval.end_index == len(rt)
                 for s in segments
             ):
@@ -366,7 +340,7 @@ def enumerate_physical_segment_universe(
         reason=reason,
         segments=physical_segments,
         segment_universe_id=_typed_physical_id(
-            "segment-universe.v1:", _canonical_physical_json_bytes(basis)
+            "segment-universe:", _canonical_physical_json_bytes(basis)
         ),
     )
 
@@ -397,7 +371,7 @@ def mint_physical_peak_question(
         universe, query_rt, selection_policy_version
     )
     values = {
-        "schema_version": "physical_peak_question_v1",
+        "schema_version": "physical_peak_question",
         "trace_content_id": prepared.trace_content_id,
         "prepared_signal_id": prepared.prepared_signal_id,
         "segment_universe_id": universe.segment_universe_id,
@@ -410,10 +384,10 @@ def mint_physical_peak_question(
         "selection_policy_version": selection_policy_version,
     }
     question_id = _typed_physical_id(
-        "physical-question.v1:", _canonical_physical_json_bytes(values)
+        "physical-question:", _canonical_physical_json_bytes(values)
     )
     return PhysicalPeakQuestion(
-        schema_version="physical_peak_question_v1",
+        schema_version="physical_peak_question",
         trace_content_id=prepared.trace_content_id,
         prepared_signal_id=prepared.prepared_signal_id,
         segment_universe_id=universe.segment_universe_id,
@@ -435,18 +409,9 @@ def _admissible_physical_segments(
 ) -> tuple[str, ...]:
     if selection_policy_version not in _PHYSICAL_PEAK_SELECTION_POLICIES:
         raise ValueError("unsupported physical peak selection policy")
-    if universe.schema_version != _physical_boundary_universe_schema(
-        selection_policy_version
-    ):
+    if universe.schema_version != PHYSICAL_SEGMENT_UNIVERSE_SCHEMA:
         raise ValueError("physical question crosses boundary policy")
-    if selection_policy_version in {
-        LEGACY_PHYSICAL_PEAK_WINDOW_POLICY,
-        LEGACY_ORIGINAL_SUPPORT_WINDOW_POLICY,
-        LEGACY_ORIGINAL_CONTINUITY_WINDOW_POLICY,
-        LEGACY_ORIGINAL_EDGE_RETURN_WINDOW_POLICY,
-        LEGACY_ORIGINAL_FRAGMENTATION_WINDOW_POLICY,
-        PHYSICAL_PEAK_WINDOW_POLICY,
-    }:
+    if selection_policy_version == PHYSICAL_PEAK_WINDOW_POLICY:
         if not universe.context_rt_start_min <= query_rt <= universe.context_rt_end_min:
             return ()
         # A group center is a prior for this already acquired bounded context.
@@ -464,7 +429,7 @@ def validate_physical_peak_question_identity(
     *,
     universe: PhysicalSegmentUniverse | None = None,
 ) -> None:
-    if question.schema_version != "physical_peak_question_v1":
+    if question.schema_version != "physical_peak_question":
         raise ValueError("unsupported physical peak question schema")
     if question.selection_policy_version not in _PHYSICAL_PEAK_SELECTION_POLICIES:
         raise ValueError("unsupported physical peak selection policy")
@@ -483,7 +448,7 @@ def validate_physical_peak_question_identity(
     ):
         raise ValueError("physical question admissible ID is outside its universe")
     expected = _typed_physical_id(
-        "physical-question.v1:", canonical_physical_peak_question_bytes(question)
+        "physical-question:", canonical_physical_peak_question_bytes(question)
     )
     if question.physical_question_id != expected:
         raise ValueError("physical_question_id does not match owner content")
@@ -539,55 +504,25 @@ def answer_physical_peak_question(
             if selected.start_index == 0 or selected.end_index == len(prepared.rt):
                 state, reason = "unavailable", "incomplete_peak_context"
                 selected = None
-            elif question.selection_policy_version in {
-                LEGACY_ORIGINAL_SUPPORT_POINT_POLICY,
-                LEGACY_ORIGINAL_SUPPORT_WINDOW_POLICY,
-                LEGACY_ORIGINAL_CONTINUITY_POINT_POLICY,
-                LEGACY_ORIGINAL_CONTINUITY_WINDOW_POLICY,
-                LEGACY_ORIGINAL_EDGE_RETURN_POINT_POLICY,
-                LEGACY_ORIGINAL_EDGE_RETURN_WINDOW_POLICY,
-                LEGACY_ORIGINAL_FRAGMENTATION_POINT_POLICY,
-                LEGACY_ORIGINAL_FRAGMENTATION_WINDOW_POLICY,
-                PHYSICAL_PEAK_POINT_POLICY,
-                PHYSICAL_PEAK_WINDOW_POLICY,
-                DISCOVERY_PHYSICAL_PEAK_POINT_POLICY,
-            }:
+            else:
                 # Smoothing may spread one acquired signal point into a peak.
                 # Support belongs to the selected interval's original XIC;
                 # saved policies retain their original answer semantics.
                 acquired = prepared.raw[selected.start_index : selected.end_index]
-                original = acquired
-                if question.selection_policy_version in {
-                    PHYSICAL_PEAK_POINT_POLICY,
-                    PHYSICAL_PEAK_WINDOW_POLICY,
-                    DISCOVERY_PHYSICAL_PEAK_POINT_POLICY,
-                }:
-                    # Acquired background is not peak support. Reuse the owner
-                    # baseline so adding an offset cannot rescue an impulse.
-                    original = np.maximum(
-                        np.asarray(original, dtype=float)
-                        - np.asarray(
-                            prepared.baseline[
-                                selected.start_index : selected.end_index
-                            ],
-                            dtype=float,
-                        ),
-                        0.0,
-                    )
+                # Acquired background is not peak support. Reuse the owner
+                # baseline so adding an offset cannot rescue an impulse.
+                original = np.maximum(
+                    np.asarray(acquired, dtype=float)
+                    - np.asarray(
+                        prepared.baseline[selected.start_index : selected.end_index],
+                        dtype=float,
+                    ),
+                    0.0,
+                )
                 if sum(value > 0.0 for value in original) < 2:
                     state, reason = "unavailable", "insufficient_original_xic_support"
                     selected = None
-                elif question.selection_policy_version in {
-                    LEGACY_ORIGINAL_CONTINUITY_POINT_POLICY,
-                    LEGACY_ORIGINAL_CONTINUITY_WINDOW_POLICY,
-                    LEGACY_ORIGINAL_EDGE_RETURN_POINT_POLICY,
-                    LEGACY_ORIGINAL_EDGE_RETURN_WINDOW_POLICY,
-                    LEGACY_ORIGINAL_FRAGMENTATION_POINT_POLICY,
-                    LEGACY_ORIGINAL_FRAGMENTATION_WINDOW_POLICY,
-                    PHYSICAL_PEAK_POINT_POLICY,
-                    PHYSICAL_PEAK_WINDOW_POLICY,
-                    DISCOVERY_PHYSICAL_PEAK_POINT_POLICY,
-                } and not any(
+                elif not any(
                     left > 0.0 and right > 0.0
                     for left, right in zip(original, original[1:])
                 ):
@@ -598,20 +533,14 @@ def answer_physical_peak_question(
                         "insufficient_original_xic_continuity",
                     )
                     selected = None
-                elif question.selection_policy_version in {
-                    LEGACY_ORIGINAL_FRAGMENTATION_POINT_POLICY,
-                    LEGACY_ORIGINAL_FRAGMENTATION_WINDOW_POLICY,
-                    PHYSICAL_PEAK_POINT_POLICY,
-                    PHYSICAL_PEAK_WINDOW_POLICY,
-                    DISCOVERY_PHYSICAL_PEAK_POINT_POLICY,
-                }:
+                else:
                     original_runs = sum(
                         value > 0.0 and (index == 0 or acquired[index - 1] <= 0.0)
                         for index, value in enumerate(acquired)
                     )
                     # Repeated raw interruptions plus severe jaggedness cannot
                     # acquire peak support from a smooth envelope. Keep this
-                    # conjunction in the versioned physical policy: neither
+                    # conjunction in the physical policy: neither
                     # isolated gaps nor jaggedness alone rejects a peak.
                     # Baseline crossings are not missing acquired samples.
                     if original_runs >= 3 and noise_shape_severity(
@@ -622,11 +551,7 @@ def answer_physical_peak_question(
                             "fragmented_original_xic_support",
                         )
                         selected = None
-                if selected is not None and question.selection_policy_version in {
-                    PHYSICAL_PEAK_POINT_POLICY,
-                    PHYSICAL_PEAK_WINDOW_POLICY,
-                    DISCOVERY_PHYSICAL_PEAK_POINT_POLICY,
-                }:
+                if selected is not None:
                     # A shallow local maximum on a background plateau must not
                     # borrow its entire residual height as peak evidence. Use
                     # relief above both local valleys and short-scale original
@@ -697,7 +622,7 @@ def answer_physical_peak_question(
                             )
                             selected = None
     answer_basis = {
-        "schema_version": "physical_peak_answer_v1",
+        "schema_version": "physical_peak_answer",
         "state": state,
         "reason": reason,
         "prepared_signal_id": prepared_result.projection.prepared_signal_id,
@@ -707,7 +632,7 @@ def answer_physical_peak_question(
         ),
     }
     answer = PhysicalPeakAnswer(
-        schema_version="physical_peak_answer_v1",
+        schema_version="physical_peak_answer",
         state=state,
         reason=reason,
         prepared_signal_id=prepared_result.projection.prepared_signal_id,
@@ -716,7 +641,7 @@ def answer_physical_peak_question(
             selected.physical_segment_id if selected is not None else None
         ),
         physical_answer_id=_typed_physical_id(
-            "physical-answer.v1:", _canonical_physical_json_bytes(answer_basis)
+            "physical-answer:", _canonical_physical_json_bytes(answer_basis)
         ),
     )
     facts: PhysicalPeakFacts | None = None
@@ -739,13 +664,13 @@ def answer_physical_peak_question(
         normalized = tuple(float(value / maximum) for value in selected_values)
         normalized_bytes = _canonical_physical_json_bytes(
             {
-                "schema_version": "physical_relative_shape_v1",
+                "schema_version": "physical_relative_shape",
                 "values": [_physical_float_text(value) for value in normalized],
             }
         )
         shape_hash = hashlib.sha256(normalized_bytes).hexdigest()
         provisional = PhysicalPeakFacts(
-            schema_version="physical_peak_facts_v1",
+            schema_version="physical_peak_facts",
             prepared_signal_id=prepared_result.projection.prepared_signal_id,
             physical_question_id=question.physical_question_id,
             physical_answer_id=answer.physical_answer_id,
@@ -756,14 +681,14 @@ def answer_physical_peak_question(
             height=selected.height,
             scan_support_count=selected.scan_support_count,
             area_counts_seconds=selected.area_counts_seconds,
-            area_source="trapezoid_counts_seconds_on_canonical_signal_v1",
-            relative_shape_schema_version="physical_relative_shape_v1",
+            area_source="trapezoid_counts_seconds_on_canonical_signal",
+            relative_shape_schema_version="physical_relative_shape",
             relative_shape_point_count=len(normalized),
             relative_shape_content_hash=shape_hash,
             fact_content_id="",
         )
         fact_id = _typed_physical_id(
-            "physical-facts.v1:",
+            "physical-facts:",
             canonical_physical_peak_facts_bytes(
                 provisional,
                 relative_shape_values=normalized,
@@ -846,8 +771,8 @@ def _physical_raw_descriptor_projection(
         height_raw=float(raw[raw_apex_offset]),
         height_smoothed=float(prepared.smoothed[selected.apex_index]),
         area_raw_counts_seconds=raw_area_counts_seconds,
-        integration_method="canonical_physical_signal_trapezoid_v1",
-        boundary_sources=("canonical_physical_segment_v1",),
+        integration_method="canonical_physical_signal_trapezoid",
+        boundary_sources=("canonical_physical_segment",),
         area_baseline_corrected=facts.area_counts_seconds,
         baseline_type=prepared.profile.baseline_method,
         raw_scan_indices=(),
@@ -926,9 +851,9 @@ def validate_bounded_physical_peak_evaluation(
             operation_order,
         }:
             raise ValueError("available physical evaluation lacks completed operations")
-        if facts.schema_version != "physical_peak_facts_v1":
+        if facts.schema_version != "physical_peak_facts":
             raise ValueError("unsupported physical peak facts schema")
-        if facts.relative_shape_schema_version != "physical_relative_shape_v1":
+        if facts.relative_shape_schema_version != "physical_relative_shape":
             raise ValueError("unsupported physical relative-shape schema")
         if facts.relative_shape_point_count < 1:
             raise ValueError("physical relative shape must contain at least one point")
@@ -946,7 +871,7 @@ def validate_bounded_physical_peak_evaluation(
         )
         _require_typed_physical_hash(
             facts.fact_content_id,
-            prefix="physical-facts.v1:",
+            prefix="physical-facts:",
             field="fact_content_id",
         )
         if (
@@ -987,7 +912,7 @@ def _physical_segment_from_chrom(segment: Any) -> PhysicalSegment:
     return replace(
         provisional,
         physical_segment_id=_typed_physical_id(
-            "physical-segment.v1:", canonical_physical_segment_bytes(provisional)
+            "physical-segment:", canonical_physical_segment_bytes(provisional)
         ),
     )
 

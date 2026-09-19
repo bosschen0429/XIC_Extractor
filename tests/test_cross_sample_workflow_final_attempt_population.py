@@ -63,8 +63,8 @@ def test_admitted_repair_with_unaffected_group_runs_one_final_assignment_pass(
         ),
         alignment_config=AlignmentConfig(anchor_min_seed_events=1),
         trajectory_policy=ModeTrackTrajectoryPolicy(
-            trajectory_policy_version="anchor-trajectory-v1",
-            band_policy_version="fixed-band-v1",
+            trajectory_policy_version="anchor-trajectory",
+            band_policy_version="fixed-band",
             prediction_half_width_min=0.1,
             max_interpolation_gap=10,
             max_extrapolation_gap=10,
@@ -78,8 +78,8 @@ def test_admitted_repair_with_unaffected_group_runs_one_final_assignment_pass(
         ),
         alignment_config=AlignmentConfig(anchor_min_seed_events=100),
         trajectory_policy=ModeTrackTrajectoryPolicy(
-            trajectory_policy_version="anchor-trajectory-v1",
-            band_policy_version="fixed-band-v1",
+            trajectory_policy_version="anchor-trajectory",
+            band_policy_version="fixed-band",
             prediction_half_width_min=0.1,
             max_interpolation_gap=10,
             max_extrapolation_gap=10,
@@ -151,7 +151,7 @@ def test_admitted_repair_with_unaffected_group_runs_one_final_assignment_pass(
             owner.sample_stem: index for index, owner in enumerate(owners, start=1)
         },
         evidence_profile=ModeTrackEvidenceProfile(
-            "anchor-trajectory-v1", "fixed-band-v1", 0.1, 10, 10
+            "anchor-trajectory", "fixed-band", 0.1, 10, 10
         ),
         budget=CrossSampleNeighborhoodBudget(86, 3655),
         fit_once_source_id=source.fit_once_source_id,
@@ -195,7 +195,7 @@ def test_admitted_repair_with_unaffected_group_runs_one_final_assignment_pass(
                 for index, owner in enumerate(component_owners, start=1)
             },
             evidence_profile=ModeTrackEvidenceProfile(
-                "anchor-trajectory-v1", "fixed-band-v1", 0.1, 10, 10
+                "anchor-trajectory", "fixed-band", 0.1, 10, 10
             ),
             budget=CrossSampleNeighborhoodBudget(86, 3655),
             fit_once_source_id=source.fit_once_source_id,

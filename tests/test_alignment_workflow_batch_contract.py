@@ -157,7 +157,7 @@ def test_batch_request_requires_real_complete_request_scope(tmp_path) -> None:
     request_identity = build_processing_request_identity(
         acquisition_sources=base_request.acquisition_sources,
         acquisition_bindings=base_request.acquisition_bindings,
-        scientific_input_schema_version="untargeted-batch-request-test-v1",
+        scientific_input_schema_version="untargeted-batch-request-test",
         processing_algorithm_version=base_request.processing_algorithm_version,
         processing_contract_version=base_request.processing_contract_version,
         scientific_inputs={REQUEST_INPUT_KEY: subject_batch.request_payload()},
@@ -523,7 +523,7 @@ def _fake_scope(
     )
     return _uninitialized(
         workflow_owner.UntargetedSearchScope,
-        schema_version="search_scope_v1",
+        schema_version="search_scope",
         request=request,
         samples=samples,
         method_constraints=object(),
@@ -553,8 +553,8 @@ def _candidate_universe_payload(
                     candidate_ids_by_stem.get(sample.metadata.raw_stem, ())
                 ),
                 "candidate_payload_sha256": "0" * 64,
-                "discovery_receipt_id": ("xic.discovery-candidate-universe.v1:test"),
-                "candidate_artifact_schema_version": "discovery_candidates_csv_v1",
+                "discovery_receipt_id": ("xic.discovery-candidate-universe:test"),
+                "candidate_artifact_schema_version": "discovery_candidates_csv",
                 "candidate_artifact_sha256": "0" * 64,
                 "candidate_artifact_byte_size": 0,
                 "acquisition_source_id": resolve_request_acquisition_source(
@@ -625,7 +625,7 @@ def test_batch_application_result_rejects_duplicate_subject_and_crossed_attempt(
     request = build_processing_request_identity(
         acquisition_sources=base_request.acquisition_sources,
         acquisition_bindings=base_request.acquisition_bindings,
-        scientific_input_schema_version="untargeted-batch-workflow-test-v1",
+        scientific_input_schema_version="untargeted-batch-workflow-test",
         processing_algorithm_version=base_request.processing_algorithm_version,
         processing_contract_version=base_request.processing_contract_version,
         scientific_inputs={
@@ -711,7 +711,7 @@ def test_batch_application_result_rejects_exclusion_crossed_to_another_sample(
     request = build_processing_request_identity(
         acquisition_sources=base_request.acquisition_sources,
         acquisition_bindings=base_request.acquisition_bindings,
-        scientific_input_schema_version="untargeted-batch-sample-binding-test-v1",
+        scientific_input_schema_version="untargeted-batch-sample-binding-test",
         processing_algorithm_version=base_request.processing_algorithm_version,
         processing_contract_version=base_request.processing_contract_version,
         scientific_inputs={
@@ -774,7 +774,7 @@ def test_batch_application_result_requires_owner_candidate_universe(
     request = build_processing_request_identity(
         acquisition_sources=base_request.acquisition_sources,
         acquisition_bindings=base_request.acquisition_bindings,
-        scientific_input_schema_version="untargeted-batch-missing-universe-test-v1",
+        scientific_input_schema_version="untargeted-batch-missing-universe-test",
         processing_algorithm_version=base_request.processing_algorithm_version,
         processing_contract_version=base_request.processing_contract_version,
         scientific_inputs={REQUEST_INPUT_KEY: subject_batch.request_payload()},
@@ -849,7 +849,7 @@ def test_batch_application_result_preserves_order_and_binding_across_chunks(
     request = build_processing_request_identity(
         acquisition_sources=base_request.acquisition_sources,
         acquisition_bindings=base_request.acquisition_bindings,
-        scientific_input_schema_version="untargeted-batch-order-test-v1",
+        scientific_input_schema_version="untargeted-batch-order-test",
         processing_algorithm_version=base_request.processing_algorithm_version,
         processing_contract_version=base_request.processing_contract_version,
         scientific_inputs={

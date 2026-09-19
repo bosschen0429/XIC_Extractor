@@ -7,14 +7,14 @@ ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_PATH = (
     ROOT
     / "docs/superpowers/schemas/"
-    "cid_nl_oracle_review_adjudication_schema.v1.json"
+    "cid_nl_oracle_review_adjudication_schema.json"
 )
 
 
 def test_review_schema_separates_local_policy_and_unblinded_phases() -> None:
     schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
 
-    assert schema["schema_version"] == "cid_nl_oracle_review_adjudication_schema_v1"
+    assert schema["schema_version"] == "cid_nl_oracle_review_adjudication_schema"
     assert schema["validation_status"] == "diagnostic_only"
     assert set(schema["allowed_review_phases"]) == {
         "sample_local_blinded",

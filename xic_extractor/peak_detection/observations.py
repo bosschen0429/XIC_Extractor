@@ -56,15 +56,15 @@ from xic_extractor.processing_identity import (
 )
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 
-SCHEMA_VERSION = "ms1_peak_observation_v1"
+SCHEMA_VERSION = "ms1_peak_observation"
 ARTIFACT_SEMANTIC_ROLE = "canonical_ms1_peak_observation"
 VALIDATION_STATUS = "diagnostic_only"
 MEDIA_TYPE = "application/json"
-SERIALIZATION_FORMAT = "canonical-json-utf8-lf-v1"
+SERIALIZATION_FORMAT = "canonical-json-utf8-lf"
 
-_CONTENT_ID_PREFIX = "xic.peak-observation-content.v1:"
-_SAMPLE_ID_PREFIX = "xic.sample.v1:"
-_ACQUISITION_SOURCE_ID_PREFIX = "xic.acquisition-source.v1:"
+_CONTENT_ID_PREFIX = "xic.peak-observation-content:"
+_SAMPLE_ID_PREFIX = "xic.sample:"
+_ACQUISITION_SOURCE_ID_PREFIX = "xic.acquisition-source:"
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _CONTENT_PAYLOAD_FIELDS = frozenset(
     {
@@ -752,7 +752,7 @@ def validate_peak_observation_binding(
 def _canonical_trace_bytes(trace: Trace) -> bytes:
     return _canonical_json_bytes(
         {
-            "schema": "ms1_trace_generation_provenance_v1",
+            "schema": "ms1_trace_generation_provenance",
             "mz": _finite_float(float(trace.mz), field="trace.mz"),
             "rt": [_finite_float(float(value), field="trace.rt") for value in trace.rt],
             "intensity": [
@@ -774,7 +774,7 @@ def _canonical_selection_trace_bytes(
 ) -> bytes:
     return _canonical_json_bytes(
         {
-            "schema": "ms1_peak_selection_trace_v1",
+            "schema": "ms1_peak_selection_trace",
             "rt": [
                 _finite_float(float(value), field="selection.rt") for value in trace.rt
             ],
@@ -815,7 +815,7 @@ def _physical_content_basis(
     integration: IntegrationResult,
 ) -> dict[str, object]:
     return {
-        "schema": "ms1_peak_observation_content_v1",
+        "schema": "ms1_peak_observation_content",
         "canonical_sample_identity_id": canonical_sample_identity_id,
         "mz": mz,
         "rt": list(rt),

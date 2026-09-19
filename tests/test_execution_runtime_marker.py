@@ -115,7 +115,7 @@ def test_finalization_atomically_replaces_launch_and_survives_loss(
             resource_key="process:sample:a",
             worker_key="worker:1",
             source_reference="no-raw:sample:a",
-            compatibility_token="alignment:no-raw:v1",
+            compatibility_token="alignment:no-raw",
         ),
     )
     state = settle_runtime_resource(
@@ -150,7 +150,7 @@ def test_finalization_atomically_replaces_launch_and_survives_loss(
 
     assert accepted == receipt
     payload = json.loads(marker.path.read_bytes())
-    assert payload["schema_version"] == "execution_runtime_recovery_marker_v4"
+    assert payload["schema_version"] == "execution_runtime_recovery_marker"
     assert marker.read().state is RuntimeMarkerState.FINALIZED
     assert marker(receipt) == accepted
     with pytest.raises(RuntimeFinalizationContractError, match="already durably"):
@@ -172,7 +172,7 @@ def test_finalization_atomically_replaces_launch_and_survives_loss(
     )
 
 
-def test_marker_reader_retains_v3_outer_schema_compatibility(tmp_path: Path) -> None:
+def test_marker_reader_rejects_obsolete_outer_schema(tmp_path: Path) -> None:
     attempt = _attempt(tmp_path)
     marker = OwnerPathRuntimeMarker(
         tmp_path / "attempt.runtime.json",
@@ -180,17 +180,15 @@ def test_marker_reader_retains_v3_outer_schema_compatibility(tmp_path: Path) -> 
     )
     marker.record_launch(_runtime(attempt))
     payload = json.loads(marker.path.read_bytes())
-    payload["schema_version"] = "execution_runtime_recovery_marker_v3"
+    payload["schema_version"] = "unsupported_runtime_marker"
     unsigned = {key: value for key, value in payload.items() if key != "marker_sha256"}
     payload["marker_sha256"] = hashlib.sha256(
         _canonical_json_bytes(unsigned)
     ).hexdigest()
     marker.path.write_bytes(_canonical_json_bytes(payload))
 
-    restored = marker.read()
-
-    assert restored.state is RuntimeMarkerState.LAUNCHED
-    assert restored.processing_attempt_id == attempt.processing_attempt_id
+    with pytest.raises(RuntimeFinalizationContractError, match="schema_version"):
+        marker.read()
 
 
 def test_finalized_marker_bytes_bind_the_exact_observability_ledger(
@@ -524,7 +522,7 @@ def _terminal_records(
             resource_key="process:sample:a",
             worker_key="worker:1",
             source_reference="no-raw:sample:a",
-            compatibility_token="alignment:no-raw:v1",
+            compatibility_token="alignment:no-raw",
         ),
     )
     state = settle_runtime_resource(
@@ -597,7 +595,7 @@ def _runtime(attempt: ProcessingAttemptIdentity) -> AttemptRuntime:
             queued,
             attempt=attempt,
             work_unit_keys=("sample:a",),
-            owner_completeness_attestation="runtime-marker-test:v1",
+            owner_completeness_attestation="runtime-marker-test",
         )
     )
 
@@ -631,9 +629,9 @@ def _attempt(
                 injection_order=1,
             ),
         ),
-        scientific_input_schema_version="runtime_marker_test_v1",
-        processing_algorithm_version="runtime_marker_test_v1",
-        processing_contract_version="processing_identity_v1",
+        scientific_input_schema_version="runtime_marker_test",
+        processing_algorithm_version="runtime_marker_test",
+        processing_contract_version="processing_identity",
         scientific_inputs={"method": "cid_nl", "neutral_loss_da": 116.0},
     )
     return issue_processing_attempt(request)

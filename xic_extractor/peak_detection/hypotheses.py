@@ -43,7 +43,7 @@ from xic_extractor.peak_detection.ms1_morphology import (
 from xic_extractor.peak_detection.observations import PeakObservationRef
 from xic_extractor.peak_detection.traces import AnalysisMode, TraceGroup
 
-OWNER_BACKED_HYPOTHESIS_ID_PREFIX = "xic.peak-hypothesis.v1:"
+OWNER_BACKED_HYPOTHESIS_ID_PREFIX = "xic.peak-hypothesis:"
 OWNER_BACKED_ANALYSIS_MODE = "workflow_neutral"
 CandidateMS2EvidenceMap = Mapping[PeakCandidate, CandidateMS2Evidence]
 

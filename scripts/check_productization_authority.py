@@ -31,7 +31,7 @@ from xic_extractor.alignment.quant_matrix_version import (  # noqa: E402
     accepted_production_acceptance_rows_by_key,
 )
 from xic_extractor.alignment.quantitative_projection_authority import (  # noqa: E402
-    QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_FIELDS_V1,
+    QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_FIELDS,
     QuantitativeProjectionAuthorityError,
     rehydrate_quantitative_projection_authority_manifest,
     render_quantitative_projection_authority_manifest_bytes,
@@ -44,14 +44,14 @@ DEFAULT_DEPENDENT_MANIFEST = ROOT / QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_R
 APPROVED_SCOPE = "backfill_policy_write_ready_rows"
 APPROVED_SCOPE_ORDER = (APPROVED_SCOPE,)
 APPROVED_SCOPES = frozenset(APPROVED_SCOPE_ORDER)
-DEPENDENT_MANIFEST_SCHEMA_VERSION = "quantitative_projection_authority_manifest_v1"
-DEPENDENT_EFFECT_ID = "untargeted_owner_backfill_canonical_quantitative_projection_v1"
+DEPENDENT_MANIFEST_SCHEMA_VERSION = "quantitative_projection_authority_manifest"
+DEPENDENT_EFFECT_ID = "untargeted_owner_backfill_canonical_quantitative_projection"
 DEPENDENT_HOLD_STATUS = "HOLD_PENDING_VALIDATION"
 DEPENDENT_PACKAGE_AUTHORITY_ARTIFACT = (
-    "xic_extractor/alignment/data/quantitative_projection_authority_v1.json"
+    "xic_extractor/alignment/data/quantitative_projection_authority.json"
 )
 DEPENDENT_PACKAGE_AUTHORITY_SHA256 = (
-    "15b74bc79dc9501210acd5f761c86b4a7128db83e74a62bf3e97b7beb1572ed5"
+    "26753eb69300ec14a4eb044d21e44cb1351c2360cac7fae9884c3aec9bb6cd54"
 )
 WRITER_MANIFEST_FIELDS = (
     "schema_version",
@@ -78,11 +78,11 @@ RETIRED_SCOPE_IDS = {
     "backfill_expansion_clean_target_selective_activation_84_cells",
 }
 CURRENT_BACKFILL_ACCEPTANCE_REL = (
-    "docs/superpowers/validation/quant_matrix_real_bundle_v1/inputs/"
+    "docs/superpowers/validation/quant_matrix_real_bundle/inputs/"
     "production_acceptance_manifest.tsv"
 )
 CURRENT_BACKFILL_ACTIVATION_VALUES_REL = (
-    "docs/superpowers/validation/quant_matrix_real_bundle_v1/source_artifacts/"
+    "docs/superpowers/validation/quant_matrix_real_bundle/source_artifacts/"
     "standard_peak_activation_values.tsv"
 )
 CURRENT_BACKFILL_VALUE_COLUMNS = (
@@ -149,13 +149,13 @@ def _check_dependent_manifest(
     manifest_raw: bytes,
     problems: list[str],
 ) -> None:
-    if tuple(manifest) != QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_FIELDS_V1:
+    if tuple(manifest) != QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_FIELDS:
         problems.append(
             "dependent authority manifest fields must preserve the exact ordered "
-            "V1 contract"
+            "contract"
         )
     if manifest.get("schema_version") != DEPENDENT_MANIFEST_SCHEMA_VERSION:
-        problems.append("dependent authority manifest schema_version must remain V1")
+        problems.append("dependent authority manifest schema_version changed")
     if manifest.get("effect_id") != DEPENDENT_EFFECT_ID:
         problems.append("dependent authority manifest effect_id is crossed")
     if manifest.get("status") != DEPENDENT_HOLD_STATUS:
@@ -228,10 +228,10 @@ def _check_dependent_manifest(
 def _check_manifest(manifest: Mapping[str, Any], problems: list[str]) -> None:
     if tuple(manifest) != WRITER_MANIFEST_FIELDS:
         problems.append(
-            "writer authority manifest fields/order changed from the frozen V1 contract"
+            "writer authority manifest fields/order changed from the frozen contract"
         )
-    if manifest.get("schema_version") != "productization_authority_manifest_v1":
-        problems.append("writer authority manifest schema_version must remain V1")
+    if manifest.get("schema_version") != "productization_authority_manifest":
+        problems.append("writer authority manifest schema_version changed")
     if manifest.get("status") != "active":
         problems.append("writer authority manifest status must remain active")
     policy = manifest.get("authority_policy")

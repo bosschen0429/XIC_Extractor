@@ -8,10 +8,10 @@ import pytest
 
 from xic_extractor.alignment.production_candidate_gate import (
     PRODUCTION_CANDIDATE_GATE_COLUMNS,
-    TIER2_CRITERIA_V0_1,
+    TIER2_CRITERIA,
+    TIER2_DIAGNOSTIC_CRITERIA,
     TIER2_SUPPORT_COMPONENT,
-    TIER2_TRACE_EVIDENCE_V0_1_COLUMNS,
-    TIER2_TRACE_EVIDENCE_V0_COLUMNS,
+    TIER2_TRACE_EVIDENCE_COLUMNS,
     evaluate_production_candidate_gate,
     load_tier2_trace_evidence,
     production_candidate_gate_as_row,
@@ -76,26 +76,6 @@ def test_valid_tier2_sidecar_support_tracks_candidate(tmp_path: Path) -> None:
     assert decision.challenge_blockers == ()
     assert decision.tier2_evidence_available is True
     assert decision.candidate_confidence == "medium"
-
-
-def test_legacy_v0_sidecar_with_v0_columns_still_promotes(
-    tmp_path: Path,
-) -> None:
-    evidence, review_row, source_context = _load_tier2_fixture(
-        tmp_path,
-        sidecar_columns=TIER2_TRACE_EVIDENCE_V0_COLUMNS,
-    )
-
-    decision = evaluate_production_candidate_gate(
-        review_row,
-        _cell_rows(detected=1, rescued=2),
-        source_context=source_context,
-        tier2_evidence=evidence,
-    )
-
-    assert decision.candidate_gate_status == "production_candidate"
-    assert decision.support_components == (TIER2_SUPPORT_COMPONENT,)
-    assert decision.tier2_evidence_available is True
 
 
 def test_retention_candidate_without_positive_tier2_support_stays_provisional(
@@ -428,7 +408,7 @@ def test_stale_tier2_source_hash_blocks_support(tmp_path: Path) -> None:
 def test_unknown_tier2_criteria_version_blocks_support(tmp_path: Path) -> None:
     evidence, review_row, source_context = _load_tier2_fixture(
         tmp_path,
-        criteria_version="future_criteria_v9",
+        criteria_version="future_criteria",
     )
 
     decision = evaluate_production_candidate_gate(
@@ -504,7 +484,7 @@ def test_mismatched_tier2_family_id_does_not_promote(tmp_path: Path) -> None:
     ("overrides", "expected_blocker"),
     (
         (
-            {"producer_version": "raw_trace_reread_tier2_v99"},
+            {"producer_version": "unsupported_raw_trace_reread_tier2"},
             "producer_version_not_recognized",
         ),
         ({"source_raw_manifest_sha256": "0" * 64}, "raw_manifest_hash_mismatch"),
@@ -604,7 +584,7 @@ def test_required_tier2_full_schema_values_do_not_promote(
         ({"trace_scan_count": "4"}, "metric_unavailable"),
         ({"scan_support_score": "0.10"}, "low_scan_support"),
         ({"scan_support_score": "0.30"}, "weak_scan_support"),
-        ({"apex_delta_sec": "31.0"}, "apex_delta_exceeds_v0_threshold"),
+        ({"apex_delta_sec": "31.0"}, "apex_delta_exceeds_threshold"),
         ({"boundary_width_sec": "0.0"}, "boundary_width_out_of_range"),
         ({"boundary_width_sec": "181.0"}, "boundary_width_out_of_range"),
         ({"neighbor_interference_ratio": "0.34"}, "neighbor_interference"),
@@ -617,7 +597,7 @@ def test_required_tier2_full_schema_values_do_not_promote(
         ({"rescued_boundary_overlap_min": "0.49"}, "rescued_boundary_overlap_low"),
     ),
 )
-def test_tier2_v0_threshold_failures_do_not_promote(
+def test_tier2_threshold_failures_do_not_promote(
     tmp_path: Path,
     row_overrides: dict[str, str],
     expected_blocker: str,
@@ -639,7 +619,7 @@ def test_tier2_v0_threshold_failures_do_not_promote(
     assert expected_blocker in decision.challenge_blockers
 
 
-def test_tier2_sidecar_missing_v0_metric_column_is_rejected(
+def test_tier2_sidecar_missing_metric_column_is_rejected(
     tmp_path: Path,
 ) -> None:
     review_path, cell_path, matrix_path = _write_sources(tmp_path)
@@ -663,7 +643,7 @@ def test_tier2_sidecar_missing_v0_metric_column_is_rejected(
         support_component=TIER2_SUPPORT_COMPONENT,
         raw_trace_reread_status="pass",
         coherence_status="pass",
-        sidecar_columns=TIER2_TRACE_EVIDENCE_V0_COLUMNS,
+        sidecar_columns=TIER2_TRACE_EVIDENCE_COLUMNS,
         omitted_columns=("trace_scan_count",),
     )
 
@@ -676,23 +656,23 @@ def test_tier2_sidecar_missing_v0_metric_column_is_rejected(
         )
 
 
-def test_v0_1_tier2_sidecar_is_diagnostic_only(tmp_path: Path) -> None:
+def test_diagnostic_tier2_sidecar_is_diagnostic_only(tmp_path: Path) -> None:
     evidence, review_row, source_context = _load_tier2_fixture(
         tmp_path,
-        criteria_version=TIER2_CRITERIA_V0_1,
-        producer_version="raw_trace_reread_tier2_v0_1",
+        criteria_version=TIER2_DIAGNOSTIC_CRITERIA,
+        producer_version="raw_trace_reread_tier2",
         evidence_status="inconclusive",
         support_component="",
         raw_trace_reread_status="pass",
         coherence_status="inconclusive",
-        challenge_blockers="tier2_v0_1_diagnostic_only",
+        challenge_blockers="tier2_diagnostic_only",
         dependent_context=(
             "neighbor_interference_not_assessed;"
-            "raw_trace_reread_v0_1;"
-            "rescued_coherence_v0_1"
+            "raw_trace_reread;"
+            "rescued_coherence"
         ),
-        row_overrides=_v0_1_row_overrides(),
-        sidecar_columns=TIER2_TRACE_EVIDENCE_V0_1_COLUMNS,
+        row_overrides=_diagnostic_row_overrides(),
+        sidecar_columns=TIER2_TRACE_EVIDENCE_COLUMNS,
     )
 
     decision = evaluate_production_candidate_gate(
@@ -706,32 +686,35 @@ def test_v0_1_tier2_sidecar_is_diagnostic_only(tmp_path: Path) -> None:
     assert decision.evidence_tier == 1
     assert decision.support_components == ()
     assert decision.tier2_evidence_available is False
-    assert "tier2_v0_1_diagnostic_only" in decision.challenge_blockers
+    assert "tier2_diagnostic_only" in decision.challenge_blockers
 
 
-def test_v0_1_sidecar_missing_new_column_is_rejected(tmp_path: Path) -> None:
+@pytest.mark.parametrize("criteria", (TIER2_CRITERIA, TIER2_DIAGNOSTIC_CRITERIA))
+def test_sidecar_requires_complete_metric_columns(
+    tmp_path: Path, criteria: str,
+) -> None:
     with pytest.raises(ValueError, match="trace_apex_intensity"):
         _load_tier2_fixture(
             tmp_path,
-            criteria_version=TIER2_CRITERIA_V0_1,
-            producer_version="raw_trace_reread_tier2_v0_1",
+            criteria_version=criteria,
+            producer_version="raw_trace_reread_tier2",
             evidence_status="inconclusive",
             support_component="",
             raw_trace_reread_status="pass",
             coherence_status="inconclusive",
-            row_overrides=_v0_1_row_overrides(),
-            sidecar_columns=TIER2_TRACE_EVIDENCE_V0_1_COLUMNS,
+            row_overrides=_diagnostic_row_overrides(),
+            sidecar_columns=TIER2_TRACE_EVIDENCE_COLUMNS,
             omitted_columns=("trace_apex_intensity",),
         )
 
 
-def test_v0_1_gate_adds_diagnostic_only_blocker_when_row_omits_it(
+def test_diagnostic_gate_adds_diagnostic_only_blocker_when_row_omits_it(
     tmp_path: Path,
 ) -> None:
     evidence, review_row, source_context = _load_tier2_fixture(
         tmp_path,
-        criteria_version=TIER2_CRITERIA_V0_1,
-        producer_version="raw_trace_reread_tier2_v0_1",
+        criteria_version=TIER2_DIAGNOSTIC_CRITERIA,
+        producer_version="raw_trace_reread_tier2",
         evidence_status="inconclusive",
         support_component="",
         raw_trace_reread_status="pass",
@@ -739,11 +722,11 @@ def test_v0_1_gate_adds_diagnostic_only_blocker_when_row_omits_it(
         challenge_blockers="",
         dependent_context=(
             "neighbor_interference_not_assessed;"
-            "raw_trace_reread_v0_1;"
-            "rescued_coherence_v0_1"
+            "raw_trace_reread;"
+            "rescued_coherence"
         ),
-        row_overrides=_v0_1_row_overrides(),
-        sidecar_columns=TIER2_TRACE_EVIDENCE_V0_1_COLUMNS,
+        row_overrides=_diagnostic_row_overrides(),
+        sidecar_columns=TIER2_TRACE_EVIDENCE_COLUMNS,
     )
 
     decision = evaluate_production_candidate_gate(
@@ -755,14 +738,14 @@ def test_v0_1_gate_adds_diagnostic_only_blocker_when_row_omits_it(
 
     assert decision.candidate_gate_status == "audit"
     assert decision.support_components == ()
-    assert "tier2_v0_1_diagnostic_only" in decision.challenge_blockers
+    assert "tier2_diagnostic_only" in decision.challenge_blockers
 
 
-def test_v0_1_validated_support_spoof_cannot_promote(tmp_path: Path) -> None:
+def test_diagnostic_validated_support_spoof_cannot_promote(tmp_path: Path) -> None:
     evidence, review_row, source_context = _load_tier2_fixture(
         tmp_path,
-        criteria_version=TIER2_CRITERIA_V0_1,
-        producer_version="raw_trace_reread_tier2_v0_1",
+        criteria_version=TIER2_DIAGNOSTIC_CRITERIA,
+        producer_version="raw_trace_reread_tier2",
         evidence_status="validated",
         support_component=TIER2_SUPPORT_COMPONENT,
         raw_trace_reread_status="pass",
@@ -770,11 +753,11 @@ def test_v0_1_validated_support_spoof_cannot_promote(tmp_path: Path) -> None:
         challenge_blockers="",
         dependent_context=(
             "neighbor_interference_not_assessed;"
-            "raw_trace_reread_v0_1;"
-            "rescued_coherence_v0_1"
+            "raw_trace_reread;"
+            "rescued_coherence"
         ),
-        row_overrides=_v0_1_row_overrides(),
-        sidecar_columns=TIER2_TRACE_EVIDENCE_V0_1_COLUMNS,
+        row_overrides=_diagnostic_row_overrides(),
+        sidecar_columns=TIER2_TRACE_EVIDENCE_COLUMNS,
     )
 
     decision = evaluate_production_candidate_gate(
@@ -788,10 +771,10 @@ def test_v0_1_validated_support_spoof_cannot_promote(tmp_path: Path) -> None:
     assert decision.evidence_tier == 1
     assert decision.support_components == ()
     assert decision.tier2_evidence_available is False
-    assert "tier2_v0_1_diagnostic_only" in decision.challenge_blockers
+    assert "tier2_diagnostic_only" in decision.challenge_blockers
 
 
-def _v0_1_row_overrides() -> dict[str, str]:
+def _diagnostic_row_overrides() -> dict[str, str]:
     return {
         "scan_availability_score": "1.0",
         "trace_apex_intensity": "1000",
@@ -813,8 +796,8 @@ def _load_tier2_fixture(
     *,
     evidence_status: str = "validated",
     support_component: str = TIER2_SUPPORT_COMPONENT,
-    criteria_version: str = "tier2_trace_identity_rescued_coherence_v0",
-    producer_version: str = "raw_trace_reread_tier2_v0",
+    criteria_version: str = "tier2_trace_identity_rescued_coherence",
+    producer_version: str = "raw_trace_reread_tier2",
     challenge_blockers: str = "",
     dependent_context: str = "",
     raw_trace_reread_status: str = "pass",
@@ -898,8 +881,8 @@ def _write_tier2_sidecar(
     evidence_status: str,
     support_component: str,
     feature_family_id: str = "FAM001",
-    criteria_version: str = "tier2_trace_identity_rescued_coherence_v0",
-    producer_version: str = "raw_trace_reread_tier2_v0",
+    criteria_version: str = "tier2_trace_identity_rescued_coherence",
+    producer_version: str = "raw_trace_reread_tier2",
     challenge_blockers: str = "",
     dependent_context: str = "",
     raw_trace_reread_status: str = "pass",
@@ -957,6 +940,7 @@ def _write_tier2_sidecar(
         "producer_command": "synthetic-test-fixture",
         "generated_at_utc": "2026-05-29T00:00:00Z",
     }
+    row.update(_diagnostic_row_overrides())
     if row_overrides:
         row.update(row_overrides)
     columns = [

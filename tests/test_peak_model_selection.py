@@ -82,7 +82,7 @@ def test_shadow_model_selection_reports_parity_for_legacy_selected_hypothesis() 
     assert result.public_projection["reason"] == "decision: accepted"
     assert result.public_projection["compatibility_labels"] == "strict_nl_ok"
     assert result.compatibility_oracle == "legacy_peak_scoring_current_oracle"
-    assert result.policy_source == "selected_hypothesis_model_selection_v1"
+    assert result.policy_source == "selected_hypothesis_model_selection"
     assert result.evidence_comparison_policy == "limited_evidence_shadow"
     assert result.product_switch_allowed is True
 
@@ -137,7 +137,7 @@ def test_peak_hypothesis_decision_record_exposes_model_selection_order() -> None
     assert record.decision_class == "accepted"
     assert record.blockers == ()
     assert record.support == ("ms1_coherent", "candidate_aligned_ms2_nl")
-    assert record.projection_authority == "selected_hypothesis_model_selection_v1"
+    assert record.projection_authority == "selected_hypothesis_model_selection"
     assert [name for name, _value in record.gate] == [
         "decision_class_rank",
         "blocker_count",

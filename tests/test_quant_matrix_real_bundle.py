@@ -11,9 +11,9 @@ from scripts.build_quant_matrix_real_bundle import (
 )
 
 ROOT = Path(__file__).resolve().parents[1]
-SCHEMA_PATH = ROOT / "docs/superpowers/schemas/quant_matrix_real_bundle_schema.v1.json"
+SCHEMA_PATH = ROOT / "docs/superpowers/schemas/quant_matrix_real_bundle_schema.json"
 RETAINED_SUMMARY = (
-    ROOT / "docs/superpowers/validation/quant_matrix_real_bundle_v1/"
+    ROOT / "docs/superpowers/validation/quant_matrix_real_bundle/"
     "quant_matrix_real_bundle_summary.json"
 )
 
@@ -21,7 +21,7 @@ RETAINED_SUMMARY = (
 def test_real_bundle_schema_matches_builder_contract() -> None:
     schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
 
-    assert schema["schema_version"] == "quant_matrix_real_bundle_schema_v1"
+    assert schema["schema_version"] == "quant_matrix_real_bundle_schema"
     assert schema["real_bundle_schema"] == REAL_BUNDLE_SCHEMA
     assert schema["authority_rules"]["read_only"] is True
     assert schema["authority_rules"]["scorer_ran"] is False
@@ -135,7 +135,7 @@ def test_real_bundle_builds_self_validating_contract_outputs(tmp_path: Path) -> 
     expected_diff_rows = _read_tsv(outputs["expected_diff"])
     assert expected_diff_rows == [
         {
-            "schema_version": "quant_matrix_version_expected_diff_v1",
+            "schema_version": "quant_matrix_version_expected_diff",
             "peak_hypothesis_id": "PH001",
             "sample_stem": "SampleB",
             "baseline_value": "",
@@ -474,7 +474,7 @@ def _write_source_run_fixture(root: Path) -> dict[str, Path]:
         ),
         [
             {
-                "schema_version": "standard_peak_shadow_activation_inputs_v1",
+                "schema_version": "standard_peak_shadow_activation_inputs",
                 "source_run_id": "synthetic-current-511-authority-replay",
                 "selected_activation_row_count": "1",
                 "next_action": "apply_matrix_only_activation",
@@ -505,7 +505,7 @@ def _write_source_run_fixture(root: Path) -> dict[str, Path]:
                 "projected_matrix_value_source": "standard_peak_shadow_projection",
                 "current_raw_status": "rescued",
                 "current_production_status": "accepted_rescue",
-                "source_artifact_schema_version": "shadow_production_projection_v1",
+                "source_artifact_schema_version": "shadow_production_projection",
                 "source_artifact_sha256": "A" * 64,
                 "source_row_sha256": "B" * 64,
                 "source_provenance_detail": (
@@ -530,7 +530,7 @@ def _write_source_run_fixture(root: Path) -> dict[str, Path]:
         ),
         [
             {
-                "schema_version": "standard_peak_seed_guard_decision_v1",
+                "schema_version": "standard_peak_seed_guard_decision",
                 "source_run_id": "synthetic-current-511-authority-replay",
                 "feature_family_id": "FAM001",
                 "peak_hypothesis_id": "PH001",
@@ -575,7 +575,7 @@ def _write_source_run_fixture(root: Path) -> dict[str, Path]:
         [
             {
                 "activation_value_delta_schema_version": (
-                    "shared_peak_identity_activation_value_delta_v3"
+                    "shared_peak_identity_activation_value_delta"
                 ),
                 "feature_family_id": "FAM001",
                 "candidate_container_id": "PH001",
@@ -592,7 +592,7 @@ def _write_source_run_fixture(root: Path) -> dict[str, Path]:
                 "matrix_value_source_field": "projected_matrix_value",
                 "matrix_value_source_detail": "standard_peak_shadow_projection",
                 "matrix_value_source_artifact_schema_version": (
-                    "shadow_production_projection_v1"
+                    "shadow_production_projection"
                 ),
                 "matrix_value_source_artifact_sha256": "A" * 64,
                 "matrix_value_source_row_sha256": "B" * 64,

@@ -22,7 +22,7 @@ def pt_evidence_row(
     *,
     trace_rule_call: str = "accept",
 ) -> dict[str, object]:
-    """Return one internally coherent v3 evidence row for ``candidate``."""
+    """Return one internally coherent evidence row for ``candidate``."""
 
     if trace_rule_call not in {"accept", "reject", "not_evaluated"}:
         raise ValueError(f"unsupported fixture trace_rule_call {trace_rule_call!r}")

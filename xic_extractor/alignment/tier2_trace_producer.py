@@ -16,8 +16,8 @@ TraceLoader = Callable[
     tuple[Iterable[TraceValue], Iterable[TraceValue]],
 ]
 
-CRITERIA_VERSION = "tier2_trace_identity_rescued_coherence_v0_1_diagnostic"
-PRODUCER_VERSION = "raw_trace_reread_tier2_v0_1"
+CRITERIA_VERSION = "tier2_trace_identity_diagnostic"
+PRODUCER_VERSION = "raw_trace_reread_tier2"
 
 
 @dataclass(frozen=True)
@@ -265,7 +265,7 @@ def _family_evidence_row(
             "challenge_blockers": ";".join(
                 _ordered_tokens(
                     (
-                        "tier2_v0_1_diagnostic_only",
+                        "tier2_diagnostic_only",
                         *coherence_blockers,
                         *tuple(sorted(set(rescue_blockers))),
                     )
@@ -273,8 +273,8 @@ def _family_evidence_row(
             ),
             "dependent_context": (
                 "neighbor_interference_not_assessed;"
-                "raw_trace_reread_v0_1;"
-                "rescued_coherence_v0_1"
+                "raw_trace_reread;"
+                "rescued_coherence"
             ),
         }
     )
@@ -330,10 +330,10 @@ def _blocked_row(
             "raw_trace_reread_status": raw_trace_reread_status,
             "coherence_status": coherence_status,
             "challenge_blockers": ";".join(
-                _ordered_tokens(("tier2_v0_1_diagnostic_only", *blockers))
+                _ordered_tokens(("tier2_diagnostic_only", *blockers))
             ),
             "dependent_context": (
-                "neighbor_interference_not_assessed;raw_trace_reread_v0_1"
+                "neighbor_interference_not_assessed;raw_trace_reread"
             ),
             "neighbor_interference_status": "not_assessed",
         }
@@ -498,7 +498,7 @@ def _trace_metric_blockers(
     elif metrics.scan_support_score < config.min_scan_support_score:
         blockers.append("weak_scan_support")
     if metrics.apex_delta_sec > config.max_apex_delta_sec:
-        blockers.append("apex_delta_exceeds_v0_threshold")
+        blockers.append("apex_delta_exceeds_threshold")
     if (
         metrics.boundary_width_sec <= 0.0
         or metrics.boundary_width_sec > config.max_boundary_width_sec

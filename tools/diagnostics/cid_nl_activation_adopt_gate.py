@@ -28,9 +28,9 @@ from tools.diagnostics.cid_nl_activation_copy_candidate import (
 )
 from xic_extractor.tabular_io import read_tsv_required, text_value, write_tsv
 
-SCHEMA_VERSION = "cid_nl_activation_adopt_gate_v1"
+SCHEMA_VERSION = "cid_nl_activation_adopt_gate"
 DEFAULT_REVIEW_DIR = Path(
-    "output/validation/cid_nl_default_activation_gallery_review_v1",
+    "output/validation/cid_nl_default_activation_gallery_review",
 )
 DEFAULT_GATE_DIR = DEFAULT_REVIEW_DIR / "feature_inclusion_gate"
 DEFAULT_FEATURE_GATE_SUMMARY_TSV = (

@@ -31,7 +31,7 @@ def test_pt_pattern_evidence_rule_accepts_full_supported_pattern() -> None:
     assert decision.detection_status == "detected"
     assert decision.reason == "full_pattern_close_apex_shape_overlap"
     assert pt_pattern_rule_id() == (
-        "pt_v2_fullpattern_status_pt_pattern_detected_diagnostic_positions_ge_3"
+        "pt_fullpattern_status_pt_pattern_detected_diagnostic_positions_ge_3"
         "_apex_floor_le_0p6s_or_scan_multiplier_1p25_pearson_ge_0p9_overlap_ge_0p5"
         "_shiftedreviewonly_shiftedpearson_ge_0p85_shapeshift_le_45s"
     )
@@ -272,7 +272,7 @@ def test_pt_pattern_evidence_rule_applies_custom_thresholds() -> None:
 
     assert decision.reason == "pearson_below_threshold"
     assert pt_pattern_rule_id(thresholds) == (
-        "pt_v2_fullpattern_status_pt_pattern_detected_diagnostic_positions_ge_3"
+        "pt_fullpattern_status_pt_pattern_detected_diagnostic_positions_ge_3"
         "_apex_floor_le_2s_or_scan_multiplier_1p25_pearson_ge_0p99_overlap_ge_0p9"
         "_shiftedreviewonly_shiftedpearson_ge_0p98_shapeshift_le_12s"
     )

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 EXPLICIT_SUPPORT_TSV_POLICY = "explicit_support_tsv"
-LIMITED_HMDC_MEDC_POLICY = "limited_5hmdc_5medc_v1"
+LIMITED_HMDC_MEDC_POLICY = "limited_5hmdc_5medc"
 TARGETED_MS1_SHAPE_IDENTITY_ACTIVATION_POLICIES = (
     EXPLICIT_SUPPORT_TSV_POLICY,
     LIMITED_HMDC_MEDC_POLICY,

@@ -759,7 +759,7 @@ def test_write_local_ms1_feature_outputs_writes_contract_files(tmp_path: Path) -
         rows = list(csv.DictReader(handle))
     assert rows[0]["source"] == "local_ms1_feature"
     payload = json.loads(outputs.summary_json.read_text(encoding="utf-8"))
-    assert payload["schema_version"] == "local_ms1_feature_summary.v1"
+    assert payload["schema_version"] == "local_ms1_feature_summary"
     assert payload["trace_builder_mode"] == "mzmine_seeded"
     assert payload["parameters"]["trace_builder_mode"] == payload["trace_builder_mode"]
     assert payload["area_contract"] == "screening_only"

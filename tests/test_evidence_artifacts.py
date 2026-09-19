@@ -41,7 +41,7 @@ def test_targeted_owner_mints_exact_bytes_and_attempt_scoped_artifact(
     second_attempt = issue_processing_attempt(request, retry_of=first_attempt)
     rows = _targeted_rows("Sample A")
     payload_bytes = canonical_targeted_ms1_shape_identity_bytes(rows)
-    output_path = tmp_path / "targeted_ms1_shape_identity_v0.tsv"
+    output_path = tmp_path / "targeted_ms1_shape_identity.tsv"
 
     write_targeted_ms1_shape_identity_tsv(output_path, rows)
     first = mint_targeted_ms1_shape_identity_artifact_ref(
@@ -248,9 +248,9 @@ def _request_and_sample(tmp_path: Path):
                 injection_order=1,
             ),
         ),
-        scientific_input_schema_version="artifact-tracer-input-v1",
-        processing_algorithm_version="artifact-tracer-algorithm-v1",
-        processing_contract_version="artifact-tracer-contract-v1",
+        scientific_input_schema_version="artifact-tracer-input",
+        processing_algorithm_version="artifact-tracer-algorithm",
+        processing_contract_version="artifact-tracer-contract",
         scientific_inputs={"fixture": "no-raw-artifact-tracer"},
     )
     sample_snapshot = mint_sample_metadata_snapshot(

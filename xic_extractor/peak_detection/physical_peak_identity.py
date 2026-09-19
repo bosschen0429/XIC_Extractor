@@ -10,6 +10,7 @@ from collections.abc import Sequence
 import numpy as np
 
 from xic_extractor.peak_detection.physical_peak_models import (
+    PHYSICAL_SEGMENT_UNIVERSE_SCHEMA,
     PhysicalPeakAnswer,
     PhysicalPeakFacts,
     PhysicalPeakQuestion,
@@ -42,7 +43,7 @@ def canonical_physical_trace_content_bytes(
     raw = _physical_vector(intensity_values, field="intensity_values")
     return _canonical_physical_json_bytes(
         {
-            "schema_version": "physical_trace_content_v1",
+            "schema_version": "physical_trace_content",
             "rt": [_physical_float_text(value) for value in rt],
             "raw": [_physical_float_text(value) for value in raw],
         }
@@ -54,7 +55,7 @@ def mint_physical_trace_content_id(
     intensity_values: object,
 ) -> str:
     return _typed_physical_id(
-        "trace-content.v1:",
+        "trace-content:",
         canonical_physical_trace_content_bytes(rt_values, intensity_values),
     )
 
@@ -76,7 +77,7 @@ def canonical_prepared_signal_identity_bytes(
 ) -> bytes:
     return _canonical_physical_json_bytes(
         {
-            "schema_version": "prepared_signal_identity_v1",
+            "schema_version": "prepared_signal_identity",
             "trace_content_id": _required_physical_text(
                 trace_content_id, field="trace_content_id"
             ),
@@ -86,7 +87,7 @@ def canonical_prepared_signal_identity_bytes(
 
 
 def validate_prepared_signal_identity(projection: PreparedSignalProjection) -> None:
-    if projection.schema_version != "prepared_signal_projection_v1":
+    if projection.schema_version != "prepared_signal_projection":
         raise ValueError("unsupported prepared signal projection schema")
     if projection.state not in {"available", "unavailable", "failed"}:
         raise ValueError("unsupported prepared signal state")
@@ -99,7 +100,7 @@ def validate_prepared_signal_identity(projection: PreparedSignalProjection) -> N
     ):
         raise ValueError("trace_point_count must be a nonnegative integer")
     expected = _typed_physical_id(
-        "prepared-signal.v1:",
+        "prepared-signal:",
         canonical_prepared_signal_identity_bytes(
             projection.trace_content_id, projection.profile_id
         ),
@@ -135,11 +136,7 @@ def canonical_physical_segment_universe_bytes(
 def validate_physical_segment_universe_identity(
     universe: PhysicalSegmentUniverse,
 ) -> None:
-    if universe.schema_version not in {
-        "physical_segment_universe_v1",
-        "physical_segment_universe_v2",
-        "physical_segment_universe_v3",
-    }:
+    if universe.schema_version != PHYSICAL_SEGMENT_UNIVERSE_SCHEMA:
         raise ValueError("unsupported physical segment universe schema")
     if universe.state not in {"available", "unavailable", "failed"}:
         raise ValueError("unsupported physical segment universe state")
@@ -161,12 +158,12 @@ def validate_physical_segment_universe_identity(
         raise ValueError("physical segment IDs must be unique")
     for segment in universe.segments:
         expected_segment_id = _typed_physical_id(
-            "physical-segment.v1:", canonical_physical_segment_bytes(segment)
+            "physical-segment:", canonical_physical_segment_bytes(segment)
         )
         if segment.physical_segment_id != expected_segment_id:
             raise ValueError("physical_segment_id does not match owner content")
     expected_universe_id = _typed_physical_id(
-        "segment-universe.v1:",
+        "segment-universe:",
         canonical_physical_segment_universe_bytes(universe),
     )
     if universe.segment_universe_id != expected_universe_id:
@@ -195,7 +192,7 @@ def canonical_physical_peak_answer_bytes(answer: PhysicalPeakAnswer) -> bytes:
 
 
 def validate_physical_peak_answer_identity(answer: PhysicalPeakAnswer) -> None:
-    if answer.schema_version != "physical_peak_answer_v1":
+    if answer.schema_version != "physical_peak_answer":
         raise ValueError("unsupported physical peak answer schema")
     if answer.state not in {"available", "unavailable", "failed"}:
         raise ValueError("unsupported physical peak answer state")
@@ -204,7 +201,7 @@ def validate_physical_peak_answer_identity(answer: PhysicalPeakAnswer) -> None:
     if (answer.state == "available") != (answer.physical_segment_id is not None):
         raise ValueError("physical peak answer selection is not canonical")
     expected = _typed_physical_id(
-        "physical-answer.v1:", canonical_physical_peak_answer_bytes(answer)
+        "physical-answer:", canonical_physical_peak_answer_bytes(answer)
     )
     if answer.physical_answer_id != expected:
         raise ValueError("physical_answer_id does not match owner content")
@@ -264,7 +261,7 @@ def validate_physical_peak_facts_identity(
     relative_shape_values: Sequence[float],
 ) -> None:
     expected = _typed_physical_id(
-        "physical-facts.v1:",
+        "physical-facts:",
         canonical_physical_peak_facts_bytes(
             facts,
             relative_shape_values=relative_shape_values,
@@ -276,7 +273,7 @@ def validate_physical_peak_facts_identity(
 
 def _physical_segment_basis(segment: PhysicalSegment) -> dict[str, object]:
     return {
-        "schema_version": "physical_segment_v1",
+        "schema_version": "physical_segment",
         "start_index": segment.start_index,
         "end_index": segment.end_index,
         "apex_index": segment.apex_index,

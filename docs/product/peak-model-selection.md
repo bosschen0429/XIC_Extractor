@@ -1,6 +1,6 @@
 # Peak Model Selection
 
-Peak model selection defines the durable product invariants for selected-hypothesis model selection over `PeakHypothesis`. Legacy scoring remains a compatibility oracle while public outputs still expose legacy confidence, reason, score breakdown, selected markers, or matrix values. Raw score arithmetic is not future product truth. The successor policy (`selected_hypothesis_model_selection_v1`) may become product authority only through parity or explicit expected-diff approval.
+Peak model selection defines the durable product invariants for selected-hypothesis model selection over `PeakHypothesis`. Legacy scoring remains a compatibility oracle while public outputs still expose legacy confidence, reason, score breakdown, selected markers, or matrix values. Raw score arithmetic is not future product truth. The successor policy (`selected_hypothesis_model_selection`) may become product authority only through parity or explicit expected-diff approval.
 
 ## Contract
 

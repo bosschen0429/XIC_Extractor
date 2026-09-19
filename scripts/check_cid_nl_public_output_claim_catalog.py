@@ -22,7 +22,7 @@ from xic_extractor.tabular_io import read_delimited_rows  # noqa: E402
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CATALOG_PATH = (
     ROOT
-    / "docs/superpowers/validation/cid_nl_public_output_claim_catalog_v1.tsv"
+    / "docs/superpowers/validation/cid_nl_public_output_claim_catalog.tsv"
 )
 
 CATALOG_COLUMNS = (
@@ -36,24 +36,24 @@ CATALOG_COLUMNS = (
     "forbidden_overclaim",
     "replacement_or_retirement_gate",
 )
-SCHEMA_VERSION = "cid_nl_public_output_claim_catalog_v1"
+SCHEMA_VERSION = "cid_nl_public_output_claim_catalog"
 ALLOWED_DISPOSITIONS = frozenset(
     {"retain", "rewrite", "replace", "retire", "unknown"}
 )
 REQUIRED_CLAIM_IDS = frozenset(
     {
-        "targeted_output_v1.file_bytes",
-        "targeted_output_v1.schema_and_order",
-        "targeted_output_v1.numeric_and_nl_projection",
-        "targeted_output_v1.missing_zero_error_and_duplicates",
-        "targeted_output_v1.selected_value_authority_ref",
-        "targeted_output_v1.counted_detection_authority_ref",
-        "untargeted_matrix_v1.authority_boundary_ref",
+        "targeted_output.file_bytes",
+        "targeted_output.schema_and_order",
+        "targeted_output.numeric_and_nl_projection",
+        "targeted_output.missing_zero_error_and_duplicates",
+        "targeted_output.selected_value_authority_ref",
+        "targeted_output.counted_detection_authority_ref",
+        "untargeted_matrix.authority_boundary_ref",
     }
 )
 CHARACTERIZATION_EVIDENCE_PREFIXES = (
-    "docs/superpowers/validation/cid_nl_legacy_baseline_v1/",
-    "docs/superpowers/validation/cid_nl_targeted_csv_contract_v1/",
+    "docs/superpowers/validation/cid_nl_legacy_baseline/",
+    "docs/superpowers/validation/cid_nl_targeted_csv_contract/",
 )
 
 def check_cid_nl_public_output_claim_catalog(

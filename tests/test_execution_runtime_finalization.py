@@ -255,7 +255,7 @@ def test_condition_not_activated_keeps_success_without_opening_resource(
     assert coordinator.state.artifacts[0].proposed_disposition is (
         RuntimeArtifactDisposition.OFFERED_TO_OWNER
     )
-    assert payload["schema_version"] == "execution_runtime_coordinator_terminal_v4"
+    assert payload["schema_version"] == "execution_runtime_coordinator_terminal"
     assert payload["resources"][0]["owner_conditional"] is True
     assert payload["resources"][0]["open_outcome"] == "condition_not_activated"
 
@@ -532,7 +532,7 @@ def test_coordinator_receipt_binds_settlement_integrity_failure(
         "work_unit_key": "raw:a",
     }
     assert json.loads(failed_bytes)["schema_version"] == (
-        "execution_runtime_coordinator_terminal_v4"
+        "execution_runtime_coordinator_terminal"
     )
     assert (
         mint_supervisor_finalization(
@@ -826,7 +826,7 @@ def _runtime(
             queued,
             attempt=attempt,
             work_unit_keys=work_unit_keys,
-            owner_completeness_attestation="runtime-finalization-test:v1",
+            owner_completeness_attestation="runtime-finalization-test",
         )
     )
 
@@ -842,7 +842,7 @@ def _reservation(
         resource_key="session:a",
         worker_key="worker:1",
         source_reference="source:a",
-        compatibility_token="targeted:test:v1",
+        compatibility_token="targeted:test",
         owner_conditional=owner_conditional,
     )
 
@@ -915,9 +915,9 @@ def _attempt(tmp_path: Path) -> ProcessingAttemptIdentity:
                 injection_order=1,
             ),
         ),
-        scientific_input_schema_version="runtime_finalization_test_v1",
-        processing_algorithm_version="runtime_finalization_test_v1",
-        processing_contract_version="processing_identity_v1",
+        scientific_input_schema_version="runtime_finalization_test",
+        processing_algorithm_version="runtime_finalization_test",
+        processing_contract_version="processing_identity",
         scientific_inputs={"method": "cid_nl", "neutral_loss_da": 116.0},
     )
     return issue_processing_attempt(request)

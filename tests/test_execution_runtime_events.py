@@ -164,7 +164,7 @@ def test_required_work_manifest_preflight_accepts_owner_attested_closed_work(
         queued,
         attempt=attempt,
         work_unit_keys=("sample-a:target-1", "sample-a:target-2"),
-        owner_completeness_attestation="targeted-application-service:v1",
+        owner_completeness_attestation="targeted-application-service",
     )
 
     assert preflight.accepted is True
@@ -177,7 +177,7 @@ def test_required_work_manifest_preflight_accepts_owner_attested_closed_work(
     )
     assert (
         preflight.manifest.owner_completeness_attestation
-        == "targeted-application-service:v1"
+        == "targeted-application-service"
     )
 
 
@@ -201,7 +201,7 @@ def test_required_work_manifest_preflight_rejects_empty_running_manifest(
         queued,
         attempt=attempt,
         work_unit_keys=(),
-        owner_completeness_attestation="targeted-application-service:v1",
+        owner_completeness_attestation="targeted-application-service",
     )
 
     assert preflight.accepted is False
@@ -217,8 +217,8 @@ def test_required_work_manifest_preflight_rejects_empty_running_manifest(
     ("work_unit_keys", "owner_completeness_attestation"),
     [
         (("sample-a:target-1",), None),
-        (("sample-a:target-1", "sample-a:target-1"), "targeted:v1"),
-        (("",), "targeted:v1"),
+        (("sample-a:target-1", "sample-a:target-1"), "targeted"),
+        (("",), "targeted"),
     ],
 )
 def test_invalid_required_work_manifest_drives_existing_failed_proposal(
@@ -287,7 +287,7 @@ def test_required_work_manifest_attempt_mismatch_fails_closed(tmp_path: Path) ->
         queued,
         attempt=other_attempt,
         work_unit_keys=("sample-a:target-1",),
-        owner_completeness_attestation="targeted:v1",
+        owner_completeness_attestation="targeted",
     )
 
     assert preflight.accepted is False
@@ -318,14 +318,14 @@ def test_attempt_runtime_settles_manifest_work_exactly_once(tmp_path: Path) -> N
         queued,
         attempt=attempt,
         work_unit_keys=("sample-a:target-1", "sample-a:target-2"),
-        owner_completeness_attestation="targeted:v1",
+        owner_completeness_attestation="targeted",
     )
 
     runtime = start_attempt_runtime(preflight)
     target_1_ref = _owner_result_ref(
         attempt,
         "sample-a:target-1",
-        b"target-1-result-v1",
+        b"target-1-result",
     )
     first = settle_work_unit(
         runtime,
@@ -346,7 +346,7 @@ def test_attempt_runtime_settles_manifest_work_exactly_once(tmp_path: Path) -> N
         owner_result_ref=_owner_result_ref(
             attempt,
             "sample-a:target-2",
-            b"target-2-result-v1",
+            b"target-2-result",
         ),
     )
 
@@ -384,7 +384,7 @@ def test_conflicting_work_settlement_is_recorded_and_fails_attempt(
             queued,
             attempt=attempt,
             work_unit_keys=("sample-a:target-1",),
-            owner_completeness_attestation="targeted:v1",
+            owner_completeness_attestation="targeted",
         )
     )
     accepted = settle_work_unit(
@@ -452,7 +452,7 @@ def test_undeclared_work_settlement_fails_attempt_without_accepting_result(
             queued,
             attempt=attempt,
             work_unit_keys=("sample-a:target-1",),
-            owner_completeness_attestation="targeted:v1",
+            owner_completeness_attestation="targeted",
         )
     )
 
@@ -500,7 +500,7 @@ def test_work_settlement_outcome_and_result_ref_fail_closed(tmp_path: Path) -> N
             queued,
             attempt=attempt,
             work_unit_keys=("sample-a:target-1",),
-            owner_completeness_attestation="targeted:v1",
+            owner_completeness_attestation="targeted",
         )
     )
 
@@ -853,9 +853,9 @@ def _request(tmp_path: Path) -> ProcessingRequestIdentity:
                 injection_order=1,
             ),
         ),
-        scientific_input_schema_version="package0_event_test_v1",
-        processing_algorithm_version="package0_event_test_v1",
-        processing_contract_version="processing_identity_v1",
+        scientific_input_schema_version="package0_event_test",
+        processing_algorithm_version="package0_event_test",
+        processing_contract_version="processing_identity",
         scientific_inputs={"method": "cid_nl", "neutral_loss_da": 116.0},
     )
 

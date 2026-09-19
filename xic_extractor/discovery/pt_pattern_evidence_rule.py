@@ -212,7 +212,7 @@ def pt_pattern_rule_id(
     thresholds: PtPatternEvidenceThresholds = DEFAULT_THRESHOLDS,
 ) -> str:
     return (
-        "pt_v2_fullpattern"
+        "pt_fullpattern"
         f"_status_{quote(thresholds.required_combined_status, safe='')}"
         f"_positions_ge_{thresholds.min_non_base_positions_supported}"
         f"_apex_floor_le_{_token(thresholds.max_abs_apex_delta_sec)}s"

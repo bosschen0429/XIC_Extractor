@@ -1,6 +1,6 @@
 {
   "source": "Exact retained Discovery XIC; operator-adjudicated non-peak background (C041). Numerical regression control, not a population accuracy oracle.",
-  "trace_content_id": "trace-content.v1:4cd4fe5c6a17b1440c8cba4bb43597a83a5bb0a6ac5ff979d9250b40418b93bb",
+  "trace_content_id": "trace-content:4cd4fe5c6a17b1440c8cba4bb43597a83a5bb0a6ac5ff979d9250b40418b93bb",
   "trace": {
     "rt": [
       "0x1.15c5c5252c981p+4",

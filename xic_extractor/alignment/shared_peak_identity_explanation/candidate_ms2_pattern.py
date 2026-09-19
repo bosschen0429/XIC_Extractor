@@ -22,7 +22,7 @@ from xic_extractor.raw_reader import Ms2ScanEvent
 from xic_extractor.settings_schema import CANONICAL_SETTINGS_DEFAULTS
 from xic_extractor.tabular_io import read_tsv_required, write_tsv
 
-CANDIDATE_MS2_PATTERN_SCHEMA_VERSION = "shared_peak_identity_candidate_ms2_pattern_v2"
+CANDIDATE_MS2_PATTERN_SCHEMA_VERSION = "shared_peak_identity_candidate_ms2_pattern"
 CANDIDATE_MS2_PATTERN_COLUMNS = (
     "candidate_ms2_pattern_schema_version",
     "feature_family_id",

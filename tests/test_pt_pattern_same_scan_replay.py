@@ -290,7 +290,7 @@ def test_core_only_component_is_not_counted_as_discovery_resolution() -> None:
         inputs={},
     )
 
-    assert summary["schema_version"] == "pt_pattern_same_scan_replay.v3"
+    assert summary["schema_version"] == "pt_pattern_same_scan_replay"
     assert summary["conflict_resolution_counts"] == {"unique_core_support": 1}
     assert summary["uniquely_resolved_conflict_component_count"] == 0
 

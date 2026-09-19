@@ -248,7 +248,7 @@ def test_untargeted_view_builds_request_with_sample_metadata_and_targets(
     metadata_csv.write_text(
         "schema_version,sample_name,raw_stem,injection_order,sample_role,"
         "batch_id,prep_batch_id,matrix_type,group,excluded,exclusion_reason\n"
-        "sample_metadata_v1,Sample_QC_01,Sample_QC_01,1,pooled_qc,B1,P1,serum,QC,true,carryover\n",
+        "sample_metadata,Sample_QC_01,Sample_QC_01,1,pooled_qc,B1,P1,serum,QC,true,carryover\n",
         encoding="utf-8",
     )
     assert view._samples.load_sequence_source(metadata_csv)

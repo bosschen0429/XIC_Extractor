@@ -31,7 +31,7 @@ def _packet_row(
     row = {column: "" for column in packet.PACKET_COLUMNS}
     row.update(
         {
-            "schema_version": packet.ANCHOR_LOCAL_SCHEMA_VERSION,
+            "schema_version": packet.SCHEMA_VERSION,
             "readiness_tier": "diagnostic_only",
             "evidence_owner": packet.EVIDENCE_OWNER,
             "packet_label": "unit_packet",
@@ -251,7 +251,7 @@ def test_machine_call_is_sealed_outside_blind_html(tmp_path: Path) -> None:
         required_columns=overlay.MACHINE_CALL_COLUMNS,
         delimiter=",",
     )
-    assert machine_rows[0]["schema_version"] == overlay.ANCHOR_LOCAL_SCHEMA_VERSION
+    assert machine_rows[0]["schema_version"] == overlay.SCHEMA_VERSION
     assert machine_rows[0]["machine_call"] == "accept"
     assert (
         machine_rows[0]["machine_call_reason"]
@@ -267,7 +267,7 @@ def test_machine_call_is_sealed_outside_blind_html(tmp_path: Path) -> None:
         "pt_plus_4"
     )
     summary = json.loads(outputs["summary_json"].read_text(encoding="utf-8"))
-    assert summary["schema_version"] == overlay.ANCHOR_LOCAL_SCHEMA_VERSION
+    assert summary["schema_version"] == overlay.SCHEMA_VERSION
     assert summary["blind_to_machine_calls_in_html"] is True
     assert summary["oracle_status"] == "pending_human_review"
     assert summary["smooth_method"] == evidence.TRACE_SMOOTH_METHOD
@@ -470,7 +470,7 @@ def test_blind_overlay_rejects_current_full_packet_without_ambiguity_columns(
 ) -> None:
     review_packet = tmp_path / "packet.csv"
     trace_points = tmp_path / "trace_points.csv"
-    legacy_columns = tuple(
+    incomplete_columns = tuple(
         column
         for column in packet.PACKET_COLUMNS
         if column
@@ -480,19 +480,19 @@ def test_blind_overlay_rejects_current_full_packet_without_ambiguity_columns(
             "shifted_only_position_labels",
         } | set(evidence.ANCHOR_SEGMENTATION_SUMMARY_COLUMNS))
     )
-    legacy_row = {
+    incomplete_row = {
         column: value
         for column, value in _packet_row().items()
-        if column in legacy_columns
+        if column in incomplete_columns
     }
-    legacy_row["schema_version"] = packet.SCHEMA_VERSION
+    incomplete_row["schema_version"] = packet.SCHEMA_VERSION
     bundle = write_overlay_lineage_bundle(
         review_packet_csv=review_packet,
-        packet_rows=[legacy_row],
+        packet_rows=[incomplete_row],
         trace_points_csv=trace_points,
         trace_point_rows=_trace_points(),
     )
-    write_delimited_rows(review_packet, [legacy_row], legacy_columns)
+    write_delimited_rows(review_packet, [incomplete_row], incomplete_columns)
     packet_manifest_path = bundle["review_packet_manifest_json"]
     packet_manifest = json.loads(packet_manifest_path.read_text(encoding="utf-8"))
     packet_manifest["outputs"]["packet_csv_sha256"] = file_sha256(
@@ -779,7 +779,7 @@ def test_blind_overlay_rejects_point_derived_metric_tamper_with_refreshed_hashes
         trace_points_csv=trace_points,
         trace_point_rows=_trace_points(),
     )
-    metrics_csv = tmp_path / "pt_pattern_anchor_local_trace_metrics.csv"
+    metrics_csv = tmp_path / "pt_pattern_trace_metrics.csv"
     metric_rows = read_delimited_rows(
         metrics_csv,
         required_columns=trace_batch.ANCHOR_LOCAL_METRIC_COLUMNS,
@@ -821,7 +821,7 @@ def test_blind_overlay_rejects_target_mz_rebinding_with_refreshed_hashes(
         trace_points_csv=trace_points,
         trace_point_rows=_trace_points(),
     )
-    metrics_csv = tmp_path / "pt_pattern_anchor_local_trace_metrics.csv"
+    metrics_csv = tmp_path / "pt_pattern_trace_metrics.csv"
     metric_rows = read_delimited_rows(
         metrics_csv,
         required_columns=trace_batch.ANCHOR_LOCAL_METRIC_COLUMNS,
@@ -866,7 +866,7 @@ def test_blind_overlay_rejects_summary_identity_rebinding_with_refreshed_hashes(
         trace_points_csv=trace_points,
         trace_point_rows=_trace_points(),
     )
-    summary_csv = tmp_path / "pt_pattern_anchor_local_trace_summary.csv"
+    summary_csv = tmp_path / "pt_pattern_trace_summary.csv"
     summary_rows = read_delimited_rows(
         summary_csv,
         required_columns=trace_batch.ANCHOR_LOCAL_SUMMARY_COLUMNS,
@@ -927,37 +927,6 @@ def test_blind_overlay_rejects_trace_point_structure_tamper_with_refreshed_hashe
             trace_points_csv=trace_points,
             output_dir=tmp_path / "overlay",
             title="Trace point structure tamper",
-        )
-
-
-def test_blind_overlay_rejects_full_packet_with_context_bundle(
-    tmp_path: Path,
-) -> None:
-    review_packet = tmp_path / "packet.csv"
-    primary = tmp_path / "primary.csv"
-    context = tmp_path / "context.csv"
-    full_row = {
-        column: value
-        for column, value in _packet_row().items()
-        if column in packet.LEGACY_PACKET_COLUMNS
-    }
-    full_row["schema_version"] = packet.SCHEMA_VERSION
-    write_overlay_lineage_bundle(
-        review_packet_csv=review_packet,
-        packet_rows=[full_row],
-        trace_points_csv=primary,
-        trace_point_rows=_trace_points(),
-        context_trace_points_csv=context,
-        context_trace_point_rows=_trace_points(),
-    )
-
-    with pytest.raises(ValueError, match="full review packet must not provide context"):
-        overlay.run_blind_overlay(
-            review_packet_csv=review_packet,
-            trace_points_csv=primary,
-            context_trace_points_csv=context,
-            output_dir=tmp_path / "overlay",
-            title="Invalid role matrix",
         )
 
 
@@ -1085,7 +1054,7 @@ def test_blind_overlay_rejects_context_target_rebinding_with_refreshed_hash(
         context_trace_points_csv=context_trace_points,
         context_trace_point_rows=_trace_points(),
     )
-    context_metrics = tmp_path / "pt_pattern_trace_metrics.csv"
+    context_metrics = tmp_path / "pt_pattern_context_trace_metrics.csv"
     metric_rows = read_delimited_rows(
         context_metrics,
         required_columns=evidence.METRIC_COLUMNS,
@@ -1177,7 +1146,7 @@ def test_blind_overlay_rejects_unknown_packet_schema(tmp_path: Path) -> None:
     review_packet = tmp_path / "packet.csv"
     trace_points = tmp_path / "trace_points.csv"
     row = _packet_row()
-    row["schema_version"] = "pt_pattern_manual_review_packet.v999"
+    row["schema_version"] = "unsupported_pt_pattern_manual_review_packet"
     write_delimited_rows(review_packet, [row], packet.PACKET_COLUMNS)
     write_delimited_rows(
         trace_points,
@@ -1220,22 +1189,6 @@ def test_blind_overlay_rejects_partial_anchor_packet_schema(tmp_path: Path) -> N
             output_dir=tmp_path / "overlay",
             title="Partial schema",
         )
-
-
-def test_blind_overlay_rejects_mixed_packet_schema_rows() -> None:
-    anchor_row = _packet_row()
-    legacy_row = {
-        column: value
-        for column, value in anchor_row.items()
-        if column in packet.LEGACY_PACKET_COLUMNS
-    }
-    legacy_row["schema_version"] = packet.SCHEMA_VERSION
-    legacy_row["candidate_id"] = "legacy-candidate"
-    legacy_row["packet_row_id"] = "pt_only|legacy-candidate"
-    legacy_row["trace_artifact_role"] = "full_context"
-
-    with pytest.raises(ValueError, match="must use one schema_version"):
-        overlay_call.validate_packet_rows((anchor_row, legacy_row))
 
 
 def test_blind_overlay_rejects_duplicate_packet_row_id() -> None:

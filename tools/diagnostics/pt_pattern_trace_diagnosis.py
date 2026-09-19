@@ -19,17 +19,16 @@ from typing import Literal
 
 from xic_extractor.discovery.pt_pattern_artifact_contract import (
     PT_PATTERN_TRACE_ANCHOR_LOCAL_ROLE,
-    PT_PATTERN_TRACE_FULL_CONTEXT_ROLE,
     prepare_pt_trace_summary_rows_for_csv,
     pt_pattern_candidate_assignment_fingerprint,
     pt_pattern_trace_extraction_fingerprint,
 )
 from xic_extractor.discovery.pt_pattern_trace_batch import (
     ANCHOR_LOCAL_METRIC_COLUMNS,
-    ANCHOR_LOCAL_SCHEMA_VERSION,
     ANCHOR_LOCAL_SUMMARY_COLUMNS,
     ANCHOR_LOCAL_TRACE_POINT_COLUMNS,
     ANCHOR_SEGMENTATION_SELECTOR,
+    SCHEMA_VERSION,
     diagnose_pt_pattern_trace_batch,
 )
 from xic_extractor.discovery.pt_pattern_trace_evidence import (
@@ -40,13 +39,9 @@ from xic_extractor.discovery.pt_pattern_trace_evidence import (
     DEFAULT_PPM,
     DEFAULT_RT_HALF_WINDOW_SEC,
     EVIDENCE_OWNER,
-    METRIC_COLUMNS,
     READINESS_TIER,
     REQUIRED_CANDIDATE_COLUMNS,
-    SCHEMA_VERSION,
-    SUMMARY_COLUMNS,
     TRACE_DECISION_BASIS,
-    TRACE_POINT_COLUMNS,
     TRACE_SMOOTH_METHOD,
     TRACE_SMOOTH_WINDOW_POINTS,
     build_trace_requests_for_candidate,
@@ -173,52 +168,31 @@ def run_trace_diagnosis(
     metrics_csv = output_dir / "pt_pattern_trace_metrics.csv"
     trace_points_csv = output_dir / "pt_pattern_trace_points.csv"
     sidecar_json = output_dir / "pt_pattern_trace_diagnosis.json"
-    anchor_summary_csv = output_dir / "pt_pattern_anchor_local_trace_summary.csv"
-    anchor_metrics_csv = output_dir / "pt_pattern_anchor_local_trace_metrics.csv"
-    anchor_trace_points_csv = (
-        output_dir / "pt_pattern_anchor_local_trace_points.csv"
-    )
-    anchor_sidecar_json = (
-        output_dir / "pt_pattern_anchor_local_trace_diagnosis.json"
-    )
 
     write_delimited_rows(
         summary_csv,
-        prepare_pt_trace_summary_rows_for_csv(diagnosis.legacy_summary_rows),
-        SUMMARY_COLUMNS,
-    )
-    write_delimited_rows(metrics_csv, diagnosis.legacy_metric_rows, METRIC_COLUMNS)
-    write_delimited_rows(
-        anchor_summary_csv,
-        prepare_pt_trace_summary_rows_for_csv(
-            diagnosis.anchor_local_summary_rows,
-        ),
+        prepare_pt_trace_summary_rows_for_csv(diagnosis.summary_rows),
         ANCHOR_LOCAL_SUMMARY_COLUMNS,
     )
     write_delimited_rows(
-        anchor_metrics_csv,
-        diagnosis.anchor_local_metric_rows,
+        metrics_csv,
+        diagnosis.metric_rows,
         ANCHOR_LOCAL_METRIC_COLUMNS,
     )
     if write_trace_points:
         write_delimited_rows(
             trace_points_csv,
-            diagnosis.legacy_trace_point_rows,
-            TRACE_POINT_COLUMNS,
-        )
-        write_delimited_rows(
-            anchor_trace_points_csv,
-            diagnosis.anchor_local_trace_point_rows,
+            diagnosis.trace_point_rows,
             ANCHOR_LOCAL_TRACE_POINT_COLUMNS,
         )
 
     status_counts = Counter(
         str(row.get("trace_support_status", ""))
-        for row in diagnosis.legacy_summary_rows
+        for row in diagnosis.summary_rows
     )
     combined_status_counts = Counter(
         str(row.get("combined_pt_pattern_status", ""))
-        for row in diagnosis.legacy_summary_rows
+        for row in diagnosis.summary_rows
     )
     sidecar = {
         "schema_version": SCHEMA_VERSION,
@@ -248,6 +222,12 @@ def run_trace_diagnosis(
         "min_pearson_r": min_pearson_r,
         "max_apex_delta_sec": max_apex_delta_sec,
         "trace_points_written": write_trace_points,
+        "anchor_segmentation_status_counts": dict(
+            sorted(Counter(diagnosis.anchor_segmentation_statuses).items())
+        ),
+        "anchor_boundary_review_status_counts": dict(
+            sorted(Counter(diagnosis.anchor_boundary_review_statuses).items())
+        ),
         "trace_support_status_counts": dict(sorted(status_counts.items())),
         "combined_pt_pattern_status_counts": dict(
             sorted(combined_status_counts.items())
@@ -262,7 +242,7 @@ def run_trace_diagnosis(
     sidecar.update(
         trace_bundle_manifest_fields(
             schema_version=SCHEMA_VERSION,
-            artifact_role=PT_PATTERN_TRACE_FULL_CONTEXT_ROLE,
+            artifact_role=PT_PATTERN_TRACE_ANCHOR_LOCAL_ROLE,
             trace_extraction_sha256=trace_extraction_sha256,
             candidates_csv_sha256=candidates_csv_sha256,
             summary_csv_sha256=file_sha256(summary_csv).lower(),
@@ -277,94 +257,11 @@ def run_trace_diagnosis(
         json.dumps(sidecar, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
-    anchor_status_counts = Counter(
-        str(row.get("trace_support_status", ""))
-        for row in diagnosis.anchor_local_summary_rows
-    )
-    anchor_combined_status_counts = Counter(
-        str(row.get("combined_pt_pattern_status", ""))
-        for row in diagnosis.anchor_local_summary_rows
-    )
-    anchor_sidecar = {
-        "schema_version": ANCHOR_LOCAL_SCHEMA_VERSION,
-        "readiness_tier": READINESS_TIER,
-        "evidence_owner": EVIDENCE_OWNER,
-        "source_trace_schema_version": SCHEMA_VERSION,
-        "anchor_segmentation_selector": ANCHOR_SEGMENTATION_SELECTOR,
-        "anchor_interval_semantics": "coelution_comparison_not_integration",
-        "candidates_csv": str(candidates_csv),
-        "raw": str(raw),
-        "raw_file_name": raw.name,
-        "raw_sha256": raw_sha256,
-        "candidates_csv_sha256": candidates_csv_sha256,
-        "trace_extraction_sha256": trace_extraction_sha256,
-        "source_sample_stem": source_sample_stem,
-        "output_dir": str(output_dir),
-        "limit": limit,
-        "offset": offset,
-        "candidate_rows_loaded": len(candidate_rows),
-        "trace_request_count": len(request_items),
-        "ppm": ppm,
-        "rt_half_window_sec": rt_half_window_sec,
-        "mz_source": mz_source,
-        "trace_decision_basis": TRACE_DECISION_BASIS,
-        "trace_smoothing_method": TRACE_SMOOTH_METHOD,
-        "trace_smoothing_window_points": TRACE_SMOOTH_WINDOW_POINTS,
-        "active_fraction": active_fraction,
-        "min_pearson_r": min_pearson_r,
-        "max_apex_delta_sec": max_apex_delta_sec,
-        "trace_points_written": write_trace_points,
-        "anchor_segmentation_status_counts": dict(
-            sorted(Counter(diagnosis.anchor_segmentation_statuses).items())
-        ),
-        "anchor_boundary_review_status_counts": dict(
-            sorted(Counter(diagnosis.anchor_boundary_review_statuses).items())
-        ),
-        "trace_support_status_counts": dict(sorted(anchor_status_counts.items())),
-        "combined_pt_pattern_status_counts": dict(
-            sorted(anchor_combined_status_counts.items())
-        ),
-        "outputs": {
-            "summary_csv": str(anchor_summary_csv),
-            "metrics_csv": str(anchor_metrics_csv),
-            "trace_points_csv": (
-                str(anchor_trace_points_csv) if write_trace_points else None
-            ),
-            "full_context_trace_points_csv": (
-                str(trace_points_csv) if write_trace_points else None
-            ),
-        },
-        "diagnostic_only": True,
-    }
-    anchor_sidecar.update(
-        trace_bundle_manifest_fields(
-            schema_version=ANCHOR_LOCAL_SCHEMA_VERSION,
-            artifact_role=PT_PATTERN_TRACE_ANCHOR_LOCAL_ROLE,
-            trace_extraction_sha256=trace_extraction_sha256,
-            candidates_csv_sha256=candidates_csv_sha256,
-            summary_csv_sha256=file_sha256(anchor_summary_csv).lower(),
-            metrics_csv_sha256=file_sha256(anchor_metrics_csv).lower(),
-            trace_points_csv_sha256=(
-                file_sha256(anchor_trace_points_csv).lower()
-                if write_trace_points
-                else None
-            ),
-            candidate_assignments=candidate_assignments,
-        )
-    )
-    anchor_sidecar_json.write_text(
-        json.dumps(anchor_sidecar, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
     return {
         "summary_csv": summary_csv,
         "metrics_csv": metrics_csv,
         "trace_points_csv": trace_points_csv,
         "sidecar_json": sidecar_json,
-        "anchor_summary_csv": anchor_summary_csv,
-        "anchor_metrics_csv": anchor_metrics_csv,
-        "anchor_trace_points_csv": anchor_trace_points_csv,
-        "anchor_sidecar_json": anchor_sidecar_json,
     }
 
 
@@ -509,22 +406,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     print(f"Pt pattern trace summary CSV: {outputs['summary_csv']}")
     print(f"Pt pattern trace metrics CSV: {outputs['metrics_csv']}")
     if args.write_trace_points:
-        print(
-            "Pt pattern full-context trace points CSV: "
-            f"{outputs['trace_points_csv']}"
-        )
+        print(f"Pt pattern trace points CSV: {outputs['trace_points_csv']}")
     print(f"Pt pattern trace diagnosis JSON: {outputs['sidecar_json']}")
-    print(f"Pt pattern anchor-local summary CSV: {outputs['anchor_summary_csv']}")
-    print(f"Pt pattern anchor-local metrics CSV: {outputs['anchor_metrics_csv']}")
-    if args.write_trace_points:
-        print(
-            "Pt pattern anchor-local trace points CSV: "
-            f"{outputs['anchor_trace_points_csv']}"
-        )
-    print(
-        "Pt pattern anchor-local diagnosis JSON: "
-        f"{outputs['anchor_sidecar_json']}"
-    )
     return 0
 
 

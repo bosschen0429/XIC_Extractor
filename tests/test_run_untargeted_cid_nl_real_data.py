@@ -123,8 +123,8 @@ def test_runner_writes_replay_packet_and_qmv_for_one_support_canary(
         (output_dir / "real_data_runtime_summary.json").read_text()
     )
     timing = json.loads((output_dir / "timing.json").read_text())
-    assert summary["schema_version"] == "untargeted_cid_nl_real_data_runtime_summary_v2"
-    assert timing["schema_version"] == "untargeted_cid_nl_real_data_runtime_timing_v2"
+    assert summary["schema_version"] == "untargeted_cid_nl_real_data_runtime_summary"
+    assert timing["schema_version"] == "untargeted_cid_nl_real_data_runtime_timing"
     assert summary["runtime_succeeded"] is True
     assert summary["terminal_state"] == "quant_matrix_version_built"
     assert summary["sample_count"] == 1

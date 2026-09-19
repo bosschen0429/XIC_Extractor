@@ -443,7 +443,7 @@ def _runtime(
     return start_runtime_attempt(
         attempt=attempt,
         work_unit_keys=work_unit_keys,
-        owner_completeness_attestation="targeted-method-runtime-test:v1",
+        owner_completeness_attestation="targeted-method-runtime-test",
         cancellation_request=(
             RuntimeCancellationRequest(attempt=attempt) if cancelled else None
         ),
@@ -458,7 +458,7 @@ def _reservations(jobs) -> tuple[RuntimeResourceReservation, ...]:
             resource_key=job.resource_key,
             worker_key=f"worker:{index}",
             source_reference=f"no-raw:{job.work_unit_key}:{index}",
-            compatibility_token="targeted-method-runtime-test:v1",
+            compatibility_token="targeted-method-runtime-test",
         )
         for index, job in enumerate(jobs)
     )

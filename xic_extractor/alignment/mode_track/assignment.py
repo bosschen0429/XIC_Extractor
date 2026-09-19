@@ -78,9 +78,9 @@ from xic_extractor.processing_identity import (
 )
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 
-SCHEMA_VERSION = "mode_track_assignment_v2"
-BATCH_SCHEMA_VERSION = "mode_track_assignment_batch_v2"
-MODEL_SET_SCHEMA_VERSION = "mode_track_model_set_v3"
+SCHEMA_VERSION = "mode_track_assignment"
+BATCH_SCHEMA_VERSION = "mode_track_assignment_batch"
+MODEL_SET_SCHEMA_VERSION = "mode_track_model_set"
 VALIDATION_STATUS = "shadow_ready"
 PRODUCT_AUTHORITY = "none"
 
@@ -1328,7 +1328,7 @@ def _fit_once_source_identity_payload_values(
     initial_assignment_batch_ids: tuple[str, ...],
 ) -> dict[str, object]:
     return {
-        "schema": "mode_track_fit_once_source_v1",
+        "schema": "mode_track_fit_once_source",
         "processing_request_id": processing_request_id,
         "processing_attempt_id": processing_attempt_id,
         "family_context_id": family_context_id,

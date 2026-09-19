@@ -29,9 +29,9 @@ from xic_extractor.processing_identity import (
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 from xic_extractor.validation_primitives import require_owner_normalized_text
 
-_GROUP_MEMBER_SUBJECT_PREFIX = "xic.group-member-subject.v1:"
-_CROSS_SAMPLE_GROUP_PREFIX = "xic.cross-sample-group.v1:"
-_CROSS_SAMPLE_REPAIRED_OBSERVATION_PREFIX = "xic.cross-sample-repaired-observation.v1:"
+_GROUP_MEMBER_SUBJECT_PREFIX = "xic.group-member-subject:"
+_CROSS_SAMPLE_GROUP_PREFIX = "xic.cross-sample-group:"
+_CROSS_SAMPLE_REPAIRED_OBSERVATION_PREFIX = "xic.cross-sample-repaired-observation:"
 _CROSS_SAMPLE_REPAIRED_OBSERVATION_MINT_TOKEN = object()
 
 CrossSampleGroupDisposition: TypeAlias = Literal[
@@ -90,11 +90,11 @@ class CrossSampleGroupMemberSubject:
         if self.subject_kind not in {"peak_hypothesis", "physical_observation"}:
             raise CrossSampleContractError("subject_kind is not a closed variant")
         expected_prefixes = (
-            ("xic.peak-hypothesis.v1:",)
+            ("xic.peak-hypothesis:",)
             if self.subject_kind == "peak_hypothesis"
             else (
-                "xic.peak-observation-content.v1:",
-                "physical-facts.v1:",
+                "xic.peak-observation-content:",
+                "physical-facts:",
             )
         )
         if not subject_id.startswith(expected_prefixes):
@@ -105,7 +105,7 @@ class CrossSampleGroupMemberSubject:
                 "physical_observation_ids must be unique and canonical-sorted"
             )
         if self.subject_kind == "physical_observation":
-            if subject_id.startswith("xic.peak-observation-content.v1:"):
+            if subject_id.startswith("xic.peak-observation-content:"):
                 if physical_ids != (subject_id,):
                     raise CrossSampleContractError(
                         "physical observation member must bind its tagged observation"
@@ -116,7 +116,7 @@ class CrossSampleGroupMemberSubject:
                 )
         basis = canonical_identity_basis_bytes(
             {
-                "schema_version": "group_member_subject_v1",
+                "schema_version": "group_member_subject",
                 "processing_request_id": request_id,
                 "canonical_sample_identity_id": sample_id,
                 "subject": {"kind": self.subject_kind, "id": subject_id},
@@ -183,7 +183,7 @@ def group_member_subject_from_peak_observation(
     subject_id = observation.content.peak_observation_content_id
     basis = canonical_identity_basis_bytes(
         {
-            "schema_version": "group_member_subject_v1",
+            "schema_version": "group_member_subject",
             "processing_request_id": request_id,
             "canonical_sample_identity_id": sample_id,
             "subject": {"kind": "physical_observation", "id": subject_id},
@@ -240,7 +240,7 @@ def group_member_subject_from_peak_hypothesis(
         raise CrossSampleContractError("peak hypothesis crossed physical observation")
     basis = canonical_identity_basis_bytes(
         {
-            "schema_version": "group_member_subject_v1",
+            "schema_version": "group_member_subject",
             "processing_request_id": request_id,
             "canonical_sample_identity_id": sample_id,
             "subject": {"kind": "peak_hypothesis", "id": hypothesis.hypothesis_id},
@@ -323,7 +323,7 @@ def group_member_subject_from_discovery_physical_selection(
     sample_id = sample.identity.sample_identity_id
     basis = canonical_identity_basis_bytes(
         {
-            "schema_version": "group_member_subject_v1",
+            "schema_version": "group_member_subject",
             "processing_request_id": request_id,
             "canonical_sample_identity_id": sample_id,
             "subject": {"kind": "physical_observation", "id": physical_id},
@@ -417,7 +417,7 @@ class CrossSampleGroupIdentity:
             raise CrossSampleContractError("singleton group cannot be established")
         basis = canonical_identity_basis_bytes(
             {
-                "schema_version": "cross_sample_group_v1",
+                "schema_version": "cross_sample_group",
                 "processing_request_id": request_id,
                 "member_subject_ids": [item.member_subject_id for item in members],
             }
@@ -452,7 +452,7 @@ def mint_cross_sample_group_identity(
     )
     basis = canonical_identity_basis_bytes(
         {
-            "schema_version": "cross_sample_group_v1",
+            "schema_version": "cross_sample_group",
             "processing_request_id": request_id,
             "member_subject_ids": [item.member_subject_id for item in members],
         }
@@ -654,7 +654,7 @@ def _repaired_observation_basis(
 ) -> bytes:
     return canonical_identity_basis_bytes(
         {
-            "schema_version": "cross_sample_repaired_observation_v1",
+            "schema_version": "cross_sample_repaired_observation",
             "repair_receipt_id": repair_receipt_id,
             "authorization_id": authorization_id,
             "candidate_id": candidate_id,

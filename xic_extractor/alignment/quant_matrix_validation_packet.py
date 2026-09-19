@@ -14,9 +14,9 @@ from xic_extractor.alignment.quant_matrix_downstream_impact import (
 )
 from xic_extractor.tabular_io import file_sha256, read_tsv_required, write_tsv
 
-VALIDATION_EVIDENCE_SCHEMA = "quant_matrix_validation_evidence_v1"
-VALIDATION_PACKET_SUMMARY_SCHEMA = "quant_matrix_validation_evidence_packet_summary_v1"
-PROMOTION_READINESS_SCHEMA = "quant_matrix_promotion_readiness_v1"
+VALIDATION_EVIDENCE_SCHEMA = "quant_matrix_validation_evidence"
+VALIDATION_PACKET_SUMMARY_SCHEMA = "quant_matrix_validation_evidence_packet_summary"
+PROMOTION_READINESS_SCHEMA = "quant_matrix_promotion_readiness"
 
 VALIDATION_EVIDENCE_ROW_COLUMNS = (
     "schema_version",
@@ -91,7 +91,7 @@ def build_quant_matrix_validation_evidence_packet(
     status_by_requirement = _required_science_status(rows)
 
     output_dir.mkdir(parents=True, exist_ok=True)
-    evidence_json = output_dir / "quant_matrix_validation_evidence_v1.json"
+    evidence_json = output_dir / "quant_matrix_validation_evidence.json"
     evidence_rows_tsv = output_dir / "quant_matrix_validation_evidence_rows.tsv"
     summary_json = output_dir / "quant_matrix_validation_evidence_summary.json"
 
@@ -177,7 +177,7 @@ def validate_quant_matrix_validation_evidence_packet(
     if not isinstance(payload, dict):
         return [f"{validation_evidence_json}: expected JSON object"]
     if payload.get("schema_version") != VALIDATION_EVIDENCE_SCHEMA:
-        problems.append("schema_version must be quant_matrix_validation_evidence_v1")
+        problems.append("schema_version must be quant_matrix_validation_evidence")
     if payload.get("read_only") is not True:
         problems.append("read_only must be true")
     if payload.get("write_authority") is not False:

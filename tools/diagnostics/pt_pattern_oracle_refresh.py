@@ -1,4 +1,4 @@
-"""Build a Pt pattern v2 manual-oracle refresh worklist."""
+"""Build a Pt pattern manual-oracle refresh worklist."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from xic_extractor.discovery.pt_pattern_oracle_refresh import run_oracle_refresh
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "Compare adjudicated Pt pattern oracle rows with current v2 manual "
+            "Compare adjudicated Pt pattern oracle rows with current manual "
             "review packets and write carryover, pending-review, and stale-row "
             "refresh artifacts."
         )
@@ -79,7 +79,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     print(f"Pt pattern oracle refresh draft: {outputs['refresh_draft_csv']}")
     print(f"Pt pattern oracle pending review: {outputs['pending_review_csv']}")
-    print(f"Pt pattern oracle stale rows: {outputs['stale_v1_rows_csv']}")
+    print(f"Pt pattern oracle stale rows: {outputs['stale_rows_csv']}")
     print(f"Pt pattern oracle refresh summary: {outputs['summary_json']}")
     return 0
 

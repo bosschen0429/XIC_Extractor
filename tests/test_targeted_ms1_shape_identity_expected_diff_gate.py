@@ -43,7 +43,7 @@ def test_limited_expected_diff_gate_accepts_hmdc_medc_flagged_rows() -> None:
 
 
 def test_limited_expected_diff_gate_rejects_rows_outside_scope() -> None:
-    with pytest.raises(ValueError, match="outside limited_5hmdc_5medc_v1 scope"):
+    with pytest.raises(ValueError, match="outside limited_5hmdc_5medc scope"):
         evaluate_limited_targeted_ms1_shape_identity_expected_diff(
             [_expected_diff_row("S1", "5-fC")],
             [_matrix_diff_row("S1", "5-hmdC_RT")],
@@ -122,7 +122,7 @@ def test_limited_expected_diff_gate_cli_writes_summary(tmp_path: Path) -> None:
     summary_tsv = tmp_path / "gate_summary.tsv"
     _write_tsv(expected_diff, [_expected_diff_row("S1", "5-hmdC")])
     _write_tsv(matrix_diff, [_matrix_diff_row("S1", "5-hmdC_RT")])
-    support_tsv = tmp_path / "targeted_ms1_shape_identity_v0.tsv"
+    support_tsv = tmp_path / "targeted_ms1_shape_identity.tsv"
     _write_tsv(support_tsv, [_support_row("S1", "5-hmdC")])
 
     assert (
@@ -217,7 +217,7 @@ def _matrix_diff_row(
 
 def _support_row(sample_name: str, target_name: str) -> dict[str, str]:
     return {
-        "schema_version": "targeted_ms1_shape_identity_v0",
+        "schema_version": "targeted_ms1_shape_identity",
         "validation_label": "diagnostic_only",
         "decision_authority": "diagnostic_only_no_product_write",
         "sample_name": sample_name,

@@ -224,7 +224,7 @@ def test_area_integration_uncertainty_audit_classifies_all_buckets(
     assert rows[0]["integration_bucket"] == "missing_alignment_match"
     alignment_rows = _read_tsv(alignment_path)
     assert alignment_rows[0]["area_uncertainty_formula_version"] == (
-        "baseline_residual_mad_v1"
+        "baseline_residual_mad"
     )
     assert alignment_rows[0]["baseline_residual_mad"] == "0.5"
     assert alignment_rows[0]["area_uncertainty_noise_source"] == "asls_residual"
@@ -436,7 +436,7 @@ def _alignment_row(
         "area": area,
         "area_baseline_corrected": baseline_area,
         "area_uncertainty": "5",
-        "area_uncertainty_formula_version": "baseline_residual_mad_v1",
+        "area_uncertainty_formula_version": "baseline_residual_mad",
         "baseline_residual_mad": "0.5",
         "area_uncertainty_noise_source": "asls_residual",
         "uncertainty_fraction": uncertainty_fraction,

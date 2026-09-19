@@ -2,34 +2,34 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 
-ORACLE_SCHEMA_VERSION = "shared_peak_identity_manual_oracle_v1"
-EVIDENCE_SCHEMA_VERSION = "shared_peak_identity_evidence_v1"
-EXPLANATION_SCHEMA_VERSION = "shared_peak_identity_explanation_v1"
-RUN_FACTS_SCHEMA_VERSION = "shared_peak_identity_run_facts_v1"
+ORACLE_SCHEMA_VERSION = "shared_peak_identity_manual_oracle"
+EVIDENCE_SCHEMA_VERSION = "shared_peak_identity_evidence"
+EXPLANATION_SCHEMA_VERSION = "shared_peak_identity_explanation"
+RUN_FACTS_SCHEMA_VERSION = "shared_peak_identity_run_facts"
 BLAST_RADIUS_MANIFEST_SCHEMA_VERSION = (
-    "shared_peak_identity_blast_radius_manifest_v1"
+    "shared_peak_identity_blast_radius_manifest"
 )
-BLAST_RADIUS_SUMMARY_SCHEMA_VERSION = "shared_peak_identity_blast_radius_summary_v1"
-SHADOW_LABEL_SCHEMA_VERSION = "shared_peak_identity_shadow_label_v1"
+BLAST_RADIUS_SUMMARY_SCHEMA_VERSION = "shared_peak_identity_blast_radius_summary"
+SHADOW_LABEL_SCHEMA_VERSION = "shared_peak_identity_shadow_label"
 SHADOW_ALIGNMENT_SUMMARY_SCHEMA_VERSION = (
-    "shared_peak_identity_shadow_alignment_summary_v1"
+    "shared_peak_identity_shadow_alignment_summary"
 )
-V2_READINESS_SCHEMA_VERSION = "shared_peak_identity_v2_readiness_v1"
+SHADOW_READINESS_SCHEMA_VERSION = "shared_peak_identity_shadow_readiness"
 MACHINE_EVIDENCE_SUPPORT_SCHEMA_VERSION = (
-    "shared_peak_identity_machine_evidence_support_v2"
+    "shared_peak_identity_machine_evidence_support"
 )
 WRONG_PEAK_ROOT_CAUSE_SCHEMA_VERSION = (
-    "shared_peak_identity_wrong_peak_root_cause_v2"
+    "shared_peak_identity_wrong_peak_root_cause"
 )
-RT_MODE_EVIDENCE_SCHEMA_VERSION = "shared_peak_identity_rt_mode_evidence_v1"
+RT_MODE_EVIDENCE_SCHEMA_VERSION = "shared_peak_identity_rt_mode_evidence"
 PEAK_HYPOTHESIS_SELECTION_SCHEMA_VERSION = (
-    "shared_peak_identity_peak_hypothesis_selection_v1"
+    "shared_peak_identity_peak_hypothesis_selection"
 )
 HYPOTHESIS_CONSISTENCY_SCHEMA_VERSION = (
-    "shared_peak_identity_hypothesis_consistency_v1"
+    "shared_peak_identity_hypothesis_consistency"
 )
 HYPOTHESIS_CONSISTENCY_SUMMARY_SCHEMA_VERSION = (
-    "shared_peak_identity_hypothesis_consistency_summary_v1"
+    "shared_peak_identity_hypothesis_consistency_summary"
 )
 
 ORACLE_COLUMNS = (
@@ -210,10 +210,10 @@ SHADOW_ALIGNMENT_SUMMARY_COLUMNS = (
     "recommended_next_action",
 )
 
-V2_READINESS_COLUMNS = (
-    "v2_readiness_schema_version",
-    "v2_mode",
-    "v2_gate_status",
+SHADOW_READINESS_COLUMNS = (
+    "shadow_readiness_schema_version",
+    "shadow_mode",
+    "shadow_gate_status",
     "readiness_label",
     "seed_rows_total",
     "shadow_rows_total",
@@ -725,7 +725,7 @@ ALLOWED_BY_FIELD: dict[str, frozenset[str]] = {
             "unresolved",
         }
     ),
-    "v2_gate_status": frozenset(
+    "shadow_gate_status": frozenset(
         {
             "shadow_ready_candidate",
             "exploratory_only",
@@ -734,7 +734,7 @@ ALLOWED_BY_FIELD: dict[str, frozenset[str]] = {
         }
     ),
     "readiness_label": frozenset({"diagnostic_only"}),
-    "v2_mode": frozenset({"shadow_label_alignment"}),
+    "shadow_mode": frozenset({"shadow_label_alignment"}),
     "status_label_alignment_status": frozenset(
         {
             "proxy_agrees",
@@ -829,7 +829,7 @@ ALLOWED_BY_FIELD: dict[str, frozenset[str]] = {
             "add_opportunity_metric",
             "check_boundary_reference",
             "check_blast_radius",
-            "flag_for_v2_gate_review",
+            "flag_for_shadow_gate_review",
         }
     ),
     "rt_mode_status": frozenset(

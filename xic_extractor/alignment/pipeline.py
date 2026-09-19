@@ -230,7 +230,6 @@ def run_alignment(
             sample_stem: read_owner_bound_discovery_candidates_csv(
                 batch.candidate_csvs[sample_stem],
                 receipt=_required_candidate_receipt(batch, sample_stem),
-                require_successor_columns=True,
             )
             for sample_stem in batch.sample_order
         }
@@ -493,14 +492,14 @@ def _run_untargeted_alignment(
         )
         metadata.update(
             {
-                "alignment_route": "untargeted_cid_nl_finalized_v1",
+                "alignment_route": "untargeted_cid_nl_finalized",
                 "effective_owner_build_route": (
                     owner_build_route_receipt.effective_owner_build_route
                 ),
                 "effective_owner_build_xic_backend": "none",
                 "owner_build_xic_backend_role": "configured_legacy_option",
-                "matrix_value_policy": "owner_finalized_cell_decision_v1",
-                "matrix_coordinate_policy": "cross_sample_owner_arithmetic_mean_v1",
+                "matrix_value_policy": "owner_finalized_cell_decision",
+                "matrix_coordinate_policy": "cross_sample_owner_arithmetic_mean",
             }
         )
         if known_istd_reference is not None:
@@ -572,7 +571,7 @@ def _run_untargeted_alignment(
                 matrix_sha256=matrix_sha256,
                 processing_request_id=getattr(req, "processing_request_id", ""),
                 processing_attempt_id=getattr(att, "processing_attempt_id", ""),
-                schema_version=2,
+                schema_version="alignment_explanation",
             )
 
         return replace(

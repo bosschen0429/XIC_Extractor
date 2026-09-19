@@ -13,7 +13,7 @@ from scipy.sparse.linalg import spsolve
 from xic_extractor.peak_detection.integration import integrate_area_counts_seconds
 
 BaselineMethod = Literal["asls"]
-AREA_UNCERTAINTY_FORMULA_VERSION = "baseline_residual_mad_v1"
+AREA_UNCERTAINTY_FORMULA_VERSION = "baseline_residual_mad"
 LINEAR_EDGE_RETIRED_MESSAGE = "linear_edge baseline integration is retired; use asls"
 
 

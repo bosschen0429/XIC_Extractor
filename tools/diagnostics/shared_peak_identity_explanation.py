@@ -45,12 +45,12 @@ from xic_extractor.alignment.shared_peak_identity_explanation.oracle import (
 from xic_extractor.alignment.shared_peak_identity_explanation.shadow_labels import (
     build_shadow_alignment_summary,
     build_shadow_label_rows,
-    build_v2_readiness,
+    build_shadow_readiness,
 )
 from xic_extractor.alignment.shared_peak_identity_explanation.writers import (
+    write_shadow_outputs,
     write_slice0_outputs,
     write_slice1_outputs,
-    write_v2_outputs,
 )
 
 
@@ -590,7 +590,7 @@ def run_explanation(
             run_facts=run_facts,
         )
     if enable_shadow_label_alignment:
-        return _write_v2_from_current_outputs(
+        return _write_shadow_from_current_outputs(
             output_dir=output_dir,
             prior_outputs=outputs,
             explanations=explanations,
@@ -610,7 +610,7 @@ def run_explanation(
     return outputs
 
 
-def _write_v2_from_current_outputs(
+def _write_shadow_from_current_outputs(
     *,
     output_dir: Path,
     prior_outputs: Mapping[str, Path],
@@ -646,12 +646,12 @@ def _write_v2_from_current_outputs(
             peak_hypothesis_selection=peak_hypothesis_selection,
         )
     )
-    readiness_row = build_v2_readiness(
+    readiness_row = build_shadow_readiness(
         run_facts=run_facts,
         shadow_rows=shadow_rows,
         machine_evidence_support_rows=machine_evidence_support_rows,
     )
-    return write_v2_outputs(
+    return write_shadow_outputs(
         output_dir=output_dir,
         prior_outputs={**dict(prior_outputs), **dict(extra_outputs or {})},
         shadow_rows=shadow_rows,

@@ -29,7 +29,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--detected-features-csv",
         type=Path,
         help=(
-            "Detected Features CSV v1 input. Mutually exclusive with "
+            "Detected Features CSV input. Mutually exclusive with "
             "--external-feature-table-tsv and --mzmine-feature-table-csv."
         ),
     )

@@ -241,7 +241,7 @@ def test_cli_slice1_writes_blast_radius_outputs(tmp_path: Path) -> None:
     assert "production_ready" not in report
 
 
-def test_cli_writes_v2_shadow_alignment_as_exploratory_when_unpinned(
+def test_cli_writes_shadow_alignment_as_exploratory_when_unpinned(
     tmp_path: Path,
 ) -> None:
     fixture = _write_cli_fixture(tmp_path)
@@ -274,8 +274,8 @@ def test_cli_writes_v2_shadow_alignment_as_exploratory_when_unpinned(
     assert (output_dir / "shared_peak_identity_shadow_labels.tsv").exists()
     assert (output_dir / "shared_peak_identity_shadow_alignment_summary.tsv").exists()
     assert (output_dir / "shared_peak_identity_machine_evidence_support.tsv").exists()
-    readiness = _read_tsv(output_dir / "shared_peak_identity_v2_readiness.tsv")[0]
-    assert readiness["v2_gate_status"] == "exploratory_only"
+    readiness = _read_tsv(output_dir / "shared_peak_identity_shadow_readiness.tsv")[0]
+    assert readiness["shadow_gate_status"] == "exploratory_only"
     assert readiness["machine_only_labeler_ready"] == "FALSE"
     assert readiness["machine_evidence_basis"] == "machine_proxy_or_manual_derived"
     assert "formal_shape_metric" in readiness["machine_evidence_blockers"]
@@ -283,7 +283,7 @@ def test_cli_writes_v2_shadow_alignment_as_exploratory_when_unpinned(
         "seed_only_manual_oracle_derived"
     )
     assert "blast_radius_not_current" in readiness["clear_answer"]
-    report = (output_dir / "shared_peak_identity_v2_report.md").read_text(
+    report = (output_dir / "shared_peak_identity_shadow_report.md").read_text(
         encoding="utf-8"
     )
     assert "exploratory_only" in report
@@ -291,7 +291,7 @@ def test_cli_writes_v2_shadow_alignment_as_exploratory_when_unpinned(
     assert "Machine Evidence Provenance" in report
 
 
-def test_cli_writes_v2_machine_observed_support_with_optional_evidence(
+def test_cli_writes_shadow_machine_observed_support_with_optional_evidence(
     tmp_path: Path,
 ) -> None:
     fixture = _write_cli_fixture(tmp_path)
@@ -322,7 +322,7 @@ def test_cli_writes_v2_machine_observed_support_with_optional_evidence(
     )
 
     output_dir = tmp_path / "out"
-    readiness = _read_tsv(output_dir / "shared_peak_identity_v2_readiness.tsv")[0]
+    readiness = _read_tsv(output_dir / "shared_peak_identity_shadow_readiness.tsv")[0]
     assert readiness["machine_evidence_basis"] == "machine_observed_sufficient"
     assert readiness["machine_observed_partial_rows"] == "0"
     assert readiness["machine_evidence_supported_rows"] == "1"
@@ -2044,6 +2044,7 @@ def _write_discovery_candidates(path: Path) -> None:
             "rt_alignment",
             "discovery_candidate_state",
             "ms1_feature_row_id",
+            "is_provisional",
             "candidate_id",
             "feature_family_id",
             "feature_family_size",
@@ -2097,6 +2098,7 @@ def _write_discovery_candidates(path: Path) -> None:
                 "rt_alignment": "aligned",
                 "discovery_candidate_state": "ms1_feature_nl_supported",
                 "ms1_feature_row_id": "S1|DNA_dR|257.125|1.0",
+                "is_provisional": "FALSE",
                 "candidate_id": "S1#100@mz257.125_p141.077",
                 "feature_family_id": "S1@F001",
                 "feature_family_size": "1",

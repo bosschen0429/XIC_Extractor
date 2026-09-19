@@ -26,7 +26,7 @@ from xic_extractor.alignment.shared_peak_identity_explanation import (
 )
 from xic_extractor.tabular_io import optional_float, text_value
 
-SCHEMA_VERSION = "backfill_ms1_pattern_product_authority_v1"
+SCHEMA_VERSION = "backfill_ms1_pattern_product_authority"
 DEFAULT_MIN_ANCHOR_OWN_MAX_SHAPE_SIMILARITY = 0.5
 _OWN_MAX_SHAPE_METRIC_SOURCE = "family_ms1_overlay_anchor_peak_own_max"
 

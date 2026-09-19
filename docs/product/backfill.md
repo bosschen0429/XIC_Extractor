@@ -68,7 +68,7 @@ or HOLD results alone.
   can enter `ProductionCellDecision`.
 - Reusable offline overlay trace evidence caches are opt-in diagnostic replay
   helpers, not Backfill authority. A warm hit must match per-sample
-  `path_stat_v1` RAW identity: resolved path, size, mtime, device, and inode.
+  `path_stat` RAW identity: resolved path, size, mtime, device, and inode.
   Missing or mismatched identity fails closed to normal RAW extraction; a same
   path string alone is never sufficient cache identity.
 
@@ -99,7 +99,7 @@ or positive recovery evidence cannot use these exceptions.
 
 The coverage owner revalidates the complete group/sample/cell closure and binds
 the proof into its planning epoch. ObservationRepair and the final cell owner
-consume that same proof. Proof-bearing epochs use the v2 canonical payload;
+consume that same proof. Proof-bearing epochs use the canonical payload;
 epochs without a proof retain their existing bytes and identity. Source cell
 artifacts and runtime result artifacts retain their existing formats. The
 runtime owner issues the completed-recovery projection; coverage never imports
@@ -148,8 +148,8 @@ The terminal receipt carries the repaired observation and its provenance for
 current consumers. A candidate-scoped no-repair receipt instead carries a
 sealed `ObservationRepairNoRepairTerminal` that binds the exact owner work unit
 and physical answer; two distinct no-repair executions therefore cannot collapse
-to the same receipt identity. Candidate receipts use the canonical v2 receipt
-namespace; existing member receipts retain their exact v1 shape and identity.
+to the same receipt identity. Candidate receipts use the canonical receipt
+namespace; existing member receipts retain their exact shape and identity.
 The candidate no-repair receipt still exposes `evidence is None` to current
 consumers and carries no synthetic repaired observation. Membership, value,
 Matrix, activation, and writer authority remain `none`; the candidate remains
@@ -383,7 +383,7 @@ Before changing Backfill product behavior, require the relevant subset of:
 ## See Also
 
 - [Historical compatibility index](../superpowers/plans/2026-06-15-productization-control-plane.md)
-- [Status index](../superpowers/validation/productization_status_index_v1.tsv)
-- [Authority manifest](../superpowers/schemas/productization_authority_manifest.v1.json)
+- [Status index](../superpowers/validation/productization_status_index.tsv)
+- [Authority manifest](../superpowers/schemas/productization_authority_manifest.json)
 - [Evidence rules](../lc-msms-evidence-rules.md)
 - [Peak anchor and group boundary](family-hypothesis-boundary.md)

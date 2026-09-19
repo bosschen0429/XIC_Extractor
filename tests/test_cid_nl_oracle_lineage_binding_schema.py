@@ -7,14 +7,14 @@ ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_PATH = (
     ROOT
     / "docs/superpowers/schemas/"
-    "cid_nl_oracle_lineage_binding_schema.v1.json"
+    "cid_nl_oracle_lineage_binding_schema.json"
 )
 
 
 def test_cid_nl_oracle_lineage_schema_binds_canonical_identities() -> None:
     schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
 
-    assert schema["schema_version"] == "cid_nl_oracle_lineage_binding_schema_v1"
+    assert schema["schema_version"] == "cid_nl_oracle_lineage_binding_schema"
     assert schema["validation_status"] == "diagnostic_only"
 
     required = set(schema["required_columns"])

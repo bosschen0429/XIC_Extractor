@@ -1145,7 +1145,7 @@ def recover_untargeted_cid_nl_sample_subject(
             processing_owners=processing_owners,
             sample=sample,
             method_subject=method_subject,
-            detector_invocation_id="untargeted-cid-nl-backfill-recovery:v1",
+            detector_invocation_id="untargeted-cid-nl-backfill-recovery",
             evaluation_receipt=CidNlEvaluationReceipt(
                 query_rt_min=query_rt_min,
                 query_rt_max=query_rt_max,
@@ -1521,7 +1521,7 @@ def _mint_assessment(
             sample=sample,
             method_subject=method_subject,
             detector_invocation_id=(
-                f"untargeted-cid-nl-real-data:{settings.resolver_mode}:v1"
+                f"untargeted-cid-nl-real-data:{settings.resolver_mode}"
             ),
             evaluation_receipt=CidNlEvaluationReceipt(
                 query_rt_min=(

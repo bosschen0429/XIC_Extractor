@@ -24,55 +24,55 @@ from tools.diagnostics.docs_policy import PRODUCTIZATION_STATUS_INDEX_REL
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_SCHEMA = (
-    ROOT / "docs/superpowers/schemas/bounded_non_broad_product_lanes.v1.json"
+    ROOT / "docs/superpowers/schemas/bounded_non_broad_product_lanes.json"
 )
 DEFAULT_ACCEPTANCE = (
-    ROOT / "docs/superpowers/validation/bounded_non_broad_lane_acceptance_v1.tsv"
+    ROOT / "docs/superpowers/validation/bounded_non_broad_lane_acceptance.tsv"
 )
 DEFAULT_STATUS_INDEX = ROOT / PRODUCTIZATION_STATUS_INDEX_REL
 STATUS_INDEX_SOURCE = PRODUCTIZATION_STATUS_INDEX_REL
 
 EXPECTED_LANE_IDS = {
-    "targeted_ms1_shape_identity_limited_rescue_v1",
-    "sample_metadata_order_projection_v1",
-    "review_action_candidate_sidecar_v1",
+    "targeted_ms1_shape_identity_limited_rescue",
+    "sample_metadata_order_projection",
+    "review_action_candidate_sidecar",
     "targeted_ms1_shape_identity_broader_targets",
     "sample_metadata_role_value_behavior",
     "review_action_selected_candidate_switch",
     "review_action_manual_boundary_area_writer",
 }
 EXPECTED_READINESS = {
-    "targeted_ms1_shape_identity_limited_rescue_v1": "production_ready",
-    "sample_metadata_order_projection_v1": "production_ready",
-    "review_action_candidate_sidecar_v1": "production_candidate",
+    "targeted_ms1_shape_identity_limited_rescue": "production_ready",
+    "sample_metadata_order_projection": "production_ready",
+    "review_action_candidate_sidecar": "production_candidate",
     "targeted_ms1_shape_identity_broader_targets": "blocked",
     "sample_metadata_role_value_behavior": "blocked",
     "review_action_selected_candidate_switch": "parked",
     "review_action_manual_boundary_area_writer": "parked",
 }
 EXPECTED_CURRENT_SURFACES = {
-    "targeted_ms1_shape_identity_limited_rescue_v1",
-    "sample_metadata_order_projection_v1",
-    "review_action_candidate_sidecar_v1",
+    "targeted_ms1_shape_identity_limited_rescue",
+    "sample_metadata_order_projection",
+    "review_action_candidate_sidecar",
 }
 EXPECTED_PRODUCTION_READY = {
-    "targeted_ms1_shape_identity_limited_rescue_v1",
-    "sample_metadata_order_projection_v1",
+    "targeted_ms1_shape_identity_limited_rescue",
+    "sample_metadata_order_projection",
 }
-EXPECTED_PRODUCTION_CANDIDATE = {"review_action_candidate_sidecar_v1"}
+EXPECTED_PRODUCTION_CANDIDATE = {"review_action_candidate_sidecar"}
 EXPECTED_SCOPE = {
-    "targeted_ms1_shape_identity_limited_rescue_v1": {
-        "limited_5hmdc_5medc_v1",
+    "targeted_ms1_shape_identity_limited_rescue": {
+        "limited_5hmdc_5medc",
         "5-hmdC",
         "5-medC",
     },
-    "sample_metadata_order_projection_v1": {"sample_metadata_v1"},
-    "review_action_candidate_sidecar_v1": {"review_action_candidate_sidecar_v1"},
+    "sample_metadata_order_projection": {"sample_metadata"},
+    "review_action_candidate_sidecar": {"review_action_candidate_sidecar"},
 }
 EXPECTED_EFFECT = {
-    "targeted_ms1_shape_identity_limited_rescue_v1": "detected_flagged_only",
-    "sample_metadata_order_projection_v1": "no_output_order_projection",
-    "review_action_candidate_sidecar_v1": "identity_verification_only",
+    "targeted_ms1_shape_identity_limited_rescue": "detected_flagged_only",
+    "sample_metadata_order_projection": "no_output_order_projection",
+    "review_action_candidate_sidecar": "identity_verification_only",
     "targeted_ms1_shape_identity_broader_targets": "none",
     "sample_metadata_role_value_behavior": "none",
     "review_action_selected_candidate_switch": "none",
@@ -169,7 +169,7 @@ def _check_schema_rows(
     if set(lane_ids) != EXPECTED_LANE_IDS:
         problems.append("acceptance lane_id set drifted")
     for index, row in enumerate(rows, start=2):
-        if row.get("schema_version") != "bounded_non_broad_lane_acceptance_v1":
+        if row.get("schema_version") != "bounded_non_broad_lane_acceptance":
             problems.append(f"row {index}: invalid schema_version")
         if row.get("readiness_status") not in allowed_statuses:
             problems.append(f"row {index}: invalid readiness_status")
@@ -320,16 +320,16 @@ def _check_targeted_limited(
     rules: Mapping[str, Any],
     problems: list[str],
 ) -> None:
-    row = by_lane.get("targeted_ms1_shape_identity_limited_rescue_v1")
+    row = by_lane.get("targeted_ms1_shape_identity_limited_rescue")
     if row is None:
         return
     scope = {part for part in row.get("allowed_scope", "").split(";") if part}
-    expected_scope = EXPECTED_SCOPE["targeted_ms1_shape_identity_limited_rescue_v1"]
+    expected_scope = EXPECTED_SCOPE["targeted_ms1_shape_identity_limited_rescue"]
     if set(rules.get("targeted_limited_scope", [])) != expected_scope:
         problems.append("schema targeted limited scope drifted")
     if scope != expected_scope:
         problems.append("targeted limited scope drifted")
-    expected_effect = EXPECTED_EFFECT["targeted_ms1_shape_identity_limited_rescue_v1"]
+    expected_effect = EXPECTED_EFFECT["targeted_ms1_shape_identity_limited_rescue"]
     if rules.get("targeted_limited_effect") != expected_effect:
         problems.append("schema targeted limited effect drifted")
     if row.get("allowed_effect") != expected_effect:
@@ -343,15 +343,15 @@ def _check_sample_metadata(
     rules: Mapping[str, Any],
     problems: list[str],
 ) -> None:
-    row = by_lane.get("sample_metadata_order_projection_v1")
+    row = by_lane.get("sample_metadata_order_projection")
     if row is None:
         return
-    expected_effect = EXPECTED_EFFECT["sample_metadata_order_projection_v1"]
+    expected_effect = EXPECTED_EFFECT["sample_metadata_order_projection"]
     if rules.get("sample_metadata_effect") != expected_effect:
         problems.append("schema sample metadata effect drifted")
     if row.get("allowed_effect") != expected_effect:
         problems.append("sample metadata effect drifted")
-    expected_scope = EXPECTED_SCOPE["sample_metadata_order_projection_v1"]
+    expected_scope = EXPECTED_SCOPE["sample_metadata_order_projection"]
     if {row.get("allowed_scope", "")} != expected_scope:
         problems.append("sample metadata scope drifted")
 
@@ -361,15 +361,15 @@ def _check_review_action_sidecar(
     rules: Mapping[str, Any],
     problems: list[str],
 ) -> None:
-    row = by_lane.get("review_action_candidate_sidecar_v1")
+    row = by_lane.get("review_action_candidate_sidecar")
     if row is None:
         return
-    expected_effect = EXPECTED_EFFECT["review_action_candidate_sidecar_v1"]
+    expected_effect = EXPECTED_EFFECT["review_action_candidate_sidecar"]
     if rules.get("review_action_candidate_sidecar_effect") != expected_effect:
         problems.append("schema review action sidecar effect drifted")
     if row.get("allowed_effect") != expected_effect:
         problems.append("review action sidecar effect drifted")
-    expected_scope = EXPECTED_SCOPE["review_action_candidate_sidecar_v1"]
+    expected_scope = EXPECTED_SCOPE["review_action_candidate_sidecar"]
     if {row.get("allowed_scope", "")} != expected_scope:
         problems.append("review action sidecar scope drifted")
 

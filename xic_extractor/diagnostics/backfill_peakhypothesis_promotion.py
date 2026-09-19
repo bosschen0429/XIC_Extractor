@@ -21,8 +21,8 @@ from xic_extractor.diagnostics.diagnostic_io import (
     write_tsv,
 )
 
-SCHEMA_VERSION = "backfill_peakhypothesis_promotion_v1"
-ALLOWLIST_SCHEMA_VERSION = "backfill_peakhypothesis_promotion_allowlist_v1"
+SCHEMA_VERSION = "backfill_peakhypothesis_promotion"
+ALLOWLIST_SCHEMA_VERSION = "backfill_peakhypothesis_promotion_allowlist"
 
 PROMOTION_COLUMNS = (
     "schema_version",

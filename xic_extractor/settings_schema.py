@@ -141,7 +141,7 @@ CANONICAL_SETTINGS_DESCRIPTIONS: dict[str, str] = {
         "model selection; leave empty unless approved real-data evidence exists"
     ),
     "targeted_ms1_shape_identity_support_tsv": (
-        "Reviewed targeted_ms1_shape_identity_v0 support TSV for explicit "
+        "Reviewed targeted_ms1_shape_identity support TSV for explicit "
         "own-max same-peak product projection support. Leave empty to let the "
         "limited default auto workflow decide eligible support rows."
     ),

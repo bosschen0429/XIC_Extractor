@@ -30,7 +30,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--review-actions",
         type=Path,
         required=True,
-        help="Review action TSV/CSV using review_action_v1.",
+        help="Review action TSV/CSV using review_action.",
     )
     parser.add_argument(
         "--targeted-long-csv",
@@ -41,13 +41,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument(
         "--expected-diff-approvals",
         type=Path,
-        help="Approved review_action_expected_diff_v1 TSV.",
+        help="Approved review_action_expected_diff TSV.",
     )
     parser.add_argument(
         "--output-apply-readiness-tsv",
         type=Path,
         required=True,
-        help="Path to write review_action_apply_readiness_v1 TSV.",
+        help="Path to write review_action_apply_readiness TSV.",
     )
     parser.add_argument(
         "--allow-unused-approvals",

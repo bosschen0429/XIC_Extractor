@@ -435,7 +435,11 @@ def test_backfill_reader_rejects_duplicate_header(tmp_path: Path) -> None:
 @pytest.mark.parametrize(
     ("field", "value", "message"),
     [
-        ("schema_version", "alignment_backfill_cell_evidence_v0", "schema_version"),
+        (
+            "schema_version",
+            "unsupported_alignment_backfill_cell_evidence",
+            "schema_version",
+        ),
         ("write_matrix_value", "true", "write_matrix_value"),
         ("area", "nan", "area"),
         ("production_cell_status", "accepted_rescue", "rescue_tier"),
@@ -533,7 +537,7 @@ def test_reordered_distinct_backfill_rows_preserve_source_order(tmp_path: Path) 
 @pytest.mark.parametrize(
     ("overrides", "message"),
     [
-        ({"predicate_version": "p7-backfill-scope-v0"}, "predicate_version"),
+        ({"predicate_version": "unsupported_p7-backfill-scope"}, "predicate_version"),
         ({"source_artifact": "caller_projection"}, "source_artifact"),
         ({"would_emit_in_full_audit": "FALSE"}, "would_emit_in_full_audit"),
         ({"raw_xic_requests_skipped": "0"}, "raw_xic_requests_skipped"),

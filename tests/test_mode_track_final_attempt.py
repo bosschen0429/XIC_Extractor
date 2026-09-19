@@ -110,8 +110,8 @@ def test_existing_member_repair_replaces_stale_candidate_without_training(
         sample_assessments=((fixture.sample("s1"), spine.assessments[0]),),
         alignment_config=AlignmentConfig(anchor_min_seed_events=1),
         trajectory_policy=ModeTrackTrajectoryPolicy(
-            trajectory_policy_version="anchor-trajectory-v1",
-            band_policy_version="fixed-band-v1",
+            trajectory_policy_version="anchor-trajectory",
+            band_policy_version="fixed-band",
             prediction_half_width_min=0.1,
             max_interpolation_gap=10,
             max_extrapolation_gap=10,
@@ -131,7 +131,7 @@ def test_existing_member_repair_replaces_stale_candidate_without_training(
         anchors=(),
         injection_order={"s1": 1},
         evidence_profile=ModeTrackEvidenceProfile(
-            "anchor-trajectory-v1", "fixed-band-v1", 0.1, 10, 10
+            "anchor-trajectory", "fixed-band", 0.1, 10, 10
         ),
         budget=CrossSampleNeighborhoodBudget(86, 3655),
         fit_once_source_id=source.fit_once_source_id,
@@ -207,8 +207,8 @@ def test_no_anchor_attempt_returns_unassessable_for_over_budget_neighborhood(
         ),
         alignment_config=AlignmentConfig(anchor_min_seed_events=1),
         trajectory_policy=ModeTrackTrajectoryPolicy(
-            trajectory_policy_version="anchor-trajectory-v1",
-            band_policy_version="fixed-band-v1",
+            trajectory_policy_version="anchor-trajectory",
+            band_policy_version="fixed-band",
             prediction_half_width_min=0.1,
             max_interpolation_gap=10,
             max_extrapolation_gap=10,
@@ -273,7 +273,7 @@ def test_no_anchor_attempt_returns_unassessable_for_over_budget_neighborhood(
             for index, owner in enumerate(owners, start=1)
         },
         evidence_profile=ModeTrackEvidenceProfile(
-            "anchor-trajectory-v1", "fixed-band-v1", 0.1, 10, 10
+            "anchor-trajectory", "fixed-band", 0.1, 10, 10
         ),
         budget=CrossSampleNeighborhoodBudget(1, 3655),
         fit_once_source_id=source.fit_once_source_id,
@@ -302,8 +302,8 @@ def test_no_anchor_attempt_returns_unassessable_for_over_budget_neighborhood(
 
 def test_untrained_evidence_is_owner_minted_and_immutable() -> None:
     profile = ModeTrackEvidenceProfile(
-        "anchor-trajectory-v1",
-        "fixed-band-v1",
+        "anchor-trajectory",
+        "fixed-band",
         0.1,
         10,
         10,

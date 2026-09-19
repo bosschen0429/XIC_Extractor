@@ -26,14 +26,14 @@ from xic_extractor.alignment.quant_matrix_version import (
 
 ROOT = Path(__file__).resolve().parents[1]
 QUANT_MATRIX_REPORT_SCHEMA = (
-    ROOT / "docs/superpowers/schemas/quant_matrix_review_report_schema.v1.json"
+    ROOT / "docs/superpowers/schemas/quant_matrix_review_report_schema.json"
 )
 
 
 def test_quant_matrix_review_report_schema_matches_public_outputs() -> None:
     schema = json.loads(QUANT_MATRIX_REPORT_SCHEMA.read_text(encoding="utf-8"))
 
-    assert schema["schema_version"] == "quant_matrix_review_report_schema_v1"
+    assert schema["schema_version"] == "quant_matrix_review_report_schema"
     assert schema["review_schema_version"] == QUANT_MATRIX_REVIEW_SCHEMA
     assert schema["review_row_columns"] == list(QUANT_MATRIX_REVIEW_ROW_COLUMNS)
     assert schema["authority_rules"]["report_only"] is True
@@ -331,7 +331,7 @@ def _write_activated_quant_matrix(
         EXPECTED_DIFF_COLUMNS,
         [
             {
-                "schema_version": "quant_matrix_version_expected_diff_v1",
+                "schema_version": "quant_matrix_version_expected_diff",
                 "peak_hypothesis_id": "PH001",
                 "sample_stem": sample_b,
                 "baseline_value": "",
@@ -358,7 +358,7 @@ def _acceptance_row(
     family_id: str,
 ) -> dict[str, str]:
     return {
-        "schema_version": "production_acceptance_manifest_v1",
+        "schema_version": "production_acceptance_manifest",
         "peak_hypothesis_id": "PH001",
         "sample_stem": sample_stem,
         "feature_family_id": family_id,
@@ -391,7 +391,7 @@ def _acceptance_row(
         "source_artifact_sha256": _sha256(source),
         "source_row_sha256": "A" * 64,
         "manifest_sha256": "",
-        "acceptance_contract_version": "production_acceptance_manifest_contract_v1",
+        "acceptance_contract_version": "production_acceptance_manifest_contract",
     }
 
 

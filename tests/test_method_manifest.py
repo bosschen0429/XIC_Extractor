@@ -89,9 +89,9 @@ def test_build_method_manifest_labels_hashes_as_fragments(tmp_path: Path) -> Non
         "isotope_label_type_values": ["unknown"],
     }
     assert payload["output_schema"] == {
-        "targeted_output_schema_version": "targeted_output_v2",
+        "targeted_output_schema_version": "targeted_output",
         "xic_results_long_csv": {
-            "schema_version": "targeted_long_csv_v2",
+            "schema_version": "targeted_long_csv",
             "headers": [
                 "SampleName",
                 "Group",
@@ -122,11 +122,11 @@ def test_build_method_manifest_labels_hashes_as_fragments(tmp_path: Path) -> Non
             ],
         },
         "xic_diagnostics_csv": {
-            "schema_version": "targeted_diagnostics_csv_v1",
+            "schema_version": "targeted_diagnostics_csv",
             "headers": ["SampleName", "Target", "Issue", "Reason"],
         },
         "xic_score_breakdown_csv": {
-            "schema_version": "targeted_score_breakdown_csv_v1",
+            "schema_version": "targeted_score_breakdown_csv",
             "headers": [
                 "SampleName",
                 "Target",
@@ -385,7 +385,7 @@ def test_load_method_manifest_for_replay_rejects_drifted_optional_artifact(
 def test_load_method_manifest_for_replay_rejects_drifted_shape_identity_support(
     tmp_path: Path,
 ) -> None:
-    support_path = tmp_path / "targeted_ms1_shape_identity_v0.tsv"
+    support_path = tmp_path / "targeted_ms1_shape_identity.tsv"
     support_path.write_text("stable\n", encoding="utf-8")
     config = replace(
         _config(tmp_path),

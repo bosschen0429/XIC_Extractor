@@ -11,11 +11,11 @@ from xic_extractor.tabular_io import (
     render_delimited_rows,
 )
 
-QUANT_MATRIX_VERSION_SCHEMA = "quant_matrix_version_v1"
-CELL_PROVENANCE_SCHEMA = "quant_matrix_cell_provenance_v1"
-ROW_SUMMARY_SCHEMA = "quant_matrix_row_summary_v1"
-EXPECTED_DIFF_SCHEMA = "quant_matrix_version_expected_diff_v1"
-EXPECTED_DIFF_SUMMARY_SCHEMA = "quant_matrix_version_expected_diff_summary_v1"
+QUANT_MATRIX_VERSION_SCHEMA = "quant_matrix_version"
+CELL_PROVENANCE_SCHEMA = "quant_matrix_cell_provenance"
+ROW_SUMMARY_SCHEMA = "quant_matrix_row_summary"
+EXPECTED_DIFF_SCHEMA = "quant_matrix_version_expected_diff"
+EXPECTED_DIFF_SUMMARY_SCHEMA = "quant_matrix_version_expected_diff_summary"
 
 PRODUCTION_ACCEPTANCE_COLUMNS = (
     "schema_version",

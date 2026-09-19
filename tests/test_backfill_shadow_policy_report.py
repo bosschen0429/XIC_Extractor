@@ -93,7 +93,7 @@ def test_cli_writes_cell_level_shadow_policy_report(tmp_path: Path) -> None:
             encoding="utf-8",
         ),
     )
-    assert payload["schema_version"] == "backfill_shadow_policy_v0"
+    assert payload["schema_version"] == "backfill_shadow_policy"
     assert payload["readiness_label"] == "diagnostic_only"
     assert payload["source_run_id"] == "unit-shadow"
     assert payload["row_count"] == 5
@@ -307,7 +307,7 @@ def _gate_row(
     missing_evidence: str = "",
 ) -> dict[str, str]:
     return {
-        "schema_version": "retained_backfill_evidence_gate_v0",
+        "schema_version": "unsupported_retained_backfill_evidence_gate",
         "feature_family_id": family_id,
         "seed_group_id": _seed_group_id(family_id),
         "seed_group_basis": (
@@ -386,7 +386,7 @@ def _shadow_output_row(
     row = {column: "" for column in BACKFILL_SHADOW_POLICY_COLUMNS}
     row.update(
         {
-            "schema_version": "backfill_shadow_policy_v0",
+            "schema_version": "backfill_shadow_policy",
             "feature_family_id": family_id,
             "seed_group_id": _seed_group_id(family_id),
             "sample_stem": "S2",

@@ -30,8 +30,8 @@ def test_area_uncertainty_uses_baseline_residual_noise_not_peak_height(
     low = integrate_asls_baseline(low_peak, rt, 3, 6)
     high = integrate_asls_baseline(high_peak, rt, 3, 6)
 
-    assert low.area_uncertainty_formula_version == "baseline_residual_mad_v1"
-    assert high.area_uncertainty_formula_version == "baseline_residual_mad_v1"
+    assert low.area_uncertainty_formula_version == "baseline_residual_mad"
+    assert high.area_uncertainty_formula_version == "baseline_residual_mad"
     assert low.area_uncertainty == pytest.approx(high.area_uncertainty)
     assert high.area_baseline_corrected > low.area_baseline_corrected
 
@@ -61,7 +61,7 @@ def test_asls_baseline_integrates_shadow_area_without_exceeding_raw() -> None:
     assert result.baseline_score is not None
     assert 0.0 <= result.baseline_score <= 1.0
     assert result.area_uncertainty is not None
-    assert result.area_uncertainty_formula_version == "baseline_residual_mad_v1"
+    assert result.area_uncertainty_formula_version == "baseline_residual_mad"
     assert result.baseline_residual_mad is not None
     assert result.area_uncertainty_noise_source == "asls_residual"
 
@@ -74,7 +74,7 @@ def test_asls_baseline_keeps_provenance_when_uncertainty_unavailable() -> None:
     result = integrate_asls_baseline(intensity, rt, 0, 5, baseline_values=baseline)
 
     assert result.area_uncertainty is None
-    assert result.area_uncertainty_formula_version == "baseline_residual_mad_v1"
+    assert result.area_uncertainty_formula_version == "baseline_residual_mad"
     assert result.baseline_residual_mad is not None
     assert result.area_uncertainty_noise_source == "asls_residual"
 
@@ -193,7 +193,7 @@ def test_cell_integration_audit_reports_baseline_corrected_area() -> None:
     assert summary.area_baseline_corrected is not None
     assert summary.baseline_type == "asls"
     assert not hasattr(summary, "area_baseline_corrected_linear_edge")
-    assert summary.area_uncertainty_formula_version == "baseline_residual_mad_v1"
+    assert summary.area_uncertainty_formula_version == "baseline_residual_mad"
     assert summary.baseline_residual_mad is not None
     assert summary.area_uncertainty_noise_source in {"asls_residual", "pre_peak_mad"}
     assert summary.baseline_fraction == pytest.approx(
@@ -219,7 +219,7 @@ def test_cell_integration_audit_defaults_to_asls_without_linear_rollback() -> No
     assert summary.baseline_score is not None
     assert not hasattr(summary, "area_baseline_corrected_linear_edge")
     assert not hasattr(summary, "baseline_score_linear_edge")
-    assert summary.area_uncertainty_formula_version == "baseline_residual_mad_v1"
+    assert summary.area_uncertainty_formula_version == "baseline_residual_mad"
     assert summary.area_uncertainty_noise_source == "asls_residual"
 
 
@@ -334,7 +334,7 @@ def test_cell_integration_audit_flags_high_local_noise_uncertainty() -> None:
     assert summary.area_uncertainty is not None
     assert summary.uncertainty_fraction is not None
     assert summary.uncertainty_fraction > 0.0
-    assert summary.area_uncertainty_formula_version == "baseline_residual_mad_v1"
+    assert summary.area_uncertainty_formula_version == "baseline_residual_mad"
 
 
 def test_cell_integration_audit_returns_empty_for_invalid_trace() -> None:

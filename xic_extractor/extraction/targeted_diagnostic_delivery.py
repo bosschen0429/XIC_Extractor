@@ -60,22 +60,22 @@ TargetedDiagnosticDeliveryCandidateStatus = Literal[
     "rolled_back",
 ]
 
-_PROJECTION_CONTRACT_VERSION = "targeted_diagnostic_projection_v2"
+_PROJECTION_CONTRACT_VERSION = "targeted_diagnostic_projection"
 _METHOD_RESULT_CONTRACT = _mint_artifact_semantic_contract_ref(
     owner_namespace="xic_extractor.extraction.targeted_diagnostic_delivery",
     semantic_role="targeted_diagnostic_method_result",
-    schema_version="targeted_diagnostic_method_result_v2",
+    schema_version="targeted_diagnostic_method_result",
     validation_status="diagnostic_only",
     media_type="application/json",
-    serialization_format="canonical-json-utf8-lf-v1",
+    serialization_format="canonical-json-utf8-lf",
 )
 _CSV_OUTPUT_CONTRACT = _mint_artifact_semantic_contract_ref(
     owner_namespace="xic_extractor.extraction.targeted_diagnostic_delivery",
     semantic_role="hard_exact_targeted_diagnostic_csv",
-    schema_version="hard_exact_targeted_diagnostic_csv_v2",
+    schema_version="hard_exact_targeted_diagnostic_csv",
     validation_status="diagnostic_only",
     media_type="text/csv",
-    serialization_format="exact-bytes-v1",
+    serialization_format="exact-bytes",
 )
 
 

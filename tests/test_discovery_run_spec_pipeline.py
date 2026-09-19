@@ -84,7 +84,6 @@ def test_physical_binding_validation_joins_canonical_candidates_by_id(
     canonical_candidates = read_owner_bound_discovery_candidates_csv(
         batch.candidate_csvs[raw_path.stem],
         receipt=receipt,
-        require_successor_columns=True,
     )
     bindings = outputs.per_sample[0].physical_bindings
     reordered_candidates = tuple(reversed(canonical_candidates))

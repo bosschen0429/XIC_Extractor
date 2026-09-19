@@ -18,7 +18,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
             "Convert an external detected-feature table into the standard "
-            "Detected Features CSV v1 input consumed by Delta Mass / Pt "
+            "Detected Features CSV input consumed by Delta Mass / Pt "
             "pattern Discovery."
         )
     )
@@ -43,7 +43,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--output-csv",
         type=Path,
         default=Path("output") / "delta_mass" / "detected_features.csv",
-        help="Destination Detected Features CSV v1 path.",
+        help="Destination Detected Features CSV path.",
     )
     return parser
 

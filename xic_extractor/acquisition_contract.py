@@ -100,9 +100,9 @@ class RawAcquisitionSessionReceipt:
                 "capability must be an owner-minted RAW session capability"
             )
         expected = _typed_id(
-            "xic.raw-acquisition-session-receipt.v1:",
+            "xic.raw-acquisition-session-receipt:",
             {
-                "schema": "raw_acquisition_session_receipt_v1",
+                "schema": "raw_acquisition_session_receipt",
                 "capability_id": self.capability.capability_id,
                 "acquisition_source_id": (
                     self.capability.acquisition_source.acquisition_source_id
@@ -148,9 +148,9 @@ def _mint_raw_acquisition_session_receipt(
         )
     return RawAcquisitionSessionReceipt(
         receipt_id=_typed_id(
-            "xic.raw-acquisition-session-receipt.v1:",
+            "xic.raw-acquisition-session-receipt:",
             {
-                "schema": "raw_acquisition_session_receipt_v1",
+                "schema": "raw_acquisition_session_receipt",
                 "capability_id": capability.capability_id,
                 "acquisition_source_id": (
                     capability.acquisition_source.acquisition_source_id
@@ -169,9 +169,9 @@ def _raw_session_capability_id(
     session_nonce: str,
 ) -> str:
     return _typed_id(
-        "xic.raw-acquisition-session-capability.v1:",
+        "xic.raw-acquisition-session-capability:",
         {
-            "schema": "raw_acquisition_session_capability_v1",
+            "schema": "raw_acquisition_session_capability",
             "acquisition_source_id": acquisition_source.acquisition_source_id,
             "session_nonce": session_nonce,
         },
@@ -213,9 +213,9 @@ class TraceAcquisitionCapability:
                 "coordinate_kind must be a TraceCoordinateKind"
             )
         expected = _typed_id(
-            "xic.trace-acquisition-capability.v1:",
+            "xic.trace-acquisition-capability:",
             {
-                "schema": "trace_acquisition_capability_v1",
+                "schema": "trace_acquisition_capability",
                 "acquisition_source_id": (
                     self.acquisition_source.acquisition_source_id
                 ),
@@ -274,7 +274,7 @@ class TraceCoordinate:
                     "scan coordinates require an ordered non-negative window"
                 )
         expected = _typed_id(
-            "xic.trace-coordinate.v1:",
+            "xic.trace-coordinate:",
             _trace_coordinate_basis(
                 capability_id=self.capability_id,
                 acquisition_source_id=self.acquisition_source_id,
@@ -313,7 +313,7 @@ class AcquiredTrace:
             raise AcquisitionContractError("trace values must be finite")
 
 
-_ACQUIRED_TRACE_SCHEMA_VERSION = "acquired_trace_v1"
+_ACQUIRED_TRACE_SCHEMA_VERSION = "acquired_trace"
 _ACQUIRED_TRACE_KEYS = (
     "schema_version",
     "acquired_trace_content_id",
@@ -338,7 +338,7 @@ def acquired_trace_content_id(acquired_trace: AcquiredTrace) -> str:
     """Return the acquisition-owner identity of coordinates and trace content."""
 
     content = _acquired_trace_content(acquired_trace)
-    return _typed_id("xic.acquired-trace-content.v1:", content)
+    return _typed_id("xic.acquired-trace-content:", content)
 
 
 def serialize_acquired_trace(acquired_trace: AcquiredTrace) -> bytes:
@@ -349,7 +349,7 @@ def serialize_acquired_trace(acquired_trace: AcquiredTrace) -> bytes:
         {
             "schema_version": _ACQUIRED_TRACE_SCHEMA_VERSION,
             "acquired_trace_content_id": _typed_id(
-                "xic.acquired-trace-content.v1:", content
+                "xic.acquired-trace-content:", content
             ),
             **content,
         }
@@ -433,7 +433,7 @@ def deserialize_acquired_trace(
     )
     acquired = AcquiredTrace(coordinate=coordinate, trace=trace)
     content = _acquired_trace_content(acquired)
-    content_id = _typed_id("xic.acquired-trace-content.v1:", content)
+    content_id = _typed_id("xic.acquired-trace-content:", content)
     persisted_content_id = _required_text(
         root["acquired_trace_content_id"], "acquired_trace_content_id"
     )
@@ -570,9 +570,9 @@ def mint_trace_acquisition_capability(
         raise AcquisitionContractError("coordinate_kind must be a TraceCoordinateKind")
     namespace = _required_text(adapter_namespace, "adapter_namespace")
     capability_id = _typed_id(
-        "xic.trace-acquisition-capability.v1:",
+        "xic.trace-acquisition-capability:",
         {
-            "schema": "trace_acquisition_capability_v1",
+            "schema": "trace_acquisition_capability",
             "acquisition_source_id": acquisition_source.acquisition_source_id,
             "adapter_namespace": namespace,
             "coordinate_kind": coordinate_kind.value,
@@ -658,7 +658,7 @@ def _mint_trace_coordinate(
         trace_point_count=trace_point_count,
     )
     return TraceCoordinate(
-        trace_coordinate_id=_typed_id("xic.trace-coordinate.v1:", basis),
+        trace_coordinate_id=_typed_id("xic.trace-coordinate:", basis),
         capability_id=capability.capability_id,
         acquisition_source_id=capability.acquisition_source.acquisition_source_id,
         request=request,
@@ -680,7 +680,7 @@ def _trace_coordinate_basis(
     trace_point_count: int,
 ) -> dict[str, object]:
     return {
-        "schema": "trace_coordinate_v1",
+        "schema": "trace_coordinate",
         "capability_id": capability_id,
         "acquisition_source_id": acquisition_source_id,
         "request": {

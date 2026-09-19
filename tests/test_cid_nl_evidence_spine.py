@@ -83,7 +83,7 @@ def test_inferred_evidence_persists_scan_provenance_and_exact_projection(
         precursor_inference_tolerance_da=0.25,
     )
     payload = json.loads(canonical_cid_nl_evidence_bytes(inferred.observation))
-    assert payload["schema_version"] == "cid_nl_evidence_observation_v4"
+    assert payload["schema_version"] == "cid_nl_evidence_observation"
     assert payload["precursor_mz_basis"] == "product_plus_neutral_loss"
     assert payload["scan_precursor_mz"] == observation.precursor_mz + 0.25
     assert payload["precursor_inference_tolerance_da"] == 0.25
@@ -313,7 +313,7 @@ def test_zero_buffer_boundary_is_set_level_hold(tmp_path: Path) -> None:
         processing_owners=fixture.owners,
         sample=fixture.sample("edge"),
         target=fixture.target,
-        detector_invocation_id="gaussian15:edge:v1",
+        detector_invocation_id="gaussian15:edge",
         evaluation_receipt=_completed_receipt(scanned_event_count=1),
         candidate_peaks=(peak,),
         evidence_refs=(evidence,),
@@ -383,7 +383,7 @@ def test_assessment_distinguishes_adjacent_interior_from_boundary_and_overlap(
             processing_owners=fixture.owners,
             sample=sample,
             target=fixture.target,
-            detector_invocation_id="adjacent-peaks:v1",
+            detector_invocation_id="adjacent-peaks",
             evaluation_receipt=_completed_receipt(scanned_event_count=1),
             candidate_peaks=peaks,
             evidence_refs=(evidence,),
@@ -747,7 +747,7 @@ def test_assessment_requires_qualifying_evidence_before_reject(
         processing_owners=fixture.owners,
         sample=sample,
         target=fixture.target,
-        detector_invocation_id="gaussian15:nonqual:v1",
+        detector_invocation_id="gaussian15:nonqual",
         evaluation_receipt=_completed_receipt(scanned_event_count=1),
         evidence_refs=(evidence,),
     )
@@ -799,7 +799,7 @@ def test_assessment_preserves_mixed_individual_and_set_scan_relations(
         processing_owners=fixture.owners,
         sample=sample,
         target=fixture.target,
-        detector_invocation_id="gaussian15:mixed:v1",
+        detector_invocation_id="gaussian15:mixed",
         evaluation_receipt=_completed_receipt(scanned_event_count=2),
         candidate_peaks=peaks,
         evidence_refs=(interior, boundary),
@@ -1149,7 +1149,7 @@ def test_reorder_is_neutral_and_multiple_scans_form_one_support_hypothesis(
         "processing_owners": fixture.owners,
         "sample": fixture.sample("multi"),
         "target": fixture.target,
-        "detector_invocation_id": "gaussian15:multi:v1",
+        "detector_invocation_id": "gaussian15:multi",
         "evaluation_receipt": _completed_receipt(scanned_event_count=2),
         "candidate_peaks": (peak,),
     }
@@ -1247,7 +1247,7 @@ def test_assessment_rejects_duplicate_acquisition_scan_evidence(
             processing_owners=fixture.owners,
             sample=fixture.sample("same-scan"),
             target=fixture.target,
-            detector_invocation_id="gaussian15:same-scan:v1",
+            detector_invocation_id="gaussian15:same-scan",
             evaluation_receipt=_completed_receipt(scanned_event_count=2),
             candidate_peaks=(peak,),
             evidence_refs=(first, second),
@@ -1306,7 +1306,7 @@ def test_partial_duplicate_and_cross_attempt_inputs_fail_closed(tmp_path: Path) 
             processing_owners=fixture.owners,
             sample=fixture.sample("sample"),
             target=fixture.target,
-            detector_invocation_id="gaussian15:sample:v1",
+            detector_invocation_id="gaussian15:sample",
             evaluation_receipt=_completed_receipt(scanned_event_count=1),
             candidate_peaks=(left,),
             evidence_refs=(evidence,),
@@ -1337,7 +1337,7 @@ def test_failed_attempt_cannot_become_reject_or_human_unassessable(
         processing_owners=fixture.owners,
         sample=fixture.sample("failed"),
         target=fixture.target,
-        detector_invocation_id="gaussian15:failed:v1",
+        detector_invocation_id="gaussian15:failed",
         evaluation_receipt=CidNlEvaluationReceipt(
             query_rt_min=7.5,
             query_rt_max=8.6,
@@ -1420,7 +1420,7 @@ def _truth_table_fixture(tmp_path: Path):
         processing_owners=fixture.owners,
         sample=fixture.sample("s1"),
         target=fixture.target,
-        detector_invocation_id="gaussian15:s1:v1",
+        detector_invocation_id="gaussian15:s1",
         evaluation_receipt=_completed_receipt(scanned_event_count=1),
         candidate_peaks=(s1_peak,),
         evidence_refs=(s1_evidence,),
@@ -1432,7 +1432,7 @@ def _truth_table_fixture(tmp_path: Path):
         processing_owners=fixture.owners,
         sample=fixture.sample("s2"),
         target=fixture.target,
-        detector_invocation_id="gaussian15:s2:v1",
+        detector_invocation_id="gaussian15:s2",
         evaluation_receipt=_completed_receipt(scanned_event_count=0),
         candidate_peaks=(s2_peak,),
     )
@@ -1447,7 +1447,7 @@ def _truth_table_fixture(tmp_path: Path):
         processing_owners=fixture.owners,
         sample=fixture.sample("s3"),
         target=fixture.target,
-        detector_invocation_id="gaussian15:s3:v1",
+        detector_invocation_id="gaussian15:s3",
         evaluation_receipt=_completed_receipt(scanned_event_count=1),
         evidence_refs=(s3_evidence,),
     )
@@ -1483,7 +1483,7 @@ def _truth_table_fixture(tmp_path: Path):
         processing_owners=fixture.owners,
         sample=fixture.sample("s4"),
         target=fixture.target,
-        detector_invocation_id="gaussian15:s4:v1",
+        detector_invocation_id="gaussian15:s4",
         evaluation_receipt=_completed_receipt(scanned_event_count=1),
         candidate_peaks=(s4_left, s4_right),
         evidence_refs=(s4_evidence,),
@@ -1494,7 +1494,7 @@ def _truth_table_fixture(tmp_path: Path):
         processing_owners=fixture.owners,
         sample=fixture.sample("s5"),
         target=fixture.target,
-        detector_invocation_id="gaussian15:s5:v1",
+        detector_invocation_id="gaussian15:s5",
         evaluation_receipt=CidNlEvaluationReceipt(
             query_rt_min=7.5,
             query_rt_max=8.6,

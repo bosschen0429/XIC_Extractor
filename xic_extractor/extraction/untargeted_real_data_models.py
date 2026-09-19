@@ -108,7 +108,7 @@ def _reduce_mapping_proxy(
 copyreg.pickle(MappingProxyType, _reduce_mapping_proxy)
 
 
-SCHEMA_VERSION = "untargeted_cid_nl_real_data_runtime_result_v3"
+SCHEMA_VERSION = "untargeted_cid_nl_real_data_runtime_result"
 VALIDATION_STATUS = "diagnostic_only"
 RUNTIME_CALL_COST_METRIC_NAMES = (
     "raw_open_count",
@@ -117,14 +117,14 @@ RUNTIME_CALL_COST_METRIC_NAMES = (
     "adapter_chromatogram_call_count",
     "trace_point_count",
 )
-_RUNTIME_COMPATIBILITY_TOKEN = "untargeted-cid-nl-real-data-runtime:v1"
+_RUNTIME_COMPATIBILITY_TOKEN = "untargeted-cid-nl-real-data-runtime"
 _ARTIFACT_SEMANTIC_CONTRACT = _mint_artifact_semantic_contract_ref(
     owner_namespace="xic_extractor.untargeted_cid_nl_real_data_runtime",
     semantic_role="untargeted_cid_nl_real_data_sample_result",
     schema_version=SCHEMA_VERSION,
     validation_status=VALIDATION_STATUS,
     media_type="application/json",
-    serialization_format="canonical-json-utf8-lf-v1",
+    serialization_format="canonical-json-utf8-lf",
 )
 
 
@@ -462,7 +462,7 @@ def _project_completed_recovery(
         or assessment.content.method_result != "HOLD"
         or assessment.candidate_peaks
         or assessment.content.detector_invocation_id
-        != "untargeted-cid-nl-backfill-recovery:v1"
+        != "untargeted-cid-nl-backfill-recovery"
         or not receipt.search_completed
         or not receipt.acquisition_supported
         or recovery.recovery_input is not None

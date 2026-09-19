@@ -1,0 +1,45 @@
+{
+  "authority_statement": "Validation packet only: artifact-bound evidence for promotion readiness; does not mutate ProductWriter, quant matrix defaults, workbook, GUI, selected peaks, selected areas, or counted detections.",
+  "evidence": [
+    {
+      "artifact_path": "artifacts/85raw_large_cohort__standard_peak_activation_inputs_summary.json",
+      "artifact_sha256": "F92C35FD65D5C210CC82AF49B5E4A7EFE38A2F19D067C74E083782F12AF0DD57",
+      "cohort_id": "seed-guard-realdata-85raw-consolidated-20260617",
+      "downstream_scope": "",
+      "evidence_note": "Existing no-RAW 85RAW consolidated standard-peak activation input summary; large-cohort evidence only, not matrix authority.",
+      "oracle_packet_id": "",
+      "raw_run_count": "85",
+      "review_packet_id": "",
+      "schema_version": "quant_matrix_validation_evidence",
+      "source_artifact_path": "output/productization_realdata_seed_guard_85raw_20260617/consolidated_no_raw_productization/standard_peak_activation_inputs/standard_peak_activation_inputs_summary.json",
+      "source_artifact_sha256": "F92C35FD65D5C210CC82AF49B5E4A7EFE38A2F19D067C74E083782F12AF0DD57",
+      "status": "pass",
+      "tier": "85raw_large_cohort"
+    },
+    {
+      "artifact_path": "artifacts/heldout_oracle__summary.json",
+      "artifact_sha256": "9BDF20941067B3BA67C2D7E9A5A727ADCAF015207AB479E5DD69B0436AAF0F0B",
+      "cohort_id": "",
+      "downstream_scope": "",
+      "evidence_note": "Existing 20-case heldout trace reintegration oracle smoke pass; oracle evidence only, not truth authority.",
+      "oracle_packet_id": "seed-guard-realdata-85raw-low-height-low-scan-clean-smoke-20260617",
+      "raw_run_count": "",
+      "review_packet_id": "",
+      "schema_version": "quant_matrix_validation_evidence",
+      "source_artifact_path": "output/productization_realdata_seed_guard_85raw_20260617/heldout_trace_reintegration_oracle_low_height_low_scan_clean_probe_smoke/summary.json",
+      "source_artifact_sha256": "9BDF20941067B3BA67C2D7E9A5A727ADCAF015207AB479E5DD69B0436AAF0F0B",
+      "status": "pass",
+      "tier": "heldout_oracle"
+    }
+  ],
+  "packet_id": "quant-matrix-evidence-packet-20260619",
+  "read_only": true,
+  "requested_readiness_label": "production_ready",
+  "required_science_evidence_status": {
+    "downstream_impact_smoke": "missing",
+    "heldout_oracle_or_manual_review": "pass",
+    "large_cohort_validation": "pass"
+  },
+  "schema_version": "quant_matrix_validation_evidence",
+  "write_authority": false
+}

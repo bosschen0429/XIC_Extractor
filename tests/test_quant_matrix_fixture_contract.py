@@ -31,7 +31,7 @@ def test_cell_provenance_contract_counts_and_validates_fixture(
     )
 
     payload = json.loads(summary_json.read_text(encoding="utf-8"))
-    assert payload["schema_version"] == "quant_matrix_fixture_contract_v1"
+    assert payload["schema_version"] == "quant_matrix_fixture_contract"
     assert payload["source_relpath"] == "quant_matrix_version/cell_provenance.tsv"
     assert payload["source_row_count"] == 2
     assert payload["source_sha256"] == file_sha256(full_tsv)
@@ -98,7 +98,7 @@ def test_review_rows_contract_preserves_review_row_universe(
 def _cell_row(status: str) -> dict[str, str]:
     is_backfill = status == "accepted_backfill"
     return {
-        "schema_version": "quant_matrix_cell_provenance_v1",
+        "schema_version": "quant_matrix_cell_provenance",
         "peak_hypothesis_id": "PH001",
         "sample_stem": "SampleB" if is_backfill else "SampleA",
         "source_feature_family_ids": "FAM001",
@@ -127,7 +127,7 @@ def _review_row(status: str, *, truth_status: str) -> dict[str, str]:
     }
     row.update(
         {
-            "schema_version": "quant_matrix_review_report_v1",
+            "schema_version": "quant_matrix_review_report",
             "peak_hypothesis_id": "PH001",
             "source_feature_family_ids": "FAM001",
             "sample_stem": "SampleB" if status == "accepted_backfill" else "SampleA",

@@ -53,17 +53,17 @@ from xic_extractor.tabular_io import (  # noqa: E402
 )
 
 ROOT = Path(__file__).resolve().parents[1]
-SCHEMA_VERSION = "cid_nl_default_activation_universe_closure_v1"
+SCHEMA_VERSION = "cid_nl_default_activation_universe_closure"
 PRODUCT_LANE = "cid_nl_discovery"
 DEFAULT_GATE_DIR = (
     ROOT
-    / "output/validation/cid_nl_default_activation_gallery_review_v1"
+    / "output/validation/cid_nl_default_activation_gallery_review"
     / "feature_inclusion_gate"
 )
 DEFAULT_SUCCESSOR_AUTHORITY_DIR = (
     ROOT
     / "output/validation/"
-    / "cid_nl_default_activation_successor_authority_contract_v1"
+    / "cid_nl_default_activation_successor_authority_contract"
 )
 DEFAULT_SUCCESSOR_AUTHORITY_SUMMARY_JSON = (
     DEFAULT_SUCCESSOR_AUTHORITY_DIR
@@ -83,15 +83,15 @@ DEFAULT_FULL_SCOPE_SUMMARY_JSON = (
     / "cid_nl_discovery_full_scope_classification_summary.json"
 )
 RETAINED_DOCS_DIR = (
-    ROOT / "docs/superpowers/validation/cid_nl_85raw_universe_closure_v1"
+    ROOT / "docs/superpowers/validation/cid_nl_85raw_universe_closure"
 )
 DEFAULT_DOCS_DIR = (
-    ROOT / "docs/superpowers/validation/cid_nl_full_cohort_universe_closure_v1"
+    ROOT / "docs/superpowers/validation/cid_nl_full_cohort_universe_closure"
 )
 RETAINED_SUMMARY_FILENAME = "cid_nl_85raw_universe_closure_summary.json"
 RETAINED_CHECKS_FILENAME = "cid_nl_85raw_universe_closure_checks.tsv"
 RETAINED_MANIFEST_FILENAME = "cid_nl_85raw_universe_closure_manifest.tsv"
-RETAINED_SCHEMA_VERSION = "cid_nl_85raw_universe_closure_v1"
+RETAINED_SCHEMA_VERSION = "cid_nl_85raw_universe_closure"
 RETAINED_CLOSURE_SCOPE = "current_cid_nl_85raw_fix3_successor_universe"
 RETAINED_INPUT_FRAGMENT = (
     "output/discovery/cid_nl_product_ready_alignment_85raw_20260620_fix3"
@@ -827,7 +827,7 @@ def _summary_payload(
             "summary_json": {
                 "path": (
                     "docs/superpowers/validation/"
-                    "cid_nl_85raw_universe_closure_v1/"
+                    "cid_nl_85raw_universe_closure/"
                     "cid_nl_85raw_universe_closure_summary.json"
                 ),
                 "retention_decision": "keep_summary",
@@ -872,7 +872,7 @@ def _write_readme(path: Path, *, payload: Mapping[str, Any]) -> None:
         path.parent / "cid_nl_full_cohort_universe_closure_manifest.tsv",
     )
     lines = [
-        "# CID-NL FULL COHORT Universe Closure v1",
+        "# CID-NL FULL COHORT Universe Closure",
         "",
         "Status: `pass`.",
         "",

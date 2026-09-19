@@ -235,7 +235,7 @@ def test_non_unique_alignment_correspondence_remains_ambiguous(
             replace(
                 groups[0],
                 group_hypothesis_id="FAM000002",
-                owner_ids=(f"xic.peak-hypothesis.v1:{'0' * 64}",),
+                owner_ids=(f"xic.peak-hypothesis:{'0' * 64}",),
             ),
         ),
         backfill_sources={},

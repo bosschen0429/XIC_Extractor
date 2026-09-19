@@ -239,9 +239,9 @@ def test_batch_pipeline_writes_per_sample_csvs_and_index(
         "NormalBC2257_DNA",
     ]
     assert [row["candidate_count"] for row in index_rows] == ["1", "1"]
-    assert {row["schema_version"] for row in index_rows} == {"discovery_batch_index_v2"}
+    assert {row["schema_version"] for row in index_rows} == {"discovery_batch_index"}
     assert all(
-        row["discovery_receipt_id"].startswith("xic.discovery-candidate-universe.v1:")
+        row["discovery_receipt_id"].startswith("xic.discovery-candidate-universe:")
         for row in index_rows
     )
     assert [row["medium_count"] for row in index_rows] == ["1", "1"]
@@ -283,7 +283,6 @@ def test_batch_pipeline_writes_per_sample_csvs_and_index(
     rebound = read_owner_bound_discovery_candidates_csv(
         batch.candidate_csvs["TumorBC2312_DNA"],
         receipt=receipt,
-        require_successor_columns=True,
     )
     assert tuple(candidate.candidate_id for candidate in rebound) == (
         "TumorBC2312_DNA#101@mz258.1085_p142.0611",
@@ -300,7 +299,6 @@ def test_batch_pipeline_writes_per_sample_csvs_and_index(
     relocated_candidates = read_owner_bound_discovery_candidates_csv(
         relocated.candidate_csvs["TumorBC2312_DNA"],
         receipt=relocated_receipt,
-        require_successor_columns=True,
     )
     assert tuple(candidate.candidate_id for candidate in relocated_candidates) == (
         "TumorBC2312_DNA#101@mz258.1085_p142.0611",

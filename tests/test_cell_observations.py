@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from copy import copy
 from dataclasses import fields, replace
 from pathlib import Path
@@ -160,6 +161,17 @@ def test_predecessor_cells_keep_all_supports_with_deterministic_outside_witness(
             alignment_config=CID_NL_ALIGNMENT_CONFIG,
         )
         assert len(cells) == len(groups) * len(assessments)
+        payloads = [
+            json.loads(cell_owner.canonical_cell_observation_bytes(cell.content))
+            for cell in cells
+        ]
+        assert {payload["schema_version"] for payload in payloads} == {
+            "cell_observation"
+        }
+        assert all("outside_group" in payload["content"] for payload in payloads)
+        assert len({frozenset(payload["content"]) for payload in payloads}) == 1
+        assert any(payload["content"]["outside_group"] is None for payload in payloads)
+
         assert {
             (
                 cell.content.group_hypothesis_id,
@@ -671,8 +683,8 @@ def _repaired_handoff(tmp_path: Path, *, sample_stem: str = "s1"):
         anchors=(),
         injection_order={sample_stem: 1},
         evidence_profile=ModeTrackEvidenceProfile(
-            "anchor-trajectory-v1",
-            "fixed-band-v1",
+            "anchor-trajectory",
+            "fixed-band",
             0.1,
             10,
             10,

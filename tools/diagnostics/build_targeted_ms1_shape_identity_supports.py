@@ -23,7 +23,7 @@ from xic_extractor.diagnostics.targeted_ms1_shape_identity_support_producer impo
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "Build diagnostic targeted_ms1_shape_identity_v0 support rows from "
+            "Build diagnostic targeted_ms1_shape_identity support rows from "
             "a baseline xic_results_long.csv and RAW MS1 traces."
         ),
     )

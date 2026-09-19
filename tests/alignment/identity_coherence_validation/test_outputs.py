@@ -141,14 +141,14 @@ def test_write_validation_outputs_writes_acceptance_artifacts(
         controls_manifest=tmp_path / "controls.reviewed.tsv",
     )
 
-    acceptance_tsv = tmp_path / "identity_coherence_v04_acceptance.tsv"
-    acceptance_md = tmp_path / "identity_coherence_v04_acceptance.md"
+    acceptance_tsv = tmp_path / "identity_coherence_acceptance.tsv"
+    acceptance_md = tmp_path / "identity_coherence_acceptance.md"
     assert acceptance_tsv.exists()
     assert acceptance_md.exists()
     assert "v04_acceptance\tpass" in acceptance_tsv.read_text(encoding="utf-8")
     assert acceptance.accepted
     markdown = acceptance_md.read_text(encoding="utf-8")
-    assert "# Identity Coherence V0.4 Acceptance" in markdown
+    assert "# Identity Coherence Acceptance" in markdown
     assert "| `v04_acceptance` | `pass` |" in markdown
     assert "does not clear full-cohort execution" in markdown
 

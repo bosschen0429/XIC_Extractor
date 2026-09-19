@@ -144,7 +144,7 @@ def test_runtime_delivers_one_real_subject_cohort_into_golden_path(
     runtime = start_runtime_attempt(
         attempt=context.processing_owners.attempt,
         work_unit_keys=tuple(job.work_unit_key for job in jobs),
-        owner_completeness_attestation="untargeted-cid-nl-real-data-runtime-test:v1",
+        owner_completeness_attestation="untargeted-cid-nl-real-data-runtime-test",
     )
 
     result = execute_untargeted_cid_nl_real_data_runtime(
@@ -260,7 +260,7 @@ def test_runtime_does_not_evaluate_ineligible_inferred_precursor(
     runtime = start_runtime_attempt(
         attempt=context.processing_owners.attempt,
         work_unit_keys=(job.work_unit_key,),
-        owner_completeness_attestation="untargeted-cid-nl-real-data-runtime-test:v1",
+        owner_completeness_attestation="untargeted-cid-nl-real-data-runtime-test",
     )
 
     vendor_raw = _install_runtime_raw(
@@ -412,7 +412,7 @@ def test_runtime_recovers_from_single_scan_cid_nl_support_owners(
         attempt=context.processing_owners.attempt,
         work_unit_keys=tuple(job.work_unit_key for job in jobs),
         owner_completeness_attestation=(
-            "untargeted-cid-nl-real-data-runtime-recovery-test:v1"
+            "untargeted-cid-nl-real-data-runtime-recovery-test"
         ),
     )
 
@@ -865,7 +865,7 @@ def test_runtime_does_not_open_recovery_resource_when_owner_condition_is_false(
         attempt=context.processing_owners.attempt,
         work_unit_keys=tuple(job.work_unit_key for job in jobs),
         owner_completeness_attestation=(
-            "real-data-runtime-conditional-resource-test:v1"
+            "real-data-runtime-conditional-resource-test"
         ),
     )
 

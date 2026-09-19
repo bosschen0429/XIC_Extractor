@@ -189,7 +189,7 @@ def _detected_features_csv_text() -> str:
 
 def _pt_candidate(**overrides: object) -> PtPatternCandidate:
     values: dict[str, object] = {
-        "schema_version": "pt_pattern_candidates.v1",
+        "schema_version": "pt_pattern_candidates",
         "sample_stem": "Sample_1",
         "method_label": "pt_pattern",
         "pattern_id": "pt",
@@ -259,7 +259,7 @@ def _pt_evidence_row(**overrides: object) -> dict[str, object]:
 
     candidate = _pt_candidate()
     row: dict[str, object] = {
-        "schema_version": "pt_pattern_discovery_evidence.v3",
+        "schema_version": "pt_pattern_discovery_evidence",
         "sample_stem": "Sample_1",
         "method_label": "pt_pattern",
         "pattern_id": "pt",
@@ -289,7 +289,7 @@ def _pt_evidence_row(**overrides: object) -> dict[str, object]:
                 }
             )
         ),
-        "trace_schema_version": "pt_pattern_trace_diagnosis.v4",
+        "trace_schema_version": "pt_pattern_trace_diagnosis",
         "trace_artifact_role": "full_context",
         "trace_extraction_sha256": "e" * 64,
         "trace_manifest_sha256": "f" * 64,
@@ -569,9 +569,9 @@ def test_pt_evidence_owner_mints_reference_from_exact_writer_bytes(
                 injection_order=1,
             ),
         ),
-        scientific_input_schema_version="pt-artifact-tracer-input-v1",
-        processing_algorithm_version="pt-artifact-tracer-algorithm-v1",
-        processing_contract_version="pt-artifact-tracer-contract-v1",
+        scientific_input_schema_version="pt-artifact-tracer-input",
+        processing_algorithm_version="pt-artifact-tracer-algorithm",
+        processing_contract_version="pt-artifact-tracer-contract",
         scientific_inputs={"fixture": "no-raw-pt-artifact-tracer"},
     )
     attempt = issue_processing_attempt(request)
@@ -590,7 +590,7 @@ def test_pt_evidence_owner_mints_reference_from_exact_writer_bytes(
         PT_EVIDENCE_ARTIFACT_SEMANTIC_ROLE
     )
     assert artifact.semantic_contract.schema_version == (
-        "pt_pattern_discovery_evidence.v3"
+        "pt_pattern_discovery_evidence"
     )
     assert artifact.semantic_contract.validation_status == "diagnostic_only"
     verify_evidence_artifact_payload(artifact, payload_bytes)
@@ -649,7 +649,7 @@ def test_pt_sidecar_json_shape_and_schema_version_for_pt_pattern_only(
     write_pt_pattern_sidecar_json(output_path, result=result)
 
     payload = json.loads(output_path.read_text(encoding="utf-8"))
-    assert payload["schema_version"] == "pt_pattern_sidecar.v4"
+    assert payload["schema_version"] == "pt_pattern_sidecar"
     assert payload["method_label"] == "pt_pattern"
     assert payload["pattern"] == {
         "pattern_id": "pt",
@@ -718,7 +718,7 @@ def test_pt_sidecar_json_records_cid_nl_candidates_csv_for_composite_method(
         trace_summary_csv_sha256="a" * 64,
         trace_metrics_csv_sha256="b" * 64,
         trace_manifest_json_sha256="c" * 64,
-        trace_schema_version="pt_pattern_trace_diagnosis.v4",
+        trace_schema_version="pt_pattern_trace_diagnosis",
         trace_artifact_role="full_context",
         trace_extraction_sha256="d" * 64,
         evidence_rows=[
@@ -856,7 +856,7 @@ def test_pt_evidence_csv_rejects_incomplete_or_wrong_version_row(
     with pytest.raises(ValueError, match="missing required fields"):
         write_pt_pattern_evidence_csv(
             output_path,
-            [{"schema_version": "pt_pattern_discovery_evidence.v1"}],
+            [{"schema_version": "pt_pattern_discovery_evidence"}],
         )
 
     assert not output_path.exists()
@@ -864,7 +864,7 @@ def test_pt_evidence_csv_rejects_incomplete_or_wrong_version_row(
     with pytest.raises(ValueError, match=r"unsupported evidence.*schema_version"):
         write_pt_pattern_evidence_csv(
             output_path,
-            [_pt_evidence_row(schema_version="pt_pattern_discovery_evidence.v1")],
+            [_pt_evidence_row(schema_version="unsupported_evidence_schema")],
         )
 
     with pytest.raises(ValueError, match="matrix_write_authority must be FALSE"):

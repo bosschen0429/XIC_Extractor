@@ -327,7 +327,7 @@ def test_targeted_runtime_receipt_does_not_claim_uncollected_metrics_measured(
     canonical = json.loads(
         canonical_runtime_observability_ledger_bytes(receipt.observability_ledger)
     )
-    assert canonical["schema_version"] == "execution_runtime_observability_ledger_v2"
+    assert canonical["schema_version"] == "execution_runtime_observability_ledger"
     metrics = {metric.name: metric for metric in receipt.observability_ledger.metrics}
     for name in (
         "artifact_read_count",

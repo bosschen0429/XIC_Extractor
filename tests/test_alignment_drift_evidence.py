@@ -341,7 +341,7 @@ def test_prepared_calibration_receipt_preserves_owner_map_without_refitting(
     assert receipt == prepared.explanation_provenance
     assert {k: receipt[k] for k in reference.provenance} == reference.provenance
     calibration = receipt["calibration"]
-    assert calibration["schema_version"] == "known_istd_calibration_v1"
+    assert calibration["schema_version"] == "known_istd_calibration"
     assert calibration["extrapolation"] == "unavailable"
     assert len(calibration["measurements"]) == 6
     samples = {sample["sample_stem"]: sample for sample in calibration["samples"]}
@@ -360,7 +360,7 @@ def test_prepared_calibration_receipt_preserves_owner_map_without_refitting(
     with ExplanationReportWriter(tmp_path / "calibration.sqlite") as writer:
         path = writer.finalize({"known_istd_reference": receipt})
     saved = read_cid_nl_explanation(path)
-    assert saved["schema_version"] == 2
+    assert saved["schema_version"] == "alignment_explanation"
     assert saved["known_istd_reference"] == receipt
 
 

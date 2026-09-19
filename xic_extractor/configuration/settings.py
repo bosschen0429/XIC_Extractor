@@ -121,7 +121,7 @@ def migrate_settings_dict(raw: dict[str, str]) -> tuple[dict[str, str], list[str
                     f"{_LEGACY_SIGNAL_WINDOW_KEY}={legacy_window!r}"
                 )
             warnings.append(
-                "settings_migration_v1 status=deprecated_alias_equal "
+                "settings_migration status=deprecated_alias_equal "
                 f"legacy_key={_LEGACY_SIGNAL_WINDOW_KEY} "
                 f"canonical_key={_CANONICAL_SIGNAL_WINDOW_KEY} "
                 f"value={canonical_window}"
@@ -140,7 +140,7 @@ def migrate_settings_dict(raw: dict[str, str]) -> tuple[dict[str, str], list[str
                 ) from exc
             migrated[_CANONICAL_SIGNAL_WINDOW_KEY] = legacy_window
             warnings.append(
-                "settings_migration_v1 status=deprecated_alias_migrated "
+                "settings_migration status=deprecated_alias_migrated "
                 f"legacy_key={_LEGACY_SIGNAL_WINDOW_KEY} "
                 f"canonical_key={_CANONICAL_SIGNAL_WINDOW_KEY} "
                 f"value={legacy_window}"
@@ -149,7 +149,7 @@ def migrate_settings_dict(raw: dict[str, str]) -> tuple[dict[str, str], list[str
     elif _LEGACY_SIGNAL_WINDOW_KEY in migrated:
         migrated.pop(_LEGACY_SIGNAL_WINDOW_KEY)
         warnings.append(
-            "settings_migration_v1 status=deprecated_alias_empty "
+            "settings_migration status=deprecated_alias_empty "
             f"legacy_key={_LEGACY_SIGNAL_WINDOW_KEY} "
             f"canonical_key={_CANONICAL_SIGNAL_WINDOW_KEY}"
         )

@@ -12,7 +12,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-SCHEMA_VERSION = "dna_dr_product_ready_fast_mode_expected_diff_v1"
+SCHEMA_VERSION = "dna_dr_product_ready_fast_mode_expected_diff"
 PUBLIC_FILES = (
     "alignment_matrix.tsv",
     "alignment_review.tsv",

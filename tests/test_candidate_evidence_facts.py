@@ -659,7 +659,7 @@ def test_build_candidate_evidence_facts_from_scoring_context() -> None:
         istd_pair="ISTD",
     )
 
-    assert facts.facts_version == "candidate_evidence_facts_v1"
+    assert facts.facts_version == "candidate_evidence_facts"
     assert facts.candidate_id.startswith("local_minimum;centwave_cwt|8.50000")
     assert facts.abundance == candidate.peak.area
     assert facts.trace.local_sn_quality == "strong"
@@ -900,7 +900,7 @@ def _reseal_question(
         physical_question_id="",
     )
     question_id = (
-        "physical-question.v1:"
+        "physical-question:"
         + hashlib.sha256(canonical_physical_peak_question_bytes(mutated)).hexdigest()
     )
     return replace(mutated, physical_question_id=question_id)

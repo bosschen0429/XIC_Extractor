@@ -521,7 +521,7 @@ def test_untargeted_batch_scope_uses_exact_candidate_subject_membership(
     request = build_processing_request_identity(
         acquisition_sources=base_request.acquisition_sources,
         acquisition_bindings=base_request.acquisition_bindings,
-        scientific_input_schema_version="untargeted-cid-nl-batch-test-v1",
+        scientific_input_schema_version="untargeted-cid-nl-batch-test",
         processing_algorithm_version=base_request.processing_algorithm_version,
         processing_contract_version=base_request.processing_contract_version,
         scientific_inputs={REQUEST_INPUT_KEY: batch.request_payload()},
@@ -768,7 +768,7 @@ def test_untargeted_batch_scope_accepts_one_exact_compatible_subject_workset(
     request = build_processing_request_identity(
         acquisition_sources=base_request.acquisition_sources,
         acquisition_bindings=base_request.acquisition_bindings,
-        scientific_input_schema_version="untargeted-cid-nl-workset-test-v1",
+        scientific_input_schema_version="untargeted-cid-nl-workset-test",
         processing_algorithm_version=base_request.processing_algorithm_version,
         processing_contract_version=base_request.processing_contract_version,
         scientific_inputs={REQUEST_INPUT_KEY: batch.request_payload()},
@@ -996,7 +996,7 @@ def test_owner_binding_rejects_observation_from_other_capture_trace(
         processing_owners=fixture.owners,
         sample=sample,
         target=fixture.target,
-        detector_invocation_id="gaussian15:S1:trace-binding-v1",
+        detector_invocation_id="gaussian15:S1:trace-binding",
         evaluation_receipt=CidNlEvaluationReceipt(
             query_rt_min=7.5,
             query_rt_max=8.5,

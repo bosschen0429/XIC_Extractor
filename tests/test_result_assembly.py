@@ -305,7 +305,7 @@ def test_extraction_result_projects_approved_expected_diff_successor_values() ->
         public_projection={"confidence": "MEDIUM"},
         evidence_sources=("ms1_trace", "role_aware_rt", "paired_area_ratio"),
         compatibility_oracle="legacy_peak_scoring_current_oracle",
-        policy_source="selected_hypothesis_model_selection_v1",
+        policy_source="selected_hypothesis_model_selection",
         product_switch_allowed=True,
         evidence_comparison_policy="complete_candidate_evidence",
     )
@@ -774,7 +774,7 @@ def test_approved_expected_diff_pair_evidence_downgrades_analyte_nl_fail() -> No
             "own_max_same_peak",
         ),
         compatibility_oracle="legacy_peak_scoring_current_oracle",
-        policy_source="selected_hypothesis_model_selection_v1",
+        policy_source="selected_hypothesis_model_selection",
         product_switch_allowed=True,
         evidence_comparison_policy="limited_evidence_shadow",
     )
@@ -821,7 +821,7 @@ def test_expected_diff_pair_evidence_without_own_max_keeps_nl_fail_not_counted()
             "paired_area_ratio",
         ),
         compatibility_oracle="legacy_peak_scoring_current_oracle",
-        policy_source="selected_hypothesis_model_selection_v1",
+        policy_source="selected_hypothesis_model_selection",
         product_switch_allowed=True,
         evidence_comparison_policy="limited_evidence_shadow",
     )

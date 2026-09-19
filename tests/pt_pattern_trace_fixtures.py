@@ -164,19 +164,19 @@ def write_overlay_lineage_bundle(
         row["trace_artifact_role"] = packet_role
 
     primary_trace_schema = (
-        trace_batch.ANCHOR_LOCAL_SCHEMA_VERSION
+        trace_batch.SCHEMA_VERSION
         if packet_role == PT_PATTERN_TRACE_ANCHOR_LOCAL_ROLE
         else trace_evidence.SCHEMA_VERSION
     )
     trace_summary_csv = review_packet_csv.parent / (
-        "pt_pattern_anchor_local_trace_summary.csv"
+        "pt_pattern_trace_summary.csv"
         if packet_role == PT_PATTERN_TRACE_ANCHOR_LOCAL_ROLE
-        else "pt_pattern_trace_summary.csv"
+        else "pt_pattern_context_trace_summary.csv"
     )
     trace_metrics_csv = review_packet_csv.parent / (
-        "pt_pattern_anchor_local_trace_metrics.csv"
+        "pt_pattern_trace_metrics.csv"
         if packet_role == PT_PATTERN_TRACE_ANCHOR_LOCAL_ROLE
-        else "pt_pattern_trace_metrics.csv"
+        else "pt_pattern_context_trace_metrics.csv"
     )
     summary_rows = [
         _summary_row_from_packet(
@@ -258,10 +258,10 @@ def write_overlay_lineage_bundle(
         context_metrics_csv: Path | None = None
         if packet_role == PT_PATTERN_TRACE_ANCHOR_LOCAL_ROLE:
             context_summary_csv = (
-                context_trace_points_csv.parent / "pt_pattern_trace_summary.csv"
+                context_trace_points_csv.parent / "pt_pattern_context_trace_summary.csv"
             )
             context_metrics_csv = (
-                context_trace_points_csv.parent / "pt_pattern_trace_metrics.csv"
+                context_trace_points_csv.parent / "pt_pattern_context_trace_metrics.csv"
             )
             context_summary_rows = [
                 _summary_row_from_packet(
@@ -360,7 +360,7 @@ def write_overlay_lineage_bundle(
     packet_columns = (
         packet.PACKET_COLUMNS
         if packet_role == PT_PATTERN_TRACE_ANCHOR_LOCAL_ROLE
-        else packet.LEGACY_PACKET_COLUMNS
+        else packet.PACKET_COLUMNS
     )
     write_delimited_rows(review_packet_csv, projected_packet_rows, packet_columns)
     packet_manifest_path = packet.default_review_packet_manifest_path(review_packet_csv)
@@ -499,12 +499,12 @@ def write_trace_summary_lineage_bundle(
         schema_version = trace_evidence.SCHEMA_VERSION
         summary_columns = trace_evidence.SUMMARY_COLUMNS
         metric_columns = trace_evidence.METRIC_COLUMNS
-        metrics_name = "pt_pattern_trace_metrics.csv"
+        metrics_name = "pt_pattern_context_trace_metrics.csv"
     elif artifact_role == PT_PATTERN_TRACE_ANCHOR_LOCAL_ROLE:
-        schema_version = trace_batch.ANCHOR_LOCAL_SCHEMA_VERSION
+        schema_version = trace_batch.SCHEMA_VERSION
         summary_columns = trace_batch.ANCHOR_LOCAL_SUMMARY_COLUMNS
         metric_columns = trace_batch.ANCHOR_LOCAL_METRIC_COLUMNS
-        metrics_name = "pt_pattern_anchor_local_trace_metrics.csv"
+        metrics_name = "pt_pattern_trace_metrics.csv"
     else:
         raise ValueError(f"unsupported fixture artifact role: {artifact_role!r}")
     resolved_metrics_csv = trace_metrics_csv or trace_summary_csv.parent / metrics_name
@@ -1344,7 +1344,7 @@ def _write_trace_manifest(
     )
     manifest = {
         "schema_version": schema_version,
-        "trace_bundle_manifest_version": "pt_pattern_trace_bundle_manifest.v1",
+        "trace_bundle_manifest_version": "pt_pattern_trace_bundle_manifest",
         "trace_artifact_role": artifact_role,
         "trace_extraction_sha256": trace_extraction_sha256,
         "candidates_csv": str(candidates_csv),

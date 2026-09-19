@@ -34,14 +34,9 @@ from xic_extractor.validation_primitives import (
     require_owner_normalized_text,
 )
 
-DISCOVERY_BATCH_INDEX_SCHEMA_VERSION = "discovery_batch_index_v2"
-DISCOVERY_CANDIDATE_ARTIFACT_SCHEMA_VERSION = "discovery_candidates_csv_v2"
-DISCOVERY_CANDIDATE_PAYLOAD_SCHEMA_VERSION = "discovery_candidate_payload_v2"
-_LEGACY_CANDIDATE_ARTIFACT_SCHEMA_VERSION = "discovery_candidates_csv_v1"
-DISCOVERY_CANDIDATE_ARTIFACT_SCHEMA_VERSIONS = frozenset({
-    DISCOVERY_CANDIDATE_ARTIFACT_SCHEMA_VERSION,
-    _LEGACY_CANDIDATE_ARTIFACT_SCHEMA_VERSION,
-})
+DISCOVERY_BATCH_INDEX_SCHEMA_VERSION = "discovery_batch_index"
+DISCOVERY_CANDIDATE_ARTIFACT_SCHEMA_VERSION = "discovery_candidates_csv"
+DISCOVERY_CANDIDATE_PAYLOAD_SCHEMA_VERSION = "discovery_candidate_payload"
 
 DISCOVERY_BATCH_RECEIPT_COLUMNS = (
     "discovery_receipt_id",
@@ -56,7 +51,7 @@ DISCOVERY_BATCH_RECEIPT_COLUMNS = (
     "observation_namespace",
 )
 
-_RECEIPT_PREFIX = "xic.discovery-candidate-universe.v1:"
+_RECEIPT_PREFIX = "xic.discovery-candidate-universe:"
 
 
 @dataclass(frozen=True, slots=True)
@@ -88,7 +83,7 @@ class DiscoveryCandidateUniverseReceipt:
             )
         if (
             self.candidate_artifact_schema_version
-            not in DISCOVERY_CANDIDATE_ARTIFACT_SCHEMA_VERSIONS
+            != DISCOVERY_CANDIDATE_ARTIFACT_SCHEMA_VERSION
         ):
             raise IdentityContractError(
                 "candidate artifact schema version is unsupported"
@@ -198,11 +193,7 @@ def validate_discovery_candidate_universe(
         raise IdentityContractError(
             "candidate count does not match the Discovery receipt"
         )
-    if discovery_candidate_payload_sha256(
-        ordered, artifact_schema_version=receipt.candidate_artifact_schema_version,
-    ) != (
-        receipt.candidate_payload_sha256
-    ):
+    if discovery_candidate_payload_sha256(ordered) != receipt.candidate_payload_sha256:
         raise IdentityContractError(
             "candidate payload does not match the Discovery receipt"
         )
@@ -211,24 +202,9 @@ def validate_discovery_candidate_universe(
 
 def discovery_candidate_payload_sha256(
     candidates: Sequence[DiscoveryCandidate],
-    *,
-    artifact_schema_version: str = DISCOVERY_CANDIDATE_ARTIFACT_SCHEMA_VERSION,
 ) -> str:
     """Return the path-independent digest of complete candidate facts."""
 
-    legacy = artifact_schema_version == _LEGACY_CANDIDATE_ARTIFACT_SCHEMA_VERSION
-    if (
-        not legacy
-        and artifact_schema_version != DISCOVERY_CANDIDATE_ARTIFACT_SCHEMA_VERSION
-    ):
-        raise IdentityContractError("candidate artifact schema version is unsupported")
-    if legacy and any(
-        item.is_provisional or item.ms1_trace_quality.lower() == "provisional"
-        for item in candidates
-    ):
-        raise IdentityContractError(
-            "legacy candidate payload cannot bind a provisional decision"
-        )
     canonical: list[dict[str, str]] = []
     for candidate in sorted(candidates, key=lambda item: item.candidate_id):
         canonical.append(
@@ -238,15 +214,12 @@ def discovery_candidate_payload_sha256(
                     getattr(candidate, column),
                 )
                 for column in DISCOVERY_CANDIDATE_COLUMNS
-                if column != "raw_file" and not (legacy and column == "is_provisional")
+                if column != "raw_file"
             }
         )
     encoded = json.dumps(
         {
-            "schema_version": (
-                "discovery_candidate_payload_v1" if legacy
-                else DISCOVERY_CANDIDATE_PAYLOAD_SCHEMA_VERSION
-            ),
+            "schema_version": DISCOVERY_CANDIDATE_PAYLOAD_SCHEMA_VERSION,
             "candidates": canonical,
         },
         ensure_ascii=False,
@@ -442,7 +415,7 @@ def _receipt_id(
     candidate_payload_sha256: str,
 ) -> str:
     basis = {
-        "schema_version": "discovery_candidate_universe_receipt_v1",
+        "schema_version": "discovery_candidate_universe_receipt",
         "sample_stem": sample_stem,
         "acquisition_source_id": acquisition_source.acquisition_source_id,
         "candidate_count": candidate_count,
@@ -513,7 +486,6 @@ __all__ = (
     "DISCOVERY_BATCH_INDEX_SCHEMA_VERSION",
     "DISCOVERY_BATCH_RECEIPT_COLUMNS",
     "DISCOVERY_CANDIDATE_ARTIFACT_SCHEMA_VERSION",
-    "DISCOVERY_CANDIDATE_ARTIFACT_SCHEMA_VERSIONS",
     "DiscoveryCandidateUniverseReceipt",
     "discovery_candidate_payload_sha256",
     "validate_discovery_candidate_physical_bindings",

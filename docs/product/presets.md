@@ -44,7 +44,7 @@ they are not product authority by themselves.
 | Resolver settings in config/GUI | Public behavior surface for peak detection choices |
 | Runner metadata and sidecars | Provenance for preset-backed runs |
 
-## CID-NL V1 Workflow Composition
+## CID-NL Workflow Composition
 
 A CID-NL preset is bound once, before expensive work, to one immutable
 in-memory recipe. The recipe contains the existing typed Discovery and
@@ -53,7 +53,7 @@ Standard Peak or Backfill-expansion post-stage choice and does not contain
 RAW/output paths, sample metadata, worker counts,
 review inputs, a persisted recipe identity, or a second invocation schema.
 
-The current V1 routes remain the existing entry-point modes:
+The current routes remain the existing entry-point modes:
 
 | Existing route | Preset-backed behavior |
 | --- | --- |
@@ -163,6 +163,6 @@ Before changing preset behavior, require the relevant subset of:
 - [Preset code](../../xic_extractor/presets/)
 - [Preset TOML data](../../xic_extractor/presets/data/)
 - [Historical compatibility index](../superpowers/plans/2026-06-15-productization-control-plane.md)
-- [Status index](../superpowers/validation/productization_status_index_v1.tsv)
-- [Authority manifest](../superpowers/schemas/productization_authority_manifest.v1.json)
+- [Status index](../superpowers/validation/productization_status_index.tsv)
+- [Authority manifest](../superpowers/schemas/productization_authority_manifest.json)
 - [Diagnostic ledger](../diagnostic-ledger.md)

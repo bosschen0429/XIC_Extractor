@@ -167,8 +167,8 @@ def test_build_parameter_sets_includes_legacy_current_and_candidate_grid() -> No
     assert parameter_sets[1].settings_overrides["resolver_mode"] == "local_minimum"
 
 
-def test_build_parameter_sets_calibration_v1_focuses_duration_and_search() -> None:
-    parameter_sets = build_parameter_sets(grid="calibration-v1")
+def test_calibration_grid_focuses_duration_and_search() -> None:
+    parameter_sets = build_parameter_sets(grid="calibration-duration-search")
 
     by_name = {item.name: item.settings_overrides for item in parameter_sets}
 
@@ -197,8 +197,8 @@ def test_build_parameter_sets_calibration_v1_focuses_duration_and_search() -> No
     assert len(parameter_sets) <= 12
 
 
-def test_build_parameter_sets_calibration_v2_focuses_min_duration_and_height() -> None:
-    parameter_sets = build_parameter_sets(grid="calibration-v2")
+def test_calibration_grid_focuses_min_duration_and_height() -> None:
+    parameter_sets = build_parameter_sets(grid="calibration-duration-height")
 
     by_name = {item.name: item.settings_overrides for item in parameter_sets}
 

@@ -44,7 +44,7 @@ def test_assembler_emits_source_rows_and_candidate_gate_context(tmp_path: Path) 
 
 def test_assembler_uses_manual_only_row_for_sentinel(tmp_path: Path) -> None:
     oracle_rows = load_manual_oracle(
-        Path("docs/superpowers/fixtures/shared_peak_identity_manual_oracle_v1.tsv")
+        Path("docs/superpowers/fixtures/shared_peak_identity_manual_oracle.tsv")
     )
     context = [row for row in oracle_rows if row.sample_id == "__family_context__"]
 

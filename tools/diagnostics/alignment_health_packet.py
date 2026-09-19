@@ -19,7 +19,7 @@ from xic_extractor.tabular_io import (
     write_tsv,
 )
 
-SCHEMA_VERSION = "alignment_health_packet_v1"
+SCHEMA_VERSION = "alignment_health_packet"
 
 REVIEW_REQUIRED = (
     "feature_family_id",

@@ -188,7 +188,7 @@ class CidNlSource:
         if not isinstance(calibration, dict):
             raise ExplanationError("known_istd_reference.calibration must be an object")
         expected = {
-            "schema_version": "known_istd_calibration_v1",
+            "schema_version": "known_istd_calibration_duration_search",
             "rt_unit": "minute",
             "interpolation": "piecewise_linear",
             "extrapolation": "unavailable",
@@ -552,7 +552,7 @@ class CidNlSource:
         invocations = {fact.get("detector_invocation_id") for _, fact in methods}
         if (
             "recovery_observation" in capture_kinds
-            and "untargeted-cid-nl-backfill-recovery:v1" in invocations
+            and "untargeted-cid-nl-backfill-recovery" in invocations
         ):
             kind = "recovery_support"
         elif "reacquired_capture" in capture_kinds and methods:
@@ -613,7 +613,7 @@ class CidNlSource:
                 elif item.kind == "candidate":
                     refs.add(witness.candidate_id)
         raw_curves = []
-        if capability == "retained_curves_v1":
+        if capability == "retained_curves":
             for sid, refs in sorted(refs_by_sample.items()):
                 if not refs:
                     continue

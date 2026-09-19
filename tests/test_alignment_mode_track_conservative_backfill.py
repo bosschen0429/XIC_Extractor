@@ -385,7 +385,7 @@ def test_mode_track_projection_enters_existing_checked_qmv_owner(
         for assignment in fact.exact_owner_candidate_assignments
     }
 
-    assert source["schema_version"] == "mode_track_projection_source_v2"
+    assert source["schema_version"] == "mode_track_projection_source"
     assert len(source["rows"]) == len(expected_assignments)
     for row in source["rows"]:
         assignment = expected_assignments[
@@ -638,11 +638,11 @@ def test_closed_writer_review_transfer_rebinds_exact_subjects_and_finalizes(
     review_path = _closed_writer_review(tmp_path, projection)
     replay_path = tmp_path / "manual_review_replay.json"
     manifest_path = _checked_manifest(tmp_path, projection)
-    retained_review = review_path.replace(tmp_path / "manual_review_v1.json")
+    retained_review = review_path.replace(tmp_path / "manual_review.json")
     retained_replay = replay_path.replace(
-        tmp_path / "manual_review_observation_replay_v1.json"
+        tmp_path / "manual_review_observation_replay.json"
     )
-    retained_manifest = manifest_path.replace(tmp_path / "checked_manifest_v1.tsv")
+    retained_manifest = manifest_path.replace(tmp_path / "checked_manifest.tsv")
     _bind_review_replay(retained_review, retained_replay, tmp_path)
 
     receipt_path = closed_writer_fixture.transfer_closed_writer_review(
@@ -660,19 +660,19 @@ def test_closed_writer_review_transfer_rebinds_exact_subjects_and_finalizes(
         receipt_path=receipt_path,
         code_sha="synthetic-transfer",
         proposal_dir=proposal_dir,
-        manual_review_path=tmp_path / "transferred/manual_review_v1.json",
+        manual_review_path=tmp_path / "transferred/manual_review.json",
         manual_review_replay_path=(
-            tmp_path / "transferred/manual_review_observation_replay_v1.json"
+            tmp_path / "transferred/manual_review_observation_replay.json"
         ),
-        manifest_path=tmp_path / "transferred/checked_manifest_v1.tsv",
+        manifest_path=tmp_path / "transferred/checked_manifest.tsv",
         manifest_root=tmp_path,
     )
     final = _finalize_closed_writer_reviewed_projection(
         projection=projection,
         proposal_dir=proposal_dir,
-        manual_review_path=tmp_path / "transferred/manual_review_v1.json",
+        manual_review_path=tmp_path / "transferred/manual_review.json",
         manual_review_replay_path=(
-            tmp_path / "transferred/manual_review_observation_replay_v1.json"
+            tmp_path / "transferred/manual_review_observation_replay.json"
         ),
         manifest_root=tmp_path,
         output_dir=tmp_path / "final-after-transfer",
@@ -695,11 +695,11 @@ def test_closed_writer_review_transfer_receipt_rejects_resealed_input_binding(
     review_path = _closed_writer_review(tmp_path, projection)
     replay_path = tmp_path / "manual_review_replay.json"
     manifest_path = _checked_manifest(tmp_path, projection)
-    retained_review = review_path.replace(tmp_path / "manual_review_v1.json")
+    retained_review = review_path.replace(tmp_path / "manual_review.json")
     retained_replay = replay_path.replace(
-        tmp_path / "manual_review_observation_replay_v1.json"
+        tmp_path / "manual_review_observation_replay.json"
     )
-    manifest_path.replace(tmp_path / "checked_manifest_v1.tsv")
+    manifest_path.replace(tmp_path / "checked_manifest.tsv")
     _bind_review_replay(retained_review, retained_replay, tmp_path)
     transferred = tmp_path / "transferred"
     receipt_path = closed_writer_fixture.transfer_closed_writer_review(
@@ -736,12 +736,12 @@ def test_closed_writer_review_transfer_receipt_rejects_resealed_input_binding(
             replay_output_dir=tmp_path / "c2-replay",
             final_output_dir=tmp_path / "c2-final",
             proposal_dir=proposal_dir,
-            manual_review_path=transferred / "manual_review_v1.json",
+            manual_review_path=transferred / "manual_review.json",
             manual_review_replay_path=(
-                transferred / "manual_review_observation_replay_v1.json"
+                transferred / "manual_review_observation_replay.json"
             ),
             review_transfer_receipt_path=receipt_path,
-            manifest_path=transferred / "checked_manifest_v1.tsv",
+            manifest_path=transferred / "checked_manifest.tsv",
             code_sha="synthetic-transfer",
             metadata_sha256="synthetic-metadata",
         )
@@ -1027,7 +1027,7 @@ def test_closed_writer_rejects_failed_review_and_ignores_external_manifest(
         manifest_root=tmp_path,
         output_dir=tmp_path / "changed-manifest",
     )
-    internal_manifest = final.parent / "checked_manifest_v1.tsv"
+    internal_manifest = final.parent / "checked_manifest.tsv"
     assert internal_manifest.is_file()
     assert "owner_valid_but_changed_after_c1" not in internal_manifest.read_text(
         encoding="utf-8"
@@ -1131,7 +1131,7 @@ def test_closed_writer_finalizer_rejects_stale_or_incomplete_physical_replay(
     ("field_name", "index", "delta"),
     [("rt", 1, 1e-6), ("intensity", 0, 1.0)],
 )
-def test_closed_writer_v1_replay_rehydrates_owner_content_before_review(
+def test_closed_writer_replay_rehydrates_owner_content_before_review(
     tmp_path: Path,
     field_name: str,
     index: int,
@@ -1151,7 +1151,7 @@ def test_closed_writer_v1_replay_rehydrates_owner_content_before_review(
     source = json.loads(projection.source_artifact_bytes)
     for row in source["rows"]:
         row.pop("peak_observation", None)
-    source_path = tmp_path / "retained-v1-mode-track-source.json"
+    source_path = tmp_path / "retained-mode-track-source.json"
     source_path.write_text(
         json.dumps(source, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
@@ -1295,8 +1295,8 @@ def _mixed_mode_track_fixture(
         sample_assessments=sample_assessments,
         alignment_config=AlignmentConfig(anchor_min_seed_events=1),
         trajectory_policy=ModeTrackTrajectoryPolicy(
-            trajectory_policy_version="anchor-trajectory-v1",
-            band_policy_version="fixed-band-v1",
+            trajectory_policy_version="anchor-trajectory",
+            band_policy_version="fixed-band",
             prediction_half_width_min=0.1,
             max_interpolation_gap=10,
             max_extrapolation_gap=10,
@@ -1473,7 +1473,7 @@ def _closed_writer_review(
     path.write_text(
         json.dumps(
             {
-                "schema_version": ("mode_track_closed_writer_manual_review_v1"),
+                "schema_version": ("mode_track_closed_writer_manual_review"),
                 "observation_replay_relpath": replay_path.relative_to(
                     tmp_path
                 ).as_posix(),
@@ -1521,7 +1521,7 @@ def _closed_writer_replay(tmp_path: Path, projection) -> Path:
                 "proposal_sha256": receipt["proposal_sha256"],
                 "row_count": len(rows),
                 "rows": rows,
-                "schema_version": ("mode_track_closed_writer_observation_replay_v1"),
+                "schema_version": ("mode_track_closed_writer_observation_replay"),
                 "source_artifact_sha256": projection.source_artifact_sha256,
                 "validation_status": "diagnostic_only",
             },

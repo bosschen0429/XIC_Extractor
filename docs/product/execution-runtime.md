@@ -186,14 +186,14 @@ claiming a durable queue:
    namespace, and coordinator launch;
 2. after work, cleanup, and artifact-disposition proposal closure, the
    coordinator produces one immutable canonical `CoordinatorTerminalRecord`
-   `execution_runtime_coordinator_terminal_v4` byte sequence containing the
+   `execution_runtime_coordinator_terminal` byte sequence containing the
    proposed outcome, manifest and per-unit outcomes, typed per-unit failure
    details, typed resource kinds plus open/cleanup outcomes, artifact registry and proposed
    dispositions, failures, coordinator metrics ending at terminal proposal,
    and the coordinator event-ledger digest through that proposal;
 3. the owner-path supervisor fsyncs those exact coordinator bytes and the exact
    runtime-owner-derived observability-ledger bytes inside the
-   self-contained `execution_runtime_recovery_marker_v4` payload, then
+   self-contained `execution_runtime_recovery_marker` payload, then
    atomically replaces the launch marker with one immutable
    `SupervisorFinalizationRecord` containing the coordinator-record digest and
    an atomic event batch continuing the coordinator sequence:
@@ -489,7 +489,7 @@ closed unique opaque work-unit keys. Missing completeness attestation, duplicate
 or blank keys, and attempt substitution drive that existing queued-to-failed
 proposal instead of relying on a caller to declare failure manually. That
 preflight-terminal state now continues through the same owner finalization
-receipt and v4 recovery marker with empty work/resource/artifact registries,
+receipt and recovery marker with empty work/resource/artifact registries,
 measured-zero mechanical counts, and `unsupported:not_started_preflight_failure`
 for work- and worker-derived metrics. Targeted and Alignment enter through the
 same atomic owner operation; it does not invoke their worker provider when
@@ -503,7 +503,7 @@ and conflicting or undeclared settlement records one immutable integrity
 failure that prevents attempt success. Failed work also prevents success.
 Failed and cancelled settlements require a typed `WorkUnitFailureDetail`
 containing category, stage, source reference, and readable message, while a
-successful settlement rejects failure detail. The canonical coordinator v4
+successful settlement rejects failure detail. The canonical coordinator
 bytes retain that exact detail. A successful settlement accepts only an
 owner-minted `EvidenceArtifactRef` bound to the same processing request and
 attempt; an opaque string is no longer sufficient.
@@ -561,13 +561,13 @@ are rejected before request resolution, launch recording, or work dispatch.
 
 This remains `diagnostic_only`. `OwnerPathRuntimeMarker` is the bounded physical
 persistence seam: the owner supplies its path, namespace, retention, and later
-publication policy; the v4 marker embeds the exact coordinator and validated
+publication policy; the marker embeds the exact coordinator and validated
 observability-ledger bytes, with separate content digests, and uses a
 cross-platform exclusive sibling lock around read/validate/replace. A concurrent
 writer waits for the current transaction and then revalidates; an unresolved
 stale lock fails closed for owner recovery instead of being auto-deleted. The
-reader retains exact canonical v3 outer-marker compatibility; new writes use
-v4 because the coordinator resource outcome vocabulary now includes
+reader retains exact canonical outer-marker compatibility; new writes use
+because the coordinator resource outcome vocabulary now includes
 `condition_not_activated`.
 The repo has not selected a storage engine, durable queue, current pointer, product
 seal, publication mechanism, telemetry producer, or telemetry backend.

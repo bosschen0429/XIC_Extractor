@@ -23,7 +23,7 @@ def _review_packet_row(
     *,
     source_label: str = "pt_only",
 ) -> dict[str, str]:
-    row = {column: "" for column in packet.LEGACY_PACKET_COLUMNS}
+    row = {column: "" for column in packet.PACKET_COLUMNS}
     row.update(
         {
             "schema_version": packet.SCHEMA_VERSION,
@@ -36,7 +36,7 @@ def _review_packet_row(
             "candidate_id": candidate_id,
             "candidate_assignment_sha256": "a" * 64,
             "trace_extraction_sha256": "b" * 64,
-            "trace_artifact_role": "full_context",
+            "trace_artifact_role": "anchor_local",
             "base_mz": "500.0",
             "base_rt_apex_min": "10.0",
             "trace_decision_basis": evidence.TRACE_DECISION_BASIS,
@@ -47,6 +47,9 @@ def _review_packet_row(
             "max_abs_apex_delta_sec": "2.0",
             "min_pearson_r_to_base": "0.95",
             "min_active_overlap_fraction": "0.90",
+            "trace_ambiguity_status": "clear",
+            "anchor_segmentation_status": "clear",
+            "anchor_segmentation_boundary_review_status": "clear",
             "oracle_status": "pending_human_review",
         }
     )
@@ -81,7 +84,7 @@ def _machine_call_row(
     source_label: str = "pt_only",
     machine_call: str = "accept",
 ) -> dict[str, str]:
-    row = {column: "" for column in overlay.LEGACY_MACHINE_CALL_COLUMNS}
+    row = {column: "" for column in overlay.MACHINE_CALL_COLUMNS}
     row.update(
         {
             "schema_version": overlay.SCHEMA_VERSION,
@@ -94,7 +97,7 @@ def _machine_call_row(
             "candidate_id": candidate_id,
             "candidate_assignment_sha256": "a" * 64,
             "trace_extraction_sha256": "b" * 64,
-            "trace_artifact_role": "full_context",
+            "trace_artifact_role": "anchor_local",
             "machine_call": machine_call,
             "machine_call_reason": "unit_machine_reason",
             "trace_decision_basis": evidence.TRACE_DECISION_BASIS,
@@ -105,6 +108,9 @@ def _machine_call_row(
             "max_abs_apex_delta_sec": "2.0",
             "min_pearson_r_to_base": "0.95",
             "min_active_overlap_fraction": "0.90",
+            "trace_ambiguity_status": "clear",
+            "anchor_segmentation_status": "clear",
+            "anchor_segmentation_boundary_review_status": "clear",
             "oracle_status": "pending_human_review",
         }
     )
@@ -116,7 +122,7 @@ def _anchor_review_packet_row(candidate_id: str) -> dict[str, str]:
     row.update(_review_packet_row(candidate_id))
     row.update(
         {
-            "schema_version": packet.ANCHOR_LOCAL_SCHEMA_VERSION,
+            "schema_version": packet.SCHEMA_VERSION,
             "trace_artifact_role": "anchor_local",
             "trace_ambiguity_status": "clear",
             "anchor_segmentation_status": "clear",
@@ -131,7 +137,7 @@ def _anchor_machine_call_row(candidate_id: str) -> dict[str, str]:
     row.update(_machine_call_row(candidate_id))
     row.update(
         {
-            "schema_version": overlay.ANCHOR_LOCAL_SCHEMA_VERSION,
+            "schema_version": overlay.SCHEMA_VERSION,
             "trace_artifact_role": "anchor_local",
             "trace_ambiguity_status": "clear",
             "anchor_segmentation_status": "clear",
@@ -234,7 +240,7 @@ def test_oracle_refresh_keeps_unproven_old_labels_pending_and_marks_stale_rows(
     assert "machine_call" not in header
 
     stale_rows = read_delimited_rows(
-        outputs["stale_v1_rows_csv"],
+        outputs["stale_rows_csv"],
         required_columns=refresh.STALE_ORACLE_COLUMNS,
         delimiter=",",
     )
@@ -415,25 +421,6 @@ def test_oracle_refresh_marks_stale_machine_lineage_as_conflict(field: str) -> N
     assert result["draft_rows"][0]["machine_call"] == ""
 
 
-def test_oracle_refresh_marks_valid_but_wrong_machine_schema_as_conflict() -> None:
-    current_row = _review_packet_row("current")
-    machine_row = _anchor_machine_call_row("current")
-
-    result = refresh.build_oracle_refresh_rows(
-        adjudicated_rows=[],
-        review_packet_rows=[current_row],
-        machine_call_rows=[machine_row],
-        refresh_packet_id="unit_refresh",
-    )
-
-    draft_row = result["draft_rows"][0]
-    assert draft_row["refresh_status"] == refresh.CONFLICT_STATUS
-    assert draft_row["machine_call_status"] == (
-        "current_machine_call_provenance_conflict"
-    )
-    assert draft_row["machine_call"] == ""
-
-
 def test_oracle_refresh_rejects_extra_machine_rows() -> None:
     with pytest.raises(ValueError, match="outside review packet"):
         refresh.build_oracle_refresh_rows(
@@ -462,13 +449,13 @@ def test_oracle_refresh_rejects_machine_csv_not_bound_by_sibling_summary(
     copied_machine_csv = sealed_machine_csv.parent / "copied_machine.csv"
     copied_machine_rows = read_delimited_rows(
         sealed_machine_csv,
-        required_columns=overlay.LEGACY_MACHINE_CALL_REQUIRED_COLUMNS,
+        required_columns=overlay.MACHINE_CALL_COLUMNS,
         delimiter=",",
     )
     write_delimited_rows(
         copied_machine_csv,
         copied_machine_rows,
-        overlay.LEGACY_MACHINE_CALL_COLUMNS,
+        overlay.MACHINE_CALL_COLUMNS,
     )
 
     with pytest.raises(ValueError, match="binds a different machine-call"):
@@ -571,7 +558,7 @@ def test_oracle_refresh_rejects_partial_anchor_machine_schema(tmp_path: Path) ->
     )
     machine_rows = read_delimited_rows(
         machine_calls_csv,
-        required_columns=overlay.LEGACY_MACHINE_CALL_REQUIRED_COLUMNS,
+        required_columns=overlay.MACHINE_CALL_COLUMNS,
         delimiter=",",
     )
     write_delimited_rows(machine_calls_csv, machine_rows, machine_columns)

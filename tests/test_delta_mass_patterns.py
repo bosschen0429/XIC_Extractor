@@ -178,7 +178,7 @@ def test_scan_proxy_candidates_use_only_same_group_base_anchor() -> None:
             rt_apex_min=10.000,
             trace_quality="OK",
             shape_score=None,
-            source="raw_scan_proxy_v1",
+            source="raw_scan_proxy",
         ),
         _feature(
             feature_id="Sample_1|scan_proxy|group1|pt_plus_1",
@@ -186,7 +186,7 @@ def test_scan_proxy_candidates_use_only_same_group_base_anchor() -> None:
             rt_apex_min=10.000,
             trace_quality="OK",
             shape_score=None,
-            source="raw_scan_proxy_v1",
+            source="raw_scan_proxy",
         ),
         _feature(
             feature_id="Sample_1|scan_proxy|group1|pt_plus_2",
@@ -194,7 +194,7 @@ def test_scan_proxy_candidates_use_only_same_group_base_anchor() -> None:
             rt_apex_min=10.000,
             trace_quality="OK",
             shape_score=None,
-            source="raw_scan_proxy_v1",
+            source="raw_scan_proxy",
         ),
         _feature(
             feature_id="Sample_1|scan_proxy|group1|pt_plus_4",
@@ -202,7 +202,7 @@ def test_scan_proxy_candidates_use_only_same_group_base_anchor() -> None:
             rt_apex_min=10.000,
             trace_quality="OK",
             shape_score=None,
-            source="raw_scan_proxy_v1",
+            source="raw_scan_proxy",
         ),
         # Without scan-proxy group/label constraints, group1|pt_plus_1 can be
         # incorrectly treated as a shifted base and mixed with these decoys.
@@ -212,7 +212,7 @@ def test_scan_proxy_candidates_use_only_same_group_base_anchor() -> None:
             rt_apex_min=10.000,
             trace_quality="OK",
             shape_score=None,
-            source="raw_scan_proxy_v1",
+            source="raw_scan_proxy",
         ),
         _feature(
             feature_id="Sample_1|scan_proxy|group2|pt_plus_2",
@@ -220,7 +220,7 @@ def test_scan_proxy_candidates_use_only_same_group_base_anchor() -> None:
             rt_apex_min=10.000,
             trace_quality="OK",
             shape_score=None,
-            source="raw_scan_proxy_v1",
+            source="raw_scan_proxy",
         ),
         _feature(
             feature_id="Sample_1|scan_proxy|group2|pt_plus_4",
@@ -228,7 +228,7 @@ def test_scan_proxy_candidates_use_only_same_group_base_anchor() -> None:
             rt_apex_min=10.000,
             trace_quality="OK",
             shape_score=None,
-            source="raw_scan_proxy_v1",
+            source="raw_scan_proxy",
         ),
     ]
 
@@ -327,7 +327,7 @@ def test_missing_local_signal_support_yields_no_candidate() -> None:
 
 
 def test_external_feature_source_without_trace_label_can_seed_candidate() -> None:
-    source = "external_feature_table:MZmine:mzmine_wide_area_proxy_v1"
+    source = "external_feature_table:MZmine:mzmine_wide_area_proxy"
     features = [
         _feature(
             feature_id="base",

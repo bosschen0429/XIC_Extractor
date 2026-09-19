@@ -94,7 +94,7 @@ jobs:
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
             $packagingRelevant = @(
               $changedPaths | Where-Object {
-                $_ -match '^(pyproject\.toml|uv\.lock|xic_extractor\.spec|tests/test_pyinstaller_spec\.py|assets/|config/(settings|targets)\.example\.csv|gui/main\.py|scripts/(csv_to_excel|xlsx_to_targets)\.py|xic_extractor/presets/data/|xic_extractor/alignment/(__init__\.py|quantitative_projection_authority\.py|data/quantitative_projection_authority_v1\.json))'
+                $_ -match '^(pyproject\.toml|uv\.lock|xic_extractor\.spec|tests/test_pyinstaller_spec\.py|assets/|config/(settings|targets)\.example\.csv|gui/main\.py|scripts/(csv_to_excel|xlsx_to_targets)\.py|xic_extractor/presets/data/|xic_extractor/alignment/(__init__\.py|quantitative_projection_authority\.py|data/quantitative_projection_authority\.json))'
               }
             )
             if ($packagingRelevant.Count -eq 0) {

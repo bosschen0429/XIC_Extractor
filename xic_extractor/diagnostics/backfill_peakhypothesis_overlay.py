@@ -30,7 +30,7 @@ from xic_extractor.peak_detection.ms1_morphology import (
     gaussian15_morphology_trace,
 )
 
-SCHEMA_VERSION = "backfill_peakhypothesis_overlay_v1"
+SCHEMA_VERSION = "backfill_peakhypothesis_overlay"
 SMOOTH_METHOD = "gaussian15_asls_residual"
 SMOOTH_WINDOW_POINTS = DEFAULT_GAUSSIAN15_WINDOW_POINTS
 MIN_MACHINE_SHAPE_CONTEXT_WIDTH_MIN = 0.60

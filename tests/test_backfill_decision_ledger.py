@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from tests.alignment_pipeline_helpers import candidate_row, write_csv
+from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.csv_io import (
     read_discovery_batch_index,
     read_discovery_candidates_csv,
@@ -33,7 +34,15 @@ from xic_extractor.discovery.batch_contract import (
     discovery_receipt_index_fields,
     mint_discovery_candidate_universe_receipt,
 )
-from xic_extractor.discovery.models import DISCOVERY_CANDIDATE_COLUMNS
+from xic_extractor.discovery.models import (
+    DISCOVERY_CANDIDATE_COLUMNS,
+    DiscoverySettings,
+    NeutralLossProfile,
+)
+from xic_extractor.extraction.provisional_run_manifest import (
+    ProvisionalRunRuntimeConfiguration,
+    write_provisional_run_manifest,
+)
 from xic_extractor.processing_identity import build_acquisition_source_identity
 
 _REVISION = "a" * 40
@@ -109,7 +118,7 @@ def test_decision_ledger_is_deterministic_and_preserves_authority_ceiling(
         "early_loser_settlement_shadow_before_exact_request_coalescing"
     )
     assert first.summary["artifact"]["manifest_rehydration_status"] == (
-        "unavailable_legacy_schema_rejected_by_current_manifest_owner"
+        "current_owner_rehydrated"
     )
     assert set(first.summary["diagnostic_layers"]) == {
         "A_same_candidate_other_ms2_evidence",
@@ -150,7 +159,6 @@ def test_decision_ledger_rejects_owner_resealed_duplicate_physical_feature_id(
     )
     original_candidate = read_discovery_candidates_csv(
         candidate_csv,
-        require_successor_columns=True,
     )[0]
     duplicate_row = candidate_row("Sample_A")
     duplicate_row.update(
@@ -165,7 +173,6 @@ def test_decision_ledger_rejects_owner_resealed_duplicate_physical_feature_id(
     write_csv(duplicate_only_csv, DISCOVERY_CANDIDATE_COLUMNS, [duplicate_row])
     duplicate_candidate = read_discovery_candidates_csv(
         duplicate_only_csv,
-        require_successor_columns=True,
     )[0]
     write_csv(
         candidate_csv,
@@ -186,6 +193,7 @@ def test_decision_ledger_rejects_owner_resealed_duplicate_physical_feature_id(
     _rewrite_batch_receipt(batch_index, resealed_receipt)
 
     with pytest.raises(ValueError, match="duplicate ms1_feature_row_id"):
+        _write_current_manifest(artifact)
         build_backfill_decision_ledger(
             artifact_root=artifact,
             output_dir=tmp_path / "output",
@@ -214,7 +222,6 @@ def test_decision_ledger_excludes_non_feature_backed_ids_from_uniqueness_claim(
     write_csv(candidate_csv, DISCOVERY_CANDIDATE_COLUMNS, [first_row, second_row])
     candidates = read_discovery_candidates_csv(
         candidate_csv,
-        require_successor_columns=True,
     )
 
     batch_index = artifact / "workflow" / "discovery" / "discovery_batch_index.csv"
@@ -229,6 +236,7 @@ def test_decision_ledger_excludes_non_feature_backed_ids_from_uniqueness_claim(
     )
     _rewrite_batch_receipt(batch_index, resealed_receipt)
 
+    _write_current_manifest(artifact)
     outputs = build_backfill_decision_ledger(
         artifact_root=artifact,
         output_dir=tmp_path / "output",
@@ -258,6 +266,7 @@ def test_decision_ledger_honors_declared_candidate_locator_and_relocates_only_at
         "../../owner-located/candidates.csv",
     )
 
+    _write_current_manifest(artifact)
     build_backfill_decision_ledger(
         artifact_root=artifact,
         output_dir=tmp_path / "declared-output",
@@ -273,6 +282,7 @@ def test_decision_ledger_honors_declared_candidate_locator_and_relocates_only_at
         / "discovery_candidates.csv"
     )
     _rewrite_batch_candidate_locator(batch_index, str(attempt_path))
+    _write_current_manifest(artifact)
     build_backfill_decision_ledger(
         artifact_root=artifact,
         output_dir=tmp_path / "attempt-output",
@@ -281,6 +291,7 @@ def test_decision_ledger_honors_declared_candidate_locator_and_relocates_only_at
 
     _rewrite_batch_candidate_locator(batch_index, "missing/candidates.csv")
     with pytest.raises(ValueError, match="required artifact file is missing"):
+        _write_current_manifest(artifact)
         build_backfill_decision_ledger(
             artifact_root=artifact,
             output_dir=tmp_path / "missing-output",
@@ -307,6 +318,7 @@ def test_decision_ledger_rejects_unknown_projection_group(tmp_path: Path) -> Non
     )
 
     with pytest.raises(ValueError, match="unknown group_hypothesis_id"):
+        _write_current_manifest(artifact)
         build_backfill_decision_ledger(
             artifact_root=artifact,
             output_dir=tmp_path / "output",
@@ -324,6 +336,7 @@ def test_decision_ledger_rejects_negative_cost_metric(tmp_path: Path) -> None:
     )
 
     with pytest.raises(ValueError, match="point_count must be a nonnegative integer"):
+        _write_current_manifest(artifact)
         build_backfill_decision_ledger(
             artifact_root=artifact,
             output_dir=tmp_path / "output",
@@ -344,6 +357,7 @@ def test_decision_ledger_rejects_missing_owner_timing_and_wrong_schema(
     ]
     timing_path.write_text(json.dumps(timing), encoding="utf-8")
     with pytest.raises(ValueError, match="sample universe does not match Discovery"):
+        _write_current_manifest(artifact)
         build_backfill_decision_ledger(
             artifact_root=artifact,
             output_dir=tmp_path / "missing-owner-output",
@@ -382,6 +396,7 @@ def test_decision_ledger_rejects_missing_owner_timing_and_wrong_schema(
         encoding="utf-8",
     )
     with pytest.raises(ValueError, match="schema_version must be"):
+        _write_current_manifest(artifact)
         build_backfill_decision_ledger(
             artifact_root=artifact,
             output_dir=tmp_path / "wrong-schema-output",
@@ -402,6 +417,7 @@ def test_decision_ledger_rejects_duplicate_header_and_unknown_enum(
         encoding="utf-8",
     )
     with pytest.raises(ValueError, match="duplicate columns"):
+        _write_current_manifest(artifact)
         build_backfill_decision_ledger(
             artifact_root=artifact,
             output_dir=tmp_path / "duplicate",
@@ -415,6 +431,7 @@ def test_decision_ledger_rejects_duplicate_header_and_unknown_enum(
         encoding="utf-8",
     )
     with pytest.raises(ValueError, match="unsupported consolidation_state"):
+        _write_current_manifest(artifact)
         build_backfill_decision_ledger(
             artifact_root=artifact,
             output_dir=tmp_path / "enum",
@@ -432,6 +449,7 @@ def test_decision_ledger_derives_inconclusive_priority_without_losers(
     rows[0]["consolidation_winner_group_hypothesis_id"] = ""
     _write_tsv(review, _REVIEW_COLUMNS, rows)
 
+    _write_current_manifest(artifact)
     result = build_backfill_decision_ledger(
         artifact_root=artifact,
         output_dir=tmp_path / "output",
@@ -480,6 +498,7 @@ def test_decision_ledger_rejects_invalid_consolidation_relationships(
     _write_tsv(review, _REVIEW_COLUMNS, rows)
 
     with pytest.raises(ValueError, match=expected):
+        _write_current_manifest(artifact)
         build_backfill_decision_ledger(
             artifact_root=artifact,
             output_dir=tmp_path / "output",
@@ -520,6 +539,7 @@ def test_decision_ledger_accepts_loser_chain_to_terminal_winner(
     )
     timing_path.write_text(json.dumps(timing), encoding="utf-8")
 
+    _write_current_manifest(artifact)
     result = build_backfill_decision_ledger(
         artifact_root=artifact,
         output_dir=tmp_path / "output",
@@ -543,6 +563,7 @@ def test_decision_ledger_rejects_nonfinite_elapsed_values(
     timing["records"][-1]["elapsed_sec"] = nonfinite
     timing_path.write_text(json.dumps(timing), encoding="utf-8")
     with pytest.raises(ValueError, match="finite nonnegative number"):
+        _write_current_manifest(artifact)
         build_backfill_decision_ledger(
             artifact_root=artifact,
             output_dir=tmp_path / "timing-output",
@@ -555,6 +576,7 @@ def test_decision_ledger_rejects_nonfinite_elapsed_values(
         encoding="utf-8",
     )
     with pytest.raises(ValueError, match="heartbeat elapsed_sec"):
+        _write_current_manifest(artifact)
         build_backfill_decision_ledger(
             artifact_root=artifact,
             output_dir=tmp_path / "heartbeat-output",
@@ -593,6 +615,7 @@ def test_decision_ledger_rejects_partial_or_incomplete_backfill_scope(
     timing_path.write_text(json.dumps(timing), encoding="utf-8")
 
     with pytest.raises(ValueError, match=expected):
+        _write_current_manifest(artifact)
         build_backfill_decision_ledger(
             artifact_root=artifact,
             output_dir=tmp_path / "output",
@@ -610,6 +633,7 @@ def test_decision_ledger_rejects_missing_backfill_scope_metric(
     timing_path.write_text(json.dumps(timing), encoding="utf-8")
 
     with pytest.raises(ValueError, match="skipped_feature_count"):
+        _write_current_manifest(artifact)
         build_backfill_decision_ledger(
             artifact_root=artifact,
             output_dir=tmp_path / "output",
@@ -633,6 +657,7 @@ def test_decision_ledger_rejects_backfill_scope_review_universe_mismatch(
     timing_path.write_text(json.dumps(timing), encoding="utf-8")
 
     with pytest.raises(ValueError, match="does not match alignment review"):
+        _write_current_manifest(artifact)
         build_backfill_decision_ledger(
             artifact_root=artifact,
             output_dir=tmp_path / "output",
@@ -789,7 +814,6 @@ def _artifact(root: Path) -> Path:
     )
     candidates = read_discovery_candidates_csv(
         candidate_csv,
-        require_successor_columns=True,
     )
     source_path = root / "inputs" / "Sample_A.synthetic"
     source_path.parent.mkdir()
@@ -869,24 +893,7 @@ def _artifact(root: Path) -> Path:
             },
         ],
     )
-    (root / "run_manifest.json").write_text(
-        json.dumps(
-            {
-                "schema_version": "untargeted_provisional_matrix_run_v1",
-                "code_revision": _REVISION,
-                "preset_name": "synthetic",
-                "effective_configuration": {},
-                "runtime": {},
-                "inputs": {},
-                "artifacts": {},
-                "validation_status": "diagnostic_only",
-                "product_authority": False,
-                "row_identity_status": "provisional",
-                "identity_settlement_status": "not_run",
-            }
-        ),
-        encoding="utf-8",
-    )
+    _write_current_manifest(root)
     (root / "heartbeat.json").write_text("{}", encoding="utf-8")
     (root / "timing.json").write_text(
         json.dumps(
@@ -924,6 +931,44 @@ def _artifact(root: Path) -> Path:
         encoding="utf-8",
     )
     return root
+
+
+def _write_current_manifest(root: Path) -> None:
+    alignment = root / "workflow" / "alignment"
+    retained_metadata = root / "inputs" / "sample_metadata.tsv"
+    retained_metadata.write_text(
+        "sample_stem\tinjection_order\nSample_A\t1\n", encoding="utf-8",
+    )
+    artifacts = {
+        "provisional_matrix": alignment / "provisional_alignment_matrix.tsv",
+        "provisional_identity": alignment / "provisional_row_identity.tsv",
+        "provisional_cell_provenance": alignment / "provisional_cell_provenance.tsv",
+        "provisional_summary": alignment / "provisional_matrix_summary.json",
+    }
+    for path in (*artifacts.values(), alignment / "alignment_matrix.tsv",
+                 alignment / "alignment_matrix_identity.tsv"):
+        if not path.exists():
+            path.write_text(path.name + "\n", encoding="utf-8")
+    write_provisional_run_manifest(
+        root / "run_manifest.json", root=root, code_revision=_REVISION,
+        preset_name="dna_dr",
+        discovery_settings=DiscoverySettings(neutral_loss_profiles=(
+            NeutralLossProfile(tag="DNA_dR", neutral_loss_da=116.0474),
+        )),
+        alignment_config=AlignmentConfig(),
+        runtime=ProvisionalRunRuntimeConfiguration(
+            sample_count=1, raw_workers=3, raw_xic_batch_size=16,
+            owner_build_xic_backend="raw_superwindow",
+            owner_backfill_xic_backend="raw",
+            owner_backfill_window_strategy="super-window",
+            owner_backfill_superwindow_span_factor=2,
+        ),
+        retained_sample_metadata=retained_metadata,
+        discovery_batch_index=(
+            root / "workflow" / "discovery" / "discovery_batch_index.csv"
+        ),
+        artifacts=artifacts,
+    )
 
 
 def _write_batch_index(

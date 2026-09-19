@@ -15,12 +15,11 @@ from xic_extractor.discovery.pt_pattern_artifact_contract import (
     PT_PATTERN_TRACE_ANCHOR_LOCAL_ROLE,
     PT_PATTERN_TRACE_ARTIFACT_ROLE_FIELD,
     PT_PATTERN_TRACE_EXTRACTION_SHA256_FIELD,
-    PT_PATTERN_TRACE_FULL_CONTEXT_ROLE,
     PT_PATTERN_TRACE_SCHEMA_ROLE,
     validate_pt_candidate_trace_summary_identity,
 )
 from xic_extractor.discovery.pt_pattern_trace_batch import (
-    ANCHOR_LOCAL_SCHEMA_VERSION as ANCHOR_TRACE_SCHEMA_VERSION,
+    SCHEMA_VERSION as TRACE_SCHEMA_VERSION,
 )
 from xic_extractor.discovery.pt_pattern_trace_bundle_reader import (
     load_trace_bundle_manifest,
@@ -29,9 +28,6 @@ from xic_extractor.discovery.pt_pattern_trace_bundle_reader import (
 from xic_extractor.discovery.pt_pattern_trace_evidence import (
     ANCHOR_SEGMENTATION_METRIC_COLUMNS,
     ANCHOR_SEGMENTATION_SUMMARY_COLUMNS,
-)
-from xic_extractor.discovery.pt_pattern_trace_evidence import (
-    SCHEMA_VERSION as LEGACY_TRACE_SCHEMA_VERSION,
 )
 from xic_extractor.discovery.pt_pattern_trace_manifest import (
     validate_trace_manifest_identity,
@@ -44,13 +40,9 @@ from xic_extractor.tabular_io import (
     write_delimited_rows,
 )
 
-SCHEMA_VERSION = "pt_pattern_manual_review_packet.v4"
-ANCHOR_LOCAL_SCHEMA_VERSION = "pt_pattern_manual_review_packet.v5"
-PACKET_MANIFEST_VERSION = "pt_pattern_manual_review_packet_manifest.v1"
-PACKET_SCHEMA_ROLE = {
-    SCHEMA_VERSION: PT_PATTERN_TRACE_FULL_CONTEXT_ROLE,
-    ANCHOR_LOCAL_SCHEMA_VERSION: PT_PATTERN_TRACE_ANCHOR_LOCAL_ROLE,
-}
+SCHEMA_VERSION = "pt_pattern_manual_review_packet"
+PACKET_MANIFEST_VERSION = "pt_pattern_manual_review_packet_manifest"
+PACKET_SCHEMA_ROLE = {SCHEMA_VERSION: PT_PATTERN_TRACE_ANCHOR_LOCAL_ROLE}
 READINESS_TIER = "diagnostic_only"
 EVIDENCE_OWNER = "xic_extractor.discovery.pt_pattern_trace_evidence"
 
@@ -217,17 +209,7 @@ PACKET_COLUMNS = (
     "human_review_note",
     "oracle_status",
 )
-LEGACY_PACKET_COLUMNS = tuple(
-    column
-    for column in PACKET_COLUMNS
-    if column not in ANCHOR_SEGMENTATION_SUMMARY_COLUMNS
-)
-ANCHOR_LOCAL_PACKET_COLUMNS = PACKET_COLUMNS
-FULL_CONTEXT_PACKET_COLUMNS = LEGACY_PACKET_COLUMNS
-PACKET_SCHEMA_COLUMNS = {
-    SCHEMA_VERSION: FULL_CONTEXT_PACKET_COLUMNS,
-    ANCHOR_LOCAL_SCHEMA_VERSION: ANCHOR_LOCAL_PACKET_COLUMNS,
-}
+PACKET_SCHEMA_COLUMNS = {SCHEMA_VERSION: PACKET_COLUMNS}
 
 
 def build_review_packet_rows(
@@ -352,12 +334,7 @@ def run_review_packet(
 
     output_dir.mkdir(parents=True, exist_ok=True)
     packet_schema_version = str(packet_rows[0]["schema_version"])
-    packet_columns = (
-        PACKET_COLUMNS
-        if packet_schema_version == ANCHOR_LOCAL_SCHEMA_VERSION
-        else LEGACY_PACKET_COLUMNS
-    )
-    write_delimited_rows(packet_csv, packet_rows, packet_columns)
+    write_delimited_rows(packet_csv, packet_rows, PACKET_COLUMNS)
     packet_csv_sha256 = file_sha256(packet_csv).lower()
 
     status_counts = Counter(
@@ -676,21 +653,12 @@ def _packet_schema_version(
     if len(summary_versions) != 1:
         raise ValueError("trace summary rows must use one schema_version")
     source_schema = next(iter(summary_versions))
-    expected_packet_schema: str
-    expects_anchor_columns: bool
-    if source_schema == LEGACY_TRACE_SCHEMA_VERSION:
-        expected_packet_schema = SCHEMA_VERSION
-        expects_anchor_columns = False
-    elif source_schema == ANCHOR_TRACE_SCHEMA_VERSION:
-        expected_packet_schema = ANCHOR_LOCAL_SCHEMA_VERSION
-        expects_anchor_columns = True
-    else:
+    if source_schema != TRACE_SCHEMA_VERSION:
         raise ValueError(f"unsupported trace summary schema_version: {source_schema!r}")
 
     _validate_anchor_columns(
         summary_rows,
         columns=ANCHOR_SEGMENTATION_SUMMARY_COLUMNS,
-        expects_anchor_columns=expects_anchor_columns,
         label="trace summary",
     )
     metric_versions = {
@@ -701,33 +669,25 @@ def _packet_schema_version(
     _validate_anchor_columns(
         metric_rows,
         columns=ANCHOR_SEGMENTATION_METRIC_COLUMNS,
-        expects_anchor_columns=expects_anchor_columns,
         label="trace metric",
     )
-    return expected_packet_schema
+    return SCHEMA_VERSION
 
 
 def _validate_anchor_columns(
     rows: Sequence[Mapping[str, str]],
     *,
     columns: Sequence[str],
-    expects_anchor_columns: bool,
     label: str,
 ) -> None:
     expected = set(columns)
     for row_index, row in enumerate(rows, start=2):
         present = expected.intersection(row)
-        if expects_anchor_columns and present != expected:
+        if present != expected:
             missing = sorted(expected - present)
             raise ValueError(
                 f"{label} row {row_index} is missing anchor segmentation columns: "
                 + ", ".join(missing)
-            )
-        if not expects_anchor_columns and present:
-            unexpected = sorted(present)
-            raise ValueError(
-                f"{label} row {row_index} legacy schema must not contain anchor "
-                "segmentation columns: " + ", ".join(unexpected)
             )
 
 

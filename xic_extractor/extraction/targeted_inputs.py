@@ -43,20 +43,20 @@ from xic_extractor.target_pair_rt_calibration import (
     rt_prior_library_from_target_pair_calibration,
 )
 
-TARGETED_PROCESSING_INPUT_SCHEMA_VERSION = "targeted_extraction_inputs_v2"
-TARGETED_PROCESSING_ALGORITHM_VERSION = "targeted_extraction_algorithm_v1"
-TARGETED_PROCESSING_CONTRACT_VERSION = "targeted_processing_contract_v2"
+TARGETED_PROCESSING_INPUT_SCHEMA_VERSION = "targeted_extraction_inputs"
+TARGETED_PROCESSING_ALGORITHM_VERSION = "targeted_extraction_algorithm"
+TARGETED_PROCESSING_CONTRACT_VERSION = "targeted_processing_contract"
 TARGETED_REAL_DATA_CANDIDATE_UNIVERSE_INPUT_KEY = (
     "targeted_real_data_candidate_universe"
 )
 TARGETED_REAL_DATA_CANDIDATE_UNIVERSE_SCHEMA_VERSION = (
-    "targeted_real_data_candidate_universe_v1"
+    "targeted_real_data_candidate_universe"
 )
 TARGETED_REAL_DATA_DISCOVERY_SETTINGS_INPUT_KEY = (
     "targeted_real_data_discovery_settings"
 )
 TARGETED_REAL_DATA_DISCOVERY_SETTINGS_SCHEMA_VERSION = (
-    "targeted_real_data_discovery_settings_v1"
+    "targeted_real_data_discovery_settings"
 )
 TARGETED_SCIENTIFIC_SETTING_FIELDS = (
     "smooth_window",
@@ -256,7 +256,7 @@ def validate_targeted_real_data_candidate_universe_payload(
     *,
     expected_sample_stems: Sequence[str],
 ) -> tuple[dict[str, object], ...]:
-    """Validate the complete persisted v1 universe before runtime replay."""
+    """Validate the complete persisted universe before runtime replay."""
 
     sample_stems = _canonical_candidate_universe_sample_stems(expected_sample_stems)
     if not isinstance(payload, dict) or set(payload) != {
@@ -264,7 +264,7 @@ def validate_targeted_real_data_candidate_universe_payload(
         "samples",
     }:
         raise IdentityContractError(
-            "candidate universe payload must use the exact v1 envelope"
+            "candidate universe payload must use the exact envelope"
         )
     if (
         payload.get("schema_version")
@@ -285,7 +285,7 @@ def validate_targeted_real_data_candidate_universe_payload(
             "candidate_universe_sha256",
         }:
             raise IdentityContractError(
-                "candidate universe sample entry must use the exact v1 shape"
+                "candidate universe sample entry must use the exact shape"
             )
         sample_stem = entry.get("sample_stem")
         candidate_count = entry.get("candidate_count")
@@ -509,7 +509,7 @@ def _targeted_ms1_shape_identity_support_snapshot(
         return None
     fingerprint = fingerprint_file_content(path)
     return {
-        "schema_version": "targeted_ms1_shape_identity_support_input_v1",
+        "schema_version": "targeted_ms1_shape_identity_support_input",
         "activation_policy": config.targeted_ms1_shape_identity_activation_policy,
         "content_sha256": fingerprint.content_sha256,
         "byte_size": fingerprint.byte_size,

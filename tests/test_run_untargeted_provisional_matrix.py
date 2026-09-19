@@ -186,7 +186,6 @@ def test_runner_publishes_full_universe_outputs_atomically(
     assert len(fingerprints.receipts) == 9
     artifact_names = {receipt.artifact_name for receipt in fingerprints.receipts}
     assert "alignment_owner_backfill_peak_fact_provenance.tsv" in artifact_names
-    assert "alignment_owner_backfill_peak_fact_provenance_v1.tsv" not in artifact_names
     assert "Validation status: diagnostic_only" in capsys.readouterr().out
     timing = json.loads((output_dir / "timing.json").read_text(encoding="utf-8"))
     assert timing["measurement_contract"]["cache_state"] == (
@@ -321,7 +320,7 @@ def test_runner_preflight_rejects_raw_stem_case_mismatch(
     for index, stem in enumerate(("Sample-A", "sample-b"), start=1):
         rows.append(
             {
-                "schema_version": "sample_metadata_v1",
+                "schema_version": "sample_metadata",
                 "sample_name": stem,
                 "raw_stem": stem,
                 "injection_order": str(index),

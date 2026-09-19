@@ -428,10 +428,10 @@ def test_cli_passes_targeted_ms1_shape_identity_support_override(
     module = _module()
     config = replace(
         _config(tmp_path),
-        targeted_ms1_shape_identity_activation_policy="limited_5hmdc_5medc_v1",
+        targeted_ms1_shape_identity_activation_policy="limited_5hmdc_5medc",
     )
     targets = [_target("Analyte")]
-    support_path = tmp_path / "targeted_ms1_shape_identity_v0.tsv"
+    support_path = tmp_path / "targeted_ms1_shape_identity.tsv"
     support_path.write_text("stub\n", encoding="utf-8")
     calls: dict[str, object] = {}
 
@@ -538,7 +538,7 @@ def test_cli_limited_policy_without_support_tsv_dispatches_auto_limited_default(
     module = _module()
     config = replace(
         _config(tmp_path),
-        targeted_ms1_shape_identity_activation_policy="limited_5hmdc_5medc_v1",
+        targeted_ms1_shape_identity_activation_policy="limited_5hmdc_5medc",
     )
     targets = [_target("Analyte")]
     calls: dict[str, object] = {}
@@ -567,7 +567,7 @@ def test_cli_limited_policy_without_support_tsv_dispatches_auto_limited_default(
     assert exit_code == 0
     assert calls["auto_config"].targeted_ms1_shape_identity_support_tsv is None
     assert calls["auto_config"].targeted_ms1_shape_identity_activation_policy == (
-        "limited_5hmdc_5medc_v1"
+        "limited_5hmdc_5medc"
     )
     assert calls["auto_targets"] == targets
     assert calls["auto_kwargs"]["auto_output_dir"] is None
@@ -692,9 +692,9 @@ def test_cli_auto_limited_default_runs_baseline_support_final(
     assert baseline_config.keep_intermediate_csv is True
     assert baseline_config.targeted_ms1_shape_identity_support_tsv is None
     assert baseline_config.targeted_ms1_shape_identity_activation_policy == (
-        "limited_5hmdc_5medc_v1"
+        "limited_5hmdc_5medc"
     )
-    support_tsv = auto_dir / "support" / "targeted_ms1_shape_identity_v0.tsv"
+    support_tsv = auto_dir / "support" / "targeted_ms1_shape_identity.tsv"
     assert calls["support_builder_kwargs"]["long_csv"] == (
         auto_dir / "baseline" / "output" / "xic_results_long.csv"
     )
@@ -708,7 +708,7 @@ def test_cli_auto_limited_default_runs_baseline_support_final(
     )
     assert final_config.targeted_ms1_shape_identity_support_tsv == support_tsv
     assert final_config.targeted_ms1_shape_identity_activation_policy == (
-        "limited_5hmdc_5medc_v1"
+        "limited_5hmdc_5medc"
     )
     assert calls["diff_writer_kwargs"] == {
         "baseline_output_dir": auto_dir / "baseline" / "output",
@@ -735,7 +735,7 @@ def test_cli_auto_limited_default_runs_baseline_support_final(
         support_tsv.resolve()
     )
     assert final_overrides["targeted_ms1_shape_identity_activation_policy"] == (
-        "limited_5hmdc_5medc_v1"
+        "limited_5hmdc_5medc"
     )
     assert "excel" not in calls
     stdout = capsys.readouterr().out
@@ -807,7 +807,7 @@ def test_cli_auto_limited_default_rejects_manual_support_tsv(
     capsys,
 ) -> None:
     module = _module()
-    support_tsv = tmp_path / "targeted_ms1_shape_identity_v0.tsv"
+    support_tsv = tmp_path / "targeted_ms1_shape_identity.tsv"
     support_tsv.write_text("stub\n", encoding="utf-8")
 
     exit_code = module.main(
@@ -1018,7 +1018,7 @@ def test_cli_replay_rejects_targeted_ms1_shape_identity_support_override(
 ) -> None:
     module = _module()
     manifest_path = _write_replay_manifest(tmp_path)
-    support_path = tmp_path / "targeted_ms1_shape_identity_v0.tsv"
+    support_path = tmp_path / "targeted_ms1_shape_identity.tsv"
     support_path.write_text("stub\n", encoding="utf-8")
     calls: dict[str, object] = {}
 
@@ -1058,7 +1058,7 @@ def test_cli_replay_rejects_targeted_ms1_shape_identity_activation_policy_overri
             "--replay-manifest",
             str(manifest_path),
             "--targeted-ms1-shape-identity-activation-policy",
-            "limited_5hmdc_5medc_v1",
+            "limited_5hmdc_5medc",
         ]
     )
 

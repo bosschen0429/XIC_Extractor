@@ -557,7 +557,9 @@ def test_run_validation_specs_runs_manual_sweep_with_script_arguments(
     assert "--parallel-workers" in sweep_args
 
 
-@pytest.mark.parametrize("grid", ["calibration-v1", "calibration-v2"])
+@pytest.mark.parametrize(
+    "grid", ["calibration-duration-search", "calibration-duration-height"]
+)
 def test_cli_accepts_calibration_grid_for_manual_sweep(
     tmp_path: Path, capsys, grid: str
 ) -> None:

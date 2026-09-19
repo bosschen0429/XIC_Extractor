@@ -47,13 +47,13 @@ def test_cli_produces_sidecar_manifest_pair_consumed_by_gate(tmp_path: Path) -> 
 
     assert rows[0]["candidate_gate_status"] == "audit"
     assert rows[0]["tier2_evidence_available"] == "FALSE"
-    assert "tier2_v0_1_diagnostic_only" in rows[0]["challenge_blockers"]
+    assert "tier2_diagnostic_only" in rows[0]["challenge_blockers"]
     assert summary["tier2_candidate_subset_count"] == 1
     assert producer_summary["readiness_label"] == "diagnostic_only"
-    assert producer_summary["producer_version"] == "raw_trace_reread_tier2_v0_1"
+    assert producer_summary["producer_version"] == "raw_trace_reread_tier2"
     assert (
         producer_summary["criteria_version"]
-        == "tier2_trace_identity_rescued_coherence_v0_1_diagnostic"
+        == "tier2_trace_identity_diagnostic"
     )
     assert producer_summary["source_expected_sample_count"] == 3
     assert producer_summary["candidate_subset_count"] == 1

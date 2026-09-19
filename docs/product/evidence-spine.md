@@ -161,7 +161,7 @@ precursor m/z, precursor tolerance, configured neutral loss, and an immutable
 subject ID. A multi-tag CID-NL subject instead binds the ordered tag/loss
 requirements and their OR/AND combination; it does not represent the first
 loss as the whole method. Single-loss subject/assessment/chromatographic schemas
-remain v1/v3/v1; composite methods use v2/v4/v2 with explicit loss bindings.
+remain v1/v3/v1; composite methods use v2/v4/with explicit loss bindings.
 A Targeted adapter retains its exact target snapshot/key/definition
 inside the subject; an Untargeted request pins the same subject schema directly
 and never fabricates a `ResolvedTargetDefinition`.
@@ -304,7 +304,7 @@ optional Targeted compatibility identity, and the exact SUPPORT assessment
 closure that formed the group. Every SUPPORT,
 HOLD, REJECT, or technical cell must consume that owner-validated group context;
 a reused display label, equal-looking group, or group from another method
-subject/Target cannot be substituted. The v4 cell artifact keeps those SUPPORT assessment artifacts
+subject/Target cannot be substituted. The cell artifact keeps those SUPPORT assessment artifacts
 in its upstream closure. An optional owner-resolved human disposition must cite
 the exact current method-assessment artifact, not merely the same sample/target
 subject. Both adapters are internal, no-write, and carry
@@ -318,7 +318,7 @@ SUPPORT assessment can belong to a sibling group without supporting the current
 cell's group. Such a cell preserves the original assessment and carries an
 explicit outside-group relation bound to that exact sibling group context and
 supported hypothesis. Its group-local observation and hypothesis remain empty.
-The v5 cell artifact binds this relation; existing cells retain their v4 canonical
+The cell artifact binds this relation; existing cells retain their canonical
 payload and semantic contract. The existing `local_owner_not_supersedable`
 coverage yields a blank, `not_searched` cell without asserting absence. ModeTrack
 and CrossSample retain identity authority, and the outside-group lane cannot

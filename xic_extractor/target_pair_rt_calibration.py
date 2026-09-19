@@ -13,7 +13,7 @@ from xic_extractor.configuration.targets import (
 from xic_extractor.rt_prior_library import LibraryEntry
 from xic_extractor.tabular_io import write_tsv
 
-TARGET_PAIR_RT_CALIBRATION_SCHEMA_VERSION = "target_pair_rt_calibration_v1"
+TARGET_PAIR_RT_CALIBRATION_SCHEMA_VERSION = "target_pair_rt_calibration"
 
 TARGET_PAIR_RT_CALIBRATION_FIELDS = (
     "schema_version",

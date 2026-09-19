@@ -119,9 +119,6 @@ def test_workflow_routes_complete_discovery_universe_to_full_alignment(
     assert physical_provenance.name == (
         "alignment_owner_backfill_peak_fact_provenance.tsv"
     )
-    assert physical_provenance.name != (
-        "alignment_owner_backfill_peak_fact_provenance_v1.tsv"
-    )
 
 
 def test_pure_cid_nl_rejects_legacy_knobs_before_write_or_discovery(

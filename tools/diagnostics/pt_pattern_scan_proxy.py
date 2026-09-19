@@ -14,8 +14,8 @@ the four Pt pattern m/z positions (``base``, ``pt_plus_1``, ``pt_plus_2``,
 ``pt_plus_4`` -- see ``xic_extractor.discovery.delta_mass_patterns.PT_PATTERN``)
 near every plausible base peak. It groups same-scan co-occurring hits across
 consecutive scans into one pseudo-"feature" per (position, candidate group)
-and writes those pseudo-features out in the exact Detected Features CSV v1
-shape, with ``source = "raw_scan_proxy_v1"`` on every row, plus a provenance
+and writes those pseudo-features out in the exact Detected Features CSV
+shape, with ``source = "raw_scan_proxy"`` on every row, plus a provenance
 JSON recording what was actually done.
 
 This is explicitly **not** a product feature detector:
@@ -62,8 +62,8 @@ from xic_extractor.numeric_validation import require_finite_real, require_intege
 from xic_extractor.raw_reader import RawReaderError, open_raw
 from xic_extractor.tabular_io import write_delimited_rows
 
-PROXY_SOURCE_LABEL = "raw_scan_proxy_v1"
-PROVENANCE_SCHEMA_VERSION = "pt_pattern_scan_proxy_provenance.v1"
+PROXY_SOURCE_LABEL = "raw_scan_proxy"
+PROVENANCE_SCHEMA_VERSION = "pt_pattern_scan_proxy_provenance"
 
 # Diagnostic-only local support fields. ``OK`` lets repeated full-pattern
 # scan-proxy groups pass the Pt matcher's local-signal gate so this bridge can

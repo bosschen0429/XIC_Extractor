@@ -17,7 +17,6 @@ from xic_extractor.discovery import pt_pattern_review_packet as packet
 from xic_extractor.discovery import pt_pattern_trace_evidence as evidence
 from xic_extractor.discovery.pt_pattern_artifact_contract import (
     PT_PATTERN_TRACE_ANCHOR_LOCAL_ROLE,
-    PT_PATTERN_TRACE_FULL_CONTEXT_ROLE,
 )
 from xic_extractor.tabular_io import (
     file_sha256,
@@ -39,15 +38,11 @@ def _review_row(
     overlap: str = "0.80",
     anchor_local: bool = False,
 ) -> dict[str, str]:
-    columns = packet.PACKET_COLUMNS if anchor_local else packet.LEGACY_PACKET_COLUMNS
+    columns = packet.PACKET_COLUMNS
     row = {column: "" for column in columns}
     row.update(
         {
-            "schema_version": (
-                packet.ANCHOR_LOCAL_SCHEMA_VERSION
-                if anchor_local
-                else packet.SCHEMA_VERSION
-            ),
+            "schema_version": packet.SCHEMA_VERSION,
             "readiness_tier": packet.READINESS_TIER,
             "evidence_owner": packet.EVIDENCE_OWNER,
             "packet_label": "unit_packet",
@@ -59,11 +54,7 @@ def _review_row(
                 f"gate-test-assignment|{candidate_id}".encode("utf-8")
             ).hexdigest(),
             "trace_extraction_sha256": "e" * 64,
-            "trace_artifact_role": (
-                PT_PATTERN_TRACE_ANCHOR_LOCAL_ROLE
-                if anchor_local
-                else PT_PATTERN_TRACE_FULL_CONTEXT_ROLE
-            ),
+            "trace_artifact_role": PT_PATTERN_TRACE_ANCHOR_LOCAL_ROLE,
             "base_mz": "500.0",
             "base_rt_apex_min": "10.0",
             "trace_decision_basis": evidence.TRACE_DECISION_BASIS,
@@ -77,14 +68,13 @@ def _review_row(
             "oracle_status": "pending_human_review",
         }
     )
-    if anchor_local:
-        row.update(
-            {
-                "trace_ambiguity_status": "clear",
-                "anchor_segmentation_status": "clear",
-                "anchor_segmentation_boundary_review_status": "clear",
-            }
-        )
+    row.update(
+        {
+            "trace_ambiguity_status": "clear",
+            "anchor_segmentation_status": "clear",
+            "anchor_segmentation_boundary_review_status": "clear",
+        }
+    )
     return row
 
 
@@ -212,7 +202,7 @@ def test_diagnostic_gate_replays_zero_false_positive_rule() -> None:
     assert reasons["reject-apex"] == "apex_delta_above_threshold"
 
     assert rows[0]["rule_id"] == (
-        "pt_v2_fullpattern_status_pt_pattern_detected_diagnostic_positions_ge_3"
+        "pt_fullpattern_status_pt_pattern_detected_diagnostic_positions_ge_3"
         "_apex_floor_le_0p6s_or_scan_multiplier_1p25_pearson_ge_0p9_overlap_ge_0p5"
         "_shiftedreviewonly_shiftedpearson_ge_0p85_shapeshift_le_45s"
     )
@@ -275,8 +265,8 @@ def test_diagnostic_gate_rejects_oracle_replay_over_synthetic_trace_row(
 
 def test_diagnostic_gate_accepts_current_anchor_packet(tmp_path: Path) -> None:
     review_csv, oracle_csv = _write_verified_review_and_promotion(
-        tmp_path / "anchor_v3",
-        candidate_id="anchor-v3",
+        tmp_path / "anchor",
+        candidate_id="anchor",
         oracle_call="reject",
         anchor_local=True,
     )
@@ -284,8 +274,8 @@ def test_diagnostic_gate_accepts_current_anchor_packet(tmp_path: Path) -> None:
     outputs = gate.run_diagnostic_gate(
         review_packet_csvs=[review_csv],
         oracle_promotion_csv=oracle_csv,
-        output_dir=tmp_path / "gate_v3",
-        gate_id="anchor_v3",
+        output_dir=tmp_path / "gate",
+        gate_id="anchor",
     )
 
     summary = json.loads(outputs["summary_json"].read_text(encoding="utf-8"))
@@ -293,13 +283,14 @@ def test_diagnostic_gate_accepts_current_anchor_packet(tmp_path: Path) -> None:
 
 
 def test_diagnostic_gate_rejects_partial_anchor_packet(tmp_path: Path) -> None:
-    review_row = _review_row("partial-v3", anchor_local=True)
-    partial_columns = (
-        *packet.LEGACY_PACKET_COLUMNS,
-        evidence.ANCHOR_SEGMENTATION_SUMMARY_COLUMNS[0],
+    review_row = _review_row("partial", anchor_local=True)
+    partial_columns = tuple(
+        column
+        for column in packet.PACKET_COLUMNS
+        if column != evidence.ANCHOR_SEGMENTATION_SUMMARY_COLUMNS[0]
     )
     review_csv = _write_csv(
-        tmp_path / "review_partial_v3.csv",
+        tmp_path / "review_partial.csv",
         [review_row],
         partial_columns,
     )
@@ -307,8 +298,8 @@ def test_diagnostic_gate_rejects_partial_anchor_packet(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="current schema columns mismatch"):
         gate.run_diagnostic_gate(
             review_packet_csvs=[review_csv],
-            output_dir=tmp_path / "gate_partial_v3",
-            gate_id="partial_v3",
+            output_dir=tmp_path / "gate_partial",
+            gate_id="partial",
         )
 
 
@@ -462,7 +453,7 @@ def test_diagnostic_gate_rejects_trace_basis_changed_with_refreshed_file_hash(
     )
     summary_rows[0]["trace_decision_basis"] = "raw_vendor_trace"
     write_delimited_rows(trace_summary_csv, summary_rows, evidence.SUMMARY_COLUMNS)
-    manifest_json = tmp_path / "pt_pattern_trace_diagnosis.json"
+    manifest_json = tmp_path / "pt_pattern_context_trace_diagnosis.json"
     manifest = json.loads(manifest_json.read_text(encoding="utf-8"))
     manifest["output_sha256"]["summary_csv"] = file_sha256(
         trace_summary_csv
@@ -489,9 +480,9 @@ def test_diagnostic_gate_rejects_header_only_trace_metrics(
         tmp_path / "trace_summary.csv",
         [_trace_summary_row("missing-metrics")],
     )
-    metrics_csv = tmp_path / "pt_pattern_trace_metrics.csv"
+    metrics_csv = tmp_path / "pt_pattern_context_trace_metrics.csv"
     write_delimited_rows(metrics_csv, [], evidence.METRIC_COLUMNS)
-    manifest_json = tmp_path / "pt_pattern_trace_diagnosis.json"
+    manifest_json = tmp_path / "pt_pattern_context_trace_diagnosis.json"
     manifest = json.loads(manifest_json.read_text(encoding="utf-8"))
     manifest["output_sha256"]["metrics_csv"] = file_sha256(metrics_csv).lower()
     manifest_json.write_text(
@@ -516,7 +507,7 @@ def test_diagnostic_gate_rejects_trace_manifest_role_conflict(
         tmp_path / "trace_summary.csv",
         [_trace_summary_row("wrong-role")],
     )
-    manifest_json = tmp_path / "pt_pattern_trace_diagnosis.json"
+    manifest_json = tmp_path / "pt_pattern_context_trace_diagnosis.json"
     manifest = json.loads(manifest_json.read_text(encoding="utf-8"))
     manifest["trace_artifact_role"] = "anchor_local"
     manifest_json.write_text(

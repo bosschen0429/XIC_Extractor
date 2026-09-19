@@ -83,7 +83,7 @@ def test_build_boundary_rows_emits_alternatives_for_each_candidate() -> None:
     assert all(row["area_baseline_corrected"] != "" for row in rows)
     assert all(row["area_uncertainty"] != "" for row in rows)
     assert {row["area_uncertainty_formula_version"] for row in rows} == {
-        "baseline_residual_mad_v1"
+        "baseline_residual_mad"
     }
     assert all(row["baseline_residual_mad"] != "" for row in rows)
     assert all(row["area_uncertainty_noise_source"] != "" for row in rows)

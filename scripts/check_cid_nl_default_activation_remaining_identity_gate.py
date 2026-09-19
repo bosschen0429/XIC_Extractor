@@ -43,7 +43,7 @@ ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_OUTPUT_DIR = (
     ROOT
     / "output/validation/"
-    / "cid_nl_default_activation_remaining_identity_gate_v1"
+    / "cid_nl_default_activation_remaining_identity_gate"
 )
 
 RESOLVED_CELL_LOCAL_STATUSES = {
@@ -147,7 +147,7 @@ def evaluate_remaining_identity_gate(
         + resolution_counts.get("cell_local_unique_detected_candidate_supersession", 0)
     )
     return {
-        "schema_version": "cid_nl_default_activation_remaining_identity_gate_v1",
+        "schema_version": "cid_nl_default_activation_remaining_identity_gate",
         "overall_status": overall_status,
         "readiness_label": (
             "default_activation_remaining_identity_resolved_candidate"
@@ -257,7 +257,7 @@ def _build_remaining_identity_audit_rows(
         rows.append(
             {
                 "schema_version": (
-                    "cid_nl_default_activation_remaining_identity_audit_v1"
+                    "cid_nl_default_activation_remaining_identity_audit"
                 ),
                 "old_peak_hypothesis_id": old_peak,
                 "sample_stem": row["sample_stem"],

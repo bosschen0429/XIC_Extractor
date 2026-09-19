@@ -111,15 +111,15 @@ from xic_extractor.sample_metadata import (
     resolve_canonical_sample_identity,
 )
 
-_IDENTITY_NAMESPACE = "targeted-production-v1"
+_IDENTITY_NAMESPACE = "targeted-production"
 _TRACE_SOURCE = "xic_extractor.targeted_production_workflow:retained-acquisition"
 _NO_OBSERVATION_ARTIFACT_CONTRACT = _mint_artifact_semantic_contract_ref(
     owner_namespace="xic_extractor.extraction.targeted_production_workflow",
     semantic_role="retained_no_observation_capture_population",
-    schema_version="targeted_no_observation_capture_v1",
+    schema_version="targeted_no_observation_capture",
     validation_status="production_input",
     media_type="application/json",
-    serialization_format="canonical-json-utf8-lf-v1",
+    serialization_format="canonical-json-utf8-lf",
 )
 _COMPLETED_WORKFLOW_MINT_TOKEN = object()
 
@@ -652,7 +652,7 @@ def _execute_target(
             processing_owners=context.owners,
             sample=sample,
             target=target,
-            detector_invocation_id="targeted-production-retained-trace:v1",
+            detector_invocation_id="targeted-production-retained-trace",
             evaluation_receipt=CidNlEvaluationReceipt(
                 query_rt_min=target.definition.target.rt_min,
                 query_rt_max=target.definition.target.rt_max,
@@ -711,8 +711,8 @@ def _execute_target(
     )
     alignment_config = AlignmentConfig()
     trajectory_policy = ModeTrackTrajectoryPolicy(
-        trajectory_policy_version="anchor-trajectory-v1",
-        band_policy_version="fixed-band-v1",
+        trajectory_policy_version="anchor-trajectory",
+        band_policy_version="fixed-band",
         prediction_half_width_min=2 / 60,
         max_interpolation_gap=10,
         max_extrapolation_gap=10,
@@ -744,7 +744,7 @@ def _execute_target(
     runtime = start_runtime_attempt(
         attempt=context.owners.attempt,
         work_unit_keys=(work_unit_key,),
-        owner_completeness_attestation="targeted-retained-acquisition-handoff:v1",
+        owner_completeness_attestation="targeted-retained-acquisition-handoff",
     )
     terminal = execute_alignment_workflow(
         TargetWorkflowRequest(
@@ -809,7 +809,7 @@ def _mint_no_observation_capture_artifact(
         )
     payload = canonical_identity_basis_bytes(
         {
-            "schema_version": "targeted_no_observation_capture_v1",
+            "schema_version": "targeted_no_observation_capture",
             "processing_request_id": owners.request.processing_request_id,
             "processing_attempt_id": owners.attempt.processing_attempt_id,
             "target_definition_id": target.definition.target_definition_id,
@@ -943,7 +943,7 @@ def _candidate_id(
 ) -> str:
     return ":".join(
         (
-            "targeted-capture-v1",
+            "targeted-capture",
             target.definition.target_definition_id,
             sample.identity.sample_identity_id,
         )

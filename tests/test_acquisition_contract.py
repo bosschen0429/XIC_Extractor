@@ -146,7 +146,7 @@ def test_acquired_trace_owner_roundtrip_closes_coordinate_request_and_content(
         lambda value: value["coordinate"].__setitem__("trace_point_count", 1),
         lambda value: value["trace"]["rt"].__setitem__(0, float(9.0).hex()),
         lambda value: value.__setitem__(
-            "acquired_trace_content_id", "xic.acquired-trace-content.v1:" + "0" * 64
+            "acquired_trace_content_id", "xic.acquired-trace-content:" + "0" * 64
         ),
         lambda value: value["trace"]["intensity"].__setitem__(0, "-0x0.0p+0"),
         lambda value: value["trace"]["intensity"].__setitem__(0, "0x0p+0"),

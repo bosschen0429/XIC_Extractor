@@ -122,7 +122,7 @@ _STATIC_LOCAL_MINIMUM_PARAMS = {
     "resolver_peak_duration_max": "2.0",
 }
 
-_CALIBRATION_V1_OVERRIDES = (
+_CALIBRATION_DURATION_SEARCH_OVERRIDES = (
     ("local_minimum_duration_1p5", {"resolver_peak_duration_max": "1.5"}),
     ("local_minimum_duration_2p0", {"resolver_peak_duration_max": "2.0"}),
     ("local_minimum_duration_3p0", {"resolver_peak_duration_max": "3.0"}),
@@ -165,7 +165,7 @@ _CALIBRATION_V1_OVERRIDES = (
     ),
 )
 
-_CALIBRATION_V2_OVERRIDES = (
+_CALIBRATION_DURATION_HEIGHT_OVERRIDES = (
     (
         "local_minimum_min_duration_0p02",
         {"resolver_peak_duration_min": "0.02"},
@@ -224,7 +224,11 @@ _GRID_VALUES: dict[str, GridValues] = {
     },
 }
 
-GRID_CHOICES = (*_GRID_VALUES.keys(), "calibration-v1", "calibration-v2")
+GRID_CHOICES = (
+    *_GRID_VALUES.keys(),
+    "calibration-duration-search",
+    "calibration-duration-height",
+)
 
 _THIN = Side(style="thin", color="BDBDBD")
 _BORDER = Border(left=_THIN, right=_THIN, top=_THIN, bottom=_THIN)
@@ -244,7 +248,7 @@ def build_parameter_sets(*, grid: str) -> list[ParameterSet]:
             {"resolver_mode": "local_minimum", **_STATIC_LOCAL_MINIMUM_PARAMS},
         ),
     ]
-    if grid == "calibration-v1":
+    if grid == "calibration-duration-search":
         parameter_sets.extend(
             ParameterSet(
                 name,
@@ -254,11 +258,11 @@ def build_parameter_sets(*, grid: str) -> list[ParameterSet]:
                     **overrides,
                 },
             )
-            for name, overrides in _CALIBRATION_V1_OVERRIDES
+            for name, overrides in _CALIBRATION_DURATION_SEARCH_OVERRIDES
         )
         return parameter_sets
 
-    if grid == "calibration-v2":
+    if grid == "calibration-duration-height":
         parameter_sets.extend(
             ParameterSet(
                 name,
@@ -268,7 +272,7 @@ def build_parameter_sets(*, grid: str) -> list[ParameterSet]:
                     **overrides,
                 },
             )
-            for name, overrides in _CALIBRATION_V2_OVERRIDES
+            for name, overrides in _CALIBRATION_DURATION_HEIGHT_OVERRIDES
         )
         return parameter_sets
 
@@ -280,9 +284,7 @@ def build_parameter_sets(*, grid: str) -> list[ParameterSet]:
             **_STATIC_LOCAL_MINIMUM_PARAMS,
             **dict(zip(keys, values)),
         }
-        parameter_sets.append(
-            ParameterSet(f"local_minimum_grid_{idx:03d}", settings)
-        )
+        parameter_sets.append(ParameterSet(f"local_minimum_grid_{idx:03d}", settings))
     return parameter_sets
 
 
@@ -301,9 +303,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         result = run_sweep(
             truth_rows,
             parameter_sets,
-            lambda parameter_set: _run_parameter_set(
-                parameter_set, cases, output_dir
-            ),
+            lambda parameter_set: _run_parameter_set(parameter_set, cases, output_dir),
         )
         output_path = write_sweep_workbook(
             output_dir / "local_minimum_param_sweep_summary.xlsx",
@@ -507,7 +507,9 @@ def _collect_program_rows(
                     height=(
                         peak.intensity_smoothed
                         if peak is not None and peak.intensity_smoothed is not None
-                        else peak.intensity if peak is not None else None
+                        else peak.intensity
+                        if peak is not None
+                        else None
                     ),
                     area=peak.area if peak is not None else None,
                     detected=peak is not None,
@@ -581,18 +583,14 @@ def score_parameter_set(
     *,
     istd_targets: set[str] | None = None,
 ) -> ParameterSetScore:
-    program_by_key = {
-        (row.sample_name, row.target): row
-        for row in program_rows
-    }
+    program_by_key = {(row.sample_name, row.target): row for row in program_rows}
     istd_target_names = set(istd_targets or ())
     per_target_rows: list[PerTargetScoreRow] = []
     for truth in truth_rows:
         program = program_by_key.get((truth.sample_name, truth.target))
         detected_program = program if _program_peak_detected(program) else None
-        is_istd = (
-            truth.target in istd_target_names
-            or (program.is_istd if program is not None else False)
+        is_istd = truth.target in istd_target_names or (
+            program.is_istd if program is not None else False
         )
         rt_abs_delta = (
             _abs_delta(detected_program.rt, truth.manual_rt)
@@ -905,9 +903,7 @@ def _collect_failure_records_by_row(
     scores: Sequence[ParameterSetScore],
 ) -> FailureRecordsByRow:
     return {
-        row: _failure_records(row)
-        for score in scores
-        for row in score.per_target_rows
+        row: _failure_records(row) for score in scores for row in score.per_target_rows
     }
 
 
@@ -967,10 +963,7 @@ def _autosize(worksheet: Worksheet, n_cols: int) -> None:
 
 def _program_peak_detected(row: ProgramPeakRow | None) -> bool:
     return bool(
-        row is not None
-        and row.detected
-        and row.rt is not None
-        and row.area is not None
+        row is not None and row.detected and row.rt is not None and row.area is not None
     )
 
 

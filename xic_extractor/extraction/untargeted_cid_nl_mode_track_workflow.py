@@ -122,7 +122,6 @@ def run_untargeted_cid_nl_mode_track_workflow(
         candidates_by_sample[raw_file.stem] = read_owner_bound_discovery_candidates_csv(
             batch.candidate_csvs[raw_file.stem],
             receipt=receipt,
-            require_successor_columns=True,
         )
 
     neutral_loss = settings.neutral_loss_profiles[0]
@@ -148,7 +147,7 @@ def run_untargeted_cid_nl_mode_track_workflow(
     runtime = start_runtime_attempt(
         attempt=context.processing_owners.attempt,
         work_unit_keys=tuple(job.work_unit_key for job in jobs),
-        owner_completeness_attestation=f"{sample_identity_namespace}:v1",
+        owner_completeness_attestation=f"{sample_identity_namespace}",
     )
     runtime_result = execute_untargeted_cid_nl_real_data_runtime(
         runtime,
@@ -287,8 +286,8 @@ def _workflow_call_cost(
 
 def _mode_track_trajectory_policy() -> ModeTrackTrajectoryPolicy:
     return ModeTrackTrajectoryPolicy(
-        trajectory_policy_version="anchor-trajectory-v1",
-        band_policy_version="fixed-band-v1",
+        trajectory_policy_version="anchor-trajectory",
+        band_policy_version="fixed-band",
         prediction_half_width_min=2 / 60,
         max_interpolation_gap=10,
         max_extrapolation_gap=10,

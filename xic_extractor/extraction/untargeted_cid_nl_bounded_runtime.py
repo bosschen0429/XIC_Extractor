@@ -78,19 +78,19 @@ PartitionResultStore = StreamedResultStore
 _PARTITION_CONTRACT = _mint_artifact_semantic_contract_ref(
     owner_namespace="xic_extractor.untargeted_cid_nl_bounded_runtime",
     semantic_role="closed_scientific_partition",
-    schema_version="cid_nl_scientific_partition_v1",
+    schema_version="cid_nl_scientific_partition",
     validation_status="diagnostic_only",
     media_type="application/json",
-    serialization_format="canonical-json-utf8-lf-v1",
+    serialization_format="canonical-json-utf8-lf",
 )
 
 _GLOBAL_CLOSURE_CONTRACT = _mint_artifact_semantic_contract_ref(
     owner_namespace="xic_extractor.untargeted_cid_nl_bounded_runtime",
     semantic_role="closed_application_result",
-    schema_version="cid_nl_global_closure_v1",
+    schema_version="cid_nl_global_closure",
     validation_status="diagnostic_only",
     media_type="application/json",
-    serialization_format="canonical-json-utf8-lf-v1",
+    serialization_format="canonical-json-utf8-lf",
 )
 
 
@@ -197,7 +197,7 @@ class CidNlPartitionPipelineAdapter:
                 source_reference=resolve_request_acquisition_source(
                     processing_owners=self._owners, sample=sample
                 ).acquisition_source_id,
-                compatibility_token="untargeted-cid-nl-real-data-runtime:v1",
+                compatibility_token="untargeted-cid-nl-real-data-runtime",
                 owner_conditional=True,
             )
             for partition in self._partitions
@@ -205,7 +205,7 @@ class CidNlPartitionPipelineAdapter:
             for phase in ("initial", "recovery")
         )
         self._owner_completeness_attestation = (
-            f"{self._owners.request.processing_request_id}:cid-nl-partitioned-v1"
+            f"{self._owners.request.processing_request_id}:cid-nl-partitioned"
         )
         self._memberships_by_subject: dict[str, list[tuple[str, str]]] = {}
         for membership in plan.subject_batch.candidate_memberships:

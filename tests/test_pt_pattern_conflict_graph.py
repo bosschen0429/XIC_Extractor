@@ -20,7 +20,7 @@ def _claim(
         sample_stem=sample_stem,
         feature_source_kind=source_kind,
         feature_source_artifact_sha256=artifact_sha256,
-        source_schema_version="detected_features.v1",
+        source_schema_version="detected_features",
         feature_id=feature_id,
     )
 
@@ -36,7 +36,7 @@ def _hypothesis(
     return PtConflictGraphInput(
         source_hypothesis_id=source_hypothesis_id,
         hypothesis_source_artifact_sha256="c" * 64,
-        hypothesis_source_schema_version="pt_pattern_candidates.v1",
+        hypothesis_source_schema_version="pt_pattern_candidates",
         claims_by_position={
             position: _claim(
                 feature_id,
@@ -60,7 +60,7 @@ def test_conflict_graph_keeps_pairwise_edges_inside_non_clique_component() -> No
             _hypothesis("B", ("b0", "shared-ab", "shared-bc", "b4")),
             _hypothesis("C", ("c0", "c1", "shared-bc", "c4")),
         ),
-        graph_rule_version="pt_conflict_graph.v1",
+        graph_rule_version="pt_conflict_graph",
     )
 
     vertex_by_source = {
@@ -86,7 +86,7 @@ def test_conflict_graph_preserves_singletons_as_graph_partitions() -> None:
             _hypothesis("shared-b", ("f4", "f5", "f6", "f7")),
             _hypothesis("singleton", ("f8", "f9", "f10", "f11")),
         ),
-        graph_rule_version="pt_conflict_graph.v1",
+        graph_rule_version="pt_conflict_graph",
     )
 
     component_sizes = sorted(
@@ -111,11 +111,11 @@ def test_conflict_graph_is_deterministic_across_input_and_mapping_order() -> Non
 
     first = build_pt_hypothesis_conflict_graph(
         (left, right),
-        graph_rule_version="pt_conflict_graph.v1",
+        graph_rule_version="pt_conflict_graph",
     )
     second = build_pt_hypothesis_conflict_graph(
         (right, reordered_left),
-        graph_rule_version="pt_conflict_graph.v1",
+        graph_rule_version="pt_conflict_graph",
     )
 
     assert first == second
@@ -131,7 +131,7 @@ def test_same_bare_feature_id_from_different_artifacts_does_not_conflict() -> No
                 artifact_sha256="b" * 64,
             ),
         ),
-        graph_rule_version="pt_conflict_graph.v1",
+        graph_rule_version="pt_conflict_graph",
     )
 
     assert len(graph.edges) == 0
@@ -153,7 +153,7 @@ def test_same_bare_feature_id_from_different_artifacts_does_not_conflict() -> No
                 PtConflictGraphInput(
                     source_hypothesis_id="missing-position",
                     hypothesis_source_artifact_sha256="c" * 64,
-                    hypothesis_source_schema_version="pt_pattern_candidates.v1",
+                    hypothesis_source_schema_version="pt_pattern_candidates",
                     claims_by_position={
                         "base": _claim("f1"),
                         "pt_plus_1": _claim("f2"),
@@ -187,7 +187,7 @@ def test_conflict_graph_fails_closed_on_invalid_inputs(
     with pytest.raises(ValueError, match=message):
         build_pt_hypothesis_conflict_graph(
             inputs,
-            graph_rule_version="pt_conflict_graph.v1",
+            graph_rule_version="pt_conflict_graph",
         )
 
 
@@ -198,7 +198,7 @@ def test_conflict_graph_rejects_duplicate_normalized_assignments() -> None:
                 _hypothesis("source-a", ("f1", "f2", "f3", "f4")),
                 _hypothesis("source-b", ("f1", "f2", "f3", "f4")),
             ),
-            graph_rule_version="pt_conflict_graph.v1",
+            graph_rule_version="pt_conflict_graph",
         )
 
 
@@ -221,7 +221,7 @@ def test_conflict_graph_rejects_invalid_source_hash() -> None:
                     claims_by_position=invalid_claims,
                 ),
             ),
-            graph_rule_version="pt_conflict_graph.v1",
+            graph_rule_version="pt_conflict_graph",
         )
 
 
@@ -239,11 +239,11 @@ def test_conflict_graph_rejects_unknown_hypothesis_source_schema() -> None:
                     hypothesis_source_artifact_sha256=(
                         valid.hypothesis_source_artifact_sha256
                     ),
-                    hypothesis_source_schema_version="pt_pattern_candidates.v999",
+                    hypothesis_source_schema_version="unsupported_pt_pattern_candidates",
                     claims_by_position=valid.claims_by_position,
                 ),
             ),
-            graph_rule_version="pt_conflict_graph.v1",
+            graph_rule_version="pt_conflict_graph",
         )
 
 
@@ -255,7 +255,7 @@ def test_conflict_graph_rejects_unknown_feature_source_schema() -> None:
         sample_stem=base.sample_stem,
         feature_source_kind=base.feature_source_kind,
         feature_source_artifact_sha256=base.feature_source_artifact_sha256,
-        source_schema_version="detected_features.v999",
+        source_schema_version="unsupported_detected_features",
         feature_id=base.feature_id,
     )
 
@@ -273,5 +273,5 @@ def test_conflict_graph_rejects_unknown_feature_source_schema() -> None:
                     claims_by_position=claims,
                 ),
             ),
-            graph_rule_version="pt_conflict_graph.v1",
+            graph_rule_version="pt_conflict_graph",
         )

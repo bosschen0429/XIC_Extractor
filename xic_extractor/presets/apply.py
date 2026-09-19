@@ -54,7 +54,7 @@ def bind_cid_nl_recipe(
     *,
     recipe_overrides: Mapping[str, object] | None = None,
 ) -> BoundCidNlRecipe:
-    """Bind one CID-NL preset to an existing V1 execution route."""
+    """Bind one CID-NL preset to an existing execution route."""
 
     if route not in _CID_NL_RECIPE_ROUTES:
         supported = ", ".join(sorted(_CID_NL_RECIPE_ROUTES))

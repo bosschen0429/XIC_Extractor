@@ -1,0 +1,107 @@
+{
+  "schema_version": "productization_control_plane_schema",
+  "purpose": "Machine-checkable contract for productization status fields, lane keys, authority rules, and stable compatibility anchors. Mutable state lives in the status index and writer scope lives in the authority manifest.",
+  "required_status_index_columns": [
+    "schema_version",
+    "lane_id",
+    "lane_group",
+    "readiness_status",
+    "owner",
+    "current_artifact",
+    "artifact_sha256",
+    "row_count",
+    "write_authority",
+    "product_authority_scope",
+    "may_touch_matrix",
+    "may_change_quant_output",
+    "may_change_workbook",
+    "may_change_selected_peak",
+    "may_change_selected_area",
+    "may_change_counted_detection",
+    "product_effect",
+    "public_surface",
+    "control_plane_anchor",
+    "handoff_anchor",
+    "next_checkpoint",
+    "expiration_condition",
+    "notes"
+  ],
+  "allowed_readiness_statuses": [
+    "production_ready",
+    "production_candidate",
+    "parked",
+    "blocked",
+    "diagnostic_only",
+    "frozen",
+    "out_of_scope"
+  ],
+  "required_control_plane_anchors": {
+    "backfill_current_write_ready_scope": "QuantMatrix Default Product Activation",
+    "cid_nl_default_product_activation": "CID-NL Default Product Activation",
+    "broad_backfill_autowrite": "park_broad_backfill",
+    "productization_authority_firewall": "productization_authority_manifest",
+    "quality_explanation_sidecar": "quality_explanations and quality_blockers are explanation and triage inputs only",
+    "targeted_ms1_shape_identity_limited_rescue": "Targeted MS1 shape identity limited rescue remains production-ready",
+    "targeted_ms1_shape_identity_broader_targets": "GUI and broader targets remain blocked",
+    "sample_metadata_order_projection": "sample_metadata cross-module parity",
+    "sample_metadata_role_value_behavior": "role/value behavior remains blocked",
+    "review_action_candidate_sidecar": "candidate-sidecar verifier is now production_candidate",
+    "review_action_selected_candidate_switch": "selected candidate / manual boundary writer parked",
+    "review_action_manual_boundary_area_writer": "manual-boundary area writer parked",
+    "calibration_normalization_activation": "calibration/normalization activation",
+    "gui_replay_parity": "GUI replay / GUI parity is out of scope",
+    "untargeted_owner_backfill_canonical_quantitative_projection": "Untargeted Owner Backfill Canonical Quantitative Projection"
+  },
+  "authority_rules": {
+    "unregistered_scope_policy": "fail_closed",
+    "allowed_product_writer_scopes": [
+      "backfill_policy_write_ready_rows"
+    ],
+    "matrix_write_requires": [
+      "registered_product_authority_scope",
+      "expected_diff_acceptance",
+      "focused_output_contract_tests"
+    ],
+    "forbidden_authority_sources": [
+      "quality_explanations",
+      "quality_blockers",
+      "round_trip_oracle_as_peak_choice_truth",
+      "istd_anchor_as_analyte_area_truth",
+      "broad_backfill_candidate_universe"
+    ],
+    "parked_blocked_diagnostic_frozen_out_of_scope_must_not_write": true,
+    "quality_explanations_cannot_write": true,
+    "review_truth_or_recovery_artifacts_cannot_write": true,
+    "handoff_and_control_plane_anchor_required": true
+  },
+  "required_lane_ids": [
+    "backfill_current_write_ready_scope",
+    "cid_nl_default_product_activation",
+    "broad_backfill_autowrite",
+    "productization_authority_firewall",
+    "quality_explanation_sidecar",
+    "targeted_ms1_shape_identity_limited_rescue",
+    "targeted_ms1_shape_identity_broader_targets",
+    "sample_metadata_order_projection",
+    "sample_metadata_role_value_behavior",
+    "review_action_candidate_sidecar",
+    "review_action_selected_candidate_switch",
+    "review_action_manual_boundary_area_writer",
+    "calibration_normalization_activation",
+    "gui_replay_parity",
+    "untargeted_owner_backfill_canonical_quantitative_projection"
+  ],
+  "dependent_effect_lane_authority": {
+    "untargeted_owner_backfill_canonical_quantitative_projection": {
+      "lane_id": "untargeted_owner_backfill_canonical_quantitative_projection",
+      "authority_manifest_schema_version": "quantitative_projection_authority_manifest",
+      "package_authority_schema_version": "quantitative_projection_authority",
+      "required_signal_processing_profile_id": "signal-profile:bcefd76d05bc26a0ec9f333fdb76427ccb2133c1946f5ec711916e85efc06de2",
+      "requires_registered_writer_membership": true,
+      "may_add_write_rows": false,
+      "write_authority": false,
+      "product_authority_scope": "",
+      "unregistered_or_cross_cell_policy": "fail_closed"
+    }
+  }
+}

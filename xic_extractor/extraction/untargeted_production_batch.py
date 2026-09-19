@@ -645,7 +645,7 @@ def execute_untargeted_cid_nl_production_batch(
         work_unit_keys=tuple(job.work_unit_key for job in batch.jobs),
         owner_completeness_attestation=(
             f"{batch.context.processing_owners.request.processing_request_id}:"
-            "cid-nl-production-v1"
+            "cid-nl-production"
         ),
     )
     result = execute_untargeted_cid_nl_real_data_runtime(
@@ -1017,8 +1017,8 @@ def _build_production_composition_inputs(
         sample.identity.sample_identity_id: sample for sample in batch.context.samples
     }
     trajectory_policy = ModeTrackTrajectoryPolicy(
-        trajectory_policy_version="anchor-trajectory-v1",
-        band_policy_version="fixed-band-v1",
+        trajectory_policy_version="anchor-trajectory",
+        band_policy_version="fixed-band",
         prediction_half_width_min=2 / 60,
         max_interpolation_gap=10,
         max_extrapolation_gap=10,

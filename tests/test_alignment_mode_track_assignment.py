@@ -97,7 +97,7 @@ def test_unique_assignment_is_owner_minted_typed_and_deterministic(
     )
 
     payload = json.loads(canonical_mode_track_assignment_batch_bytes(forward))
-    assert payload["schema_version"] == "mode_track_assignment_batch_v2"
+    assert payload["schema_version"] == "mode_track_assignment_batch"
     assert payload["assignments"][0]["state"] == "uniquely_assigned"
     assert (
         payload["assignments"][0]["candidate_observation_id"]
@@ -670,7 +670,7 @@ def test_candidate_physical_observation_must_stay_inside_family_universe(
     tight_rt_context = mint_family_context_ref(
         mz_interval=scenario.family_context.mz_interval,
         rt_interval=(7.0, 8.40),
-        context_policy_version="mode-track-family-context-v1",
+        context_policy_version="mode-track-family-context",
         source_lineage_refs=("synthetic:tight-family-rt-universe",),
         mode_tracks=(scenario.track_a, scenario.track_b),
     )
@@ -808,7 +808,7 @@ def test_assignment_rejects_candidate_from_foreign_request_before_prediction(
     foreign_context = mint_family_context_ref(
         mz_interval=(499.0, 501.0),
         rt_interval=(7.0, 10.0),
-        context_policy_version="mode-track-family-context-v1",
+        context_policy_version="mode-track-family-context",
         source_lineage_refs=("synthetic:foreign-request-candidate-ingress",),
         mode_tracks=(foreign_track_a.group, foreign_track_b.group),
     )
@@ -893,7 +893,7 @@ def test_fit_rejects_two_tracks_seeded_by_one_physical_observation(
     context = mint_family_context_ref(
         mz_interval=(499.0, 501.0),
         rt_interval=(7.0, 9.0),
-        context_policy_version="mode-track-family-context-v1",
+        context_policy_version="mode-track-family-context",
         source_lineage_refs=("synthetic:physical-cardinality",),
         mode_tracks=tracks,
     )
@@ -920,8 +920,8 @@ def test_fit_rejects_two_tracks_seeded_by_one_physical_observation(
             family_context=context,
             direct_support_anchors=anchors,
             policy=ModeTrackTrajectoryPolicy(
-                trajectory_policy_version="piecewise-linear-injection-local-v1",
-                band_policy_version="explicit-half-width-v1",
+                trajectory_policy_version="piecewise-linear-injection-local",
+                band_policy_version="explicit-half-width",
                 prediction_half_width_min=0.1,
                 max_interpolation_gap=4,
                 max_extrapolation_gap=2,
@@ -1079,13 +1079,13 @@ def test_crossing_is_local_to_the_crossed_tracks(tmp_path: Path) -> None:
     family_context = mint_family_context_ref(
         mz_interval=(499.0, 501.0),
         rt_interval=(7.0, 10.0),
-        context_policy_version="mode-track-family-context-v1",
+        context_policy_version="mode-track-family-context",
         source_lineage_refs=("synthetic:crossing-locality",),
         mode_tracks=tuple(spine.group for spine in spines),
     )
     policy = ModeTrackTrajectoryPolicy(
-        trajectory_policy_version="piecewise-linear-injection-local-v1",
-        band_policy_version="explicit-half-width-v1",
+        trajectory_policy_version="piecewise-linear-injection-local",
+        band_policy_version="explicit-half-width",
         prediction_half_width_min=0.1,
         max_interpolation_gap=4,
         max_extrapolation_gap=2,
@@ -1629,13 +1629,13 @@ def _scenario(
     context = mint_family_context_ref(
         mz_interval=(499.0, 501.0),
         rt_interval=(7.0, 10.0),
-        context_policy_version="mode-track-family-context-v1",
+        context_policy_version="mode-track-family-context",
         source_lineage_refs=("synthetic:no-raw-mode-track-truth-table",),
         mode_tracks=(track_a_spine.group, track_b_spine.group),
     )
     policy = ModeTrackTrajectoryPolicy(
-        trajectory_policy_version="piecewise-linear-injection-local-v1",
-        band_policy_version="explicit-half-width-v1",
+        trajectory_policy_version="piecewise-linear-injection-local",
+        band_policy_version="explicit-half-width",
         prediction_half_width_min=prediction_half_width_min,
         max_interpolation_gap=max_interpolation_gap,
         max_extrapolation_gap=max_extrapolation_gap,
@@ -1806,7 +1806,7 @@ def _different_request_same_sources(fixture):
         scientific_input_schema_version=(
             fixture.request.scientific_input_schema_version
         ),
-        processing_algorithm_version="mode-track-foreign-request-v1",
+        processing_algorithm_version="mode-track-foreign-request",
         processing_contract_version=fixture.request.processing_contract_version,
         scientific_inputs=json.loads(fixture.request.normalized_scientific_inputs_json),
     )

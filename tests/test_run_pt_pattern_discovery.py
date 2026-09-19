@@ -35,7 +35,7 @@ def _write_detected_features_csv(path: Path) -> None:
 
 def _write_external_feature_table(path: Path) -> None:
     row = (
-        "MZmine\trun1\t4.9.14\tcontract_v1\tSample_1\tF1\t500.0\t10.0\t"
+        "MZmine\trun1\t4.9.14\tcontract\tSample_1\tF1\t500.0\t10.0\t"
         "1000.0\theight\tGOOD\tppm\tminutes\tsource_unique\t"
         "blank_is_missing\r\n"
     )

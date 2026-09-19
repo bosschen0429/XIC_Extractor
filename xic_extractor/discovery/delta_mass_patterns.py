@@ -37,13 +37,13 @@ _REQUIRED_NON_BASE_SUPPORT_COUNT = 2
 
 _BASE_LABEL = "base"
 _NON_BASE_LABELS: tuple[str, ...] = ("pt_plus_1", "pt_plus_2", "pt_plus_4")
-_SCAN_PROXY_SOURCE_LABEL = "raw_scan_proxy_v1"
+_SCAN_PROXY_SOURCE_LABEL = "raw_scan_proxy"
 _SCAN_PROXY_MARKER = "|scan_proxy|"
 _SCAN_PROXY_LABELS = (_BASE_LABEL, *_NON_BASE_LABELS)
 _EXTERNAL_FEATURE_SOURCE_PREFIX = "external_feature_table:"
 _UNSPECIFIED_TRACE_QUALITY = "UNSPECIFIED"
 _LOCAL_MS1_FEATURE_SOURCE_LEVEL_STATUS = "feature_source_detected"
-PT_PATTERN_CANDIDATE_SCHEMA_VERSION = "pt_pattern_candidates.v1"
+PT_PATTERN_CANDIDATE_SCHEMA_VERSION = "pt_pattern_candidates"
 
 
 @dataclass(frozen=True)
@@ -125,7 +125,7 @@ def is_within_ppm(
 class PtPatternCandidate:
     """A fully-matched, sample-local Pt pattern candidate.
 
-    Field set mirrors the Pt Candidate CSV v1 contract shared by the CSV writer
+    Field set mirrors the Pt Candidate CSV contract shared by the CSV writer
     and Discovery pipeline. The
     ``base_*`` fields describe the base position; ``pt_plus_1_*``,
     ``pt_plus_2_*``, and ``pt_plus_4_*`` describe the three non-base
@@ -554,7 +554,7 @@ def _build_candidate(
 ) -> PtPatternCandidate:
     # ``(sample_stem, base.feature_id)`` is the canonical identity and is
     # validated unique before matching. The rounded m/z/RT suffix remains only
-    # for persisted v1 candidate-id compatibility; it no longer supplies
+    # for persisted candidate identity; it no longer supplies
     # uniqueness or disambiguates duplicate feature rows.
     candidate_id = (
         f"{sample_stem}|pt|base:{base.feature_id}"

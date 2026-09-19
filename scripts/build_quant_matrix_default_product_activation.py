@@ -51,7 +51,7 @@ from xic_extractor.tabular_io import (
 ROOT = Path(__file__).resolve().parents[1]
 
 DEFAULT_PRODUCT_ACTIVATION_OUTPUT_DIR = Path(
-    "docs/superpowers/validation/quant_matrix_default_product_activation_v1",
+    "docs/superpowers/validation/quant_matrix_default_product_activation",
 )
 DEFAULT_REAL_BUNDLE_SUMMARY_JSON = (
     DEFAULT_REAL_BUNDLE_DIR / "quant_matrix_real_bundle_summary.json"
@@ -61,8 +61,8 @@ DEFAULT_PRODUCT_READY_CLOSEOUT_SUMMARY_JSON = (
     / "quant_matrix_product_ready_closeout_summary.json"
 )
 
-DEFAULT_PRODUCT_ACTIVATION_SCHEMA = "quant_matrix_default_product_activation_v1"
-OUTPUT_COMPARISON_SCHEMA = "quant_matrix_default_product_activation_check_v1"
+DEFAULT_PRODUCT_ACTIVATION_SCHEMA = "quant_matrix_default_product_activation"
+OUTPUT_COMPARISON_SCHEMA = "quant_matrix_default_product_activation_check"
 PRODUCT_AUTHORITY_SCOPE = "backfill_policy_write_ready_rows"
 
 CHECK_COLUMNS = (
@@ -1093,7 +1093,7 @@ def _externalized_validation_artifact_path(path: Path, *, output_dir: Path) -> P
     relpath = path.relative_to(output_dir)
     return (
         ROOT / "local_validation_artifacts/externalized_superpowers_validation/"
-        "quant_matrix_default_product_activation_v1" / relpath
+        "quant_matrix_default_product_activation" / relpath
     )
 
 
@@ -1128,7 +1128,7 @@ def _append_externalized_fixture_artifact_problems(
     except (OSError, ValueError, json.JSONDecodeError) as exc:
         problems.append(f"{label}: replacement summary invalid: {exc}")
         return
-    if payload.get("schema_version") != "quant_matrix_fixture_contract_v1":
+    if payload.get("schema_version") != "quant_matrix_fixture_contract":
         problems.append(f"{label}: replacement summary schema mismatch")
     if payload.get("source_relpath") != raw_entry.get("path"):
         problems.append(f"{label}: replacement summary source_relpath mismatch")

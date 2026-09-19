@@ -11,7 +11,7 @@ from xic_extractor.numeric_validation import require_finite_real, require_intege
 from xic_extractor.xic_models import XICRequest, XICTrace
 
 MS1IndexIntensityMode = Literal["max", "sum"]
-MS1_INDEX_CACHE_SCHEMA_VERSION = "ms1_scan_index_npz_v1"
+MS1_INDEX_CACHE_SCHEMA_VERSION = "ms1_scan_index_npz"
 
 
 @dataclass(frozen=True)

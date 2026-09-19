@@ -21,11 +21,11 @@ from typing import Any
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from scripts.build_quant_matrix_promotion_packet_v2 import (
-    DEFAULT_OUTPUT_DIR as DEFAULT_PACKET_V2_DIR,
+from scripts.build_quant_matrix_promotion_packet import (
+    DEFAULT_OUTPUT_DIR as DEFAULT_PACKET_DIR,
 )
-from scripts.build_quant_matrix_promotion_packet_v2 import (
-    validate_quant_matrix_promotion_packet_v2,
+from scripts.build_quant_matrix_promotion_packet import (
+    validate_quant_matrix_promotion_packet,
 )
 from scripts.build_quant_matrix_real_bundle import (
     DEFAULT_ACCEPTED_BACKFILL_COUNT,
@@ -53,18 +53,18 @@ from xic_extractor.tabular_io import (
 ROOT = Path(__file__).resolve().parents[1]
 
 DEFAULT_ACTIVATION_DRY_RUN_OUTPUT_DIR = Path(
-    "docs/superpowers/validation/quant_matrix_default_activation_dry_run_v1",
+    "docs/superpowers/validation/quant_matrix_default_activation_dry_run",
 )
 DEFAULT_REAL_BUNDLE_SUMMARY_JSON = (
     DEFAULT_REAL_BUNDLE_DIR / "quant_matrix_real_bundle_summary.json"
 )
-DEFAULT_PROMOTION_PACKET_V2_SUMMARY_JSON = (
-    DEFAULT_PACKET_V2_DIR / "quant_matrix_promotion_packet_v2_summary.json"
+DEFAULT_PROMOTION_PACKET_SUMMARY_JSON = (
+    DEFAULT_PACKET_DIR / "quant_matrix_promotion_packet_summary.json"
 )
 
-DEFAULT_ACTIVATION_DRY_RUN_SCHEMA = "quant_matrix_default_activation_dry_run_v1"
+DEFAULT_ACTIVATION_DRY_RUN_SCHEMA = "quant_matrix_default_activation_dry_run"
 ACTIVATION_DRY_RUN_COMPARISON_SCHEMA = (
-    "quant_matrix_default_activation_dry_run_comparison_v1"
+    "quant_matrix_default_activation_dry_run_comparison"
 )
 
 COMPARISON_COLUMNS = (
@@ -90,7 +90,7 @@ def build_quant_matrix_default_activation_dry_run(
     output_dir: Path = DEFAULT_ACTIVATION_DRY_RUN_OUTPUT_DIR,
     source_root: Path = ROOT,
     real_bundle_summary_json: Path = DEFAULT_REAL_BUNDLE_SUMMARY_JSON,
-    promotion_packet_v2_summary_json: Path = DEFAULT_PROMOTION_PACKET_V2_SUMMARY_JSON,
+    promotion_packet_summary_json: Path = DEFAULT_PROMOTION_PACKET_SUMMARY_JSON,
     expected_source_run_id: str = DEFAULT_SOURCE_RUN_ID,
     expected_downstream_scope: str = DEFAULT_DOWNSTREAM_SCOPE,
     expected_accepted_backfill_count: int = DEFAULT_ACCEPTED_BACKFILL_COUNT,
@@ -100,7 +100,7 @@ def build_quant_matrix_default_activation_dry_run(
         source_root=source_root,
     )
     promotion_packet_summary = _resolve_source(
-        promotion_packet_v2_summary_json,
+        promotion_packet_summary_json,
         source_root=source_root,
     )
     _raise_if_problems(
@@ -114,8 +114,8 @@ def build_quant_matrix_default_activation_dry_run(
         ),
     )
     _raise_if_problems(
-        "promotion packet v2 check failed",
-        validate_quant_matrix_promotion_packet_v2(
+        "promotion packet check failed",
+        validate_quant_matrix_promotion_packet(
             summary_json=promotion_packet_summary,
             source_root=source_root,
             expected_source_run_id=expected_source_run_id,
@@ -232,7 +232,7 @@ def validate_quant_matrix_default_activation_dry_run(
     inputs = _input_artifacts(payload, source_root=source_root, problems=problems)
     artifacts = _output_artifacts(payload, summary_json.parent, problems)
     real_bundle_summary = inputs.get("real_bundle_summary_json")
-    promotion_packet_summary = inputs.get("promotion_packet_v2_summary_json")
+    promotion_packet_summary = inputs.get("promotion_packet_summary_json")
     comparison_tsv = artifacts.get("comparison_tsv")
 
     if real_bundle_summary is not None:
@@ -248,8 +248,8 @@ def validate_quant_matrix_default_activation_dry_run(
         )
     if promotion_packet_summary is not None:
         problems.extend(
-            "promotion packet v2: " + problem
-            for problem in validate_quant_matrix_promotion_packet_v2(
+            "promotion packet: " + problem
+            for problem in validate_quant_matrix_promotion_packet(
                 summary_json=promotion_packet_summary,
                 source_root=source_root,
                 expected_source_run_id=expected_source_run_id,
@@ -553,11 +553,11 @@ def _write_summary(
                 source_root=source_root,
             ),
             "real_bundle_summary_json_sha256": file_sha256(real_bundle_summary),
-            "promotion_packet_v2_summary_json": _source_relpath(
+            "promotion_packet_summary_json": _source_relpath(
                 promotion_packet_summary,
                 source_root=source_root,
             ),
-            "promotion_packet_v2_summary_json_sha256": file_sha256(
+            "promotion_packet_summary_json_sha256": file_sha256(
                 promotion_packet_summary,
             ),
             "baseline_quant_matrix": _source_relpath(
@@ -783,7 +783,7 @@ def _input_artifacts(
     result: dict[str, Path] = {}
     for field in (
         "real_bundle_summary_json",
-        "promotion_packet_v2_summary_json",
+        "promotion_packet_summary_json",
         "baseline_quant_matrix",
         "input_matrix_identity",
         "production_acceptance_manifest",
@@ -927,7 +927,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             output_dir=args.output_dir,
             source_root=args.source_root,
             real_bundle_summary_json=args.real_bundle_summary_json,
-            promotion_packet_v2_summary_json=args.promotion_packet_v2_summary_json,
+            promotion_packet_summary_json=args.promotion_packet_summary_json,
             expected_source_run_id=args.expected_source_run_id,
             expected_downstream_scope=args.expected_downstream_scope,
             expected_accepted_backfill_count=args.expected_accepted_backfill_count,
@@ -954,9 +954,9 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         default=DEFAULT_REAL_BUNDLE_SUMMARY_JSON,
     )
     parser.add_argument(
-        "--promotion-packet-v2-summary-json",
+        "--promotion-packet-summary-json",
         type=Path,
-        default=DEFAULT_PROMOTION_PACKET_V2_SUMMARY_JSON,
+        default=DEFAULT_PROMOTION_PACKET_SUMMARY_JSON,
     )
     parser.add_argument("--expected-source-run-id", default=DEFAULT_SOURCE_RUN_ID)
     parser.add_argument(

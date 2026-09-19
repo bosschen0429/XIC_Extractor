@@ -104,7 +104,7 @@ def test_pure_cid_nl_wrapper_reports_retained_route_and_typed_handoff(
         explanation_provenance={
             **reference_provenance,
             "calibration": {
-                "schema_version": "known_istd_calibration_v1", "samples": [],
+                "schema_version": "known_istd_calibration", "samples": [],
             },
         },
     )
@@ -606,7 +606,7 @@ def test_pure_cid_nl_targets_csv_integration(
         explanation_provenance={
             "workbook_sha256": "b" * 64,
             "calibration": {
-                "schema_version": "known_istd_calibration_v1", "samples": [],
+                "schema_version": "known_istd_calibration", "samples": [],
             },
         },
     )

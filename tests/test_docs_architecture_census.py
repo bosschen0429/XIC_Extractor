@@ -184,7 +184,7 @@ def start_cancelled(attempt):
     return start_runtime_attempt(
         attempt=attempt,
         work_unit_keys=("targeted:a",),
-        owner_completeness_attestation="targeted:v1",
+        owner_completeness_attestation="targeted",
         cancellation_request=RuntimeCancellationRequest(attempt=attempt),
     )
 """.lstrip(),
@@ -1211,7 +1211,7 @@ def test_optional_json_census_has_content_identity_and_scope(
     census.write_architecture_census_json(output, observed, ROOT)
 
     payload = json.loads(output.read_text(encoding="utf-8"))
-    assert payload["schema_version"] == "architecture_census_v2"
+    assert payload["schema_version"] == "architecture_census"
     assert payload["claim"] == "derived_disposable_not_authority"
     assert payload["static_dependency_scope"] == "grimp_static_import_graph"
     assert payload["static_dependency_gate"] == ".importlinter"

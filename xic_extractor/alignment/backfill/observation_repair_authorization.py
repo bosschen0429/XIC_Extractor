@@ -53,10 +53,10 @@ ObservationRepairAuthorizationState: TypeAlias = Literal[
     "not_run", "repair", "multiple_eligible"
 ]
 
-_AUTHORIZATION_PREFIX = "xic.observation-repair-authorization.v1:"
-_CANDIDATE_PREFIX = "xic.observation-repair-candidate.v1:"
-_CELL_PREFIX = "xic.observation-repair-cell.v1:"
-_COVERAGE_SEMANTICS_PREFIX = "xic.observation-repair-coverage-semantics.v1:"
+_AUTHORIZATION_PREFIX = "xic.observation-repair-authorization:"
+_CANDIDATE_PREFIX = "xic.observation-repair-candidate:"
+_CELL_PREFIX = "xic.observation-repair-cell:"
+_COVERAGE_SEMANTICS_PREFIX = "xic.observation-repair-coverage-semantics:"
 _AUTHORIZATION_MINT_TOKEN = object()
 _CANDIDATE_MINT_TOKEN = object()
 _TYPED_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_.-]*:[0-9a-f]{64}$")
@@ -886,7 +886,7 @@ def _coverage_semantics_id(
         _COVERAGE_SEMANTICS_PREFIX,
         canonical_identity_basis_bytes(
             {
-                "schema_version": "observation_repair_coverage_semantics_v1",
+                "schema_version": "observation_repair_coverage_semantics",
                 "epoch_id": coverage.epoch.epoch_id,
                 "processing_request_id": (
                     coverage.epoch.processing_owners.request.processing_request_id
@@ -941,7 +941,7 @@ def _authorization_id(
         _AUTHORIZATION_PREFIX,
         canonical_identity_basis_bytes(
             {
-                "schema_version": "observation_repair_authorization_v1",
+                "schema_version": "observation_repair_authorization",
                 "processing_request_id": (
                     processing_owners.request.processing_request_id
                 ),
@@ -975,7 +975,7 @@ def _candidate_id(
         _CANDIDATE_PREFIX,
         canonical_identity_basis_bytes(
             {
-                "schema_version": "observation_repair_candidate_v1",
+                "schema_version": "observation_repair_candidate",
                 "authorization_id": authorization_id,
                 "processing_request_id": processing_request_id,
                 "processing_attempt_id": processing_attempt_id,

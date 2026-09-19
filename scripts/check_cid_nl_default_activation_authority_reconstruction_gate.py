@@ -47,7 +47,7 @@ ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_OUTPUT_DIR = (
     ROOT
     / "output/validation/"
-    / "cid_nl_default_activation_authority_reconstruction_gate_v1"
+    / "cid_nl_default_activation_authority_reconstruction_gate"
 )
 
 ACCEPT_DECISIONS = {"accept_basic_backfill", "accept_strict_backfill"}
@@ -153,7 +153,7 @@ def evaluate_authority_reconstruction_gate(
         blockers.append("candidate_replay_not_pass:" + replay["reason"])
     overall_status = "pass" if not blockers else "blocked"
     return {
-        "schema_version": "cid_nl_default_activation_authority_reconstruction_gate_v1",
+        "schema_version": "cid_nl_default_activation_authority_reconstruction_gate",
         "overall_status": overall_status,
         "readiness_label": (
             "default_activation_authority_reconstructed_candidate"
@@ -254,7 +254,7 @@ def _build_reconstruction_audit_rows(
         audit_rows.append(
             {
                 "schema_version": (
-                    "cid_nl_default_activation_authority_reconstruction_audit_v1"
+                    "cid_nl_default_activation_authority_reconstruction_audit"
                 ),
                 "old_peak_hypothesis_id": old_peak_id,
                 "sample_stem": sample_stem,

@@ -33,6 +33,7 @@ from xic_extractor.alignment.untargeted_finalized_matrix import (
 from xic_extractor.diagnostics.cid_nl_explanation import (
     CandidateNotFoundError,
     ExplanationError,
+    read_cid_nl_curves,
     read_cid_nl_explanation,
     write_explanation_report,
 )
@@ -247,18 +248,18 @@ def test_owner_facts_survive_persisted_candidate_query(tmp_path, monkeypatch, sc
             alignment_config=config,
         )
     if scenario == "positive":
-        legacy = replace(
+        missing_audit = replace(
             completed, method_assessments=(), initial_groups=(), initial_edges=()
         )
-        legacy_report = write_cid_nl_explanation(
-            tmp_path / "legacy.sqlite",
-            completed=legacy,
+        missing_audit_report = write_cid_nl_explanation(
+            tmp_path / "missing_audit.sqlite",
+            completed=missing_audit,
             writer_inputs=writer,
             candidates_by_sample=candidates,
             matrix_path=matrix,
             alignment_config=config,
         )
-        assert read_cid_nl_explanation(legacy_report)["audit_availability"] == {
+        assert read_cid_nl_explanation(missing_audit_report)["audit_availability"] == {
             "method_assessments": "unavailable",
             "initial_groups": "unavailable",
             "initial_edges": "unavailable",
@@ -558,8 +559,11 @@ def test_indexed_query_preserves_many_groups_and_skips_unrelated_payloads(tmp_pa
         read_cid_nl_explanation(report, candidate_id="b")
 
 
-@pytest.mark.parametrize("corruption", ("bytes", "version", "schema", "payload"))
-def test_invalid_report_never_returns_empty_success(tmp_path, corruption):
+@pytest.mark.parametrize(
+    "corruption", ("bytes", "schema_identity", "schema", "payload"),
+)
+@pytest.mark.parametrize("reader", (read_cid_nl_explanation, read_cid_nl_curves))
+def test_invalid_report_never_returns_empty_success(tmp_path, corruption, reader):
     report = tmp_path / "bad.sqlite"
     if corruption == "bytes":
         report.write_bytes(b"not sqlite")
@@ -568,11 +572,16 @@ def test_invalid_report_never_returns_empty_success(tmp_path, corruption):
             report, summary={}, candidates=(), records={}, links=()
         )
         with sqlite3.connect(report) as connection:
-            if corruption == "version":
-                connection.execute("PRAGMA user_version=42")
+            if corruption == "schema_identity":
+                row = connection.execute("SELECT payload FROM metadata").fetchone()
+                summary = json.loads(row[0])
+                summary["schema_version"] = "unsupported_explanation"
+                connection.execute(
+                    "UPDATE metadata SET payload=?", (json.dumps(summary),)
+                )
             elif corruption == "schema":
                 connection.execute("DROP TABLE records")
             else:
                 connection.execute("UPDATE metadata SET payload='null'")
-    with pytest.raises(ExplanationError, match="malformed|unsupported"):
-        read_cid_nl_explanation(report)
+    with pytest.raises(ExplanationError, match="malformed|unsupported|failed reading"):
+        reader(report)

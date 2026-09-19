@@ -521,7 +521,7 @@ def test_entry_rejects_row_id_collision_with_unequal_basis(
     monkeypatch.setattr(
         projection_owner,
         "_untarget_row_key_id",
-        lambda _basis: "xic.untarget-row-key.v1:forced-collision",
+        lambda _basis: "xic.untarget-row-key:forced-collision",
     )
 
     with pytest.raises(UntargetProjectionContractError, match="collision"):
@@ -576,7 +576,7 @@ def test_row_identity_basis_is_closed_to_request_and_group_identity_only(
         "group_hypothesis_id": group.group_hypothesis_id,
         "group_identity_basis_hex": group.basis_bytes.hex(),
         "processing_request_id": alignment.processing_request_id,
-        "schema_version": "untarget_row_key_v1",
+        "schema_version": "untarget_row_key",
     }
     assert row_key.group_identity_basis_bytes == group.basis_bytes
 

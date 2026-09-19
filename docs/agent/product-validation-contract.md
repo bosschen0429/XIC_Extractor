@@ -9,14 +9,14 @@ Rewritten development notes may become repo source-of-truth only after their
 stable claims are routed to the correct owner. This file owns product-readiness
 language and product-surface discipline; it does not own active maturity tier,
 active lane, current writer counts, or promotion-packet status. Those live in
-`docs/superpowers/validation/productization_status_index_v1.tsv`, and
-`docs/superpowers/schemas/productization_authority_manifest.v1.json`.
+`docs/superpowers/validation/productization_status_index.tsv`, and
+`docs/superpowers/schemas/productization_authority_manifest.json`.
 Dependent canonical quantitative-effect status and its package/activation
 binding live separately in
-`docs/superpowers/schemas/quantitative_projection_authority_manifest.v1.json`;
+`docs/superpowers/schemas/quantitative_projection_authority_manifest.json`;
 that manifest does not add a ProductWriter scope.
 The schema at
-`docs/superpowers/schemas/productization_control_plane_schema.v3.json` owns the
+`docs/superpowers/schemas/productization_control_plane_schema.json` owns the
 machine field and allowed-value contract. The dated control-plane path is a
 compatibility index only; its stable lookup route remains
 `docs/superpowers/plans/2026-06-15-productization-control-plane.md`.

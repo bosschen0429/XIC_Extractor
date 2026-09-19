@@ -13,13 +13,10 @@ from xic_extractor.alignment.output_rows import (
     format_value,
 )
 
-LEGACY_MATRIX_IDENTITY_SCHEMA_VERSION = (
-    "untargeted_peak_hypothesis_matrix_identity_v1"
-)
-MATRIX_IDENTITY_SCHEMA_VERSION = "untargeted_peak_hypothesis_matrix_identity_v2"
+MATRIX_IDENTITY_SCHEMA_VERSION = "untargeted_peak_hypothesis_matrix_identity"
 MATRIX_ROW_BINDING_COLUMN = "matrix_row_binding_sha256"
-_MATRIX_ROW_BINDING_SCHEMA_VERSION = "alignment_matrix_row_binding_v1"
-LEGACY_ALIGNMENT_MATRIX_IDENTITY_COLUMNS = (
+_MATRIX_ROW_BINDING_SCHEMA_VERSION = "alignment_matrix_row_binding"
+ALIGNMENT_MATRIX_IDENTITY_COLUMNS = (
     "identity_schema_version",
     "matrix_row_index",
     "Mz",
@@ -38,9 +35,6 @@ LEGACY_ALIGNMENT_MATRIX_IDENTITY_COLUMNS = (
     "evidence_status",
     "parent_peak_hypothesis_id",
     "child_peak_hypothesis_ids",
-)
-ALIGNMENT_MATRIX_IDENTITY_COLUMNS = (
-    *LEGACY_ALIGNMENT_MATRIX_IDENTITY_COLUMNS,
     MATRIX_ROW_BINDING_COLUMN,
 )
 
@@ -124,10 +118,10 @@ def serialize_public_matrix_table(
 
 
 def matrix_mz_binding_matches(display_mz: object, canonical_mz: object) -> bool:
-    """Report whether text could be a current projection or legacy pair.
+    """Report whether text is the current public projection.
 
     Persisted consumers must use :func:`validate_matrix_identity_rows`, which
-    dispatches by the declared identity schema and also validates row binding.
+    validates the current identity schema and complete row binding.
     """
 
     display_text = str(display_mz).strip()
@@ -138,10 +132,7 @@ def matrix_mz_binding_matches(display_mz: object, canonical_mz: object) -> bool:
         return False
     if not display_text or not canonical_text:
         return False
-    if display_text == public_matrix_mz_text(canonical_text):
-        return True
-    legacy_text = f"{float(canonical_text):.6g}"
-    return canonical_input == legacy_text and display_text == legacy_text
+    return display_text == public_matrix_mz_text(canonical_text)
 
 
 def bind_matrix_identity_rows(
@@ -151,7 +142,7 @@ def bind_matrix_identity_rows(
     identity_columns: Sequence[str],
     identity_rows: Sequence[Mapping[str, object]],
 ) -> tuple[dict[str, str], ...]:
-    """Mint v2 identity rows bound to the complete ordered public Matrix rows."""
+    """Mint identity rows bound to the complete ordered public Matrix rows."""
 
     _validate_binding_headers(matrix_header, identity_columns)
     if len(matrix_rows) != len(identity_rows):
@@ -197,7 +188,6 @@ def validate_matrix_identity_rows(
     header_schema = _validate_binding_headers(
         matrix_header,
         identity_columns,
-        allow_legacy=True,
     )
     if len(matrix_rows) != len(identity_rows):
         raise ValueError("alignment matrix identity row census mismatch")
@@ -246,7 +236,6 @@ def validate_matrix_identity_row(
     header_schema = _validate_binding_headers(
         matrix_header,
         identity_columns,
-        allow_legacy=True,
     )
     _validate_serialized_row_shape(
         matrix_row,
@@ -272,7 +261,6 @@ def validate_matrix_identity_row(
         matrix_row=matrix_row,
         identity_columns=identity_columns,
         identity_row=identity_row,
-        schema_version=schema,
     )
 
 
@@ -321,8 +309,6 @@ def matrix_row_binding_sha256(
 def _validate_binding_headers(
     matrix_header: Sequence[str],
     identity_columns: Sequence[str],
-    *,
-    allow_legacy: bool = False,
 ) -> str:
     if tuple(matrix_header[:2]) != ("Mz", "RT"):
         raise ValueError("alignment matrix identity requires an Mz/RT Matrix")
@@ -333,13 +319,8 @@ def _validate_binding_headers(
     identity_column_set = set(identity_columns)
     if identity_column_set == set(ALIGNMENT_MATRIX_IDENTITY_COLUMNS):
         return MATRIX_IDENTITY_SCHEMA_VERSION
-    if identity_column_set == set(LEGACY_ALIGNMENT_MATRIX_IDENTITY_COLUMNS):
-        if allow_legacy:
-            return LEGACY_MATRIX_IDENTITY_SCHEMA_VERSION
-        raise ValueError("alignment matrix identity binding column is missing")
     expected = set(ALIGNMENT_MATRIX_IDENTITY_COLUMNS)
-    legacy_expected = set(LEGACY_ALIGNMENT_MATRIX_IDENTITY_COLUMNS)
-    missing = sorted(legacy_expected - identity_column_set)
+    missing = sorted(expected - identity_column_set)
     unexpected = sorted(identity_column_set - expected)
     details = []
     if missing:
@@ -349,7 +330,7 @@ def _validate_binding_headers(
     if not details:
         details.append("schema columns are incomplete")
     raise ValueError(
-        "alignment matrix identity columns do not match v1 or v2 schema: "
+        "alignment matrix identity columns do not match current schema: "
         + "; ".join(details)
     )
 
@@ -374,29 +355,20 @@ def _validate_matrix_identity_row(
     matrix_row: Mapping[str, object],
     identity_columns: Sequence[str],
     identity_row: Mapping[str, object],
-    schema_version: str,
 ) -> None:
     display_mz = str(matrix_row.get("Mz", "")).strip()
     canonical_mz = str(identity_row.get("Mz", "")).strip()
-    if schema_version == LEGACY_MATRIX_IDENTITY_SCHEMA_VERSION:
-        try:
-            legacy_mz = f"{float(canonical_mz):.6g}"
-        except ValueError as exc:
-            raise ValueError("legacy identity Mz must be numeric") from exc
-        if display_mz != legacy_mz or canonical_mz != legacy_mz:
-            raise ValueError("legacy identity Mz binding mismatch")
-    else:
-        if display_mz != public_matrix_mz_text(canonical_mz):
-            raise ValueError("v2 identity Mz binding mismatch")
-        binding = str(identity_row.get(MATRIX_ROW_BINDING_COLUMN, "")).strip()
-        expected = matrix_row_binding_sha256(
-            matrix_header=matrix_header,
-            matrix_row=matrix_row,
-            identity_columns=identity_columns,
-            identity_row=identity_row,
-        )
-        if binding != expected:
-            raise ValueError("v2 identity row binding mismatch")
+    if display_mz != public_matrix_mz_text(canonical_mz):
+        raise ValueError("identity Mz binding mismatch")
+    binding = str(identity_row.get(MATRIX_ROW_BINDING_COLUMN, "")).strip()
+    expected = matrix_row_binding_sha256(
+        matrix_header=matrix_header,
+        matrix_row=matrix_row,
+        identity_columns=identity_columns,
+        identity_row=identity_row,
+    )
+    if binding != expected:
+        raise ValueError("identity row binding mismatch")
     if not _exact_finite_numeric_equal(
         matrix_row.get("RT", ""),
         identity_row.get("RT", ""),
@@ -406,10 +378,7 @@ def _validate_matrix_identity_row(
 
 def _declared_identity_schema(identity_row: Mapping[str, object]) -> str:
     schema = str(identity_row.get("identity_schema_version", "")).strip()
-    if schema not in {
-        LEGACY_MATRIX_IDENTITY_SCHEMA_VERSION,
-        MATRIX_IDENTITY_SCHEMA_VERSION,
-    }:
+    if schema != MATRIX_IDENTITY_SCHEMA_VERSION:
         raise ValueError("alignment matrix identity schema is missing or unknown")
     return schema
 

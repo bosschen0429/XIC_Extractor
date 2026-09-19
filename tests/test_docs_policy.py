@@ -599,19 +599,19 @@ def test_superpowers_schema_index_constant_matches_case_sensitive_path() -> None
     assert Path(DOC_ROUTING_SCHEMAS_INDEX_PATH).exists()
 
 
-def test_productization_owner_route_uses_v3_and_dependent_manifest_contracts() -> None:
+def test_productization_owner_route_uses_and_dependent_manifest_contracts() -> None:
     assert PRODUCTIZATION_SCHEMA_REL == (
-        "docs/superpowers/schemas/productization_control_plane_schema.v3.json"
+        "docs/superpowers/schemas/productization_control_plane_schema.json"
     )
     assert PRODUCTIZATION_AUTHORITY_MANIFEST_REL == (
-        "docs/superpowers/schemas/productization_authority_manifest.v1.json"
+        "docs/superpowers/schemas/productization_authority_manifest.json"
     )
     assert QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_REL == (
-        "docs/superpowers/schemas/quantitative_projection_authority_manifest.v1.json"
+        "docs/superpowers/schemas/quantitative_projection_authority_manifest.json"
     )
     assert QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_SCHEMA_REL == (
         "docs/superpowers/schemas/"
-        "quantitative_projection_authority_manifest_schema.v1.json"
+        "quantitative_projection_authority_manifest_schema.json"
     )
     for path in (
         PRODUCTIZATION_SCHEMA_REL,
@@ -624,7 +624,4 @@ def test_productization_owner_route_uses_v3_and_dependent_manifest_contracts() -
     assert (
         QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_REL
         in DOC_ROUTING_AUTHORITY_REFERRER_PATHS
-    )
-    assert "productization_control_plane_schema.v2.json" not in (
-        PRODUCTIZATION_OWNER_ROUTE
     )

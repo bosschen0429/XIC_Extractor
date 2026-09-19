@@ -227,8 +227,8 @@ def test_discovery_samples_section_file_dropped_imports_csv(
     csv_file.write_text(
         "schema_version,sample_name,raw_stem,injection_order,sample_role,"
         "batch_id,prep_batch_id,matrix_type,group,excluded,exclusion_reason\n"
-        "sample_metadata_v1,Sample1,Stem1,10,calibrator,BatchX,Prep1,serum,G1,true,carryover\n"
-        "sample_metadata_v1,Sample2,Stem2,20,pooled_qc,BatchX,Prep2,plasma,G2,false,\n",
+        "sample_metadata,Sample1,Stem1,10,calibrator,BatchX,Prep1,serum,G1,true,carryover\n"
+        "sample_metadata,Sample2,Stem2,20,pooled_qc,BatchX,Prep2,plasma,G2,false,\n",
         encoding="utf-8",
     )
 
@@ -297,7 +297,7 @@ def test_sample_source_fields_follow_current_records(
     source.write_text(
         "schema_version,sample_name,raw_stem,injection_order,sample_role,"
         "batch_id,prep_batch_id,matrix_type,group,excluded,exclusion_reason\n"
-        "sample_metadata_v1,Sample1,Sample1,1,study_sample,BatchA,P1,serum,G1,true,carryover\n",
+        "sample_metadata,Sample1,Sample1,1,study_sample,BatchA,P1,serum,G1,true,carryover\n",
         encoding="utf-8",
     )
     section = DiscoverySamplesSection()
@@ -350,7 +350,7 @@ def test_failed_explicit_sample_import_preserves_source_and_edits(
     source.write_text(
         "schema_version,sample_name,raw_stem,injection_order,sample_role,"
         "batch_id,prep_batch_id,matrix_type,group,excluded,exclusion_reason\n"
-        "sample_metadata_v1,Sample1,Sample1,1,study_sample,BatchA,P1,serum,G1,true,carryover\n",
+        "sample_metadata,Sample1,Sample1,1,study_sample,BatchA,P1,serum,G1,true,carryover\n",
         encoding="utf-8",
     )
     section = DiscoverySamplesSection()

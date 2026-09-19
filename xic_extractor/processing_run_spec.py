@@ -47,11 +47,11 @@ from xic_extractor.validation_primitives import (
     require_text,
 )
 
-PROCESSING_RUN_SPEC_SCHEMA_VERSION = "processing_run_spec_v2"
-PROCESSING_RUN_SPEC_ENVELOPE_VERSION = "processing_run_spec_envelope_v1"
-PROCESSING_RUN_SPEC_ID_PREFIX = "processing-run.v1:"
-CID_NL_DISCOVERY_METHOD_SCHEMA_VERSION = "cid_nl_discovery_method_v2"
-CID_NL_DISCOVERY_METHOD_ID_PREFIX = "cid-nl-discovery-method.v1:"
+PROCESSING_RUN_SPEC_SCHEMA_VERSION = "processing_run_spec"
+PROCESSING_RUN_SPEC_ENVELOPE_VERSION = "processing_run_spec_envelope"
+PROCESSING_RUN_SPEC_ID_PREFIX = "processing-run:"
+CID_NL_DISCOVERY_METHOD_SCHEMA_VERSION = "cid_nl_discovery_method"
+CID_NL_DISCOVERY_METHOD_ID_PREFIX = "cid-nl-discovery-method:"
 
 _RUN_CONTENT_KEYS = (
     "schema_version",
@@ -209,28 +209,13 @@ class CidNlDiscoveryMethodSpec:
     settings: DiscoverySettings
     method: str = "cid_nl"
     schema_version: str = CID_NL_DISCOVERY_METHOD_SCHEMA_VERSION
-    _legacy_blank_settings: bool = dataclass_field(default=False, repr=False)
 
     def __post_init__(self) -> None:
-        if self.schema_version not in {
-            "cid_nl_discovery_method_v1",
-            CID_NL_DISCOVERY_METHOD_SCHEMA_VERSION,
-        }:
+        if self.schema_version != CID_NL_DISCOVERY_METHOD_SCHEMA_VERSION:
             raise ValueError("unsupported CID-NL Discovery method schema_version")
         if self.method != "cid_nl":
             raise ValueError("Discovery method must be 'cid_nl'")
         _validate_discovery_settings(self.settings)
-        if (
-            self.schema_version == "cid_nl_discovery_method_v1"
-            and not self._legacy_blank_settings
-        ):
-            if (
-                self.settings.enable_blank_qualification
-                or self.settings.blank_library_path is not None
-                or self.settings.blank_ppm_tol != 10.0
-                or self.settings.blank_fold_change_threshold != 3.0
-            ):
-                raise ValueError("original v1 method cannot carry blank settings")
 
     @property
     def method_hash(self) -> str:
@@ -251,10 +236,7 @@ class ProcessingRunSpec:
     schema_version: str = PROCESSING_RUN_SPEC_SCHEMA_VERSION
 
     def __post_init__(self) -> None:
-        if self.schema_version not in {
-            "processing_run_spec_v1",
-            PROCESSING_RUN_SPEC_SCHEMA_VERSION,
-        }:
+        if self.schema_version != PROCESSING_RUN_SPEC_SCHEMA_VERSION:
             raise ValueError("unsupported ProcessingRunSpec schema_version")
         if (
             not isinstance(self.acquisition_inputs, tuple)
@@ -302,17 +284,11 @@ class ProcessingRunSpec:
         ):
             raise TypeError("discovery_method must be a DiscoveryMethodSpec")
         if isinstance(self.discovery_method, CidNlDiscoveryMethodSpec):
-            expected_method_schema = (
-                "cid_nl_discovery_method_v1"
-                if self.schema_version == "processing_run_spec_v1"
-                else CID_NL_DISCOVERY_METHOD_SCHEMA_VERSION
-            )
-            if self.discovery_method.schema_version != expected_method_schema:
+            if (
+                self.discovery_method.schema_version
+                != CID_NL_DISCOVERY_METHOD_SCHEMA_VERSION
+            ):
                 raise ValueError("run and method schema versions disagree")
-        if self.schema_version == "processing_run_spec_v1" and any(
-            item.blank_library_sha256 is not None for item in self.acquisition_inputs
-        ):
-            raise ValueError("v1 run cannot carry blank library bindings")
         if not isinstance(self.signal_processing_profile, SignalProcessingProfile):
             raise TypeError(
                 "signal_processing_profile must be a SignalProcessingProfile"
@@ -436,11 +412,7 @@ def _run_content(spec: ProcessingRunSpec) -> dict[str, object]:
                         item.acquisition_source.observation_namespace
                     ),
                 },
-                **(
-                    {"blank_library_sha256": item.blank_library_sha256}
-                    if spec.schema_version == PROCESSING_RUN_SPEC_SCHEMA_VERSION
-                    else {}
-                ),
+                "blank_library_sha256": item.blank_library_sha256,
             }
             for item in spec.acquisition_inputs
         ],
@@ -509,8 +481,7 @@ class GenericMethodSettings(Mapping[str, Any]):
         if kwargs:
             merged.update(kwargs)
         normalized = {
-            str(k): _normalize_generic_setting_value(v)
-            for k, v in merged.items()
+            str(k): _normalize_generic_setting_value(v) for k, v in merged.items()
         }
         self._data: dict[str, Any] = dict(sorted(normalized.items()))
         self._hash: int | None = None
@@ -595,7 +566,7 @@ class GenericDiscoveryMethodSpec:
 
     @property
     def method_id(self) -> str:
-        return f"{self.method}-discovery-method.v1:{self.method_hash}"
+        return f"{self.method}-discovery-method:{self.method_hash}"
 
 
 DiscoveryMethodDecoder = Callable[[Mapping[str, object]], DiscoveryMethodSpec]
@@ -682,13 +653,6 @@ def _method_content(
                 ),
             },
         }
-        if (
-            method.schema_version == "cid_nl_discovery_method_v1"
-            and not method._legacy_blank_settings
-        ):
-            settings_content = cast(dict[str, object], content["settings"])
-            for key in _SETTINGS_KEYS[-4:]:
-                del settings_content[key]
         return content
     if method.method in _DISCOVERY_METHOD_ENCODERS:
         return dict(_DISCOVERY_METHOD_ENCODERS[method.method](method))
@@ -717,10 +681,7 @@ def _method_content(
 def _run_spec_from_content(content: Mapping[str, object]) -> ProcessingRunSpec:
     _require_keys(content, _RUN_CONTENT_KEYS, label="ProcessingRunSpec content")
     schema_version = _text(content["schema_version"], field="schema_version")
-    if schema_version not in {
-        "processing_run_spec_v1",
-        PROCESSING_RUN_SPEC_SCHEMA_VERSION,
-    }:
+    if schema_version != PROCESSING_RUN_SPEC_SCHEMA_VERSION:
         raise ValueError("unsupported ProcessingRunSpec schema_version")
     input_values = _list(content["acquisition_inputs"], label="acquisition_inputs")
     inputs: list[ProcessingAcquisitionInput] = []
@@ -728,12 +689,7 @@ def _run_spec_from_content(content: Mapping[str, object]) -> ProcessingRunSpec:
         item = _mapping(value, label="acquisition input")
         _require_keys(
             item,
-            _ACQUISITION_INPUT_KEYS
-            + (
-                ("blank_library_sha256",)
-                if schema_version == PROCESSING_RUN_SPEC_SCHEMA_VERSION
-                else ()
-            ),
+            _ACQUISITION_INPUT_KEYS + ("blank_library_sha256",),
             label="acquisition input",
         )
         source_value = _mapping(item["acquisition_source"], label="acquisition source")
@@ -832,13 +788,9 @@ def _method_from_content(content: Mapping[str, object]) -> DiscoveryMethodSpec:
     from xic_extractor.discovery.models import DiscoverySettings, NeutralLossProfile
 
     settings_value = _mapping(content["settings"], label="Discovery settings")
-    legacy_original = (
-        content["schema_version"] == "cid_nl_discovery_method_v1"
-        and tuple(settings_value) == _SETTINGS_KEYS[:-4]
-    )
     _require_keys(
         settings_value,
-        _SETTINGS_KEYS[:-4] if legacy_original else _SETTINGS_KEYS,
+        _SETTINGS_KEYS,
         label="Discovery settings",
     )
     profile_values = _list(
@@ -970,19 +922,19 @@ def _method_from_content(content: Mapping[str, object]) -> DiscoveryMethodSpec:
         resolver_mode=_text(settings_value["resolver_mode"], field="resolver_mode"),
         evidence_profile=evidence_profile,
         enable_blank_qualification=_boolean(
-            settings_value.get("enable_blank_qualification", False),
+            settings_value["enable_blank_qualification"],
             field="enable_blank_qualification",
         ),
         blank_library_path=_optional_text(
-            settings_value.get("blank_library_path"),
+            settings_value["blank_library_path"],
             field="blank_library_path",
         ),
         blank_ppm_tol=_float_from_text(
-            settings_value.get("blank_ppm_tol", _float_text(10.0)),
+            settings_value["blank_ppm_tol"],
             field="blank_ppm_tol",
         ),
         blank_fold_change_threshold=_float_from_text(
-            settings_value.get("blank_fold_change_threshold", _float_text(3.0)),
+            settings_value["blank_fold_change_threshold"],
             field="blank_fold_change_threshold",
         ),
     )
@@ -990,10 +942,6 @@ def _method_from_content(content: Mapping[str, object]) -> DiscoveryMethodSpec:
         settings=settings,
         method=_text(content["method"], field="method"),
         schema_version=_text(content["schema_version"], field="schema_version"),
-        _legacy_blank_settings=(
-            content["schema_version"] == "cid_nl_discovery_method_v1"
-            and not legacy_original
-        ),
     )
 
 
@@ -1116,7 +1064,6 @@ def _text(value: object, *, field: str) -> str:
 
 def _integer(value: object, *, field: str) -> int:
     return require_integer(value, field=field, type_error_factory=TypeError)
-
 
 
 __all__ = [

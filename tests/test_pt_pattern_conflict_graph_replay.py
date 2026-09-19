@@ -224,7 +224,7 @@ def test_conflict_graph_replay_rejects_unknown_candidate_schema(
     _write_candidates(
         candidates_csv,
         (("single", ("f1", "f2", "f3", "f4")),),
-        schema_version="pt_pattern_candidates.v999",
+        schema_version="unsupported_pt_pattern_candidates",
     )
 
     with pytest.raises(ValueError, match="unsupported schema_version"):
@@ -328,7 +328,7 @@ def _write_candidates(
     path: Path,
     assignments: tuple[tuple[str, tuple[str, str, str, str]], ...],
     *,
-    schema_version: str = "pt_pattern_candidates.v1",
+    schema_version: str = "pt_pattern_candidates",
 ) -> None:
     rows = [
         {

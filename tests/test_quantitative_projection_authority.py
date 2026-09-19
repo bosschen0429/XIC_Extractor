@@ -13,11 +13,11 @@ from xic_extractor.alignment import (
     quantitative_projection_authority as authority_module,
 )
 from xic_extractor.alignment.quantitative_projection_authority import (
-    QUANTITATIVE_PROJECTION_AUTHORITY_FIELDS_V1,
-    QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_FIELDS_V1,
+    QUANTITATIVE_PROJECTION_AUTHORITY_FIELDS,
+    QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_FIELDS,
     QuantitativeProjectionAuthorityError,
     QuantitativeProjectionAuthorityHoldError,
-    QuantitativeProjectionAuthorityManifestV1,
+    QuantitativeProjectionAuthorityManifest,
     load_quantitative_projection_authority_for_diagnostic,
     rehydrate_quantitative_projection_authority_manifest,
     render_quantitative_projection_authority_manifest_bytes,
@@ -27,23 +27,23 @@ from xic_extractor.peak_detection.signal_processing_profile import (
     DEFAULT_SIGNAL_PROCESSING_PROFILE_ID,
 )
 
-_RESOURCE_NAME = "quantitative_projection_authority_v1.json"
+_RESOURCE_NAME = "quantitative_projection_authority.json"
 _CONSUMER_ID = "xic_extractor.alignment.pipeline.run_alignment:production-equivalent"
 _PROFILE_ID = (
-    "signal-profile.v1:bcefd76d05bc26a0ec9f333fdb76427ccb2133c1946f5ec711916e85efc06de2"
+    "signal-profile:bcefd76d05bc26a0ec9f333fdb76427ccb2133c1946f5ec711916e85efc06de2"
 )
-_AUTHORITY_ID_PREFIX = "quantitative-projection-authority.v1:"
-_MANIFEST_ID_PREFIX = "quantitative-projection-authority-manifest.v1:"
+_AUTHORITY_ID_PREFIX = "quantitative-projection-authority:"
+_MANIFEST_ID_PREFIX = "quantitative-projection-authority-manifest:"
 _PACKAGE_AUTHORITY_ARTIFACT = (
-    "xic_extractor/alignment/data/quantitative_projection_authority_v1.json"
+    "xic_extractor/alignment/data/quantitative_projection_authority.json"
 )
 _ACTIVATION_SUMMARY_ARTIFACT = (
     "docs/superpowers/validation/"
-    "untargeted_owner_backfill_canonical_quantitative_activation_v1/"
+    "untargeted_owner_backfill_canonical_quantitative_activation/"
     "activation_summary.json"
 )
 _MANIFEST_PATH = Path(
-    "docs/superpowers/schemas/quantitative_projection_authority_manifest.v1.json"
+    "docs/superpowers/schemas/quantitative_projection_authority_manifest.json"
 )
 
 
@@ -74,7 +74,7 @@ def _canonical_package_bytes(payload: dict[str, object]) -> bytes:
 def _reseal(payload: dict[str, object]) -> bytes:
     basis = {
         field_name: payload[field_name]
-        for field_name in QUANTITATIVE_PROJECTION_AUTHORITY_FIELDS_V1[:-1]
+        for field_name in QUANTITATIVE_PROJECTION_AUTHORITY_FIELDS[:-1]
     }
     digest = hashlib.sha256(
         json.dumps(
@@ -91,8 +91,8 @@ def _reseal(payload: dict[str, object]) -> bytes:
 def _manifest_payload(*, package_raw: bytes | None = None) -> dict[str, object]:
     raw = package_raw or _package_bytes()
     payload: dict[str, object] = {
-        "schema_version": "quantitative_projection_authority_manifest_v1",
-        "effect_id": ("untargeted_owner_backfill_canonical_quantitative_projection_v1"),
+        "schema_version": "quantitative_projection_authority_manifest",
+        "effect_id": ("untargeted_owner_backfill_canonical_quantitative_projection"),
         "status": "HOLD_PENDING_VALIDATION",
         "package_authority_artifact": _PACKAGE_AUTHORITY_ARTIFACT,
         "package_authority_sha256": hashlib.sha256(raw).hexdigest(),
@@ -111,7 +111,7 @@ def _manifest_payload(*, package_raw: bytes | None = None) -> dict[str, object]:
 def _reseal_manifest(payload: dict[str, object]) -> None:
     basis = {
         field_name: payload[field_name]
-        for field_name in QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_FIELDS_V1[:-1]
+        for field_name in QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_FIELDS[:-1]
     }
     digest = hashlib.sha256(
         json.dumps(
@@ -127,7 +127,7 @@ def _reseal_manifest(payload: dict[str, object]) -> None:
 def test_package_hold_authority_has_exact_contract() -> None:
     authority = load_quantitative_projection_authority_for_diagnostic()
 
-    assert QUANTITATIVE_PROJECTION_AUTHORITY_FIELDS_V1 == (
+    assert QUANTITATIVE_PROJECTION_AUTHORITY_FIELDS == (
         "schema_version",
         "authority_scope",
         "policy_id",
@@ -148,11 +148,11 @@ def test_package_hold_authority_has_exact_contract() -> None:
         "activation_summary_sha256",
         "authority_id",
     )
-    assert authority.schema_version == "quantitative_projection_authority_v1"
+    assert authority.schema_version == "quantitative_projection_authority"
     assert authority.authority_scope == (
-        "untargeted_owner_backfill_canonical_quantitative_projection_v1"
+        "untargeted_owner_backfill_canonical_quantitative_projection"
     )
-    assert authority.policy_id == "activation-base-owner-backfill-policy.v1"
+    assert authority.policy_id == "activation-base-owner-backfill-policy"
     assert authority.effect == (
         "reproject_existing_matrix_value_on_existing_authorized_cells"
     )
@@ -178,11 +178,11 @@ def test_package_hold_authority_has_exact_contract() -> None:
     assert authority.may_change_counted_detection is False
     assert authority.activation_summary_sha256 == ""
     assert authority.authority_id == (
-        "quantitative-projection-authority.v1:"
-        "ca4ed4afd15bd5649c97ad91568e34b7b60e1437b2d87d7b9b75be60ce56965f"
+        "quantitative-projection-authority:"
+        "04fc3d3e56de54d23f2f8f6aaf5736c317f48b56d068ff373043e1f11fb17ac5"
     )
     assert hashlib.sha256(_package_bytes()).hexdigest() == (
-        "15b74bc79dc9501210acd5f761c86b4a7128db83e74a62bf3e97b7beb1572ed5"
+        "26753eb69300ec14a4eb044d21e44cb1351c2360cac7fae9884c3aec9bb6cd54"
     )
 
 
@@ -345,10 +345,10 @@ def test_strict_rehydration_rejects_field_shape_and_order(
     else:
         original = _package_bytes().decode("utf-8")
         invalid_bytes = original.replace(
-            '{"schema_version":"quantitative_projection_authority_v1",',
+            '{"schema_version":"quantitative_projection_authority",',
             (
-                '{"schema_version":"quantitative_projection_authority_v1",'
-                '"schema_version":"quantitative_projection_authority_v1",'
+                '{"schema_version":"quantitative_projection_authority",'
+                '"schema_version":"quantitative_projection_authority",'
             ),
             1,
         ).encode("utf-8")
@@ -438,7 +438,7 @@ def test_invalid_package_is_rejection_not_hold(
 def test_hold_manifest_rehydrates_exact_package_bound_contract() -> None:
     manifest = rehydrate_quantitative_projection_authority_manifest(_manifest_payload())
 
-    assert QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_FIELDS_V1 == (
+    assert QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_FIELDS == (
         "schema_version",
         "effect_id",
         "status",
@@ -450,25 +450,25 @@ def test_hold_manifest_rehydrates_exact_package_bound_contract() -> None:
         "current_effect_cell_count",
         "manifest_content_id",
     )
-    assert isinstance(manifest, QuantitativeProjectionAuthorityManifestV1)
+    assert isinstance(manifest, QuantitativeProjectionAuthorityManifest)
     assert tuple(field.name for field in fields(manifest)) == (
-        QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_FIELDS_V1
+        QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_FIELDS
     )
     assert authority_module.__all__ == (
-        "QUANTITATIVE_PROJECTION_AUTHORITY_FIELDS_V1",
-        "QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_FIELDS_V1",
+        "QUANTITATIVE_PROJECTION_AUTHORITY_FIELDS",
+        "QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_FIELDS",
         "QuantitativeProjectionAuthorityError",
         "QuantitativeProjectionAuthorityHoldError",
-        "QuantitativeProjectionAuthorityManifestV1",
-        "QuantitativeProjectionAuthorityV1",
+        "QuantitativeProjectionAuthorityManifest",
+        "QuantitativeProjectionAuthority",
         "load_quantitative_projection_authority_for_diagnostic",
         "rehydrate_quantitative_projection_authority_manifest",
         "render_quantitative_projection_authority_manifest_bytes",
         "require_product_quantitative_projection_authority",
     )
-    assert manifest.schema_version == ("quantitative_projection_authority_manifest_v1")
+    assert manifest.schema_version == ("quantitative_projection_authority_manifest")
     assert manifest.effect_id == (
-        "untargeted_owner_backfill_canonical_quantitative_projection_v1"
+        "untargeted_owner_backfill_canonical_quantitative_projection"
     )
     assert manifest.status == "HOLD_PENDING_VALIDATION"
     assert manifest.package_authority_artifact == _PACKAGE_AUTHORITY_ARTIFACT
@@ -510,8 +510,8 @@ def test_manifest_renderer_rejects_foreign_and_subclass_values(
             _manifest_payload()  # type: ignore[arg-type]
         )
 
-    empty_exact: QuantitativeProjectionAuthorityManifestV1 = object.__new__(
-        QuantitativeProjectionAuthorityManifestV1
+    empty_exact: QuantitativeProjectionAuthorityManifest = object.__new__(
+        QuantitativeProjectionAuthorityManifest
     )
     with pytest.raises(
         QuantitativeProjectionAuthorityError,
@@ -520,16 +520,16 @@ def test_manifest_renderer_rejects_foreign_and_subclass_values(
         render_quantitative_projection_authority_manifest_bytes(empty_exact)
 
     monkeypatch.setattr(
-        QuantitativeProjectionAuthorityManifestV1,
+        QuantitativeProjectionAuthorityManifest,
         "__init_subclass__",
         classmethod(lambda cls, **kwargs: None),
     )
     forged_type = type(
         "ForgedQuantitativeProjectionAuthorityManifest",
-        (QuantitativeProjectionAuthorityManifestV1,),
+        (QuantitativeProjectionAuthorityManifest,),
         {},
     )
-    forged: QuantitativeProjectionAuthorityManifestV1 = object.__new__(forged_type)
+    forged: QuantitativeProjectionAuthorityManifest = object.__new__(forged_type)
     with pytest.raises(
         QuantitativeProjectionAuthorityError,
         match="requires an owner-minted exact manifest",
@@ -544,10 +544,10 @@ def test_manifest_renderer_never_renders_forged_active_content() -> None:
     payload["activation_summary_sha256"] = "a" * 64
     payload["current_effect_cell_count"] = 1
     _reseal_manifest(payload)
-    forged: QuantitativeProjectionAuthorityManifestV1 = object.__new__(
-        QuantitativeProjectionAuthorityManifestV1
+    forged: QuantitativeProjectionAuthorityManifest = object.__new__(
+        QuantitativeProjectionAuthorityManifest
     )
-    for field_name in QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_FIELDS_V1:
+    for field_name in QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_FIELDS:
         value = payload[field_name]
         if field_name == "allowed_registered_writer_scope_ids":
             value = tuple(value)  # type: ignore[arg-type]

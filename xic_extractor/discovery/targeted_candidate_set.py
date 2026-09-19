@@ -31,8 +31,8 @@ from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 
 TargetedCandidateSetStatus = Literal["complete", "failed"]
 
-SCHEMA_VERSION = "targeted_candidate_set_v1"
-COMPLETION_SCHEMA_VERSION = "targeted_candidate_discovery_completion_v1"
+SCHEMA_VERSION = "targeted_candidate_set"
+COMPLETION_SCHEMA_VERSION = "targeted_candidate_discovery_completion"
 VALIDATION_STATUS = "diagnostic_only"
 ARTIFACT_SEMANTIC_ROLE = "targeted_candidate_set_receipt"
 COMPLETION_ARTIFACT_SEMANTIC_ROLE = "targeted_candidate_discovery_completion"
@@ -42,7 +42,7 @@ _ARTIFACT_SEMANTIC_CONTRACT = _mint_artifact_semantic_contract_ref(
     schema_version=SCHEMA_VERSION,
     validation_status=VALIDATION_STATUS,
     media_type="application/json",
-    serialization_format="canonical-json-utf8-lf-v1",
+    serialization_format="canonical-json-utf8-lf",
 )
 _COMPLETION_ARTIFACT_SEMANTIC_CONTRACT = _mint_artifact_semantic_contract_ref(
     owner_namespace="xic_extractor.discovery.targeted_candidate_set",
@@ -50,14 +50,14 @@ _COMPLETION_ARTIFACT_SEMANTIC_CONTRACT = _mint_artifact_semantic_contract_ref(
     schema_version=COMPLETION_SCHEMA_VERSION,
     validation_status=VALIDATION_STATUS,
     media_type="application/json",
-    serialization_format="canonical-json-utf8-lf-v1",
+    serialization_format="canonical-json-utf8-lf",
 )
-_PROCESSING_REQUEST_PREFIX = "xic.processing-request.v1:"
-_PROCESSING_ATTEMPT_PREFIX = "xic.processing-attempt.v1:"
-_SAMPLE_ID_PREFIX = "xic.sample.v1:"
-_TARGET_SNAPSHOT_PREFIX = "xic.target-list-snapshot.v1:"
-_TARGET_KEY_PREFIX = "xic.target-key.v1:"
-_TARGET_DEFINITION_PREFIX = "xic.target-definition.v1:"
+_PROCESSING_REQUEST_PREFIX = "xic.processing-request:"
+_PROCESSING_ATTEMPT_PREFIX = "xic.processing-attempt:"
+_SAMPLE_ID_PREFIX = "xic.sample:"
+_TARGET_SNAPSHOT_PREFIX = "xic.target-list-snapshot:"
+_TARGET_KEY_PREFIX = "xic.target-key:"
+_TARGET_DEFINITION_PREFIX = "xic.target-definition:"
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
 

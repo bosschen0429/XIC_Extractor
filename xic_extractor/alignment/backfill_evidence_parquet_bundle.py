@@ -28,7 +28,7 @@ from xic_extractor.alignment.backfill_evidence_tsv import (
 )
 
 PARQUET_SHADOW_BUNDLE_SCHEMA_VERSION = (
-    "alignment_backfill_evidence_parquet_shadow_bundle_v1"
+    "alignment_backfill_evidence_parquet_shadow_bundle"
 )
 PARQUET_SHADOW_AUTHORITY = "diagnostic_only_shadow"
 PARQUET_SHADOW_MANIFEST_FILENAME = "bundle_manifest.json"

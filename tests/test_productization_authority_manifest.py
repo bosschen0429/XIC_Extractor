@@ -8,11 +8,11 @@ from scripts.check_productization_state import artifact_sha256
 
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST_PATH = (
-    ROOT / "docs/superpowers/schemas/productization_authority_manifest.v1.json"
+    ROOT / "docs/superpowers/schemas/productization_authority_manifest.json"
 )
 DEPENDENT_MANIFEST_PATH = (
     ROOT
-    / "docs/superpowers/schemas/quantitative_projection_authority_manifest.v1.json"
+    / "docs/superpowers/schemas/quantitative_projection_authority_manifest.json"
 )
 
 APPROVED_SCOPE = "backfill_policy_write_ready_rows"

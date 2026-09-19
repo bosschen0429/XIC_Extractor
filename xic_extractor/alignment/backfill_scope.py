@@ -43,7 +43,7 @@ BackfillRequestPlanningReason = Literal[
     "retained_local_owner",
     "local_owner_not_supersedable",
 ]
-REQUEST_PLAN_VERSION = "alignment-parity-scoped-owner-backfill-request-plan-v1"
+REQUEST_PLAN_VERSION = "alignment-parity-scoped-owner-backfill-request-plan"
 
 
 @dataclass(frozen=True)

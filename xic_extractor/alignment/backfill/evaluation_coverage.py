@@ -115,18 +115,18 @@ OWNER_BACKFILL_TERMINAL_REASONS: tuple[OwnerBackfillTerminalReason, ...] = (
     "validation_unassessable",
 )
 
-_POSITION_PREFIX = "xic.owner-backfill-coverage-position.v1:"
-_TERMINAL_PREFIX = "xic.owner-backfill-coverage-terminal.v1:"
-_EPOCH_PREFIX = "xic.owner-backfill-planning-epoch.v1:"
-_BATCH_PREFIX = "xic.owner-backfill-evaluation-coverage.v1:"
+_POSITION_PREFIX = "xic.owner-backfill-coverage-position:"
+_TERMINAL_PREFIX = "xic.owner-backfill-coverage-terminal:"
+_EPOCH_PREFIX = "xic.owner-backfill-planning-epoch:"
+_BATCH_PREFIX = "xic.owner-backfill-evaluation-coverage:"
 
 _COMPLETED_RECOVERY_CONTRACT = _mint_artifact_semantic_contract_ref(
     owner_namespace="xic_extractor.untargeted_cid_nl_real_data_runtime",
     semantic_role="owner_backfill_completed_recovery_projection",
-    schema_version="owner_backfill_completed_recovery_projection_v1",
+    schema_version="owner_backfill_completed_recovery_projection",
     validation_status="diagnostic_only",
     media_type="application/json",
-    serialization_format="canonical-json-utf8-lf-v1",
+    serialization_format="canonical-json-utf8-lf",
 )
 
 
@@ -169,7 +169,7 @@ class OwnerBackfillCompletedRecoveryProjection:
         subject = assessment.content.method_subject
         if (
             assessment.content.detector_invocation_id
-            != "untargeted-cid-nl-backfill-recovery:v1"
+            != "untargeted-cid-nl-backfill-recovery"
             or assessment.content.technical_state != "evaluated"
             or assessment.content.method_result != "HOLD"
             or assessment.candidate_peaks
@@ -260,7 +260,7 @@ def _completed_recovery_projection_bytes(
 ) -> bytes:
     return _canonical_proof_bytes(
         {
-            "schema": "owner_backfill_completed_recovery_projection_v1",
+            "schema": "owner_backfill_completed_recovery_projection",
             "processing_request_id": processing_owners.request.processing_request_id,
             "processing_attempt_id": processing_owners.attempt.processing_attempt_id,
             "sample_identity_id": sample.identity.sample_identity_id,
@@ -312,7 +312,7 @@ class OwnerBackfillConservativeNoRequestProof:
     def __post_init__(self) -> None:
         _validate_conservative_no_request(self)
         if self.proof_id != _typed_id(
-            "xic.owner-backfill-conservative-no-request.v1:",
+            "xic.owner-backfill-conservative-no-request:",
             _conservative_no_request_basis(
                 processing_owners=self.processing_owners,
                 group_identity=self.group_identity,
@@ -334,7 +334,7 @@ def mint_owner_backfill_conservative_no_request_proof(
 ) -> OwnerBackfillConservativeNoRequestProof:
     return OwnerBackfillConservativeNoRequestProof(
         proof_id=_typed_id(
-            "xic.owner-backfill-conservative-no-request.v1:",
+            "xic.owner-backfill-conservative-no-request:",
             _conservative_no_request_basis(
                 processing_owners=processing_owners,
                 group_identity=group_identity,
@@ -461,7 +461,7 @@ def _conservative_no_request_basis(
 ) -> Mapping[str, object]:
     facts = decision.group_facts
     return {
-        "schema": "owner_backfill_conservative_no_request_v1",
+        "schema": "owner_backfill_conservative_no_request",
         "variant": "threshold_not_met"
         if completion is None
         else "completed_recovery_empty",
@@ -912,7 +912,7 @@ class OwnerBackfillEvaluationCoverageBatch:
         expected = _typed_id(
             _BATCH_PREFIX,
             {
-                "schema": "owner_backfill_evaluation_coverage_v1",
+                "schema": "owner_backfill_evaluation_coverage",
                 "epoch_id": self.epoch.epoch_id,
                 "terminal_ids": [item.terminal_id for item in self.terminals],
                 "terminal_evaluations": [
@@ -933,7 +933,7 @@ def mint_owner_backfill_position_id(
     return _typed_id(
         _POSITION_PREFIX,
         {
-            "schema": "owner_backfill_coverage_position_v1",
+            "schema": "owner_backfill_coverage_position",
             "processing_request_id": _required_text(
                 processing_request_id,
                 "processing_request_id",
@@ -961,7 +961,7 @@ def mint_owner_backfill_terminal_id(
     return _typed_id(
         _TERMINAL_PREFIX,
         {
-            "schema": "owner_backfill_coverage_terminal_v1",
+            "schema": "owner_backfill_coverage_terminal",
             "position_id": _required_text(position_id, "position_id"),
             "logical_request_id": _required_text(
                 logical_request_id,
@@ -993,7 +993,7 @@ def mint_owner_backfill_selection_subject_id(
     )
     canonical = json.dumps(
         {
-            "schema_version": "owner_backfill_selection_subject_v1",
+            "schema_version": "owner_backfill_selection_subject",
             "request_identity_id": request_key,
             "group_hypothesis_id": group_hypothesis_id,
             "sample_stem": sample_stem,
@@ -1004,7 +1004,7 @@ def mint_owner_backfill_selection_subject_id(
         allow_nan=False,
         separators=(",", ":"),
     ).encode("utf-8")
-    return "owner-backfill-subject.v1:" + hashlib.sha256(canonical).hexdigest()
+    return "owner-backfill-subject:" + hashlib.sha256(canonical).hexdigest()
 
 
 def mint_owner_backfill_planning_epoch(
@@ -1208,7 +1208,7 @@ def build_owner_backfill_evaluation_coverage(
         coverage_id=_typed_id(
             _BATCH_PREFIX,
             {
-                "schema": "owner_backfill_evaluation_coverage_v1",
+                "schema": "owner_backfill_evaluation_coverage",
                 "epoch_id": epoch.epoch_id,
                 "terminal_ids": [item.terminal_id for item in canonical],
                 "terminal_evaluations": [
@@ -1476,13 +1476,8 @@ def _epoch_basis(
     selected_family_ids: frozenset[str],
     positions: tuple[OwnerBackfillPlanningPosition, ...],
 ) -> Mapping[str, object]:
-    has_proof = any(
-        item.conservative_no_request_proof is not None for item in positions
-    )
     return {
-        "schema": "owner_backfill_planning_epoch_v2"
-        if has_proof
-        else "owner_backfill_planning_epoch_v1",
+        "schema": "owner_backfill_planning_epoch",
         "processing_request_id": processing_request_id,
         "groups": [
             {
@@ -1528,16 +1523,10 @@ def _epoch_basis(
                     request.request_identity.request_identity_id
                     for request in item.primary_logical_requests
                 ],
-                **(
-                    {
-                        "conservative_no_request_proof_id": (
-                            item.conservative_no_request_proof.proof_id
-                            if item.conservative_no_request_proof is not None
-                            else None
-                        )
-                    }
-                    if has_proof
-                    else {}
+                "conservative_no_request_proof_id": (
+                    item.conservative_no_request_proof.proof_id
+                    if item.conservative_no_request_proof is not None
+                    else None
                 ),
             }
             for item in positions

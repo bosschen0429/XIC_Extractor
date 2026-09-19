@@ -33,7 +33,7 @@ def test_discovery_output_publication_rolls_back_every_replace_failure(
     final_paths = [
         output_dir / "discovery_candidates.csv",
         output_dir / "discovery_review.csv",
-        output_dir / "discovery_physical_facts.v1.json",
+        output_dir / "discovery_physical_facts.json",
     ]
     run_spec = None
     acquisition_input = None
@@ -133,7 +133,7 @@ def test_legacy_publication_removes_stale_spec_bound_sidecar(
     assert outputs.candidates_csv.read_bytes() == expected_candidates
     assert outputs.review_csv.read_bytes() == expected_review
     assert outputs.physical_facts_json is None
-    assert not (output_dir / "discovery_physical_facts.v1.json").exists()
+    assert not (output_dir / "discovery_physical_facts.json").exists()
     assert not [
         path for path in output_dir.iterdir() if path.name.endswith((".tmp", ".bak"))
     ]
@@ -217,7 +217,7 @@ def test_discovery_output_publication_rolls_back_sidecar_staging_failure(
     final_paths = (
         output_dir / "discovery_candidates.csv",
         output_dir / "discovery_review.csv",
-        output_dir / "discovery_physical_facts.v1.json",
+        output_dir / "discovery_physical_facts.json",
     )
     prior = {path: f"prior-{index}".encode() for index, path in enumerate(final_paths)}
     if prior_outputs:

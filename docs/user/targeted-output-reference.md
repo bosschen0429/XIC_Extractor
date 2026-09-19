@@ -64,8 +64,8 @@ same selection's existing smoothed height; the writer does not smooth again or
 change RT, Area, peak selection, or counting. Non-counted rows render both
 intensities as `ND`, and file errors render both as `ERROR`. Long CSV adds
 `IntSmoothed` immediately after `Int`; wide CSV adds `<Target>_IntSmoothed`.
-These additive fields are versioned as `targeted_output_v2` and
-`targeted_long_csv_v2`. They do not establish chemical identity or readiness.
+These additive fields are versioned as `targeted_output` and
+`targeted_long_csv`. They do not establish chemical identity or readiness.
 
 ---
 
@@ -165,7 +165,7 @@ Key-value pairs recording settings and provenance for the run.
 | resolver_mode | `region_first_safe_merge` | Peak separation algorithm |
 | smooth_window | `15` | Smoothing window (points) |
 | smooth_polyorder | `3` | Polynomial order |
-| targeted_output_schema_version | `targeted_output_v2` | Output schema version |
+| targeted_output_schema_version | `targeted_output` | Output schema version |
 | method_manifest_sha256 | `b7c4...` | Method manifest hash |
 
 ---

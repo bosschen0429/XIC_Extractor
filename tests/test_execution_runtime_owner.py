@@ -213,7 +213,7 @@ def test_runtime_owner_derives_peak_fact_cost_from_typed_work_and_telemetry(
             owner_request_identity="owner-request:1",
             group_hypothesis_id="GROUP:1",
             acquisition_source=source,
-            prepared_signal_id="prepared-signal.v1:" + "1" * 64,
+            prepared_signal_id="prepared-signal:" + "1" * 64,
             elapsed_seconds=0.25,
         ),
         RuntimePeakFactWorkReceipt(
@@ -249,7 +249,7 @@ def test_runtime_owner_derives_peak_fact_cost_from_typed_work_and_telemetry(
     assert metrics.sealed_observation_count == 1
     assert metrics.identity_unavailable_count == 1
     assert metrics.elapsed_seconds == pytest.approx(0.25)
-    assert metrics.measurement_source == "execution_runtime_owner:v1"
+    assert metrics.measurement_source == "execution_runtime_owner"
     assert metrics.count_scope == "owner_backfill_worker_peak_fact_runtime"
 
     with pytest.raises(
@@ -333,7 +333,7 @@ def test_runtime_owner_derives_peak_fact_cost_from_typed_work_and_telemetry(
             owner_request_identity="owner-request:non-finite",
             group_hypothesis_id="GROUP:non-finite",
             acquisition_source=source,
-            prepared_signal_id="prepared-signal.v1:" + "2" * 64,
+            prepared_signal_id="prepared-signal:" + "2" * 64,
             elapsed_seconds=float("nan"),
         )
     with pytest.raises(
@@ -371,7 +371,7 @@ def test_runtime_owner_counts_preparation_once_per_prepared_signal(
         acquisition_format="thermo_raw",
         observation_namespace="thermo_raw_file_reader:Device.MS:1",
     )
-    shared_prepared_signal_id = "prepared-signal.v1:" + "a" * 64
+    shared_prepared_signal_id = "prepared-signal:" + "a" * 64
     operations = (
         RuntimePeakFactOperation.TRACE_EVALUATION,
         RuntimePeakFactOperation.ASLS_BASELINE,
@@ -421,7 +421,7 @@ def test_runtime_owner_counts_preparation_once_per_prepared_signal(
             receipts[0],
             replace(
                 receipts[1],
-                prepared_signal_id="prepared-signal.v1:" + "b" * 64,
+                prepared_signal_id="prepared-signal:" + "b" * 64,
             ),
         ),
         artifact_io=None,
@@ -453,7 +453,7 @@ def test_runtime_owner_counts_preparation_once_per_prepared_signal(
     assert unavailable_metrics.raw_descriptor_projection_count == 0
 
     with pytest.raises(RuntimeFinalizationContractError, match="prepared_signal_id"):
-        replace(receipts[0], prepared_signal_id="prepared-signal.v1:not-a-digest")
+        replace(receipts[0], prepared_signal_id="prepared-signal:not-a-digest")
 
     with pytest.raises(
         RuntimeFinalizationContractError,
@@ -505,7 +505,7 @@ def test_runtime_owner_keeps_missing_peak_fact_timing_and_artifacts_unavailable(
                 owner_request_identity="owner-request:missing-time",
                 group_hypothesis_id="GROUP:missing-time",
                 acquisition_source=source,
-                prepared_signal_id="prepared-signal.v1:" + "3" * 64,
+                prepared_signal_id="prepared-signal:" + "3" * 64,
             ),
         ),
         artifact_io=None,
@@ -527,7 +527,7 @@ def test_owner_start_accepts_exact_typed_cancellation_request(
     runtime = start_runtime_attempt(
         attempt=attempt,
         work_unit_keys=("raw:a",),
-        owner_completeness_attestation="runtime-owner-test:v1",
+        owner_completeness_attestation="runtime-owner-test",
         cancellation_request=RuntimeCancellationRequest(attempt=attempt),
     )
 
@@ -548,7 +548,7 @@ def test_owner_start_rejects_foreign_cancellation_request(tmp_path: Path) -> Non
         start_runtime_attempt(
             attempt=attempt,
             work_unit_keys=("raw:a",),
-            owner_completeness_attestation="runtime-owner-test:v1",
+            owner_completeness_attestation="runtime-owner-test",
             cancellation_request=RuntimeCancellationRequest(attempt=foreign),
         )
 
@@ -561,7 +561,7 @@ def test_owner_start_does_not_relabel_rejected_manifest_as_cancelled(
     runtime = start_runtime_attempt(
         attempt=attempt,
         work_unit_keys=(),
-        owner_completeness_attestation="runtime-owner-test:v1",
+        owner_completeness_attestation="runtime-owner-test",
         cancellation_request=RuntimeCancellationRequest(attempt=attempt),
     )
 
@@ -577,7 +577,7 @@ def test_owner_accepted_cancellation_closes_without_worker_dispatch(
     runtime = start_runtime_attempt(
         attempt=attempt,
         work_unit_keys=("raw:a", "raw:b"),
-        owner_completeness_attestation="runtime-owner-test:v1",
+        owner_completeness_attestation="runtime-owner-test",
         cancellation_request=RuntimeCancellationRequest(attempt=attempt),
     )
     worker_calls: list[str] = []
@@ -639,7 +639,7 @@ def test_runtime_phase_error_wraps_worker_exception_without_follow_on_callbacks(
     runtime = start_runtime_attempt(
         attempt=attempt,
         work_unit_keys=("raw:a",),
-        owner_completeness_attestation="runtime-owner-test:v1",
+        owner_completeness_attestation="runtime-owner-test",
     )
     worker_seen: list[RuntimeAttemptAggregate] = []
     telemetry_calls: list[str] = []
@@ -690,7 +690,7 @@ def test_runtime_phase_error_wraps_telemetry_exception_after_one_worker_batch(
     runtime = start_runtime_attempt(
         attempt=attempt,
         work_unit_keys=("raw:a",),
-        owner_completeness_attestation="runtime-owner-test:v1",
+        owner_completeness_attestation="runtime-owner-test",
     )
     worker_calls: list[str] = []
     persister_calls: list[RuntimeFinalizationReceipt] = []
@@ -734,7 +734,7 @@ def test_runtime_phase_error_wraps_persister_exception_before_write(
     runtime = start_runtime_attempt(
         attempt=attempt,
         work_unit_keys=("raw:a",),
-        owner_completeness_attestation="runtime-owner-test:v1",
+        owner_completeness_attestation="runtime-owner-test",
     )
     proposed_receipts: list[RuntimeFinalizationReceipt] = []
     sentinel = RuntimeError("persister callback details stay out of owner facts")
@@ -768,7 +768,7 @@ def test_runtime_phase_error_preserves_marker_durability_but_not_acceptance(
     runtime = start_runtime_attempt(
         attempt=attempt,
         work_unit_keys=("raw:a",),
-        owner_completeness_attestation="runtime-owner-test:v1",
+        owner_completeness_attestation="runtime-owner-test",
     )
     marker = OwnerPathRuntimeMarker(
         tmp_path / "phase-persister.runtime.json",
@@ -805,7 +805,7 @@ def test_invalid_callback_returns_remain_contract_errors_not_phase_errors(
     runtime = start_runtime_attempt(
         attempt=attempt,
         work_unit_keys=("raw:a",),
-        owner_completeness_attestation="runtime-owner-test:v1",
+        owner_completeness_attestation="runtime-owner-test",
     )
 
     with pytest.raises(RuntimeFinalizationContractError):
@@ -823,7 +823,7 @@ def test_invalid_callback_returns_remain_contract_errors_not_phase_errors(
     runtime = start_runtime_attempt(
         attempt=attempt,
         work_unit_keys=("raw:a",),
-        owner_completeness_attestation="runtime-owner-test:v1",
+        owner_completeness_attestation="runtime-owner-test",
     )
     with pytest.raises(RuntimeFinalizationContractError):
         execute_runtime_attempt(
@@ -840,7 +840,7 @@ def test_invalid_callback_returns_remain_contract_errors_not_phase_errors(
     runtime = start_runtime_attempt(
         attempt=attempt,
         work_unit_keys=("raw:a",),
-        owner_completeness_attestation="runtime-owner-test:v1",
+        owner_completeness_attestation="runtime-owner-test",
     )
     with pytest.raises(RuntimeFinalizationContractError):
         execute_runtime_attempt(
@@ -860,7 +860,7 @@ def test_runtime_phase_error_does_not_catch_base_exception(tmp_path: Path) -> No
     runtime = start_runtime_attempt(
         attempt=attempt,
         work_unit_keys=("raw:a",),
-        owner_completeness_attestation="runtime-owner-test:v1",
+        owner_completeness_attestation="runtime-owner-test",
     )
 
     class SentinelBaseException(BaseException):
@@ -921,7 +921,7 @@ def test_owner_aggregate_derives_lifecycle_metrics_and_one_receipt(
     runtime = start_runtime_attempt(
         attempt=attempt,
         work_unit_keys=("raw:a",),
-        owner_completeness_attestation="runtime-owner-test:v1",
+        owner_completeness_attestation="runtime-owner-test",
     )
     result_ref = mint_targeted_process_result_ref(
         processing_attempt=attempt,
@@ -1014,14 +1014,14 @@ def test_owner_aggregate_derives_lifecycle_metrics_and_one_receipt(
         canonical_runtime_observability_ledger_bytes(receipt.observability_ledger)
     )
     assert coordinator_payload["schema_version"] == (
-        "execution_runtime_coordinator_terminal_v4"
+        "execution_runtime_coordinator_terminal"
     )
     assert observability_payload["schema_version"] == (
-        "execution_runtime_observability_ledger_v1"
+        "execution_runtime_observability_ledger"
     )
     assert {
         metric.measurement_source for metric in receipt.observability_ledger.metrics
-    } == {"execution_runtime_owner:v1"}
+    } == {"execution_runtime_owner"}
 
     with pytest.raises(
         RuntimeFinalizationContractError,
@@ -1057,7 +1057,7 @@ def test_owner_aggregate_derives_lifecycle_metrics_and_one_receipt(
         start_runtime_attempt(
             attempt=foreign_attempt,
             work_unit_keys=("raw:a",),
-            owner_completeness_attestation="runtime-owner-test:v1",
+            owner_completeness_attestation="runtime-owner-test",
         ),
         (),
     )
@@ -1079,7 +1079,7 @@ def test_owner_rejects_telemetry_that_omits_derived_events(tmp_path: Path) -> No
     runtime = start_runtime_attempt(
         attempt=attempt,
         work_unit_keys=("raw:a",),
-        owner_completeness_attestation="runtime-owner-test:v1",
+        owner_completeness_attestation="runtime-owner-test",
     )
     result_ref = mint_targeted_process_result_ref(
         processing_attempt=attempt,
@@ -1134,7 +1134,7 @@ def test_owner_rejects_telemetry_that_omits_derived_events(tmp_path: Path) -> No
 @pytest.mark.parametrize(
     ("work_unit_keys", "owner_completeness_attestation"),
     (
-        ((), "runtime-owner-test:v1"),
+        ((), "runtime-owner-test"),
         (("raw:a",), ""),
         (("raw:a",), None),
     ),
@@ -1225,7 +1225,7 @@ def test_unopened_process_resource_does_not_invent_worker_topology(
     runtime = start_runtime_attempt(
         attempt=attempt,
         work_unit_keys=("raw:a",),
-        owner_completeness_attestation="runtime-owner-test:v1",
+        owner_completeness_attestation="runtime-owner-test",
     )
     reservation = RuntimeResourceReservation(
         attempt=attempt,
@@ -1233,7 +1233,7 @@ def test_unopened_process_resource_does_not_invent_worker_topology(
         resource_key="process:a",
         worker_key="worker:a",
         source_reference="no-raw:sample:a",
-        compatibility_token="runtime-owner-test:v1",
+        compatibility_token="runtime-owner-test",
     )
     aggregate = _apply_runtime_worker_batch(
         _prepare_runtime_attempt(runtime, (reservation,)),
@@ -1305,7 +1305,7 @@ def test_unknown_open_state_after_worker_loss_retains_worker_topology(
     runtime = start_runtime_attempt(
         attempt=attempt,
         work_unit_keys=("raw:a",),
-        owner_completeness_attestation="runtime-owner-test:v1",
+        owner_completeness_attestation="runtime-owner-test",
     )
     reservation = RuntimeResourceReservation(
         attempt=attempt,
@@ -1313,7 +1313,7 @@ def test_unknown_open_state_after_worker_loss_retains_worker_topology(
         resource_key="process:a",
         worker_key="worker:a",
         source_reference="no-raw:sample:a",
-        compatibility_token="runtime-owner-test:v1",
+        compatibility_token="runtime-owner-test",
     )
     receipt = execute_runtime_attempt(
         runtime,
@@ -1398,7 +1398,7 @@ def test_owner_worker_batch_matches_sequential_state_and_bytes(
     runtime = start_runtime_attempt(
         attempt=attempt,
         work_unit_keys=keys,
-        owner_completeness_attestation="runtime-owner-test:v1",
+        owner_completeness_attestation="runtime-owner-test",
         cancellation_request=(
             RuntimeCancellationRequest(attempt=attempt)
             if scenario == "cancelled"
@@ -1648,7 +1648,7 @@ def _reservation(
         resource_key="session:a",
         worker_key="worker:a",
         source_reference="no-raw:sample:a",
-        compatibility_token="runtime-owner-test:v1",
+        compatibility_token="runtime-owner-test",
     )
 
 
@@ -1673,9 +1673,9 @@ def _attempt(
                 injection_order=1,
             ),
         ),
-        scientific_input_schema_version="runtime_owner_test_v1",
-        processing_algorithm_version="runtime_owner_test_v1",
-        processing_contract_version="processing_identity_v1",
+        scientific_input_schema_version="runtime_owner_test",
+        processing_algorithm_version="runtime_owner_test",
+        processing_contract_version="processing_identity",
         scientific_inputs={"method": "cid_nl", "neutral_loss_da": 116.0},
     )
     return issue_processing_attempt(request)
@@ -1717,7 +1717,7 @@ def test_runtime_acquisition_compaction_preserves_counts_replay_and_releases_arr
     runtime = start_runtime_attempt(
         attempt=attempt,
         work_unit_keys=("raw:a",),
-        owner_completeness_attestation="runtime-compaction-test:v1",
+        owner_completeness_attestation="runtime-compaction-test",
     )
     initial = _prepare_runtime_attempt(runtime, ())
     worker = replace(_failed_worker_batch(attempt), acquisitions=(receipt,))

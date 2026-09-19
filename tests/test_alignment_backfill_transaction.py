@@ -563,7 +563,7 @@ def test_sample_transaction_revalidates_selected_integration_binding(
     object.__setattr__(
         crossed,
         "selected_integration_authority_content_id",
-        "selected-integration-v1:forged",
+        "selected-integration:forged",
     )
     transaction = OwnerBackfillSampleTransaction(
         (live.feature,),

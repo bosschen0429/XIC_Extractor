@@ -114,7 +114,7 @@ def test_runtime_batch_request_shares_initial_acquisition_across_exact_subjects(
         attempt=context.processing_owners.attempt,
         work_unit_keys=tuple(job.work_unit_key for job in jobs),
         owner_completeness_attestation=(
-            "untargeted-cid-nl-real-data-runtime-batch-test:v1"
+            "untargeted-cid-nl-real-data-runtime-batch-test"
         ),
     )
 
@@ -301,7 +301,7 @@ def test_runtime_batch_request_bounds_initial_and_recovery_by_sample_phase(
         attempt=context.processing_owners.attempt,
         work_unit_keys=tuple(job.work_unit_key for job in jobs),
         owner_completeness_attestation=(
-            "untargeted-cid-nl-real-data-runtime-batch-recovery-test:v1"
+            "untargeted-cid-nl-real-data-runtime-batch-recovery-test"
         ),
     )
 

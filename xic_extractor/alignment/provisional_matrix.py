@@ -19,12 +19,12 @@ from xic_extractor.alignment.models import AlignmentCluster
 from xic_extractor.alignment.tsv_writer import write_safe_alignment_tsv
 
 PROVISIONAL_VALIDATION_STATUS = "diagnostic_only"
-PROVISIONAL_MATRIX_SCHEMA_VERSION = "untargeted_provisional_matrix_v1"
-PROVISIONAL_IDENTITY_SCHEMA_VERSION = "untargeted_provisional_row_identity_v1"
+PROVISIONAL_MATRIX_SCHEMA_VERSION = "untargeted_provisional_matrix"
+PROVISIONAL_IDENTITY_SCHEMA_VERSION = "untargeted_provisional_row_identity"
 PROVISIONAL_PROVENANCE_SCHEMA_VERSION = (
-    "untargeted_provisional_cell_provenance_v1"
+    "untargeted_provisional_cell_provenance"
 )
-PROVISIONAL_SUMMARY_SCHEMA_VERSION = "untargeted_provisional_matrix_summary_v1"
+PROVISIONAL_SUMMARY_SCHEMA_VERSION = "untargeted_provisional_matrix_summary"
 
 _MATRIX_METADATA_COLUMNS = (
     "group_hypothesis_id",

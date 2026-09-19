@@ -11,8 +11,8 @@ from xic_extractor.discovery.cid_nl_oracle_verdict import (
 ROOT = Path(__file__).resolve().parents[1]
 SUITE = (
     ROOT
-    / "docs/superpowers/validation/cid_nl_oracle_packet_preflight_v1/"
-    "cid_nl_oracle_synthetic_contract_suite_v1.tsv"
+    / "docs/superpowers/validation/cid_nl_oracle_packet_preflight/"
+    "cid_nl_oracle_synthetic_contract_suite.tsv"
 )
 
 

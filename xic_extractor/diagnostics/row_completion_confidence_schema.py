@@ -9,7 +9,7 @@ from typing import Literal
 
 from xic_extractor.tabular_io import file_sha256, read_tsv_with_header, text_value
 
-SCHEMA_VERSION = "row_completion_confidence_v1"
+SCHEMA_VERSION = "row_completion_confidence"
 NO_AUTHORITY_STATEMENT = (
     "This row-completion confidence report is diagnostic_only. It does not "
     "change matrix authority, ProductWriter authority, selected values, "

@@ -1,7 +1,0 @@
-{
-  "accepted_backfill_count": 1,
-  "detected_count": 1,
-  "report_only_risk_count": 1,
-  "schema_version": "quant_matrix_review_report_v1",
-  "validation_label": "shadow_review"
-}

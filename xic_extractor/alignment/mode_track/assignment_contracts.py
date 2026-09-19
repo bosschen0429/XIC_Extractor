@@ -40,9 +40,9 @@ from xic_extractor.processing_identity import (
 )
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 
-SCHEMA_VERSION = "mode_track_assignment_v2"
-BATCH_SCHEMA_VERSION = "mode_track_assignment_batch_v2"
-MODEL_SET_SCHEMA_VERSION = "mode_track_model_set_v3"
+SCHEMA_VERSION = "mode_track_assignment"
+BATCH_SCHEMA_VERSION = "mode_track_assignment_batch"
+MODEL_SET_SCHEMA_VERSION = "mode_track_model_set"
 VALIDATION_STATUS = "shadow_ready"
 PRODUCT_AUTHORITY = "none"
 
@@ -1508,17 +1508,17 @@ def _prediction_payload(
 
 
 def _anchor_identity_payload(**values: object) -> dict[str, object]:
-    return {"schema": "mode_track_support_anchor_v2", **values}
+    return {"schema": "mode_track_support_anchor", **values}
 
 
 def _candidate_identity_payload(**values: object) -> dict[str, object]:
-    return {"schema": "mode_track_candidate_observation_v2", **values}
+    return {"schema": "mode_track_candidate_observation", **values}
 
 
 def _repair_assignment_observation_payload(
     **values: object,
 ) -> dict[str, object]:
-    return {"schema": "mode_track_repair_assignment_observation_v1", **values}
+    return {"schema": "mode_track_repair_assignment_observation", **values}
 
 
 def _model_set_identity_payload(

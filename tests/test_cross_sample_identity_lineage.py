@@ -366,7 +366,7 @@ def test_membership_change_mints_deterministic_successor_lineage(tmp_path) -> No
 
     impossible_basis = canonical_identity_basis_bytes(
         {
-            "schema_version": "cross_sample_group_v1",
+            "schema_version": "cross_sample_group",
             "processing_request_id": fixture.request.processing_request_id,
             "member_subject_ids": [
                 members[0].member_subject_id,
@@ -375,7 +375,7 @@ def test_membership_change_mints_deterministic_successor_lineage(tmp_path) -> No
         }
     )
     impossible_id = typed_identity_digest(
-        "xic.cross-sample-group.v1:",
+        "xic.cross-sample-group:",
         impossible_basis,
     )
     with pytest.raises(CrossSampleContractError, match="basis is malformed"):

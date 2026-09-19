@@ -251,10 +251,10 @@ def _next_action(evidence_gap_class: str) -> str:
         "machine_too_permissive_rt_pattern_conflict": "inspect_ms2_pattern",
         "machine_too_permissive_scope_rule_conflict": "inspect_manual_eic",
         "boundary_reference_ambiguous": "check_boundary_reference",
-        "rt_drift_policy_gap": "flag_for_v2_gate_review",
+        "rt_drift_policy_gap": "flag_for_shadow_gate_review",
         "human_unjudgeable_shape_bad": "inspect_manual_eic",
-        "delta_mass_related_context_only": "flag_for_v2_gate_review",
-        "unexplained_machine_manual_gap": "flag_for_v2_gate_review",
+        "delta_mass_related_context_only": "flag_for_shadow_gate_review",
+        "unexplained_machine_manual_gap": "flag_for_shadow_gate_review",
     }[evidence_gap_class]
 
 

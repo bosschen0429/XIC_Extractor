@@ -29,7 +29,7 @@ CrossSamplePositionResolution: TypeAlias = Literal[
     "exact_sample_member_successor",
 ]
 
-_HANDOFF_PREFIX = "xic.cross-sample-association-lineage.v1:"
+_HANDOFF_PREFIX = "xic.cross-sample-association-lineage:"
 _HANDOFF_MINT_TOKEN = object()
 
 
@@ -421,7 +421,7 @@ def _handoff_basis(
 ) -> bytes:
     return canonical_identity_basis_bytes(
         {
-            "schema_version": "cross_sample_association_lineage_v1",
+            "schema_version": "cross_sample_association_lineage",
             "coverage_id": coverage.coverage_id,
             "final_receipt_id": final_receipt.receipt_id,
             "predecessor_associations": [

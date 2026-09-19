@@ -22,7 +22,7 @@ from xic_extractor.diagnostics.diagnostic_io import (
     write_tsv,
 )
 
-SCHEMA_VERSION = "backfill_peakhypothesis_acceptance_gate_v1"
+SCHEMA_VERSION = "backfill_peakhypothesis_acceptance_gate"
 
 FULL_COHORT_ACCEPTANCE_GATE_COLUMNS = (
     "schema_version",

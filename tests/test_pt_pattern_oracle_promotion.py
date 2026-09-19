@@ -24,7 +24,7 @@ def _review_packet_row(candidate_id: str, *, status: str) -> dict[str, str]:
     row = {column: "" for column in packet.PACKET_COLUMNS}
     row.update(
         {
-            "schema_version": packet.ANCHOR_LOCAL_SCHEMA_VERSION,
+            "schema_version": packet.SCHEMA_VERSION,
             "readiness_tier": "diagnostic_only",
             "evidence_owner": packet.EVIDENCE_OWNER,
             "packet_label": "unit_packet",
@@ -118,7 +118,7 @@ def _sealed_machine_rows(overlay_summary_json: Path) -> list[dict[str, str]]:
     summary = json.loads(overlay_summary_json.read_text(encoding="utf-8"))
     return read_delimited_rows(
         Path(summary["outputs"]["machine_calls_csv"]),
-        required_columns=overlay.LEGACY_MACHINE_CALL_REQUIRED_COLUMNS,
+        required_columns=overlay.MACHINE_CALL_COLUMNS,
         delimiter=",",
     )
 
@@ -1020,7 +1020,7 @@ def test_oracle_promotion_rejects_non_deterministic_sealed_machine_projection(
 @pytest.mark.parametrize(
     ("field", "value", "message"),
     (
-        ("schema_version", overlay.SCHEMA_VERSION, "summary schema"),
+        ("schema_version", "unsupported_blind_overlay", "summary schema"),
         ("trace_artifact_role", "full_context", "trace_artifact_role"),
         ("gallery_mode", "full_context_only", "gallery_mode"),
     ),

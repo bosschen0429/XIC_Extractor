@@ -72,7 +72,7 @@ def test_primary_outputs_hide_status_strings_and_keep_audit_reasons(
     workbook_path = write_alignment_results_xlsx(
         tmp_path / "alignment_results.xlsx",
         matrix,
-        metadata={"schema_version": "alignment-results-v3"},
+        metadata={"schema_version": "alignment-results"},
         production_decisions=_production_decisions(matrix),
     )
 

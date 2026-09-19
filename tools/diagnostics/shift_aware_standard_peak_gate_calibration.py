@@ -20,7 +20,7 @@ from xic_extractor.diagnostics.diagnostic_io import (
     write_tsv,
 )
 
-SCHEMA_VERSION = "shift_aware_standard_peak_gate_calibration_v0"
+SCHEMA_VERSION = "shift_aware_standard_peak_gate_calibration"
 SHIFT_AWARE_SUPPORT_CALL = "shift_aware_same_pattern_support_review_only"
 OVERLAY_STANDARD_VERDICT = "ms1_shape_supports_family_backfill"
 

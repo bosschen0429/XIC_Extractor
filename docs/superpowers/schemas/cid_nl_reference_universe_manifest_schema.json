@@ -1,0 +1,247 @@
+{
+  "schema_version": "cid_nl_reference_universe_manifest_schema",
+  "manifest_schema_version": "cid_nl_reference_universe_manifest",
+  "status": "active",
+  "validation_status": "diagnostic_only",
+  "purpose": "Freeze an independent, bounded CID-NL reference universe that can measure recovery without allowing tested-tracer proposals, legacy calls, or spectral-library membership to define sample-local presence.",
+  "row_unit": "one reference claim for one PeakHypothesis-family x AcquisitionSource x method scope",
+  "required_columns": [
+    "schema_version",
+    "reference_universe_id",
+    "reference_row_id",
+    "reference_family_id",
+    "acquisition_source_id",
+    "sample_key",
+    "sample_material_stratum",
+    "method_scope",
+    "precursor_mz",
+    "neutral_loss_da",
+    "reference_rt_min",
+    "reference_source_type",
+    "reference_source_id",
+    "reference_source_artifact_ids",
+    "reference_source_sha256s",
+    "physical_presence_basis",
+    "method_detectability_basis",
+    "sample_local_evidence_status",
+    "reference_label",
+    "reference_claim_scope",
+    "universe_construction_method",
+    "independent_enumerator_id",
+    "independent_enumerator_version",
+    "independent_enumerator_config_sha256",
+    "reference_enumerator_dependency_manifest_id",
+    "reference_enumerator_dependency_manifest_sha256",
+    "shared_raw_adapter_status",
+    "shared_candidate_generation_status",
+    "shared_decision_logic_status",
+    "shared_logic_overlap_disposition",
+    "uses_tested_tracer_output_for_membership",
+    "uses_legacy_output_for_membership",
+    "uses_library_record_as_sample_presence",
+    "sampling_frame_id",
+    "sampling_frame_size",
+    "sampling_stratum",
+    "stratum_frame_size",
+    "frame_completeness",
+    "undercoverage_disposition",
+    "recovery_claim_label",
+    "inclusion_probability",
+    "analysis_weight",
+    "independent_hypothesis_group_id",
+    "batch_group_id",
+    "study_group_id",
+    "instrument_group_id",
+    "review_record_id",
+    "exclusion_reason",
+    "source_row_sha256"
+  ],
+  "allowed_sample_material_strata": [
+    "dna_only_biological",
+    "dna_and_rna_mixed_biological",
+    "pooled_qc",
+    "not_applicable"
+  ],
+  "allowed_reference_source_types": [
+    "fixed_spike_internal_standard",
+    "authentic_standard",
+    "frozen_identity_profile",
+    "attributable_library_ms2",
+    "independent_benchmark",
+    "blinded_systematic_review",
+    "matched_negative"
+  ],
+  "allowed_physical_presence_basis": [
+    "fixed_spike_design",
+    "authentic_standard_design",
+    "sample_local_observed_evidence",
+    "unknown",
+    "not_applicable"
+  ],
+  "allowed_method_detectability_basis": [
+    "in_scope_expected_control",
+    "sample_local_supported",
+    "out_of_method_scope",
+    "unknown",
+    "not_applicable"
+  ],
+  "allowed_sample_local_evidence_statuses": [
+    "supported",
+    "unsupported",
+    "unassessable",
+    "not_reviewed",
+    "not_applicable"
+  ],
+  "allowed_reference_labels": [
+    "expected_positive_control",
+    "independently_supported_positive",
+    "supported_negative",
+    "unassessable",
+    "method_out_of_scope",
+    "excluded"
+  ],
+  "allowed_reference_claim_scopes": [
+    "sample_local_presence_and_method_detectability",
+    "sample_local_observed_feature",
+    "identity_profile_support_only",
+    "matched_negative_only",
+    "scope_exclusion_only"
+  ],
+  "allowed_universe_construction_methods": [
+    "complete_control_census",
+    "independent_bounded_enumeration",
+    "probability_sample_from_independent_frame",
+    "preregistered_challenge_only"
+  ],
+  "allowed_shared_stage_statuses": [
+    "independent",
+    "shared_declared",
+    "unknown"
+  ],
+  "allowed_shared_logic_overlap_dispositions": [
+    "independent_recovery_eligible",
+    "exclude_from_independent_recovery"
+  ],
+  "allowed_frame_completeness": [
+    "complete",
+    "incomplete_known_undercoverage",
+    "unknown"
+  ],
+  "allowed_recovery_claim_labels": [
+    "full_bounded_reference_recovery",
+    "known_reference_recovery",
+    "expected_control_recovery_only",
+    "not_applicable"
+  ],
+  "nullable_columns": [
+    "reference_rt_min",
+    "independent_enumerator_id",
+    "independent_enumerator_version",
+    "independent_enumerator_config_sha256",
+    "inclusion_probability",
+    "analysis_weight",
+    "review_record_id",
+    "exclusion_reason",
+    "undercoverage_disposition"
+  ],
+  "conditional_rules": {
+    "expected_positive_control_requires_fixed_spike_or_authentic_standard_presence_basis": true,
+    "expected_positive_control_requires_in_scope_expected_control_detectability": true,
+    "in_scope_fixed_spike_or_authentic_standard_must_be_labeled_expected_positive_control": true,
+    "independently_supported_positive_requires_supported_sample_local_evidence": true,
+    "library_or_profile_source_alone_cannot_assert_sample_local_presence": true,
+    "method_out_of_scope_rows_cannot_enter_recovery_denominator": true,
+    "unassessable_rows_cannot_enter_positive_or_negative_denominators": true,
+    "sampled_rows_require_positive_inclusion_probability_and_analysis_weight": true,
+    "complete_control_census_rows_require_unit_inclusion_probability_and_weight": true,
+    "independent_enumeration_requires_versioned_enumerator_or_documented_human_protocol": true,
+    "shared_or_unknown_candidate_or_decision_logic_requires_exclusion_from_independent_recovery": true,
+    "dependency_manifest_id_and_sha256_required": true,
+    "complete_frame_requires_positive_frame_and_stratum_sizes": true,
+    "incomplete_or_unknown_frame_forbids_full_bounded_reference_recovery_claim": true,
+    "incomplete_or_unknown_frame_requires_undercoverage_disposition": true,
+    "paired_analyte_presence_cannot_be_inferred_from_internal_standard_presence": true,
+    "rna_or_nl132_evidence_cannot_create_nl116_dna_only_expected_positive": true
+  },
+  "recovery_denominator_rules": {
+    "eligible_labels": [
+      "expected_positive_control",
+      "independently_supported_positive"
+    ],
+    "requires_method_scope_match": true,
+    "requires_valid_sealed_reference_row": true,
+    "tested_tracer_proposal_rows_may_define_denominator": false,
+    "legacy_machine_rows_may_define_denominator": false,
+    "spectral_library_membership_may_define_sample_presence": false,
+    "sampled_estimand_uses_preregistered_analysis_weights": true,
+    "report_expected_controls_separately_from_observed_reference_positives": true
+  },
+  "independence_rules": {
+    "uses_tested_tracer_output_for_membership_must_be_false": true,
+    "uses_legacy_output_for_membership_must_be_false": true,
+    "uses_library_record_as_sample_presence_must_be_false": true,
+    "tested_tracer_scores_rankings_thresholds_and_calls_forbidden_during_construction": true,
+    "legacy_or_targeted_calls_may_be_revealed_only_after_reference_seal": true,
+    "shared_low_level_raw_adapter_must_be_declared_but_does_not_by_itself_define_membership": true,
+    "shared_candidate_or_decision_logic_with_tested_tracer_requires_bias_limitation_and_cannot_claim_independent_recovery": true,
+    "dependency_manifest_and_shared_stage_dispositions_are_required_for_auditable_independence": true
+  },
+  "seal_required_fields": [
+    "schema_version",
+    "reference_universe_id",
+    "reference_universe_tsv_sha256",
+    "bounded_dataset_manifest_sha256",
+    "method_scope_sha256",
+    "source_manifest_sha256",
+    "reference_enumerator_dependency_manifest_sha256",
+    "universe_construction_protocol_sha256",
+    "frame_completeness",
+    "sampling_frame_size",
+    "frame_size_by_stratum_sha256",
+    "undercoverage_disposition",
+    "recovery_claim_label",
+    "row_count",
+    "eligible_positive_row_count",
+    "expected_positive_control_count",
+    "independently_supported_positive_count",
+    "supported_negative_count",
+    "unassessable_count",
+    "method_out_of_scope_count",
+    "independence_audit_passed",
+    "unresolved_shared_candidate_or_decision_overlap_count",
+    "source_roles_revealed_to_reviewer",
+    "machine_mapping_revealed_to_reviewer",
+    "legacy_mapping_revealed_to_reviewer",
+    "sealed_at_utc",
+    "sealed_by",
+    "seal_status",
+    "supersedes_reference_universe_id"
+  ],
+  "integrity_rules": {
+    "primary_key": [
+      "reference_universe_id",
+      "reference_row_id"
+    ],
+    "scientific_deduplication_key": [
+      "reference_family_id",
+      "acquisition_source_id",
+      "method_scope"
+    ],
+    "one_reference_claim_per_scientific_deduplication_key": true,
+    "source_bytes_hashes_and_claim_roles_required": true,
+    "source_row_sha256_is_canonical_row_digest_excluding_itself": true,
+    "construction_and_source_manifests_sealed_before_tested_tracer_mapping_reveal": true,
+    "sealed_rows_are_append_only": true,
+    "post_reveal_row_removal_or_relabelling_forbidden": true,
+    "post_reveal_integrity_problem_verdict": "inconclusive",
+    "correction_requires_new_universe_and_supersession_edge": true
+  },
+  "authority_rules": {
+    "reference_label_grants_compound_identification": false,
+    "reference_label_grants_matrix_authority": false,
+    "reference_label_grants_backfill_writer_authority": false,
+    "reference_label_grants_counted_detection_authority": false,
+    "reference_label_grants_selected_area_authority": false,
+    "reference_label_grants_activation_or_export_authority": false
+  }
+}

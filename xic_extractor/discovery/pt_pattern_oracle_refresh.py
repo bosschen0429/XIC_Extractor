@@ -27,10 +27,10 @@ from xic_extractor.tabular_io import (
     write_delimited_rows,
 )
 
-SCHEMA_VERSION = "pt_pattern_oracle_refresh.v1"
+SCHEMA_VERSION = "pt_pattern_oracle_refresh"
 READINESS_TIER = "diagnostic_only"
 EVIDENCE_OWNER = "xic_extractor.discovery.pt_pattern_oracle_refresh"
-AUTHORITY_SCOPE = "v2_manual_oracle_refresh_worklist_only"
+AUTHORITY_SCOPE = "manual_oracle_refresh_worklist_only"
 
 CARRYOVER_STATUS = "carryover_label"
 PENDING_STATUS = "pending_human_review"
@@ -119,7 +119,7 @@ def run_oracle_refresh(
 ) -> dict[str, Path]:
     draft_csv = output_dir / "pt_pattern_oracle_refresh_draft.csv"
     pending_csv = output_dir / "pt_pattern_oracle_refresh_pending_review.csv"
-    stale_csv = output_dir / "pt_pattern_oracle_refresh_stale_v1_rows.csv"
+    stale_csv = output_dir / "pt_pattern_oracle_refresh_stale_rows.csv"
     summary_json = output_dir / "pt_pattern_oracle_refresh_summary.json"
     require_disjoint_artifact_paths(
         input_paths=(
@@ -225,7 +225,7 @@ def run_oracle_refresh(
         "outputs": {
             "refresh_draft_csv": str(draft_csv),
             "pending_review_csv": str(pending_csv),
-            "stale_v1_rows_csv": str(stale_csv),
+            "stale_rows_csv": str(stale_csv),
         },
     }
     summary_json.write_text(
@@ -235,7 +235,7 @@ def run_oracle_refresh(
     return {
         "refresh_draft_csv": draft_csv,
         "pending_review_csv": pending_csv,
-        "stale_v1_rows_csv": stale_csv,
+        "stale_rows_csv": stale_csv,
         "summary_json": summary_json,
     }
 
@@ -302,7 +302,7 @@ def build_oracle_refresh_rows(
                 )
             ),
             refresh_packet_id=refresh_packet_id,
-            case_index=f"v2-{index:03d}",
+            case_index=f"refresh-{index:03d}",
         )
         draft_rows.append(draft_row)
         if draft_row["refresh_status"] != CARRYOVER_STATUS:
@@ -468,7 +468,7 @@ def _build_draft_row(
         )
         return base_row
 
-    # packet_row_id and candidate_id prove only logical-row continuity.  The v1
+    # packet_row_id and candidate_id prove only logical-row continuity.  The
     # adjudication schema does not bind the label to the exact review-packet
     # artifact (or row hash), so carrying the verdict forward would silently
     # reuse a potentially stale human judgment against changed evidence.

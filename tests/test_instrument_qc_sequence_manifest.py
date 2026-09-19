@@ -325,7 +325,7 @@ def test_sequence_manifest_writers_emit_audit_and_injection_order(
     assert "SDOLEK-missing" in manifest_md.read_text(encoding="utf-8")
 
 
-def test_sequence_manifest_writes_sample_metadata_v1_for_actual_raw_rows(
+def test_sequence_manifest_writes_sample_metadata_for_actual_raw_rows(
     tmp_path: Path,
 ) -> None:
     entries = parse_sequence_tables(

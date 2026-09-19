@@ -7,7 +7,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_PATH = (
     ROOT
     / "docs/superpowers/schemas/"
-    "cid_nl_oracle_statistical_design_manifest_schema.v1.json"
+    "cid_nl_oracle_statistical_design_manifest_schema.json"
 )
 
 
@@ -16,7 +16,7 @@ def test_statistical_design_schema_dispatches_by_sampling_design() -> None:
 
     assert (
         schema["schema_version"]
-        == "cid_nl_oracle_statistical_design_manifest_schema_v1"
+        == "cid_nl_oracle_statistical_design_manifest_schema"
     )
     assert schema["validation_status"] == "diagnostic_only"
 

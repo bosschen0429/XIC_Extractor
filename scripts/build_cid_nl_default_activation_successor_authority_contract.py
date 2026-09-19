@@ -68,11 +68,11 @@ ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_OUTPUT_DIR = (
     ROOT
     / "output/validation/"
-    / "cid_nl_default_activation_successor_authority_contract_v1"
+    / "cid_nl_default_activation_successor_authority_contract"
 )
 
-SUCCESSOR_SCHEMA = "cid_nl_default_activation_successor_authority_contract_v1"
-DECISION_SCHEMA = "cid_nl_default_activation_successor_authority_decision_v1"
+SUCCESSOR_SCHEMA = "cid_nl_default_activation_successor_authority_contract"
+DECISION_SCHEMA = "cid_nl_default_activation_successor_authority_decision"
 DECISION_COLUMNS = (
     "schema_version",
     "old_peak_hypothesis_id",
@@ -340,7 +340,7 @@ def _build_successor_rows(
             manifest_rows.append(manifest_row)
             expected_diff_rows.append(
                 {
-                    "schema_version": "quant_matrix_version_expected_diff_v1",
+                    "schema_version": "quant_matrix_version_expected_diff",
                     "peak_hypothesis_id": successor_peak,
                     "sample_stem": sample,
                     "baseline_value": "",

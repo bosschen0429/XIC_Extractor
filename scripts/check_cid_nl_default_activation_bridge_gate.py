@@ -36,7 +36,7 @@ from xic_extractor.tabular_io import (  # noqa: E402
 )
 
 ROOT = Path(__file__).resolve().parents[1]
-OLD_INPUT_DIR = ROOT / "docs/superpowers/validation/quant_matrix_real_bundle_v1/inputs"
+OLD_INPUT_DIR = ROOT / "docs/superpowers/validation/quant_matrix_real_bundle/inputs"
 NEW_ALIGNMENT_DIR = (
     ROOT / "output/discovery/cid_nl_product_ready_alignment_85raw_20260620_fix3"
 )
@@ -49,11 +49,11 @@ DEFAULT_PRODUCTION_ACCEPTANCE_MANIFEST_TSV = (
 DEFAULT_EXPECTED_DIFF_TSV = OLD_INPUT_DIR / "expected_diff.tsv"
 DEFAULT_TARGET_PREFLIGHT_SUMMARY_JSON = (
     ROOT
-    / "docs/superpowers/validation/cid_nl_default_activation_preflight_v1/"
+    / "docs/superpowers/validation/cid_nl_default_activation_preflight/"
     / "cid_nl_default_activation_preflight_summary.json"
 )
 DEFAULT_OUTPUT_DIR = (
-    ROOT / "output/validation/cid_nl_default_activation_bridge_gate_v1"
+    ROOT / "output/validation/cid_nl_default_activation_bridge_gate"
 )
 
 DEFAULT_MZ_TOLERANCE_DA = 0.02
@@ -203,7 +203,7 @@ def evaluate_bridge_gate(
         else "blocked"
     )
     return {
-        "schema_version": "cid_nl_default_activation_bridge_gate_v1",
+        "schema_version": "cid_nl_default_activation_bridge_gate",
         "overall_status": overall_status,
         "readiness_label": (
             "default_activation_bridge_candidate"
@@ -395,7 +395,7 @@ def _build_audit_rows(
                 blocker = "new_baseline_already_has_value"
         audit_rows.append(
             {
-                "schema_version": "cid_nl_default_activation_bridge_audit_v1",
+                "schema_version": "cid_nl_default_activation_bridge_audit",
                 "old_peak_hypothesis_id": old_peak_id,
                 "sample_stem": sample_stem,
                 "bridge_status": status,

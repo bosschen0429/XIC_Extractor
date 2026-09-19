@@ -27,6 +27,7 @@ from gui.workers.inspector_report_worker import (
     InspectorReportWorker,
     InspectorSummaryWorker,
 )
+from xic_extractor.diagnostics.alignment_explanation import SCHEMA_VERSION
 from xic_inspector.api import EvidenceLocator, ReportResult
 
 _PER_SAMPLE_HEADERS = ("樣本", "候選", "高", "中", "低")
@@ -479,7 +480,7 @@ def _locator_from_summary(value: object) -> tuple[EvidenceLocator | None, str]:
     ):
         return None, "Inspector evidence locator Matrix digest 無效"
     version = value.get("schema_version")
-    if not isinstance(version, int) or isinstance(version, bool) or version < 1:
+    if version != SCHEMA_VERSION:
         return None, "Inspector evidence locator schema version 無效"
     return EvidenceLocator(
         report_path=Path(value["report_path"]),

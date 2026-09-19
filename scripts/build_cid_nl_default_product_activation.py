@@ -69,7 +69,7 @@ def artifact_record(path: Path, *, base_dir: Path) -> dict[str, str]:
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SCHEMA_VERSION = "cid_nl_default_product_activation_v1"
+SCHEMA_VERSION = "cid_nl_default_product_activation"
 ACTIVATION_LABEL = "product_ready_default_matrix_activated"
 PRODUCT_AUTHORITY_SCOPE = "cid_nl_adopt_ready_feature_inclusion_95_cells"
 DISCOVERY_DEFAULT_EFFECT = "write_cid_nl_discovery_default_cell"
@@ -81,9 +81,9 @@ LOW_PREVALENCE_FEATURE_POLICY = "allowed_for_untargeted_downstream_filter"
 SOURCE_SUCCESSOR_IDENTITY_SCOPE = "identity_review_only_not_feature_inclusion_blocker"
 LEGACY_QUANT_MATRIX_EFFECT = "write_accepted_backfill"
 LEGACY_PROVENANCE_STATUS = "accepted_backfill"
-DEFAULT_OUTPUT_DIR = ROOT / "output/validation/cid_nl_default_product_activation_v1"
+DEFAULT_OUTPUT_DIR = ROOT / "output/validation/cid_nl_default_product_activation"
 DEFAULT_DOCS_DIR = (
-    ROOT / "docs/superpowers/validation/cid_nl_default_product_activation_v1"
+    ROOT / "docs/superpowers/validation/cid_nl_default_product_activation"
 )
 DEFAULT_ADOPT_SUMMARY_JSON = (
     DEFAULT_ADOPT_GATE_DIR / "cid_nl_activation_adopt_gate_summary.json"
@@ -91,12 +91,12 @@ DEFAULT_ADOPT_SUMMARY_JSON = (
 DEFAULT_SUCCESSOR_AUTHORITY_MANIFEST_TSV = (
     ROOT
     / "output/validation/"
-    / "cid_nl_default_activation_successor_authority_contract_v1/"
+    / "cid_nl_default_activation_successor_authority_contract/"
     / "successor_authority_manifest.tsv"
 )
 DEFAULT_VALUE_DELTA_TSV = (
     ROOT
-    / "output/validation/cid_nl_default_activation_gallery_review_v1/"
+    / "output/validation/cid_nl_default_activation_gallery_review/"
     / "activation_copy_candidate/cid_nl_activation_copy_value_delta.tsv"
 )
 DEFAULT_EXPECTED_CONTRACT_CELL_COUNT = 95
@@ -568,14 +568,14 @@ def _activation_manifest_rows(
             for column in PRODUCTION_ACCEPTANCE_COLUMNS
         }
         manifest_row["decision_reason"] = (
-            "cid_nl_default_product_activation_v1:"
+            "cid_nl_default_product_activation:"
             f"transition={contract['transition_key']}"
         )
         manifest_row["closure_rule_ids"] = _append_tokens(
             manifest_row.get("closure_rule_ids", ""),
             (
-                "cid_nl_activation_adopt_gate_v1",
-                "cid_nl_default_product_activation_v1",
+                "cid_nl_activation_adopt_gate",
+                "cid_nl_default_product_activation",
             ),
         )
         manifest_row["manifest_sha256"] = ""
@@ -668,14 +668,14 @@ def _quant_expected_diff_rows(
 ) -> list[dict[str, str]]:
     return [
         {
-            "schema_version": "quant_matrix_version_expected_diff_v1",
+            "schema_version": "quant_matrix_version_expected_diff",
             "peak_hypothesis_id": text_value(row.get("successor_peak_hypothesis_id")),
             "sample_stem": text_value(row.get("sample_stem")),
             "baseline_value": "",
             "activated_value": text_value(row.get("candidate_quant_value")),
             "expected_matrix_effect": LEGACY_QUANT_MATRIX_EFFECT,
             "expected_reason": (
-                "cid_nl_default_product_activation_v1:"
+                "cid_nl_default_product_activation:"
                 f"transition={text_value(row.get('transition_key'))}"
             ),
         }
@@ -1165,7 +1165,7 @@ def _write_readme(
     )
     compact_relpath = _relative_or_absolute(compact_manifest_tsv)
     lines = [
-        "# CID-NL Default Product Activation v1",
+        "# CID-NL Default Product Activation",
         "",
         "Status: `pass`.",
         "",
@@ -1213,7 +1213,7 @@ def _write_readme(
         f"- Checks TSV: `{_relative_or_absolute(checks_tsv)}`",
         "",
         "Full matrix and provenance TSV outputs are intentionally externalized "
-        "under `output/validation/cid_nl_default_product_activation_v1/` to keep "
+        "under `output/validation/cid_nl_default_product_activation/` to keep "
         "review diffs small.",
         "",
     ]

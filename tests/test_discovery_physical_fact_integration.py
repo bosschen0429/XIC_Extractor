@@ -57,7 +57,7 @@ from xic_extractor.raw_reader import (
 )
 from xic_extractor.xic_models import XICTrace
 
-_TEST_RUN_SPEC_ID = "processing-run.v1:" + ("0" * 64)
+_TEST_RUN_SPEC_ID = "processing-run:" + ("0" * 64)
 
 
 class _OwnerBoundBatchRaw(_BatchRaw):
@@ -405,7 +405,7 @@ def test_spec_bound_single_run_uses_compiled_acquisition_and_writes_sidecar(
     )
 
     assert outputs.physical_facts_json == (
-        tmp_path / "out" / "discovery_physical_facts.v1.json"
+        tmp_path / "out" / "discovery_physical_facts.json"
     )
     assert outputs.physical_facts_json is not None
     assert physical_calls == {"prepare": 1, "evaluate": 1}
@@ -1039,7 +1039,7 @@ def test_physical_fact_owner_rejects_cross_acquisition_reassembly(
         foreign_raw,
         (group,),
         acquisition_source=foreign_source,
-        run_spec_id="processing-run.v1:" + ("1" * 64),
+        run_spec_id="processing-run:" + ("1" * 64),
         settings=_backfill_settings(),
         peak_config=_backfill_peak_config(),
         signal_processing_profile=profile,
@@ -1139,8 +1139,8 @@ def test_spec_bound_terminal_physical_truth_remains_distinct_hold_state(
     candidate = result.candidates[0]
     evaluation = result.physical_evaluations[0].evaluation
     assert evaluation.question.selection_policy_version == (
-        "background_qualified_peak_contains_query_v1"
-        if window_points == 15 else "baseline_peak_contains_query_v7"
+        "background_qualified_peak_contains_query"
+        if window_points == 15 else "baseline_peak_contains_query"
     )
     assert evaluation.state == physical_state
     assert evaluation.reason == physical_reason
@@ -1177,13 +1177,6 @@ def test_discovery_recovers_near_baseline_peak_after_exterior_context_crop(
     rt = 7.8 + (rt[:-1] - 23.0) * 0.025
     intensity = intensity[:-1]
     profile = SignalProcessingProfile(window_points=15)
-    previous = evaluate_physical_peak(
-        prepare_physical_signal(rt, intensity, profile=profile),
-        selection_subject_id="retained-exterior-context",
-        query_rt_min=7.8,
-        selection_policy_version="baseline_peak_contains_query_v4",
-    )
-    assert previous.reason == "incomplete_peak_context"
     raw_path = tmp_path / "sample.raw"
     raw_path.write_bytes(b"owner-bound-exterior-context")
     source = build_acquisition_source_identity(
@@ -1288,7 +1281,7 @@ def test_physical_fact_sharing_uses_exact_owner_question(
         first_work, second_work = result.physical_work_manifest
         assert first_work.candidate_id == second_work.candidate_id
         assert first_work.selection_subject_id != second_work.selection_subject_id
-        path = tmp_path / "discovery_physical_facts.v1.json"
+        path = tmp_path / "discovery_physical_facts.json"
         write_discovery_physical_fact_sidecar(
             path,
             run_spec=spec,

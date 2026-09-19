@@ -46,7 +46,7 @@ ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_OUTPUT_DIR = (
     ROOT
     / "output/validation/"
-    / "cid_nl_default_activation_cell_local_identity_gate_v1"
+    / "cid_nl_default_activation_cell_local_identity_gate"
 )
 
 CELL_LOCAL_AUDIT_COLUMNS = (
@@ -131,7 +131,7 @@ def evaluate_cell_local_identity_gate(
         blockers.append(f"unresolved_authority_cell_count:{unresolved_count}")
     overall_status = "pass" if not blockers else "blocked"
     return {
-        "schema_version": "cid_nl_default_activation_cell_local_identity_gate_v1",
+        "schema_version": "cid_nl_default_activation_cell_local_identity_gate",
         "overall_status": overall_status,
         "readiness_label": (
             "default_activation_cell_local_identity_candidate"
@@ -246,7 +246,7 @@ def _build_cell_local_audit_rows(
         rows.append(
             {
                 "schema_version": (
-                    "cid_nl_default_activation_cell_local_identity_audit_v1"
+                    "cid_nl_default_activation_cell_local_identity_audit"
                 ),
                 "old_peak_hypothesis_id": row["old_peak_hypothesis_id"],
                 "sample_stem": sample_stem,

@@ -452,7 +452,7 @@ def _promotion_row(
     promotion_blockers: str = "",
 ) -> dict[str, str]:
     return {
-        "schema_version": "backfill_peakhypothesis_promotion_v1",
+        "schema_version": "backfill_peakhypothesis_promotion",
         "peak_hypothesis_id": peak_hypothesis_id,
         "activation_unit_scope": "peak_hypothesis",
         "feature_family_id": peak_hypothesis_id,
@@ -481,7 +481,7 @@ def _full_cohort_slice_row(
     blockers: str = "full_cohort_candidate_family_consolidation_review_required",
 ) -> dict[str, str]:
     return {
-        "schema_version": "backfill_peakhypothesis_acceptance_gate_v1",
+        "schema_version": "backfill_peakhypothesis_acceptance_gate",
         "peak_hypothesis_id": peak_hypothesis_id,
         "feature_family_id": peak_hypothesis_id,
         "seed_group_id": f"seed::{peak_hypothesis_id}",
@@ -507,7 +507,7 @@ def _manual_verdict_row(
     reviewer_verdict: str = "same_peak_supported",
 ) -> dict[str, str]:
     return {
-        "schema_version": "backfill_peakhypothesis_full_cohort_manual_verdict_v1",
+        "schema_version": "backfill_peakhypothesis_full_cohort_manual_verdict",
         "source_peak_hypothesis_id": source_peak_hypothesis_id,
         "source_feature_family_id": source_peak_hypothesis_id,
         "sample_stem": sample,
@@ -531,7 +531,7 @@ def _machine_shape_row(
     same_peak_verdict: str = "same_peak_supported",
 ) -> dict[str, str]:
     return {
-        "schema_version": "backfill_peakhypothesis_overlay_v1",
+        "schema_version": "backfill_peakhypothesis_overlay",
         "source_peak_hypothesis_id": source_peak_hypothesis_id,
         "sample_stem": sample,
         "full_cohort_matched_peak_hypothesis_id": matched_peak_hypothesis_id,

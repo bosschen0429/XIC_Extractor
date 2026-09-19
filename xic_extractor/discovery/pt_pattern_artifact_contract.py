@@ -165,15 +165,15 @@ PT_PATTERN_ANCHOR_LOCAL_METRIC_COLUMNS = (
 PT_PATTERN_ANCHOR_LOCAL_TRACE_POINT_COLUMNS = PT_PATTERN_TRACE_POINT_COLUMNS
 
 _TRACE_TEXT_IDENTITY_FIELDS = ("candidate_id", "sample_stem")
-PT_PATTERN_TRACE_SUMMARY_SCHEMA_VERSION = "pt_pattern_trace_diagnosis.v4"
+PT_PATTERN_TRACE_SUMMARY_SCHEMA_VERSION = "pt_pattern_trace_diagnosis"
 PT_PATTERN_ANCHOR_LOCAL_TRACE_SUMMARY_SCHEMA_VERSION = (
-    "pt_pattern_anchor_local_trace_diagnosis.v3"
+    "pt_pattern_anchor_local_trace_diagnosis"
 )
 PT_PATTERN_TRACE_SUMMARY_SCHEMA_VERSIONS = (
     PT_PATTERN_TRACE_SUMMARY_SCHEMA_VERSION,
     PT_PATTERN_ANCHOR_LOCAL_TRACE_SUMMARY_SCHEMA_VERSION,
 )
-PT_PATTERN_EVIDENCE_SCHEMA_VERSION = "pt_pattern_discovery_evidence.v3"
+PT_PATTERN_EVIDENCE_SCHEMA_VERSION = "pt_pattern_discovery_evidence"
 PT_PATTERN_CANDIDATE_ASSIGNMENT_TEXT_FIELDS = (
     "sample_stem",
     "method_label",
@@ -203,8 +203,8 @@ PT_PATTERN_TRACE_EXTRACTION_SHA256_FIELD = "trace_extraction_sha256"
 PT_PATTERN_TRACE_ARTIFACT_ROLE_FIELD = "trace_artifact_role"
 PT_PATTERN_TRACE_FULL_CONTEXT_ROLE: Literal["full_context"] = "full_context"
 PT_PATTERN_TRACE_ANCHOR_LOCAL_ROLE: Literal["anchor_local"] = "anchor_local"
-PT_PATTERN_TRACE_BUNDLE_MANIFEST_VERSION = "pt_pattern_trace_bundle_manifest.v1"
-PT_PATTERN_TRACE_EXTRACTION_FINGERPRINT_VERSION = "pt_pattern_trace_extraction.v1"
+PT_PATTERN_TRACE_BUNDLE_MANIFEST_VERSION = "pt_pattern_trace_bundle_manifest"
+PT_PATTERN_TRACE_EXTRACTION_FINGERPRINT_VERSION = "pt_pattern_trace_extraction"
 PT_PATTERN_TRACE_SCHEMA_ROLE = {
     PT_PATTERN_TRACE_SUMMARY_SCHEMA_VERSION: PT_PATTERN_TRACE_FULL_CONTEXT_ROLE,
     PT_PATTERN_ANCHOR_LOCAL_TRACE_SUMMARY_SCHEMA_VERSION: (
@@ -349,7 +349,7 @@ def pt_pattern_candidate_assignment_fingerprint(
     trace/evidence artifacts when the assigned +1/+2/+4 features change.
     """
 
-    payload: list[tuple[str, str]] = [("contract", "pt_candidate_assignment.v1")]
+    payload: list[tuple[str, str]] = [("contract", "pt_candidate_assignment")]
     candidate_text = {
         field: _required_text(candidate_row, field=field, side="candidate")
         for field in PT_PATTERN_CANDIDATE_ASSIGNMENT_TEXT_FIELDS

@@ -15,7 +15,7 @@ from xic_extractor.diagnostics.diagnostic_io import (
     write_tsv,
 )
 
-SCHEMA_VERSION = "backfill_peakhypothesis_transfer_readiness_v1"
+SCHEMA_VERSION = "backfill_peakhypothesis_transfer_readiness"
 
 READINESS_COLUMNS = (
     "schema_version",
@@ -65,15 +65,8 @@ _CANONICAL_FULL_COHORT_BASE_METADATA = {
     "audit_evidence_mode": "none",
     "owner_backfill_xic_backend": "raw",
 }
-_LEGACY_ALIGNMENT_METADATA_SCHEMA_VERSION = "alignment-results-v3"
-_TARGETED_ISTD_ALIGNMENT_METADATA_SCHEMA_VERSION = "alignment-results-v4"
-_CURRENT_MATRIX_VALUE_POLICY = "canonical_signal_profile_selected_area_v1"
-_LEGACY_V3_MATRIX_VALUE_POLICIES = frozenset(
-    {
-        "gaussian15_positive_asls_residual_primary",
-        _CURRENT_MATRIX_VALUE_POLICY,
-    }
-)
+_ALIGNMENT_METADATA_SCHEMA_VERSION = "alignment-results"
+_CURRENT_MATRIX_VALUE_POLICY = "canonical_signal_profile_selected_area"
 
 _ZERO_MISMATCH_FIELDS = (
     "unexpected_matrix_diff_count",
@@ -362,22 +355,13 @@ def _full_cohort_failures(
         text_value(metadata.get("targeted_istd_target_snapshot_id"))
     )
     matrix_value_policy = text_value(metadata.get("matrix_value_policy"))
-    if has_targeted_istd_anchor != has_targeted_istd_snapshot:
-        metadata_contract_invalid = True
-    if schema_version == _TARGETED_ISTD_ALIGNMENT_METADATA_SCHEMA_VERSION:
-        if not (
-            has_targeted_istd_anchor
-            and has_targeted_istd_snapshot
-            and matrix_value_policy == _CURRENT_MATRIX_VALUE_POLICY
-        ):
-            metadata_contract_invalid = True
-    elif schema_version == _LEGACY_ALIGNMENT_METADATA_SCHEMA_VERSION:
-        if has_targeted_istd_anchor:
-            if matrix_value_policy != _CURRENT_MATRIX_VALUE_POLICY:
-                metadata_contract_invalid = True
-        elif matrix_value_policy not in _LEGACY_V3_MATRIX_VALUE_POLICIES:
-            metadata_contract_invalid = True
-    else:
+    if (
+        schema_version != _ALIGNMENT_METADATA_SCHEMA_VERSION
+        or matrix_value_policy != _CURRENT_MATRIX_VALUE_POLICY
+        or "targeted_istd_anchor_identity" not in metadata
+        or "targeted_istd_target_snapshot_id" not in metadata
+        or has_targeted_istd_anchor != has_targeted_istd_snapshot
+    ):
         metadata_contract_invalid = True
     if metadata_contract_invalid:
         failures.append("full_cohort_metadata_contract_not_canonical")
@@ -399,7 +383,7 @@ def _full_cohort_acceptance_gate_failures(
         return ()
     failures: list[str] = []
     if _text(summary.get("schema_version")) != (
-        "backfill_peakhypothesis_acceptance_gate_v1"
+        "backfill_peakhypothesis_acceptance_gate"
     ):
         failures.append("full_cohort_acceptance_gate_schema_mismatch")
     if _int_value(summary.get("promotion_row_count")) != matrix_write_count:
@@ -493,7 +477,7 @@ def _manual_same_peak_covers_review(
     if manual_review_summary is None or slice_gate_summary is None:
         return False
     if _text(manual_review_summary.get("schema_version")) != (
-        "backfill_peakhypothesis_full_cohort_manual_verdict_v1"
+        "backfill_peakhypothesis_full_cohort_manual_verdict"
     ):
         return False
     review_count = _int_value(

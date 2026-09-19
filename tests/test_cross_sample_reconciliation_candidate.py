@@ -470,8 +470,8 @@ def _scenario(tmp_path: Path, *, hold_sample: str = "s2"):
             owner.sample_stem: index for index, owner in enumerate(owners, start=1)
         },
         evidence_profile=ModeTrackEvidenceProfile(
-            "anchor-trajectory-v1",
-            "fixed-band-v1",
+            "anchor-trajectory",
+            "fixed-band",
             0.1,
             10,
             10,

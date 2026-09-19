@@ -227,7 +227,7 @@ def _review_queue_row(
     peak_end_rt: str,
 ) -> dict[str, str]:
     return {
-        "schema_version": "backfill_peakhypothesis_hypothesis_review_v1",
+        "schema_version": "backfill_peakhypothesis_hypothesis_review",
         "review_item_id": review_item_id,
         "source_feature_family_id": "FAM_SRC",
         "source_peak_hypothesis_id": "FAM_SRC",

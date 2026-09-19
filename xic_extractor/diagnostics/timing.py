@@ -356,7 +356,7 @@ class TimingRecorder:
         from xic_extractor.diagnostics.timing_summary import summarize_timing_records
 
         result: dict[str, object] = {
-            "schema_version": "timing.v1",
+            "schema_version": "timing",
             "run_id": self.run_id,
             "pipeline": self.pipeline,
             "records": [record.to_json_dict() for record in self._records],
@@ -408,7 +408,7 @@ class TimingRecorder:
             )
             observations = self._measurement_observations[observation_start:]
             payload = {
-                "schema_version": "timing.live.v2",
+                "schema_version": "timing.live",
                 "run_id": self.run_id,
                 "pipeline": self.pipeline,
                 "heartbeat": dict(self._heartbeat),

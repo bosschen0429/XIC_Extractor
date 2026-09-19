@@ -20,16 +20,16 @@ from xic_extractor.peak_detection.cid_nl_peak_support import (
     DdaCidNlPeakSupportPolicy,
 )
 
-SCHEMA_VERSION = "cid_nl_chromatographic_support_v1"
+SCHEMA_VERSION = "cid_nl_chromatographic_support"
 ARTIFACT_SEMANTIC_ROLE = "cid_nl_chromatographic_support_event"
 VALIDATION_STATUS = "diagnostic_only"
 MEDIA_TYPE = "application/json"
-SERIALIZATION_FORMAT = "canonical-json-utf8-lf-v1"
+SERIALIZATION_FORMAT = "canonical-json-utf8-lf"
 RELATIONSHIP = "strict_nl_scans_within_one_physical_ms1_peak"
 
-_ARTIFACT_CONTENT_ID_PREFIX = "xic.artifact-content.v1:"
-_PEAK_CONTENT_ID_PREFIX = "xic.peak-observation-content.v1:"
-_SAMPLE_ID_PREFIX = "xic.sample.v1:"
+_ARTIFACT_CONTENT_ID_PREFIX = "xic.artifact-content:"
+_PEAK_CONTENT_ID_PREFIX = "xic.peak-observation-content:"
+_SAMPLE_ID_PREFIX = "xic.sample:"
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _ARTIFACT_SEMANTIC_CONTRACT = _mint_artifact_semantic_contract_ref(
     owner_namespace=("xic_extractor.peak_detection.cid_nl_chromatographic_support"),
@@ -39,16 +39,6 @@ _ARTIFACT_SEMANTIC_CONTRACT = _mint_artifact_semantic_contract_ref(
     media_type=MEDIA_TYPE,
     serialization_format=SERIALIZATION_FORMAT,
 )
-_COMPOSITE_ARTIFACT_SEMANTIC_CONTRACT = _mint_artifact_semantic_contract_ref(
-    owner_namespace="xic_extractor.peak_detection.cid_nl_chromatographic_support",
-    semantic_role=ARTIFACT_SEMANTIC_ROLE,
-    schema_version="cid_nl_chromatographic_support_v2",
-    validation_status=VALIDATION_STATUS,
-    media_type=MEDIA_TYPE,
-    serialization_format=SERIALIZATION_FORMAT,
-)
-
-
 class CidNlChromatographicSupportContractError(ValueError):
     """Raised when scan support cannot form one physical-peak event."""
 
@@ -218,11 +208,7 @@ class CidNlChromatographicSupportRef:
                 "artifact must be an owner-minted EvidenceArtifactRef"
             )
         composite = self.content.scan_supports[0].configured_neutral_loss_da is not None
-        if self.artifact.semantic_contract != (
-            _COMPOSITE_ARTIFACT_SEMANTIC_CONTRACT
-            if composite
-            else _ARTIFACT_SEMANTIC_CONTRACT
-        ):
+        if self.artifact.semantic_contract != _ARTIFACT_SEMANTIC_CONTRACT:
             raise CidNlChromatographicSupportContractError(
                 "artifact semantic contract is not owned by CID-NL support"
             )
@@ -249,7 +235,7 @@ class CidNlChromatographicSupportRef:
                     )
         elif self.evidence_refs:
             raise CidNlChromatographicSupportContractError(
-                "v1 support cannot carry composite evidence dimensions"
+                "scalar support cannot carry composite evidence dimensions"
             )
         if len(self.artifact.upstream_artifact_ids) != len(self.content.scan_supports):
             raise CidNlChromatographicSupportContractError(
@@ -277,15 +263,10 @@ def canonical_cid_nl_chromatographic_support_bytes(
         )
     content_payload = asdict(content)
     payload = {
-        "schema_version": "cid_nl_chromatographic_support_v2"
-        if content.scan_supports[0].configured_neutral_loss_da is not None
-        else SCHEMA_VERSION,
+        "schema_version": SCHEMA_VERSION,
         "validation_status": VALIDATION_STATUS,
         "content": content_payload,
     }
-    if content.scan_supports[0].configured_neutral_loss_da is None:
-        for member in content_payload["scan_supports"]:
-            member.pop("configured_neutral_loss_da")
     try:
         serialized = json.dumps(
             payload,

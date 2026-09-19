@@ -187,10 +187,6 @@ def validate_processing_run_spec_call(
     )
     if not discovery_settings.enable_blank_qualification:
         return inputs
-    if spec.schema_version == "processing_run_spec_v1":
-        raise ValueError(
-            "legacy blank-enabled run has no library binding; recompile the run"
-        )
     hydrated: list[ProcessingAcquisitionInput] = []
     snapshots: dict[str, tuple[str | None, str | None]] = {}
     libraries: _LibrarySnapshots = {}

@@ -280,7 +280,7 @@ def test_runtime_retains_morphology_park_reason_and_call_cost(
     runtime = start_runtime_attempt(
         attempt=context.processing_owners.attempt,
         work_unit_keys=(job.work_unit_key,),
-        owner_completeness_attestation="untargeted-cid-nl-morphology-park-test:v1",
+        owner_completeness_attestation="untargeted-cid-nl-morphology-park-test",
     )
 
     result = execute_untargeted_cid_nl_real_data_runtime(
@@ -327,7 +327,7 @@ def _canonical_physical_candidates(
         cast(BatchXICAdapter, raw),
         groups,
         acquisition_source=raw.acquisition_source,
-        run_spec_id="processing-run.v1:" + ("0" * 64),
+        run_spec_id="processing-run:" + ("0" * 64),
         settings=settings,
         peak_config=peak_config,
         signal_processing_profile=SignalProcessingProfile(window_points=15),

@@ -35,16 +35,16 @@ from xic_extractor.peak_detection.observations import (
 from xic_extractor.processing_identity import ProcessingOwnerReferences
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 
-SCHEMA_VERSION = "dda_cid_nl_candidate_set_relation_v1"
+SCHEMA_VERSION = "dda_cid_nl_candidate_set_relation"
 ARTIFACT_SEMANTIC_ROLE = "dda_cid_nl_candidate_set_relation"
 VALIDATION_STATUS = "diagnostic_only"
 MEDIA_TYPE = "application/json"
-SERIALIZATION_FORMAT = "canonical-json-utf8-lf-v1"
+SERIALIZATION_FORMAT = "canonical-json-utf8-lf"
 RELATIONSHIP = "supports_one_or_more_of"
 
-_ARTIFACT_CONTENT_ID_PREFIX = "xic.artifact-content.v1:"
-_PEAK_CONTENT_ID_PREFIX = "xic.peak-observation-content.v1:"
-_SAMPLE_ID_PREFIX = "xic.sample.v1:"
+_ARTIFACT_CONTENT_ID_PREFIX = "xic.artifact-content:"
+_PEAK_CONTENT_ID_PREFIX = "xic.peak-observation-content:"
+_SAMPLE_ID_PREFIX = "xic.sample:"
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _ARTIFACT_SEMANTIC_CONTRACT = _mint_artifact_semantic_contract_ref(
     owner_namespace="xic_extractor.peak_detection.cid_nl_candidate_set_relation",

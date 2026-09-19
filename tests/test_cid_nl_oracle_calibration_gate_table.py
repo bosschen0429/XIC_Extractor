@@ -7,7 +7,7 @@ ROOT = Path(__file__).resolve().parents[1]
 GATE_TABLE = (
     ROOT
     / "docs/superpowers/validation/"
-    "cid_nl_oracle_istd_calibration_2raw_v1/calibration_gate_table.tsv"
+    "cid_nl_oracle_istd_calibration_2raw/calibration_gate_table.tsv"
 )
 
 

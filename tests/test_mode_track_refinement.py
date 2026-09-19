@@ -60,8 +60,8 @@ def test_trajectory_input_identity_ignores_value_only_owner_changes() -> None:
         "anchors": (),
         "injection_order": {"sample-a": 1, "sample-b": 2},
         "evidence_profile": ModeTrackEvidenceProfile(
-            trajectory_policy_version="anchor-trajectory-v1",
-            band_policy_version="fixed-band-v1",
+            trajectory_policy_version="anchor-trajectory",
+            band_policy_version="fixed-band",
             prediction_half_width_min=0.1,
             max_interpolation_gap=10,
             max_extrapolation_gap=10,
@@ -166,13 +166,13 @@ def test_accepted_proposal_bound_to_another_snapshot_fails_closed() -> None:
     }
     original = mint_mode_track_trajectory_input(
         evidence_profile=ModeTrackEvidenceProfile(
-            "anchor-trajectory-v1", "fixed-band-v1", 0.1, 10, 10
+            "anchor-trajectory", "fixed-band", 0.1, 10, 10
         ),
         **common,
     )
     crossed = mint_mode_track_trajectory_input(
         evidence_profile=ModeTrackEvidenceProfile(
-            "anchor-trajectory-v2", "fixed-band-v1", 0.1, 10, 10
+            "anchor-trajectory", "fixed-band", 0.2, 10, 10
         ),
         **common,
     )
@@ -319,7 +319,7 @@ def test_oversized_neighborhood_is_unassessable_without_subset_processing() -> N
         anchors=(),
         injection_order={f"sample-{index}": index + 1 for index in range(3)},
         evidence_profile=ModeTrackEvidenceProfile(
-            "anchor-trajectory-v1", "fixed-band-v1", 0.1, 10, 10
+            "anchor-trajectory", "fixed-band", 0.1, 10, 10
         ),
         budget=CrossSampleNeighborhoodBudget(
             max_members=2,
@@ -385,7 +385,7 @@ def test_successor_partition_is_complete_and_order_independent() -> None:
         anchors=(),
         injection_order={"sample-a": 1, "sample-b": 2},
         evidence_profile=ModeTrackEvidenceProfile(
-            "anchor-trajectory-v1", "fixed-band-v1", 0.1, 10, 10
+            "anchor-trajectory", "fixed-band", 0.1, 10, 10
         ),
         budget=budget,
     )
@@ -482,7 +482,7 @@ def test_accepted_partition_cannot_reopen_excluded_edge() -> None:
             for index, letter in enumerate("abc")
         },
         evidence_profile=ModeTrackEvidenceProfile(
-            "anchor-trajectory-v1", "fixed-band-v1", 0.1, 10, 10
+            "anchor-trajectory", "fixed-band", 0.1, 10, 10
         ),
         budget=CrossSampleNeighborhoodBudget(86, 3655),
     )

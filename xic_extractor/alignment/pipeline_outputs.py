@@ -293,11 +293,9 @@ def alignment_metadata(
             "provided together"
         )
     metadata = {
-        "schema_version": (
-            "alignment-results-v4"
-            if has_targeted_istd_anchor
-            else "alignment-results-v3"
-        ),
+        "schema_version": "alignment-results",
+        "targeted_istd_anchor_identity": targeted_istd_anchor_identity,
+        "targeted_istd_target_snapshot_id": targeted_istd_target_snapshot_id,
         "discovery_batch_index": str(discovery_batch_index),
         "raw_dir": str(raw_dir),
         "dll_dir": str(dll_dir),
@@ -325,15 +323,15 @@ def alignment_metadata(
         "audit_evidence_mode_reason": audit_evidence_mode_reason,
         "scope_warning": scope_warning,
         "skipped_evidence_predicate_version": skipped_evidence_predicate_version,
-        "cross_sample_peak_group_policy": "cross_sample_peak_group_hypothesis_v1",
+        "cross_sample_peak_group_policy": "cross_sample_peak_group_hypothesis",
         "public_family_id_policy": "fam_compatibility_id",
-        "group_delivery_policy": "owner_group_delivery_successor_projection_v1",
-        "gap_fill_policy": "missing_observation_gap_fill_v1",
+        "group_delivery_policy": "owner_group_delivery_successor_projection",
+        "gap_fill_policy": "missing_observation_gap_fill",
         "legacy_owner_backfill_role": ("owner_backfill_as_gap_fill_materialization"),
         "pre_backfill_projection_policy": (
             "pre_backfill_successor_projection_required_when_enabled"
         ),
-        "matrix_value_policy": "canonical_signal_profile_selected_area_v1",
+        "matrix_value_policy": "canonical_signal_profile_selected_area",
         "signal_processing_profile_schema_version": (
             signal_processing_profile.schema_version
         ),
@@ -349,11 +347,6 @@ def alignment_metadata(
             owner_backfill_peak_fact_provenance_row_count
         ),
     }
-    if has_targeted_istd_anchor:
-        metadata["targeted_istd_anchor_identity"] = targeted_istd_anchor_identity
-        metadata["targeted_istd_target_snapshot_id"] = (
-            targeted_istd_target_snapshot_id
-        )
     return metadata
 
 

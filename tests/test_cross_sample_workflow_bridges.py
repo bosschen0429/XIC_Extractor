@@ -283,7 +283,7 @@ def test_no_receipt_terminal_closes_epoch_zero_without_repair_evidence(
             for index, owner in enumerate(group.owners, start=1)
         },
         evidence_profile=ModeTrackEvidenceProfile(
-            "anchor-trajectory-v1", "fixed-band-v1", 0.1, 10, 10
+            "anchor-trajectory", "fixed-band", 0.1, 10, 10
         ),
         budget=CrossSampleNeighborhoodBudget(86, 3655),
     )
@@ -308,7 +308,7 @@ def test_no_receipt_terminal_closes_epoch_zero_without_repair_evidence(
     assert result.final_population == context.population
     with pytest.raises(
         CrossSampleReconciliationContractError,
-        match="legacy final receipt requires",
+        match="subject-scoped final receipt requires",
     ):
         replace(
             result,
@@ -431,8 +431,8 @@ def test_mt0_bridge_preserves_complete_components(tmp_path: Path) -> None:
         sample_assessments=tuple(assessments),
         alignment_config=AlignmentConfig(anchor_min_seed_events=1, preferred_rt_sec=30),
         trajectory_policy=ModeTrackTrajectoryPolicy(
-            trajectory_policy_version="anchor-trajectory-v1",
-            band_policy_version="fixed-band-v1",
+            trajectory_policy_version="anchor-trajectory",
+            band_policy_version="fixed-band",
             prediction_half_width_min=0.1,
             max_interpolation_gap=10,
             max_extrapolation_gap=10,
@@ -533,8 +533,8 @@ def test_mt0_bridge_closes_mixed_population_and_rejects_crossed_inputs(
         sample_assessments=((fixture.sample("early"), assessment),),
         alignment_config=AlignmentConfig(anchor_min_seed_events=1),
         trajectory_policy=ModeTrackTrajectoryPolicy(
-            trajectory_policy_version="anchor-trajectory-v1",
-            band_policy_version="fixed-band-v1",
+            trajectory_policy_version="anchor-trajectory",
+            band_policy_version="fixed-band",
             prediction_half_width_min=0.1,
             max_interpolation_gap=10,
             max_extrapolation_gap=10,

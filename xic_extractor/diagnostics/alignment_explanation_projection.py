@@ -154,7 +154,7 @@ def _emit_curve_payload(
         else (evaluation.integration if evaluation is not None else None)
     )
     envelope = {
-        "schema_version": "curve_payload_v1",
+        "schema_version": "curve_payload",
         "kind": kind,
         "sample_id": sample_id,
         "candidate_id": candidate_id,
@@ -180,7 +180,7 @@ def _emit_curve_payload(
         separators=(",", ":"),
         allow_nan=False,
     ).encode("utf-8")
-    payload_id = "xic.inspector-curve.v1:" + hashlib.sha256(encoded).hexdigest()
+    payload_id = "xic.inspector-curve:" + hashlib.sha256(encoded).hexdigest()
     sink.add_curve_payload(
         payload_id=payload_id,
         sample_id=sample_id,
@@ -441,7 +441,7 @@ def write_cid_nl_explanation(
             ]
             if (
                 content.detector_invocation_id
-                == "untargeted-cid-nl-backfill-recovery:v1"
+                == "untargeted-cid-nl-backfill-recovery"
                 and content.method_result == "SUPPORT"
             ):
                 # Recovery has no Discovery terminal. Retain its exact physical

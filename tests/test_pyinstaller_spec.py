@@ -21,11 +21,11 @@ AUTHORITY_RESOURCE_RELATIVE = (
     Path("xic_extractor")
     / "alignment"
     / "data"
-    / "quantitative_projection_authority_v1.json"
+    / "quantitative_projection_authority.json"
 )
 AUTHORITY_RESOURCE_ARCHIVE_PATH = PurePosixPath(*AUTHORITY_RESOURCE_RELATIVE.parts)
 AUTHORITY_RESOURCE_SHA256 = (
-    "15b74bc79dc9501210acd5f761c86b4a7128db83e74a62bf3e97b7beb1572ed5"
+    "26753eb69300ec14a4eb044d21e44cb1351c2360cac7fae9884c3aec9bb6cd54"
 )
 INSTALLED_WHEEL_PROBE = """
 import json
@@ -59,7 +59,7 @@ if not module_file.is_relative_to(target):
     )
     raise RuntimeError(message)
 resource = files("xic_extractor.alignment").joinpath(
-    "data", "quantitative_projection_authority_v1.json"
+    "data", "quantitative_projection_authority.json"
 )
 resource_output.write_bytes(resource.read_bytes())
 metadata_output.write_text(
@@ -276,14 +276,14 @@ def test_pyinstaller_spec_includes_quantitative_projection_authority() -> None:
 
     assert "authority_datas = collect_data_files(" in spec_text
     assert '"xic_extractor.alignment"' in spec_text
-    assert 'includes=["data/quantitative_projection_authority_v1.json"]' in spec_text
+    assert 'includes=["data/quantitative_projection_authority.json"]' in spec_text
     assert "+ authority_datas" in spec_text
 
 
 def test_pyinstaller_collects_quantitative_projection_authority() -> None:
     datas = collect_data_files(
         "xic_extractor.alignment",
-        includes=["data/quantitative_projection_authority_v1.json"],
+        includes=["data/quantitative_projection_authority.json"],
     )
     collected = {
         (Path(source).name, Path(destination).as_posix())
@@ -292,7 +292,7 @@ def test_pyinstaller_collects_quantitative_projection_authority() -> None:
 
     assert collected == {
         (
-            "quantitative_projection_authority_v1.json",
+            "quantitative_projection_authority.json",
             "xic_extractor/alignment/data",
         )
     }

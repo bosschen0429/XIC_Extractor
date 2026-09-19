@@ -43,7 +43,7 @@ def test_targeted_delivery_cell_revision_stage_and_seal_candidate_are_bound(
     revision = mint_targeted_delivery_revision_candidate(
         cell=cell,
         producer_attempt=attempt,
-        projection_contract_version="targeted_projection_v1",
+        projection_contract_version="targeted_projection",
         evidence_artifacts=(artifact,),
         selected_payload=b"9.1000,1000.0,5000.0",
     )
@@ -71,7 +71,7 @@ def test_targeted_delivery_revision_rejects_failure_as_scientific_null(
         mint_targeted_delivery_revision_candidate(
             cell=mint_targeted_delivery_cell_key(_sample(), _target()),
             producer_attempt=attempt,
-            projection_contract_version="targeted_projection_v1",
+            projection_contract_version="targeted_projection",
             evidence_artifacts=(artifact,),
         )
 
@@ -84,7 +84,7 @@ def test_delivery_revision_changes_when_selected_payload_changes(
     kwargs = {
         "cell": mint_targeted_delivery_cell_key(_sample(), _target()),
         "producer_attempt": attempt,
-        "projection_contract_version": "targeted_projection_v1",
+        "projection_contract_version": "targeted_projection",
         "evidence_artifacts": (artifact,),
     }
 
@@ -104,7 +104,7 @@ def test_stage_rejects_duplicate_delivery_cell(tmp_path: Path) -> None:
     revision = mint_targeted_delivery_revision_candidate(
         cell=mint_targeted_delivery_cell_key(_sample(), _target()),
         producer_attempt=attempt,
-        projection_contract_version="targeted_projection_v1",
+        projection_contract_version="targeted_projection",
         evidence_artifacts=(artifact,),
         selected_payload=b"first",
     )
@@ -129,7 +129,7 @@ def test_delivery_revision_derives_complete_retry_predecessor_chain(
     revision = mint_targeted_delivery_revision_candidate(
         cell=mint_targeted_delivery_cell_key(_sample(), _target()),
         producer_attempt=third,
-        projection_contract_version="targeted_projection_v1",
+        projection_contract_version="targeted_projection",
         evidence_artifacts=(first_artifact,),
         selected_payload=b"selected-from-retry-chain",
     )
@@ -151,7 +151,7 @@ def test_delivery_revision_rejects_caller_authorized_sibling_attempt(
         mint_targeted_delivery_revision_candidate(
             cell=mint_targeted_delivery_cell_key(_sample(), _target()),
             producer_attempt=producer,
-            projection_contract_version="targeted_projection_v1",
+            projection_contract_version="targeted_projection",
             evidence_artifacts=(_artifact(sibling, b"sibling-evidence"),),
             dependency_processing_attempt_ids=(sibling.processing_attempt_id,),
             selected_payload=b"invalid-cross-attempt-selection",
@@ -188,7 +188,7 @@ def test_delivery_stage_outputs_must_come_from_current_attempt(tmp_path: Path) -
     revision = mint_targeted_delivery_revision_candidate(
         cell=mint_targeted_delivery_cell_key(_sample(), _target()),
         producer_attempt=retry,
-        projection_contract_version="targeted_projection_v1",
+        projection_contract_version="targeted_projection",
         evidence_artifacts=(predecessor_artifact,),
         selected_payload=b"selected-from-retry-chain",
     )
@@ -250,9 +250,9 @@ def _request(tmp_path: Path):
                 injection_order=1,
             ),
         ),
-        scientific_input_schema_version="package0_fixture_v1",
-        processing_algorithm_version="package0_fixture_v1",
-        processing_contract_version="package0_fixture_v1",
+        scientific_input_schema_version="package0_fixture",
+        processing_algorithm_version="package0_fixture",
+        processing_contract_version="package0_fixture",
         scientific_inputs={"neutral_loss_da": 116.0474},
     )
 
@@ -265,10 +265,10 @@ def _artifact(attempt, payload: bytes):
     contract = _mint_artifact_semantic_contract_ref(
         owner_namespace="tests.package0_delivery_lineage",
         semantic_role="targeted_selected_result_fixture",
-        schema_version="targeted_selected_result_fixture_v1",
+        schema_version="targeted_selected_result_fixture",
         validation_status="diagnostic_only",
         media_type="application/json",
-        serialization_format="canonical-json-v1",
+        serialization_format="canonical-json",
     )
     return _mint_evidence_artifact_ref(
         producer_processing_request_id=attempt.processing_request_id,

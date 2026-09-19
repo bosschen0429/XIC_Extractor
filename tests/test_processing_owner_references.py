@@ -47,16 +47,16 @@ from xic_extractor.sample_metadata import (
     resolve_canonical_sample_identity,
 )
 
-_REVIEW_REQUEST_ID = "xic.processing-request.v1:" + "a" * 64
+_REVIEW_REQUEST_ID = "xic.processing-request:" + "a" * 64
 _TEST_ARTIFACT_SEMANTIC_CONTRACT = _mint_artifact_semantic_contract_ref(
     owner_namespace="tests.review_roundtrip.artifact_owner",
     semantic_role="review_fixture_evidence",
-    schema_version="review_fixture_evidence_v1",
+    schema_version="review_fixture_evidence",
     validation_status="diagnostic_only",
     media_type="application/octet-stream",
-    serialization_format="review_fixture_bytes_v1",
+    serialization_format="review_fixture_bytes",
 )
-_TEST_ARTIFACT_ATTEMPT_ID = "xic.processing-attempt.v1:" + "d" * 64
+_TEST_ARTIFACT_ATTEMPT_ID = "xic.processing-attempt:" + "d" * 64
 
 
 def test_sample_owner_mints_canonical_identity_from_primary_sample_key() -> None:
@@ -75,14 +75,14 @@ def test_sample_owner_mints_canonical_identity_from_primary_sample_key() -> None
     )
 
     assert snapshot.snapshot_id == (
-        "xic.sample-metadata-snapshot.v1:"
-        "a5c133f3c37c7e2988747f99a1f0a491a1024795a806ef015b0129b951990787"
+        "xic.sample-metadata-snapshot:"
+        "51cb5f4fc98a99b9e67b439667f81b1166ee6fd1db65ffb75616e2877be371fe"
     )
     assert identity.sample_identity_id == (
-        "xic.sample.v1:c6eb17e155ab6d78368c18428f6cc967e9b7762cde9d3d792e6c598f7c87b592"
+        "xic.sample:e322e40f4137abbc784c2d9a004e703ff63aeb29fa16bec19038cf9905d8d7f6"
     )
     assert identity.sample_key == "Sample A"
-    assert identity.sample_metadata_schema_version == "sample_metadata_v1"
+    assert identity.sample_metadata_schema_version == "sample_metadata"
     by_key = resolve_canonical_sample_identity(snapshot, "Sample A")
     by_alias = resolve_canonical_sample_identity(snapshot, "sample_a_acquisition")
 
@@ -204,15 +204,15 @@ def test_review_owner_mints_digest_and_typed_id_from_immutable_content() -> None
 
     assert first == same
     assert first.content_sha256 == (
-        "eae99977675b9f2b8c79918d9042d66cbfe323ab32be08c93b97abbac386acf5"
+        "8b54b77ede4b205850c26f1135ae96359058154304b2f2e5dd0f91e263930f60"
     )
     assert first.review_record_id == (
-        "xic.review-record.v1:"
-        "5b6c7157545737d89aac4ef1fa39216bf7490f9caeae93806ca00c11ec570164"
+        "xic.review-record:"
+        "a6649c89264524e9a20ddce778db6e5cc17a0b77357b8799c920c373ce5ff3dc"
     )
     assert _review_snapshot(first).snapshot_id == (
-        "xic.review-record-snapshot.v1:"
-        "c27445e245f608b276443cd3c23e7eba57533042093ca7fc684e0478143f2ae3"
+        "xic.review-record-snapshot:"
+        "443171dbc764cca1b29e8bdcd6b9cef0f342f1593e17dbd576673d053c66b16f"
     )
     assert changed.review_record_id != first.review_record_id
     assert changed.content_sha256 != first.content_sha256
@@ -243,7 +243,7 @@ def test_review_subject_is_stable_while_definition_and_request_bind_exactly() ->
     successor = _review_record(
         action=_review_action(comment="reviewed changed definition"),
         target=changed_target,
-        processing_request_id="xic.processing-request.v1:" + "b" * 64,
+        processing_request_id="xic.processing-request:" + "b" * 64,
         supersedes=original,
         supersession_reason="target definition changed before a new request",
     )
@@ -257,7 +257,7 @@ def test_review_subject_is_stable_while_definition_and_request_bind_exactly() ->
     with pytest.raises(ReviewRecordReferenceError, match="processing request.*stale"):
         _resolve_review(
             original,
-            processing_request_id="xic.processing-request.v1:" + "b" * 64,
+            processing_request_id="xic.processing-request:" + "b" * 64,
         )
 
 
@@ -290,7 +290,7 @@ def test_review_resolver_rejects_missing_ambiguous_stale_and_rebound_inputs() ->
     with pytest.raises(ReviewRecordReferenceError, match="missing"):
         resolve_current_review_record(
             snapshot,
-            review_record_id="xic.review-record.v1:" + "f" * 64,
+            review_record_id="xic.review-record:" + "f" * 64,
             expected_record=_review_action(),
             expected_sample=_resolved_sample(),
             expected_target=_resolved_target(),
@@ -440,7 +440,7 @@ def test_review_mint_accepts_only_owner_typed_and_validated_actions() -> None:
         target_label="5-mdC",
         action_type="anything",  # type: ignore[arg-type]
     )
-    with pytest.raises(ReviewRecordReferenceError, match="valid review_action_v1"):
+    with pytest.raises(ReviewRecordReferenceError, match="valid review_action"):
         mint_review_record_reference(
             record=invalid,
             sample=_resolved_sample(),
@@ -638,7 +638,7 @@ def test_lineage_rejects_review_from_different_request_or_target(
     wrong_request_ref = _review_record(
         sample=sample,
         target=target,
-        processing_request_id="xic.processing-request.v1:" + "b" * 64,
+        processing_request_id="xic.processing-request:" + "b" * 64,
     )
     wrong_request_snapshot = _review_snapshot(wrong_request_ref)
     wrong_request = _resolve_review(
@@ -948,9 +948,9 @@ def _request_many(
     return build_processing_request_identity(
         acquisition_sources=tuple(sources),
         acquisition_bindings=tuple(bindings),
-        scientific_input_schema_version="owner-reference-fixture-v1",
-        processing_algorithm_version="owner-reference-fixture-v1",
-        processing_contract_version="owner-reference-fixture-v1",
+        scientific_input_schema_version="owner-reference-fixture",
+        processing_algorithm_version="owner-reference-fixture",
+        processing_contract_version="owner-reference-fixture",
         scientific_inputs=scientific_inputs,
     )
 

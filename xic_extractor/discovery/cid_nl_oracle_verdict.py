@@ -163,13 +163,13 @@ def reduce_oracle_verdict(
     """Reduce raw gate results; NARROW is derived only from sealed scopes."""
 
     if sha256_bytes(verdict_table_bytes) != _CANONICAL_VERDICT_TABLE_SHA256:
-        raise OracleContractError("verdict table bytes are not canonical v1")
+        raise OracleContractError("verdict table bytes are not canonical")
     verdict_rules = {
         _required_text(row, "rule_id"): row
         for row in _parse_tsv_bytes(verdict_table_bytes)
     }
     if any(
-        row.get("schema_version") != "cid_nl_oracle_verdict_table_v1"
+        row.get("schema_version") != "cid_nl_oracle_verdict_table"
         for row in verdict_rules.values()
     ):
         raise OracleContractError("invalid verdict table schema version")
@@ -183,9 +183,9 @@ def reduce_oracle_verdict(
         for row in _parse_tsv_bytes(gate_table_bytes)
     }
     if sha256_bytes(gate_table_bytes) != _CANONICAL_GATE_TABLE_SHA256:
-        raise OracleContractError("gate table bytes are not canonical v1")
+        raise OracleContractError("gate table bytes are not canonical")
     if any(
-        row.get("schema_version") != "cid_nl_oracle_gate_table_v1"
+        row.get("schema_version") != "cid_nl_oracle_gate_table"
         for row in gate_definitions.values()
     ):
         raise OracleContractError("invalid gate table schema version")

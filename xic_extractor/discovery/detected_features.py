@@ -45,7 +45,7 @@ DETECTED_FEATURES_COLUMNS = (
     "source",
 )
 
-DETECTED_FEATURES_SCHEMA_VERSION = "detected_features.v1"
+DETECTED_FEATURES_SCHEMA_VERSION = "detected_features"
 
 EXTERNAL_FEATURE_TABLE_REQUIRED_COLUMNS = (
     "external_tool",
@@ -80,7 +80,7 @@ _SHAPE_SCORE_COLUMNS = ("shape_score", "ms1_shape_score")
 _SOURCE_FEATURE_ROW_ID_COLUMNS = ("source_feature_row_id", "ms1_feature_row_id")
 _UNSPECIFIED_TRACE_QUALITY = "UNSPECIFIED"
 LOCAL_MS1_FEATURE_SOURCE = "local_ms1_feature"
-CID_NL_SHARED_IDENTITY_SOURCE = "cid_nl_ms1_feature_handoff_v1"
+CID_NL_SHARED_IDENTITY_SOURCE = "cid_nl_ms1_feature_handoff"
 LOCAL_MS1_FEATURE_TRACE_QUALITY_OK = "OK"
 LOCAL_MS1_FEATURE_TRACE_QUALITY_WEAK_SUPPORT = "WEAK_SUPPORT"
 LOCAL_MS1_FEATURE_TRACE_QUALITIES = frozenset(
@@ -93,7 +93,7 @@ _MZMINE_REQUIRED_COLUMNS = ("row ID", "row m/z", "row retention time")
 _MZMINE_PEAK_AREA_SUFFIX = " Peak area"
 _MZMINE_MZML_SUFFIX = ".mzML"
 _MZMINE_RAW_SUFFIX = ".raw"
-_MZMINE_WIDE_ADAPTER_VERSION = "mzmine_wide_area_proxy_v1"
+_MZMINE_WIDE_ADAPTER_VERSION = "mzmine_wide_area_proxy"
 
 
 @dataclass(frozen=True)
@@ -255,7 +255,7 @@ class DeltaMassPatternSettings:
 
 
 def load_detected_features_csv(path: Path) -> tuple[DetectedFeature, ...]:
-    """Load and validate the Detected Features CSV v1 input contract.
+    """Load and validate the Detected Features CSV input contract.
 
     Required non-empty fields: ``sample_stem``, ``feature_id``, ``mz``,
     ``rt_apex_min``, ``height``, ``trace_quality``, and ``source``. ``height``
@@ -288,7 +288,7 @@ def load_external_feature_table_tsv(path: Path) -> tuple[DetectedFeature, ...]:
     intensity proxy while the ``area`` field preserves the original semantics.
     Missing trace/shape support is recorded as ``UNSPECIFIED`` and must be
     tightened later by trace-level evidence when that evidence is available.
-    External-table v1 row IDs are preserved as provenance only; this adapter
+    External-table row IDs are preserved as provenance only; this adapter
     does not declare them comparable to CID-NL ``ms1_feature_row_id`` values.
     """
 
@@ -348,7 +348,7 @@ def write_detected_features_csv(
     path: Path,
     features: Sequence[DetectedFeature],
 ) -> Path:
-    """Write the Detected Features CSV v1 handoff surface."""
+    """Write the Detected Features CSV handoff surface."""
 
     rows = tuple(
         _validated_detected_feature_row(feature, path=path, row_index=row_index)

@@ -265,7 +265,7 @@ def test_projector_rejects_terminal_population_shape_errors(
         object.__setattr__(
             terminal,
             "canonical_sample_identity_id",
-            "xic.canonical-sample.v1:extra",
+            "xic.canonical-sample:extra",
         )
     else:
         terminal = result.terminal_subjects[0]
@@ -481,7 +481,7 @@ def test_projection_revalidates_each_consumed_owner_ingress(
         object.__setattr__(
             scope.capture_bindings[0],
             "sample_identity_id",
-            "xic.canonical-sample.v1:crossed",
+            "xic.canonical-sample:crossed",
         )
     elif ingress == "canonical_sample":
         object.__setattr__(scope.samples[0], "lookup_token", "crossed-sample")
@@ -493,7 +493,7 @@ def test_projection_revalidates_each_consumed_owner_ingress(
         object.__setattr__(
             result.final_cross_sample_receipt,
             "processing_request_id",
-            "xic.processing-request.v1:crossed",
+            "xic.processing-request:crossed",
         )
     elif ingress == "group":
         object.__setattr__(group, "basis_bytes", b"crossed-group-basis")
@@ -787,7 +787,7 @@ def _final_receipt(
         evidence=None,
         _mint_token=repair_owner._RECEIPT_MINT_TOKEN,
     )
-    trajectory_id = "xic.mode-track-trajectory-input.v1:test"
+    trajectory_id = "xic.mode-track-trajectory-input:test"
     state = CrossSampleReconciledState(
         processing_request_id=fixture.request.processing_request_id,
         population=population,

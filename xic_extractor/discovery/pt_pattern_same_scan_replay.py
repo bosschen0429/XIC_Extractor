@@ -40,7 +40,7 @@ from xic_extractor.tabular_io import (
     write_delimited_rows,
 )
 
-SCHEMA_VERSION = "pt_pattern_same_scan_replay.v3"
+SCHEMA_VERSION = "pt_pattern_same_scan_replay"
 READINESS_TIER = "diagnostic_only"
 EVIDENCE_OWNER = "xic_extractor.discovery.pt_pattern_same_scan_evidence"
 D3_CONTROL_NAME = "d3-dG-C8-MeIQx"

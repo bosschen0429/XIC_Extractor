@@ -29,12 +29,12 @@ def test_bounded_schema_matches_acceptance_header() -> None:
 @pytest.mark.ledger_snapshot
 def test_limited_targeted_ms1_scope_and_effect_are_pinned() -> None:
     _, rows = _read_tsv(DEFAULT_ACCEPTANCE)
-    row = _row(rows, "targeted_ms1_shape_identity_limited_rescue_v1")
+    row = _row(rows, "targeted_ms1_shape_identity_limited_rescue")
 
     assert row["readiness_status"] == "production_ready"
     assert row["allowed_effect"] == "detected_flagged_only"
     assert set(row["allowed_scope"].split(";")) == {
-        "limited_5hmdc_5medc_v1",
+        "limited_5hmdc_5medc",
         "5-hmdC",
         "5-medC",
     }
@@ -102,7 +102,7 @@ def test_checker_rejects_selected_peak_or_area_writeback(tmp_path: Path) -> None
 def test_checker_rejects_stale_status_index_hash(tmp_path: Path) -> None:
     mutated = _mutated_acceptance(
         tmp_path,
-        lane_id="sample_metadata_order_projection_v1",
+        lane_id="sample_metadata_order_projection",
         updates={"source_status_index_sha256": "0" * 64},
     )
 
@@ -114,7 +114,7 @@ def test_checker_rejects_stale_status_index_hash(tmp_path: Path) -> None:
 def test_checker_rejects_status_index_disagreement(tmp_path: Path) -> None:
     status = _mutated_status_index(
         tmp_path,
-        "sample_metadata_order_projection_v1",
+        "sample_metadata_order_projection",
         {"readiness_status": "blocked"},
     )
 
@@ -128,7 +128,7 @@ def test_checker_rejects_custom_status_index_hash_target_mismatch(
 ) -> None:
     status = _mutated_status_index(
         tmp_path,
-        "sample_metadata_order_projection_v1",
+        "sample_metadata_order_projection",
         {"may_change_quant_output": "TRUE"},
     )
 
@@ -148,7 +148,7 @@ def test_checker_rejects_status_index_extra_writer_even_with_refreshed_hash(
     extra = dict(status_rows[0])
     extra.update(
         {
-            "lane_id": "targeted_ms1_shape_identity_broad_writer_v2",
+            "lane_id": "targeted_ms1_shape_identity_broad_writer",
             "lane_group": "targeted_ms1",
             "readiness_status": "production_ready",
             "write_authority": "TRUE",
@@ -199,8 +199,8 @@ def test_checker_rejects_coordinated_schema_acceptance_status_promotion(
         {
             "rules": {
                 "production_ready_lanes": [
-                    "targeted_ms1_shape_identity_limited_rescue_v1",
-                    "sample_metadata_order_projection_v1",
+                    "targeted_ms1_shape_identity_limited_rescue",
+                    "sample_metadata_order_projection",
                     "targeted_ms1_shape_identity_broader_targets",
                 ]
             }

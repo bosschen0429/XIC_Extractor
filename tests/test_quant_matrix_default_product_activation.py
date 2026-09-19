@@ -18,14 +18,14 @@ from scripts.build_quant_matrix_product_ready_closeout import (
     build_quant_matrix_product_ready_closeout,
 )
 from tests.test_quant_matrix_default_activation_dry_run import (
-    _build_synthetic_packet_v2,
+    _build_synthetic_packet,
 )
 
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_PATH = (
     ROOT
     / "docs/superpowers/schemas/"
-    / "quant_matrix_default_product_activation_schema.v1.json"
+    / "quant_matrix_default_product_activation_schema.json"
 )
 
 
@@ -34,7 +34,7 @@ def test_default_product_activation_schema_matches_builder_contract() -> None:
 
     assert (
         schema["schema_version"]
-        == "quant_matrix_default_product_activation_schema_v1"
+        == "quant_matrix_default_product_activation_schema"
     )
     assert (
         schema["default_product_activation_schema"]
@@ -372,12 +372,12 @@ def test_default_product_activation_script_check_only_round_trip(
 
 
 def _build_synthetic_activation_inputs(tmp_path: Path) -> dict[str, Path]:
-    packet_inputs = _build_synthetic_packet_v2(tmp_path)
+    packet_inputs = _build_synthetic_packet(tmp_path)
     dry_run = build_quant_matrix_default_activation_dry_run(
         output_dir=tmp_path / "dry_run_gate",
         source_root=tmp_path,
         real_bundle_summary_json=packet_inputs["real_bundle_summary"],
-        promotion_packet_v2_summary_json=packet_inputs["packet_summary"],
+        promotion_packet_summary_json=packet_inputs["packet_summary"],
         expected_source_run_id="synthetic-current-511-authority-replay",
         expected_downstream_scope="synthetic_current_authority_replay",
         expected_accepted_backfill_count=1,
@@ -385,7 +385,7 @@ def _build_synthetic_activation_inputs(tmp_path: Path) -> dict[str, Path]:
     closeout = build_quant_matrix_product_ready_closeout(
         output_dir=tmp_path / "product_ready_closeout",
         source_root=tmp_path,
-        promotion_packet_v2_summary_json=packet_inputs["packet_summary"],
+        promotion_packet_summary_json=packet_inputs["packet_summary"],
         activation_dry_run_summary_json=dry_run["summary_json"],
         expected_source_run_id="synthetic-current-511-authority-replay",
         expected_downstream_scope="synthetic_current_authority_replay",

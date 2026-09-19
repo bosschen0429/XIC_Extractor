@@ -16,7 +16,6 @@ from xic_extractor.discovery import pt_pattern_review_packet as packet
 from xic_extractor.discovery import pt_pattern_trace_evidence as evidence
 from xic_extractor.discovery.pt_pattern_artifact_contract import (
     PT_PATTERN_TRACE_ANCHOR_LOCAL_ROLE,
-    PT_PATTERN_TRACE_FULL_CONTEXT_ROLE,
 )
 from xic_extractor.tabular_io import (
     read_delimited_rows,
@@ -37,15 +36,11 @@ def _review_row(
     overlap: str = "0.80",
     anchor_local: bool = False,
 ) -> dict[str, str]:
-    columns = packet.PACKET_COLUMNS if anchor_local else packet.LEGACY_PACKET_COLUMNS
+    columns = packet.PACKET_COLUMNS
     row = {column: "" for column in columns}
     row.update(
         {
-            "schema_version": (
-                packet.ANCHOR_LOCAL_SCHEMA_VERSION
-                if anchor_local
-                else packet.SCHEMA_VERSION
-            ),
+            "schema_version": packet.SCHEMA_VERSION,
             "readiness_tier": packet.READINESS_TIER,
             "evidence_owner": packet.EVIDENCE_OWNER,
             "packet_label": "unit_packet",
@@ -57,11 +52,7 @@ def _review_row(
                 f"threshold-test-assignment|{candidate_id}".encode("utf-8")
             ).hexdigest(),
             "trace_extraction_sha256": "e" * 64,
-            "trace_artifact_role": (
-                PT_PATTERN_TRACE_ANCHOR_LOCAL_ROLE
-                if anchor_local
-                else PT_PATTERN_TRACE_FULL_CONTEXT_ROLE
-            ),
+            "trace_artifact_role": PT_PATTERN_TRACE_ANCHOR_LOCAL_ROLE,
             "base_mz": "500.0",
             "base_rt_apex_min": "10.0",
             "trace_decision_basis": evidence.TRACE_DECISION_BASIS,
@@ -75,14 +66,13 @@ def _review_row(
             "oracle_status": "pending_human_review",
         }
     )
-    if anchor_local:
-        row.update(
-            {
-                "trace_ambiguity_status": "clear",
-                "anchor_segmentation_status": "clear",
-                "anchor_segmentation_boundary_review_status": "clear",
-            }
-        )
+    row.update(
+        {
+            "trace_ambiguity_status": "clear",
+            "anchor_segmentation_status": "clear",
+            "anchor_segmentation_boundary_review_status": "clear",
+        }
+    )
     return row
 
 
@@ -167,7 +157,7 @@ def test_threshold_calibration_selects_zero_false_positive_rule() -> None:
     )
     recommended = threshold_rows[0]
     assert recommended["rule_id"] == (
-        "pt_v2_fullpattern_status_pt_pattern_detected_diagnostic_positions_ge_3"
+        "pt_fullpattern_status_pt_pattern_detected_diagnostic_positions_ge_3"
         "_apex_floor_le_0p6s_or_scan_multiplier_1p25_pearson_ge_0p9_overlap_ge_0p5"
         "_shiftedreviewonly_shiftedpearson_ge_0p85_shapeshift_le_45s"
     )
@@ -207,13 +197,13 @@ def test_threshold_calibration_rejects_missing_review_packet() -> None:
 def test_threshold_calibration_accepts_current_anchor_packet(
     tmp_path: Path,
 ) -> None:
-    review_row = _review_row("anchor-v3", anchor_local=True)
+    review_row = _review_row("anchor", anchor_local=True)
     review_csv = _write_review_bundle(
         tmp_path / "anchor" / "review.csv",
         [review_row],
     )
     oracle_csv = _write_verified_promotion(
-        tmp_path / "oracle_v3",
+        tmp_path / "oracle",
         review_csv=review_csv,
         oracle_call="reject",
     )
@@ -221,8 +211,8 @@ def test_threshold_calibration_accepts_current_anchor_packet(
     outputs = thresholds.run_threshold_calibration(
         oracle_promotion_csv=oracle_csv,
         review_packet_csvs=[review_csv],
-        output_dir=tmp_path / "thresholds_v3",
-        calibration_id="anchor_v3",
+        output_dir=tmp_path / "thresholds",
+        calibration_id="anchor",
     )
 
     summary = json.loads(outputs["summary_json"].read_text(encoding="utf-8"))
@@ -232,13 +222,14 @@ def test_threshold_calibration_accepts_current_anchor_packet(
 def test_threshold_calibration_rejects_partial_anchor_packet(
     tmp_path: Path,
 ) -> None:
-    review_row = _review_row("partial-v3", anchor_local=True)
-    partial_columns = (
-        *packet.LEGACY_PACKET_COLUMNS,
-        evidence.ANCHOR_SEGMENTATION_SUMMARY_COLUMNS[0],
+    review_row = _review_row("partial", anchor_local=True)
+    partial_columns = tuple(
+        column
+        for column in packet.PACKET_COLUMNS
+        if column != evidence.ANCHOR_SEGMENTATION_SUMMARY_COLUMNS[0]
     )
     review_csv = _write_csv(
-        tmp_path / "review_partial_v3.csv",
+        tmp_path / "review_partial.csv",
         [review_row],
         partial_columns,
     )
@@ -247,7 +238,7 @@ def test_threshold_calibration_rejects_partial_anchor_packet(
         [_review_row("promotion-source")],
     )
     oracle_csv = _write_verified_promotion(
-        tmp_path / "oracle_partial_v3",
+        tmp_path / "oracle_partial",
         review_csv=valid_review,
         oracle_call="reject",
     )
@@ -256,43 +247,15 @@ def test_threshold_calibration_rejects_partial_anchor_packet(
         thresholds.run_threshold_calibration(
             oracle_promotion_csv=oracle_csv,
             review_packet_csvs=[review_csv],
-            output_dir=tmp_path / "thresholds_partial_v3",
-            calibration_id="partial_v3",
-        )
-
-
-def test_threshold_calibration_rejects_mixed_packet_schemas(
-    tmp_path: Path,
-) -> None:
-    legacy_row = _review_row("legacy-v2")
-    anchor_row = _review_row("anchor-v3", anchor_local=True)
-    legacy_csv = _write_review_bundle(
-        tmp_path / "full" / "review.csv",
-        [legacy_row],
-    )
-    anchor_csv = _write_review_bundle(
-        tmp_path / "anchor" / "review.csv",
-        [anchor_row],
-    )
-    oracle_csv = _write_verified_promotion(
-        tmp_path / "oracle",
-        review_csv=legacy_csv,
-        oracle_call="reject",
-    )
-
-    with pytest.raises(ValueError, match="must use one schema_version"):
-        thresholds.run_threshold_calibration(
-            oracle_promotion_csv=oracle_csv,
-            review_packet_csvs=[legacy_csv, anchor_csv],
-            output_dir=tmp_path / "thresholds_mixed",
-            calibration_id="mixed",
+            output_dir=tmp_path / "thresholds_partial",
+            calibration_id="partial",
         )
 
 
 @pytest.mark.parametrize(
     ("field", "value"),
     [
-        ("schema_version", "pt_pattern_oracle_promotion_packet.v1"),
+        ("schema_version", "unsupported_pt_pattern_oracle_promotion_packet"),
         ("readiness_tier", "production_ready"),
         ("authority_scope", "detector_activation"),
         ("oracle_status", "pending_human_review"),
@@ -306,7 +269,7 @@ def test_threshold_calibration_rejects_mixed_packet_schemas(
         ("sample_stem", "DifferentSample"),
         ("base_mz", "501.0"),
         ("base_rt_apex_min", "11.0"),
-        ("review_packet_schema_version", packet.ANCHOR_LOCAL_SCHEMA_VERSION),
+        ("review_packet_schema_version", "unsupported_review_packet"),
         ("review_packet_readiness_tier", "production_ready"),
         ("review_packet_oracle_status", "resolved"),
         (

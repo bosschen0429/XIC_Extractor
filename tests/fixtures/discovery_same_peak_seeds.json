@@ -1,5 +1,5 @@
 {
-  "source_acquisition_id": "xic.acquisition-source.v1:5d0aa205beb264d08e2df6bd5a5c2449024cb3002a1434f82c7ea9750abb5a0f",
+  "source_acquisition_id": "xic.acquisition-source:5d0aa205beb264d08e2df6bd5a5c2449024cb3002a1434f82c7ea9750abb5a0f",
   "source": "BenignfatBC1055_DNA; exact owner-acquired MS1 XIC, identical RT/intensity arrays at both precursor queries",
   "trace": {
     "rt": [

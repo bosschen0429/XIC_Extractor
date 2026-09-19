@@ -540,7 +540,7 @@ def test_preflight_rejects_review_hash_drift_before_running_raw(
 ) -> None:
     projection, _proposal_dir = _closed_writer_proposal(tmp_path)
     review_bundle = _review_bundle(tmp_path, projection)
-    replay_path = review_bundle / "manual_review_observation_replay_v1.json"
+    replay_path = review_bundle / "manual_review_observation_replay.json"
     replay_path.write_bytes(replay_path.read_bytes() + b"\n")
     raw_dir, dll_dir, metadata_path = _operator_inputs(tmp_path)
 
@@ -647,7 +647,7 @@ def _operator_inputs(
         (raw_dir / f"{stem}.raw").write_bytes(b"")
         rows.append(
             {
-                "schema_version": "sample_metadata_v1",
+                "schema_version": "sample_metadata",
                 "sample_name": stem,
                 "raw_stem": stem,
                 "injection_order": (
@@ -715,7 +715,7 @@ def _review_bundle(tmp_path: Path, projection) -> Path:
                 "verdict": "pass",
             }
         )
-    replay_path = bundle / "manual_review_observation_replay_v1.json"
+    replay_path = bundle / "manual_review_observation_replay.json"
     replay_path.write_text(
         json.dumps(
             {
@@ -723,7 +723,7 @@ def _review_bundle(tmp_path: Path, projection) -> Path:
                 "row_count": len(replay_rows),
                 "rows": replay_rows,
                 "schema_version": (
-                    "mode_track_closed_writer_observation_replay_v1"
+                    "mode_track_closed_writer_observation_replay"
                 ),
                 "source_artifact_sha256": source_sha,
                 "validation_status": "diagnostic_only",
@@ -734,7 +734,7 @@ def _review_bundle(tmp_path: Path, projection) -> Path:
         + "\n",
         encoding="utf-8",
     )
-    (bundle / "manual_review_v1.json").write_text(
+    (bundle / "manual_review.json").write_text(
         json.dumps(
             {
                 "observation_replay_relpath": replay_path.name,
@@ -743,7 +743,7 @@ def _review_bundle(tmp_path: Path, projection) -> Path:
                 ).hexdigest(),
                 "rows": review_rows,
                 "schema_version": (
-                    "mode_track_closed_writer_manual_review_v1"
+                    "mode_track_closed_writer_manual_review"
                 ),
             },
             indent=2,

@@ -682,9 +682,9 @@ def _fixture(
                 injection_order=1,
             ),
         ),
-        scientific_input_schema_version="cid-nl-dual-projection-input-v1",
-        processing_algorithm_version="cid-nl-dual-projection-algorithm-v1",
-        processing_contract_version="cid-nl-dual-projection-contract-v1",
+        scientific_input_schema_version="cid-nl-dual-projection-input",
+        processing_algorithm_version="cid-nl-dual-projection-algorithm",
+        processing_contract_version="cid-nl-dual-projection-contract",
         scientific_inputs={
             "fixture": "no-raw-cid-nl-dual-projection",
             "target_list_snapshot": target_list_snapshot_payload(target_snapshot),

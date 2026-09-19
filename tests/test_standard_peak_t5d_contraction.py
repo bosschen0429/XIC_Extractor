@@ -7,13 +7,13 @@ from pathlib import Path
 
 _T0_PACKET_HASHES = {
     "README.md": "51153CC647E101E9D3DA54E152DF498AE954143F710F12B77EC393DDBE656734",
-    "call_cost_baseline_v1.tsv": (
+    "call_cost_baseline.tsv": (
         "0CCC6A67815048B2F472D9A1E51850B41A225164F28F83481561AE55680C954F"
     ),
-    "historical_failure_matrix_v1.tsv": (
+    "historical_failure_matrix.tsv": (
         "AB78FB65992A18F0AB38FAEEDE2D01D775DE5462243B201C9A82EBC45C5D6FD2"
     ),
-    "rule_disposition_v1.tsv": (
+    "rule_disposition.tsv": (
         "9003E0C5AA1DA5F7B4B3050A29BB77B3672E07121BE39A107F6AD6972A391BE7"
     ),
 }
@@ -24,7 +24,7 @@ def test_retired_84_cell_scope_cannot_regain_writer_authority() -> None:
     authority_manifest = json.loads(
         (
             root
-            / "docs/superpowers/schemas/productization_authority_manifest.v1.json"
+            / "docs/superpowers/schemas/productization_authority_manifest.json"
         ).read_text(encoding="utf-8")
     )
     retired_scope = "backfill_expansion_clean_target_selective_activation_84_cells"
@@ -40,7 +40,7 @@ def test_retired_84_cell_scope_cannot_regain_writer_authority() -> None:
 def test_retained_t0_packet_is_an_immutable_historical_oracle() -> None:
     packet = (
         Path(__file__).resolve().parents[1]
-        / "docs/superpowers/validation/standard_peak_shared_evidence_t0_v1"
+        / "docs/superpowers/validation/standard_peak_shared_evidence_t0"
     )
     actual_hashes = {
         path.name: hashlib.sha256(path.read_bytes()).hexdigest().upper()
@@ -58,8 +58,8 @@ def test_sp001_through_sp055_have_one_final_t5d_disposition() -> None:
     root = Path(__file__).resolve().parents[1]
     manifest = (
         root
-        / "docs/superpowers/validation/standard_peak_t5d_contraction_v1"
-        / "capability_disposition_v1.tsv"
+        / "docs/superpowers/validation/standard_peak_t5d_contraction"
+        / "capability_disposition.tsv"
     )
     with manifest.open(encoding="utf-8", newline="") as handle:
         rows = tuple(csv.DictReader(handle, delimiter="\t"))

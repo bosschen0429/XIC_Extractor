@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING
 from xic_extractor.alignment.matrix import AlignedCell
 from xic_extractor.alignment.production_decisions import (
     OWNER_BACKFILL_AUTHORITY_CELL_ID_PREFIX,
-    ProductionCellDecisionProjectionV2,
+    ProductionCellDecisionProjection,
 )
 from xic_extractor.peak_detection.physical_peak_evaluation import (
     validate_bounded_physical_peak_evaluation,
@@ -35,18 +35,18 @@ if TYPE_CHECKING:
 
 
 SELECTED_INTEGRATION_AUTHORITY_SCHEMA_VERSION = (
-    "selected_integration_authority_projection_v1"
+    "selected_integration_authority_projection"
 )
 OWNER_BACKFILL_AUTHORITY_CELL_SCHEMA_VERSION = (
-    "owner_backfill_authority_cell_projection_v2"
+    "owner_backfill_authority_cell_projection"
 )
-OWNER_BACKFILL_CELL_PROJECTION_SCHEMA_VERSION = "owner_backfill_cell_projection_v2"
+OWNER_BACKFILL_CELL_PROJECTION_SCHEMA_VERSION = "owner_backfill_cell_projection"
 OWNER_BACKFILL_PROVENANCE_WRITER_SCHEMA_VERSION = (
-    "alignment-owner-backfill-peak-fact-provenance-writer-v2"
+    "alignment-owner-backfill-peak-fact-provenance-writer"
 )
 
-SELECTED_INTEGRATION_AUTHORITY_ID_PREFIX = "selected-integration-authority.v1:"
-OWNER_BACKFILL_CELL_PROJECTION_ID_PREFIX = "owner-backfill-cell-projection.v2:"
+SELECTED_INTEGRATION_AUTHORITY_ID_PREFIX = "selected-integration-authority:"
+OWNER_BACKFILL_CELL_PROJECTION_ID_PREFIX = "owner-backfill-cell-projection:"
 
 _STAGE_PROJECTION_MINT_TOKEN = object()
 
@@ -424,7 +424,7 @@ class OwnerBackfillPeakFactObservation:
 
 
 @dataclass(frozen=True, slots=True)
-class SelectedIntegrationAuthorityProjectionV1:
+class SelectedIntegrationAuthorityProjection:
     rt_left_min: float
     rt_apex_min: float
     rt_right_min: float
@@ -457,7 +457,7 @@ class SelectedIntegrationAuthorityProjectionV1:
 
 
 @dataclass(frozen=True, slots=True)
-class OwnerBackfillAuthorityCellProjectionV2:
+class OwnerBackfillAuthorityCellProjection:
     work_unit_key: str
     acquisition_source_id: str
     profile_id: str
@@ -540,7 +540,7 @@ class OwnerBackfillAuthorityCellProjectionV2:
 
 
 @dataclass(frozen=True, slots=True)
-class OwnerBackfillCellProjectionV2:
+class OwnerBackfillCellProjection:
     group_hypothesis_id: str
     public_family_id: str
     sample_stem: str
@@ -590,13 +590,13 @@ class OwnerBackfillCellProjectionV2:
 
 def selected_integration_authority_projection(
     integration: IntegrationResult | None,
-) -> SelectedIntegrationAuthorityProjectionV1:
+) -> SelectedIntegrationAuthorityProjection:
     if integration is None:
         raise ValueError("selected integration is required")
     raw_scan_indices = tuple(getattr(integration, "raw_scan_indices", ()))
     if raw_scan_indices:
         raise ValueError("bounded selected integration must omit raw scan indices")
-    return SelectedIntegrationAuthorityProjectionV1(
+    return SelectedIntegrationAuthorityProjection(
         rt_left_min=integration.rt_left_min,
         rt_apex_min=integration.rt_apex_min,
         rt_right_min=integration.rt_right_min,
@@ -680,7 +680,7 @@ def owner_backfill_authority_cell_projection(
     selected_fact_content_id: str,
     physical_answer_id: str,
     physical_segment_id: str,
-) -> OwnerBackfillAuthorityCellProjectionV2:
+) -> OwnerBackfillAuthorityCellProjection:
     if not isinstance(stage, OwnerBackfillPeakFactStageProjection):
         raise TypeError("stage must be owner-minted")
     if not isinstance(cell, AlignedCell):
@@ -704,7 +704,7 @@ def owner_backfill_authority_cell_projection(
     )
     if missing:
         raise ValueError(f"live Alignment cell lacks authority fields: {missing!r}")
-    return OwnerBackfillAuthorityCellProjectionV2(
+    return OwnerBackfillAuthorityCellProjection(
         work_unit_key=stage.work_unit_key,
         acquisition_source_id=stage.acquisition_source_id,
         profile_id=profile_id,
@@ -814,9 +814,9 @@ def owner_backfill_authority_cell_projection(
 
 def owner_backfill_cell_projection(
     *,
-    authority_cell: OwnerBackfillAuthorityCellProjectionV2,
-    production_decision: ProductionCellDecisionProjectionV2,
-) -> OwnerBackfillCellProjectionV2:
+    authority_cell: OwnerBackfillAuthorityCellProjection,
+    production_decision: ProductionCellDecisionProjection,
+) -> OwnerBackfillCellProjection:
     if (
         production_decision.owner_backfill_cell_content_id
         != authority_cell.owner_backfill_cell_content_id
@@ -833,7 +833,7 @@ def owner_backfill_cell_projection(
         or production_decision.raw_status != authority_cell.status
     ):
         raise ValueError("production decision crosses its authority cell")
-    return OwnerBackfillCellProjectionV2(
+    return OwnerBackfillCellProjection(
         group_hypothesis_id=authority_cell.group_hypothesis_id,
         public_family_id=authority_cell.public_family_id,
         sample_stem=authority_cell.sample_stem,
@@ -864,11 +864,11 @@ __all__ = [
     "SELECTED_INTEGRATION_AUTHORITY_FIELDS",
     "SELECTED_INTEGRATION_AUTHORITY_ID_PREFIX",
     "SELECTED_INTEGRATION_AUTHORITY_SCHEMA_VERSION",
-    "OwnerBackfillAuthorityCellProjectionV2",
-    "OwnerBackfillCellProjectionV2",
+    "OwnerBackfillAuthorityCellProjection",
+    "OwnerBackfillCellProjection",
     "OwnerBackfillPeakFactObservation",
     "OwnerBackfillPeakFactStageProjection",
-    "SelectedIntegrationAuthorityProjectionV1",
+    "SelectedIntegrationAuthorityProjection",
     "_STAGE_PROJECTION_MINT_TOKEN",
     "_authority_id",
     "_authority_value",

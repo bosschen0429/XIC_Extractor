@@ -11,7 +11,7 @@ MISSING_ASLS_PRIMARY_AREA = MISSING_MS1_MORPHOLOGY_AREA
 ASLS_PRIMARY_MATRIX_AREA_SOURCE = "asls_baseline_corrected"
 MS1_MORPHOLOGY_PRIMARY_MATRIX_AREA_SOURCE = MS1_MORPHOLOGY_AREA_SOURCE
 CANONICAL_PHYSICAL_PRIMARY_MATRIX_AREA_SOURCE = (
-    "trapezoid_counts_seconds_on_canonical_signal_v1"
+    "trapezoid_counts_seconds_on_canonical_signal"
 )
 PRIMARY_MATRIX_AREA_SOURCES = frozenset(
     {

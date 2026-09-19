@@ -11,7 +11,7 @@ from typing import Literal, cast, final
 
 from xic_extractor.alignment.stage_policy_matrix import _canonical_semantic_bytes
 
-QUANTITATIVE_PROJECTION_AUTHORITY_FIELDS_V1 = (
+QUANTITATIVE_PROJECTION_AUTHORITY_FIELDS = (
     "schema_version",
     "authority_scope",
     "policy_id",
@@ -33,7 +33,7 @@ QUANTITATIVE_PROJECTION_AUTHORITY_FIELDS_V1 = (
     "authority_id",
 )
 
-QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_FIELDS_V1 = (
+QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_FIELDS = (
     "schema_version",
     "effect_id",
     "status",
@@ -46,37 +46,37 @@ QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_FIELDS_V1 = (
     "manifest_content_id",
 )
 
-_AUTHORITY_ID_PREFIX = "quantitative-projection-authority.v1:"
+_AUTHORITY_ID_PREFIX = "quantitative-projection-authority:"
 _AUTHORITY_RESOURCE_PACKAGE = "xic_extractor.alignment"
 _AUTHORITY_RESOURCE_DIRECTORY = "data"
-_AUTHORITY_RESOURCE_NAME = "quantitative_projection_authority_v1.json"
+_AUTHORITY_RESOURCE_NAME = "quantitative_projection_authority.json"
 _AUTHORITY_MINT_TOKEN = object()
 _MANIFEST_MINT_TOKEN = object()
 
-_MANIFEST_SCHEMA_VERSION = "quantitative_projection_authority_manifest_v1"
-_MANIFEST_EFFECT_ID = "untargeted_owner_backfill_canonical_quantitative_projection_v1"
+_MANIFEST_SCHEMA_VERSION = "quantitative_projection_authority_manifest"
+_MANIFEST_EFFECT_ID = "untargeted_owner_backfill_canonical_quantitative_projection"
 _PACKAGE_AUTHORITY_ARTIFACT = (
-    "xic_extractor/alignment/data/quantitative_projection_authority_v1.json"
+    "xic_extractor/alignment/data/quantitative_projection_authority.json"
 )
 _ACTIVATION_SUMMARY_ARTIFACT = (
     "docs/superpowers/validation/"
-    "untargeted_owner_backfill_canonical_quantitative_activation_v1/"
+    "untargeted_owner_backfill_canonical_quantitative_activation/"
     "activation_summary.json"
 )
-_MANIFEST_CONTENT_ID_PREFIX = "quantitative-projection-authority-manifest.v1:"
+_MANIFEST_CONTENT_ID_PREFIX = "quantitative-projection-authority-manifest:"
 
 _EXACT_TEXT_FIELDS = {
-    "schema_version": "quantitative_projection_authority_v1",
+    "schema_version": "quantitative_projection_authority",
     "authority_scope": (
-        "untargeted_owner_backfill_canonical_quantitative_projection_v1"
+        "untargeted_owner_backfill_canonical_quantitative_projection"
     ),
-    "policy_id": "activation-base-owner-backfill-policy.v1",
+    "policy_id": "activation-base-owner-backfill-policy",
     "effect": "reproject_existing_matrix_value_on_existing_authorized_cells",
     "consumer_id": (
         "xic_extractor.alignment.pipeline.run_alignment:production-equivalent"
     ),
     "signal_processing_profile_id": (
-        "signal-profile.v1:"
+        "signal-profile:"
         "bcefd76d05bc26a0ec9f333fdb76427ccb2133c1946f5ec711916e85efc06de2"
     ),
 }
@@ -111,7 +111,7 @@ class QuantitativeProjectionAuthorityHoldError(QuantitativeProjectionAuthorityEr
 
 @final
 @dataclass(frozen=True, slots=True)
-class QuantitativeProjectionAuthorityV1:
+class QuantitativeProjectionAuthority:
     """Immutable authority content minted only by this package-data owner."""
 
     schema_version: str
@@ -136,7 +136,7 @@ class QuantitativeProjectionAuthorityV1:
     _mint_token: InitVar[object] = field(kw_only=True, repr=False)
 
     def __init_subclass__(cls, **kwargs: object) -> None:
-        raise TypeError("QuantitativeProjectionAuthorityV1 is final")
+        raise TypeError("QuantitativeProjectionAuthority is final")
 
     def __post_init__(self, _mint_token: object) -> None:
         if _mint_token is not _AUTHORITY_MINT_TOKEN:
@@ -147,7 +147,7 @@ class QuantitativeProjectionAuthorityV1:
 
 @final
 @dataclass(frozen=True, slots=True)
-class QuantitativeProjectionAuthorityManifestV1:
+class QuantitativeProjectionAuthorityManifest:
     """Immutable dependent-effect manifest minted only by this package owner."""
 
     schema_version: str
@@ -163,7 +163,7 @@ class QuantitativeProjectionAuthorityManifestV1:
     _mint_token: InitVar[object] = field(kw_only=True, repr=False)
 
     def __init_subclass__(cls, **kwargs: object) -> None:
-        raise TypeError("QuantitativeProjectionAuthorityManifestV1 is final")
+        raise TypeError("QuantitativeProjectionAuthorityManifest is final")
 
     def __post_init__(self, _mint_token: object) -> None:
         if _mint_token is not _MANIFEST_MINT_TOKEN:
@@ -173,7 +173,7 @@ class QuantitativeProjectionAuthorityManifestV1:
 
 
 def load_quantitative_projection_authority_for_diagnostic() -> (
-    QuantitativeProjectionAuthorityV1
+    QuantitativeProjectionAuthority
 ):
     """Strictly load HOLD or ACTIVE package content without product authority."""
 
@@ -182,7 +182,7 @@ def load_quantitative_projection_authority_for_diagnostic() -> (
 
 def rehydrate_quantitative_projection_authority_manifest(
     payload: object,
-) -> QuantitativeProjectionAuthorityManifestV1:
+) -> QuantitativeProjectionAuthorityManifest:
     """Rehydrate one exact dependent-effect HOLD manifest from untrusted content."""
 
     if type(payload) is not dict:
@@ -190,7 +190,7 @@ def rehydrate_quantitative_projection_authority_manifest(
             "quantitative projection authority manifest must be one ordered mapping"
         )
     content = cast(dict[str, object], payload)
-    if tuple(content) != QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_FIELDS_V1:
+    if tuple(content) != QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_FIELDS:
         raise QuantitativeProjectionAuthorityError(
             "quantitative projection authority manifest fields are missing, "
             "extra, or reordered"
@@ -233,11 +233,11 @@ def rehydrate_quantitative_projection_authority_manifest(
 
 
 def render_quantitative_projection_authority_manifest_bytes(
-    manifest: QuantitativeProjectionAuthorityManifestV1,
+    manifest: QuantitativeProjectionAuthorityManifest,
 ) -> bytes:
     """Render one owner-minted manifest as exact canonical UTF-8/LF bytes."""
 
-    if type(manifest) is not QuantitativeProjectionAuthorityManifestV1:
+    if type(manifest) is not QuantitativeProjectionAuthorityManifest:
         raise QuantitativeProjectionAuthorityError(
             "manifest renderer requires an owner-minted exact manifest"
         )
@@ -257,7 +257,7 @@ def render_quantitative_projection_authority_manifest_bytes(
     return (
         _canonical_projection_bytes(
             content,
-            QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_FIELDS_V1,
+            QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_FIELDS,
         )
         + b"\n"
     )
@@ -267,7 +267,7 @@ def require_product_quantitative_projection_authority(
     *,
     consumer_id: str,
     signal_processing_profile_id: str,
-) -> QuantitativeProjectionAuthorityV1:
+) -> QuantitativeProjectionAuthority:
     """Fail closed unless the package can authorize the exact product ingress."""
 
     if type(consumer_id) is not str:
@@ -331,7 +331,7 @@ def _read_package_authority_bytes() -> bytes:
 
 def _rehydrate_quantitative_projection_authority(
     raw: bytes,
-) -> QuantitativeProjectionAuthorityV1:
+) -> QuantitativeProjectionAuthority:
     if type(raw) is not bytes:
         raise QuantitativeProjectionAuthorityError(
             "package authority content must be bytes"
@@ -361,7 +361,7 @@ def _rehydrate_quantitative_projection_authority(
     content = cast(dict[str, object], payload)
 
     actual_fields = tuple(content)
-    if actual_fields != QUANTITATIVE_PROJECTION_AUTHORITY_FIELDS_V1:
+    if actual_fields != QUANTITATIVE_PROJECTION_AUTHORITY_FIELDS:
         raise QuantitativeProjectionAuthorityError(
             "package authority fields are missing, extra, or reordered"
         )
@@ -520,8 +520,8 @@ def _validate_manifest_exact_content(content: dict[str, object]) -> None:
 
 def _mint_quantitative_projection_authority(
     content: dict[str, object],
-) -> QuantitativeProjectionAuthorityV1:
-    return QuantitativeProjectionAuthorityV1(
+) -> QuantitativeProjectionAuthority:
+    return QuantitativeProjectionAuthority(
         schema_version=cast(str, content["schema_version"]),
         authority_scope=cast(str, content["authority_scope"]),
         policy_id=cast(str, content["policy_id"]),
@@ -555,8 +555,8 @@ def _mint_quantitative_projection_authority(
 
 def _mint_quantitative_projection_authority_manifest(
     content: dict[str, object],
-) -> QuantitativeProjectionAuthorityManifestV1:
-    return QuantitativeProjectionAuthorityManifestV1(
+) -> QuantitativeProjectionAuthorityManifest:
+    return QuantitativeProjectionAuthorityManifest(
         schema_version=cast(str, content["schema_version"]),
         effect_id=cast(str, content["effect_id"]),
         status=cast(Literal["HOLD_PENDING_VALIDATION", "ACTIVE"], content["status"]),
@@ -574,7 +574,7 @@ def _mint_quantitative_projection_authority_manifest(
 
 
 def _manifest_content_from_value(
-    manifest: QuantitativeProjectionAuthorityManifestV1,
+    manifest: QuantitativeProjectionAuthorityManifest,
 ) -> dict[str, object]:
     scope_ids = manifest.allowed_registered_writer_scope_ids
     if type(scope_ids) is not tuple:
@@ -599,7 +599,7 @@ def _authority_id_from_content(content: dict[str, object]) -> str:
     digest = hashlib.sha256(
         _canonical_projection_bytes(
             content,
-            QUANTITATIVE_PROJECTION_AUTHORITY_FIELDS_V1[:-1],
+            QUANTITATIVE_PROJECTION_AUTHORITY_FIELDS[:-1],
         )
     ).hexdigest()
     return f"{_AUTHORITY_ID_PREFIX}{digest}"
@@ -609,7 +609,7 @@ def _canonical_package_bytes(content: dict[str, object]) -> bytes:
     return (
         _canonical_projection_bytes(
             content,
-            QUANTITATIVE_PROJECTION_AUTHORITY_FIELDS_V1,
+            QUANTITATIVE_PROJECTION_AUTHORITY_FIELDS,
         )
         + b"\n"
     )
@@ -619,7 +619,7 @@ def _manifest_content_id_from_content(content: dict[str, object]) -> str:
     digest = hashlib.sha256(
         _canonical_projection_bytes(
             content,
-            QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_FIELDS_V1[:-1],
+            QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_FIELDS[:-1],
         )
     ).hexdigest()
     return f"{_MANIFEST_CONTENT_ID_PREFIX}{digest}"
@@ -666,12 +666,12 @@ def _reject_nonstandard_json_constant(value: str) -> object:
 
 
 __all__ = (
-    "QUANTITATIVE_PROJECTION_AUTHORITY_FIELDS_V1",
-    "QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_FIELDS_V1",
+    "QUANTITATIVE_PROJECTION_AUTHORITY_FIELDS",
+    "QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_FIELDS",
     "QuantitativeProjectionAuthorityError",
     "QuantitativeProjectionAuthorityHoldError",
-    "QuantitativeProjectionAuthorityManifestV1",
-    "QuantitativeProjectionAuthorityV1",
+    "QuantitativeProjectionAuthorityManifest",
+    "QuantitativeProjectionAuthority",
     "load_quantitative_projection_authority_for_diagnostic",
     "rehydrate_quantitative_projection_authority_manifest",
     "render_quantitative_projection_authority_manifest_bytes",

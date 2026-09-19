@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.matrix_identity_fixtures import legacy_matrix_identity_row
+from tests.matrix_identity_fixtures import current_matrix_identity_row
 from xic_extractor.diagnostics import (
     backfill_peakhypothesis_activation_trial as trial,
 )
@@ -221,12 +221,13 @@ def _write_artifact_dir(tmp_path: Path) -> Path:
     artifact_dir.mkdir()
     _write_tsv(
         artifact_dir / "alignment_matrix.tsv",
-        [{"Mz": "100", "RT": "10.0", "QC1": "", "QC2": "1234"}],
+        [{"Mz": "100.0000", "RT": "10.0", "QC1": "", "QC2": "1234"}],
     )
     _write_tsv(
         artifact_dir / "alignment_matrix_identity.tsv",
         [
-            legacy_matrix_identity_row(
+            current_matrix_identity_row(
+                sample_values={"QC1": "", "QC2": "1234"},
                 index=1,
                 mz="100",
                 rt="10.0",
@@ -285,7 +286,7 @@ def _normal_decision(
     same_peak_source: str = "manual_review",
 ) -> dict[str, str]:
     return {
-        "schema_version": "backfill_peakhypothesis_normal_peak_decision_v1",
+        "schema_version": "backfill_peakhypothesis_normal_peak_decision",
         "source_run_id": "test",
         "peak_hypothesis_id": source_peak_hypothesis_id,
         "activation_unit_scope": "peak_hypothesis",
@@ -330,7 +331,7 @@ def _manual_verdict(
     verdict: str = "same_peak_supported",
 ) -> dict[str, str]:
     return {
-        "schema_version": "backfill_peakhypothesis_full_cohort_manual_verdict_v1",
+        "schema_version": "backfill_peakhypothesis_full_cohort_manual_verdict",
         "source_run_id": "test",
         "review_item_id": "HYPREV0001",
         "sample_stem": sample_stem,

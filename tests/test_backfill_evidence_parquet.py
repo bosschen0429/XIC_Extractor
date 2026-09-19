@@ -165,7 +165,7 @@ def _sources(
     metadata.write_text(
         json.dumps(
             {
-                "schema_version": "alignment-results-v3",
+                "schema_version": "alignment-results",
                 "backfill_scope": "production-equivalent",
                 "skipped_evidence_predicate_version": PREDICATE_VERSION,
             },

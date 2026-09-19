@@ -22,7 +22,7 @@ from xic_extractor.alignment.quant_matrix_version import (
 
 ROOT = Path(__file__).resolve().parents[1]
 QUANT_MATRIX_VERSION_SCHEMA = (
-    ROOT / "docs/superpowers/schemas/quant_matrix_version_schema.v1.json"
+    ROOT / "docs/superpowers/schemas/quant_matrix_version_schema.json"
 )
 
 
@@ -72,7 +72,7 @@ def test_quant_matrix_version_writes_accepted_backfill_with_provenance(
     summary_rows = _read_tsv(outputs["row_summary"])
     assert summary_rows == [
         {
-            "schema_version": "quant_matrix_row_summary_v1",
+            "schema_version": "quant_matrix_row_summary",
             "peak_hypothesis_id": "PH001",
             "source_feature_family_ids": "FAM001",
             "detected_count": "1",
@@ -279,7 +279,7 @@ def _write_activation_inputs(
     if expected_diff_rows is None:
         expected_diff_rows = [
             {
-                "schema_version": "quant_matrix_version_expected_diff_v1",
+                "schema_version": "quant_matrix_version_expected_diff",
                 "peak_hypothesis_id": "PH001",
                 "sample_stem": "SampleB",
                 "baseline_value": "",
@@ -299,7 +299,7 @@ def _write_activation_inputs(
 
 def _acceptance_row(source: Path, doublet: Path) -> dict[str, str]:
     return {
-        "schema_version": "production_acceptance_manifest_v1",
+        "schema_version": "production_acceptance_manifest",
         "peak_hypothesis_id": "PH001",
         "sample_stem": "SampleB",
         "feature_family_id": "FAM001",
@@ -332,7 +332,7 @@ def _acceptance_row(source: Path, doublet: Path) -> dict[str, str]:
         "source_artifact_sha256": _sha256(source),
         "source_row_sha256": "A" * 64,
         "manifest_sha256": "",
-        "acceptance_contract_version": "production_acceptance_manifest_contract_v1",
+        "acceptance_contract_version": "production_acceptance_manifest_contract",
     }
 
 

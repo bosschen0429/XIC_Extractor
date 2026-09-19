@@ -175,10 +175,10 @@ def test_bounded_partition_keeps_alignment_workset_atomic(
         max_partition_jobs=sample_count * 2,
     )
 
-    assert tuple(partition.payload for partition in adapter.partitions) == (
-        subjects[:2],
-        subjects[2:],
-    )
+    assert {
+        frozenset(subject.precursor_mz for subject in partition.payload)
+        for partition in adapter.partitions
+    } == {frozenset({500.0, 500.015}), frozenset({500.05})}
     with pytest.raises(
         ValueError,
         match="cannot contain one alignment subject workset",
@@ -217,8 +217,8 @@ def test_bounded_partition_real_entry_mints_interleaved_worksets_canonically(
                 for precursor_mz, neutral_loss_da in (
                     (300.0, 116.0474),
                     (300.005, 116.0474),
-                    (300.001, 114.0),
-                    (300.006, 114.0),
+                    (300.003, 114.0),
+                    (300.004, 114.0),
                 )
             ),
             key=lambda subject: subject.method_subject_id,

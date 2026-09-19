@@ -735,7 +735,7 @@ backfill_expansion_productization = "clean-target-selective"
                 output_dir
                 / "backfill_expansion_productization_preset"
                 / "docs"
-                / "backfill_expansion_clean_target_selective_product_activation_v1"
+                / "backfill_expansion_clean_target_selective_product_activation"
                 / (
                     "backfill_expansion_clean_target_selective_product_activation_"
                     "summary.json"
@@ -1096,7 +1096,7 @@ def test_run_alignment_cli_writes_live_timing_json(
 
     assert code == 0
     payload = json.loads(live_path.read_text(encoding="utf-8"))
-    assert payload["schema_version"] == "timing.live.v2"
+    assert payload["schema_version"] == "timing.live"
     assert payload["recent_records"][0]["stage"] == "alignment.run_config"
     assert "records" not in payload
     assert "Timing live JSON:" in capsys.readouterr().out

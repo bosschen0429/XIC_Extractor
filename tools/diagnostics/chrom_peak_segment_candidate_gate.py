@@ -9,7 +9,7 @@ from typing import Any, Sequence
 
 from tools.diagnostics.diagnostic_io import write_tsv
 
-GATE_VERSION = "chrom_peak_segment_candidate_gate_v1"
+GATE_VERSION = "chrom_peak_segment_candidate_gate"
 CHROM_SOURCE = "chrom_peak_segment"
 KEY_FIELDS = ("sample_name", "target_label", "role")
 _MANUAL_BOUNDARY_EXTENSION_ACTIONS = {

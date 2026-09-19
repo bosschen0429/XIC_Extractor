@@ -20,7 +20,7 @@ from xic_inspector.selection.query import filter_by_attention, filter_by_query
 from xic_inspector.selection.sampler import (
     SAMPLING_ALGORITHM,
     review_case_key,
-    sample_cross_sample_sha256_v2,
+    sample_cross_sample_sha256,
 )
 from xic_inspector.sources import (
     EvidenceLocator,
@@ -31,7 +31,7 @@ from xic_inspector.sources import (
 )
 
 StrategyKind = Literal["sample", "attention", "query"]
-CapabilityKind = Literal["retained_curves_v1", "metadata_only"]
+CapabilityKind = Literal["retained_curves", "metadata_only"]
 ProgressStage = Literal["metadata", "selection", "curves", "render", "write"]
 
 
@@ -347,7 +347,7 @@ def generate_report(
     missing_rt_count = 0
 
     if selection.strategy == "sample":
-        selected_items = sample_cross_sample_sha256_v2(
+        selected_items = sample_cross_sample_sha256(
             eligible_items, limit=selection.limit, seed=selection.seed
         )
         matched_count = eligible_count

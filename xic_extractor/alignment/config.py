@@ -127,9 +127,9 @@ class AlignmentConfig:
             self.identity_rt_candidate_window_sec,
         )
         if self.rt_unit != "min":
-            raise ValueError('rt_unit must be "min" in v1')
+            raise ValueError('rt_unit must be "min"')
         if self.fragmentation_model != "cid_nl":
-            raise ValueError('fragmentation_model must be "cid_nl" in v1')
+            raise ValueError('fragmentation_model must be "cid_nl"')
 
 
 def _require_positive(name: str, value: float) -> None:

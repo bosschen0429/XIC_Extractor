@@ -502,7 +502,7 @@ def _unsuccessful_targeted_runtime(
             resource_key="process:targeted:method",
             worker_key="worker:targeted:method",
             source_reference="no-raw:targeted:method",
-            compatibility_token="targeted-delivery-test:v1",
+            compatibility_token="targeted-delivery-test",
         )
         reservations = (reservation,)
         resource_reports = (
@@ -548,7 +548,7 @@ def _base_runtime(
     return start_runtime_attempt(
         attempt=attempt,
         work_unit_keys=(work_unit_key,),
-        owner_completeness_attestation="targeted-delivery-test:v1",
+        owner_completeness_attestation="targeted-delivery-test",
         cancellation_request=(
             RuntimeCancellationRequest(attempt=attempt) if cancelled else None
         ),

@@ -11,7 +11,7 @@ from xic_extractor.alignment.shared_peak_identity_explanation.oracle import (
     load_manual_oracle,
 )
 
-ORACLE = Path("docs/superpowers/fixtures/shared_peak_identity_manual_oracle_v1.tsv")
+ORACLE = Path("docs/superpowers/fixtures/shared_peak_identity_manual_oracle.tsv")
 
 
 def test_classifier_covers_seed_vocabulary_without_unexplained_rows() -> None:

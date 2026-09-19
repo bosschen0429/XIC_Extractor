@@ -11,35 +11,12 @@ from xic_extractor.peak_detection.signal_processing_profile import (
 )
 
 PhysicalPeakState = Literal["available", "unavailable", "failed"]
-LEGACY_PHYSICAL_PEAK_SELECTION_POLICY = "closed_segment_contains_query_v1"
-LEGACY_PHYSICAL_PEAK_POINT_POLICY = "baseline_peak_contains_query_v2"
-LEGACY_PHYSICAL_PEAK_WINDOW_POLICY = "unique_baseline_peak_in_context_v1"
-LEGACY_ORIGINAL_SUPPORT_POINT_POLICY = "baseline_peak_contains_query_v3"
-LEGACY_ORIGINAL_SUPPORT_WINDOW_POLICY = "unique_baseline_peak_in_context_v2"
-LEGACY_ORIGINAL_CONTINUITY_POINT_POLICY = "baseline_peak_contains_query_v4"
-LEGACY_ORIGINAL_CONTINUITY_WINDOW_POLICY = "unique_baseline_peak_in_context_v3"
-LEGACY_ORIGINAL_EDGE_RETURN_POINT_POLICY = "baseline_peak_contains_query_v5"
-LEGACY_ORIGINAL_EDGE_RETURN_WINDOW_POLICY = "unique_baseline_peak_in_context_v4"
-LEGACY_ORIGINAL_FRAGMENTATION_POINT_POLICY = "baseline_peak_contains_query_v6"
-LEGACY_ORIGINAL_FRAGMENTATION_WINDOW_POLICY = "unique_baseline_peak_in_context_v5"
-PHYSICAL_PEAK_POINT_POLICY = "baseline_peak_contains_query_v7"
-PHYSICAL_PEAK_WINDOW_POLICY = "unique_baseline_peak_in_context_v6"
-DISCOVERY_PHYSICAL_PEAK_POINT_POLICY = (
-    "background_qualified_peak_contains_query_v1"
-)
+PHYSICAL_SEGMENT_UNIVERSE_SCHEMA = "physical_segment_universe"
+PHYSICAL_PEAK_POINT_POLICY = "baseline_peak_contains_query"
+PHYSICAL_PEAK_WINDOW_POLICY = "unique_baseline_peak_in_context"
+DISCOVERY_PHYSICAL_PEAK_POINT_POLICY = "background_qualified_peak_contains_query"
 _PHYSICAL_PEAK_SELECTION_POLICIES = frozenset(
     {
-        LEGACY_PHYSICAL_PEAK_SELECTION_POLICY,
-        LEGACY_PHYSICAL_PEAK_POINT_POLICY,
-        LEGACY_PHYSICAL_PEAK_WINDOW_POLICY,
-        LEGACY_ORIGINAL_SUPPORT_POINT_POLICY,
-        LEGACY_ORIGINAL_SUPPORT_WINDOW_POLICY,
-        LEGACY_ORIGINAL_CONTINUITY_POINT_POLICY,
-        LEGACY_ORIGINAL_CONTINUITY_WINDOW_POLICY,
-        LEGACY_ORIGINAL_EDGE_RETURN_POINT_POLICY,
-        LEGACY_ORIGINAL_EDGE_RETURN_WINDOW_POLICY,
-        LEGACY_ORIGINAL_FRAGMENTATION_POINT_POLICY,
-        LEGACY_ORIGINAL_FRAGMENTATION_WINDOW_POLICY,
         PHYSICAL_PEAK_POINT_POLICY,
         PHYSICAL_PEAK_WINDOW_POLICY,
         DISCOVERY_PHYSICAL_PEAK_POINT_POLICY,

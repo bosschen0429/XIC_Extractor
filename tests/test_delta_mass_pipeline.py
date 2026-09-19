@@ -93,7 +93,7 @@ def _write_external_feature_table(path: Path, rows: list[dict[str, object]]) -> 
                 "external_tool": "MZmine",
                 "external_run_id": "run1",
                 "external_tool_version": "4.9.14",
-                "external_adapter_version": "contract_v1",
+                "external_adapter_version": "contract",
                 "mz_tolerance_unit": "ppm",
                 "rt_tolerance_unit": "minutes",
                 "duplicate_feature_policy": "source_unique",
@@ -513,8 +513,8 @@ def test_composite_local_detector_identity_uses_sample_local_mz_rt_fallback(
     "source",
     (
         "local_ms1_feature",
-        "external_feature_table:MZmine:mzmine_wide_area_proxy_v1",
-        "external_feature_table:OpenMS:contract_v1",
+        "external_feature_table:MZmine:mzmine_wide_area_proxy",
+        "external_feature_table:OpenMS:contract",
     ),
 )
 def test_composite_detector_local_matching_string_cannot_bypass_mz_rt_fallback(
@@ -1010,7 +1010,7 @@ def test_run_pt_pattern_discovery_applies_optional_trace_summary_evidence(
     )
     assert evidence_rows[0]["shifted_only_position_labels"] == "none"
     assert evidence_rows[0]["trace_schema_version"] == (
-        "pt_pattern_trace_diagnosis.v4"
+        "pt_pattern_trace_diagnosis"
     )
     assert evidence_rows[0]["trace_artifact_role"] == "full_context"
     assert evidence_rows[0]["trace_extraction_sha256"]

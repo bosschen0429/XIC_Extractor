@@ -20,9 +20,9 @@ known, where the evidence lives, and when a rerun is justified.
 This file is also not the live productization tier board. Product maturity tier,
 active lane, current writer counts, promotion-packet status, and Backfill
 authority scopes are owned by the productization status index
-`docs/superpowers/validation/productization_status_index_v1.tsv`, the authority
+`docs/superpowers/validation/productization_status_index.tsv`, the authority
 manifest
-`docs/superpowers/schemas/productization_authority_manifest.v1.json`, and the
+`docs/superpowers/schemas/productization_authority_manifest.json`, and the
 promotion contract `docs/agent/product-validation-contract.md`. When this ledger
 cites a historical validation note, treat it as diagnostic/rerun memory unless
 a current structured authority artifact still promotes the same claim. The
@@ -56,9 +56,9 @@ dated productization control-plane path is compatibility lookup only.
 
 | Purpose | Stable path |
 | --- | --- |
-| Accepted 8RAW discovery input (v2) | `local_validation_artifacts/discovery/accepted_v2/8raw/discovery_batch_index.csv` |
-| Accepted 85RAW discovery input | none; a diagnostic v2 run exists, but full-cohort Alignment remains incomplete (see the 2026-09-09 resource-pressure result below). |
-| Retired v1 discovery inputs | `local_validation_artifacts/discovery/accepted_p8b/{8raw,85raw}/`; `scripts.run_alignment` rejects them with `discovery_batch_index_v2 owner closure is required` |
+| Accepted 8RAW discovery input (v2) | `local_validation_artifacts/discovery/accepted/8raw/discovery_batch_index.csv` |
+| Accepted 85RAW discovery input | none; a diagnostic run exists, but full-cohort Alignment remains incomplete (see the 2026-09-09 resource-pressure result below). |
+| Retired discovery inputs | `local_validation_artifacts/discovery/accepted_p8b/{8raw,85raw}/`; `scripts.run_alignment` rejects them with `discovery_batch_index owner closure is required` |
 | Targeted GT 8RAW default workbook | `local_validation_artifacts/targeted_gt_workbooks/8raw/xic_results_20260512_1151.xlsx`, SHA256 `788892188C8419C82DC4618C98E160B90AC6C44C38676C53609248AA529889F7` |
 | RAW root | `$env:XIC_RAW_ROOT` |
 | Thermo DLL dir | `$env:THERMO_RAWFILE_READER_DLL_DIR` |
@@ -173,7 +173,7 @@ dated productization control-plane path is compatibility lookup only.
 - Formal timing: runtime 438.768 seconds; explanation writer 65.021 seconds.
   The non-overlapping recorded stages total 506.528 seconds; remaining wall time
   is outside those spans and must not be silently attributed to RAW acquisition.
-- Historical `full8-v3` took 2,279.765 supervised seconds, but its overlapping
+- Historical `full8` took 2,279.765 supervised seconds, but its overlapping
   replay, worker setting, code changes and uncontrolled cache prevent an isolated
   speedup claim. The current one-run result does not characterize timing noise.
 - Locator: `output/cid-nl-bounded-runtime/full8-source-reuse-w4/report.md`, with
@@ -255,7 +255,7 @@ source-qualified observations, not a controlled end-to-end RAW speed ratio.
 Peak sampled private memory for the final replay was 2,702,323,712 bytes.
 
 Evidence locators are `output/cid-nl-bounded-runtime/correction-report.md`,
-`stored-replay-v1/receipt.json`, and `stored-replay-final/receipt.json` beneath
+`stored-replay/receipt.json`, and `stored-replay-final/receipt.json` beneath
 that task output directory. They are local diagnostic receipts, not shipped
 fixtures or a public spool-reopen contract. Field records increase the two
 partition files from 368,767,337 to 663,826,992 bytes by dropping cross-record
@@ -897,7 +897,7 @@ public explanation reader, SQLite integrity, schema, and all candidate,
 record, and link payloads pass exact parity. Only output-path and attempt-ID
 provenance are excluded from comparison. Source and candidate refs, checkpoint
 and reference hashes, commands, timings, and parity receipts are retained under
-`output/cid-nl-performance-v12/`.
+`output/cid-nl-performance/`.
 
 On six structurally selected children, three interleaved repetitions with
 1/2/4/6 threads took median 10.956/11.945/11.850/12.145 seconds. All 72 child
@@ -943,7 +943,7 @@ secondary target. There is no systematic peak-memory, GC, page-fault, or host
 contention trace; serialized payload size does not establish RAM pressure.
 
 Task-local evidence and the ordered exact-safe plan are under
-`output/cid-nl-performance-v11/`. Start with the rows request traversal, then
+`output/cid-nl-performance/`. Start with the rows request traversal, then
 remeasure before changing batch closure or projection construction. Preserve
 Matrix values, membership, reasons and persisted identities; writer-only
 validation can reuse the completed result. No product optimization or RAW
@@ -1025,7 +1025,7 @@ sources, and variants. Public Matrix changes trace only to formally bound
 known-ISTD owners. Two off-target singleton groups have 16 reminted cell receipt
 IDs from the updated context, with their grouping and values unchanged.
 Task-local receipts are under
-`output/cid-nl-feature-loss-v10/`.
+`output/cid-nl-feature-loss/`.
 
 Clean `39cfa36ad3457febf85da49f1bfebe6ec5343759` completed fresh Discovery and
 Alignment on eight tissue validation RAW files with `dna_dr`, production output,
@@ -1078,8 +1078,8 @@ workflow, result, projection and production tests passed (133 tests); commit
 checks also passed. These checks establish engineering behavior coverage.
 
 Task-local evidence, commands and RAW/DLL/source hashes are under
-`output/cid-nl-end-to-end/composition-v9-e2e/` (`run.json`, `alignment.log`,
-`artifact-verification.json`) and `composition-cost-v9/`. These ignored host-local
+`output/cid-nl-end-to-end/composition-e2e/` (`run.json`, `alignment.log`,
+`artifact-verification.json`) and `composition-cost/`. These ignored host-local
 artifacts are not reusable clean-checkout inputs. The task harness retains
 coarse progress and final timing without per-job live timing-file rewrites;
 product timing behavior is unchanged.
@@ -1087,7 +1087,7 @@ product timing behavior is unchanged.
 ### 2026-08-26 Issue #303 ModeTrack Neighborhood Budget
 
 Verdict: `diagnosis_ready / diagnostic_only`. The retained Gate B receipt
-`docs/superpowers/fixtures/mode_track_assignment_85raw_gate_b_v1.json` contains
+`docs/superpowers/fixtures/mode_track_assignment_85raw_gate_b.json` contains
 85 samples, 86 physical hypotheses, 11 ModeTracks, a maximum track ownership of
 15, and no ModeTrack-added RAW opens or XIC calls. A no-RAW exact API replay of
 the CrossSample bounded-neighborhood operation at the full 86-member complete
@@ -1125,7 +1125,7 @@ Verdict: `production_ready` for three headless workflows: explicit reviewed
 `targeted_ms1_shape_identity_support_tsv`, explicit
 `xic-extractor-cli --targeted-ms1-shape-identity-auto-limited-default`, and the
 canonical no-flag normal CLI default. The ready claim is limited to
-`limited_5hmdc_5medc_v1`, `5-hmdC + 5-medC`, and `detected_flagged` output.
+`limited_5hmdc_5medc`, `5-hmdC + 5-medC`, and `detected_flagged` output.
 GUI is not connected, and broader targets need separate expected-diff evidence.
 
 Update on the same date: the original five-row TSV was a handpicked review
@@ -1138,7 +1138,7 @@ Generic producer smoke:
 `output/ms1_shape_identity_generic_support_85raw_20260616/`
 
 2026-06-17 support key-set gate update: the limited expected-diff gate now reads
-the actual `targeted_ms1_shape_identity_v0.tsv` with `--support-tsv` and fails
+the actual `targeted_ms1_shape_identity.tsv` with `--support-tsv` and fails
 closed unless accepted support keys exactly match product long-row diff keys.
 The existing 85RAW generic artifact rerun passed with `long_changed_rows=11`,
 `matrix_changed_cells=66`, and `support_tsv_supported_rows=11`.
@@ -1153,7 +1153,7 @@ The 8RAW auto smoke passed with `1` support row, `1` changed long row, and
 `11` changed long rows, `66` matrix cells, and wall-clock `369.2 s`.
 
 2026-06-17 no-flag default update: canonical settings defaults now use
-`targeted_ms1_shape_identity_activation_policy=limited_5hmdc_5medc_v1`. The
+`targeted_ms1_shape_identity_activation_policy=limited_5hmdc_5medc`. The
 headless CLI dispatches the same auto-limited workflow when no support TSV is
 configured, so no-flag normal CLI output is still gated by support TSV key-set
 expected-diff before `final/output` is published. Reused 85RAW artifact gate:
@@ -1180,7 +1180,7 @@ Key facts:
   `$env:XIC_RAW_ROOT` for 85RAW; all runs used
   CSV-only output.
 - Opt-in runs used
-  `output/ms1_rescue_5hmdc_own_max_similarity_20260616/targeted_ms1_shape_identity_v0.tsv`.
+  `output/ms1_rescue_5hmdc_own_max_similarity_20260616/targeted_ms1_shape_identity.tsv`.
 - 8RAW `expected_diff_summary.tsv` found exactly one changed row:
   `TumorBC2263_DNA / 5-hmdC`.
 - That row changed from `Product State=not_counted`,
@@ -1320,7 +1320,7 @@ Key facts:
   `local_minimum` while keeping `region_first_safe_merge` as audit context for
   alignment runs.
 - The strict ISTD blocker on `15N5-8-oxodG` was resolved in hotfix artifacts.
-- Reviewed identity-coherence controls passed V0.4 acceptance, and the
+- Reviewed identity-coherence controls passed acceptance, and the
   hotfix-reviewed identity-family decisions were byte-identical to the
   pre-change baseline.
 - The same-surface `d3-N6-medA` probe reclassified the
@@ -1554,7 +1554,7 @@ Recommended next check:
 ## 2026-07-24 Acquisition Source And Reusable Artifact Capability
 
 Issue #124 is source-qualified in
-`docs/superpowers/validation/acquisition_source_capability_probe_v1/README.md`.
+`docs/superpowers/validation/acquisition_source_capability_probe/README.md`.
 
 Reusable conclusion:
 
@@ -1712,7 +1712,7 @@ review-group universe. Candidate projection links additionally bind
 stable group representative so equivalent row reordering cannot change the
 ledger.
 
-The retained manifest is legacy `untargeted_provisional_matrix_run_v1` and is
+The retained manifest is legacy `untargeted_provisional_matrix_run` and is
 rejected by the current manifest owner. The diagnostic records that
 rehydration gap explicitly instead of promoting legacy embedded assertions,
 including the asserted producer revision.
@@ -2113,7 +2113,7 @@ paired performance evidence, and the Terminal B disposition remains
 fallback; they do not justify a broader Discovery window or a new
 sample-specific RT predictor.
 
-At clean tracked revision `c0b9f0fc`, the current 54RAW urine Discovery v2
+At clean tracked revision `c0b9f0fc`, the current 54RAW urine Discovery
 artifacts and no-RAW grouping replay produced MeIQx `FAM000012` with 44 owners,
 center m/z `482.2098181818182`, center RT `40.933679545454545 min`, and
 `owner_targeted_istd_trajectory` evidence. The source group, owner, and batch

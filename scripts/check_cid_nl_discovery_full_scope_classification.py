@@ -32,21 +32,21 @@ from xic_extractor.tabular_io import (  # noqa: E402
 )
 
 ROOT = Path(__file__).resolve().parents[1]
-SCHEMA_VERSION = "cid_nl_discovery_full_scope_classification_v1"
+SCHEMA_VERSION = "cid_nl_discovery_full_scope_classification"
 PRODUCT_LANE = "cid_nl_discovery"
 NO_AUTHORITY_EFFECT = "diagnostic_only_no_authority_change"
 DEFAULT_GATE_DIR = (
-    ROOT / "output/validation/cid_nl_default_activation_gallery_review_v1"
+    ROOT / "output/validation/cid_nl_default_activation_gallery_review"
     / "feature_inclusion_gate"
 )
 DEFAULT_ACTIVATION_SUMMARY_JSON = (
     ROOT
-    / "docs/superpowers/validation/cid_nl_default_product_activation_v1/"
+    / "docs/superpowers/validation/cid_nl_default_product_activation/"
     / "cid_nl_default_product_activation_summary.json"
 )
 DEFAULT_DOCS_DIR = (
     ROOT
-    / "docs/superpowers/validation/cid_nl_discovery_full_scope_classification_v1"
+    / "docs/superpowers/validation/cid_nl_discovery_full_scope_classification"
 )
 
 CHECK_COLUMNS = (
@@ -879,7 +879,7 @@ def _summary_payload(
             "summary_json": {
                 "path": (
                     "docs/superpowers/validation/"
-                    "cid_nl_discovery_full_scope_classification_v1/"
+                    "cid_nl_discovery_full_scope_classification/"
                     "cid_nl_discovery_full_scope_classification_summary.json"
                 ),
                 "retention_decision": "keep_summary",
@@ -898,7 +898,7 @@ def _summary_payload(
         "source_artifacts": {
             "feature_gate_summary_json": {
                 "path": (
-                    "output/validation/cid_nl_default_activation_gallery_review_v1/"
+                    "output/validation/cid_nl_default_activation_gallery_review/"
                     "feature_inclusion_gate/"
                     "cid_nl_feature_inclusion_gate_summary.json"
                 ),

@@ -1,0 +1,95 @@
+{
+  "schema_version": "quant_matrix_version_schema",
+  "quant_matrix_version": "quant_matrix_version",
+  "purpose": "Defines the explicit QuantMatrixVersion activation outputs produced from a validated ProductionAcceptanceManifest and an expected-diff TSV. This schema does not change ProductWriter default extraction, workbooks, GUI behavior, selected peaks, selected areas, or counted detections.",
+  "output_files": {
+    "quant_matrix": "quant_matrix.tsv",
+    "cell_provenance": "cell_provenance.tsv",
+    "row_summary": "row_summary.tsv",
+    "expected_diff_summary": "expected_diff_summary.tsv",
+    "source_summary": "source_summary.tsv"
+  },
+  "quant_matrix_rules": {
+    "header_must_start_with": [
+      "Mz",
+      "RT"
+    ],
+    "sample_columns_are_dynamic": true,
+    "contains_detected_plus_accepted_backfill_values": true,
+    "must_not_overwrite_existing_detected_values": true,
+    "unaccepted_missing_cells_remain_blank": true
+  },
+  "expected_diff_columns": [
+    "schema_version",
+    "peak_hypothesis_id",
+    "sample_stem",
+    "baseline_value",
+    "activated_value",
+    "expected_matrix_effect",
+    "expected_reason"
+  ],
+  "cell_provenance_columns": [
+    "schema_version",
+    "peak_hypothesis_id",
+    "sample_stem",
+    "source_feature_family_ids",
+    "matrix_value",
+    "cell_status",
+    "value_source",
+    "write_authority",
+    "acceptance_decision",
+    "acceptance_basis",
+    "truth_status",
+    "quant_value_source",
+    "matrix_area_source",
+    "source_artifact_relpath",
+    "source_artifact_sha256",
+    "source_row_sha256",
+    "manifest_sha256"
+  ],
+  "row_summary_columns": [
+    "schema_version",
+    "peak_hypothesis_id",
+    "source_feature_family_ids",
+    "detected_count",
+    "accepted_backfilled_count",
+    "quant_available_count",
+    "missing_count",
+    "backfill_fraction",
+    "prevalence_flags"
+  ],
+  "expected_diff_summary_columns": [
+    "schema_version",
+    "acceptance_status",
+    "expected_diff_count",
+    "written_backfill_count",
+    "unused_expected_diff_count",
+    "blocking_reasons"
+  ],
+  "source_summary_columns": [
+    "schema_version",
+    "input_quant_matrix_tsv",
+    "input_quant_matrix_sha256",
+    "input_matrix_identity_tsv",
+    "input_matrix_identity_sha256",
+    "production_acceptance_manifest_tsv",
+    "production_acceptance_manifest_sha256",
+    "expected_diff_tsv",
+    "expected_diff_sha256"
+  ],
+  "invariants": {
+    "every_non_empty_quant_matrix_cell_has_one_cell_provenance_row": true,
+    "accepted_backfill_cells_require_write_authority_true": true,
+    "detected_cells_keep_write_authority_false": true,
+    "detected_count_excludes_backfill": true,
+    "quant_available_count_equals_detected_plus_accepted_backfilled": true,
+    "detected_only_view_reconstructable_from_quant_matrix_and_cell_provenance": true,
+    "expected_diff_required_for_every_accepted_backfill_write": true
+  },
+  "review_report_requires": [
+    "gallery_report_alignment",
+    "accepted_backfill_vs_detected_visibility",
+    "prevalence_uncertainty_explanation",
+    "source_hash_display"
+  ]
+}

@@ -219,9 +219,9 @@ def build_processing_identity_no_raw_fixture(
     request = build_processing_request_identity(
         acquisition_sources=tuple(sources),
         acquisition_bindings=tuple(bindings),
-        scientific_input_schema_version="processing-identity-targeted-input-v1",
-        processing_algorithm_version="processing-identity-targeted-algorithm-v1",
-        processing_contract_version="processing-identity-targeted-contract-v1",
+        scientific_input_schema_version="processing-identity-targeted-input",
+        processing_algorithm_version="processing-identity-targeted-algorithm",
+        processing_contract_version="processing-identity-targeted-contract",
         scientific_inputs={
             "fixture": "processing-identity-no-raw-multi-sample",
             "target_list_snapshot": target_list_snapshot_payload(target_snapshot),

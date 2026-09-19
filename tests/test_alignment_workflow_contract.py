@@ -231,8 +231,8 @@ def test_workflow_rejects_incomplete_or_crossed_owner_population(
             sample_assessments=assessments,
             alignment_config=coverage.epoch.alignment_config,
             trajectory_policy=workflow_owner.ModeTrackTrajectoryPolicy(
-                trajectory_policy_version="anchor-trajectory-v1",
-                band_policy_version="fixed-band-v1",
+                trajectory_policy_version="anchor-trajectory",
+                band_policy_version="fixed-band",
                 prediction_half_width_min=0.1,
                 max_interpolation_gap=10,
                 max_extrapolation_gap=10,

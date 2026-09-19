@@ -107,9 +107,9 @@ value implementation.
 - Structured productization-owner update when maturity, lane, or authority
   changes: status index for lane state, authority manifest for writer scope,
   and the promotion contract for readiness evidence.
-- The bounded CID-NL `targeted_output_v1` delivery claims and current test
+- The bounded CID-NL `targeted_output` delivery claims and current test
   dispositions are indexed in the
-  [public-output claim catalog](../superpowers/validation/cid_nl_public_output_claim_catalog_v1.tsv).
+  [public-output claim catalog](../superpowers/validation/cid_nl_public_output_claim_catalog.tsv).
   The catalog points to these owners; it does not grant selected-value,
   counted-detection, ProductWriter, or Matrix authority.
 

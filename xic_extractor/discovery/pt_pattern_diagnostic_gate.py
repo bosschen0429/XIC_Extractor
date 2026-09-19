@@ -47,7 +47,7 @@ from xic_extractor.tabular_io import (
     write_delimited_rows,
 )
 
-SCHEMA_VERSION = "pt_pattern_diagnostic_gate.v2"
+SCHEMA_VERSION = "pt_pattern_diagnostic_gate"
 READINESS_TIER = "diagnostic_only"
 EVIDENCE_OWNER = "xic_extractor.discovery.pt_pattern_diagnostic_gate"
 AUTHORITY_SCOPE = "diagnostic_gate_replay_only"

@@ -35,7 +35,7 @@ TRACE_MANIFEST_SHA256 = "f" * 64
 
 def _candidate(**overrides: object) -> PtPatternCandidate:
     values: dict[str, object] = {
-        "schema_version": "pt_pattern_candidates.v1",
+        "schema_version": "pt_pattern_candidates",
         "sample_stem": "Sample_1",
         "method_label": "pt_pattern",
         "pattern_id": "pt",
@@ -267,7 +267,7 @@ def test_discovery_evidence_rejects_legacy_trace_summary_without_assignment_bind
                     "trace_support_status,combined_pt_pattern_status,reason"
                 ),
                 (
-                    "pt_pattern_trace_diagnosis.v2,Sample_1,Sample_1@pt@base-1,"
+                    "pt_pattern_trace_diagnosis,Sample_1,Sample_1@pt@base-1,"
                     "full_pattern_seeded,500,10,30,20,observed,"
                     "gaussian15_smoothed_trace,gaussian15,15,19.5,4,4,4,3,0.4,0.95,"
                     "0.70,0.4,0.95,0.70,supported,"

@@ -463,7 +463,7 @@ def _canonical_region_audit(
         )
     return PeakRegionAuditSummary(
         candidate_count=len(evaluation.segment_universe.segments),
-        selected_proposal_sources=("canonical_physical_segment_v1",),
+        selected_proposal_sources=("canonical_physical_segment",),
         selected_merge_note="canonical owner; no audit merge",
         shadow_status="evaluated",
         shadow_verdict="canonical_selected_segment",

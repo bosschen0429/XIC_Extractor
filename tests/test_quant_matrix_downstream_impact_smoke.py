@@ -19,14 +19,14 @@ SCHEMA_PATH = (
     / "docs"
     / "superpowers"
     / "schemas"
-    / "quant_matrix_downstream_impact_smoke_schema.v1.json"
+    / "quant_matrix_downstream_impact_smoke_schema.json"
 )
 
 
 def test_downstream_impact_schema_matches_builder_contract() -> None:
     schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
 
-    assert schema["schema_version"] == "quant_matrix_downstream_impact_smoke_schema_v1"
+    assert schema["schema_version"] == "quant_matrix_downstream_impact_smoke_schema"
     assert schema["downstream_impact_schema"] == DOWNSTREAM_IMPACT_SCHEMA
     assert schema["bundle_kinds"] == list(DOWNSTREAM_IMPACT_BUNDLE_KINDS)
     assert schema["row_columns"] == list(DOWNSTREAM_IMPACT_ROW_COLUMNS)
@@ -293,7 +293,7 @@ def _write_quant_matrix_version_outputs(root: Path) -> dict[str, Path]:
         ),
         [
             {
-                "schema_version": "quant_matrix_cell_provenance_v1",
+                "schema_version": "quant_matrix_cell_provenance",
                 "peak_hypothesis_id": "PH001",
                 "sample_stem": "SampleA",
                 "source_feature_family_ids": "FAM001",
@@ -312,7 +312,7 @@ def _write_quant_matrix_version_outputs(root: Path) -> dict[str, Path]:
                 "manifest_sha256": "",
             },
             {
-                "schema_version": "quant_matrix_cell_provenance_v1",
+                "schema_version": "quant_matrix_cell_provenance",
                 "peak_hypothesis_id": "PH001",
                 "sample_stem": "SampleB",
                 "source_feature_family_ids": "FAM001",
@@ -348,7 +348,7 @@ def _write_quant_matrix_version_outputs(root: Path) -> dict[str, Path]:
         ),
         [
             {
-                "schema_version": "quant_matrix_row_summary_v1",
+                "schema_version": "quant_matrix_row_summary",
                 "peak_hypothesis_id": "PH001",
                 "source_feature_family_ids": "FAM001",
                 "detected_count": "1",

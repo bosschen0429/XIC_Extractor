@@ -54,8 +54,8 @@ def test_acceptance_a1_production_owner_pipeline_fidelity(
 
     # Re-read new DB
     summary = read_cid_nl_explanation(report_path)
-    assert summary["schema_version"] == 2
-    assert summary["plot_evidence_capability"] == "retained_curves_v1"
+    assert summary["schema_version"] == "alignment_explanation"
+    assert summary["plot_evidence_capability"] == "retained_curves"
     assert summary["matrix_sha256"] == hashlib.sha256(matrix.read_bytes()).hexdigest()
 
     # Verify curves persisted without RAW or DLL

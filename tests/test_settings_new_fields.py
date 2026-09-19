@@ -44,7 +44,7 @@ def test_new_keys_present() -> None:
         "keep_intermediate_csv": "false",
         "model_selection_expected_diff_approval_registry": "",
         "targeted_ms1_shape_identity_support_tsv": "",
-        "targeted_ms1_shape_identity_activation_policy": "limited_5hmdc_5medc_v1",
+        "targeted_ms1_shape_identity_activation_policy": "limited_5hmdc_5medc",
         "ms1_morphology_smoothing_window_points": "15",
     }.items():
         assert CANONICAL_SETTINGS_DEFAULTS[key] == default
@@ -77,10 +77,10 @@ def test_new_settings_are_in_canonical_defaults_and_descriptions() -> None:
     assert "expected-diff" in CANONICAL_SETTINGS_DESCRIPTIONS[
         "model_selection_expected_diff_approval_registry"
     ]
-    assert "targeted_ms1_shape_identity_v0" in CANONICAL_SETTINGS_DESCRIPTIONS[
+    assert "targeted_ms1_shape_identity" in CANONICAL_SETTINGS_DESCRIPTIONS[
         "targeted_ms1_shape_identity_support_tsv"
     ]
-    assert "limited_5hmdc_5medc_v1" in CANONICAL_SETTINGS_DESCRIPTIONS[
+    assert "limited_5hmdc_5medc" in CANONICAL_SETTINGS_DESCRIPTIONS[
         "targeted_ms1_shape_identity_activation_policy"
     ]
     assert "Gaussian15" in CANONICAL_SETTINGS_DESCRIPTIONS[
@@ -98,7 +98,7 @@ def test_load_config_parses_scoring_settings(tmp_path: Path) -> None:
     rt_library = tmp_path / "rt_prior_library.csv"
     calibration = tmp_path / "target_pair_rt_calibration.tsv"
     approval_registry = tmp_path / "expected_diff_approvals.tsv"
-    shape_identity_support = tmp_path / "targeted_ms1_shape_identity_v0.tsv"
+    shape_identity_support = tmp_path / "targeted_ms1_shape_identity.tsv"
     rows = {
         "data_dir": str(data_dir),
         "dll_dir": str(dll_dir),
@@ -117,7 +117,7 @@ def test_load_config_parses_scoring_settings(tmp_path: Path) -> None:
         "target_pair_rt_calibration_path": str(calibration),
         "model_selection_expected_diff_approval_registry": str(approval_registry),
         "targeted_ms1_shape_identity_support_tsv": str(shape_identity_support),
-        "targeted_ms1_shape_identity_activation_policy": "limited_5hmdc_5medc_v1",
+        "targeted_ms1_shape_identity_activation_policy": "limited_5hmdc_5medc",
         "emit_score_breakdown": "true",
         "emit_review_report": "true",
         "emit_peak_candidates": "true",
@@ -162,7 +162,7 @@ def test_load_config_parses_scoring_settings(tmp_path: Path) -> None:
     assert config.model_selection_expected_diff_approval_registry == approval_registry
     assert config.targeted_ms1_shape_identity_support_tsv == shape_identity_support
     assert config.targeted_ms1_shape_identity_activation_policy == (
-        "limited_5hmdc_5medc_v1"
+        "limited_5hmdc_5medc"
     )
     assert config.emit_score_breakdown is True
     assert config.emit_review_report is True
@@ -232,7 +232,7 @@ def test_load_config_defaults_scoring_settings_for_legacy_settings_csv(
     assert config.model_selection_expected_diff_approval_registry is None
     assert config.targeted_ms1_shape_identity_support_tsv is None
     assert config.targeted_ms1_shape_identity_activation_policy == (
-        "limited_5hmdc_5medc_v1"
+        "limited_5hmdc_5medc"
     )
     assert config.emit_score_breakdown is False
     assert config.emit_review_report is False

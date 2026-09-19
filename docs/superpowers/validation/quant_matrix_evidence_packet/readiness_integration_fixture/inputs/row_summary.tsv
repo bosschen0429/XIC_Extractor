@@ -1,0 +1,2 @@
+schema_version	peak_hypothesis_id	source_feature_family_ids	detected_count	accepted_backfilled_count	quant_available_count	missing_count	backfill_fraction	prevalence_flags
+quant_matrix_row_summary	PH001	FAM001	1	1	2	0	0.500000	low_seed_support

@@ -39,10 +39,10 @@ REQUIRED_QUEUE_COLUMNS = (
 SUPPORT_FAMILY_VERDICT = "ms1_shape_supports_family_backfill"
 TOP30_EXPANSION_ELIGIBLE = "eligible"
 TOP30_EXPANSION_BLOCKED = "blocked"
-OVERLAY_BATCH_SOURCE = "family_ms1_overlay_batch_v2"
+OVERLAY_BATCH_SOURCE = "family_ms1_overlay_batch"
 OVERLAY_SUPERWINDOW_SPAN_FACTOR = 2
-OVERLAY_EVIDENCE_CACHE_SCHEMA = "family_ms1_overlay_evidence_cache_v6"
-RAW_IDENTITY_METHOD = "path_stat_v1"
+OVERLAY_EVIDENCE_CACHE_SCHEMA = "family_ms1_overlay_evidence_cache"
+RAW_IDENTITY_METHOD = "path_stat"
 OverlayTraceItem = tuple[int, overlay_plot.FamilyCell, str, Any]
 WindowedOverlayTraceItem = tuple[int, OverlayTraceItem, tuple[int, int]]
 
@@ -384,7 +384,7 @@ def seed_evidence_cache_from_overlay_summary(
     )
     status_counts = Counter(str(row.get("status", "")) for row in summary_rows)
     return {
-        "schema_version": "family_ms1_overlay_evidence_cache_seed_v1",
+        "schema_version": "family_ms1_overlay_evidence_cache_seed",
         "review_queue_tsv": str(review_queue_tsv),
         "alignment_cells": str(alignment_cells),
         "raw_dir": str(raw_dir),
@@ -1892,7 +1892,7 @@ def _write_summary_json(
     path.write_text(
         json.dumps(
             {
-                "schema_version": "family_ms1_overlay_batch_summary_v1",
+                "schema_version": "family_ms1_overlay_batch_summary",
                 "requested_row_count": len(rows),
                 "status_counts": dict(sorted(statuses.items())),
                 "metrics": dict(metrics),

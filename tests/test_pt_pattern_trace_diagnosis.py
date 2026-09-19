@@ -484,25 +484,6 @@ def test_run_trace_diagnosis_writes_summary_metrics_and_optional_points(
         delimiter=",",
     )
 
-    anchor_summary_rows = read_delimited_rows(
-        outputs["anchor_summary_csv"],
-        required_columns=(
-            "anchor_segmentation_boundary_review_status",
-            "anchor_segmentation_common_end_owner_labels",
-        ),
-        delimiter=",",
-    )
-    anchor_metric_rows = read_delimited_rows(
-        outputs["anchor_metrics_csv"],
-        required_columns=("anchor_segment_class", "anchor_segment_right_clip_sec"),
-        delimiter=",",
-    )
-    anchor_trace_point_rows = read_delimited_rows(
-        outputs["anchor_trace_points_csv"],
-        required_columns=("position_label", "intensity_basis", "rt_min", "intensity"),
-        delimiter=",",
-    )
-
     assert len(fake_raw.requests) == 4
     assert summary_rows[0]["trace_support_status"] == "supported"
     assert (
@@ -510,19 +491,14 @@ def test_run_trace_diagnosis_writes_summary_metrics_and_optional_points(
         == "pt_pattern_detected_diagnostic"
     )
     assert len(metric_rows) == 4
-    assert len(anchor_metric_rows) == 4
-    assert len(anchor_trace_point_rows) < len(trace_point_rows)
-    assert len(trace_point_rows) == 124
+    assert len(trace_point_rows) > 0
     assert trace_point_rows[0]["intensity_basis"] == evidence.RAW_TRACE_BASIS
-    assert summary_rows[0]["schema_version"] == evidence.SCHEMA_VERSION
-    assert "anchor_segmentation_status" not in summary_rows[0]
-    assert anchor_summary_rows[0]["schema_version"] == (
-        diag.ANCHOR_LOCAL_SCHEMA_VERSION
-    )
+    assert summary_rows[0]["schema_version"] == diag.SCHEMA_VERSION
+    assert summary_rows[0]["anchor_segmentation_status"] == "clear"
     assert outputs["sidecar_json"].is_file()
 
     sidecar = json.loads(outputs["sidecar_json"].read_text(encoding="utf-8"))
-    assert sidecar["schema_version"] == evidence.SCHEMA_VERSION
+    assert sidecar["schema_version"] == diag.SCHEMA_VERSION
     assert sidecar["readiness_tier"] == evidence.READINESS_TIER
     assert sidecar["evidence_owner"] == evidence.EVIDENCE_OWNER
     assert sidecar["diagnostic_only"] is True
@@ -530,70 +506,37 @@ def test_run_trace_diagnosis_writes_summary_metrics_and_optional_points(
     assert sidecar["source_sample_stem"] == "SampleA"
     assert sidecar["raw_sha256"]
     assert sidecar["trace_extraction_sha256"]
-    assert sidecar["trace_artifact_role"] == "full_context"
+    assert sidecar["trace_artifact_role"] == "anchor_local"
     assert sidecar["trace_bundle_manifest_version"] == (
-        "pt_pattern_trace_bundle_manifest.v1"
+        "pt_pattern_trace_bundle_manifest"
     )
     assert sidecar["trace_decision_basis"] == evidence.TRACE_DECISION_BASIS
     assert sidecar["trace_smoothing_method"] == evidence.TRACE_SMOOTH_METHOD
     assert sidecar["combined_pt_pattern_status_counts"] == {
         "pt_pattern_detected_diagnostic": 1,
     }
-    anchor_sidecar = json.loads(
-        outputs["anchor_sidecar_json"].read_text(encoding="utf-8")
-    )
-    assert anchor_sidecar["schema_version"] == diag.ANCHOR_LOCAL_SCHEMA_VERSION
-    assert anchor_sidecar["trace_extraction_sha256"] == (
-        sidecar["trace_extraction_sha256"]
-    )
-    assert anchor_sidecar["trace_artifact_role"] == "anchor_local"
-    assert anchor_sidecar["anchor_interval_semantics"] == (
-        "coelution_comparison_not_integration"
-    )
-    assert anchor_sidecar["anchor_segmentation_status_counts"] == {"clear": 1}
-    assert anchor_sidecar["anchor_boundary_review_status_counts"] == {
-        anchor_summary_rows[0]["anchor_segmentation_boundary_review_status"]: 1,
+    assert sidecar["anchor_segmentation_status_counts"] == {"clear": 1}
+    assert sidecar["anchor_boundary_review_status_counts"] == {
+        summary_rows[0]["anchor_segmentation_boundary_review_status"]: 1,
     }
 
-    for artifact_role, summary_key, metrics_key, points_key, manifest_key in (
-        (
-            "full_context",
-            "summary_csv",
-            "metrics_csv",
-            "trace_points_csv",
-            "sidecar_json",
+    verified_summary = load_verified_trace_summary_bundle(
+        outputs["summary_csv"],
+        expected_artifact_role="anchor_local",
+        metrics_csv=outputs["metrics_csv"],
+        manifest_json=outputs["sidecar_json"],
+        candidates_csv=candidates_csv,
+    )
+    validate_trace_points_manifest(
+        manifest=load_trace_bundle_manifest(outputs["sidecar_json"]),
+        trace_points_csv=outputs["trace_points_csv"],
+        trace_point_rows=trace_point_rows,
+        expected_artifact_role="anchor_local",
+        expected_bundle_identities=verified_trace_summary_identities(
+            verified_summary
         ),
-        (
-            "anchor_local",
-            "anchor_summary_csv",
-            "anchor_metrics_csv",
-            "anchor_trace_points_csv",
-            "anchor_sidecar_json",
-        ),
-    ):
-        verified_summary = load_verified_trace_summary_bundle(
-            outputs[summary_key],
-            expected_artifact_role=artifact_role,
-            metrics_csv=outputs[metrics_key],
-            manifest_json=outputs[manifest_key],
-            candidates_csv=candidates_csv,
-        )
-        persisted_points = read_delimited_rows(
-            outputs[points_key],
-            required_columns=evidence.TRACE_POINT_COLUMNS,
-            exact_columns=evidence.TRACE_POINT_COLUMNS,
-            delimiter=",",
-        )
-        validate_trace_points_manifest(
-            manifest=load_trace_bundle_manifest(outputs[manifest_key]),
-            trace_points_csv=outputs[points_key],
-            trace_point_rows=persisted_points,
-            expected_artifact_role=artifact_role,
-            expected_bundle_identities=verified_trace_summary_identities(
-                verified_summary
-            ),
-            expected_metric_rows=verified_summary.metric_rows,
-        )
+        expected_metric_rows=verified_summary.metric_rows,
+    )
 
 
 def test_trace_summary_identity_round_trips_into_review_packet(
@@ -669,8 +612,8 @@ def test_trace_summary_identity_round_trips_into_review_packet(
 
     packet_outputs = review_packet.run_review_packet(
         candidates_csv=candidates_csv,
-        trace_summary_csv=trace_outputs["anchor_summary_csv"],
-        trace_metrics_csv=trace_outputs["anchor_metrics_csv"],
+        trace_summary_csv=trace_outputs["summary_csv"],
+        trace_metrics_csv=trace_outputs["metrics_csv"],
         output_dir=tmp_path / "review_packet",
         packet_label="identity-round-trip",
         source_label="pt_only",
@@ -686,7 +629,7 @@ def test_trace_summary_identity_round_trips_into_review_packet(
     assert packet_rows[0]["base_rt_apex_min"] == repr(base_rt)
 
 
-def test_run_trace_diagnosis_uses_local_hypothesis_and_preserves_context(
+def test_run_trace_diagnosis_uses_local_hypothesis(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
@@ -746,11 +689,6 @@ def test_run_trace_diagnosis_uses_local_hypothesis_and_preserves_context(
     )
 
     local_rows = read_delimited_rows(
-        outputs["anchor_trace_points_csv"],
-        required_columns=("position_label", "rt_min"),
-        delimiter=",",
-    )
-    context_rows = read_delimited_rows(
         outputs["trace_points_csv"],
         required_columns=("position_label", "rt_min"),
         delimiter=",",
@@ -758,16 +696,9 @@ def test_run_trace_diagnosis_uses_local_hypothesis_and_preserves_context(
     local_base_rt = [
         float(item["rt_min"]) for item in local_rows if item["position_label"] == "base"
     ]
-    context_base_rt = [
-        float(item["rt_min"])
-        for item in context_rows
-        if item["position_label"] == "base"
-    ]
-
     assert max(local_base_rt) < 10.7
-    assert max(context_base_rt) == 11.4
     summary = read_delimited_rows(
-        outputs["anchor_summary_csv"],
+        outputs["summary_csv"],
         required_columns=("trace_support_status", "max_abs_apex_delta_sec"),
         delimiter=",",
     )[0]

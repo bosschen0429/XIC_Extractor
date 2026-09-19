@@ -186,7 +186,7 @@ def _normal_decision(
 ) -> dict[str, str]:
     quantitation_area = area if quantitation_area is None else quantitation_area
     return {
-        "schema_version": "backfill_peakhypothesis_normal_peak_decision_v1",
+        "schema_version": "backfill_peakhypothesis_normal_peak_decision",
         "source_run_id": "test",
         "peak_hypothesis_id": source_peak_hypothesis_id,
         "activation_unit_scope": "peak_hypothesis",
@@ -244,7 +244,7 @@ def _trial_row(
     blockers: str = "",
 ) -> dict[str, str]:
     return {
-        "schema_version": "backfill_peakhypothesis_activation_trial_v1",
+        "schema_version": "backfill_peakhypothesis_activation_trial",
         "source_run_id": "test",
         "policy_id": "same_peak_normal_peak_override",
         "source_peak_hypothesis_id": source_peak_hypothesis_id,

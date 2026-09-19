@@ -28,7 +28,7 @@ def test_daily_packet_writes_no_authority_outputs(tmp_path: Path) -> None:
     )
 
     packet = json.loads(outputs.summary_json.read_text(encoding="utf-8"))
-    assert packet["schema_version"] == "row_completion_confidence_v1"
+    assert packet["schema_version"] == "row_completion_confidence"
     assert packet["gate_mode"] == "diagnostic"
     assert packet["run_ok"] is True
     assert packet["gate_ok"] is True
@@ -453,14 +453,14 @@ def _write_alignment_artifacts(
     (path / "alignment_backfill_cell_evidence.tsv").write_text(
         "schema_version\tfeature_family_id\tsample_stem\tstatus\t"
         "bounded_by_alignment_row\treason\n"
-        "alignment_backfill_cell_evidence_v1\tFAM_BAD\tSampleA\t"
+        "alignment_backfill_cell_evidence\tFAM_BAD\tSampleA\t"
         "review_only\ttrue\tduplicate only\n",
         encoding="utf-8",
     )
     (path / "alignment_owner_backfill_seed_audit.tsv").write_text(
         "schema_version\tfeature_family_id\tsample_stem\tstatus\t"
         "seed_source\treason\n"
-        "alignment_owner_backfill_seed_audit_v1\tFAM_BAD\tSampleA\t"
+        "alignment_owner_backfill_seed_audit\tFAM_BAD\tSampleA\t"
         "review_only\towner\tduplicate only\n",
         encoding="utf-8",
     )
@@ -470,7 +470,7 @@ def _write_alignment_artifacts(
 def _write_health_packet(path: Path) -> Path:
     path.mkdir()
     packet = {
-        "schema_version": "alignment_health_packet_v1",
+        "schema_version": "alignment_health_packet",
         "summary_metrics": {
             "row_flag_counts": {
                 "duplicate_only": 1,

@@ -95,7 +95,7 @@ def test_nonmember_no_repair_preserves_owner_negative_without_mt1(
             )
         },
         evidence_profile=ModeTrackEvidenceProfile(
-            "anchor-trajectory-v1", "fixed-band-v1", 0.1, 10, 10
+            "anchor-trajectory", "fixed-band", 0.1, 10, 10
         ),
         budget=CrossSampleNeighborhoodBudget(86, 3655),
     )
@@ -159,8 +159,8 @@ def test_existing_member_terminal_and_exact_final_attempt_close_once(
         ),
         alignment_config=AlignmentConfig(anchor_min_seed_events=1),
         trajectory_policy=ModeTrackTrajectoryPolicy(
-            trajectory_policy_version="anchor-trajectory-v1",
-            band_policy_version="fixed-band-v1",
+            trajectory_policy_version="anchor-trajectory",
+            band_policy_version="fixed-band",
             prediction_half_width_min=0.1,
             max_interpolation_gap=10,
             max_extrapolation_gap=10,
@@ -179,7 +179,7 @@ def test_existing_member_terminal_and_exact_final_attempt_close_once(
             for index, owner in enumerate(owners, start=1)
         },
         evidence_profile=ModeTrackEvidenceProfile(
-            "anchor-trajectory-v1", "fixed-band-v1", 0.1, 10, 10
+            "anchor-trajectory", "fixed-band", 0.1, 10, 10
         ),
         budget=CrossSampleNeighborhoodBudget(86, 3655),
         fit_once_source_id=source.fit_once_source_id,
@@ -268,12 +268,12 @@ def test_unchanged_existing_member_closes_full_multicomponent_trajectory(
     repaired_group = candidate.predecessor_group
     repaired_sample_id = candidate.sample_identity.identity.sample_identity_id
     repaired_physical_id = typed_identity_digest(
-        "xic.peak-observation-content.v1:",
+        "xic.peak-observation-content:",
         canonical_identity_basis_bytes({"sample_stem": "repaired"}),
     )
     repaired_member_basis = canonical_identity_basis_bytes(
         {
-            "schema_version": "group_member_subject_v1",
+            "schema_version": "group_member_subject",
             "processing_request_id": repaired_group.processing_request_id,
             "canonical_sample_identity_id": repaired_sample_id,
             "subject": {"kind": "physical_observation", "id": repaired_physical_id},
@@ -282,7 +282,7 @@ def test_unchanged_existing_member_closes_full_multicomponent_trajectory(
     )
     repaired_member = CrossSampleGroupMemberSubject(
         member_subject_id=typed_identity_digest(
-            "xic.group-member-subject.v1:",
+            "xic.group-member-subject:",
             repaired_member_basis,
         ),
         processing_request_id=repaired_group.processing_request_id,
@@ -309,12 +309,12 @@ def test_unchanged_existing_member_closes_full_multicomponent_trajectory(
         cross_sample_member_subject=repaired_member,
     )
     physical_id = typed_identity_digest(
-        "xic.peak-observation-content.v1:",
+        "xic.peak-observation-content:",
         canonical_identity_basis_bytes({"sample_stem": "unaffected"}),
     )
     member_basis = canonical_identity_basis_bytes(
         {
-            "schema_version": "group_member_subject_v1",
+            "schema_version": "group_member_subject",
             "processing_request_id": repaired_group.processing_request_id,
             "canonical_sample_identity_id": "test-sample:unaffected",
             "subject": {"kind": "physical_observation", "id": physical_id},
@@ -323,7 +323,7 @@ def test_unchanged_existing_member_closes_full_multicomponent_trajectory(
     )
     unaffected_member = CrossSampleGroupMemberSubject(
         member_subject_id=typed_identity_digest(
-            "xic.group-member-subject.v1:",
+            "xic.group-member-subject:",
             member_basis,
         ),
         processing_request_id=repaired_group.processing_request_id,
@@ -398,7 +398,7 @@ def test_unchanged_existing_member_closes_full_multicomponent_trajectory(
             owner.sample_stem: index for index, owner in enumerate(owners, start=1)
         },
         evidence_profile=ModeTrackEvidenceProfile(
-            "anchor-trajectory-v1", "fixed-band-v1", 0.1, 10, 10
+            "anchor-trajectory", "fixed-band", 0.1, 10, 10
         ),
         budget=CrossSampleNeighborhoodBudget(86, 3655),
     )

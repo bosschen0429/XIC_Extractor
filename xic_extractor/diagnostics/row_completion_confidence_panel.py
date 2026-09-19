@@ -25,7 +25,7 @@ _PANEL_REQUIRED_COLUMNS = (
     "manual_review_trigger",
     "reason",
 )
-_MANIFEST_SCHEMA_VERSION = "row_completion_canonical_panel_manifest_v1"
+_MANIFEST_SCHEMA_VERSION = "row_completion_canonical_panel_manifest"
 _MANUAL_REVIEW_TRIGGERS = {"on_warn_fail", "on_any_current", "on_increase"}
 _TARGETED_GT_FAILURE_MODES = {"SPLIT", "MISS", "DRIFT", "DUPLICATE"}
 _SENTINEL_METRIC_KEYS = {

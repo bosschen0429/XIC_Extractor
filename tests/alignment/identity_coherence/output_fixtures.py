@@ -78,7 +78,7 @@ def seed_gate() -> SeedGateResult:
         precursor_tolerance_ppm=10.0,
         product_tolerance_ppm=10.0,
         cid_observed_loss_tolerance_ppm=10.0,
-        fragment_profile_id="dna-cid-v1",
+        fragment_profile_id="dna-cid",
         fragment_profile_hash="hash1",
     )
     match = match_request_to_candidate(request, seed_candidate())

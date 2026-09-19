@@ -45,10 +45,10 @@ OWNER_BACKFILL_XIC_BACKENDS: tuple[OwnerBackfillXicBackend, ...] = (
     "ms1_index",
     "ms1_index_hybrid",
 )
-OWNER_BACKFILL_TRACE_RESULT_SEMANTICS = "owner_backfill_xic_trace_v1"
-_REQUEST_IDENTITY_PREFIX = "xic.owner-backfill-request.v1:"
-_LOGICAL_REQUEST_PREFIX = "xic.owner-backfill-logical-request.v1:"
-_RUNTIME_SAMPLE_PROJECTION_PREFIX = "xic.owner-backfill-runtime-sample.v1:"
+OWNER_BACKFILL_TRACE_RESULT_SEMANTICS = "owner_backfill_xic_trace"
+_REQUEST_IDENTITY_PREFIX = "xic.owner-backfill-request:"
+_LOGICAL_REQUEST_PREFIX = "xic.owner-backfill-logical-request:"
+_RUNTIME_SAMPLE_PROJECTION_PREFIX = "xic.owner-backfill-runtime-sample:"
 
 
 class OwnerBackfillRequestItem(NamedTuple):
@@ -262,7 +262,7 @@ class OwnerBackfillLogicalRequestMember:
         expected = _typed_id(
             _LOGICAL_REQUEST_PREFIX,
             {
-                "schema": "owner_backfill_logical_request_v1",
+                "schema": "owner_backfill_logical_request",
                 "logical_index": self.logical_index,
                 "group_hypothesis_id": group_hypothesis_id,
                 "sample_stem": self.item.sample_stem,
@@ -688,7 +688,7 @@ def _runtime_sample_projection_basis(
     canonical_sample: ResolvedCanonicalSampleIdentity | None = None,
 ) -> dict[str, object]:
     return {
-        "schema": "owner_backfill_runtime_sample_v1",
+        "schema": "owner_backfill_runtime_sample",
         "sample_stem": _required_text(sample_stem, "sample_stem"),
         "runtime_feature_ids": tuple(
             _required_text(feature.runtime_feature_id, "runtime_feature_id")
@@ -823,7 +823,7 @@ def mint_owner_backfill_logical_request_member(
     item: OwnerBackfillRequestItem,
 ) -> OwnerBackfillLogicalRequestMember:
     basis = {
-        "schema": "owner_backfill_logical_request_v1",
+        "schema": "owner_backfill_logical_request",
         "logical_index": logical_index,
         "group_hypothesis_id": group_hypothesis_id,
         "sample_stem": item.sample_stem,
@@ -846,7 +846,7 @@ def _request_identity_basis(
     context: OwnerBackfillRequestEquivalenceContext,
 ) -> dict[str, object]:
     return {
-        "schema": "owner_backfill_request_identity_v1",
+        "schema": "owner_backfill_request_identity",
         "sample_stem": sample_stem,
         "acquisition_source_id": acquisition_source.acquisition_source_id,
         "request": _request_basis(request),

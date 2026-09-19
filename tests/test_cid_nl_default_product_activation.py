@@ -116,7 +116,7 @@ def test_builds_cid_nl_default_activation_from_adopt_ready_bundle(
     assert len(manifest) == 2
     assert {row["peak_hypothesis_id"] for row in manifest} == {"FAM_NEW"}
     assert all(
-        "cid_nl_default_product_activation_v1" in row["closure_rule_ids"]
+        "cid_nl_default_product_activation" in row["closure_rule_ids"]
         for row in manifest
     )
 
@@ -125,7 +125,7 @@ def test_builds_cid_nl_default_activation_from_adopt_ready_bundle(
     )
     assert compact == [
         {
-            "schema_version": "cid_nl_default_product_activation_v1",
+            "schema_version": "cid_nl_default_product_activation",
             "transition_key": "FAM_OLD->FAM_NEW",
             "contract_source": "primary_supported",
             "contract_cell_count": "2",
@@ -388,7 +388,7 @@ def _contract_row(
 
 def _value_delta_row(row: dict[str, str]) -> dict[str, str]:
     return {
-        "schema_version": "cid_nl_activation_copy_candidate_v1",
+        "schema_version": "cid_nl_activation_copy_candidate",
         "transition_key": row["transition_key"],
         "sample_stem": row["sample_stem"],
         "source_peak_hypothesis_id": row["source_peak_hypothesis_id"],
@@ -414,7 +414,7 @@ def _acceptance_row(tmp_path: Path, sample: str, value: str) -> dict[str, str]:
     source = _write_source(tmp_path, "sources/evidence.tsv", "cell\tFAM_NEW\n")
     doublet = _write_source(tmp_path, "sources/doublet.tsv", "doublet\tFAM_NEW\n")
     return {
-        "schema_version": "production_acceptance_manifest_v1",
+        "schema_version": "production_acceptance_manifest",
         "peak_hypothesis_id": "FAM_NEW",
         "sample_stem": sample,
         "feature_family_id": "FAM_NEW",
@@ -447,7 +447,7 @@ def _acceptance_row(tmp_path: Path, sample: str, value: str) -> dict[str, str]:
         "source_artifact_sha256": _sha256(source),
         "source_row_sha256": "A" * 64,
         "manifest_sha256": "",
-        "acceptance_contract_version": "production_acceptance_manifest_contract_v1",
+        "acceptance_contract_version": "production_acceptance_manifest_contract",
     }
 
 

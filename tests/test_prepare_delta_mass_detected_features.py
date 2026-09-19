@@ -34,7 +34,7 @@ def _write_external_table(path: Path, *, semantics: str = "height") -> None:
                 "external_tool": "MZmine",
                 "external_run_id": "run1",
                 "external_tool_version": "4.9.14",
-                "external_adapter_version": "contract_v1",
+                "external_adapter_version": "contract",
                 "sample_id": "Sample_1",
                 "feature_id": "F123",
                 "mz": "500.0",

@@ -126,7 +126,7 @@ def test_timing_recorder_live_output_updates_on_each_record(tmp_path: Path) -> N
 
     recorder.record("alignment.run_config", elapsed_sec=0.0)
     payload = json.loads(live_path.read_text(encoding="utf-8"))
-    assert payload["schema_version"] == "timing.live.v2"
+    assert payload["schema_version"] == "timing.live"
     assert [record["stage"] for record in payload["recent_records"]] == [
         "alignment.run_config"
     ]
@@ -197,7 +197,7 @@ def test_live_output_replace_retries_transient_windows_lock(
     recorder.record("alignment.run_config", elapsed_sec=0.0)
 
     payload = json.loads(live_path.read_text(encoding="utf-8"))
-    assert payload["schema_version"] == "timing.live.v2"
+    assert payload["schema_version"] == "timing.live"
     assert replace_attempts == 3
     assert delays == [0.05, 0.1]
 
@@ -517,7 +517,7 @@ def test_timing_recorder_live_observations_are_bounded(tmp_path: Path) -> None:
         recorder.observe("metric", value=index)
 
     payload = json.loads(live_path.read_text(encoding="utf-8"))
-    assert payload["schema_version"] == "timing.live.v2"
+    assert payload["schema_version"] == "timing.live"
     assert "records" not in payload
     assert payload["observation_count"] == 4
     assert payload["dropped_observation_count"] == 2
@@ -777,5 +777,5 @@ def test_timing_recorder_concurrent_live_output_thread_safety(tmp_path: Path) ->
 
     assert live_path.exists()
     payload = json.loads(live_path.read_text(encoding="utf-8"))
-    assert payload["schema_version"] == "timing.live.v2"
+    assert payload["schema_version"] == "timing.live"
     assert payload["record_count"] == 80

@@ -28,5 +28,5 @@ parallel_workers,11,Process mode worker 數量（>= 1；預設 CPU 核心數 - 1
 rt_prior_library_path,,developer/debug RT prior library CSV path; leave empty for normal use
 target_pair_rt_calibration_path,,target pair RT calibration TSV path for shadow auto-reselection diagnostics; leave empty to disable
 model_selection_expected_diff_approval_registry,,Durable expected-diff approval registry TSV for selected-hypothesis model selection; leave empty unless approved real-data evidence exists
-targeted_ms1_shape_identity_support_tsv,,Reviewed targeted_ms1_shape_identity_v0 support TSV for explicit own-max same-peak NL_FAIL support; leave empty to let the limited default auto workflow decide eligible support rows
-targeted_ms1_shape_identity_activation_policy,limited_5hmdc_5medc_v1,Targeted MS1 shape identity activation policy: limited_5hmdc_5medc_v1 default auto workflow or explicit_support_tsv explicit-only mode
+targeted_ms1_shape_identity_support_tsv,,Reviewed targeted_ms1_shape_identity support TSV for explicit own-max same-peak NL_FAIL support; leave empty to let the limited default auto workflow decide eligible support rows
+targeted_ms1_shape_identity_activation_policy,limited_5hmdc_5medc,Targeted MS1 shape identity activation policy: limited_5hmdc_5medc default auto workflow or explicit_support_tsv explicit-only mode

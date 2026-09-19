@@ -158,7 +158,7 @@ def _imported_module_names(node):
     return []
 
 
-def test_default_config_matches_v1_alignment_contract():
+def test_default_config_matches_alignment_contract():
     from xic_extractor.alignment import AlignmentConfig
 
     config = AlignmentConfig()
@@ -344,7 +344,7 @@ def test_bool_tolerance_windows_are_rejected(field):
         {"fragmentation_model": "hcd"},
     ],
 )
-def test_invalid_anchor_and_v1_fixed_fields_are_rejected(kwargs):
+def test_invalid_anchor_and_fixed_fields_are_rejected(kwargs):
     from xic_extractor.alignment import AlignmentConfig
 
     with pytest.raises(ValueError):

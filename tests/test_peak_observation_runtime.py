@@ -453,7 +453,7 @@ def test_batch_receipt_is_stable_and_coordinate_truth_changes_identity(
     with pytest.raises(PeakObservationBatchError, match="different processing"):
         replace(
             first,
-            processing_attempt_id=("xic.processing-attempt.v1:" + "0" * 64),
+            processing_attempt_id=("xic.processing-attempt:" + "0" * 64),
         )
 
 
@@ -869,9 +869,9 @@ def _identity_fixture(
                 injection_order=1,
             ),
         ),
-        scientific_input_schema_version="observation-runtime-observation-input-v1",
-        processing_algorithm_version="observation-runtime-observation-algorithm-v1",
-        processing_contract_version="observation-runtime-observation-contract-v1",
+        scientific_input_schema_version="observation-runtime-observation-input",
+        processing_algorithm_version="observation-runtime-observation-algorithm",
+        processing_contract_version="observation-runtime-observation-contract",
         scientific_inputs={"fixture": "synthetic-no-raw-observation-runtime"},
     )
     attempt = issue_processing_attempt(request)
@@ -943,9 +943,9 @@ def _two_sample_identity_fixture(
     request = build_processing_request_identity(
         acquisition_sources=sources,
         acquisition_bindings=bindings,
-        scientific_input_schema_version="observation-runtime-observation-input-v1",
-        processing_algorithm_version="observation-runtime-observation-algorithm-v1",
-        processing_contract_version="observation-runtime-observation-contract-v1",
+        scientific_input_schema_version="observation-runtime-observation-input",
+        processing_algorithm_version="observation-runtime-observation-algorithm",
+        processing_contract_version="observation-runtime-observation-contract",
         scientific_inputs={
             "fixture": "synthetic-no-raw-observation-runtime-two-sample"
         },
@@ -1081,7 +1081,7 @@ def _runtime(
     return start_runtime_attempt(
         attempt=attempt,
         work_unit_keys=work_unit_keys,
-        owner_completeness_attestation="observation-runtime-observation-runtime:v1",
+        owner_completeness_attestation="observation-runtime-observation-runtime",
     )
 
 
@@ -1096,7 +1096,7 @@ def _reservations(
             resource_key=job.resource_key,
             worker_key=f"worker:{index}",
             source_reference=f"no-raw:{job.work_unit_key}",
-            compatibility_token="observation-runtime-observation-runtime:v1",
+            compatibility_token="observation-runtime-observation-runtime",
         )
         for index, job in enumerate(jobs)
     )
@@ -1129,7 +1129,7 @@ def _replace_coordinate(
     )
     return TraceCoordinate(
         trace_coordinate_id=acquisition_contract_module._typed_id(
-            "xic.trace-coordinate.v1:",
+            "xic.trace-coordinate:",
             basis,
         ),
         capability_id=coordinate.capability_id,

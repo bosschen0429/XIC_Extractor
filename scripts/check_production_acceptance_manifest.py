@@ -1,4 +1,4 @@
-"""Check ProductionAcceptanceManifest v1 schema and TSV artifacts."""
+"""Check ProductionAcceptanceManifest schema and TSV artifacts."""
 
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ from xic_extractor.alignment.quant_matrix_version import (
 
 ROOT = Path(__file__).resolve().parents[1]
 PRODUCTION_ACCEPTANCE_MANIFEST_SCHEMA = (
-    ROOT / "docs/superpowers/schemas/production_acceptance_manifest_schema.v1.json"
+    ROOT / "docs/superpowers/schemas/production_acceptance_manifest_schema.json"
 )
 
 

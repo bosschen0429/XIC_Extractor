@@ -66,7 +66,7 @@ def _summary_row(
     candidate_id: str,
     status: str,
     *,
-    schema_version: str = trace_batch.ANCHOR_LOCAL_SCHEMA_VERSION,
+    schema_version: str = trace_batch.SCHEMA_VERSION,
     trace_extraction_sha256: str = "b" * 64,
 ) -> dict[str, str]:
     assignment_sha256 = pt_pattern_candidate_assignment_fingerprint(
@@ -80,7 +80,7 @@ def _summary_row(
         "trace_extraction_sha256": trace_extraction_sha256,
         "trace_artifact_role": (
             "anchor_local"
-            if schema_version == trace_batch.ANCHOR_LOCAL_SCHEMA_VERSION
+            if schema_version == trace_batch.SCHEMA_VERSION
             else "full_context"
         ),
         "scan_pattern_seed_status": "full_pattern_seeded",
@@ -138,7 +138,7 @@ def _summary_row(
 def _metric_rows(
     candidate_id: str,
     *,
-    schema_version: str = trace_batch.ANCHOR_LOCAL_SCHEMA_VERSION,
+    schema_version: str = trace_batch.SCHEMA_VERSION,
     trace_extraction_sha256: str = "b" * 64,
 ) -> list[dict[str, str]]:
     assignment_sha256 = pt_pattern_candidate_assignment_fingerprint(
@@ -153,7 +153,7 @@ def _metric_rows(
             "trace_extraction_sha256": trace_extraction_sha256,
             "trace_artifact_role": (
                 "anchor_local"
-                if schema_version == trace_batch.ANCHOR_LOCAL_SCHEMA_VERSION
+                if schema_version == trace_batch.SCHEMA_VERSION
                 else "full_context"
             ),
             "position_label": label,
@@ -244,7 +244,7 @@ def _metric_rows(
                     "anchor_segment_common_left_trend": "ascending",
                     "anchor_segment_common_right_trend": "descending",
                 }
-                if schema_version == trace_batch.ANCHOR_LOCAL_SCHEMA_VERSION
+                if schema_version == trace_batch.SCHEMA_VERSION
                 else {}
             ),
             "trace_quality_flags": (
@@ -344,7 +344,7 @@ def _write_trace_bundle_fixture(
 ) -> Path:
     schema_version = summary_rows[0]["schema_version"]
     artifact_role = summary_rows[0]["trace_artifact_role"]
-    is_anchor = schema_version == trace_batch.ANCHOR_LOCAL_SCHEMA_VERSION
+    is_anchor = schema_version == trace_batch.SCHEMA_VERSION
     candidate_assignments = tuple(
         (row["candidate_id"], row["candidate_assignment_sha256"])
         for row in summary_rows
@@ -549,7 +549,7 @@ def test_build_review_packet_rows_samples_per_status_and_keeps_pending_oracle() 
         "cand-supported-a",
         "cand-partial",
     ]
-    assert rows[0]["schema_version"] == packet.ANCHOR_LOCAL_SCHEMA_VERSION
+    assert rows[0]["schema_version"] == packet.SCHEMA_VERSION
     assert rows[0]["readiness_tier"] == "diagnostic_only"
     assert rows[0]["evidence_owner"] == packet.EVIDENCE_OWNER
     assert rows[0]["review_bucket"] == "detected_diagnostic_review"
@@ -877,7 +877,7 @@ def test_review_packet_cli_writes_csv_and_sidecar(tmp_path: Path) -> None:
             encoding="utf-8"
         )
     )
-    assert sidecar["schema_version"] == packet.ANCHOR_LOCAL_SCHEMA_VERSION
+    assert sidecar["schema_version"] == packet.SCHEMA_VERSION
     assert sidecar["readiness_tier"] == "diagnostic_only"
     assert sidecar["packet_row_count"] == 1
     assert sidecar["packet_manifest_version"] == packet.PACKET_MANIFEST_VERSION
@@ -1534,55 +1534,6 @@ def test_verified_trace_bundle_rejects_out_of_domain_manifest_settings(
         )
 
 
-def test_review_packet_uses_current_full_columns_for_full_trace_summary(
-    tmp_path: Path,
-) -> None:
-    candidates_csv = tmp_path / "pt_pattern_candidates.csv"
-    summary_csv = tmp_path / "pt_pattern_trace_summary.csv"
-    metrics_csv = tmp_path / "pt_pattern_trace_metrics.csv"
-    write_delimited_rows(
-        candidates_csv,
-        [_candidate_row("cand-supported")],
-        packet.CANDIDATE_REQUIRED_COLUMNS,
-    )
-    summary_rows = [
-        _summary_row(
-            "cand-supported",
-            "pt_pattern_detected_diagnostic",
-            schema_version=evidence.SCHEMA_VERSION,
-        )
-    ]
-    metric_rows = _metric_rows(
-        "cand-supported",
-        schema_version=evidence.SCHEMA_VERSION,
-    )
-    trace_manifest = _write_trace_bundle_fixture(
-        candidates_csv=candidates_csv,
-        summary_csv=summary_csv,
-        metrics_csv=metrics_csv,
-        summary_rows=summary_rows,
-        metric_rows=metric_rows,
-    )
-
-    outputs = packet.run_review_packet(
-        candidates_csv=candidates_csv,
-        trace_summary_csv=summary_csv,
-        trace_metrics_csv=metrics_csv,
-        output_dir=tmp_path / "legacy_packet",
-        packet_label="legacy",
-        source_label="pt_only",
-        max_per_status=1,
-        trace_manifest_json=trace_manifest,
-    )
-    rows = read_delimited_rows(
-        outputs["packet_csv"],
-        required_columns=packet.LEGACY_PACKET_COLUMNS,
-        delimiter=",",
-    )
-    assert rows[0]["schema_version"] == packet.SCHEMA_VERSION
-    assert "anchor_segmentation_status" not in rows[0]
-
-
 def test_saved_review_packet_rejects_stale_trace_manifest_fingerprint(
     tmp_path: Path,
 ) -> None:
@@ -1598,12 +1549,12 @@ def test_saved_review_packet_rejects_stale_trace_manifest_fingerprint(
         _summary_row(
             "cand-stale-manifest",
             "pt_pattern_detected_diagnostic",
-            schema_version=evidence.SCHEMA_VERSION,
+            schema_version=trace_batch.SCHEMA_VERSION,
         )
     ]
     metric_rows = _metric_rows(
         "cand-stale-manifest",
-        schema_version=evidence.SCHEMA_VERSION,
+        schema_version=trace_batch.SCHEMA_VERSION,
     )
     trace_manifest = _write_trace_bundle_fixture(
         candidates_csv=candidates_csv,
@@ -1644,7 +1595,7 @@ def test_saved_review_packet_rejects_stale_trace_manifest_fingerprint(
 
 def test_review_packet_rejects_unknown_trace_schema() -> None:
     summary = _summary_row("cand", "pt_pattern_detected_diagnostic")
-    summary["schema_version"] = "pt_pattern_trace_diagnosis.v999"
+    summary["schema_version"] = "unsupported_pt_pattern_trace_diagnosis"
 
     with pytest.raises(ValueError, match="unsupported trace summary schema_version"):
         packet.build_review_packet_rows(

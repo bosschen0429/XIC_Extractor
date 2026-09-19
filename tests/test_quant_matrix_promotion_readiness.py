@@ -22,14 +22,14 @@ from xic_extractor.tabular_io import file_sha256
 
 ROOT = Path(__file__).resolve().parents[1]
 PROMOTION_SCHEMA = (
-    ROOT / "docs/superpowers/schemas/quant_matrix_promotion_readiness_schema.v1.json"
+    ROOT / "docs/superpowers/schemas/quant_matrix_promotion_readiness_schema.json"
 )
 
 
 def test_quant_matrix_promotion_schema_matches_public_outputs() -> None:
     schema = json.loads(PROMOTION_SCHEMA.read_text(encoding="utf-8"))
 
-    assert schema["schema_version"] == "quant_matrix_promotion_readiness_schema_v1"
+    assert schema["schema_version"] == "quant_matrix_promotion_readiness_schema"
     assert schema["readiness_schema_version"] == PROMOTION_READINESS_SCHEMA
     assert schema["promotion_check_columns"] == list(PROMOTION_CHECK_COLUMNS)
     assert schema["authority_rules"]["contract_correctness_is_not_science"] is True
@@ -91,7 +91,7 @@ def test_focused_or_fixture_cohort_only_validation_cannot_claim_production_ready
     evidence.write_text(
         json.dumps(
             {
-                "schema_version": "quant_matrix_validation_evidence_v1",
+                "schema_version": "quant_matrix_validation_evidence",
                 "requested_readiness_label": "production_ready",
                 "evidence": [
                     {"tier": "focused_tests", "status": "pass"},
@@ -125,7 +125,7 @@ def test_required_science_strings_without_artifact_binding_cannot_promote(
     evidence.write_text(
         json.dumps(
             {
-                "schema_version": "quant_matrix_validation_evidence_v1",
+                "schema_version": "quant_matrix_validation_evidence",
                 "requested_readiness_label": "production_ready",
                 "evidence": [
                     {"tier": "full_cohort", "status": "pass"},
@@ -160,7 +160,7 @@ def test_duplicate_validation_tiers_fail_closed(tmp_path: Path) -> None:
     evidence.write_text(
         json.dumps(
             {
-                "schema_version": "quant_matrix_validation_evidence_v1",
+                "schema_version": "quant_matrix_validation_evidence",
                 "requested_readiness_label": "production_ready",
                 "evidence": evidence_rows,
             }
@@ -190,7 +190,7 @@ def test_large_cohort_oracle_and_downstream_evidence_can_mark_science_ready(
     evidence.write_text(
         json.dumps(
             {
-                "schema_version": "quant_matrix_validation_evidence_v1",
+                "schema_version": "quant_matrix_validation_evidence",
                 "requested_readiness_label": "production_ready",
                 "evidence": _science_ready_evidence_rows(tmp_path),
             }
@@ -222,7 +222,7 @@ def test_contract_failure_blocks_even_with_science_evidence(tmp_path: Path) -> N
         EXPECTED_DIFF_SUMMARY_COLUMNS,
         [
             {
-                "schema_version": "quant_matrix_version_expected_diff_summary_v1",
+                "schema_version": "quant_matrix_version_expected_diff_summary",
                 "acceptance_status": "fail",
                 "expected_diff_count": "1",
                 "written_backfill_count": "1",
@@ -235,7 +235,7 @@ def test_contract_failure_blocks_even_with_science_evidence(tmp_path: Path) -> N
     evidence.write_text(
         json.dumps(
             {
-                "schema_version": "quant_matrix_validation_evidence_v1",
+                "schema_version": "quant_matrix_validation_evidence",
                 "evidence": _science_ready_evidence_rows(tmp_path),
             }
         ),
@@ -342,7 +342,7 @@ def _write_contract_ready_inputs(root: Path) -> dict[str, Path]:
         EXPECTED_DIFF_SUMMARY_COLUMNS,
         [
             {
-                "schema_version": "quant_matrix_version_expected_diff_summary_v1",
+                "schema_version": "quant_matrix_version_expected_diff_summary",
                 "acceptance_status": "pass",
                 "expected_diff_count": "1",
                 "written_backfill_count": "1",
@@ -357,7 +357,7 @@ def _write_contract_ready_inputs(root: Path) -> dict[str, Path]:
         CELL_PROVENANCE_COLUMNS,
         [
             {
-                "schema_version": "quant_matrix_cell_provenance_v1",
+                "schema_version": "quant_matrix_cell_provenance",
                 "peak_hypothesis_id": "PH001",
                 "sample_stem": "SampleA",
                 "source_feature_family_ids": "FAM001",
@@ -376,7 +376,7 @@ def _write_contract_ready_inputs(root: Path) -> dict[str, Path]:
                 "manifest_sha256": "",
             },
             {
-                "schema_version": "quant_matrix_cell_provenance_v1",
+                "schema_version": "quant_matrix_cell_provenance",
                 "peak_hypothesis_id": "PH001",
                 "sample_stem": "SampleB",
                 "source_feature_family_ids": "FAM001",
@@ -402,7 +402,7 @@ def _write_contract_ready_inputs(root: Path) -> dict[str, Path]:
         ROW_SUMMARY_COLUMNS,
         [
             {
-                "schema_version": "quant_matrix_row_summary_v1",
+                "schema_version": "quant_matrix_row_summary",
                 "peak_hypothesis_id": "PH001",
                 "source_feature_family_ids": "FAM001",
                 "detected_count": "1",
@@ -512,7 +512,7 @@ def _write_downstream_impact_artifact(root: Path) -> Path:
         CELL_PROVENANCE_COLUMNS,
         [
             {
-                "schema_version": "quant_matrix_cell_provenance_v1",
+                "schema_version": "quant_matrix_cell_provenance",
                 "peak_hypothesis_id": "PH001",
                 "sample_stem": "SampleA",
                 "source_feature_family_ids": "FAM001",
@@ -531,7 +531,7 @@ def _write_downstream_impact_artifact(root: Path) -> Path:
                 "manifest_sha256": "",
             },
             {
-                "schema_version": "quant_matrix_cell_provenance_v1",
+                "schema_version": "quant_matrix_cell_provenance",
                 "peak_hypothesis_id": "PH001",
                 "sample_stem": "SampleB",
                 "source_feature_family_ids": "FAM001",
@@ -557,7 +557,7 @@ def _write_downstream_impact_artifact(root: Path) -> Path:
         ROW_SUMMARY_COLUMNS,
         [
             {
-                "schema_version": "quant_matrix_row_summary_v1",
+                "schema_version": "quant_matrix_row_summary",
                 "peak_hypothesis_id": "PH001",
                 "source_feature_family_ids": "FAM001",
                 "detected_count": "1",

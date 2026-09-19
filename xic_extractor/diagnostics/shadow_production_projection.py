@@ -55,7 +55,7 @@ from xic_extractor.tabular_io import (
     write_tsv,
 )
 
-SCHEMA_VERSION = "shadow_production_projection_v1"
+SCHEMA_VERSION = "shadow_production_projection"
 
 ShadowDecision = Literal["accept", "block", "context"]
 
@@ -1193,7 +1193,6 @@ def _selected_overlay_row(
         rows,
         seed_group_id=seed_group_id,
         support_verdict=_MS1_SHAPE_SUPPORT_COMPONENT,
-        allow_legacy_family_row=False,
     )
 
 

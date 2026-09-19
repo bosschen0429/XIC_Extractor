@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import replace
 from pathlib import Path
 
@@ -33,7 +35,7 @@ from xic_extractor.peak_detection.cid_nl_method_assessment import (
 )
 
 
-def test_legacy_member_no_repair_keeps_v1_receipt_shape(tmp_path: Path) -> None:
+def test_subject_no_repair_uses_current_complete_receipt_shape(tmp_path: Path) -> None:
     fixture = _repair_fixture(tmp_path, empty=True)
 
     receipt = close_observation_repair(_subject(fixture), fixture.result)
@@ -41,13 +43,29 @@ def test_legacy_member_no_repair_keeps_v1_receipt_shape(tmp_path: Path) -> None:
     assert receipt.outcome == "no_repair"
     assert receipt.evidence is None
     assert receipt.no_repair_terminal is None
+    expected_payload = {
+        "schema_version": "observation_repair_receipt",
+        "repair_scope": "subject",
+        "subject_id": receipt.subject.subject_id,
+        "repair_epoch": receipt.subject.repair_epoch,
+        "outcome": "no_repair",
+        "sample_stem": receipt.sample_stem,
+        "authorization_id": None,
+        "candidate_id": None,
+        "evidence": None,
+        "no_repair_terminal": None,
+    }
+    expected_bytes = json.dumps(
+        expected_payload, ensure_ascii=True, sort_keys=True, separators=(",", ":"),
+        allow_nan=False,
+    ).encode("utf-8")
     assert receipt.receipt_id == (
-        "xic.observation-repair-receipt.v1:"
-        "6b138f27e02c207962faf83d31df6bb0dccbc75d3ce3908f854437aa3282353a"
+        "xic.observation-repair-receipt:"
+        + hashlib.sha256(expected_bytes).hexdigest()
     )
 
 
-def test_legacy_member_receipt_rejects_candidate_terminal(tmp_path: Path) -> None:
+def test_subject_receipt_rejects_candidate_terminal(tmp_path: Path) -> None:
     fixture = _repair_fixture(tmp_path, empty=True)
     subject = _subject(fixture)
     evaluation = fixture.observation.physical_evaluation

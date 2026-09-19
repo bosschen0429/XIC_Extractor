@@ -1464,7 +1464,7 @@ def write_architecture_census_json(
             "architecture census JSON must be outside the repo or git-ignored"
         )
     payload = {
-        "schema_version": "architecture_census_v2",
+        "schema_version": "architecture_census",
         "claim": "derived_disposable_not_authority",
         "static_dependency_scope": STATIC_DEPENDENCY_SCOPE,
         "static_dependency_gate": ".importlinter",

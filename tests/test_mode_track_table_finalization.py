@@ -26,17 +26,17 @@ def test_committed_review_bundle_preserves_hash_and_reviewed_census() -> None:
     repo_root = Path(__file__).resolve().parents[1]
     review_bundle = (
         repo_root
-        / "docs/superpowers/validation/issue180_m9_gate_c_closed_writer_v3"
+        / "docs/superpowers/validation/issue180_m9_gate_c_closed_writer"
         / "review_transfer"
     )
-    review_path = review_bundle / "manual_review_v1.json"
-    replay_path = review_bundle / "manual_review_observation_replay_v1.json"
+    review_path = review_bundle / "manual_review.json"
+    replay_path = review_bundle / "manual_review_observation_replay.json"
 
     assert hashlib.sha256(review_path.read_bytes()).hexdigest() == (
-        "a7edc540ea634b03b0f0f525730867b6432a5c6ea535518cd3da73410fb47a89"
+        "71cabbb78dd2a32b41aa42a94fc8221b43ddc414f3898e75dc3c370671f657a4"
     )
     assert hashlib.sha256(replay_path.read_bytes()).hexdigest() == (
-        "698d414d53241e593aac1af5d1456dd0406ef4ee0caeb37a763a279c6546a1cd"
+        "d82dbde054039085867c0eca2106c783ed203b12c77a2cd147da13b3261f9ae2"
     )
     summary = finalization.inspect_mode_track_review_bundle(
         manual_review_path=review_path,

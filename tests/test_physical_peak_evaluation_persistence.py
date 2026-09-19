@@ -25,12 +25,10 @@ from xic_extractor.peak_detection.physical_peak_codec import (
 from xic_extractor.peak_detection.physical_peak_evaluation import (
     enumerate_physical_segment_universe,
     evaluate_physical_peak,
-    mint_physical_peak_question,
     prepare_physical_signal,
 )
 from xic_extractor.peak_detection.physical_peak_models import (
     DISCOVERY_PHYSICAL_PEAK_POINT_POLICY,
-    LEGACY_PHYSICAL_PEAK_SELECTION_POLICY,
     PHYSICAL_PEAK_POINT_POLICY,
     PHYSICAL_PEAK_WINDOW_POLICY,
 )
@@ -87,69 +85,12 @@ def test_exterior_context_change_keeps_observed_near_baseline_peak_available() -
     )
 
 
-@pytest.mark.parametrize(
-    "policy", ["baseline_peak_contains_query_v4", "unique_baseline_peak_in_context_v3"]
-)
-def test_recorded_zero_return_policy_replays_without_edge_recovery(policy: str) -> None:
-    rt, raw = _context_sensitive_trace()
-    rt, raw = rt[:-1], raw[:-1]
-    profile = SignalProcessingProfile()
-    recorded = evaluate_physical_peak(
-        prepare_physical_signal(rt, raw),
-        selection_subject_id="recorded-zero-return",
-        query_rt_min=23.0,
-        selection_policy_version=policy,
-    )
-    assert recorded.state == "unavailable"
-    assert recorded.reason == "incomplete_peak_context"
-    payload = serialize_physical_peak_evaluation(
-        rt, raw, profile=profile, evaluation=recorded
-    )
-    *_, restored = deserialize_physical_peak_evaluation(payload)
-    assert restored == recorded
-    assert serialize_physical_peak_evaluation(
-        rt, raw, profile=profile, evaluation=restored
-    ) == payload
-
-
-def test_complete_peak_values_are_unchanged_by_edge_recovery() -> None:
+def test_retired_point_policy_is_rejected() -> None:
     rt, raw = _context_sensitive_trace()
     prepared = prepare_physical_signal(rt, raw)
-    recorded = evaluate_physical_peak(
-        prepared, selection_subject_id="complete-context", query_rt_min=23.0,
-        selection_policy_version="baseline_peak_contains_query_v4",
-    )
-    fresh = evaluate_physical_peak(
-        prepared, selection_subject_id="complete-context", query_rt_min=23.0
-    )
-    assert recorded.state == fresh.state == "available"
-    assert recorded.facts is not None and fresh.facts is not None
-    assert fresh.facts.physical_segment_id == recorded.facts.physical_segment_id
-    assert (
-        fresh.facts.relative_shape_content_hash
-        == recorded.facts.relative_shape_content_hash
-    )
-    assert fresh.facts.scan_support_count == recorded.facts.scan_support_count
-    assert fresh.integration == recorded.integration
-
-
-@pytest.mark.parametrize("fresh_universe", [False, True])
-def test_point_question_rejects_a_different_boundary_policy_family(
-    fresh_universe: bool,
-) -> None:
-    rt, raw = _context_sensitive_trace()
-    prepared = prepare_physical_signal(rt, raw)
-    old_policy = "baseline_peak_contains_query_v4"
-    universe_policy = PHYSICAL_PEAK_POINT_POLICY if fresh_universe else old_policy
-    query_policy = old_policy if fresh_universe else PHYSICAL_PEAK_POINT_POLICY
-    universe = enumerate_physical_segment_universe(
-        prepared, selection_policy_version=universe_policy
-    )
-    with pytest.raises(ValueError, match="crosses boundary policy"):
-        mint_physical_peak_question(
-            prepared.projection, universe,
-            selection_subject_id="cross-boundary-policy", query_rt_min=23.0,
-            selection_policy_version=query_policy,
+    with pytest.raises(ValueError, match="unsupported physical peak selection policy"):
+        enumerate_physical_segment_universe(
+            prepared, selection_policy_version="unsupported_point_policy"
         )
 
 
@@ -172,8 +113,6 @@ def test_truncated_physical_peak_has_no_numeric_facts() -> None:
     [
         PHYSICAL_PEAK_POINT_POLICY,
         PHYSICAL_PEAK_WINDOW_POLICY,
-        "baseline_peak_contains_query_v3",
-        "unique_baseline_peak_in_context_v2",
     ],
 )
 @pytest.mark.parametrize("positive_points", [1, 2])
@@ -203,37 +142,20 @@ def test_original_xic_support_limits_physical_answers(
 
 
 @pytest.mark.parametrize(
-    "policy,recorded_policy,query_rt",
+    "policy,query_rt",
     [
-        (PHYSICAL_PEAK_POINT_POLICY, "baseline_peak_contains_query_v3", 1.5),
-        (PHYSICAL_PEAK_WINDOW_POLICY, "unique_baseline_peak_in_context_v2", 0.2),
+        (PHYSICAL_PEAK_POINT_POLICY, 1.5),
+        (PHYSICAL_PEAK_WINDOW_POLICY, 0.2),
     ],
 )
 @pytest.mark.parametrize("positions", [(14, 16), (12, 14, 16, 18)])
 def test_discontinuous_original_points_cannot_mint_fresh_physical_facts(
-    policy: str, recorded_policy: str, query_rt: float, positions: tuple[int, ...]
+    policy: str, query_rt: float, positions: tuple[int, ...]
 ) -> None:
     rt = np.linspace(0.0, 3.0, 31)
     raw = np.zeros_like(rt)
     raw[list(positions)] = 1000.0
-    profile = SignalProcessingProfile()
-    prepared = prepare_physical_signal(rt, raw, profile=profile)
-    recorded = evaluate_physical_peak(
-        prepared,
-        selection_subject_id="isolated-acquired-impulses",
-        query_rt_min=query_rt,
-        selection_policy_version=recorded_policy,
-    )
-    assert recorded.state == "available"
-    payload = serialize_physical_peak_evaluation(
-        rt, raw, profile=profile, evaluation=recorded
-    )
-    *_, restored = deserialize_physical_peak_evaluation(payload)
-    assert restored == recorded
-    assert serialize_physical_peak_evaluation(
-        rt, raw, profile=profile, evaluation=restored
-    ) == payload
-
+    prepared = prepare_physical_signal(rt, raw)
     fresh = evaluate_physical_peak(
         prepared,
         selection_subject_id="isolated-acquired-impulses",
@@ -266,14 +188,14 @@ def test_original_continuity_accepts_a_pair_despite_another_isolated_point(
 
 
 @pytest.mark.parametrize(
-    "policy,recorded_policy,query_rt",
+    "policy,query_rt",
     [
-        (PHYSICAL_PEAK_POINT_POLICY, "baseline_peak_contains_query_v5", 5.0),
-        (PHYSICAL_PEAK_WINDOW_POLICY, "unique_baseline_peak_in_context_v4", 0.5),
+        (PHYSICAL_PEAK_POINT_POLICY, 5.0),
+        (PHYSICAL_PEAK_WINDOW_POLICY, 0.5),
     ],
 )
 def test_fragmented_original_peak_is_not_rescued_by_smoothed_envelope(
-    policy: str, recorded_policy: str, query_rt: float,
+    policy: str, query_rt: float,
 ) -> None:
     rt = np.linspace(0.0, 10.0, 101)
     raw = 1000.0 * np.exp(-0.5 * ((rt - 5.0) / 0.8) ** 2)
@@ -281,20 +203,6 @@ def test_fragmented_original_peak_is_not_rescued_by_smoothed_envelope(
     raw[50] = 1000.0  # An adjacent pair does not repair repeated interruptions.
     profile = SignalProcessingProfile()
     prepared = prepare_physical_signal(rt, raw, profile=profile)
-    recorded = evaluate_physical_peak(
-        prepared, selection_subject_id="fragmented-envelope", query_rt_min=query_rt,
-        selection_policy_version=recorded_policy,
-    )
-    assert recorded.state == "available" and recorded.facts is not None
-    payload = serialize_physical_peak_evaluation(
-        rt, raw, profile=profile, evaluation=recorded,
-    )
-    *_, restored = deserialize_physical_peak_evaluation(payload)
-    assert restored == recorded
-    assert serialize_physical_peak_evaluation(
-        rt, raw, profile=profile, evaluation=restored,
-    ) == payload
-
     fresh = evaluate_physical_peak(
         prepared, selection_subject_id="fragmented-envelope", query_rt_min=query_rt,
         selection_policy_version=policy,
@@ -303,7 +211,6 @@ def test_fragmented_original_peak_is_not_rescued_by_smoothed_envelope(
     assert fresh.reason == "fragmented_original_xic_support"
     assert fresh.facts is None and fresh.integration is None
     assert fresh.answer.physical_segment_id is None
-    assert fresh.segment_universe == recorded.segment_universe
     fresh_payload = serialize_physical_peak_evaluation(
         rt, raw, profile=profile, evaluation=fresh,
     )
@@ -326,24 +233,19 @@ def test_original_jaggedness_does_not_replace_peak_evidence(
     else:
         raw[::2] *= 0.1  # Jagged, but original signal remains continuous.
     prepared = prepare_physical_signal(rt, raw)
-    recorded = evaluate_physical_peak(
-        prepared, selection_subject_id="supported-original-peak", query_rt_min=5.0,
-        selection_policy_version="baseline_peak_contains_query_v5",
-    )
-    fresh = evaluate_physical_peak(
+    result = evaluate_physical_peak(
         prepared, selection_subject_id="supported-original-peak", query_rt_min=5.0,
     )
-    assert recorded.state == fresh.state == "available"
+    assert result.state == "available"
     if not background_fragments:
-        assert recorded.facts is not None
+        assert result.facts is not None
         selected = next(
-            segment for segment in recorded.segment_universe.segments
-            if segment.physical_segment_id == recorded.facts.physical_segment_id
+            segment for segment in result.segment_universe.segments
+            if segment.physical_segment_id == result.facts.physical_segment_id
         )
         original = raw[selected.start_index:selected.end_index]
         assert noise_shape_severity(original)[0] == 2
-    assert fresh.integration == recorded.integration
-    assert fresh.segment_universe == recorded.segment_universe
+    assert result.integration is not None
 
 
 @pytest.mark.parametrize("scale,background", [(1.0, 0.0), (1000.0, 100000.0)])
@@ -360,25 +262,13 @@ def test_background_fluctuation_cannot_borrow_height_from_its_baseline(
         161.916,
     ]) + background
     rt = np.arange(len(raw), dtype=float) / 10.0
-    profile = SignalProcessingProfile()
-    prepared = prepare_physical_signal(rt, raw, profile=profile)
-    recorded = evaluate_physical_peak(
-        prepared, selection_subject_id="background-fluctuation", query_rt_min=1.7,
-        selection_policy_version="baseline_peak_contains_query_v6",
-    )
-    assert recorded.state == "available"
-    payload = serialize_physical_peak_evaluation(
-        rt, raw, profile=profile, evaluation=recorded,
-    )
-    *_, restored = deserialize_physical_peak_evaluation(payload)
-    assert restored == recorded
+    prepared = prepare_physical_signal(rt, raw)
     fresh = evaluate_physical_peak(
         prepared, selection_subject_id="background-fluctuation", query_rt_min=1.7,
     )
     assert fresh.state == "unavailable"
     assert fresh.reason == "insufficient_local_peak_contrast"
     assert fresh.facts is None and fresh.integration is None
-    assert fresh.segment_universe == recorded.segment_universe
 
 
 @pytest.mark.parametrize(
@@ -416,17 +306,13 @@ def test_resolved_peak_on_background_keeps_its_canonical_integration(
         + background + slope * rt
     )
     prepared = prepare_physical_signal(rt, raw)
-    recorded = evaluate_physical_peak(
-        prepared, selection_subject_id="resolved-peak", query_rt_min=5.0,
-        selection_policy_version="baseline_peak_contains_query_v6",
-    )
-    fresh = evaluate_physical_peak(
+    result = evaluate_physical_peak(
         prepared, selection_subject_id="resolved-peak", query_rt_min=5.0,
         selection_policy_version=policy,
     )
-    assert recorded.state == fresh.state == "available"
-    assert fresh.integration == recorded.integration
-    assert fresh.segment_universe == recorded.segment_universe
+    assert result.state == "available"
+    assert result.integration is not None
+    assert result.facts is not None
 
 
 @pytest.mark.parametrize("positive_points", [2, 3])
@@ -450,7 +336,7 @@ def test_background_qualification_keeps_a_sparse_isolated_peak(
 
 
 @pytest.mark.parametrize("background", [False, True])
-def test_discovery_qualification_policy_replays_without_reinterpreting_old_answers(
+def test_current_discovery_qualification_persists_exactly(
     background: bool,
 ) -> None:
     profile = SignalProcessingProfile()
@@ -601,39 +487,6 @@ def test_has_unresolved_valley_floors() -> None:
 
 
 @pytest.mark.parametrize(
-    "policy,query_rt",
-    [
-        ("baseline_peak_contains_query_v2", 1.5),
-        ("unique_baseline_peak_in_context_v1", 0.2),
-    ],
-)
-def test_recorded_singleton_policy_replays_without_reinterpretation(
-    policy: str, query_rt: float
-) -> None:
-    rt = np.linspace(0.0, 3.0, 31)
-    raw = np.zeros_like(rt)
-    raw[15] = 1000.0
-    profile = SignalProcessingProfile()
-    recorded = evaluate_physical_peak(
-        prepare_physical_signal(rt, raw, profile=profile),
-        selection_subject_id="recorded-singleton",
-        query_rt_min=query_rt,
-        selection_policy_version=policy,
-    )
-    assert recorded.state == "available"
-    assert recorded.facts is not None
-    assert recorded.facts.scan_support_count > 1
-    payload = serialize_physical_peak_evaluation(
-        rt, raw, profile=profile, evaluation=recorded
-    )
-    *_, restored = deserialize_physical_peak_evaluation(payload)
-    assert restored == recorded
-    assert serialize_physical_peak_evaluation(
-        rt, raw, profile=profile, evaluation=restored
-    ) == payload
-
-
-@pytest.mark.parametrize(
     "policy,reason",
     [
         (PHYSICAL_PEAK_POINT_POLICY, "insufficient_original_xic_support"),
@@ -681,28 +534,6 @@ def test_visible_peak_tail_selects_complete_baseline_bounded_peak(
     )
     assert baseline.state == "unavailable"
     assert baseline.facts is None
-
-
-@pytest.mark.parametrize("query_rt", [1.525, 2.0])
-def test_legacy_peak_policy_rehydrates_without_changing_saved_answer(query_rt) -> None:
-    rt = np.linspace(0.0, 4.0, 161)
-    raw = 100.0 + 10000.0 * np.exp(-0.5 * ((rt - 2.0) / 0.16) ** 2)
-    profile = SignalProcessingProfile()
-    legacy = evaluate_physical_peak(
-        prepare_physical_signal(rt, raw, profile=profile),
-        selection_subject_id="saved-legacy-query",
-        query_rt_min=query_rt,
-        selection_policy_version=LEGACY_PHYSICAL_PEAK_SELECTION_POLICY,
-    )
-    assert legacy.state == ("available" if query_rt == 2.0 else "unavailable")
-    payload = serialize_physical_peak_evaluation(
-        rt, raw, profile=profile, evaluation=legacy
-    )
-    *_, restored = deserialize_physical_peak_evaluation(payload)
-    assert restored == legacy
-    assert serialize_physical_peak_evaluation(
-        rt, raw, profile=profile, evaluation=restored
-    ) == payload
 
 
 @pytest.mark.parametrize(
@@ -793,7 +624,7 @@ def test_physical_evaluation_persistence_rehydrates_terminal_owner_state(
     "mutate",
     [
         lambda value: value["evaluation"]["answer"].__setitem__(
-            "physical_answer_id", "physical-answer.v1:" + "0" * 64
+            "physical_answer_id", "physical-answer:" + "0" * 64
         ),
         lambda value: value["trace"]["rt"].__setitem__(0, "-0x0.0p+0"),
         lambda value: value["trace"]["rt"].__setitem__(0, "0x0p+0"),

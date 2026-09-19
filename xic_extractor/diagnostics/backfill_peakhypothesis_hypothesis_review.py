@@ -19,7 +19,7 @@ from xic_extractor.diagnostics.diagnostic_io import (
     write_tsv,
 )
 
-SCHEMA_VERSION = "backfill_peakhypothesis_hypothesis_review_v1"
+SCHEMA_VERSION = "backfill_peakhypothesis_hypothesis_review"
 
 REVIEW_QUEUE_COLUMNS = (
     "schema_version",

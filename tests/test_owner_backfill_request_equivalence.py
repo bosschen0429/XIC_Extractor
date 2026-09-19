@@ -1149,7 +1149,7 @@ def test_process_worker_rebuilds_owner_partition_and_fans_out(
     assert result.peak_fact_cost.sealed_observation_count == 2
     assert result.peak_fact_cost.identity_unavailable_count == 0
     assert result.peak_fact_cost.elapsed_seconds is not None
-    assert result.peak_fact_cost.measurement_source == "execution_runtime_owner:v1"
+    assert result.peak_fact_cost.measurement_source == "execution_runtime_owner"
     assert len(raw_open_calls) == 1
     assert raw_open_calls[0][1]["_raw_session_capability"] == (raw_session_capability)
 

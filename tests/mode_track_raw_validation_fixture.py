@@ -73,7 +73,7 @@ SAMPLE_STEM = "TumorBC2297_DNA"
 PRECURSOR_MZ = 349.215
 NEUTRAL_LOSS_DA = 116.0474
 VALIDATION_STATUS = "diagnostic_only"
-_HEARTBEAT_SCHEMA_VERSION = "mode_track_validation_heartbeat_v1"
+_HEARTBEAT_SCHEMA_VERSION = "mode_track_validation_heartbeat"
 _RUNTIME_TELEMETRY_UNAVAILABLE_REASON = "not_collected_by_mode_track_validation"
 RUN_CONTEXT_FIELDS = frozenset(
     (
@@ -136,7 +136,7 @@ class _ValidatedClosedWriterReviewSet:
 
 def closed_writer_launch_contract() -> dict[str, object]:
     return {
-        "schema_version": "mode_track_closed_writer_launch_contract_v2",
+        "schema_version": "mode_track_closed_writer_launch_contract",
         "validation_status": VALIDATION_STATUS,
         "precursor_mz": PRECURSOR_MZ,
         "neutral_loss_da": NEUTRAL_LOSS_DA,
@@ -198,7 +198,7 @@ def run_single_sample_canary(
     _write_json(
         receipt,
         {
-            "schema_version": "mode_track_single_sample_canary_receipt_v1",
+            "schema_version": "mode_track_single_sample_canary_receipt",
             "validation_status": VALIDATION_STATUS,
             "sample_stem": SAMPLE_STEM,
             "precursor_mz": PRECURSOR_MZ,
@@ -329,7 +329,7 @@ def run_closed_writer_finalization(
     _write_json(
         fresh_receipt_path,
         {
-            "schema_version": ("mode_track_closed_writer_fresh_owner_receipt_v1"),
+            "schema_version": ("mode_track_closed_writer_fresh_owner_receipt"),
             "validation_status": VALIDATION_STATUS,
             "code_sha": code_sha,
             "metadata_sha256": metadata_sha256,
@@ -404,7 +404,7 @@ def _finalize_closed_writer_transaction(
     _write_json(
         transaction_receipt_path,
         {
-            "schema_version": ("mode_track_closed_writer_transaction_receipt_v2"),
+            "schema_version": ("mode_track_closed_writer_transaction_receipt"),
             "validation_status": VALIDATION_STATUS,
             "code_sha": code_sha,
             "metadata_sha256": metadata_sha256,
@@ -466,7 +466,6 @@ def _run_mode_track_batch(
         candidates_by_sample[raw_file.stem] = read_owner_bound_discovery_candidates_csv(
             batch.candidate_csvs[raw_file.stem],
             receipt=receipt,
-            require_successor_columns=True,
         )
     method_subject = mint_untargeted_cid_nl_method_subject(
         precursor_mz=PRECURSOR_MZ,
@@ -501,7 +500,7 @@ def _run_mode_track_batch(
     runtime = start_runtime_attempt(
         attempt=context.processing_owners.attempt,
         work_unit_keys=tuple(job.work_unit_key for job in jobs),
-        owner_completeness_attestation=f"{identity_namespace}:v1",
+        owner_completeness_attestation=f"{identity_namespace}",
     )
     runtime_result = execute_untargeted_cid_nl_real_data_runtime(
         runtime,
@@ -595,8 +594,8 @@ def _validate_closed_writer_call_budget(call_cost: Mapping[str, int]) -> None:
 
 def _mode_track_trajectory_policy() -> ModeTrackTrajectoryPolicy:
     return ModeTrackTrajectoryPolicy(
-        trajectory_policy_version="anchor-trajectory-v1",
-        band_policy_version="fixed-band-v1",
+        trajectory_policy_version="anchor-trajectory",
+        band_policy_version="fixed-band",
         prediction_half_width_min=2 / 60,
         max_interpolation_gap=10,
         max_extrapolation_gap=10,
@@ -778,7 +777,7 @@ def freeze_closed_writer_proposal(
         projection.mode_track_facts
     )
     proposal = {
-        "schema_version": "mode_track_closed_writer_proposal_v2",
+        "schema_version": "mode_track_closed_writer_proposal",
         "matrix_header": list(projection.matrix_header),
         "input_quant_matrix_rows": list(map(dict, projection.input_quant_matrix_rows)),
         "input_matrix_identity_rows": list(
@@ -819,7 +818,7 @@ def freeze_closed_writer_proposal(
     )
     context["candidate_census"] = supplied_census
     receipt = {
-        "schema_version": ("mode_track_closed_writer_proposal_receipt_v2"),
+        "schema_version": ("mode_track_closed_writer_proposal_receipt"),
         "proposal_sha256": _sha256(proposal_path),
         "source_file_sha256": _sha256(staged_source),
         "run_context": context,
@@ -855,9 +854,9 @@ def transfer_closed_writer_review(
     old_proposal_dir = reviewed_packet_dir / "proposal"
     old_proposal_path = old_proposal_dir / "proposal.json"
     old_receipt_path = old_proposal_dir / "proposal_receipt.json"
-    old_review_path = reviewed_packet_dir / "manual_review_v1.json"
-    old_replay_path = reviewed_packet_dir / "manual_review_observation_replay_v1.json"
-    old_manifest_path = reviewed_packet_dir / "checked_manifest_v1.tsv"
+    old_review_path = reviewed_packet_dir / "manual_review.json"
+    old_replay_path = reviewed_packet_dir / "manual_review_observation_replay.json"
+    old_manifest_path = reviewed_packet_dir / "checked_manifest.tsv"
     new_proposal_path = proposal_dir / "proposal.json"
     new_receipt_path = proposal_dir / "proposal_receipt.json"
     old_proposal = _read_json_object(old_proposal_path)
@@ -894,12 +893,12 @@ def transfer_closed_writer_review(
     old_replay = _read_json_object(old_replay_path)
     transferred_replay = {
         **old_replay,
-        "schema_version": "mode_track_closed_writer_observation_replay_v1",
+        "schema_version": "mode_track_closed_writer_observation_replay",
         "proposal_sha256": new_receipt["proposal_sha256"],
         "source_artifact_sha256": new_proposal["source_artifact_sha256"],
         "rows": _required_mapping_rows(old_replay, "rows"),
     }
-    replay_path = staging / "manual_review_observation_replay_v1.json"
+    replay_path = staging / "manual_review_observation_replay.json"
     _write_json(replay_path, transferred_replay)
 
     new_source_rows = _required_rows(_read_json_object(new_source), "rows")
@@ -925,18 +924,18 @@ def transfer_closed_writer_review(
     final_replay_path = output_dir / replay_path.name
     final_replay_relpath = final_replay_path.relative_to(manifest_root).as_posix()
     transferred_review: dict[str, object] = {
-        "schema_version": "mode_track_closed_writer_manual_review_v1",
+        "schema_version": "mode_track_closed_writer_manual_review",
         "observation_replay_relpath": final_replay_relpath,
         "observation_replay_sha256": _sha256(replay_path),
         "rows": transferred_review_rows,
     }
-    review_path = staging / "manual_review_v1.json"
+    review_path = staging / "manual_review.json"
     _write_json(review_path, transferred_review)
 
     pending = _required_rows(new_proposal, "pending_acceptance_rows")
     manifest_sha = quant_matrix.production_acceptance_manifest_sha256(pending)
     checked_rows = [{**row, "manifest_sha256": manifest_sha} for row in pending]
-    manifest_path = staging / "checked_manifest_v1.tsv"
+    manifest_path = staging / "checked_manifest.tsv"
     manifest_path.write_text(
         render_delimited_rows(
             checked_rows,
@@ -965,7 +964,7 @@ def transfer_closed_writer_review(
     )
     _validate_pending_manifest_equality(pending, checked.rows)
     transfer_receipt = {
-        "schema_version": ("mode_track_closed_writer_review_transfer_receipt_v1"),
+        "schema_version": ("mode_track_closed_writer_review_transfer_receipt"),
         "validation_status": VALIDATION_STATUS,
         "code_sha": code_sha,
         "review_subject_count": len(new_subjects),
@@ -1027,7 +1026,7 @@ def _validate_review_transfer_receipt(
     }
     if set(receipt) != required_fields or (
         receipt.get("schema_version")
-        != "mode_track_closed_writer_review_transfer_receipt_v1"
+        != "mode_track_closed_writer_review_transfer_receipt"
         or receipt.get("validation_status") != VALIDATION_STATUS
         or receipt.get("code_sha") != code_sha
         or receipt.get("transfer_rule")
@@ -1082,18 +1081,18 @@ def _validate_reviewed_packet_for_transfer(
     proposal_schema = proposal.get("schema_version")
     receipt_schema = receipt.get("schema_version")
     if proposal_schema not in {
-        "mode_track_closed_writer_proposal_v1",
-        "mode_track_closed_writer_proposal_v2",
+        "mode_track_closed_writer_proposal",
+        "mode_track_closed_writer_proposal",
     } or receipt_schema not in {
-        "mode_track_closed_writer_proposal_receipt_v1",
-        "mode_track_closed_writer_proposal_receipt_v2",
+        "mode_track_closed_writer_proposal_receipt",
+        "mode_track_closed_writer_proposal_receipt",
     }:
         raise ValueError("closed-writer reviewed packet schema is unsupported")
     if receipt.get("proposal_sha256") != _sha256(proposal_path) or receipt.get(
         "source_file_sha256"
     ) != _sha256(source_path):
         raise ValueError("closed-writer reviewed packet hash changed")
-    if proposal_schema == "mode_track_closed_writer_proposal_v2":
+    if proposal_schema == "mode_track_closed_writer_proposal":
         _validate_proposal_payload(proposal, receipt, source_path)
     elif (
         str(proposal.get("source_artifact_sha256", "")).upper()
@@ -1297,7 +1296,7 @@ def finalize_closed_writer_fresh_projection(
     if output_dir.exists() or staging.exists():
         raise ValueError("closed-writer final or staging output already exists")
     staging.mkdir(parents=True)
-    manifest_path = staging / "checked_manifest_v1.tsv"
+    manifest_path = staging / "checked_manifest.tsv"
     manifest_path.write_text(
         render_delimited_rows(
             checked_rows,
@@ -1330,7 +1329,7 @@ def finalize_closed_writer_fresh_projection(
         projection.mode_track_facts
     )
     final_receipt = {
-        "schema_version": "mode_track_closed_writer_final_receipt_v3",
+        "schema_version": "mode_track_closed_writer_final_receipt",
         "validation_status": VALIDATION_STATUS,
         "validated_review_subjects_sha256": _json_sha256(
             [asdict(subject) for subject in validated_review.subjects]
@@ -1360,9 +1359,9 @@ def _validate_proposal_payload(
     receipt: Mapping[str, object],
     source_path: Path,
 ) -> None:
-    if proposal.get("schema_version") != "mode_track_closed_writer_proposal_v2":
+    if proposal.get("schema_version") != "mode_track_closed_writer_proposal":
         raise ValueError("closed-writer proposal schema changed")
-    if receipt.get("schema_version") != "mode_track_closed_writer_proposal_receipt_v2":
+    if receipt.get("schema_version") != "mode_track_closed_writer_proposal_receipt":
         raise ValueError("closed-writer proposal receipt schema changed")
     source_bytes = source_path.read_bytes()
     source_sha = hashlib.sha256(source_bytes).hexdigest().upper()
@@ -1433,7 +1432,7 @@ def _validate_manual_review(
     replay_relpath: str,
     replay_sha256: str,
 ) -> None:
-    if review.get("schema_version") != "mode_track_closed_writer_manual_review_v1":
+    if review.get("schema_version") != "mode_track_closed_writer_manual_review":
         raise ValueError("closed-writer manual review schema changed")
     rows = review.get("rows")
     if not isinstance(rows, list):
@@ -1483,7 +1482,7 @@ def _validate_manual_review_replay(
     source_path: Path,
 ) -> None:
     if (
-        replay.get("schema_version") != "mode_track_closed_writer_observation_replay_v1"
+        replay.get("schema_version") != "mode_track_closed_writer_observation_replay"
         or replay.get("validation_status") != VALIDATION_STATUS
         or replay.get("proposal_sha256") != receipt["proposal_sha256"]
         or str(replay.get("source_artifact_sha256", "")).upper()

@@ -69,7 +69,7 @@ def test_candidate_receipt_requires_exact_authorization_and_is_membership_neutra
         cell_observations=cells,
     )
 
-    assert receipt.receipt_id.startswith("xic.observation-repair-receipt.v2:")
+    assert receipt.receipt_id.startswith("xic.observation-repair-receipt:")
     assert receipt.subject is candidate
     assert receipt.authorization_id == authorization.authorization_id
     assert receipt.candidate_id == candidate.candidate_id

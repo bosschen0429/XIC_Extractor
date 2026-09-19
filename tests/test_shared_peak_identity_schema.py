@@ -19,8 +19,8 @@ from xic_extractor.alignment.shared_peak_identity_explanation.schema import (
     SHADOW_ALIGNMENT_SUMMARY_SCHEMA_VERSION,
     SHADOW_LABEL_COLUMNS,
     SHADOW_LABEL_SCHEMA_VERSION,
-    V2_READINESS_COLUMNS,
-    V2_READINESS_SCHEMA_VERSION,
+    SHADOW_READINESS_COLUMNS,
+    SHADOW_READINESS_SCHEMA_VERSION,
     validate_semicolon_tokens,
     validate_source_row_ids,
     validate_token,
@@ -69,7 +69,7 @@ def test_matched_source_row_ids_are_dynamic_traceable_ids() -> None:
 def test_slice1_blast_radius_schema_constants_match_contract() -> None:
     assert (
         BLAST_RADIUS_MANIFEST_SCHEMA_VERSION
-        == "shared_peak_identity_blast_radius_manifest_v1"
+        == "shared_peak_identity_blast_radius_manifest"
     )
     assert BLAST_RADIUS_MANIFEST_COLUMNS == (
         "manifest_schema_version",
@@ -91,7 +91,7 @@ def test_slice1_blast_radius_schema_constants_match_contract() -> None:
     )
     assert (
         BLAST_RADIUS_SUMMARY_SCHEMA_VERSION
-        == "shared_peak_identity_blast_radius_summary_v1"
+        == "shared_peak_identity_blast_radius_summary"
     )
     assert BLAST_RADIUS_SUMMARY_COLUMNS == (
         "summary_schema_version",
@@ -165,8 +165,8 @@ def test_slice1_tokens_are_allowed() -> None:
     validate_token("present_current", "blast_radius_assessed")
 
 
-def test_v2_shadow_label_schema_constants_match_contract() -> None:
-    assert SHADOW_LABEL_SCHEMA_VERSION == "shared_peak_identity_shadow_label_v1"
+def test_shadow_shadow_label_schema_constants_match_contract() -> None:
+    assert SHADOW_LABEL_SCHEMA_VERSION == "shared_peak_identity_shadow_label"
     assert SHADOW_LABEL_COLUMNS == (
         "shadow_label_schema_version",
         "oracle_row_id",
@@ -186,7 +186,7 @@ def test_v2_shadow_label_schema_constants_match_contract() -> None:
     )
     assert (
         SHADOW_ALIGNMENT_SUMMARY_SCHEMA_VERSION
-        == "shared_peak_identity_shadow_alignment_summary_v1"
+        == "shared_peak_identity_shadow_alignment_summary"
     )
     assert SHADOW_ALIGNMENT_SUMMARY_COLUMNS == (
         "shadow_summary_schema_version",
@@ -203,11 +203,11 @@ def test_v2_shadow_label_schema_constants_match_contract() -> None:
         "dominant_gap_classes",
         "recommended_next_action",
     )
-    assert V2_READINESS_SCHEMA_VERSION == "shared_peak_identity_v2_readiness_v1"
-    assert V2_READINESS_COLUMNS == (
-        "v2_readiness_schema_version",
-        "v2_mode",
-        "v2_gate_status",
+    assert SHADOW_READINESS_SCHEMA_VERSION == "shared_peak_identity_shadow_readiness"
+    assert SHADOW_READINESS_COLUMNS == (
+        "shadow_readiness_schema_version",
+        "shadow_mode",
+        "shadow_gate_status",
         "readiness_label",
         "seed_rows_total",
         "shadow_rows_total",
@@ -234,7 +234,7 @@ def test_v2_shadow_label_schema_constants_match_contract() -> None:
     )
     assert (
         MACHINE_EVIDENCE_SUPPORT_SCHEMA_VERSION
-        == "shared_peak_identity_machine_evidence_support_v2"
+        == "shared_peak_identity_machine_evidence_support"
     )
     assert MACHINE_EVIDENCE_SUPPORT_COLUMNS == (
         "machine_evidence_support_schema_version",
@@ -263,7 +263,7 @@ def test_v2_shadow_label_schema_constants_match_contract() -> None:
     )
 
 
-def test_v2_shadow_label_tokens_are_allowed() -> None:
+def test_shadow_shadow_label_tokens_are_allowed() -> None:
     for token in {
         "manual_like_pass_candidate",
         "manual_like_suspect_candidate",
@@ -302,10 +302,10 @@ def test_v2_shadow_label_tokens_are_allowed() -> None:
         "blocked_by_vocabulary",
         "blocked_by_overfit_risk",
     }:
-        validate_token(token, "v2_gate_status")
+        validate_token(token, "shadow_gate_status")
 
     validate_token("diagnostic_only", "readiness_label")
-    validate_token("shadow_label_alignment", "v2_mode")
+    validate_token("shadow_label_alignment", "shadow_mode")
 
     for token in {
         "proxy_agrees",
@@ -358,7 +358,7 @@ def test_v2_shadow_label_tokens_are_allowed() -> None:
 def test_hypothesis_consistency_schema_tokens_are_allowed() -> None:
     assert (
         HYPOTHESIS_CONSISTENCY_SCHEMA_VERSION
-        == "shared_peak_identity_hypothesis_consistency_v1"
+        == "shared_peak_identity_hypothesis_consistency"
     )
     assert HYPOTHESIS_CONSISTENCY_COLUMNS[:8] == (
         "hypothesis_consistency_schema_version",
@@ -372,7 +372,7 @@ def test_hypothesis_consistency_schema_tokens_are_allowed() -> None:
     )
     assert (
         HYPOTHESIS_CONSISTENCY_SUMMARY_SCHEMA_VERSION
-        == "shared_peak_identity_hypothesis_consistency_summary_v1"
+        == "shared_peak_identity_hypothesis_consistency_summary"
     )
     assert HYPOTHESIS_CONSISTENCY_SUMMARY_COLUMNS[:6] == (
         "hypothesis_consistency_summary_schema_version",

@@ -436,7 +436,7 @@ def _project_physical_capture(
             integration=physical_peak_observation_integration(evaluation),
             evidence=EvidenceVector(),
             audit=AuditTrail(
-                proposal_sources=("canonical_physical_segment_v1",),
+                proposal_sources=("canonical_physical_segment",),
                 selected=True,
                 selection_reference_rt_min=binding.preferred_rt,
             ),
@@ -547,7 +547,7 @@ def capture_physical_recovery_observation(
         integration=physical_peak_observation_integration(evaluation),
         selection_intensity=prepared.prepared.positive_signal,
         resolver_mode=resolver_mode,
-        proposal_sources=("canonical_physical_segment_v1",),
+        proposal_sources=("canonical_physical_segment",),
         physical_evaluation=evaluation,
         signal_processing_profile=profile,
         capture_stage="method_recovery",

@@ -116,7 +116,7 @@ class _RejectedRequiredWorkManifest:
     """Internal empty carrier for a manifest-preflight terminal attempt.
 
     This is not an accepted manifest and is never exposed as a construction
-    surface.  It lets the existing coordinator v3 and observability v1 shapes
+    surface.  It lets the existing coordinator and observability shapes
     retain the owner-issued attempt plus an empty work universe without
     fabricating ``attempt_started``.
     """

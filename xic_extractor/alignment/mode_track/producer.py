@@ -55,8 +55,8 @@ from xic_extractor.peak_detection.peak_hypothesis_identity import (
 from xic_extractor.processing_identity import ProcessingOwnerReferences
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 
-_FAMILY_CONTEXT_POLICY_VERSION = "cid-nl-method-subject-family-v1"
-_MS1_FAMILY_CONTEXT_POLICY_VERSION = "target-ms1-family-v1"
+_FAMILY_CONTEXT_POLICY_VERSION = "cid-nl-method-subject-family"
+_MS1_FAMILY_CONTEXT_POLICY_VERSION = "target-ms1-family"
 
 
 class ModeTrackProducerError(ValueError):

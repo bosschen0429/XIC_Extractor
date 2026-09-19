@@ -636,7 +636,7 @@ def _write_index_cache_manifest(
     manifest_path = index_cache_path.with_suffix(".manifest.json")
     raw_stat = raw_path.stat() if raw_path is not None and raw_path.exists() else None
     manifest = {
-        "schema_version": "ms1_index_cache_manifest_v1",
+        "schema_version": "ms1_index_cache_manifest",
         "sample_stem": sample_stem,
         "cache_path": str(index_cache_path),
         "raw_path": str(raw_path) if raw_path is not None else "",

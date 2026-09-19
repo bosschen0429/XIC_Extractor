@@ -539,7 +539,7 @@ def build_discovery_physical_selection_subject_id(
     product_mz: float,
 ) -> str:
     return (
-        "discovery-physical-work.v1:"
+        "discovery-physical-work:"
         f"{sample_stem}:{best_ms2_scan_id}:"
         f"{float(precursor_mz).hex()}:{float(product_mz).hex()}"
     )
