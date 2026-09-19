@@ -16,7 +16,7 @@ from xic_extractor.discovery.pt_pattern_artifact_contract import (
     pt_pattern_candidate_assignment_fingerprint,
     pt_pattern_trace_extraction_fingerprint,
 )
-from xic_extractor.discovery.pt_pattern_trace_manifest import (
+from xic_extractor.discovery.pt_pattern_trace_bundle_reader import (
     default_trace_manifest_path,
 )
 from xic_extractor.tabular_io import (

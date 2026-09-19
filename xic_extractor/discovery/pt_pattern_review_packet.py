@@ -22,6 +22,10 @@ from xic_extractor.discovery.pt_pattern_artifact_contract import (
 from xic_extractor.discovery.pt_pattern_trace_batch import (
     ANCHOR_LOCAL_SCHEMA_VERSION as ANCHOR_TRACE_SCHEMA_VERSION,
 )
+from xic_extractor.discovery.pt_pattern_trace_bundle_reader import (
+    load_trace_bundle_manifest,
+    load_verified_trace_summary_bundle,
+)
 from xic_extractor.discovery.pt_pattern_trace_evidence import (
     ANCHOR_SEGMENTATION_METRIC_COLUMNS,
     ANCHOR_SEGMENTATION_SUMMARY_COLUMNS,
@@ -30,8 +34,6 @@ from xic_extractor.discovery.pt_pattern_trace_evidence import (
     SCHEMA_VERSION as LEGACY_TRACE_SCHEMA_VERSION,
 )
 from xic_extractor.discovery.pt_pattern_trace_manifest import (
-    load_trace_bundle_manifest,
-    load_verified_trace_summary_bundle,
     validate_trace_manifest_identity,
     validate_trace_row_bundle,
 )

@@ -23,6 +23,147 @@ from xic_extractor.discovery.pt_pattern_evidence_rule import (
 from xic_extractor.mass_accuracy import is_within_mz_tolerance
 from xic_extractor.tabular_io import optional_float
 
+PT_PATTERN_RAW_TRACE_BASIS = "raw_vendor_trace"
+
+PT_PATTERN_ANCHOR_SEGMENTATION_SUMMARY_COLUMNS = (
+    "anchor_segmentation_status",
+    "anchor_segmentation_reason",
+    "anchor_segmentation_common_rt_start_min",
+    "anchor_segmentation_common_rt_end_min",
+    "anchor_segmentation_common_duration_sec",
+    "anchor_segmentation_common_start_owner_labels",
+    "anchor_segmentation_common_end_owner_labels",
+    "anchor_segmentation_boundary_review_status",
+    "anchor_segmentation_boundary_review_position_labels",
+    "anchor_segmentation_max_left_clip_sec",
+    "anchor_segmentation_max_right_clip_sec",
+    "anchor_segmentation_min_common_retained_fraction",
+    "anchor_segmentation_max_common_left_residual_fraction",
+    "anchor_segmentation_max_common_right_residual_fraction",
+    "anchor_segmentation_descending_at_common_right_position_labels",
+)
+
+PT_PATTERN_ANCHOR_SEGMENTATION_METRIC_COLUMNS = (
+    "anchor_segment_rt_start_min",
+    "anchor_segment_rt_end_min",
+    "anchor_segment_duration_sec",
+    "anchor_segment_class",
+    "anchor_segment_boundary_stop_reason",
+    "anchor_segment_owns_common_start",
+    "anchor_segment_owns_common_end",
+    "anchor_segment_left_clip_sec",
+    "anchor_segment_right_clip_sec",
+    "anchor_segment_common_retained_fraction",
+    "anchor_segment_common_left_residual_fraction",
+    "anchor_segment_common_right_residual_fraction",
+    "anchor_segment_common_left_trend",
+    "anchor_segment_common_right_trend",
+)
+
+PT_PATTERN_TRACE_SUMMARY_COLUMNS = (
+    "schema_version",
+    "sample_stem",
+    "candidate_id",
+    "candidate_assignment_sha256",
+    "trace_extraction_sha256",
+    "trace_artifact_role",
+    "scan_pattern_seed_status",
+    "base_mz",
+    "base_rt_apex_min",
+    "rt_half_window_sec",
+    "ppm",
+    "mz_source",
+    "trace_decision_basis",
+    "trace_smoothing_method",
+    "trace_smoothing_window_points",
+    "min_median_rt_step_sec",
+    "min_effective_smoothing_window_sec",
+    "max_trace_point_count",
+    "positions_requested",
+    "positions_with_points",
+    "positions_with_signal",
+    "non_base_positions_supported",
+    "max_abs_apex_delta_sec",
+    "min_pearson_r_to_base",
+    "min_active_overlap_fraction",
+    "min_shifted_pearson_r_to_base",
+    "max_abs_shape_shift_sec_to_base",
+    "raw_max_abs_apex_delta_sec",
+    "raw_min_pearson_r_to_base",
+    "raw_min_active_overlap_fraction",
+    "trace_ambiguity_status",
+    "trace_ambiguity_flags",
+    "shifted_only_position_labels",
+    "trace_support_status",
+    "combined_pt_pattern_status",
+    "reason",
+)
+
+PT_PATTERN_TRACE_METRIC_COLUMNS = (
+    "schema_version",
+    "sample_stem",
+    "candidate_id",
+    "candidate_assignment_sha256",
+    "trace_extraction_sha256",
+    "trace_artifact_role",
+    "position_label",
+    "target_mz",
+    "rt_min",
+    "rt_max",
+    "ppm",
+    "trace_decision_basis",
+    "trace_smoothing_method",
+    "trace_smoothing_window_points",
+    "point_count",
+    "median_rt_step_sec",
+    "effective_smoothing_window_sec",
+    "raw_max_intensity",
+    "raw_apex_rt_min",
+    "raw_apex_delta_sec_to_base",
+    "raw_smoothed_apex_delta_sec",
+    "raw_height_ratio_to_base",
+    "raw_pearson_r_to_base",
+    "raw_active_overlap_fraction",
+    "max_intensity",
+    "apex_rt_min",
+    "apex_delta_sec_to_base",
+    "height_ratio_to_base",
+    "pearson_r_to_base",
+    "active_overlap_fraction",
+    "shifted_pearson_r_to_base",
+    "shape_shift_sec_to_base",
+    "trace_quality_flags",
+    "trace_support_status",
+    "reason",
+)
+
+PT_PATTERN_TRACE_POINT_COLUMNS = (
+    "schema_version",
+    "sample_stem",
+    "candidate_id",
+    "candidate_assignment_sha256",
+    "trace_extraction_sha256",
+    "trace_artifact_role",
+    "position_label",
+    "intensity_basis",
+    "rt_min",
+    "intensity",
+)
+
+PT_PATTERN_ANCHOR_LOCAL_SUMMARY_COLUMNS = (
+    *PT_PATTERN_TRACE_SUMMARY_COLUMNS[:-3],
+    *PT_PATTERN_ANCHOR_SEGMENTATION_SUMMARY_COLUMNS,
+    *PT_PATTERN_TRACE_SUMMARY_COLUMNS[-3:],
+)
+
+PT_PATTERN_ANCHOR_LOCAL_METRIC_COLUMNS = (
+    *PT_PATTERN_TRACE_METRIC_COLUMNS[:-3],
+    *PT_PATTERN_ANCHOR_SEGMENTATION_METRIC_COLUMNS,
+    *PT_PATTERN_TRACE_METRIC_COLUMNS[-3:],
+)
+
+PT_PATTERN_ANCHOR_LOCAL_TRACE_POINT_COLUMNS = PT_PATTERN_TRACE_POINT_COLUMNS
+
 _TRACE_TEXT_IDENTITY_FIELDS = ("candidate_id", "sample_stem")
 PT_PATTERN_TRACE_SUMMARY_SCHEMA_VERSION = "pt_pattern_trace_diagnosis.v4"
 PT_PATTERN_ANCHOR_LOCAL_TRACE_SUMMARY_SCHEMA_VERSION = (

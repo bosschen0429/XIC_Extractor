@@ -18,12 +18,18 @@ import numpy as np
 from numpy.typing import NDArray
 
 from xic_extractor.discovery.pt_pattern_artifact_contract import (
+    PT_PATTERN_ANCHOR_SEGMENTATION_METRIC_COLUMNS,
+    PT_PATTERN_ANCHOR_SEGMENTATION_SUMMARY_COLUMNS,
     PT_PATTERN_CANDIDATE_ASSIGNMENT_COLUMNS,
     PT_PATTERN_CANDIDATE_ASSIGNMENT_SHA256_FIELD,
+    PT_PATTERN_RAW_TRACE_BASIS,
     PT_PATTERN_TRACE_ANCHOR_LOCAL_ROLE,
     PT_PATTERN_TRACE_ARTIFACT_ROLE_FIELD,
     PT_PATTERN_TRACE_EXTRACTION_SHA256_FIELD,
     PT_PATTERN_TRACE_FULL_CONTEXT_ROLE,
+    PT_PATTERN_TRACE_METRIC_COLUMNS,
+    PT_PATTERN_TRACE_POINT_COLUMNS,
+    PT_PATTERN_TRACE_SUMMARY_COLUMNS,
     PT_PATTERN_TRACE_SUMMARY_SCHEMA_VERSION,
     pt_pattern_candidate_assignment_fingerprint,
 )
@@ -38,11 +44,17 @@ from xic_extractor.tabular_io import (
 )
 from xic_extractor.xic_models import XICRequest, XICTrace
 
+ANCHOR_SEGMENTATION_SUMMARY_COLUMNS = PT_PATTERN_ANCHOR_SEGMENTATION_SUMMARY_COLUMNS
+ANCHOR_SEGMENTATION_METRIC_COLUMNS = PT_PATTERN_ANCHOR_SEGMENTATION_METRIC_COLUMNS
+SUMMARY_COLUMNS = PT_PATTERN_TRACE_SUMMARY_COLUMNS
+METRIC_COLUMNS = PT_PATTERN_TRACE_METRIC_COLUMNS
+TRACE_POINT_COLUMNS = PT_PATTERN_TRACE_POINT_COLUMNS
+RAW_TRACE_BASIS = PT_PATTERN_RAW_TRACE_BASIS
+
 SCHEMA_VERSION = PT_PATTERN_TRACE_SUMMARY_SCHEMA_VERSION
 EVIDENCE_OWNER = "xic_extractor.discovery.pt_pattern_trace_evidence"
 READINESS_TIER = "diagnostic_only"
 TRACE_DECISION_BASIS = "gaussian15_smoothed_trace"
-RAW_TRACE_BASIS = "raw_vendor_trace"
 TRACE_SMOOTH_METHOD = "gaussian15"
 TRACE_SMOOTH_WINDOW_POINTS = DEFAULT_OWN_MAX_SMOOTH_POINTS
 TRACE_FLAG_NONE = "none"
@@ -58,79 +70,6 @@ POSITION_LABELS = ("base", "pt_plus_1", "pt_plus_2", "pt_plus_4")
 NON_BASE_POSITION_LABELS = ("pt_plus_1", "pt_plus_2", "pt_plus_4")
 REQUIRED_CANDIDATE_COLUMNS = PT_PATTERN_CANDIDATE_ASSIGNMENT_COLUMNS
 
-ANCHOR_SEGMENTATION_SUMMARY_COLUMNS = (
-    "anchor_segmentation_status",
-    "anchor_segmentation_reason",
-    "anchor_segmentation_common_rt_start_min",
-    "anchor_segmentation_common_rt_end_min",
-    "anchor_segmentation_common_duration_sec",
-    "anchor_segmentation_common_start_owner_labels",
-    "anchor_segmentation_common_end_owner_labels",
-    "anchor_segmentation_boundary_review_status",
-    "anchor_segmentation_boundary_review_position_labels",
-    "anchor_segmentation_max_left_clip_sec",
-    "anchor_segmentation_max_right_clip_sec",
-    "anchor_segmentation_min_common_retained_fraction",
-    "anchor_segmentation_max_common_left_residual_fraction",
-    "anchor_segmentation_max_common_right_residual_fraction",
-    "anchor_segmentation_descending_at_common_right_position_labels",
-)
-
-ANCHOR_SEGMENTATION_METRIC_COLUMNS = (
-    "anchor_segment_rt_start_min",
-    "anchor_segment_rt_end_min",
-    "anchor_segment_duration_sec",
-    "anchor_segment_class",
-    "anchor_segment_boundary_stop_reason",
-    "anchor_segment_owns_common_start",
-    "anchor_segment_owns_common_end",
-    "anchor_segment_left_clip_sec",
-    "anchor_segment_right_clip_sec",
-    "anchor_segment_common_retained_fraction",
-    "anchor_segment_common_left_residual_fraction",
-    "anchor_segment_common_right_residual_fraction",
-    "anchor_segment_common_left_trend",
-    "anchor_segment_common_right_trend",
-)
-
-SUMMARY_COLUMNS = (
-    "schema_version",
-    "sample_stem",
-    "candidate_id",
-    "candidate_assignment_sha256",
-    "trace_extraction_sha256",
-    "trace_artifact_role",
-    "scan_pattern_seed_status",
-    "base_mz",
-    "base_rt_apex_min",
-    "rt_half_window_sec",
-    "ppm",
-    "mz_source",
-    "trace_decision_basis",
-    "trace_smoothing_method",
-    "trace_smoothing_window_points",
-    "min_median_rt_step_sec",
-    "min_effective_smoothing_window_sec",
-    "max_trace_point_count",
-    "positions_requested",
-    "positions_with_points",
-    "positions_with_signal",
-    "non_base_positions_supported",
-    "max_abs_apex_delta_sec",
-    "min_pearson_r_to_base",
-    "min_active_overlap_fraction",
-    "min_shifted_pearson_r_to_base",
-    "max_abs_shape_shift_sec_to_base",
-    "raw_max_abs_apex_delta_sec",
-    "raw_min_pearson_r_to_base",
-    "raw_min_active_overlap_fraction",
-    "trace_ambiguity_status",
-    "trace_ambiguity_flags",
-    "shifted_only_position_labels",
-    "trace_support_status",
-    "combined_pt_pattern_status",
-    "reason",
-)
 
 TRACE_SUMMARY_AGGREGATE_COLUMNS = (
     "min_median_rt_step_sec",
@@ -156,56 +95,6 @@ TRACE_SUMMARY_AGGREGATE_COLUMNS = (
     "reason",
 )
 
-METRIC_COLUMNS = (
-    "schema_version",
-    "sample_stem",
-    "candidate_id",
-    "candidate_assignment_sha256",
-    "trace_extraction_sha256",
-    "trace_artifact_role",
-    "position_label",
-    "target_mz",
-    "rt_min",
-    "rt_max",
-    "ppm",
-    "trace_decision_basis",
-    "trace_smoothing_method",
-    "trace_smoothing_window_points",
-    "point_count",
-    "median_rt_step_sec",
-    "effective_smoothing_window_sec",
-    "raw_max_intensity",
-    "raw_apex_rt_min",
-    "raw_apex_delta_sec_to_base",
-    "raw_smoothed_apex_delta_sec",
-    "raw_height_ratio_to_base",
-    "raw_pearson_r_to_base",
-    "raw_active_overlap_fraction",
-    "max_intensity",
-    "apex_rt_min",
-    "apex_delta_sec_to_base",
-    "height_ratio_to_base",
-    "pearson_r_to_base",
-    "active_overlap_fraction",
-    "shifted_pearson_r_to_base",
-    "shape_shift_sec_to_base",
-    "trace_quality_flags",
-    "trace_support_status",
-    "reason",
-)
-
-TRACE_POINT_COLUMNS = (
-    "schema_version",
-    "sample_stem",
-    "candidate_id",
-    "candidate_assignment_sha256",
-    "trace_extraction_sha256",
-    "trace_artifact_role",
-    "position_label",
-    "intensity_basis",
-    "rt_min",
-    "intensity",
-)
 
 TRACE_POINT_PROJECTED_METRIC_COLUMNS = (
     "rt_min",
