@@ -176,8 +176,9 @@ class GroupCellSubject:
     row_key: UntargetRowKey
     canonical_sample: ResolvedCanonicalSampleIdentity
     member_subject: CrossSampleGroupMemberSubject | None
+    _mint_token: InitVar[object | None] = field(default=None, kw_only=True, repr=False)
 
-    def __post_init__(self) -> None:
+    def __post_init__(self, _mint_token: object | None) -> None:
         if type(self.row_key) is not UntargetRowKey:
             raise UntargetProjectionContractError(
                 "GroupCellSubject requires an exact UntargetRowKey"
@@ -193,7 +194,10 @@ class GroupCellSubject:
             raise UntargetProjectionContractError(
                 "GroupCellSubject member must be an exact CrossSample subject"
             )
-        if self.member_subject not in group.member_subjects:
+        if (
+            _mint_token is not _PROJECTION_MINT_TOKEN
+            and self.member_subject not in group.member_subjects
+        ):
             raise UntargetProjectionContractError(
                 "GroupCellSubject member is absent from its group"
             )
@@ -335,22 +339,21 @@ def _build_cell_subjects(
             raise UntargetProjectionContractError(
                 "GroupCellSubject row crossed its owner group"
             )
-        for sample in samples:
-            matching = tuple(
-                member
-                for member in group.member_subjects
-                if member.canonical_sample_identity_id
-                == sample.identity.sample_identity_id
+        members_by_sample = {
+            member.canonical_sample_identity_id: member
+            for member in group.member_subjects
+        }
+        if len(members_by_sample) != len(group.member_subjects):
+            raise UntargetProjectionContractError(
+                "group has duplicate members for one canonical sample"
             )
-            if len(matching) > 1:
-                raise UntargetProjectionContractError(
-                    "group has duplicate members for one canonical sample"
-                )
+        for sample in samples:
             result.append(
                 GroupCellSubject(
                     row_key=row,
                     canonical_sample=sample,
-                    member_subject=matching[0] if matching else None,
+                    member_subject=members_by_sample.get(sample.identity.sample_identity_id),
+                    _mint_token=_PROJECTION_MINT_TOKEN,
                 )
             )
     return tuple(result)

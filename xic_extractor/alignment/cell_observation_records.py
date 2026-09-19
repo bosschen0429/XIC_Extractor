@@ -26,7 +26,6 @@ from xic_extractor.alignment.cell_group_context import (
     TerminalObservationVariant,
     _canonical_typed_ids,
     _group_support_artifacts,
-    _population_group_context_validation,
     _required_text,
     _validate_group_support_attempts,
     _validate_typed_digest_id,
@@ -626,16 +625,6 @@ def _terminal_trace_group_id(value: object) -> str:
         )
     return value
 
-def _validate_relation_group_context(context: CidNlCellGroupContext) -> None:
-    scope = _population_group_context_validation.get()
-    if scope is None or scope[0].get(id(context)) is not context:
-        context.__post_init__()
-        return
-    if id(context) not in scope[1]:
-        context.__post_init__()
-        scope[1].add(id(context))
-
-
 def _outside_group_relation(
     *,
     group_context: CidNlCellGroupContext,
@@ -648,8 +637,6 @@ def _outside_group_relation(
         raise CellObservationContractError(
             "outside-group context has the wrong owner type"
         )
-    _validate_relation_group_context(group_context)
-    _validate_relation_group_context(outside_group_context)
     if (
         method_assessment.content.method_result != "SUPPORT"
         or outside_group_context.processing_attempt != group_context.processing_attempt

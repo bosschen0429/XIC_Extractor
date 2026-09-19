@@ -603,6 +603,23 @@ def test_entry_builds_group_sample_population_once(
     alignment = _finalized_alignment(tmp_path, monkeypatch)
     original = projection_owner._build_cell_subjects
     calls = 0
+    scans = []
+    membership_checks = []
+
+    class CountedMembers(tuple):
+        def __iter__(self):
+            scans.append(len(self))
+            return super().__iter__()
+
+        def __contains__(self, value):
+            membership_checks.append(value)
+            return super().__contains__(value)
+
+    original_members = [group.member_subjects for group in alignment.final_population]
+    for group, members in zip(
+        alignment.final_population, original_members, strict=True,
+    ):
+        object.__setattr__(group, "member_subjects", CountedMembers(members))
 
     def record_build(**kwargs):
         nonlocal calls
@@ -611,11 +628,19 @@ def test_entry_builds_group_sample_population_once(
 
     monkeypatch.setattr(projection_owner, "_build_cell_subjects", record_build)
 
-    projection = project_untarget_pre_cell(alignment)
+    try:
+        projection = project_untarget_pre_cell(alignment)
+    finally:
+        for group, members in zip(
+            alignment.final_population, original_members, strict=True,
+        ):
+            object.__setattr__(group, "member_subjects", members)
     assert len(projection.cell_subjects) == (
         len(alignment.final_population) * len(alignment.canonical_samples)
     )
     assert calls == 1
+    assert len(scans) == len(alignment.final_population)
+    assert membership_checks == []
 
 
 def test_projection_values_are_immutable_and_direct_result_mint_is_closed(
