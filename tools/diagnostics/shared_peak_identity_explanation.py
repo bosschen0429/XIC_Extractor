@@ -59,86 +59,7 @@ from xic_extractor.alignment.shared_peak_identity_explanation.writers import (
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parse_args(argv)
     try:
-        outputs = run_explanation(
-            manual_oracle_tsv=args.manual_oracle_tsv,
-            alignment_review_tsv=args.alignment_review_tsv,
-            alignment_cells_tsv=args.alignment_cells_tsv,
-            output_dir=args.output_dir,
-            candidate_gate_tsv=args.candidate_gate_tsv,
-            enable_blast_radius=args.enable_blast_radius,
-            blast_radius_preflight_only=args.blast_radius_preflight_only,
-            blast_radius_sample_row_limit=args.blast_radius_sample_row_limit,
-            blast_radius_fixture_cohort_run=args.blast_radius_fixture_cohort_run,
-            blast_radius_full_cohort_run=args.blast_radius_full_cohort_run,
-            expected_blast_radius_manifest=args.expected_blast_radius_manifest,
-            optional_blast_radius_artifacts=args.optional_blast_radius_artifact,
-            enable_shadow_label_alignment=args.enable_shadow_label_alignment,
-            cwt_shape_evidence_tsv=args.cwt_shape_evidence_tsv,
-            tier2_trace_evidence_tsv=args.tier2_trace_evidence_tsv,
-            candidate_ms2_pattern_evidence_tsv=(
-                args.candidate_ms2_pattern_evidence_tsv
-            ),
-            candidate_ms2_pattern_batch_index=args.candidate_ms2_pattern_batch_index,
-            candidate_ms2_pattern_raw_dll_dir=(args.candidate_ms2_pattern_raw_dll_dir),
-            ms1_pattern_coherence_evidence_tsv=(
-                args.ms1_pattern_coherence_evidence_tsv
-            ),
-            qc_ms1_pattern_reference_evidence_tsv=(
-                args.qc_ms1_pattern_reference_evidence_tsv
-            ),
-            sample_negative_evidence_tsv=args.sample_negative_evidence_tsv,
-            rt_mode_evidence_tsv=args.rt_mode_evidence_tsv,
-            generate_rt_mode_evidence=args.generate_rt_mode_evidence,
-            rt_mode_evidence_mode_assignment_tsv=(
-                args.rt_mode_evidence_mode_assignment_tsv
-            ),
-            rt_mode_evidence_mode_summary_tsv=args.rt_mode_evidence_mode_summary_tsv,
-            rt_mode_evidence_family_id=args.rt_mode_evidence_family_id,
-            rt_mode_evidence_overlay_trace_data_json=(
-                args.rt_mode_evidence_overlay_trace_data_json
-            ),
-            peak_hypothesis_selection_tsv=args.peak_hypothesis_selection_tsv,
-            generate_peak_hypothesis_selection=(
-                args.generate_peak_hypothesis_selection
-            ),
-            generate_mode_hypothesis_assignment=(
-                args.generate_mode_hypothesis_assignment
-            ),
-            generate_hypothesis_consistency=args.generate_hypothesis_consistency,
-            generate_ms1_pattern_coherence_evidence=(
-                args.generate_ms1_pattern_coherence_evidence
-            ),
-            matrix_rt_drift_policy_tsv=args.matrix_rt_drift_policy_tsv,
-            generate_matrix_rt_drift_policy=args.generate_matrix_rt_drift_policy,
-            matrix_rt_drift_policy_owner_edge_tsv=(
-                args.matrix_rt_drift_policy_owner_edge_tsv
-            ),
-            matrix_rt_drift_policy_rt_normalization_families_tsv=(
-                args.matrix_rt_drift_policy_rt_normalization_families_tsv
-            ),
-            matrix_rt_drift_policy_targeted_istd_summary_tsv=(
-                args.matrix_rt_drift_policy_targeted_istd_summary_tsv
-            ),
-            matrix_rt_drift_policy_rt_normalization_leave_one_out_tsv=(
-                args.matrix_rt_drift_policy_rt_normalization_leave_one_out_tsv
-            ),
-            matrix_rt_drift_policy_istd_rt_trend_tsv=(
-                args.matrix_rt_drift_policy_istd_rt_trend_tsv
-            ),
-            matrix_rt_drift_policy_istd_phase_summary_tsv=(
-                args.matrix_rt_drift_policy_istd_phase_summary_tsv
-            ),
-            ms1_pattern_coherence_overlay_trace_data_json=(
-                args.ms1_pattern_coherence_overlay_trace_data_json
-            ),
-            enable_product_activation_contract=(
-                args.enable_product_activation_contract
-            ),
-            activation_must_not_regress_status=(
-                args.activation_must_not_regress_status
-            ),
-            activation_must_not_regress_tsv=args.activation_must_not_regress_tsv,
-        )
+        outputs = run_explanation(**vars(args))
     except (OSError, ValueError) as exc:
         print(str(exc), file=sys.stderr)
         return 2
@@ -657,69 +578,47 @@ def run_explanation(
         explanation_rows=explanations,
         run_facts=run_facts,
     )
-    if not enable_blast_radius:
-        if enable_shadow_label_alignment:
-            return _write_v2_from_current_outputs(
-                output_dir=output_dir,
-                prior_outputs=slice0_outputs,
-                explanations=explanations,
-                run_facts=run_facts,
-                machine_matches=matches,
-                cwt_shape_evidence=cwt_shape_evidence,
-                tier2_trace_evidence=tier2_trace_evidence,
-                candidate_ms2_pattern_evidence=candidate_ms2_pattern_evidence,
-                ms1_pattern_coherence_evidence=ms1_pattern_coherence_evidence,
-                qc_ms1_pattern_reference_evidence=(qc_ms1_pattern_reference_evidence),
-                matrix_rt_drift_policy_evidence=matrix_rt_drift_policy_evidence,
-                sample_negative_evidence=sample_negative_evidence,
-                rt_mode_evidence=rt_mode_evidence_rows,
-                peak_hypothesis_selection=peak_hypothesis_selection_rows,
-                extra_outputs=generated_evidence_outputs,
-                blast_radius_summary_rows=(),
-                enable_product_activation_contract=(enable_product_activation_contract),
-                activation_must_not_regress_status=(activation_must_not_regress_status),
-                activation_must_not_regress_expectations=(
-                    must_not_regress_expectations
-                ),
-            )
-        return slice0_outputs
-
-    if blast_radius_fixture_cohort_run is None or blast_radius_full_cohort_run is None:
-        raise AssertionError("blast-radius run paths were validated above")
-
-    manifest_rows = build_blast_radius_manifest(
-        manual_oracle_tsv=manual_oracle_tsv,
-        slice0_explanations_tsv=slice0_outputs["explanations"],
-        slice0_evidence_vectors_tsv=slice0_outputs["evidence_vectors"],
-        fixture_cohort_run_dir=blast_radius_fixture_cohort_run,
-        full_cohort_run_dir=blast_radius_full_cohort_run,
-        expected_manifest_tsv=expected_blast_radius_manifest,
-        optional_artifacts=optional_artifacts,
-    )
-    summary_rows = build_blast_radius_summary(
-        class_profiles=build_class_profiles(explanations, evidence_rows),
-        manifest_rows=manifest_rows,
-        fixture_cohort_run_dir=blast_radius_fixture_cohort_run,
-        full_cohort_run_dir=blast_radius_full_cohort_run,
-    )
-    slice1_run_facts = build_slice1_run_facts(
-        slice0_run_facts=run_facts,
-        manifest_rows=manifest_rows,
-        summary_rows=summary_rows,
-    )
-    slice1_outputs = write_slice1_outputs(
-        output_dir=output_dir,
-        slice0_outputs=slice0_outputs,
-        manifest_rows=manifest_rows,
-        summary_rows=summary_rows,
-        run_facts=slice1_run_facts,
-    )
+    outputs = slice0_outputs
+    summary_rows: Sequence[Mapping[str, str]] = ()
+    if enable_blast_radius:
+        if (
+            blast_radius_fixture_cohort_run is None
+            or blast_radius_full_cohort_run is None
+        ):
+            raise AssertionError("blast-radius run paths were validated above")
+        manifest_rows = build_blast_radius_manifest(
+            manual_oracle_tsv=manual_oracle_tsv,
+            slice0_explanations_tsv=slice0_outputs["explanations"],
+            slice0_evidence_vectors_tsv=slice0_outputs["evidence_vectors"],
+            fixture_cohort_run_dir=blast_radius_fixture_cohort_run,
+            full_cohort_run_dir=blast_radius_full_cohort_run,
+            expected_manifest_tsv=expected_blast_radius_manifest,
+            optional_artifacts=optional_artifacts,
+        )
+        summary_rows = build_blast_radius_summary(
+            class_profiles=build_class_profiles(explanations, evidence_rows),
+            manifest_rows=manifest_rows,
+            fixture_cohort_run_dir=blast_radius_fixture_cohort_run,
+            full_cohort_run_dir=blast_radius_full_cohort_run,
+        )
+        run_facts = build_slice1_run_facts(
+            slice0_run_facts=run_facts,
+            manifest_rows=manifest_rows,
+            summary_rows=summary_rows,
+        )
+        outputs = write_slice1_outputs(
+            output_dir=output_dir,
+            slice0_outputs=slice0_outputs,
+            manifest_rows=manifest_rows,
+            summary_rows=summary_rows,
+            run_facts=run_facts,
+        )
     if enable_shadow_label_alignment:
         return _write_v2_from_current_outputs(
             output_dir=output_dir,
-            prior_outputs=slice1_outputs,
+            prior_outputs=outputs,
             explanations=explanations,
-            run_facts=slice1_run_facts,
+            run_facts=run_facts,
             machine_matches=matches,
             cwt_shape_evidence=cwt_shape_evidence,
             tier2_trace_evidence=tier2_trace_evidence,
@@ -734,9 +633,9 @@ def run_explanation(
             blast_radius_summary_rows=summary_rows,
             enable_product_activation_contract=enable_product_activation_contract,
             activation_must_not_regress_status=activation_must_not_regress_status,
-            activation_must_not_regress_expectations=(must_not_regress_expectations),
+            activation_must_not_regress_expectations=must_not_regress_expectations,
         )
-    return slice1_outputs
+    return outputs
 
 
 def _write_v2_from_current_outputs(
@@ -911,6 +810,7 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--optional-blast-radius-artifact",
+        dest="optional_blast_radius_artifacts",
         action="append",
         default=[],
         metavar="ROLE=PATH",
