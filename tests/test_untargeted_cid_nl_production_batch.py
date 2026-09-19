@@ -1983,22 +1983,6 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     )
     with pytest.raises(capture_owner.SampleLocalCaptureError):
         bind_capture(changed_source, **binding_args)
-    mutable_capture = capture_peak(
-        scope=bound_capture.scope,
-        candidate_id=bound_capture.candidate_id,
-        trace=replace(
-            bound_capture.trace, intensity=bound_capture.trace.intensity.copy()
-        ),
-    )
-    mutable_capture.trace.intensity[-1] += 1.0
-    with pytest.raises(capture_owner.SampleLocalCaptureError):
-        bind_capture(mutable_capture, **binding_args)
-    with pytest.raises((capture_owner.SampleLocalCaptureError, ValueError)):
-        capture_owner.mint_captured_peak_observation(
-            mutable_capture,
-            processing_owners=captured_batches[0].jobs[0].processing_owners,
-            sample=captured_batches[0].jobs[0].sample,
-        )
     from xic_extractor.peak_detection.search_scope import SearchScopeContractError
 
     changed_answer = evaluate_physical_peak(

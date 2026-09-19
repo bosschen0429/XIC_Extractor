@@ -514,19 +514,20 @@ def _mint_peak_observation_artifact(
     physical_evaluation: PhysicalPeakEvaluation | None = None,
     capture_stage: str = "initial_capture",
 ) -> PeakObservationRef:
+    payload_bytes = canonical_peak_observation_ref_bytes(
+        content,
+        generation_provenance,
+    )
     artifact = _mint_evidence_artifact_ref(
         producer_processing_request_id=processing_owners.request.processing_request_id,
         producer_processing_attempt_id=processing_owners.attempt.processing_attempt_id,
         semantic_contract=_ARTIFACT_SEMANTIC_CONTRACT,
-        payload_bytes=canonical_peak_observation_ref_bytes(
-            content,
-            generation_provenance,
-        ),
+        payload_bytes=payload_bytes,
     )
-    return PeakObservationRef(
-        content=content,
-        generation_provenance=generation_provenance,
-        artifact=artifact,
+    return _owner_minted_peak_observation_ref(
+        content,
+        generation_provenance,
+        artifact,
         physical_evaluation=physical_evaluation,
         capture_stage=capture_stage,
     )
@@ -635,19 +636,8 @@ def _project_peak_observation_values(
         integration,
         raw_scan_indices=tuple(range(len(selected_indices))),
     )
-    content_basis = _physical_content_basis(
-        canonical_sample_identity_id=canonical_sample_identity_id,
-        mz=float(trace.mz),
-        rt=selected_rt,
-        intensity=selected_intensity,
-        integration=normalized_integration,
-    )
     return (
-        PeakObservationContent(
-            peak_observation_content_id=_typed_digest(
-                _CONTENT_ID_PREFIX,
-                content_basis,
-            ),
+        _owner_minted_peak_observation_content(
             canonical_sample_identity_id=canonical_sample_identity_id,
             mz=float(trace.mz),
             rt=selected_rt,
@@ -676,6 +666,59 @@ def _project_peak_observation_values(
             ),
         ),
     )
+
+
+def _owner_minted_peak_observation_content(
+    *,
+    canonical_sample_identity_id: str,
+    mz: float,
+    rt: tuple[float, ...],
+    intensity: tuple[float, ...],
+    integration: IntegrationResult,
+) -> PeakObservationContent:
+    """Issue content from values normalized by the observation owner once."""
+
+    content = object.__new__(PeakObservationContent)
+    object.__setattr__(
+        content,
+        "peak_observation_content_id",
+        _content_id(
+            canonical_sample_identity_id=canonical_sample_identity_id,
+            mz=mz,
+            rt=rt,
+            intensity=intensity,
+            integration=integration,
+        ),
+    )
+    object.__setattr__(
+        content,
+        "canonical_sample_identity_id",
+        canonical_sample_identity_id,
+    )
+    object.__setattr__(content, "mz", mz)
+    object.__setattr__(content, "rt", rt)
+    object.__setattr__(content, "intensity", intensity)
+    object.__setattr__(content, "integration", integration)
+    return content
+
+
+def _owner_minted_peak_observation_ref(
+    content: PeakObservationContent,
+    generation_provenance: PeakObservationGenerationProvenance,
+    artifact: EvidenceArtifactRef,
+    *,
+    physical_evaluation: PhysicalPeakEvaluation | None,
+    capture_stage: str,
+) -> PeakObservationRef:
+    """Issue a ref whose exact canonical payload just minted ``artifact``."""
+
+    reference = object.__new__(PeakObservationRef)
+    object.__setattr__(reference, "content", content)
+    object.__setattr__(reference, "generation_provenance", generation_provenance)
+    object.__setattr__(reference, "artifact", artifact)
+    object.__setattr__(reference, "physical_evaluation", physical_evaluation)
+    object.__setattr__(reference, "capture_stage", capture_stage)
+    return reference
 
 
 def canonical_peak_observation_ref_bytes(
