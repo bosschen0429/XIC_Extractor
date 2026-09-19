@@ -265,9 +265,11 @@ def run_trace_diagnosis(
             artifact_role=PT_PATTERN_TRACE_FULL_CONTEXT_ROLE,
             trace_extraction_sha256=trace_extraction_sha256,
             candidates_csv_sha256=candidates_csv_sha256,
-            summary_csv=summary_csv,
-            metrics_csv=metrics_csv,
-            trace_points_csv=trace_points_csv if write_trace_points else None,
+            summary_csv_sha256=file_sha256(summary_csv).lower(),
+            metrics_csv_sha256=file_sha256(metrics_csv).lower(),
+            trace_points_csv_sha256=(
+                file_sha256(trace_points_csv).lower() if write_trace_points else None
+            ),
             candidate_assignments=candidate_assignments,
         )
     )
@@ -340,10 +342,12 @@ def run_trace_diagnosis(
             artifact_role=PT_PATTERN_TRACE_ANCHOR_LOCAL_ROLE,
             trace_extraction_sha256=trace_extraction_sha256,
             candidates_csv_sha256=candidates_csv_sha256,
-            summary_csv=anchor_summary_csv,
-            metrics_csv=anchor_metrics_csv,
-            trace_points_csv=(
-                anchor_trace_points_csv if write_trace_points else None
+            summary_csv_sha256=file_sha256(anchor_summary_csv).lower(),
+            metrics_csv_sha256=file_sha256(anchor_metrics_csv).lower(),
+            trace_points_csv_sha256=(
+                file_sha256(anchor_trace_points_csv).lower()
+                if write_trace_points
+                else None
             ),
             candidate_assignments=candidate_assignments,
         )

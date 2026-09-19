@@ -25,15 +25,17 @@ from xic_extractor.discovery.pt_pattern_review_packet import (
     default_review_packet_manifest_path,
     validate_review_packet_manifest,
 )
-from xic_extractor.discovery.pt_pattern_trace_evidence import TRACE_POINT_COLUMNS
-from xic_extractor.discovery.pt_pattern_trace_manifest import (
+from xic_extractor.discovery.pt_pattern_trace_bundle_reader import (
     VerifiedTraceSummaryBundle,
     default_trace_summary_path,
     load_trace_bundle_manifest,
     load_verified_trace_summary_bundle,
-    validate_cross_role_trace_request_identity,
     validate_trace_points_manifest,
     verified_trace_summary_identities,
+)
+from xic_extractor.discovery.pt_pattern_trace_evidence import TRACE_POINT_COLUMNS
+from xic_extractor.discovery.pt_pattern_trace_manifest import (
+    validate_cross_role_trace_request_identity,
 )
 from xic_extractor.tabular_io import (
     file_sha256,

@@ -15,9 +15,11 @@ from xic_extractor.discovery.pt_pattern_artifact_contract import (
 from xic_extractor.discovery.pt_pattern_review_bundle import (
     load_verified_review_packet_bundle,
 )
-from xic_extractor.discovery.pt_pattern_trace_manifest import (
+from xic_extractor.discovery.pt_pattern_trace_bundle_reader import (
     default_trace_manifest_path,
     load_verified_trace_summary_bundle,
+)
+from xic_extractor.discovery.pt_pattern_trace_manifest import (
     trace_bundle_manifest_fields,
 )
 from xic_extractor.tabular_io import (
@@ -504,9 +506,9 @@ def _write_trace_bundle_fixture(
             artifact_role=artifact_role,
             trace_extraction_sha256=trace_extraction_sha256,
             candidates_csv_sha256=candidates_csv_sha256,
-            summary_csv=summary_csv,
-            metrics_csv=metrics_csv,
-            trace_points_csv=None,
+            summary_csv_sha256=file_sha256(summary_csv).lower(),
+            metrics_csv_sha256=file_sha256(metrics_csv).lower(),
+            trace_points_csv_sha256=None,
             candidate_assignments=candidate_assignments,
         )
     )

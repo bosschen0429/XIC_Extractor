@@ -17,36 +17,28 @@ from xic_extractor.discovery.pt_pattern_anchor_segmentation import (
     select_anchor_local_segments,
 )
 from xic_extractor.discovery.pt_pattern_artifact_contract import (
+    PT_PATTERN_ANCHOR_LOCAL_METRIC_COLUMNS,
+    PT_PATTERN_ANCHOR_LOCAL_SUMMARY_COLUMNS,
+    PT_PATTERN_ANCHOR_LOCAL_TRACE_POINT_COLUMNS,
     PT_PATTERN_ANCHOR_LOCAL_TRACE_SUMMARY_SCHEMA_VERSION,
+    PT_PATTERN_ANCHOR_SEGMENTATION_METRIC_COLUMNS,
     PT_PATTERN_TRACE_ANCHOR_LOCAL_ROLE,
     PT_PATTERN_TRACE_FULL_CONTEXT_ROLE,
 )
 from xic_extractor.discovery.pt_pattern_trace_evidence import (
-    ANCHOR_SEGMENTATION_METRIC_COLUMNS,
-    ANCHOR_SEGMENTATION_SUMMARY_COLUMNS,
-    METRIC_COLUMNS,
     POSITION_LABELS,
-    SUMMARY_COLUMNS,
-    TRACE_POINT_COLUMNS,
     combined_pt_pattern_status,
     diagnose_candidate_traces,
 )
 from xic_extractor.tabular_io import format_diagnostic_value
 from xic_extractor.xic_models import XICTrace
 
+ANCHOR_LOCAL_SUMMARY_COLUMNS = PT_PATTERN_ANCHOR_LOCAL_SUMMARY_COLUMNS
+ANCHOR_LOCAL_METRIC_COLUMNS = PT_PATTERN_ANCHOR_LOCAL_METRIC_COLUMNS
+ANCHOR_LOCAL_TRACE_POINT_COLUMNS = PT_PATTERN_ANCHOR_LOCAL_TRACE_POINT_COLUMNS
+
 ANCHOR_LOCAL_SCHEMA_VERSION = PT_PATTERN_ANCHOR_LOCAL_TRACE_SUMMARY_SCHEMA_VERSION
 ANCHOR_SEGMENTATION_SELECTOR = "anchor_containing_chrom_peak_segment.v1"
-ANCHOR_LOCAL_SUMMARY_COLUMNS = (
-    *SUMMARY_COLUMNS[:-3],
-    *ANCHOR_SEGMENTATION_SUMMARY_COLUMNS,
-    *SUMMARY_COLUMNS[-3:],
-)
-ANCHOR_LOCAL_METRIC_COLUMNS = (
-    *METRIC_COLUMNS[:-3],
-    *ANCHOR_SEGMENTATION_METRIC_COLUMNS,
-    *METRIC_COLUMNS[-3:],
-)
-ANCHOR_LOCAL_TRACE_POINT_COLUMNS = TRACE_POINT_COLUMNS
 
 
 @dataclass(frozen=True, slots=True)
@@ -419,7 +411,7 @@ def _anchor_segmentation_metric_fields(
     evidence: PositionAnchorBoundaryEvidence | None,
 ) -> dict[str, object]:
     if evidence is None:
-        return {column: "" for column in ANCHOR_SEGMENTATION_METRIC_COLUMNS}
+        return {column: "" for column in PT_PATTERN_ANCHOR_SEGMENTATION_METRIC_COLUMNS}
     return {
         "anchor_segment_rt_start_min": evidence.segment_rt_start_min,
         "anchor_segment_rt_end_min": evidence.segment_rt_end_min,

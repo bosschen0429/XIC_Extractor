@@ -16,7 +16,7 @@ from xic_extractor.discovery import pt_pattern_trace_evidence as evidence
 from xic_extractor.discovery.pt_pattern_anchor_segmentation import (
     select_anchor_local_segments,
 )
-from xic_extractor.discovery.pt_pattern_trace_manifest import (
+from xic_extractor.discovery.pt_pattern_trace_bundle_reader import (
     load_trace_bundle_manifest,
     load_verified_trace_summary_bundle,
     validate_trace_points_manifest,

@@ -29,6 +29,14 @@ from xic_extractor.discovery.pt_pattern_review_packet import (
     EVIDENCE_OWNER,
     READINESS_TIER,
 )
+from xic_extractor.discovery.pt_pattern_trace_bundle_reader import (
+    default_trace_manifest_path,
+    default_trace_summary_path,
+    load_trace_bundle_manifest,
+    load_verified_trace_summary_bundle,
+    validate_trace_points_manifest,
+    verified_trace_summary_identities,
+)
 from xic_extractor.discovery.pt_pattern_trace_evidence import (
     POSITION_LABELS as TRACE_POSITION_LABELS,
 )
@@ -37,13 +45,7 @@ from xic_extractor.discovery.pt_pattern_trace_evidence import (
     TRACE_POINT_COLUMNS,
 )
 from xic_extractor.discovery.pt_pattern_trace_manifest import (
-    default_trace_manifest_path,
-    default_trace_summary_path,
-    load_trace_bundle_manifest,
-    load_verified_trace_summary_bundle,
     validate_cross_role_trace_request_identity,
-    validate_trace_points_manifest,
-    verified_trace_summary_identities,
 )
 from xic_extractor.tabular_io import (
     file_sha256,

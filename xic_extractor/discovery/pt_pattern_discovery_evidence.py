@@ -31,7 +31,7 @@ from xic_extractor.discovery.pt_pattern_evidence_rule import (
     pt_pattern_rule_id,
     pt_pattern_scan_interval_sec,
 )
-from xic_extractor.discovery.pt_pattern_trace_manifest import (
+from xic_extractor.discovery.pt_pattern_trace_bundle_reader import (
     VerifiedTraceSummaryBundle,
     load_verified_trace_summary_bundle,
 )

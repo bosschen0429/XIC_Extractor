@@ -37,7 +37,7 @@ from xic_extractor.discovery.pt_pattern_oracle_replay_contract import (
     validate_oracle_promotion_binding,
 )
 from xic_extractor.discovery.pt_pattern_review_packet import PACKET_SCHEMA_ROLE
-from xic_extractor.discovery.pt_pattern_trace_manifest import (
+from xic_extractor.discovery.pt_pattern_trace_bundle_reader import (
     VerifiedTraceSummaryBundle,
     load_verified_trace_summary_bundle,
 )
