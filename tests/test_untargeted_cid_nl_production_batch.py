@@ -14,6 +14,7 @@ from openpyxl import load_workbook
 
 import xic_extractor.alignment.result.application_result as application_result_owner
 import xic_extractor.alignment.untargeted_finalized_matrix as finalized_matrix
+import xic_extractor.discovery.processing_run_spec_adapter as processing_spec_adapter
 import xic_extractor.extraction.untargeted_cid_nl_alignment as alignment_adapter
 import xic_extractor.extraction.untargeted_cid_nl_real_data_inputs as input_owner
 import xic_extractor.processing_identity as identity_owner
@@ -59,6 +60,9 @@ from xic_extractor.diagnostics.timing import TimingRecorder
 from xic_extractor.discovery.models import (
     MS1_FEATURE_BACKED_STATES,
     DiscoveryCandidate,
+)
+from xic_extractor.discovery.processing_run_spec_adapter import (
+    compile_discovery_processing_run_spec_with_expectations,
 )
 from xic_extractor.execution_runtime import AttemptTerminalOutcome
 from xic_extractor.execution_runtime_marker import OwnerPathRuntimeMarker
@@ -1521,8 +1525,14 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     monkeypatch.setattr(
         bounded_owner, "execute_untargeted_cid_nl_runtime_partition", checked_runtime
     )
+    preparation_fingerprints = []
     runtime_fingerprints = []
+    preparation_fingerprint = identity_owner.fingerprint_file_content
     fingerprint = raw_reader_owner.fingerprint_file_content
+
+    def count_preparation_fingerprint(path, **kwargs):
+        preparation_fingerprints.append(path)
+        return preparation_fingerprint(path, **kwargs)
 
     def count_runtime_fingerprint(path):
         runtime_fingerprints.append(path)
@@ -1530,6 +1540,9 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
 
     monkeypatch.setattr(
         raw_reader_owner, "fingerprint_file_content", count_runtime_fingerprint
+    )
+    monkeypatch.setattr(
+        identity_owner, "fingerprint_file_content", count_preparation_fingerprint
     )
     completed = alignment_adapter.complete_untargeted_cid_nl_alignment(
         discovery_batch=discovery_batch,
@@ -1641,6 +1654,9 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
             tmp_path / "producer-evidence.sqlite", expected_curves, expected_curve_links
         )
 
+    assert preparation_fingerprints == [
+        tmp_path / f"{stem}.synthetic" for stem in discovery_batch.sample_order
+    ], "formal preparation must fully fingerprint each RAW source once"
     assert runtime_fingerprints == [], (
         "RAW opens must reuse the input owner's source verification",
         runtime_fingerprints,
@@ -2804,6 +2820,70 @@ def test_production_rejects_source_change_during_expectation_mint(
     )
     with pytest.raises(identity_owner.IdentityContractError, match="changed during"):
         prepare_untargeted_cid_nl_production_plan(**arguments)
+
+
+def test_reused_run_spec_source_rejects_change_before_plan(
+    tmp_path: Path,
+) -> None:
+    path, _raw, arguments = _source_verification_inputs(tmp_path)
+    _spec, expectations = compile_discovery_processing_run_spec_with_expectations(
+        (path,),
+        discovery_settings=arguments["settings"],
+    )
+    path.write_bytes(b"changed-between-preparation-owners")
+
+    with pytest.raises(identity_owner.IdentityContractError, match="changed after"):
+        prepare_untargeted_cid_nl_production_plan(
+            **arguments,
+            acquisition_source_expectations=expectations,
+        )
+
+
+def test_run_spec_expectation_rejects_change_after_fingerprint(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path, _raw, arguments = _source_verification_inputs(tmp_path)
+    build_source = processing_spec_adapter.build_acquisition_source_identity
+
+    def change_after_fingerprint(source_path, **kwargs):
+        source = build_source(source_path, **kwargs)
+        path.write_bytes(b"changed-during-run-spec-preparation")
+        return source
+
+    monkeypatch.setattr(
+        processing_spec_adapter,
+        "build_acquisition_source_identity",
+        change_after_fingerprint,
+    )
+    with pytest.raises(identity_owner.IdentityContractError, match="changed during"):
+        compile_discovery_processing_run_spec_with_expectations(
+            (path,),
+            discovery_settings=arguments["settings"],
+        )
+
+
+def test_reused_run_spec_source_preserves_plan_request_and_candidates(
+    tmp_path: Path,
+) -> None:
+    path, _raw, arguments = _source_verification_inputs(tmp_path)
+    baseline = prepare_untargeted_cid_nl_production_plan(**arguments)
+    spec, expectations = compile_discovery_processing_run_spec_with_expectations(
+        (path,),
+        discovery_settings=arguments["settings"],
+    )
+    reused = prepare_untargeted_cid_nl_production_plan(
+        **arguments,
+        acquisition_source_expectations=expectations,
+    )
+
+    assert spec.acquisition_inputs[0].acquisition_source == expectations[0].source
+    assert reused.subject_batch == baseline.subject_batch
+    assert reused.context.processing_owners.request == (
+        baseline.context.processing_owners.request
+    )
+    assert reused.context.candidates_by_sample == baseline.context.candidates_by_sample
+    assert reused.excluded_candidates == baseline.excluded_candidates
 
 
 @pytest.mark.parametrize("change", ["edit", "replace"])

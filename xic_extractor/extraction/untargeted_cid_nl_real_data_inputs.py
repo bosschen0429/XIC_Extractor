@@ -56,15 +56,9 @@ from xic_extractor.sample_metadata import (
     resolve_canonical_sample_identity,
 )
 
-UNTARGETED_CID_NL_PROCESSING_INPUT_SCHEMA_VERSION = (
-    "untargeted_cid_nl_real_data_inputs"
-)
-UNTARGETED_CID_NL_PROCESSING_ALGORITHM_VERSION = (
-    "untargeted_cid_nl_real_data_algorithm"
-)
-UNTARGETED_CID_NL_PROCESSING_CONTRACT_VERSION = (
-    "untargeted_cid_nl_real_data_contract"
-)
+UNTARGETED_CID_NL_PROCESSING_INPUT_SCHEMA_VERSION = "untargeted_cid_nl_real_data_inputs"
+UNTARGETED_CID_NL_PROCESSING_ALGORITHM_VERSION = "untargeted_cid_nl_real_data_algorithm"
+UNTARGETED_CID_NL_PROCESSING_CONTRACT_VERSION = "untargeted_cid_nl_real_data_contract"
 DISCOVERY_SETTINGS_INPUT_KEY = "current_discovery_settings"
 DISCOVERY_SETTINGS_SCHEMA_VERSION = "current_discovery_settings"
 CANDIDATE_UNIVERSE_INPUT_KEY = "current_discovery_candidate_universe"
@@ -122,6 +116,8 @@ def build_untargeted_cid_nl_real_data_context(
     signal_processing_profile: SignalProcessingProfile | None = None,
     physical_records_by_candidate: Mapping[str, DiscoveryPhysicalFactRecord]
     | None = None,
+    acquisition_source_expectations: tuple[AcquisitionSourceExpectation, ...]
+    | None = None,
 ) -> UntargetedCidNlRealDataContext:
     """Mint one replayable request before any real-data runtime RAW handle is opened."""
 
@@ -171,23 +167,52 @@ def build_untargeted_cid_nl_real_data_context(
             raise IdentityContractError(
                 "CID-NL subject batch must cover the exact Discovery candidate universe"
             )
-    sources_by_stem = {}
-    source_expectations = {}
-    for stem, path in paths_by_stem.items():
-        before = _stat_identity(path.stat())
-        source = build_acquisition_source_identity(
-            path,
-            acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
-            observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
-        )
-        if _stat_identity(path.stat()) != before:
+    sources_by_stem: dict[str, AcquisitionSourceIdentity] = {}
+    source_expectations: dict[str, AcquisitionSourceExpectation] = {}
+    if acquisition_source_expectations is not None:
+        if not isinstance(acquisition_source_expectations, tuple) or len(
+            acquisition_source_expectations
+        ) != len(paths_by_stem):
             raise IdentityContractError(
-                "CID-NL RAW source changed during fingerprinting"
+                "source expectations must cover every RAW source exactly once"
             )
-        sources_by_stem[stem] = source
-        source_expectations[stem] = AcquisitionSourceExpectation(
-            source=source, path_identity=before
-        )
+        for (stem, path), expectation in zip(
+            paths_by_stem.items(), acquisition_source_expectations, strict=True
+        ):
+            if not isinstance(expectation, AcquisitionSourceExpectation):
+                raise IdentityContractError(
+                    "source expectations must be owner-verified bindings"
+                )
+            source = expectation.source
+            if (
+                source.acquisition_format != THERMO_RAW_ACQUISITION_FORMAT
+                or source.observation_namespace != THERMO_RAW_OBSERVATION_NAMESPACE
+            ):
+                raise IdentityContractError(
+                    "source expectation uses the wrong acquisition contract"
+                )
+            if _stat_identity(path.stat()) != expectation.path_identity:
+                raise IdentityContractError(
+                    "CID-NL RAW source changed after run-spec verification"
+                )
+            sources_by_stem[stem] = source
+            source_expectations[stem] = expectation
+    else:
+        for stem, path in paths_by_stem.items():
+            before = _stat_identity(path.stat())
+            source = build_acquisition_source_identity(
+                path,
+                acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
+                observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
+            )
+            if _stat_identity(path.stat()) != before:
+                raise IdentityContractError(
+                    "CID-NL RAW source changed during fingerprinting"
+                )
+            sources_by_stem[stem] = source
+            source_expectations[stem] = AcquisitionSourceExpectation(
+                source=source, path_identity=before
+            )
     receipt_map = _discovery_receipt_map(
         discovery_receipts_by_sample,
         expected_sample_stems=tuple(paths_by_stem),
@@ -433,9 +458,7 @@ def validate_candidate_universe_payload(
             or not isinstance(entry.get("candidate_artifact_byte_size"), int)
             or entry["candidate_artifact_byte_size"] < 0
             or not isinstance(entry.get("acquisition_source_id"), str)
-            or not entry["acquisition_source_id"].startswith(
-                "xic.acquisition-source:"
-            )
+            or not entry["acquisition_source_id"].startswith("xic.acquisition-source:")
         ):
             raise IdentityContractError(
                 "candidate universe owner receipt facts are invalid"

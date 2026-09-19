@@ -125,6 +125,7 @@ from xic_extractor.peak_detection.search_scope import (
 from xic_extractor.peak_detection.signal_processing_profile import (
     SignalProcessingProfile,
 )
+from xic_extractor.processing_identity import AcquisitionSourceExpectation
 from xic_extractor.processing_run_spec import CidNlDiscoveryMethodSpec
 from xic_extractor.sample_metadata import (
     SampleMetadata,
@@ -364,6 +365,8 @@ def prepare_untargeted_cid_nl_production_plan(
     signal_processing_profile: SignalProcessingProfile | None = None,
     physical_records_by_candidate: Mapping[str, DiscoveryPhysicalFactRecord]
     | None = None,
+    acquisition_source_expectations: tuple[AcquisitionSourceExpectation, ...]
+    | None = None,
 ) -> UntargetedCidNlProductionPlan:
     """Seal exact candidate membership before any subject-local runtime work."""
 
@@ -481,6 +484,7 @@ def prepare_untargeted_cid_nl_production_plan(
         sample_identity_namespace=sample_identity_namespace,
         signal_processing_profile=signal_processing_profile,
         physical_records_by_candidate=physical_records_by_candidate,
+        acquisition_source_expectations=acquisition_source_expectations,
     )
     candidate_by_id = {candidate.candidate_id: candidate for candidate in candidates}
     eligible_subject_ids = {
