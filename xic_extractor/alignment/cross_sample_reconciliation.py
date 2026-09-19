@@ -92,7 +92,7 @@ from xic_extractor.alignment.owner_backfill import (
     OwnerBackfillPeakFactObservation,
     validate_owner_backfill_peak_fact_observation,
 )
-from xic_extractor.alignment.owner_backfill_peak_fact_provenance import (
+from xic_extractor.alignment.owner_backfill_peak_fact_projection import (
     selected_integration_authority_projection,
 )
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
