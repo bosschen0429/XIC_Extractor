@@ -71,6 +71,7 @@ RUNTIME_CONSTRUCTION_OWNER_PATHS = frozenset(
         "xic_extractor/execution_runtime_owner.py",
     }
 )
+RUNTIME_RECEIPT_CONTRACT_PATH = "xic_extractor/execution_runtime_receipts.py"
 RUNTIME_CONSUMER_PATHS = frozenset(
     {
         "xic_extractor/alignment/runtime_adapter.py",
@@ -85,6 +86,7 @@ RUNTIME_AUTHORITY_MODULES = frozenset(
         "xic_extractor.execution_runtime_finalization_models",
         "xic_extractor.execution_runtime_observability",
         "xic_extractor.execution_runtime_owner",
+        "xic_extractor.execution_runtime_receipts",
     }
 )
 RAW_OPEN_RECEIPT_MINTER_REFERENCE = (
@@ -140,6 +142,44 @@ RUNTIME_LOW_LEVEL_ALLOWED_EXPORTS: Mapping[str, frozenset[str]] = {
             "validate_runtime_acquisition_metrics",
         }
     ),
+    RUNTIME_RECEIPT_CONTRACT_PATH: frozenset(
+        {
+            "RuntimeAcquisitionMetrics",
+            "RuntimeAcquisitionReceipt",
+            "RuntimeArtifactIoSample",
+            "RuntimeArtifactRegistrationReceipt",
+            "RuntimeCancellationRequest",
+            "RuntimeExecutionPhase",
+            "RuntimeExecutionPhaseError",
+            "RuntimeFinalizationPersister",
+            "RuntimeFinalizationReceipt",
+            "RuntimePeakFactCostMetrics",
+            "RuntimePeakFactIdentityStatus",
+            "RuntimePeakFactOperation",
+            "RuntimePeakFactWorkReceipt",
+            "RuntimeProcessTreePeakRssSample",
+            "RuntimeRawOpenMetrics",
+            "RuntimeResourceSettlementReceipt",
+            "RuntimeTelemetryProvider",
+            "RuntimeTelemetrySamples",
+            "RuntimeWorkerBatchProvider",
+            "RuntimeWorkerBatchReceipt",
+            "RuntimeWorkerPeakRssSample",
+            "accept_runtime_finalization_receipt",
+            "compact_runtime_acquisition_receipt",
+            "derive_runtime_acquisition_metrics",
+            "derive_runtime_peak_fact_cost_metrics",
+            "derive_runtime_raw_open_metrics",
+        }
+    ),
+}
+RUNTIME_RECEIPT_CONTRACT_INTERNAL_REFERENCES_BY_MODULE: Mapping[
+    str, frozenset[str]
+] = {
+    "xic_extractor.execution_runtime": frozenset({"WorkUnitSettlement"}),
+    "xic_extractor.execution_runtime_finalization": frozenset(
+        {"CoordinatorTerminalRecord", "accept_supervisor_finalization"}
+    ),
 }
 RUNTIME_EXTERNAL_CALLS_BY_MODULE: Mapping[str, frozenset[str]] = {
     "xic_extractor.execution_runtime": RUNTIME_LOW_LEVEL_ALLOWED_EXPORTS[
@@ -192,6 +232,32 @@ RUNTIME_EXTERNAL_CALLS_BY_MODULE: Mapping[str, frozenset[str]] = {
             "start_runtime_attempt",
         }
     ),
+    "xic_extractor.execution_runtime_receipts": frozenset(
+        {
+            "RuntimeAcquisitionMetrics",
+            "RuntimeAcquisitionReceipt",
+            "RuntimeArtifactIoSample",
+            "RuntimeArtifactRegistrationReceipt",
+            "RuntimeCancellationRequest",
+            "RuntimeExecutionPhase",
+            "RuntimeExecutionPhaseError",
+            "RuntimePeakFactCostMetrics",
+            "RuntimePeakFactIdentityStatus",
+            "RuntimePeakFactOperation",
+            "RuntimePeakFactWorkReceipt",
+            "RuntimeProcessTreePeakRssSample",
+            "RuntimeRawOpenMetrics",
+            "RuntimeResourceSettlementReceipt",
+            "RuntimeTelemetrySamples",
+            "RuntimeWorkerBatchReceipt",
+            "RuntimeWorkerPeakRssSample",
+            "accept_runtime_finalization_receipt",
+            "compact_runtime_acquisition_receipt",
+            "derive_runtime_acquisition_metrics",
+            "derive_runtime_peak_fact_cost_metrics",
+            "derive_runtime_raw_open_metrics",
+        }
+    ),
 }
 RUNTIME_CALLER_PROJECTION_PARAMETERS = frozenset(
     {
@@ -239,6 +305,7 @@ RUNTIME_STATE_MODEL_TEST_OWNER_PATHS = frozenset(
         "tests/test_execution_runtime_marker.py",
         "tests/test_execution_runtime_observability.py",
         "tests/test_execution_runtime_owner.py",
+        "tests/test_execution_runtime_receipts.py",
     }
 )
 RUNTIME_STATE_MODEL_TEST_OWNER_MODULES = frozenset(
@@ -439,7 +506,11 @@ def validate_runtime_boundary_authority(
                     not is_runtime_owner
                     and not is_state_model_test_owner
                     and _is_runtime_authority_reference(reference)
-                    and not _is_allowed_runtime_external_call(reference, call_symbol)
+                    and not _is_allowed_runtime_external_call(
+                        reference,
+                        call_symbol,
+                        source_path=path_key,
+                    )
                 ):
                     problems.append(
                         _runtime_boundary_problem(
@@ -487,6 +558,7 @@ def validate_runtime_boundary_authority(
                     and not _is_allowed_runtime_external_call(
                         reference,
                         referenced_symbol,
+                        source_path=path_key,
                     )
                     and node not in annotation_nodes
                     and _runtime_reference_escapes_as_value(
@@ -781,6 +853,7 @@ def _runtime_import_boundary_problems(
                             not _is_allowed_runtime_external_call(
                                 reference,
                                 imported.name,
+                                source_path=source_path.as_posix(),
                             )
                             and not has_runtime_use
                         )
@@ -1166,10 +1239,19 @@ def _is_runtime_authority_reference(reference: str | None) -> bool:
 def _is_allowed_runtime_external_call(
     reference: str | None,
     symbol: str | None,
+    *,
+    source_path: str | None = None,
 ) -> bool:
     if reference is None or symbol is None or reference.startswith("local:"):
         return False
     module = reference.rsplit(".", 1)[0]
+    if source_path == RUNTIME_RECEIPT_CONTRACT_PATH and symbol in (
+        RUNTIME_RECEIPT_CONTRACT_INTERNAL_REFERENCES_BY_MODULE.get(
+            module,
+            frozenset(),
+        )
+    ):
+        return True
     return symbol in RUNTIME_EXTERNAL_CALLS_BY_MODULE.get(module, frozenset())
 
 

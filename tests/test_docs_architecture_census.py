@@ -259,6 +259,29 @@ def bypass(state):
     assert any("mark_worker_lost is owner-internal" in item for item in problems)
 
 
+def test_runtime_receipt_internal_allowlist_is_path_scoped(
+    tmp_path: Path,
+) -> None:
+    adapter = Path("xic_extractor/extraction/targeted_runtime_adapter.py")
+    source = tmp_path / adapter
+    source.parent.mkdir(parents=True)
+    source.write_text(
+        """
+from xic_extractor.execution_runtime import WorkUnitSettlement
+
+def inspect_settlement(value):
+    return (WorkUnitSettlement,)
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    problems = census.validate_runtime_boundary_authority(tmp_path, (adapter,))
+
+    assert any(
+        "WorkUnitSettlement is owner-internal" in item for item in problems
+    )
+
+
 def test_runtime_boundary_authority_rejects_low_level_public_exports(
     tmp_path: Path,
 ) -> None:
