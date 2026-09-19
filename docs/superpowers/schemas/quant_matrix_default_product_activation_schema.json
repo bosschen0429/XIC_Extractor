@@ -53,7 +53,7 @@
   ],
   "binding_rules": {
     "product_ready_closeout_must_validate": true,
-    "real_bundle_must_validate": true,
+    "product_ready_closeout_supplies_the_validated_real_bundle_predecessor_chain": true,
     "default_check_only_must_match_current_511_source_run": true,
     "default_check_only_must_match_current_511_downstream_scope": true,
     "default_check_only_must_match_511_accepted_backfills": true,

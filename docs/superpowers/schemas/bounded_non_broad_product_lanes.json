@@ -20,8 +20,6 @@
     "may_change_selected_area",
     "may_change_counted_detection",
     "review_or_truth_required_before_expansion",
-    "source_status_index",
-    "source_status_index_sha256",
     "notes"
   ],
   "required_lane_ids": [

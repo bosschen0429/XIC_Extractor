@@ -32,8 +32,13 @@ def test_product_ready_closeout_schema_matches_builder_contract() -> None:
     assert schema["product_ready_closeout_schema"] == PRODUCT_READY_CLOSEOUT_SCHEMA
     assert schema["check_schema"] == PRODUCT_READY_CLOSEOUT_CHECK_SCHEMA
     assert schema["check_columns"] == list(CHECK_COLUMNS)
-    assert schema["binding_rules"]["promotion_packet_must_validate"] is True
     assert schema["binding_rules"]["default_activation_dry_run_must_validate"] is True
+    assert (
+        schema["binding_rules"][
+            "default_activation_dry_run_supplies_the_validated_promotion_packet_predecessor"
+        ]
+        is True
+    )
     assert schema["binding_rules"]["checks_tsv_must_match_inputs"] is True
     assert schema["authority_rules"]["write_authority"] is False
     assert schema["authority_rules"]["product_writer_changed"] is False
@@ -126,6 +131,33 @@ def test_product_ready_closeout_rejects_tampered_dry_run_input(
     assert any("may_enter_product_ready_closeout must be true" in p for p in problems)
 
 
+def test_product_ready_closeout_rejects_tampered_promotion_packet_transitively(
+    tmp_path: Path,
+) -> None:
+    outputs = _build_synthetic_closeout(tmp_path)
+    packet = outputs["packet_summary"]
+    packet_payload = json.loads(packet.read_text(encoding="utf-8"))
+    packet_payload["production_ready"] = False
+    packet.write_text(
+        json.dumps(packet_payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+    problems = validate_quant_matrix_product_ready_closeout(
+        summary_json=outputs["summary_json"],
+        source_root=tmp_path,
+        expected_source_run_id="synthetic-current-511-authority-replay",
+        expected_downstream_scope="synthetic_current_authority_replay",
+        expected_accepted_backfill_count=1,
+    )
+
+    assert any(
+        "default activation dry-run promotion_packet_summary_json_sha256 mismatch"
+        in problem
+        for problem in problems
+    )
+
+
 def test_product_ready_closeout_default_check_rejects_non_current_bundle(
     tmp_path: Path,
 ) -> None:
@@ -154,8 +186,6 @@ def test_product_ready_closeout_script_check_only_round_trip(
             str(output_dir),
             "--source-root",
             str(tmp_path),
-            "--promotion-packet-summary-json",
-            str(inputs["packet_summary"]),
             "--activation-dry-run-summary-json",
             str(inputs["dry_run_summary"]),
             "--expected-source-run-id",
@@ -198,17 +228,18 @@ def test_product_ready_closeout_script_check_only_round_trip(
 
 def _build_synthetic_closeout(tmp_path: Path) -> dict[str, Path]:
     inputs = _build_synthetic_promotion_and_replay(tmp_path)
-    return dict(
+    outputs = dict(
         build_quant_matrix_product_ready_closeout(
             output_dir=tmp_path / "product_ready_closeout",
             source_root=tmp_path,
-            promotion_packet_summary_json=inputs["packet_summary"],
             activation_dry_run_summary_json=inputs["dry_run_summary"],
             expected_source_run_id="synthetic-current-511-authority-replay",
             expected_downstream_scope="synthetic_current_authority_replay",
             expected_accepted_backfill_count=1,
         )
     )
+    outputs.update(inputs)
+    return outputs
 
 
 def _build_synthetic_promotion_and_replay(tmp_path: Path) -> dict[str, Path]:
@@ -216,7 +247,6 @@ def _build_synthetic_promotion_and_replay(tmp_path: Path) -> dict[str, Path]:
     dry_run = build_quant_matrix_default_activation_dry_run(
         output_dir=tmp_path / "dry_run_gate",
         source_root=tmp_path,
-        real_bundle_summary_json=inputs["real_bundle_summary"],
         promotion_packet_summary_json=inputs["packet_summary"],
         expected_source_run_id="synthetic-current-511-authority-replay",
         expected_downstream_scope="synthetic_current_authority_replay",

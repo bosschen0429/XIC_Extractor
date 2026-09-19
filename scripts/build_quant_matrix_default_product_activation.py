@@ -23,16 +23,13 @@ if __package__ in {None, ""}:
 
 from scripts.build_quant_matrix_product_ready_closeout import (
     DEFAULT_PRODUCT_READY_CLOSEOUT_OUTPUT_DIR,
+    resolve_quant_matrix_product_ready_closeout_real_bundle,
     validate_quant_matrix_product_ready_closeout,
 )
 from scripts.build_quant_matrix_real_bundle import (
     DEFAULT_ACCEPTED_BACKFILL_COUNT,
     DEFAULT_DOWNSTREAM_SCOPE,
     DEFAULT_SOURCE_RUN_ID,
-    validate_quant_matrix_real_bundle,
-)
-from scripts.build_quant_matrix_real_bundle import (
-    DEFAULT_OUTPUT_DIR as DEFAULT_REAL_BUNDLE_DIR,
 )
 from scripts.build_quant_matrix_version import run_activation
 from xic_extractor.alignment.quant_matrix_fixture_contract import (
@@ -52,9 +49,6 @@ ROOT = Path(__file__).resolve().parents[1]
 
 DEFAULT_PRODUCT_ACTIVATION_OUTPUT_DIR = Path(
     "docs/superpowers/validation/quant_matrix_default_product_activation",
-)
-DEFAULT_REAL_BUNDLE_SUMMARY_JSON = (
-    DEFAULT_REAL_BUNDLE_DIR / "quant_matrix_real_bundle_summary.json"
 )
 DEFAULT_PRODUCT_READY_CLOSEOUT_SUMMARY_JSON = (
     DEFAULT_PRODUCT_READY_CLOSEOUT_OUTPUT_DIR
@@ -89,7 +83,6 @@ def build_quant_matrix_default_product_activation(
     *,
     output_dir: Path = DEFAULT_PRODUCT_ACTIVATION_OUTPUT_DIR,
     source_root: Path = ROOT,
-    real_bundle_summary_json: Path = DEFAULT_REAL_BUNDLE_SUMMARY_JSON,
     product_ready_closeout_summary_json: Path = (
         DEFAULT_PRODUCT_READY_CLOSEOUT_SUMMARY_JSON
     ),
@@ -97,23 +90,9 @@ def build_quant_matrix_default_product_activation(
     expected_downstream_scope: str = DEFAULT_DOWNSTREAM_SCOPE,
     expected_accepted_backfill_count: int = DEFAULT_ACCEPTED_BACKFILL_COUNT,
 ) -> Mapping[str, Path]:
-    real_bundle_summary = _resolve_source(
-        real_bundle_summary_json,
-        source_root=source_root,
-    )
     closeout_summary = _resolve_source(
         product_ready_closeout_summary_json,
         source_root=source_root,
-    )
-    _raise_if_problems(
-        "real bundle check failed",
-        validate_quant_matrix_real_bundle(
-            summary_json=real_bundle_summary,
-            repo_root=source_root,
-            expected_source_run_id=expected_source_run_id,
-            expected_downstream_scope=expected_downstream_scope,
-            expected_accepted_backfill_count=expected_accepted_backfill_count,
-        ),
     )
     _raise_if_problems(
         "product ready closeout check failed",
@@ -125,9 +104,12 @@ def build_quant_matrix_default_product_activation(
             expected_accepted_backfill_count=expected_accepted_backfill_count,
         ),
     )
-
-    bundle_payload = _read_json_object(real_bundle_summary)
     closeout_payload = _read_json_object(closeout_summary)
+    real_bundle_summary = resolve_quant_matrix_product_ready_closeout_real_bundle(
+        closeout_summary,
+        source_root=source_root,
+    )
+    bundle_payload = _read_json_object(real_bundle_summary)
     _raise_if_problems(
         "activation inputs mismatch",
         _source_identity_problems(
@@ -208,7 +190,6 @@ def build_quant_matrix_default_product_activation(
         summary_json,
         output_dir=output_dir,
         source_root=source_root,
-        real_bundle_summary=real_bundle_summary,
         closeout_summary=closeout_summary,
         bundle_payload=bundle_payload,
         closeout_payload=closeout_payload,
@@ -282,41 +263,35 @@ def validate_quant_matrix_default_product_activation(
 
     inputs = _input_artifacts(payload, source_root=source_root, problems=problems)
     artifacts = _output_artifacts(payload, summary_json.parent, problems)
-    real_bundle_summary = inputs.get("real_bundle_summary_json")
     closeout_summary = inputs.get("product_ready_closeout_summary_json")
 
     bundle_payload: Mapping[str, Any] | None = None
     bundle_paths: dict[str, Path] | None = None
-    if real_bundle_summary is not None:
-        problems.extend(
-            "real bundle: " + problem
-            for problem in validate_quant_matrix_real_bundle(
-                summary_json=real_bundle_summary,
-                repo_root=source_root,
-                expected_source_run_id=expected_source_run_id,
-                expected_downstream_scope=expected_downstream_scope,
-                expected_accepted_backfill_count=expected_accepted_backfill_count,
-            )
-        )
-        try:
-            bundle_payload = _read_json_object(real_bundle_summary)
-            bundle_paths = _real_bundle_paths(bundle_payload, real_bundle_summary)
-        except (OSError, ValueError, json.JSONDecodeError) as exc:
-            problems.append(f"real bundle paths: {exc}")
     if closeout_summary is not None:
-        problems.extend(
-            "product ready closeout: " + problem
-            for problem in validate_quant_matrix_product_ready_closeout(
-                summary_json=closeout_summary,
-                source_root=source_root,
-                expected_source_run_id=expected_source_run_id,
-                expected_downstream_scope=expected_downstream_scope,
-                expected_accepted_backfill_count=expected_accepted_backfill_count,
-            )
+        closeout_problems = validate_quant_matrix_product_ready_closeout(
+            summary_json=closeout_summary,
+            source_root=source_root,
+            expected_source_run_id=expected_source_run_id,
+            expected_downstream_scope=expected_downstream_scope,
+            expected_accepted_backfill_count=expected_accepted_backfill_count,
         )
-        if bundle_payload is not None:
+        problems.extend(
+            "product ready closeout: " + problem for problem in closeout_problems
+        )
+        if not closeout_problems:
             try:
                 closeout_payload = _read_json_object(closeout_summary)
+                real_bundle_summary = (
+                    resolve_quant_matrix_product_ready_closeout_real_bundle(
+                        closeout_summary,
+                        source_root=source_root,
+                    )
+                )
+                bundle_payload = _read_json_object(real_bundle_summary)
+                bundle_paths = _real_bundle_paths(
+                    bundle_payload,
+                    real_bundle_summary,
+                )
                 problems.extend(
                     _source_identity_problems(
                         bundle_payload,
@@ -329,7 +304,7 @@ def validate_quant_matrix_default_product_activation(
                     )
                 )
             except (OSError, ValueError, json.JSONDecodeError) as exc:
-                problems.append(f"product ready closeout payload: {exc}")
+                problems.append(f"product ready closeout chain: {exc}")
 
     if bundle_paths is not None:
         missing_outputs = sorted(
@@ -780,7 +755,6 @@ def _write_summary(
     *,
     output_dir: Path,
     source_root: Path,
-    real_bundle_summary: Path,
     closeout_summary: Path,
     bundle_payload: Mapping[str, Any],
     closeout_payload: Mapping[str, Any],
@@ -829,11 +803,6 @@ def _write_summary(
         "broad_backfill_unparked": False,
         "accepted_backfill_values_are_detection": False,
         "input_artifacts": {
-            "real_bundle_summary_json": _source_relpath(
-                real_bundle_summary,
-                source_root=source_root,
-            ),
-            "real_bundle_summary_json_sha256": file_sha256(real_bundle_summary),
             "product_ready_closeout_summary_json": _source_relpath(
                 closeout_summary,
                 source_root=source_root,
@@ -841,32 +810,6 @@ def _write_summary(
             "product_ready_closeout_summary_json_sha256": file_sha256(
                 closeout_summary,
             ),
-            "baseline_quant_matrix": _source_relpath(
-                bundle_paths["baseline_quant_matrix"],
-                source_root=source_root,
-            ),
-            "baseline_quant_matrix_sha256": file_sha256(
-                bundle_paths["baseline_quant_matrix"],
-            ),
-            "input_matrix_identity": _source_relpath(
-                bundle_paths["input_matrix_identity"],
-                source_root=source_root,
-            ),
-            "input_matrix_identity_sha256": file_sha256(
-                bundle_paths["input_matrix_identity"],
-            ),
-            "production_acceptance_manifest": _source_relpath(
-                bundle_paths["production_acceptance_manifest"],
-                source_root=source_root,
-            ),
-            "production_acceptance_manifest_sha256": file_sha256(
-                bundle_paths["production_acceptance_manifest"],
-            ),
-            "expected_diff": _source_relpath(
-                bundle_paths["expected_diff"],
-                source_root=source_root,
-            ),
-            "expected_diff_sha256": file_sha256(bundle_paths["expected_diff"]),
         },
         "artifacts": {
             "checks_tsv": _artifact_record(checks_tsv, base_dir=output_dir),
@@ -972,14 +915,7 @@ def _input_artifacts(
         problems.append("default product activation input_artifacts must be an object")
         return {}
     result: dict[str, Path] = {}
-    for field in (
-        "real_bundle_summary_json",
-        "product_ready_closeout_summary_json",
-        "baseline_quant_matrix",
-        "input_matrix_identity",
-        "production_acceptance_manifest",
-        "expected_diff",
-    ):
+    for field in ("product_ready_closeout_summary_json",):
         path_value = str(raw.get(field, "")).strip()
         sha_value = str(raw.get(f"{field}_sha256", "")).strip()
         if not path_value:
@@ -1271,7 +1207,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         outputs = build_quant_matrix_default_product_activation(
             output_dir=args.output_dir,
             source_root=args.source_root,
-            real_bundle_summary_json=args.real_bundle_summary_json,
             product_ready_closeout_summary_json=(
                 args.product_ready_closeout_summary_json
             ),
@@ -1295,11 +1230,6 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         default=DEFAULT_PRODUCT_ACTIVATION_OUTPUT_DIR,
     )
     parser.add_argument("--source-root", type=Path, default=ROOT)
-    parser.add_argument(
-        "--real-bundle-summary-json",
-        type=Path,
-        default=DEFAULT_REAL_BUNDLE_SUMMARY_JSON,
-    )
     parser.add_argument(
         "--product-ready-closeout-summary-json",
         type=Path,

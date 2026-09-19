@@ -1,5 +1,4 @@
 import csv
-import hashlib
 import json
 from pathlib import Path
 
@@ -99,18 +98,6 @@ def test_checker_rejects_selected_peak_or_area_writeback(tmp_path: Path) -> None
     assert any("forbidden capability" in problem for problem in problems)
 
 
-def test_checker_rejects_stale_status_index_hash(tmp_path: Path) -> None:
-    mutated = _mutated_acceptance(
-        tmp_path,
-        lane_id="sample_metadata_order_projection",
-        updates={"source_status_index_sha256": "0" * 64},
-    )
-
-    problems = check_bounded_product_lanes(acceptance_path=mutated)
-
-    assert any("source_status_index_sha256 mismatch" in problem for problem in problems)
-
-
 def test_checker_rejects_status_index_disagreement(tmp_path: Path) -> None:
     status = _mutated_status_index(
         tmp_path,
@@ -123,7 +110,7 @@ def test_checker_rejects_status_index_disagreement(tmp_path: Path) -> None:
     assert any("readiness_status disagrees" in problem for problem in problems)
 
 
-def test_checker_rejects_custom_status_index_hash_target_mismatch(
+def test_checker_rejects_custom_status_index_product_risk(
     tmp_path: Path,
 ) -> None:
     status = _mutated_status_index(
@@ -134,14 +121,24 @@ def test_checker_rejects_custom_status_index_hash_target_mismatch(
 
     problems = check_bounded_product_lanes(status_index_path=status)
 
-    assert any("source_status_index_sha256 mismatch" in problem for problem in problems)
     assert any(
         "status index: row" in problem and "changes product output" in problem
         for problem in problems
     )
 
 
-def test_checker_rejects_status_index_extra_writer_even_with_refreshed_hash(
+def test_checker_accepts_unrelated_valid_status_metadata_change(
+    tmp_path: Path,
+) -> None:
+    header, rows = _read_tsv(DEFAULT_STATUS_INDEX)
+    row = _row(rows, "sample_metadata_order_projection")
+    row["notes"] += "; editorial clarification"
+    status = _write_tsv(tmp_path / "status_metadata.tsv", header, rows)
+
+    assert check_bounded_product_lanes(status_index_path=status) == []
+
+
+def test_checker_rejects_status_index_extra_writer(
     tmp_path: Path,
 ) -> None:
     status_header, status_rows = _read_tsv(DEFAULT_STATUS_INDEX)
@@ -157,20 +154,14 @@ def test_checker_rejects_status_index_extra_writer_even_with_refreshed_hash(
     )
     status_rows.append(extra)
     status = _write_tsv(tmp_path / "status_extra.tsv", status_header, status_rows)
-    acceptance = _acceptance_with_source_hash(tmp_path, _sha256(status))
 
-    problems = check_bounded_product_lanes(
-        acceptance_path=acceptance,
-        status_index_path=status,
-    )
+    problems = check_bounded_product_lanes(status_index_path=status)
 
     assert any(
-        "status index: unregistered lane_id values" in problem
-        for problem in problems
+        "status index: unregistered lane_id values" in problem for problem in problems
     )
     assert any(
-        "status index: status index writer lanes mismatch"
-        in problem
+        "status index: status index writer lanes mismatch" in problem
         for problem in problems
     )
 
@@ -191,7 +182,6 @@ def test_checker_rejects_coordinated_schema_acceptance_status_promotion(
             "current_bounded_surface": "TRUE",
             "allowed_scope": "all_targets",
             "allowed_effect": "detected_flagged_only",
-            "source_status_index_sha256": _sha256(status),
         },
     )
     schema = _mutated_schema(
@@ -215,8 +205,7 @@ def test_checker_rejects_coordinated_schema_acceptance_status_promotion(
 
     assert any("bounded readiness status drifted" in problem for problem in problems)
     assert any(
-        "schema production_ready_lanes drifted" in problem
-        for problem in problems
+        "schema production_ready_lanes drifted" in problem for problem in problems
     )
     assert any("production_ready lane set drifted" in problem for problem in problems)
 
@@ -242,13 +231,6 @@ def _mutated_acceptance(
         new_row.update(append)
         rows.append(new_row)
     return _write_tsv(tmp_path / "acceptance.tsv", header, rows)
-
-
-def _acceptance_with_source_hash(tmp_path: Path, source_hash: str) -> Path:
-    header, rows = _read_tsv(DEFAULT_ACCEPTANCE)
-    for row in rows:
-        row["source_status_index_sha256"] = source_hash
-    return _write_tsv(tmp_path / "acceptance_refreshed.tsv", header, rows)
 
 
 def _mutated_schema(tmp_path: Path, updates: dict[str, object]) -> Path:
@@ -284,14 +266,6 @@ def _write_tsv(path: Path, header: list[str], rows: list[dict[str, str]]) -> Pat
         writer.writeheader()
         writer.writerows(rows)
     return path
-
-
-def _sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for block in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(block)
-    return digest.hexdigest().upper()
 
 
 def _read_tsv(path: Path) -> tuple[list[str], list[dict[str, str]]]:

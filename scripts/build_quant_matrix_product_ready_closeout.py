@@ -20,13 +20,9 @@ if __package__ in {None, ""}:
 
 from scripts.build_quant_matrix_default_activation_dry_run import (
     DEFAULT_ACTIVATION_DRY_RUN_OUTPUT_DIR,
+    resolve_quant_matrix_default_activation_dry_run_promotion_packet,
+    resolve_quant_matrix_default_activation_dry_run_real_bundle,
     validate_quant_matrix_default_activation_dry_run,
-)
-from scripts.build_quant_matrix_promotion_packet import (
-    DEFAULT_OUTPUT_DIR as DEFAULT_PACKET_DIR,
-)
-from scripts.build_quant_matrix_promotion_packet import (
-    validate_quant_matrix_promotion_packet,
 )
 from scripts.build_quant_matrix_real_bundle import (
     DEFAULT_ACCEPTED_BACKFILL_COUNT,
@@ -44,9 +40,6 @@ ROOT = Path(__file__).resolve().parents[1]
 
 DEFAULT_PRODUCT_READY_CLOSEOUT_OUTPUT_DIR = Path(
     "docs/superpowers/validation/quant_matrix_product_ready_closeout",
-)
-DEFAULT_PROMOTION_PACKET_SUMMARY_JSON = (
-    DEFAULT_PACKET_DIR / "quant_matrix_promotion_packet_summary.json"
 )
 DEFAULT_ACTIVATION_DRY_RUN_SUMMARY_JSON = (
     DEFAULT_ACTIVATION_DRY_RUN_OUTPUT_DIR
@@ -69,29 +62,14 @@ def build_quant_matrix_product_ready_closeout(
     *,
     output_dir: Path = DEFAULT_PRODUCT_READY_CLOSEOUT_OUTPUT_DIR,
     source_root: Path = ROOT,
-    promotion_packet_summary_json: Path = DEFAULT_PROMOTION_PACKET_SUMMARY_JSON,
     activation_dry_run_summary_json: Path = DEFAULT_ACTIVATION_DRY_RUN_SUMMARY_JSON,
     expected_source_run_id: str = DEFAULT_SOURCE_RUN_ID,
     expected_downstream_scope: str = DEFAULT_DOWNSTREAM_SCOPE,
     expected_accepted_backfill_count: int = DEFAULT_ACCEPTED_BACKFILL_COUNT,
 ) -> Mapping[str, Path]:
-    promotion_packet_summary = _resolve_source(
-        promotion_packet_summary_json,
-        source_root=source_root,
-    )
     activation_dry_run_summary = _resolve_source(
         activation_dry_run_summary_json,
         source_root=source_root,
-    )
-    _raise_if_problems(
-        "promotion packet check failed",
-        validate_quant_matrix_promotion_packet(
-            summary_json=promotion_packet_summary,
-            source_root=source_root,
-            expected_source_run_id=expected_source_run_id,
-            expected_downstream_scope=expected_downstream_scope,
-            expected_accepted_backfill_count=expected_accepted_backfill_count,
-        ),
     )
     _raise_if_problems(
         "default activation dry-run check failed",
@@ -103,9 +81,14 @@ def build_quant_matrix_product_ready_closeout(
             expected_accepted_backfill_count=expected_accepted_backfill_count,
         ),
     )
-
-    packet_payload = _read_json_object(promotion_packet_summary)
     dry_run_payload = _read_json_object(activation_dry_run_summary)
+    promotion_packet_summary = (
+        resolve_quant_matrix_default_activation_dry_run_promotion_packet(
+            activation_dry_run_summary,
+            source_root=source_root,
+        )
+    )
+    packet_payload = _read_json_object(promotion_packet_summary)
     check_rows = _check_rows(
         packet_payload=packet_payload,
         dry_run_payload=dry_run_payload,
@@ -129,7 +112,6 @@ def build_quant_matrix_product_ready_closeout(
         summary_json,
         output_dir=output_dir,
         source_root=source_root,
-        promotion_packet_summary=promotion_packet_summary,
         activation_dry_run_summary=activation_dry_run_summary,
         packet_payload=packet_payload,
         dry_run_payload=dry_run_payload,
@@ -179,32 +161,31 @@ def validate_quant_matrix_product_ready_closeout(
 
     inputs = _input_artifacts(payload, source_root=source_root, problems=problems)
     artifacts = _output_artifacts(payload, summary_json.parent, problems)
-    promotion_packet_summary = inputs.get("promotion_packet_summary_json")
     activation_dry_run_summary = inputs.get("activation_dry_run_summary_json")
     checks_tsv = artifacts.get("checks_tsv")
 
-    if promotion_packet_summary is not None:
-        problems.extend(
-            "promotion packet: " + problem
-            for problem in validate_quant_matrix_promotion_packet(
-                summary_json=promotion_packet_summary,
-                source_root=source_root,
-                expected_source_run_id=expected_source_run_id,
-                expected_downstream_scope=expected_downstream_scope,
-                expected_accepted_backfill_count=expected_accepted_backfill_count,
-            )
-        )
+    promotion_packet_summary: Path | None = None
     if activation_dry_run_summary is not None:
-        problems.extend(
-            "default activation dry-run: " + problem
-            for problem in validate_quant_matrix_default_activation_dry_run(
-                summary_json=activation_dry_run_summary,
-                source_root=source_root,
-                expected_source_run_id=expected_source_run_id,
-                expected_downstream_scope=expected_downstream_scope,
-                expected_accepted_backfill_count=expected_accepted_backfill_count,
-            )
+        dry_run_problems = validate_quant_matrix_default_activation_dry_run(
+            summary_json=activation_dry_run_summary,
+            source_root=source_root,
+            expected_source_run_id=expected_source_run_id,
+            expected_downstream_scope=expected_downstream_scope,
+            expected_accepted_backfill_count=expected_accepted_backfill_count,
         )
+        problems.extend(
+            "default activation dry-run: " + problem for problem in dry_run_problems
+        )
+        if not dry_run_problems:
+            try:
+                promotion_packet_summary = (
+                    resolve_quant_matrix_default_activation_dry_run_promotion_packet(
+                        activation_dry_run_summary,
+                        source_root=source_root,
+                    )
+                )
+            except (OSError, ValueError, json.JSONDecodeError) as exc:
+                problems.append(f"default activation dry-run promotion input: {exc}")
     if (
         promotion_packet_summary is not None
         and activation_dry_run_summary is not None
@@ -237,6 +218,25 @@ def validate_quant_matrix_product_ready_closeout(
             problems=problems,
         )
     return problems
+
+
+def resolve_quant_matrix_product_ready_closeout_real_bundle(
+    summary_json: Path,
+    *,
+    source_root: Path = ROOT,
+) -> Path:
+    """Resolve the real bundle through the closeout's validated predecessor."""
+    payload = _read_json_object(summary_json)
+    dry_run_summary = _predecessor_input_path(
+        payload,
+        field="activation_dry_run_summary_json",
+        source_root=source_root,
+        owner="product ready closeout",
+    )
+    return resolve_quant_matrix_default_activation_dry_run_real_bundle(
+        dry_run_summary,
+        source_root=source_root,
+    )
 
 
 def _check_rows(
@@ -357,7 +357,6 @@ def _write_summary(
     *,
     output_dir: Path,
     source_root: Path,
-    promotion_packet_summary: Path,
     activation_dry_run_summary: Path,
     packet_payload: Mapping[str, Any],
     dry_run_payload: Mapping[str, Any],
@@ -418,13 +417,6 @@ def _write_summary(
         "selected_peak_area_or_counting_changed": False,
         "broad_backfill_unparked": False,
         "input_artifacts": {
-            "promotion_packet_summary_json": _source_relpath(
-                promotion_packet_summary,
-                source_root=source_root,
-            ),
-            "promotion_packet_summary_json_sha256": file_sha256(
-                promotion_packet_summary,
-            ),
             "activation_dry_run_summary_json": _source_relpath(
                 activation_dry_run_summary,
                 source_root=source_root,
@@ -548,10 +540,7 @@ def _input_artifacts(
         problems.append("product ready closeout input_artifacts must be an object")
         return {}
     result: dict[str, Path] = {}
-    for field in (
-        "promotion_packet_summary_json",
-        "activation_dry_run_summary_json",
-    ):
+    for field in ("activation_dry_run_summary_json",):
         path_value = str(raw.get(field, "")).strip()
         sha_value = str(raw.get(f"{field}_sha256", "")).strip()
         if not path_value:
@@ -565,6 +554,25 @@ def _input_artifacts(
         if not _is_sha256(sha_value) or file_sha256(path) != sha_value.upper():
             problems.append(f"product ready closeout {field}_sha256 mismatch")
     return result
+
+
+def _predecessor_input_path(
+    payload: Mapping[str, Any],
+    *,
+    field: str,
+    source_root: Path,
+    owner: str,
+) -> Path:
+    raw = payload.get("input_artifacts")
+    if not isinstance(raw, dict):
+        raise ValueError(f"{owner} input_artifacts must be an object")
+    path_value = str(raw.get(field, "")).strip()
+    if not path_value:
+        raise ValueError(f"{owner} {field} is missing")
+    path = _resolve_source(Path(path_value), source_root=source_root)
+    if not path.is_file():
+        raise FileNotFoundError(str(path))
+    return path
 
 
 def _output_artifacts(
@@ -672,7 +680,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         outputs = build_quant_matrix_product_ready_closeout(
             output_dir=args.output_dir,
             source_root=args.source_root,
-            promotion_packet_summary_json=args.promotion_packet_summary_json,
             activation_dry_run_summary_json=args.activation_dry_run_summary_json,
             expected_source_run_id=args.expected_source_run_id,
             expected_downstream_scope=args.expected_downstream_scope,
@@ -694,11 +701,6 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         default=DEFAULT_PRODUCT_READY_CLOSEOUT_OUTPUT_DIR,
     )
     parser.add_argument("--source-root", type=Path, default=ROOT)
-    parser.add_argument(
-        "--promotion-packet-summary-json",
-        type=Path,
-        default=DEFAULT_PROMOTION_PACKET_SUMMARY_JSON,
-    )
     parser.add_argument(
         "--activation-dry-run-summary-json",
         type=Path,

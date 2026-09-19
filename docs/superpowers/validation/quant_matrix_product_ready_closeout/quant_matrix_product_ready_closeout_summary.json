@@ -24,9 +24,7 @@
   "explicit_activation_not_in_this_commit": true,
   "input_artifacts": {
     "activation_dry_run_summary_json": "docs/superpowers/validation/quant_matrix_default_activation_dry_run/quant_matrix_default_activation_dry_run_summary.json",
-    "activation_dry_run_summary_json_sha256": "B2DBC1E9473274F052FFF8324C07C3E923CA7D69C13F36DA210EB2672A42887A",
-    "promotion_packet_summary_json": "docs/superpowers/validation/quant_matrix_promotion_packet/quant_matrix_promotion_packet_summary.json",
-    "promotion_packet_summary_json_sha256": "A521DEF7CA13F0A4A900B5A8C5DB2B37EFBCDD59B921EB7F7787EB2E5BCA5B5D"
+    "activation_dry_run_summary_json_sha256": "05F83FD18531D3CC65E2177EC609BE56CD46713BC0F270FD9248AAE939C5459B"
   },
   "may_activate_default_quant_matrix_with_explicit_contract": true,
   "product_ready_candidate": true,

@@ -54,18 +54,8 @@
   "downstream_scope": "current_511_authority_replay",
   "expected_diff_count": "511",
   "input_artifacts": {
-    "baseline_quant_matrix": "docs/superpowers/validation/quant_matrix_real_bundle/inputs/baseline_quant_matrix.tsv",
-    "baseline_quant_matrix_sha256": "A78B5F7697D300A66472C12C5E18651E3DCED114169460BDBD23E58927A4B56A",
-    "expected_diff": "docs/superpowers/validation/quant_matrix_real_bundle/inputs/expected_diff.tsv",
-    "expected_diff_sha256": "C7BDFAFAB5081383C08B00E5D0B8B9291120F875754460B24C8F9899F61065DA",
-    "input_matrix_identity": "docs/superpowers/validation/quant_matrix_real_bundle/inputs/alignment_matrix_identity.tsv",
-    "input_matrix_identity_sha256": "4462CC8762C9CB3FEA106397D2EB1B9B53CEA0B01B50100CBC540D6C115D4769",
     "product_ready_closeout_summary_json": "docs/superpowers/validation/quant_matrix_product_ready_closeout/quant_matrix_product_ready_closeout_summary.json",
-    "product_ready_closeout_summary_json_sha256": "578AECD902052B58B14080562A23CF0F523268C1A233050332D233CECC008026",
-    "production_acceptance_manifest": "docs/superpowers/validation/quant_matrix_real_bundle/inputs/production_acceptance_manifest.tsv",
-    "production_acceptance_manifest_sha256": "C97AE405A5558B567D85E769F66F20DB75D80EF5E1820795889688D3DD3C001C",
-    "real_bundle_summary_json": "docs/superpowers/validation/quant_matrix_real_bundle/quant_matrix_real_bundle_summary.json",
-    "real_bundle_summary_json_sha256": "CCD9C7880BCFD7F807780FA3000F1E636E21C96C7DF6357D56E54E73C57BF09A"
+    "product_ready_closeout_summary_json_sha256": "CC952A08CA2BC6E23E6395E14E475C4E6A8579C67D2B2BB89DF53C91DD157FDA"
   },
   "product_authority_scope": "backfill_policy_write_ready_rows",
   "product_ready_closeout_label": "product_ready_default_matrix_candidate",

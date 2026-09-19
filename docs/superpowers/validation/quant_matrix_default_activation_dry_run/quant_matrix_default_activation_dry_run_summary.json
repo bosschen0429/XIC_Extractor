@@ -21,18 +21,8 @@
   "dry_run_unused_expected_diff_count": "0",
   "dry_run_written_backfill_count": "511",
   "input_artifacts": {
-    "baseline_quant_matrix": "docs/superpowers/validation/quant_matrix_real_bundle/inputs/baseline_quant_matrix.tsv",
-    "baseline_quant_matrix_sha256": "A78B5F7697D300A66472C12C5E18651E3DCED114169460BDBD23E58927A4B56A",
-    "expected_diff": "docs/superpowers/validation/quant_matrix_real_bundle/inputs/expected_diff.tsv",
-    "expected_diff_sha256": "C7BDFAFAB5081383C08B00E5D0B8B9291120F875754460B24C8F9899F61065DA",
-    "input_matrix_identity": "docs/superpowers/validation/quant_matrix_real_bundle/inputs/alignment_matrix_identity.tsv",
-    "input_matrix_identity_sha256": "4462CC8762C9CB3FEA106397D2EB1B9B53CEA0B01B50100CBC540D6C115D4769",
-    "production_acceptance_manifest": "docs/superpowers/validation/quant_matrix_real_bundle/inputs/production_acceptance_manifest.tsv",
-    "production_acceptance_manifest_sha256": "C97AE405A5558B567D85E769F66F20DB75D80EF5E1820795889688D3DD3C001C",
     "promotion_packet_summary_json": "docs/superpowers/validation/quant_matrix_promotion_packet/quant_matrix_promotion_packet_summary.json",
-    "promotion_packet_summary_json_sha256": "A521DEF7CA13F0A4A900B5A8C5DB2B37EFBCDD59B921EB7F7787EB2E5BCA5B5D",
-    "real_bundle_summary_json": "docs/superpowers/validation/quant_matrix_real_bundle/quant_matrix_real_bundle_summary.json",
-    "real_bundle_summary_json_sha256": "CCD9C7880BCFD7F807780FA3000F1E636E21C96C7DF6357D56E54E73C57BF09A"
+    "promotion_packet_summary_json_sha256": "A521DEF7CA13F0A4A900B5A8C5DB2B37EFBCDD59B921EB7F7787EB2E5BCA5B5D"
   },
   "may_enter_product_ready_closeout": true,
   "product_writer_changed": false,

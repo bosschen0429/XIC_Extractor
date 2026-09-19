@@ -48,7 +48,7 @@
   ],
   "binding_rules": {
     "promotion_packet_must_validate": true,
-    "real_bundle_must_validate": true,
+    "promotion_packet_supplies_the_validated_real_bundle_predecessor": true,
     "default_check_only_must_match_current_511_source_run": true,
     "default_check_only_must_match_current_511_downstream_scope": true,
     "default_check_only_must_match_511_accepted_backfills": true,

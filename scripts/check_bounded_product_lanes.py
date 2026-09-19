@@ -16,21 +16,15 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-from scripts.check_productization_state import (
-    artifact_sha256,
-    check_productization_state,
-)
+from scripts.check_productization_state import check_productization_state
 from tools.diagnostics.docs_policy import PRODUCTIZATION_STATUS_INDEX_REL
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_SCHEMA = (
-    ROOT / "docs/superpowers/schemas/bounded_non_broad_product_lanes.json"
-)
+DEFAULT_SCHEMA = ROOT / "docs/superpowers/schemas/bounded_non_broad_product_lanes.json"
 DEFAULT_ACCEPTANCE = (
     ROOT / "docs/superpowers/validation/bounded_non_broad_lane_acceptance.tsv"
 )
 DEFAULT_STATUS_INDEX = ROOT / PRODUCTIZATION_STATUS_INDEX_REL
-STATUS_INDEX_SOURCE = PRODUCTIZATION_STATUS_INDEX_REL
 
 EXPECTED_LANE_IDS = {
     "targeted_ms1_shape_identity_limited_rescue",
@@ -113,7 +107,6 @@ def check_bounded_product_lanes(
     schema_path: Path = DEFAULT_SCHEMA,
     acceptance_path: Path = DEFAULT_ACCEPTANCE,
     status_index_path: Path = DEFAULT_STATUS_INDEX,
-    repo_root: Path = ROOT,
 ) -> list[str]:
     problems: list[str] = []
     schema = _read_json(schema_path, problems)
@@ -131,7 +124,6 @@ def check_bounded_product_lanes(
     }
     _check_schema_rows(schema, header, rows, problems)
     _check_status_alignment(rows, status_by_lane, problems)
-    _check_sources(rows, repo_root, status_index_path, problems)
     _check_bounded_rules(schema, rows, problems)
     return problems
 
@@ -218,31 +210,6 @@ def _check_status_alignment(
                 f"row {index}: status index row changes product output: "
                 + ", ".join(risky_status)
             )
-
-
-def _check_sources(
-    rows: Sequence[Mapping[str, str]],
-    repo_root: Path,
-    status_index_path: Path,
-    problems: list[str],
-) -> None:
-    for index, row in enumerate(rows, start=2):
-        source = row.get("source_status_index", "")
-        expected_hash = row.get("source_status_index_sha256", "")
-        if source != STATUS_INDEX_SOURCE:
-            problems.append(f"row {index}: unexpected source_status_index")
-        source_path = (repo_root / source).resolve()
-        supplied_status_path = status_index_path.resolve()
-        if source_path != supplied_status_path:
-            problems.append(
-                f"row {index}: source_status_index does not match supplied "
-                "status-index"
-            )
-        if not supplied_status_path.exists():
-            problems.append(f"row {index}: source_status_index missing")
-            continue
-        if artifact_sha256(supplied_status_path) != expected_hash:
-            problems.append(f"row {index}: source_status_index_sha256 mismatch")
 
 
 def _check_bounded_rules(

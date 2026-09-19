@@ -2,7 +2,7 @@
   "schema_version": "quant_matrix_product_ready_closeout_schema",
   "product_ready_closeout_schema": "quant_matrix_product_ready_closeout",
   "check_schema": "quant_matrix_product_ready_closeout_check",
-  "purpose": "Defines the no-RAW Product Ready closeout packet for the default QuantMatrix candidate. The packet collects the promotion candidate packet and default activation replay evidence into one activation-ready candidate statement without changing ProductWriter defaults or matrix authority.",
+  "purpose": "Defines the no-RAW Product Ready closeout packet for the default QuantMatrix candidate. The packet binds the default activation replay, which supplies its validated promotion candidate predecessor, into one activation-ready candidate statement without changing ProductWriter defaults or matrix authority.",
   "output_files": {
     "summary_json": "quant_matrix_product_ready_closeout_summary.json",
     "checks_tsv": "quant_matrix_product_ready_closeout_checks.tsv"
@@ -56,8 +56,8 @@
     "default_check_only_must_match_current_511_source_run": true,
     "default_check_only_must_match_current_511_downstream_scope": true,
     "default_check_only_must_match_511_accepted_backfills": true,
-    "promotion_packet_must_validate": true,
     "default_activation_dry_run_must_validate": true,
+    "default_activation_dry_run_supplies_the_validated_promotion_packet_predecessor": true,
     "input_artifact_hashes_must_match": true,
     "checks_tsv_must_match_inputs": true,
     "promotion_packet_and_activation_replay_source_identity_must_match": true,

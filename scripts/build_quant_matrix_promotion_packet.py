@@ -325,6 +325,25 @@ def validate_quant_matrix_promotion_packet(
     return problems
 
 
+def resolve_quant_matrix_promotion_packet_real_bundle(
+    summary_json: Path,
+    *,
+    source_root: Path = ROOT,
+) -> Path:
+    """Resolve the validated packet's direct real-bundle predecessor."""
+    payload = _read_json_object(summary_json)
+    raw = payload.get("input_artifacts")
+    if not isinstance(raw, dict):
+        raise ValueError("promotion packet input_artifacts must be an object")
+    path_value = str(raw.get("real_bundle_summary_json", "")).strip()
+    if not path_value:
+        raise ValueError("promotion packet real_bundle_summary_json is missing")
+    path = _resolve_source(Path(path_value), source_root=source_root)
+    if not path.is_file():
+        raise FileNotFoundError(str(path))
+    return path
+
+
 def _write_summary(
     summary_json: Path,
     *,

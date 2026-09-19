@@ -32,18 +32,19 @@ SCHEMA_PATH = (
 def test_default_product_activation_schema_matches_builder_contract() -> None:
     schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
 
+    assert schema["schema_version"] == "quant_matrix_default_product_activation_schema"
     assert (
-        schema["schema_version"]
-        == "quant_matrix_default_product_activation_schema"
-    )
-    assert (
-        schema["default_product_activation_schema"]
-        == DEFAULT_PRODUCT_ACTIVATION_SCHEMA
+        schema["default_product_activation_schema"] == DEFAULT_PRODUCT_ACTIVATION_SCHEMA
     )
     assert schema["output_comparison_schema"] == OUTPUT_COMPARISON_SCHEMA
     assert schema["check_columns"] == list(CHECK_COLUMNS)
     assert schema["binding_rules"]["product_ready_closeout_must_validate"] is True
-    assert schema["binding_rules"]["real_bundle_must_validate"] is True
+    assert (
+        schema["binding_rules"][
+            "product_ready_closeout_supplies_the_validated_real_bundle_predecessor_chain"
+        ]
+        is True
+    )
     assert schema["binding_rules"]["expected_diff_summary_must_pass"] is True
     assert (
         schema["binding_rules"][
@@ -66,7 +67,6 @@ def test_default_product_activation_writes_default_outputs(
     outputs = build_quant_matrix_default_product_activation(
         output_dir=tmp_path / "default_activation",
         source_root=tmp_path,
-        real_bundle_summary_json=inputs["real_bundle_summary"],
         product_ready_closeout_summary_json=inputs["closeout_summary"],
         expected_source_run_id="synthetic-current-511-authority-replay",
         expected_downstream_scope="synthetic_current_authority_replay",
@@ -105,9 +105,10 @@ def test_default_product_activation_writes_default_outputs(
     assert summary["artifacts"]["cell_provenance_summary"]["retention_decision"] == (
         "keep_summary"
     )
-    assert summary["artifacts"]["cell_provenance_minimal_fixture"][
-        "retention_decision"
-    ] == "keep_minimal_fixture"
+    assert (
+        summary["artifacts"]["cell_provenance_minimal_fixture"]["retention_decision"]
+        == "keep_minimal_fixture"
+    )
     assert outputs["cell_provenance_summary_json"].is_file()
     assert outputs["cell_provenance_minimal_fixture"].is_file()
 
@@ -140,14 +141,15 @@ def test_default_product_activation_rejects_tampered_default_matrix(
     outputs = build_quant_matrix_default_product_activation(
         output_dir=tmp_path / "default_activation",
         source_root=tmp_path,
-        real_bundle_summary_json=inputs["real_bundle_summary"],
         product_ready_closeout_summary_json=inputs["closeout_summary"],
         expected_source_run_id="synthetic-current-511-authority-replay",
         expected_downstream_scope="synthetic_current_authority_replay",
         expected_accepted_backfill_count=1,
     )
     outputs["quant_matrix"].write_text(
-        outputs["quant_matrix"].read_text(encoding="utf-8").replace(
+        outputs["quant_matrix"]
+        .read_text(encoding="utf-8")
+        .replace(
             "222.2",
             "333.3",
         ),
@@ -178,7 +180,6 @@ def test_default_product_activation_rejects_tampered_sidecars(
     outputs = build_quant_matrix_default_product_activation(
         output_dir=tmp_path / "default_activation",
         source_root=tmp_path,
-        real_bundle_summary_json=inputs["real_bundle_summary"],
         product_ready_closeout_summary_json=inputs["closeout_summary"],
         expected_source_run_id="synthetic-current-511-authority-replay",
         expected_downstream_scope="synthetic_current_authority_replay",
@@ -191,7 +192,9 @@ def test_default_product_activation_rejects_tampered_sidecars(
         encoding="utf-8",
     )
     outputs["checks_tsv"].write_text(
-        outputs["checks_tsv"].read_text(encoding="utf-8").replace(
+        outputs["checks_tsv"]
+        .read_text(encoding="utf-8")
+        .replace(
             "expected_diff_closed",
             "expected_diff_closed_stale",
             1,
@@ -228,7 +231,6 @@ def test_default_product_activation_rejects_missing_minimal_fixture(
     outputs = build_quant_matrix_default_product_activation(
         output_dir=tmp_path / "default_activation",
         source_root=tmp_path,
-        real_bundle_summary_json=inputs["real_bundle_summary"],
         product_ready_closeout_summary_json=inputs["closeout_summary"],
         expected_source_run_id="synthetic-current-511-authority-replay",
         expected_downstream_scope="synthetic_current_authority_replay",
@@ -247,6 +249,47 @@ def test_default_product_activation_rejects_missing_minimal_fixture(
     assert any("cell_provenance_minimal_fixture" in p for p in problems)
 
 
+def test_default_product_activation_rejects_tampered_dry_run_transitively(
+    tmp_path: Path,
+) -> None:
+    inputs = _build_synthetic_activation_inputs(tmp_path)
+    outputs = build_quant_matrix_default_product_activation(
+        output_dir=tmp_path / "default_activation",
+        source_root=tmp_path,
+        product_ready_closeout_summary_json=inputs["closeout_summary"],
+        expected_source_run_id="synthetic-current-511-authority-replay",
+        expected_downstream_scope="synthetic_current_authority_replay",
+        expected_accepted_backfill_count=1,
+    )
+    closeout_payload = json.loads(
+        inputs["closeout_summary"].read_text(encoding="utf-8")
+    )
+    dry_run_summary = (
+        tmp_path
+        / closeout_payload["input_artifacts"]["activation_dry_run_summary_json"]
+    )
+    dry_run_payload = json.loads(dry_run_summary.read_text(encoding="utf-8"))
+    dry_run_payload["may_enter_product_ready_closeout"] = False
+    dry_run_summary.write_text(
+        json.dumps(dry_run_payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+    problems = validate_quant_matrix_default_product_activation(
+        summary_json=outputs["summary_json"],
+        source_root=tmp_path,
+        expected_source_run_id="synthetic-current-511-authority-replay",
+        expected_downstream_scope="synthetic_current_authority_replay",
+        expected_accepted_backfill_count=1,
+    )
+
+    assert any(
+        "product ready closeout activation_dry_run_summary_json_sha256 mismatch"
+        in problem
+        for problem in problems
+    )
+
+
 def test_default_product_activation_rejects_provenance_rerun_drift(
     tmp_path: Path,
     monkeypatch,
@@ -255,7 +298,6 @@ def test_default_product_activation_rejects_provenance_rerun_drift(
     outputs = build_quant_matrix_default_product_activation(
         output_dir=tmp_path / "default_activation",
         source_root=tmp_path,
-        real_bundle_summary_json=inputs["real_bundle_summary"],
         product_ready_closeout_summary_json=inputs["closeout_summary"],
         expected_source_run_id="synthetic-current-511-authority-replay",
         expected_downstream_scope="synthetic_current_authority_replay",
@@ -299,7 +341,6 @@ def test_default_product_activation_default_check_rejects_non_current_bundle(
     outputs = build_quant_matrix_default_product_activation(
         output_dir=tmp_path / "default_activation",
         source_root=tmp_path,
-        real_bundle_summary_json=inputs["real_bundle_summary"],
         product_ready_closeout_summary_json=inputs["closeout_summary"],
         expected_source_run_id="synthetic-current-511-authority-replay",
         expected_downstream_scope="synthetic_current_authority_replay",
@@ -329,8 +370,6 @@ def test_default_product_activation_script_check_only_round_trip(
             str(output_dir),
             "--source-root",
             str(tmp_path),
-            "--real-bundle-summary-json",
-            str(inputs["real_bundle_summary"]),
             "--product-ready-closeout-summary-json",
             str(inputs["closeout_summary"]),
             "--expected-source-run-id",
@@ -376,7 +415,6 @@ def _build_synthetic_activation_inputs(tmp_path: Path) -> dict[str, Path]:
     dry_run = build_quant_matrix_default_activation_dry_run(
         output_dir=tmp_path / "dry_run_gate",
         source_root=tmp_path,
-        real_bundle_summary_json=packet_inputs["real_bundle_summary"],
         promotion_packet_summary_json=packet_inputs["packet_summary"],
         expected_source_run_id="synthetic-current-511-authority-replay",
         expected_downstream_scope="synthetic_current_authority_replay",
@@ -385,7 +423,6 @@ def _build_synthetic_activation_inputs(tmp_path: Path) -> dict[str, Path]:
     closeout = build_quant_matrix_product_ready_closeout(
         output_dir=tmp_path / "product_ready_closeout",
         source_root=tmp_path,
-        promotion_packet_summary_json=packet_inputs["packet_summary"],
         activation_dry_run_summary_json=dry_run["summary_json"],
         expected_source_run_id="synthetic-current-511-authority-replay",
         expected_downstream_scope="synthetic_current_authority_replay",
