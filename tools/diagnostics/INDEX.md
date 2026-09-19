@@ -33,9 +33,8 @@ in the entry status text, `docs/product/`, `docs/architecture-contract.md`,
 7. [Instrument QC](#instrument-qc)
 8. [Peak-Group / Overlay Visualization](#peak-group--overlay-visualization)
 9. [Area / Region Audits](#area--region-audits)
-10. [One-off Fixtures](#one-off-fixtures)
-11. [Delta Mass / Pt Pattern Discovery](#delta-mass--pt-pattern-discovery)
-12. [Agent / Docs Workflow Guards](#agent--docs-workflow-guards)
+10. [Delta Mass / Pt Pattern Discovery](#delta-mass--pt-pattern-discovery)
+11. [Agent / Docs Workflow Guards](#agent--docs-workflow-guards)
 
 ---
 
@@ -49,19 +48,6 @@ baseline decision closed. AsLS is the current production baseline integration
 method, and `linear_edge` is retired as a selectable baseline method. Do not add
 new diagnostics that compare against or fall back to linear-edge; use current
 AsLS/boundary/product contracts instead.
-
-### `targeted_resolver_comparison.py`
-
-**Purpose**: Compare targeted resolver area RSD and RT shifts across resolver configurations.
-**Topic group**: `targeted_resolver_comparison.py` (single-file)
-**Originating spec**: `retired-provenance:4d545a180b14`
-**Recent doc**: `retired-provenance:c1b9909ce7c0`
-**Stop-maintenance note**: The resolver-default decision is closed. Current
-public/config settings still accept the `region_first_safe_merge` token, while
-alignment production maps that token to `local_minimum`; this gate is retained
-only as decision history.
-
----
 
 ### `alignment_parity.py`
 
@@ -1705,28 +1691,6 @@ output, matrix values, or candidate selection.
 schema no longer emits or consumes linear-edge rollback columns. Area
 uncertainty uses the reported `area_baseline_corrected` value from the current
 audit schema only.
-
----
-
-### `region_first_safe_merge_comparison.py`
-
-**Purpose**: Compare default XIC output with opt-in region-first safe merge.
-**Topic group**: `region_first_safe_merge_comparison.py` (single-file)
-**Originating spec**: `retired-provenance:4545acb11ee0` + `retired-provenance:801934525810`
-
----
-
-## One-off Fixtures
-
-Tools that build deterministic test fixtures from production data; expected
-to be re-run only when the underlying data shape changes.
-
-### `build_istd_false_missing_fixture.py`
-
-**Purpose**: Build ISTD false-missing validation fixture.
-**Topic group**: `build_istd_false_missing_fixture.py` (single-file)
-**Originating plan**: `retired-provenance:6d2a06f8be03`
-**Cadence note**: "Build-once" — should declare a per-campaign or per-data-shape cadence per the lifecycle spec's seasonal-cadence exception.
 
 ---
 
