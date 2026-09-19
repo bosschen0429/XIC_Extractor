@@ -8,7 +8,6 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 from xic_extractor.alignment.shared_peak_identity_explanation import (
-    activation_contract,
     candidate_ms2_pattern,
     hypothesis_consistency,
     machine_evidence_support,
@@ -49,7 +48,6 @@ from xic_extractor.alignment.shared_peak_identity_explanation.shadow_labels impo
     build_v2_readiness,
 )
 from xic_extractor.alignment.shared_peak_identity_explanation.writers import (
-    write_activation_outputs,
     write_slice0_outputs,
     write_slice1_outputs,
     write_v2_outputs,
@@ -111,9 +109,6 @@ def run_explanation(
     matrix_rt_drift_policy_istd_rt_trend_tsv: Path | None = None,
     matrix_rt_drift_policy_istd_phase_summary_tsv: Path | None = None,
     ms1_pattern_coherence_overlay_trace_data_json: Sequence[Path] | None = None,
-    enable_product_activation_contract: bool = False,
-    activation_must_not_regress_status: str = "not_assessed",
-    activation_must_not_regress_tsv: Path | None = None,
 ) -> Mapping[str, Path | str]:
     optional_artifacts = _parse_optional_blast_radius_artifacts(
         optional_blast_radius_artifacts
@@ -218,18 +213,6 @@ def run_explanation(
             "--generate-hypothesis-consistency requires "
             "--peak-hypothesis-selection-tsv or "
             "a PeakHypothesis selection producer"
-        )
-    if enable_product_activation_contract and not enable_shadow_label_alignment:
-        raise ValueError(
-            "--enable-product-activation-contract requires "
-            "--enable-shadow-label-alignment"
-        )
-    if activation_must_not_regress_tsv and (
-        activation_must_not_regress_status != "not_assessed"
-    ):
-        raise ValueError(
-            "use either --activation-must-not-regress-tsv or "
-            "--activation-must-not-regress-status, not both"
         )
     if candidate_ms2_pattern_raw_dll_dir and not candidate_ms2_pattern_batch_index:
         raise ValueError(
@@ -557,13 +540,6 @@ def run_explanation(
         generated_evidence_outputs["hypothesis_consistency_summary"] = (
             generated_hypothesis_consistency_summary_path
         )
-    must_not_regress_expectations = (
-        activation_contract.load_must_not_regress_expectations(
-            activation_must_not_regress_tsv
-        )
-        if activation_must_not_regress_tsv is not None
-        else ()
-    )
     evidence_rows = assemble_evidence_vectors(oracle_rows, matches)
     explanations = classify_explanations(oracle_rows, evidence_rows)
     run_facts = build_slice0_run_facts(
@@ -630,10 +606,6 @@ def run_explanation(
             rt_mode_evidence=rt_mode_evidence_rows,
             peak_hypothesis_selection=peak_hypothesis_selection_rows,
             extra_outputs=generated_evidence_outputs,
-            blast_radius_summary_rows=summary_rows,
-            enable_product_activation_contract=enable_product_activation_contract,
-            activation_must_not_regress_status=activation_must_not_regress_status,
-            activation_must_not_regress_expectations=must_not_regress_expectations,
         )
     return outputs
 
@@ -655,10 +627,6 @@ def _write_v2_from_current_outputs(
     rt_mode_evidence: Mapping[tuple[str, str], Mapping[str, str]],
     peak_hypothesis_selection: Mapping[tuple[str, str], Mapping[str, str]],
     extra_outputs: Mapping[str, Path] | None = None,
-    blast_radius_summary_rows: Sequence[Mapping[str, str]] = (),
-    enable_product_activation_contract: bool = False,
-    activation_must_not_regress_status: str = "not_assessed",
-    activation_must_not_regress_expectations: Sequence[Mapping[str, str]] = (),
 ) -> Mapping[str, Path | str]:
     shadow_rows = build_shadow_label_rows(explanations)
     shadow_summary_rows = build_shadow_alignment_summary(shadow_rows)
@@ -683,50 +651,13 @@ def _write_v2_from_current_outputs(
         shadow_rows=shadow_rows,
         machine_evidence_support_rows=machine_evidence_support_rows,
     )
-    outputs = write_v2_outputs(
+    return write_v2_outputs(
         output_dir=output_dir,
         prior_outputs={**dict(prior_outputs), **dict(extra_outputs or {})},
         shadow_rows=shadow_rows,
         summary_rows=shadow_summary_rows,
         readiness_row=readiness_row,
         machine_evidence_support_rows=machine_evidence_support_rows,
-    )
-    if not enable_product_activation_contract:
-        return outputs
-    activation_rows = activation_contract.build_activation_decision_rows(
-        machine_evidence_support_rows,
-    )
-    assessed_full_cohort_rows, assessed_rows_basis = (
-        activation_contract.infer_full_cohort_assessed_rows(blast_radius_summary_rows)
-    )
-    must_not_regress_basis = "manual_status_flag"
-    must_not_regress_failure_reasons: tuple[str, ...] = ()
-    if activation_must_not_regress_expectations:
-        (
-            activation_must_not_regress_status,
-            must_not_regress_failure_reasons,
-        ) = activation_contract.evaluate_must_not_regress(
-            activation_rows,
-            activation_must_not_regress_expectations,
-        )
-        must_not_regress_basis = "activation_must_not_regress_tsv"
-    acceptance_row = activation_contract.summarize_activation_acceptance(
-        activation_rows,
-        blast_radius_current=(
-            run_facts.get("blast_radius_assessed") == "present_current"
-            and run_facts.get("blast_radius_stale_artifact_count") == "0"
-        ),
-        assessed_full_cohort_rows=assessed_full_cohort_rows,
-        assessed_rows_basis=assessed_rows_basis,
-        must_not_regress_status=activation_must_not_regress_status,
-        must_not_regress_basis=must_not_regress_basis,
-        must_not_regress_failure_reasons=must_not_regress_failure_reasons,
-    )
-    return write_activation_outputs(
-        output_dir=output_dir,
-        prior_outputs=outputs,
-        activation_rows=activation_rows,
-        acceptance_row=acceptance_row,
     )
 
 
@@ -744,13 +675,6 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument("--blast-radius-full-cohort-run", type=Path)
     parser.add_argument("--expected-blast-radius-manifest", type=Path)
     parser.add_argument("--enable-shadow-label-alignment", action="store_true")
-    parser.add_argument("--enable-product-activation-contract", action="store_true")
-    parser.add_argument(
-        "--activation-must-not-regress-status",
-        default="not_assessed",
-        choices=("not_assessed", "pass", "fail"),
-    )
-    parser.add_argument("--activation-must-not-regress-tsv", type=Path)
     parser.add_argument("--cwt-shape-evidence-tsv", type=Path)
     parser.add_argument("--tier2-trace-evidence-tsv", type=Path)
     parser.add_argument("--candidate-ms2-pattern-evidence-tsv", type=Path)

@@ -299,9 +299,6 @@ def test_tsv_adapter_reduces_generic_review_rescue_to_unavailable(
     assert family["promotion_reason"] == "backfill_owner_rehydration_unavailable"
     summary = {row["metric"]: row["value"] for row in result["summary"]}
     assert summary["unavailable_backfill_owner_evidence_rows"] == "1"
-    assert result["activation_decisions"] == []
-    assert _read_tsv(output_dir / "single_dr_gate_activation_decisions.tsv") == []
-    assert _read_tsv(output_dir / "single_dr_gate_changed_row_bundle.tsv") == []
 
 
 def test_tsv_adapter_requires_height_for_rescue_quantifiable_parity(
@@ -324,85 +321,6 @@ def test_tsv_adapter_requires_height_for_rescue_quantifiable_parity(
     assert family["risk_classification"] == "blocked_low_ms1_assessable_coverage"
     assert family["promotion_state"] == "blocked"
     assert family["assessed_rescue_count"] == 0
-
-
-def test_gate_writes_activation_decisions_for_implemented_primary_blocks(
-    tmp_path: Path,
-) -> None:
-    alignment_dir = tmp_path / "alignment"
-    output_dir = tmp_path / "diagnostics"
-    _write_tsv(
-        alignment_dir / "alignment_review.tsv",
-        (_review_row("FAM_BLOCK", q_detected=2, q_rescue=8),),
-    )
-    cells = _cells("FAM_BLOCK", detected=2, rescued=8)
-    for row in cells:
-        if row["status"] == "rescued":
-            row.update(_backfill_evidence_row(supported=False))
-    _write_tsv(alignment_dir / "alignment_cells.tsv", tuple(cells))
-
-    result = report.build_decision_report(alignment_dir=alignment_dir)
-    report.write_outputs(output_dir, result)
-
-    decisions = _read_tsv(output_dir / "single_dr_gate_activation_decisions.tsv")
-    assert decisions == [
-        {
-            "activation_schema_version": (
-                "shared_peak_identity_activation_decision_v1"
-            ),
-            "feature_family_id": "FAM_BLOCK",
-            "candidate_container_id": "FAM_BLOCK",
-            "sample_id": "__family_context__",
-            "peak_hypothesis_id": "FAM_BLOCK",
-            "activation_unit_scope": "legacy_family_row",
-            "machine_current_label": "blocked_missing_backfill_identity_evidence",
-            "evidence_support_status": "not_supportive",
-            "activation_status": "auto_block",
-            "activation_action": "require_review",
-            "product_label_candidate": "fail",
-            "product_effect": "block_family_promotion",
-            "activation_confidence": "medium",
-            "hard_product_block": "TRUE",
-            "contract_rule_id": "context_or_not_evaluable",
-            "activation_reason": (
-                "single_dr_gate:blocked_missing_backfill_identity_evidence:"
-                "backfill_ms1_pattern_not_supportive"
-            ),
-            "required_review_reason": "",
-            "source_evidence_tokens": (
-                "single_dr_gate;missing_independent_backfill_identity_evidence"
-            ),
-            "diagnostic_only": "FALSE",
-        }
-    ]
-    changed_rows = _read_tsv(output_dir / "single_dr_gate_changed_row_bundle.tsv")
-    assert changed_rows == [
-        {
-            "stable_row_id": "FAM_BLOCK",
-            "sample": "__row__",
-            "target": "DNA_dR",
-            "legacy_candidate_id": "",
-            "successor_candidate_id": "FAM_BLOCK",
-            "selected_rt": "8.0",
-            "area": "",
-            "boundary": "",
-            "confidence": "medium",
-            "reason": (
-                "single_dr_gate:blocked_missing_backfill_identity_evidence:"
-                "backfill_ms1_pattern_not_supportive"
-            ),
-            "presence_impact": "primary_row_removed",
-            "typed_facts_completeness": (
-                "blocked:backfill_ms1_pattern_not_supportive:"
-                "supported_rescue_count=0:assessed_rescue_count=8"
-            ),
-            "retired_legacy_inputs": "scan_support_only;owner_backfill_label",
-            "ms2_nl_opportunity_status": "not_supportive",
-            "rt_istd_rationale": "",
-            "evidence_tier": "blocked_missing_backfill_identity_evidence",
-            "reviewer_verdict": "pending_manual_review",
-        }
-    ]
 
 
 def test_tsv_adapter_uses_primary_matrix_area_for_rescue_evidence(
@@ -833,7 +751,6 @@ def test_rt_held_owner_decision_is_unavailable_after_tsv_roundtrip(
     assert production.quantifiable_rescue_count == 0
     assert family["risk_classification"] == "unavailable_backfill_owner_evidence"
     assert family["promotion_state"] == "unavailable"
-    assert result["activation_decisions"] == []
 
 
 def _review_row(

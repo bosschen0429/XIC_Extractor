@@ -40,9 +40,6 @@ from xic_extractor.alignment.promotion_policy import (
     classify_backfill_promotion,
     evidence_from_tsv_rows,
 )
-from xic_extractor.alignment.shared_peak_identity_explanation.schema import (
-    ACTIVATION_DECISION_SCHEMA_VERSION,
-)
 
 _REVIEW_REQUIRED_COLUMNS = (
     "feature_family_id",
@@ -180,14 +177,6 @@ def build_decision_report(
         ),
     )
     gate_candidates = _gate_candidates(families)
-    activation_decisions = _activation_decision_rows(
-        families,
-        gate_candidates=gate_candidates,
-    )
-    changed_row_bundle = _changed_row_bundle_rows(
-        families,
-        activation_decisions=activation_decisions,
-    )
     summary = _summary_rows(
         alignment_dir=alignment_dir,
         sample_count=len(sample_order),
@@ -221,8 +210,6 @@ def build_decision_report(
         "families": families,
         "detected_cells": detected_cells,
         "gate_candidates": gate_candidates,
-        "activation_decisions": activation_decisions,
-        "changed_row_bundle": changed_row_bundle,
     }
 
 
@@ -351,12 +338,7 @@ def _is_duplicate_rescue_watch(
     duplicate_pressure = duplicate_count > 0 or "duplicate_claim_pressure" in flags
     rescue_heavy = rescue_fraction >= 0.50 or "rescue_heavy" in flags
     low_detected_support = q_detected <= 5
-    return (
-        duplicate_pressure
-        and rescue_heavy
-        and low_detected_support
-        and q_rescue > 0
-    )
+    return duplicate_pressure and rescue_heavy and low_detected_support and q_rescue > 0
 
 
 def _seed_quality(
@@ -468,8 +450,7 @@ def _gate_candidates(families: list[dict[str, Any]]) -> list[dict[str, Any]]:
         _gate_candidate(
             gate_candidate_id="dr_backfill_policy_blocked",
             rule_description=(
-                "single dR rows blocked by the shared cell-evidence promotion "
-                "policy"
+                "single dR rows blocked by the shared cell-evidence promotion policy"
             ),
             families=family_buckets.blocked_families,
             default_action="implement",
@@ -564,121 +545,6 @@ def _gate_candidate(
     }
 
 
-def _activation_decision_rows(
-    families: list[dict[str, Any]],
-    *,
-    gate_candidates: list[dict[str, Any]],
-) -> list[dict[str, str]]:
-    implemented_gate_ids = {
-        str(row["gate_candidate_id"])
-        for row in gate_candidates
-        if row["recommended_action"] == "implement"
-    }
-    decisions = []
-    for family in families:
-        gate_id = _activation_gate_id_for_family(family)
-        if gate_id not in implemented_gate_ids:
-            continue
-        if not family["include_in_primary_matrix"]:
-            continue
-        decisions.append(_activation_decision_row(family, gate_id=gate_id))
-    return decisions
-
-
-def _activation_gate_id_for_family(family: Mapping[str, Any]) -> str:
-    classification = str(family["risk_classification"])
-    if classification == "risky_extreme_backfill":
-        return _EXTREME_GATE_ID
-    if classification == "risky_weak_seed_backfill":
-        return _WEAK_SEED_GATE_ID
-    if classification.startswith("blocked_"):
-        return "dr_backfill_policy_blocked"
-    return ""
-
-
-def _activation_decision_row(
-    family: Mapping[str, Any],
-    *,
-    gate_id: str,
-) -> dict[str, str]:
-    classification = str(family["risk_classification"])
-    promotion_reason = str(family.get("promotion_reason", ""))
-    promotion_flags = str(family.get("promotion_flags", ""))
-    tokens = ["single_dr_gate"]
-    if promotion_flags:
-        tokens.extend(_split_tokens(promotion_flags))
-    return {
-        "activation_schema_version": ACTIVATION_DECISION_SCHEMA_VERSION,
-        "feature_family_id": str(family["feature_family_id"]),
-        "candidate_container_id": str(family["feature_family_id"]),
-        "sample_id": "__family_context__",
-        "peak_hypothesis_id": str(family["feature_family_id"]),
-        "activation_unit_scope": "legacy_family_row",
-        "machine_current_label": classification,
-        "evidence_support_status": "not_supportive",
-        "activation_status": "auto_block",
-        "activation_action": "require_review",
-        "product_label_candidate": "fail",
-        "product_effect": "block_family_promotion",
-        "activation_confidence": "medium",
-        "hard_product_block": "TRUE",
-        "contract_rule_id": "context_or_not_evaluable",
-        "activation_reason": ":".join(
-            part
-            for part in ("single_dr_gate", classification, promotion_reason)
-            if part
-        ),
-        "required_review_reason": "",
-        "source_evidence_tokens": ";".join(dict.fromkeys(tokens)),
-        "diagnostic_only": "FALSE",
-    }
-
-
-def _changed_row_bundle_rows(
-    families: list[dict[str, Any]],
-    *,
-    activation_decisions: list[dict[str, str]],
-) -> list[dict[str, str]]:
-    family_by_id = {
-        str(family["feature_family_id"]): family for family in families
-    }
-    rows: list[dict[str, str]] = []
-    for decision in activation_decisions:
-        family_id = decision["feature_family_id"]
-        family = family_by_id[family_id]
-        rows.append(
-            {
-                "stable_row_id": family_id,
-                "sample": "__row__",
-                "target": str(family.get("neutral_loss_tag", "")),
-                "legacy_candidate_id": "",
-                "successor_candidate_id": decision["peak_hypothesis_id"],
-                "selected_rt": str(family.get("family_center_rt", "")),
-                "area": "",
-                "boundary": "",
-                "confidence": decision["activation_confidence"],
-                "reason": decision["activation_reason"],
-                "presence_impact": "primary_row_removed",
-                "typed_facts_completeness": _typed_facts_completeness(family),
-                "retired_legacy_inputs": "scan_support_only;owner_backfill_label",
-                "ms2_nl_opportunity_status": "not_supportive",
-                "rt_istd_rationale": str(family.get("rt_context", "")),
-                "evidence_tier": str(family["risk_classification"]),
-                "reviewer_verdict": "pending_manual_review",
-            }
-        )
-    return rows
-
-
-def _typed_facts_completeness(family: Mapping[str, Any]) -> str:
-    return (
-        f"{family.get('promotion_state', '')}:"
-        f"{family.get('promotion_reason', '')}:"
-        f"supported_rescue_count={family.get('supported_rescue_count', '')}:"
-        f"assessed_rescue_count={family.get('assessed_rescue_count', '')}"
-    )
-
-
 def _recommendation_reason(default_action: str) -> str:
     if default_action == "implement":
         return (
@@ -706,9 +572,7 @@ def _summary_rows(
     gate_candidates: list[dict[str, Any]],
 ) -> list[dict[str, str]]:
     class_counts = Counter(str(row["risk_classification"]) for row in families)
-    action_counts = Counter(
-        str(row["recommended_action"]) for row in gate_candidates
-    )
+    action_counts = Counter(str(row["recommended_action"]) for row in gate_candidates)
     rows = [
         {"metric": "alignment_dir", "value": str(alignment_dir)},
         {"metric": "sample_count", "value": str(sample_count)},
@@ -748,7 +612,6 @@ def _summary_rows(
             },
         )
     return rows
-
 
 
 def _lookup_candidate_quality(
@@ -806,7 +669,6 @@ def _split_tokens(value: str) -> tuple[str, ...]:
     )
 
 
-
 def _risk_sort_key(classification: str) -> int:
     order = {
         "blocked_neighboring_ms1_interference": 0,
@@ -840,8 +702,6 @@ def _split_list(value: str) -> tuple[str, ...]:
     return tuple(part.strip() for part in value.split(";") if part.strip())
 
 
-
-
 def _int_value(value: str) -> int:
     try:
         return int(float(value))
@@ -851,8 +711,6 @@ def _int_value(value: str) -> int:
 
 def _is_true(value: str) -> bool:
     return value.strip().lower() in {"1", "true", "t", "yes", "y"}
-
-
 
 
 def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:

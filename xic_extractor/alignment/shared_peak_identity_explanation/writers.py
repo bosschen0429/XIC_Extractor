@@ -7,8 +7,6 @@ from pathlib import Path
 from xic_extractor.tabular_io import write_tsv
 
 from .schema import (
-    ACTIVATION_ACCEPTANCE_COLUMNS,
-    ACTIVATION_DECISION_COLUMNS,
     BLAST_RADIUS_MANIFEST_COLUMNS,
     BLAST_RADIUS_SUMMARY_COLUMNS,
     EVIDENCE_VECTOR_COLUMNS,
@@ -173,35 +171,6 @@ def write_v2_outputs(
         "v2_readiness": readiness_path,
         "machine_evidence_support": support_path,
         "v2_report": report_path,
-    }
-
-
-def write_activation_outputs(
-    *,
-    output_dir: Path,
-    prior_outputs: Mapping[str, Path],
-    activation_rows: Sequence[Mapping[str, str]],
-    acceptance_row: Mapping[str, str],
-) -> dict[str, Path]:
-    output_dir.mkdir(parents=True, exist_ok=True)
-    decisions_path = output_dir / "shared_peak_identity_activation_decisions.tsv"
-    acceptance_path = output_dir / "shared_peak_identity_activation_acceptance.tsv"
-    write_tsv(
-        decisions_path,
-        activation_rows,
-        ACTIVATION_DECISION_COLUMNS,
-        lineterminator="\n",
-    )
-    write_tsv(
-        acceptance_path,
-        [acceptance_row],
-        ACTIVATION_ACCEPTANCE_COLUMNS,
-        lineterminator="\n",
-    )
-    return {
-        **dict(prior_outputs),
-        "activation_decisions": decisions_path,
-        "activation_acceptance": acceptance_path,
     }
 
 

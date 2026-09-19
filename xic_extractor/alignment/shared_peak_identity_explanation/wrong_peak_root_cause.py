@@ -17,6 +17,29 @@ _ALTERNATE_MIN_RELATIVE_INTENSITY = 0.05
 _ALTERNATE_STRONG_RELATIVE_INTENSITY = 0.25
 _SELECTED_BOUNDARY_TOLERANCE_MIN = 0.02
 _SELECTED_APEX_TOLERANCE_MIN = 0.05
+_WRONG_PEAK_TOKENS = frozenset(
+    {
+        "family_ms1_overlay_competing_peak_matches_family_consensus",
+        "rt_mode_status=mode_conflict",
+        "rt_mode_status=mode_split_required",
+        "rt_mode_status=consolidation_no_go",
+        "peak_hypothesis_status=cross_mode_rescue_blocked",
+        "product_selection_action=block_cross_mode_rescue",
+    }
+)
+_QC_CONFLICT_TOKENS = frozenset(
+    {
+        "candidate_ms2_pattern_status=conflict",
+        "ms1_pattern_status=conflict",
+    }
+)
+_QC_CONFLICT_MISSING_EVIDENCE = frozenset(
+    {
+        "matrix_rt_drift_policy_not_supportive",
+        "peak_hypothesis_not_supportive",
+        "rt_mode_not_supportive",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -79,27 +102,21 @@ def load_overlay_trace_data(
 
 def build_wrong_peak_root_cause_rows(
     *,
-    activation_decision_rows: Sequence[Mapping[str, str]],
     machine_evidence_support_rows: Sequence[Mapping[str, str]],
     alignment_cell_rows: Sequence[Mapping[str, str]],
     overlay_traces: Mapping[tuple[str, str], OverlayTrace] | None = None,
 ) -> tuple[dict[str, str], ...]:
-    support_by_key = _index_rows_by_family_sample(machine_evidence_support_rows)
     cells_by_key = _index_rows_by_family_sample(alignment_cell_rows)
     trace_by_key = overlay_traces or {}
     rows: list[dict[str, str]] = []
-    for decision in activation_decision_rows:
-        if not _is_wrong_peak_decision(decision):
+    for support in machine_evidence_support_rows:
+        if not _is_wrong_peak_support(support):
             continue
-        family_id = decision.get("feature_family_id", "")
-        sample_id = _first_text(decision.get("sample_id"), decision.get("sample_stem"))
-        support = _lookup_family_sample_row(support_by_key, family_id, decision)
-        cell = _lookup_family_sample_row(cells_by_key, family_id, decision)
-        trace = _lookup_family_sample_trace(trace_by_key, family_id, decision)
-        metrics = _parse_metrics(
-            support.get("observed_machine_metrics", ""),
-            decision.get("source_evidence_tokens", ""),
-        )
+        family_id = support.get("feature_family_id", "")
+        sample_id = _first_text(support.get("sample_id"), support.get("sample_stem"))
+        cell = _lookup_family_sample_row(cells_by_key, family_id, support)
+        trace = _lookup_family_sample_trace(trace_by_key, family_id, support)
+        metrics = _parse_metrics(support.get("observed_machine_metrics", ""))
         selected_apex_rt = _first_float(
             cell.get("apex_rt"),
             metrics.get("apex_rt"),
@@ -129,10 +146,7 @@ def build_wrong_peak_root_cause_rows(
                 ),
                 "feature_family_id": family_id,
                 "sample_id": sample_id,
-                "activation_status": decision.get("activation_status", ""),
-                "contract_rule_id": decision.get("contract_rule_id", ""),
-                "machine_current_label": decision.get("machine_current_label", ""),
-                "product_effect": decision.get("product_effect", ""),
+                "machine_current_label": support.get("machine_current_label", ""),
                 "root_cause_class": _classify_root_cause(metrics),
                 "secondary_root_cause_tokens": ";".join(
                     _secondary_root_cause_tokens(metrics)
@@ -262,13 +276,28 @@ def _sample_keys(row: Mapping[str, str]) -> tuple[str, ...]:
     return tuple(keys)
 
 
-def _is_wrong_peak_decision(row: Mapping[str, str]) -> bool:
-    return (
-        row.get("contract_rule_id") == "wrong_peak_conflict"
-        or (
-            row.get("activation_status") == "auto_block"
-            and row.get("product_effect") == "block_rescue_cell"
-        )
+def _is_wrong_peak_support(row: Mapping[str, str]) -> bool:
+    metrics = _split_tokens(row.get("observed_machine_metrics"))
+    missing = _split_tokens(row.get("missing_machine_evidence"))
+    if _has_any(metrics, _WRONG_PEAK_TOKENS) or "rt_pattern_conflict_gate" in missing:
+        return True
+    if "qc_ms1_reference_status=conflict" not in metrics:
+        return False
+    return _has_any(metrics, _QC_CONFLICT_TOKENS) or _has_any(
+        missing,
+        _QC_CONFLICT_MISSING_EVIDENCE,
+    )
+
+
+def _split_tokens(value: object) -> tuple[str, ...]:
+    return tuple(part.strip() for part in str(value or "").split(";") if part.strip())
+
+
+def _has_any(values: Sequence[str], candidates: frozenset[str]) -> bool:
+    return any(
+        value == candidate or candidate in value
+        for value in values
+        for candidate in candidates
     )
 
 

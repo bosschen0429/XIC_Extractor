@@ -11,16 +11,6 @@ from xic_extractor.alignment.shared_peak_identity_explanation import (
 
 def test_wrong_peak_family_consensus_proposes_later_alternate() -> None:
     rows = wrong_peak_root_cause.build_wrong_peak_root_cause_rows(
-        activation_decision_rows=[
-            _decision_row(
-                family_id="FAM011810",
-                sample_id="TumorBC2263_DNA",
-                source_tokens=(
-                    "ms1_pattern_reason="
-                    "family_ms1_overlay_competing_peak_matches_family_consensus"
-                ),
-            )
-        ],
         machine_evidence_support_rows=[
             _support_row(
                 family_id="FAM011810",
@@ -69,13 +59,6 @@ def test_wrong_peak_family_consensus_proposes_later_alternate() -> None:
 
 def test_wrong_peak_qc_conflict_reports_low_dominance_candidate() -> None:
     rows = wrong_peak_root_cause.build_wrong_peak_root_cause_rows(
-        activation_decision_rows=[
-            _decision_row(
-                family_id="FAM001473",
-                sample_id="TumorBC2312_DNA",
-                source_tokens="qc_ms1_reference_status=conflict",
-            )
-        ],
         machine_evidence_support_rows=[
             _support_row(
                 family_id="FAM001473",
@@ -120,16 +103,6 @@ def test_wrong_peak_qc_conflict_reports_low_dominance_candidate() -> None:
 
 def test_wrong_peak_uses_sample_id_alias_for_alignment_cell_context() -> None:
     rows = wrong_peak_root_cause.build_wrong_peak_root_cause_rows(
-        activation_decision_rows=[
-            _decision_row(
-                family_id="FAM011810",
-                sample_id="TumorBC2263_DNA",
-                source_tokens=(
-                    "ms1_pattern_reason="
-                    "family_ms1_overlay_competing_peak_matches_family_consensus"
-                ),
-            )
-        ],
         machine_evidence_support_rows=[
             _support_row(
                 family_id="FAM011810",
@@ -162,35 +135,34 @@ def test_wrong_peak_uses_sample_id_alias_for_alignment_cell_context() -> None:
     assert row["selected_peak_start_rt"] == "6.25"
 
 
+def test_wrong_peak_ignores_machine_support_without_conflict_evidence() -> None:
+    rows = wrong_peak_root_cause.build_wrong_peak_root_cause_rows(
+        machine_evidence_support_rows=[
+            _support_row(
+                family_id="FAM000001",
+                sample_id="SampleA",
+                metrics="ms1_pattern_status=supportive",
+            )
+        ],
+        alignment_cell_rows=[],
+    )
+
+    assert rows == ()
+
+
 def test_wrong_peak_cli_writes_root_cause_tsv(tmp_path: Path) -> None:
-    decisions = tmp_path / "activation.tsv"
     support = tmp_path / "support.tsv"
     cells = tmp_path / "cells.tsv"
     trace = tmp_path / "trace.json"
     _write_tsv(
-        decisions,
+        support,
         (
             "feature_family_id",
             "sample_id",
-            "activation_status",
-            "product_effect",
-            "contract_rule_id",
-            "source_evidence_tokens",
+            "machine_current_label",
+            "observed_machine_metrics",
+            "missing_machine_evidence",
         ),
-        [
-            _decision_row(
-                family_id="FAM011810",
-                sample_id="TumorBC2263_DNA",
-                source_tokens=(
-                    "ms1_pattern_reason="
-                    "family_ms1_overlay_competing_peak_matches_family_consensus"
-                ),
-            )
-        ],
-    )
-    _write_tsv(
-        support,
-        ("feature_family_id", "sample_id", "observed_machine_metrics"),
         [
             _support_row(
                 family_id="FAM011810",
@@ -245,8 +217,6 @@ def test_wrong_peak_cli_writes_root_cause_tsv(tmp_path: Path) -> None:
     assert (
         main(
             [
-                "--activation-decisions-tsv",
-                str(decisions),
                 "--machine-evidence-support-tsv",
                 str(support),
                 "--alignment-cells-tsv",
@@ -266,23 +236,6 @@ def test_wrong_peak_cli_writes_root_cause_tsv(tmp_path: Path) -> None:
     )
 
 
-def _decision_row(
-    *,
-    family_id: str,
-    sample_id: str,
-    source_tokens: str,
-) -> dict[str, str]:
-    return {
-        "feature_family_id": family_id,
-        "sample_id": sample_id,
-        "activation_status": "auto_block",
-        "product_effect": "block_rescue_cell",
-        "contract_rule_id": "wrong_peak_conflict",
-        "machine_current_label": "rescued",
-        "source_evidence_tokens": source_tokens,
-    }
-
-
 def _support_row(
     *,
     family_id: str,
@@ -292,7 +245,9 @@ def _support_row(
     return {
         "feature_family_id": family_id,
         "sample_id": sample_id,
+        "machine_current_label": "rescued",
         "observed_machine_metrics": metrics,
+        "missing_machine_evidence": "",
     }
 
 

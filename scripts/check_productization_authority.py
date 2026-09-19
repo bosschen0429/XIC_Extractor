@@ -36,9 +36,6 @@ from xic_extractor.alignment.quantitative_projection_authority import (  # noqa:
     rehydrate_quantitative_projection_authority_manifest,
     render_quantitative_projection_authority_manifest_bytes,
 )
-from xic_extractor.alignment.shared_peak_identity_explanation.schema import (  # noqa: E402
-    ACTIVATION_VALUE_INPUT_COLUMNS,
-)
 from xic_extractor.tabular_io import read_tsv_with_header_snapshot  # noqa: E402
 
 DEFAULT_MANIFEST = ROOT / PRODUCTIZATION_AUTHORITY_MANIFEST_REL
@@ -87,6 +84,19 @@ CURRENT_BACKFILL_ACCEPTANCE_REL = (
 CURRENT_BACKFILL_ACTIVATION_VALUES_REL = (
     "docs/superpowers/validation/quant_matrix_real_bundle_v1/source_artifacts/"
     "standard_peak_activation_values.tsv"
+)
+CURRENT_BACKFILL_VALUE_COLUMNS = (
+    "peak_hypothesis_id",
+    "feature_family_id",
+    "sample_stem",
+    "projected_matrix_value",
+    "projected_matrix_value_source",
+    "current_raw_status",
+    "current_production_status",
+    "source_artifact_schema_version",
+    "source_artifact_sha256",
+    "source_row_sha256",
+    "source_provenance_detail",
 )
 NEGATIVE_SCOPE_IDS = {
     "all_stability",
@@ -417,7 +427,7 @@ def _check_current_backfill_membership(
     try:
         _header, activation_rows, _sha = read_tsv_with_header_snapshot(
             repo_root / CURRENT_BACKFILL_ACTIVATION_VALUES_REL,
-            exact_columns=ACTIVATION_VALUE_INPUT_COLUMNS,
+            exact_columns=CURRENT_BACKFILL_VALUE_COLUMNS,
         )
     except (OSError, ValueError) as exc:
         problems.append(f"current Backfill membership cannot be read: {exc}")
