@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal, cast
 
@@ -32,6 +32,9 @@ if TYPE_CHECKING:
     )
     from xic_extractor.alignment.owner_backfill import (
         OwnerBackfillPeakFactObservation,
+    )
+    from xic_extractor.alignment.result.application_result import (
+        FinalizedUntargetApplicationResult,
     )
 
 PRESENTATION_FORMULA_VERSION = "cross_sample_owner_arithmetic_mean"
@@ -96,8 +99,10 @@ class CompletedUntargetBatchWriterInputs:
 
 def project_completed_untarget_batch_writer_inputs(
     completed: CompletedUntargetBatchWorkflowResult,
+    *,
+    consume_child: Callable[[FinalizedUntargetApplicationResult], None] | None = None,
 ) -> CompletedUntargetBatchWriterInputs:
-    """Translate one successful finalized batch without rerunning decisions."""
+    """Project the batch and share each loaded child with an output consumer."""
 
     if type(completed) is not CompletedUntargetBatchWorkflowResult:
         raise TypeError("writer projection requires a completed Untarget batch")
@@ -239,6 +244,8 @@ def project_completed_untarget_batch_writer_inputs(
                 owner_counts=projected.counts,
                 route_reason=projected.route.reason,
             )
+        if consume_child is not None:
+            consume_child(child)
 
     matrix = AlignmentMatrix(
         clusters=tuple(rows),

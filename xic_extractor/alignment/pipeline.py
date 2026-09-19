@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Callable, Iterable, Mapping, Sequence
+from contextlib import ExitStack
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -53,7 +54,7 @@ from xic_extractor.config import ExtractionConfig
 from xic_extractor.configuration.models import Target
 from xic_extractor.diagnostics.alignment_explanation import EvidenceLocator
 from xic_extractor.diagnostics.alignment_explanation_projection import (
-    write_alignment_explanation as _real_write_alignment_explanation,
+    prepare_alignment_explanation,
 )
 from xic_extractor.diagnostics.timing import TimingRecorder
 from xic_extractor.discovery.batch_contract import DiscoveryCandidateUniverseReceipt
@@ -74,8 +75,6 @@ from xic_extractor.sample_metadata import SampleMetadata
 
 complete_untargeted_alignment = _real_complete_untargeted_alignment
 complete_untargeted_cid_nl_alignment = _real_complete_untargeted_alignment
-write_alignment_explanation = _real_write_alignment_explanation
-write_cid_nl_explanation = _real_write_alignment_explanation
 
 
 def extract_batch_known_istd_reference(
@@ -462,10 +461,33 @@ def _run_untargeted_alignment(
             )
     except RuntimeError as exc:
         raise AlignmentProcessExecutionError(str(exc)) from exc
-    try:
+    with ExitStack() as output_stack:
+        if hasattr(completed, "close"):
+            output_stack.callback(completed.close)
         if should_cancel is not None and should_cancel():
             raise InterruptedError("Alignment cancelled before output publication")
-        writer_inputs = project_completed_untarget_batch_writer_inputs(completed)
+        matrix_path = outputs.matrix_tsv
+        if matrix_path is None:
+            raise RuntimeError("CID-NL explanation requires the published Matrix")
+        with timing_recorder.stage("alignment.prepare_explanation"):
+            explanation = output_stack.enter_context(
+                prepare_alignment_explanation(
+                    output_dir / "cid_nl_explanation.sqlite",
+                    completed=completed,
+                    candidates_by_sample=candidates_by_sample,
+                    alignment_config=alignment_config,
+                    known_istd_reference_provenance=(
+                        None
+                        if known_istd_reference is None
+                        else known_istd_reference.explanation_provenance
+                    ),
+                    progress_callback=timing_recorder.heartbeat_event,
+                )
+            )
+        with timing_recorder.stage("alignment.project_outputs"):
+            writer_inputs = project_completed_untarget_batch_writer_inputs(
+                completed, consume_child=explanation.consume_child
+            )
         if should_cancel is not None and should_cancel():
             raise InterruptedError("Alignment cancelled before output publication")
         metadata = _metadata(
@@ -537,26 +559,8 @@ def _run_untargeted_alignment(
             outputs = replace(
                 outputs, artifact_fingerprint_batch=artifact_fingerprint_batch
             )
-        if outputs.matrix_tsv is None:
-            raise RuntimeError("CID-NL explanation requires the published Matrix")
-        _write_fn = write_alignment_explanation
-        if write_cid_nl_explanation is not _real_write_alignment_explanation:
-            _write_fn = write_cid_nl_explanation
         with timing_recorder.stage("alignment.write_cid_nl_explanation"):
-            db_path = _write_fn(
-                output_dir / "cid_nl_explanation.sqlite",
-                completed=completed,
-                writer_inputs=writer_inputs,
-                candidates_by_sample=candidates_by_sample,
-                matrix_path=outputs.matrix_tsv,
-                alignment_config=alignment_config,
-                known_istd_reference_provenance=(
-                    None
-                    if known_istd_reference is None
-                    else known_istd_reference.explanation_provenance
-                ),
-                progress_callback=timing_recorder.heartbeat_event,
-            )
+            db_path = explanation.finalize(writer_inputs, matrix_path)
         evidence: EvidenceLocator | None = None
         if outputs.matrix_tsv is not None and outputs.matrix_tsv.is_file():
             with outputs.matrix_tsv.open("rb") as handle:
@@ -580,9 +584,6 @@ def _run_untargeted_alignment(
             untargeted_cid_nl_result=completed,
             evidence=evidence,
         )
-    finally:
-        if hasattr(completed, "close"):
-            completed.close()
 
 
 def _run_untargeted_cid_nl_alignment(*args: Any, **kwargs: Any) -> AlignmentRunOutputs:

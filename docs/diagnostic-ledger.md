@@ -7,7 +7,7 @@ Repo owner: docs/diagnostic-ledger.md
 Doc exit rule: Keep active while expensive RAW rerun memory is needed; retire only after durable diagnostic memory moves to a replacement canonical owner.
 
 **Status:** maintained repo-local diagnostic memory
-**Last updated:** 2026-09-11
+**Last updated:** 2026-09-20
 
 This ledger records diagnostic conclusions that should survive branch and
 worktree changes. Use it before rerunning expensive RAW validation or treating a
@@ -64,6 +64,38 @@ dated productization control-plane path is compatibility lookup only.
 | Thermo DLL dir | `$env:THERMO_RAWFILE_READER_DLL_DIR` |
 
 ## Known Diagnostic Conclusions
+
+### 2026-09-20 Alignment Preparation And Output Reuse
+
+- Evidence: `diagnostic_only`; optimization lane `exact_safe`, scoped verdict
+  `optimized`. These are synthetic engineering measurements; product validation
+  status and the incomplete 85RAW conclusion below are unchanged. No RAW run.
+- Alignment physical replay and production preparation now share the existing
+  stat-bound acquisition expectation: one full source hash instead of two.
+  Nine warm-cache paired runs over a 36 MiB synthetic source measured median
+  preparation time 67.537 -> 34.554 ms; every pair improved by 32.478–34.181 ms.
+  Processing spec/request/candidates matched, and mutation during hashing or
+  between owners was rejected. Standalone preparation still fingerprints.
+- Matrix projection now hands each loaded child directly to the explanation
+  transaction. Three file-backed partitions/four synthetic samples required
+  three child restores instead of six, including the associated completion-seal
+  reconstruction. Five paired output runs measured median 46.780 -> 33.835 ms;
+  every candidate observation was faster. Matrix bytes and all logical SQLite
+  rows, including retained curves, matched the isolated pre-change writer.
+- This removes repeated restoration, not all output memory. A separate
+  tracemalloc pass measured 1,454,401 -> 1,763,665 peak bytes. Pipeline tests
+  verify earlier children are released as streaming advances, official reader
+  parity, and temporary-report cleanup on projection/Matrix failure.
+- Local evidence: `output/data-flow-efficiency-20260920/fix-verification.md`,
+  `fingerprint/candidate-timing.json` and `writer-paired-probe/receipt.json`
+  below that same root. Durable oracles are the source-reuse tests in
+  `tests/test_untargeted_cid_nl_production_batch.py` and the partition-streaming
+  test in `tests/test_alignment_pipeline.py`.
+- Do not infer full-cohort wall time or a memory-pressure fix from these probes.
+  Rerun a bounded comparison if source ownership or the child-consumption path
+  changes. A real-data speed claim needs its own approved comparable run.
+  Explanation work now spans preparation, shared projection, and finalization;
+  the old explanation timing stage alone is no longer a comparable metric.
 
 ### 2026-09-11 Eight-Sample Eligibility And HOLD Verification
 
