@@ -12,6 +12,8 @@ consumer and a concrete removal loss.
 
 Issue scope, TaskFrame continuity, CBM structure, code behavior, and PR delivery
 remain separate owners. Do not mirror one owner's contract in another layer.
+Dispatch and fan-in belong to global router skills; repo-local contracts supply
+XIC technical inputs, not a second agent workflow.
 
 ## Current Hooks And Rules
 

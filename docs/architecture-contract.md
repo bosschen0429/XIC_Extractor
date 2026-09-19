@@ -26,23 +26,24 @@ decomposition plans belong in Issues, PRs, and Git.
 
 ## Change Locality
 
-For ownership, serialization, derived-fact, or internal-defense changes:
+XIC technical evidence for ownership, serialization, derived-fact, or
+internal-defense changes:
 
-1. Before mutation, trace one affected production entry through its authoritative
-   producer and validation to the current consumer. Locate where the needed
-   invariant is established; reuse current CBM/source evidence in the task.
-2. Before adding fallback, recomputation, or deep revalidation, name a reachable
-   input/path and its observable loss. Justify the check by changed inputs or an
+1. Identify the affected production entry, authoritative producer, validation,
+   and current consumer, including where the needed invariant is established.
+   Reuse current owner evidence; CBM owns structural query mechanics.
+2. A fallback, recomputation, or deep revalidation needs a reachable input/path
+   and observable loss. Justify the check by changed inputs or an
    actual trust boundary. Repair a fixed internal bypass at its owner or caller;
    uncertainty alone does not justify another defense.
 3. Update consumers and retire superseded surfaces in the same responsibility
    change. The [testing contract](agent/testing.md) owns which oracles survive.
-4. Before completion, take one rule or representation changed in this diff and
-   identify every affected module that must know it. Justify each remaining
-   dependency. An ordinary consumer independently reconstructing owner-derived
-   facts or parsing other owners' internal ancestor schemas leaves the refactor
-   incomplete; resolve it at the owner within the authorized scope. A separately
-   required audit keeps its own oracle and does not replace the production fact.
+4. For one rule or representation changed in this diff, identify the affected
+   modules that must know it and justify each remaining dependency. For in-scope
+   decoupling, ordinary consumers still reconstructing owner-derived facts or
+   parsing other owners' internal ancestor schemas are unmet technical acceptance.
+   A separately required audit keeps its own oracle and does not replace the
+   production fact.
 
 Use source and existing observable checks for this acceptance. Record the result
 in the current task/PR, not a permanent inventory or a new generic lint gate.

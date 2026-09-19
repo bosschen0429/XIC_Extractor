@@ -101,12 +101,6 @@ budget, review time, and construction stages are not seams. Activation or
 replacement includes retiring the old surface or naming the current consumer
 that still requires it.
 
-Subagent work packages use the same outcome boundary: assign a usable consumer
-result and the responsibility to retire, with files bounding write authority.
-Keep a coupled flow with one implementation owner; split independent outcomes.
-Main integrates against [Change Locality](../architecture-contract.md#change-locality),
-including dependencies that individual file-level checks cannot establish.
-
 ## Closeout
 
 Keep the Issue open while required acceptance remains. The final repo docs state
