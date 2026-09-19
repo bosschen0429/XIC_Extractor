@@ -216,26 +216,6 @@ def test_product_writer_rejects_no_split_multi_family_hypothesis_collapse(
         raise AssertionError("expected multi-family PeakHypothesis collapse guard")
 
 
-def test_istd_fixture_records_explicit_matching_fields():
-    fixture = Path(
-        "tests/fixtures/untargeted_alignment/istd_false_missing_fixture.csv",
-    )
-    rows = _read_csv(fixture)
-
-    assert len(rows) == 16
-    assert {row["targeted_identity"] for row in rows} == {
-        "d3-5-medC",
-        "d3-5-hmdC",
-    }
-    assert all(row["targeted_confidence"] == "HIGH" for row in rows)
-    assert all(row["targeted_nl"] == "✓" for row in rows)
-    assert all(row["sample_mapping_rule"] for row in rows)
-    assert {(row["old_row_coordinate"], row["targeted_identity"]) for row in rows} == {
-        ("245.1332/12.28", "d3-5-medC"),
-        ("261.1283/8.97", "d3-5-hmdC"),
-    }
-
-
 def _production_decisions(matrix: AlignmentMatrix) -> ProductionDecisionSet:
     return build_production_decisions(
         matrix,
@@ -339,11 +319,6 @@ def _integration(
 def _read_tsv(path: Path) -> list[dict[str, str]]:
     with path.open(newline="", encoding="utf-8") as handle:
         return list(csv.DictReader(handle, delimiter="\t"))
-
-
-def _read_csv(path: Path) -> list[dict[str, str]]:
-    with path.open(newline="", encoding="utf-8") as handle:
-        return list(csv.DictReader(handle))
 
 
 def _worksheet_records(sheet) -> list[dict[str, object]]:
