@@ -27,7 +27,6 @@ from gui.workers.inspector_report_worker import (
     InspectorReportWorker,
     InspectorSummaryWorker,
 )
-from xic_extractor.diagnostics.alignment_explanation import SCHEMA_VERSION
 from xic_inspector.api import EvidenceLocator, ReportResult
 
 _PER_SAMPLE_HEADERS = ("樣本", "候選", "高", "中", "低")
@@ -463,33 +462,9 @@ class DiscoveryResultsSection(QWidget):
 def _locator_from_summary(value: object) -> tuple[EvidenceLocator | None, str]:
     if value is None:
         return None, "本次完成結果沒有 Inspector evidence locator"
-    if not isinstance(value, dict):
+    if not isinstance(value, EvidenceLocator):
         return None, "Inspector evidence locator 格式無效"
-    path_keys = ("report_path", "matrix_path")
-    text_keys = (
-        "matrix_sha256", "processing_request_id", "processing_attempt_id"
-    )
-    if any(
-        not isinstance(value.get(key), str) or not value[key].strip()
-        for key in (*path_keys, *text_keys)
-    ):
-        return None, "Inspector evidence locator 欄位缺失或無效"
-    digest = value["matrix_sha256"]
-    if len(digest) != 64 or any(
-        char not in "0123456789abcdefABCDEF" for char in digest
-    ):
-        return None, "Inspector evidence locator Matrix digest 無效"
-    version = value.get("schema_version")
-    if version != SCHEMA_VERSION:
-        return None, "Inspector evidence locator schema version 無效"
-    return EvidenceLocator(
-        report_path=Path(value["report_path"]),
-        matrix_path=Path(value["matrix_path"]),
-        matrix_sha256=digest,
-        processing_request_id=value["processing_request_id"],
-        processing_attempt_id=value["processing_attempt_id"],
-        schema_version=version,
-    ), ""
+    return value, ""
 
 
 def _run_label(source: EvidenceLocator) -> str:

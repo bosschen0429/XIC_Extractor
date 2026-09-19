@@ -27,7 +27,9 @@ from xic_inspector.sources import (
     EvidenceSource,
     ExplanationError,
     ExplanationUnavailableError,
-    read_evidence_summary,
+)
+from xic_inspector.sources import (
+    read_evidence_summary as read_evidence_summary,
 )
 
 StrategyKind = Literal["sample", "attention", "query"]
@@ -230,7 +232,8 @@ def generate_report(
         raise InspectorError(3, f"Source DB unavailable: {report_path}")
 
     try:
-        summary = read_evidence_summary(report_path)
+        source = EvidenceSource(report_path)
+        summary = source.summary
     except ExplanationUnavailableError as exc:
         raise InspectorError(3, str(exc), cause=exc) from exc
     except ExplanationError as exc:
@@ -267,7 +270,7 @@ def generate_report(
         )
 
     # Validate expected_source if provided
-    schema_version = summary.get("schema_version", 1)
+    schema_version = summary["schema_version"]
     req_id = summary.get("processing_request_id", "")
     att_id = summary.get("processing_attempt_id", "")
 
@@ -326,7 +329,6 @@ def generate_report(
 
     # Stage: Selection
     normalized_set = set(normalized_sample_ids)
-    source = EvidenceSource(report_path, req_id, att_id)
     try:
         all_items = source.load_items(normalized_set)
     except ExplanationError as exc:

@@ -493,6 +493,48 @@ def _read_completed_summary(connection: sqlite3.Connection) -> dict[str, Any]:
     return summary
 
 
+@dataclass(frozen=True, slots=True)
+class ExplanationMetadata:
+    """Completed review facts and exact links, without curve payloads."""
+
+    summary: dict[str, Any]
+    candidates: dict[tuple[str, str], dict[str, Any]]
+    records: dict[str, dict[str, dict[str, Any]]]
+    links: tuple[tuple[str, str, str, str], ...]
+
+
+def read_explanation_metadata(path: str | Path) -> ExplanationMetadata:
+    """Read the review population through the storage owner, without curves."""
+    path = Path(path)
+    if not path.is_file():
+        raise ExplanationUnavailableError(f"explanation unavailable: {path}")
+    connection: sqlite3.Connection | None = None
+    try:
+        connection = sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True)
+        connection.execute("PRAGMA query_only = ON")
+        summary = _read_completed_summary(connection)
+        candidates = {
+            (cid, sid): _object(payload)
+            for cid, sid, payload in connection.execute(
+                "SELECT candidate_id, sample_id, payload FROM candidates"
+            )
+        }
+        records: dict[str, dict[str, dict[str, Any]]] = {}
+        for kind, rid, payload in connection.execute(
+            "SELECT kind, record_id, payload FROM records"
+        ):
+            records.setdefault(kind, {})[rid] = _object(payload)
+        links = tuple(connection.execute(
+            "SELECT candidate_id, sample_id, kind, record_id FROM links"
+        ))
+        return ExplanationMetadata(summary, candidates, records, links)
+    except (sqlite3.Error, json.JSONDecodeError, TypeError) as exc:
+        raise ExplanationError(f"malformed explanation: {exc}") from exc
+    finally:
+        if connection is not None:
+            connection.close()
+
+
 def read_cid_nl_explanation(
     path: str | Path, *, candidate_id: str | None = None
 ) -> dict[str, Any]:

@@ -30,14 +30,7 @@ def _summary(source: EvidenceLocator) -> dict:
         "mode": "align_only",
         "matrix_tsv": str(source.matrix_path),
         "alignment_outputs": {"matrix_tsv": str(source.matrix_path)},
-        "evidence": {
-            "report_path": str(source.report_path),
-            "matrix_path": str(source.matrix_path),
-            "matrix_sha256": source.matrix_sha256,
-            "processing_request_id": source.processing_request_id,
-            "processing_attempt_id": source.processing_attempt_id,
-            "schema_version": source.schema_version,
-        },
+        "evidence": source,
     }
 
 
@@ -65,13 +58,6 @@ def test_results_only_enable_export_for_valid_current_locator(qtbot, tmp_path):
     assert not section._export_inspector.isEnabled()
     assert "無效" in section._inspector_status.text()
     assert section._open_matrix.isEnabled()
-
-    for unsupported_schema in (2, "unsupported_explanation"):
-        invalid = _summary(source)
-        invalid["evidence"]["schema_version"] = unsupported_schema
-        section.update_results(invalid)
-        assert not section._export_inspector.isEnabled()
-        assert section._evidence is None
 
     section.update_results(_summary(source))
     section.clear_results()
