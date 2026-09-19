@@ -29,7 +29,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--review-actions",
         type=Path,
         required=True,
-        help="Review action TSV/CSV using review_action_v1.",
+        help="Review action TSV/CSV using review_action.",
     )
     parser.add_argument(
         "--peak-candidates-tsv",
@@ -41,7 +41,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--output-candidate-sidecar-tsv",
         type=Path,
         required=True,
-        help="Path to write review_action_candidate_sidecar_v1 TSV.",
+        help="Path to write review_action_candidate_sidecar TSV.",
     )
     parser.add_argument(
         "--summary-json",

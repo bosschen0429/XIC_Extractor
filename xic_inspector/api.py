@@ -20,18 +20,20 @@ from xic_inspector.selection.query import filter_by_attention, filter_by_query
 from xic_inspector.selection.sampler import (
     SAMPLING_ALGORITHM,
     review_case_key,
-    sample_cross_sample_sha256_v2,
+    sample_cross_sample_sha256,
 )
 from xic_inspector.sources import (
     EvidenceLocator,
     EvidenceSource,
     ExplanationError,
     ExplanationUnavailableError,
-    read_evidence_summary,
+)
+from xic_inspector.sources import (
+    read_evidence_summary as read_evidence_summary,
 )
 
 StrategyKind = Literal["sample", "attention", "query"]
-CapabilityKind = Literal["retained_curves_v1", "metadata_only"]
+CapabilityKind = Literal["retained_curves", "metadata_only"]
 ProgressStage = Literal["metadata", "selection", "curves", "render", "write"]
 
 
@@ -230,7 +232,8 @@ def generate_report(
         raise InspectorError(3, f"Source DB unavailable: {report_path}")
 
     try:
-        summary = read_evidence_summary(report_path)
+        source = EvidenceSource(report_path)
+        summary = source.summary
     except ExplanationUnavailableError as exc:
         raise InspectorError(3, str(exc), cause=exc) from exc
     except ExplanationError as exc:
@@ -267,7 +270,7 @@ def generate_report(
         )
 
     # Validate expected_source if provided
-    schema_version = summary.get("schema_version", 1)
+    schema_version = summary["schema_version"]
     req_id = summary.get("processing_request_id", "")
     att_id = summary.get("processing_attempt_id", "")
 
@@ -326,7 +329,6 @@ def generate_report(
 
     # Stage: Selection
     normalized_set = set(normalized_sample_ids)
-    source = EvidenceSource(report_path, req_id, att_id)
     try:
         all_items = source.load_items(normalized_set)
     except ExplanationError as exc:
@@ -347,7 +349,7 @@ def generate_report(
     missing_rt_count = 0
 
     if selection.strategy == "sample":
-        selected_items = sample_cross_sample_sha256_v2(
+        selected_items = sample_cross_sample_sha256(
             eligible_items, limit=selection.limit, seed=selection.seed
         )
         matched_count = eligible_count

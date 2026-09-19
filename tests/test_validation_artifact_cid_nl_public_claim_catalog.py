@@ -20,7 +20,7 @@ def test_claim_catalog_rejects_characterization_as_authority(
     rows[0]["existing_authority_owner"] = (
         "docs/agent/architecture-public-contracts.md#Public Contracts; "
         "docs/superpowers/validation/"
-        "cid_nl_targeted_csv_contract_v1/README.md"
+        "cid_nl_targeted_csv_contract/README.md"
     )
     catalog_path = tmp_path / "claim_catalog.tsv"
     _write_rows(catalog_path, rows)
@@ -70,7 +70,7 @@ def test_claim_catalog_rejects_missing_python_owner_symbol(tmp_path: Path) -> No
 def test_claim_catalog_rejects_missing_markdown_heading(tmp_path: Path) -> None:
     rows = _read_rows(claim_catalog.DEFAULT_CATALOG_PATH)
     rows[0]["evidence_or_fixture"] = (
-        "docs/superpowers/validation/cid_nl_targeted_csv_contract_v1/"
+        "docs/superpowers/validation/cid_nl_targeted_csv_contract/"
         "README.md#Missing Heading"
     )
     catalog_path = tmp_path / "claim_catalog.tsv"
@@ -93,7 +93,7 @@ def test_claim_catalog_marks_matrix_boundary_as_reference_only(
     matrix_row = next(
         row
         for row in rows
-        if row["claim_id"] == "untargeted_matrix_v1.authority_boundary_ref"
+        if row["claim_id"] == "untargeted_matrix.authority_boundary_ref"
     )
     matrix_row["public_surface"] = "hard_exact: targeted Matrix authority"
     catalog_path = tmp_path / "claim_catalog.tsv"
@@ -115,9 +115,9 @@ def test_reference_rows_preserve_existing_owner_boundaries() -> None:
         row["claim_id"]: row
         for row in _read_rows(claim_catalog.DEFAULT_CATALOG_PATH)
     }
-    selected = rows["targeted_output_v1.selected_value_authority_ref"]
-    counted = rows["targeted_output_v1.counted_detection_authority_ref"]
-    matrix = rows["untargeted_matrix_v1.authority_boundary_ref"]
+    selected = rows["targeted_output.selected_value_authority_ref"]
+    counted = rows["targeted_output.counted_detection_authority_ref"]
+    matrix = rows["untargeted_matrix.authority_boundary_ref"]
 
     for row in (selected, counted, matrix):
         assert row["public_surface"].startswith("reference_only:")
@@ -128,7 +128,7 @@ def test_reference_rows_preserve_existing_owner_boundaries() -> None:
             "existing_authority_owner"
         ]
     assert "docs/product/quant-matrix.md" in matrix["existing_authority_owner"]
-    assert "productization_authority_manifest.v1.json" in matrix[
+    assert "productization_authority_manifest.json" in matrix[
         "existing_authority_owner"
     ]
     assert "targeted-selection.md" not in matrix["existing_authority_owner"]

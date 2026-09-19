@@ -14,18 +14,14 @@ from xic_extractor.discovery.pt_pattern_artifact_contract import (
     PT_PATTERN_TRACE_ANCHOR_LOCAL_ROLE,
     PT_PATTERN_TRACE_ARTIFACT_ROLE_FIELD,
     PT_PATTERN_TRACE_EXTRACTION_SHA256_FIELD,
-    PT_PATTERN_TRACE_FULL_CONTEXT_ROLE,
 )
 from xic_extractor.discovery.pt_pattern_evidence_rule import (
     PtPatternEvidenceThresholds,
     evaluate_pt_pattern_evidence,
 )
 from xic_extractor.discovery.pt_pattern_review_packet import (
-    ANCHOR_LOCAL_SCHEMA_VERSION as ANCHOR_PACKET_SCHEMA_VERSION,
-)
-from xic_extractor.discovery.pt_pattern_review_packet import (
     EVIDENCE_OWNER,
-    FULL_CONTEXT_PACKET_COLUMNS,
+    PACKET_COLUMNS,
     PACKET_SCHEMA_COLUMNS,
     PACKET_SCHEMA_ROLE,
     READINESS_TIER,
@@ -41,14 +37,12 @@ from xic_extractor.discovery.pt_pattern_trace_evidence import (
 )
 from xic_extractor.tabular_io import optional_float
 
-SCHEMA_VERSION = "pt_pattern_blind_overlay.v4"
-ANCHOR_LOCAL_SCHEMA_VERSION = "pt_pattern_blind_overlay.v5"
+SCHEMA_VERSION = "pt_pattern_blind_overlay"
 SMOOTH_METHOD = TRACE_SMOOTH_METHOD
 SMOOTH_WINDOW_POINTS = TRACE_SMOOTH_WINDOW_POINTS
 MACHINE_CALL_SCOPE = "trace_evidence_disposition_only"
 
-LEGACY_PACKET_REQUIRED_COLUMNS = FULL_CONTEXT_PACKET_COLUMNS
-PACKET_REQUIRED_COLUMNS = FULL_CONTEXT_PACKET_COLUMNS
+PACKET_REQUIRED_COLUMNS = PACKET_COLUMNS
 
 MACHINE_CALL_COLUMNS = (
     "schema_version",
@@ -83,26 +77,9 @@ MACHINE_CALL_COLUMNS = (
     *ANCHOR_SEGMENTATION_SUMMARY_COLUMNS,
     "oracle_status",
 )
-LEGACY_MACHINE_CALL_COLUMNS = tuple(
-    column
-    for column in MACHINE_CALL_COLUMNS
-    if column not in ANCHOR_SEGMENTATION_SUMMARY_COLUMNS
-)
-FULL_CONTEXT_MACHINE_CALL_COLUMNS = LEGACY_MACHINE_CALL_COLUMNS
-ANCHOR_LOCAL_MACHINE_CALL_COLUMNS = MACHINE_CALL_COLUMNS
-LEGACY_MACHINE_CALL_REQUIRED_COLUMNS = FULL_CONTEXT_MACHINE_CALL_COLUMNS
-PACKET_TO_MACHINE_SCHEMA = {
-    PACKET_SCHEMA_VERSION: SCHEMA_VERSION,
-    ANCHOR_PACKET_SCHEMA_VERSION: ANCHOR_LOCAL_SCHEMA_VERSION,
-}
-MACHINE_SCHEMA_COLUMNS = {
-    SCHEMA_VERSION: FULL_CONTEXT_MACHINE_CALL_COLUMNS,
-    ANCHOR_LOCAL_SCHEMA_VERSION: ANCHOR_LOCAL_MACHINE_CALL_COLUMNS,
-}
-MACHINE_SCHEMA_ROLE = {
-    SCHEMA_VERSION: PT_PATTERN_TRACE_FULL_CONTEXT_ROLE,
-    ANCHOR_LOCAL_SCHEMA_VERSION: PT_PATTERN_TRACE_ANCHOR_LOCAL_ROLE,
-}
+PACKET_TO_MACHINE_SCHEMA = {PACKET_SCHEMA_VERSION: SCHEMA_VERSION}
+MACHINE_SCHEMA_COLUMNS = {SCHEMA_VERSION: MACHINE_CALL_COLUMNS}
+MACHINE_SCHEMA_ROLE = {SCHEMA_VERSION: PT_PATTERN_TRACE_ANCHOR_LOCAL_ROLE}
 
 MACHINE_CALL_THRESHOLDS = PtPatternEvidenceThresholds()
 
@@ -224,16 +201,10 @@ def _validate_packet_envelope(
 def machine_call_row(row: Mapping[str, object]) -> dict[str, object]:
     machine_call, reason = classify_machine_call(row)
     packet_schema = str(row.get("schema_version", "")).strip()
-    if packet_schema == PACKET_SCHEMA_VERSION:
-        machine_schema = SCHEMA_VERSION
-        has_anchor_segmentation = False
-    elif packet_schema == ANCHOR_PACKET_SCHEMA_VERSION:
-        machine_schema = ANCHOR_LOCAL_SCHEMA_VERSION
-        has_anchor_segmentation = True
-    else:
+    if packet_schema != PACKET_SCHEMA_VERSION:
         raise ValueError(f"unsupported packet schema_version: {packet_schema!r}")
     return {
-        "schema_version": machine_schema,
+        "schema_version": SCHEMA_VERSION,
         "readiness_tier": READINESS_TIER,
         "evidence_owner": EVIDENCE_OWNER,
         "packet_label": row.get("packet_label", ""),
@@ -278,7 +249,6 @@ def machine_call_row(row: Mapping[str, object]) -> dict[str, object]:
         **{
             column: row.get(column, "")
             for column in ANCHOR_SEGMENTATION_SUMMARY_COLUMNS
-            if has_anchor_segmentation
         },
         "oracle_status": row.get("oracle_status", ""),
     }
@@ -322,15 +292,12 @@ def classify_machine_call(row: Mapping[str, object]) -> tuple[str, str]:
     if boundary_status == "review_required":
         return "uncertain", "anchor_segmentation_boundary_review_required"
 
-    if packet_schema == ANCHOR_PACKET_SCHEMA_VERSION:
-        if trace_ambiguity != "clear":
-            return "uncertain", "trace_ambiguity_not_clear"
-        if segmentation_status != "clear":
-            return "uncertain", "anchor_segmentation_not_clear"
-        if boundary_status != "clear":
-            return "uncertain", "anchor_segmentation_boundary_not_clear"
-    elif trace_ambiguity not in {"", "clear"}:
+    if trace_ambiguity != "clear":
         return "uncertain", "trace_ambiguity_not_clear"
+    if segmentation_status != "clear":
+        return "uncertain", "anchor_segmentation_not_clear"
+    if boundary_status != "clear":
+        return "uncertain", "anchor_segmentation_boundary_not_clear"
 
     status = str(row.get("combined_pt_pattern_status", "")).strip()
     supported = optional_float(row.get("non_base_positions_supported"))

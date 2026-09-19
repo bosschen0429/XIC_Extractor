@@ -17,7 +17,7 @@ if __package__ in {None, ""}:
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CANDIDATES_CSV = (
     ROOT
-    / "docs/superpowers/validation/discovery_precursor_inference_v1"
+    / "docs/superpowers/validation/discovery_precursor_inference"
     / "TumorBC2312_DNA/discovery_candidates.csv"
 )
 

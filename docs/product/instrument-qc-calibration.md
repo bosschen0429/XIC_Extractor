@@ -35,7 +35,7 @@ contract promotes a correction or gate.
   unassessable cases.
 - `scripts/run_instrument_qc.py` is a contract-bearing product adapter. Its
   method-document path already produces sequence, injection-order, and
-  `sample_metadata_v1` projections that should be reused rather than
+  `sample_metadata` projections that should be reused rather than
   reimplemented by a future downstream handoff.
 
 ## Surfaces

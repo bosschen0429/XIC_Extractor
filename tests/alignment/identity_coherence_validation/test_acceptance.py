@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from xic_extractor.alignment.identity_coherence_validation.acceptance import (
-    evaluate_v04_acceptance,
+    evaluate_acceptance,
     sidecar_parity_failed_count,
 )
 from xic_extractor.alignment.identity_coherence_validation.models import (
@@ -68,7 +68,7 @@ def test_sidecar_parity_failed_count_requires_all_frozen_sidecars() -> None:
     assert sidecar_parity_failed_count(result) == 4
 
 
-def test_v04_acceptance_passes_when_parity_and_reviewed_controls_pass() -> None:
+def test_acceptance_passes_when_parity_and_reviewed_controls_pass() -> None:
     result = _result_with_rows(
         (
             *_passing_sidecar_rows(),
@@ -97,7 +97,7 @@ def test_v04_acceptance_passes_when_parity_and_reviewed_controls_pass() -> None:
         )
     )
 
-    report = evaluate_v04_acceptance(
+    report = evaluate_acceptance(
         result,
         controls_manifest=Path("controls.reviewed.tsv"),
     )
@@ -107,7 +107,7 @@ def test_v04_acceptance_passes_when_parity_and_reviewed_controls_pass() -> None:
     assert rows["v04_acceptance"].status == "pass"
 
 
-def test_v04_acceptance_fails_without_reviewed_controls() -> None:
+def test_acceptance_fails_without_reviewed_controls() -> None:
     result = _result_with_rows(
         (
             *_passing_sidecar_rows(),
@@ -142,7 +142,7 @@ def test_v04_acceptance_fails_without_reviewed_controls() -> None:
         )
     )
 
-    report = evaluate_v04_acceptance(
+    report = evaluate_acceptance(
         result,
         controls_manifest=Path("identity_coherence_controls_manifest.reviewed.tsv"),
     )
@@ -154,7 +154,7 @@ def test_v04_acceptance_fails_without_reviewed_controls() -> None:
     assert not report.accepted
 
 
-def test_v04_acceptance_fails_for_non_reviewed_manifest_name() -> None:
+def test_acceptance_fails_for_non_reviewed_manifest_name() -> None:
     result = _result_with_rows(
         (
             *_passing_sidecar_rows(),
@@ -162,7 +162,7 @@ def test_v04_acceptance_fails_for_non_reviewed_manifest_name() -> None:
         )
     )
 
-    report = evaluate_v04_acceptance(result, controls_manifest=Path("controls.tsv"))
+    report = evaluate_acceptance(result, controls_manifest=Path("controls.tsv"))
 
     rows = {row.criterion: row for row in report.rows}
     assert rows["reviewed_controls_manifest"].status == "fail"
@@ -170,7 +170,7 @@ def test_v04_acceptance_fails_for_non_reviewed_manifest_name() -> None:
     assert not report.accepted
 
 
-def test_v04_acceptance_fails_when_decoy_promotes() -> None:
+def test_acceptance_fails_when_decoy_promotes() -> None:
     result = _result_with_rows(
         (
             *_passing_sidecar_rows(),
@@ -199,7 +199,7 @@ def test_v04_acceptance_fails_when_decoy_promotes() -> None:
         )
     )
 
-    report = evaluate_v04_acceptance(
+    report = evaluate_acceptance(
         result,
         controls_manifest=Path("controls.reviewed.tsv"),
     )
@@ -210,7 +210,7 @@ def test_v04_acceptance_fails_when_decoy_promotes() -> None:
     assert rows["v04_acceptance"].evidence == "identity_decoy_specificity"
 
 
-def test_v04_acceptance_fails_when_decoy_rejected_count_fails() -> None:
+def test_acceptance_fails_when_decoy_rejected_count_fails() -> None:
     result = _result_with_rows(
         (
             *_passing_sidecar_rows(),
@@ -245,7 +245,7 @@ def test_v04_acceptance_fails_when_decoy_rejected_count_fails() -> None:
         )
     )
 
-    report = evaluate_v04_acceptance(
+    report = evaluate_acceptance(
         result,
         controls_manifest=Path("identity_coherence_controls_manifest.reviewed.tsv"),
     )

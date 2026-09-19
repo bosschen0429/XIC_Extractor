@@ -63,10 +63,10 @@ from xic_extractor.execution_runtime_owner import (
 _TEST_CONTRACT = _mint_artifact_semantic_contract_ref(
     owner_namespace="xic_extractor.test_execution_engine",
     semantic_role="test_partition_artifact",
-    schema_version="test_v1",
+    schema_version="test",
     validation_status="diagnostic_only",
     media_type="application/json",
-    serialization_format="canonical-json-utf8-lf-v1",
+    serialization_format="canonical-json-utf8-lf",
 )
 
 
@@ -285,7 +285,7 @@ class MockAdapter:
                 resource_key=f"acquisition-session:{p.partition_key}:phase",
                 worker_key=f"worker:{p.partition_key}",
                 source_reference="test-src",
-                compatibility_token="test:v1",
+                compatibility_token="test",
                 owner_conditional=True,
             )
             for p in self._partitions

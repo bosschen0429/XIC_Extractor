@@ -128,7 +128,7 @@ def test_owner_backfill_shared_peak_facts_preserve_projection_and_work_telemetry
     assert observation.physical_evaluation is not None
     forged_question = replace(
         observation.physical_evaluation.question,
-        selection_subject_id="owner-backfill-subject.v1:" + "0" * 64,
+        selection_subject_id="owner-backfill-subject:" + "0" * 64,
     )
     with pytest.raises(ValueError, match="physical selection subject"):
         replace(

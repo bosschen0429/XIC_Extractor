@@ -46,7 +46,7 @@ include = ["gui*", "scripts*", "tools*", "xic_extractor*", "xic_inspector*"]
 exclude = ["tests*"]
 
 [tool.setuptools.package-data]
-"xic_extractor.alignment" = ["data/quantitative_projection_authority_v1.json", "*.pyx"]
+"xic_extractor.alignment" = ["data/quantitative_projection_authority.json", "*.pyx"]
 "xic_extractor.presets.data" = ["*.toml"]
 "xic_extractor.discovery" = ["data/*"]
 

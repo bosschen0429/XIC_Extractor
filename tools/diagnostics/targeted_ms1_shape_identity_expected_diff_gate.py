@@ -42,7 +42,7 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         type=Path,
         required=True,
         help=(
-            "Required targeted_ms1_shape_identity_v0 support TSV. Supported "
+            "Required targeted_ms1_shape_identity support TSV. Supported "
             "sample/target keys must exactly match the long-row diff."
         ),
     )

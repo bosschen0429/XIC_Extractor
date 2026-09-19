@@ -147,7 +147,7 @@ def test_changed_physical_query_evaluates_once_and_preserves_support(
         raw,
         group_discovery_seeds(seeds, settings=settings),
         acquisition_source=source,
-        run_spec_id="processing-run.v1:" + "0" * 64,
+        run_spec_id="processing-run:" + "0" * 64,
         settings=settings,
         peak_config=peak_config,
         signal_processing_profile=profile,
@@ -171,7 +171,7 @@ def test_changed_physical_query_evaluates_once_and_preserves_support(
                 request_context_rt_end_min=(
                     record.evaluation.question.context_rt_end_min
                 ),
-                selection_policy_version="baseline_peak_contains_query_v2",
+                selection_policy_version="baseline_peak_contains_query",
             ),
         )
         for record in discovery.physical_evaluations
@@ -275,11 +275,11 @@ def test_changed_physical_query_evaluates_once_and_preserves_support(
         assert binding.physical_evaluation is capture.physical_evaluation
         assert (
             binding.source_physical_evaluation.question.selection_policy_version
-            == "baseline_peak_contains_query_v2"
+            == "baseline_peak_contains_query"
         )
         assert (
             capture.physical_evaluation.question.selection_policy_version
-            == "baseline_peak_contains_query_v7"
+            == "baseline_peak_contains_query"
         )
         assert binding.acquisition_source_id == source.acquisition_source_id
         assert (
@@ -317,7 +317,7 @@ def test_changed_physical_query_evaluates_once_and_preserves_support(
         assert replay.physical_evaluation == record.evaluation
         assert (
             replay.physical_evaluation.question.selection_policy_version
-            == "baseline_peak_contains_query_v2"
+            == "baseline_peak_contains_query"
         )
         if expected.state == "unavailable":
             assert capture.selected_hypothesis is None
@@ -379,7 +379,7 @@ def test_changed_physical_query_evaluates_once_and_preserves_support(
             trace=replace(
                 capture.trace,
                 rt_min=capture.trace.rt_min - 0.01,
-                acquisition_source_id="xic.acquisition-source.v1:" + "0" * 64,
+                acquisition_source_id="xic.acquisition-source:" + "0" * 64,
             ),
         )
 
@@ -943,7 +943,7 @@ def test_adapter_supports_adjacent_physical_peaks_with_interior_scans(
         raw,
         group_discovery_seeds(seeds, settings=settings),
         acquisition_source=fixture.owners.request.acquisition_sources[0],
-        run_spec_id="processing-run.v1:" + "0" * 64,
+        run_spec_id="processing-run:" + "0" * 64,
         settings=settings,
         peak_config=peak_config,
         signal_processing_profile=profile,
@@ -1059,8 +1059,8 @@ def test_adapter_preserves_supported_and_observation_only_physical_peaks(
             sample_assessments=((fixture.sample("S1"), assessment),),
             alignment_config=AlignmentConfig(),
             trajectory_policy=ModeTrackTrajectoryPolicy(
-                trajectory_policy_version="anchor-trajectory-v1",
-                band_policy_version="fixed-band-v1",
+                trajectory_policy_version="anchor-trajectory",
+                band_policy_version="fixed-band",
                 prediction_half_width_min=0.1,
                 max_interpolation_gap=0,
                 max_extrapolation_gap=0,

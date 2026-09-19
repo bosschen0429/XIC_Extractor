@@ -62,19 +62,19 @@ PRODUCTIZATION_STATUS_ANCHOR_PATH = (
     "docs/superpowers/productization/status/cc-framework-improvements-productization.md"
 )
 PRODUCTIZATION_SCHEMA_REL = (
-    "docs/superpowers/schemas/productization_control_plane_schema.v3.json"
+    "docs/superpowers/schemas/productization_control_plane_schema.json"
 )
 PRODUCTIZATION_STATUS_INDEX_REL = (
-    "docs/superpowers/validation/productization_status_index_v1.tsv"
+    "docs/superpowers/validation/productization_status_index.tsv"
 )
 PRODUCTIZATION_AUTHORITY_MANIFEST_REL = (
-    "docs/superpowers/schemas/productization_authority_manifest.v1.json"
+    "docs/superpowers/schemas/productization_authority_manifest.json"
 )
 QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_SCHEMA_REL = (
-    "docs/superpowers/schemas/quantitative_projection_authority_manifest_schema.v1.json"
+    "docs/superpowers/schemas/quantitative_projection_authority_manifest_schema.json"
 )
 QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_REL = (
-    "docs/superpowers/schemas/quantitative_projection_authority_manifest.v1.json"
+    "docs/superpowers/schemas/quantitative_projection_authority_manifest.json"
 )
 PRODUCTIZATION_CONTROL_PLANE_SOURCE_HASH = (
     "97778ff9fb5c316ac58ee5f34964de8f13e9dd5f7dfd18e04e0cb6490fa213e5"
@@ -370,8 +370,8 @@ DOC_ROUTING_MECHANICAL_REFERRER_PREFIXES = (
 DOC_ROUTING_SCHEMAS_INDEX_PATH = "docs/superpowers/schemas/README.md"
 DOC_ROUTING_AUTHORITY_REFERRER_PATHS = frozenset(
     {
-        "docs/superpowers/validation/productization_status_index_v1.tsv",
-        "docs/superpowers/schemas/productization_authority_manifest.v1.json",
+        "docs/superpowers/validation/productization_status_index.tsv",
+        "docs/superpowers/schemas/productization_authority_manifest.json",
         QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_REL,
     }
 )

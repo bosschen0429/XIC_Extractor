@@ -41,7 +41,7 @@ def test_repair_owned_physical_observation_is_non_training_assignment_input(
     scenario = _scenario(tmp_path)
     sample = scenario.fixture.sample("target")
     physical_id = typed_identity_digest(
-        "physical-facts.v1:",
+        "physical-facts:",
         canonical_identity_basis_bytes(
             {"fixture": "mode-track-repair-assignment-observation"}
         ),
@@ -114,8 +114,8 @@ def test_bootstrap_returns_fit_once_source_closing_existing_values(
             sample_assessments=sample_assessments,
             alignment_config=AlignmentConfig(anchor_min_seed_events=1),
             trajectory_policy=ModeTrackTrajectoryPolicy(
-                trajectory_policy_version="anchor-trajectory-v1",
-                band_policy_version="fixed-band-v1",
+                trajectory_policy_version="anchor-trajectory",
+                band_policy_version="fixed-band",
                 prediction_half_width_min=0.1,
                 max_interpolation_gap=10,
                 max_extrapolation_gap=10,
@@ -213,8 +213,8 @@ def test_fit_once_source_rejects_batch_from_another_candidate_snapshot(
             sample_assessments=sample_assessments,
             alignment_config=AlignmentConfig(anchor_min_seed_events=1),
             trajectory_policy=ModeTrackTrajectoryPolicy(
-                trajectory_policy_version="anchor-trajectory-v1",
-                band_policy_version="fixed-band-v1",
+                trajectory_policy_version="anchor-trajectory",
+                band_policy_version="fixed-band",
                 prediction_half_width_min=0.1,
                 max_interpolation_gap=10,
                 max_extrapolation_gap=10,

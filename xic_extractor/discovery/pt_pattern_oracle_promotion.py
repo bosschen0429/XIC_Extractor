@@ -25,11 +25,11 @@ from xic_extractor.tabular_io import (
     write_delimited_rows,
 )
 
-SCHEMA_VERSION = "pt_pattern_oracle_promotion_packet.v2"
+SCHEMA_VERSION = "pt_pattern_oracle_promotion_packet"
 READINESS_TIER = "diagnostic_only"
 EVIDENCE_OWNER = "xic_extractor.discovery.pt_pattern_oracle_promotion"
 AUTHORITY_SCOPE = "bounded_manual_oracle_only"
-BUNDLE_MANIFEST_VERSION = "pt_pattern_oracle_promotion_bundle.v1"
+BUNDLE_MANIFEST_VERSION = "pt_pattern_oracle_promotion_bundle"
 PROMOTION_PACKET_FILE_NAME = "pt_pattern_oracle_promotion_packet.csv"
 PROMOTION_SUMMARY_FILE_NAME = "pt_pattern_oracle_promotion_summary.json"
 

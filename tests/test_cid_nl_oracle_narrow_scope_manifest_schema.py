@@ -7,14 +7,14 @@ ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_PATH = (
     ROOT
     / "docs/superpowers/schemas/"
-    "cid_nl_oracle_narrow_scope_manifest_schema.v1.json"
+    "cid_nl_oracle_narrow_scope_manifest_schema.json"
 )
 
 
 def test_narrow_scope_schema_forbids_post_hoc_scope_selection() -> None:
     schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
 
-    assert schema["schema_version"] == "cid_nl_oracle_narrow_scope_manifest_schema_v1"
+    assert schema["schema_version"] == "cid_nl_oracle_narrow_scope_manifest_schema"
     assert schema["validation_status"] == "diagnostic_only"
 
     required = set(schema["required_columns"])

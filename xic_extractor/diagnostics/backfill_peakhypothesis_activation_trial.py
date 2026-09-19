@@ -19,7 +19,7 @@ from xic_extractor.diagnostics.diagnostic_io import (
     write_tsv,
 )
 
-SCHEMA_VERSION = "backfill_peakhypothesis_activation_trial_v1"
+SCHEMA_VERSION = "backfill_peakhypothesis_activation_trial"
 POLICY_ID = "same_peak_normal_peak_override"
 
 NORMAL_DECISION_REQUIRED_COLUMNS = (

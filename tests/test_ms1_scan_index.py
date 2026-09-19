@@ -230,7 +230,7 @@ def test_ms1_scan_index_reader_rejects_missing_required_array(tmp_path: Path) ->
     path = tmp_path / "missing.npz"
     np.savez(
         path,
-        schema_version=np.asarray(["ms1_scan_index_npz_v1"]),
+        schema_version=np.asarray(["ms1_scan_index_npz"]),
         scan_number=np.asarray([1]),
         rt=np.asarray([1.0]),
         offsets=np.asarray([0, 1]),
@@ -247,7 +247,7 @@ def test_ms1_scan_index_reader_rejects_unordered_scan_metadata(
     path = tmp_path / "unordered.npz"
     np.savez(
         path,
-        schema_version=np.asarray(["ms1_scan_index_npz_v1"]),
+        schema_version=np.asarray(["ms1_scan_index_npz"]),
         scan_number=np.asarray([2, 1]),
         rt=np.asarray([1.1, 1.0]),
         offsets=np.asarray([0, 1, 2]),
@@ -293,7 +293,7 @@ def test_ms1_scan_index_reader_rejects_non_integer_structure_arrays(
     path = tmp_path / "invalid-integers.npz"
     np.savez(
         path,
-        schema_version=np.asarray(["ms1_scan_index_npz_v1"]),
+        schema_version=np.asarray(["ms1_scan_index_npz"]),
         scan_number=field_values["scan_number"],
         rt=np.asarray([1.0]),
         offsets=field_values["offsets"],
@@ -313,7 +313,7 @@ def test_ms1_scan_index_reader_rejects_non_real_rt_arrays(
     path = tmp_path / "invalid-rt.npz"
     np.savez(
         path,
-        schema_version=np.asarray(["ms1_scan_index_npz_v1"]),
+        schema_version=np.asarray(["ms1_scan_index_npz"]),
         scan_number=np.asarray([1]),
         rt=rt_values,
         offsets=np.asarray([0, 1]),

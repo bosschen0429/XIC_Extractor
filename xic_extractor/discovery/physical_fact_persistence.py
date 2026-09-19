@@ -53,7 +53,7 @@ from xic_extractor.validation_primitives import (
 )
 from xic_extractor.xic_models import XICRequest, XICTrace
 
-DISCOVERY_PHYSICAL_FACT_SIDECAR_SCHEMA_VERSION = "discovery_physical_fact_sidecar_v2"
+DISCOVERY_PHYSICAL_FACT_SIDECAR_SCHEMA_VERSION = "discovery_physical_fact_sidecar"
 
 _ROOT_KEYS = (
     "schema_version",
@@ -100,7 +100,7 @@ def _retained_signal_content(evaluation: PhysicalPeakEvaluation) -> dict | None:
     if signal is None:
         return None
     return {
-        "schema_version": "retained_prepared_signal_v1",
+        "schema_version": "retained_prepared_signal",
         "prepared_signal_id": signal.projection.prepared_signal_id,
         "profile_id": signal.profile.profile_id,
         **{
@@ -129,7 +129,7 @@ def _restore_retained_signal(
         label="retained_prepared_signal",
     )
     if (
-        signal["schema_version"] != "retained_prepared_signal_v1"
+        signal["schema_version"] != "retained_prepared_signal"
         or signal["prepared_signal_id"] != evaluation.prepared.prepared_signal_id
         or signal["profile_id"] != profile.profile_id
     ):
@@ -366,10 +366,7 @@ def _read_discovery_physical_fact_records_direct(
     expected_manifest = tuple(expected_work_manifest)
     _validate_manifest(expected_manifest, acquisition_input=expected_acquisition_input)
     _require_keys(root, _ROOT_KEYS, label="Discovery physical sidecar")
-    if root["schema_version"] not in {
-        DISCOVERY_PHYSICAL_FACT_SIDECAR_SCHEMA_VERSION,
-        "discovery_physical_fact_sidecar_v1",
-    }:
+    if root["schema_version"] != DISCOVERY_PHYSICAL_FACT_SIDECAR_SCHEMA_VERSION:
         raise ValueError("unsupported Discovery physical sidecar schema_version")
     run_spec_value = _mapping(root["run_spec"], label="run_spec")
     persisted_spec = deserialize_processing_run_spec(
@@ -405,9 +402,7 @@ def _read_discovery_physical_fact_records_direct(
             record,
             _RECORD_KEYS[:3]
             + ("candidate_links", "retained_prepared_signal")
-            + _RECORD_KEYS[3:]
-            if root["schema_version"] == DISCOVERY_PHYSICAL_FACT_SIDECAR_SCHEMA_VERSION
-            else _RECORD_KEYS,
+            + _RECORD_KEYS[3:],
             label="record",
         )
         if _text(record["candidate_id"], field="candidate_id") != item.candidate_id:
@@ -470,7 +465,7 @@ def _read_discovery_physical_fact_records_direct(
             ("schema_version", "profile", "trace", "evaluation"),
             label="physical_evaluation",
         )
-        if phys_val["schema_version"] != "physical_peak_evaluation_persistence_v1":
+        if phys_val["schema_version"] != "physical_peak_evaluation_persistence":
             raise ValueError("unsupported physical evaluation persistence schema")
         profile_envelope = _mapping(phys_val["profile"], label="profile")
         _require_keys(
@@ -551,10 +546,7 @@ def _deserialize_discovery_physical_fact_sidecar_from_root(
     expected_manifest = tuple(expected_work_manifest)
     _validate_manifest(expected_manifest, acquisition_input=expected_acquisition_input)
     _require_keys(root, _ROOT_KEYS, label="Discovery physical sidecar")
-    if root["schema_version"] not in {
-        DISCOVERY_PHYSICAL_FACT_SIDECAR_SCHEMA_VERSION,
-        "discovery_physical_fact_sidecar_v1",
-    }:
+    if root["schema_version"] != DISCOVERY_PHYSICAL_FACT_SIDECAR_SCHEMA_VERSION:
         raise ValueError("unsupported Discovery physical sidecar schema_version")
     run_spec_value = _mapping(root["run_spec"], label="run_spec")
     persisted_spec = deserialize_processing_run_spec(
@@ -590,9 +582,7 @@ def _deserialize_discovery_physical_fact_sidecar_from_root(
             record,
             _RECORD_KEYS[:3]
             + ("candidate_links", "retained_prepared_signal")
-            + _RECORD_KEYS[3:]
-            if root["schema_version"] == DISCOVERY_PHYSICAL_FACT_SIDECAR_SCHEMA_VERSION
-            else _RECORD_KEYS,
+            + _RECORD_KEYS[3:],
             label="record",
         )
         if _text(record["candidate_id"], field="candidate_id") != item.candidate_id:

@@ -65,16 +65,16 @@ if TYPE_CHECKING:
         ModeTrackFinalAttemptResult,
     )
 
-_FINAL_RECEIPT_PREFIX = "xic.cross-sample-final-receipt.v1:"
-_NONMEMBER_REPAIR_RESULT_PREFIX = "xic.cross-sample-nonmember-repair.v1:"
+_FINAL_RECEIPT_PREFIX = "xic.cross-sample-final-receipt:"
+_NONMEMBER_REPAIR_RESULT_PREFIX = "xic.cross-sample-nonmember-repair:"
 _POST_REPAIR_MODE_TRACK_INPUT_PREFIX = (
-    "xic.cross-sample-post-repair-mode-track-input.v1:"
+    "xic.cross-sample-post-repair-mode-track-input:"
 )
-_POST_REPAIR_POPULATION_PREFIX = "xic.cross-sample-post-repair-population.v1:"
-_POST_REPAIR_APPLICATION_PREFIX = "xic.cross-sample-post-repair-application.v1:"
-_EXISTING_MEMBER_REPAIR_RESULT_PREFIX = "xic.cross-sample-existing-member-repair.v1:"
-_GROUP_MEMBER_SUBJECT_PREFIX = "xic.group-member-subject.v1:"
-_TRAJECTORY_INPUT_PREFIX = "xic.mode-track-trajectory-input.v1:"
+_POST_REPAIR_POPULATION_PREFIX = "xic.cross-sample-post-repair-population:"
+_POST_REPAIR_APPLICATION_PREFIX = "xic.cross-sample-post-repair-application:"
+_EXISTING_MEMBER_REPAIR_RESULT_PREFIX = "xic.cross-sample-existing-member-repair:"
+_GROUP_MEMBER_SUBJECT_PREFIX = "xic.group-member-subject:"
+_TRAJECTORY_INPUT_PREFIX = "xic.mode-track-trajectory-input:"
 _FINAL_RECEIPT_MINT_TOKEN = object()
 _NONMEMBER_REPAIR_RESULT_MINT_TOKEN = object()
 _POST_REPAIR_MODE_TRACK_INPUT_MINT_TOKEN = object()
@@ -964,16 +964,16 @@ def _validate_final_repair_binding(
             return
         if type(receipt) is not ObservationRepairReceipt or repair_epoch != 1:
             raise CrossSampleReconciliationContractError(
-                "legacy final receipt requires one exact repair receipt"
+                "subject-scoped final receipt requires one exact repair receipt"
             )
         _validate_repair_receipt(receipt)
         if receipt.subject.successor_application != post_application:
             raise CrossSampleReconciliationContractError(
-                "legacy final receipt crosses post-MT0 application"
+                "subject-scoped final receipt crosses post-MT0 application"
             )
         if state.repair_authorization_id is not None:
             raise CrossSampleReconciliationContractError(
-                "legacy final receipt cannot invent repair authorization"
+                "subject-scoped final receipt cannot invent repair authorization"
             )
         return
     if type(terminal) is not ObservationRepairTerminalResult:
@@ -1242,7 +1242,7 @@ def _mint_repaired_candidate_member(
     sample_identity_id = candidate.sample_identity.identity.sample_identity_id
     basis = canonical_identity_basis_bytes(
         {
-            "schema_version": "group_member_subject_v1",
+            "schema_version": "group_member_subject",
             "processing_request_id": request_id,
             "canonical_sample_identity_id": sample_identity_id,
             "subject": {
@@ -1388,7 +1388,7 @@ def _post_repair_population_id(
 ) -> str:
     basis = canonical_identity_basis_bytes(
         {
-            "schema_version": "cross_sample_post_repair_population_v1",
+            "schema_version": "cross_sample_post_repair_population",
             "groups": [_group_reference(group) for group in population],
         }
     )
@@ -1405,7 +1405,7 @@ def _post_repair_application_id(
     )
     basis = canonical_identity_basis_bytes(
         {
-            "schema_version": "cross_sample_post_repair_application_v1",
+            "schema_version": "cross_sample_post_repair_application",
             "application": _application_reference(application),
         }
     )
@@ -1427,7 +1427,7 @@ def _existing_member_repair_result_id(
 ) -> str:
     basis = canonical_identity_basis_bytes(
         {
-            "schema_version": "cross_sample_existing_member_repair_v1",
+            "schema_version": "cross_sample_existing_member_repair",
             "processing_owners": _processing_owners_reference(processing_owners),
             "repair_receipt_id": repair_receipt_id,
             "repair_epoch": repair_epoch,
@@ -1465,7 +1465,7 @@ def _post_repair_mode_track_input_basis(
 ) -> bytes:
     return canonical_identity_basis_bytes(
         {
-            "schema_version": "cross_sample_post_repair_mode_track_input_v3",
+            "schema_version": "cross_sample_post_repair_mode_track_input",
             "processing_request_id": processing_request_id,
             "processing_attempt_id": processing_attempt_id,
             "processing_owners": _processing_owners_reference(processing_owners),
@@ -1664,7 +1664,7 @@ def _nonmember_repair_result_basis(
         )
     return canonical_identity_basis_bytes(
         {
-            "schema_version": "cross_sample_nonmember_repair_v1",
+            "schema_version": "cross_sample_nonmember_repair",
             "processing_request_id": processing_request_id,
             "authorization_id": candidate.authorization_id,
             "candidate_id": candidate.candidate_id,
@@ -2209,46 +2209,9 @@ def _final_receipt_basis(
     final_application: CrossSampleSuccessorApplication,
     final_population: tuple[CrossSampleGroupIdentity, ...],
 ) -> bytes:
-    if (
-        repair_terminal is None
-        and repair_receipt is not None
-        and mode_track_final_attempt is None
-    ):
-        if repair_receipt is None:
-            raise CrossSampleReconciliationContractError(
-                "legacy final basis requires its exact repair receipt"
-            )
-        return canonical_identity_basis_bytes(
-            {
-                "schema_version": "cross_sample_final_receipt_v1",
-                "processing_request_id": processing_request_id,
-                "post_mt0_application": _application_reference(post_mt0_application),
-                "repair_receipt_id": repair_receipt.receipt_id,
-                "repair_epoch": repair_epoch,
-                "cs2_state": {
-                    "processing_request_id": cs2_state.processing_request_id,
-                    "population": [
-                        _group_reference(group) for group in cs2_state.population
-                    ],
-                    "repair_receipt_id": cs2_state.repair_receipt_id,
-                    "repair_epoch": cs2_state.repair_epoch,
-                    "repair_outcome": cs2_state.repair_outcome,
-                    "member_subject_ids": list(cs2_state.member_subject_ids),
-                    "trajectory_input_id": cs2_state.trajectory_input_id,
-                    "trajectory_changed": cs2_state.trajectory_changed,
-                },
-                "pre_trajectory_input_id": pre_trajectory_input_id,
-                "post_trajectory_input_id": post_trajectory_input_id,
-                "mode_track_proposal": _proposal_reference(mode_track_proposal),
-                "final_application": _application_reference(final_application),
-                "final_population": [
-                    _group_reference(group) for group in final_population
-                ],
-            }
-        )
     return canonical_identity_basis_bytes(
         {
-            "schema_version": "cross_sample_final_receipt_v2",
+            "schema_version": "cross_sample_final_receipt",
             "processing_request_id": processing_request_id,
             "post_mt0_application": _application_reference(post_mt0_application),
             "repair_terminal": _repair_terminal_reference(repair_terminal),

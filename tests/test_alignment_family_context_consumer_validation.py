@@ -41,7 +41,7 @@ def _mint(
     return mint_family_context_ref(
         mz_interval=mz_interval,
         rt_interval=rt_interval,
-        context_policy_version="mode-track-family-context-v1",
+        context_policy_version="mode-track-family-context",
         source_lineage_refs=("source-packet:abc", "trace-query:def"),
         mode_tracks=tracks,
     )

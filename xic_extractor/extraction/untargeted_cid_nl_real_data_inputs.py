@@ -9,7 +9,7 @@ from pathlib import Path
 
 from xic_extractor.config import ExtractionConfig
 from xic_extractor.discovery.batch_contract import (
-    DISCOVERY_CANDIDATE_ARTIFACT_SCHEMA_VERSIONS,
+    DISCOVERY_CANDIDATE_ARTIFACT_SCHEMA_VERSION,
     DiscoveryCandidateUniverseReceipt,
     validate_discovery_candidate_universe,
 )
@@ -57,18 +57,18 @@ from xic_extractor.sample_metadata import (
 )
 
 UNTARGETED_CID_NL_PROCESSING_INPUT_SCHEMA_VERSION = (
-    "untargeted_cid_nl_real_data_inputs_v2"
+    "untargeted_cid_nl_real_data_inputs"
 )
 UNTARGETED_CID_NL_PROCESSING_ALGORITHM_VERSION = (
-    "untargeted_cid_nl_real_data_algorithm_v1"
+    "untargeted_cid_nl_real_data_algorithm"
 )
 UNTARGETED_CID_NL_PROCESSING_CONTRACT_VERSION = (
-    "untargeted_cid_nl_real_data_contract_v2"
+    "untargeted_cid_nl_real_data_contract"
 )
 DISCOVERY_SETTINGS_INPUT_KEY = "current_discovery_settings"
-DISCOVERY_SETTINGS_SCHEMA_VERSION = "current_discovery_settings_v1"
+DISCOVERY_SETTINGS_SCHEMA_VERSION = "current_discovery_settings"
 CANDIDATE_UNIVERSE_INPUT_KEY = "current_discovery_candidate_universe"
-CANDIDATE_UNIVERSE_SCHEMA_VERSION = "current_discovery_candidate_universe_v2"
+CANDIDATE_UNIVERSE_SCHEMA_VERSION = "current_discovery_candidate_universe"
 PEAK_SETTINGS_INPUT_KEY = "peak_detection_settings"
 
 
@@ -376,7 +376,7 @@ def validate_candidate_universe_payload(
         "schema_version",
         "samples",
     }:
-        raise IdentityContractError("candidate universe must use the exact v2 envelope")
+        raise IdentityContractError("candidate universe must use the exact envelope")
     if payload.get("schema_version") != CANDIDATE_UNIVERSE_SCHEMA_VERSION:
         raise IdentityContractError("candidate universe schema is unsupported")
     samples = payload.get("samples")
@@ -396,7 +396,7 @@ def validate_candidate_universe_payload(
             "acquisition_source_id",
         }:
             raise IdentityContractError(
-                "candidate universe entry must use the exact v2 shape"
+                "candidate universe entry must use the exact current shape"
             )
         stem = entry.get("sample_stem")
         count = entry.get("candidate_count")
@@ -423,18 +423,18 @@ def validate_candidate_universe_payload(
         if (
             not isinstance(entry.get("discovery_receipt_id"), str)
             or not entry["discovery_receipt_id"].startswith(
-                "xic.discovery-candidate-universe.v1:"
+                "xic.discovery-candidate-universe:"
             )
             or not isinstance(entry.get("candidate_artifact_schema_version"), str)
             or entry["candidate_artifact_schema_version"]
-            not in DISCOVERY_CANDIDATE_ARTIFACT_SCHEMA_VERSIONS
+            != DISCOVERY_CANDIDATE_ARTIFACT_SCHEMA_VERSION
             or not _is_digest(entry.get("candidate_artifact_sha256"))
             or isinstance(entry.get("candidate_artifact_byte_size"), bool)
             or not isinstance(entry.get("candidate_artifact_byte_size"), int)
             or entry["candidate_artifact_byte_size"] < 0
             or not isinstance(entry.get("acquisition_source_id"), str)
             or not entry["acquisition_source_id"].startswith(
-                "xic.acquisition-source.v1:"
+                "xic.acquisition-source:"
             )
         ):
             raise IdentityContractError(

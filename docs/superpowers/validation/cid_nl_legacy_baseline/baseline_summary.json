@@ -1,0 +1,82 @@
+{
+  "authority": {
+    "control_plane_update_required": false,
+    "product_authority_granted": false,
+    "reason": "characterization_only_no_product_or_public_behavior_change"
+  },
+  "baseline_id": "cid_nl_legacy_baseline_6d3b18ef_8raw",
+  "canonical_artifact_set": {
+    "future_comparison_target": "run_1_output_artifact_set",
+    "output_inventory_sha256": "CC25A6A731C822F9147FECAB5949EAABB79D0415FCA67436365CEC035B4293B1",
+    "publication_status": "sealed",
+    "source_run": "run_1",
+    "source_run_role": "canonical_candidate"
+  },
+  "comparator_contract": {
+    "decision_states": [
+      "GO",
+      "KILL",
+      "NARROW"
+    ],
+    "dimensions": [
+      "dependency_crossings",
+      "duplicate_authorities",
+      "raw_open_count",
+      "vendor_chromatogram_call_count",
+      "extracted_point_count",
+      "elapsed_seconds",
+      "peak_memory_bytes",
+      "cache_rebuild_cost",
+      "lineage_completeness",
+      "public_surface_blast_radius",
+      "change_cost",
+      "unresolved_backend_specific_branches"
+    ],
+    "schema_version": "cid_nl_strangler_comparator_contract"
+  },
+  "config_inventory_sha256": "E09DFAEEBE854203E8191E403C0EB1B8E9312F041FE6D32B0EDD686AEEE1D408",
+  "deterministic_parity": {
+    "blockers": [],
+    "normalized_only_artifacts": [
+      "baseline/output/method_manifest.json",
+      "final/output/method_manifest.json"
+    ],
+    "status": "pass"
+  },
+  "environment_inventory_sha256": "1D499A77F72D456FE3FC0195C5F06FAD66BE164F23BE5BAC9C0D91BCCA47C57E",
+  "execution_observations": {
+    "interpretation": "reproducibility observations only; two runs do not establish a performance baseline",
+    "run_1_elapsed_seconds": 67.300027,
+    "run_2_elapsed_seconds": 64.827012
+  },
+  "externalized_artifacts": {
+    "canonical_file_count": 12,
+    "comparison_sha256": "18CB6494426F2B19BFEFBD1E5373962496E9ADB46730DF2F06B2D0024CA0C662",
+    "config_file_count": 2,
+    "evidence_file_count": 8,
+    "retention_rule": "retain run_1 artifact set plus both receipts and comparison; run_2 output is verification-only",
+    "root": "local_validation_artifacts/externalized_superpowers_validation/cid_nl_legacy_baseline/baseline_6d3b18ef_provenance",
+    "run_1_receipt_sha256": "1E9BDDCB95B3A175676EC8D536DFA2E9FCE9BFE71413ACDC85DD6FFEEA39D0F5",
+    "run_2_receipt_sha256": "2498BB27C19A0C2838ED3E8B04031359A2A27E6BA3E4CBE09933FB96BDB48D1C",
+    "stable_copy_verified": true
+  },
+  "legacy_characterization_limits": [
+    "This baseline freezes observed legacy behavior; it is not scientific truth.",
+    "The current targeted method manifest does not hash RAW or DLL directory contents and declares exact replay not ready.",
+    "The current targeted CLI does not expose RAW opens, vendor calls, extracted points, peak memory, or cache rebuild cost.",
+    "Existing raw_scan_indices are trace-array offsets, not vendor-native scan identifiers.",
+    "The in-repo CSV-to-workbook path is not proof of the external downstream analysis reader required by issue 130.",
+    "The default limited MS1-shape workflow is multi-stage (baseline, support generation, final); receipts must preserve those stages rather than flatten them.",
+    "The 2026-07-22 pair predates pre/post execution snapshots and the durable retained-copy verifier; it remains candidate evidence and is not the canonical comparison target."
+  ],
+  "raw_file_count": 8,
+  "raw_inventory_sha256": "7ED3AF4F27027D467803E46E250BE393BCA018473ADE7E7BECBA1493BB76F7C3",
+  "schema_version": "targeted_legacy_baseline_summary",
+  "software_build_inventory_sha256": "D1F50033C1C67CAE681F4F7875E7986E50D3B3D6106E1A64081DC4CEE8FF848A",
+  "source_commit_sha": "6d3b18efd88971ffb6d96412a8d8ee47e8ed4742",
+  "source_dedicated_worktree": true,
+  "source_detached_head": true,
+  "source_worktree_clean": true,
+  "validation_status": "diagnostic_only",
+  "vendor_bridge_inventory_sha256": "5B0925A3BC251146A3F00FA49A5B9EFDC8A4B529A1B90B2DFA7FAE7E20366267"
+}

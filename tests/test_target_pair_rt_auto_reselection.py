@@ -1428,7 +1428,7 @@ def _model_result(
         public_projection={},
         evidence_sources=("ms1_trace", "role_aware_rt"),
         compatibility_oracle="legacy_peak_scoring_current_oracle",
-        policy_source="selected_hypothesis_model_selection_v1",
+        policy_source="selected_hypothesis_model_selection",
         product_switch_allowed=product_switch_allowed,
         evidence_comparison_policy="limited_evidence_shadow",
     )

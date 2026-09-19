@@ -36,7 +36,7 @@ from xic_extractor.peak_detection.signal_processing_profile import (
     deserialize_signal_processing_profile,
 )
 
-_PERSISTED_PHYSICAL_EVALUATION_SCHEMA = "physical_peak_evaluation_persistence_v1"
+_PERSISTED_PHYSICAL_EVALUATION_SCHEMA = "physical_peak_evaluation_persistence"
 _PERSISTED_PHYSICAL_KEYS = (
     "schema_version",
     "profile",
@@ -486,7 +486,7 @@ def _physical_evaluation_from_payload(
         segment_schema = _physical_text(
             segment["schema_version"], field="segment.schema_version"
         )
-        if segment_schema != "physical_segment_v1":
+        if segment_schema != "physical_segment":
             raise ValueError("unsupported physical segment schema")
         segments.append(
             PhysicalSegment(

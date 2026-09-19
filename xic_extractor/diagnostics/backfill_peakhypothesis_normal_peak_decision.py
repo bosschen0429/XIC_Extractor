@@ -21,7 +21,7 @@ from xic_extractor.diagnostics.diagnostic_io import (
     write_tsv,
 )
 
-SCHEMA_VERSION = "backfill_peakhypothesis_normal_peak_decision_v1"
+SCHEMA_VERSION = "backfill_peakhypothesis_normal_peak_decision"
 NORMAL_PEAK_SHAPE_DEFINITION = (
     "gaussian15_asls_residual_selected_shape_context_single_complete_unimodal_peak;"
     "raw_spikes_neighbor_contact_family_multiplet_not_blockers"

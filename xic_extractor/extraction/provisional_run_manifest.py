@@ -44,7 +44,7 @@ from xic_extractor.processing_identity import (
 )
 
 PROVISIONAL_RUN_MANIFEST_SCHEMA_VERSION = (
-    "untargeted_provisional_matrix_publication_envelope_v2"
+    "untargeted_provisional_matrix_publication_envelope"
 )
 
 _REVISION_PATTERN = re.compile(r"^[0-9a-f]{40}$")
@@ -452,7 +452,7 @@ def _build_manifest(
             "sample_metadata": _artifact_binding(
                 retained_sample_metadata,
                 root=root,
-                schema_version="sample_metadata_v1",
+                schema_version="sample_metadata",
                 binding_role="input:sample_metadata",
                 transaction_id=transaction_id,
                 fingerprint_sink=fingerprints,
@@ -573,7 +573,7 @@ def _validate_manifest_payload(
     _validate_binding(
         _required_mapping(inputs, "sample_metadata"),
         root=root,
-        expected_schema="sample_metadata_v1",
+        expected_schema="sample_metadata",
         binding_role="input:sample_metadata",
         fingerprint_registry=fingerprint_registry,
     )

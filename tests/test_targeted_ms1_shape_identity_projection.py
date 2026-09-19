@@ -65,7 +65,7 @@ def test_support_rows_fail_closed_for_non_support() -> None:
 def test_shape_identity_support_loader_requires_evidence_bearing_schema(
     tmp_path: Path,
 ) -> None:
-    path = tmp_path / "targeted_ms1_shape_identity_v0.tsv"
+    path = tmp_path / "targeted_ms1_shape_identity.tsv"
     minimal_columns = (
         "schema_version",
         "validation_label",
@@ -93,7 +93,7 @@ def test_shape_identity_support_loader_requires_evidence_bearing_schema(
 def test_shape_identity_support_loader_rejects_duplicate_supported_keys(
     tmp_path: Path,
 ) -> None:
-    path = tmp_path / "targeted_ms1_shape_identity_v0.tsv"
+    path = tmp_path / "targeted_ms1_shape_identity.tsv"
     path.write_text(
         "\t".join(_row().keys())
         + "\n"
@@ -114,7 +114,7 @@ def test_limited_default_policy_accepts_hmdc_and_medc_supports() -> None:
             _row(sample_name="S1", target_name="5-hmdC"),
             _row(sample_name="S2", target_name="5-medC"),
         ],
-        activation_policy="limited_5hmdc_5medc_v1",
+        activation_policy="limited_5hmdc_5medc",
     )
 
     assert [(support.sample_name, support.target_name) for support in supports] == [
@@ -124,17 +124,17 @@ def test_limited_default_policy_accepts_hmdc_and_medc_supports() -> None:
 
 
 def test_limited_default_policy_rejects_supported_rows_outside_scope() -> None:
-    with pytest.raises(ValueError, match="outside limited_5hmdc_5medc_v1 scope"):
+    with pytest.raises(ValueError, match="outside limited_5hmdc_5medc scope"):
         targeted_ms1_shape_identity_supports_from_rows(
             [_row(sample_name="S1", target_name="5-fC")],
-            activation_policy="limited_5hmdc_5medc_v1",
+            activation_policy="limited_5hmdc_5medc",
         )
 
 
 def test_shape_identity_support_loader_rejects_unknown_activation_policy(
     tmp_path: Path,
 ) -> None:
-    path = tmp_path / "targeted_ms1_shape_identity_v0.tsv"
+    path = tmp_path / "targeted_ms1_shape_identity.tsv"
     path.write_text(
         "\t".join(_row().keys())
         + "\n"
@@ -161,7 +161,7 @@ def _row(
     competing_peak_status: str = "no_competing_peak_observed",
 ) -> dict[str, str]:
     return {
-        "schema_version": "targeted_ms1_shape_identity_v0",
+        "schema_version": "targeted_ms1_shape_identity",
         "validation_label": "diagnostic_only",
         "decision_authority": "diagnostic_only_no_product_write",
         "sample_name": sample_name,

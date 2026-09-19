@@ -50,7 +50,7 @@ ARTIFACT_OWNER_NAMESPACE = "xic_extractor.discovery.pt_pattern_discovery_evidenc
 ARTIFACT_SEMANTIC_ROLE = "pt_pattern_discovery_evidence"
 ARTIFACT_VALIDATION_STATUS = "diagnostic_only"
 ARTIFACT_MEDIA_TYPE = "text/csv; charset=utf-8"
-ARTIFACT_SERIALIZATION_FORMAT = "pt_pattern_discovery_evidence_csv_v3"
+ARTIFACT_SERIALIZATION_FORMAT = "pt_pattern_discovery_evidence_csv"
 _SHA256_PATTERN = re.compile(r"[0-9a-f]{64}")
 _ARTIFACT_ESCAPED_FIELDS = frozenset({"trace_rule_reason"})
 

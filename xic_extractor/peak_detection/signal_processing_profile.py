@@ -5,8 +5,8 @@ import json
 from dataclasses import dataclass
 from typing import Any
 
-SIGNAL_PROCESSING_PROFILE_SCHEMA_VERSION = "signal_processing_profile_v1"
-SIGNAL_PROCESSING_PROFILE_ID_PREFIX = "signal-profile.v1:"
+SIGNAL_PROCESSING_PROFILE_SCHEMA_VERSION = "signal_processing_profile"
+SIGNAL_PROCESSING_PROFILE_ID_PREFIX = "signal-profile:"
 DEFAULT_SIGNAL_PROCESSING_WINDOW_POINTS = 15
 
 _PROFILE_KEYS = (
@@ -28,19 +28,19 @@ _PROFILE_KEYS = (
     "relative_shape_basis",
 )
 _FIXED_PROFILE_VALUES: dict[str, object] = {
-    "gaussian_sigma_rule": "window_points_div_6_v1",
-    "gaussian_kernel_normalization": "unit_sum_v1",
-    "gaussian_edge_policy": "zero_pad_same_v1",
+    "gaussian_sigma_rule": "window_points_div_6",
+    "gaussian_kernel_normalization": "unit_sum",
+    "gaussian_edge_policy": "zero_pad_same",
     "baseline_method": "asls",
     "baseline_lam": 100000,
     "baseline_p": 0.01,
     "baseline_n_iter": 10,
-    "physical_signal_formula": "gaussian_raw_minus_nonnegative_asls_raw_positive_v2",
-    "boundary_basis": "chrom_peak_segment_closed_subject_v1",
+    "physical_signal_formula": "gaussian_raw_minus_nonnegative_asls_raw_positive",
+    "boundary_basis": "chrom_peak_segment_closed_subject",
     "segment_universe_limit": 64,
-    "segment_selection_behavior": "closed_segment_contains_query_complete_context_v2",
-    "area_basis": "trapezoid_counts_seconds_on_canonical_signal_v1",
-    "relative_shape_basis": "own_max_canonical_signal_v1",
+    "segment_selection_behavior": "closed_segment_contains_query_complete_context",
+    "area_basis": "trapezoid_counts_seconds_on_canonical_signal",
+    "relative_shape_basis": "own_max_canonical_signal",
 }
 
 
@@ -51,21 +51,21 @@ class SignalProcessingProfile:
     method: str = "gaussian"
     window_points: int = DEFAULT_SIGNAL_PROCESSING_WINDOW_POINTS
     schema_version: str = SIGNAL_PROCESSING_PROFILE_SCHEMA_VERSION
-    gaussian_sigma_rule: str = "window_points_div_6_v1"
-    gaussian_kernel_normalization: str = "unit_sum_v1"
-    gaussian_edge_policy: str = "zero_pad_same_v1"
+    gaussian_sigma_rule: str = "window_points_div_6"
+    gaussian_kernel_normalization: str = "unit_sum"
+    gaussian_edge_policy: str = "zero_pad_same"
     baseline_method: str = "asls"
     baseline_lam: int = 100000
     baseline_p: float = 0.01
     baseline_n_iter: int = 10
-    physical_signal_formula: str = "gaussian_raw_minus_nonnegative_asls_raw_positive_v2"
-    boundary_basis: str = "chrom_peak_segment_closed_subject_v1"
+    physical_signal_formula: str = "gaussian_raw_minus_nonnegative_asls_raw_positive"
+    boundary_basis: str = "chrom_peak_segment_closed_subject"
     segment_universe_limit: int = 64
     segment_selection_behavior: str = (
-        "closed_segment_contains_query_complete_context_v2"
+        "closed_segment_contains_query_complete_context"
     )
-    area_basis: str = "trapezoid_counts_seconds_on_canonical_signal_v1"
-    relative_shape_basis: str = "own_max_canonical_signal_v1"
+    area_basis: str = "trapezoid_counts_seconds_on_canonical_signal"
+    relative_shape_basis: str = "own_max_canonical_signal"
 
     def __post_init__(self) -> None:
         if self.schema_version != SIGNAL_PROCESSING_PROFILE_SCHEMA_VERSION:

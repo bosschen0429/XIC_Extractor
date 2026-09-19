@@ -21,9 +21,9 @@ from xic_extractor.tabular_io import (
     write_tsv,
 )
 
-SCHEMA_VERSION = "cid_nl_feature_inclusion_gate_v1"
+SCHEMA_VERSION = "cid_nl_feature_inclusion_gate"
 DEFAULT_REVIEW_DIR = Path(
-    "output/validation/cid_nl_default_activation_gallery_review_v1",
+    "output/validation/cid_nl_default_activation_gallery_review",
 )
 DEFAULT_DIFFERENTIAL_REVIEW_TSV = (
     DEFAULT_REVIEW_DIR / "cid_nl_discovery_identity_differential_review.tsv"
@@ -40,11 +40,11 @@ DEFAULT_AI_ADJUDICATION_TSV = (
     / "cid_nl_differential_ai_adjudication.tsv"
 )
 DEFAULT_DECISIONS_TSV = Path(
-    "output/validation/cid_nl_default_activation_successor_authority_contract_v1/"
+    "output/validation/cid_nl_default_activation_successor_authority_contract/"
     "successor_authority_decisions.tsv",
 )
 DEFAULT_MANUAL_REVIEW_TSV = (
-    Path("docs/superpowers/validation/cid_nl_default_activation_gallery_review_v1")
+    Path("docs/superpowers/validation/cid_nl_default_activation_gallery_review")
     / "cid_nl_manual_feature_inclusion_review.tsv"
 )
 DEFAULT_OUTPUT_DIR = DEFAULT_REVIEW_DIR / "feature_inclusion_gate"
@@ -121,7 +121,7 @@ DECISION_REQUIRED_COLUMNS = (
     "candidate_baseline_values",
     "accepted_quant_value",
 )
-MANUAL_REVIEW_SCHEMA_VERSION = "cid_nl_manual_feature_inclusion_review_v1"
+MANUAL_REVIEW_SCHEMA_VERSION = "cid_nl_manual_feature_inclusion_review"
 MANUAL_REVIEW_REQUIRED_COLUMNS = (
     "schema_version",
     "transition_key",

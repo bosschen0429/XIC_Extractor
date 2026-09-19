@@ -102,29 +102,29 @@ labels until an adapter binds them to the contract above.
 | `target_list_snapshot_id` | Owner namespace + exact ordered target definitions + target-list schema/version | Mutable `list[Target]`, file path, truncated config hash, or unordered membership |
 | `processing_request_id` | Identified acquisition sources; normalized evidence queries and method constraints; algorithm/schema/contract versions | Output path, wall-clock time, worker count, cache hit/miss, or product publication result |
 | `processing_attempt_id` | A unique execution identity referencing exactly one request; optional retry/predecessor reference | Request digest alone or a reused timestamp |
-| `canonical_sample_identity` | Owner-minted stable namespace + `sample_metadata_v1` identity schema/version + owner-stable primary sample key | Acquisition source, filename/path, row order, display alias, injection order, role, batch, or exclusion state |
+| `canonical_sample_identity` | Owner-minted stable namespace + `sample_metadata` identity schema/version + owner-stable primary sample key | Acquisition source, filename/path, row order, display alias, injection order, role, batch, or exclusion state |
 | `immutable_review_record_ref` | Review-owner subject from canonical sample + stable target key; exact target definition + processing request; schema/version; canonical content digest; exact artifact bindings; optional same-subject predecessor and supersession reason | Bare sample/target labels, caller-provided ID/digest, mutable latest row, private rationale, or review truth inferred by lineage |
 | `evidence_artifact_id` | Producer attempt + semantic role + schema version + content digest | Filename, directory, row count, or generated timestamp alone |
 | owner-backed CID-NL `peak_hypothesis_id` | Hypothesis method + canonical sample identity + physical peak content ID + chromatographic-support artifact content ID | Target label, ISTD role/pairing, trace-group ID, selection status, attempt token, or output position |
 | kernel object reference | Request identity plus the normalized sample-local or cross-sample scientific identity | A bare ID whose meaning can change across requests |
 | `group_hypothesis_id` | Group identity schema + exact processing request + canonical-sorted identity-bearing members, each binding canonical sample to a tagged union of owner-backed hypothesis or physical-observation identity | `FAM...`, group ordinal, sample stem, area, display RT/m/z, ModeTrack anchor ID, or an untagged wrapper identity |
 | `untarget_row_key` | Untarget projection schema + finalized canonical group identity | Group/display label alone, center coordinates, current Matrix row number, or cross-request inference |
-| `delivery_cell_key` | Projection kind + `sample_metadata_v1`-owned stable sample identity + projection-owned target/row identity | Acquisition-source identity, display name alone, current row number, column position, `FAM000...` ordinal, or output path |
+| `delivery_cell_key` | Projection kind + `sample_metadata`-owned stable sample identity + projection-owned target/row identity | Acquisition-source identity, display name alone, current row number, column position, `FAM000...` ordinal, or output path |
 | `delivery_revision_id` | Cell key + producer attempt + selected decision/null payload + projection policy/contract version | Mutable “latest” state |
 | `delivery_seal_id` | Canonical sealed manifest content, including revision and output-artifact identities | Directory existence or writer exit code |
 
-The first executable identity slice uses `processing_identity_v1`: typed IDs
+The first executable identity slice uses `processing_identity`: typed IDs
 are SHA-256 digests over compact canonical JSON (`sort_keys`, UTF-8, finite JSON
 numbers), with a type/version prefix. Its current content boundary is:
 
 - an acquisition source binds the full-file SHA-256, byte size, acquisition
   format, and adapter-readable observation namespace; path and file stat values
   are used only to locate the file and detect mutation during hashing;
-- the configuration owner mints `xic.target-key.v1` from an explicitly supplied
+- the configuration owner mints `xic.target-key` from an explicitly supplied
   owner namespace plus normalized target label, and
-  `xic.target-definition.v1` from that key plus every effective `Target`
+  `xic.target-definition` from that key plus every effective `Target`
   field. It freezes those definitions in user-declared row order as
-  `xic.target-list-snapshot.v1`. Users may change the target list before a new
+  `xic.target-list-snapshot`. Users may change the target list before a new
   request; the owner never mutates an existing snapshot. A same-label content
   change preserves the stable key but creates a new definition and snapshot;
   reorder also creates a new snapshot because Targeted request and output order
@@ -154,19 +154,19 @@ numbers), with a type/version prefix. Its current content boundary is:
   collapse artifact-instance identity;
 - the first two producer adapters are deliberately diagnostic-only. The
   Targeted MS1-shape owner fixes the
-  `targeted_ms1_shape_identity_v0` UTF-8 TSV bytes and role; the Pt Discovery
-  evidence CSV owner fixes the `pt_pattern_discovery_evidence.v3` UTF-8 CSV
+  `targeted_ms1_shape_identity` UTF-8 TSV bytes and role; the Pt Discovery
+  evidence CSV owner fixes the `pt_pattern_discovery_evidence` UTF-8 CSV
   bytes and role. Callers cannot supply role/schema strings, and both owner APIs
   require an owner-issued processing attempt;
-- the sample-metadata owner mints `xic.sample.v1` from the
-  stable owner namespace, `sample_metadata_v1` identity schema, and canonical
+- the sample-metadata owner mints `xic.sample` from the
+  stable owner namespace, `sample_metadata` identity schema, and canonical
   `sample_name` key. Its `raw_stem` may resolve that key but is not identity
   content; other metadata projections do not invalidate identity, while
   renaming the canonical key does. Resolution retains one content-digested
   complete owner snapshot, exact lookup token, and metadata row;
-- the review-roundtrip owner currently mints `xic.review-subject.v1` from one
+- the review-roundtrip owner currently mints `xic.review-subject` from one
   owner-resolved canonical sample plus one owner-stable target key. It mints
-  `xic.review-record.v1` only from an owner-validated typed `review_action_v1`,
+  `xic.review-record` only from an owner-validated typed `review_action`,
   the exact target definition and processing request, canonical exact artifact
   references, and any complete same-subject predecessor/supersession edge. The
   action's sample/target labels must match those owner references. Resolution
@@ -513,7 +513,7 @@ The model fails and must be narrowed or redrawn if:
    automatic promotion of other sidecars.
 7. Current writers can emit method manifests and output metadata, but no
    workflow-neutral two-phase delivery seal owns the complete output lineage.
-8. `review_action_v1` and current review artifacts provide typed actions,
+8. `review_action` and current review artifacts provide typed actions,
    stable-row checks, and source hashes. The review owner can now mint and
    resolve a workflow-neutral immutable review-conclusion/supersession
    reference, but no production registry or persisted lineage integration has
@@ -609,7 +609,7 @@ contract.
 
 A fourth bounded implementation closes the first provider-specific
 evidence-to-observation relation for the lab's DDA/ddMS2 method. CID-NL evidence
-schema v3 binds the exact request acquisition source, positive scan number, and
+schema binds the exact request acquisition source, positive scan number, and
 explicit `dda_ddms2` acquisition mode. `DdaCidNlPeakSupportRef` then composes that
 immutable evidence ref with exactly one `PeakObservationRef` whose physical
 integration RT bounds contain the scan RT and whose m/z satisfies the explicit
@@ -632,7 +632,7 @@ hard-zero public-output diff with both legacy writers authoritative.
 
 The Untargeted CID-NL real-data bridge closes that previously external
 caller-completeness premise only for its explicit input contract. Discovery
-batch index v2 carries one self-validating candidate-universe receipt per
+batch index carries one self-validating candidate-universe receipt per
 sample: exact candidate artifact bytes/size, parsed candidate payload/count,
 and the content-bound acquisition source. The runtime validates the artifact before and
 after parsing, binds the receipt into its processing request, and rejects a

@@ -33,9 +33,8 @@ in the entry status text, `docs/product/`, `docs/architecture-contract.md`,
 7. [Instrument QC](#instrument-qc)
 8. [Peak-Group / Overlay Visualization](#peak-group--overlay-visualization)
 9. [Area / Region Audits](#area--region-audits)
-10. [One-off Fixtures](#one-off-fixtures)
-11. [Delta Mass / Pt Pattern Discovery](#delta-mass--pt-pattern-discovery)
-12. [Agent / Docs Workflow Guards](#agent--docs-workflow-guards)
+10. [Delta Mass / Pt Pattern Discovery](#delta-mass--pt-pattern-discovery)
+11. [Agent / Docs Workflow Guards](#agent--docs-workflow-guards)
 
 ---
 
@@ -49,19 +48,6 @@ baseline decision closed. AsLS is the current production baseline integration
 method, and `linear_edge` is retired as a selectable baseline method. Do not add
 new diagnostics that compare against or fall back to linear-edge; use current
 AsLS/boundary/product contracts instead.
-
-### `targeted_resolver_comparison.py`
-
-**Purpose**: Compare targeted resolver area RSD and RT shifts across resolver configurations.
-**Topic group**: `targeted_resolver_comparison.py` (single-file)
-**Originating spec**: `retired-provenance:4d545a180b14`
-**Recent doc**: `retired-provenance:c1b9909ce7c0`
-**Stop-maintenance note**: The resolver-default decision is closed. Current
-public/config settings still accept the `region_first_safe_merge` token, while
-alignment production maps that token to `local_minimum`; this gate is retained
-only as decision history.
-
----
 
 ### `alignment_parity.py`
 
@@ -92,7 +78,7 @@ review; consumes
 `cid_nl_differential_ai_adjudication.tsv`; optional
 `cid_nl_manual_feature_inclusion_review.tsv`.
 **Originating spec/goal/plan**:
-`docs/superpowers/validation/cid_nl_default_activation_gallery_review_v1/README.md`;
+`docs/superpowers/validation/cid_nl_default_activation_gallery_review/README.md`;
 stable external-method takeaways now live in `docs/product/untargeted-method.md`.
 **Status note**: Diagnostic-only gate adapter. It does not read RAW, render
 PNGs, create a second Discovery system, mutate ProductWriter/default
@@ -106,7 +92,7 @@ matrix/workbook/GUI outputs, or treat candidates as matrix rows. It writes
 `cid_nl_manual_resolved_hold_queue.tsv`,
 `cid_nl_user_review_queue.tsv`, and
 `cid_nl_feature_inclusion_blocked_queue.tsv` under ignored
-`output/validation/cid_nl_default_activation_gallery_review_v1/feature_inclusion_gate/`.
+`output/validation/cid_nl_default_activation_gallery_review/feature_inclusion_gate/`.
 The gate separates supported feature-inclusion candidates from review-required
 and current-bundle-blocked candidates. Supported candidates only advance to
 expected-diff design; identity authority and ProductWriter activation remain a
@@ -125,7 +111,7 @@ Consumes `cid_nl_supported_candidate_expected_diff_contract.tsv` plus
 closed if any contract transition overlaps the user-review, agent-hold,
 manual-hold, or blocked queues.
 **Originating spec/goal/plan**:
-`docs/superpowers/validation/cid_nl_default_activation_gallery_review_v1/README.md`;
+`docs/superpowers/validation/cid_nl_default_activation_gallery_review/README.md`;
 `docs/superpowers/plans/2026-06-15-productization-control-plane.md`.
 **Status note**: Diagnostic-only activated-copy surface. It reads the current
 public `alignment_matrix.tsv` and `alignment_matrix_identity.tsv`, writes
@@ -133,7 +119,7 @@ public `alignment_matrix.tsv` and `alignment_matrix_identity.tsv`, writes
 `alignment_matrix_identity_activated_copy.tsv`,
 `cid_nl_activation_copy_value_delta.tsv`, and
 `cid_nl_activation_copy_candidate_summary.tsv/json` under ignored
-`output/validation/cid_nl_default_activation_gallery_review_v1/activation_copy_candidate/`.
+`output/validation/cid_nl_default_activation_gallery_review/activation_copy_candidate/`.
 It refuses to overwrite existing matrix values, requires every written cell to
 come from the expected-diff contract, and reports explicit false flags for
 ProductWriter, default matrix, workbook/GUI, and candidate-row authority. This
@@ -151,12 +137,12 @@ contracts, user-review/agent-hold/manual-hold/blocked queues, input public
 matrix, activated copy matrix, matrix identity sidecar, and activated-copy
 value delta.
 **Originating spec/goal/plan**:
-`docs/superpowers/validation/cid_nl_default_activation_gallery_review_v1/README.md`;
+`docs/superpowers/validation/cid_nl_default_activation_gallery_review/README.md`;
 `docs/superpowers/plans/2026-06-15-productization-control-plane.md`.
 **Status note**: Diagnostic-only acceptance gate. It writes
 `cid_nl_activation_copy_acceptance_summary.tsv/json` and
 `cid_nl_activation_copy_matrix_diff.tsv` under ignored
-`output/validation/cid_nl_default_activation_gallery_review_v1/activation_copy_candidate/acceptance/`.
+`output/validation/cid_nl_default_activation_gallery_review/activation_copy_candidate/acceptance/`.
 It passes only when value-delta keys match the contract, no forbidden
 review/hold/blocked transitions overlap the contract, and the input/output
 matrix diff is exactly the contracted cell set. It reports
@@ -174,13 +160,13 @@ expected-diff contracts, forbidden user-review/hold/blocked queues,
 feature-inclusion summary, activated-copy summary, activated-copy acceptance
 summary, and value-delta TSV.
 **Originating spec/goal/plan**:
-`docs/superpowers/validation/cid_nl_default_activation_gallery_review_v1/README.md`;
+`docs/superpowers/validation/cid_nl_default_activation_gallery_review/README.md`;
 `docs/superpowers/plans/2026-06-15-productization-control-plane.md`.
 **Status note**: Production-candidate adopt gate for the narrowed 95-cell
 validation-copy bundle. It writes
 `cid_nl_activation_adopt_gate_summary.tsv/json` and the compact 20-transition
 `cid_nl_activation_adopt_manifest.tsv` under ignored
-`output/validation/cid_nl_default_activation_gallery_review_v1/activation_adopt_gate/`.
+`output/validation/cid_nl_default_activation_gallery_review/activation_adopt_gate/`.
 It returns `adopt_ready` only when the feature gate, copy gate, and acceptance
 gate all pass; user review is zero; no forbidden transitions overlap; the
 value-delta keys exactly match the expected-diff contract; ProductWriter,
@@ -219,111 +205,21 @@ models because their output schemas are intentionally different; see
 
 ### `shared_peak_identity_explanation.py`
 
-**Purpose**: Write the default Slice 0 `diagnostic_only` shared peak identity explanation outputs from a durable manual oracle plus existing alignment/candidate-gate artifacts; with `--enable-blast-radius`, add Slice 1 blast-radius manifest, summary, run facts, and report sections over existing 8RAW / FULL COHORT alignment artifacts; with `--enable-shadow-label-alignment`, add V2 shadow-label alignment, machine-evidence provenance, readiness, and report artifacts. Optional `--cwt-shape-evidence-tsv`, `--tier2-trace-evidence-tsv`, `--candidate-ms2-pattern-evidence-tsv`, `--ms1-pattern-coherence-evidence-tsv`, `--qc-ms1-pattern-reference-evidence-tsv`, `--sample-negative-evidence-tsv`, `--matrix-rt-drift-policy-tsv`, `--rt-mode-evidence-tsv`, and `--peak-hypothesis-selection-tsv` inputs can mark CWT shape, Tier2 raw-trace scan/intensity, sample/candidate-aligned MS2 pattern, MS1 constellation pattern coherence, local/consensus injection-QC MS1 pattern reference, sample-level negative evidence class/detail, independent matrix RT drift facts, iRT/raw selected-apex mode membership, and mode-level PeakHypothesis selection as machine-observed evidence; `--candidate-ms2-pattern-batch-index` can generate that candidate-MS2 sidecar from the same discovery batch index used by the alignment run, `--candidate-ms2-pattern-raw-dll-dir` can additionally probe rows without `source_candidate_id` against the sample RAW file recorded in that batch index, `--generate-ms1-pattern-coherence-evidence` can generate a conservative alignment-cell boundary-constellation sidecar, `--ms1-pattern-coherence-overlay-trace-data-json` can enrich that generated MS1 sidecar with RAW-backed `family_ms1_overlay_plot` trace shape/local-window metrics and optional peak-quality feature-vector fields when overlay `rt` / `intensity` arrays are present, `--generate-matrix-rt-drift-policy` can generate the matrix RT drift policy sidecar from alignment cells plus optional owner-edge, RT-normalization-family, targeted-ISTD anchor-local trend artifacts, and optional ISTD injection-order / phase-summary provenance, `--generate-rt-mode-evidence` can generate `shared_peak_identity_rt_mode_evidence.tsv` from an existing selected-apex mode assignment TSV plus optional mode summary and candidate-MS2 tag sidecar, and `--generate-peak-hypothesis-selection` can generate `shared_peak_identity_peak_hypothesis_selection.tsv` from RT-mode evidence.
+**Purpose**: Explain shared-peak identity from a manual oracle and existing
+alignment/candidate-gate artifacts. Optional blast-radius analysis summarizes
+existing cohort artifacts; shadow-label analysis compares human labels with
+machine evidence and reports diagnostic readiness.
 **Topic group**: `shared_peak_identity_explanation.py` + `xic_extractor/alignment/shared_peak_identity_explanation/*`
-**Originating spec/plan**: `retired-provenance:4451f010e6c4`; `retired-provenance:36493f007c1f`; `retired-provenance:fddde24e3c1d`; `retired-provenance:4d97a2722c41`
-**Status note**: Default mode emits only the manual-oracle copy, evidence vectors, explanations, run facts, and Markdown report under `output/shared_peak_identity_evidence_explanation/`; it does not emit Slice 1 files unless `--enable-blast-radius` is passed. Slice 1 writes `shared_peak_identity_blast_radius_manifest.tsv` and `shared_peak_identity_blast_radius_summary.tsv` from existing artifacts only. V2 shadow mode writes `shared_peak_identity_shadow_labels.tsv`, `shared_peak_identity_shadow_alignment_summary.tsv`, `shared_peak_identity_v2_readiness.tsv`, `shared_peak_identity_machine_evidence_support.tsv`, and `shared_peak_identity_v2_report.md`; when the batch-index producer is enabled it also writes `shared_peak_identity_candidate_ms2_pattern_evidence.tsv`, when MS1 pattern generation is enabled it writes `shared_peak_identity_ms1_pattern_coherence_evidence.tsv`, when matrix RT drift generation is enabled it writes `shared_peak_identity_matrix_rt_drift_policy.tsv`, when RT mode generation is enabled it writes `shared_peak_identity_rt_mode_evidence.tsv`, and when PeakHypothesis generation is enabled it writes `shared_peak_identity_peak_hypothesis_selection.tsv`. `--generate-hypothesis-consistency` writes `shared_peak_identity_hypothesis_consistency.tsv` and `shared_peak_identity_hypothesis_consistency_summary.tsv`; this is a full-matrix diagnostic gate that cross-checks each PeakHypothesis against MS1 pattern, QC MS1 reference context, matrix RT drift, and candidate MS2/DDA opportunity evidence, but it does not select peaks, retarget rows, activate labels, or rewrite matrices. It can report `exploratory_only` when blast-radius evidence is not current or when decisive shape / pattern / opportunity evidence remains partial, conflicting, proxy-only, or manual-oracle-derived. Candidate MS2 pattern evidence is fail-closed and must be explicitly keyed by `feature_family_id + sample_stem`; target-label-only or RT/mz heuristic joins do not count. MS1 pattern coherence sidecars can close `formal_pattern_metric` when they emit supportive/partial `sample_constellation`, `sample_boundary_constellation`, or `trace_constellation` evidence; RAW-backed `trace_constellation` overlay rows can close `formal_shape_metric` only when they have `shape_metric_source=family_ms1_overlay_raw_trace`, `family_ms1_overlay_trace_data_json`, non-empty `shape_correlation_score`, and a machine-observed `peak_quality_vector_basis=family_ms1_overlay_raw_trace_vector` with `peak_quality_vector_status` of `supportive` or `partial_support`. QC MS1 reference sidecars can close `formal_pattern_metric` only when consensus-backed evidence levels such as `qc_consensus_with_local_qc_overlay` or `qc_consensus_qc_overlay` are supportive/partial; nearest-valid-local-only QC rows remain context-only. Consensus-backed QC conflicts can contribute to `pattern_metric_not_supportive` only when not overridden by sample-level RAW MS1 pattern support; they do not close `formal_shape_metric`. RT mode sidecars consume selected-apex mode assignments from overlay/iRT diagnostics and classify `rt_mode_pure`, `tag_backed_core_with_outlier_modes`, `irt_refined_mode_split`, `tailing_confounded`, or `consolidation_no_go`; tag-backed non-core mode membership fails closed as `rt_mode_not_supportive` and feeds the product activation `wrong_peak_conflict` rule, while tailing-confounded mode evidence remains diagnostic and must not force a split. PeakHypothesis selection sidecars convert RT-mode evidence into explicit product units: `product_candidate_core` is a mode-level candidate, `cross_mode_rescue_blocked` feeds `wrong_peak_conflict`, and `mode_split_required` / `consolidation_no_go` block family promotion until mode-aware consolidation exists. Sample negative sidecars can close `sample_level_negative_evidence` only with machine-observed `negative_evidence_class` in `no_candidate_ms1_evidence`, `pattern_mismatch`, `rt_not_explained`, or `local_peak_not_decisive`; `negative_evidence_detail` preserves narrower review reasons such as ugly shape, bad boundary, or QC reference conflict. Older overlay JSON without `rt` / `intensity` arrays remains readable but no longer counts as the full V2 formal-shape evidence chain. RAW overlay enrichment also records cell/local/global intensity metrics, including `cell_to_local_window_max_ratio`, and optional `peak_quality_*` vector fields for trace point count, boundary point count, S/N proxy, FWHM, sharpness, zigzag/noise, tailing, boundary margin, feature count, status, basis, and reason. Low shape correlation or low height can therefore be reviewed against selected-cell height dominance and trace-vector quality instead of being treated as automatic negative identity evidence. The generated MS1 sidecar remains conservative without overlay inputs: it uses existing alignment-cell apex/boundary/family-reference facts plus optional matrix RT drift policy, leaves raw shape correlation empty, and reports weak boundary-only or unmodeled-shift cases as `inconclusive` rather than false conflicts. Generated/read matrix RT drift policy evidence can close `matrix_rt_drift_policy` when supportive, and it fails closed as a machine-observed conflict when contradictory. The matrix RT drift producer reuses existing `alignment_cells.tsv`, optional `owner_edge_evidence.tsv`, optional `rt_normalization_families.tsv`, and optional paired `targeted_istd_benchmark_summary.tsv` + `rt_normalization_leave_one_anchor_out.tsv`; optional ISTD RT trend and phase-summary TSVs are provenance-only trend evidence, not a new fitted RT model. The targeted-ISTD anchor-local trend path is coverage-gated for FULL COHORT-like injection-order evidence and must not be used to tune RT policy from 8RAW method-smoke subsets. RAW-backed fallback is opt-in only through `--candidate-ms2-pattern-raw-dll-dir`; it uses the batch-index `raw_file`, existing `neutral_loss.collect_candidate_ms2_evidence`, and reports `sample_boundary_aligned` evidence only when a boundary/apex-aligned precursor MS2 scan is observed. Missing MS2 stays `not_observed`, not negative identity evidence; when MS1 is strongly supportive, MS1 intensity is at least `2.5e4`, RAW-boundary MS2 triggers are at least three, and the MS2 trace-strength proxy is moderate/strong, the missing expected NL is recorded as `dda_missing_nl_policy_status=not_dispositive` instead of a hard fail. This diagnostic does not mutate `alignment_review.tsv`, `alignment_cells.tsv`, `alignment_matrix.tsv`, workbooks, selected peaks, backfill, Tier 2 support, or downstream contracts, and it must not claim production readiness.
-**QC reference policy note**: QC MS1 reference evidence is no longer nearest-QC-wins. `nearest_valid_qc_local_condition_only` is context only; only consensus-backed levels such as `qc_consensus_with_local_qc_overlay` or `qc_consensus_qc_overlay` can close `formal_pattern_metric`, and local-vs-consensus disagreement stays review-only. A QC consensus conflict is not a standalone veto when the target cell already has sample-level RAW MS1 pattern support; it supports product blocking only together with sample-level pattern/RT/PeakHypothesis wrong-peak evidence.
-
-**Activation note**: With `--enable-product-activation-contract`, V2 shadow mode also writes `shared_peak_identity_activation_decisions.tsv` and `shared_peak_identity_activation_acceptance.tsv`. These files translate sidecar statuses into `auto_activate`, `auto_block`, `confidence_only`, or `review_required` product-effect candidates under the current quant-matrix/productization owners (`docs/product/quant-matrix.md`, `docs/product/productization.md`; retired sidecar-to-product activation spec provenance retained in file-management manifests); they remain diagnostic until a separate product wiring flag consumes them. Activation decisions keep `feature_family_id`/`candidate_container_id` as provenance and carry `peak_hypothesis_id` plus `activation_unit_scope` when a mode-level PeakHypothesis is the product candidate unit. When Slice 1 blast-radius is enabled, activation acceptance uses the current `all_available_full_cohort` blast-radius `assessed_row_count` as the row denominator and emits explicit basis fields so seed-scope decisions are not confused with a full production matrix mutation. `--activation-must-not-regress-tsv` evaluates a machine-readable expectation manifest such as `docs/superpowers/fixtures/shared_peak_identity_activation_must_not_regress_v1.tsv`; the manual `--activation-must-not-regress-status` flag is only a diagnostic fallback.
-
-**Mode generalization note**: `--generate-rt-mode-evidence` can also consume repeated `--rt-mode-evidence-overlay-trace-data-json` inputs from RAW-backed `family_ms1_overlay_*` trace JSONs. iRT/assignment rows take precedence when the same family/sample is present. RAW-overlay-only split evidence is emitted as `raw_mode_review_only`; it can feed review queues and PeakHypothesis coverage, but it must not directly auto-block promotion or override the activation must-not-regress set without independent iRT/tag support. Use `--generate-mode-hypothesis-assignment` when the V2 flow should produce product-facing sample-level PeakHypothesis selection from typed iRT/mode evidence plus MS1, QC, RT-drift, and MS2 opportunity sidecars; this supersedes raw-overlay-derived mode selection for activation-facing evidence. Legacy `--generate-peak-hypothesis-selection` output is retained as diagnostic/review evidence; activation-facing auto-activation requires `peak_hypothesis_authority_source=typed_mode_hypothesis_assignment` or a locked oracle manifest. Overlay JSON `mode_windows` product-status fields are ignored by matrix construction and demoted to review-only candidates.
-
-**Hypothesis consistency note**: `--generate-hypothesis-consistency` summarizes `scope=sidecar_key_union` by default. Interpret it as full-matrix only when the input PeakHypothesis, MS1 pattern, matrix RT drift, QC reference, and candidate MS2 sidecars are themselves full-matrix; representative or manual-oracle sidecars remain representative diagnostics.
-
-**Opportunity-policy note**: RAW-backed MS1 overlay height/local-window evidence can satisfy `intensity_opportunity_metric` without a separate Tier 2 trace sidecar when it comes from `family_ms1_overlay_raw_trace` or the RAW trace-vector basis and intensity is at least `2.5e4`. Missing NL/product evidence with `raw_ms2_diagnostic_product_absence_reason=product_outside_diagnostic_window` is recorded as `dda_missing_nl_policy_status=not_dispositive` when the family has required-tag context, the sample has enough boundary MS2 trigger opportunity, and MS1 evidence is supportive; it remains non-dispositive evidence, not an auto-activation rule.
-
----
-
-### `apply_shared_peak_identity_activation.py`
-
-**Purpose**: Apply accepted `shared_peak_identity_activation_*` sidecars to alignment product outputs.
-**Topic group**: `shared_peak_identity_explanation.py` + `xic_extractor/alignment/shared_peak_identity_explanation/product_activation.py`
-**Originating owner/plan**: `docs/product/quant-matrix.md`; retired sidecar-to-product activation spec provenance.
-**Status note**: This is the explicit sidecar-to-product bridge. It requires
-`activation_acceptance_status=pass` by default. `--output-mode activated-copy`
-writes `alignment_matrix_activated.tsv`, `alignment_review_activated.tsv`, and
-`alignment_cells_activated.tsv`; `--output-mode formal` writes the formal
-downstream contract files `alignment_matrix.tsv`, `alignment_review.tsv`, and
-`alignment_cells.tsv` in the requested output directory. Formal
-`alignment_matrix.tsv` remains the downstream `Mz` / `RT` / sample-column
-matrix; `peak_hypothesis_id` is written to
-`activation_hypothesis_identity.tsv` as an identity/provenance sidecar, not as a
-replacement matrix row key. Formal mode also writes
-`alignment_matrix_identity.tsv` with `matrix_row_index`, `Mz`, `RT`,
-`peak_hypothesis_id`, and `source_feature_family_ids` so downstream tools such
-as `targeted_istd_benchmark.py` can read the public matrix directly. When the
-source matrix is already the public
-`Mz` / `RT` / sample-column matrix, `--alignment-matrix-identity-tsv` supplies
-the bridge back to internal provenance and `feature_family_id` remains
-debug/provenance only. Optional `--rt-mode-evidence-tsv` lets formal output use
-matching typed mode `raw_selected_rt` values as area-weighted
-PeakHypothesis-level RT centers for split rows; rows without matching typed mode
-evidence fall back to their source family RT and disclose that fallback through
-`alignment_matrix_identity.tsv:center_rt_basis`. Optional
-`--candidate-ms2-pattern-evidence-tsv`,
-`--ms1-pattern-coherence-evidence-tsv`,
-`--qc-ms1-pattern-reference-evidence-tsv`, and
-`--matrix-rt-drift-policy-tsv` project typed shared-peak evidence into rescued
-cell `backfill_*` fields so the downstream backfill promotion gate can consume
-RT, MS1 pattern/QC, and optional MS2/NL opportunity facts from the same
-activation output. MS1 product support requires product-authorized sidecars
-from the backfill authorizers; Candidate MS2 rows are optional context and must
-also carry product-authorized provenance before they are displayed as reviewed
-context. Raw diagnostic sidecars remain review-only and fail closed. Missing sidecars do not invent support; stale cells without projection
-columns remain fail-closed for gate/report consumers. Formal activation keeps
-`feature_family_id` as provenance/debug only and treats `peak_hypothesis_id` as
-the internal product identity sidecar. By default, unresolved rows without
-split/wrong-peak/mode evidence are excluded from emitted `alignment_matrix.tsv`
-and reported in `family_projection_rows_excluded` /
-`family_projection_cells_excluded`. These exclusions keep
-`canonical_row_identity_ready=FALSE` with
-`canonical_row_identity_blockers=family_projection_excluded_incomplete_scope`;
-projection-free emitted rows are not proof that the full legacy family matrix has
-been completely split. `--exclude-family-projections` is the formal-mode default
-and remains as a compatibility flag. `--include-family-projections` is
-diagnostic-only opt-in: it writes `<feature_family_id>::family_projection` rows
-with `row_identity_basis=family_projection_no_split_evidence`, reports
-`canonical_row_identity_blockers=family_projection_present`, and must not be
-handed to downstream as a product matrix. `--require-complete-peak-hypothesis-identity`
-must fail while included or excluded projection rows remain. Optional
-`--legacy-rt-row-oracle-xlsx` adds
-context-only `legacy_rt_row_context_id` hints from a legacy MZmine RT-row
-workbook but does not mint product identities; matching outputs report
-`legacy_rt_row_context_authority=context_only_not_identity_authority`. Both
-modes also write `activation_application_summary.tsv` and
-`activation_value_delta.tsv`. Existing matrix values are preserved; only missing
-`auto_activate` cells are written, while `auto_block` cells can be blanked or
-family promotion can be blocked. `activation_value_delta.tsv` records original
-value, activated value, source cell area, effect, `value_changed`, and v3
-matrix-value provenance fields such as `matrix_value_kind`,
-`matrix_value_source`, `matrix_value_source_field`,
-`matrix_value_source_artifact_sha256`, and `matrix_value_source_row_sha256` for
-review. Matrix-only `activation_values.tsv` input must carry
-`projected_matrix_value_source`, source artifact schema/hash, source row hash,
-and source provenance detail; the source artifact hash must be a real lowercase
-SHA256 provenance digest, not an id-derived placeholder. Naked projected values
-fail closed. If multiple
-provenance rows share one formal hypothesis/sample value,
-the temporary pre-AsLS policy records the conflict and keeps the larger numeric
-value. Formal mode refuses to overwrite source alignment TSVs unless
-`--allow-overwrite-source` is passed. `--allow-non-passing-acceptance` is a
-diagnostic override only and must not be used for product claims.
-
-`--matrix-only` is the reviewed normal-peak backfill cost-control path. It
-requires `--activation-values-tsv`, `--alignment-matrix-tsv`,
-`--alignment-matrix-identity-tsv`, and `--alignment-review-tsv`, but does not
-require or read `--alignment-cells-tsv`. It writes only `alignment_matrix.tsv`,
-`alignment_matrix_identity.tsv`, `activation_hypothesis_identity.tsv`,
-`activation_value_delta.tsv`, and `activation_application_summary.tsv`.
-`alignment_cells.tsv` remains the audit/debug ledger for full activation copies
-and evidence projection; it is not a product dependency for matrix-only
-activation when product-authorized activation values are available. Matrix-only
-written values are tagged in `activation_value_delta.tsv` as
-`matrix_value_kind=backfill_activation` with
-`matrix_value_source=activation_values_tsv`, source artifact hash, and source
-row hash, so downstream reviewers can distinguish reviewed backfill values from
-primary detected values.
+**Status note**: The default command writes an oracle copy, evidence vectors,
+explanations, run facts, and a Markdown report. Optional modes add blast-radius,
+shadow-label, machine-evidence, and readiness artifacts. Evidence inputs cover
+CWT shape, trace support, candidate MS2, MS1 coherence, QC reference, sample
+negative evidence, RT drift, RT modes, and PeakHypothesis selection. The command
+can generate the supported evidence sidecars; `--help` owns the exact options.
+Candidate evidence must retain sample/family provenance; missing or proxy-only
+evidence does not become a positive identity claim. RAW-backed evidence remains
+opt-in. Hypothesis consistency and mode assignments are diagnostic outputs and
+cannot authorize values, rewrite matrices, or apply product activation.
 
 ---
 
@@ -332,38 +228,22 @@ primary detected values.
 **Purpose**: Build typed sample-level PeakHypothesis assignment rows from `shared_peak_identity_rt_mode_evidence.tsv` plus candidate MS2 tag/opportunity, RAW-backed MS1 pattern, QC MS1 reference, and matrix RT drift policy sidecars.
 **Topic group**: `shared_peak_identity_explanation.py` + `xic_extractor/alignment/shared_peak_identity_explanation/mode_hypothesis_assignment.py`
 **Originating owner/plan**: `docs/product/quant-matrix.md`; retired sidecar-to-product activation spec provenance.
-**Status note**: This is the product-facing producer for mode-aware sample assignment. It writes the existing `shared_peak_identity_peak_hypothesis_selection.tsv` schema so downstream matrix construction and activation can keep using `peak_hypothesis_id`, but the selection is no longer inferred from family overlay raw modes. A sample can become `product_candidate_core` only when typed iRT/mode evidence assigns it to a mode that has required-tag support and the sample-level MS1 shape, QC context, RT-drift policy, and boundary/MS2 opportunity evidence do not conflict. QC is a context/conflict gate, not a hard required gate: missing QC does not block when sample-level MS1, RT drift, and MS2/tag evidence support the assignment. RAW-selected or raw-overlay-only modes stay `raw_mode_review_only`; a family with no required tag becomes `consolidation_no_go`; a sample assigned to a non-tag mode while another mode carries the tag becomes `cross_mode_rescue_blocked`.
-
----
-
-### `evaluate_mode_window_assignment_contract.py`
-
-**Purpose**: Evaluate the Mode-Window Assignment Contract Gate v0 sentinel fixture against FULL COHORT sidecars.
-**Topic group**: `shared_peak_identity_explanation.py` + `xic_extractor/alignment/shared_peak_identity_explanation/mode_window_assignment_gate.py`
-**Originating owner/plan**: `docs/product/quant-matrix.md`; retired sidecar-to-product activation spec provenance.
-**Status note**: This acceptance diagnostic consumes `docs/superpowers/fixtures/shared_peak_identity_mode_window_assignment_contract_v0.tsv`, a PeakHypothesis selection sidecar, and optional activation, matrix-summary, QC-reference, RT-drift, MS1-pattern, and candidate-MS2 sidecars. It writes `shared_peak_identity_mode_window_assignment_gate.tsv` plus `shared_peak_identity_mode_window_assignment_summary.tsv`. The gate checks explicit selection `peak_hypothesis_id`, activation `peak_hypothesis_id`, `product_unit_scope`, `selected_mode_id`, and `activation_unit_scope`, so legacy status/action rows cannot fake a typed mode-window acceptance. It also checks that fixture `required_evidence_oracle` requirements are backed by the supplied sidecars when the oracle names MS1, QC, RT, MS2, or tag evidence. The gate verifies that typed mode assignment can pass product-candidate and wrong-peak sentinel rows, that raw/overlay-only modes remain activation-ineligible, that QC and ISTD trend artifacts are treated as context rather than standalone identity authorities, and that any matrix with family-projection rows does not overclaim complete canonical row identity. A passing summary with `canonical_row_identity_ready=FALSE` is scoped contract acceptance only; it intentionally keeps product activation and complete canonical row identity blocked until matrix construction is ready. Use `--fail-on-gate-failure` when the command is serving as an actual acceptance gate instead of a diagnostic artifact writer.
-
----
-
-### `build_peak_hypothesis_matrix.py`
-
-**Purpose**: Build a diagnostic PeakHypothesis-assigned construction artifact before product activation by consuming source alignment TSVs plus `shared_peak_identity_peak_hypothesis_selection.tsv`, optional `shared_peak_identity_hypothesis_consistency.tsv`, and optional RAW-backed `family_ms1_overlay_*` trace-data JSONs with mode windows.
-**Topic group**: `shared_peak_identity_explanation.py` + `xic_extractor/alignment/shared_peak_identity_explanation/peak_hypothesis_matrix.py`
-**Originating owner/plan**: `docs/product/quant-matrix.md`; retired sidecar-to-product activation spec provenance.
-**Status note**: This is the first construction boundary for mode-aware identity, not the final downstream matrix contract. It writes `alignment_matrix.tsv`, `peak_hypothesis_inventory.tsv`, `peak_hypothesis_cell_assignments.tsv`, and `peak_hypothesis_matrix_summary.tsv` in a separate output directory as diagnostic construction artifacts. In this artifact, row identity is `peak_hypothesis_id`; explicit product-candidate modes use `row_identity_basis=matrix_construction_peak_hypothesis`, unresolved legacy cells use `<feature_family_id>::family_projection` with `row_identity_basis=family_projection_no_split_evidence`, and hard split/wrong-peak consistency blockers are recorded in assignments but not written to the artifact matrix. This `alignment_matrix.tsv` must not be handed to downstream as the final matrix until it is converted back into the public `Mz` / `RT` / sample-column contract with a separate hypothesis identity sidecar. When `--overlay-trace-data-json` is supplied, each declared `mode_windows` peak with RAW trace signal is enumerated as an expanded candidate row before matrix construction, so two peaks from the same `feature_family_id` can both enter the construction artifact as independent `peak_hypothesis_id` rows instead of competing through retarget. Any product-status fields embedded in overlay JSON `mode_windows` are ignored and demoted to `raw_mode_review_only`; only typed PeakHypothesis selection rows can supply product-facing authority. Untyped mode windows and raw-apex inferred windows are review-only expanded candidates: they use `construction_assignment_status=expanded_candidate`, default to `candidate_value_basis=raw_overlay_window_trapezoid_area`, set `canonical_row_identity_ready=FALSE` with `canonical_row_identity_blockers=raw_mode_review_only`, and must not be treated as product-ready row identity until a typed mode-hypothesis contract supplies explicit iRT/manual/tag-confirmed status. Family projection rows set `canonical_row_identity_blockers=family_projection_present`; they are acceptable bridge rows but not proof of complete canonical identity. Cells with source `alignment_cells.tsv` area but no source matrix value are recorded as candidate context only (`matrix_value_effect=source_matrix_value_missing`) until quantification/baseline policy is wired. `--require-complete-peak-hypothesis-identity` now fails unless the summary reports `canonical_row_identity_ready=TRUE`, so projection-heavy diagnostic outputs cannot be mistaken for promotion-ready matrices. This tool is `diagnostic_only`: it proves that split/wrong-peak separation can happen before matrix output, but it does not mutate source alignment artifacts, does not define the downstream `Mz` / `RT` / sample-column matrix, and does not claim all-family split-science readiness.
+**Status note**: This diagnostic produces mode-aware sample assignments in `shared_peak_identity_peak_hypothesis_selection.tsv`. The sidecar records `peak_hypothesis_id` for review and consistency checks; it does not authorize matrix construction or activation. A sample can become `product_candidate_core` only when typed iRT/mode evidence assigns it to a mode that has required-tag support and the sample-level MS1 shape, QC context, RT-drift policy, and boundary/MS2 opportunity evidence do not conflict. QC is a context/conflict gate, not a hard required gate: missing QC does not block when sample-level MS1, RT drift, and MS2/tag evidence support the assignment. RAW-selected or raw-overlay-only modes stay `raw_mode_review_only`; a family with no required tag becomes `consolidation_no_go`; a sample assigned to a non-tag mode while another mode carries the tag becomes `cross_mode_rescue_blocked`.
 
 ---
 
 ### `diagnose_shared_peak_wrong_peak.py`
 
-**Purpose**: Diagnose `wrong_peak_conflict` activation blocks and propose RAW-overlay alternate peak candidates without retargeting product outputs.
-**Topic group**: `shared_peak_identity_explanation.py` + `xic_extractor/alignment/shared_peak_identity_explanation/wrong_peak_root_cause.py`
-**Originating owner/plan**: `docs/product/quant-matrix.md`; retired sidecar-to-product activation spec provenance.
-**Status note**: This diagnostic consumes `shared_peak_identity_activation_decisions.tsv`, `shared_peak_identity_machine_evidence_support.tsv`, `alignment_cells.tsv`, and optional `family_ms1_overlay_*` trace-data JSON files. It writes `shared_peak_identity_wrong_peak_root_cause.tsv` with the selected-cell evidence, root-cause class, selection failure mode, and strongest alternate local maximum outside the selected boundary. Alternate peaks are review candidates only; this tool does not mutate `alignment_matrix.tsv`, product labels, selected peaks, backfill, or activation decisions.
+**Purpose**: Explain machine-observed wrong-peak conflicts and propose alternate
+local peaks for review.
+**Topic group**: `diagnose_shared_peak_wrong_peak.py` + `xic_extractor/alignment/shared_peak_identity_explanation/wrong_peak_root_cause.py`
+**Status note**: Consumes machine-evidence support, alignment cells, and optional
+overlay trace-data JSON. The root-cause sidecar records diagnostic conflict
+classes, selected-cell evidence, and alternate local maxima without activation
+status or writer decisions. Alternate peaks are review candidates only; the
+command does not retarget peaks or rewrite matrices.
 
 ---
-
-## Alignment Diagnostics
 
 ### `explain_cid_nl_run.py`
 
@@ -659,7 +539,7 @@ checker proves current-file self-consistency only; it does not authenticate the
 packet's historical origin or immutability. T5D retired its ownerless writer and
 registered authority scope, and the retained counts and hashes cannot mint
 current authority. The final SP-001–SP-055 map is
-`docs/superpowers/validation/standard_peak_t5d_contraction_v1/capability_disposition_v1.tsv`.
+`docs/superpowers/validation/standard_peak_t5d_contraction/capability_disposition.tsv`.
 
 ---
 
@@ -677,7 +557,7 @@ current authority. The final SP-001–SP-055 map is
 **Purpose**: Evaluate deterministic standard-peak held-out oracle manifest rows against observed boundary/area results and write `heldout_oracle_results.tsv`.
 **Topic group**: `standard_peak_shadow_activation_inputs.py` + `xic_extractor/diagnostics/standard_peak_shadow_activation_inputs.py`
 **Originating owner/goal/plan**: `docs/product/backfill.md`; `docs/product/quant-matrix.md`; retired backfill integration policy spec provenance.
-**Status note**: Thin CLI wrapper around the package-level held-out oracle evaluator. It reads `heldout_oracle_manifest.tsv`, observed result rows with `oracle_case_id`, observed boundary/area fields, and observed-result provenance fields, records the source artifact SHA, and writes the existing `standard_peak_seed_guard_heldout_oracle_results_v1` schema. Manifest rows must declare `heldout_original_cell_status` proving the masked source cell was originally detected; `rescued`, blank, or unknown statuses fail before result evaluation. Observed rows must identify an independent product-writer, masked-rerun, or boundary-reintegration source; oracle/manual-review/review-queue source copies fail closed after punctuation/whitespace canonicalization, and neutral observed source labels also fail when they canonicalize to the same value as the matching manifest `oracle_source`. The result source artifact must exist so its SHA can be recorded. It does not run RAW, generate oracle rows, mutate matrices, authorize non-standard peaks, or upgrade the standard-path seed guard beyond `production_candidate`; real/reviewed held-out oracle rows plus FULL COHORT expected-diff evidence are still required for `production_ready`.
+**Status note**: Thin CLI wrapper around the package-level held-out oracle evaluator. It reads `heldout_oracle_manifest.tsv`, observed result rows with `oracle_case_id`, observed boundary/area fields, and observed-result provenance fields, records the source artifact SHA, and writes the existing `standard_peak_seed_guard_heldout_oracle_results` schema. Manifest rows must declare `heldout_original_cell_status` proving the masked source cell was originally detected; `rescued`, blank, or unknown statuses fail before result evaluation. Observed rows must identify an independent product-writer, masked-rerun, or boundary-reintegration source; oracle/manual-review/review-queue source copies fail closed after punctuation/whitespace canonicalization, and neutral observed source labels also fail when they canonicalize to the same value as the matching manifest `oracle_source`. The result source artifact must exist so its SHA can be recorded. It does not run RAW, generate oracle rows, mutate matrices, authorize non-standard peaks, or upgrade the standard-path seed guard beyond `production_candidate`; real/reviewed held-out oracle rows plus FULL COHORT expected-diff evidence are still required for `production_ready`.
 
 ---
 
@@ -704,7 +584,7 @@ current authority. The final SP-001–SP-055 map is
 **Purpose**: Audit whether standard-peak activation writes have boundary-stable stored traces under two no-RAW reintegration views.
 **Topic group**: `standard_peak_reintegration_stability_audit.py` + `xic_extractor/diagnostics/standard_peak_reintegration_stability_audit.py`
 **Originating spec/goal/plan**: `docs/superpowers/plans/2026-06-15-productization-control-plane.md`
-**Status note**: Reads `activation_high_signal_clean_scope_audit.tsv` from `standard_peak_activation_scope_audit.py`, reloads the referenced `*_trace_data.json` rows, and reintegrates each written trace twice: full stored trace and an expected-window-bounded trace around the stored reference boundary. It writes `reintegration_stability_audit.tsv` plus `reintegration_stability_summary.tsv/json`. The input scope audit must carry `standard_peak_activation_scope_audit_v1` schema rows with nonblank source run ids; the summary records the upstream TSV SHA/source provenance. `--expected-window-padding-min` must be finite and <=0.5 min so the bounded reintegration remains an independent local check instead of collapsing into full-trace reintegration. A row is `eligible` only when full-trace and bounded-window boundary error are each <=0.1 min, full-trace and bounded-window area relative error are each <=10%, and the two reintegration methods agree within the same boundary/area tolerances. The first real no-RAW FULL COHORT run over the consolidated 4613-row activation scope found 299 eligible written rows, 3227 ineligible rows, and 1087 missing-evidence rows; 271 eligible rows were outside the four then-current production-ready scoped writer envelopes. This audit remains a `production_candidate` evidence class by itself, and the summary intentionally reports `status=candidate_pool_blocked`, `writer_authority_status=blocked`, and `production_ready=FALSE`: it proves a broader boundary-stability candidate pool exists, but it does not mutate matrices, create broad writer authority, replace masked/product-writer oracle evidence, or authorize broad 4613-row activation. A separate follow-up promoted only the low-height subset of this candidate pool: 220 low-height reintegration-stable rows have per-row stability evidence, a passing family-level heldout oracle over detected traces from the same families, plus explicit writer expected-diff and are now the fifth scoped `production_ready` Backfill writer.
+**Status note**: Reads `activation_high_signal_clean_scope_audit.tsv` from `standard_peak_activation_scope_audit.py`, reloads the referenced `*_trace_data.json` rows, and reintegrates each written trace twice: full stored trace and an expected-window-bounded trace around the stored reference boundary. It writes `reintegration_stability_audit.tsv` plus `reintegration_stability_summary.tsv/json`. The input scope audit must carry `standard_peak_activation_scope_audit` schema rows with nonblank source run ids; the summary records the upstream TSV SHA/source provenance. `--expected-window-padding-min` must be finite and <=0.5 min so the bounded reintegration remains an independent local check instead of collapsing into full-trace reintegration. A row is `eligible` only when full-trace and bounded-window boundary error are each <=0.1 min, full-trace and bounded-window area relative error are each <=10%, and the two reintegration methods agree within the same boundary/area tolerances. The first real no-RAW FULL COHORT run over the consolidated 4613-row activation scope found 299 eligible written rows, 3227 ineligible rows, and 1087 missing-evidence rows; 271 eligible rows were outside the four then-current production-ready scoped writer envelopes. This audit remains a `production_candidate` evidence class by itself, and the summary intentionally reports `status=candidate_pool_blocked`, `writer_authority_status=blocked`, and `production_ready=FALSE`: it proves a broader boundary-stability candidate pool exists, but it does not mutate matrices, create broad writer authority, replace masked/product-writer oracle evidence, or authorize broad 4613-row activation. A separate follow-up promoted only the low-height subset of this candidate pool: 220 low-height reintegration-stable rows have per-row stability evidence, a passing family-level heldout oracle over detected traces from the same families, plus explicit writer expected-diff and are now the fifth scoped `production_ready` Backfill writer.
 
 ---
 
@@ -716,7 +596,7 @@ current authority. The final SP-001–SP-055 map is
 **Load-bearing note**: This is part of the built-in `dna_dr` standard-peak
 publication path. Treat it as product-adjacent activation infrastructure, not a
 disposable research diagnostic.
-**Status note**: Writes `standard_peak_activation_decisions.tsv`, `standard_peak_activation_values.tsv`, `standard_peak_activation_acceptance.tsv`, `standard_peak_activation_inputs.tsv`, `standard_peak_activation_inputs_summary.json`, and additive `seed_guard_decisions.tsv`. It selects only rows with `shadow_decision=accept`, `current_matrix_written=FALSE`, `projected_matrix_written=TRUE`, a nonblank projected value, and `same_peak_reason:shift_aware_standard_peak_gate_supported` in the product-authority chain. Current-matrix rows are counted as already written and are not reactivated; nonstandard, context, blocked, or unprovenanced rows fail closed. When a seed-guard context is supplied by the productization bridge, standard-path candidates are evaluated against the N-banded cohort seed-support rule before activation decisions are written; low-seed and inconclusive rows do not write activation decisions. Before writing acceptance, the converter runs a standard-peak row-level gate that checks PeakHypothesis scope, auto-activate decision shape, matching activation values, source schema, source row SHA, and the standard-peak same-peak reason. Passing rows generate an existing-contract `activation_acceptance.tsv` with `must_not_regress_status=pass`, a max product-affecting row allowance equal to the gated selected row count, and an activation scope derived from authority provenance: manual-oracle rows stay `manual_oracle_seed_rows`, while machine-gate rows are labeled `machine_gate_standard_peak_rows` with `must_not_regress_basis=machine_shift_aware_standard_peak_gate`. With `--apply-matrix-only`, the CLI immediately calls the existing matrix-only product activation writer and emits an activated matrix under `<output-dir>/activated_matrix` unless `--activated-output-dir` is supplied. If the standard-peak gate fails, acceptance stays fail and product application must stop for review. This converter does not generate upstream evidence, change source alignment artifacts, or bypass product activation; `apply_shared_peak_identity_activation.py --matrix-only` remains the matrix writer.
+**Status note**: Writes `standard_peak_activation_decisions.tsv`, `standard_peak_activation_values.tsv`, `standard_peak_activation_acceptance.tsv`, `standard_peak_activation_inputs.tsv`, `standard_peak_activation_inputs_summary.json`, and additive `seed_guard_decisions.tsv`. It selects only rows with `shadow_decision=accept`, `current_matrix_written=FALSE`, `projected_matrix_written=TRUE`, a nonblank projected value, and `same_peak_reason:shift_aware_standard_peak_gate_supported` in the product-authority chain. Current-matrix rows are counted as already written and are not reactivated; nonstandard, context, blocked, or unprovenanced rows fail closed. When a seed-guard context is supplied by the productization bridge, standard-path candidates are evaluated against the N-banded cohort seed-support rule before activation decisions are written; low-seed and inconclusive rows do not write activation decisions. Before writing acceptance, the converter runs a standard-peak row-level gate that checks PeakHypothesis scope, auto-activate decision shape, matching activation values, source schema, source row SHA, and the standard-peak same-peak reason. Passing rows generate an existing-contract `activation_acceptance.tsv` with `must_not_regress_status=pass`, a max product-affecting row allowance equal to the gated selected row count, and an activation scope derived from authority provenance: manual-oracle rows stay `manual_oracle_seed_rows`, while machine-gate rows are labeled `machine_gate_standard_peak_rows` with `must_not_regress_basis=machine_shift_aware_standard_peak_gate`. With `--apply-matrix-only`, the CLI immediately calls the existing matrix-only product activation writer and emits an activated matrix under `<output-dir>/activated_matrix` unless `--activated-output-dir` is supplied. If the standard-peak gate fails, acceptance stays fail and product application must stop for review. This converter does not generate upstream evidence, change source alignment artifacts, or bypass product activation. Its files are diagnostic proposals, not a matrix-writing interface.
 
 ---
 
@@ -736,9 +616,9 @@ the matching activation-scope audit. It selects policy rows with
 `matrix_value_source_row_sha256`, reloads the stored trace JSON, recomputes
 boundaries/area from the full stored trace, and writes
 `standard_peak_policy_observed_oracle.tsv` plus `summary.tsv/json`. Results use
-schema `standard_peak_policy_observed_oracle_v1`; only rows with
+schema `standard_peak_policy_observed_oracle`; only rows with
 `oracle_case_status=pass`, `included_in_product_acceptance=TRUE`, and
-`observed_result_source=policy_observed_full_trace_reintegration_v1` may be
+`observed_result_source=policy_observed_full_trace_reintegration` may be
 consumed by `standard_peak_backfill_productization.py
 --policy-observed-oracle-tsv --policy-observed-oracle-summary-json`. The current no-RAW FULL COHORT packet under
 `output/productization_realdata_seed_guard_full_cohort_20260617/policy_observed_oracle_detected_flagged_full_trace/`
@@ -874,59 +754,6 @@ final matrices. `nonstandard_assessable_area` rows can be review evidence only
 and remain blocked until a separate integration policy exists.
 8RAW activation and FULL COHORT validation are still required before production-ready
 claims.
-
----
-
-### `backfill_peakhypothesis_activation_bridge.py`
-
-**Purpose**: Convert reviewed `backfill_peakhypothesis_promotion_cells.tsv`
-rows into the existing shared-peak activation decision/acceptance TSV contract
-without creating a parallel matrix writer.
-**Topic group**: `backfill_peakhypothesis_activation_bridge.py` +
-`xic_extractor/diagnostics/backfill_peakhypothesis_activation_bridge.py`
-**Originating spec/goal/plan**:
-`retired-provenance:3aee8e2b6031`
-**Status note**: Writes `activation_decisions.tsv`,
-`activation_acceptance.tsv`, `activation_matrix_preflight.tsv`, and
-`backfill_peakhypothesis_activation_bridge_summary.json`. By default acceptance
-is `fail` with `next_action=run_activation_matrix_diff_smoke`, so the sidecar
-cannot be mistaken for production approval. Optional
-`--normal-peak-decisions-tsv` makes explicit `require_backfill` normal-peak
-decisions a fail-closed activation prerequisite. Optional
-`--alignment-matrix-tsv` plus `--alignment-matrix-identity-tsv` performs a
-public-matrix preflight: promoted PeakHypothesis/sample cells already present in
-the public matrix are suppressed from activation decisions. If the promotion
-snapshot says `current_matrix_written=FALSE` but the public matrix has a value,
-the preflight reports
-`public_matrix_conflicts_with_projection_current_snapshot` and points to
-rebuilding the matrix with the current writer before activation. This tool does
-not read RAW, mutate alignment artifacts, change workbook schemas, or write
-final matrices; matrix application remains owned by
-`apply_shared_peak_identity_activation.py`.
-
----
-
-### `backfill_peakhypothesis_activation_acceptance.py`
-
-**Purpose**: Validate the post-activation matrix diff for a reviewed
-PeakHypothesis backfill promotion slice, proving that activation changed exactly
-the promoted PeakHypothesis/sample cells and no unrelated public matrix cells.
-**Topic group**: `backfill_peakhypothesis_activation_acceptance.py` +
-`xic_extractor/diagnostics/backfill_peakhypothesis_activation_acceptance.py`
-**Originating spec/goal/plan**:
-`retired-provenance:3aee8e2b6031`
-**Status note**: Writes `backfill_peakhypothesis_activation_acceptance.tsv`,
-`backfill_peakhypothesis_activation_matrix_diff.tsv`, and
-`backfill_peakhypothesis_activation_acceptance_summary.json`. The gate consumes
-promotion cells, activation decisions, bridge matrix preflight, activation
-application summary, activation value delta, and before/after
-`alignment_matrix.tsv` plus `alignment_matrix_identity.tsv`. A pass requires
-all promoted rows to have matching `auto_activate` decisions, `needs_activation`
-preflight, `written` value deltas, coherent application summary, and a full
-matrix diff containing only the promoted cells with values matching the
-promotion sidecar. This is an 8RAW/current-writer diagnostic acceptance surface;
-it does not read RAW, mutate artifacts, change workbook schemas, or replace
-FULL COHORT production validation.
 
 ---
 
@@ -1113,45 +940,8 @@ normal-peak decision blockers, same-peak conflicts, non-positive normal-peak
 quantitation area, non-Gaussian15 quantitation area source, or activation-trial
 blockers. The projected value is
 `normal_peak_quantitation_area` when present, so machine-shape standard peaks
-write the Gaussian15 lobe area selected by the decision TSV. It does not apply
-activation or write matrices; downstream matrix mutation remains owned by
-`apply_shared_peak_identity_activation.py` / `product_activation`.
-
----
-
-### `backfill_peakhypothesis_normal_peak_activation.py`
-
-**Purpose**: Run the normal-peak backfill product path end to end: evidence
-rows become explicit `require_backfill` normal-peak decisions, FULL COHORT activation
-keys, activation sidecars, matrix-only `alignment_matrix.tsv` output, and a
-post-activation matrix-diff acceptance audit.
-**Topic group**: `backfill_peakhypothesis_normal_peak_activation.py` +
-`xic_extractor/diagnostics/backfill_peakhypothesis_normal_peak_activation.py`
-**Originating spec/goal/plan**:
-`retired-provenance:9851d7cfb739`
-**Status note**: This is the normal-peak end-to-end CLI for product behavior.
-It accepts either a provided `backfill_peakhypothesis_normal_peak_decisions.tsv`
-or the evidence inputs needed to generate it
-(`backfill_peakhypothesis_promotion_cells.tsv`,
-`backfill_peakhypothesis_acceptance_gate.tsv`, and machine Gaussian15
-shape/same-peak evidence from the overlay index; manual same-peak verdicts are
-optional overrides). It then consumes an existing
-`backfill_peakhypothesis_activation_trial.tsv` or can build one from a
-current FULL COHORT artifact directory, runs the FULL COHORT activation transfer,
-bridges transfer promotions into activation decisions, applies matrix-only
-activation through `product_activation`, and runs exact post-activation
-matrix-diff acceptance. The bridge's pre-application `activation_acceptance.tsv`
-is intentionally allowed to be fail-closed inside this orchestrator because the
-real product gate is the final `backfill_peakhypothesis_activation_acceptance.tsv`.
-Standard normal-peak rows with blockers fail closed before matrix writing.
-For machine-shape standard peaks, the matrix-only activation value comes from
-the decision TSV's `normal_peak_quantitation_area`, which is the Gaussian15
-baseline-return lobe area selected by the overlay/`ChromPeakSegment` evidence.
-`review_only_nonstandard_peak` rows are counted and excluded from activation
-rather than blocking this normal-peak goal. Passing output writes `alignment_matrix.tsv`,
-`alignment_matrix_identity.tsv`, `activation_value_delta.tsv`,
-`activation_hypothesis_identity.tsv`, and an end-to-end summary with source
-paths, source hashes, changed-cell count, and acceptance status.
+write the Gaussian15 lobe area selected by the decision TSV. It does not apply activation or write matrices. Transfer rows remain
+diagnostic proposals and do not grant matrix-writing authority.
 
 ---
 
@@ -1191,19 +981,19 @@ until an explicit product-transfer decision and consolidation policy exist.
 
 ### `authorize_backfill_ms1_pattern_evidence.py`
 
-**Purpose**: Convert reviewed, allowlisted RAW-overlay MS1 pattern sidecar rows into a product-authorized MS1 sidecar candidate for `apply_shared_peak_identity_activation.py`.
+**Purpose**: Convert reviewed, allowlisted RAW-overlay MS1 pattern sidecar rows into a product-authorized MS1 sidecar candidate for Backfill evidence review.
 **Topic group**: `authorize_backfill_ms1_pattern_evidence.py` + `xic_extractor/alignment/backfill_ms1_product_authority.py`
 **Originating spec/goal/plan**: `retired-provenance:69bd6d102e9c`
-**Status note**: Writes `shared_peak_identity_ms1_pattern_coherence_product_authorized.tsv`, `backfill_ms1_pattern_product_authority_audit.tsv`, and `backfill_ms1_pattern_product_authority_summary.json`. Authorization is fail-closed: the allowlist row must be `backfill_ms1_pattern_product_authority_v1` with `authority_status=product_authorized`, reviewed `expected_overlay_trace_data_json`, and reviewed `expected_overlay_trace_data_sha256`; the source MS1 row must be supportive/partial `trace_constellation` RAW-overlay evidence with the same-peak own-max anchor reason, `shape_metric_source=family_ms1_overlay_anchor_peak_own_max`, and an own-max similarity above the allowlist threshold. Empty allowlist thresholds use the default `0.5` floor; explicit thresholds may tighten but cannot lower that floor. Duplicate source/product sidecar keys are ambiguous and fail closed instead of using row order. The recorded `family_ms1_overlay_trace_data_json` must resolve relative to the source TSV without absolute paths or bundle escape, declare the same top-level `family_id`, contain one matching sample trace with usable RAW RT/intensity vectors and own-max similarity, match the reviewed allowlist path/hash, and the authorized row records `product_authority_overlay_trace_data_sha256`. Output rows set `diagnostic_only=FALSE` plus explicit `product_authority_*` fields. Projection copies authority provenance into rescued-cell `backfill_ms1_product_authority_*` columns, and promotion policy does not treat naked `backfill_ms1_*` support fields as product support. This tool does not generate overlays, does not mutate source alignment artifacts, and by itself is only a product-authority sidecar candidate; 8RAW/FULL COHORT activation validation is still required before product readiness.
+**Status note**: Writes `shared_peak_identity_ms1_pattern_coherence_product_authorized.tsv`, `backfill_ms1_pattern_product_authority_audit.tsv`, and `backfill_ms1_pattern_product_authority_summary.json`. Authorization is fail-closed: the allowlist row must be `backfill_ms1_pattern_product_authority` with `authority_status=product_authorized`, reviewed `expected_overlay_trace_data_json`, and reviewed `expected_overlay_trace_data_sha256`; the source MS1 row must be supportive/partial `trace_constellation` RAW-overlay evidence with the same-peak own-max anchor reason, `shape_metric_source=family_ms1_overlay_anchor_peak_own_max`, and an own-max similarity above the allowlist threshold. Empty allowlist thresholds use the default `0.5` floor; explicit thresholds may tighten but cannot lower that floor. Duplicate source/product sidecar keys are ambiguous and fail closed instead of using row order. The recorded `family_ms1_overlay_trace_data_json` must resolve relative to the source TSV without absolute paths or bundle escape, declare the same top-level `family_id`, contain one matching sample trace with usable RAW RT/intensity vectors and own-max similarity, match the reviewed allowlist path/hash, and the authorized row records `product_authority_overlay_trace_data_sha256`. Output rows set `diagnostic_only=FALSE` plus explicit `product_authority_*` fields. Projection copies authority provenance into rescued-cell `backfill_ms1_product_authority_*` columns, and promotion policy does not treat naked `backfill_ms1_*` support fields as product support. This tool does not generate overlays, does not mutate source alignment artifacts, and by itself is only a product-authority sidecar candidate; 8RAW/FULL COHORT activation validation is still required before product readiness.
 
 ---
 
 ### `authorize_backfill_candidate_ms2_pattern_evidence.py`
 
-**Purpose**: Convert reviewed, allowlisted Candidate MS2/NL pattern sidecar rows into a product-authorized Candidate MS2 sidecar candidate for `apply_shared_peak_identity_activation.py`.
+**Purpose**: Convert reviewed, allowlisted Candidate MS2/NL pattern sidecar rows into a product-authorized Candidate MS2 sidecar candidate for Backfill evidence review.
 **Topic group**: `authorize_backfill_candidate_ms2_pattern_evidence.py` + `xic_extractor/alignment/backfill_candidate_ms2_product_authority.py`
 **Originating spec/goal/plan**: `retired-provenance:69bd6d102e9c`
-**Status note**: Writes `shared_peak_identity_candidate_ms2_pattern_product_authorized.tsv`, `backfill_candidate_ms2_product_authority_audit.tsv`, and `backfill_candidate_ms2_product_authority_summary.json`. Authorization is fail-closed: the allowlist row must be `backfill_candidate_ms2_pattern_product_authority_v1` with `authority_status=product_authorized`, non-empty authority source, expected status/level/alignment-source fields, and a reviewed canonical SHA256 of the source Candidate MS2 row. The source row must carry the canonical `shared_peak_identity_candidate_ms2_pattern_v2` producer schema and full producer columns. Only supportive or partial Candidate MS2 rows at `sample_candidate_aligned` or `sample_boundary_aligned` can become product-authorized; direct candidate rows require matched-tag/NL provenance and RAW-boundary rows require positive trigger/strict-NL/product-trace evidence. `not_observed`, conflicts, missing rows, stale source-row hashes, status/level/alignment drift, malformed provenance, and similarity below the default `0.5` floor remain audit rejects. Output rows set `diagnostic_only=FALSE` plus explicit `product_authority_*` fields so backfill projection can consume them. Projection copies authority provenance into rescued-cell `backfill_candidate_ms2_product_authority_*` columns, and promotion policy does not treat naked `backfill_candidate_ms2_*` support fields as product support. This tool does not generate Candidate MS2 evidence, does not read RAW, does not mutate source alignment artifacts, and by itself is only a product-authority sidecar candidate; 8RAW/FULL COHORT activation validation is still required before product readiness.
+**Status note**: Writes `shared_peak_identity_candidate_ms2_pattern_product_authorized.tsv`, `backfill_candidate_ms2_product_authority_audit.tsv`, and `backfill_candidate_ms2_product_authority_summary.json`. Authorization is fail-closed: the allowlist row must be `backfill_candidate_ms2_pattern_product_authority` with `authority_status=product_authorized`, non-empty authority source, expected status/level/alignment-source fields, and a reviewed canonical SHA256 of the source Candidate MS2 row. The source row must carry the canonical `shared_peak_identity_candidate_ms2_pattern` producer schema and full producer columns. Only supportive or partial Candidate MS2 rows at `sample_candidate_aligned` or `sample_boundary_aligned` can become product-authorized; direct candidate rows require matched-tag/NL provenance and RAW-boundary rows require positive trigger/strict-NL/product-trace evidence. `not_observed`, conflicts, missing rows, stale source-row hashes, status/level/alignment drift, malformed provenance, and similarity below the default `0.5` floor remain audit rejects. Output rows set `diagnostic_only=FALSE` plus explicit `product_authority_*` fields so backfill projection can consume them. Projection copies authority provenance into rescued-cell `backfill_candidate_ms2_product_authority_*` columns, and promotion policy does not treat naked `backfill_candidate_ms2_*` support fields as product support. This tool does not generate Candidate MS2 evidence, does not read RAW, does not mutate source alignment artifacts, and by itself is only a product-authority sidecar candidate; 8RAW/FULL COHORT activation validation is still required before product readiness.
 
 ---
 
@@ -1220,7 +1010,7 @@ until an explicit product-transfer decision and consolidation policy exist.
 
 **Purpose**: Write the no-RAW source/successor transition evidence consumed by CID-NL differential diagnostics.
 **Topic group**: `cid_nl_default_activation_gallery_review.py`, `cid_nl_differential_overlay_review.py`, and `cid_nl_feature_inclusion_gate.py`.
-**Originating spec/goal/plan**: `docs/superpowers/validation/cid_nl_default_activation_successor_authority_contract_v1/README.md`; `docs/superpowers/validation/cid_nl_default_activation_gallery_review_v1/README.md`.
+**Originating spec/goal/plan**: `docs/superpowers/validation/cid_nl_default_activation_successor_authority_contract/README.md`; `docs/superpowers/validation/cid_nl_default_activation_gallery_review/README.md`.
 **Status note**: `write_transition_review_evidence(...)` consumes successor decisions and alignment review TSVs, then writes the deterministic `cid_nl_discovery_identity_differential_review.tsv` shape at the caller-supplied path. It preserves source/successor counts, coordinates, feature-inclusion and identity-authority gates, relationship state, and paired-overlay readiness. It has no CLI or HTML output and does not read RAW, mutate product outputs, or grant writer authority.
 
 ---
@@ -1229,7 +1019,7 @@ until an explicit product-transfer decision and consolidation policy exist.
 
 **Purpose**: Generate paired source vs successor RAW-backed MS1 overlay review artifacts for CID-NL feature-inclusion and identity-relationship review.
 **Topic group**: `cid_nl_default_activation_gallery_review.py`, `cid_nl_feature_inclusion_gate.py`, and the RAW `open_raw(...).extract_xic_many(...)` batch extraction path.
-**Originating spec/goal/plan**: `docs/superpowers/validation/cid_nl_default_activation_gallery_review_v1/README.md`.
+**Originating spec/goal/plan**: `docs/superpowers/validation/cid_nl_default_activation_gallery_review/README.md`.
 **Status note**: `write_differential_evidence(...)` consumes the transition and successor-decision TSVs, filters ready source/successor transitions, and extracts both XICs in one RAW open per sample. It writes the paired queue, Gaussian15-smoothed PNG overlays, lossless trace JSON, and `cid_nl_differential_overlay_review_summary.tsv/json` beneath the requested output directory. It emits no Gallery HTML. The artifacts remain `diagnostic_only`: they can support feature-inclusion review, while replacement, merge, deduplication, Matrix writes, and product adoption retain their separate owners and gates.
 
 ---
@@ -1247,8 +1037,8 @@ until an explicit product-transfer decision and consolidation policy exist.
 
 **Purpose**: Produce paired `diagnostic_only` Tier 2 RAW trace evidence and RAW manifest sidecars for retained provisional backfill candidates.
 **Topic group**: `tier2_raw_trace_reread_producer.py` + `xic_extractor/alignment/tier2_trace_producer.py` + `xic_extractor/alignment/production_candidate_gate.py`
-**Originating spec/plan**: `retired-provenance:443a0af82ac4`; follows the sidecar provenance gate checkpoint in `retired-provenance:d3d707f162f6`; v0.1 diagnostic criteria review in `retired-provenance:38373345f4da` and `retired-provenance:e509e2788bf2`.
-**Status note**: Writes diagnostic-only v0.1 Tier 2 RAW trace evidence and RAW manifest sidecars. The v0.1 criteria expose scan availability, signal/noise, shape, boundary-reference, apex-span, and neighbor-interference context, but do not provide positive Tier 2 support or change `alignment_matrix.tsv`. FULL COHORT is out of scope until a reviewed follow-up plan is approved after a successful v0.1 8RAW diagnostic rerun.
+**Originating spec/plan**: `retired-provenance:443a0af82ac4`; follows the sidecar provenance gate checkpoint in `retired-provenance:d3d707f162f6`; diagnostic criteria review in `retired-provenance:38373345f4da` and `retired-provenance:e509e2788bf2`.
+**Status note**: Writes diagnostic-only Tier 2 RAW trace evidence and RAW manifest sidecars. The criteria expose scan availability, signal/noise, shape, boundary-reference, apex-span, and neighbor-interference context, but do not provide positive Tier 2 support or change `alignment_matrix.tsv`. FULL COHORT is out of scope until a reviewed follow-up plan is approved after a successful 8RAW diagnostic rerun.
 
 ---
 
@@ -1390,14 +1180,9 @@ workbook, matrix, or candidate-selection outputs.
 **Purpose**: Build a single-dR production gate decision report.
 **Topic group**: `single_dr_production_gate_decision_report.py` + `single_dr_gate_decision_{loaders, writers}` (3 files)
 **Originating spec**: `retired-provenance:038bfb65fe90:29` (designated PR2 split target)
-**Status note**: The report now writes both review summaries and product-facing
-gate artifacts. `single_dr_gate_activation_decisions.tsv` translates implemented
-row-level gate candidates into activation rows, and
-`single_dr_gate_changed_row_bundle.tsv` records the required changed-row review
-fields for every product-affecting row removal. These files are intended to feed
-`apply_shared_peak_identity_activation.py`; after activation is applied, rerun
-the gate and require zero pending activation-decision rows before claiming the
-8RAW slice has no remaining product mutation. Gate-candidate report assembly
+**Status note**: Writes family and detected-cell evidence, gate-candidate
+summaries, and JSON/Markdown reports for review. These outputs do not grant
+matrix-writing authority. Gate-candidate report assembly
 indexes family rows by risk classification once and reuses those buckets for the
 individual gate summaries while preserving blocked-row order and existing output
 schemas.
@@ -1424,7 +1209,7 @@ schemas.
 ### `targeted_ms1_shape_identity_from_grid.py`
 
 **Purpose**: Convert an existing targeted own-max trace grid plus per-sample
-summary into `targeted_ms1_shape_identity_v0` evidence rows with the formal
+summary into `targeted_ms1_shape_identity` evidence rows with the formal
 `own_max_same_peak_support` token.
 **Topic group**: targeted NL dropout / MS1 shape identity; reuses
 `xic_extractor.diagnostics.targeted_ms1_shape_identity`.
@@ -1436,7 +1221,7 @@ runs, change selected RT/area, or mutate workbooks/matrices.
 
 ### `build_targeted_ms1_shape_identity_supports.py`
 
-**Purpose**: Build generic `targeted_ms1_shape_identity_v0` evidence rows from
+**Purpose**: Build generic `targeted_ms1_shape_identity` evidence rows from
 a baseline `xic_results_long.csv` plus RAW MS1 traces. It selects all eligible
 analyte NL-fail policy-blocked rows with paired RT/area-ratio support, finds a
 Gaussian-smoothed local apex near the paired-ISTD reference mode, and compares
@@ -1453,7 +1238,7 @@ Normal extraction can consume a reviewed TSV through
 `targeted_ms1_shape_identity_support_tsv`. The headless CLI also wraps the same
 producer in a bounded auto workflow, either with
 `--targeted-ms1-shape-identity-auto-limited-default` or by default when the
-effective config policy is `limited_5hmdc_5medc_v1` and no support TSV is
+effective config policy is `limited_5hmdc_5medc` and no support TSV is
 configured. In both auto paths, product output is published only after the
 support-TSV expected-diff gate passes for the limited `5-hmdC + 5-medC` /
 `detected_flagged` behavior.
@@ -1468,7 +1253,7 @@ limited `5-hmdC` / `5-medC` activation policy.
 `xic_extractor.diagnostics.targeted_ms1_shape_identity_expected_diff`.
 **Status note**: Reads existing `expected_diff_summary.tsv`,
 `matrix_diff_summary.tsv`, and the required actual
-`targeted_ms1_shape_identity_v0` `--support-tsv`. It fails closed unless every
+`targeted_ms1_shape_identity` `--support-tsv`. It fails closed unless every
 long-row mutation is an analyte `NL_FAIL` row moving from `not_counted/FALSE` to
 `detected_flagged/TRUE` with `own_max_same_peak_support`, every wide-matrix cell
 mutation is an allowed `5-hmdC` or `5-medC` measurement moving from `ND` to a
@@ -1511,7 +1296,7 @@ are not daily).
 
 **Purpose**: Build docs-derived instrument QC sequence manifest.
 **Originating spec**: `retired-provenance:9b1b633f6f09`
-**Status note**: The `run_instrument_qc.py --method-doc` flow writes the sequence manifest, legacy `instrument_qc_injection_order.csv`, and additive `instrument_qc_sample_metadata.tsv` using `sample_metadata_v1`. The sample-metadata sidecar projects matched RAW rows and raw-dir-only instrument-QC rows as metadata only; roles do not alter instrument-QC trend values or matrix outputs.
+**Status note**: The `run_instrument_qc.py --method-doc` flow writes the sequence manifest, legacy `instrument_qc_injection_order.csv`, and additive `instrument_qc_sample_metadata.tsv` using `sample_metadata`. The sample-metadata sidecar projects matched RAW rows and raw-dir-only instrument-QC rows as metadata only; roles do not alter instrument-QC trend values or matrix outputs.
 
 ---
 
@@ -1580,8 +1365,8 @@ multiple MS1 peak modes.
 `--evidence-cache-dir` is an opt-in evidence-only accelerator for repeated
 modeling validation. Cache keys bind the alignment-cell hash, RAW/DLL paths,
 overlay source, rank/output prefix, legacy family/sample/seed request, mz/ppm/RT
-window, and peak-group center RT. Cache v4 also records per-sample RAW identity
-with `path_stat_v1` (`resolved_path`, size, mtime, device, inode). Warm hits
+window, and peak-group center RT. Cache also records per-sample RAW identity
+with `path_stat` (`resolved_path`, size, mtime, device, inode). Warm hits
 reuse cached trace TSV/JSON evidence without opening RAW files only after the
 cached trace payload, stable provenance, and current RAW identities still match
 the request; missing or mismatched RAW identity fails closed to normal RAW
@@ -1652,7 +1437,7 @@ or global trace apex conflicts.
 
 **Purpose**: Build a `diagnostic_only` nearest-injection-QC MS1 pattern reference sidecar from `family_ms1_overlay_plot` RAW trace JSON plus SampleInfo injection order; reports whether the closest QC supports, conflicts with, or cannot adjudicate a reviewed sample's selected MS1 peak.
 **Topic group**: `qc_ms1_pattern_reference.py` + `xic_extractor/alignment/shared_peak_identity_explanation/qc_ms1_pattern_reference.py`
-**Originating context**: V2 shared peak identity evidence-chain follow-up for using nearby QC MS1 pattern as an RT-drift / wrong-peak adjudication surface.
+**Originating context**: shared peak identity evidence-chain follow-up for using nearby QC MS1 pattern as an RT-drift / wrong-peak adjudication surface.
 
 ---
 
@@ -1665,7 +1450,7 @@ the Gaussian15 morphology area contract; reports fail-closed rows with missing
 MS1 morphology area and hard-fails any non-Gaussian source that still writes
 primary matrix area.
 **Topic group**: `alignment_primary_area_authority_audit.py` (single-file)
-**Originating context**: 2026-06-05 Product Authority Reconciliation v1
+**Originating context**: 2026-06-05 Product Authority Reconciliation
 follow-up for owner scalar fallback / retired area-source leakage.
 **Status note**: Reads existing `alignment_cells.tsv`, writes summary and
 flagged-row TSV/JSON only, and does not mutate matrices, workbook outputs,
@@ -1682,7 +1467,7 @@ and requires trigger-rate review before promotion.
 area versus raw area and configured/default-15 smoothing duration from
 `peak_candidates.tsv`.
 **Topic group**: `gaussian15_area_pressure_audit.py` (single-file)
-**Originating context**: 2026-06-05 Product Authority Reconciliation v1
+**Originating context**: 2026-06-05 Product Authority Reconciliation
 follow-up for raw-vs-Gaussian area comparability and scan-rate sensitivity.
 **Status note**: Reads candidate-table provenance fields
 (`area_raw_counts_seconds`, `area_ms1_morphology`,
@@ -1708,28 +1493,6 @@ audit schema only.
 
 ---
 
-### `region_first_safe_merge_comparison.py`
-
-**Purpose**: Compare default XIC output with opt-in region-first safe merge.
-**Topic group**: `region_first_safe_merge_comparison.py` (single-file)
-**Originating spec**: `retired-provenance:4545acb11ee0` + `retired-provenance:801934525810`
-
----
-
-## One-off Fixtures
-
-Tools that build deterministic test fixtures from production data; expected
-to be re-run only when the underlying data shape changes.
-
-### `build_istd_false_missing_fixture.py`
-
-**Purpose**: Build ISTD false-missing validation fixture.
-**Topic group**: `build_istd_false_missing_fixture.py` (single-file)
-**Originating plan**: `retired-provenance:6d2a06f8be03`
-**Cadence note**: "Build-once" — should declare a per-campaign or per-data-shape cadence per the lifecycle spec's seasonal-cadence exception.
-
----
-
 ## Delta Mass / Pt Pattern Discovery
 
 Diagnostics-only bridge tooling for the `delta_mass(pattern_id=pt)` Discovery
@@ -1745,7 +1508,7 @@ modules; this tool follows the same boundary by convention).
 RAW file (reusing `xic_extractor.raw_reader.open_raw`/`RawFileHandle`) and
 emits a schema-valid Detected Features CSV
 (`xic_extractor.discovery.delta_mass_csv.DETECTED_FEATURES_COLUMNS`) with
-`source = "raw_scan_proxy_v1"` on every row, plus a `proxy_provenance.json`
+`source = "raw_scan_proxy"` on every row, plus a `proxy_provenance.json`
 provenance file, so the Pt pattern CLI
 (`scripts/run_pt_pattern_discovery.py`) has something to run against for a
 first diagnostic look at a real Fullscan sample.
@@ -1758,7 +1521,7 @@ pattern matcher's real m/z gate by default, while wider exploratory windows
 remain opt-in. Repeated full-pattern scan groups are written with
 `trace_quality = "OK"` and blank `shape_score` so the bridge can produce review
 candidates, but the provenance labels the output `diagnostic_only`; see
-`docs/superpowers/validation/pt_pattern_discovery_v1/README.md`.
+`docs/superpowers/validation/pt_pattern_discovery/README.md`.
 
 ---
 
@@ -1769,11 +1532,11 @@ candidates, but the provenance labels the output `diagnostic_only`; see
 +4 around each candidate's base RT using
 `xic_extractor.raw_reader.open_raw` / `RawFileHandle.extract_xic_many`, and
 writes candidate-level trace support summaries, position-level co-elution
-metrics, and optional trace points. Current full-context schema v4 keeps the
+metrics, and optional trace points. Current full-context schema keeps the
 full extraction-window semantics, including
 `pt_pattern_trace_points.csv`. Anchor-local segmentation is emitted separately
 as `pt_pattern_anchor_local_trace_*.csv` under
-`pt_pattern_anchor_local_trace_diagnosis.v3`. For the anchor-local output, each
+`pt_pattern_anchor_local_trace_diagnosis`. For the anchor-local output, each
 Pt position must yield exactly one chromatographic segment that contains the
 candidate anchor RT; its co-elution metrics use the common intersection of the
 four selected segments. Missing or ambiguous segments fail closed to review
@@ -1794,7 +1557,7 @@ diagnostic wrapper owns RAW opening and file writes only; batch diagnosis,
 segmentation, boundary facts, and support semantics live in Discovery package
 modules. One RAW extraction feeds one full-window diagnosis and one
 anchor-local diagnosis; context trace points are not produced by recomputing a
-third diagnosis. Schema v2 records
+third diagnosis. Schema records
 `trace_decision_basis = gaussian15_smoothed_trace`: apex, shape similarity,
 active overlap, and support status use Gaussian15-smoothed XIC intensity, while
 raw vendor trace points and raw audit metrics are retained as reference
@@ -1827,7 +1590,7 @@ historical `oracle_status` field names workflow state only: filled and promoted
 human labels remain bounded adjudication evidence, not independent ground truth.
 An `uncertain` label stays unresolved and must not be counted as a true reject.
 Current full-context inputs use packet schema v4; anchor-local inputs use packet
-schema v5 with explicit `anchor_segmentation_*` evidence fields. Both require a
+schema with explicit `anchor_segmentation_*` evidence fields. Both require a
 packet manifest and the verified trace manifest/fingerprint that produced the
 reviewed rows; historical unsealed packet schemas fail closed.
 
@@ -1860,7 +1623,7 @@ sealed machine calls use the same Gaussian15 trace-decision metrics. Those calls
 are the current `trace_rule_call` proxy only. Raw trace-point CSVs remain raw
 vendor evidence and are not Matrix, counting, or quantitation authority. Current
 full-context output uses overlay/machine schema v4; anchor-local inputs use
-overlay/machine schema v5. Rendering, sealed-call projection, and artifact
+overlay/machine schema. Rendering, sealed-call projection, and artifact
 writing are maintained by separate package modules. Trace-point CSVs are sparse
 observation tables: a reviewed candidate or position may have zero rows when
 the XIC is empty or anchor segmentation fails. The writer renders those gaps as
@@ -1886,7 +1649,7 @@ named bounded adjudication packet.
 `xic_extractor.discovery.pt_pattern_oracle_promotion`
 **Product owner**: `docs/product/discovery.md`
 **Status note**: Diagnostic-only despite the historical `oracle` names in its
-schema and paths. Promotion schema v2 requires each adjudicated row to carry a
+schema and paths. Promotion schema requires each adjudicated row to carry a
 fresh human `accept` or `reject`, the SHA-256 of its review-packet CSV, and the
 SHA-256 of a supplied blind-overlay summary. The tool re-hashes every packet,
 trace CSV, gallery HTML, sealed machine-call CSV, and summary named by that
@@ -1908,7 +1671,7 @@ packet does not establish detector accuracy or physical Pt identity.
 ### `pt_pattern_oracle_refresh.py`
 
 **Purpose**: Compare an older, historically named Pt pattern adjudication CSV
-with current manual-review packets and sealed machine-call CSVs, then write a v2 refresh
+with current manual-review packets and sealed machine-call CSVs, then write a refresh
 draft, a pending human-review worklist, stale old-oracle rows, and a summary
 JSON with input SHA-256 provenance.
 **Topic group**: `pt_pattern_oracle_refresh.py` +
@@ -1922,7 +1685,7 @@ logical continuity: without exact reviewed-artifact identity, old labels remain
 `pending_human_review` instead of being carried forward. Candidate conflicts
 remain conflicts, and old rows absent from the current packet are reported as
 stale. A refresh draft can be packaged only after every pending/conflicting row
-is freshly resolved under the promotion v2 provenance contract. The
+is freshly resolved under the promotion provenance contract. The
 machine-call CSV is accepted only through its sibling
 `pt_pattern_blind_overlay_summary.json`; that summary must verify the complete
 packet/trace/gallery/machine bundle and bind the exact supplied machine path.
@@ -1947,7 +1710,7 @@ a case-level audit CSV, and a summary JSON.
 **Status note**: Diagnostic-only threshold calibration surface. It does not
 open RAW, create candidates, recompute trace evidence, mutate Discovery
 outputs, read Alignment state, or write Matrix/workbook artifacts. The
-calibration consumer validates current manifest-sealed packet schema v4/v5 and requires each promotion
+calibration consumer validates current manifest-sealed packet schema v4/and requires each promotion
 row's schema/status, candidate/sample identity, and review-packet SHA-256 to
 match the actual packet supplying the metrics. A stale label cannot be paired
 with another packet merely by reusing `packet_row_id`. The recommended rule is
@@ -2019,8 +1782,8 @@ core-with-conditional-+4 window-occupancy evidence.
 **Product owner**: `docs/product/discovery.md`
 **Status note**: Diagnostic-only RAW-backed replay. It loads or builds one MS1
 index per run, never reopens RAW per candidate, preserves below-noise +4 as
-censored evidence, and reports shared-feature conflict components. Replay v3
-keeps the v2 strict component rule and treats `(source_set, seed_id)` as the
+censored evidence, and reports shared-feature conflict components. Replay
+keeps the strict component rule and treats `(source_set, seed_id)` as the
 structured seed identity. Known-list seed IDs derive from normalized base-m/z
 assignments; compound names remain review metadata and do not define identity.
 A component counts as resolved only when exactly one candidate has full
@@ -2096,11 +1859,11 @@ SOURCE_LABEL=PATH` lets the same calibrated rule run on current full-context
 trace-diagnosed candidate slices instead of only bounded manual-review packets;
 the canonical sibling metrics CSV and trace manifest are required and the
 manifest fingerprint/output hashes are revalidated before any gate row is
-written. Diagnostic-gate schema v2 preserves the input schema, assignment SHA,
+written. Diagnostic-gate schema preserves the input schema, assignment SHA,
 extraction SHA, and artifact role in every output row.
 `--require-zero-fpfn` makes the CLI fail if bounded-oracle replay has any false
 positive or false negative. Reviewed-label replay first requires an exact
-promotion-v2 row and actual review-packet SHA/candidate/sample match; synthetic
+promotion row and actual review-packet SHA/candidate/sample match; synthetic
 trace-summary rows cannot stand in for that packet. The pass/fail result is
 still only a diagnostic gate against those reviewed labels. A zero-error result is resubstitution, not
 ground-truth accuracy or held-out validation, and must not be treated as final

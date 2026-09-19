@@ -1,0 +1,66 @@
+{
+  "schema_version": "quant_matrix_downstream_impact_smoke_schema",
+  "downstream_impact_schema": "quant_matrix_downstream_impact_smoke",
+  "row_schema": "quant_matrix_downstream_impact_row",
+  "purpose": "Defines the no-RAW downstream-impact smoke artifact for QuantMatrixVersion promotion. It proves accepted Backfill values improve numeric matrix availability while keeping detected-only claims reconstructable from sidecars. It does not grant write authority or change ProductWriter/default matrix behavior.",
+  "summary_json": "quant_matrix_downstream_impact_smoke.json",
+  "row_metrics_tsv": "quant_matrix_downstream_impact_rows.tsv",
+  "bundle_kinds": [
+    "contract_fixture",
+    "real_quant_matrix_version"
+  ],
+  "row_columns": [
+    "schema_version",
+    "peak_hypothesis_id",
+    "sample_count",
+    "detected_count",
+    "accepted_backfilled_count",
+    "quant_available_count",
+    "detected_only_missing_count",
+    "quant_matrix_missing_count",
+    "missing_cell_reduction_count",
+    "backfill_fraction",
+    "prevalence_flags"
+  ],
+  "summary_required_fields": [
+    "schema_version",
+    "downstream_scope",
+    "bundle_kind",
+    "status",
+    "read_only",
+    "write_authority",
+    "product_writer_changed",
+    "default_quant_matrix_changed",
+    "detected_claims_unchanged",
+    "production_promotion_eligible",
+    "input_artifacts",
+    "row_metrics_tsv",
+    "row_metrics_tsv_sha256",
+    "metrics",
+    "problems",
+    "pass_conditions",
+    "authority_statement"
+  ],
+  "promotion_binding_rules": {
+    "status_must_be_pass": true,
+    "bundle_kind_must_be_real_quant_matrix_version": true,
+    "production_promotion_eligible_must_be_true": true,
+    "row_metrics_tsv_hash_must_match": true,
+    "input_artifact_paths_and_hashes_must_match": true,
+    "metrics_must_recompute_from_input_artifacts": true,
+    "row_metrics_must_recompute_from_input_artifacts": true,
+    "accepted_backfill_values_must_be_positive_numeric": true,
+    "missing_cell_reduction_must_equal_accepted_backfill_count": true,
+    "detected_claims_must_remain_unchanged": true
+  },
+  "authority_rules": {
+    "read_only": true,
+    "write_authority": false,
+    "product_writer_changed": false,
+    "default_quant_matrix_changed": false,
+    "does_not_run_scorer": true,
+    "does_not_read_raw_inputs": true,
+    "does_not_change_selected_peak_area_or_counting": true,
+    "contract_fixture_cannot_satisfy_promotion": true
+  }
+}

@@ -39,9 +39,9 @@ class TargetedDeliveryCellKey:
         )
         _required_text(self.target_key_id, "target_key_id")
         expected = _typed_id(
-            "xic.targeted-delivery-cell.v1:",
+            "xic.targeted-delivery-cell:",
             {
-                "schema": "targeted_delivery_cell_v1",
+                "schema": "targeted_delivery_cell",
                 "projection": "targeted",
                 "canonical_sample_identity_id": self.canonical_sample_identity_id,
                 "target_key_id": self.target_key_id,
@@ -113,7 +113,7 @@ class TargetedDeliveryRevisionCandidate:
                 "evidence artifacts must be canonical-sorted"
             )
         expected = _typed_id(
-            "xic.targeted-delivery-revision-candidate.v1:",
+            "xic.targeted-delivery-revision-candidate:",
             _revision_basis(
                 cell=self.cell,
                 attempt=self.producer_attempt,
@@ -185,8 +185,8 @@ class TargetedDeliveryStageCandidate:
                 "lineage_manifest_sha256 mismatches staged content"
             )
         expected_stage = _typed_id(
-            "xic.targeted-delivery-stage-candidate.v1:",
-            {"schema": "targeted_delivery_stage_candidate_v1", **manifest},
+            "xic.targeted-delivery-stage-candidate:",
+            {"schema": "targeted_delivery_stage_candidate", **manifest},
         )
         if self.delivery_stage_id != expected_stage:
             raise DeliveryLineageContractError(
@@ -205,9 +205,9 @@ class TargetedDeliverySealCandidate:
                 "stage must be a TargetedDeliveryStageCandidate"
             )
         expected = _typed_id(
-            "xic.targeted-delivery-seal-candidate.v1:",
+            "xic.targeted-delivery-seal-candidate:",
             {
-                "schema": "targeted_delivery_seal_candidate_v1",
+                "schema": "targeted_delivery_seal_candidate",
                 "delivery_stage_id": self.stage.delivery_stage_id,
                 "lineage_manifest_sha256": self.stage.lineage_manifest_sha256,
                 "revision_ids": [
@@ -239,13 +239,13 @@ def mint_targeted_delivery_cell_key(
             "target must be an owner-resolved target definition"
         )
     basis = {
-        "schema": "targeted_delivery_cell_v1",
+        "schema": "targeted_delivery_cell",
         "projection": "targeted",
         "canonical_sample_identity_id": sample.identity.sample_identity_id,
         "target_key_id": target.definition.target_key.target_key_id,
     }
     return TargetedDeliveryCellKey(
-        delivery_cell_key_id=_typed_id("xic.targeted-delivery-cell.v1:", basis),
+        delivery_cell_key_id=_typed_id("xic.targeted-delivery-cell:", basis),
         canonical_sample_identity_id=sample.identity.sample_identity_id,
         target_key_id=target.definition.target_key.target_key_id,
     )
@@ -290,7 +290,7 @@ def mint_targeted_delivery_revision_candidate(
     )
     return TargetedDeliveryRevisionCandidate(
         delivery_revision_id=_typed_id(
-            "xic.targeted-delivery-revision-candidate.v1:", basis
+            "xic.targeted-delivery-revision-candidate:", basis
         ),
         cell=cell,
         producer_attempt=producer_attempt,
@@ -329,8 +329,8 @@ def stage_targeted_delivery_candidate(
     )
     return TargetedDeliveryStageCandidate(
         delivery_stage_id=_typed_id(
-            "xic.targeted-delivery-stage-candidate.v1:",
-            {"schema": "targeted_delivery_stage_candidate_v1", **manifest},
+            "xic.targeted-delivery-stage-candidate:",
+            {"schema": "targeted_delivery_stage_candidate", **manifest},
         ),
         producer_attempt=producer_attempt,
         revisions=revisions,
@@ -347,7 +347,7 @@ def mint_targeted_delivery_seal_candidate(
             "stage must be a TargetedDeliveryStageCandidate"
         )
     basis = {
-        "schema": "targeted_delivery_seal_candidate_v1",
+        "schema": "targeted_delivery_seal_candidate",
         "delivery_stage_id": stage.delivery_stage_id,
         "lineage_manifest_sha256": stage.lineage_manifest_sha256,
         "revision_ids": [
@@ -360,7 +360,7 @@ def mint_targeted_delivery_seal_candidate(
     }
     return TargetedDeliverySealCandidate(
         delivery_seal_candidate_id=_typed_id(
-            "xic.targeted-delivery-seal-candidate.v1:", basis
+            "xic.targeted-delivery-seal-candidate:", basis
         ),
         stage=stage,
     )
@@ -377,7 +377,7 @@ def _revision_basis(
     non_observation_reason: str | None,
 ) -> dict[str, object]:
     return {
-        "schema": "targeted_delivery_revision_candidate_v1",
+        "schema": "targeted_delivery_revision_candidate",
         "delivery_cell_key_id": cell.delivery_cell_key_id,
         "processing_request_id": attempt.processing_request_id,
         "processing_attempt_id": attempt.processing_attempt_id,

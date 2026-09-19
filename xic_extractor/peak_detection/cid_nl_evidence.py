@@ -27,15 +27,15 @@ from xic_extractor.processing_identity import (
 )
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 
-SCHEMA_VERSION = "cid_nl_evidence_observation_v4"
+SCHEMA_VERSION = "cid_nl_evidence_observation"
 ARTIFACT_SEMANTIC_ROLE = "canonical_cid_nl_observation"
 VALIDATION_STATUS = "diagnostic_only"
 MEDIA_TYPE = "application/json"
-SERIALIZATION_FORMAT = "canonical-json-utf8-lf-v1"
+SERIALIZATION_FORMAT = "canonical-json-utf8-lf"
 ACQUISITION_MODE = "dda_ddms2"
 
-_SAMPLE_ID_PREFIX = "xic.sample.v1:"
-_ACQUISITION_SOURCE_ID_PREFIX = "xic.acquisition-source.v1:"
+_SAMPLE_ID_PREFIX = "xic.sample:"
+_ACQUISITION_SOURCE_ID_PREFIX = "xic.acquisition-source:"
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _ARTIFACT_SEMANTIC_CONTRACT = _mint_artifact_semantic_contract_ref(
     owner_namespace="xic_extractor.peak_detection.cid_nl_evidence",

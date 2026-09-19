@@ -616,7 +616,7 @@ def _derive_runtime_observability_ledger(
     *,
     telemetry: RuntimeTelemetrySamples,
 ) -> RuntimeObservabilityLedger:
-    """Project owner facts and narrow telemetry into observability v1."""
+    """Project owner facts and narrow telemetry into observability."""
 
     if not isinstance(aggregate, RuntimeAttemptAggregate):
         raise RuntimeFinalizationContractError(

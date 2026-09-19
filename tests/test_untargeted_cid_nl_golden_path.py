@@ -373,7 +373,7 @@ def test_untargeted_method_subject_must_be_pinned_by_the_processing_request(
             processing_owners=fixture.owners,
             sample=fixture.sample("Missing"),
             method_subject=crossed_subject,
-            detector_invocation_id="gaussian15:crossed-subject:v1",
+            detector_invocation_id="gaussian15:crossed-subject",
             evaluation_receipt=_completed_receipt(scanned_event_count=0),
         )
 
@@ -600,7 +600,7 @@ def _golden_inputs(
         processing_owners=fixture.owners,
         sample=fixture.sample("Split"),
         method_subject=fixture.method_subject,
-        detector_invocation_id="gaussian15:Split:v1",
+        detector_invocation_id="gaussian15:Split",
         evaluation_receipt=_completed_receipt(scanned_event_count=1),
         candidate_peaks=(split_left, split_right),
         evidence_refs=(split_evidence,),
@@ -622,7 +622,7 @@ def _golden_inputs(
         processing_owners=fixture.owners,
         sample=fixture.sample("Reject"),
         method_subject=fixture.method_subject,
-        detector_invocation_id="gaussian15:Reject:v1",
+        detector_invocation_id="gaussian15:Reject",
         evaluation_receipt=_completed_receipt(scanned_event_count=1),
         evidence_refs=(reject_evidence,),
     )
@@ -640,7 +640,7 @@ def _golden_inputs(
         processing_owners=fixture.owners,
         sample=fixture.sample("Missing"),
         method_subject=fixture.method_subject,
-        detector_invocation_id="gaussian15:Missing:backfill-v1",
+        detector_invocation_id="gaussian15:Missing:backfill",
         evaluation_receipt=_completed_receipt(scanned_event_count=0),
         candidate_peaks=(recovery_peak,),
     )
@@ -678,7 +678,7 @@ def _support_input(
         processing_owners=fixture.owners,
         sample=fixture.sample(sample_stem),
         method_subject=fixture.method_subject,
-        detector_invocation_id=f"gaussian15:{sample_stem}:v1",
+        detector_invocation_id=f"gaussian15:{sample_stem}",
         evaluation_receipt=_completed_receipt(scanned_event_count=1),
         candidate_peaks=(peak,),
         evidence_refs=(evidence,),
@@ -718,7 +718,7 @@ def _multi_projection_support_input(
         processing_owners=fixture.owners,
         sample=fixture.sample(sample_stem),
         method_subject=fixture.method_subject,
-        detector_invocation_id=f"gaussian15:{sample_stem}:multi-projection:v1",
+        detector_invocation_id=f"gaussian15:{sample_stem}:multi-projection",
         evaluation_receipt=_completed_receipt(scanned_event_count=2),
         candidate_peaks=(peak,),
         evidence_refs=evidence_refs,
@@ -743,7 +743,7 @@ def _assessment_input(
         processing_owners=fixture.owners,
         sample=fixture.sample(sample_stem),
         method_subject=fixture.method_subject,
-        detector_invocation_id=f"gaussian15:{sample_stem}:v1",
+        detector_invocation_id=f"gaussian15:{sample_stem}",
         evaluation_receipt=_completed_receipt(scanned_event_count=scanned_event_count),
     )
     return UntargetedCidNlAssessmentInput(
@@ -760,7 +760,7 @@ def _technical_input(
         processing_owners=fixture.owners,
         sample=fixture.sample(sample_stem),
         method_subject=fixture.method_subject,
-        detector_invocation_id=f"gaussian15:{sample_stem}:unsupported-v1",
+        detector_invocation_id=f"gaussian15:{sample_stem}:unsupported",
         evaluation_receipt=CidNlEvaluationReceipt(
             query_rt_min=7.5,
             query_rt_max=8.6,

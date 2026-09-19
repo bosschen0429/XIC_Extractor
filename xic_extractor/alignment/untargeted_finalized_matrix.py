@@ -34,7 +34,7 @@ if TYPE_CHECKING:
         OwnerBackfillPeakFactObservation,
     )
 
-PRESENTATION_FORMULA_VERSION = "cross_sample_owner_arithmetic_mean_v1"
+PRESENTATION_FORMULA_VERSION = "cross_sample_owner_arithmetic_mean"
 
 
 @dataclass(frozen=True, slots=True)
@@ -457,7 +457,7 @@ def _selected_cell_source(
             if len(assessments) == 1 and (
                 assessments[0].content.method_subject.composition is not None
                 or assessments[0].content.detector_invocation_id
-                == "untargeted-cid-nl-backfill-recovery:v1"
+                == "untargeted-cid-nl-backfill-recovery"
             ):
                 from xic_extractor.alignment.hypothesis_owner_adapter import (
                     validate_cid_nl_assessment_hypothesis_closure,

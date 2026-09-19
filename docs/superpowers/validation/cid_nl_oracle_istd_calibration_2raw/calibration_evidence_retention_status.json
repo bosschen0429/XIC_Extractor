@@ -1,0 +1,35 @@
+{
+  "schema_version": "cid_nl_oracle_calibration_evidence_retention",
+  "validation_status": "diagnostic_only",
+  "numeric_review_tables_retained_in_git": true,
+  "retained_numeric_tables": [
+    {
+      "path": "calibration_human_labels.tsv",
+      "sha256": "f9008842da7911bbaba9d6366f6e8cd5e51ee2f2b986ae0ee354e98238a4e14c"
+    },
+    {
+      "path": "calibration_human_machine_comparison.tsv",
+      "sha256": "bc724331bf9aed450a035ad33aa9e549b483414f6c507e9e40c69d0287395e75"
+    },
+    {
+      "path": "calibration_area_sensitivity.tsv",
+      "sha256": "940b2da819174ae8331042e33ecd312a13bdf8c8bccff99bd6cf9bc6ec1c3f98"
+    }
+  ],
+  "visual_evidence_status": "local_hash_bound_not_portable",
+  "visual_case_count": 12,
+  "visual_case_hash_owner": "calibration_case_manifest.tsv",
+  "durable_visual_archive_locator": null,
+  "durable_visual_archive_sha256": null,
+  "formal_gate_effect": "inconclusive_until_visual_evidence_is_durably_pinned",
+  "new_raw_replay_required_to_close_retention": false,
+  "closure_action": "Copy the existing 12 blind plot bytes to an approved durable artifact store and record its locator and aggregate hash; do not rerun RAW.",
+  "authority": {
+    "matrix": false,
+    "backfill_writer": false,
+    "counted_detection": false,
+    "selected_area": false,
+    "workbook_or_gui": false,
+    "activation_or_export": false
+  }
+}

@@ -91,7 +91,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         else output_dir / "timing.json"
     )
     timing_payload = {
-        "schema_version": "untargeted_cid_nl_real_data_runtime_timing_v2",
+        "schema_version": "untargeted_cid_nl_real_data_runtime_timing",
         "validation_status": VALIDATION_STATUS,
         "elapsed_seconds": elapsed,
         "sample_count": summary["sample_count"],
@@ -144,7 +144,6 @@ def _run(
         candidates_by_sample[stem] = read_owner_bound_discovery_candidates_csv(
             batch_index.candidate_csvs[stem],
             receipt=receipt,
-            require_successor_columns=True,
         )
     metadata_rows = load_sample_metadata(args.sample_metadata.resolve())
     metadata_by_stem = {row.raw_stem: row for row in metadata_rows}
@@ -203,7 +202,7 @@ def _run(
     runtime = start_runtime_attempt(
         attempt=context.processing_owners.attempt,
         work_unit_keys=tuple(job.work_unit_key for job in jobs),
-        owner_completeness_attestation="untargeted-cid-nl-real-data-runtime-runner:v1",
+        owner_completeness_attestation="untargeted-cid-nl-real-data-runtime-runner",
     )
     runtime_result = execute_untargeted_cid_nl_real_data_runtime(
         runtime,
@@ -342,7 +341,7 @@ def _run(
     else:
         terminal_state = "prepared_requires_production_acceptance_manifest"
     return {
-        "schema_version": "untargeted_cid_nl_real_data_runtime_summary_v2",
+        "schema_version": "untargeted_cid_nl_real_data_runtime_summary",
         "validation_status": VALIDATION_STATUS,
         "terminal_state": terminal_state,
         "runtime_succeeded": runtime_result.succeeded,
@@ -523,7 +522,7 @@ class _Heartbeat:
         _write_json(
             self._path,
             {
-                "schema_version": "untargeted_cid_nl_real_data_runtime_heartbeat_v1",
+                "schema_version": "untargeted_cid_nl_real_data_runtime_heartbeat",
                 "validation_status": VALIDATION_STATUS,
                 "event": event,
                 "elapsed_seconds": time.perf_counter() - self._started,

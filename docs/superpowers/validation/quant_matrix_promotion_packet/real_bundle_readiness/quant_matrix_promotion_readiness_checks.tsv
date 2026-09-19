@@ -1,0 +1,8 @@
+schema_version	check_id	category	status	severity	evidence	next_action
+quant_matrix_promotion_readiness	contract_expected_diff_pass	contract_correctness	pass	blocker	acceptance_status=pass; expected=511; written=511; unused=0	Expected diff is closed.
+quant_matrix_promotion_readiness	contract_cell_provenance_authority	contract_correctness	pass	blocker	rows=18000; accepted_backfill=511; problems=	Cell provenance authority is closed.
+quant_matrix_promotion_readiness	contract_row_summary_arithmetic	contract_correctness	pass	blocker	rows=685; problems=	Row-level detected/backfilled arithmetic is closed.
+quant_matrix_promotion_readiness	contract_review_summary_shadow_only	contract_correctness	pass	blocker	problems=	Review summary is a shadow_review sidecar.
+quant_matrix_promotion_readiness	science_large_cohort	scientific_confidence	pass	blocker	full_cohort=pass	Required science evidence is present.
+quant_matrix_promotion_readiness	science_heldout_oracle_or_manual_review	scientific_confidence	pass	blocker	heldout_oracle=pass	Required science evidence is present.
+quant_matrix_promotion_readiness	science_downstream_impact_smoke	scientific_confidence	pass	blocker	downstream_impact_smoke=pass	Required science evidence is present.

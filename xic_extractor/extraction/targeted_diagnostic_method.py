@@ -81,7 +81,7 @@ def targeted_attempt_namespace_component(processing_attempt_id: str) -> str:
 
     if not isinstance(
         processing_attempt_id, str
-    ) or not processing_attempt_id.startswith("xic.processing-attempt.v1:"):
+    ) or not processing_attempt_id.startswith("xic.processing-attempt:"):
         raise TargetedDiagnosticMethodError(
             "processing_attempt_id must be an owner-issued typed identity"
         )
@@ -192,7 +192,7 @@ def canonical_targeted_diagnostic_method_bytes(
     result: TargetedDiagnosticMethodResult,
 ) -> bytes:
     payload = {
-        "schema_version": "targeted_diagnostic_method_v2",
+        "schema_version": "targeted_diagnostic_method",
         "processing_request_id": result.processing_request_id,
         "processing_attempt_id": result.processing_attempt_id,
         "groups": [

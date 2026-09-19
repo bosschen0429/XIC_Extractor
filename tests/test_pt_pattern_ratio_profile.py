@@ -425,7 +425,7 @@ def _candidate(
     }
     row.update(
         {
-            "schema_version": "pt_candidate.v1",
+            "schema_version": "pt_candidate",
             "sample_stem": "sample-a",
             "method_label": "pt_only",
             "pattern_id": "pt",

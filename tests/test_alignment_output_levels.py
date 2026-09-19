@@ -69,13 +69,13 @@ def test_validation_minimal_output_level_is_machine_gate_surface_only():
     "output_level",
     ("machine", "debug", "validation", "validation-minimal"),
 )
-def test_all_output_levels_keep_same_provenance_filename_without_v1_alias(
+def test_all_output_levels_keep_same_provenance_filename_without_alias(
     output_level,
 ):
     artifacts = artifact_names_for_output_level(output_level)
 
     assert "alignment_owner_backfill_peak_fact_provenance.tsv" in artifacts
-    assert "alignment_owner_backfill_peak_fact_provenance_v1.tsv" not in artifacts
+    assert artifacts.count("alignment_owner_backfill_peak_fact_provenance.tsv") == 1
 
 
 def test_parse_alignment_output_level_rejects_unknown_value():

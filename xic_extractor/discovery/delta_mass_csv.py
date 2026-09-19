@@ -1,8 +1,8 @@
 """CSV and JSON IO for Pt pattern Delta Mass Discovery.
 
-Re-exports the Detected Features CSV v1 loader owned by
+Re-exports the Detected Features CSV loader owned by
 ``xic_extractor.discovery.detected_features`` and implements the Pt Candidate /
-Pt Review CSV v1, Pt Discovery Evidence CSV v2, and Pt Sidecar JSON v3 writers
+Pt Review CSV, Pt Discovery Evidence CSV, and Pt Sidecar JSON writers
 described by the current Discovery contract in ``docs/product/discovery.md``.
 
 Column tuples and field rules are pinned by the approved contract tests in
@@ -113,7 +113,7 @@ PT_REVIEW_COLUMNS = (
 
 PT_EVIDENCE_COLUMNS = PT_PATTERN_EVIDENCE_CONTRACT_COLUMNS
 
-_SIDECAR_SCHEMA_VERSION = "pt_pattern_sidecar.v4"
+_SIDECAR_SCHEMA_VERSION = "pt_pattern_sidecar"
 
 # Formula escaping is a presentation concern, so machine identifiers in the
 # candidate/evidence contracts must remain byte-for-byte joinable. The compact
@@ -140,7 +140,7 @@ class DeltaMassDiscoveryResult:
     """A completed Pt pattern Discovery run, ready for sidecar JSON output.
 
     CLI-provided input path fields are recorded as the supplied path strings
-    (not resolved local absolute paths), per the Pt Sidecar JSON v3 contract.
+    (not resolved local absolute paths), per the Pt Sidecar JSON contract.
     """
 
     method_label: str
@@ -168,7 +168,7 @@ def write_pt_pattern_candidates_csv(
     path: Path,
     candidates: Sequence[PtPatternCandidate],
 ) -> Path:
-    """Write the Pt Candidate CSV v1 contract.
+    """Write the Pt Candidate CSV contract.
 
     Writes a header-only file when ``candidates`` is empty. Candidate order
     is preserved as given (the matcher / pipeline is responsible for final
@@ -196,7 +196,7 @@ def write_pt_pattern_review_csv(
     path: Path,
     candidates: Sequence[PtPatternCandidate],
 ) -> Path:
-    """Write the Pt Review CSV v1 contract.
+    """Write the Pt Review CSV contract.
 
     Uses the same candidate ordering as ``write_pt_pattern_candidates_csv``
     (this writer does not re-sort either), so callers that pass the same
@@ -224,7 +224,7 @@ def write_pt_pattern_evidence_csv(
     path: Path,
     evidence_rows: Sequence[Mapping[str, object]],
 ) -> Path:
-    """Write the complete, fail-closed Pt Discovery Evidence CSV v2 contract."""
+    """Write the complete, fail-closed Pt Discovery Evidence CSV contract."""
 
     payload_bytes = canonical_pt_pattern_evidence_csv_bytes(evidence_rows)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -237,7 +237,7 @@ def write_pt_pattern_sidecar_json(
     *,
     result: DeltaMassDiscoveryResult,
 ) -> Path:
-    """Write the Pt Sidecar JSON v3 contract."""
+    """Write the Pt Sidecar JSON contract."""
 
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = {

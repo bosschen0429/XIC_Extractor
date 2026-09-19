@@ -408,8 +408,8 @@ def test_write_alignment_matrix_tsv_uses_stable_numeric_text_without_value_drift
 def test_alignment_matrix_mz_format_preserves_identity_coordinate_contract(
     tmp_path: Path,
 ) -> None:
-    from xic_extractor.alignment.shared_peak_identity_explanation import (
-        product_activation,
+    from xic_extractor.alignment.matrix_output_contract import (
+        validate_matrix_identity_rows,
     )
     from xic_extractor.alignment.tsv_writer import (
         write_alignment_matrix_identity_tsv,
@@ -456,7 +456,10 @@ def test_alignment_matrix_mz_format_preserves_identity_coordinate_contract(
     assert matrix_row["Mz"] == "500.1235"
     assert identity_row["Mz"] == "500.123456"
     assert review_row["family_center_mz"] == "500.123456"
-    product_activation._validate_identity_coordinate(1, matrix_row, identity_row)
+    validate_matrix_identity_rows(
+        matrix_header=tuple(matrix_row), matrix_rows=(matrix_row,),
+        identity_columns=tuple(identity_row), identity_rows=(identity_row,),
+    )
 
 
 def test_alignment_matrix_mz_format_is_display_only_for_small_mz(
@@ -549,7 +552,7 @@ def test_alignment_matrix_display_collision_does_not_merge_identity_rows(
         "unknown_column",
     ),
 )
-def test_alignment_matrix_v2_identity_binding_rejects_every_row_substitution(
+def test_alignment_matrix_identity_binding_rejects_every_row_substitution(
     tmp_path: Path,
     mutation: str,
 ) -> None:
@@ -616,65 +619,45 @@ def test_alignment_matrix_v2_identity_binding_rejects_every_row_substitution(
         )
 
 
-def test_alignment_matrix_identity_schema_dispatch_is_explicit() -> None:
-    from tests.matrix_identity_fixtures import legacy_matrix_identity_row
+def test_alignment_matrix_identity_requires_current_schema_and_binding() -> None:
+    from tests.matrix_identity_fixtures import current_matrix_identity_row
     from xic_extractor.alignment.matrix_output_contract import (
-        LEGACY_ALIGNMENT_MATRIX_IDENTITY_COLUMNS,
+        ALIGNMENT_MATRIX_IDENTITY_COLUMNS,
+        MATRIX_ROW_BINDING_COLUMN,
         validate_matrix_identity_rows,
     )
 
     matrix_header = ("Mz", "RT", "sample-a")
-    legacy_matrix = ({"Mz": "500.123", "RT": "8.49", "sample-a": "100"},)
-    legacy_identity = (
-        legacy_matrix_identity_row(
-            index=1,
-            mz="500.123",
-            rt="8.49",
-            peak_hypothesis_id="ALN000001",
-        ),
+    matrix_rows = ({"Mz": "500.1230", "RT": "8.49", "sample-a": "100"},)
+    identity = current_matrix_identity_row(
+        index=1, mz="500.123", rt="8.49", peak_hypothesis_id="ALN000001",
+        sample_values={"sample-a": "100"},
     )
-    identity_columns = LEGACY_ALIGNMENT_MATRIX_IDENTITY_COLUMNS
-
     validate_matrix_identity_rows(
-        matrix_header=matrix_header,
-        matrix_rows=legacy_matrix,
-        identity_columns=identity_columns,
-        identity_rows=legacy_identity,
+        matrix_header=matrix_header, matrix_rows=matrix_rows,
+        identity_columns=ALIGNMENT_MATRIX_IDENTITY_COLUMNS, identity_rows=(identity,),
     )
-
-    for schema_version in ("", "unknown_identity_schema"):
-        invalid_identity = (
-            {
-                **legacy_identity[0],
-                "identity_schema_version": schema_version,
-            },
-        )
+    for schema in (
+        "", "unknown_identity_schema",
+        "unsupported_matrix_identity",
+    ):
         with pytest.raises(ValueError, match="identity schema"):
             validate_matrix_identity_rows(
-                matrix_header=matrix_header,
-                matrix_rows=legacy_matrix,
-                identity_columns=identity_columns,
-                identity_rows=invalid_identity,
+                matrix_header=matrix_header, matrix_rows=matrix_rows,
+                identity_columns=ALIGNMENT_MATRIX_IDENTITY_COLUMNS,
+                identity_rows=({**identity, "identity_schema_version": schema},),
             )
-
-    with pytest.raises(ValueError, match="legacy identity"):
-        validate_matrix_identity_rows(
-            matrix_header=matrix_header,
-            matrix_rows=({**legacy_matrix[0], "Mz": "500.1230"},),
-            identity_columns=identity_columns,
-            identity_rows=legacy_identity,
-        )
-
-    for invalid_columns in (
-        identity_columns[:-1],
-        (*identity_columns, "unknown_identity_field"),
+    for columns in (
+        tuple(
+            c for c in ALIGNMENT_MATRIX_IDENTITY_COLUMNS
+            if c != MATRIX_ROW_BINDING_COLUMN
+        ),
+        (*ALIGNMENT_MATRIX_IDENTITY_COLUMNS, "unknown_identity_field"),
     ):
         with pytest.raises(ValueError, match="identity columns"):
             validate_matrix_identity_rows(
-                matrix_header=matrix_header,
-                matrix_rows=legacy_matrix,
-                identity_columns=invalid_columns,
-                identity_rows=legacy_identity,
+                matrix_header=matrix_header, matrix_rows=matrix_rows,
+                identity_columns=columns, identity_rows=(identity,),
             )
 
 
@@ -692,23 +675,24 @@ def test_alignment_matrix_identity_schema_dispatch_is_explicit() -> None:
 def test_alignment_matrix_identity_rejects_malformed_serialized_row_shapes(
     mutation: str,
 ) -> None:
-    from tests.matrix_identity_fixtures import legacy_matrix_identity_row
+    from tests.matrix_identity_fixtures import current_matrix_identity_row
     from xic_extractor.alignment.matrix_output_contract import (
-        LEGACY_ALIGNMENT_MATRIX_IDENTITY_COLUMNS,
+        ALIGNMENT_MATRIX_IDENTITY_COLUMNS,
         validate_matrix_identity_rows,
     )
 
     matrix_header = ("Mz", "RT", "sample-a")
     matrix_row: dict[object, object] = {
-        "Mz": "500.123",
+        "Mz": "500.1230",
         "RT": "8.49",
         "sample-a": "100",
     }
-    identity_row: dict[object, object] = legacy_matrix_identity_row(
+    identity_row: dict[object, object] = current_matrix_identity_row(
         index=1,
         mz="500.123",
         rt="8.49",
         peak_hypothesis_id="ALN000001",
+        sample_values={"sample-a": "100"},
     )
     if mutation == "identity_overflow":
         identity_row[None] = ["overflow"]
@@ -727,7 +711,7 @@ def test_alignment_matrix_identity_rejects_malformed_serialized_row_shapes(
         validate_matrix_identity_rows(
             matrix_header=matrix_header,
             matrix_rows=(matrix_row,),
-            identity_columns=LEGACY_ALIGNMENT_MATRIX_IDENTITY_COLUMNS,
+            identity_columns=ALIGNMENT_MATRIX_IDENTITY_COLUMNS,
             identity_rows=(identity_row,),
         )
 
@@ -786,13 +770,13 @@ def test_alignment_matrix_binding_uses_exact_persisted_rt_and_header_tokens(
     )
 
 
-def test_alignment_matrix_mz_binding_accepts_current_and_exact_legacy_text() -> None:
+def test_alignment_matrix_mz_binding_accepts_only_current_text() -> None:
     from xic_extractor.alignment.matrix_output_contract import (
         matrix_mz_binding_matches,
     )
 
     assert matrix_mz_binding_matches("500.1235", "500.123456")
-    assert matrix_mz_binding_matches("500.123", "500.123")
+    assert not matrix_mz_binding_matches("500.123", "500.123")
     assert not matrix_mz_binding_matches("500.1234", "500.123456")
     assert not matrix_mz_binding_matches("not-an-mz", "500.123456")
     assert not matrix_mz_binding_matches("500.1235", "not-an-mz")
@@ -880,7 +864,7 @@ def test_alignment_cells_tsv_renders_canonical_physical_owner_area_source(
         raw_area=66.6,
         asls_area=None,
         morphology_area=66.6,
-        morphology_area_source="trapezoid_counts_seconds_on_canonical_signal_v1",
+        morphology_area_source="trapezoid_counts_seconds_on_canonical_signal",
     )
     matrix = AlignmentMatrix(
         clusters=(_cluster(fold_evidence="owner_complete_link;owner_count=2"),),
@@ -900,7 +884,7 @@ def test_alignment_cells_tsv_renders_canonical_physical_owner_area_source(
     assert rows[0]["area"] == "66.6"
     assert rows[0]["primary_matrix_area"] == "66.6"
     assert rows[0]["primary_matrix_area_source"] == (
-        "trapezoid_counts_seconds_on_canonical_signal_v1"
+        "trapezoid_counts_seconds_on_canonical_signal"
     )
     assert rows[0]["primary_matrix_area_reason"] == ""
 
@@ -1056,7 +1040,7 @@ def test_write_alignment_matrix_identity_tsv_maps_product_rows(
         for key, value in identity_rows[0].items()
         if key != "matrix_row_binding_sha256"
     } == {
-        "identity_schema_version": "untargeted_peak_hypothesis_matrix_identity_v2",
+        "identity_schema_version": "untargeted_peak_hypothesis_matrix_identity",
         "matrix_row_index": "1",
         "Mz": "500.123",
         "RT": matrix_rows[0]["RT"],
@@ -1863,7 +1847,7 @@ def test_write_alignment_cell_integration_audit_tsv_is_sidecar(
     assert audit[0]["neutral_loss_tag"] == "DNA_dR"
     assert audit[0]["area_baseline_corrected"] == "8"
     assert audit[0]["area_uncertainty"] == "2"
-    assert audit[0]["area_uncertainty_formula_version"] == "baseline_residual_mad_v1"
+    assert audit[0]["area_uncertainty_formula_version"] == "baseline_residual_mad"
     assert audit[0]["baseline_residual_mad"] == "0.5"
     assert audit[0]["area_uncertainty_noise_source"] == "asls_residual"
     assert audit[0]["baseline_type"] == "asls"
@@ -2321,7 +2305,7 @@ def _cell(
                 raw_area=area,
                 area_baseline_corrected=8.0,
                 area_uncertainty=2.0,
-                area_uncertainty_formula_version="baseline_residual_mad_v1",
+                area_uncertainty_formula_version="baseline_residual_mad",
                 baseline_residual_mad=0.5,
                 area_uncertainty_noise_source="asls_residual",
                 baseline_type="asls",

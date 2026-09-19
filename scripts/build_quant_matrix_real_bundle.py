@@ -64,26 +64,26 @@ from xic_extractor.tabular_io import (
 )
 
 ROOT = Path(__file__).resolve().parents[1]
-REAL_BUNDLE_SCHEMA = "quant_matrix_real_bundle_v1"
+REAL_BUNDLE_SCHEMA = "quant_matrix_real_bundle"
 DEFAULT_SOURCE_RUN_DIR = (
     ROOT
     / "output/productization_realdata_seed_guard_85raw_20260617/"
     "generated_policy_policy_observed_oracle_no_raw_productization"
 )
 DEFAULT_OUTPUT_DIR = (
-    ROOT / "docs/superpowers/validation/quant_matrix_real_bundle_v1"
+    ROOT / "docs/superpowers/validation/quant_matrix_real_bundle"
 )
 DEFAULT_RENDERED_REVIEW_DIR = (
     ROOT
     / "local_validation_artifacts/externalized_superpowers_validation/"
-    "quant_matrix_real_bundle_v1/review"
+    "quant_matrix_real_bundle/review"
 )
 DEFAULT_DOWNSTREAM_SCOPE = "current_511_authority_replay"
 DEFAULT_SOURCE_RUN_ID = (
     "seed-guard-realdata-85raw-generated-policy-policy-observed-oracle-20260617"
 )
 DEFAULT_ACCEPTED_BACKFILL_COUNT = 511
-EXTERNALIZED_ARTIFACT_SUMMARY_SCHEMA = "externalized_validation_artifact_summary_v1"
+EXTERNALIZED_ARTIFACT_SUMMARY_SCHEMA = "externalized_validation_artifact_summary"
 
 _TRUE = "TRUE"
 _FALSE = "FALSE"
@@ -363,6 +363,7 @@ def build_quant_matrix_real_bundle(
     summary_json.write_text(
         json.dumps(summary, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
+        newline="\n",
     )
     outputs = {
         "summary_json": summary_json,
@@ -720,7 +721,7 @@ def _manifest_rows(
         flags = str(counts["prevalence_flags"])
         rows.append(
             {
-                "schema_version": "production_acceptance_manifest_v1",
+                "schema_version": "production_acceptance_manifest",
                 "peak_hypothesis_id": peak,
                 "sample_stem": sample,
                 "feature_family_id": value_row.get("feature_family_id", ""),
@@ -757,7 +758,7 @@ def _manifest_rows(
                 "source_row_sha256": value_row.get("source_row_sha256", "").upper(),
                 "manifest_sha256": "",
                 "acceptance_contract_version": (
-                    "production_acceptance_manifest_contract_v1"
+                    "production_acceptance_manifest_contract"
                 ),
             }
         )
@@ -790,7 +791,7 @@ def _expected_diff_rows(
         row_index = identity_by_peak[peak]
         rows.append(
             {
-                "schema_version": "quant_matrix_version_expected_diff_v1",
+                "schema_version": "quant_matrix_version_expected_diff",
                 "peak_hypothesis_id": peak,
                 "sample_stem": sample,
                 "baseline_value": baseline_rows[row_index - 1].get(sample, ""),
@@ -1033,7 +1034,7 @@ def _externalized_validation_artifact_path(path: Path, *, output_dir: Path) -> P
     return (
         ROOT
         / "local_validation_artifacts/externalized_superpowers_validation/"
-        "quant_matrix_real_bundle_v1"
+        "quant_matrix_real_bundle"
         / relpath
     )
 
@@ -1065,7 +1066,7 @@ def _write_externalized_review_html_summary(
     summary_path = output_dir / "review/quant_matrix_review_report_summary.json"
     summary = {
         "schema_version": EXTERNALIZED_ARTIFACT_SUMMARY_SCHEMA,
-        "artifact_id": "quant_matrix_real_bundle_v1.review_html",
+        "artifact_id": "quant_matrix_real_bundle.review_html",
         "original_path": _display_path(original_html, base_dir=repo_root),
         "externalized_path": _display_path(rendered_html, base_dir=repo_root),
         "generated_file_name": rendered_html.name,
@@ -1087,6 +1088,7 @@ def _write_externalized_review_html_summary(
     summary_path.write_text(
         json.dumps(summary, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
+        newline="\n",
     )
     return summary_path
 
@@ -1169,6 +1171,7 @@ def _rewrite_review_artifact_paths(
     summary_json.write_text(
         json.dumps(payload, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
+        newline="\n",
     )
     html = html_path.read_text(encoding="utf-8")
     for old_value, new_value in replacements.items():
@@ -1191,6 +1194,7 @@ def _rewrite_downstream_artifact_paths(
     summary_json.write_text(
         json.dumps(payload, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
+        newline="\n",
     )
 
 
@@ -1208,6 +1212,7 @@ def _rewrite_readiness_artifact_paths(
     summary_json.write_text(
         json.dumps(payload, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
+        newline="\n",
     )
 
 
@@ -1308,7 +1313,7 @@ def _append_externalized_artifact_problems(
     except (OSError, ValueError, json.JSONDecodeError) as exc:
         problems.append(f"{label}: replacement summary invalid: {exc}")
         return
-    if summary.get("schema_version") == "quant_matrix_fixture_contract_v1":
+    if summary.get("schema_version") == "quant_matrix_fixture_contract":
         _append_externalized_fixture_contract_problems(
             label,
             raw_entry,
@@ -1444,7 +1449,7 @@ def _append_expected_diff_problems(
         return
     row = rows[0]
     accepted_count = optional_int(payload.get("accepted_backfill_count", ""))
-    if row.get("schema_version") != "quant_matrix_version_expected_diff_summary_v1":
+    if row.get("schema_version") != "quant_matrix_version_expected_diff_summary":
         problems.append("expected_diff_summary schema_version mismatch")
     if row.get("acceptance_status") != "pass":
         problems.append("expected_diff_summary acceptance_status mismatch")

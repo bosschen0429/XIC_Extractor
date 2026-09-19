@@ -375,7 +375,7 @@ def _write_preflight_fixture(
         ),
         [
             {
-                "schema_version": "quant_matrix_version_expected_diff_v1",
+                "schema_version": "quant_matrix_version_expected_diff",
                 "peak_hypothesis_id": manifest_peak_id,
                 "sample_stem": "SampleA",
                 "baseline_value": "",

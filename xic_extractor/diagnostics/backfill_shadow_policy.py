@@ -28,7 +28,7 @@ from xic_extractor.diagnostics.diagnostic_io import (
     write_tsv,
 )
 
-SCHEMA_VERSION = "backfill_shadow_policy_v0"
+SCHEMA_VERSION = "backfill_shadow_policy"
 SUPPORT_OVERLAY_VERDICT = "ms1_shape_supports_family_backfill"
 _URL_SCHEME_RE = re.compile(r"^([A-Za-z][A-Za-z0-9+.-]*):")
 _DANGEROUS_SCHEMES = {"javascript", "data", "vbscript"}
@@ -555,7 +555,6 @@ def _selected_overlay_row(
         rows,
         seed_group_id=seed_group_id,
         support_verdict=SUPPORT_OVERLAY_VERDICT,
-        allow_legacy_family_row=True,
     )
 
 

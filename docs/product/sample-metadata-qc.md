@@ -7,15 +7,15 @@ future activation gates.
 
 ## Contract
 
-- The accepted `sample_metadata_v1` contract covers no-output-change sample
+- The accepted `sample_metadata` contract covers no-output-change sample
   identity, injection-order projection, and lookup parity. Consult the status
   index for current lane readiness.
-- Within `sample_metadata_v1`, `sample_name` is the owner-stable,
+- Within `sample_metadata`, `sample_name` is the owner-stable,
   case-sensitive primary sample key. `raw_stem` is a lookup alias only;
   injection order, role, batch, matrix, group, and exclusion fields do not
   participate in canonical sample identity.
 - `CanonicalSampleIdentity` is minted only by `xic_extractor.sample_metadata`
-  as `xic.sample.v1:<sha256>` over an explicit stable owner namespace, the
+  as `xic.sample:<sha256>` over an explicit stable owner namespace, the
   identity schema/version, and primary sample key. The namespace must identify
   the owning study/sample registry and must not be a path, timestamp, or output
   location. Renaming `sample_name` creates a new identity; changing only a
@@ -44,7 +44,7 @@ future activation gates.
 
 | Surface | Role |
 | --- | --- |
-| `sample_metadata_v1` CSV/TSV | Shared sample identity, order, role, batch, matrix, group, exclusion schema |
+| `sample_metadata` CSV/TSV | Shared sample identity, order, role, batch, matrix, group, exclusion schema |
 | `SampleMetadataSnapshot` | Owner-minted content identity for one complete normalized metadata snapshot and stable identity namespace |
 | `mint_canonical_sample_identity` / `resolve_canonical_sample_identity` | Owner-only namespaced identity minting and self-validating fail-closed lookup resolution |
 | `injection_order_source` | Current no-value-change ordering projection |
@@ -84,4 +84,4 @@ future activation gates.
 - [Run provenance](run-provenance.md)
 - [Productization](productization.md)
 - [Product validation contract](../agent/product-validation-contract.md)
-- [Productization status index](../superpowers/validation/productization_status_index_v1.tsv)
+- [Productization status index](../superpowers/validation/productization_status_index.tsv)

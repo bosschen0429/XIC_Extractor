@@ -66,32 +66,32 @@ from xic_extractor.peak_detection.targeted_product_projection import (
 _FROZEN_LEGACY_CSV_SHA256 = (
     "f0a471bd81046cefaa924d619b934957505ee22591b17820a73143f7b4126937"
 )
-_VALIDATION_PACKET = Path("docs/superpowers/validation/package2_targeted_method_v1")
+_VALIDATION_PACKET = Path("docs/superpowers/validation/package2_targeted_method")
 _FROZEN_DIFFERENCE_MANIFEST_SHA256 = (
     "213bf92f5f237cdedf61abc9435d675c63831774004bb2153952c2322a3dabcd"
 )
 _FROZEN_TRACE_ORACLE = {
     "observed-a": (
-        "xic.peak-observation-content.v1:"
-        "f7fe6efc41563f0bee64a0e091f7b89f4d310b45a9e8a48b357f294c4eb97919",
-        "01b30f4fbec56104676771bf30cffc16f5140638139533e4886bced20d2a9cae",
-        "191de630bb7e9817ced1934ea374671a075e9426c5b32973752db7b0294b9145",
+        "xic.peak-observation-content:"
+        "b8304b3f3ccf59ffcf8f23e6adbbe4c6581d1488f17858531b92480d4d9423c7",
+        "5f1be40ecd3a2a0004133b8697f1bdd45a8f04af72a7c051e71442b4208890f1",
+        "57b803307f7ecb009aa32b38fec8813aa3dbdefbe0454c1157b0926d41511827",
     ),
     "observed-b": (
-        "xic.peak-observation-content.v1:"
-        "4ebad55d65c3289f3a75ae44b0f90e1f47fd7c9405c015d4364735d5c872c795",
-        "13d44f691034f0a472765817ea0a004fc2c98b7679b0cb471319a98e5d0e8c51",
-        "6b7a814a0149b4d23ddc66e1563fa8b3720cccf6d69298f19ec3c200cf47da9b",
+        "xic.peak-observation-content:"
+        "da504262c5a2637f5b410420297b376a47f01c6fd6d6fbf2b86526f91fa513e2",
+        "62a28a29f663ce814e9b6b4a18ebd10ab25caf477de3e01a1bfa0ac2d6ee95b3",
+        "803e310b99dbfcefe5680a155a9e08938a296c9700bb802394d7defef4be0ece",
     ),
 }
 _FROZEN_HYPOTHESIS_ORACLE = {
     "observed-a": (
-        "xic.peak-hypothesis.v1:"
-        "c5cab413fd875f0f5133b1ae32963d34cb469578c1f64fc33972b7b14b7eb284"
+        "xic.peak-hypothesis:"
+        "2483367d2bf8aac07eec9bd2e94f1b4fd78f09a2fde6462d05c47aac90e52e18"
     ),
     "observed-b": (
-        "xic.peak-hypothesis.v1:"
-        "1ae834520fc0fd5efef0353c6da44fb89bcf1f2722cff574509486ecda4f90e8"
+        "xic.peak-hypothesis:"
+        "2faad514f96092bc4da6f0b107aa782fd9550a131755ae2c5e184c2f8e5463a1"
     ),
 }
 
@@ -693,7 +693,7 @@ def _runtime(fixture: ProcessingIdentityNoRawFixture, work_unit_key: str):
     return start_runtime_attempt(
         attempt=fixture.attempt,
         work_unit_keys=(work_unit_key,),
-        owner_completeness_attestation="processing_identity-targeted-method:v1",
+        owner_completeness_attestation="processing_identity-targeted-method",
     )
 
 
@@ -707,7 +707,7 @@ def _reservation(
         resource_key=job.resource_key,
         worker_key=f"worker:{job.work_unit_key}",
         source_reference=f"synthetic-no-raw:{job.work_unit_key}",
-        compatibility_token="processing_identity-targeted-method:v1",
+        compatibility_token="processing_identity-targeted-method",
     )
 
 

@@ -30,9 +30,9 @@ from xic_extractor.tabular_io import (
     write_delimited_rows,
 )
 
-SCHEMA_VERSION = "pt_pattern_conflict_graph_replay.v1"
+SCHEMA_VERSION = "pt_pattern_conflict_graph_replay"
 READINESS_TIER = "diagnostic_only"
-GRAPH_RULE_VERSION = "pt_conflict_graph.v1"
+GRAPH_RULE_VERSION = "pt_conflict_graph"
 EVIDENCE_OWNER = "xic_extractor.discovery.pt_pattern_conflict_graph"
 
 _LEGACY_RESOLUTION_STATUSES = frozenset(

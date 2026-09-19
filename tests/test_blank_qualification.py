@@ -21,7 +21,9 @@ def test_loaded_unordered_library_still_classifies_background(
 
     path = tmp_path / f"library{suffix}"
     payload = {
-        "version": "v1", "min_intensity": 25000.0, "source_blanks": ["B1"],
+        "version": "blank_background_library",
+        "min_intensity": 25000.0,
+        "source_blanks": ["B1"],
         "ions": [
             {"mz": mz, "max_intensity": 100000.0,
              "scan_count": 5, "source_blank": "B1"}

@@ -6,10 +6,10 @@ from pathlib import Path
 
 import pytest
 
-from tests.matrix_identity_fixtures import legacy_matrix_identity_row
+from tests.matrix_identity_fixtures import current_matrix_identity_row
 from tools.diagnostics import shadow_production_projection as projection_cli
 from xic_extractor.alignment.matrix_output_contract import (
-    LEGACY_ALIGNMENT_MATRIX_IDENTITY_COLUMNS,
+    ALIGNMENT_MATRIX_IDENTITY_COLUMNS,
 )
 from xic_extractor.alignment.production_decisions import (
     ProductionCellDecision,
@@ -861,7 +861,7 @@ def test_projection_writer_serializes_stable_schema_and_summary(tmp_path: Path) 
         reader = csv.reader(handle, delimiter="\t")
         assert next(reader) == list(SHADOW_PRODUCTION_PROJECTION_COLUMNS)
     payload = json.loads(outputs.json.read_text(encoding="utf-8"))
-    assert payload["schema_version"] == "shadow_production_projection_v1"
+    assert payload["schema_version"] == "shadow_production_projection"
     assert payload["source_run_id"] == "unit-run"
     assert payload["decision_counts"] == {"accept": 1, "context": 1}
     assert payload["gate_row_count"] == 1
@@ -993,29 +993,31 @@ def test_current_matrix_values_limits_materialization_to_requested_keys(
     _write_tsv(
         matrix_tsv,
         [
-            {"Mz": "300.3", "RT": "10.0", "S_KEEP": "111", "S_SKIP": "999"},
-            {"Mz": "400.4", "RT": "11.0", "S_KEEP": "222", "S_SKIP": "888"},
+            {"Mz": "300.3000", "RT": "10.0", "S_KEEP": "111", "S_SKIP": "999"},
+            {"Mz": "400.4000", "RT": "11.0", "S_KEEP": "222", "S_SKIP": "888"},
         ],
         ("Mz", "RT", "S_KEEP", "S_SKIP"),
     )
     _write_tsv(
         identity_tsv,
         [
-            legacy_matrix_identity_row(
+            current_matrix_identity_row(
                 index=1,
                 mz="300.3",
                 rt="10.0",
                 peak_hypothesis_id="FAM_KEEP::mode_1",
+                sample_values={"S_KEEP": "111", "S_SKIP": "999"},
                 source_feature_family_ids="FAM_KEEP",
             ),
-            legacy_matrix_identity_row(
+            current_matrix_identity_row(
                 index=2,
                 mz="400.4",
                 rt="11.0",
                 peak_hypothesis_id="FAM_UNUSED",
+                sample_values={"S_KEEP": "222", "S_SKIP": "888"},
             ),
         ],
-        LEGACY_ALIGNMENT_MATRIX_IDENTITY_COLUMNS,
+        ALIGNMENT_MATRIX_IDENTITY_COLUMNS,
     )
 
     values = _current_matrix_values_by_family_sample(
@@ -1222,20 +1224,21 @@ def test_cli_current_written_uses_actual_matrix_cell_when_identity_supplied(
     )
     _write_tsv(
         alignment_dir / "alignment_matrix.tsv",
-        [{"Mz": "300.3", "RT": "10.0", "S_DET": "100", "S_REVIEW": ""}],
+        [{"Mz": "300.3000", "RT": "10.0", "S_DET": "100", "S_REVIEW": ""}],
         ("Mz", "RT", "S_DET", "S_REVIEW"),
     )
     _write_tsv(
         alignment_dir / "alignment_matrix_identity.tsv",
         [
-            legacy_matrix_identity_row(
+            current_matrix_identity_row(
                 index=1,
                 mz="300.3",
                 rt="10.0",
                 peak_hypothesis_id="FAM_STALE",
+                sample_values={"S_DET": "100", "S_REVIEW": ""},
             ),
         ],
-        LEGACY_ALIGNMENT_MATRIX_IDENTITY_COLUMNS,
+        ALIGNMENT_MATRIX_IDENTITY_COLUMNS,
     )
     _write_tsv(
         alignment_dir / "retained_gate.tsv",

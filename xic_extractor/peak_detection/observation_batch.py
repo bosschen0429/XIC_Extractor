@@ -38,7 +38,7 @@ from xic_extractor.processing_identity import (
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 from xic_extractor.xic_models import XICRequest
 
-SCHEMA_VERSION = "peak_observation_batch_v1"
+SCHEMA_VERSION = "peak_observation_batch"
 VALIDATION_STATUS = "diagnostic_only"
 
 
@@ -112,17 +112,17 @@ class PeakObservationBatch:
     def __post_init__(self) -> None:
         _required_prefixed_id(
             self.processing_request_id,
-            prefix="xic.processing-request.v1:",
+            prefix="xic.processing-request:",
             field="processing_request_id",
         )
         _required_prefixed_id(
             self.processing_attempt_id,
-            prefix="xic.processing-attempt.v1:",
+            prefix="xic.processing-attempt:",
             field="processing_attempt_id",
         )
         _required_prefixed_id(
             self.canonical_sample_identity_id,
-            prefix="xic.sample.v1:",
+            prefix="xic.sample:",
             field="canonical_sample_identity_id",
         )
         if not isinstance(self.acquisition, TraceAcquisitionBatch):

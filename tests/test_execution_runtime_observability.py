@@ -1130,9 +1130,9 @@ def _attempt(tmp_path: Path):
                 injection_order=1,
             ),
         ),
-        scientific_input_schema_version="package0_fixture_v1",
-        processing_algorithm_version="package0_fixture_v1",
-        processing_contract_version="package0_fixture_v1",
+        scientific_input_schema_version="package0_fixture",
+        processing_algorithm_version="package0_fixture",
+        processing_contract_version="package0_fixture",
         scientific_inputs={"neutral_loss_da": 116.0474},
     )
     return issue_processing_attempt(request)

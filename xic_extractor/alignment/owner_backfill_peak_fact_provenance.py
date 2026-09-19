@@ -40,11 +40,11 @@ from xic_extractor.alignment.owner_backfill_peak_fact_projection import (
     SELECTED_INTEGRATION_AUTHORITY_FIELDS,
     SELECTED_INTEGRATION_AUTHORITY_ID_PREFIX,
     SELECTED_INTEGRATION_AUTHORITY_SCHEMA_VERSION,
-    OwnerBackfillAuthorityCellProjectionV2,
-    OwnerBackfillCellProjectionV2,
+    OwnerBackfillAuthorityCellProjection,
+    OwnerBackfillCellProjection,
     OwnerBackfillPeakFactObservation,
     OwnerBackfillPeakFactStageProjection,
-    SelectedIntegrationAuthorityProjectionV1,
+    SelectedIntegrationAuthorityProjection,
     owner_backfill_authority_cell_projection,
     owner_backfill_cell_lineage_matches,
     owner_backfill_cell_projection,
@@ -86,7 +86,7 @@ class PreparedOwnerBackfillPeakFact:
     feature_family_id: str
     stage: OwnerBackfillPeakFactStageProjection
     physical_row: OwnerBackfillPeakFactProvenanceRow
-    selected_integration_authority: SelectedIntegrationAuthorityProjectionV1 | None
+    selected_integration_authority: SelectedIntegrationAuthorityProjection | None
     selected_integration_authority_content_id: str | None
 
     def __post_init__(self) -> None:
@@ -286,7 +286,7 @@ def build_owner_backfill_peak_fact_provenance_batch(
     observations: Sequence[OwnerBackfillPeakFactObservation],
     *,
     profile: SignalProcessingProfile,
-    cell_projections: Sequence[OwnerBackfillCellProjectionV2] = (),
+    cell_projections: Sequence[OwnerBackfillCellProjection] = (),
 ) -> OwnerBackfillPeakFactProvenanceBatch:
     ordered_physical = sorted(
         observations,
@@ -580,9 +580,9 @@ __all__ = [
     "SELECTED_INTEGRATION_AUTHORITY_ID_PREFIX",
     "SELECTED_INTEGRATION_AUTHORITY_SCHEMA_VERSION",
     "ClaimState",
-    "OwnerBackfillAuthorityCellProjectionV2",
+    "OwnerBackfillAuthorityCellProjection",
     "OwnerBackfillCellClaim",
-    "OwnerBackfillCellProjectionV2",
+    "OwnerBackfillCellProjection",
     "OwnerBackfillPeakFactCompositionResult",
     "OwnerBackfillPeakFactObservation",
     "OwnerBackfillPeakFactProvenanceBatch",
@@ -592,7 +592,7 @@ __all__ = [
     "OwnerBackfillPhysicalClaim",
     "PreparedOwnerBackfillPeakFact",
     "RowKind",
-    "SelectedIntegrationAuthorityProjectionV1",
+    "SelectedIntegrationAuthorityProjection",
     "_PROVENANCE_ROWS_PER_CHUNK",
     "_STAGE_PROJECTION_MINT_TOKEN",
     "_cell_projection_row",

@@ -380,7 +380,7 @@ def test_load_config_accepts_equal_canonical_and_legacy_signal_window(
     config, _ = load_config(config_dir)
 
     assert config.signal_processing_window_points == 21
-    assert "settings_migration_v1" in caplog.text
+    assert "settings_migration" in caplog.text
     assert "status=deprecated_alias_equal" in caplog.text
     assert "legacy_key=ms1_morphology_smoothing_window_points" in caplog.text
     assert "canonical_key=signal_processing_window_points" in caplog.text

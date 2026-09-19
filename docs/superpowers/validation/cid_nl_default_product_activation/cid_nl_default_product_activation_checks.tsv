@@ -1,0 +1,19 @@
+schema_version	check_id	status	observed	expected	notes
+cid_nl_default_product_activation	adopt_gate_status	pass	adopt_ready	adopt_ready	
+cid_nl_default_product_activation	contract_cell_count	pass	95	95	
+cid_nl_default_product_activation	candidate_transition_count	pass	20	20	
+cid_nl_default_product_activation	existing_successor_context_preserved	pass	337	337	
+cid_nl_default_product_activation	omitted_no_target_preserved	pass	27	27	
+cid_nl_default_product_activation	expected_diff_replay_status	pass	pass	pass	
+cid_nl_default_product_activation	expected_diff_written_count	pass	95	95	
+cid_nl_default_product_activation	expected_diff_unused_count	pass	0	0	
+cid_nl_default_product_activation	matrix_delta_exact_keyset	pass	pass	pass	
+cid_nl_default_product_activation	matrix_delta_changed_count	pass	95	95	
+cid_nl_default_product_activation	cell_provenance_exact_keyset	pass	pass	pass	
+cid_nl_default_product_activation	cell_provenance_accepted_count	pass	95	95	
+cid_nl_default_product_activation	successor_self_evidence_contract	pass	status=pass;problems=0	pass;problems=0	Feature inclusion is based on successor tag, quant value, write authority, and provenance; source/successor similarity is reserved for identity review.
+cid_nl_default_product_activation	discovery_terminology_boundary	pass	default_activation_effect=write_cid_nl_discovery_default_cell;legacy_quant_matrix_effect=write_accepted_backfill	discovery public term with QuantMatrixVersion compatibility	
+cid_nl_default_product_activation	product_surface_flags	pass	product_writer/default_matrix TRUE; workbook/gui FALSE	explicit public default activation	
+cid_nl_default_product_activation	matrix_row_universe_policy	pass	discovery_expanded_85raw_alignment_rows	Discovery-expanded untargeted matrix; downstream filters handle low prevalence	
+cid_nl_default_product_activation	source_successor_identity_scope	pass	identity_review_only_not_feature_inclusion_blocker	identity review only	
+cid_nl_default_product_activation	contract_source_counts	pass	"{""agent_resolved"": 9, ""manual_resolved"": 13, ""primary_supported"": 73}"	tracked	

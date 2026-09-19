@@ -39,14 +39,14 @@ def test_family_context_ref_is_internal_canonical_and_order_independent() -> Non
     forward = mint_family_context_ref(
         mz_interval=(499.9, 500.1),
         rt_interval=(7.5, 8.8),
-        context_policy_version="mode-track-family-context-v1",
+        context_policy_version="mode-track-family-context",
         source_lineage_refs=("source-packet:abc", "trace-query:def"),
         mode_tracks=(first, second),
     )
     reversed_input = mint_family_context_ref(
         mz_interval=(499.9, 500.1),
         rt_interval=(7.5, 8.8),
-        context_policy_version="mode-track-family-context-v1",
+        context_policy_version="mode-track-family-context",
         source_lineage_refs=("trace-query:def", "source-packet:abc"),
         mode_tracks=(second, first),
     )
@@ -61,7 +61,7 @@ def test_family_context_ref_is_internal_canonical_and_order_independent() -> Non
     )
 
     payload = json.loads(canonical_family_context_ref_bytes(forward))
-    assert payload["schema_version"] == "family_context_ref_v1"
+    assert payload["schema_version"] == "family_context_ref"
     assert payload["group_hypothesis_ids"] == ["track-a", "track-b"]
     assert "display-family" not in canonical_family_context_ref_bytes(forward).decode()
     assert "method_subject" not in canonical_family_context_ref_bytes(forward).decode()
@@ -72,7 +72,7 @@ def test_family_context_ref_allows_zero_or_multiple_mode_tracks(mode_tracks) -> 
     context = mint_family_context_ref(
         mz_interval=(499.9, 500.1),
         rt_interval=(7.5, 8.8),
-        context_policy_version="mode-track-family-context-v1",
+        context_policy_version="mode-track-family-context",
         source_lineage_refs=("source-packet:abc",),
         mode_tracks=mode_tracks,
     )
@@ -84,7 +84,7 @@ def test_family_context_ref_keeps_same_display_family_tracks_distinct() -> None:
     context = mint_family_context_ref(
         mz_interval=(499.9, 500.1),
         rt_interval=(7.5, 8.8),
-        context_policy_version="mode-track-family-context-v1",
+        context_policy_version="mode-track-family-context",
         source_lineage_refs=("source-packet:abc",),
         mode_tracks=(_track("track-a"), _track("track-b")),
     )
@@ -100,7 +100,7 @@ def test_family_context_ref_rejects_duplicate_or_out_of_context_tracks() -> None
         mint_family_context_ref(
             mz_interval=(499.9, 500.1),
             rt_interval=(7.5, 8.8),
-            context_policy_version="mode-track-family-context-v1",
+            context_policy_version="mode-track-family-context",
             source_lineage_refs=("source-packet:abc",),
             mode_tracks=(_track("track-a"), _track("track-a")),
         )
@@ -109,7 +109,7 @@ def test_family_context_ref_rejects_duplicate_or_out_of_context_tracks() -> None
         mint_family_context_ref(
             mz_interval=(499.9, 500.1),
             rt_interval=(7.5, 8.8),
-            context_policy_version="mode-track-family-context-v1",
+            context_policy_version="mode-track-family-context",
             source_lineage_refs=("source-packet:abc",),
             mode_tracks=(_track("track-a", center_rt=9.0),),
         )
@@ -140,7 +140,7 @@ def test_family_context_ref_rejects_tracks_that_share_an_owner() -> None:
         mint_family_context_ref(
             mz_interval=(499.9, 500.1),
             rt_interval=(7.5, 8.8),
-            context_policy_version="mode-track-family-context-v1",
+            context_policy_version="mode-track-family-context",
             source_lineage_refs=("source-packet:abc",),
             mode_tracks=(first, second),
         )
@@ -163,7 +163,7 @@ def test_family_context_ref_rejects_malformed_identity_inputs(kwargs, message) -
     arguments = {
         "mz_interval": (499.9, 500.1),
         "rt_interval": (7.5, 8.8),
-        "context_policy_version": "mode-track-family-context-v1",
+        "context_policy_version": "mode-track-family-context",
         "source_lineage_refs": ("source-packet:abc",),
         "mode_tracks": (),
     }
@@ -179,7 +179,7 @@ def test_family_context_ref_cannot_be_caller_forged_or_gain_public_fields() -> N
             family_context_id="family-context:forged",
             mz_interval=(499.9, 500.1),
             rt_interval=(7.5, 8.8),
-            context_policy_version="mode-track-family-context-v1",
+            context_policy_version="mode-track-family-context",
             source_lineage_refs=("source-packet:abc",),
             mode_tracks=(),
             group_hypothesis_ids=(),
@@ -198,21 +198,21 @@ def test_family_context_ref_identity_changes_with_exact_context_or_lineage() -> 
     base = mint_family_context_ref(
         mz_interval=(499.9, 500.1),
         rt_interval=(7.5, 8.8),
-        context_policy_version="mode-track-family-context-v1",
+        context_policy_version="mode-track-family-context",
         source_lineage_refs=("source-packet:abc",),
         mode_tracks=(_track("track-a"),),
     )
     changed_lineage = mint_family_context_ref(
         mz_interval=(499.9, 500.1),
         rt_interval=(7.5, 8.8),
-        context_policy_version="mode-track-family-context-v1",
+        context_policy_version="mode-track-family-context",
         source_lineage_refs=("source-packet:changed",),
         mode_tracks=(_track("track-a"),),
     )
     changed_membership = mint_family_context_ref(
         mz_interval=(499.9, 500.1),
         rt_interval=(7.5, 8.8),
-        context_policy_version="mode-track-family-context-v1",
+        context_policy_version="mode-track-family-context",
         source_lineage_refs=("source-packet:abc",),
         mode_tracks=(_track("track-a"), _track("track-b")),
     )

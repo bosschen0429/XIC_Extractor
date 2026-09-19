@@ -1,9 +1,4 @@
-"""Package-owned batch diagnosis for legacy and anchor-local Pt traces.
-
-The legacy v2 diagnosis retains its full extraction-window semantics. The
-anchor-local output is a separate diagnostic schema built from segmentation
-evidence; it is not a canonical ``PeakHypothesis`` or an integration boundary.
-"""
+"""Package-owned batch diagnosis for anchor-local Pt traces."""
 
 from __future__ import annotations
 
@@ -23,7 +18,6 @@ from xic_extractor.discovery.pt_pattern_artifact_contract import (
     PT_PATTERN_ANCHOR_LOCAL_TRACE_SUMMARY_SCHEMA_VERSION,
     PT_PATTERN_ANCHOR_SEGMENTATION_METRIC_COLUMNS,
     PT_PATTERN_TRACE_ANCHOR_LOCAL_ROLE,
-    PT_PATTERN_TRACE_FULL_CONTEXT_ROLE,
 )
 from xic_extractor.discovery.pt_pattern_trace_evidence import (
     POSITION_LABELS,
@@ -37,18 +31,15 @@ ANCHOR_LOCAL_SUMMARY_COLUMNS = PT_PATTERN_ANCHOR_LOCAL_SUMMARY_COLUMNS
 ANCHOR_LOCAL_METRIC_COLUMNS = PT_PATTERN_ANCHOR_LOCAL_METRIC_COLUMNS
 ANCHOR_LOCAL_TRACE_POINT_COLUMNS = PT_PATTERN_ANCHOR_LOCAL_TRACE_POINT_COLUMNS
 
-ANCHOR_LOCAL_SCHEMA_VERSION = PT_PATTERN_ANCHOR_LOCAL_TRACE_SUMMARY_SCHEMA_VERSION
-ANCHOR_SEGMENTATION_SELECTOR = "anchor_containing_chrom_peak_segment.v1"
+SCHEMA_VERSION = PT_PATTERN_ANCHOR_LOCAL_TRACE_SUMMARY_SCHEMA_VERSION
+ANCHOR_SEGMENTATION_SELECTOR = "anchor_containing_chrom_peak_segment"
 
 
 @dataclass(frozen=True, slots=True)
 class PtPatternTraceBatchDiagnosis:
-    legacy_summary_rows: tuple[dict[str, object], ...]
-    legacy_metric_rows: tuple[dict[str, object], ...]
-    legacy_trace_point_rows: tuple[dict[str, object], ...]
-    anchor_local_summary_rows: tuple[dict[str, object], ...]
-    anchor_local_metric_rows: tuple[dict[str, object], ...]
-    anchor_local_trace_point_rows: tuple[dict[str, object], ...]
+    summary_rows: tuple[dict[str, object], ...]
+    metric_rows: tuple[dict[str, object], ...]
+    trace_point_rows: tuple[dict[str, object], ...]
     anchor_segmentation_statuses: tuple[str, ...]
     anchor_boundary_review_statuses: tuple[str, ...]
 
@@ -68,9 +59,6 @@ def diagnose_pt_pattern_trace_batch(
 ) -> PtPatternTraceBatchDiagnosis:
     """Diagnose each context exactly once per declared output semantics."""
 
-    legacy_summary_rows: list[dict[str, object]] = []
-    legacy_metric_rows: list[dict[str, object]] = []
-    legacy_trace_point_rows: list[dict[str, object]] = []
     anchor_summary_rows: list[dict[str, object]] = []
     anchor_metric_rows: list[dict[str, object]] = []
     anchor_trace_point_rows: list[dict[str, object]] = []
@@ -83,23 +71,6 @@ def diagnose_pt_pattern_trace_batch(
             label: trace_by_key.get((candidate_id, label), XICTrace.empty())
             for label in POSITION_LABELS
         }
-        legacy = diagnose_candidate_traces(
-            row,
-            context_traces,
-            trace_extraction_sha256=trace_extraction_sha256,
-            trace_artifact_role=PT_PATTERN_TRACE_FULL_CONTEXT_ROLE,
-            ppm=ppm,
-            rt_half_window_sec=rt_half_window_sec,
-            mz_source=mz_source,
-            active_fraction=active_fraction,
-            min_pearson_r=min_pearson_r,
-            max_apex_delta_sec=max_apex_delta_sec,
-            include_trace_points=include_trace_points,
-        )
-        legacy_summary_rows.append(legacy.summary_row)
-        legacy_metric_rows.extend(legacy.metric_rows)
-        legacy_trace_point_rows.extend(legacy.trace_point_rows)
-
         segmentation = select_anchor_local_segments(
             context_traces,
             anchor_rt_min=float(row["base_rt_apex_min"]),
@@ -165,12 +136,9 @@ def diagnose_pt_pattern_trace_batch(
         )
 
     return PtPatternTraceBatchDiagnosis(
-        legacy_summary_rows=tuple(legacy_summary_rows),
-        legacy_metric_rows=tuple(legacy_metric_rows),
-        legacy_trace_point_rows=tuple(legacy_trace_point_rows),
-        anchor_local_summary_rows=tuple(anchor_summary_rows),
-        anchor_local_metric_rows=tuple(anchor_metric_rows),
-        anchor_local_trace_point_rows=tuple(anchor_trace_point_rows),
+        summary_rows=tuple(anchor_summary_rows),
+        metric_rows=tuple(anchor_metric_rows),
+        trace_point_rows=tuple(anchor_trace_point_rows),
         anchor_segmentation_statuses=tuple(segmentation_statuses),
         anchor_boundary_review_statuses=tuple(boundary_review_statuses),
     )
@@ -435,7 +403,7 @@ def _anchor_segmentation_metric_fields(
 
 
 def _with_anchor_schema(row: Mapping[str, object]) -> dict[str, object]:
-    return dict(row) | {"schema_version": ANCHOR_LOCAL_SCHEMA_VERSION}
+    return dict(row) | {"schema_version": SCHEMA_VERSION}
 
 
 def _optional_value(value: float | None) -> float | str:

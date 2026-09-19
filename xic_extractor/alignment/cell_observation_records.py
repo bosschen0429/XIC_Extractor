@@ -14,13 +14,11 @@ from xic_extractor.alignment.cell_group_context import (
     _ARTIFACT_SEMANTIC_CONTRACT,
     _EVIDENCE_ARTIFACT_ID_PREFIX,
     _METHOD_SUBJECT_ID_PREFIX,
-    _OUTSIDE_GROUP_ARTIFACT_SEMANTIC_CONTRACT,
     _PEAK_CONTENT_ID_PREFIX,
     _PEAK_HYPOTHESIS_ID_PREFIX,
     _SAMPLE_ID_PREFIX,
     _TARGET_DEFINITION_ID_PREFIX,
     _TARGET_KEY_ID_PREFIX,
-    OUTSIDE_GROUP_SCHEMA_VERSION,
     SCHEMA_VERSION,
     VALIDATION_STATUS,
     CellObservationContractError,
@@ -137,8 +135,8 @@ class CellObservationContent:
         )
         _validate_typed_digest_id(
             self.group_method_subject_id,
-            prefix="xic.cid-nl-method-subject.v2:"
-            if self.group_method_subject_id.startswith("xic.cid-nl-method-subject.v2:")
+            prefix="xic.cid-nl-method-subject:"
+            if self.group_method_subject_id.startswith("xic.cid-nl-method-subject:")
             else _METHOD_SUBJECT_ID_PREFIX,
             field="group_method_subject_id",
         )
@@ -406,11 +404,7 @@ class CellObservationRef:
             raise CellObservationContractError(
                 "artifact must be an owner-minted EvidenceArtifactRef"
             )
-        if self.artifact.semantic_contract != (
-            _OUTSIDE_GROUP_ARTIFACT_SEMANTIC_CONTRACT
-            if self.content.outside_group is not None
-            else _ARTIFACT_SEMANTIC_CONTRACT
-        ):
+        if self.artifact.semantic_contract != _ARTIFACT_SEMANTIC_CONTRACT:
             raise CellObservationContractError(
                 "artifact semantic contract is not owned by CellObservation"
             )
@@ -905,11 +899,7 @@ def mint_cell_observation_ref(
     artifact = _mint_evidence_artifact_ref(
         producer_processing_request_id=processing_owners.request.processing_request_id,
         producer_processing_attempt_id=processing_owners.attempt.processing_attempt_id,
-        semantic_contract=(
-            _OUTSIDE_GROUP_ARTIFACT_SEMANTIC_CONTRACT
-            if outside_group is not None
-            else _ARTIFACT_SEMANTIC_CONTRACT
-        ),
+        semantic_contract=_ARTIFACT_SEMANTIC_CONTRACT,
         payload_bytes=canonical_cell_observation_bytes(content),
         upstream_artifacts=upstreams,
     )
@@ -931,14 +921,8 @@ def canonical_cell_observation_bytes(content: CellObservationContent) -> bytes:
             "canonical serialization requires CellObservation content"
         )
     values = asdict(content)
-    if content.outside_group is None:
-        values.pop("outside_group")
     payload = {
-        "schema_version": (
-            OUTSIDE_GROUP_SCHEMA_VERSION
-            if content.outside_group is not None
-            else SCHEMA_VERSION
-        ),
+        "schema_version": SCHEMA_VERSION,
         "validation_status": VALIDATION_STATUS,
         "content": values,
     }

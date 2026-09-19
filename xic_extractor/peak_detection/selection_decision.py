@@ -20,7 +20,7 @@ from xic_extractor.peak_detection.hypotheses import (
 from xic_extractor.peak_detection.models import PeakDetectionResult
 
 LegacyProjectionStatus = Literal["active_policy_remaining", "successor_owned"]
-SelectionDecisionPolicySource = Literal["selected_hypothesis_decision_v1"]
+SelectionDecisionPolicySource = Literal["selected_hypothesis_decision"]
 SelectionDecisionCompatibilityOracle = Literal[
     "legacy_peak_scoring_current_oracle",
     "successor_evidence_decision_semantics",
@@ -32,9 +32,9 @@ DiagnosticSelectionStatus = Literal[
     "failed",
 ]
 
-DIAGNOSTIC_SELECTION_SCHEMA_VERSION = "diagnostic_peak_hypothesis_selection_v2"
+DIAGNOSTIC_SELECTION_SCHEMA_VERSION = "diagnostic_peak_hypothesis_selection"
 DIAGNOSTIC_SELECTION_VALIDATION_STATUS = "diagnostic_only"
-DIAGNOSTIC_SELECTION_POLICY = "unique_owner_backed_hypothesis_v1"
+DIAGNOSTIC_SELECTION_POLICY = "unique_owner_backed_hypothesis"
 _DIAGNOSTIC_SELECTION_SEMANTIC_ROLE = "diagnostic_peak_hypothesis_selection"
 _DIAGNOSTIC_SELECTION_ARTIFACT_CONTRACT = _mint_artifact_semantic_contract_ref(
     owner_namespace="xic_extractor.peak_detection.selection_decision",
@@ -42,15 +42,15 @@ _DIAGNOSTIC_SELECTION_ARTIFACT_CONTRACT = _mint_artifact_semantic_contract_ref(
     schema_version=DIAGNOSTIC_SELECTION_SCHEMA_VERSION,
     validation_status=DIAGNOSTIC_SELECTION_VALIDATION_STATUS,
     media_type="application/json",
-    serialization_format="canonical-json-utf8-lf-v1",
+    serialization_format="canonical-json-utf8-lf",
 )
-_SAMPLE_ID_PREFIX = "xic.sample.v1:"
-_TARGET_SNAPSHOT_PREFIX = "xic.target-list-snapshot.v1:"
-_TARGET_KEY_PREFIX = "xic.target-key.v1:"
-_TARGET_DEFINITION_PREFIX = "xic.target-definition.v1:"
-_EVIDENCE_ARTIFACT_ID_PREFIX = "xic.evidence-artifact.v1:"
-_HYPOTHESIS_ID_PREFIX = "xic.peak-hypothesis.v1:"
-_ARTIFACT_CONTENT_ID_PREFIX = "xic.artifact-content.v1:"
+_SAMPLE_ID_PREFIX = "xic.sample:"
+_TARGET_SNAPSHOT_PREFIX = "xic.target-list-snapshot:"
+_TARGET_KEY_PREFIX = "xic.target-key:"
+_TARGET_DEFINITION_PREFIX = "xic.target-definition:"
+_EVIDENCE_ARTIFACT_ID_PREFIX = "xic.evidence-artifact:"
+_HYPOTHESIS_ID_PREFIX = "xic.peak-hypothesis:"
+_ARTIFACT_CONTENT_ID_PREFIX = "xic.artifact-content:"
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
@@ -330,7 +330,7 @@ class PeakHypothesisSelectionDecision:
     compatibility_labels: tuple[str, ...] = ()
     evidence_sources: tuple[str, ...] = ()
     legacy_projection_status: LegacyProjectionStatus = "active_policy_remaining"
-    policy_source: SelectionDecisionPolicySource = "selected_hypothesis_decision_v1"
+    policy_source: SelectionDecisionPolicySource = "selected_hypothesis_decision"
     compatibility_oracle: SelectionDecisionCompatibilityOracle = (
         "legacy_peak_scoring_current_oracle"
     )

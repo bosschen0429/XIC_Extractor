@@ -93,7 +93,7 @@ def test_write_calibration_manifest_json_round_trips_paths(tmp_path: Path) -> No
             ),
         ),
         source_artifacts={"instrument_qc_sdolek_trend.tsv": "abc"},
-        source_contracts={"instrument_qc": "sdolek_trend_v1"},
+        source_contracts={"instrument_qc": "sdolek_trend"},
         generation_command="cmd",
         created_at_utc="2026-05-21T00:00:00Z",
         created_by="tool",

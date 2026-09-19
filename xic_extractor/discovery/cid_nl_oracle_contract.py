@@ -36,18 +36,18 @@ from xic_extractor.discovery.cid_nl_oracle_primitives import (
 )
 
 _CANONICAL_GATE_TABLE_SHA256 = (
-    "b1e3e67cc0051b9eb9b0bf41bf9163477ed6b3da66582b19cba74b0fcd7f4b99"
+    "95d70b9e5e6466c4c6baf1aded2e461119175b62b6ef1bff9976bc7e778e853d"
 )
 _CANONICAL_VERDICT_TABLE_SHA256 = (
-    "5100fb80ae7ade82df50e2971891b20be639c4753150cf1a2d307de8dc6f33e0"
+    "33af3d9133dee87acf0ded0914163a7d41165efc2c04070800594e214f96518c"
 )
 _MANIFEST_PAYLOAD_SHA256_FIELDS = {
-    "cid_nl_tested_tracer_proposal_manifest_v1": "proposal_tsv_sha256",
-    "cid_nl_formal_holdout_sampling_manifest_v1": "holdout_tsv_sha256",
-    "cid_nl_reference_universe_manifest_v1": "reference_universe_tsv_sha256",
-    "cid_nl_oracle_narrow_scope_manifest_v1": "narrow_scope_tsv_sha256",
-    "cid_nl_oracle_lineage_binding_v1": "lineage_binding_tsv_sha256",
-    "cid_nl_oracle_statistical_design_manifest_v1": (
+    "cid_nl_tested_tracer_proposal_manifest": "proposal_tsv_sha256",
+    "cid_nl_formal_holdout_sampling_manifest": "holdout_tsv_sha256",
+    "cid_nl_reference_universe_manifest": "reference_universe_tsv_sha256",
+    "cid_nl_oracle_narrow_scope_manifest": "narrow_scope_tsv_sha256",
+    "cid_nl_oracle_lineage_binding": "lineage_binding_tsv_sha256",
+    "cid_nl_oracle_statistical_design_manifest": (
         "statistical_design_tsv_sha256"
     ),
 }
@@ -371,7 +371,7 @@ def validate_proposal_row(row: Mapping[str, Any]) -> None:
 
     _require_schema_version(
         row,
-        "cid_nl_tested_tracer_proposal_manifest_v1",
+        "cid_nl_tested_tracer_proposal_manifest",
     )
     _require_fields(row, _PROPOSAL_REQUIRED_FIELDS)
     for field in (
@@ -483,7 +483,7 @@ def validate_sampling_row(row: Mapping[str, Any]) -> None:
 
     _require_schema_version(
         row,
-        "cid_nl_formal_holdout_sampling_manifest_v1",
+        "cid_nl_formal_holdout_sampling_manifest",
     )
     _require_fields(row, _SAMPLING_REQUIRED_FIELDS)
     for field in ("case_locator_sha256",):
@@ -727,7 +727,7 @@ def validate_sampling_statistical_binding(
     """Bind every sampled case to exactly one compatible estimand design."""
 
     if sha256_bytes(gate_table_bytes) != _CANONICAL_GATE_TABLE_SHA256:
-        raise OracleContractError("gate table bytes are not canonical v1")
+        raise OracleContractError("gate table bytes are not canonical")
     gate_definitions = {
         _required_text(row, "gate_id"): row
         for row in _parse_tsv_bytes(gate_table_bytes)
@@ -824,7 +824,7 @@ def validate_sampling_statistical_binding(
     for reference_row in reference_rows:
         _require_schema_version(
             reference_row,
-            "cid_nl_reference_universe_manifest_v1",
+            "cid_nl_reference_universe_manifest",
         )
         _require_fields(reference_row, _REFERENCE_REQUIRED_FIELDS)
         validate_canonical_row_hash(reference_row)
@@ -994,7 +994,7 @@ def _validate_reference_row(
 
     _require_schema_version(
         row,
-        "cid_nl_reference_universe_manifest_v1",
+        "cid_nl_reference_universe_manifest",
     )
     _require_fields(row, _REFERENCE_REQUIRED_FIELDS)
     validate_canonical_row_hash(row)
@@ -1248,7 +1248,7 @@ def validate_reference_manifest_rows(
     _require_fields(seal, _REFERENCE_SEAL_REQUIRED_FIELDS)
     _require_schema_version(
         seal,
-        "cid_nl_reference_universe_manifest_v1",
+        "cid_nl_reference_universe_manifest",
     )
     if seal.get("seal_status") != "sealed":
         raise OracleContractError("reference universe must be sealed")
@@ -1418,11 +1418,11 @@ def validate_narrow_scope_row(
     _require_fields(manifest_seal, _NARROW_SCOPE_SEAL_REQUIRED_FIELDS)
     _require_schema_version(
         row,
-        "cid_nl_oracle_narrow_scope_manifest_v1",
+        "cid_nl_oracle_narrow_scope_manifest",
     )
     _require_schema_version(
         manifest_seal,
-        "cid_nl_oracle_narrow_scope_manifest_v1",
+        "cid_nl_oracle_narrow_scope_manifest",
     )
     validate_canonical_row_hash(row)
     if not _boolean(row, "membership_frozen_before_reveal"):
@@ -1499,7 +1499,7 @@ def validate_narrow_scope_row(
 def validate_lineage_binding_row(row: Mapping[str, Any]) -> None:
     """Validate role-specific #123 lineage bindings for oracle artifacts."""
 
-    _require_schema_version(row, "cid_nl_oracle_lineage_binding_v1")
+    _require_schema_version(row, "cid_nl_oracle_lineage_binding")
     _require_fields(row, _LINEAGE_REQUIRED_FIELDS)
     validate_canonical_row_hash(row)
     for field in ("artifact_sha256", "source_row_sha256"):
@@ -1621,7 +1621,7 @@ def validate_statistical_design_row(row: Mapping[str, Any]) -> None:
 
     _require_schema_version(
         row,
-        "cid_nl_oracle_statistical_design_manifest_v1",
+        "cid_nl_oracle_statistical_design_manifest",
     )
     if not _boolean(row, "frozen_before_reveal"):
         raise OracleContractError("statistical design must be frozen before reveal")

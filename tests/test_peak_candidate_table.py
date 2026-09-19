@@ -401,7 +401,7 @@ def test_build_rows_can_emit_baseline_corrected_audit_area() -> None:
     assert rows[0]["ms1_morphology_trace_effective_points"] != ""
     assert rows[0]["area_uncertainty"] != ""
     assert rows[0]["area_uncertainty_formula_version"] == (
-        "baseline_residual_mad_v1"
+        "baseline_residual_mad"
     )
     assert rows[0]["baseline_residual_mad"] != ""
     assert rows[0]["area_uncertainty_noise_source"] != ""

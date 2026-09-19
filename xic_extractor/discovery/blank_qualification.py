@@ -16,6 +16,8 @@ from xic_extractor.raw_reader import open_raw
 if TYPE_CHECKING:
     from xic_extractor.discovery.models import DiscoveryCandidate
 
+BLANK_BACKGROUND_LIBRARY_SCHEMA = "blank_background_library"
+
 
 class BlankQualificationCategory(str, Enum):
     """Classification of Discovery candidates based on Blank background evaluation."""
@@ -59,7 +61,7 @@ class BlankBackgroundLibrary:
     ions: tuple[BlankBackgroundIon, ...]
     min_intensity: float
     source_blanks: tuple[str, ...]
-    version: str = "v1"
+    version: str = BLANK_BACKGROUND_LIBRARY_SCHEMA
 
     @property
     def mzs(self) -> np.ndarray:
@@ -129,11 +131,14 @@ class BlankBackgroundLibrary:
                 key=lambda ion: ion.mz,
             )
         )
+        version = str(data["version"])
+        if version != BLANK_BACKGROUND_LIBRARY_SCHEMA:
+            raise ValueError("unsupported Blank background library version")
         return cls(
             ions=ions,
             min_intensity=float(data.get("min_intensity", 25000.0)),
             source_blanks=tuple(data.get("source_blanks", [])),
-            version=str(data.get("version", "v1")),
+            version=version,
         )
 
 
@@ -170,6 +175,8 @@ def deserialize_background_library(payload: str) -> BlankBackgroundLibrary:
             source_blanks=tuple(data["source_blanks"]),
             version=data["version"],
         )
+        if library.version != BLANK_BACKGROUND_LIBRARY_SCHEMA:
+            raise ValueError("unsupported Blank background library version")
         if serialize_background_library(library) != payload:
             raise ValueError("background library snapshot is not canonical")
         if any(a.mz > b.mz for a, b in zip(library.ions, library.ions[1:])):
@@ -391,14 +398,7 @@ _CACHED_DEFAULT_LIBRARY: BlankBackgroundLibrary | None = None
 
 def get_default_background_library_path() -> Path:
     """Return the filesystem path to the packaged default background library."""
-    data_dir = Path(__file__).parent / "data"
-    gz_path = data_dir / DEFAULT_BACKGROUND_LIBRARY_FILENAME
-    if gz_path.is_file():
-        return gz_path
-    legacy_path = data_dir / "default_background_library_15min.json"
-    if legacy_path.is_file():
-        return legacy_path
-    return gz_path
+    return Path(__file__).parent / "data" / DEFAULT_BACKGROUND_LIBRARY_FILENAME
 
 
 def get_default_background_library() -> BlankBackgroundLibrary | None:

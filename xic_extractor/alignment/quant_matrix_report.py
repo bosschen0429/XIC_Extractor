@@ -18,7 +18,7 @@ from xic_extractor.tabular_io import (
     write_tsv,
 )
 
-QUANT_MATRIX_REVIEW_SCHEMA = "quant_matrix_review_report_v1"
+QUANT_MATRIX_REVIEW_SCHEMA = "quant_matrix_review_report"
 
 _AUTHORITY_NOTICE = (
     "shadow_review surface only; does not mutate quant matrix, ProductWriter, "
@@ -145,6 +145,7 @@ def build_quant_matrix_review_report(
     summary_json.write_text(
         json.dumps(summary, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
+        newline="\n",
     )
     html_path.write_text(_render_html(review_rows, summary), encoding="utf-8")
     return {

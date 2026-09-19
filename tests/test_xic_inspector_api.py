@@ -32,7 +32,7 @@ def _report_data(path: Path) -> dict:
     return json.loads(match.group(1))
 
 
-def _create_mock_v2_db(
+def _create_mock_db(
     directory: Path,
     *,
     request_id: str = "req-01",
@@ -99,7 +99,7 @@ def _create_mock_v2_db(
         )
         # Add a curve payload for C1
         curve_envelope = {
-            "schema_version": "curve_payload_v1",
+            "schema_version": "curve_payload",
             "kind": "initial_capture",
             "sample_id": "S1",
             "candidate_id": "C1",
@@ -158,7 +158,7 @@ def _create_mock_v2_db(
 def test_generate_report_sample_strategy_success() -> None:
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp = Path(tmpdir)
-        db_path, matrix_path, matrix_hash = _create_mock_v2_db(tmp)
+        db_path, matrix_path, matrix_hash = _create_mock_db(tmp)
         out_html = tmp / "report.html"
 
         req = SelectionRequest(strategy="sample", limit=10, seed=0)
@@ -173,7 +173,7 @@ def test_generate_report_sample_strategy_success() -> None:
 
         assert out_html.is_file()
         assert res.output_path == out_html.resolve()
-        assert res.evidence_capability == "retained_curves_v1"
+        assert res.evidence_capability == "retained_curves"
         assert res.run_total >= 1
         assert res.selected_count >= 1
         assert res.sample_ids == ("S1", "S2")
@@ -188,11 +188,11 @@ def test_generate_report_sample_strategy_success() -> None:
         heading = re.search(r"<h1[^>]*>(.*?)</h1>", content, re.S).group(1)
         assert title == heading == "Inspector"
         assert res.source.processing_request_id not in title + heading
-        assert "retained_curves_v1" in content
+        assert "retained_curves" in content
 
 
 def test_group_query_keeps_unlinked_stored_cells_scoped_and_readable(tmp_path):
-    report, _, _ = _create_mock_v2_db(tmp_path)
+    report, _, _ = _create_mock_db(tmp_path)
     stored_cell = {
         "cell_observation_id": "cell-observation-02",
         "decision_id": "decision-02",
@@ -320,7 +320,7 @@ def test_group_query_keeps_unlinked_stored_cells_scoped_and_readable(tmp_path):
 def test_error_code_2_invalid_request() -> None:
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp = Path(tmpdir)
-        db_path, _, _ = _create_mock_v2_db(tmp)
+        db_path, _, _ = _create_mock_db(tmp)
         out_html = tmp / "report.html"
 
         # Invalid limit
@@ -366,7 +366,7 @@ def test_error_code_3_source_unavailable() -> None:
 def test_error_code_4_source_invalid_mismatched_matrix() -> None:
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp = Path(tmpdir)
-        db_path, matrix_path, _ = _create_mock_v2_db(tmp)
+        db_path, matrix_path, _ = _create_mock_db(tmp)
         out_html = tmp / "report.html"
 
         # Tamper with matrix file
@@ -380,7 +380,7 @@ def test_error_code_4_source_invalid_mismatched_matrix() -> None:
 def test_error_code_6_output_aliasing_source() -> None:
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp = Path(tmpdir)
-        db_path, matrix_path, _ = _create_mock_v2_db(tmp)
+        db_path, matrix_path, _ = _create_mock_db(tmp)
 
         # Output aliases source DB
         with pytest.raises(InspectorError) as exc_info:
@@ -396,7 +396,7 @@ def test_error_code_6_output_aliasing_source() -> None:
 def test_cancellation_preserves_old_html_and_code_130() -> None:
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp = Path(tmpdir)
-        db_path, _, _ = _create_mock_v2_db(tmp)
+        db_path, _, _ = _create_mock_db(tmp)
         out_html = tmp / "existing.html"
         out_html.write_text("Old unmodified HTML content", encoding="utf-8")
 
@@ -417,7 +417,7 @@ def test_cancellation_preserves_old_html_and_code_130() -> None:
 def test_normalized_sample_scope_semantics() -> None:
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp = Path(tmpdir)
-        db_path, _, _ = _create_mock_v2_db(
+        db_path, _, _ = _create_mock_db(
             tmp,
             samples=[
                 {"sample_stem": "b_sample", "canonical_sample_identity_id": "S_B"},
@@ -452,7 +452,7 @@ def test_normalized_sample_scope_semantics() -> None:
 def test_cli_execution() -> None:
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp = Path(tmpdir)
-        db_path, _, _ = _create_mock_v2_db(tmp)
+        db_path, _, _ = _create_mock_db(tmp)
         out_html = tmp / "cli_report.html"
 
         # CLI success
@@ -492,7 +492,7 @@ def test_row_curves_follow_exact_witnesses_and_shared_payload_is_read_once(
     from xic_inspector.api import read_evidence_summary
     from xic_inspector.sources import cid_nl
 
-    report, _, _ = _create_mock_v2_db(tmp_path)
+    report, _, _ = _create_mock_db(tmp_path)
     with sqlite3.connect(report) as connection:
         for index in range(2, row_count + 1):
             rid = f"row-{index:02d}"
@@ -556,7 +556,7 @@ def test_row_curves_follow_exact_witnesses_and_shared_payload_is_read_once(
 
 
 def test_real_source_query_uses_one_scoped_candidate_observation(tmp_path):
-    report, _, _ = _create_mock_v2_db(tmp_path)
+    report, _, _ = _create_mock_db(tmp_path)
     with sqlite3.connect(report) as connection:
         connection.execute("DELETE FROM records WHERE kind='rows'")
         connection.execute("DELETE FROM links WHERE kind='rows'")
@@ -628,7 +628,7 @@ def test_real_source_query_uses_one_scoped_candidate_observation(tmp_path):
 
 
 def test_source_strata_use_only_selected_samples_actual_cells(tmp_path):
-    report, _, _ = _create_mock_v2_db(tmp_path)
+    report, _, _ = _create_mock_db(tmp_path)
     with sqlite3.connect(report) as connection:
         connection.execute(
             "INSERT INTO candidates VALUES (?, ?, ?)",
@@ -686,7 +686,7 @@ def test_source_strata_use_only_selected_samples_actual_cells(tmp_path):
 def test_invalid_selected_payload_preserves_existing_report(tmp_path, failure):
     import zlib
 
-    report, _, _ = _create_mock_v2_db(tmp_path)
+    report, _, _ = _create_mock_db(tmp_path)
     output = tmp_path / "preserved.html"
     generate_report(report, SelectionRequest(), output)
     before = output.read_bytes()
@@ -717,7 +717,7 @@ def test_invalid_selected_payload_preserves_existing_report(tmp_path, failure):
 def test_legitimate_candidate_without_observation_remains_available_as_metadata(
     tmp_path,
 ):
-    report, _, _ = _create_mock_v2_db(tmp_path)
+    report, _, _ = _create_mock_db(tmp_path)
     with sqlite3.connect(report) as connection:
         connection.execute(
             "INSERT INTO candidates VALUES (?, ?, ?)",
@@ -746,7 +746,7 @@ def test_legitimate_candidate_without_observation_remains_available_as_metadata(
 
 
 def test_candidate_presentation_ids_preserve_sample_identity(tmp_path):
-    report, _, _ = _create_mock_v2_db(tmp_path)
+    report, _, _ = _create_mock_db(tmp_path)
     with sqlite3.connect(report) as connection:
         for sid in ("S1", "S2"):
             connection.execute(
@@ -772,7 +772,7 @@ def test_selected_capture_stages_preserve_each_payload_and_reject_partial_loss(
 ):
     import zlib
 
-    report, _, _ = _create_mock_v2_db(tmp_path)
+    report, _, _ = _create_mock_db(tmp_path)
     with sqlite3.connect(report) as connection:
         blob = connection.execute("SELECT payload FROM curve_payloads").fetchone()[0]
         original = json.loads(zlib.decompress(blob))
@@ -794,7 +794,7 @@ def test_selected_capture_stages_preserve_each_payload_and_reject_partial_loss(
                     "S1",
                     kind,
                     record_id,
-                    "zlib-json-utf8-v1",
+                    "zlib-json-utf8",
                     zlib.compress(json.dumps(payload).encode()),
                 ),
             )
@@ -835,19 +835,19 @@ def test_selected_capture_stages_preserve_each_payload_and_reject_partial_loss(
     (
         (
             "recovery_observation",
-            "untargeted-cid-nl-backfill-recovery:v1",
+            "untargeted-cid-nl-backfill-recovery",
             "recovery_support",
             "Backfill（回填）支持",
         ),
         (
             "reacquired_capture",
-            "untargeted-cid-nl-reacquire:v1",
+            "untargeted-cid-nl-reacquire",
             "reacquired_support",
             "重新擷取支持",
         ),
         (
             "initial_capture",
-            "untargeted-cid-nl-real-data:v1",
+            "untargeted-cid-nl-real-data:local_minimum",
             "discovery_support",
             "初始探索支持",
         ),
@@ -858,7 +858,7 @@ def test_sample_support_origin_uses_exact_method_capture_and_observation(
 ):
     import zlib
 
-    report, _, _ = _create_mock_v2_db(tmp_path)
+    report, _, _ = _create_mock_db(tmp_path)
     with sqlite3.connect(report) as connection:
         original = json.loads(
             zlib.decompress(
@@ -876,7 +876,7 @@ def test_sample_support_origin_uses_exact_method_capture_and_observation(
                 "S1",
                 capture_kind,
                 "obs-01",
-                "zlib-json-utf8-v1",
+                "zlib-json-utf8",
                 zlib.compress(json.dumps(recovery).encode()),
             ),
         )
@@ -938,7 +938,7 @@ def test_sample_support_origin_uses_exact_method_capture_and_observation(
 def test_recovery_origin_survives_zero_terminal_final_cell_binding(tmp_path):
     import zlib
 
-    report, _, _ = _create_mock_v2_db(tmp_path)
+    report, _, _ = _create_mock_db(tmp_path)
     with sqlite3.connect(report) as connection:
         connection.execute(
             "DELETE FROM links WHERE kind='terminal_subjects' "
@@ -1014,7 +1014,7 @@ def test_recovery_origin_survives_zero_terminal_final_cell_binding(tmp_path):
                 "S1",
                 "recovery_observation",
                 "obs-01",
-                "zlib-json-utf8-v1",
+                "zlib-json-utf8",
                 zlib.compress(
                     json.dumps({**original, "kind": "recovery_observation"}).encode()
                 ),
@@ -1039,7 +1039,7 @@ def test_recovery_origin_survives_zero_terminal_final_cell_binding(tmp_path):
                 {
                     "canonical_sample_identity_id": "S1",
                     "candidate_peak_content_ids": ["obs-01"],
-                    "detector_invocation_id": "untargeted-cid-nl-backfill-recovery:v1",
+                    "detector_invocation_id": "untargeted-cid-nl-backfill-recovery",
                     "method_result": "SUPPORT",
                 },
             ),
@@ -1071,7 +1071,7 @@ def test_recovery_origin_survives_zero_terminal_final_cell_binding(tmp_path):
 def test_initial_edge_adds_one_exact_peer_without_expanding_selection(tmp_path):
     import zlib
 
-    report, _, _ = _create_mock_v2_db(tmp_path)
+    report, _, _ = _create_mock_db(tmp_path)
     with sqlite3.connect(report) as connection:
         original = json.loads(
             zlib.decompress(
@@ -1140,7 +1140,7 @@ def test_initial_edge_adds_one_exact_peer_without_expanding_selection(tmp_path):
                     "S1",
                     "initial_capture",
                     observation_id,
-                    "zlib-json-utf8-v1",
+                    "zlib-json-utf8",
                     zlib.compress(json.dumps(curve).encode()),
                 ),
             )
@@ -1184,7 +1184,7 @@ def test_initial_edge_adds_one_exact_peer_without_expanding_selection(tmp_path):
 
 
 def test_internal_pair_support_preserves_edge_identity_and_disposition(tmp_path):
-    report, _, _ = _create_mock_v2_db(
+    report, _, _ = _create_mock_db(
         tmp_path,
         samples=[
             {"sample_stem": "sample one", "canonical_sample_identity_id": "S1"},
@@ -1374,7 +1374,7 @@ def test_internal_pair_support_preserves_edge_identity_and_disposition(tmp_path)
 
 
 def test_initial_edge_peer_join_preserves_shared_candidate_multirow_identity(tmp_path):
-    report, _, _ = _create_mock_v2_db(tmp_path)
+    report, _, _ = _create_mock_db(tmp_path)
     with sqlite3.connect(report) as connection:
         connection.execute(
             "INSERT INTO candidates VALUES (?, ?, ?)",
@@ -1455,7 +1455,7 @@ def test_initial_edge_peer_join_preserves_shared_candidate_multirow_identity(tmp
 def test_curve_projects_declared_same_sample_rt_calibration_without_extrapolation(
     tmp_path,
 ):
-    report, _, _ = _create_mock_v2_db(tmp_path)
+    report, _, _ = _create_mock_db(tmp_path)
     with sqlite3.connect(report) as connection:
         summary = json.loads(
             connection.execute(
@@ -1464,7 +1464,7 @@ def test_curve_projects_declared_same_sample_rt_calibration_without_extrapolatio
         )
         summary["known_istd_reference"] = {
             "calibration": {
-                "schema_version": "known_istd_calibration_v1",
+                "schema_version": "known_istd_calibration_duration_search",
                 "rt_unit": "minute",
                 "interpolation": "piecewise_linear",
                 "extrapolation": "unavailable",
@@ -1508,7 +1508,7 @@ def test_curve_projects_declared_same_sample_rt_calibration_without_extrapolatio
 
 
 def test_declared_malformed_rt_calibration_is_rejected(tmp_path):
-    report, _, _ = _create_mock_v2_db(tmp_path)
+    report, _, _ = _create_mock_db(tmp_path)
     with sqlite3.connect(report) as connection:
         summary = json.loads(
             connection.execute(
@@ -1517,7 +1517,7 @@ def test_declared_malformed_rt_calibration_is_rejected(tmp_path):
         )
         summary["known_istd_reference"] = {
             "calibration": {
-                "schema_version": "known_istd_calibration_v1",
+                "schema_version": "known_istd_calibration_duration_search",
                 "rt_unit": "minute",
                 "interpolation": "piecewise_linear",
                 "extrapolation": "unavailable",
@@ -1544,7 +1544,7 @@ def test_declared_malformed_rt_calibration_is_rejected(tmp_path):
 def test_readable_evidence_preserves_exact_record_curve_and_decision_bindings(
     tmp_path,
 ):
-    report, _, _ = _create_mock_v2_db(tmp_path)
+    report, _, _ = _create_mock_db(tmp_path)
     output = tmp_path / "readable.html"
     generate_report(report, SelectionRequest(), output)
 
@@ -1610,7 +1610,7 @@ def test_readable_evidence_preserves_exact_record_curve_and_decision_bindings(
 def test_fact_summary_and_readable_records_keep_null_zero_and_unknown_distinct(
     tmp_path,
 ):
-    report, _, _ = _create_mock_v2_db(tmp_path)
+    report, _, _ = _create_mock_db(tmp_path)
     with sqlite3.connect(report) as connection:
         connection.execute(
             "UPDATE records SET payload=? WHERE kind='cell_decisions'",
@@ -1680,7 +1680,7 @@ def test_fact_summary_and_readable_records_keep_null_zero_and_unknown_distinct(
 
 
 def test_multiple_decisions_keep_all_exact_refs_without_a_single_value(tmp_path):
-    report, _, _ = _create_mock_v2_db(tmp_path)
+    report, _, _ = _create_mock_db(tmp_path)
     with sqlite3.connect(report) as connection:
         connection.execute(
             "INSERT INTO records VALUES (?, ?, ?)",
@@ -1714,15 +1714,15 @@ def test_multiple_decisions_keep_all_exact_refs_without_a_single_value(tmp_path)
 def test_structured_external_evidence_refs_remain_technical_without_fake_links(
     tmp_path,
 ):
-    report, _, _ = _create_mock_v2_db(tmp_path)
+    report, _, _ = _create_mock_db(tmp_path)
     external_ref = {
         "content_identity": {
-            "artifact_content_id": "xic.artifact-content.v1:content-01",
+            "artifact_content_id": "xic.artifact-content:content-01",
             "content_sha256": "content-sha-01",
         },
-        "evidence_artifact_id": "xic.evidence-artifact.v1:external-01",
-        "producer_processing_attempt_id": "xic.processing-attempt.v1:external-att",
-        "producer_processing_request_id": "xic.processing-request.v1:external-req",
+        "evidence_artifact_id": "xic.evidence-artifact:external-01",
+        "producer_processing_attempt_id": "xic.processing-attempt:external-att",
+        "producer_processing_request_id": "xic.processing-request:external-req",
         "upstream_artifact_ids": [],
     }
     with sqlite3.connect(report) as connection:
@@ -1752,16 +1752,16 @@ def test_structured_external_evidence_refs_remain_technical_without_fake_links(
     assert assessment["links"] == []
     technical_values = {ref["value"] for ref in assessment["technical_refs"]}
     assert technical_values >= {
-        "xic.artifact-content.v1:content-01",
-        "xic.evidence-artifact.v1:external-01",
-        "xic.processing-attempt.v1:external-att",
-        "xic.processing-request.v1:external-req",
+        "xic.artifact-content:content-01",
+        "xic.evidence-artifact:external-01",
+        "xic.processing-attempt:external-att",
+        "xic.processing-request:external-req",
         "content-sha-01",
     }
 
 
 def test_decision_and_curve_link_only_exact_sample_method_and_edge_records(tmp_path):
-    report, _, _ = _create_mock_v2_db(tmp_path)
+    report, _, _ = _create_mock_db(tmp_path)
     with sqlite3.connect(report) as connection:
         connection.execute(
             "INSERT INTO candidates VALUES (?, ?, ?)",
@@ -1880,7 +1880,7 @@ def test_decision_and_curve_link_only_exact_sample_method_and_edge_records(tmp_p
 
 
 def test_excluded_candidate_exposes_exact_exclusion_without_curve(tmp_path):
-    report, _, _ = _create_mock_v2_db(tmp_path)
+    report, _, _ = _create_mock_db(tmp_path)
     with sqlite3.connect(report) as connection:
         for candidate_id in ("C2", "C3"):
             connection.execute(
@@ -1964,7 +1964,7 @@ def test_excluded_candidate_exposes_exact_exclusion_without_curve(tmp_path):
 def test_readable_numeric_formatting_keeps_scientific_payload_precision(tmp_path):
     import zlib
 
-    report, _, _ = _create_mock_v2_db(tmp_path)
+    report, _, _ = _create_mock_db(tmp_path)
     precursor_mz = 307.1023254394531
     apex_rt = 17.2623
     area = 28578.925063705414
@@ -2045,8 +2045,8 @@ def test_readable_numeric_formatting_keeps_scientific_payload_precision(tmp_path
 def test_source_labels_explain_recorded_group_and_sample_outcome(
     tmp_path, state, destination, sample_count
 ):
-    report, _, _ = _create_mock_v2_db(tmp_path)
-    source_code = "trapezoid_counts_seconds_on_canonical_signal_v1"
+    report, _, _ = _create_mock_db(tmp_path)
+    source_code = "trapezoid_counts_seconds_on_canonical_signal"
     with sqlite3.connect(report) as connection:
         row = {
             "row_key_id": "row-01",

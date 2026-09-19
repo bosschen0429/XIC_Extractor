@@ -1,0 +1,58 @@
+{
+  "artifact_kind": "cell_provenance",
+  "column_names": [
+    "schema_version",
+    "peak_hypothesis_id",
+    "sample_stem",
+    "source_feature_family_ids",
+    "matrix_value",
+    "cell_status",
+    "value_source",
+    "write_authority",
+    "acceptance_decision",
+    "acceptance_basis",
+    "truth_status",
+    "quant_value_source",
+    "matrix_area_source",
+    "source_artifact_relpath",
+    "source_artifact_sha256",
+    "source_row_sha256",
+    "manifest_sha256"
+  ],
+  "counts": {
+    "cell_status": {
+      "accepted_backfill": 511,
+      "detected": 17489
+    },
+    "value_source": {
+      "ProductionAcceptanceManifest": 511,
+      "input_quant_matrix": 17489
+    },
+    "write_authority": {
+      "FALSE": 17489,
+      "TRUE": 511
+    }
+  },
+  "may_grant_product_authority": false,
+  "minimal_fixture": {
+    "path": "cell_provenance_minimal_fixture.tsv",
+    "row_count": 2,
+    "selection_rule": "first detected row plus first accepted_backfill row",
+    "selection_warnings": [],
+    "sha256": "C137C6DB5B877F5E80BFCA73AD499456A2AEC7EAFDCB4A13C8C5CD75404FF6E0"
+  },
+  "row_universe": {
+    "key_columns": [
+      "peak_hypothesis_id",
+      "sample_stem",
+      "source_feature_family_ids",
+      "cell_status"
+    ],
+    "row_count": 18000,
+    "sha256": "9EC5737DD72456DF11A2166E91263F2B82BE3BE656F9A46BC883A6E163BA7ADC"
+  },
+  "schema_version": "quant_matrix_fixture_contract",
+  "source_relpath": "default_output/cell_provenance.tsv",
+  "source_row_count": 18000,
+  "source_sha256": "56ADBAC113897D893E4F9E9D7FF92371B747A0D7A96B37C81819E017AE8A1FFA"
+}

@@ -18,7 +18,7 @@ from xic_extractor.alignment.production_decisions import (
 )
 
 ALIGNMENT_BACKFILL_CELL_EVIDENCE_SCHEMA_VERSION = (
-    "alignment_backfill_cell_evidence_v1"
+    "alignment_backfill_cell_evidence"
 )
 ALIGNMENT_BACKFILL_CELL_EVIDENCE_COLUMNS = (
     "schema_version",
@@ -56,7 +56,7 @@ ALIGNMENT_BACKFILL_CELL_EVIDENCE_COLUMNS = (
     "reason",
 )
 
-SKIPPED_EVIDENCE_LEDGER_SCHEMA_VERSION = "skipped_evidence_ledger_v1"
+SKIPPED_EVIDENCE_LEDGER_SCHEMA_VERSION = "skipped_evidence_ledger"
 SKIPPED_EVIDENCE_LEDGER_COLUMNS = (
     "feature_family_id",
     "sample_stem",
@@ -75,7 +75,7 @@ SKIPPED_EVIDENCE_LEDGER_COLUMNS = (
     "source_artifact",
 )
 
-PREDICATE_VERSION = "alignment-parity-scoped-backfill-scope-v1"
+PREDICATE_VERSION = "alignment-parity-scoped-backfill-scope"
 
 _CELL_STATUSES = frozenset(
     {

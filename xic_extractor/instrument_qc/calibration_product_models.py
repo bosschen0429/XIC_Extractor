@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 
-ARTIFACT_SCHEMA_VERSION = "instrument_qc_calibration.v1"
+ARTIFACT_SCHEMA_VERSION = "instrument_qc_calibration"
 
 
 class ProductSupportStatus(StrEnum):

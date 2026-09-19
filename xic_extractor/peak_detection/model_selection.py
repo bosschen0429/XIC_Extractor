@@ -51,7 +51,7 @@ ExpectedDiffFinalLabel = Literal[
     "inconclusive",
 ]
 ModelSelectionPolicySource = Literal[
-    "selected_hypothesis_model_selection_v1",
+    "selected_hypothesis_model_selection",
 ]
 _MATRIX_AFFECTING_PUBLIC_OUTPUTS = frozenset(
     {
@@ -311,7 +311,7 @@ def model_select_peak_hypothesis(
             expected_diff_approval=expected_diff_approval,
         ),
         compatibility_oracle="legacy_peak_scoring_current_oracle",
-        policy_source="selected_hypothesis_model_selection_v1",
+        policy_source="selected_hypothesis_model_selection",
         product_switch_allowed=_product_switch_allowed(
             status,
             expected_diff_approval,
@@ -416,7 +416,7 @@ def peak_hypothesis_decision_record(
         support=support,
         gate=gate,
         tie_break=tie_break,
-        projection_authority="selected_hypothesis_model_selection_v1",
+        projection_authority="selected_hypothesis_model_selection",
     )
 
 
@@ -464,7 +464,7 @@ def _blocked_result(
         public_projection={},
         evidence_sources=(),
         compatibility_oracle="legacy_peak_scoring_current_oracle",
-        policy_source="selected_hypothesis_model_selection_v1",
+        policy_source="selected_hypothesis_model_selection",
         product_switch_allowed=False,
         evidence_comparison_policy=evidence_comparison_policy,
     )

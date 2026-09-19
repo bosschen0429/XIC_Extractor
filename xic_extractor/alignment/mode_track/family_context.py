@@ -12,7 +12,7 @@ from xic_extractor.alignment.cross_sample_peak_groups import (
     CrossSamplePeakGroupHypothesis,
 )
 
-SCHEMA_VERSION = "family_context_ref_v1"
+SCHEMA_VERSION = "family_context_ref"
 VALIDATION_STATUS = "shadow_ready"
 PRODUCT_AUTHORITY = "none"
 FAMILY_CONTEXT_ID_PREFIX = "family-context:"
@@ -176,7 +176,7 @@ def _family_context_id(
     group_hypothesis_ids: tuple[str, ...],
 ) -> str:
     basis = {
-        "schema": "family_context_identity_v1",
+        "schema": "family_context_identity",
         "mz_interval": list(mz_interval),
         "rt_interval": list(rt_interval),
         "context_policy_version": context_policy_version,

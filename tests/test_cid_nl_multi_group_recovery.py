@@ -110,7 +110,7 @@ def test_rejected_initial_evidence_gets_one_independent_bounded_assessment(
     runtime = start_runtime_attempt(
         attempt=batch.context.processing_owners.attempt,
         work_unit_keys=tuple(job.work_unit_key for job in batch.jobs),
-        owner_completeness_attestation="rejected-bounded-recovery:v1",
+        owner_completeness_attestation="rejected-bounded-recovery",
     )
     result = execute_untargeted_cid_nl_real_data_runtime(
         runtime,
@@ -388,7 +388,7 @@ def test_runtime_recovers_every_authorized_rt_group(
     runtime = start_runtime_attempt(
         attempt=context.processing_owners.attempt,
         work_unit_keys=tuple(job.work_unit_key for job in jobs),
-        owner_completeness_attestation="multi-group-recovery:v1",
+        owner_completeness_attestation="multi-group-recovery",
     )
     canonical_calls = []
     canonical_bytes = runtime_owner._canonical_acquisition_bytes
@@ -583,8 +583,8 @@ def test_runtime_recovers_every_authorized_rt_group(
                 processing_owners=context.processing_owners,
                 alignment_config=AlignmentConfig(anchor_min_seed_events=1),
                 trajectory_policy=ModeTrackTrajectoryPolicy(
-                    trajectory_policy_version="anchor-trajectory-v1",
-                    band_policy_version="fixed-band-v1",
+                    trajectory_policy_version="anchor-trajectory",
+                    band_policy_version="fixed-band",
                     prediction_half_width_min=2 / 60,
                     max_interpolation_gap=10,
                     max_extrapolation_gap=10,

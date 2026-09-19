@@ -475,6 +475,10 @@ def test_repeated_dda_scans_compose_one_order_neutral_chromatographic_event(
     )
     assert forward.content.strict_nl_scan_count == 2
     assert forward.content.chromatographic_support_event_count == 1
+    assert (
+        forward.artifact.semantic_contract.schema_version
+        == "cid_nl_chromatographic_support"
+    )
     assert forward.artifact.upstream_artifact_ids == tuple(
         sorted(
             (
@@ -815,7 +819,7 @@ def test_cid_nl_event_composes_the_existing_peak_hypothesis_owner(
     )
 
     assert isinstance(hypothesis, PeakHypothesis)
-    assert hypothesis.hypothesis_id.startswith("xic.peak-hypothesis.v1:")
+    assert hypothesis.hypothesis_id.startswith("xic.peak-hypothesis:")
     assert hypothesis.hypothesis_method == "dda_cid_nl"
     assert hypothesis.peak_observation_refs == (peak,)
     assert hypothesis.evidence.cid_nl_chromatographic_support_ref == event
@@ -998,7 +1002,7 @@ def test_owner_backed_hypothesis_rejects_legacy_context_and_identity_tamper(
     with pytest.raises(PeakHypothesisContractError, match="Targeted context"):
         replace(hypothesis, target_label="control")
     with pytest.raises(PeakHypothesisContractError, match="hypothesis_id"):
-        replace(hypothesis, hypothesis_id=f"xic.peak-hypothesis.v1:{'0' * 64}")
+        replace(hypothesis, hypothesis_id=f"xic.peak-hypothesis:{'0' * 64}")
     with pytest.raises(PeakHypothesisContractError, match="hypothesis_method"):
         replace(
             hypothesis,
@@ -1048,7 +1052,7 @@ def test_owner_backed_hypothesis_cannot_enter_selection_or_targeted_product(
             public_projection={},
             evidence_sources=(),
             compatibility_oracle="legacy_peak_scoring_current_oracle",
-            policy_source="selected_hypothesis_model_selection_v1",
+            policy_source="selected_hypothesis_model_selection",
             product_switch_allowed=True,
             evidence_comparison_policy="complete_candidate_evidence",
         )
@@ -1244,9 +1248,9 @@ def _identity_fixture(
                 injection_order=1,
             ),
         ),
-        scientific_input_schema_version="dda-cid-nl-peak-support-input-v1",
-        processing_algorithm_version="dda-cid-nl-peak-support-algorithm-v1",
-        processing_contract_version="dda-cid-nl-peak-support-contract-v1",
+        scientific_input_schema_version="dda-cid-nl-peak-support-input",
+        processing_algorithm_version="dda-cid-nl-peak-support-algorithm",
+        processing_contract_version="dda-cid-nl-peak-support-contract",
         scientific_inputs={
             "fixture": "synthetic-no-raw-dda-cid-nl-peak-support",
             "precursor_tolerance_da": 0.01,

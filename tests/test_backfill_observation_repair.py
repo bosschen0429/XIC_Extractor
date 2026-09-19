@@ -492,7 +492,7 @@ def _member_subject(
     assert base is not None
     basis = canonical_identity_basis_bytes(
         {
-            "schema_version": "group_member_subject_v1",
+            "schema_version": "group_member_subject",
             "processing_request_id": base.processing_request_id,
             "canonical_sample_identity_id": (
                 sample_identity.identity.sample_identity_id
@@ -503,7 +503,7 @@ def _member_subject(
     )
     return CrossSampleGroupMemberSubject(
         member_subject_id=typed_identity_digest(
-            "xic.group-member-subject.v1:",
+            "xic.group-member-subject:",
             basis,
         ),
         processing_request_id=base.processing_request_id,

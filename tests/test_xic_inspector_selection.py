@@ -10,7 +10,7 @@ from xic_inspector.selection.canonical import (
     build_canonical_ref,
 )
 from xic_inspector.selection.query import filter_by_query
-from xic_inspector.selection.sampler import sample_cross_sample_sha256_v2
+from xic_inspector.selection.sampler import sample_cross_sample_sha256
 from xic_inspector.selection.strata import classify_scoped_stratum
 
 
@@ -66,7 +66,7 @@ def test_default_sample_keeps_cross_sample_cases_among_many_singletons() -> None
         _make_item("candidate", f"c_{index}", "excluded", ("s1",))
         for index in range(2000)
     ]
-    selected = sample_cross_sample_sha256_v2(groups + candidates, limit=30, seed=0)
+    selected = sample_cross_sample_sha256(groups + candidates, limit=30, seed=0)
     assert len(selected) == 30
     assert all(item.kind == "row" for item in selected)
     assert sum(item.details["review_summary"]["observed_sample_count"] >= 2
@@ -75,10 +75,10 @@ def test_default_sample_keeps_cross_sample_cases_among_many_singletons() -> None
     assert any(item.identifier.startswith("broad_direct") for item in selected)
     assert any(item.identifier.startswith("partial_reacquired") for item in selected)
     assert any(item.identifier.startswith("limited") for item in selected)
-    assert selected == sample_cross_sample_sha256_v2(
+    assert selected == sample_cross_sample_sha256(
         list(reversed(candidates + groups)), limit=30, seed=0
     )
-    assert selected == sample_cross_sample_sha256_v2(groups, limit=30, seed=0)
+    assert selected == sample_cross_sample_sha256(groups, limit=30, seed=0)
 
 
 def test_default_sample_uses_candidates_only_after_existing_groups() -> None:
@@ -87,7 +87,7 @@ def test_default_sample_uses_candidates_only_after_existing_groups() -> None:
         _make_item("candidate", f"c_{index}", "excluded", ("s1",))
         for index in range(20)
     ]
-    selected = sample_cross_sample_sha256_v2([row, *candidates], limit=4, seed=0)
+    selected = sample_cross_sample_sha256([row, *candidates], limit=4, seed=0)
     assert len(selected) == 4
     assert row in selected
     assert len({item.serialized_ref for item in selected}) == 4

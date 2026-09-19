@@ -43,9 +43,9 @@ class FingerprintCancelledError(IdentityContractError):
     """Raised when a caller cancels an in-progress content fingerprint."""
 
 
-_ACQUISITION_SOURCE_PREFIX = "xic.acquisition-source.v1:"
-_PROCESSING_REQUEST_PREFIX = "xic.processing-request.v1:"
-_PROCESSING_ATTEMPT_PREFIX = "xic.processing-attempt.v1:"
+_ACQUISITION_SOURCE_PREFIX = "xic.acquisition-source:"
+_PROCESSING_REQUEST_PREFIX = "xic.processing-request:"
+_PROCESSING_ATTEMPT_PREFIX = "xic.processing-attempt:"
 PROCESSING_REQUEST_ID_PREFIX = _PROCESSING_REQUEST_PREFIX
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _TOKEN_RE = re.compile(r"^[0-9a-f]{32}$")
@@ -236,7 +236,7 @@ class AcquisitionSourceIdentity:
         expected_id = _typed_digest(
             _ACQUISITION_SOURCE_PREFIX,
             {
-                "schema": "acquisition_source_identity_v1",
+                "schema": "acquisition_source_identity",
                 "content_sha256": content_sha256,
                 "byte_size": self.byte_size,
                 "acquisition_format": acquisition_format,
@@ -307,7 +307,7 @@ def _request_basis(
     normalized_scientific_inputs_json: str,
 ) -> dict[str, object]:
     return {
-        "schema": "processing_request_identity_v1",
+        "schema": "processing_request_identity",
         "acquisition_sources": [
             source.acquisition_source_id for source in acquisition_sources
         ],
@@ -453,7 +453,7 @@ def _attempt_basis(
     retry_of_attempt_id: str | None,
 ) -> dict[str, object]:
     return {
-        "schema": "processing_attempt_identity_v1",
+        "schema": "processing_attempt_identity",
         "processing_request_id": processing_request_id,
         "attempt_token": attempt_token,
         "retry_of_attempt_id": retry_of_attempt_id,
@@ -924,7 +924,7 @@ def _build_acquisition_source_identity(
     source_id = _typed_digest(
         _ACQUISITION_SOURCE_PREFIX,
         {
-            "schema": "acquisition_source_identity_v1",
+            "schema": "acquisition_source_identity",
             "content_sha256": content_sha256,
             "byte_size": byte_size,
             "acquisition_format": acquisition_format,

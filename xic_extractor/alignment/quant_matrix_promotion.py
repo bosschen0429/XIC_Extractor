@@ -28,7 +28,7 @@ from xic_extractor.tabular_io import (
     write_tsv,
 )
 
-PROMOTION_READINESS_SCHEMA = "quant_matrix_promotion_readiness_v1"
+PROMOTION_READINESS_SCHEMA = "quant_matrix_promotion_readiness"
 
 PROMOTION_CHECK_COLUMNS = (
     "schema_version",
@@ -178,6 +178,7 @@ def evaluate_quant_matrix_promotion_readiness(
     summary_json.write_text(
         json.dumps(summary, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
+        newline="\n",
     )
     write_tsv(
         checks_tsv,
@@ -399,7 +400,7 @@ def _evaluate_science_evidence(
             status="fail",
             severity="blocker",
             evidence=f"schema_version={evidence.get('schema_version', '')}",
-            next_action="Use quant_matrix_validation_evidence_v1.",
+            next_action="Use quant_matrix_validation_evidence.",
         )
         return {
             "status": "fail",

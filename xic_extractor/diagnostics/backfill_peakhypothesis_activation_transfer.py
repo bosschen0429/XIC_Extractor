@@ -30,7 +30,7 @@ from xic_extractor.diagnostics.diagnostic_io import (
     write_tsv,
 )
 
-SCHEMA_VERSION = "backfill_peakhypothesis_activation_transfer_v1"
+SCHEMA_VERSION = "backfill_peakhypothesis_activation_transfer"
 _GAUSSIAN15_AREA_SOURCE = "gaussian15_positive_asls_residual"
 _TRANSFER_REASON = "normal_peak_same_peak_transfer_activation"
 _SOURCE_ID_AUTHORITY = "audit_only_not_activation_key"

@@ -267,7 +267,7 @@ def test_evidence_identity_rejects_stale_partner_assignment() -> None:
 
 def test_candidate_evidence_envelope_rejects_unsupported_schema() -> None:
     candidate = _candidate_row()
-    evidence = _evidence_row(schema_version="pt_pattern_discovery_evidence.v1")
+    evidence = _evidence_row(schema_version="unsupported_pt_pattern_evidence")
 
     with pytest.raises(ValueError, match=r"unsupported evidence.*schema_version"):
         validate_pt_candidate_evidence_envelope(

@@ -29,7 +29,7 @@ from xic_extractor.tabular_io import (
     write_tsv,
 )
 
-SCHEMA_VERSION = "cid_nl_activation_copy_acceptance_v1"
+SCHEMA_VERSION = "cid_nl_activation_copy_acceptance"
 DEFAULT_ACTIVATION_COPY_DIR = DEFAULT_REVIEW_DIR / "activation_copy_candidate"
 DEFAULT_ACTIVATED_MATRIX_TSV = (
     DEFAULT_ACTIVATION_COPY_DIR / "alignment_matrix_activated_copy.tsv"

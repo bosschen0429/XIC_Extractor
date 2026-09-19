@@ -258,20 +258,20 @@ def test_committed_canonical_panel_manifest_binding() -> None:
         / "docs"
         / "superpowers"
         / "validation"
-        / "row_completion_canonical_panel_v1.tsv"
+        / "row_completion_canonical_panel.tsv"
     )
     manifest_path = (
         repo_root
         / "docs"
         / "superpowers"
         / "validation"
-        / "row_completion_canonical_panel_manifest_v1.json"
+        / "row_completion_canonical_panel_manifest.json"
     )
 
     panel_cases = load_canonical_panel(panel_path)
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     expected_panel_tsv = (
-        "docs/superpowers/validation/row_completion_canonical_panel_v1.tsv"
+        "docs/superpowers/validation/row_completion_canonical_panel.tsv"
     )
 
     assert len(panel_cases) == 6
@@ -323,7 +323,7 @@ def _write_panel(
 
 def _write_panel_manifest(path: Path, *, required_case_count: int = 1) -> Path:
     path.write_text(
-        '{"schema_version":"row_completion_canonical_panel_manifest_v1",'
+        '{"schema_version":"row_completion_canonical_panel_manifest",'
         f'"required_case_count":{required_case_count},'
         '"status":"diagnostic_only"}\n',
         encoding="utf-8",

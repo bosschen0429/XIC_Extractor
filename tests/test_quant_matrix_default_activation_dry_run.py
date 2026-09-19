@@ -11,35 +11,37 @@ from scripts.build_quant_matrix_default_activation_dry_run import (
     build_quant_matrix_default_activation_dry_run,
     validate_quant_matrix_default_activation_dry_run,
 )
-from scripts.build_quant_matrix_promotion_packet_v2 import (
-    build_quant_matrix_promotion_packet_v2,
+from scripts.build_quant_matrix_promotion_packet import (
+    build_quant_matrix_promotion_packet,
 )
 from scripts.build_quant_matrix_real_bundle import build_quant_matrix_real_bundle
-from tests.test_quant_matrix_promotion_packet_v2 import _write_science_sources
+from tests.test_quant_matrix_promotion_packet import _write_science_sources
 from tests.test_quant_matrix_real_bundle import _write_source_run_fixture
 
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_PATH = (
     ROOT
     / "docs/superpowers/schemas/"
-    / "quant_matrix_default_activation_dry_run_schema.v1.json"
+    / "quant_matrix_default_activation_dry_run_schema.json"
 )
 
 
 def test_default_activation_dry_run_schema_matches_builder_contract() -> None:
     schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
 
-    assert (
-        schema["schema_version"]
-        == "quant_matrix_default_activation_dry_run_schema_v1"
-    )
+    assert schema["schema_version"] == "quant_matrix_default_activation_dry_run_schema"
     assert schema["default_activation_dry_run_schema"] == (
         DEFAULT_ACTIVATION_DRY_RUN_SCHEMA
     )
     assert schema["comparison_schema"] == ACTIVATION_DRY_RUN_COMPARISON_SCHEMA
     assert schema["comparison_columns"] == list(COMPARISON_COLUMNS)
-    assert schema["binding_rules"]["promotion_packet_v2_must_validate"] is True
-    assert schema["binding_rules"]["real_bundle_must_validate"] is True
+    assert schema["binding_rules"]["promotion_packet_must_validate"] is True
+    assert (
+        schema["binding_rules"][
+            "promotion_packet_supplies_the_validated_real_bundle_predecessor"
+        ]
+        is True
+    )
     assert schema["binding_rules"]["comparison_tsv_must_match_rerun"] is True
     assert schema["authority_rules"]["dry_run_only"] is True
     assert schema["authority_rules"]["write_authority"] is False
@@ -50,13 +52,12 @@ def test_default_activation_dry_run_schema_matches_builder_contract() -> None:
 def test_default_activation_dry_run_replays_expected_diff_candidate(
     tmp_path: Path,
 ) -> None:
-    inputs = _build_synthetic_packet_v2(tmp_path)
+    inputs = _build_synthetic_packet(tmp_path)
 
     outputs = build_quant_matrix_default_activation_dry_run(
         output_dir=tmp_path / "dry_run_gate",
         source_root=tmp_path,
-        real_bundle_summary_json=inputs["real_bundle_summary"],
-        promotion_packet_v2_summary_json=inputs["packet_summary"],
+        promotion_packet_summary_json=inputs["packet_summary"],
         expected_source_run_id="synthetic-current-511-authority-replay",
         expected_downstream_scope="synthetic_current_authority_replay",
         expected_accepted_backfill_count=1,
@@ -112,6 +113,35 @@ def test_default_activation_dry_run_rejects_stale_comparison_tsv(
 
     assert any("comparison_tsv sha256 mismatch" in problem for problem in problems)
     assert any("comparison TSV is stale" in problem for problem in problems)
+
+
+def test_default_activation_dry_run_rejects_tampered_real_bundle_transitively(
+    tmp_path: Path,
+) -> None:
+    outputs = _build_synthetic_dry_run(tmp_path)
+    bundle_summary = outputs["real_bundle_summary"]
+    bundle_payload = json.loads(bundle_summary.read_text(encoding="utf-8"))
+    quant_matrix = (
+        bundle_summary.parent / bundle_payload["artifacts"]["quant_matrix"]["path"]
+    )
+    quant_matrix.write_text(
+        quant_matrix.read_text(encoding="utf-8") + "tampered\n",
+        encoding="utf-8",
+    )
+
+    problems = validate_quant_matrix_default_activation_dry_run(
+        summary_json=outputs["summary_json"],
+        source_root=tmp_path,
+        expected_source_run_id="synthetic-current-511-authority-replay",
+        expected_downstream_scope="synthetic_current_authority_replay",
+        expected_accepted_backfill_count=1,
+    )
+
+    assert any(
+        "promotion packet: real bundle:" in problem
+        and "quant_matrix: sha256 mismatch" in problem
+        for problem in problems
+    )
 
 
 def test_default_activation_dry_run_accepts_externalized_cell_provenance(
@@ -185,7 +215,7 @@ def test_default_activation_dry_run_default_check_rejects_non_current_bundle(
 def test_default_activation_dry_run_script_check_only_round_trip(
     tmp_path: Path,
 ) -> None:
-    inputs = _build_synthetic_packet_v2(tmp_path)
+    inputs = _build_synthetic_packet(tmp_path)
     output_dir = tmp_path / "dry_run_gate"
     build = subprocess.run(
         [
@@ -195,9 +225,7 @@ def test_default_activation_dry_run_script_check_only_round_trip(
             str(output_dir),
             "--source-root",
             str(tmp_path),
-            "--real-bundle-summary-json",
-            str(inputs["real_bundle_summary"]),
-            "--promotion-packet-v2-summary-json",
+            "--promotion-packet-summary-json",
             str(inputs["packet_summary"]),
             "--expected-source-run-id",
             "synthetic-current-511-authority-replay",
@@ -238,23 +266,23 @@ def test_default_activation_dry_run_script_check_only_round_trip(
 
 
 def _build_synthetic_dry_run(tmp_path: Path) -> dict[str, Path]:
-    inputs = _build_synthetic_packet_v2(tmp_path)
+    inputs = _build_synthetic_packet(tmp_path)
     outputs = dict(
         build_quant_matrix_default_activation_dry_run(
             output_dir=tmp_path / "dry_run_gate",
             source_root=tmp_path,
-            real_bundle_summary_json=inputs["real_bundle_summary"],
-            promotion_packet_v2_summary_json=inputs["packet_summary"],
+            promotion_packet_summary_json=inputs["packet_summary"],
             expected_source_run_id="synthetic-current-511-authority-replay",
             expected_downstream_scope="synthetic_current_authority_replay",
             expected_accepted_backfill_count=1,
         )
     )
     outputs["real_bundle_cell_provenance"] = inputs["real_bundle_cell_provenance"]
+    outputs["real_bundle_summary"] = inputs["real_bundle_summary"]
     return outputs
 
 
-def _build_synthetic_packet_v2(tmp_path: Path) -> dict[str, Path]:
+def _build_synthetic_packet(tmp_path: Path) -> dict[str, Path]:
     fixture = _write_source_run_fixture(tmp_path)
     real_bundle = build_quant_matrix_real_bundle(
         source_run_dir=fixture["source_run"],
@@ -263,8 +291,8 @@ def _build_synthetic_packet_v2(tmp_path: Path) -> dict[str, Path]:
         downstream_scope="synthetic_current_authority_replay",
     )
     sources = _write_science_sources(tmp_path)
-    packet = build_quant_matrix_promotion_packet_v2(
-        output_dir=tmp_path / "packet_v2",
+    packet = build_quant_matrix_promotion_packet(
+        output_dir=tmp_path / "packet",
         source_root=tmp_path,
         real_bundle_summary_json=real_bundle["summary_json"],
         large_cohort_artifact=sources["large"],

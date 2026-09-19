@@ -41,7 +41,7 @@ def build_report_html(
     payload_data: dict[str, Any],
 ) -> str:
     """Build single-file self-contained HTML report with embedded data."""
-    cap_badge = "ok" if evidence_capability == "retained_curves_v1" else "null"
+    cap_badge = "ok" if evidence_capability == "retained_curves" else "null"
     data_json = serialize_safe_inline_json(payload_data)
 
     content = HTML_TEMPLATE

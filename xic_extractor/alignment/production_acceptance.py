@@ -1,4 +1,4 @@
-"""Validate ProductionAcceptanceManifest v1 schema and TSV artifacts.
+"""Validate ProductionAcceptanceManifest schema and TSV artifacts.
 
 This is a fail-closed contract checker. It defines and validates the only
 Backfill artifact shape that may grant per-cell write_authority=true in a
@@ -30,9 +30,9 @@ from xic_extractor.tabular_io import (
     read_tsv_with_header_snapshot,
 )
 
-SCHEMA_VERSION = "production_acceptance_manifest_schema_v1"
-MANIFEST_SCHEMA_VERSION = "production_acceptance_manifest_v1"
-ACCEPTANCE_CONTRACT_VERSION = "production_acceptance_manifest_contract_v1"
+SCHEMA_VERSION = "production_acceptance_manifest_schema"
+MANIFEST_SCHEMA_VERSION = "production_acceptance_manifest"
+ACCEPTANCE_CONTRACT_VERSION = "production_acceptance_manifest_contract"
 
 REQUIRED_COLUMNS = PRODUCTION_ACCEPTANCE_COLUMNS
 

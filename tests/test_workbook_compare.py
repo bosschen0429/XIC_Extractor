@@ -117,13 +117,13 @@ def test_compare_workbooks_compares_manifest_schema_metadata(
 ) -> None:
     left = tmp_path / "left.xlsx"
     right = tmp_path / "right.xlsx"
-    _write_workbook(left, method_manifest_schema="method_manifest_v1")
-    _write_workbook(right, method_manifest_schema="method_manifest_v2")
+    _write_workbook(left, method_manifest_schema="method_manifest")
+    _write_workbook(right, method_manifest_schema="unsupported_method_manifest")
 
     result = compare_workbooks(left, right)
 
     assert not result.matched
-    assert any("method_manifest_v1" in diff for diff in result.differences)
+    assert any("method_manifest" in diff for diff in result.differences)
 
 
 def test_compare_workbooks_ignores_sheet_order(tmp_path: Path) -> None:
@@ -181,7 +181,7 @@ def _write_workbook(
     generated_at: str = "2026-05-03T00:00:00Z",
     elapsed_seconds: str = "1.0",
     output_path: str = "C:\\output\\xic_results.xlsx",
-    method_manifest_schema: str = "method_manifest_v1",
+    method_manifest_schema: str = "method_manifest",
     method_manifest_path: str = "C:\\output\\method_manifest.json",
     method_manifest_sha256: str = "a" * 64,
     include_score_breakdown: bool = False,

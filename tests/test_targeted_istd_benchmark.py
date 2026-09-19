@@ -930,7 +930,7 @@ def _identity_row(
 ) -> dict[str, object]:
     return {
         "identity_schema_version": (
-            "untargeted_peak_hypothesis_matrix_identity_v1"
+            "untargeted_peak_hypothesis_matrix_identity"
         ),
         "matrix_row_index": matrix_row_index,
         "Mz": mz,

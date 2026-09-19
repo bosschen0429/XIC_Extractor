@@ -7,8 +7,6 @@ from pathlib import Path
 from xic_extractor.tabular_io import write_tsv
 
 from .schema import (
-    ACTIVATION_ACCEPTANCE_COLUMNS,
-    ACTIVATION_DECISION_COLUMNS,
     BLAST_RADIUS_MANIFEST_COLUMNS,
     BLAST_RADIUS_SUMMARY_COLUMNS,
     EVIDENCE_VECTOR_COLUMNS,
@@ -18,7 +16,7 @@ from .schema import (
     RUN_FACTS_COLUMNS,
     SHADOW_ALIGNMENT_SUMMARY_COLUMNS,
     SHADOW_LABEL_COLUMNS,
-    V2_READINESS_COLUMNS,
+    SHADOW_READINESS_COLUMNS,
     validate_source_row_ids,
 )
 
@@ -118,7 +116,7 @@ def write_slice1_outputs(
     }
 
 
-def write_v2_outputs(
+def write_shadow_outputs(
     *,
     output_dir: Path,
     prior_outputs: Mapping[str, Path],
@@ -130,9 +128,9 @@ def write_v2_outputs(
     output_dir.mkdir(parents=True, exist_ok=True)
     shadow_path = output_dir / "shared_peak_identity_shadow_labels.tsv"
     summary_path = output_dir / "shared_peak_identity_shadow_alignment_summary.tsv"
-    readiness_path = output_dir / "shared_peak_identity_v2_readiness.tsv"
+    readiness_path = output_dir / "shared_peak_identity_shadow_readiness.tsv"
     support_path = output_dir / "shared_peak_identity_machine_evidence_support.tsv"
-    report_path = output_dir / "shared_peak_identity_v2_report.md"
+    report_path = output_dir / "shared_peak_identity_shadow_report.md"
     write_tsv(
         shadow_path,
         shadow_rows,
@@ -148,7 +146,7 @@ def write_v2_outputs(
     write_tsv(
         readiness_path,
         [readiness_row],
-        V2_READINESS_COLUMNS,
+        SHADOW_READINESS_COLUMNS,
         lineterminator="\n",
     )
     write_tsv(
@@ -158,7 +156,7 @@ def write_v2_outputs(
         lineterminator="\n",
     )
     report_path.write_text(
-        render_v2_report(
+        render_shadow_report(
             readiness_row=readiness_row,
             summary_rows=summary_rows,
             shadow_rows=shadow_rows,
@@ -170,38 +168,9 @@ def write_v2_outputs(
         **dict(prior_outputs),
         "shadow_labels": shadow_path,
         "shadow_alignment_summary": summary_path,
-        "v2_readiness": readiness_path,
+        "shadow_readiness": readiness_path,
         "machine_evidence_support": support_path,
-        "v2_report": report_path,
-    }
-
-
-def write_activation_outputs(
-    *,
-    output_dir: Path,
-    prior_outputs: Mapping[str, Path],
-    activation_rows: Sequence[Mapping[str, str]],
-    acceptance_row: Mapping[str, str],
-) -> dict[str, Path]:
-    output_dir.mkdir(parents=True, exist_ok=True)
-    decisions_path = output_dir / "shared_peak_identity_activation_decisions.tsv"
-    acceptance_path = output_dir / "shared_peak_identity_activation_acceptance.tsv"
-    write_tsv(
-        decisions_path,
-        activation_rows,
-        ACTIVATION_DECISION_COLUMNS,
-        lineterminator="\n",
-    )
-    write_tsv(
-        acceptance_path,
-        [acceptance_row],
-        ACTIVATION_ACCEPTANCE_COLUMNS,
-        lineterminator="\n",
-    )
-    return {
-        **dict(prior_outputs),
-        "activation_decisions": decisions_path,
-        "activation_acceptance": acceptance_path,
+        "shadow_report": report_path,
     }
 
 
@@ -245,7 +214,7 @@ def render_report(
         else "- next_action: `revise_vocabulary_or_oracle_before_slice1`",
         "",
         "This report summarizes machine-readable TSV facts. "
-        "It is not a V1 gating verdict and does not claim production readiness.",
+        "It is not a gating verdict and does not claim production readiness.",
         "",
         "## Top Blocking Rows Or Classes",
         "",
@@ -277,10 +246,10 @@ def render_report(
     _append_examples(lines, explanation_rows, "machine_too_conservative")
     lines.extend(["", "## Machine Too Permissive Examples", ""])
     _append_examples(lines, explanation_rows, "machine_too_permissive")
-    lines.extend(["", "## V2 Candidates And Non-Goals", ""])
+    lines.extend(["", "## Shadow Candidates And Non-Goals", ""])
     lines.extend(
         [
-            "- V2 may use these facts for shadow label alignment planning.",
+            "- Shadow may use these facts for shadow label alignment planning.",
             "- Slice 0 emits no blast-radius manifest or summary.",
             "- Slice 0 does not change selected peaks, backfill rescue, "
             "Tier 2 support, workbooks, or the primary matrix.",
@@ -289,7 +258,7 @@ def render_report(
     return "\n".join(lines) + "\n"
 
 
-def render_v2_report(
+def render_shadow_report(
     *,
     readiness_row: Mapping[str, str],
     summary_rows: Sequence[Mapping[str, str]],
@@ -320,13 +289,13 @@ def render_v2_report(
         if basis
     )
     lines = [
-        "# Shared Peak Identity V2 Shadow Label Alignment Report",
+        "# Shared Peak Identity Shadow Label Alignment Report",
         "",
         "## Decision Summary",
         "",
         "- readiness_label: `diagnostic_only`",
-        f"- v2_mode: `{readiness_row['v2_mode']}`",
-        f"- v2_gate_status: `{readiness_row['v2_gate_status']}`",
+        f"- shadow_mode: `{readiness_row['shadow_mode']}`",
+        f"- shadow_gate_status: `{readiness_row['shadow_gate_status']}`",
         "- machine_only_labeler_ready: "
         f"`{readiness_row['machine_only_labeler_ready']}`",
         f"- alignment_fraction: `{readiness_row['alignment_fraction']}`",
@@ -570,10 +539,10 @@ def _exit_interpretation(run_facts: Mapping[str, str]) -> list[str]:
     if risk == "medium" or assessed != "present_current" or stale_count:
         return [
             "- externalize_missing_evidence: complete pinned current artifacts "
-            "before V2 shadow-label-alignment planning."
+            "before Shadow-label-alignment planning."
         ]
     return [
-        "- allow_v2_shadow_label_alignment_planning: Slice 1 facts are current "
+        "- allow_shadow_shadow_label_alignment_planning: Slice 1 facts are current "
         "and overfit risk is low or none."
     ]
 
@@ -586,7 +555,7 @@ def _slice1_next_action(run_facts: Mapping[str, str]) -> str:
         return "revise_or_kill_vocabulary"
     if risk == "medium" or assessed != "present_current" or stale_count:
         return "externalize_missing_evidence"
-    return "allow_v2_shadow_label_alignment_planning"
+    return "allow_shadow_shadow_label_alignment_planning"
 
 
 def _int_value(value: str | None) -> int:

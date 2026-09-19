@@ -254,9 +254,9 @@ contract says otherwise.
 
 ## Shared Contract Identifiers
 
-- `sample_metadata_v1`: canonical schema for sample identity, injection order,
+- `sample_metadata`: canonical schema for sample identity, injection order,
   role, batch, and QC context.
-- `review_action_v1`: typed action-import schema for converting human review
+- `review_action`: typed action-import schema for converting human review
   decisions into machine-checkable plans without silently editing product
   values.
 - `method_manifest.json`: machine-readable run envelope for effective input

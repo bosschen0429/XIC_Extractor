@@ -37,8 +37,8 @@ from xic_extractor.extraction.provisional_run_manifest import (
 )
 from xic_extractor.tabular_io import validate_delimited_header, write_tsv
 
-LEDGER_SCHEMA_VERSION: Final = "backfill_decision_ledger_v1"
-SUMMARY_SCHEMA_VERSION: Final = "backfill_decision_summary_v1"
+LEDGER_SCHEMA_VERSION: Final = "backfill_decision_ledger"
+SUMMARY_SCHEMA_VERSION: Final = "backfill_decision_summary"
 VALIDATION_STATUS: Final = "diagnostic_only"
 
 _LEDGER_COLUMNS: Final = (
@@ -73,22 +73,6 @@ _LEDGER_COLUMNS: Final = (
     "cost_status",
 )
 
-_LEGACY_MANIFEST_SCHEMA_VERSION: Final = "untargeted_provisional_matrix_run_v1"
-_LEGACY_MANIFEST_FIELDS: Final = frozenset(
-    {
-        "schema_version",
-        "code_revision",
-        "preset_name",
-        "effective_configuration",
-        "runtime",
-        "inputs",
-        "artifacts",
-        "validation_status",
-        "row_identity_status",
-        "identity_settlement_status",
-        "product_authority",
-    }
-)
 _CONSOLIDATION_STATES: Final = frozenset(
     {"not_consolidated", "primary_loser", "primary_winner"}
 )
@@ -296,7 +280,6 @@ def _iter_owner_bound_candidates(
         yield from read_owner_bound_discovery_candidates_csv(
             candidate_path,
             receipt=receipt,
-            require_successor_columns=True,
         )
 
 
@@ -785,8 +768,8 @@ def _read_timing(
     schema_version = payload.get("schema_version")
     if schema_version is None:
         schema_status = "unavailable_legacy_unversioned_timing_projection"
-    elif schema_version == "timing.v1":
-        schema_status = "current_timing_v1_projection"
+    elif schema_version == "timing":
+        schema_status = "current_timing_projection"
     else:
         raise ValueError(f"{path}: unsupported timing schema {schema_version!r}")
     records = payload.get("records")
@@ -979,7 +962,7 @@ def _summary(
         "validation_status": VALIDATION_STATUS,
         "artifact": {
             "artifact_name": artifact_root.name,
-            "legacy_manifest_asserted_code_revision": expected_code_revision,
+            "owner_validated_code_revision": expected_code_revision,
             "caller_expected_code_revision": expected_code_revision,
             "manifest_schema_version": manifest_evidence.schema_version,
             "manifest_rehydration_status": (manifest_evidence.rehydration_status),
@@ -1115,8 +1098,8 @@ def _summary(
         ],
         "residual_risks": [
             (
-                "The legacy manifest's asserted revision is not owner-validated "
-                "and is not current-head parity evidence."
+                "The manifest binds the recorded revision, but is not "
+                "current-head parity evidence."
             ),
             (
                 "Final consolidation rows do not prove winner/loser knowability "
@@ -1219,60 +1202,15 @@ def _read_manifest_evidence(
     artifact_root: Path,
     expected_code_revision: str,
 ) -> _ManifestEvidence:
-    manifest = _read_json_object(path)
-    schema_version = manifest.get("schema_version")
-    if schema_version == PROVISIONAL_RUN_MANIFEST_SCHEMA_VERSION:
-        validated = validate_provisional_run_manifest(path, root=artifact_root)
-        if validated.get("code_revision") != expected_code_revision:
-            raise ValueError(
-                f"{artifact_root}: owner-validated code_revision does not match "
-                f"expected {expected_code_revision!r}"
-            )
-        return _ManifestEvidence(
-            schema_version=PROVISIONAL_RUN_MANIFEST_SCHEMA_VERSION,
-            rehydration_status="current_owner_rehydrated",
-        )
-    if schema_version != _LEGACY_MANIFEST_SCHEMA_VERSION:
+    validated = validate_provisional_run_manifest(path, root=artifact_root)
+    if validated.get("code_revision") != expected_code_revision:
         raise ValueError(
-            f"{artifact_root}: unsupported manifest schema {schema_version!r}"
-        )
-    if set(manifest) != _LEGACY_MANIFEST_FIELDS:
-        raise ValueError(
-            f"{artifact_root}: legacy manifest field set is invalid; current owner "
-            "rehydration is unavailable"
-        )
-
-    try:
-        validate_provisional_run_manifest(path, root=artifact_root)
-    except ValueError:
-        rehydration_status = (
-            "unavailable_legacy_schema_rejected_by_current_manifest_owner"
-        )
-    else:
-        raise ValueError(
-            f"{artifact_root}: legacy schema unexpectedly passed the current owner"
-        )
-    observed_revision = manifest.get("code_revision")
-    if observed_revision != expected_code_revision:
-        raise ValueError(
-            f"{artifact_root}: code_revision {observed_revision!r} does not match "
+            f"{artifact_root}: owner-validated code_revision does not match "
             f"expected {expected_code_revision!r}"
         )
-    expected_fields: dict[str, object] = {
-        "validation_status": VALIDATION_STATUS,
-        "product_authority": False,
-        "row_identity_status": "provisional",
-        "identity_settlement_status": "not_run",
-    }
-    for field, expected in expected_fields.items():
-        if manifest.get(field) != expected:
-            raise ValueError(
-                f"{artifact_root}: manifest {field} must be {expected!r}, got "
-                f"{manifest.get(field)!r}"
-            )
     return _ManifestEvidence(
-        schema_version=_LEGACY_MANIFEST_SCHEMA_VERSION,
-        rehydration_status=rehydration_status,
+        schema_version=PROVISIONAL_RUN_MANIFEST_SCHEMA_VERSION,
+        rehydration_status="current_owner_rehydrated",
     )
 
 

@@ -78,7 +78,7 @@ how diagnostic evidence earns matrix write authority.
 
 - Phase 1 peak pipeline modernization (#62)
 - Close ASLS phase 1 scope (#63)
-- Identity coherence V0.4 diagnostic acceptance (#60)
+- Identity coherence diagnostic acceptance (#60)
 
 ### Agent & Workflow
 
@@ -127,13 +127,13 @@ Targeted NL dropout convergence and region-first safe merge landed.
 
 ## 2026-05 early — Untargeted Discovery & Evidence Scoring
 
-Untargeted discovery pipeline v1 landed with CID neutral-loss seed
+Untargeted discovery pipeline landed with CID neutral-loss seed
 evidence, MS1 feature finding, and cross-sample alignment. Weighted
 evidence scoring replaced the initial tier-based confidence system.
 
 ### Untargeted Discovery
 
-- Untargeted discovery and alignment v1 integration (#43)
+- Untargeted discovery and alignment integration (#43)
 
 ### Evidence & Scoring
 
@@ -145,14 +145,14 @@ evidence scoring replaced the initial tier-based confidence system.
 ### Peak Detection
 
 - Add opt-in local minimum resolver (#16)
-- Calibrate local minimum preset v1 (#31)
+- Calibrate local minimum preset (#31)
 - Add validation harness baselines (#30)
 - Improve local-minimum evidence and Excel review UX (#29)
 - Add resolver profile GUI and local minimum preset contract (#28)
 
 ### Output & Refactoring
 
-- Review visualization v2 (#33)
+- Review visualization (#33)
 - Refactor output workbook and review report modules (#32)
 - Refactor extractor orchestration modules (#34)
 - Refactor signal processing peak detection modules (#35)

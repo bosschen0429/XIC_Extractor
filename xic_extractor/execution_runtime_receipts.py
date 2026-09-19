@@ -34,7 +34,7 @@ from xic_extractor.processing_identity import (
     ProcessingAttemptIdentity,
 )
 
-_RUNTIME_OWNER_MEASUREMENT_SOURCE = "execution_runtime_owner:v1"
+_RUNTIME_OWNER_MEASUREMENT_SOURCE = "execution_runtime_owner"
 _RUNTIME_OWNER_MINT_TOKEN = object()
 
 
@@ -1013,10 +1013,10 @@ def _required_text(value: object, *, field: str) -> str:
 
 
 def _required_prepared_signal_id(value: object) -> str:
-    prefix = "prepared-signal.v1:"
+    prefix = "prepared-signal:"
     if not isinstance(value, str) or not value.startswith(prefix):
         raise RuntimeFinalizationContractError(
-            "prepared_signal_id must use the prepared-signal.v1 identity"
+            "prepared_signal_id must use the prepared-signal identity"
         )
     digest = value[len(prefix) :]
     if len(digest) != 64 or any(char not in "0123456789abcdef" for char in digest):

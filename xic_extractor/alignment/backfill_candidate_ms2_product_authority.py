@@ -21,7 +21,7 @@ from xic_extractor.alignment.shared_peak_identity_explanation import (
 )
 from xic_extractor.tabular_io import optional_float, text_value
 
-SCHEMA_VERSION = "backfill_candidate_ms2_pattern_product_authority_v1"
+SCHEMA_VERSION = "backfill_candidate_ms2_pattern_product_authority"
 DEFAULT_MIN_CANDIDATE_MS2_SIMILARITY_SCORE = 0.5
 _SUPPORTED_STATUSES = frozenset({"supportive", "partial_support"})
 _SUPPORTED_LEVELS = frozenset(

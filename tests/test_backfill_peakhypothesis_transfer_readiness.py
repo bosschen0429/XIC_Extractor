@@ -78,7 +78,7 @@ def test_readiness_fails_closed_when_full_cohort_contract_is_not_canonical() -> 
     )
 
 
-def test_readiness_accepts_targeted_istd_alignment_metadata_v4() -> None:
+def test_readiness_accepts_targeted_istd_alignment_metadata() -> None:
     metadata = _current_full_cohort_metadata(targeted_istd=True)
 
     index = readiness.build_transfer_readiness(
@@ -92,7 +92,7 @@ def test_readiness_accepts_targeted_istd_alignment_metadata_v4() -> None:
     assert index.readiness_row["full_cohort_artifact_status"] == "pass"
 
 
-def test_readiness_accepts_current_unanchored_alignment_metadata_v3() -> None:
+def test_readiness_accepts_current_unanchored_alignment_metadata() -> None:
     index = readiness.build_transfer_readiness(
         promotion_summary=_promotion_summary(promote_count=11),
         activation_acceptance_rows=[_activation_acceptance_row()],
@@ -103,10 +103,10 @@ def test_readiness_accepts_current_unanchored_alignment_metadata_v3() -> None:
     assert index.readiness_row["full_cohort_metadata_contract_status"] == "pass"
 
 
-def test_readiness_accepts_historical_targeted_istd_metadata_v3() -> None:
+def test_readiness_rejects_historical_targeted_istd_metadata() -> None:
     metadata = {
         **_current_full_cohort_metadata(targeted_istd=True),
-        "schema_version": "alignment-results-v3",
+        "schema_version": "unsupported_alignment_results",
     }
 
     index = readiness.build_transfer_readiness(
@@ -116,12 +116,15 @@ def test_readiness_accepts_historical_targeted_istd_metadata_v3() -> None:
         full_cohort_counts=_full_cohort_counts(),
     )
 
-    assert index.readiness_row["full_cohort_metadata_contract_status"] == "pass"
+    assert index.readiness_row["full_cohort_metadata_contract_status"] == "fail"
 
 
-def test_readiness_rejects_legacy_policy_for_anchored_metadata_v3() -> None:
+
+
+def test_readiness_rejects_legacy_matrix_policy_under() -> None:
     metadata = {
         **_full_cohort_metadata(),
+        "matrix_value_policy": "gaussian15_positive_asls_residual_primary",
         "targeted_istd_anchor_identity": "anchor-id",
         "targeted_istd_target_snapshot_id": "snapshot-id",
     }
@@ -136,25 +139,7 @@ def test_readiness_rejects_legacy_policy_for_anchored_metadata_v3() -> None:
     assert index.readiness_row["full_cohort_metadata_contract_status"] == "fail"
 
 
-def test_readiness_rejects_legacy_matrix_policy_under_v4() -> None:
-    metadata = {
-        **_full_cohort_metadata(),
-        "schema_version": "alignment-results-v4",
-        "targeted_istd_anchor_identity": "anchor-id",
-        "targeted_istd_target_snapshot_id": "snapshot-id",
-    }
-
-    index = readiness.build_transfer_readiness(
-        promotion_summary=_promotion_summary(promote_count=11),
-        activation_acceptance_rows=[_activation_acceptance_row()],
-        full_cohort_metadata=metadata,
-        full_cohort_counts=_full_cohort_counts(),
-    )
-
-    assert index.readiness_row["full_cohort_metadata_contract_status"] == "fail"
-
-
-def test_readiness_rejects_incomplete_targeted_istd_alignment_metadata_v4() -> None:
+def test_readiness_rejects_incomplete_targeted_istd_alignment_metadata() -> None:
     metadata = _current_full_cohort_metadata(targeted_istd=True)
     metadata.pop("targeted_istd_target_snapshot_id")
 
@@ -478,7 +463,7 @@ def test_cli_accepts_manual_same_peak_review_summary(tmp_path: Path) -> None:
 
 def _promotion_summary(*, promote_count: int) -> dict[str, object]:
     return {
-        "schema_version": "backfill_peakhypothesis_promotion_v1",
+        "schema_version": "backfill_peakhypothesis_promotion",
         "readiness_label": "shadow_ready",
         "decision_counts": {"promote_matrix_write": promote_count},
         "allowlist_row_count": promote_count,
@@ -487,7 +472,7 @@ def _promotion_summary(*, promote_count: int) -> dict[str, object]:
 
 def _activation_acceptance_row(count: str = "11") -> dict[str, str]:
     return {
-        "schema_version": "backfill_peakhypothesis_activation_acceptance_v1",
+        "schema_version": "backfill_peakhypothesis_activation_acceptance",
         "validation_scope": "fixture_cohort_current_writer_matrix_diff",
         "promotion_row_count": count,
         "activation_decision_row_count": count,
@@ -506,14 +491,7 @@ def _activation_acceptance_row(count: str = "11") -> dict[str, str]:
 
 
 def _full_cohort_metadata() -> dict[str, str]:
-    return {
-        "output_level": "validation-minimal",
-        "backfill_scope": "production-equivalent",
-        "audit_evidence_mode": "none",
-        "matrix_value_policy": "gaussian15_positive_asls_residual_primary",
-        "owner_backfill_xic_backend": "raw",
-        "schema_version": "alignment-results-v3",
-    }
+    return _current_full_cohort_metadata(targeted_istd=False)
 
 
 def _current_full_cohort_metadata(*, targeted_istd: bool) -> dict[str, str]:
@@ -561,7 +539,7 @@ def _full_cohort_acceptance_gate_summary(
     if absent_count is None:
         absent_count = 1 if blocked_count else 0
     return {
-        "schema_version": "backfill_peakhypothesis_acceptance_gate_v1",
+        "schema_version": "backfill_peakhypothesis_acceptance_gate",
         "gate_status": gate_status,
         "promotion_row_count": promotion_count,
         "candidate_no_regression_count": candidate_no_regression_count,
@@ -580,7 +558,7 @@ def _full_cohort_winner_remap_summary(
     blocked_count: int = 1,
 ) -> dict[str, object]:
     return {
-        "schema_version": "backfill_peakhypothesis_winner_remap_v1",
+        "schema_version": "backfill_peakhypothesis_winner_remap",
         "remap_gate_status": remap_gate_status,
         "row_count": candidate_count + blocked_count,
         "remap_candidate_review_count": candidate_count,
@@ -597,7 +575,7 @@ def _full_cohort_hypothesis_review_summary(
     same_peak_supported_count: int,
 ) -> dict[str, object]:
     return {
-        "schema_version": "backfill_peakhypothesis_full_cohort_manual_verdict_v1",
+        "schema_version": "backfill_peakhypothesis_full_cohort_manual_verdict",
         "reviewed_candidate_count": reviewed_candidate_count,
         "same_peak_supported_count": same_peak_supported_count,
         "same_peak_conflict_count": 0,

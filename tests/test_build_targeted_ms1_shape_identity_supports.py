@@ -18,7 +18,7 @@ def test_run_build_targeted_ms1_shape_identity_supports_writes_generic_rows(
     monkeypatch,
 ) -> None:
     long_csv = tmp_path / "xic_results_long.csv"
-    output_tsv = tmp_path / "targeted_ms1_shape_identity_v0.tsv"
+    output_tsv = tmp_path / "targeted_ms1_shape_identity.tsv"
     targets = (_target("5-hmdC", istd_pair="d3-5-hmdC"), _istd("d3-5-hmdC"))
     _write_csv(
         long_csv,

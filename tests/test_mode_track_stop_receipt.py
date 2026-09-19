@@ -11,11 +11,11 @@ def test_mode_track_full_cohort_stop_receipt_is_evidence_only() -> None:
         / "docs"
         / "superpowers"
         / "fixtures"
-        / "mode_track_assignment_85raw_inconclusive_v1.json"
+        / "mode_track_assignment_85raw_inconclusive.json"
     )
     receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
 
-    assert receipt["schema_version"] == "mode_track_85raw_stop_receipt_v1"
+    assert receipt["schema_version"] == "mode_track_85raw_stop_receipt"
     assert receipt["sample_census"] == {
         "total": 85,
         "study": 78,
@@ -41,7 +41,7 @@ def test_mode_track_full_cohort_stop_receipt_is_evidence_only() -> None:
         "independent_verdict": "multiple_tracks_supported_diagnostic_only",
     }
     assert receipt["retained_historical_packet"] == {
-        "discovery_index_schema": "legacy_v1_unowned",
+        "discovery_index_schema": "legacy_unowned",
         "discovery_index_sha256": (
             "93c37cd016bff16f8243523777738f951955f13b86eb1a6dd7e30cb072a07474"
         ),

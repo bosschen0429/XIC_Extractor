@@ -190,7 +190,7 @@ def test_discovery_sidecar_roundtrips_complete_independent_work_manifest(
 ) -> None:
     _, spec, acquisition_input = _spec(tmp_path)
     manifest, records = _population(spec, acquisition_input)
-    path = tmp_path / "out" / "discovery_physical_facts.v1.json"
+    path = tmp_path / "out" / "discovery_physical_facts.json"
 
     assert (
         write_discovery_physical_fact_sidecar(
@@ -263,11 +263,11 @@ def test_discovery_sidecar_roundtrips_complete_independent_work_manifest(
             "acquisition_source_id", "cross-acquisition"
         ),
         lambda value: value["work_manifest"][0].__setitem__(
-            "trace_coordinate_id", "xic.trace-coordinate.v1:" + "0" * 64
+            "trace_coordinate_id", "xic.trace-coordinate:" + "0" * 64
         ),
         lambda value: value["work_manifest"][0].__setitem__(
             "acquired_trace_content_id",
-            "xic.acquired-trace-content.v1:" + "0" * 64,
+            "xic.acquired-trace-content:" + "0" * 64,
         ),
         lambda value: value["work_manifest"][0].__setitem__(
             "xic_mz", float(999.0).hex()
@@ -285,7 +285,7 @@ def test_discovery_sidecar_roundtrips_complete_independent_work_manifest(
             "request"
         ].__setitem__("mz", float(999.0).hex()),
         lambda value: value["records"][0]["acquired_trace"]["coordinate"].__setitem__(
-            "trace_coordinate_id", "xic.trace-coordinate.v1:" + "0" * 64
+            "trace_coordinate_id", "xic.trace-coordinate:" + "0" * 64
         ),
         lambda value: value["records"][0]["acquired_trace"]["coordinate"].__setitem__(
             "trace_point_count", 1
@@ -295,7 +295,7 @@ def test_discovery_sidecar_roundtrips_complete_independent_work_manifest(
         ].__setitem__(0, float(999.0).hex()),
         lambda value: value["records"][0]["acquired_trace"].__setitem__(
             "acquired_trace_content_id",
-            "xic.acquired-trace-content.v1:" + "0" * 64,
+            "xic.acquired-trace-content:" + "0" * 64,
         ),
         lambda value: value["records"][0]["physical_evaluation"]["trace"][
             "raw"
@@ -305,7 +305,7 @@ def test_discovery_sidecar_roundtrips_complete_independent_work_manifest(
         ].__setitem__("query_rt_min", float(1.1).hex()),
         lambda value: value["records"][0]["physical_evaluation"]["evaluation"][
             "answer"
-        ].__setitem__("physical_answer_id", "physical-answer.v1:" + "0" * 64),
+        ].__setitem__("physical_answer_id", "physical-answer:" + "0" * 64),
         lambda value: value["records"][0]["physical_evaluation"]["evaluation"][
             "facts"
         ].__setitem__("area_counts_seconds", float(1.0).hex()),
@@ -317,12 +317,12 @@ def test_discovery_sidecar_roundtrips_complete_independent_work_manifest(
         ].__setitem__("state", "failed"),
         lambda value: value["records"][0]["physical_evaluation"]["evaluation"][
             "prepared"
-        ].__setitem__("prepared_signal_id", "prepared-signal.v1:" + "0" * 64),
+        ].__setitem__("prepared_signal_id", "prepared-signal:" + "0" * 64),
         lambda value: value["records"][0]["physical_evaluation"]["profile"].__setitem__(
-            "profile_id", "signal-profile.v1:" + "0" * 64
+            "profile_id", "signal-profile:" + "0" * 64
         ),
         lambda value: value["run_spec"].__setitem__(
-            "run_spec_id", "processing-run.v1:" + "0" * 64
+            "run_spec_id", "processing-run:" + "0" * 64
         ),
     ],
 )
@@ -397,9 +397,9 @@ def test_discovery_sidecar_rejects_duplicate_json_field(tmp_path: Path) -> None:
         records=records,
     ).decode("utf-8")
     duplicate = payload.replace(
-        '{"schema_version":"discovery_physical_fact_sidecar_v2",',
-        '{"schema_version":"discovery_physical_fact_sidecar_v2",'
-        '"schema_version":"discovery_physical_fact_sidecar_v2",',
+        '{"schema_version":"discovery_physical_fact_sidecar",',
+        '{"schema_version":"discovery_physical_fact_sidecar",'
+        '"schema_version":"discovery_physical_fact_sidecar",',
         1,
     )
 
@@ -496,7 +496,7 @@ def test_discovery_sidecar_writer_detects_a_temp_file_that_does_not_match(
 
     _, spec, acquisition_input = _spec(tmp_path)
     manifest, records = _population(spec, acquisition_input)
-    path = tmp_path / "out" / "discovery_physical_facts.v1.json"
+    path = tmp_path / "out" / "discovery_physical_facts.json"
     temporary = path.with_name(f"{path.name}.tmp")
     original_open = Path.open
 
@@ -529,7 +529,7 @@ def test_discovery_sidecar_writer_publishes_exact_serializer_bytes(
 ) -> None:
     _, spec, acquisition_input = _spec(tmp_path)
     manifest, records = _population(spec, acquisition_input)
-    path = tmp_path / "out" / "discovery_physical_facts.v1.json"
+    path = tmp_path / "out" / "discovery_physical_facts.json"
 
     write_discovery_physical_fact_sidecar(
         path,
@@ -592,40 +592,3 @@ def test_read_discovery_physical_fact_records_rejects_profile_mismatch(
             expected_run_spec=spec,
             expected_acquisition_input=acquisition_input,
         )
-
-
-def test_legacy_sidecar_does_not_claim_unretained_processed_curves(
-    tmp_path, monkeypatch
-):
-    _, spec, acquisition_input = _spec(tmp_path)
-    manifest, records = _population(spec, acquisition_input)
-    value = json.loads(
-        serialize_discovery_physical_fact_sidecar(
-            run_spec=spec,
-            acquisition_input=acquisition_input,
-            work_manifest=manifest,
-            records=records,
-        )
-    )
-    value["schema_version"] = "discovery_physical_fact_sidecar_v1"
-    for record in value["records"]:
-        record.pop("candidate_links")
-        record.pop("retained_prepared_signal")
-    path = tmp_path / "legacy.json"
-    path.write_text(
-        json.dumps(value, ensure_ascii=False, separators=(",", ":")), encoding="utf-8"
-    )
-    from xic_extractor.peak_detection import physical_peak_codec as owner
-
-    def unexpected_recompute(*args, **kwargs):
-        raise AssertionError("a legacy evidence reader must not manufacture arrays")
-
-    monkeypatch.setattr(owner, "prepare_physical_signal", unexpected_recompute)
-    monkeypatch.setattr(owner, "evaluate_physical_peak", unexpected_recompute)
-    restored = read_discovery_physical_fact_records(
-        path, expected_run_spec=spec, expected_acquisition_input=acquisition_input
-    )
-    assert len(restored) == len(records)
-    assert all(item.evaluation.retained_prepared_signal is None for item in restored)
-    assert all(item.candidate_links == () for item in restored)
-    assert tuple(item.rt for item in restored) == tuple(item.rt for item in records)

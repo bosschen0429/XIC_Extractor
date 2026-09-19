@@ -17,7 +17,7 @@ from xic_extractor.alignment.cross_sample_peak_groups import (
 )
 from xic_extractor.alignment.owner_area import owner_quantification_eligible
 
-_RUNTIME_FEATURE_ID_PREFIX = "xic.owner-backfill-runtime-feature.v1:"
+_RUNTIME_FEATURE_ID_PREFIX = "xic.owner-backfill-runtime-feature:"
 
 
 class BackfillRuntimeFeature(Protocol):
@@ -321,7 +321,7 @@ def _runtime_feature_basis(
     input_group_identity: CrossSampleGroupIdentity | None,
 ) -> Mapping[str, object]:
     return {
-        "schema": "owner_backfill_runtime_feature_v1",
+        "schema": "owner_backfill_runtime_feature",
         "feature_family_id": _required_text(
             feature.feature_family_id, "feature_family_id"
         ),

@@ -285,14 +285,13 @@ def _assert_outside_group_cells(scientific, batch, tmp_path: Path) -> None:
         "FAM000002",
     }
     for source in local_cells:
-        legacy_content = asdict(source.content)
-        legacy_content.pop("outside_group")
+        current_content = asdict(source.content)
         expected = (
             json.dumps(
                 {
-                    "schema_version": "cell_observation_v4",
+                    "schema_version": "cell_observation",
                     "validation_status": cell_owner.VALIDATION_STATUS,
-                    "content": legacy_content,
+                    "content": current_content,
                 },
                 ensure_ascii=False,
                 sort_keys=True,
@@ -305,7 +304,7 @@ def _assert_outside_group_cells(scientific, batch, tmp_path: Path) -> None:
             cell_owner.canonical_cell_observation_bytes(source.content)
             == expected.encode()
         )
-        assert source.artifact.semantic_contract.schema_version == "cell_observation_v4"
+        assert source.artifact.semantic_contract.schema_version == "cell_observation"
     outside = outside_cells[0]
     relation = outside.content.outside_group
     assert relation is not None
@@ -334,11 +333,11 @@ def _assert_outside_group_cells(scientific, batch, tmp_path: Path) -> None:
         payload = json.loads(
             cell_owner.canonical_cell_observation_bytes(source.content)
         )
-        assert payload["schema_version"] == "cell_observation_v5"
+        assert payload["schema_version"] == "cell_observation"
         assert payload["content"]["outside_group"] == asdict(
             source.content.outside_group
         )
-        assert source.artifact.semantic_contract.schema_version == "cell_observation_v5"
+        assert source.artifact.semantic_contract.schema_version == "cell_observation"
         assert source.peak_observation is None and source.peak_hypothesis is None
         assert source.content.method_result == "SUPPORT"
         assert (
@@ -793,7 +792,7 @@ def _expected_retained_curve(
         else evaluation.integration
     )
     value = {
-        "schema_version": "curve_payload_v1",
+        "schema_version": "curve_payload",
         "kind": kind,
         "sample_id": sample_id,
         "candidate_id": candidate_id,
@@ -1086,14 +1085,14 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         )
         csvs[path.stem] = folder / f"{path.stem}.owner-candidates.csv"
         write_discovery_physical_fact_sidecar(
-            folder / "discovery_physical_facts.v1.json",
+            folder / "discovery_physical_facts.json",
             run_spec=spec,
             acquisition_input=source,
             work_manifest=discovery.physical_work_manifest,
             records=discovery.physical_evaluations,
         )
         candidates[path.stem] = read_owner_bound_discovery_candidates_csv(
-            csvs[path.stem], receipt=receipts[path.stem], require_successor_columns=True
+            csvs[path.stem], receipt=receipts[path.stem]
         )
         source_records.update(
             (record.candidate_id, record) for record in discovery.physical_evaluations
@@ -1648,12 +1647,12 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     )
     marker = OwnerPathRuntimeMarker(
         tmp_path / "alignment" / ".cid_nl_runtime.json",
-        "untargeted-cid-nl-alignment-v1",
+        "untargeted-cid-nl-alignment",
     ).read_optional()
     assert marker is not None and marker.observability_ledger_bytes is not None
     persisted_ledger = json.loads(marker.observability_ledger_bytes)
     assert persisted_ledger["schema_version"] == (
-        "execution_runtime_observability_ledger_v2"
+        "execution_runtime_observability_ledger"
     )
     assert all(
         event["monotonic_offset_ns"] is None for event in persisted_ledger["events"]
@@ -1918,7 +1917,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         integration=integration,
         selection_intensity=prepared.prepared.positive_signal,
         resolver_mode=peak_config.resolver_mode,
-        proposal_sources=("canonical_physical_segment_v1",),
+        proposal_sources=("canonical_physical_segment",),
         physical_evaluation=evaluation,
         signal_processing_profile=profile,
     )
@@ -2083,7 +2082,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
             assert recovery_evaluations[-1].facts is None
             assert recovery_evaluations[-1].integration is None
             assert recovery_evaluations[-1].question.selection_policy_version == (
-                "unique_baseline_peak_in_context_v6"
+                "unique_baseline_peak_in_context"
             )
 
         source_raws[paths[0]].intensity = original_intensity * 0.0
@@ -3984,7 +3983,7 @@ def _assert_conservative_proof_seals(
 ) -> None:
     import hashlib
     import json
-    from copy import copy, deepcopy
+    from copy import copy
     from dataclasses import fields
 
     from xic_extractor.alignment.backfill import evaluation_coverage as owner
@@ -4016,7 +4015,7 @@ def _assert_conservative_proof_seals(
         "groups": epoch.group_identities,
     }
     epoch_basis = owner._epoch_basis(**basis_args)
-    assert epoch_basis["schema"] == "owner_backfill_planning_epoch_v2"
+    assert epoch_basis["schema"] == "owner_backfill_planning_epoch"
     assert proof.proof_id in {
         row["conservative_no_request_proof_id"] for row in epoch_basis["positions"]
     }
@@ -4024,7 +4023,7 @@ def _assert_conservative_proof_seals(
     assert coverage.coverage_id == owner._typed_id(
         owner._BATCH_PREFIX,
         {
-            "schema": "owner_backfill_evaluation_coverage_v1",
+            "schema": "owner_backfill_evaluation_coverage",
             "epoch_id": epoch.epoch_id,
             "terminal_ids": [],
             "terminal_evaluations": [],
@@ -4040,24 +4039,8 @@ def _assert_conservative_proof_seals(
         json.loads(
             canonical_cell_observation_bytes(proof.decision.target_cell.content)
         )["schema_version"]
-        == "cell_observation_v4"
+        == "cell_observation"
     )
-
-    # The old schema has precisely these position fields and no absent-proof key.
-    legacy_positions = tuple(
-        replace(
-            item,
-            conservative_no_request_proof=None,
-            planning_reason="retained_local_owner",
-        )
-        for item in epoch.positions
-    )
-    legacy_basis = owner._epoch_basis(**(basis_args | {"positions": legacy_positions}))
-    expected_legacy = deepcopy(epoch_basis)
-    expected_legacy["schema"] = "owner_backfill_planning_epoch_v1"
-    for row in expected_legacy["positions"]:
-        row.pop("conservative_no_request_proof_id")
-        row["planning_reason"] = "retained_local_owner"
 
     def canonical(value):
         return json.dumps(
@@ -4068,22 +4051,12 @@ def _assert_conservative_proof_seals(
             allow_nan=False,
         ).encode()
 
-    assert canonical(legacy_basis) == canonical(expected_legacy)
-    legacy_epoch = owner.mint_owner_backfill_planning_epoch(
-        **(epoch_args | {"positions": legacy_positions})
-    )
-    assert (
-        legacy_epoch.epoch_id
-        == owner._EPOCH_PREFIX + hashlib.sha256(canonical(expected_legacy)).hexdigest()
-    )
-    assert legacy_epoch.epoch_id != epoch.epoch_id
-
     other_sample = next(
         sample for sample in epoch.samples if sample is not proof.sample
     )
     for substitution in (
         {"sample": other_sample},
-        {"proof_id": "xic.owner-backfill-conservative-no-request.v1:" + "0" * 64},
+        {"proof_id": "xic.owner-backfill-conservative-no-request:" + "0" * 64},
         {
             "processing_owners": replace(
                 proof.processing_owners,
@@ -4459,8 +4432,8 @@ def test_production_composition_closes_recovered_observation_without_candidate(
             assert cell_apex == pytest.approx(expected_cell_apexes[sample_stem])
         else:
             assert cell_apex is None
-    assert row.center_mz_basis == "cross_sample_owner_arithmetic_mean_v1"
-    assert row.center_rt_basis == "cross_sample_owner_arithmetic_mean_v1"
+    assert row.center_mz_basis == "cross_sample_owner_arithmetic_mean"
+    assert row.center_rt_basis == "cross_sample_owner_arithmetic_mean"
 
     base_cells = writer_inputs.production_decisions.cells
     weighted_values = dict(zip(sample_stems, (1.0, 9.0, 2.0, 9.0), strict=True))

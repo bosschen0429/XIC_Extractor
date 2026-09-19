@@ -50,8 +50,8 @@ different questions:
 | `docs/architecture-contract.md` | Dependency direction and the rule that evidence providers feed the spine before any matrix/export contract. | Current validation packet status. |
 | `docs/lc-msms-evidence-rules.md` | Domain interpretation of MS1/MS2/RT/Backfill evidence and promotion constraints. | Current product lane state. |
 | `docs/superpowers/plans/2026-06-15-productization-control-plane.md` | Compatibility lookup for retired control-plane lane keys and historical anchors. | Current tier, lane, writer scope, or promotion state. |
-| `docs/superpowers/validation/productization_status_index_v1.tsv` | Machine-checkable current lane status and public-surface flags. | Domain meaning of each evidence field. |
-| `docs/superpowers/schemas/productization_authority_manifest.v1.json` | Allowed and forbidden writer scopes. Unknown scopes fail closed. | Scientific sufficiency of evidence providers. |
+| `docs/superpowers/validation/productization_status_index.tsv` | Machine-checkable current lane status and public-surface flags. | Domain meaning of each evidence field. |
+| `docs/superpowers/schemas/productization_authority_manifest.json` | Allowed and forbidden writer scopes. Unknown scopes fail closed. | Scientific sufficiency of evidence providers. |
 | This file | Human-maintained evidence-chain map across code, diagnostics, and promotion boundaries. | Machine enforcement, counts, tier changes, or writer authority. |
 
 Rule: if a durable evidence provider, evidence state, gate, or authority
@@ -372,8 +372,8 @@ a separate activation contract consumes it.
 ## Product-Lane Authority Boundaries
 
 The authoritative machine-readable registry state is
-`docs/superpowers/validation/productization_status_index_v1.tsv` plus
-`docs/superpowers/schemas/productization_authority_manifest.v1.json`. This table
+`docs/superpowers/validation/productization_status_index.tsv` plus
+`docs/superpowers/schemas/productization_authority_manifest.json`. This table
 describes stable lane roles, not current counts. Counts, hashes, pass/fail
 numbers, and active scope sizes belong in the machine-readable artifacts.
 The exact Backfill writer membership remains in the retained production-
@@ -412,8 +412,8 @@ When adding or changing evidence:
    boundaries, or authority concepts change.
 3. Update `docs/lc-msms-evidence-rules.md` when the scientific/domain
    interpretation changes.
-4. Update `productization_status_index_v1.tsv`,
-   `productization_authority_manifest.v1.json`, and the promotion contract only
+4. Update `productization_status_index.tsv`,
+   `productization_authority_manifest.json`, and the promotion contract only
    when tier, active lane, writer scope, public
    surface, default matrix, workbook, counted detection, selected peak, or
    selected area changes.

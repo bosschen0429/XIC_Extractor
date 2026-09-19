@@ -102,7 +102,7 @@ def _external_row(**overrides: object) -> dict[str, object]:
         "external_tool": "MZmine",
         "external_run_id": "run1",
         "external_tool_version": "4.9.14",
-        "external_adapter_version": "contract_v1",
+        "external_adapter_version": "contract",
         "sample_id": "Sample_1",
         "feature_id": "F123",
         "source_feature_row_id": "Sample_1|feature|F123",
@@ -169,7 +169,7 @@ def test_external_feature_table_maps_to_detected_features(tmp_path: Path) -> Non
     assert feature.area == 5000.0
     assert feature.trace_quality == "GOOD"
     assert feature.shape_score == 0.91
-    assert feature.source == "external_feature_table:MZmine:contract_v1"
+    assert feature.source == "external_feature_table:MZmine:contract"
     assert comparable_cid_nl_identity(feature) is None
 
 
@@ -317,7 +317,7 @@ def test_mzmine_wide_feature_table_maps_positive_peak_area_rows(
     assert comparable_cid_nl_identity(features[0]) is None
     assert (
         features[0].source
-        == "external_feature_table:MZmine:mzmine_wide_area_proxy_v1"
+        == "external_feature_table:MZmine:mzmine_wide_area_proxy"
     )
     assert features[1].sample_stem == "Sample_B"
     assert features[1].feature_id == "Sample_B|mzmine_row|8"
@@ -341,8 +341,8 @@ def test_mzmine_wide_feature_table_rejects_duplicate_headers(
     ("source", "expected_comparable"),
     (
         (CID_NL_SHARED_IDENTITY_SOURCE, True),
-        ("external_feature_table:OpenMS:contract_v1", False),
-        ("external_feature_table:MZmine:contract_v1", False),
+        ("external_feature_table:OpenMS:contract", False),
+        ("external_feature_table:MZmine:contract", False),
         ("local_ms1_feature", False),
         ("unknown_legacy_source", False),
     ),

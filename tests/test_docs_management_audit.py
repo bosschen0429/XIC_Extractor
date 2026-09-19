@@ -1240,7 +1240,7 @@ def test_sample_metadata_contract_gets_own_topic_before_run_provenance(
                     "absorbs it."
                 ),
                 "",
-                "sample_metadata_v1 injection_order source.",
+                "sample_metadata injection_order source.",
             ]
         ),
     )
@@ -1728,16 +1728,16 @@ def test_topic_review_separates_bound_and_compressible_support_surfaces(
     ):
         _write(root / path, "# Backfill support\n\n" + "\n".join(support_body))
     _write(
-        root / "docs/superpowers/validation/productization_status_index_v1.tsv",
+        root / "docs/superpowers/validation/productization_status_index.tsv",
         (f"lane\tcurrent_artifact\nbroad_backfill\t{authority_bound_path}\n"),
     )
     _write(
-        root / "docs/superpowers/schemas/productization_authority_manifest.v1.json",
+        root / "docs/superpowers/schemas/productization_authority_manifest.json",
         json.dumps({"decision_packet": authority_bound_path}),
     )
     _write(
         root / "docs/superpowers/schemas/"
-        "quantitative_projection_authority_manifest.v1.json",
+        "quantitative_projection_authority_manifest.json",
         json.dumps({"activation_summary_artifact": dependent_authority_bound_path}),
     )
     for index in range(6):

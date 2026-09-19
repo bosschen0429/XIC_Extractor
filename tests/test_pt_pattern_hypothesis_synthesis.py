@@ -367,7 +367,7 @@ def test_hypothesis_synthesis_rejects_wrong_ratio_population_role(
 @pytest.mark.parametrize(
     ("field", "value", "message"),
     [
-        ("schema_version", "pt_pattern_ratio_profile.v999", "schema_version"),
+        ("schema_version", "unsupported_pt_pattern_ratio_profile", "schema_version"),
         ("profile_id", "", "profile_id"),
         ("missing_count", "-1", "missing_count"),
     ],
@@ -935,7 +935,7 @@ def _ratio_summary(
     row = {column: "" for column in RATIO_SUMMARY_COLUMNS}
     row.update(
         {
-            "schema_version": "pt_pattern_ratio_profile.v1",
+            "schema_version": "pt_pattern_ratio_profile",
             "readiness_tier": "diagnostic_only",
             "evidence_owner": (
                 "xic_extractor.discovery.pt_pattern_ratio_profile"

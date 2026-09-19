@@ -22,7 +22,7 @@ from xic_extractor.discovery.models import (
     "candidate_state",
     ["review_only_physical_unavailable", "review_only_physical_failed"],
 )
-def test_discovery_csv_rejects_non_v1_physical_state_values(
+def test_discovery_csv_rejects_non_physical_state_values(
     tmp_path: Path,
     candidate_state: str,
 ) -> None:
@@ -51,7 +51,7 @@ def test_discovery_csv_rejects_non_v1_physical_state_values(
     write_discovery_candidates_csv(output_path, (candidate,))
     with pytest.raises(ValueError, match="discovery_candidate_state must be one"):
         read_discovery_candidates_csv(
-            output_path, require_successor_columns=True
+        output_path
         )
 
 @pytest.mark.parametrize(
@@ -178,7 +178,7 @@ def test_discovery_csv_rejects_non_v1_physical_state_values(
         ),
     ],
 )
-def test_discovery_v1_state_and_physical_truth_projection_table(
+def test_discovery_state_and_physical_truth_projection_table(
     tmp_path: Path,
     case: str,
     ms2_support: str,
@@ -240,7 +240,7 @@ def test_discovery_v1_state_and_physical_truth_projection_table(
             "rejected_noise_or_outside_rt",
         }
 
-def test_discovery_candidate_state_vocabulary_remains_v1_exact() -> None:
+def test_discovery_candidate_state_vocabulary_remains_exact() -> None:
     assert DISCOVERY_CANDIDATE_STATE_VALUES == (
         "ms1_feature_nl_supported",
         "ms1_feature_nl_rescued",

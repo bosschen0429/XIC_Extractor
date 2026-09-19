@@ -34,7 +34,7 @@ from .assignment import (
     ModeTrackSupportAnchor,
 )
 
-_TRAJECTORY_INPUT_PREFIX = "xic.mode-track-trajectory-input.v1:"
+_TRAJECTORY_INPUT_PREFIX = "xic.mode-track-trajectory-input:"
 _TRAJECTORY_INPUT_MINT_TOKEN = object()
 _EVIDENCE_MINT_TOKEN = object()
 _PROPOSAL_MINT_TOKEN = object()
@@ -683,7 +683,7 @@ def _trajectory_input_payload(
     exclusions: tuple[tuple[str, str, str], ...],
 ) -> dict[str, object]:
     return {
-        "schema_version": "mode_track_trajectory_input_v1",
+        "schema_version": "mode_track_trajectory_input",
         "processing_request_id": processing_request_id,
         "anchors": list(anchor_ids),
         "members": list(member_subject_ids),

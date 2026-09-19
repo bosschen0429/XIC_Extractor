@@ -544,7 +544,7 @@ assignment batch; the operation is pure and grants no reinforcement or product
 authority. Reinforcement enters through the same validation closure.
 
 The retained fixture
-`docs/superpowers/fixtures/mode_track_assignment_85raw_inconclusive_v1.json`
+`docs/superpowers/fixtures/mode_track_assignment_85raw_inconclusive.json`
 records the source-qualified ModeTrack stop condition; it is not a replay fixture or a
 classification oracle. It preserves the producing code/base SHAs, required
 Discovery/sample/trace hashes, 85-sample census, and historical 85-open/85-call
@@ -557,7 +557,7 @@ historical morphology, intensity, or mode labels cannot seed tracks or grant a
 current-checkout compatibility claim.
 
 The later fresh current-request single-sample canary receipt
-`docs/superpowers/fixtures/mode_track_assignment_85raw_gate_b_v1.json` closes
+`docs/superpowers/fixtures/mode_track_assignment_85raw_gate_b.json` closes
 that source gap for the CID-NL 116.0474, precursor 349.215 validation lane. The
 accepted 85-sample run retained 86 physical hypotheses in 11 ModeTracks, with
 9 multi-owner tracks, exact owner-to-assignment closure, no same-sample double
@@ -576,12 +576,12 @@ anchor, and the evidence grants no Matrix, Backfill, chemical-identity, or
 ProductWriter authority.
 
 The bounded closed-writer validation packet at
-`docs/superpowers/validation/issue180_m9_gate_c_closed_writer_v3/README.md`
+`docs/superpowers/validation/issue180_m9_gate_c_closed_writer/README.md`
 retains the current closed-writer evidence. Its C2 finalizer accepts only the
 fresh typed ModeTrack projection plus one in-memory owner-validated review set,
 derives its checked manifest and expected diff internally, and publishes the
 QMV and terminal receipts atomically. The earlier
-`docs/superpowers/validation/issue180_m9_gate_c_85raw_v2/README.md` packet
+`docs/superpowers/validation/issue180_m9_gate_c_fresh_owner/README.md` packet
 retains the historical RAW-backed acquisition, fresh-owner comparison,
 manual-review, and 26-cell QMV evidence, but its broader persisted input surface
 is `diagnostic_only`. Neither packet is a replayable writer input or activates
@@ -630,7 +630,7 @@ their schemas and writers are unchanged.
 | `alignment_matrix_identity.tsv` | Identity and owner traceability |
 | `alignment_backfill_cell_evidence.tsv` | Backfill-related cell evidence sidecar |
 | `alignment_run_metadata.json` | Conditional run settings and provenance sidecar |
-| `alignment-results-v2/v3/v4` metadata | Schema-version signals for public behavior changes; unanchored v3 accepts the legacy or canonical Matrix value policy, historical paired targeted-ISTD v3 requires the canonical policy, and v4 requires that same paired binding and canonical policy |
+| `alignment-results/v3/v4` metadata | Schema-version signals for public behavior changes; unanchored accepts the legacy or canonical Matrix value policy, historical paired targeted-ISTD requires the canonical policy, and requires that same paired binding and canonical policy |
 
 ### CID-NL execution explanations
 
@@ -730,6 +730,6 @@ Before changing alignment behavior, require the relevant subset of:
 - [Product validation contract](../agent/product-validation-contract.md)
 - [Diagnostic ledger](../diagnostic-ledger.md)
 - [Peak anchor and group boundary](family-hypothesis-boundary.md)
-- [Authority manifest](../superpowers/schemas/productization_authority_manifest.v1.json)
+- [Authority manifest](../superpowers/schemas/productization_authority_manifest.json)
 - [Discovery](discovery.md)
 - [Evidence spine](evidence-spine.md)

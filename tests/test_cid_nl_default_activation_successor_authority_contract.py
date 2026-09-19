@@ -43,7 +43,7 @@ def test_successor_authority_contract_builds_write_allowlist_and_replay(
     expected = _read_tsv(tmp_path / "out" / "successor_expected_diff.tsv")
     assert expected == [
         {
-            "schema_version": "quant_matrix_version_expected_diff_v1",
+            "schema_version": "quant_matrix_version_expected_diff",
             "peak_hypothesis_id": "FAM_NEW",
             "sample_stem": "SampleA",
             "baseline_value": "",
@@ -205,7 +205,7 @@ def _write_fixture(tmp_path: Path, *, scenario: str) -> dict[str, Path | None]:
         EXPECTED_DIFF_COLUMNS,
         [
             {
-                "schema_version": "quant_matrix_version_expected_diff_v1",
+                "schema_version": "quant_matrix_version_expected_diff",
                 "peak_hypothesis_id": "FAM_OLD",
                 "sample_stem": "SampleA",
                 "baseline_value": "",
@@ -259,7 +259,7 @@ def _acceptance_row(tmp_path: Path) -> dict[str, str]:
     source = _write_source(tmp_path, "sources/evidence.tsv", "cell\tFAM_OLD\n")
     doublet = _write_source(tmp_path, "sources/doublet.tsv", "doublet\tFAM_OLD\n")
     return {
-        "schema_version": "production_acceptance_manifest_v1",
+        "schema_version": "production_acceptance_manifest",
         "peak_hypothesis_id": "FAM_OLD",
         "sample_stem": "SampleA",
         "feature_family_id": "FAM_OLD",
@@ -292,7 +292,7 @@ def _acceptance_row(tmp_path: Path) -> dict[str, str]:
         "source_artifact_sha256": _sha256(source),
         "source_row_sha256": "A" * 64,
         "manifest_sha256": "",
-        "acceptance_contract_version": "production_acceptance_manifest_contract_v1",
+        "acceptance_contract_version": "production_acceptance_manifest_contract",
     }
 
 

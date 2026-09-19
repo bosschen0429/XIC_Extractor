@@ -49,7 +49,7 @@ def test_closed_writer_budget_counts_discovery_and_runtime_raw_opens_separately(
     None
 ):
     contract = closed_writer_fixture.closed_writer_launch_contract()
-    assert contract["schema_version"] == ("mode_track_closed_writer_launch_contract_v2")
+    assert contract["schema_version"] == ("mode_track_closed_writer_launch_contract")
     assert contract["call_budget"] == {
         "discovery_raw_open_count_max": 85,
         "runtime_raw_open_count_max": 85,
@@ -79,7 +79,7 @@ def test_closed_writer_budget_counts_discovery_and_runtime_raw_opens_separately(
 def test_shared_validation_artifact_labels_are_role_neutral() -> None:
     heartbeat = closed_writer_fixture._heartbeat("started", 0.0)
 
-    assert heartbeat["schema_version"] == "mode_track_validation_heartbeat_v1"
+    assert heartbeat["schema_version"] == "mode_track_validation_heartbeat"
     assert (
         closed_writer_fixture._RUNTIME_TELEMETRY_UNAVAILABLE_REASON
         == "not_collected_by_mode_track_validation"
@@ -432,7 +432,7 @@ def _inputs(
         (raw_dir / f"{stem}.raw").write_bytes(b"")
         rows.append(
             {
-                "schema_version": "sample_metadata_v1",
+                "schema_version": "sample_metadata",
                 "sample_name": stem,
                 "raw_stem": stem,
                 "injection_order": 1 if duplicate_order and index == 2 else index,

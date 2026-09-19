@@ -39,9 +39,9 @@ from xic_extractor.processing_identity import (
     validate_typed_identity_id,
 )
 
-_CROSS_SAMPLE_LINEAGE_EDGE_PREFIX = "xic.cross-sample-lineage-edge.v1:"
+_CROSS_SAMPLE_LINEAGE_EDGE_PREFIX = "xic.cross-sample-lineage-edge:"
 _CROSS_SAMPLE_REPAIR_APPLICATION_PREFIX = (
-    "xic.cross-sample-repair-admission-application.v1:"
+    "xic.cross-sample-repair-admission-application:"
 )
 _CROSS_SAMPLE_REPAIR_APPLICATION_MINT_TOKEN = object()
 
@@ -621,7 +621,7 @@ class CrossSampleLineageEdge:
                 "processing_request_id",
                 "member_subject_ids",
             }
-            or predecessor_basis["schema_version"] != "cross_sample_group_v1"
+            or predecessor_basis["schema_version"] != "cross_sample_group"
             or predecessor_basis["processing_request_id"] != request_id
         ):
             raise CrossSampleContractError("lineage predecessor crossed request")
@@ -657,7 +657,7 @@ class CrossSampleLineageEdge:
             )
         basis = canonical_identity_basis_bytes(
             {
-                "schema_version": "cross_sample_lineage_edge_v1",
+                "schema_version": "cross_sample_lineage_edge",
                 "processing_request_id": request_id,
                 "predecessor_group_hypothesis_id": predecessor,
                 "predecessor_identity_basis": predecessor_basis,
@@ -868,7 +868,7 @@ def _mint_cross_sample_lineage_edge(
     predecessor_basis = json.loads(predecessor.basis_bytes.decode("utf-8"))
     basis = canonical_identity_basis_bytes(
         {
-            "schema_version": "cross_sample_lineage_edge_v1",
+            "schema_version": "cross_sample_lineage_edge",
             "processing_request_id": predecessor.processing_request_id,
             "predecessor_group_hypothesis_id": predecessor.group_hypothesis_id,
             "predecessor_identity_basis": predecessor_basis,
@@ -931,7 +931,7 @@ def _repair_admission_application_basis(
 ) -> bytes:
     return canonical_identity_basis_bytes(
         {
-            "schema_version": "cross_sample_repair_admission_application_v1",
+            "schema_version": "cross_sample_repair_admission_application",
             "repair_receipt_id": _required_text(
                 repair_receipt_id,
                 field="repair_receipt_id",

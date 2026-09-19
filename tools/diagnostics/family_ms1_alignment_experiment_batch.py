@@ -215,7 +215,7 @@ def run_alignment_experiment_batch(
                     )
     status_counts = Counter(row["alignment_status"] for row in rows)
     summary: dict[str, Any] = {
-        "schema_version": "family_ms1_alignment_experiment_batch_v0",
+        "schema_version": "family_ms1_alignment_experiment_batch",
         "source_overlay_batch_summary_tsv": str(overlay_batch_summary_tsv),
         "source_cell_evidence_tsv": str(cell_evidence_tsv),
         "start_rank": start_rank,

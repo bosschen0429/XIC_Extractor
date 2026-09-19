@@ -140,7 +140,7 @@ def test_build_seed_sources_uses_primary_pre_backfill_owners() -> None:
         candidates=(seed,),
         ownership=_ownership(_owner(seed)),
         alignment_config=AlignmentConfig(),
-        fragment_profile_id="dna-cid-v1",
+        fragment_profile_id="dna-cid",
         fragment_profile_hash="hash1",
     )[0]
 
@@ -161,7 +161,7 @@ def test_build_seed_sources_skips_owner_without_candidate_join() -> None:
         candidates=(),
         ownership=_ownership(_owner(seed)),
         alignment_config=AlignmentConfig(),
-        fragment_profile_id="dna-cid-v1",
+        fragment_profile_id="dna-cid",
         fragment_profile_hash="hash1",
     )
 
@@ -178,7 +178,7 @@ def test_build_seed_sources_skips_owner_without_assignment() -> None:
             ambiguous_records=(),
         ),
         alignment_config=AlignmentConfig(),
-        fragment_profile_id="dna-cid-v1",
+        fragment_profile_id="dna-cid",
         fragment_profile_hash="hash1",
     )
 
@@ -191,7 +191,7 @@ def test_candidate_pool_member_uses_metadata_before_trace_retrieval() -> None:
         candidates=(seed,),
         ownership=_ownership(_owner(seed)),
         alignment_config=AlignmentConfig(),
-        fragment_profile_id="dna-cid-v1",
+        fragment_profile_id="dna-cid",
         fragment_profile_hash="hash1",
     )[0].request
     nearby = _candidate("CAND-NEAR", sample_stem="Sample_B", best_seed_rt=5.5)
@@ -435,7 +435,7 @@ def test_run_diagnostic_writes_outputs_for_pre_backfill_state(tmp_path) -> None:
         raw_xic_batch_size=64,
         output_dir=output_dir,
         alignment_config=AlignmentConfig(),
-        fragment_profile_id="dna-cid-v1",
+        fragment_profile_id="dna-cid",
         fragment_profile_hash="hash1",
     )
 
@@ -479,7 +479,7 @@ def test_run_diagnostic_does_not_retrieve_non_seed_traces_when_seed_gate_fails(
         raw_xic_batch_size=64,
         output_dir=tmp_path / "identity",
         alignment_config=AlignmentConfig(),
-        fragment_profile_id="dna-cid-v1",
+        fragment_profile_id="dna-cid",
         fragment_profile_hash="hash1",
     )
 
@@ -557,7 +557,7 @@ def test_run_diagnostic_evaluates_controls_manifest(tmp_path) -> None:
         output_dir=tmp_path / "identity",
         alignment_config=AlignmentConfig(),
         controls_manifest_path=manifest,
-        fragment_profile_id="dna-cid-v1",
+        fragment_profile_id="dna-cid",
         fragment_profile_hash="hash1",
     )
 
@@ -592,7 +592,7 @@ def test_run_diagnostic_process_mode_matches_serial_ordering(
         raw_xic_batch_size=64,
         output_dir=tmp_path / "serial",
         alignment_config=AlignmentConfig(),
-        fragment_profile_id="dna-cid-v1",
+        fragment_profile_id="dna-cid",
         fragment_profile_hash="hash1",
     )
 
@@ -642,7 +642,7 @@ def test_run_diagnostic_process_mode_matches_serial_ordering(
         raw_xic_batch_size=64,
         output_dir=tmp_path / "process",
         alignment_config=AlignmentConfig(),
-        fragment_profile_id="dna-cid-v1",
+        fragment_profile_id="dna-cid",
         fragment_profile_hash="hash1",
     )
 
@@ -729,7 +729,7 @@ def test_run_diagnostic_process_mode_batches_all_seed_trace_requests_once(
         raw_xic_batch_size=64,
         output_dir=tmp_path / "process",
         alignment_config=AlignmentConfig(),
-        fragment_profile_id="dna-cid-v1",
+        fragment_profile_id="dna-cid",
         fragment_profile_hash="hash1",
     )
 

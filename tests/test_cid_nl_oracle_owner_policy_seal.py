@@ -9,8 +9,8 @@ from xic_extractor.discovery.cid_nl_oracle_primitives import sha256_canonical_js
 ROOT = Path(__file__).resolve().parents[1]
 SEAL = (
     ROOT
-    / "docs/superpowers/validation/cid_nl_oracle_packet_preflight_v1/"
-    "cid_nl_oracle_owner_policy_seal_v1.json"
+    / "docs/superpowers/validation/cid_nl_oracle_packet_preflight/"
+    "cid_nl_oracle_owner_policy_seal.json"
 )
 SUMMARY = SEAL.with_name("cid_nl_oracle_packet_preflight_summary.json")
 

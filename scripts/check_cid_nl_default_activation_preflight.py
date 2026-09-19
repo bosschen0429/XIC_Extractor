@@ -50,17 +50,17 @@ DEFAULT_BACKFILL_CELL_EVIDENCE_TSV = (
 )
 DEFAULT_PRODUCTION_ACCEPTANCE_MANIFEST_TSV = (
     ROOT
-    / "docs/superpowers/validation/quant_matrix_real_bundle_v1/inputs/"
+    / "docs/superpowers/validation/quant_matrix_real_bundle/inputs/"
     / "production_acceptance_manifest.tsv"
 )
 DEFAULT_EXPECTED_DIFF_TSV = (
     ROOT
-    / "docs/superpowers/validation/quant_matrix_real_bundle_v1/inputs/"
+    / "docs/superpowers/validation/quant_matrix_real_bundle/inputs/"
     / "expected_diff.tsv"
 )
 DEFAULT_SUMMARY_JSON = (
     ROOT
-    / "docs/superpowers/validation/cid_nl_default_activation_preflight_v1/"
+    / "docs/superpowers/validation/cid_nl_default_activation_preflight/"
     / "cid_nl_default_activation_preflight_summary.json"
 )
 
@@ -265,7 +265,7 @@ def evaluate_cid_nl_default_activation_preflight(
         overall_status = "blocked"
 
     return {
-        "schema_version": "cid_nl_default_activation_preflight_v1",
+        "schema_version": "cid_nl_default_activation_preflight",
         "overall_status": overall_status,
         "default_activation_readiness": overall_status,
         "target_alignment_evidence_status": target_status,

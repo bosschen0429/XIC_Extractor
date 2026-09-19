@@ -19,7 +19,7 @@ from xic_extractor.review_actions import (
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description=(
-            "Apply review_action_apply_changeset_v1 rows to an audited copy of "
+            "Apply review_action_apply_changeset rows to an audited copy of "
             "targeted long output. This command never overwrites the input CSV."
         )
     )
@@ -34,7 +34,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         type=Path,
         required=True,
         help=(
-            "review_action_apply_changeset_v1 TSV from "
+            "review_action_apply_changeset TSV from "
             "plan_review_action_apply_changesets.py."
         ),
     )
@@ -48,7 +48,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--output-audit-tsv",
         type=Path,
         required=True,
-        help="Path to write review_action_apply_audit_v1 TSV.",
+        help="Path to write review_action_apply_audit TSV.",
     )
     parser.add_argument(
         "--allow-blocked",

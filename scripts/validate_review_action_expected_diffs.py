@@ -16,14 +16,14 @@ from xic_extractor.review_actions import (
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description=(
-            "Validate approved review_action_expected_diff_v1 TSV rows. This "
+            "Validate approved review_action_expected_diff TSV rows. This "
             "command does not apply actions or modify extraction outputs."
         )
     )
     parser.add_argument(
         "expected_diff_tsv",
         type=Path,
-        help="Approved review_action_expected_diff_v1 TSV.",
+        help="Approved review_action_expected_diff TSV.",
     )
     parser.add_argument(
         "--summary-json",

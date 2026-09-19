@@ -24,9 +24,8 @@ from xic_extractor.processing_identity import (
     ProcessingRequestIdentity,
 )
 
-SCHEMA_VERSION = "cid_nl_method_subject_v1"
-COMPOSITE_SCHEMA_VERSION = "cid_nl_method_subject_v2"
-BATCH_SCHEMA_VERSION = "cid_nl_method_subject_batch_v1"
+SCHEMA_VERSION = "cid_nl_method_subject"
+BATCH_SCHEMA_VERSION = "cid_nl_method_subject_batch"
 REQUEST_INPUT_KEY = "cid_nl_method_subject"
 CID_NL_PROVIDER_ID = "dda_ddms2_cid_nl"
 CID_NL_METHOD_ID = "cid_nl"
@@ -37,10 +36,10 @@ CidNlMethodSubjectKind: TypeAlias = Literal[
     "untargeted_precursor",
 ]
 
-_SUBJECT_ID_PREFIX = "xic.cid-nl-method-subject.v1:"
-_TARGET_KEY_ID_PREFIX = "xic.target-key.v1:"
-_TARGET_DEFINITION_ID_PREFIX = "xic.target-definition.v1:"
-_TARGET_SNAPSHOT_ID_PREFIX = "xic.target-list-snapshot.v1:"
+_SUBJECT_ID_PREFIX = "xic.cid-nl-method-subject:"
+_TARGET_KEY_ID_PREFIX = "xic.target-key:"
+_TARGET_DEFINITION_ID_PREFIX = "xic.target-definition:"
+_TARGET_SNAPSHOT_ID_PREFIX = "xic.target-list-snapshot:"
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
@@ -176,12 +175,8 @@ class CidNlMethodSubject:
         """Return the exact value an Untargeted processing request must pin."""
 
         payload = asdict(self)
-        if self.composition is None:
-            payload.pop("composition")
         return {
-            "schema_version": COMPOSITE_SCHEMA_VERSION
-            if self.composition
-            else SCHEMA_VERSION,
+            "schema_version": SCHEMA_VERSION,
             **payload,
         }
 
@@ -541,7 +536,7 @@ def cid_nl_method_subject_batch_from_request(
     """Rehydrate a request-pinned multi-subject Untargeted CID-NL batch."""
 
     payload = _request_cid_nl_payload(request)
-    if payload.get("schema_version") == SCHEMA_VERSION:
+    if payload.get("schema_version") != BATCH_SCHEMA_VERSION:
         raise CidNlMethodSubjectContractError(
             "Untargeted request pins a singular CID-NL method subject"
         )
@@ -697,15 +692,13 @@ def _subject_from_payload(payload: object) -> CidNlMethodSubject:
         "target_snapshot_id",
         "target_key_id",
         "target_definition_id",
+        "composition",
     }
-    composite = payload.get("schema_version") == COMPOSITE_SCHEMA_VERSION
-    if composite:
-        expected_fields.add("composition")
     if set(payload) != expected_fields:
         raise CidNlMethodSubjectContractError(
             "Untargeted request CID-NL method subject has wrong fields"
         )
-    if payload["schema_version"] not in {SCHEMA_VERSION, COMPOSITE_SCHEMA_VERSION}:
+    if payload["schema_version"] != SCHEMA_VERSION:
         raise CidNlMethodSubjectContractError(
             f"Untargeted request CID-NL schema must be {SCHEMA_VERSION!r}"
         )
@@ -730,8 +723,8 @@ def _subject_from_payload(payload: object) -> CidNlMethodSubject:
         )
     try:
         composition = None
-        if composite:
-            raw = payload["composition"]
+        raw = payload["composition"]
+        if raw is not None:
             if (
                 not isinstance(raw, dict)
                 or set(raw) != {"tags", "combine_mode"}
@@ -759,7 +752,7 @@ def _subject_from_payload(payload: object) -> CidNlMethodSubject:
                 field="precursor_tolerance_ppm",
             ),
             neutral_loss_da=None
-            if composite
+            if composition is not None
             else _positive_finite_float(
                 payload["neutral_loss_da"], field="neutral_loss_da"
             ),
@@ -931,10 +924,8 @@ def _method_subject_id(
         "target_snapshot_id": target_snapshot_id,
         "target_key_id": target_key_id,
         "target_definition_id": target_definition_id,
+        "composition": asdict(composition) if composition is not None else None,
     }
-    if composition is not None:
-        payload["schema_version"] = COMPOSITE_SCHEMA_VERSION
-        payload["composition"] = asdict(composition)
     encoded = json.dumps(
         payload,
         ensure_ascii=False,
@@ -942,8 +933,7 @@ def _method_subject_id(
         separators=(",", ":"),
         allow_nan=False,
     ).encode("utf-8")
-    prefix = "xic.cid-nl-method-subject.v2:" if composition else _SUBJECT_ID_PREFIX
-    return prefix + hashlib.sha256(encoded).hexdigest()
+    return _SUBJECT_ID_PREFIX + hashlib.sha256(encoded).hexdigest()
 
 
 def _positive_finite_float(value: object, *, field: str) -> float:

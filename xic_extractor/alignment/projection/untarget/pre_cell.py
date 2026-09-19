@@ -33,10 +33,10 @@ class UntargetProjectionContractError(ValueError):
     """Raised when an Untargeted pre-cell projection cannot close exactly."""
 
 
-_UNTARGET_ROW_KEY_PREFIX = "xic.untarget-row-key.v1:"
-_GROUP_CELL_SUBJECT_PREFIX = "xic.group-cell-subject.v1:"
-_UNTARGET_ROW_KEY_SCHEMA_VERSION = "untarget_row_key_v1"
-_GROUP_CELL_SUBJECT_SCHEMA_VERSION = "group_cell_subject_v1"
+_UNTARGET_ROW_KEY_PREFIX = "xic.untarget-row-key:"
+_GROUP_CELL_SUBJECT_PREFIX = "xic.group-cell-subject:"
+_UNTARGET_ROW_KEY_SCHEMA_VERSION = "untarget_row_key"
+_GROUP_CELL_SUBJECT_SCHEMA_VERSION = "group_cell_subject"
 _PROJECTION_MINT_TOKEN = object()
 
 

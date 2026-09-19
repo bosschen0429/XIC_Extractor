@@ -123,7 +123,7 @@ def test_append_lifecycle_dataset_can_explicitly_allow_duplicate(
 def test_append_lifecycle_dataset_fingerprint_includes_hcd_audit_outputs(
     tmp_path: Path,
 ) -> None:
-    first_output = _write_artifacts(tmp_path / "out", hcd_payload="hcd-v1")
+    first_output = _write_artifacts(tmp_path / "out", hcd_payload="hcd")
     kwargs: dict[str, Any] = {
         "raw_dir": tmp_path / "raw",
         "output_dir": tmp_path / "out",
@@ -134,7 +134,7 @@ def test_append_lifecycle_dataset_fingerprint_includes_hcd_audit_outputs(
         "timestamp_utc": "2026-05-20T00:00:00Z",
     }
     first = append_lifecycle_dataset(output=first_output, **kwargs)
-    second_output = _write_artifacts(tmp_path / "out", hcd_payload="hcd-v2")
+    second_output = _write_artifacts(tmp_path / "out", hcd_payload="changed-hcd")
     second = append_lifecycle_dataset(output=second_output, **kwargs)
 
     assert second.run_fingerprint != first.run_fingerprint

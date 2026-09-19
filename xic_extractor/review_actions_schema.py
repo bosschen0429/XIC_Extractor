@@ -2,14 +2,14 @@ from __future__ import annotations
 
 from typing import Literal
 
-REVIEW_ACTION_SCHEMA_VERSION = "review_action_v1"
-REVIEW_ACTION_APPLICATION_PLAN_SCHEMA_VERSION = "review_action_application_plan_v1"
-REVIEW_ACTION_EXPECTED_DIFF_SCHEMA_VERSION = "review_action_expected_diff_v1"
-REVIEW_ACTION_APPLY_READINESS_SCHEMA_VERSION = "review_action_apply_readiness_v1"
-REVIEW_ACTION_APPLY_CHANGESET_SCHEMA_VERSION = "review_action_apply_changeset_v1"
-REVIEW_ACTION_APPLY_AUDIT_SCHEMA_VERSION = "review_action_apply_audit_v1"
+REVIEW_ACTION_SCHEMA_VERSION = "review_action"
+REVIEW_ACTION_APPLICATION_PLAN_SCHEMA_VERSION = "review_action_application_plan"
+REVIEW_ACTION_EXPECTED_DIFF_SCHEMA_VERSION = "review_action_expected_diff"
+REVIEW_ACTION_APPLY_READINESS_SCHEMA_VERSION = "review_action_apply_readiness"
+REVIEW_ACTION_APPLY_CHANGESET_SCHEMA_VERSION = "review_action_apply_changeset"
+REVIEW_ACTION_APPLY_AUDIT_SCHEMA_VERSION = "review_action_apply_audit"
 REVIEW_ACTION_CANDIDATE_SIDECAR_SCHEMA_VERSION = (
-    "review_action_candidate_sidecar_v1"
+    "review_action_candidate_sidecar"
 )
 REVIEW_ACTION_COLUMNS: tuple[str, ...] = (
     "schema_version",

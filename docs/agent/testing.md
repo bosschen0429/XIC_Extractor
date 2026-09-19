@@ -20,6 +20,11 @@ loss before fixing it. Do not freeze private helpers, temporary file layout, or
 cleanup state without a current consumer. Temporary compatibility tests name
 their removal condition.
 
+Owner replacement retires tests of obsolete helpers, duplicate parsing, and
+superseded internal representations in the same change. Keep the correctness oracle
+with the owner and consumer-visible behavior with the consumer. A test alone
+does not justify retaining a retired interface or compatibility branch.
+
 ## Oracle, Attribution, And Contract Boundaries
 
 1. **Independent oracle:** derive expected results from an analytical formula,

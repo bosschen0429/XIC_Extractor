@@ -54,7 +54,7 @@ RtEvidenceStatus = Literal["missing", "close", "borderline", "far"]
 RtWindowStatus = Literal["inside", "borderline", "outside", "unknown"]
 AcquisitionOpportunity = Literal["observed", "not_observed", "not_required"]
 
-FACTS_VERSION = "candidate_evidence_facts_v1"
+FACTS_VERSION = "candidate_evidence_facts"
 PAIRED_ISTD_MAX_DELTA_MIN = 1.0
 
 @dataclass(frozen=True)

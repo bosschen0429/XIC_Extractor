@@ -33,7 +33,7 @@ from xic_extractor.alignment.owner_backfill_peak_fact_provenance import (
     OWNER_BACKFILL_PEAK_FACT_PROVENANCE_SCHEMA_VERSION,
     OWNER_BACKFILL_PROVENANCE_WRITER_SCHEMA_VERSION,
     SELECTED_INTEGRATION_AUTHORITY_FIELDS,
-    OwnerBackfillCellProjectionV2,
+    OwnerBackfillCellProjection,
     OwnerBackfillPeakFactObservation,
     OwnerBackfillPeakFactProvenanceBatch,
     OwnerBackfillPeakFactStageProjection,
@@ -301,7 +301,7 @@ def test_run_profile_is_mandatory_even_without_questions(tmp_path: Path) -> None
     assert len(path.read_text(encoding="utf-8").splitlines()) == 2
 
 
-def test_v1_header_is_rejected_and_requires_rerun(tmp_path: Path) -> None:
+def test_header_is_rejected_and_requires_rerun(tmp_path: Path) -> None:
     path, _live = _write_three_kind_provenance(tmp_path)
     header, rows = _read_projection_rows(path)
     removed = {
@@ -316,7 +316,7 @@ def test_v1_header_is_rejected_and_requires_rerun(tmp_path: Path) -> None:
     ]
     _write_projection_rows(path, legacy_header, legacy_rows)
 
-    with pytest.raises(ValueError, match="v1 provenance.*rerun alignment.*v2"):
+    with pytest.raises(ValueError, match="provenance.*rerun alignment"):
         read_owner_backfill_peak_fact_provenance_tsv(path)
 
 
@@ -421,12 +421,16 @@ def test_primary_winner_requires_complete_winner_and_source_lineage(
 @pytest.mark.parametrize(
     ("field", "value", "message"),
     (
-        ("profile_schema_version", "signal_processing_profile_v2", "schema_version"),
+        (
+            "profile_schema_version",
+            "unsupported_signal_processing_profile",
+            "schema_version",
+        ),
         ("signal_processing_method", "savgol", "must be 'gaussian'"),
         ("signal_processing_window_points", "16", "odd integer"),
         ("physical_signal_formula", "arbitrary", "physical_signal_formula"),
         ("profile_hash", "0" * 64, "profile_hash"),
-        ("profile_id", "signal-profile.v1:" + "0" * 64, "profile_id"),
+        ("profile_id", "signal-profile:" + "0" * 64, "profile_id"),
     ),
 )
 def test_run_profile_requires_exact_owner_reconstruction(
@@ -506,7 +510,7 @@ def test_resealed_owner_field_tamper_stays_untrusted_until_live_replay(
     path, live = _write_three_kind_provenance(tmp_path)
     header, rows = _read_projection_rows(path)
     physical = rows[1]
-    physical[_column("selection_subject_id")] = "owner-backfill-subject.v1:" + "0" * 64
+    physical[_column("selection_subject_id")] = "owner-backfill-subject:" + "0" * 64
     _reseal_projection_content_id(physical)
     _write_projection_rows(path, header, rows)
 
@@ -1042,7 +1046,7 @@ def _reseal_projection_content_id(values: list[str]) -> None:
             separators=(",", ":"),
         ).encode("utf-8")
     ).hexdigest()
-    values[-1] = f"owner-backfill-provenance-row.v2:{digest}"
+    values[-1] = f"owner-backfill-provenance-row:{digest}"
 
 
 def _column(name: str) -> int:
@@ -1102,7 +1106,7 @@ def _mutate_owner_bearing_projection(
         _recompute_cell_projection_id(cell)
         _reseal_projection_content_id(cell)
         return
-    else:  # pragma: no cover - closed by the pinned V4 census
+    else:  # pragma: no cover - closed by the pinned census
         raise AssertionError(owner_class)
     _reseal_projection_content_id(physical)
 
@@ -1115,7 +1119,7 @@ def _cross_typed_id(value: str) -> str:
 
 
 def _recompute_cell_projection_id(values: list[str]) -> None:
-    projection = OwnerBackfillCellProjectionV2(
+    projection = OwnerBackfillCellProjection(
         group_hypothesis_id=values[_column("group_hypothesis_id")],
         public_family_id=values[_column("public_family_id")],
         sample_stem=values[_column("sample_stem")],

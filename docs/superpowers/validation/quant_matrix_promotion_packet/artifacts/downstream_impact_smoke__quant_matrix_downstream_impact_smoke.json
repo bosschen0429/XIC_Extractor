@@ -1,0 +1,46 @@
+{
+  "authority_statement": "Downstream smoke evidence only: proves accepted Backfill values increase numeric matrix availability while preserving detected-only claims in sidecars. It does not mutate ProductWriter or grant write authority.",
+  "bundle_kind": "real_quant_matrix_version",
+  "default_quant_matrix_changed": false,
+  "detected_claims_unchanged": true,
+  "downstream_scope": "current_511_authority_replay",
+  "input_artifacts": {
+    "cell_provenance_sha256": "56ADBAC113897D893E4F9E9D7FF92371B747A0D7A96B37C81819E017AE8A1FFA",
+    "cell_provenance_tsv": "downstream_impact_inputs/cell_provenance.tsv",
+    "quant_matrix_sha256": "43CA851F97732267CF76552112D75894F74EDA4BC90BC9226E1F7D0958A0517C",
+    "quant_matrix_tsv": "downstream_impact_inputs/quant_matrix.tsv",
+    "row_summary_sha256": "07615165FCFE3F350DE2A3D7C3A37E13F9B4DC40E99A6E0AF92BEEF87FE837C9",
+    "row_summary_tsv": "downstream_impact_inputs/row_summary.tsv"
+  },
+  "metrics": {
+    "accepted_backfill_values_are_positive_numeric": true,
+    "accepted_backfilled_cell_count": 511,
+    "detected_cell_count": 17489,
+    "detected_only_missing_cell_count": 40736,
+    "every_non_empty_cell_has_provenance": true,
+    "missing_cell_reduction_count": 511,
+    "missingness_not_worse": true,
+    "peak_count": 685,
+    "quant_available_cell_count": 18000,
+    "quant_matrix_missing_cell_count": 40225,
+    "row_summary_matches_cell_provenance": true,
+    "sample_count": 85
+  },
+  "pass_conditions": {
+    "accepted_backfill_values_are_positive_numeric": true,
+    "accepted_backfill_values_present": true,
+    "every_non_empty_cell_has_provenance": true,
+    "missing_reduction_equals_accepted_backfills": true,
+    "missingness_not_worse": true,
+    "row_summary_matches_cell_provenance": true
+  },
+  "problems": [],
+  "product_writer_changed": false,
+  "production_promotion_eligible": true,
+  "read_only": true,
+  "row_metrics_tsv": "quant_matrix_downstream_impact_rows.tsv",
+  "row_metrics_tsv_sha256": "0622F2AB217D6940C1EFF60B07439C95F70939D0B78FF712B8636CC7AC21D286",
+  "schema_version": "quant_matrix_downstream_impact_smoke",
+  "status": "pass",
+  "write_authority": false
+}

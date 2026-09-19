@@ -61,7 +61,7 @@ from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 
 VALIDATION_STATUS = "production_candidate"
 PRODUCT_AUTHORITY = "none_until_checked_manifest"
-SOURCE_SCHEMA_VERSION = "untargeted_cid_nl_golden_path_source_v1"
+SOURCE_SCHEMA_VERSION = "untargeted_cid_nl_golden_path_source"
 CID_NL_ALIGNMENT_CONFIG = AlignmentConfig(anchor_min_seed_events=1)
 _GOLDEN_PATH_PROJECTION_MINT_TOKEN = object()
 
@@ -428,7 +428,7 @@ def build_untargeted_cid_nl_golden_path(
     }
     acceptance_rows = tuple(
         {
-            "schema_version": "production_acceptance_manifest_v1",
+            "schema_version": "production_acceptance_manifest",
             "peak_hypothesis_id": peak_hypothesis_id,
             "sample_stem": sample_stem,
             "feature_family_id": feature_family_id,
@@ -464,14 +464,14 @@ def build_untargeted_cid_nl_golden_path(
             "source_row_sha256": source_row_sha_by_sample[sample_stem],
             "manifest_sha256": "",
             "acceptance_contract_version": (
-                "production_acceptance_manifest_contract_v1"
+                "production_acceptance_manifest_contract"
             ),
         }
         for sample_stem, value in sorted(accepted_sample_values.items())
     )
     expected_diff_rows = tuple(
         {
-            "schema_version": "quant_matrix_version_expected_diff_v1",
+            "schema_version": "quant_matrix_version_expected_diff",
             "peak_hypothesis_id": peak_hypothesis_id,
             "sample_stem": sample_stem,
             "baseline_value": "",
@@ -683,7 +683,7 @@ def build_untargeted_cid_nl_mode_track_projection(
                 }
             )
     source_bytes = _canonical_json_bytes(
-        {"schema_version": "mode_track_projection_source_v2", "rows": proposals}
+        {"schema_version": "mode_track_projection_source", "rows": proposals}
     )
     source_sha = hashlib.sha256(source_bytes).hexdigest().upper()
     acceptance_rows = tuple(
@@ -697,7 +697,7 @@ def build_untargeted_cid_nl_mode_track_projection(
     )
     expected_diff_rows = tuple(
         {
-            "schema_version": "quant_matrix_version_expected_diff_v1",
+            "schema_version": "quant_matrix_version_expected_diff",
             "peak_hypothesis_id": row["peak_hypothesis_id"],
             "sample_stem": row["sample_stem"],
             "baseline_value": "",
@@ -1052,7 +1052,7 @@ def _mode_track_acceptance_row(
     backfilled = cast(int, proposal["backfilled_count"])
     available = cast(int, proposal["available_count"])
     return {
-        "schema_version": "production_acceptance_manifest_v1",
+        "schema_version": "production_acceptance_manifest",
         "peak_hypothesis_id": str(proposal["group_hypothesis_id"]),
         "sample_stem": str(proposal["sample_stem"]),
         "feature_family_id": str(proposal["group_hypothesis_id"]),
@@ -1087,7 +1087,7 @@ def _mode_track_acceptance_row(
         .hexdigest()
         .upper(),
         "manifest_sha256": "",
-        "acceptance_contract_version": "production_acceptance_manifest_contract_v1",
+        "acceptance_contract_version": "production_acceptance_manifest_contract",
     }
 
 

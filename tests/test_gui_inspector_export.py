@@ -15,13 +15,14 @@ from gui.workers.inspector_report_worker import (
     InspectorJob,
     InspectorReportWorker,
 )
-from tests.test_xic_inspector_api import _create_mock_v2_db
+from tests.test_xic_inspector_api import _create_mock_db
+from xic_extractor.diagnostics.alignment_explanation import SCHEMA_VERSION
 from xic_inspector.api import EvidenceLocator, InspectorCancelled, SelectionRequest
 
 
 def _source(tmp_path: Path) -> EvidenceLocator:
-    db, matrix, digest = _create_mock_v2_db(tmp_path)
-    return EvidenceLocator(db, matrix, digest, "req-01", "att-01", 2)
+    db, matrix, digest = _create_mock_db(tmp_path)
+    return EvidenceLocator(db, matrix, digest, "req-01", "att-01", SCHEMA_VERSION)
 
 
 def _summary(source: EvidenceLocator) -> dict:
@@ -29,14 +30,7 @@ def _summary(source: EvidenceLocator) -> dict:
         "mode": "align_only",
         "matrix_tsv": str(source.matrix_path),
         "alignment_outputs": {"matrix_tsv": str(source.matrix_path)},
-        "evidence": {
-            "report_path": str(source.report_path),
-            "matrix_path": str(source.matrix_path),
-            "matrix_sha256": source.matrix_sha256,
-            "processing_request_id": source.processing_request_id,
-            "processing_attempt_id": source.processing_attempt_id,
-            "schema_version": source.schema_version,
-        },
+        "evidence": source,
     }
 
 
@@ -185,7 +179,7 @@ def test_export_and_open_announces_success_before_browser_event_reentry(
     assert opened == [str(tmp_path / "opened.html")]
     assert (tmp_path / "opened.html").is_file()
     assert "selected 1" in section._inspector_status.text()
-    assert "retained_curves_v1" in section._inspector_status.text()
+    assert "retained_curves" in section._inspector_status.text()
     assert statuses and "selected 1" in statuses[-1]
 
 

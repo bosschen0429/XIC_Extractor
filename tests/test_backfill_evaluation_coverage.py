@@ -751,9 +751,9 @@ def _coverage_fixture(
     request = build_processing_request_identity(
         acquisition_sources=tuple(acquisitions.values()),
         acquisition_bindings=tuple(bindings),
-        scientific_input_schema_version="backfill_coverage_test_v1",
-        processing_algorithm_version="backfill_coverage_test_v1",
-        processing_contract_version="processing_identity_v1",
+        scientific_input_schema_version="backfill_coverage_test",
+        processing_algorithm_version="backfill_coverage_test",
+        processing_contract_version="processing_identity",
         scientific_inputs={"fixture": "backfill-evaluation-coverage"},
     )
     snapshot = mint_sample_metadata_snapshot(
@@ -774,7 +774,7 @@ def _coverage_fixture(
     assert old_subject is not None
     member_basis = canonical_identity_basis_bytes(
         {
-            "schema_version": "group_member_subject_v1",
+            "schema_version": "group_member_subject",
             "processing_request_id": request.processing_request_id,
             "canonical_sample_identity_id": resolved[0].identity.sample_identity_id,
             "subject": {
@@ -786,7 +786,7 @@ def _coverage_fixture(
     )
     member = CrossSampleGroupMemberSubject(
         member_subject_id=typed_identity_digest(
-            "xic.group-member-subject.v1:",
+            "xic.group-member-subject:",
             member_basis,
         ),
         processing_request_id=request.processing_request_id,

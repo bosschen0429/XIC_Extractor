@@ -219,7 +219,7 @@ def test_cli_stale_tier2_hash_emits_machine_readable_blocker(
     assert "source_hash_mismatch" in by_id["FAM_CAND"]["challenge_blockers"]
 
 
-def test_cli_consumes_v0_1_sidecar_as_diagnostic_only(tmp_path: Path) -> None:
+def test_cli_consumes_diagnostic_sidecar_as_diagnostic_only(tmp_path: Path) -> None:
     alignment_dir = _write_alignment_run(tmp_path / "alignment")
     output_dir = tmp_path / "gate"
     raw_manifest_path = _write_raw_manifest(tmp_path)
@@ -238,8 +238,8 @@ def test_cli_consumes_v0_1_sidecar_as_diagnostic_only(tmp_path: Path) -> None:
         candidate_rows=candidate_rows,
         source_context=source_context,
         raw_manifest_path=raw_manifest_path,
-        criteria_version="tier2_trace_identity_rescued_coherence_v0_1_diagnostic",
-        producer_version="raw_trace_reread_tier2_v0_1",
+        criteria_version="tier2_trace_identity_diagnostic",
+        producer_version="raw_trace_reread_tier2",
         evidence_status="inconclusive",
         support_component="",
         raw_trace_reread_status="pass",
@@ -247,8 +247,8 @@ def test_cli_consumes_v0_1_sidecar_as_diagnostic_only(tmp_path: Path) -> None:
         challenge_blockers="",
         dependent_context=(
             "neighbor_interference_not_assessed;"
-            "raw_trace_reread_v0_1;"
-            "rescued_coherence_v0_1"
+            "raw_trace_reread;"
+            "rescued_coherence"
         ),
     )
 
@@ -270,7 +270,7 @@ def test_cli_consumes_v0_1_sidecar_as_diagnostic_only(tmp_path: Path) -> None:
     by_id = {row["feature_family_id"]: row for row in rows}
     assert by_id["FAM_CAND"]["candidate_gate_status"] == "audit"
     assert by_id["FAM_CAND"]["support_components"] == ""
-    assert "tier2_v0_1_diagnostic_only" in by_id["FAM_CAND"]["challenge_blockers"]
+    assert "tier2_diagnostic_only" in by_id["FAM_CAND"]["challenge_blockers"]
     payload = json.loads(
         (output_dir / "alignment_production_candidate_gate.json").read_text(
             encoding="utf-8",
@@ -387,8 +387,8 @@ def _write_tier2_sidecar(
     source_context,
     raw_manifest_path: Path,
     source_review_sha256: str | None = None,
-    criteria_version: str = "tier2_trace_identity_rescued_coherence_v0",
-    producer_version: str = "raw_trace_reread_tier2_v0",
+    criteria_version: str = "tier2_trace_identity_rescued_coherence",
+    producer_version: str = "raw_trace_reread_tier2",
     evidence_status: str = "validated",
     support_component: str = "validated_tier2_trace_evidence",
     raw_trace_reread_status: str = "pass",

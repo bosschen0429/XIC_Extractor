@@ -74,8 +74,8 @@ def test_typed_identity_reuse_does_not_normalize_distinct_bytes(basis) -> None:
 def test_canonical_typed_identity_golden_vectors(monkeypatch) -> None:
     source = AcquisitionSourceIdentity(
         acquisition_source_id=(
-            "xic.acquisition-source.v1:"
-            "34f07412e8ab8ecba62561ae55f884bf21b3b3ed65b70e9e74d5bfb828411bad"
+            "xic.acquisition-source:"
+            "a856331f7d6fc3e3ccc62044a371f1f5c2a38655b1451c6fa88915fb649c6955"
         ),
         content_sha256=(
             "551ebcc397ca84390e53746bbf4c3b1a30c31f3ed35065dc724c40a8bbb89fc4"
@@ -93,21 +93,21 @@ def test_canonical_typed_identity_golden_vectors(monkeypatch) -> None:
                 injection_order=1,
             ),
         ),
-        scientific_input_schema_version="golden_inputs_v1",
-        processing_algorithm_version="golden_algorithm_v1",
-        processing_contract_version="golden_contract_v1",
+        scientific_input_schema_version="golden_inputs",
+        processing_algorithm_version="golden_algorithm",
+        processing_contract_version="golden_contract",
         scientific_inputs={"z": [2, 1], "a": "é"},
     )
     assert request.processing_request_id == (
-        "xic.processing-request.v1:"
-        "2ad720c5b9c84c9aef69e5563f6c33f63c521264cbe6c1fe2ccc2d0189e1e061"
+        "xic.processing-request:"
+        "7ea38cb865a270184b34af1cd97982ce1be31cc742497e55c2f17a992df1fe79"
     )
 
     changed_algorithm = build_processing_request_identity(
         acquisition_sources=request.acquisition_sources,
         acquisition_bindings=request.acquisition_bindings,
         scientific_input_schema_version=request.scientific_input_schema_version,
-        processing_algorithm_version="golden_algorithm_v2",
+        processing_algorithm_version="alternative_algorithm",
         processing_contract_version=request.processing_contract_version,
         scientific_inputs={"z": [2, 1], "a": "é"},
     )
@@ -119,8 +119,8 @@ def test_canonical_typed_identity_golden_vectors(monkeypatch) -> None:
     )
     attempt = issue_processing_attempt(request)
     assert attempt.processing_attempt_id == (
-        "xic.processing-attempt.v1:"
-        "0c4117db90c1d2eb67f7b194aa95eb294b12dcf17f638ace9f96dc12cb6c0bbe"
+        "xic.processing-attempt:"
+        "bf45e9a3c70e068fcd9503a6246c9c699e5232c1b8fda88d3d98bf84ad3cd4aa"
     )
 
 
@@ -556,7 +556,7 @@ def test_request_invalidates_ms1_shape_support_content_or_policy(
 ) -> None:
     raw_path = _raw(tmp_path / "sample_a.raw", b"source-a")
     support_path = tmp_path / "shape-support.tsv"
-    support_path.write_bytes(b"support-v1")
+    support_path.write_bytes(b"support")
     config = replace(
         _config(tmp_path),
         targeted_ms1_shape_identity_support_tsv=support_path,
@@ -568,12 +568,12 @@ def test_request_invalidates_ms1_shape_support_content_or_policy(
     )
     baseline = _request(config, [raw_path], resolved=resolved)
 
-    support_path.write_bytes(b"support-v2")
+    support_path.write_bytes(b"changed-support")
     content_changed = _request(config, [raw_path], resolved=resolved)
     policy_changed = _request(
         replace(
             config,
-            targeted_ms1_shape_identity_activation_policy="limited_5hmdc_5medc_v1",
+            targeted_ms1_shape_identity_activation_policy="limited_5hmdc_5medc",
         ),
         [raw_path],
         resolved=resolved,
@@ -610,7 +610,7 @@ def test_request_excludes_output_callback_and_execution_policy(
     inactive_policy_changed = _request(
         replace(
             config,
-            targeted_ms1_shape_identity_activation_policy="limited_5hmdc_5medc_v1",
+            targeted_ms1_shape_identity_activation_policy="limited_5hmdc_5medc",
         ),
         paths,
     )
@@ -745,9 +745,9 @@ def test_request_rejects_duplicate_adapter_input_keys(tmp_path: Path) -> None:
                     injection_order=2,
                 ),
             ),
-            scientific_input_schema_version="fixture-v1",
-            processing_algorithm_version="fixture-v1",
-            processing_contract_version="fixture-v1",
+            scientific_input_schema_version="fixture",
+            processing_algorithm_version="fixture",
+            processing_contract_version="fixture",
             scientific_inputs={"fixture": True},
         )
 
@@ -765,9 +765,9 @@ def test_request_rejects_nested_non_string_json_keys(tmp_path: Path) -> None:
                     injection_order=1,
                 ),
             ),
-            scientific_input_schema_version="fixture-v1",
-            processing_algorithm_version="fixture-v1",
-            processing_contract_version="fixture-v1",
+            scientific_input_schema_version="fixture",
+            processing_algorithm_version="fixture",
+            processing_contract_version="fixture",
             scientific_inputs={"nested": {1: "integer-key"}},  # type: ignore[dict-item]
         )
 
@@ -789,9 +789,9 @@ def test_request_rejects_non_finite_json_numbers(
                     injection_order=1,
                 ),
             ),
-            scientific_input_schema_version="fixture-v1",
-            processing_algorithm_version="fixture-v1",
-            processing_contract_version="fixture-v1",
+            scientific_input_schema_version="fixture",
+            processing_algorithm_version="fixture",
+            processing_contract_version="fixture",
             scientific_inputs={"nested": {"value": non_finite}},
         )
 

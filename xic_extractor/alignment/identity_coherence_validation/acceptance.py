@@ -25,7 +25,7 @@ def _sidecar_parity_failures(result: ValidationResult) -> tuple[str, ...]:
     return tuple(failures)
 
 
-def evaluate_v04_acceptance(
+def evaluate_acceptance(
     result: ValidationResult,
     *,
     controls_manifest: Path | None = None,
@@ -42,7 +42,7 @@ def evaluate_v04_acceptance(
             status="pass",
             evidence="all_required_criteria_passed",
             details=(
-                "V0.4 diagnostic mechanics and reviewed controls passed for "
+                "diagnostic mechanics and reviewed controls passed for "
                 "diagnostic-subset method review; this does not clear "
                 "full-cohort execution."
             ),
@@ -54,7 +54,7 @@ def evaluate_v04_acceptance(
             status="fail",
             evidence=failing,
             details=(
-                "V0.4 acceptance is blocked until all required criteria pass; "
+                "acceptance is blocked until all required criteria pass; "
                 "do not treat serial/process parity alone as method validation."
             ),
         )
@@ -133,7 +133,7 @@ def _acceptance_positive_controls(
         criterion="positive_control_sensitivity",
         status="fail",
         evidence=_row_evidence(row),
-        details="positive controls must be present and pass before V0.4 acceptance",
+        details="positive controls must be present and pass before acceptance",
     )
 
 

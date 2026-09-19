@@ -23,13 +23,13 @@ from xic_extractor.peak_detection.cid_nl_evidence import (
 from xic_extractor.processing_identity import ProcessingOwnerReferences
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 
-SCHEMA_VERSION = "targeted_cid_nl_evidence_projection_v1"
+SCHEMA_VERSION = "targeted_cid_nl_evidence_projection"
 ARTIFACT_SEMANTIC_ROLE = "targeted_cid_nl_evidence_projection"
 VALIDATION_STATUS = "diagnostic_only"
-_TARGET_KEY_PREFIX = "xic.target-key.v1:"
-_TARGET_DEFINITION_PREFIX = "xic.target-definition.v1:"
-_SAMPLE_ID_PREFIX = "xic.sample.v1:"
-_EVIDENCE_ARTIFACT_ID_PREFIX = "xic.evidence-artifact.v1:"
+_TARGET_KEY_PREFIX = "xic.target-key:"
+_TARGET_DEFINITION_PREFIX = "xic.target-definition:"
+_SAMPLE_ID_PREFIX = "xic.sample:"
+_EVIDENCE_ARTIFACT_ID_PREFIX = "xic.evidence-artifact:"
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _ARTIFACT_SEMANTIC_CONTRACT = _mint_artifact_semantic_contract_ref(
     owner_namespace="xic_extractor.extraction.cid_nl_evidence_projection",
@@ -37,7 +37,7 @@ _ARTIFACT_SEMANTIC_CONTRACT = _mint_artifact_semantic_contract_ref(
     schema_version=SCHEMA_VERSION,
     validation_status=VALIDATION_STATUS,
     media_type="application/json",
-    serialization_format="canonical-json-utf8-lf-v1",
+    serialization_format="canonical-json-utf8-lf",
 )
 
 

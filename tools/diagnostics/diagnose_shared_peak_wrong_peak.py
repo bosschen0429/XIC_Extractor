@@ -1,4 +1,4 @@
-"""Diagnose wrong-peak activation blocks without mutating product outputs."""
+"""Diagnose wrong-peak machine evidence without mutating product outputs."""
 
 from __future__ import annotations
 
@@ -18,17 +18,12 @@ from xic_extractor.alignment.shared_peak_identity_explanation.schema import (
     WRONG_PEAK_ROOT_CAUSE_COLUMNS,
 )
 
-_ACTIVATION_REQUIRED_COLUMNS = (
-    "feature_family_id",
-    "sample_id",
-    "activation_status",
-    "product_effect",
-    "contract_rule_id",
-)
 _MACHINE_SUPPORT_REQUIRED_COLUMNS = (
     "feature_family_id",
     "sample_id",
+    "machine_current_label",
     "observed_machine_metrics",
+    "missing_machine_evidence",
 )
 _ALIGNMENT_CELL_REQUIRED_COLUMNS = (
     "feature_family_id",
@@ -41,7 +36,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = _parse_args(argv)
     try:
         outputs = run_diagnostic(
-            activation_decisions_tsv=args.activation_decisions_tsv,
             machine_evidence_support_tsv=args.machine_evidence_support_tsv,
             alignment_cells_tsv=args.alignment_cells_tsv,
             output_dir=args.output_dir,
@@ -57,16 +51,11 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 def run_diagnostic(
     *,
-    activation_decisions_tsv: Path,
     machine_evidence_support_tsv: Path,
     alignment_cells_tsv: Path,
     output_dir: Path,
     trace_data_json: Sequence[Path] = (),
 ) -> Mapping[str, Path]:
-    decision_rows = read_tsv_required(
-        activation_decisions_tsv,
-        _ACTIVATION_REQUIRED_COLUMNS,
-    )
     support_rows = read_tsv_required(
         machine_evidence_support_tsv,
         _MACHINE_SUPPORT_REQUIRED_COLUMNS,
@@ -77,7 +66,6 @@ def run_diagnostic(
     )
     trace_index = wrong_peak_root_cause.load_overlay_trace_data(trace_data_json)
     rows = wrong_peak_root_cause.build_wrong_peak_root_cause_rows(
-        activation_decision_rows=decision_rows,
         machine_evidence_support_rows=support_rows,
         alignment_cell_rows=cell_rows,
         overlay_traces=trace_index,
@@ -91,12 +79,6 @@ def run_diagnostic(
 def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--activation-decisions-tsv",
-        type=Path,
-        required=True,
-        help="shared_peak_identity_activation_decisions.tsv",
-    )
-    parser.add_argument(
         "--machine-evidence-support-tsv",
         type=Path,
         required=True,
@@ -106,7 +88,7 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         "--alignment-cells-tsv",
         type=Path,
         required=True,
-        help="alignment_cells.tsv used by the activation run",
+        help="alignment_cells.tsv used by the explanation run",
     )
     parser.add_argument(
         "--trace-data-json",

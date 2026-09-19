@@ -384,11 +384,6 @@ def canonical_runtime_observability_ledger_bytes(
         raise RuntimeObservabilityContractError(
             "ledger must be a RuntimeObservabilityLedger"
         )
-    has_unavailable_telemetry = ledger.events[0].monotonic_offset_ns is None or any(
-        metric.name.startswith("artifact_")
-        and metric.availability is not RuntimeMetricAvailability.MEASURED
-        for metric in ledger.metrics
-    )
     payload = {
         "events": [
             {
@@ -419,11 +414,7 @@ def canonical_runtime_observability_ledger_bytes(
         ],
         "processing_attempt_id": ledger.attempt.processing_attempt_id,
         "processing_request_id": ledger.attempt.processing_request_id,
-        "schema_version": (
-            "execution_runtime_observability_ledger_v2"
-            if has_unavailable_telemetry
-            else "execution_runtime_observability_ledger_v1"
-        ),
+        "schema_version": "execution_runtime_observability_ledger",
         "work_unit_keys": list(ledger.work_unit_keys),
     }
     return json.dumps(

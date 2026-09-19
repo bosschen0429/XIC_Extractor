@@ -10,7 +10,7 @@ from xic_extractor.alignment.shared_peak_identity_explanation.schema import (
     ORACLE_COLUMNS,
 )
 
-ORACLE = Path("docs/superpowers/fixtures/shared_peak_identity_manual_oracle_v1.tsv")
+ORACLE = Path("docs/superpowers/fixtures/shared_peak_identity_manual_oracle.tsv")
 CURRENT_8RAW_SAMPLES = {
     "BenignfatBC1055_DNA",
     "BenignfatBC1151_DNA",
@@ -30,7 +30,7 @@ def test_manual_oracle_fixture_schema_and_seed_scope() -> None:
 
     assert tuple(reader.fieldnames or ()) == ORACLE_COLUMNS
     assert {row["oracle_schema_version"] for row in rows} == {
-        "shared_peak_identity_manual_oracle_v1"
+        "shared_peak_identity_manual_oracle"
     }
     assert len({row["oracle_row_id"] for row in rows}) == len(rows)
     assert all(

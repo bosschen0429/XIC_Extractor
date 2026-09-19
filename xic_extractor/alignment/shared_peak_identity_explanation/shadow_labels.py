@@ -6,7 +6,7 @@ from collections.abc import Mapping, Sequence
 from .schema import (
     SHADOW_ALIGNMENT_SUMMARY_SCHEMA_VERSION,
     SHADOW_LABEL_SCHEMA_VERSION,
-    V2_READINESS_SCHEMA_VERSION,
+    SHADOW_READINESS_SCHEMA_VERSION,
     validate_row_tokens,
 )
 
@@ -43,7 +43,7 @@ def build_shadow_alignment_summary(
     )
 
 
-def build_v2_readiness(
+def build_shadow_readiness(
     *,
     run_facts: Mapping[str, str],
     shadow_rows: Sequence[Mapping[str, str]],
@@ -71,7 +71,7 @@ def build_v2_readiness(
         aligned_or_partial / decision_denominator if decision_denominator else 0.0
     )
     machine_evidence = _machine_evidence_readiness(machine_evidence_support_rows)
-    gate_status = _v2_gate_status(
+    gate_status = _shadow_gate_status(
         run_facts=run_facts,
         contradicted=contradicted,
         alignment_fraction=alignment_fraction,
@@ -84,9 +84,9 @@ def build_v2_readiness(
     )
     machine_ready = "TRUE" if gate_status == "shadow_ready_candidate" else "FALSE"
     row = {
-        "v2_readiness_schema_version": V2_READINESS_SCHEMA_VERSION,
-        "v2_mode": "shadow_label_alignment",
-        "v2_gate_status": gate_status,
+        "shadow_readiness_schema_version": SHADOW_READINESS_SCHEMA_VERSION,
+        "shadow_mode": "shadow_label_alignment",
+        "shadow_gate_status": gate_status,
         "readiness_label": "diagnostic_only",
         "seed_rows_total": str(seed_rows_total),
         "shadow_rows_total": str(len(shadow_rows)),
@@ -318,13 +318,13 @@ def _summary_next_action(status_counts: Counter[str]) -> str:
     if status_counts["contradicted"]:
         return "inspect_ms2_pattern"
     if status_counts["unresolved"]:
-        return "flag_for_v2_gate_review"
+        return "flag_for_shadow_gate_review"
     if status_counts["partial"]:
         return "add_shape_metric"
     return "no_action"
 
 
-def _v2_gate_status(
+def _shadow_gate_status(
     *,
     run_facts: Mapping[str, str],
     contradicted: int,
@@ -361,7 +361,7 @@ def _clear_answer(
 ) -> str:
     if gate_status == "shadow_ready_candidate":
         return (
-            "V2 completed as shadow_ready_candidate: seed shadow labels align with "
+            "Shadow completed as shadow_ready_candidate: seed shadow labels align with "
             "manual semantics and current blast-radius facts are low risk; this is "
             "still diagnostic_only and not production promotion."
         )
@@ -377,7 +377,7 @@ def _clear_answer(
     if machine_evidence.get("machine_evidence_basis") != "machine_observed_sufficient":
         blockers.append("machine_evidence_not_sufficient")
     return (
-        "V2 completed as exploratory_only: shadow labels can organize the manual "
+        "Shadow completed as exploratory_only: shadow labels can organize the manual "
         "seed semantics, but the machine-only evidence chain is not ready for "
         "autonomous pass/fail. Blockers: "
         + ";".join(blockers or ["generalization_not_established"])
@@ -389,7 +389,7 @@ def _next_action(gate_status: str, machine_evidence: Mapping[str, str]) -> str:
     if gate_status == "shadow_ready_candidate":
         return "plan_machine_label_shadow_validation"
     if gate_status == "blocked_by_vocabulary":
-        return "revise_vocabulary_or_oracle_before_v2"
+        return "revise_vocabulary_or_oracle_before"
     if gate_status == "blocked_by_overfit_risk":
         return "revise_vocabulary_or_expand_evidence_chain"
     blockers = set(machine_evidence.get("machine_evidence_blockers", "").split(";"))
@@ -397,14 +397,14 @@ def _next_action(gate_status: str, machine_evidence: Mapping[str, str]) -> str:
         "formal_pattern_metric" in blockers
         or "candidate_aligned_ms2_pattern" in blockers
     ):
-        return "add_ms1_or_ms2_pattern_metric_then_rerun_v2"
+        return "add_ms1_or_ms2_pattern_metric_then_rerun"
     if "matrix_rt_drift_policy" in blockers:
-        return "add_matrix_rt_drift_policy_then_rerun_v2"
+        return "add_matrix_rt_drift_policy_then_rerun"
     if "dda_opportunity_policy" in blockers:
-        return "add_dda_opportunity_policy_then_rerun_v2"
+        return "add_dda_opportunity_policy_then_rerun"
     if "shape_metric_not_supportive" in blockers:
         return "calibrate_cwt_shape_metric_against_manual_rows"
-    return "add_shape_pattern_opportunity_metrics_then_rerun_v2"
+    return "add_shape_pattern_opportunity_metrics_then_rerun"
 
 
 def _machine_evidence_readiness(

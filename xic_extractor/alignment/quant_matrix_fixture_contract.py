@@ -24,7 +24,7 @@ from xic_extractor.tabular_io import (
     write_tsv,
 )
 
-FIXTURE_CONTRACT_SCHEMA = "quant_matrix_fixture_contract_v1"
+FIXTURE_CONTRACT_SCHEMA = "quant_matrix_fixture_contract"
 ROW_UNIVERSE_KEY_COLUMNS = (
     "peak_hypothesis_id",
     "sample_stem",
@@ -190,6 +190,7 @@ def _write_contract(
     summary_json.write_text(
         json.dumps(payload, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
+        newline="\n",
     )
 
 

@@ -90,7 +90,7 @@ def _rt_mode_row(
     mode_id: str,
 ) -> dict[str, str]:
     return {
-        "rt_mode_evidence_schema_version": "shared_peak_identity_rt_mode_evidence_v1",
+        "rt_mode_evidence_schema_version": "shared_peak_identity_rt_mode_evidence",
         "feature_family_id": family_id,
         "sample_stem": sample_stem,
         "rt_mode_status": "mode_supported",

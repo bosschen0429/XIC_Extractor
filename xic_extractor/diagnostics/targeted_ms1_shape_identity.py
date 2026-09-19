@@ -25,7 +25,7 @@ from xic_extractor.peak_detection.ms1_shape_identity import (
 )
 from xic_extractor.tabular_io import render_delimited_rows
 
-SCHEMA_VERSION = "targeted_ms1_shape_identity_v0"
+SCHEMA_VERSION = "targeted_ms1_shape_identity"
 VALIDATION_LABEL = "diagnostic_only"
 DECISION_AUTHORITY = "diagnostic_only_no_product_write"
 DEFAULT_MIN_OWN_MAX_SIMILARITY = 0.80
@@ -33,7 +33,7 @@ DEFAULT_STRONG_COMPETING_PEAK_RATIO = 0.65
 ARTIFACT_OWNER_NAMESPACE = "xic_extractor.diagnostics.targeted_ms1_shape_identity"
 ARTIFACT_SEMANTIC_ROLE = "targeted_ms1_shape_identity_evidence"
 ARTIFACT_MEDIA_TYPE = "text/tab-separated-values; charset=utf-8"
-ARTIFACT_SERIALIZATION_FORMAT = "targeted_ms1_shape_identity_tsv_v0"
+ARTIFACT_SERIALIZATION_FORMAT = "targeted_ms1_shape_identity_tsv"
 
 TARGETED_MS1_SHAPE_IDENTITY_COLUMNS = (
     "schema_version",

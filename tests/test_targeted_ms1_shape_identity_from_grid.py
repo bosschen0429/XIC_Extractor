@@ -55,7 +55,7 @@ def test_run_targeted_ms1_shape_identity_from_grid_writes_support_token(
 ) -> None:
     summary_tsv = tmp_path / "own_max_similarity_summary.tsv"
     trace_grid_tsv = tmp_path / "own_max_similarity_trace_grid.tsv"
-    output_tsv = tmp_path / "targeted_ms1_shape_identity_v0.tsv"
+    output_tsv = tmp_path / "targeted_ms1_shape_identity.tsv"
     rt = np.linspace(8.8, 9.4, 61)
     shape = np.exp(-0.5 * ((rt - 9.12) / 0.06) ** 2)
 
@@ -111,7 +111,7 @@ def test_run_targeted_ms1_shape_identity_from_grid_writes_support_token(
 
     rows = _read_tsv(outputs.evidence_tsv)
     assert len(rows) == 1
-    assert rows[0]["schema_version"] == "targeted_ms1_shape_identity_v0"
+    assert rows[0]["schema_version"] == "targeted_ms1_shape_identity"
     assert rows[0]["validation_label"] == "diagnostic_only"
     assert rows[0]["decision_authority"] == "diagnostic_only_no_product_write"
     assert rows[0]["own_max_same_peak_status"] == "own_max_same_peak_supported"

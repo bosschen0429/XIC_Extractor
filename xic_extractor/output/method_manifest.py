@@ -22,9 +22,9 @@ from xic_extractor.output.schema import (
     TARGETED_SCORE_BREAKDOWN_CSV_SCHEMA_VERSION,
 )
 
-METHOD_MANIFEST_SCHEMA_VERSION = "method_manifest_v1"
+METHOD_MANIFEST_SCHEMA_VERSION = "method_manifest"
 METHOD_MANIFEST_FILENAME = "method_manifest.json"
-ARTIFACT_REPLAY_POLICY_SCHEMA_VERSION = "artifact_replay_policy_v1"
+ARTIFACT_REPLAY_POLICY_SCHEMA_VERSION = "artifact_replay_policy"
 WORKBOOK_NORMALIZED_METADATA_KEYS: tuple[str, ...] = (
     "elapsed",
     "elapsed_seconds",

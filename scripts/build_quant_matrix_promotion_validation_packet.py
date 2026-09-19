@@ -36,17 +36,17 @@ from xic_extractor.tabular_io import write_tsv
 ROOT = Path(__file__).resolve().parents[1]
 
 DEFAULT_OUTPUT_DIR = Path(
-    "docs/superpowers/validation/quant_matrix_promotion_validation_packet_v1",
+    "docs/superpowers/validation/quant_matrix_evidence_packet",
 )
 DEFAULT_LARGE_COHORT_ARTIFACT = Path(
-    "docs/superpowers/validation/quant_matrix_real_bundle_v1/"
+    "docs/superpowers/validation/quant_matrix_real_bundle/"
     "source_artifacts/cohort_activation_summary.json",
 )
 DEFAULT_HELDOUT_ORACLE_ARTIFACT = Path(
-    "docs/superpowers/validation/quant_matrix_real_bundle_v1/"
+    "docs/superpowers/validation/quant_matrix_real_bundle/"
     "source_artifacts/heldout_oracle_summary.json",
 )
-DEFAULT_PACKET_ID = "quant-matrix-promotion-validation-packet-v1"
+DEFAULT_PACKET_ID = "quant-matrix-evidence-packet"
 DEFAULT_COHORT_ID = "seed-guard-realdata-full_cohort-consolidated-20260617"
 DEFAULT_ORACLE_PACKET_ID = (
     "seed-guard-realdata-full_cohort-low-height-low-scan-clean-smoke-20260617"
@@ -57,7 +57,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = _parse_args(argv)
     if args.check_only:
         evidence_json = args.validation_evidence_json or (
-            args.output_dir / "quant_matrix_validation_evidence_v1.json"
+            args.output_dir / "quant_matrix_validation_evidence.json"
         )
         problems = validate_quant_matrix_validation_evidence_packet(
             evidence_json,
@@ -227,7 +227,7 @@ def _write_contract_ready_inputs(
         expected_diff_summary,
         [
             {
-                "schema_version": "quant_matrix_version_expected_diff_summary_v1",
+                "schema_version": "quant_matrix_version_expected_diff_summary",
                 "acceptance_status": "pass",
                 "expected_diff_count": "1",
                 "written_backfill_count": "1",
@@ -243,7 +243,7 @@ def _write_contract_ready_inputs(
         cell_provenance,
         [
             {
-                "schema_version": "quant_matrix_cell_provenance_v1",
+                "schema_version": "quant_matrix_cell_provenance",
                 "peak_hypothesis_id": "PH001",
                 "sample_stem": "SampleA",
                 "source_feature_family_ids": "FAM001",
@@ -262,7 +262,7 @@ def _write_contract_ready_inputs(
                 "manifest_sha256": "not_applicable",
             },
             {
-                "schema_version": "quant_matrix_cell_provenance_v1",
+                "schema_version": "quant_matrix_cell_provenance",
                 "peak_hypothesis_id": "PH001",
                 "sample_stem": "SampleB",
                 "source_feature_family_ids": "FAM001",
@@ -289,7 +289,7 @@ def _write_contract_ready_inputs(
         row_summary,
         [
             {
-                "schema_version": "quant_matrix_row_summary_v1",
+                "schema_version": "quant_matrix_row_summary",
                 "peak_hypothesis_id": "PH001",
                 "source_feature_family_ids": "FAM001",
                 "detected_count": "1",
@@ -318,6 +318,7 @@ def _write_contract_ready_inputs(
         )
         + "\n",
         encoding="utf-8",
+        newline="\n",
     )
 
 

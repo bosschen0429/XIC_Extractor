@@ -41,7 +41,7 @@ sample scope, and run/eligible/matched/selected counts. Invalid requests,
 unavailable or invalid sources, unsafe output paths, output failures, and
 cancellation remain distinguishable errors.
 
-The default sample uses `cross_sample_sha256_v2`, limit 30 and seed 0. It cycles
+The default sample uses `cross_sample_sha256`, limit 30 and seed 0. It cycles
 through represented group cases: broad coverage (all or all but one scoped
 sample, with at least two observed samples), other cross-sample coverage, and
 limited coverage. Recorded Backfill, reacquisition, discovery support, and

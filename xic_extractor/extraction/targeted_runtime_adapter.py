@@ -67,14 +67,14 @@ class TargetedRuntimeAdapterError(ValueError):
     """Raised when a Targeted process result cannot settle its runtime work."""
 
 
-_SCHEMA_VERSION = "targeted_process_result_identity_v1"
+_SCHEMA_VERSION = "targeted_process_result_identity"
 _ARTIFACT_SEMANTIC_CONTRACT = _mint_artifact_semantic_contract_ref(
     owner_namespace="xic_extractor.extraction.targeted_runtime_adapter",
     semantic_role="targeted_process_worker_result_identity",
     schema_version=_SCHEMA_VERSION,
     validation_status="diagnostic_only",
     media_type="application/vnd.xic.targeted-process-result-identity+json",
-    serialization_format="canonical-json-v1",
+    serialization_format="canonical-json",
 )
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 

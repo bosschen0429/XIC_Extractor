@@ -45,16 +45,16 @@ lifecycle for each provider.
   not prove chemical identity or replace cross-sample support and Backfill
   eligibility.
 - Discovery retains provisional qualification when it reuses a physical result.
-  Candidate CSV v2 carries the final `is_provisional` decision through Alignment
+  Candidate CSV carries the final `is_provisional` decision through Alignment
   replay, including merged candidates. Legacy CSVs without provisional evidence
   remain readable; legacy rows marked provisional without the decision field
   are rejected because their final qualification cannot be recovered exactly.
 - Blank qualification uses the selected explicit, sample-local, or packaged
-  background library. ProcessingRunSpec v2 binds each input to that library's
+  background library. ProcessingRunSpec binds each input to that library's
   content digest, and execution consumes the bound immutable snapshot. Reading
-  a saved v2 run for execution verifies the selected library against that digest.
-  Historical v1 run specs remain readable with their original bytes and identity;
-  an enabled v1 run without a library binding must be recompiled before execution.
+  a saved run for execution verifies the selected library against that digest.
+  Historical run specs remain readable with their original bytes and identity;
+  an enabled run without a library binding must be recompiled before execution.
   The CLI's explicit `--no-blank-qualification` takes precedence over `--blank-dir`.
   When qualification is enabled, an explicit blank directory is extracted anew;
   matching filenames alone do not establish reusable blank content.
@@ -121,7 +121,7 @@ lifecycle for each provider.
   `discovery_review.csv`. There is no compatibility adapter for those columns;
   downstream consumers must read the current column constants or tolerate the
   missing legacy fields.
-- Batch discovery handoff uses `discovery_batch_index_v2`. For every sample,
+- Batch discovery handoff uses `discovery_batch_index`. For every sample,
   the Discovery owner binds the exact candidate CSV SHA-256/byte size, complete
   path-independent candidate payload/count, and content-bound acquisition
   source into one `DiscoveryCandidateUniverseReceipt`. A downstream real-data replay
@@ -130,7 +130,7 @@ lifecycle for each provider.
   identity. The current producer writes candidate/review locators relative to
   the batch index so a complete Discovery directory remains readable after a
   rename or copy. The external RAW locator is not rewritten. Owner-closed
-  execution requires the v2 handoff and rejects legacy batch indexes. Do not
+  execution requires the handoff and rejects legacy batch indexes. Do not
   depend on old worktree-local output directories as durable inputs.
 - Minimal output modes are for fast inspection; standard outputs are the public
   machine handoff surfaces.
@@ -221,7 +221,7 @@ confirmation: those four m/z positions, viewed as XIC traces or trace-like
 featurelets, have close RT/apex behavior and compatible peak shape. A
 scan-level hit by itself is a seed, not a complete Pt pattern detection. When
 both layers support the same row, the result is a stronger diagnostic
-hypothesis, not a final detector call. The current v1 matcher greedily retains
+hypothesis, not a final detector call. The current matcher greedily retains
 one compatible non-base feature per position for each base anchor. Its emitted
 rows therefore represent one serialized assignment per base, not enumeration
 of all compatible assignments; alternatives pruned during matching cannot be
@@ -274,7 +274,7 @@ available as a standalone preparation step.
 authority. Pt + CID-NL composite matching may compare `feature_id` or
 `source_feature_row_id` directly with CID-NL `ms1_feature_row_id` only when the
 detected feature declares the exact shared-namespace capability
-`source = cid_nl_ms1_feature_handoff_v1`. Local-MS1, MZmine, OpenMS, scan-proxy,
+`source = cid_nl_ms1_feature_handoff`. Local-MS1, MZmine, OpenMS, scan-proxy,
 and unknown source IDs remain detector-local even when their strings happen to
 match; they may participate only through the bounded same-sample m/z/RT
 fallback. A declared shared-namespace mismatch must not fall back.
@@ -337,14 +337,14 @@ state returns `uncertain` rather than becoming a threshold reject or final
 detector decision.
 
 Current Pt trace/review artifacts are sealed as a lineage chain. Full-context
-trace summary/metrics/points use `pt_pattern_trace_diagnosis.v4`; anchor-local
-trace artifacts use `pt_pattern_anchor_local_trace_diagnosis.v3`. Every row
+trace summary/metrics/points use `pt_pattern_trace_diagnosis`; anchor-local
+trace artifacts use `pt_pattern_anchor_local_trace_diagnosis`. Every row
 carries a candidate-assignment SHA-256, a shared extraction SHA-256, and an
 exact `full_context` or `anchor_local` role. The trace manifest binds those
 identities to the candidate CSV, RAW hash, candidate slice, extraction
 settings, decision/smoothing contracts, and every emitted trace artifact.
-Current review packets use full v4 or anchor-local v5; blind-overlay summaries
-and sealed machine rows use full v4 or anchor-local v5. Current consumers fail
+Current review packets use full or anchor-local v5; blind-overlay summaries
+and sealed machine rows use full or anchor-local. Current consumers fail
 closed on blank/historical schemas, missing manifests, stale fingerprints,
 artifact swaps, role/schema conflicts, or full/anchor mixtures across files.
 
@@ -522,7 +522,7 @@ or Matrix changes.
 | `xic_extractor/discovery/pt_pattern_blind_overlay.py` | Blind Pt MS1/XIC overlay review surface; visual traces and sealed machine calls share the Gaussian15 trace-decision basis, and sealed calls are not oracle authority |
 | `xic_extractor/discovery/pt_pattern_oracle_promotion.py` | Historical-named bounded adjudication-packet builder; exact packet/gallery/sealed-call provenance is required, and the result remains `diagnostic_only` rather than ground truth, detector, or Matrix authority |
 | `xic_extractor/discovery/pt_pattern_review_bundle.py` | Canonical sealed loaders for trace manifests, review-packet collections, blind-overlay bundles, and machine-call identity/role checks |
-| `xic_extractor/discovery/pt_pattern_oracle_replay_contract.py` | Shared fail-closed replay binding from promotion-v2 rows to current manifest-verified review packets before threshold calibration or reviewed-label replay |
+| `xic_extractor/discovery/pt_pattern_oracle_replay_contract.py` | Shared fail-closed replay binding from promotion rows to current manifest-verified review packets before threshold calibration or reviewed-label replay |
 | `xic_extractor/discovery/pt_pattern_oracle_thresholds.py` | Diagnostic-only threshold calibration against an exact-SHA-bound reviewed-label packet using the reusable Pt evidence rule; resubstitution fit is not detector accuracy or activation |
 | `xic_extractor/discovery/pt_pattern_diagnostic_gate.py` | Diagnostic-only replay wrapper for the reusable Pt evidence rule against manifest-verified review packets or full trace bundles; optional reviewed-label replay requires exact packet provenance and is not detector validation or activation |
 | `xic_extractor/discovery/pt_pattern_ddms2_support_replay.py` | Diagnostic-only Fullscan-seeded DDMS2 support replay; not a DDMS2 global discovery denominator and not detector activation |
@@ -535,8 +535,8 @@ or Matrix changes.
 | `discovery_batch_index.csv` | Batch handoff index for downstream alignment |
 
 Pt pattern Discovery additionally writes `pt_pattern_evidence.csv`
-(`pt_pattern_discovery_evidence.v2`) and `pt_pattern_sidecar.json`
-(`pt_pattern_sidecar.v3`). `pt_pattern_evidence.csv` separates feature-level
+(`pt_pattern_discovery_evidence`) and `pt_pattern_sidecar.json`
+(`pt_pattern_sidecar`). `pt_pattern_evidence.csv` separates feature-level
 full-pattern seed status from trace-level evidence. If no trace summary is
 provided, trace rule fields are `not_evaluated`; if a trace summary is provided,
 the shared Pt rule writes diagnostic `accept`/`reject` and legacy

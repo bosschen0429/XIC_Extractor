@@ -147,7 +147,7 @@ def test_external_ms1_shape_identity_support_can_unlock_area_ratio_projection(
     assert "paired_area_ratio_support" in after.support_reasons
     assert OWN_MAX_SAME_PEAK_SUPPORT_REASON in after.support_reasons
     assert "analyte_nl_fail_requires_policy" not in after.not_counted_reasons
-    assert "targeted_ms1_shape_identity_v0" in decision.evidence_sources
+    assert "targeted_ms1_shape_identity" in decision.evidence_sources
 
 
 def test_direct_ms1_shape_identity_support_requires_matching_sample() -> None:

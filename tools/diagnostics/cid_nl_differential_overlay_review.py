@@ -18,20 +18,20 @@ from xic_extractor.tabular_io import read_tsv_required, text_value, write_tsv
 from xic_extractor.xic_models import XICTrace
 
 DEFAULT_DIFFERENTIAL_REVIEW_TSV = Path(
-    "output/validation/cid_nl_default_activation_gallery_review_v1/"
+    "output/validation/cid_nl_default_activation_gallery_review/"
     "cid_nl_discovery_identity_differential_review.tsv",
 )
 DEFAULT_DECISIONS_TSV = Path(
-    "output/validation/cid_nl_default_activation_successor_authority_contract_v1/"
+    "output/validation/cid_nl_default_activation_successor_authority_contract/"
     "successor_authority_decisions.tsv",
 )
 DEFAULT_OUTPUT_DIR = Path(
-    "output/validation/cid_nl_default_activation_gallery_review_v1/"
+    "output/validation/cid_nl_default_activation_gallery_review/"
     "differential_overlays",
 )
 RAW_ROOT = Path("C:/Xcalibur/data/20260106_CSMU_NAA_Tissue_R")
 DLL_DIR = Path("C:/Xcalibur/system/programs")
-SCHEMA_VERSION = "cid_nl_differential_overlay_review_v1"
+SCHEMA_VERSION = "cid_nl_differential_overlay_review"
 PPM = 10.0
 RT_HALF_WINDOW_MIN = 1.5
 

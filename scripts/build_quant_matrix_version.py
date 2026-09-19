@@ -1,4 +1,4 @@
-"""Build QuantMatrixVersion v1 from a ProductionAcceptanceManifest.
+"""Build QuantMatrixVersion from a ProductionAcceptanceManifest.
 
 This QuantMatrixVersion activation renderer writes explicit activation artifacts
 only. It does not run RAW, recompute evidence, change ProductWriter defaults,
@@ -129,7 +129,7 @@ def run_activation(
         source_summary_tsv,
         [
             {
-                "schema_version": "quant_matrix_version_source_summary_v1",
+                "schema_version": "quant_matrix_version_source_summary",
                 "input_quant_matrix_tsv": str(input_quant_matrix_tsv),
                 "input_quant_matrix_sha256": matrix_sha256,
                 "input_matrix_identity_tsv": str(input_matrix_identity_tsv),

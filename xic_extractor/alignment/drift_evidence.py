@@ -61,7 +61,7 @@ class KnownIstdReference:
     def content_sha256(self) -> str:
         """Identify declared targets and measured coordinates, not source bytes."""
         payload = {
-            "schema_version": "known_istd_reference_content_v1",
+            "schema_version": "known_istd_reference_content",
             "target_snapshot_id": self.anchor.target_snapshot.snapshot_id,
             "observed_labels": self.anchor.observed_labels,
             "coordinates": tuple(
@@ -82,7 +82,7 @@ class KnownIstdReference:
             "workbook_sha256": self.workbook_sha256,
             "content_sha256": self.content_sha256,
             "target_snapshot_id": self.anchor.target_snapshot.snapshot_id,
-            "policy": "known_istd_batch_monotone_rt_map_same_target_fallback_v2",
+            "policy": "known_istd_batch_monotone_rt_map_same_target_fallback",
         }
 
     @property
@@ -95,7 +95,7 @@ class KnownIstdReference:
         samples, orders = prepared._batch_context
         knots_by_sample = prepared._knots_by_sample
         result["calibration"] = {
-            "schema_version": "known_istd_calibration_v1",
+            "schema_version": "known_istd_calibration",
             "rt_unit": "minute",
             "interpolation": "piecewise_linear",
             "extrapolation": "unavailable",
@@ -423,7 +423,7 @@ def mint_known_istd_reference_from_measurements(
         raise ValueError("known ISTD reference requires unique ISTD target labels")
 
     snapshot = mint_target_list_snapshot(
-        istd_targets, identity_namespace="known-istd-reference-v1"
+        istd_targets, identity_namespace="known-istd-reference"
     )
     labels = {t.label for t in istd_targets}
 

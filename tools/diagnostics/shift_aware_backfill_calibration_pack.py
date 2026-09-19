@@ -19,7 +19,7 @@ from xic_extractor.diagnostics.diagnostic_io import (
     write_tsv,
 )
 
-SCHEMA_VERSION = "shift_aware_backfill_calibration_pack_v0"
+SCHEMA_VERSION = "shift_aware_backfill_calibration_pack"
 DEFAULT_STANDARD_PEAK_MIN_SHAPE_R = 0.95
 
 PACK_COLUMNS = (

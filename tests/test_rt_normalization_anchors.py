@@ -843,7 +843,7 @@ def _write_sample_metadata(
         for row in rows:
             payload = {key: "" for key in fieldnames}
             payload.update(row)
-            payload["schema_version"] = "sample_metadata_v1"
+            payload["schema_version"] = "sample_metadata"
             payload.setdefault("excluded", "FALSE")
             writer.writerow(payload)
 

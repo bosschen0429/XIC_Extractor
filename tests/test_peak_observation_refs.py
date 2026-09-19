@@ -820,9 +820,9 @@ def _identity_fixture(
                 injection_order=1,
             ),
         ),
-        scientific_input_schema_version="peak-observation-input-v1",
-        processing_algorithm_version="peak-observation-algorithm-v1",
-        processing_contract_version="peak-observation-contract-v1",
+        scientific_input_schema_version="peak-observation-input",
+        processing_algorithm_version="peak-observation-algorithm",
+        processing_contract_version="peak-observation-contract",
         scientific_inputs={"fixture": "synthetic-no-raw-peak-observation"},
     )
     snapshot = mint_sample_metadata_snapshot(

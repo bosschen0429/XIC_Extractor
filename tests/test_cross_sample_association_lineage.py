@@ -475,7 +475,7 @@ def _fixture(tmp_path: Path, *, sample_stems: tuple[str, ...]) -> _Fixture:
         assert member is not None
         basis = canonical_identity_basis_bytes(
             {
-                "schema_version": "group_member_subject_v1",
+                "schema_version": "group_member_subject",
                 "processing_request_id": request_id,
                 "canonical_sample_identity_id": sample.identity.sample_identity_id,
                 "subject": {
@@ -487,7 +487,7 @@ def _fixture(tmp_path: Path, *, sample_stems: tuple[str, ...]) -> _Fixture:
         )
         fixture.members[sample_stem] = CrossSampleGroupMemberSubject(
             member_subject_id=typed_identity_digest(
-                "xic.group-member-subject.v1:", basis
+                "xic.group-member-subject:", basis
             ),
             processing_request_id=request_id,
             canonical_sample_identity_id=sample.identity.sample_identity_id,
@@ -660,8 +660,8 @@ def _final_receipt(
             )
         },
         evidence_profile=ModeTrackEvidenceProfile(
-            "anchor-trajectory-v1",
-            "fixed-band-v1",
+            "anchor-trajectory",
+            "fixed-band",
             0.1,
             10,
             10,

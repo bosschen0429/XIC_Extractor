@@ -21,9 +21,9 @@ from xic_extractor.tabular_io import (
     write_tsv,
 )
 
-SCHEMA_VERSION = "cid_nl_activation_copy_candidate_v1"
+SCHEMA_VERSION = "cid_nl_activation_copy_candidate"
 DEFAULT_REVIEW_DIR = Path(
-    "output/validation/cid_nl_default_activation_gallery_review_v1",
+    "output/validation/cid_nl_default_activation_gallery_review",
 )
 DEFAULT_GATE_DIR = DEFAULT_REVIEW_DIR / "feature_inclusion_gate"
 DEFAULT_EXPECTED_DIFF_CONTRACTS = (

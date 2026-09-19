@@ -52,11 +52,11 @@ from xic_extractor.processing_identity import (
 )
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 
-POLICY_VERSION = "conservative-backfill-v1"
+POLICY_VERSION = "conservative-backfill"
 VALIDATION_STATUS = "shadow_ready"
 PRODUCT_AUTHORITY = "none"
 RECOVERY_UNIVERSE_SCHEMA_VERSION = (
-    "conservative_backfill_recovery_candidate_universe_v3"
+    "conservative_backfill_recovery_candidate_universe"
 )
 RECOVERY_UNIVERSE_ARTIFACT_SEMANTIC_ROLE = (
     "conservative_backfill_recovery_candidate_universe"
@@ -68,7 +68,7 @@ _RECOVERY_UNIVERSE_ARTIFACT_SEMANTIC_CONTRACT = (
         schema_version=RECOVERY_UNIVERSE_SCHEMA_VERSION,
         validation_status=VALIDATION_STATUS,
         media_type="application/json",
-        serialization_format="canonical-json-utf8-lf-v1",
+        serialization_format="canonical-json-utf8-lf",
     )
 )
 _CELL_DECISION_MINT_TOKEN = object()

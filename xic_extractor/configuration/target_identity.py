@@ -13,10 +13,10 @@ from xic_extractor.configuration.targets import (
     _validate_target_relationships,
 )
 
-TARGET_LIST_SCHEMA_VERSION = "target_list_snapshot_v1"
-_TARGET_KEY_PREFIX = "xic.target-key.v1:"
-_TARGET_DEFINITION_PREFIX = "xic.target-definition.v1:"
-_TARGET_LIST_SNAPSHOT_PREFIX = "xic.target-list-snapshot.v1:"
+TARGET_LIST_SCHEMA_VERSION = "target_list_snapshot"
+_TARGET_KEY_PREFIX = "xic.target-key:"
+_TARGET_DEFINITION_PREFIX = "xic.target-definition:"
+_TARGET_LIST_SNAPSHOT_PREFIX = "xic.target-list-snapshot:"
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
@@ -41,7 +41,7 @@ class TargetKey:
         expected_id = _typed_digest(
             _TARGET_KEY_PREFIX,
             {
-                "schema": "target_key_identity_v1",
+                "schema": "target_key_identity",
                 "identity_namespace": namespace,
                 "target_label": label,
             },
@@ -159,7 +159,7 @@ def mint_target_key(
         target_key_id=_typed_digest(
             _TARGET_KEY_PREFIX,
             {
-                "schema": "target_key_identity_v1",
+                "schema": "target_key_identity",
                 "identity_namespace": namespace,
                 "target_label": label,
             },
@@ -382,7 +382,7 @@ def _target_definition_basis(
     target: Target,
 ) -> dict[str, object]:
     return {
-        "schema": "target_definition_identity_v1",
+        "schema": "target_definition_identity",
         "target_key_id": target_key.target_key_id,
         "target": asdict(target),
     }

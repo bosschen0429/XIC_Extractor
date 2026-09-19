@@ -240,7 +240,7 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         default=None,
         help=(
             "Override settings.csv targeted_ms1_shape_identity_support_tsv with a "
-            "reviewed targeted_ms1_shape_identity_v0 support TSV."
+            "reviewed targeted_ms1_shape_identity support TSV."
         ),
     )
     parser.add_argument(
@@ -249,7 +249,7 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         default=None,
         help=(
             "Override settings.csv targeted_ms1_shape_identity_activation_policy. "
-            "Use limited_5hmdc_5medc_v1 to restrict support TSV activation to "
+            "Use limited_5hmdc_5medc to restrict support TSV activation to "
             "5-hmdC and 5-medC."
         ),
     )
@@ -259,8 +259,8 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         help=(
             "Run the bounded automatic NL_FAIL/NO_MS2 rescue workflow. This "
             "creates baseline/support/final artifacts, builds a RAW-backed "
-            "targeted_ms1_shape_identity_v0 support TSV for 5-hmdC and 5-medC, "
-            "and applies it with the limited_5hmdc_5medc_v1 policy."
+            "targeted_ms1_shape_identity support TSV for 5-hmdC and 5-medC, "
+            "and applies it with the limited_5hmdc_5medc policy."
         ),
     )
     parser.add_argument(
@@ -404,7 +404,7 @@ def _run_targeted_ms1_shape_identity_auto_limited_default(
             output_projection="acquisition_baseline",
         )
     ).active_output
-    support_tsv = support_dir / "targeted_ms1_shape_identity_v0.tsv"
+    support_tsv = support_dir / "targeted_ms1_shape_identity.tsv"
     support_outputs = run_build_targeted_ms1_shape_identity_supports(
         long_csv=baseline_config.output_csv.with_name("xic_results_long.csv"),
         raw_dir=baseline_config.data_dir,

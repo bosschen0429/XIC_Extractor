@@ -75,7 +75,7 @@ def validate_review_event(
 ) -> None:
     """Validate one blinded review event and its immutable local binding."""
 
-    _require_schema_version(row, "cid_nl_oracle_review_event_v1")
+    _require_schema_version(row, "cid_nl_oracle_review_event")
     _require_fields(row, _REVIEW_REQUIRED_FIELDS)
     validate_canonical_row_hash(row)
     phase = _required_text(row, "review_phase")
@@ -432,7 +432,7 @@ def validate_review_event_set(
 def validate_adjudication_event(row: Mapping[str, Any]) -> None:
     """Validate one append-only pre- or post-reveal adjudication event."""
 
-    _require_schema_version(row, "cid_nl_oracle_adjudication_event_v1")
+    _require_schema_version(row, "cid_nl_oracle_adjudication_event")
     _require_fields(row, _ADJUDICATION_REQUIRED_FIELDS)
     validate_canonical_row_hash(row)
     machine_visible = _boolean(row, "machine_mapping_visible")
@@ -488,7 +488,7 @@ def validate_adjudication_event_set(
     for review_row in review_rows:
         _require_schema_version(
             review_row,
-            "cid_nl_oracle_review_event_v1",
+            "cid_nl_oracle_review_event",
         )
         _require_fields(review_row, _REVIEW_REQUIRED_FIELDS)
         validate_canonical_row_hash(review_row)

@@ -152,7 +152,7 @@ def test_owner_backfill_process_builds_pickleable_sample_jobs_and_orders_output(
     }
     assert {job.owner_backfill_superwindow_span_factor for job in captured_jobs} == {2}
     assert {job.request_plan_id for job in captured_jobs} == {
-        "alignment-parity-scoped-owner-backfill-request-plan-v1"
+        "alignment-parity-scoped-owner-backfill-request-plan"
     }
     assert {job.backfill_scope for job in captured_jobs} == {"production-equivalent"}
     assert [job.feature_payload_count for job in captured_jobs] == [1, 2]

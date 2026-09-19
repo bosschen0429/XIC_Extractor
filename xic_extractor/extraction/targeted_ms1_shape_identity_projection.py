@@ -35,7 +35,7 @@ if TYPE_CHECKING:
     )
 
 REQUIRED_COLUMNS = TARGETED_MS1_SHAPE_IDENTITY_COLUMNS
-EVIDENCE_SOURCE = "targeted_ms1_shape_identity_v0"
+EVIDENCE_SOURCE = "targeted_ms1_shape_identity"
 OWN_MAX_EVIDENCE_SOURCE = "own_max_same_peak"
 
 

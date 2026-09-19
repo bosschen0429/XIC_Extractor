@@ -31,7 +31,7 @@ def _canonical_settings() -> dict[str, str]:
         "target_pair_rt_calibration_path": "",
         "model_selection_expected_diff_approval_registry": "",
         "targeted_ms1_shape_identity_support_tsv": "",
-        "targeted_ms1_shape_identity_activation_policy": "limited_5hmdc_5medc_v1",
+        "targeted_ms1_shape_identity_activation_policy": "limited_5hmdc_5medc",
         "emit_score_breakdown": "false",
         "emit_review_report": "false",
         "emit_peak_candidates": "false",

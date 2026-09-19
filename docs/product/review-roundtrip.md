@@ -11,13 +11,13 @@ approved product changes.
 - An immutable retained review conclusion is referenced through
   `xic_extractor.review_records`, an implementation surface of this owner.
   This first slice accepts only an owner-validated typed `ReviewAction` under
-  `review_action_v1`; arbitrary schema labels or JSON mappings cannot mint a
+  `review_action`; arbitrary schema labels or JSON mappings cannot mint a
   record. The owner computes canonical JSON SHA-256 content identity and
-  derives a typed `xic.review-record.v1:<sha256>` ID; callers cannot supply
+  derives a typed `xic.review-record:<sha256>` ID; callers cannot supply
   either ID or digest.
 - A review subject is owner-derived from one resolved canonical sample identity
   plus one owner-stable target key. Bare `sample_name` and `target_label` remain
-  fields in `review_action_v1`, but they must match those owner references and
+  fields in `review_action`, but they must match those owner references and
   cannot mint the subject by themselves.
 - A review-record identity separately binds its record schema version, full
   content digest, exact target-definition identity, exact processing-request
@@ -60,7 +60,7 @@ approved product changes.
 | Surface | Role |
 | --- | --- |
 | Review Queue | Worklist and triage surface |
-| `review_action_v1` | Typed action import schema |
+| `review_action` | Typed action import schema |
 | `ImmutableReviewRecordRef` | Owner-minted immutable sample/target/request/content/artifact/supersession reference for retained conclusions |
 | `ReviewRecordRegistrySnapshot` | Content-digested immutable owner snapshot used for current/superseded resolution |
 | `ResolvedReviewRecordRef` | Owner-validated current reference within an immutable registry snapshot |

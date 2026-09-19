@@ -27,7 +27,7 @@ from xic_extractor.peak_detection.ms1_morphology import (
 )
 from xic_extractor.tabular_io import write_delimited_rows
 
-SUMMARY_SCHEMA_VERSION = "local_ms1_feature_summary.v1"
+SUMMARY_SCHEMA_VERSION = "local_ms1_feature_summary"
 DIAGNOSTICS_COLUMNS = (
     "trace_id",
     "mz_apex",
@@ -460,7 +460,7 @@ def build_local_ms1_feature_table(
         sample_stem=sample_stem,
         extraction_backend="local_ms1_scan_index",
         ms1_scan_selection_rule="MSOrder == Ms",
-        generator_version="local_ms1_feature_generator.v1",
+        generator_version="local_ms1_feature_generator",
         trace_builder_mode=resolved.trace_builder_mode,
         parameters=asdict(resolved),
         parameter_hash=_parameter_hash(resolved),

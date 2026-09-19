@@ -24,7 +24,7 @@ from xic_extractor.diagnostics.diagnostic_io import (
     write_tsv,
 )
 
-SCHEMA_VERSION = "retained_backfill_evidence_gate_v0"
+SCHEMA_VERSION = "retained_backfill_evidence_gate"
 SUPPORT_OVERLAY_VERDICT = "ms1_shape_supports_family_backfill"
 MACHINE_SUPPORT_COMPONENT = "high_detected_anchor_low_rescue_machine_support"
 MACHINE_SUPPORT_DETECTED_MIN = 20
@@ -413,10 +413,6 @@ def _evaluate_group(
         seed_group_id=seed_group.seed_group_id,
     )
     overlay_verdict = text_value(selected_overlay.get("family_verdict"))
-    overlay_is_seed_specific = _is_seed_specific_overlay(
-        selected_overlay,
-        seed_group_id=seed_group.seed_group_id,
-    )
     support_components: list[str] = []
     dependent_context: list[str] = ["retained_product_backfill"]
     challenge_blockers: list[str] = []
@@ -438,15 +434,6 @@ def _evaluate_group(
             dependent_context.append("overlay_not_required_machine_supported")
         else:
             missing_evidence.append("missing_overlay_evidence")
-    elif not overlay_is_seed_specific:
-        dependent_context.append("legacy_family_overlay_context")
-        if overlay_verdict:
-            dependent_context.append(f"legacy_family_overlay:{overlay_verdict}")
-        if _has_machine_support_without_overlay(review, family_cells):
-            support_components.append(MACHINE_SUPPORT_COMPONENT)
-            dependent_context.append("seed_specific_overlay_not_required_machine_supported")
-        else:
-            missing_evidence.append("missing_seed_specific_overlay")
     elif overlay_verdict == SUPPORT_OVERLAY_VERDICT:
         support_components.append(SUPPORT_OVERLAY_VERDICT)
     elif overlay_verdict:
@@ -730,16 +717,8 @@ def _selected_overlay_row(
         rows,
         seed_group_id=seed_group_id,
         support_verdict=SUPPORT_OVERLAY_VERDICT,
-        allow_legacy_family_row=True,
     )
 
-
-def _is_seed_specific_overlay(
-    row: Mapping[str, str],
-    *,
-    seed_group_id: str,
-) -> bool:
-    return bool(row) and text_value(row.get("seed_group_id")) == seed_group_id
 
 
 def _group_by_family(
@@ -867,7 +846,6 @@ def _missing_overlay_queue_candidates(
         if row.evidence_gate_status == "evidence_missing"
         and (
             "missing_overlay_evidence" in row.missing_evidence
-            or "missing_seed_specific_overlay" in row.missing_evidence
         )
         and row.seed_group_basis == "seed_audit"
         and row.suggested_rt_min

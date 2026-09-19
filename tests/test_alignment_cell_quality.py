@@ -209,7 +209,7 @@ def test_owner_hard_negative_backfill_facts_hold_rescue_out_of_matrix(
             "rescued",
             100.0,
             region_local_mixture_diagnostic=(
-                "neighbor_interference_not_assessed;raw_trace_reread_v0_1"
+                "neighbor_interference_not_assessed;raw_trace_reread_1"
             ),
         ),
         lambda: _cell(

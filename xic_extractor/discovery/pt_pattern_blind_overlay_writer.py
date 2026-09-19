@@ -12,8 +12,6 @@ from xic_extractor.discovery.pt_pattern_artifact_contract import (
     PT_PATTERN_TRACE_FULL_CONTEXT_ROLE,
 )
 from xic_extractor.discovery.pt_pattern_blind_overlay_call import (
-    ANCHOR_LOCAL_SCHEMA_VERSION,
-    LEGACY_MACHINE_CALL_COLUMNS,
     MACHINE_CALL_COLUMNS,
     SMOOTH_METHOD,
     SMOOTH_WINDOW_POINTS,
@@ -228,12 +226,7 @@ def run_blind_overlay(
         encoding="utf-8",
     )
     machine_schema_version = str(machine_rows[0]["schema_version"])
-    machine_columns = (
-        MACHINE_CALL_COLUMNS
-        if machine_schema_version == ANCHOR_LOCAL_SCHEMA_VERSION
-        else LEGACY_MACHINE_CALL_COLUMNS
-    )
-    write_delimited_rows(machine_calls_csv, machine_rows, machine_columns)
+    write_delimited_rows(machine_calls_csv, machine_rows, MACHINE_CALL_COLUMNS)
 
     review_packet_sha256 = file_sha256(review_packet_csv)
     trace_points_sha256 = file_sha256(trace_points_csv)

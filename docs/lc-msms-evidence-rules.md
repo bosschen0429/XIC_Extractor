@@ -37,8 +37,8 @@ packet outside that activation chain is not matrix authority by itself.
 
 This document owns durable evidence semantics, not live maturity tier, active
 lane, or current writer counts. Read lane/readiness from
-`docs/superpowers/validation/productization_status_index_v1.tsv`, writer scope
-from `docs/superpowers/schemas/productization_authority_manifest.v1.json`, and
+`docs/superpowers/validation/productization_status_index.tsv`, writer scope
+from `docs/superpowers/schemas/productization_authority_manifest.json`, and
 promotion semantics from `docs/agent/product-validation-contract.md`.
 
 ## MS1 Morphology And Area Owner
@@ -67,9 +67,9 @@ processing, see [`product/signal-processing-rationale.md`](product/signal-proces
   in the universe. A still-clipped or unmatched alternative supplies no recovery.
   This bounded tolerance addresses near-zero bridges caused by context-sensitive
   baseline estimation; it does not infer an unobserved outer boundary.
-  Point queries use `baseline_peak_contains_query_v7`; membership and integration
+  Point queries use `baseline_peak_contains_query`; membership and integration
   share the selected bounds, including inter-scan peak tails. Group-guided
-  recovery uses `unique_baseline_peak_in_context_v6`: its center locates the bounded search
+  recovery uses `unique_baseline_peak_in_context`: its center locates the bounded search
   context and need not fall inside the peak, but multiple local peaks remain
   ambiguous and nonnumeric. Both current policies require at least two original
   XIC values strictly greater than the owner baseline within the uniquely selected, complete
@@ -111,16 +111,16 @@ processing, see [`product/signal-processing-rationale.md`](product/signal-proces
   identity or quantification readiness. Qualification neither
   changes integration nor removes weak segments to resolve ambiguity. Fresh
   policies use segment-universe-v3; questions cannot cross boundary-policy
-  families. Recorded point-v6/window-v5 receipts retain above-zero acquired
+  families. Recorded point/window receipts retain above-zero acquired
   support and fragmentation checks, without baseline-relative support or local
-  contrast qualification. Recorded point-v5/window-v4 receipts retain the adjacency-only
-  requirement and edge recovery with segment-universe-v3, without the fragmented
-  support check. Recorded point-v4/window-v3 receipts retain exact-zero returns and
-  the adjacency requirement with segment-universe-v2. Recorded point-v3/window-v2
+  contrast qualification. Recorded point/window receipts retain the adjacency-only
+  requirement and edge recovery with segment-universe, without the fragmented
+  support check. Recorded point/window receipts retain exact-zero returns and
+  the adjacency requirement with segment-universe. Recorded point/window
   receipts retain the minimum-two-positive-points rule without the adjacency
-  requirement. Recorded point-v2/window-v1 receipts replay without either
+  requirement. Recorded point/window receipts replay without either
   original-support rule. Legacy
-  `closed_segment_contains_query_v1` receipts retain their original 2%-height
+  `closed_segment_contains_query` receipts retain their original 2%-height
   bounds. Explicit fresh evaluation uses the current policy and new answer
   identity; replay never rewrites a saved answer.
 - The canonical public profile fields are `signal_processing_method`
@@ -318,7 +318,7 @@ processing, see [`product/signal-processing-rationale.md`](product/signal-proces
   analyte rescue policy has all required support. Pair evidence must not
   silently convert missing or failed product evidence into a counted detection.
 - The current targeted MS1 own-max opt-in verdict is limited to the headless
-  explicit `limited_5hmdc_5medc_v1` support-TSV workflow. It may project
+  explicit `limited_5hmdc_5medc` support-TSV workflow. It may project
   reviewed `5-hmdC`/`5-medC` `NL_FAIL` candidates to `detected_flagged` only
   under the support-TSV key-set and expected-diff gate. Default automatic
   rescue, GUI rescue, and broader-target rescue remain blocked.

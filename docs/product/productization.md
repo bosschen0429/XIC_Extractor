@@ -9,10 +9,10 @@ verdicts.
 
 | Question | Exclusive authority |
 | --- | --- |
-| Current per-lane readiness, owner, artifact, product effect, public surface, and next gate | [Productization status index](../superpowers/validation/productization_status_index_v1.tsv) |
-| ProductWriter scope and current authorized counts | [Productization authority manifest](../superpowers/schemas/productization_authority_manifest.v1.json) |
-| Dependent canonical quantitative-effect status and package/activation binding | [Quantitative projection authority manifest](../superpowers/schemas/quantitative_projection_authority_manifest.v1.json) |
-| Structured fields, required lane keys, allowed status values, stable compatibility anchors, writer rules, and dependent-effect rules | [Productization control-plane schema](../superpowers/schemas/productization_control_plane_schema.v3.json) |
+| Current per-lane readiness, owner, artifact, product effect, public surface, and next gate | [Productization status index](../superpowers/validation/productization_status_index.tsv) |
+| ProductWriter scope and current authorized counts | [Productization authority manifest](../superpowers/schemas/productization_authority_manifest.json) |
+| Dependent canonical quantitative-effect status and package/activation binding | [Quantitative projection authority manifest](../superpowers/schemas/quantitative_projection_authority_manifest.json) |
+| Structured fields, required lane keys, allowed status values, stable compatibility anchors, writer rules, and dependent-effect rules | [Productization control-plane schema](../superpowers/schemas/productization_control_plane_schema.json) |
 | Readiness vocabulary, promotion semantics, and promotion-packet requirements | [Product validation contract](../agent/product-validation-contract.md) |
 | Stable capability meaning and public boundaries | Matching `docs/product/*.md` topic owner |
 | Compatibility lookup from historical control-plane anchors | [Productization compatibility index](../superpowers/plans/2026-06-15-productization-control-plane.md) |

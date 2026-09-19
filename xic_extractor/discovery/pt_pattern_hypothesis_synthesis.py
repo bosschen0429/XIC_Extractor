@@ -38,7 +38,7 @@ from xic_extractor.tabular_io import (
     write_delimited_rows,
 )
 
-SCHEMA_VERSION = "pt_pattern_hypothesis_synthesis.v2"
+SCHEMA_VERSION = "pt_pattern_hypothesis_synthesis"
 READINESS_TIER = "diagnostic_only"
 EVIDENCE_OWNER = "xic_extractor.discovery.pt_pattern_hypothesis_synthesis"
 AUTHORITY_SCOPE = "hypothesis_synthesis_only"

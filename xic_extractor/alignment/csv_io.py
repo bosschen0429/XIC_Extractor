@@ -9,7 +9,6 @@ from typing import cast
 from xic_extractor.discovery.batch_contract import (
     DISCOVERY_BATCH_INDEX_SCHEMA_VERSION,
     DISCOVERY_BATCH_RECEIPT_COLUMNS,
-    DISCOVERY_CANDIDATE_ARTIFACT_SCHEMA_VERSION,
     DiscoveryCandidateUniverseReceipt,
     discovery_receipt_from_index_fields,
     validate_discovery_candidate_artifact,
@@ -18,14 +17,11 @@ from xic_extractor.discovery.batch_contract import (
 from xic_extractor.discovery.models import (
     DISCOVERY_CANDIDATE_COLUMNS,
     DISCOVERY_CANDIDATE_STATE_VALUES,
-    DISCOVERY_SUCCESSOR_COLUMNS,
     MS1_FEATURE_BACKED_STATES,
     DiscoveryCandidate,
     DiscoveryCandidateState,
     GroupPrecursorMzBasis,
     NeutralLossErrorBasis,
-    assign_discovery_candidate_state,
-    build_ms1_feature_row_id,
 )
 from xic_extractor.processing_identity import IdentityContractError
 
@@ -89,12 +85,6 @@ _ALLOWED_NEUTRAL_LOSS_ERROR_BASIS = {
 }
 _ALLOWED_DISCOVERY_CANDIDATE_STATES = set(DISCOVERY_CANDIDATE_STATE_VALUES)
 _MS1_FEATURE_BACKED_STATES = set(MS1_FEATURE_BACKED_STATES)
-_DISCOVERY_SUCCESSOR_COLUMN_SET = set(DISCOVERY_SUCCESSOR_COLUMNS)
-_DISCOVERY_LEGACY_CANDIDATE_COLUMNS = tuple(
-    column
-    for column in DISCOVERY_CANDIDATE_COLUMNS
-    if column not in _DISCOVERY_SUCCESSOR_COLUMN_SET
-)
 _ROW_ID_MZ_TOLERANCE_DA = 0.001
 _MS1_FEATURE_ROW_ID_RT_TOLERANCE_MIN = 0.001
 _ROW_ID_PATTERN = re.compile(
@@ -215,37 +205,15 @@ def read_discovery_batch_index(
 
 def read_discovery_candidates_csv(
     path: Path,
-    *,
-    require_successor_columns: bool = False,
-    require_provisional_column: bool = False,
 ) -> tuple[DiscoveryCandidate, ...]:
     rows, fieldnames = _read_csv_rows(path)
-    has_successor_columns = _candidate_has_successor_columns(path, fieldnames)
-    if require_successor_columns and not has_successor_columns:
-        joined = ", ".join(DISCOVERY_SUCCESSOR_COLUMNS)
-        raise ValueError(f"{path}: current successor columns are required: {joined}")
-    required_columns = (
-        DISCOVERY_CANDIDATE_COLUMNS
-        if has_successor_columns
-        else _DISCOVERY_LEGACY_CANDIDATE_COLUMNS
-    )
-    _require_columns(
-        path, fieldnames,
-        tuple(column for column in required_columns if column != "is_provisional"),
-    )
-    if require_provisional_column:
-        _require_columns(path, fieldnames, ("is_provisional",))
+    _require_columns(path, fieldnames, DISCOVERY_CANDIDATE_COLUMNS)
 
     candidates: list[DiscoveryCandidate] = []
     seen_candidate_ids: dict[str, int] = {}
     seen_ms1_feature_row_ids: dict[tuple[str, str, str], int] = {}
     for row_number, row in rows:
-        candidate = _parse_candidate_row(
-            path,
-            row_number,
-            row,
-            has_successor_columns=has_successor_columns,
-        )
+        candidate = _parse_candidate_row(path, row_number, row)
         previous_row = seen_candidate_ids.get(candidate.candidate_id)
         if previous_row is not None:
             raise ValueError(
@@ -253,13 +221,12 @@ def read_discovery_candidates_csv(
                 f"{candidate.candidate_id!r}; first seen at row {previous_row}"
             )
         seen_candidate_ids[candidate.candidate_id] = row_number
-        if has_successor_columns:
-            _require_unique_ms1_feature_row_id(
-                path,
-                row_number,
-                candidate,
-                seen_ms1_feature_row_ids,
-            )
+        _require_unique_ms1_feature_row_id(
+            path,
+            row_number,
+            candidate,
+            seen_ms1_feature_row_ids,
+        )
         candidates.append(candidate)
     return tuple(candidates)
 
@@ -268,20 +235,12 @@ def read_owner_bound_discovery_candidates_csv(
     path: Path,
     *,
     receipt: DiscoveryCandidateUniverseReceipt,
-    require_successor_columns: bool = False,
 ) -> tuple[DiscoveryCandidate, ...]:
     """Read one exact Discovery artifact and close it against its receipt."""
 
     try:
         validate_discovery_candidate_artifact(receipt, path)
-        candidates = read_discovery_candidates_csv(
-            path,
-            require_successor_columns=require_successor_columns,
-            require_provisional_column=(
-                receipt.candidate_artifact_schema_version
-                == DISCOVERY_CANDIDATE_ARTIFACT_SCHEMA_VERSION
-            ),
-        )
+        candidates = read_discovery_candidates_csv(path)
         validate_discovery_candidate_artifact(receipt, path)
         return validate_discovery_candidate_universe(
             receipt,
@@ -320,29 +279,10 @@ def _require_columns(
         raise ValueError(f"{path}: missing required columns: {joined}")
 
 
-def _candidate_has_successor_columns(path: Path, fieldnames: tuple[str, ...]) -> bool:
-    present_successor_columns = _DISCOVERY_SUCCESSOR_COLUMN_SET.intersection(
-        fieldnames
-    )
-    if not present_successor_columns:
-        return False
-    if present_successor_columns != _DISCOVERY_SUCCESSOR_COLUMN_SET:
-        missing = [
-            column
-            for column in DISCOVERY_SUCCESSOR_COLUMNS
-            if column not in present_successor_columns
-        ]
-        joined = ", ".join(missing)
-        raise ValueError(f"{path}: missing required columns: {joined}")
-    return True
-
-
 def _parse_candidate_row(
     path: Path,
     row_number: int,
     row: dict[str, str],
-    *,
-    has_successor_columns: bool,
 ) -> DiscoveryCandidate:
     candidate_id = _machine_field(row, "candidate_id")
     row_identity = _parse_row_identity_candidate_id(path, row_number, candidate_id)
@@ -361,35 +301,19 @@ def _parse_candidate_row(
         path, row_number, row, "ms1_peak_rt_start"
     )
     ms1_peak_rt_end = _parse_optional_float(path, row_number, row, "ms1_peak_rt_end")
-    if has_successor_columns:
-        discovery_candidate_state = _parse_discovery_candidate_state(
-            path,
-            row_number,
-            row,
-        )
-        ms1_feature_row_id = _machine_field(row, "ms1_feature_row_id")
-        _validate_discovery_candidate_state_identity(
-            path,
-            row_number,
-            discovery_candidate_state=discovery_candidate_state,
-            ms1_feature_row_id=ms1_feature_row_id,
-            ms1_peak_found=ms1_peak_found,
-        )
-    else:
-        discovery_candidate_state = assign_discovery_candidate_state(
-            ms1_peak_found=ms1_peak_found,
-            precursor_mz_basis=precursor_mz_basis,
-        )
-        ms1_feature_row_id = build_ms1_feature_row_id(
-            sample_stem=sample_stem,
-            neutral_loss_tag=neutral_loss_tag,
-            precursor_mz=row_identity.precursor_mz,
-            best_seed_rt=best_seed_rt,
-            ms1_peak_found=ms1_peak_found,
-            ms1_apex_rt=ms1_apex_rt,
-            ms1_peak_rt_start=ms1_peak_rt_start,
-            ms1_peak_rt_end=ms1_peak_rt_end,
-        )
+    discovery_candidate_state = _parse_discovery_candidate_state(
+        path,
+        row_number,
+        row,
+    )
+    ms1_feature_row_id = _machine_field(row, "ms1_feature_row_id")
+    _validate_discovery_candidate_state_identity(
+        path,
+        row_number,
+        discovery_candidate_state=discovery_candidate_state,
+        ms1_feature_row_id=ms1_feature_row_id,
+        ms1_peak_found=ms1_peak_found,
+    )
     _require_candidate_id_matches_row(
         path,
         row_number,
@@ -402,20 +326,19 @@ def _parse_candidate_row(
         product_mz=product_mz,
         product_mz_text=product_mz_text,
     )
-    if has_successor_columns:
-        _validate_ms1_feature_row_identity(
-            path,
-            row_number,
-            ms1_feature_row_id=ms1_feature_row_id,
-            sample_stem=sample_stem,
-            neutral_loss_tag=neutral_loss_tag,
-            precursor_mz=row_identity.precursor_mz,
-            best_seed_rt=best_seed_rt,
-            ms1_peak_found=ms1_peak_found,
-            ms1_apex_rt=ms1_apex_rt,
-            ms1_peak_rt_start=ms1_peak_rt_start,
-            ms1_peak_rt_end=ms1_peak_rt_end,
-        )
+    _validate_ms1_feature_row_identity(
+        path,
+        row_number,
+        ms1_feature_row_id=ms1_feature_row_id,
+        sample_stem=sample_stem,
+        neutral_loss_tag=neutral_loss_tag,
+        precursor_mz=row_identity.precursor_mz,
+        best_seed_rt=best_seed_rt,
+        ms1_peak_found=ms1_peak_found,
+        ms1_apex_rt=ms1_apex_rt,
+        ms1_peak_rt_start=ms1_peak_rt_start,
+        ms1_peak_rt_end=ms1_peak_rt_end,
+    )
     return DiscoveryCandidate(
         review_priority=_required_text(path, row_number, row, "review_priority"),  # type: ignore[arg-type]
         evidence_tier=_required_text(path, row_number, row, "evidence_tier"),
@@ -496,14 +419,7 @@ def _parse_candidate_row(
 def _parse_provisional_decision(
     path: Path, row_number: int, row: dict[str, str],
 ) -> bool:
-    if "is_provisional" in row:
-        return _parse_bool(path, row_number, row, "is_provisional")
-    if row.get("ms1_trace_quality", "").lower() == "provisional":
-        raise ValueError(
-            f"{path}: row {row_number}: legacy provisional quality "
-            "lacks an exact decision"
-        )
-    return False
+    return _parse_bool(path, row_number, row, "is_provisional")
 
 
 def _resolve_artifact_path(parent: Path, value: str) -> Path:

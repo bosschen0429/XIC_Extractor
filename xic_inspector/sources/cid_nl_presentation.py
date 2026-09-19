@@ -140,7 +140,7 @@ def _decision_reason(cells: list[dict[str, Any]]) -> str:
     if reason not in (None, ""):
         return f"來源記錄理由：{reason}"
     source = cell.get("source")
-    if source == "trapezoid_counts_seconds_on_canonical_signal_v1":
+    if source == "trapezoid_counts_seconds_on_canonical_signal":
         return "來源記錄定量方式為當次採用訊號的梯形積分；未另記理由。"
     if source not in (None, ""):
         return f"來源記錄定量方式為「{source}」；未另記理由。"
@@ -613,7 +613,7 @@ def _decision_label(cells):
         return "當次定量決策記錄為空值，並非零。"
     if value == 0:
         return "當次定量決策記錄的數值為零。"
-    if cell.get("source") == "trapezoid_counts_seconds_on_canonical_signal_v1":
+    if cell.get("source") == "trapezoid_counts_seconds_on_canonical_signal":
         return "依當次採用的訊號，以梯形積分面積定量。"
     return "當次定量決策已保留數值。"
 

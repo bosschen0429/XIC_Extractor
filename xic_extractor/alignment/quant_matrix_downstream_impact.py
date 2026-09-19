@@ -25,8 +25,8 @@ from xic_extractor.tabular_io import (
     write_tsv,
 )
 
-DOWNSTREAM_IMPACT_SCHEMA = "quant_matrix_downstream_impact_smoke_v1"
-DOWNSTREAM_IMPACT_ROW_SCHEMA = "quant_matrix_downstream_impact_row_v1"
+DOWNSTREAM_IMPACT_SCHEMA = "quant_matrix_downstream_impact_smoke"
+DOWNSTREAM_IMPACT_ROW_SCHEMA = "quant_matrix_downstream_impact_row"
 DOWNSTREAM_IMPACT_BUNDLE_KINDS = (
     "contract_fixture",
     "real_quant_matrix_version",
@@ -139,6 +139,7 @@ def build_quant_matrix_downstream_impact_smoke(
     summary_json.write_text(
         json.dumps(payload, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
+        newline="\n",
     )
     return {"summary_json": summary_json, "rows_tsv": rows_tsv}
 
@@ -591,7 +592,7 @@ def _append_externalized_cell_provenance_contract_problems(
     if not isinstance(summary, dict):
         problems.append("downstream impact cell_provenance summary must be an object")
         return
-    if summary.get("schema_version") != "quant_matrix_fixture_contract_v1":
+    if summary.get("schema_version") != "quant_matrix_fixture_contract":
         problems.append("downstream impact cell_provenance summary schema mismatch")
     if summary.get("source_sha256") != expected_source_sha256.upper():
         problems.append("downstream impact cell_provenance source_sha256 mismatch")

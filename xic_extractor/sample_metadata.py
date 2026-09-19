@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
-SAMPLE_METADATA_SCHEMA_VERSION = "sample_metadata_v1"
+SAMPLE_METADATA_SCHEMA_VERSION = "sample_metadata"
 SAMPLE_METADATA_COLUMNS: tuple[str, ...] = (
     "schema_version",
     "sample_name",
@@ -45,8 +45,8 @@ SAMPLE_ROLES: frozenset[str] = frozenset(
         "unknown",
     }
 )
-_CANONICAL_SAMPLE_ID_PREFIX = "xic.sample.v1:"
-_SAMPLE_METADATA_SNAPSHOT_PREFIX = "xic.sample-metadata-snapshot.v1:"
+_CANONICAL_SAMPLE_ID_PREFIX = "xic.sample:"
+_SAMPLE_METADATA_SNAPSHOT_PREFIX = "xic.sample-metadata-snapshot:"
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _SEQUENCE_HEADER_ALIASES: Mapping[str, frozenset[str]] = {
     "order": frozenset(
@@ -161,7 +161,7 @@ class CanonicalSampleIdentity:
     def __post_init__(self) -> None:
         if self.sample_metadata_schema_version != SAMPLE_METADATA_SCHEMA_VERSION:
             raise SampleMetadataError(
-                "sample identity schema does not match sample_metadata_v1"
+                "sample identity schema does not match sample_metadata"
             )
         namespace = _owner_normalized_text(
             self.identity_namespace,
@@ -860,7 +860,7 @@ def mint_canonical_sample_identity(
     *,
     identity_namespace: str,
 ) -> CanonicalSampleIdentity:
-    """Mint the v1 canonical identity from the owner-declared primary key."""
+    """Mint the canonical identity from the owner-declared primary key."""
 
     if not isinstance(row, SampleMetadata):
         raise SampleMetadataError("sample identity must be minted from SampleMetadata")
@@ -1175,7 +1175,7 @@ def _canonical_sample_identity_id(
             "identity_namespace": identity_namespace,
             "sample_key": sample_key,
             "sample_metadata_schema_version": SAMPLE_METADATA_SCHEMA_VERSION,
-            "schema": "canonical_sample_identity_v1",
+            "schema": "canonical_sample_identity",
         }
     )
     return f"{_CANONICAL_SAMPLE_ID_PREFIX}{digest}"
@@ -1230,7 +1230,7 @@ def _sample_metadata_snapshot_content_sha256(
 ) -> str:
     return _canonical_json_sha256(
         {
-            "schema": "sample_metadata_snapshot_v1",
+            "schema": "sample_metadata_snapshot",
             "sample_metadata_schema_version": SAMPLE_METADATA_SCHEMA_VERSION,
             "identity_namespace": identity_namespace,
             "rows": [

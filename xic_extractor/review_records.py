@@ -19,13 +19,13 @@ from xic_extractor.validation_primitives import (
     require_owner_normalized_text,
 )
 
-_REVIEW_RECORD_ID_PREFIX = "xic.review-record.v1:"
-_REVIEW_RECORD_SNAPSHOT_PREFIX = "xic.review-record-snapshot.v1:"
-_REVIEW_SUBJECT_ID_PREFIX = "xic.review-subject.v1:"
-_CANONICAL_SAMPLE_ID_PREFIX = "xic.sample.v1:"
-_TARGET_KEY_ID_PREFIX = "xic.target-key.v1:"
-_TARGET_DEFINITION_ID_PREFIX = "xic.target-definition.v1:"
-_PROCESSING_REQUEST_ID_PREFIX = "xic.processing-request.v1:"
+_REVIEW_RECORD_ID_PREFIX = "xic.review-record:"
+_REVIEW_RECORD_SNAPSHOT_PREFIX = "xic.review-record-snapshot:"
+_REVIEW_SUBJECT_ID_PREFIX = "xic.review-subject:"
+_CANONICAL_SAMPLE_ID_PREFIX = "xic.sample:"
+_TARGET_KEY_ID_PREFIX = "xic.target-key:"
+_TARGET_DEFINITION_ID_PREFIX = "xic.target-definition:"
+_PROCESSING_REQUEST_ID_PREFIX = "xic.processing-request:"
 
 
 class ReviewRecordReferenceError(ValueError):
@@ -59,7 +59,7 @@ class ImmutableReviewRecordRef:
     def __post_init__(self) -> None:
         if self.schema_version != REVIEW_ACTION_SCHEMA_VERSION:
             raise ReviewRecordReferenceError(
-                "schema_version must be the owner-supported review_action_v1"
+                "schema_version must be the owner-supported review_action"
             )
         schema_version = self.schema_version
         subject_id = _validate_typed_digest_id(
@@ -603,11 +603,11 @@ def _review_action_content_sha256(record: ReviewAction) -> str:
         )
     except ReviewActionError as exc:
         raise ReviewRecordReferenceError(
-            "record must satisfy the valid review_action_v1 contract"
+            "record must satisfy the valid review_action contract"
         ) from exc
     if len(parsed) != 1 or parsed[0] != record:
         raise ReviewRecordReferenceError(
-            "record must be owner-normalized valid review_action_v1 content"
+            "record must be owner-normalized valid review_action content"
         )
     return _content_sha256(content)
 
@@ -635,7 +635,7 @@ def _review_record_id(
     supersession_reason: str,
 ) -> str:
     basis = {
-        "schema": "immutable_review_record_reference_v1",
+        "schema": "immutable_review_record_reference",
         "review_subject_id": review_subject_id,
         "canonical_sample_identity_id": canonical_sample_identity_id,
         "target_key_id": target_key_id,
@@ -670,7 +670,7 @@ def _review_subject_id(
     digest = hashlib.sha256(
         _canonical_json(
             {
-                "schema": "review_subject_identity_v1",
+                "schema": "review_subject_identity",
                 "canonical_sample_identity_id": sample_id,
                 "target_key_id": stable_target_key_id,
             },
@@ -684,7 +684,7 @@ def _review_registry_content_sha256(
     records: tuple[ImmutableReviewRecordRef, ...],
 ) -> str:
     payload = {
-        "schema": "review_record_registry_snapshot_v1",
+        "schema": "review_record_registry_snapshot",
         "records": [
             {
                 "review_record_id": record.review_record_id,

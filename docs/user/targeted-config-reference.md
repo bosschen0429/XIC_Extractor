@@ -92,7 +92,7 @@ These are rarely needed and not exposed in the GUI by default.
 | `target_pair_rt_calibration_path` | path | Target-pair RT calibration TSV for shadow diagnostics |
 | `model_selection_expected_diff_approval_registry` | path | Expected-diff approval registry TSV |
 | `targeted_ms1_shape_identity_support_tsv` | path | Reviewed MS1 shape-identity support TSV |
-| `targeted_ms1_shape_identity_activation_policy` | enum | `limited_5hmdc_5medc_v1` or `explicit_support_tsv` |
+| `targeted_ms1_shape_identity_activation_policy` | enum | `limited_5hmdc_5medc` or `explicit_support_tsv` |
 
 ---
 

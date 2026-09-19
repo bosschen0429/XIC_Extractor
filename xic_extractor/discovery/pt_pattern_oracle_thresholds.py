@@ -24,7 +24,7 @@ from xic_extractor.tabular_io import (
     write_delimited_rows,
 )
 
-SCHEMA_VERSION = "pt_pattern_oracle_threshold_calibration.v1"
+SCHEMA_VERSION = "pt_pattern_oracle_threshold_calibration"
 READINESS_TIER = "diagnostic_only"
 EVIDENCE_OWNER = "xic_extractor.discovery.pt_pattern_oracle_thresholds"
 AUTHORITY_SCOPE = "threshold_calibration_only"

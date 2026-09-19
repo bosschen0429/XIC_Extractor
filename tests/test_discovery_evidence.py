@@ -15,7 +15,7 @@ from xic_extractor.discovery.models import (
 )
 
 
-def test_default_evidence_profile_pins_v1_weights() -> None:
+def test_default_evidence_profile_pins_weights() -> None:
     weights = DEFAULT_EVIDENCE_PROFILE.weights
     assert DEFAULT_EVIDENCE_PROFILE.name == "default"
     assert weights.ms1_peak_present == 25
@@ -35,7 +35,7 @@ def test_default_evidence_profile_pins_v1_weights() -> None:
     assert weights.legacy_trace_quality_low == -10
 
 
-def test_default_evidence_profile_pins_v1_thresholds() -> None:
+def test_default_evidence_profile_pins_thresholds() -> None:
     thresholds = DEFAULT_EVIDENCE_PROFILE.thresholds
     assert thresholds.rt_aligned_max_min == 0.05
     assert thresholds.rt_near_max_min == 0.20
@@ -63,7 +63,7 @@ def test_evidence_thresholds_are_frozen_and_hashable() -> None:
     assert hash(first) == hash(second)
 
 
-def test_score_discovery_evidence_preserves_default_v1_baseline() -> None:
+def test_score_discovery_evidence_preserves_default_baseline() -> None:
     evidence = score_discovery_evidence(_candidate())
 
     assert evidence.score == 71

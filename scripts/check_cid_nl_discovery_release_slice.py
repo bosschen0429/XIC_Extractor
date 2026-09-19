@@ -98,7 +98,7 @@ def check_cid_nl_discovery_release_slice(
 
 def _check_summary(payload: Mapping[str, Any], problems: list[str]) -> None:
     expected: dict[str, object] = {
-        "schema_version": "cid_nl_default_product_activation_v1",
+        "schema_version": "cid_nl_default_product_activation",
         "status": "pass",
         "activation_label": "product_ready_default_matrix_activated",
         "validation_label": "product_ready_cid_nl_default_activation",
@@ -251,7 +251,7 @@ def _check_docs(
             "reopen broad Backfill",
         ],
         handoff: [
-            "cid_nl_default_product_activation_v1",
+            "cid_nl_default_product_activation",
             "broad_backfill_autowrite",
         ],
     }

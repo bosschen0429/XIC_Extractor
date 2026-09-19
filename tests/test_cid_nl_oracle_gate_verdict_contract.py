@@ -23,10 +23,10 @@ from xic_extractor.discovery.cid_nl_oracle_verdict import reduce_oracle_verdict
 ROOT = Path(__file__).resolve().parents[1]
 PACKET = (
     ROOT
-    / "docs/superpowers/validation/cid_nl_oracle_packet_preflight_v1"
+    / "docs/superpowers/validation/cid_nl_oracle_packet_preflight"
 )
-GATE_TABLE = PACKET / "cid_nl_oracle_gate_table_v1.tsv"
-VERDICT_TABLE = PACKET / "cid_nl_oracle_verdict_table_v1.tsv"
+GATE_TABLE = PACKET / "cid_nl_oracle_gate_table.tsv"
+VERDICT_TABLE = PACKET / "cid_nl_oracle_verdict_table.tsv"
 
 
 def _tsv(path: Path) -> list[dict[str, str]]:
@@ -119,7 +119,7 @@ def _sealed_scope_bundle(
     }
     membership_bytes = _membership_bytes("C1", "P1", holdout_rows[0])
     scope = {
-        "schema_version": "cid_nl_oracle_narrow_scope_manifest_v1",
+        "schema_version": "cid_nl_oracle_narrow_scope_manifest",
         "narrow_scope_manifest_id": "NSM1",
         "narrow_scope_id": "NS1",
         "scope_precedence": "1",
@@ -133,7 +133,7 @@ def _sealed_scope_bundle(
         "included_sampling_strata": "all",
         "excluded_sampling_strata": "none",
         "minimum_independent_units_parameter": "n_min",
-        "gatekeeping_rule_id": "scope_gate_v1",
+        "gatekeeping_rule_id": "scope_gate",
         "required_gate_ids": "|".join(required_gate_ids),
         "allowed_overall_failed_gate_ids": "|".join(allowed_failed_gate_ids),
         "membership_frozen_before_reveal": "TRUE",
@@ -143,7 +143,7 @@ def _sealed_scope_bundle(
     scope["source_row_sha256"] = canonical_row_sha256(scope)
     manifest_bytes = canonical_tsv_bytes([scope])
     seal = {
-        "schema_version": "cid_nl_oracle_narrow_scope_manifest_v1",
+        "schema_version": "cid_nl_oracle_narrow_scope_manifest",
         "narrow_scope_manifest_id": "NSM1",
         "narrow_scope_tsv_sha256": sha256_bytes(manifest_bytes),
         "scope_membership_digests": {
@@ -244,7 +244,7 @@ def test_narrow_scope_required_fields_match_schema() -> None:
         (
             ROOT
             / "docs/superpowers/schemas/"
-            "cid_nl_oracle_narrow_scope_manifest_schema.v1.json"
+            "cid_nl_oracle_narrow_scope_manifest_schema.json"
         ).read_text(encoding="utf-8")
     )
     assert set(_NARROW_SCOPE_REQUIRED_FIELDS) == set(

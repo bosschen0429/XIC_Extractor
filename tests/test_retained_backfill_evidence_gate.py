@@ -109,7 +109,7 @@ def test_cli_writes_retained_product_backfill_gate_and_summary(
             encoding="utf-8",
         ),
     )
-    assert payload["schema_version"] == "retained_backfill_evidence_gate_v0"
+    assert payload["schema_version"] == "retained_backfill_evidence_gate"
     assert payload["readiness_label"] == "diagnostic_only"
     assert payload["source_run_id"] == "unit-test-run"
     assert payload["row_count"] == 3
@@ -248,7 +248,7 @@ def test_high_detected_low_rescue_missing_overlay_is_not_queued(
     }
 
 
-def test_legacy_family_overlay_requires_seed_specific_overlay(
+def test_unbound_family_overlay_is_not_evidence(
     tmp_path: Path,
 ) -> None:
     alignment_dir = _write_alignment_run(tmp_path / "alignment")
@@ -275,10 +275,9 @@ def test_legacy_family_overlay_requires_seed_specific_overlay(
     supported = by_id["FAM_SUPPORT"]
     assert supported["evidence_gate_status"] == "evidence_missing"
     assert supported["recommended_action"] == "generate_missing_evidence"
-    assert "missing_seed_specific_overlay" in supported["missing_evidence"]
-    assert "legacy_family_overlay_context" in supported["dependent_context"]
+    assert "missing_overlay_evidence" in supported["missing_evidence"]
     assert "ms1_shape_supports_family_backfill" not in supported["support_components"]
-    assert supported["overlay_png_path"] == "plots/fam-support.png"
+    assert supported["overlay_png_path"] == ""
 
     queue_rows = _read_tsv(
         output_dir / "alignment_retained_backfill_missing_overlay_queue.tsv",
@@ -287,7 +286,7 @@ def test_legacy_family_overlay_requires_seed_specific_overlay(
     assert by_queue_id["FAM_SUPPORT"]["seed_group_id"] == _seed_group_id(
         "FAM_SUPPORT",
     )
-    assert "missing_seed_specific_overlay" in by_queue_id["FAM_SUPPORT"][
+    assert "missing_overlay_evidence" in by_queue_id["FAM_SUPPORT"][
         "missing_evidence"
     ]
 

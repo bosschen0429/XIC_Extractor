@@ -25,7 +25,7 @@ def test_alignment_results_xlsx_has_matrix_review_metadata_sheets(tmp_path: Path
         tmp_path / "alignment_results.xlsx",
         matrix,
         metadata={
-            "schema_version": "alignment-results-v3",
+            "schema_version": "alignment-results",
             "resolver_mode": "local_minimum",
         },
         production_decisions=_production_decisions(matrix),
@@ -119,7 +119,7 @@ def test_alignment_results_xlsx_has_matrix_review_metadata_sheets(tmp_path: Path
     ]
     assert workbook["Metadata"]["A1"].value == "key"
     assert workbook["Metadata"]["A3"].value == "schema_version"
-    assert workbook["Metadata"]["B3"].value == "alignment-results-v3"
+    assert workbook["Metadata"]["B3"].value == "alignment-results"
 
 
 def test_alignment_results_xlsx_audit_projects_region_decision_fields(
@@ -144,7 +144,7 @@ def test_alignment_results_xlsx_audit_projects_region_decision_fields(
     path = write_alignment_results_xlsx(
         tmp_path / "alignment_results.xlsx",
         matrix,
-        metadata={"schema_version": "alignment-results-v3"},
+        metadata={"schema_version": "alignment-results"},
         production_decisions=_production_decisions(matrix),
     )
 
@@ -179,7 +179,7 @@ def test_alignment_results_xlsx_blanks_duplicate_assigned_matrix_area(
     path = write_alignment_results_xlsx(
         tmp_path / "alignment_results.xlsx",
         matrix,
-        metadata={"schema_version": "alignment-results-v3"},
+        metadata={"schema_version": "alignment-results"},
         production_decisions=_production_decisions(matrix),
     )
 
@@ -217,7 +217,7 @@ def test_alignment_results_xlsx_prefers_ms1_morphology_area(
     path = write_alignment_results_xlsx(
         tmp_path / "alignment_results.xlsx",
         matrix,
-        metadata={"schema_version": "alignment-results-v3"},
+        metadata={"schema_version": "alignment-results"},
         production_decisions=_production_decisions(matrix),
     )
 
@@ -247,7 +247,7 @@ def test_alignment_results_xlsx_excludes_review_only_rows_from_matrix(
     path = write_alignment_results_xlsx(
         tmp_path / "alignment_results.xlsx",
         matrix,
-        metadata={"schema_version": "alignment-results-v3"},
+        metadata={"schema_version": "alignment-results"},
         production_decisions=_production_decisions(matrix),
     )
 
@@ -284,7 +284,7 @@ def test_alignment_results_xlsx_audit_explains_duplicate_blank(
     path = write_alignment_results_xlsx(
         tmp_path / "alignment_results.xlsx",
         matrix,
-        metadata={"schema_version": "alignment-results-v3"},
+        metadata={"schema_version": "alignment-results"},
         production_decisions=_production_decisions(matrix),
     )
 
@@ -355,7 +355,7 @@ def test_alignment_results_xlsx_rejects_orphan_audit_cell(tmp_path: Path):
         write_alignment_results_xlsx(
             tmp_path / "alignment_results.xlsx",
             matrix,
-            metadata={"schema_version": "alignment-results-v3"},
+            metadata={"schema_version": "alignment-results"},
             production_decisions=_production_decisions(matrix),
         )
 

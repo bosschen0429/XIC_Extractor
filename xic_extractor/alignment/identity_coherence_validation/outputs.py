@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from xic_extractor.alignment.identity_coherence_validation.acceptance import (
-    evaluate_v04_acceptance,
+    evaluate_acceptance,
     sidecar_parity_failed_count,
 )
 from xic_extractor.alignment.identity_coherence_validation.controls_summary import (
@@ -41,16 +41,16 @@ def write_validation_outputs(
         controls_manifest=controls_manifest,
         run_metadata=metadata,
     )
-    acceptance = evaluate_v04_acceptance(
+    acceptance = evaluate_acceptance(
         result,
         controls_manifest=controls_manifest,
     )
     _write_acceptance_tsv(
-        output_root / "identity_coherence_v04_acceptance.tsv",
+        output_root / "identity_coherence_acceptance.tsv",
         acceptance,
     )
     _write_acceptance_md(
-        output_root / "identity_coherence_v04_acceptance.md",
+        output_root / "identity_coherence_acceptance.md",
         report=acceptance,
         controls_manifest=controls_manifest,
     )
@@ -125,10 +125,10 @@ def _write_acceptance_md(
     )
     verdict = "PASS" if report.accepted else "FAIL"
     lines = [
-        "# Identity Coherence V0.4 Acceptance",
+        "# Identity Coherence Acceptance",
         "",
         (
-            "This report closes the V0.4 diagnostic acceptance loop. It is "
+            "This report closes the diagnostic acceptance loop. It is "
             "diagnostic-only and does not validate final matrix filtering, "
             "background filtering, normalization, statistics, or full-cohort "
             "execution."
@@ -153,7 +153,7 @@ def _write_acceptance_md(
             "## Handoff Notes",
             "",
             (
-                "- A PASS means the V0.4 diagnostic is ready for human method "
+                "- A PASS means the diagnostic is ready for human method "
                 "review on the diagnostic subset."
             ),
             (

@@ -73,7 +73,7 @@ def test_trajectory_input_rejects_anchor_minted_for_another_group(
                 for anchor in scenario.track_a_spine.anchors
             },
             evidence_profile=ModeTrackEvidenceProfile(
-                "anchor-trajectory-v1", "fixed-band-v1", 0.1, 10, 10
+                "anchor-trajectory", "fixed-band", 0.1, 10, 10
             ),
             budget=CrossSampleNeighborhoodBudget(
                 max_members=86,

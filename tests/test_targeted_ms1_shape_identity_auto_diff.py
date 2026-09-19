@@ -15,7 +15,7 @@ def test_auto_diff_artifacts_pass_limited_expected_diff_gate(tmp_path: Path) -> 
     baseline_dir = tmp_path / "baseline"
     optin_dir = tmp_path / "optin"
     output_dir = tmp_path / "diff"
-    support_tsv = tmp_path / "targeted_ms1_shape_identity_v0.tsv"
+    support_tsv = tmp_path / "targeted_ms1_shape_identity.tsv"
     _write_long_csv(
         baseline_dir / "xic_results_long.csv",
         [
@@ -144,7 +144,7 @@ def _write_wide_csv(path: Path, values: dict[str, str]) -> None:
 
 def _write_support_tsv(path: Path) -> None:
     row = {
-        "schema_version": "targeted_ms1_shape_identity_v0",
+        "schema_version": "targeted_ms1_shape_identity",
         "validation_label": "diagnostic_only",
         "decision_authority": "diagnostic_only_no_product_write",
         "sample_name": "SampleA",

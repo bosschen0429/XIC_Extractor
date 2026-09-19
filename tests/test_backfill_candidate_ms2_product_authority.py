@@ -116,7 +116,7 @@ def test_rejects_candidate_ms2_allowlist_status_level_or_alignment_drift() -> No
 def test_rejects_candidate_ms2_source_without_full_producer_columns() -> None:
     source = {
         "candidate_ms2_pattern_schema_version": (
-            "shared_peak_identity_candidate_ms2_pattern_v2"
+            "shared_peak_identity_candidate_ms2_pattern"
         ),
         "feature_family_id": "FAM_MS2",
         "sample_stem": "S2",
@@ -141,7 +141,7 @@ def test_rejects_candidate_ms2_source_without_full_producer_columns() -> None:
 def test_rejects_candidate_ms2_source_with_wrong_schema_version() -> None:
     source = {
         **_candidate_ms2_row(),
-        "candidate_ms2_pattern_schema_version": "legacy_candidate_ms2_pattern_v1",
+        "candidate_ms2_pattern_schema_version": "legacy_candidate_ms2_pattern",
     }
     result = authorize_candidate_ms2_pattern_rows(
         candidate_ms2_pattern_rows=[source],
@@ -298,7 +298,7 @@ def _candidate_ms2_row(
 ) -> dict[str, str]:
     return {
         "candidate_ms2_pattern_schema_version": (
-            "shared_peak_identity_candidate_ms2_pattern_v2"
+            "shared_peak_identity_candidate_ms2_pattern"
         ),
         "feature_family_id": family_id,
         "sample_stem": sample_stem,

@@ -1,4 +1,4 @@
-"""Versioned diagnostic-only storage and indexed, acquisition-free queries."""
+"""Diagnostic-only storage and indexed, acquisition-free queries."""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ from xic_extractor.peak_detection.signal_processing_profile import (
 
 REPORT_FILENAME = "cid_nl_explanation.sqlite"
 GENERIC_REPORT_FILENAME = "alignment_explanation.sqlite"
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = "alignment_explanation"
 
 VALID_CURVE_KINDS = frozenset(
     {
@@ -54,7 +54,7 @@ class EvidenceLocator:
     matrix_sha256: str
     processing_request_id: str
     processing_attempt_id: str
-    schema_version: int
+    schema_version: str
 
 
 class ExplanationError(ValueError):
@@ -117,7 +117,7 @@ def _validate_curve_payload(
         raise ExplanationError(f"undeclared curve payload keys: {sorted(extra)}")
     if set(payload) != ALLOWED_CURVE_PAYLOAD_KEYS:
         raise ExplanationError("curve payload missing required fields")
-    if payload["schema_version"] != "curve_payload_v1":
+    if payload["schema_version"] != "curve_payload":
         raise ExplanationError("unsupported curve payload schema version")
     if payload["kind"] != kind or payload["sample_id"] != sample_id:
         raise ExplanationError("curve payload crosses sample or kind binding")
@@ -306,12 +306,12 @@ class ExplanationReportWriter:
         kind: str,
         record_id: str,
         payload: Mapping[str, Any],
-        codec: str = "zlib-json-utf8-v1",
+        codec: str = "zlib-json-utf8",
     ) -> None:
         _validate_curve_payload(
             payload, sample_id=sample_id, kind=kind, record_id=record_id
         )
-        if codec != "zlib-json-utf8-v1":
+        if codec != "zlib-json-utf8":
             raise ExplanationError(f"unsupported curve codec: {codec}")
         encoded_json = json.dumps(
             payload, ensure_ascii=False, sort_keys=True, allow_nan=False
@@ -400,14 +400,13 @@ class ExplanationReportWriter:
                     dict(
                         summary,
                         schema_version=SCHEMA_VERSION,
-                        plot_evidence_capability="retained_curves_v1",
+                        plot_evidence_capability="retained_curves",
                         diagnostic_only=True,
                         completion="post_matrix_publication",
                     )
                 ),
             ),
         )
-        self._connection().execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
         self._connection().commit()
         self._connection().close()
         self.connection = None
@@ -462,6 +461,80 @@ def _object(payload: str) -> dict[str, Any]:
     return value
 
 
+def _read_completed_summary(connection: sqlite3.Connection) -> dict[str, Any]:
+    expected = {
+        "metadata": ("key", "payload"),
+        "candidates": ("candidate_id", "sample_id", "payload"),
+        "records": ("kind", "record_id", "payload"),
+        "links": ("candidate_id", "sample_id", "kind", "record_id"),
+        "curve_payloads": (
+            "payload_id", "sample_id", "kind", "record_id", "codec", "payload",
+        ),
+    }
+    for table, columns in expected.items():
+        actual = tuple(
+            row[1] for row in connection.execute(f"PRAGMA table_info({table})")
+        )
+        if actual != columns:
+            raise ExplanationError(f"malformed explanation schema: {table}")
+    row = connection.execute(
+        "SELECT payload FROM metadata WHERE key='summary'"
+    ).fetchone()
+    if row is None:
+        raise ExplanationError("malformed explanation: missing completion summary")
+    summary = _object(row[0])
+    if (
+        summary.get("schema_version") != SCHEMA_VERSION
+        or summary.get("diagnostic_only") is not True
+        or summary.get("completion") != "post_matrix_publication"
+        or summary.get("plot_evidence_capability") != "retained_curves"
+    ):
+        raise ExplanationError("malformed explanation: invalid completion summary")
+    return summary
+
+
+@dataclass(frozen=True, slots=True)
+class ExplanationMetadata:
+    """Completed review facts and exact links, without curve payloads."""
+
+    summary: dict[str, Any]
+    candidates: dict[tuple[str, str], dict[str, Any]]
+    records: dict[str, dict[str, dict[str, Any]]]
+    links: tuple[tuple[str, str, str, str], ...]
+
+
+def read_explanation_metadata(path: str | Path) -> ExplanationMetadata:
+    """Read the review population through the storage owner, without curves."""
+    path = Path(path)
+    if not path.is_file():
+        raise ExplanationUnavailableError(f"explanation unavailable: {path}")
+    connection: sqlite3.Connection | None = None
+    try:
+        connection = sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True)
+        connection.execute("PRAGMA query_only = ON")
+        summary = _read_completed_summary(connection)
+        candidates = {
+            (cid, sid): _object(payload)
+            for cid, sid, payload in connection.execute(
+                "SELECT candidate_id, sample_id, payload FROM candidates"
+            )
+        }
+        records: dict[str, dict[str, dict[str, Any]]] = {}
+        for kind, rid, payload in connection.execute(
+            "SELECT kind, record_id, payload FROM records"
+        ):
+            records.setdefault(kind, {})[rid] = _object(payload)
+        links = tuple(connection.execute(
+            "SELECT candidate_id, sample_id, kind, record_id FROM links"
+        ))
+        return ExplanationMetadata(summary, candidates, records, links)
+    except (sqlite3.Error, json.JSONDecodeError, TypeError) as exc:
+        raise ExplanationError(f"malformed explanation: {exc}") from exc
+    finally:
+        if connection is not None:
+            connection.close()
+
+
 def read_cid_nl_explanation(
     path: str | Path, *, candidate_id: str | None = None
 ) -> dict[str, Any]:
@@ -473,46 +546,7 @@ def read_cid_nl_explanation(
     try:
         connection = sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True)
         connection.execute("PRAGMA query_only = ON")
-        version = connection.execute("PRAGMA user_version").fetchone()[0]
-        if version not in (1, 2):
-            raise ExplanationError(f"unsupported explanation schema version: {version}")
-        expected = {
-            "metadata": ("key", "payload"),
-            "candidates": ("candidate_id", "sample_id", "payload"),
-            "records": ("kind", "record_id", "payload"),
-            "links": ("candidate_id", "sample_id", "kind", "record_id"),
-        }
-        if version == 2:
-            expected["curve_payloads"] = (
-                "payload_id",
-                "sample_id",
-                "kind",
-                "record_id",
-                "codec",
-                "payload",
-            )
-        for table, columns in expected.items():
-            actual = tuple(
-                row[1] for row in connection.execute(f"PRAGMA table_info({table})")
-            )
-            if actual != columns:
-                raise ExplanationError(f"malformed explanation schema: {table}")
-        row = connection.execute(
-            "SELECT payload FROM metadata WHERE key='summary'"
-        ).fetchone()
-        if row is None:
-            raise ExplanationError("malformed explanation: missing completion summary")
-        summary = _object(row[0])
-        if (
-            summary.get("schema_version") != version
-            or summary.get("diagnostic_only") is not True
-            or summary.get("completion") != "post_matrix_publication"
-        ):
-            raise ExplanationError("malformed explanation: invalid completion summary")
-        if version == 1:
-            summary.setdefault("plot_evidence_capability", "metadata_only")
-        else:
-            summary.setdefault("plot_evidence_capability", "retained_curves_v1")
+        summary = _read_completed_summary(connection)
         if candidate_id is None:
             return summary
         candidates = [
@@ -534,7 +568,7 @@ def read_cid_nl_explanation(
         ):
             records.setdefault(kind, []).append(_object(payload))
         return {
-            "schema_version": version,
+            "schema_version": SCHEMA_VERSION,
             "diagnostic_only": True,
             "completion": summary["completion"],
             "candidate_id": candidate_id,
@@ -562,11 +596,7 @@ def read_cid_nl_curves(
     try:
         connection = sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True)
         connection.execute("PRAGMA query_only = ON")
-        version = connection.execute("PRAGMA user_version").fetchone()[0]
-        if version == 1:
-            return []
-        if version != 2:
-            raise ExplanationError(f"unsupported explanation schema version: {version}")
+        _read_completed_summary(connection)
         if sample_ids is not None and not sample_ids:
             return []
         if record_ids is not None and not record_ids:
@@ -593,7 +623,7 @@ def read_cid_nl_curves(
             codec,
             blob,
         ) in connection.execute(query, params):
-            if codec != "zlib-json-utf8-v1":
+            if codec != "zlib-json-utf8":
                 raise ExplanationError(f"unsupported curve payload codec: {codec}")
             decompressed = zlib.decompress(blob)
             payload_data = json.loads(decompressed.decode("utf-8"))

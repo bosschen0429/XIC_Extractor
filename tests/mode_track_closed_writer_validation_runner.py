@@ -273,7 +273,7 @@ def build_launch_inputs(
             "transaction_receipt": str(final_output_dir / "transaction_receipt.json"),
         }
     manifest: dict[str, object] = {
-        "schema_version": "mode_track_closed_writer_launch_manifest_v2",
+        "schema_version": "mode_track_closed_writer_launch_manifest",
         "stage": stage,
         "launch_contract": closed_writer_fixture.closed_writer_launch_contract(),
         "code_sha": code_sha,

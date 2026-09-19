@@ -79,7 +79,7 @@ def test_run_spec_runtime_local_imports_keep_forbidden_modules_absent() -> None:
             source = identity.build_acquisition_source_identity(
                 path,
                 acquisition_format="thermo_raw",
-                observation_namespace="thermo_raw_scan_v1",
+                observation_namespace="thermo_raw_scan",
             )
             acquisition = owner.ProcessingAcquisitionInput(
                 input_ordinal=0,

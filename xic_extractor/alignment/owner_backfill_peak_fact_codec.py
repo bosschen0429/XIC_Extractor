@@ -21,7 +21,7 @@ from typing import Literal, cast
 from xic_extractor.alignment.owner_backfill_peak_fact_projection import (
     OWNER_BACKFILL_CELL_PROJECTION_ID_PREFIX,
     OWNER_BACKFILL_PROVENANCE_WRITER_SCHEMA_VERSION,
-    OwnerBackfillCellProjectionV2,
+    OwnerBackfillCellProjection,
     _compact_json_bytes,
     _float_text,
     _nonnegative_int,
@@ -47,9 +47,9 @@ from xic_extractor.peak_detection.signal_processing_profile import (
 )
 
 OWNER_BACKFILL_PEAK_FACT_PROVENANCE_SCHEMA_VERSION = (
-    "alignment_owner_backfill_peak_fact_provenance_v2"
+    "alignment_owner_backfill_peak_fact_provenance"
 )
-OWNER_BACKFILL_PROVENANCE_ROW_ID_PREFIX = "owner-backfill-provenance-row.v2:"
+OWNER_BACKFILL_PROVENANCE_ROW_ID_PREFIX = "owner-backfill-provenance-row:"
 
 RowKind = Literal["run_profile", "physical_question", "cell_projection"]
 ClaimState = Literal["verified", "unavailable_without_live_owner"]
@@ -328,7 +328,7 @@ def _run_profile_row(
 
 
 def _cell_projection_row(
-    projection: OwnerBackfillCellProjectionV2,
+    projection: OwnerBackfillCellProjection,
     profile: SignalProcessingProfile,
 ) -> OwnerBackfillPeakFactProvenanceRow:
     if projection.profile_id != profile.profile_id:
@@ -367,7 +367,7 @@ def build_owner_backfill_peak_fact_provenance_batch_from_rows(
     physical_rows: Sequence[OwnerBackfillPeakFactProvenanceRow],
     *,
     profile: SignalProcessingProfile,
-    cell_projections: Sequence[OwnerBackfillCellProjectionV2] = (),
+    cell_projections: Sequence[OwnerBackfillCellProjection] = (),
 ) -> OwnerBackfillPeakFactProvenanceBatch:
     """Freeze already owner-projected physical rows with final cell authority."""
 
@@ -583,23 +583,23 @@ def _validate_physical_row(row: OwnerBackfillPeakFactProvenanceRow) -> None:
     if not set(row.admissible_segment_ids).issubset(row.segment_candidate_ids):
         raise ValueError("admissible segments must be a subset of the segment universe")
     _require_typed_id(
-        row.trace_content_id, prefix="trace-content.v1:", field="trace_content_id"
+        row.trace_content_id, prefix="trace-content:", field="trace_content_id"
     )
     _require_typed_id(
-        row.prepared_signal_id, prefix="prepared-signal.v1:", field="prepared_signal_id"
+        row.prepared_signal_id, prefix="prepared-signal:", field="prepared_signal_id"
     )
     _require_typed_id(
         row.segment_universe_id,
-        prefix="segment-universe.v1:",
+        prefix="segment-universe:",
         field="segment_universe_id",
     )
     _require_typed_id(
         row.physical_question_id,
-        prefix="physical-question.v1:",
+        prefix="physical-question:",
         field="physical_question_id",
     )
     _require_typed_id(
-        row.physical_answer_id, prefix="physical-answer.v1:", field="physical_answer_id"
+        row.physical_answer_id, prefix="physical-answer:", field="physical_answer_id"
     )
     if row.state == "available":
         for name in (
@@ -624,11 +624,11 @@ def _validate_physical_row(row: OwnerBackfillPeakFactProvenanceRow) -> None:
         )
         _require_typed_id(
             row.physical_segment_id,
-            prefix="physical-segment.v1:",
+            prefix="physical-segment:",
             field="physical_segment_id",
         )
         _require_typed_id(
-            row.fact_content_id, prefix="physical-facts.v1:", field="fact_content_id"
+            row.fact_content_id, prefix="physical-facts:", field="fact_content_id"
         )
         _require_lower_sha256(
             row.relative_shape_content_hash, field="relative_shape_content_hash"
@@ -685,7 +685,7 @@ def _validate_cell_row(row: OwnerBackfillPeakFactProvenanceRow) -> None:
         raise ValueError("unsupported provenance writer_schema_version")
     _require_typed_id(
         row.selected_fact_content_id,
-        prefix="physical-facts.v1:",
+        prefix="physical-facts:",
         field="selected_fact_content_id",
     )
     _require_typed_id(
@@ -703,7 +703,7 @@ def _validate_cell_row(row: OwnerBackfillPeakFactProvenanceRow) -> None:
         prefix=OWNER_BACKFILL_CELL_PROJECTION_ID_PREFIX,
         field="cell_projection_id",
     )
-    expected = OwnerBackfillCellProjectionV2(
+    expected = OwnerBackfillCellProjection(
         group_hypothesis_id=row.group_hypothesis_id,
         public_family_id=row.public_family_id,
         sample_stem=row.sample_stem,
@@ -947,7 +947,7 @@ def _strict_projection(
 def _validate_exact_header(path: Path, header: Sequence[str] | None) -> None:
     if len(tuple(header or ())) == 58:
         raise ValueError(
-            f"{path}: v1 provenance is not readable; rerun alignment to emit v2"
+            f"{path}: incomplete provenance is not readable; rerun alignment"
         )
     if tuple(header or ()) != OWNER_BACKFILL_PEAK_FACT_PROVENANCE_COLUMNS:
         raise ValueError(f"{path}: expected exact provenance schema")

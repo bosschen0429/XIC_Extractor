@@ -10,7 +10,7 @@ from collections.abc import Sequence
 from xic_inspector.selection.canonical import CanonicalItem
 from xic_inspector.selection.strata import STRATA_ORDER
 
-SAMPLING_ALGORITHM = "cross_sample_sha256_v2"
+SAMPLING_ALGORITHM = "cross_sample_sha256"
 _COVERAGE_ORDER = ("broad", "partial", "limited", "candidate")
 _ORIGIN_ORDER = (
     "recovery_support", "reacquired_support", "discovery_support", "unavailable"
@@ -36,7 +36,7 @@ def review_case_key(item: CanonicalItem) -> tuple[str, str, str]:
     return coverage, origin if coverage != "limited" else "unavailable", item.stratum
 
 
-def sample_cross_sample_sha256_v2(
+def sample_cross_sample_sha256(
     items: Sequence[CanonicalItem], *, limit: int = 30, seed: int = 0,
 ) -> list[CanonicalItem]:
     """Cycle through family cases; candidates only fill spare slots."""

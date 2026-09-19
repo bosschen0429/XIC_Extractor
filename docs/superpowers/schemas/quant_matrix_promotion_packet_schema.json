@@ -1,0 +1,73 @@
+{
+  "schema_version": "quant_matrix_promotion_packet_schema",
+  "promotion_packet_summary_schema": "quant_matrix_promotion_packet_summary",
+  "validation_evidence_schema": "quant_matrix_validation_evidence",
+  "promotion_readiness_schema": "quant_matrix_promotion_readiness",
+  "purpose": "Defines the no-RAW QuantMatrix promotion candidate packet summary. The packet binds the real QuantMatrixVersion candidate bundle, large-cohort evidence, heldout-oracle evidence, and real downstream-impact smoke into a production-ready candidate packet without changing ProductWriter defaults or matrix authority.",
+  "output_files": {
+    "summary_json": "quant_matrix_promotion_packet_summary.json",
+    "validation_evidence_json": "quant_matrix_validation_evidence.json",
+    "validation_evidence_rows_tsv": "quant_matrix_validation_evidence_rows.tsv",
+    "validation_evidence_summary_json": "quant_matrix_validation_evidence_summary.json",
+    "copied_artifacts": "artifacts/",
+    "real_bundle_readiness": "real_bundle_readiness/"
+  },
+  "summary_required_fields": [
+    "schema_version",
+    "artifact_role",
+    "status",
+    "packet_id",
+    "requested_readiness_label",
+    "source_run_id",
+    "downstream_scope",
+    "accepted_backfill_count",
+    "readiness_label",
+    "contract_correctness_status",
+    "scientific_confidence_status",
+    "production_ready",
+    "may_promote_default_quant_matrix",
+    "validation_tiers",
+    "missing_science_evidence",
+    "read_only",
+    "write_authority",
+    "scorer_ran",
+    "raw_or_full_cohort_ran",
+    "product_writer_changed",
+    "default_quant_matrix_changed",
+    "broad_backfill_unparked",
+    "input_artifacts",
+    "artifacts"
+  ],
+  "binding_rules": {
+    "default_check_only_must_match_current_511_source_run": true,
+    "default_check_only_must_match_current_511_downstream_scope": true,
+    "default_check_only_must_match_511_accepted_backfills": true,
+    "real_bundle_must_validate": true,
+    "validation_packet_must_validate": true,
+    "readiness_must_rerun_cleanly_against_real_bundle": true,
+    "readiness_must_be_production_ready_candidate_packet": true,
+    "required_science_tiers_must_pass": [
+      "full_cohort",
+      "heldout_oracle",
+      "downstream_impact_smoke"
+    ],
+    "downstream_impact_smoke_must_validate_artifact_content": true
+  },
+  "authority_rules": {
+    "read_only": true,
+    "write_authority": false,
+    "scorer_ran": false,
+    "raw_or_full_cohort_ran": false,
+    "product_writer_changed": false,
+    "default_quant_matrix_changed": false,
+    "broad_backfill_unparked": false,
+    "does_not_change_selected_peak_area_or_counting": true,
+    "does_not_change_workbook_or_gui": true
+  },
+  "promotion_claim": {
+    "readiness_label": "production_ready_candidate_packet",
+    "production_ready": true,
+    "may_promote_default_quant_matrix": true,
+    "meaning": "This authorizes a later expected-diff default-matrix activation gate to proceed; it does not itself activate ProductWriter or default outputs."
+  }
+}

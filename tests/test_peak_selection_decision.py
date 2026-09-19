@@ -38,7 +38,7 @@ def test_selection_decision_projects_accepted_typed_semantics() -> None:
     assert decision.support_reasons == ("ms1_coherent", "candidate_aligned_ms2_nl")
     assert decision.compatibility_labels == ("strict_nl_ok", "local_sn_strong")
     assert decision.legacy_projection_status == "active_policy_remaining"
-    assert decision.policy_source == "selected_hypothesis_decision_v1"
+    assert decision.policy_source == "selected_hypothesis_decision"
     assert decision.compatibility_oracle == "legacy_peak_scoring_current_oracle"
     assert "candidate_aligned_ms2_nl" in decision.evidence_sources
     assert "legacy_compatibility_projection" in decision.evidence_sources

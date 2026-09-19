@@ -778,7 +778,7 @@ def test_publication_rejects_every_cross_role_artifact_mapping(
             "workflow/alignment/provisional_row_identity.tsv",
             "path was substituted",
         ),
-        ("schema_version", "foreign_schema_v1", "schema does not match"),
+        ("schema_version", "foreign_schema", "schema does not match"),
     ],
 )
 def test_manifest_fingerprint_registry_rejects_path_or_schema_substitution(
@@ -822,7 +822,7 @@ def test_manifest_fingerprint_cannot_be_caller_minted(tmp_path: Path) -> None:
             root=tmp_path.resolve(),
             resolved_path=path.resolve(),
             relative_path=path.name,
-            schema_version="schema_v1",
+            schema_version="schema",
             fingerprint=fingerprint,
             _mint_capability=object(),
         )

@@ -65,14 +65,14 @@ class AlignmentRuntimeAdapterError(ValueError):
     """Raised when Alignment process results cannot close shared runtime work."""
 
 
-_SCHEMA_VERSION = "alignment_process_result_identity_v1"
+_SCHEMA_VERSION = "alignment_process_result_identity"
 _ARTIFACT_SEMANTIC_CONTRACT = _mint_artifact_semantic_contract_ref(
     owner_namespace="xic_extractor.alignment.runtime_adapter",
     semantic_role="alignment_process_worker_result_identity",
     schema_version=_SCHEMA_VERSION,
     validation_status="diagnostic_only",
     media_type="application/vnd.xic.alignment-process-result-identity+json",
-    serialization_format="canonical-json-v1",
+    serialization_format="canonical-json",
 )
 
 
@@ -507,7 +507,7 @@ def canonical_alignment_peak_group_result_bytes(
         json.dumps(
             {
                 "groups": projected_groups,
-                "schema_version": "alignment_peak_group_result_v1",
+                "schema_version": "alignment_peak_group_result",
             },
             ensure_ascii=False,
             sort_keys=True,
@@ -521,12 +521,12 @@ def canonical_alignment_peak_group_result_bytes(
 def canonical_alignment_peak_group_binding_bytes(
     groups: tuple[CrossSamplePeakGroupHypothesis, ...],
 ) -> bytes:
-    """Bind internal CrossSample authority without changing the v1 projection."""
+    """Bind internal CrossSample authority without changing the projection."""
 
     _validated_cross_sample_population(groups)
     public_payload = canonical_alignment_peak_group_result_bytes(groups)
     payload = {
-        "schema_version": "alignment_cross_sample_result_binding_v1",
+        "schema_version": "alignment_cross_sample_result_binding",
         "public_result_sha256": hashlib.sha256(public_payload).hexdigest(),
         "groups": [
             {

@@ -139,6 +139,7 @@ _DDA_NON_DISPOSITIVE_MS1_INTENSITY_MIN = 2.5e4
 _DDA_NON_DISPOSITIVE_TRIGGER_SCAN_MIN = 3
 _DDA_NON_DISPOSITIVE_TRACE_STRENGTHS = frozenset({"moderate", "strong"})
 
+
 def build_machine_evidence_support_rows(
     *,
     explanations: Sequence[Mapping[str, str]],
@@ -146,25 +147,18 @@ def build_machine_evidence_support_rows(
     machine_matches: Mapping[str, Sequence[MachineMatch]],
     cwt_shape_evidence: Mapping[tuple[str, str], Mapping[str, str]] | None = None,
     tier2_trace_evidence: Mapping[str, Mapping[str, str]] | None = None,
-    candidate_ms2_pattern_evidence: Mapping[
-        tuple[str, str], Mapping[str, str]
-    ] | None = None,
-    ms1_pattern_coherence_evidence: Mapping[
-        tuple[str, str], Mapping[str, str]
-    ] | None = None,
-    qc_ms1_pattern_reference_evidence: Mapping[
-        tuple[str, str], Mapping[str, str]
-    ] | None = None,
-    matrix_rt_drift_policy_evidence: Mapping[
-        tuple[str, str], Mapping[str, str]
-    ] | None = None,
-    sample_negative_evidence: Mapping[
-        tuple[str, str], Mapping[str, str]
-    ] | None = None,
+    candidate_ms2_pattern_evidence: Mapping[tuple[str, str], Mapping[str, str]]
+    | None = None,
+    ms1_pattern_coherence_evidence: Mapping[tuple[str, str], Mapping[str, str]]
+    | None = None,
+    qc_ms1_pattern_reference_evidence: Mapping[tuple[str, str], Mapping[str, str]]
+    | None = None,
+    matrix_rt_drift_policy_evidence: Mapping[tuple[str, str], Mapping[str, str]]
+    | None = None,
+    sample_negative_evidence: Mapping[tuple[str, str], Mapping[str, str]] | None = None,
     rt_mode_evidence: Mapping[tuple[str, str], Mapping[str, str]] | None = None,
-    peak_hypothesis_selection: Mapping[
-        tuple[str, str], Mapping[str, str]
-    ] | None = None,
+    peak_hypothesis_selection: Mapping[tuple[str, str], Mapping[str, str]]
+    | None = None,
 ) -> tuple[dict[str, str], ...]:
     shadow_by_id = {row["oracle_row_id"]: row for row in shadow_rows}
     cwt_shape_evidence = cwt_shape_evidence or {}
@@ -439,13 +433,16 @@ def _pattern_basis_status(
     ms1_pattern_row: Mapping[str, str] | None,
     qc_ms1_reference_row: Mapping[str, str] | None,
 ) -> str:
-    if _has_candidate_ms2_pattern_metric(
-        candidate_ms2_row,
-    ) or _has_family_ms2_required_tag(
-        family_ms2_required_tag_row,
-    ) or _has_ms1_pattern_metric(
-        ms1_pattern_row
-    ) or _has_qc_ms1_pattern_reference_metric(qc_ms1_reference_row):
+    if (
+        _has_candidate_ms2_pattern_metric(
+            candidate_ms2_row,
+        )
+        or _has_family_ms2_required_tag(
+            family_ms2_required_tag_row,
+        )
+        or _has_ms1_pattern_metric(ms1_pattern_row)
+        or _has_qc_ms1_pattern_reference_metric(qc_ms1_reference_row)
+    ):
         return "machine_observed"
     has_family_proxy = any(
         _has_value(match.row.get("neutral_loss_tag")) for match in context_matches
@@ -466,19 +463,24 @@ def _opportunity_basis_status(
     ms1_pattern_row: Mapping[str, str] | None,
     qc_ms1_reference_row: Mapping[str, str] | None,
 ) -> str:
-    if _has_tier2_trace_metric(
-        tier2_row,
-    ) or _has_ms1_intensity_opportunity_metric(
-        ms1_pattern_row,
-    ) or _has_family_ms2_required_tag(
-        candidate_ms2_row,
-    ) or _dda_non_dispositive_policy_supports_manual(
-        tags,
-        context_matches,
-        candidate_ms2_row,
-        family_ms2_required_tag_row,
-        ms1_pattern_row,
-        qc_ms1_reference_row,
+    if (
+        _has_tier2_trace_metric(
+            tier2_row,
+        )
+        or _has_ms1_intensity_opportunity_metric(
+            ms1_pattern_row,
+        )
+        or _has_family_ms2_required_tag(
+            candidate_ms2_row,
+        )
+        or _dda_non_dispositive_policy_supports_manual(
+            tags,
+            context_matches,
+            candidate_ms2_row,
+            family_ms2_required_tag_row,
+            ms1_pattern_row,
+            qc_ms1_reference_row,
+        )
     ):
         return "machine_observed"
     machine_tokens = _machine_tokens(sample_matches, context_matches)
@@ -600,6 +602,15 @@ def _basis_status(*, has_machine_proxy: bool, has_manual: bool) -> str:
     return "not_available"
 
 
+def _append_row_metrics(
+    metrics: list[str],
+    row: Mapping[str, str],
+    fields: Sequence[tuple[str, str]],
+) -> None:
+    for metric_name, row_field in fields:
+        _append_metric(metrics, metric_name, row.get(row_field))
+
+
 def _observed_machine_metrics(
     sample_matches: Sequence[MachineMatch],
     context_matches: Sequence[MachineMatch],
@@ -619,16 +630,24 @@ def _observed_machine_metrics(
     metrics: list[str] = []
     if sample_matches:
         first_sample = sample_matches[0].row
-        _append_metric(metrics, "status", first_sample.get("status"))
-        _append_metric(metrics, "apex_rt", first_sample.get("apex_rt"))
-        _append_metric(metrics, "rt_delta_sec", first_sample.get("rt_delta_sec"))
+        _append_row_metrics(
+            metrics,
+            first_sample,
+            (
+                ("status", "status"),
+                ("apex_rt", "apex_rt"),
+                ("rt_delta_sec", "rt_delta_sec"),
+            ),
+        )
         if _has_rt_preferred_window_conflict(sample_matches):
             metrics.append("rt_preferred_window_status=outside_preferred_window")
-        _append_metric(metrics, "trace_quality", first_sample.get("trace_quality"))
-        _append_metric(
+        _append_row_metrics(
             metrics,
-            "scan_support_score",
-            first_sample.get("scan_support_score"),
+            first_sample,
+            (
+                ("trace_quality", "trace_quality"),
+                ("scan_support_score", "scan_support_score"),
+            ),
         )
         width_sec = _peak_width_sec(first_sample)
         if width_sec:
@@ -637,542 +656,276 @@ def _observed_machine_metrics(
         if match.evidence_source == "alignment_review":
             if _has_cid_nl_pattern_context((match,)):
                 metrics.append("cid_nl_pattern_context=family_level_present")
-            _append_metric(
+            _append_row_metrics(
                 metrics,
-                "neutral_loss_tag",
-                match.row.get("neutral_loss_tag"),
-            )
-            _append_metric(
-                metrics,
-                "family_product_mz",
-                match.row.get("family_product_mz"),
-            )
-            _append_metric(
-                metrics,
-                "family_observed_neutral_loss_da",
-                match.row.get("family_observed_neutral_loss_da"),
+                match.row,
+                (
+                    ("neutral_loss_tag", "neutral_loss_tag"),
+                    ("family_product_mz", "family_product_mz"),
+                    (
+                        "family_observed_neutral_loss_da",
+                        "family_observed_neutral_loss_da",
+                    ),
+                ),
             )
             break
     if cwt_row:
-        _append_metric(metrics, "cwt_status", cwt_row.get("cwt_status"))
-        _append_metric(metrics, "cwt_shape_status", cwt_row.get("cwt_shape_status"))
-        _append_metric(metrics, "cwt_apex_delta_sec", cwt_row.get("cwt_apex_delta_sec"))
-        _append_metric(
+        _append_row_metrics(
             metrics,
-            "cwt_boundary_width_sec",
-            cwt_row.get("cwt_boundary_width_sec"),
-        )
-        _append_metric(metrics, "cwt_prominence", cwt_row.get("cwt_prominence"))
-        _append_metric(
-            metrics,
-            "cwt_region_scan_count",
-            cwt_row.get("cwt_region_scan_count"),
-        )
-        _append_metric(
-            metrics,
-            "cwt_quality_flags",
-            cwt_row.get("cwt_quality_flags"),
+            cwt_row,
+            (
+                ("cwt_status", "cwt_status"),
+                ("cwt_shape_status", "cwt_shape_status"),
+                ("cwt_apex_delta_sec", "cwt_apex_delta_sec"),
+                ("cwt_boundary_width_sec", "cwt_boundary_width_sec"),
+                ("cwt_prominence", "cwt_prominence"),
+                ("cwt_region_scan_count", "cwt_region_scan_count"),
+                ("cwt_quality_flags", "cwt_quality_flags"),
+            ),
         )
     if tier2_row:
-        _append_metric(
+        _append_row_metrics(
             metrics,
-            "tier2_raw_trace_status",
-            tier2_row.get("raw_trace_reread_status"),
-        )
-        _append_metric(
-            metrics,
-            "tier2_scan_support_score",
-            tier2_row.get("scan_support_score"),
-        )
-        _append_metric(
-            metrics,
-            "tier2_trace_scan_count",
-            tier2_row.get("trace_scan_count"),
-        )
-        _append_metric(
-            metrics,
-            "tier2_sn_proxy",
-            tier2_row.get("trace_signal_to_noise_proxy"),
-        )
-        _append_metric(
-            metrics,
-            "tier2_apex_prominence_score",
-            tier2_row.get("trace_apex_prominence_score"),
+            tier2_row,
+            (
+                ("tier2_raw_trace_status", "raw_trace_reread_status"),
+                ("tier2_scan_support_score", "scan_support_score"),
+                ("tier2_trace_scan_count", "trace_scan_count"),
+                ("tier2_sn_proxy", "trace_signal_to_noise_proxy"),
+                ("tier2_apex_prominence_score", "trace_apex_prominence_score"),
+            ),
         )
     if candidate_ms2_row:
-        _append_metric(
+        _append_row_metrics(
             metrics,
-            "candidate_ms2_pattern_status",
-            candidate_ms2_row.get("candidate_ms2_pattern_status"),
-        )
-        _append_metric(
-            metrics,
-            "candidate_ms2_evidence_level",
-            candidate_ms2_row.get("candidate_ms2_evidence_level"),
-        )
-        _append_metric(
-            metrics,
-            "candidate_ms2_similarity_score",
-            candidate_ms2_row.get("candidate_ms2_similarity_score"),
-        )
-        _append_metric(
-            metrics,
-            "candidate_ms2_matched_product_count",
-            candidate_ms2_row.get("matched_product_count"),
-        )
-        _append_metric(
-            metrics,
-            "candidate_ms2_matched_neutral_loss_count",
-            candidate_ms2_row.get("matched_neutral_loss_count"),
-        )
-        _append_metric(
-            metrics,
-            "candidate_ms2_apex_delta_sec",
-            candidate_ms2_row.get("apex_ms2_delta_sec"),
-        )
-        _append_metric(
-            metrics,
-            "candidate_ms2_alignment_source",
-            candidate_ms2_row.get("ms2_alignment_source"),
-        )
-        _append_metric(
-            metrics,
-            "candidate_ms2_source_neutral_loss_mass_error_ppm",
-            candidate_ms2_row.get("source_neutral_loss_mass_error_ppm"),
-        )
-        _append_metric(
-            metrics,
-            "candidate_ms2_raw_best_loss_ppm",
-            candidate_ms2_row.get("raw_ms2_best_loss_ppm"),
-        )
-        _append_metric(
-            metrics,
-            "candidate_ms2_raw_trigger_scan_count",
-            candidate_ms2_row.get("raw_ms2_trigger_scan_count"),
-        )
-        _append_metric(
-            metrics,
-            "candidate_ms2_raw_strict_nl_scan_count",
-            candidate_ms2_row.get("raw_ms2_strict_nl_scan_count"),
-        )
-        _append_metric(
-            metrics,
-            "candidate_ms2_raw_trace_strength",
-            candidate_ms2_row.get("raw_ms2_trace_strength"),
-        )
-        _append_metric(
-            metrics,
-            "candidate_ms2_raw_absence_reason",
-            candidate_ms2_row.get("raw_ms2_diagnostic_product_absence_reason"),
-        )
-        _append_metric(
-            metrics,
-            "candidate_ms2_nl_ppm_warn",
-            candidate_ms2_row.get("nl_ppm_warn"),
-        )
-        _append_metric(
-            metrics,
-            "candidate_ms2_nl_ppm_max",
-            candidate_ms2_row.get("nl_ppm_max"),
+            candidate_ms2_row,
+            (
+                ("candidate_ms2_pattern_status", "candidate_ms2_pattern_status"),
+                ("candidate_ms2_evidence_level", "candidate_ms2_evidence_level"),
+                ("candidate_ms2_similarity_score", "candidate_ms2_similarity_score"),
+                ("candidate_ms2_matched_product_count", "matched_product_count"),
+                (
+                    "candidate_ms2_matched_neutral_loss_count",
+                    "matched_neutral_loss_count",
+                ),
+                ("candidate_ms2_apex_delta_sec", "apex_ms2_delta_sec"),
+                ("candidate_ms2_alignment_source", "ms2_alignment_source"),
+                (
+                    "candidate_ms2_source_neutral_loss_mass_error_ppm",
+                    "source_neutral_loss_mass_error_ppm",
+                ),
+                ("candidate_ms2_raw_best_loss_ppm", "raw_ms2_best_loss_ppm"),
+                (
+                    "candidate_ms2_raw_trigger_scan_count",
+                    "raw_ms2_trigger_scan_count",
+                ),
+                (
+                    "candidate_ms2_raw_strict_nl_scan_count",
+                    "raw_ms2_strict_nl_scan_count",
+                ),
+                ("candidate_ms2_raw_trace_strength", "raw_ms2_trace_strength"),
+                (
+                    "candidate_ms2_raw_absence_reason",
+                    "raw_ms2_diagnostic_product_absence_reason",
+                ),
+                ("candidate_ms2_nl_ppm_warn", "nl_ppm_warn"),
+                ("candidate_ms2_nl_ppm_max", "nl_ppm_max"),
+            ),
         )
     if _has_family_ms2_required_tag(family_ms2_required_tag_row):
         assert family_ms2_required_tag_row is not None
         metrics.append("family_ms2_required_tag_status=observed_in_family")
-        _append_metric(
+        _append_row_metrics(
             metrics,
-            "family_ms2_required_tag_sample",
-            family_ms2_required_tag_row.get("sample_stem"),
-        )
-        _append_metric(
-            metrics,
-            "family_ms2_required_tag_strict_nl_count",
-            family_ms2_required_tag_row.get("raw_ms2_strict_nl_scan_count"),
+            family_ms2_required_tag_row,
+            (
+                ("family_ms2_required_tag_sample", "sample_stem"),
+                (
+                    "family_ms2_required_tag_strict_nl_count",
+                    "raw_ms2_strict_nl_scan_count",
+                ),
+            ),
         )
     if ms1_pattern_row:
-        _append_metric(
+        _append_row_metrics(
             metrics,
-            "ms1_pattern_status",
-            ms1_pattern_row.get("ms1_pattern_status"),
-        )
-        _append_metric(
-            metrics,
-            "ms1_pattern_evidence_level",
-            ms1_pattern_row.get("ms1_pattern_evidence_level"),
-        )
-        _append_metric(
-            metrics,
-            "ms1_apex_coherence_sec",
-            ms1_pattern_row.get("apex_coherence_sec"),
-        )
-        _append_metric(
-            metrics,
-            "ms1_boundary_overlap_score",
-            ms1_pattern_row.get("boundary_overlap_score"),
-        )
-        _append_metric(
-            metrics,
-            "ms1_shape_correlation_score",
-            ms1_pattern_row.get("shape_correlation_score"),
-        )
-        _append_metric(
-            metrics,
-            "ms1_local_interference_score",
-            ms1_pattern_row.get("local_interference_score"),
-        )
-        _append_metric(
-            metrics,
-            "ms1_drift_compatible_status",
-            ms1_pattern_row.get("drift_compatible_status"),
-        )
-        _append_metric(
-            metrics,
-            "ms1_shape_metric_source",
-            ms1_pattern_row.get("shape_metric_source"),
-        )
-        _append_metric(
-            metrics,
-            "ms1_overlay_verdict",
-            ms1_pattern_row.get("family_ms1_overlay_verdict"),
-        )
-        _append_metric(
-            metrics,
-            "ms1_cell_height",
-            ms1_pattern_row.get("cell_height"),
-        )
-        _append_metric(
-            metrics,
-            "ms1_local_window_max_intensity",
-            ms1_pattern_row.get("local_window_max_intensity"),
-        )
-        _append_metric(
-            metrics,
-            "ms1_trace_max_intensity",
-            ms1_pattern_row.get("trace_max_intensity"),
+            ms1_pattern_row,
+            (
+                ("ms1_pattern_status", "ms1_pattern_status"),
+                ("ms1_pattern_evidence_level", "ms1_pattern_evidence_level"),
+                ("ms1_apex_coherence_sec", "apex_coherence_sec"),
+                ("ms1_boundary_overlap_score", "boundary_overlap_score"),
+                ("ms1_shape_correlation_score", "shape_correlation_score"),
+                ("ms1_local_interference_score", "local_interference_score"),
+                ("ms1_drift_compatible_status", "drift_compatible_status"),
+                ("ms1_shape_metric_source", "shape_metric_source"),
+                ("ms1_overlay_verdict", "family_ms1_overlay_verdict"),
+                ("ms1_cell_height", "cell_height"),
+                ("ms1_local_window_max_intensity", "local_window_max_intensity"),
+                ("ms1_trace_max_intensity", "trace_max_intensity"),
+            ),
         )
         if _has_ms1_intensity_opportunity_metric(ms1_pattern_row):
             metrics.append(
-                "ms1_intensity_opportunity_status="
-                "supported_by_raw_overlay_height"
+                "ms1_intensity_opportunity_status=supported_by_raw_overlay_height"
             )
-        _append_metric(
+        _append_row_metrics(
             metrics,
-            "ms1_cell_to_local_window_max_ratio",
-            ms1_pattern_row.get("cell_to_local_window_max_ratio"),
-        )
-        _append_metric(
-            metrics,
-            "ms1_local_window_to_global_max_ratio",
-            ms1_pattern_row.get("local_window_to_global_max_ratio"),
-        )
-        _append_metric(
-            metrics,
-            "ms1_local_window_apex_delta_sec",
-            ms1_pattern_row.get("local_window_apex_delta_sec"),
-        )
-        _append_metric(
-            metrics,
-            "ms1_global_trace_apex_delta_sec",
-            ms1_pattern_row.get("global_trace_apex_delta_sec"),
-        )
-        _append_metric(
-            metrics,
-            "ms1_peak_quality_vector_status",
-            ms1_pattern_row.get("peak_quality_vector_status"),
-        )
-        _append_metric(
-            metrics,
-            "ms1_peak_quality_vector_basis",
-            ms1_pattern_row.get("peak_quality_vector_basis"),
-        )
-        _append_metric(
-            metrics,
-            "ms1_peak_quality_trace_point_count",
-            ms1_pattern_row.get("peak_quality_trace_point_count"),
-        )
-        _append_metric(
-            metrics,
-            "ms1_peak_quality_boundary_point_count",
-            ms1_pattern_row.get("peak_quality_boundary_point_count"),
-        )
-        _append_metric(
-            metrics,
-            "ms1_peak_quality_signal_to_noise_proxy",
-            ms1_pattern_row.get("peak_quality_signal_to_noise_proxy"),
-        )
-        _append_metric(
-            metrics,
-            "ms1_peak_quality_fwhm_sec",
-            ms1_pattern_row.get("peak_quality_fwhm_sec"),
-        )
-        _append_metric(
-            metrics,
-            "ms1_peak_quality_sharpness_score",
-            ms1_pattern_row.get("peak_quality_sharpness_score"),
-        )
-        _append_metric(
-            metrics,
-            "ms1_peak_quality_zigzag_score",
-            ms1_pattern_row.get("peak_quality_zigzag_score"),
-        )
-        _append_metric(
-            metrics,
-            "ms1_peak_quality_tailing_ratio",
-            ms1_pattern_row.get("peak_quality_tailing_ratio"),
-        )
-        _append_metric(
-            metrics,
-            "ms1_peak_quality_boundary_margin_ratio",
-            ms1_pattern_row.get("peak_quality_boundary_margin_ratio"),
-        )
-        _append_metric(
-            metrics,
-            "ms1_peak_quality_feature_count",
-            ms1_pattern_row.get("peak_quality_feature_count"),
-        )
-        _append_metric(
-            metrics,
-            "ms1_peak_quality_vector_reason",
-            ms1_pattern_row.get("peak_quality_vector_reason"),
-        )
-        _append_metric(
-            metrics,
-            "ms1_pattern_reason",
-            ms1_pattern_row.get("reason"),
+            ms1_pattern_row,
+            (
+                (
+                    "ms1_cell_to_local_window_max_ratio",
+                    "cell_to_local_window_max_ratio",
+                ),
+                (
+                    "ms1_local_window_to_global_max_ratio",
+                    "local_window_to_global_max_ratio",
+                ),
+                ("ms1_local_window_apex_delta_sec", "local_window_apex_delta_sec"),
+                (
+                    "ms1_global_trace_apex_delta_sec",
+                    "global_trace_apex_delta_sec",
+                ),
+                ("ms1_peak_quality_vector_status", "peak_quality_vector_status"),
+                ("ms1_peak_quality_vector_basis", "peak_quality_vector_basis"),
+                (
+                    "ms1_peak_quality_trace_point_count",
+                    "peak_quality_trace_point_count",
+                ),
+                (
+                    "ms1_peak_quality_boundary_point_count",
+                    "peak_quality_boundary_point_count",
+                ),
+                (
+                    "ms1_peak_quality_signal_to_noise_proxy",
+                    "peak_quality_signal_to_noise_proxy",
+                ),
+                ("ms1_peak_quality_fwhm_sec", "peak_quality_fwhm_sec"),
+                (
+                    "ms1_peak_quality_sharpness_score",
+                    "peak_quality_sharpness_score",
+                ),
+                ("ms1_peak_quality_zigzag_score", "peak_quality_zigzag_score"),
+                ("ms1_peak_quality_tailing_ratio", "peak_quality_tailing_ratio"),
+                (
+                    "ms1_peak_quality_boundary_margin_ratio",
+                    "peak_quality_boundary_margin_ratio",
+                ),
+                ("ms1_peak_quality_feature_count", "peak_quality_feature_count"),
+                ("ms1_peak_quality_vector_reason", "peak_quality_vector_reason"),
+                ("ms1_pattern_reason", "reason"),
+            ),
         )
     if qc_ms1_reference_row:
-        _append_metric(
+        _append_row_metrics(
             metrics,
-            "qc_ms1_reference_status",
-            qc_ms1_reference_row.get("qc_reference_status"),
-        )
-        _append_metric(
-            metrics,
-            "qc_ms1_reference_evidence_level",
-            qc_ms1_reference_row.get("qc_reference_evidence_level"),
-        )
-        _append_metric(
-            metrics,
-            "qc_ms1_reference_policy",
-            qc_ms1_reference_row.get("qc_reference_policy"),
-        )
-        _append_metric(
-            metrics,
-            "qc_ms1_reference_local_status",
-            qc_ms1_reference_row.get("local_qc_reference_status"),
-        )
-        _append_metric(
-            metrics,
-            "qc_ms1_reference_consensus_status",
-            qc_ms1_reference_row.get("qc_consensus_status"),
-        )
-        _append_metric(
-            metrics,
-            "qc_ms1_reference_conflict_status",
-            qc_ms1_reference_row.get("qc_reference_conflict_status"),
-        )
-        _append_metric(
-            metrics,
-            "qc_ms1_reference_sample",
-            qc_ms1_reference_row.get("nearest_qc_sample_stem"),
-        )
-        _append_metric(
-            metrics,
-            "qc_ms1_reference_injection_order_delta",
-            qc_ms1_reference_row.get("nearest_qc_injection_order_delta"),
-        )
-        _append_metric(
-            metrics,
-            "qc_ms1_reference_apex_abs_delta_sec",
-            qc_ms1_reference_row.get("target_qc_apex_abs_delta_sec"),
-        )
-        _append_metric(
-            metrics,
-            "qc_ms1_reference_shape_similarity",
-            qc_ms1_reference_row.get("target_qc_shape_similarity"),
-        )
-        _append_metric(
-            metrics,
-            "qc_ms1_reference_target_local_ratio",
-            qc_ms1_reference_row.get("target_local_window_to_global_max_ratio"),
-        )
-        _append_metric(
-            metrics,
-            "qc_ms1_reference_qc_local_ratio",
-            qc_ms1_reference_row.get(
-                "nearest_qc_local_window_to_global_max_ratio"
+            qc_ms1_reference_row,
+            (
+                ("qc_ms1_reference_status", "qc_reference_status"),
+                ("qc_ms1_reference_evidence_level", "qc_reference_evidence_level"),
+                ("qc_ms1_reference_policy", "qc_reference_policy"),
+                ("qc_ms1_reference_local_status", "local_qc_reference_status"),
+                ("qc_ms1_reference_consensus_status", "qc_consensus_status"),
+                ("qc_ms1_reference_conflict_status", "qc_reference_conflict_status"),
+                ("qc_ms1_reference_sample", "nearest_qc_sample_stem"),
+                (
+                    "qc_ms1_reference_injection_order_delta",
+                    "nearest_qc_injection_order_delta",
+                ),
+                (
+                    "qc_ms1_reference_apex_abs_delta_sec",
+                    "target_qc_apex_abs_delta_sec",
+                ),
+                (
+                    "qc_ms1_reference_shape_similarity",
+                    "target_qc_shape_similarity",
+                ),
+                (
+                    "qc_ms1_reference_target_local_ratio",
+                    "target_local_window_to_global_max_ratio",
+                ),
+                (
+                    "qc_ms1_reference_qc_local_ratio",
+                    "nearest_qc_local_window_to_global_max_ratio",
+                ),
             ),
         )
     if matrix_rt_drift_row:
-        _append_metric(
+        _append_row_metrics(
             metrics,
-            "matrix_rt_drift_status",
-            matrix_rt_drift_row.get("matrix_rt_drift_status"),
-        )
-        _append_metric(
-            metrics,
-            "drift_evidence_level",
-            matrix_rt_drift_row.get("drift_evidence_level"),
-        )
-        _append_metric(
-            metrics,
-            "raw_rt_delta_sec",
-            matrix_rt_drift_row.get("raw_rt_delta_sec"),
-        )
-        _append_metric(
-            metrics,
-            "drift_corrected_delta_sec",
-            matrix_rt_drift_row.get("drift_corrected_delta_sec"),
-        )
-        _append_metric(
-            metrics,
-            "matrix_shift_sec",
-            matrix_rt_drift_row.get("matrix_shift_sec"),
-        )
-        _append_metric(
-            metrics,
-            "drift_reference_count",
-            matrix_rt_drift_row.get("drift_reference_count"),
-        )
-        _append_metric(
-            metrics,
-            "drift_compatible_status",
-            matrix_rt_drift_row.get("drift_compatible_status"),
-        )
-        _append_metric(
-            metrics,
-            "drift_reference_source",
-            matrix_rt_drift_row.get("drift_reference_source"),
-        )
-        _append_metric(
-            metrics,
-            "drift_reference_artifacts",
-            matrix_rt_drift_row.get("drift_reference_artifacts"),
-        )
-        _append_metric(
-            metrics,
-            "istd_trend_injection_order_span",
-            matrix_rt_drift_row.get("istd_trend_injection_order_span"),
-        )
-        _append_metric(
-            metrics,
-            "istd_phase_summary",
-            matrix_rt_drift_row.get("istd_phase_summary"),
+            matrix_rt_drift_row,
+            (
+                ("matrix_rt_drift_status", "matrix_rt_drift_status"),
+                ("drift_evidence_level", "drift_evidence_level"),
+                ("raw_rt_delta_sec", "raw_rt_delta_sec"),
+                ("drift_corrected_delta_sec", "drift_corrected_delta_sec"),
+                ("matrix_shift_sec", "matrix_shift_sec"),
+                ("drift_reference_count", "drift_reference_count"),
+                ("drift_compatible_status", "drift_compatible_status"),
+                ("drift_reference_source", "drift_reference_source"),
+                ("drift_reference_artifacts", "drift_reference_artifacts"),
+                (
+                    "istd_trend_injection_order_span",
+                    "istd_trend_injection_order_span",
+                ),
+                ("istd_phase_summary", "istd_phase_summary"),
+            ),
         )
     if sample_negative_row:
-        _append_metric(
+        _append_row_metrics(
             metrics,
-            "sample_negative_evidence_class",
-            sample_negative_row.get("negative_evidence_class"),
-        )
-        _append_metric(
-            metrics,
-            "sample_negative_evidence_level",
-            sample_negative_row.get("negative_evidence_level"),
-        )
-        _append_metric(
-            metrics,
-            "sample_negative_evidence_detail",
-            sample_negative_row.get("negative_evidence_detail"),
-        )
-        _append_metric(
-            metrics,
-            "sample_negative_evidence_reason",
-            sample_negative_row.get("reason"),
+            sample_negative_row,
+            (
+                ("sample_negative_evidence_class", "negative_evidence_class"),
+                ("sample_negative_evidence_level", "negative_evidence_level"),
+                ("sample_negative_evidence_detail", "negative_evidence_detail"),
+                ("sample_negative_evidence_reason", "reason"),
+            ),
         )
     if rt_mode_row:
-        _append_metric(metrics, "rt_mode_status", rt_mode_row.get("rt_mode_status"))
-        _append_metric(
+        _append_row_metrics(
             metrics,
-            "rt_mode_evidence_level",
-            rt_mode_row.get("rt_mode_evidence_level"),
+            rt_mode_row,
+            (
+                ("rt_mode_status", "rt_mode_status"),
+                ("rt_mode_evidence_level", "rt_mode_evidence_level"),
+                ("selected_mode_id", "selected_mode_id"),
+                ("selected_mode_role", "selected_mode_role"),
+                ("selected_mode_tag_status", "selected_mode_tag_status"),
+                ("family_mode_class", "family_mode_class"),
+                ("family_mode_count", "family_mode_count"),
+                ("tag_bearing_mode_count", "tag_bearing_mode_count"),
+                ("selected_mode_cell_count", "selected_mode_cell_count"),
+                ("selected_mode_raw_rt_range_min", "selected_mode_raw_rt_range_min"),
+                (
+                    "selected_mode_normalized_rt_range_min",
+                    "selected_mode_normalized_rt_range_min",
+                ),
+                ("family_raw_rt_range_min", "family_raw_rt_range_min"),
+                (
+                    "family_normalized_rt_range_min",
+                    "family_normalized_rt_range_min",
+                ),
+                ("rt_mode_reason", "reason"),
+            ),
         )
-        _append_metric(metrics, "selected_mode_id", rt_mode_row.get("selected_mode_id"))
-        _append_metric(
-            metrics,
-            "selected_mode_role",
-            rt_mode_row.get("selected_mode_role"),
-        )
-        _append_metric(
-            metrics,
-            "selected_mode_tag_status",
-            rt_mode_row.get("selected_mode_tag_status"),
-        )
-        _append_metric(
-            metrics,
-            "family_mode_class",
-            rt_mode_row.get("family_mode_class"),
-        )
-        _append_metric(
-            metrics,
-            "family_mode_count",
-            rt_mode_row.get("family_mode_count"),
-        )
-        _append_metric(
-            metrics,
-            "tag_bearing_mode_count",
-            rt_mode_row.get("tag_bearing_mode_count"),
-        )
-        _append_metric(
-            metrics,
-            "selected_mode_cell_count",
-            rt_mode_row.get("selected_mode_cell_count"),
-        )
-        _append_metric(
-            metrics,
-            "selected_mode_raw_rt_range_min",
-            rt_mode_row.get("selected_mode_raw_rt_range_min"),
-        )
-        _append_metric(
-            metrics,
-            "selected_mode_normalized_rt_range_min",
-            rt_mode_row.get("selected_mode_normalized_rt_range_min"),
-        )
-        _append_metric(
-            metrics,
-            "family_raw_rt_range_min",
-            rt_mode_row.get("family_raw_rt_range_min"),
-        )
-        _append_metric(
-            metrics,
-            "family_normalized_rt_range_min",
-            rt_mode_row.get("family_normalized_rt_range_min"),
-        )
-        _append_metric(metrics, "rt_mode_reason", rt_mode_row.get("reason"))
     if peak_hypothesis_row:
         _append_metric(
             metrics,
             "peak_hypothesis_authority_source",
             _peak_hypothesis_authority_source(peak_hypothesis_row),
         )
-        _append_metric(
+        _append_row_metrics(
             metrics,
-            "peak_hypothesis_status",
-            peak_hypothesis_row.get("peak_hypothesis_status"),
-        )
-        _append_metric(
-            metrics,
-            "peak_hypothesis_id",
-            peak_hypothesis_row.get("peak_hypothesis_id"),
-        )
-        _append_metric(
-            metrics,
-            "product_unit_scope",
-            peak_hypothesis_row.get("product_unit_scope"),
-        )
-        _append_metric(
-            metrics,
-            "product_selection_action",
-            peak_hypothesis_row.get("product_selection_action"),
-        )
-        _append_metric(
-            metrics,
-            "product_selection_blocker",
-            peak_hypothesis_row.get("product_selection_blocker"),
-        )
-        _append_metric(
-            metrics,
-            "peak_hypothesis_reason",
-            peak_hypothesis_row.get("reason"),
+            peak_hypothesis_row,
+            (
+                ("peak_hypothesis_status", "peak_hypothesis_status"),
+                ("peak_hypothesis_id", "peak_hypothesis_id"),
+                ("product_unit_scope", "product_unit_scope"),
+                ("product_selection_action", "product_selection_action"),
+                ("product_selection_blocker", "product_selection_blocker"),
+                ("peak_hypothesis_reason", "reason"),
+            ),
         )
     dda_status = _dda_non_dispositive_policy_status(
         tags,
@@ -1337,13 +1090,18 @@ def _missing_machine_evidence(
         missing.append("human_review_or_retire_from_training")
     if "delta_mass_related" in tags:
         missing.append("delta_mass_family_model")
-    if not sample_matches and explanation.get("manual_label") not in {
-        "not_applicable",
-        "human_unjudgeable",
-    } and not _sample_negative_evidence_supports_manual(
-        explanation,
-        tags,
-        sample_negative_row,
+    if (
+        not sample_matches
+        and explanation.get("manual_label")
+        not in {
+            "not_applicable",
+            "human_unjudgeable",
+        }
+        and not _sample_negative_evidence_supports_manual(
+            explanation,
+            tags,
+            sample_negative_row,
+        )
     ):
         missing.append("sample_level_machine_observation")
     if (
@@ -1620,34 +1378,30 @@ def _cwt_conflicts_with_manual(
 def _has_candidate_ms2_pattern_metric(row: Mapping[str, str] | None) -> bool:
     if not row:
         return False
-    return (
-        row.get("candidate_ms2_evidence_level") in _CANDIDATE_MS2_OBSERVED_LEVELS
-        and row.get("candidate_ms2_pattern_status")
-        in (_CANDIDATE_MS2_SUPPORT_STATUSES | _CANDIDATE_MS2_CONFLICT_STATUSES)
+    return row.get(
+        "candidate_ms2_evidence_level"
+    ) in _CANDIDATE_MS2_OBSERVED_LEVELS and row.get("candidate_ms2_pattern_status") in (
+        _CANDIDATE_MS2_SUPPORT_STATUSES | _CANDIDATE_MS2_CONFLICT_STATUSES
     )
 
 
 def _has_ms1_pattern_metric(row: Mapping[str, str] | None) -> bool:
     if not row:
         return False
-    return (
-        row.get("ms1_pattern_evidence_level") in _MS1_PATTERN_OBSERVED_LEVELS
-        and row.get("ms1_pattern_status")
-        in (_MS1_PATTERN_SUPPORT_STATUSES | _MS1_PATTERN_CONFLICT_STATUSES)
+    return row.get(
+        "ms1_pattern_evidence_level"
+    ) in _MS1_PATTERN_OBSERVED_LEVELS and row.get("ms1_pattern_status") in (
+        _MS1_PATTERN_SUPPORT_STATUSES | _MS1_PATTERN_CONFLICT_STATUSES
     )
 
 
 def _has_qc_ms1_pattern_reference_metric(row: Mapping[str, str] | None) -> bool:
     if not row:
         return False
-    return (
-        row.get("qc_reference_evidence_level")
-        in _QC_MS1_REFERENCE_OBSERVED_LEVELS
-        and row.get("qc_reference_status")
-        in (
-            _QC_MS1_REFERENCE_SUPPORT_STATUSES
-            | _QC_MS1_REFERENCE_CONFLICT_STATUSES
-        )
+    return row.get(
+        "qc_reference_evidence_level"
+    ) in _QC_MS1_REFERENCE_OBSERVED_LEVELS and row.get("qc_reference_status") in (
+        _QC_MS1_REFERENCE_SUPPORT_STATUSES | _QC_MS1_REFERENCE_CONFLICT_STATUSES
     )
 
 
@@ -1677,13 +1431,10 @@ def _has_ms1_peak_quality_vector_metric(row: Mapping[str, str] | None) -> bool:
 def _has_matrix_rt_drift_metric(row: Mapping[str, str] | None) -> bool:
     if not row:
         return False
-    return (
-        row.get("drift_evidence_level") in _MATRIX_RT_DRIFT_OBSERVED_LEVELS
-        and row.get("matrix_rt_drift_status")
-        in (
-            _MATRIX_RT_DRIFT_SUPPORT_STATUSES
-            | _MATRIX_RT_DRIFT_CONFLICT_STATUSES
-        )
+    return row.get(
+        "drift_evidence_level"
+    ) in _MATRIX_RT_DRIFT_OBSERVED_LEVELS and row.get("matrix_rt_drift_status") in (
+        _MATRIX_RT_DRIFT_SUPPORT_STATUSES | _MATRIX_RT_DRIFT_CONFLICT_STATUSES
     )
 
 
@@ -1691,8 +1442,7 @@ def _has_sample_negative_evidence_metric(row: Mapping[str, str] | None) -> bool:
     if not row:
         return False
     return (
-        row.get("negative_evidence_level")
-        in _SAMPLE_NEGATIVE_EVIDENCE_OBSERVED_LEVELS
+        row.get("negative_evidence_level") in _SAMPLE_NEGATIVE_EVIDENCE_OBSERVED_LEVELS
         and row.get("negative_evidence_class") in _SAMPLE_NEGATIVE_EVIDENCE_CLASSES
     )
 
@@ -1815,8 +1565,7 @@ def _dda_non_dispositive_policy_status(
             family_ms2_required_tag_row,
             context_matches,
         )
-        and candidate_ms2_row.get("candidate_ms2_evidence_level")
-        != "not_available"
+        and candidate_ms2_row.get("candidate_ms2_evidence_level") != "not_available"
     ):
         return "family_required_tag_not_observed"
     return "policy_evidence_missing"
@@ -1869,10 +1618,7 @@ def _dda_non_dispositive_policy_supports_manual(
     ):
         return False
     intensity = _ms1_supporting_intensity(ms1_pattern_row)
-    return (
-        intensity is not None
-        and intensity >= _DDA_NON_DISPOSITIVE_MS1_INTENSITY_MIN
-    )
+    return intensity is not None and intensity >= _DDA_NON_DISPOSITIVE_MS1_INTENSITY_MIN
 
 
 def _has_family_required_tag_or_context(
@@ -1968,9 +1714,8 @@ def _ms1_shape_supports_manual(
             and shape_score >= _MS1_SHAPE_SUPPORT_MIN
         )
     if "shape_bad" in tags:
-        return (
-            status in _MS1_PATTERN_CONFLICT_STATUSES
-            or (shape_score is not None and shape_score < _MS1_SHAPE_SUPPORT_MIN)
+        return status in _MS1_PATTERN_CONFLICT_STATUSES or (
+            shape_score is not None and shape_score < _MS1_SHAPE_SUPPORT_MIN
         )
     return False
 
@@ -2119,8 +1864,7 @@ def _ms1_pattern_metric_inconclusive(row: Mapping[str, str] | None) -> bool:
     if row is None:
         return False
     return bool(
-        _MS1_PATTERN_INCONCLUSIVE_REASONS
-        & set(_split_semicolon(row.get("reason", "")))
+        _MS1_PATTERN_INCONCLUSIVE_REASONS & set(_split_semicolon(row.get("reason", "")))
     )
 
 

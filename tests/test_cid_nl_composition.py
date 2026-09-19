@@ -133,6 +133,10 @@ def test_configured_composition_runs_discovery_to_owner_matrix(
         result.job.sample.metadata.raw_stem: result.effective_assessment
         for result in runtime.sample_results
     }
+    assert {
+        assessment.artifact.semantic_contract.schema_version
+        for assessment in by_sample.values()
+    } == {"cid_nl_method_assessment"}
     if recovery:
         recovered = next(
             result
@@ -375,7 +379,7 @@ def test_composite_requirement_identity_and_strict_payload_replay():
     for subject in subjects:
         assert subject.neutral_loss_da is None
         payload = json.loads(json.dumps(subject.request_payload()))
-        assert payload["schema_version"] == "cid_nl_method_subject_v2"
+        assert payload["schema_version"] == "cid_nl_method_subject"
         assert _subject_from_payload(payload) == subject
         payload["composition"]["undeclared"] = True
         with pytest.raises(CidNlMethodSubjectContractError, match="wrong fields"):
@@ -384,9 +388,13 @@ def test_composite_requirement_identity_and_strict_payload_replay():
         precursor_mz=500.0, precursor_tolerance_ppm=5.0, neutral_loss_da=116.0474
     )
     payload = single.request_payload()
-    assert payload["schema_version"] == "cid_nl_method_subject_v1"
-    assert "composition" not in payload
+    assert payload["schema_version"] == "cid_nl_method_subject"
+    assert payload["composition"] is None
     assert _subject_from_payload(payload) == single
-    payload["composition"] = None
+    payload["schema_version"] = "unsupported_cid_nl_method_subject"
+    with pytest.raises(CidNlMethodSubjectContractError, match="schema must be"):
+        _subject_from_payload(payload)
+    payload["schema_version"] = "cid_nl_method_subject"
+    payload.pop("composition")
     with pytest.raises(CidNlMethodSubjectContractError, match="wrong fields"):
         _subject_from_payload(payload)

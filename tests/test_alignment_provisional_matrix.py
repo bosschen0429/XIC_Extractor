@@ -74,8 +74,8 @@ def test_projection_keeps_full_group_breadth_and_cell_provenance() -> None:
         if row["matrix_value"]
     } == {MS1_MORPHOLOGY_AREA_SOURCE}
     assert projection.summary == {
-        "schema_version": "untargeted_provisional_matrix_summary_v1",
-        "matrix_schema_version": "untargeted_provisional_matrix_v1",
+        "schema_version": "untargeted_provisional_matrix_summary",
+        "matrix_schema_version": "untargeted_provisional_matrix",
         "validation_status": PROVISIONAL_VALIDATION_STATUS,
         "row_identity_status": "provisional",
         "identity_settlement_status": "not_run",
@@ -169,16 +169,16 @@ def test_streamed_provisional_artifacts_match_frozen_materializing_hashes(
             143,
         ),
         "identity.tsv": (
-            "7f20ad4ddbc136b8208d8eb113a33e8f289731ae18eaa40469163bd9fa389eeb",
-            924,
+            "3b1ed4c241b07fac957abc8152f03825e9736d93077ad125ee236b5c0295239c",
+            918,
         ),
         "provenance.tsv": (
-            "d7dd8085004fa672b90863e990bbe467310acc446e23df00dd0c234101950a72",
-            1197,
+            "58548b5b3837b934639263c906e23d14fb4ce45eadc8a40829739da9d0f4a83d",
+            1185,
         ),
         "summary.json": (
-            "cb8ef8de0a3152ff9720316827fde25b409b77ee44a632f77e493b755b48af84",
-            573,
+            "f254a7f32b0b11904ce5fb8a1d76b944c4589aef73105194d7bd3f959b7c3cab",
+            567,
         ),
     }
 
@@ -320,20 +320,20 @@ def test_streamed_pipeline_matches_frozen_formula_and_unquantified_bytes(
             123,
         ),
         "provisional_row_identity.tsv": (
-            "9f3bef2537181c13d417a87f8877141ad594687637baac9ba7d6c287a4d8247a",
-            909,
+            "842113b31fa92ad431fdf50fc410647712a19d147c65658f8d9f955ca5dfaa4f",
+            903,
         ),
         "provisional_cell_provenance.tsv": (
-            "068e09a359e8d44a0f7f5fe2f1e35a9cd2a72cd9d228390aa3e3d15f7eba289a",
-            1151,
+            "2fbda60aa7182d9a63af9b7779e30dcba5615af86115244acd773c0bd4752741",
+            1139,
         ),
         "provisional_matrix_summary.json": (
-            "ffd670f1d95d8ea2bebaa4b4c492e765d7ea41adaf31760d6292e2f109e13f7d",
-            573,
+            "2c8d27d8c99a92610a1b03cb7af50bcf23bb9cb42adf959804d6464c28c50851",
+            567,
         ),
         "alignment_owner_backfill_peak_fact_provenance.tsv": (
-            "65227a6f4b446e7111c5c92a67d934b5d7368f7f92fb89f48a941f43c11defa4",
-            1678,
+            "96b42a4ad44cc07fa70aeb853e2e440c9e9fb0059e2a80210caf741f55bf3f69",
+            1663,
         ),
     }
 

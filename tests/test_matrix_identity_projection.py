@@ -1,6 +1,6 @@
 import pytest
 
-from tests.matrix_identity_fixtures import legacy_matrix_identity_row
+from tests.matrix_identity_fixtures import current_matrix_identity_row
 from xic_extractor.diagnostics.matrix_identity_projection import (
     matrix_value_diffs,
     matrix_values_by_identity,
@@ -9,20 +9,22 @@ from xic_extractor.diagnostics.matrix_identity_projection import (
 
 def test_matrix_values_by_identity_limits_family_alias_requested_keys() -> None:
     matrix_rows = (
-        {"Mz": "300.3", "RT": "10.0", "S_KEEP": "111", "S_SKIP": "999"},
-        {"Mz": "400.4", "RT": "11.0", "S_KEEP": "222", "S_SKIP": "888"},
+        {"Mz": "300.3000", "RT": "10.0", "S_KEEP": "111", "S_SKIP": "999"},
+        {"Mz": "400.4000", "RT": "11.0", "S_KEEP": "222", "S_SKIP": "888"},
     )
     identity_rows = (
-        legacy_matrix_identity_row(
+        current_matrix_identity_row(
+            sample_values={'S_KEEP': '111', 'S_SKIP': '999'},
             index=1,
-            mz="300.3",
+            mz="300.3000",
             rt="10.0",
             peak_hypothesis_id="FAM_KEEP::mode_1",
             source_feature_family_ids="FAM_KEEP",
         ),
-        legacy_matrix_identity_row(
+        current_matrix_identity_row(
+            sample_values={'S_KEEP': '222', 'S_SKIP': '888'},
             index=2,
-            mz="400.4",
+            mz="400.4000",
             rt="11.0",
             peak_hypothesis_id="FAM_UNUSED",
         ),
@@ -43,16 +45,17 @@ def test_matrix_values_by_identity_can_return_written_public_values_only() -> No
     values = matrix_values_by_identity(
         matrix_rows=(
             {
-                "Mz": "200.2",
+                "Mz": "200.2000",
                 "RT": "8.2",
                 "S1": "",
                 "S2": "321.5",
             },
         ),
         matrix_identity_rows=(
-            legacy_matrix_identity_row(
+            current_matrix_identity_row(
+            sample_values={'S1': '', 'S2': '321.5'},
                 index=1,
-                mz="200.2",
+                mz="200.2000",
                 rt="8.2",
                 peak_hypothesis_id="FAM_ADD::mode_1",
                 source_feature_family_ids="FAM_ADD",
@@ -66,19 +69,21 @@ def test_matrix_values_by_identity_can_return_written_public_values_only() -> No
 
 def test_matrix_values_by_identity_rejects_duplicate_identity_indices() -> None:
     matrix_rows = (
-        {"Mz": "300.3", "RT": "10.0", "S1": "111"},
-        {"Mz": "400.4", "RT": "11.0", "S1": "222"},
+        {"Mz": "300.3000", "RT": "10.0", "S1": "111"},
+        {"Mz": "400.4000", "RT": "11.0", "S1": "222"},
     )
     identity_rows = (
-        legacy_matrix_identity_row(
+        current_matrix_identity_row(
+            sample_values={'S1': '111'},
             index=1,
-            mz="300.3",
+            mz="300.3000",
             rt="10.0",
             peak_hypothesis_id="FAM001",
         ),
-        legacy_matrix_identity_row(
+        current_matrix_identity_row(
+            sample_values={'S1': '222'},
             index=1,
-            mz="400.4",
+            mz="400.4000",
             rt="11.0",
             peak_hypothesis_id="FAM002",
         ),

@@ -241,7 +241,7 @@ def test_cli_slice1_writes_blast_radius_outputs(tmp_path: Path) -> None:
     assert "production_ready" not in report
 
 
-def test_cli_writes_v2_shadow_alignment_as_exploratory_when_unpinned(
+def test_cli_writes_shadow_alignment_as_exploratory_when_unpinned(
     tmp_path: Path,
 ) -> None:
     fixture = _write_cli_fixture(tmp_path)
@@ -274,8 +274,8 @@ def test_cli_writes_v2_shadow_alignment_as_exploratory_when_unpinned(
     assert (output_dir / "shared_peak_identity_shadow_labels.tsv").exists()
     assert (output_dir / "shared_peak_identity_shadow_alignment_summary.tsv").exists()
     assert (output_dir / "shared_peak_identity_machine_evidence_support.tsv").exists()
-    readiness = _read_tsv(output_dir / "shared_peak_identity_v2_readiness.tsv")[0]
-    assert readiness["v2_gate_status"] == "exploratory_only"
+    readiness = _read_tsv(output_dir / "shared_peak_identity_shadow_readiness.tsv")[0]
+    assert readiness["shadow_gate_status"] == "exploratory_only"
     assert readiness["machine_only_labeler_ready"] == "FALSE"
     assert readiness["machine_evidence_basis"] == "machine_proxy_or_manual_derived"
     assert "formal_shape_metric" in readiness["machine_evidence_blockers"]
@@ -283,7 +283,7 @@ def test_cli_writes_v2_shadow_alignment_as_exploratory_when_unpinned(
         "seed_only_manual_oracle_derived"
     )
     assert "blast_radius_not_current" in readiness["clear_answer"]
-    report = (output_dir / "shared_peak_identity_v2_report.md").read_text(
+    report = (output_dir / "shared_peak_identity_shadow_report.md").read_text(
         encoding="utf-8"
     )
     assert "exploratory_only" in report
@@ -291,7 +291,7 @@ def test_cli_writes_v2_shadow_alignment_as_exploratory_when_unpinned(
     assert "Machine Evidence Provenance" in report
 
 
-def test_cli_writes_v2_machine_observed_support_with_optional_evidence(
+def test_cli_writes_shadow_machine_observed_support_with_optional_evidence(
     tmp_path: Path,
 ) -> None:
     fixture = _write_cli_fixture(tmp_path)
@@ -322,7 +322,7 @@ def test_cli_writes_v2_machine_observed_support_with_optional_evidence(
     )
 
     output_dir = tmp_path / "out"
-    readiness = _read_tsv(output_dir / "shared_peak_identity_v2_readiness.tsv")[0]
+    readiness = _read_tsv(output_dir / "shared_peak_identity_shadow_readiness.tsv")[0]
     assert readiness["machine_evidence_basis"] == "machine_observed_sufficient"
     assert readiness["machine_observed_partial_rows"] == "0"
     assert readiness["machine_evidence_supported_rows"] == "1"
@@ -337,130 +337,6 @@ def test_cli_writes_v2_machine_observed_support_with_optional_evidence(
         "candidate_ms2_pattern_status=supportive" in support["observed_machine_metrics"]
     )
     assert support["missing_machine_evidence"] == ""
-
-
-def test_cli_can_emit_activation_contract_outputs(tmp_path: Path) -> None:
-    fixture = _write_cli_fixture(tmp_path)
-    peak_hypothesis = tmp_path / "peak_hypothesis_selection.tsv"
-    _write_peak_hypothesis_selection(peak_hypothesis)
-
-    assert (
-        main(
-            [
-                "--manual-oracle-tsv",
-                str(fixture["oracle"]),
-                "--alignment-review-tsv",
-                str(fixture["review"]),
-                "--alignment-cells-tsv",
-                str(fixture["cells"]),
-                "--candidate-gate-tsv",
-                str(fixture["gate"]),
-                "--output-dir",
-                str(tmp_path / "out"),
-                "--enable-shadow-label-alignment",
-                "--enable-product-activation-contract",
-                "--activation-must-not-regress-status",
-                "pass",
-                "--cwt-shape-evidence-tsv",
-                str(fixture["cwt"]),
-                "--tier2-trace-evidence-tsv",
-                str(fixture["tier2_trace"]),
-                "--candidate-ms2-pattern-evidence-tsv",
-                str(fixture["candidate_ms2"]),
-                "--peak-hypothesis-selection-tsv",
-                str(peak_hypothesis),
-            ]
-        )
-        == 0
-    )
-
-    output_dir = tmp_path / "out"
-    decisions = _read_tsv(output_dir / "shared_peak_identity_activation_decisions.tsv")
-    acceptance = _read_tsv(
-        output_dir / "shared_peak_identity_activation_acceptance.tsv"
-    )[0]
-    assert decisions[0]["activation_status"] == "auto_activate"
-    assert decisions[0]["activation_action"] == "activate_pass"
-    assert decisions[0]["peak_hypothesis_id"] == "FAM001::mode_1"
-    assert decisions[0]["activation_unit_scope"] == "peak_hypothesis"
-    assert acceptance["acceptance_status"] == "fail"
-    assert "blast_radius_not_current" in acceptance["hard_fail_reasons"]
-    assert acceptance["assessed_rows_basis"] == "activation_decision_rows_fallback"
-
-
-def test_cli_activation_acceptance_uses_full_cohort_blast_radius_denominator(
-    tmp_path: Path,
-) -> None:
-    fixture = _write_cli_fixture(tmp_path)
-    expected_manifest = tmp_path / "expected_manifest.tsv"
-    must_not_regress = tmp_path / "must_not_regress.tsv"
-    peak_hypothesis = tmp_path / "peak_hypothesis_selection.tsv"
-    _write_peak_hypothesis_selection(peak_hypothesis)
-    _write_expected_manifest(
-        expected_manifest,
-        {
-            "fixture_cohort_alignment_review": fixture["fixture_cohort"]
-            / "alignment_review.tsv",
-            "fixture_cohort_alignment_cells": fixture["fixture_cohort"]
-            / "alignment_cells.tsv",
-            "full_cohort_alignment_review": fixture["full_cohort"]
-            / "alignment_review.tsv",
-            "full_cohort_alignment_cells": fixture["full_cohort"]
-            / "alignment_cells.tsv",
-        },
-    )
-    _write_activation_must_not_regress(must_not_regress)
-
-    assert (
-        main(
-            [
-                "--manual-oracle-tsv",
-                str(fixture["oracle"]),
-                "--alignment-review-tsv",
-                str(fixture["review"]),
-                "--alignment-cells-tsv",
-                str(fixture["cells"]),
-                "--candidate-gate-tsv",
-                str(fixture["gate"]),
-                "--output-dir",
-                str(tmp_path / "out"),
-                "--enable-blast-radius",
-                "--blast-radius-fixture-cohort-run",
-                str(fixture["fixture_cohort"]),
-                "--blast-radius-full-cohort-run",
-                str(fixture["full_cohort"]),
-                "--expected-blast-radius-manifest",
-                str(expected_manifest),
-                "--enable-shadow-label-alignment",
-                "--enable-product-activation-contract",
-                "--activation-must-not-regress-tsv",
-                str(must_not_regress),
-                "--cwt-shape-evidence-tsv",
-                str(fixture["cwt"]),
-                "--tier2-trace-evidence-tsv",
-                str(fixture["tier2_trace"]),
-                "--candidate-ms2-pattern-evidence-tsv",
-                str(fixture["candidate_ms2"]),
-                "--peak-hypothesis-selection-tsv",
-                str(peak_hypothesis),
-            ]
-        )
-        == 0
-    )
-
-    acceptance = _read_tsv(
-        tmp_path / "out" / "shared_peak_identity_activation_acceptance.tsv"
-    )[0]
-    assert acceptance["blast_radius_current"] == "TRUE"
-    assert acceptance["assessed_rows"] == "2"
-    assert (
-        acceptance["assessed_rows_basis"]
-        == "blast_radius_summary:all_available_full_cohort:assessed_row_count"
-    )
-    assert acceptance["decision_rows_total"] == "1"
-    assert acceptance["must_not_regress_status"] == "pass"
-    assert acceptance["must_not_regress_basis"] == "activation_must_not_regress_tsv"
-    assert acceptance["acceptance_status"] == "pass"
 
 
 def test_cli_accepts_ms1_pattern_and_matrix_rt_drift_sidecars(
@@ -2168,6 +2044,7 @@ def _write_discovery_candidates(path: Path) -> None:
             "rt_alignment",
             "discovery_candidate_state",
             "ms1_feature_row_id",
+            "is_provisional",
             "candidate_id",
             "feature_family_id",
             "feature_family_size",
@@ -2221,6 +2098,7 @@ def _write_discovery_candidates(path: Path) -> None:
                 "rt_alignment": "aligned",
                 "discovery_candidate_state": "ms1_feature_nl_supported",
                 "ms1_feature_row_id": "S1|DNA_dR|257.125|1.0",
+                "is_provisional": "FALSE",
                 "candidate_id": "S1#100@mz257.125_p141.077",
                 "feature_family_id": "S1@F001",
                 "feature_family_size": "1",
@@ -2333,42 +2211,6 @@ def _write_expected_manifest(path: Path, artifacts: dict[str, Path]) -> None:
         path,
         ("artifact_id", "artifact_role", "expected_artifact_sha256"),
         rows,
-    )
-
-
-def _write_activation_must_not_regress(path: Path) -> None:
-    _write_tsv(
-        path,
-        (
-            "expectation_schema_version",
-            "expectation_id",
-            "feature_family_id",
-            "sample_id",
-            "allowed_activation_statuses",
-            "allowed_contract_rule_ids",
-            "allowed_product_label_candidates",
-            "disallowed_activation_statuses",
-            "disallowed_contract_rule_ids",
-            "expectation_reason",
-        ),
-        [
-            {
-                "expectation_schema_version": (
-                    "shared_peak_identity_activation_must_not_regress_v1"
-                ),
-                "expectation_id": "unit_positive",
-                "feature_family_id": "FAM001",
-                "sample_id": "S1",
-                "allowed_activation_statuses": "auto_activate",
-                "allowed_contract_rule_ids": (
-                    "machine_observed_sufficient_positive_identity"
-                ),
-                "allowed_product_label_candidates": "pass",
-                "disallowed_activation_statuses": "",
-                "disallowed_contract_rule_ids": "",
-                "expectation_reason": "unit fixture positive must remain pass",
-            }
-        ],
     )
 
 

@@ -73,7 +73,7 @@ def test_slice1_writer_outputs_run_facts_and_report(tmp_path: Path) -> None:
     assert "Machine Too Permissive" in report
     assert "non-seed rows are machine-side blast-radius context" in report
     assert "production_ready" not in report
-    assert "V1 gating verdict" not in report
+    assert "gating verdict" not in report
 
 
 def test_slice1_run_facts_classify_missing_unpinned_and_stale_surfaces() -> None:
@@ -189,7 +189,7 @@ def test_slice1_run_facts_exclude_seed_scope_from_max_risk(
     report = (tmp_path / "shared_peak_identity_explanation_report.md").read_text(
         encoding="utf-8"
     )
-    assert "next_action: `allow_v2_shadow_label_alignment_planning`" in report
+    assert "next_action: `allow_shadow_shadow_label_alignment_planning`" in report
 
 
 def _write_slice0_outputs(tmp_path: Path) -> dict[str, Path]:
@@ -207,7 +207,7 @@ def _write_slice0_outputs(tmp_path: Path) -> dict[str, Path]:
 
 def _slice0_run_facts() -> dict[str, str]:
     return {
-        "run_facts_schema_version": "shared_peak_identity_run_facts_v1",
+        "run_facts_schema_version": "shared_peak_identity_run_facts",
         "slice": "slice0",
         "seed_rows_total": "7",
         "seed_rows_explained": "7",
@@ -233,7 +233,7 @@ def _manifest_rows(*, status: str) -> list[dict[str, str]]:
         rows.append(
             {
                 "manifest_schema_version": (
-                    "shared_peak_identity_blast_radius_manifest_v1"
+                    "shared_peak_identity_blast_radius_manifest"
                 ),
                 "artifact_id": artifact_id,
                 "artifact_role": "alignment_cells"
@@ -266,7 +266,7 @@ def _summary_row(
     overfit_risk: str = "low",
 ) -> dict[str, str]:
     return {
-        "summary_schema_version": "shared_peak_identity_blast_radius_summary_v1",
+        "summary_schema_version": "shared_peak_identity_blast_radius_summary",
         "scope": scope,
         "artifact_id": "combined_alignment_cells",
         "evidence_gap_class": evidence_gap_class,

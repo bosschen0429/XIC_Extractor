@@ -36,14 +36,14 @@ from xic_extractor.discovery.cid_nl_oracle_review import (
 ROOT = Path(__file__).resolve().parents[1]
 GATE_TABLE = (
     ROOT
-    / "docs/superpowers/validation/cid_nl_oracle_packet_preflight_v1/"
-    "cid_nl_oracle_gate_table_v1.tsv"
+    / "docs/superpowers/validation/cid_nl_oracle_packet_preflight/"
+    "cid_nl_oracle_gate_table.tsv"
 )
 
 
 def _proposal(**overrides: object) -> dict[str, object]:
     row: dict[str, object] = {
-        "schema_version": "cid_nl_tested_tracer_proposal_manifest_v1",
+        "schema_version": "cid_nl_tested_tracer_proposal_manifest",
         "proposal_manifest_id": "PM1",
         "proposal_row_id": "PR1",
         "processing_request_id": "REQ1",
@@ -77,7 +77,7 @@ def _proposal(**overrides: object) -> dict[str, object]:
 
 def _sampling(**overrides: object) -> dict[str, object]:
     row: dict[str, object] = {
-        "schema_version": "cid_nl_formal_holdout_sampling_manifest_v1",
+        "schema_version": "cid_nl_formal_holdout_sampling_manifest",
         "holdout_manifest_id": "HM1",
         "case_id": "C1",
         "presentation_id": "P1",
@@ -161,7 +161,7 @@ def _reference(**overrides: object) -> dict[str, object]:
     dependency_hash = sha256_bytes(dependency_bytes)
     config_hash = sha256_bytes(b"enumerator config")
     row: dict[str, object] = {
-        "schema_version": "cid_nl_reference_universe_manifest_v1",
+        "schema_version": "cid_nl_reference_universe_manifest",
         "reference_universe_id": "RU1",
         "reference_row_id": "RR1",
         "reference_family_id": "RF1",
@@ -291,7 +291,7 @@ def _reference_manifest_bundle(
         for row in rows
     }
     seal: dict[str, object] = {
-        "schema_version": "cid_nl_reference_universe_manifest_v1",
+        "schema_version": "cid_nl_reference_universe_manifest",
         "reference_universe_id": "RU1",
         "reference_universe_tsv_sha256": sha256_bytes(manifest_bytes),
         **{
@@ -347,7 +347,7 @@ def _local_review(
 ) -> dict[str, object]:
     source_sampling_row = sampling_row or _sampling()
     row: dict[str, object] = {
-        "schema_version": "cid_nl_oracle_review_event_v1",
+        "schema_version": "cid_nl_oracle_review_event",
         "oracle_packet_id": "OP1",
         "holdout_manifest_id": "HM1",
         "case_id": "C1",
@@ -422,7 +422,7 @@ def _local_label_seal(
 
 def _adjudication(**overrides: object) -> dict[str, object]:
     row: dict[str, object] = {
-        "schema_version": "cid_nl_oracle_adjudication_event_v1",
+        "schema_version": "cid_nl_oracle_adjudication_event",
         "oracle_packet_id": "OP1",
         "adjudication_record_id": "A1",
         "case_id": "C1",
@@ -436,7 +436,7 @@ def _adjudication(**overrides: object) -> dict[str, object]:
         "resulting_confirmatory_review_record_id": "R3",
         "adjudicated_dimension": "peak_boundary",
         "adjudicated_value": "9.5|10.5",
-        "adjudication_rule_id": "hidden_duplicate_consensus_v1",
+        "adjudication_rule_id": "hidden_duplicate_consensus",
         "affected_gate_ids": "reviewer_repeatability",
         "packet_effect": "confirm_frozen_label",
         "source_row_sha256": "c" * 64,
@@ -565,7 +565,7 @@ def test_reference_validator_required_fields_match_schema() -> None:
         (
             ROOT
             / "docs/superpowers/schemas/"
-            "cid_nl_reference_universe_manifest_schema.v1.json"
+            "cid_nl_reference_universe_manifest_schema.json"
         ).read_text(encoding="utf-8")
     )
     expected = set(schema["required_columns"]) - set(schema["nullable_columns"])
@@ -829,7 +829,7 @@ def test_review_validator_required_fields_match_schema() -> None:
         (
             ROOT
             / "docs/superpowers/schemas/"
-            "cid_nl_oracle_review_adjudication_schema.v1.json"
+            "cid_nl_oracle_review_adjudication_schema.json"
         ).read_text(encoding="utf-8")
     )
     expected = set(schema["required_review_event_columns"]) - set(
@@ -1365,7 +1365,7 @@ def test_adjudication_set_binds_immutable_triggers_and_predecessors() -> None:
         _local_review(oracle_packet_id="OP2", review_record_id="R6"),
     ]
     correction = _adjudication(
-        schema_version="cid_nl_oracle_adjudication_event_v1",
+        schema_version="cid_nl_oracle_adjudication_event",
         oracle_packet_id="OP2",
         adjudication_record_id="A2",
         trigger_review_record_ids="R4|R5",
@@ -1547,7 +1547,7 @@ def test_adjudication_and_lineage_required_fields_match_schemas() -> None:
         (
             ROOT
             / "docs/superpowers/schemas/"
-            "cid_nl_oracle_review_adjudication_schema.v1.json"
+            "cid_nl_oracle_review_adjudication_schema.json"
         ).read_text(encoding="utf-8")
     )
     expected_adjudication = set(
@@ -1563,14 +1563,14 @@ def test_adjudication_and_lineage_required_fields_match_schemas() -> None:
         (
             ROOT
             / "docs/superpowers/schemas/"
-            "cid_nl_oracle_lineage_binding_schema.v1.json"
+            "cid_nl_oracle_lineage_binding_schema.json"
         ).read_text(encoding="utf-8")
     )
     expected_lineage = set(lineage_schema["required_columns"]) - set(
         lineage_schema["nullable_columns"]
     )
     base_lineage = {
-        "schema_version": "cid_nl_oracle_lineage_binding_v1",
+        "schema_version": "cid_nl_oracle_lineage_binding",
         "oracle_packet_id": "P1",
         "binding_id": "B1",
         "binding_role": "gate_result",
@@ -1600,7 +1600,7 @@ def test_adjudication_and_lineage_required_fields_match_schemas() -> None:
 
 def test_lineage_gate_result_requires_gate_specific_binding_fields() -> None:
     row = {
-        "schema_version": "cid_nl_oracle_lineage_binding_v1",
+        "schema_version": "cid_nl_oracle_lineage_binding",
         "oracle_packet_id": "P1",
         "binding_id": "B1",
         "binding_role": "gate_result",
@@ -1678,11 +1678,11 @@ def test_lineage_seal_derives_missing_required_binding_coverage() -> None:
         (
             ROOT
             / "docs/superpowers/schemas/"
-            "cid_nl_oracle_lineage_binding_schema.v1.json"
+            "cid_nl_oracle_lineage_binding_schema.json"
         ).read_text(encoding="utf-8")
     )
     row = {
-        "schema_version": "cid_nl_oracle_lineage_binding_v1",
+        "schema_version": "cid_nl_oracle_lineage_binding",
         "oracle_packet_id": "OP1",
         "binding_id": "B1",
         "binding_role": "gate_result",
@@ -1695,7 +1695,7 @@ def test_lineage_seal_derives_missing_required_binding_coverage() -> None:
     manifest_bytes = canonical_tsv_bytes([row])
     gate_table_bytes = b"gate table"
     seal = {
-        "schema_version": "cid_nl_oracle_lineage_binding_v1",
+        "schema_version": "cid_nl_oracle_lineage_binding",
         "oracle_packet_id": "OP1",
         "lineage_binding_tsv_sha256": sha256_bytes(manifest_bytes),
         "proposal_manifest_seal_id": "PS1",
@@ -1764,7 +1764,7 @@ def test_manifest_seal_validator_rejects_missing_or_invalid_hashes() -> None:
     schema_path = (
         ROOT
         / "docs/superpowers/schemas/"
-        "cid_nl_oracle_narrow_scope_manifest_schema.v1.json"
+        "cid_nl_oracle_narrow_scope_manifest_schema.json"
     )
     schema = json.loads(schema_path.read_text(encoding="utf-8"))
     seal = {
@@ -1864,7 +1864,7 @@ def test_proposal_seal_binds_distinct_hypothesis_count() -> None:
         (
             ROOT
             / "docs/superpowers/schemas/"
-            "cid_nl_tested_tracer_proposal_manifest_schema.v1.json"
+            "cid_nl_tested_tracer_proposal_manifest_schema.json"
         ).read_text(encoding="utf-8")
     )
     config_bytes = b"tracer config"
@@ -1882,7 +1882,7 @@ def test_proposal_seal_binds_distinct_hypothesis_count() -> None:
         "row_count": "1",
         "distinct_peak_hypothesis_count": "1",
         "distinct_acquisition_source_count": "1",
-        "precision_denominator_rule_id": "cid_nl_tested_tracer_select_value_v1",
+        "precision_denominator_rule_id": "cid_nl_tested_tracer_select_value",
         "candidate_universe_complete": "TRUE",
         "machine_mapping_revealed_to_reviewer": "FALSE",
         "legacy_mapping_revealed_to_reviewer": "FALSE",
@@ -1926,7 +1926,7 @@ def test_review_label_seal_binds_event_logs_and_counts() -> None:
         (
             ROOT
             / "docs/superpowers/schemas/"
-            "cid_nl_oracle_review_adjudication_schema.v1.json"
+            "cid_nl_oracle_review_adjudication_schema.json"
         ).read_text(encoding="utf-8")
     )
     sampling_rows = [_sampling()]
@@ -2066,7 +2066,7 @@ def test_review_label_seal_binds_event_logs_and_counts() -> None:
 
 def test_statistical_design_validator_rejects_wrong_uncertainty_dispatch() -> None:
     row = {
-        "schema_version": "cid_nl_oracle_statistical_design_manifest_v1",
+        "schema_version": "cid_nl_oracle_statistical_design_manifest",
         "statistical_design_manifest_id": "SD1",
         "estimand_id": "proposal_precision",
         "gate_id": "proposal_precision",
@@ -2128,7 +2128,7 @@ def test_statistical_design_validator_rejects_wrong_uncertainty_dispatch() -> No
 
 def test_sampling_rows_bind_to_matching_estimand_frame_and_design() -> None:
     design = {
-        "schema_version": "cid_nl_oracle_statistical_design_manifest_v1",
+        "schema_version": "cid_nl_oracle_statistical_design_manifest",
         "statistical_design_manifest_id": "SD1",
         "estimand_id": "reference_recovery",
         "gate_id": "reference_recovery",

@@ -59,8 +59,8 @@ CellEvidence: TypeAlias = (
     ObservedSearchSubject | SearchedNoObservationSubject | FinalGroupCellObservation
 )
 
-_DECISION_PREFIX = "xic.production-cell-decision.v1:"
-_DECISION_SCHEMA_VERSION = "production_cell_decision_v1"
+_DECISION_PREFIX = "xic.production-cell-decision:"
+_DECISION_SCHEMA_VERSION = "production_cell_decision"
 _DECISION_MINT_TOKEN = object()
 _NO_WRITE_STATES = frozenset(
     {

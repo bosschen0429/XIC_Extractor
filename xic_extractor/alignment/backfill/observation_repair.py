@@ -59,11 +59,10 @@ if TYPE_CHECKING:
 
 ObservationRepairOutcome: TypeAlias = Literal["no_repair", "repaired"]
 
-_SUBJECT_PREFIX = "xic.observation-repair-subject.v1:"
-_RECEIPT_PREFIX = "xic.observation-repair-receipt.v1:"
-_CANDIDATE_RECEIPT_PREFIX = "xic.observation-repair-receipt.v2:"
-_NO_REPAIR_TERMINAL_PREFIX = "xic.observation-repair-no-repair-terminal.v1:"
-_PHYSICAL_ANSWER_PREFIX = "physical-answer.v1:"
+_SUBJECT_PREFIX = "xic.observation-repair-subject:"
+_RECEIPT_PREFIX = "xic.observation-repair-receipt:"
+_NO_REPAIR_TERMINAL_PREFIX = "xic.observation-repair-no-repair-terminal:"
+_PHYSICAL_ANSWER_PREFIX = "physical-answer:"
 _SUBJECT_MINT_TOKEN = object()
 _RECEIPT_MINT_TOKEN = object()
 _NO_REPAIR_TERMINAL_MINT_TOKEN = object()
@@ -931,7 +930,7 @@ def _subject_id(
         _SUBJECT_PREFIX,
         canonical_identity_basis_bytes(
             {
-                "schema_version": "observation_repair_subject_v1",
+                "schema_version": "observation_repair_subject",
                 "request_identity_id": request_identity.request_identity_id,
                 "logical_request_id": logical_request.logical_request_id,
                 "predecessor_group_hypothesis_id": (
@@ -1011,7 +1010,7 @@ def _no_repair_terminal_id(
         _NO_REPAIR_TERMINAL_PREFIX,
         canonical_identity_basis_bytes(
             {
-                "schema_version": "observation_repair_no_repair_terminal_v1",
+                "schema_version": "observation_repair_no_repair_terminal",
                 "subject_id": subject_id,
                 "authorization_id": authorization_id,
                 "candidate_id": candidate_id,
@@ -1099,20 +1098,17 @@ def _receipt_id(
             for name in ObservationRepairEvidence.__dataclass_fields__
         }
     payload: dict[str, object] = {
-        "schema_version": (
-            "observation_repair_receipt_v2"
-            if candidate_receipt
-            else "observation_repair_receipt_v1"
-        ),
+        "schema_version": "observation_repair_receipt",
+        "repair_scope": "candidate" if candidate_receipt else "subject",
+        "authorization_id": authorization_id,
+        "candidate_id": candidate_id,
+        "no_repair_terminal": None,
         "subject_id": subject_id,
         "repair_epoch": repair_epoch,
         "outcome": outcome,
         "sample_stem": sample_stem,
         "evidence": evidence_basis,
     }
-    if candidate_receipt:
-        payload["authorization_id"] = authorization_id
-        payload["candidate_id"] = candidate_id
     if no_repair_terminal is not None:
         payload["no_repair_terminal"] = {
             "terminal_id": no_repair_terminal.terminal_id,
@@ -1124,7 +1120,7 @@ def _receipt_id(
             "physical_answer_id": no_repair_terminal.physical_answer_id,
         }
     return typed_identity_digest(
-        _CANDIDATE_RECEIPT_PREFIX if candidate_receipt else _RECEIPT_PREFIX,
+        _RECEIPT_PREFIX,
         canonical_identity_basis_bytes(payload),
     )
 

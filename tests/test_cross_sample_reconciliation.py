@@ -71,8 +71,8 @@ def _scenario(
             {sample_stem: 1} if injection_order is None else injection_order
         ),
         evidence_profile=ModeTrackEvidenceProfile(
-            "anchor-trajectory-v1",
-            "fixed-band-v1",
+            "anchor-trajectory",
+            "fixed-band",
             0.1,
             10,
             10,
@@ -144,12 +144,12 @@ def test_changed_existing_member_handoff_is_component_local(
         cross_sample_member_subject=repaired_group.member_subjects[0],
     )
     physical_id = typed_identity_digest(
-        "xic.peak-observation-content.v1:",
+        "xic.peak-observation-content:",
         canonical_identity_basis_bytes({"sample_stem": "s2", "suffix": "unaffected"}),
     )
     member_basis = canonical_identity_basis_bytes(
         {
-            "schema_version": "group_member_subject_v1",
+            "schema_version": "group_member_subject",
             "processing_request_id": repaired_group.processing_request_id,
             "canonical_sample_identity_id": "test-sample:s2",
             "subject": {"kind": "physical_observation", "id": physical_id},
@@ -158,7 +158,7 @@ def test_changed_existing_member_handoff_is_component_local(
     )
     unaffected_member = CrossSampleGroupMemberSubject(
         member_subject_id=typed_identity_digest(
-            "xic.group-member-subject.v1:", member_basis
+            "xic.group-member-subject:", member_basis
         ),
         processing_request_id=repaired_group.processing_request_id,
         canonical_sample_identity_id="test-sample:s2",
@@ -215,7 +215,7 @@ def test_changed_existing_member_handoff_is_component_local(
             owner.sample_stem: index for index, owner in enumerate(owners, 1)
         },
         evidence_profile=ModeTrackEvidenceProfile(
-            "anchor-trajectory-v1", "fixed-band-v1", 0.1, 10, 10
+            "anchor-trajectory", "fixed-band", 0.1, 10, 10
         ),
         budget=CrossSampleNeighborhoodBudget(86, 3655),
     )

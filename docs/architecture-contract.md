@@ -24,6 +24,32 @@ decomposition plans belong in Issues, PRs, and Git.
 - Preserve public contracts unless an approved change names the consumer,
   observable delta, and rollback.
 
+## Change Locality
+
+XIC technical evidence for ownership, serialization, derived-fact, or
+internal-defense changes:
+
+1. Identify the affected production entry, authoritative producer, validation,
+   and current consumer, including where the needed invariant is established.
+   Reuse current owner evidence; CBM owns structural query mechanics.
+2. A fallback, recomputation, or deep revalidation needs a reachable input/path
+   and observable loss. Justify the check by changed inputs or an
+   actual trust boundary. Repair a fixed internal bypass at its owner or caller;
+   uncertainty alone does not justify another defense.
+3. Update consumers and retire superseded surfaces in the same responsibility
+   change. The [testing contract](agent/testing.md) owns which oracles survive.
+4. For one rule or representation changed in this diff, identify the affected
+   modules that must know it and justify each remaining dependency. For in-scope
+   decoupling, ordinary consumers still reconstructing owner-derived facts or
+   parsing other owners' internal ancestor schemas are unmet technical acceptance.
+   A separately required audit keeps its own oracle and does not replace the
+   production fact.
+
+Use source and existing observable checks for this acceptance. Record the result
+in the current task/PR, not a permanent inventory or a new generic lint gate.
+Established-owner local edits retain their compact workflow; this is a check of
+the affected flow, not a whole-repository audit.
+
 ## Responsibility Boundaries and Anti-Paranoia Invariants
 
 To maintain clean code and prevent cognitive overload, runaway monoliths, and defensive recomputation traps:
@@ -34,9 +60,10 @@ To maintain clean code and prevent cognitive overload, runaway monoliths, and de
    - All I/O, concurrency orchestration, and batch chunking belong exclusively to outer orchestrators, worker harnesses, or dedicated adapters.
 
 2. **Certified Upstream Trust (No Defensive Paranoia)**:
-   - Objects constructed by authoritative upstream owners (e.g. frozen dataclasses, verified context models, and canonical receipts) are guaranteed valid upon creation.
-   - Downstream private functions and inner loops MUST NOT perform redundant type assertions (`isinstance`), length checks, or dictionary key lookups on trusted internal entities.
-   - No defensive recomputation: expensive evaluations (peak grouping, tolerance calculations, candidate filtering) are executed once by their designated owner. Downstream consumers read produced facts; they must not re-scan or re-evaluate unless an explicit input diff is established.
+   - Reuse facts computed or validated by the formal owner for unchanged inputs.
+     Consumers check only identity and binding needed for their use. Keep
+     validation of persisted or external input at its real entry boundary;
+     [Change Locality](#change-locality) governs exceptions and owner repairs.
 
 3. **Orthogonality of Computation vs Auditing and Serialization**:
    - Domain algorithms calculate domain answers and return pure result structures (e.g., `AlignmentResult`, `HypothesisGroup`).

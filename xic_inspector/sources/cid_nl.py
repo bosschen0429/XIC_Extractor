@@ -7,9 +7,7 @@ cid_nl_presentation assembles the selected data's labels and readable records.
 
 from __future__ import annotations
 
-import json
 import math
-import sqlite3
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -19,6 +17,7 @@ from xic_extractor.diagnostics.cid_nl_explanation import (
     ExplanationError,
     read_cid_nl_curves,
     read_cid_nl_explanation,
+    read_explanation_metadata,
 )
 from xic_inspector.selection.canonical import (
     CanonicalItem,
@@ -37,12 +36,14 @@ def read_summary(path: str | Path) -> dict[str, Any]:
 class CidNlSource:
     """One report's metadata projection and selected evidence retrieval."""
 
-    def __init__(self, path: Path, request_id: str, attempt_id: str) -> None:
+    def __init__(self, path: Path) -> None:
         self.path = path
-        self.request_id = request_id
-        self.attempt_id = attempt_id
-        self.records: dict[str, dict[str, dict[str, Any]]] = {}
-        self.candidates: dict[tuple[str, str], dict[str, Any]] = {}
+        metadata = read_explanation_metadata(path)
+        self.summary = metadata.summary
+        self.request_id = self.summary.get("processing_request_id", "")
+        self.attempt_id = self.summary.get("processing_attempt_id", "")
+        self.records = metadata.records
+        self.candidates = metadata.candidates
         self.links: dict[tuple[str, str], set[tuple[str, str]]] = {}
         self.record_links: dict[tuple[str, str], set[tuple[str, str]]] = {}
         self.initial_edge_refs_by_member: dict[str, set[str]] = {}
@@ -51,61 +52,37 @@ class CidNlSource:
         self.related_items: dict[str, list[tuple[CanonicalItem, tuple[str, ...]]]] = {}
         self.calibration_by_sample_stem: dict[str, tuple[tuple[float, float], ...]] = {}
 
-    def load_items(self, sample_ids: set[str]) -> list[CanonicalItem]:
-        connection = sqlite3.connect(
-            self.path.resolve().as_uri() + "?mode=ro", uri=True
-        )
-        try:
-            connection.execute("PRAGMA query_only = ON")
-            summary_row = connection.execute(
-                "SELECT payload FROM metadata WHERE key='summary'"
-            ).fetchone()
-            if summary_row is not None:
-                summary = json.loads(summary_row[0])
-                for sample in summary.get("samples", []):
-                    sid = sample.get("canonical_sample_identity_id")
-                    sample_stem = sample.get("sample_stem")
-                    if isinstance(sid, str) and isinstance(sample_stem, str):
-                        self.sample_labels[sid] = sample_stem
-                self.calibration_by_sample_stem = self._read_calibration(summary)
-            for cid, sid, payload in connection.execute(
-                "SELECT candidate_id, sample_id, payload FROM candidates"
-            ):
-                self.candidates[cid, sid] = json.loads(payload)
-                sample_stem = self.candidates[cid, sid].get("sample_stem")
-                if isinstance(sample_stem, str) and sample_stem:
-                    self.sample_labels.setdefault(sid, sample_stem)
-            for kind, rid, payload in connection.execute(
-                "SELECT kind, record_id, payload FROM records"
-            ):
-                self.records.setdefault(kind, {})[rid] = json.loads(payload)
-            for edge_ref, edge in self.records.get("initial_edges", {}).items():
-                for field in ("left_member_subject_id", "right_member_subject_id"):
-                    member_id = edge.get(field)
-                    if isinstance(member_id, str):
-                        refs = self.initial_edge_refs_by_member.setdefault(
-                            member_id, set()
-                        )
-                        refs.add(edge_ref)
-            for rid, fact in self.records.get("cell_decisions", {}).items():
-                group_id = fact.get("group_hypothesis_id")
-                row_key_id = fact.get("row_key_id")
-                if isinstance(group_id, str) and isinstance(row_key_id, str):
-                    self.row_cell_decisions.setdefault((group_id, row_key_id), {})[
-                        rid
-                    ] = fact
-            for cid, sid, kind, rid in connection.execute(
-                "SELECT candidate_id, sample_id, kind, record_id FROM links"
-            ):
-                key = cid, sid
-                record = kind, rid
-                self.links.setdefault(key, set()).add(record)
-                self.record_links.setdefault(record, set()).add(key)
-        except (sqlite3.Error, json.JSONDecodeError, TypeError) as exc:
-            raise ExplanationError(f"Invalid CID-NL metadata: {exc}") from exc
-        finally:
-            connection.close()
+        for sample in self.summary.get("samples", []):
+            sid = sample.get("canonical_sample_identity_id")
+            sample_stem = sample.get("sample_stem")
+            if isinstance(sid, str) and isinstance(sample_stem, str):
+                self.sample_labels[sid] = sample_stem
+        self.calibration_by_sample_stem = self._read_calibration(self.summary)
+        for (_, sid), candidate in self.candidates.items():
+            sample_stem = candidate.get("sample_stem")
+            if isinstance(sample_stem, str) and sample_stem:
+                self.sample_labels.setdefault(sid, sample_stem)
+        for edge_ref, edge in self.records.get("initial_edges", {}).items():
+            for field in ("left_member_subject_id", "right_member_subject_id"):
+                member_id = edge.get(field)
+                if isinstance(member_id, str):
+                    self.initial_edge_refs_by_member.setdefault(member_id, set()).add(
+                        edge_ref
+                    )
+        for rid, fact in self.records.get("cell_decisions", {}).items():
+            group_id = fact.get("group_hypothesis_id")
+            row_key_id = fact.get("row_key_id")
+            if isinstance(group_id, str) and isinstance(row_key_id, str):
+                self.row_cell_decisions.setdefault((group_id, row_key_id), {})[
+                    rid
+                ] = fact
+        for cid, sid, kind, rid in metadata.links:
+            key = cid, sid
+            record = kind, rid
+            self.links.setdefault(key, set()).add(record)
+            self.record_links.setdefault(record, set()).add(key)
 
+    def load_items(self, sample_ids: set[str]) -> list[CanonicalItem]:
         items = []
         item_keys: dict[str, set[tuple[str, str]]] = {}
         row_groups = set()
@@ -188,7 +165,7 @@ class CidNlSource:
         if not isinstance(calibration, dict):
             raise ExplanationError("known_istd_reference.calibration must be an object")
         expected = {
-            "schema_version": "known_istd_calibration_v1",
+            "schema_version": "known_istd_calibration_duration_search",
             "rt_unit": "minute",
             "interpolation": "piecewise_linear",
             "extrapolation": "unavailable",
@@ -552,7 +529,7 @@ class CidNlSource:
         invocations = {fact.get("detector_invocation_id") for _, fact in methods}
         if (
             "recovery_observation" in capture_kinds
-            and "untargeted-cid-nl-backfill-recovery:v1" in invocations
+            and "untargeted-cid-nl-backfill-recovery" in invocations
         ):
             kind = "recovery_support"
         elif "reacquired_capture" in capture_kinds and methods:
@@ -613,7 +590,7 @@ class CidNlSource:
                 elif item.kind == "candidate":
                     refs.add(witness.candidate_id)
         raw_curves = []
-        if capability == "retained_curves_v1":
+        if capability == "retained_curves":
             for sid, refs in sorted(refs_by_sample.items()):
                 if not refs:
                     continue

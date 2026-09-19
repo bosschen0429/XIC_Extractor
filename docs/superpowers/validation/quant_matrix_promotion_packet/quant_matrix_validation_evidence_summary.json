@@ -1,0 +1,20 @@
+{
+  "evidence_row_count": 3,
+  "failed_science_evidence": [],
+  "missing_science_evidence": [],
+  "packet_id": "quant-matrix-promotion-packet",
+  "read_only": true,
+  "requested_readiness_label": "production_ready",
+  "required_science_evidence_status": {
+    "downstream_impact_smoke": "pass",
+    "heldout_oracle_or_manual_review": "pass",
+    "large_cohort_validation": "pass"
+  },
+  "schema_version": "quant_matrix_validation_evidence_packet_summary",
+  "validation_evidence_json": "quant_matrix_validation_evidence.json",
+  "validation_evidence_json_sha256": "DF9F0EA16F09306A0B1FB6912B0189B2CC5A38B34531289EDEC0459DE08EC071",
+  "validation_evidence_rows_tsv": "quant_matrix_validation_evidence_rows.tsv",
+  "validation_evidence_rows_tsv_sha256": "DF289FBF68C6FBE15E8CFFEE49823B1B6AAA158DC26B7BFBED92A36D3B6AB2D7",
+  "validation_evidence_schema": "quant_matrix_validation_evidence",
+  "write_authority": false
+}

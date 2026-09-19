@@ -55,24 +55,20 @@ from xic_extractor.tabular_io import (
 )
 
 _MANIFEST_FILE_BY_ROLE = {
-    PT_PATTERN_TRACE_FULL_CONTEXT_ROLE: "pt_pattern_trace_diagnosis.json",
-    PT_PATTERN_TRACE_ANCHOR_LOCAL_ROLE: (
-        "pt_pattern_anchor_local_trace_diagnosis.json"
-    ),
+    PT_PATTERN_TRACE_FULL_CONTEXT_ROLE: "pt_pattern_context_trace_diagnosis.json",
+    PT_PATTERN_TRACE_ANCHOR_LOCAL_ROLE: "pt_pattern_trace_diagnosis.json",
 }
 
 
 _METRICS_FILE_BY_ROLE = {
-    PT_PATTERN_TRACE_FULL_CONTEXT_ROLE: "pt_pattern_trace_metrics.csv",
-    PT_PATTERN_TRACE_ANCHOR_LOCAL_ROLE: ("pt_pattern_anchor_local_trace_metrics.csv"),
+    PT_PATTERN_TRACE_FULL_CONTEXT_ROLE: "pt_pattern_context_trace_metrics.csv",
+    PT_PATTERN_TRACE_ANCHOR_LOCAL_ROLE: "pt_pattern_trace_metrics.csv",
 }
 
 
 _SUMMARY_FILE_BY_ROLE = {
-    PT_PATTERN_TRACE_FULL_CONTEXT_ROLE: "pt_pattern_trace_summary.csv",
-    PT_PATTERN_TRACE_ANCHOR_LOCAL_ROLE: (
-        "pt_pattern_anchor_local_trace_summary.csv"
-    ),
+    PT_PATTERN_TRACE_FULL_CONTEXT_ROLE: "pt_pattern_context_trace_summary.csv",
+    PT_PATTERN_TRACE_ANCHOR_LOCAL_ROLE: "pt_pattern_trace_summary.csv",
 }
 
 

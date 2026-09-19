@@ -5,21 +5,21 @@ from pathlib import Path
 import pytest
 
 from scripts.check_productization_state import (
-    CONTROL_PLANE_SCHEMA_FIELDS_V3,
+    CONTROL_PLANE_SCHEMA_FIELDS,
     DEFAULT_AUTHORITY_MANIFEST,
     DEFAULT_CONTROL_PLANE,
     DEFAULT_HANDOFF,
     DEFAULT_PRODUCTIZATION_SUMMARY,
     DEFAULT_SCHEMA,
     DEFAULT_STATUS_INDEX,
-    DEPENDENT_EFFECT_LANE_AUTHORITY_FIELDS_V1,
+    DEPENDENT_EFFECT_LANE_AUTHORITY_FIELDS,
     DEPENDENT_EFFECT_LANE_ID,
     DEPENDENT_PACKAGE_AUTHORITY_ARTIFACT,
     DEPENDENT_PACKAGE_AUTHORITY_SHA256,
     EXPECTED_CONTROL_PLANE_SCHEMA_VERSION,
     EXPECTED_HOLD_ROW,
-    REQUIRED_LANE_IDS_V3,
-    STATUS_INDEX_FIELDS_V1,
+    REQUIRED_LANE_IDS,
+    STATUS_INDEX_FIELDS,
     _render_compatibility_index,
     artifact_sha256,
     check_productization_state,
@@ -41,12 +41,12 @@ def test_status_schema_matches_index_header() -> None:
     assert header == schema["required_status_index_columns"]
     assert {row["lane_id"] for row in rows} == set(schema["required_lane_ids"])
     assert len(rows) == len(schema["required_lane_ids"])
-    assert DEFAULT_SCHEMA.name == "productization_control_plane_schema.v3.json"
+    assert DEFAULT_SCHEMA.name == "productization_control_plane_schema.json"
     assert schema["schema_version"] == EXPECTED_CONTROL_PLANE_SCHEMA_VERSION
-    assert tuple(schema) == CONTROL_PLANE_SCHEMA_FIELDS_V3
-    assert tuple(header) == STATUS_INDEX_FIELDS_V1
-    assert tuple(schema["required_lane_ids"]) == REQUIRED_LANE_IDS_V3
-    assert len(rows) == len(REQUIRED_LANE_IDS_V3) == 15
+    assert tuple(schema) == CONTROL_PLANE_SCHEMA_FIELDS
+    assert tuple(header) == STATUS_INDEX_FIELDS
+    assert tuple(schema["required_lane_ids"]) == REQUIRED_LANE_IDS
+    assert len(rows) == len(REQUIRED_LANE_IDS) == 15
     assert schema["required_control_plane_anchors"] == {
         row["lane_id"]: row["control_plane_anchor"] for row in rows
     }
@@ -59,7 +59,7 @@ def test_dependent_effect_lane_is_exact_hold_package_binding() -> None:
     dependent_rule = schema["dependent_effect_lane_authority"][DEPENDENT_EFFECT_LANE_ID]
     row = next(item for item in rows if item["lane_id"] == DEPENDENT_EFFECT_LANE_ID)
 
-    assert tuple(dependent_rule) == DEPENDENT_EFFECT_LANE_AUTHORITY_FIELDS_V1
+    assert tuple(dependent_rule) == DEPENDENT_EFFECT_LANE_AUTHORITY_FIELDS
     assert row == EXPECTED_HOLD_ROW
     assert row["current_artifact"] == DEPENDENT_PACKAGE_AUTHORITY_ARTIFACT
     assert row["artifact_sha256"] == DEPENDENT_PACKAGE_AUTHORITY_SHA256
@@ -84,7 +84,7 @@ def test_only_revalidated_default_scope_has_writer_authority() -> None:
 
     backfill = authority_by_lane["backfill_current_write_ready_scope"]
     assert backfill["current_artifact"] == (
-        "docs/superpowers/validation/quant_matrix_default_product_activation_v1/"
+        "docs/superpowers/validation/quant_matrix_default_product_activation/"
         "quant_matrix_default_product_activation_summary.json"
     )
     assert backfill["product_authority_scope"] == "backfill_policy_write_ready_rows"
@@ -96,13 +96,13 @@ def test_only_revalidated_default_scope_has_writer_authority() -> None:
     assert backfill["may_change_selected_area"] == "FALSE"
     assert backfill["may_change_counted_detection"] == "FALSE"
     assert backfill["product_effect"] == "default_quant_matrix_product_output"
-    assert backfill["public_surface"] == "quant_matrix_default_product_activation_v1"
+    assert backfill["public_surface"] == "quant_matrix_default_product_activation"
 
     cid_nl = next(
-        row for row in rows if row["lane_id"] == "cid_nl_default_product_activation_v1"
+        row for row in rows if row["lane_id"] == "cid_nl_default_product_activation"
     )
     assert cid_nl["current_artifact"] == (
-        "docs/superpowers/validation/cid_nl_default_product_activation_v1/"
+        "docs/superpowers/validation/cid_nl_default_product_activation/"
         "cid_nl_default_product_activation_summary.json"
     )
     assert cid_nl["readiness_status"] == "blocked"
@@ -116,7 +116,7 @@ def test_only_revalidated_default_scope_has_writer_authority() -> None:
     assert cid_nl["may_change_selected_area"] == "FALSE"
     assert cid_nl["may_change_counted_detection"] == "FALSE"
     assert cid_nl["product_effect"] == "none"
-    assert cid_nl["public_surface"] == "cid_nl_default_product_activation_v1"
+    assert cid_nl["public_surface"] == "cid_nl_default_product_activation"
 
 
 def test_checker_rejects_stale_backfill_writer_row_count(tmp_path: Path) -> None:
@@ -274,10 +274,11 @@ def test_checker_derives_narrative_mutable_fields_from_schema(
     assert any("duplicates mutable structured state" in problem for problem in problems)
 
 
-def test_checker_rejects_predecessor_control_plane_schema() -> None:
-    predecessor = (
-        DEFAULT_SCHEMA.parent / "productization_control_plane_schema.v2.json"
-    )
+def test_checker_rejects_unsupported_control_plane_schema(tmp_path: Path) -> None:
+    payload = json.loads(DEFAULT_SCHEMA.read_text(encoding="utf-8"))
+    payload["schema_version"] = "unsupported_control_plane"
+    predecessor = tmp_path / "unsupported_schema.json"
+    predecessor.write_text(json.dumps(payload), encoding="utf-8")
 
     problems = check_productization_state(schema_path=predecessor)
 
@@ -288,7 +289,7 @@ def test_checker_rejects_predecessor_control_plane_schema() -> None:
 
 
 @pytest.mark.parametrize("mutation", ("missing", "extra", "reordered"))
-def test_checker_rejects_v3_schema_top_level_shape(
+def test_checker_rejects_schema_top_level_shape(
     tmp_path: Path,
     mutation: str,
 ) -> None:
@@ -304,14 +305,14 @@ def test_checker_rejects_v3_schema_top_level_shape(
 
     problems = check_productization_state(schema_path=mutated)
 
-    assert any("ordered V3 contract" in problem for problem in problems)
+    assert any("ordered contract" in problem for problem in problems)
 
 
-def test_checker_rejects_duplicate_v3_schema_json_key(tmp_path: Path) -> None:
+def test_checker_rejects_duplicate_schema_json_key(tmp_path: Path) -> None:
     text = DEFAULT_SCHEMA.read_text(encoding="utf-8")
     text = text.replace(
         '  "purpose":',
-        '  "schema_version": "productization_control_plane_schema_v3",\n  "purpose":',
+        '  "schema_version": "productization_control_plane_schema",\n  "purpose":',
         1,
     )
     mutated = tmp_path / "schema-duplicate.json"
@@ -362,7 +363,7 @@ def test_checker_rejects_dependent_effect_rule_drift(
 
 
 @pytest.mark.parametrize("mutation", ("missing", "extra", "duplicate", "reordered"))
-def test_checker_rejects_non_exact_v3_lane_registry(
+def test_checker_rejects_non_exact_lane_registry(
     tmp_path: Path,
     mutation: str,
 ) -> None:
@@ -381,12 +382,12 @@ def test_checker_rejects_non_exact_v3_lane_registry(
 
     problems = check_productization_state(schema_path=mutated)
 
-    expected = f"exact ordered {len(REQUIRED_LANE_IDS_V3)}-lane"
+    expected = f"exact ordered {len(REQUIRED_LANE_IDS)}-lane"
     assert any(expected in problem for problem in problems)
 
 
 @pytest.mark.parametrize("mutation", ("missing", "extra", "duplicate", "reordered"))
-def test_checker_rejects_non_exact_v3_anchor_registry(
+def test_checker_rejects_non_exact_anchor_registry(
     tmp_path: Path,
     mutation: str,
 ) -> None:
@@ -419,7 +420,7 @@ def test_checker_rejects_crossed_or_active_dependent_status_row(
         DEPENDENT_EFFECT_LANE_ID,
         {
             "current_artifact": (
-                "docs/superpowers/schemas/productization_authority_manifest.v1.json"
+                "docs/superpowers/schemas/productization_authority_manifest.json"
             ),
             "artifact_sha256": artifact_sha256(DEFAULT_AUTHORITY_MANIFEST),
             "readiness_status": "production_ready",
@@ -609,7 +610,7 @@ def test_checker_allows_non_lane_artifact_readiness_label(tmp_path: Path) -> Non
 def test_checker_rejects_compatibility_owner_route_drift(tmp_path: Path) -> None:
     text = DEFAULT_CONTROL_PLANE.read_text(encoding="utf-8")
     text = text.replace(
-        "../schemas/productization_authority_manifest.v1.json",
+        "../schemas/productization_authority_manifest.json",
         "../schemas/wrong-authority.json",
         1,
     )
@@ -626,7 +627,7 @@ def test_schemas_readme_lists_quant_matrix_version_schema() -> None:
         encoding="utf-8",
     )
 
-    assert "quant_matrix_version_schema.v1.json" in text
+    assert "quant_matrix_version_schema.json" in text
     assert "cell_provenance" in text
     assert "row_summary" in text
     assert "expected-diff" in text
@@ -637,7 +638,7 @@ def test_schemas_readme_lists_quant_matrix_review_report_schema() -> None:
         encoding="utf-8",
     )
 
-    assert "quant_matrix_review_report_schema.v1.json" in text
+    assert "quant_matrix_review_report_schema.json" in text
     assert "review rows" in text
     assert "summary JSON" in text
     assert "HTML report" in text
@@ -649,7 +650,7 @@ def test_schemas_readme_lists_quant_matrix_promotion_readiness_schema() -> None:
         encoding="utf-8",
     )
 
-    assert "quant_matrix_promotion_readiness_schema.v1.json" in text
+    assert "quant_matrix_promotion_readiness_schema.json" in text
     assert "readiness summary JSON" in text
     assert "checks" in text
     assert "contract correctness from scientific confidence" in text
@@ -662,18 +663,18 @@ def test_schemas_readme_lists_quant_matrix_validation_evidence_schema() -> None:
         encoding="utf-8",
     )
 
-    assert "quant_matrix_validation_evidence_schema.v1.json" in text
+    assert "quant_matrix_validation_evidence_schema.json" in text
     assert "artifact-bound" in text
     assert "source artifact paths/hashes" in text
     assert "`write_authority=false`" in text
 
 
-def test_schemas_readme_lists_quant_matrix_promotion_packet_v2_schema() -> None:
+def test_schemas_readme_lists_quant_matrix_promotion_packet_schema() -> None:
     text = (Path(__file__).parents[1] / "docs/superpowers/schemas/README.md").read_text(
         encoding="utf-8",
     )
 
-    assert "quant_matrix_promotion_packet_v2_schema.v1.json" in text
+    assert "quant_matrix_promotion_packet_schema.json" in text
     assert "`production_ready_candidate_packet`" in text
     assert "large-cohort" in text
     assert "heldout-oracle" in text
@@ -686,7 +687,7 @@ def test_schemas_readme_lists_quant_matrix_default_activation_dry_run_schema() -
         encoding="utf-8",
     )
 
-    assert "quant_matrix_default_activation_dry_run_schema.v1.json" in text
+    assert "quant_matrix_default_activation_dry_run_schema.json" in text
     assert "temporary directory" in text
     assert "expected-diff summary hashes" in text
     assert "comparison/summary artifacts" in text
@@ -698,7 +699,7 @@ def test_schemas_readme_lists_quant_matrix_product_ready_closeout_schema() -> No
         encoding="utf-8",
     )
 
-    assert "quant_matrix_product_ready_closeout_schema.v1.json" in text
+    assert "quant_matrix_product_ready_closeout_schema.json" in text
     assert "`product_ready_default_matrix_candidate`" in text
     assert "separate explicit ProductWriter activation commit" in text
     assert "default outputs or matrix authority" in text
@@ -709,7 +710,7 @@ def test_schemas_readme_lists_quant_matrix_default_product_activation_schema() -
         encoding="utf-8",
     )
 
-    assert "quant_matrix_default_product_activation_schema.v1.json" in text
+    assert "quant_matrix_default_product_activation_schema.json" in text
     assert "`default_output/quant_matrix.tsv`" in text
     assert "current\n  rule-selected Backfill membership" in text
     assert "quantification values, not detections or truth claims" in text
@@ -737,7 +738,7 @@ def test_checker_rejects_parked_broad_backfill_authority(tmp_path: Path) -> None
 def test_checker_rejects_diagnostic_sidecar_authority(tmp_path: Path) -> None:
     mutated = _mutated_index(
         tmp_path,
-        "quality_explanation_sidecar_v1",
+        "quality_explanation_sidecar",
         {
             "write_authority": "TRUE",
             "product_authority_scope": "backfill_policy_write_ready_rows",
@@ -753,7 +754,7 @@ def test_checker_rejects_diagnostic_sidecar_authority(tmp_path: Path) -> None:
 def test_checker_rejects_non_writer_scope_without_write_flag(tmp_path: Path) -> None:
     mutated = _mutated_index(
         tmp_path,
-        "quality_explanation_sidecar_v1",
+        "quality_explanation_sidecar",
         {"product_authority_scope": "backfill_policy_write_ready_rows"},
     )
 
@@ -767,7 +768,7 @@ def test_checker_rejects_non_writer_matrix_touch_without_write_flag(
 ) -> None:
     mutated = _mutated_index(
         tmp_path,
-        "review_action_candidate_sidecar_v1",
+        "review_action_candidate_sidecar",
         {
             "write_authority": "FALSE",
             "product_authority_scope": "",
@@ -783,7 +784,7 @@ def test_checker_rejects_non_writer_matrix_touch_without_write_flag(
 def test_checker_rejects_non_writer_product_output_changes(tmp_path: Path) -> None:
     mutated = _mutated_index(
         tmp_path,
-        "quality_explanation_sidecar_v1",
+        "quality_explanation_sidecar",
         {
             "may_change_workbook": "TRUE",
             "may_change_selected_peak": "TRUE",
@@ -802,7 +803,7 @@ def test_checker_rejects_non_writer_product_output_changes(tmp_path: Path) -> No
 def test_checker_rejects_blank_doc_anchors(tmp_path: Path) -> None:
     mutated = _mutated_index(
         tmp_path,
-        "productization_authority_firewall_v1",
+        "productization_authority_firewall",
         {"handoff_anchor": "", "control_plane_anchor": ""},
     )
 
@@ -815,7 +816,7 @@ def test_checker_rejects_blank_doc_anchors(tmp_path: Path) -> None:
 def test_checker_rejects_artifact_hash_drift(tmp_path: Path) -> None:
     mutated = _mutated_index(
         tmp_path,
-        "productization_authority_firewall_v1",
+        "productization_authority_firewall",
         {"artifact_sha256": "0" * 64},
     )
 

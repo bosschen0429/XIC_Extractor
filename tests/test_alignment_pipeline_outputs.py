@@ -35,17 +35,19 @@ def test_alignment_metadata_records_baseline_audit_method() -> None:
         peak_config=peak_config,
     )
 
-    assert metadata["schema_version"] == "alignment-results-v3"
+    assert metadata["schema_version"] == "alignment-results"
+    assert metadata["targeted_istd_anchor_identity"] == ""
+    assert metadata["targeted_istd_target_snapshot_id"] == ""
     assert (
         metadata["cross_sample_peak_group_policy"]
-        == "cross_sample_peak_group_hypothesis_v1"
+        == "cross_sample_peak_group_hypothesis"
     )
     assert metadata["public_family_id_policy"] == "fam_compatibility_id"
     assert (
         metadata["group_delivery_policy"]
-        == "owner_group_delivery_successor_projection_v1"
+        == "owner_group_delivery_successor_projection"
     )
-    assert metadata["gap_fill_policy"] == "missing_observation_gap_fill_v1"
+    assert metadata["gap_fill_policy"] == "missing_observation_gap_fill"
     assert (
         metadata["legacy_owner_backfill_role"]
         == "owner_backfill_as_gap_fill_materialization"
@@ -55,7 +57,7 @@ def test_alignment_metadata_records_baseline_audit_method() -> None:
         == "pre_backfill_successor_projection_required_when_enabled"
     )
     assert (
-        metadata["matrix_value_policy"] == "canonical_signal_profile_selected_area_v1"
+        metadata["matrix_value_policy"] == "canonical_signal_profile_selected_area"
     )
     assert metadata["baseline_audit_method"] == "asls"
     assert metadata["owner_build_xic_backend"] == "raw"
@@ -64,23 +66,23 @@ def test_alignment_metadata_records_baseline_audit_method() -> None:
     assert metadata["selected_family_source"] == ""
     assert metadata["scope_warning"] == ""
     assert metadata["signal_processing_profile_schema_version"] == (
-        "signal_processing_profile_v1"
+        "signal_processing_profile"
     )
-    assert metadata["signal_processing_profile_id"].startswith("signal-profile.v1:")
+    assert metadata["signal_processing_profile_id"].startswith("signal-profile:")
     assert len(metadata["signal_processing_profile_hash"]) == 64
     assert metadata["signal_processing_method"] == "gaussian"
     assert metadata["signal_processing_window_points"] == "15"
     assert metadata["physical_signal_formula"] == (
-        "gaussian_raw_minus_nonnegative_asls_raw_positive_v2"
+        "gaussian_raw_minus_nonnegative_asls_raw_positive"
     )
     assert metadata["owner_backfill_peak_fact_provenance_schema_version"] == (
-        "alignment_owner_backfill_peak_fact_provenance_v2"
+        "alignment_owner_backfill_peak_fact_provenance"
     )
     assert "_v1" not in metadata["owner_backfill_peak_fact_provenance_schema_version"]
     assert metadata["owner_backfill_peak_fact_provenance_row_count"] == "0"
 
 
-def test_alignment_metadata_versions_targeted_istd_anchor_shape() -> None:
+def test_alignment_metadata_keeps_targeted_istd_fields_in_current_shape() -> None:
     metadata = alignment_metadata(
         discovery_batch_index=Path("batch.csv"),
         raw_dir=Path("raw"),
@@ -92,7 +94,7 @@ def test_alignment_metadata_versions_targeted_istd_anchor_shape() -> None:
         targeted_istd_target_snapshot_id="snapshot-id",
     )
 
-    assert metadata["schema_version"] == "alignment-results-v4"
+    assert metadata["schema_version"] == "alignment-results"
     assert metadata["targeted_istd_anchor_identity"] == "anchor-id"
     assert metadata["targeted_istd_target_snapshot_id"] == "snapshot-id"
 
@@ -189,7 +191,7 @@ def test_alignment_metadata_records_audit_evidence_mode() -> None:
     assert metadata["heavy_audit_enabled"] == "False"
     assert (
         metadata["request_plan_version"]
-        == "alignment-parity-scoped-owner-backfill-request-plan-v1"
+        == "alignment-parity-scoped-owner-backfill-request-plan"
     )
     assert (
         metadata["audit_evidence_mode_reason"]

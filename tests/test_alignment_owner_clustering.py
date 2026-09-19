@@ -35,7 +35,7 @@ from xic_extractor.processing_identity import (
     typed_identity_digest,
 )
 
-_TEST_PROCESSING_REQUEST_ID = "xic.processing-request.v1:" + "0" * 64
+_TEST_PROCESSING_REQUEST_ID = "xic.processing-request:" + "0" * 64
 
 
 def test_raw_sufficient_group_skips_drift_in_admission_and_ranking() -> None:
@@ -2229,12 +2229,12 @@ def _owner(
         seed_event_count=seed_event_count,
     )
     physical_id = typed_identity_digest(
-        "xic.peak-observation-content.v1:",
+        "xic.peak-observation-content:",
         canonical_identity_basis_bytes({"sample_stem": sample_stem, "suffix": suffix}),
     )
     member_basis = canonical_identity_basis_bytes(
         {
-            "schema_version": "group_member_subject_v1",
+            "schema_version": "group_member_subject",
             "processing_request_id": _TEST_PROCESSING_REQUEST_ID,
             "canonical_sample_identity_id": f"test-sample:{sample_stem}",
             "subject": {"kind": "physical_observation", "id": physical_id},
@@ -2262,7 +2262,7 @@ def _owner(
         ),
         cross_sample_member_subject=CrossSampleGroupMemberSubject(
             member_subject_id=typed_identity_digest(
-                "xic.group-member-subject.v1:", member_basis
+                "xic.group-member-subject:", member_basis
             ),
             processing_request_id=_TEST_PROCESSING_REQUEST_ID,
             canonical_sample_identity_id=f"test-sample:{sample_stem}",

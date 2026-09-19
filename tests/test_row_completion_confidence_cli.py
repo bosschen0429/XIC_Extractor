@@ -319,14 +319,14 @@ def _write_alignment_artifacts(
     (path / "alignment_backfill_cell_evidence.tsv").write_text(
         "schema_version\tfeature_family_id\tsample_stem\tstatus\t"
         "bounded_by_alignment_row\treason\n"
-        "alignment_backfill_cell_evidence_v1\tFAM1\tSampleA\t"
+        "alignment_backfill_cell_evidence\tFAM1\tSampleA\t"
         "not_needed\ttrue\tok\n",
         encoding="utf-8",
     )
     (path / "alignment_owner_backfill_seed_audit.tsv").write_text(
         "schema_version\tfeature_family_id\tsample_stem\tstatus\t"
         "seed_source\treason\n"
-        "alignment_owner_backfill_seed_audit_v1\tFAM1\tSampleA\t"
+        "alignment_owner_backfill_seed_audit\tFAM1\tSampleA\t"
         "not_needed\towner\tok\n",
         encoding="utf-8",
     )
@@ -336,7 +336,7 @@ def _write_alignment_artifacts(
 def _write_health_packet(path: Path) -> Path:
     path.mkdir()
     packet = {
-        "schema_version": "alignment_health_packet_v1",
+        "schema_version": "alignment_health_packet",
         "summary_metrics": {
             "row_flag_counts": {},
             "accepted_rescue_count_total": 0,

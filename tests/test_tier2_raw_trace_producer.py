@@ -4,7 +4,7 @@ import csv
 from pathlib import Path
 
 from xic_extractor.alignment.production_candidate_gate import (
-    TIER2_CRITERIA_V0_1,
+    TIER2_DIAGNOSTIC_CRITERIA,
     TIER2_RAW_MANIFEST_REQUIRED_COLUMNS,
     TIER2_TRACE_EVIDENCE_REQUIRED_COLUMNS,
     GateSourceContext,
@@ -18,7 +18,7 @@ from xic_extractor.alignment.tier2_trace_producer import (
 )
 
 
-def test_tier2_trace_producer_rows_are_v0_1_diagnostic_only(
+def test_tier2_trace_producer_rows_are_diagnostic_only(
     tmp_path: Path,
 ) -> None:
     review_rows = [_candidate_review_row()]
@@ -49,12 +49,12 @@ def test_tier2_trace_producer_rows_are_v0_1_diagnostic_only(
     assert len(rows) == 1
     row = rows[0]
     assert row["feature_family_id"] == "FAM001"
-    assert row["criteria_version"] == TIER2_CRITERIA_V0_1
+    assert row["criteria_version"] == TIER2_DIAGNOSTIC_CRITERIA
     assert row["evidence_status"] == "inconclusive"
     assert row["support_component"] == ""
     assert row["raw_trace_reread_status"] == "pass"
     assert row["coherence_status"] == "inconclusive"
-    assert "tier2_v0_1_diagnostic_only" in row["challenge_blockers"]
+    assert "tier2_diagnostic_only" in row["challenge_blockers"]
     assert "neighbor_interference_not_assessed" in row["dependent_context"]
     assert row["source_candidate_subset_sha256"] == subset.sha256
     assert row["source_candidate_subset_count"] == "1"
@@ -94,7 +94,7 @@ def test_tier2_trace_producer_rows_are_v0_1_diagnostic_only(
     assert decision.candidate_gate_status == "audit"
     assert decision.tier2_evidence_available is False
     assert decision.support_components == ()
-    assert "tier2_v0_1_diagnostic_only" in decision.challenge_blockers
+    assert "tier2_diagnostic_only" in decision.challenge_blockers
 
 
 def test_tier2_trace_producer_emits_signal_shape_and_reference_views(
@@ -157,9 +157,9 @@ def test_tier2_trace_producer_marks_raw_seed_trace_failures_inconclusive(
     assert row["support_component"] == ""
     assert row["raw_trace_reread_status"] == "inconclusive"
     assert "raw_unavailable" in row["challenge_blockers"]
-    assert "tier2_v0_1_diagnostic_only" in row["challenge_blockers"]
+    assert "tier2_diagnostic_only" in row["challenge_blockers"]
     assert "neighbor_interference_not_assessed" in row["dependent_context"]
-    assert "raw_trace_reread_v0_1" in row["dependent_context"]
+    assert "raw_trace_reread" in row["dependent_context"]
     assert row["neighbor_interference_status"] == "not_assessed"
 
 
@@ -190,7 +190,7 @@ def test_tier2_trace_producer_rejects_multiple_detected_seed_cells(
     assert row["evidence_status"] == "blocked"
     assert row["raw_trace_reread_status"] == "fail"
     assert "multiple_detected_seed_cells" in row["challenge_blockers"]
-    assert "tier2_v0_1_diagnostic_only" in row["challenge_blockers"]
+    assert "tier2_diagnostic_only" in row["challenge_blockers"]
 
 
 def test_tier2_trace_producer_marks_seed_metric_unavailable_coherence_inconclusive(
@@ -215,7 +215,7 @@ def test_tier2_trace_producer_marks_seed_metric_unavailable_coherence_inconclusi
     assert row["raw_trace_reread_status"] == "inconclusive"
     assert row["coherence_status"] == "inconclusive"
     assert "metric_unavailable" in row["challenge_blockers"]
-    assert "tier2_v0_1_diagnostic_only" in row["challenge_blockers"]
+    assert "tier2_diagnostic_only" in row["challenge_blockers"]
 
 
 def test_tier2_trace_producer_uses_contract_status_for_hard_metric_failure(
@@ -240,9 +240,9 @@ def test_tier2_trace_producer_uses_contract_status_for_hard_metric_failure(
     assert row["support_component"] == ""
     assert row["raw_trace_reread_status"] == "fail"
     assert "low_scan_support" in row["challenge_blockers"]
-    assert "tier2_v0_1_diagnostic_only" in row["challenge_blockers"]
+    assert "tier2_diagnostic_only" in row["challenge_blockers"]
     assert "neighbor_interference_not_assessed" in row["dependent_context"]
-    assert "raw_trace_reread_v0_1" in row["dependent_context"]
+    assert "raw_trace_reread" in row["dependent_context"]
     assert row["neighbor_interference_status"] == "not_assessed"
 
 
@@ -273,7 +273,7 @@ def test_tier2_trace_producer_uses_contract_status_for_rescued_coherence_failure
     assert row["evidence_status"] == "inconclusive"
     assert row["raw_trace_reread_status"] == "pass"
     assert row["coherence_status"] == "inconclusive"
-    assert "tier2_v0_1_diagnostic_only" in row["challenge_blockers"]
+    assert "tier2_diagnostic_only" in row["challenge_blockers"]
     assert "rescued_apex_span_wide" in row["challenge_blockers"]
 
 

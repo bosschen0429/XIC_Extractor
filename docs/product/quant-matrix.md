@@ -31,6 +31,10 @@ different typed names and cannot cross the delivery seam as if already final.
 - Approved activation packets may write a versioned matrix bundle without re-reading the full `alignment_cells.tsv` ledger, provided the productization status index and authority manifest define the exact accepted scope.
 - Matrix-only activation still requires explicit provenance and replay artifacts: acceptance manifest or expected-diff packet, `QuantMatrixVersion`, cell provenance, row/source summary, value-delta record, and application summary.
 - Identity, row-basis, source, evidence, and review details belong in sidecars unless an explicit public schema says otherwise.
+- Shared-peak explanation and PeakHypothesis selection sidecars are diagnostic
+  evidence only. They do not expose an independent activation writer or matrix
+  reconstruction command; finalized production owners and the accepted
+  `QuantMatrixVersion` path own matrix output.
 - Within one activated Alignment run, the owner-minted
   `ProductionDecisionSet` is the single live semantic input for TSV, XLSX, and
   HTML projections. Renderers may format it but cannot rebuild competing
@@ -120,6 +124,6 @@ themselves.
 
 - [Backfill](backfill.md) | [Alignment](alignment.md) | [Productization](productization.md)
 - [Historical compatibility index](../superpowers/plans/2026-06-15-productization-control-plane.md)
-- [Status index](../superpowers/validation/productization_status_index_v1.tsv) | [Authority manifest](../superpowers/schemas/productization_authority_manifest.v1.json)
+- [Status index](../superpowers/validation/productization_status_index.tsv) | [Authority manifest](../superpowers/schemas/productization_authority_manifest.json)
 - [Peak model selection](peak-model-selection.md)
 - [Run provenance](run-provenance.md)

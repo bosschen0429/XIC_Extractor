@@ -34,12 +34,12 @@ from xic_extractor.tabular_io import numeric_equal, render_delimited_rows
 
 VALIDATION_STATUS = "diagnostic_only"
 MODE_TRACK_TABLE_PUBLICATION_RECEIPT_SCHEMA_VERSION = (
-    "mode_track_table_publication_receipt_v1"
+    "mode_track_table_publication_receipt"
 )
 _REVIEW_CLAIM = "owner_validated_physical_subject_binding_only"
 _WRITER_AUTHORITY = "fresh_projection_plus_owner_validated_review_subjects"
 _PUBLISHED_OUTPUTS = {
-    "checked_manifest": "checked_manifest_v1.tsv",
+    "checked_manifest": "checked_manifest.tsv",
     "alignment_matrix_tsv": "alignment_matrix.tsv",
     "alignment_matrix_identity_tsv": "alignment_matrix_identity.tsv",
     "alignment_matrix_xlsx": "alignment_matrix.xlsx",
@@ -295,7 +295,7 @@ def _finalize_mode_track_projection(
         matrix_tsv=output_dir / "alignment_matrix.tsv",
         matrix_identity_tsv=output_dir / "alignment_matrix_identity.tsv",
         matrix_xlsx=output_dir / "alignment_matrix.xlsx",
-        checked_manifest_tsv=output_dir / "checked_manifest_v1.tsv",
+        checked_manifest_tsv=output_dir / "checked_manifest.tsv",
         publication_receipt_json=output_dir / "publication_receipt.json",
     )
 
@@ -338,10 +338,7 @@ def _rehydrate_mode_track_review_set(
     review = _read_json_bytes(review_bytes)
     replay = _read_json_bytes(replay_bytes)
     replay_sha = hashlib.sha256(replay_bytes).hexdigest()
-    if review.get("schema_version") not in {
-        "mode_track_closed_writer_manual_review_v1",
-        "issue180_m9_gate_c_manual_review_v1",
-    }:
+    if review.get("schema_version") != "mode_track_closed_writer_manual_review":
         raise ValueError("manual review schema changed")
     if (
         not review.get("observation_replay_relpath")
@@ -350,10 +347,7 @@ def _rehydrate_mode_track_review_set(
         raise ValueError("manual review replay binding changed")
     if (
         replay.get("schema_version")
-        not in {
-            "mode_track_closed_writer_observation_replay_v1",
-            "issue180_m9_gate_c_observation_replay_v1",
-        }
+        != "mode_track_closed_writer_observation_replay"
         or replay.get("validation_status") != VALIDATION_STATUS
     ):
         raise ValueError("physical replay authority binding changed")
@@ -596,7 +590,7 @@ def _write_outputs(
         identity_columns=ALIGNMENT_MATRIX_IDENTITY_COLUMNS,
         identity_rows=projection.input_matrix_identity_rows,
     )
-    (output_dir / "checked_manifest_v1.tsv").write_text(
+    (output_dir / "checked_manifest.tsv").write_text(
         render_delimited_rows(
             checked_rows,
             quant_matrix.PRODUCTION_ACCEPTANCE_COLUMNS,

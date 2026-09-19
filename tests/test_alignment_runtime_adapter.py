@@ -262,7 +262,7 @@ def test_alignment_preflight_failure_skips_runner_and_finalizes_marker(
         start_runtime_attempt(
             attempt=attempt,
             work_unit_keys=(),
-            owner_completeness_attestation="alignment-runtime-test:v1",
+            owner_completeness_attestation="alignment-runtime-test",
         ),
         (job,),
         worker=worker,
@@ -306,7 +306,7 @@ def test_alignment_accepted_cancellation_skips_runner_without_factory(
         start_runtime_attempt(
             attempt=attempt,
             work_unit_keys=("sample:a",),
-            owner_completeness_attestation="alignment-runtime-test:v1",
+            owner_completeness_attestation="alignment-runtime-test",
             cancellation_request=RuntimeCancellationRequest(attempt=attempt),
         ),
         (job,),
@@ -591,7 +591,7 @@ def test_alignment_scientific_serializer_rejects_display_only_group() -> None:
         canonical_alignment_peak_group_result_bytes((display_only,))
 
 
-def test_runtime_binding_closes_internal_disposition_without_changing_v1_projection(
+def test_runtime_binding_closes_internal_disposition_without_changing_projection(
     tmp_path: Path,
 ) -> None:
     attempt = _attempt(tmp_path, stem="internal-binding")
@@ -678,11 +678,11 @@ def _group(
     )
 
     processing_request_id = attempt.processing_request_id
-    subject_id = f"xic.peak-observation-content.v1:{group_id}"
-    sample_id = f"xic.sample.v1:{group_id}"
+    subject_id = f"xic.peak-observation-content:{group_id}"
+    sample_id = f"xic.sample:{group_id}"
     member_basis = canonical_identity_basis_bytes(
         {
-            "schema_version": "group_member_subject_v1",
+            "schema_version": "group_member_subject",
             "processing_request_id": processing_request_id,
             "canonical_sample_identity_id": sample_id,
             "subject": {"kind": "physical_observation", "id": subject_id},
@@ -691,7 +691,7 @@ def _group(
     )
     member = CrossSampleGroupMemberSubject(
         member_subject_id=typed_identity_digest(
-            "xic.group-member-subject.v1:",
+            "xic.group-member-subject:",
             member_basis,
         ),
         processing_request_id=processing_request_id,
@@ -725,7 +725,7 @@ def _runtime(
     return start_runtime_attempt(
         attempt=attempt,
         work_unit_keys=work_unit_keys,
-        owner_completeness_attestation="alignment-runtime-test:v1",
+        owner_completeness_attestation="alignment-runtime-test",
     )
 
 
@@ -739,7 +739,7 @@ def _reservations(
             resource_key=f"process:sample:{suffix}",
             worker_key=f"worker:{suffix}",
             source_reference=f"no-raw:sample:{suffix}",
-            compatibility_token="alignment:no-raw:v1",
+            compatibility_token="alignment:no-raw",
         )
         for suffix in ("a", "b")
     )
@@ -766,9 +766,9 @@ def _attempt(
                 injection_order=1,
             ),
         ),
-        scientific_input_schema_version="alignment_runtime_test_v1",
-        processing_algorithm_version="alignment_runtime_test_v1",
-        processing_contract_version="processing_identity_v1",
+        scientific_input_schema_version="alignment_runtime_test",
+        processing_algorithm_version="alignment_runtime_test",
+        processing_contract_version="processing_identity",
         scientific_inputs={"method": "cid_nl", "neutral_loss_da": 116.0},
     )
     return issue_processing_attempt(request)

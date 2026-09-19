@@ -212,12 +212,12 @@ def test_acquire_applies_targeted_ms1_shape_identity_support_tsv(
     from xic_extractor import extractor
     from xic_extractor.extraction import serial_backend
 
-    support_path = tmp_path / "targeted_ms1_shape_identity_v0.tsv"
+    support_path = tmp_path / "targeted_ms1_shape_identity.tsv"
     config = ExtractionConfig(
         **{
             **_config(tmp_path, keep_intermediate_csv=False).__dict__,
             "targeted_ms1_shape_identity_support_tsv": support_path,
-            "targeted_ms1_shape_identity_activation_policy": ("limited_5hmdc_5medc_v1"),
+            "targeted_ms1_shape_identity_activation_policy": ("limited_5hmdc_5medc"),
         }
     )
     (config.data_dir / "SampleA.raw").write_text("", encoding="utf-8")
@@ -272,7 +272,7 @@ def test_acquire_applies_targeted_ms1_shape_identity_support_tsv(
 
     assert output is returned
     assert calls["support_path"] == support_path
-    assert calls["activation_policy"] == "limited_5hmdc_5medc_v1"
+    assert calls["activation_policy"] == "limited_5hmdc_5medc"
     assert calls["projection_input"] is returned
     assert calls["projection_targets"] == targets
     assert calls["projection_supports"] == supports
@@ -289,7 +289,7 @@ def test_acquire_limited_shape_identity_policy_without_support_tsv_keeps_output(
     config = ExtractionConfig(
         **{
             **_config(tmp_path, keep_intermediate_csv=False).__dict__,
-            "targeted_ms1_shape_identity_activation_policy": ("limited_5hmdc_5medc_v1"),
+            "targeted_ms1_shape_identity_activation_policy": ("limited_5hmdc_5medc"),
         }
     )
     (config.data_dir / "SampleA.raw").write_text("", encoding="utf-8")
@@ -373,7 +373,7 @@ def test_acquire_reports_invalid_targeted_ms1_shape_identity_support_as_config_e
     from xic_extractor import extractor
     from xic_extractor.extraction import serial_backend
 
-    support_path = tmp_path / "targeted_ms1_shape_identity_v0.tsv"
+    support_path = tmp_path / "targeted_ms1_shape_identity.tsv"
     config = ExtractionConfig(
         **{
             **_config(tmp_path, keep_intermediate_csv=False).__dict__,
@@ -499,7 +499,7 @@ def test_acquire_resolves_sample_metadata_source_as_injection_order(
         + "\n"
         + "\t".join(
             [
-                "sample_metadata_v1",
+                "sample_metadata",
                 "SampleA",
                 "RawA",
                 "7",

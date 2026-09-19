@@ -28,8 +28,8 @@ from xic_extractor.sample_metadata import (
     mint_sample_metadata_snapshot,
 )
 
-_MANUAL_REVIEW_FILENAME = "manual_review_v1.json"
-_REVIEW_REPLAY_FILENAME = "manual_review_observation_replay_v1.json"
+_MANUAL_REVIEW_FILENAME = "manual_review.json"
+_REVIEW_REPLAY_FILENAME = "manual_review_observation_replay.json"
 _DIAGNOSTIC_ROLE_MESSAGE = (
     "ModeTrack role: diagnostic_only (debug or batch review; no product authority)"
 )

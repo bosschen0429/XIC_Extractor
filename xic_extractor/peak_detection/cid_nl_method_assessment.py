@@ -57,11 +57,11 @@ from xic_extractor.processing_identity import (
 )
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 
-SCHEMA_VERSION = "cid_nl_method_assessment_v3"
+SCHEMA_VERSION = "cid_nl_method_assessment"
 ARTIFACT_SEMANTIC_ROLE = "cid_nl_method_assessment"
 VALIDATION_STATUS = "diagnostic_only"
 MEDIA_TYPE = "application/json"
-SERIALIZATION_FORMAT = "canonical-json-utf8-lf-v1"
+SERIALIZATION_FORMAT = "canonical-json-utf8-lf"
 
 CidNlTechnicalState: TypeAlias = Literal[
     "evaluated",
@@ -71,10 +71,10 @@ CidNlTechnicalState: TypeAlias = Literal[
 ]
 CidNlMethodResult: TypeAlias = Literal["SUPPORT", "HOLD", "REJECT"]
 
-_ARTIFACT_CONTENT_ID_PREFIX = "xic.artifact-content.v1:"
-_ACQUISITION_SOURCE_ID_PREFIX = "xic.acquisition-source.v1:"
-_PEAK_CONTENT_ID_PREFIX = "xic.peak-observation-content.v1:"
-_SAMPLE_ID_PREFIX = "xic.sample.v1:"
+_ARTIFACT_CONTENT_ID_PREFIX = "xic.artifact-content:"
+_ACQUISITION_SOURCE_ID_PREFIX = "xic.acquisition-source:"
+_PEAK_CONTENT_ID_PREFIX = "xic.peak-observation-content:"
+_SAMPLE_ID_PREFIX = "xic.sample:"
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _TECHNICAL_STATES = frozenset({"evaluated", "unsupported", "failed", "not_evaluated"})
 _METHOD_RESULTS = frozenset({"SUPPORT", "HOLD", "REJECT"})
@@ -86,16 +86,6 @@ _ARTIFACT_SEMANTIC_CONTRACT = _mint_artifact_semantic_contract_ref(
     media_type=MEDIA_TYPE,
     serialization_format=SERIALIZATION_FORMAT,
 )
-_COMPOSITE_ARTIFACT_SEMANTIC_CONTRACT = _mint_artifact_semantic_contract_ref(
-    owner_namespace="xic_extractor.peak_detection.cid_nl_method_assessment",
-    semantic_role=ARTIFACT_SEMANTIC_ROLE,
-    schema_version="cid_nl_method_assessment_v4",
-    validation_status=VALIDATION_STATUS,
-    media_type=MEDIA_TYPE,
-    serialization_format=SERIALIZATION_FORMAT,
-)
-
-
 class CidNlMethodAssessmentContractError(ValueError):
     """Raised when one complete CID-NL method attempt cannot be closed."""
 
@@ -336,11 +326,7 @@ class CidNlMethodAssessmentRef:
             raise CidNlMethodAssessmentContractError(
                 "artifact must be an owner-minted EvidenceArtifactRef"
             )
-        if self.artifact.semantic_contract != (
-            _COMPOSITE_ARTIFACT_SEMANTIC_CONTRACT
-            if self.content.method_subject.composition
-            else _ARTIFACT_SEMANTIC_CONTRACT
-        ):
+        if self.artifact.semantic_contract != _ARTIFACT_SEMANTIC_CONTRACT:
             raise CidNlMethodAssessmentContractError(
                 "artifact semantic contract is not owned by CID-NL assessment"
             )
@@ -463,9 +449,7 @@ def mint_cid_nl_method_assessment_ref(
     artifact = _mint_evidence_artifact_ref(
         producer_processing_request_id=processing_owners.request.processing_request_id,
         producer_processing_attempt_id=processing_owners.attempt.processing_attempt_id,
-        semantic_contract=_COMPOSITE_ARTIFACT_SEMANTIC_CONTRACT
-        if subject.composition
-        else _ARTIFACT_SEMANTIC_CONTRACT,
+        semantic_contract=_ARTIFACT_SEMANTIC_CONTRACT,
         payload_bytes=canonical_cid_nl_method_assessment_bytes(content),
         upstream_artifacts=upstreams,
     )
@@ -540,14 +524,10 @@ def canonical_cid_nl_method_assessment_bytes(
         )
     content_payload = asdict(content)
     payload = {
-        "schema_version": "cid_nl_method_assessment_v4"
-        if content.method_subject.composition
-        else SCHEMA_VERSION,
+        "schema_version": SCHEMA_VERSION,
         "validation_status": VALIDATION_STATUS,
         "content": content_payload,
     }
-    if content.method_subject.composition is None:
-        content_payload["method_subject"].pop("composition")
     try:
         serialized = json.dumps(
             payload,

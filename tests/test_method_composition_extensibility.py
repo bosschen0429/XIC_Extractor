@@ -5,8 +5,6 @@ and SQLite explanation.
 from __future__ import annotations
 
 import argparse
-import json
-import sqlite3
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Mapping
@@ -15,6 +13,7 @@ from scripts.run_alignment import _resolve_preset
 from tests.test_processing_run_spec import _compile_paths, _raws
 from xic_extractor.diagnostics.cid_nl_explanation import (
     GENERIC_REPORT_FILENAME,
+    ExplanationReportWriter,
     read_alignment_curves,
     read_alignment_explanation,
     read_cid_nl_curves,
@@ -60,7 +59,7 @@ class MockDeltaMassDiscoveryMethodSpec:
 
     @property
     def method_id(self) -> str:
-        return "mock_delta_mass_v1"
+        return "mock_delta_mass"
 
 
 def test_custom_discovery_method_spec_satisfies_protocol():
@@ -68,7 +67,7 @@ def test_custom_discovery_method_spec_satisfies_protocol():
     assert isinstance(spec, DiscoveryMethodSpec)
     assert spec.method == "delta_mass"
     assert spec.schema_version == "1.0.0"
-    assert spec.method_id == "mock_delta_mass_v1"
+    assert spec.method_id == "mock_delta_mass"
 
 
 def test_compile_processing_run_spec_with_custom_discovery_method(tmp_path: Path):
@@ -91,7 +90,7 @@ def test_compile_processing_run_spec_with_custom_discovery_method(tmp_path: Path
     assert run_spec.discovery_method.method == "delta_mass"
     assert run_spec.run_spec_hash is not None
     assert len(run_spec.run_spec_hash) == 64
-    assert run_spec.run_spec_id.startswith("processing-run.v1:")
+    assert run_spec.run_spec_id.startswith("processing-run:")
 
     # Serialization and deserialization roundtrip preserves spec equality
     # and attribute access
@@ -150,7 +149,7 @@ def test_registered_discovery_method_codec_roundtrip(tmp_path: Path):
         assert isinstance(
             deserialized.discovery_method, MockDeltaMassDiscoveryMethodSpec
         )
-        assert deserialized.discovery_method.method_id == "mock_delta_mass_v1"
+        assert deserialized.discovery_method.method_id == "mock_delta_mass"
         assert (
             deserialized.discovery_method.settings == MockDeltaMassDiscoverySettings()
         )
@@ -216,32 +215,12 @@ def test_generic_sqlite_diagnostic_aliases_and_roundtrip(tmp_path: Path):
     assert read_alignment_curves is read_cid_nl_curves
     assert write_alignment_explanation is write_cid_nl_explanation
 
-    with sqlite3.connect(db_path) as conn:
-        conn.execute("PRAGMA user_version = 1")
-        conn.execute("CREATE TABLE metadata (key TEXT PRIMARY KEY, payload TEXT)")
-        conn.execute(
-            "CREATE TABLE candidates (candidate_id TEXT, sample_id TEXT, payload TEXT)"
-        )
-        conn.execute("CREATE TABLE records (kind TEXT, record_id TEXT, payload TEXT)")
-        conn.execute(
-            "CREATE TABLE links ("
-            "candidate_id TEXT, sample_id TEXT, kind TEXT, record_id TEXT"
-            ")"
-        )
-        summary_payload = json.dumps(
-            {
-                "schema_version": 1,
-                "diagnostic_only": True,
-                "completion": "post_matrix_publication",
-                "method": "discovery",
-            }
-        )
-        conn.execute("INSERT INTO metadata VALUES ('summary', ?)", (summary_payload,))
-        conn.commit()
+    with ExplanationReportWriter(db_path) as writer:
+        writer.finalize({"method": "discovery"})
 
     rows_generic = read_alignment_explanation(db_path)
-    rows_legacy = read_cid_nl_explanation(db_path)
-    assert rows_generic == rows_legacy
+    rows_cid_nl = read_cid_nl_explanation(db_path)
+    assert rows_generic == rows_cid_nl
     assert rows_generic["diagnostic_only"] is True
     assert rows_generic["method"] == "discovery"
 
@@ -261,7 +240,7 @@ def test_sidecar_roundtrip_with_generic_discovery_method_spec(tmp_path: Path):
     )
     spec = replace(base_spec, discovery_method=custom_method)
     manifest, records = _population(spec, acquisition_input)
-    sidecar_path = tmp_path / "out" / "custom_physical_facts.v1.json"
+    sidecar_path = tmp_path / "out" / "custom_physical_facts.json"
 
     write_discovery_physical_fact_sidecar(
         sidecar_path,

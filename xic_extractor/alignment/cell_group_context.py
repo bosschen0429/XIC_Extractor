@@ -38,36 +38,27 @@ from xic_extractor.processing_identity import (
 )
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 
-SCHEMA_VERSION = "cell_observation_v4"
-OUTSIDE_GROUP_SCHEMA_VERSION = "cell_observation_v5"
+SCHEMA_VERSION = "cell_observation"
 ARTIFACT_SEMANTIC_ROLE = "diagnostic_cell_observation"
 VALIDATION_STATUS = "diagnostic_only"
 MEDIA_TYPE = "application/json"
-SERIALIZATION_FORMAT = "canonical-json-utf8-lf-v1"
+SERIALIZATION_FORMAT = "canonical-json-utf8-lf"
 
-_ARTIFACT_CONTENT_ID_PREFIX = "xic.artifact-content.v1:"
-_EVIDENCE_ARTIFACT_ID_PREFIX = "xic.evidence-artifact.v1:"
-_PEAK_CONTENT_ID_PREFIX = "xic.peak-observation-content.v1:"
-_PEAK_HYPOTHESIS_ID_PREFIX = "xic.peak-hypothesis.v1:"
-_SAMPLE_ID_PREFIX = "xic.sample.v1:"
-_METHOD_SUBJECT_ID_PREFIX = "xic.cid-nl-method-subject.v1:"
-_TARGET_KEY_ID_PREFIX = "xic.target-key.v1:"
-_TARGET_DEFINITION_ID_PREFIX = "xic.target-definition.v1:"
-_FINAL_CELL_OBSERVATION_ID_PREFIX = "xic.final-cell-observation.v1:"
+_ARTIFACT_CONTENT_ID_PREFIX = "xic.artifact-content:"
+_EVIDENCE_ARTIFACT_ID_PREFIX = "xic.evidence-artifact:"
+_PEAK_CONTENT_ID_PREFIX = "xic.peak-observation-content:"
+_PEAK_HYPOTHESIS_ID_PREFIX = "xic.peak-hypothesis:"
+_SAMPLE_ID_PREFIX = "xic.sample:"
+_METHOD_SUBJECT_ID_PREFIX = "xic.cid-nl-method-subject:"
+_TARGET_KEY_ID_PREFIX = "xic.target-key:"
+_TARGET_DEFINITION_ID_PREFIX = "xic.target-definition:"
+_FINAL_CELL_OBSERVATION_ID_PREFIX = "xic.final-cell-observation:"
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _FINAL_CELL_MINT_TOKEN = object()
 _ARTIFACT_SEMANTIC_CONTRACT = _mint_artifact_semantic_contract_ref(
     owner_namespace="xic_extractor.alignment.cell_observations",
     semantic_role=ARTIFACT_SEMANTIC_ROLE,
     schema_version=SCHEMA_VERSION,
-    validation_status=VALIDATION_STATUS,
-    media_type=MEDIA_TYPE,
-    serialization_format=SERIALIZATION_FORMAT,
-)
-_OUTSIDE_GROUP_ARTIFACT_SEMANTIC_CONTRACT = _mint_artifact_semantic_contract_ref(
-    owner_namespace="xic_extractor.alignment.cell_observations",
-    semantic_role=ARTIFACT_SEMANTIC_ROLE,
-    schema_version=OUTSIDE_GROUP_SCHEMA_VERSION,
     validation_status=VALIDATION_STATUS,
     media_type=MEDIA_TYPE,
     serialization_format=SERIALIZATION_FORMAT,

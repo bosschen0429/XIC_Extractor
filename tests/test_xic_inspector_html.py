@@ -201,7 +201,7 @@ def test_build_and_write_report_atomically() -> None:
         out = Path(tmpdir) / "sub" / "report.html"
         html = build_report_html(
             title="測試報告",
-            evidence_capability="retained_curves_v1",
+            evidence_capability="retained_curves",
             strategy="sample",
             request_id="req-123",
             run_total=100,
@@ -215,7 +215,7 @@ def test_build_and_write_report_atomically() -> None:
         assert size > 0
         content = out.read_text(encoding="utf-8")
         assert "測試報告" in content
-        assert "retained_curves_v1" in content
+        assert "retained_curves" in content
         assert "req-123" in content
         # Check no temporary files left
         tmp_files = list(out.parent.glob("*.tmp.*"))

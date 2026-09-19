@@ -30,7 +30,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--review-actions",
         type=Path,
         required=True,
-        help="Review action TSV/CSV using review_action_v1.",
+        help="Review action TSV/CSV using review_action.",
     )
     parser.add_argument(
         "--targeted-long-csv",
@@ -53,7 +53,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--expected-diff-template-tsv",
         type=Path,
         help=(
-            "Optional path to write review_action_expected_diff_v1 template rows "
+            "Optional path to write review_action_expected_diff template rows "
             "for product-mutating actions blocked by expected-diff review."
         ),
     )

@@ -11,10 +11,10 @@ from xic_extractor.alignment.shared_peak_identity_explanation.machine_artifacts 
 from xic_extractor.alignment.shared_peak_identity_explanation.shadow_labels import (
     build_shadow_alignment_summary,
     build_shadow_label_rows,
-    build_v2_readiness,
+    build_shadow_readiness,
 )
 from xic_extractor.alignment.shared_peak_identity_explanation.writers import (
-    write_v2_outputs,
+    write_shadow_outputs,
 )
 
 
@@ -47,17 +47,14 @@ def test_shadow_labels_map_manual_evidence_classes_without_promotion() -> None:
     by_id = {row["oracle_row_id"]: row for row in rows}
     assert by_id["row-pass-low"]["shadow_label"] == "low_opportunity_supported"
     assert by_id["row-pass-low"]["shadow_alignment_status"] == "aligned"
-    assert (
-        by_id["row-fail-conflict"]["shadow_label"]
-        == "rt_pattern_conflict_blocked"
-    )
+    assert by_id["row-fail-conflict"]["shadow_label"] == "rt_pattern_conflict_blocked"
     assert by_id["row-fail-conflict"]["shadow_alignment_status"] == "aligned"
     assert by_id["row-shape-bad"]["shadow_alignment_status"] == "unjudgeable"
     assert by_id["row-context"]["shadow_alignment_status"] == "context_only"
     assert {row["diagnostic_only"] for row in rows} == {"TRUE"}
 
 
-def test_v2_readiness_is_exploratory_when_blast_radius_is_unassessed() -> None:
+def test_shadow_readiness_is_exploratory_when_blast_radius_is_unassessed() -> None:
     shadow_rows = build_shadow_label_rows(
         [
             _explanation(
@@ -73,7 +70,7 @@ def test_v2_readiness_is_exploratory_when_blast_radius_is_unassessed() -> None:
         ]
     )
 
-    readiness = build_v2_readiness(
+    readiness = build_shadow_readiness(
         run_facts={
             **_slice1_run_facts(),
             "blast_radius_assessed": "not_assessed",
@@ -89,7 +86,7 @@ def test_v2_readiness_is_exploratory_when_blast_radius_is_unassessed() -> None:
         ],
     )
 
-    assert readiness["v2_gate_status"] == "exploratory_only"
+    assert readiness["shadow_gate_status"] == "exploratory_only"
     assert readiness["machine_only_labeler_ready"] == "FALSE"
     assert readiness["machine_evidence_basis"] == "machine_proxy_or_manual_derived"
     assert readiness["semantic_generalization_evidence"] == (
@@ -99,7 +96,9 @@ def test_v2_readiness_is_exploratory_when_blast_radius_is_unassessed() -> None:
     assert "overfit_risk_unassessed" in readiness["clear_answer"]
 
 
-def test_v2_readiness_can_be_shadow_ready_candidate_after_current_low_risk() -> None:
+def test_shadow_readiness_can_be_shadow_ready_candidate_after_current_low_risk() -> (
+    None
+):
     shadow_rows = build_shadow_label_rows(
         [
             _explanation(
@@ -115,7 +114,7 @@ def test_v2_readiness_can_be_shadow_ready_candidate_after_current_low_risk() -> 
         ]
     )
 
-    readiness = build_v2_readiness(
+    readiness = build_shadow_readiness(
         run_facts={
             **_slice1_run_facts(),
             "blast_radius_assessed": "present_current",
@@ -135,13 +134,13 @@ def test_v2_readiness_can_be_shadow_ready_candidate_after_current_low_risk() -> 
         ],
     )
 
-    assert readiness["v2_gate_status"] == "shadow_ready_candidate"
+    assert readiness["shadow_gate_status"] == "shadow_ready_candidate"
     assert readiness["machine_only_labeler_ready"] == "TRUE"
     assert readiness["readiness_label"] == "diagnostic_only"
     assert readiness["machine_evidence_coverage_fraction"] == "1.000000"
 
 
-def test_v2_readiness_does_not_promote_without_machine_observed_evidence() -> None:
+def test_shadow_readiness_does_not_promote_without_machine_observed_evidence() -> None:
     shadow_rows = build_shadow_label_rows(
         [
             _explanation(
@@ -152,7 +151,7 @@ def test_v2_readiness_does_not_promote_without_machine_observed_evidence() -> No
         ]
     )
 
-    readiness = build_v2_readiness(
+    readiness = build_shadow_readiness(
         run_facts={
             **_slice1_run_facts(),
             "blast_radius_assessed": "present_current",
@@ -169,11 +168,13 @@ def test_v2_readiness_does_not_promote_without_machine_observed_evidence() -> No
         ],
     )
 
-    assert readiness["v2_gate_status"] == "exploratory_only"
+    assert readiness["shadow_gate_status"] == "exploratory_only"
     assert "machine_evidence_not_sufficient" in readiness["clear_answer"]
 
 
-def test_v2_readiness_preserves_first_seen_unique_machine_evidence_blockers() -> None:
+def test_shadow_readiness_preserves_first_seen_unique_machine_evidence_blockers() -> (
+    None
+):
     shadow_rows = build_shadow_label_rows(
         [
             _explanation(
@@ -189,7 +190,7 @@ def test_v2_readiness_preserves_first_seen_unique_machine_evidence_blockers() ->
         ]
     )
 
-    readiness = build_v2_readiness(
+    readiness = build_shadow_readiness(
         run_facts={**_slice1_run_facts(), "blast_radius_assessed": "not_assessed"},
         shadow_rows=shadow_rows,
         machine_evidence_support_rows=[
@@ -273,9 +274,9 @@ def test_machine_evidence_support_marks_manual_derived_metric_gaps() -> None:
     assert row["evidence_support_status"] == "machine_proxy_only"
     assert "formal_shape_metric" in row["missing_machine_evidence"]
     assert "formal_pattern_metric" in row["missing_machine_evidence"]
-    assert "cid_nl_pattern_context=family_level_present" in row[
-        "observed_machine_metrics"
-    ]
+    assert (
+        "cid_nl_pattern_context=family_level_present" in row["observed_machine_metrics"]
+    )
     assert "neutral_loss_tag=loss_116" in row["observed_machine_metrics"]
     assert "zhang_2014_eic_quality" in row["literature_support_refs"]
     assert "neutral_loss_product_ion_annotation" in row["literature_support_refs"]
@@ -434,7 +435,7 @@ def test_dda_missing_nl_policy_can_be_non_dispositive_with_ms1_support() -> None
                 "raw_ms2_strict_nl_scan_count": "1",
                 "raw_ms2_trace_strength": "strong",
                 "raw_ms2_diagnostic_product_absence_reason": "",
-            }
+            },
         },
         ms1_pattern_coherence_evidence={
             ("FAM001", "S1"): {
@@ -458,15 +459,15 @@ def test_dda_missing_nl_policy_can_be_non_dispositive_with_ms1_support() -> None
     row = rows[0]
     assert "dda_opportunity_policy" not in row["missing_machine_evidence"]
     assert row["opportunity_basis_status"] == "machine_observed"
-    assert "dda_missing_nl_policy_status=not_dispositive" in row[
-        "observed_machine_metrics"
-    ]
-    assert "candidate_ms2_raw_trigger_scan_count=3" in row[
-        "observed_machine_metrics"
-    ]
-    assert "family_ms2_required_tag_status=observed_in_family" in row[
-        "observed_machine_metrics"
-    ]
+    assert (
+        "dda_missing_nl_policy_status=not_dispositive"
+        in row["observed_machine_metrics"]
+    )
+    assert "candidate_ms2_raw_trigger_scan_count=3" in row["observed_machine_metrics"]
+    assert (
+        "family_ms2_required_tag_status=observed_in_family"
+        in row["observed_machine_metrics"]
+    )
 
 
 def test_ms1_overlay_height_closes_intensity_opportunity_without_tier2() -> None:
@@ -619,9 +620,10 @@ def test_dda_missing_nl_policy_requires_family_level_required_tag() -> None:
     row = rows[0]
     assert "family_required_tag_gate" in row["missing_machine_evidence"]
     assert row["evidence_support_status"] == "machine_observed_conflict"
-    assert "dda_missing_nl_policy_status=family_required_tag_not_observed" in row[
-        "observed_machine_metrics"
-    ]
+    assert (
+        "dda_missing_nl_policy_status=family_required_tag_not_observed"
+        in row["observed_machine_metrics"]
+    )
 
 
 def test_dda_missing_nl_policy_is_not_required_when_sample_tag_observed() -> None:
@@ -679,9 +681,10 @@ def test_dda_missing_nl_policy_is_not_required_when_sample_tag_observed() -> Non
     assert "dda_opportunity_policy" not in row["missing_machine_evidence"]
     assert "family_required_tag_gate" not in row["missing_machine_evidence"]
     assert row["opportunity_basis_status"] == "machine_observed"
-    assert "dda_missing_nl_policy_status=sample_required_tag_observed" in row[
-        "observed_machine_metrics"
-    ]
+    assert (
+        "dda_missing_nl_policy_status=sample_required_tag_observed"
+        in row["observed_machine_metrics"]
+    )
 
 
 def test_dda_missing_nl_policy_accepts_existing_family_tag_context() -> None:
@@ -765,12 +768,13 @@ def test_dda_missing_nl_policy_accepts_existing_family_tag_context() -> None:
     row = rows[0]
     assert "family_required_tag_gate" not in row["missing_machine_evidence"]
     assert "dda_opportunity_policy" not in row["missing_machine_evidence"]
-    assert "cid_nl_pattern_context=family_level_present" in row[
-        "observed_machine_metrics"
-    ]
-    assert "dda_missing_nl_policy_status=not_dispositive" in row[
-        "observed_machine_metrics"
-    ]
+    assert (
+        "cid_nl_pattern_context=family_level_present" in row["observed_machine_metrics"]
+    )
+    assert (
+        "dda_missing_nl_policy_status=not_dispositive"
+        in row["observed_machine_metrics"]
+    )
 
 
 def test_dda_missing_nl_policy_accepts_product_outside_diagnostic_window() -> None:
@@ -856,12 +860,14 @@ def test_dda_missing_nl_policy_accepts_product_outside_diagnostic_window() -> No
 
     row = rows[0]
     assert "dda_opportunity_policy" not in row["missing_machine_evidence"]
-    assert "candidate_ms2_raw_absence_reason=product_outside_diagnostic_window" in row[
-        "observed_machine_metrics"
-    ]
-    assert "dda_missing_nl_policy_status=not_dispositive" in row[
-        "observed_machine_metrics"
-    ]
+    assert (
+        "candidate_ms2_raw_absence_reason=product_outside_diagnostic_window"
+        in row["observed_machine_metrics"]
+    )
+    assert (
+        "dda_missing_nl_policy_status=not_dispositive"
+        in row["observed_machine_metrics"]
+    )
 
 
 def test_wrong_peak_conflict_closes_pattern_without_marking_shape_bad() -> None:
@@ -1159,9 +1165,7 @@ def test_qc_ms1_reference_can_close_formal_pattern_metric() -> None:
     row = rows[0]
     assert row["pattern_basis_status"] == "machine_observed"
     assert "formal_pattern_metric" not in row["missing_machine_evidence"]
-    assert "qc_ms1_reference_status=partial_support" in row[
-        "observed_machine_metrics"
-    ]
+    assert "qc_ms1_reference_status=partial_support" in row["observed_machine_metrics"]
     assert row["evidence_support_status"] == "machine_observed_sufficient"
 
 
@@ -1278,9 +1282,7 @@ def test_legacy_nearest_only_qc_reference_stays_context_only() -> None:
     row = rows[0]
     assert row["pattern_basis_status"] == "manual_oracle_derived"
     assert "formal_pattern_metric" in row["missing_machine_evidence"]
-    assert "qc_ms1_reference_status=partial_support" in row[
-        "observed_machine_metrics"
-    ]
+    assert "qc_ms1_reference_status=partial_support" in row["observed_machine_metrics"]
 
 
 def test_ms1_overlay_shape_metric_can_close_formal_shape_metric() -> None:
@@ -1359,12 +1361,14 @@ def test_ms1_overlay_shape_metric_can_close_formal_shape_metric() -> None:
     assert row["shape_basis_status"] == "machine_observed"
     assert "formal_shape_metric" not in row["missing_machine_evidence"]
     assert "formal_pattern_metric" not in row["missing_machine_evidence"]
-    assert "ms1_shape_metric_source=family_ms1_overlay_raw_trace" in row[
-        "observed_machine_metrics"
-    ]
-    assert "ms1_peak_quality_vector_basis=family_ms1_overlay_raw_trace_vector" in row[
-        "observed_machine_metrics"
-    ]
+    assert (
+        "ms1_shape_metric_source=family_ms1_overlay_raw_trace"
+        in row["observed_machine_metrics"]
+    )
+    assert (
+        "ms1_peak_quality_vector_basis=family_ms1_overlay_raw_trace_vector"
+        in row["observed_machine_metrics"]
+    )
     assert row["evidence_support_status"] == "machine_observed_sufficient"
 
 
@@ -1569,12 +1573,10 @@ def test_raw_ms1_overlay_low_shape_local_peak_is_inconclusive() -> None:
     assert "formal_pattern_metric" not in row["missing_machine_evidence"]
     assert "shape_metric_not_supportive" not in row["missing_machine_evidence"]
     assert "pattern_metric_not_supportive" not in row["missing_machine_evidence"]
-    assert "shape_metric_inconclusive_apex_or_height" in row[
-        "missing_machine_evidence"
-    ]
-    assert "pattern_metric_inconclusive_apex_or_height" in row[
-        "missing_machine_evidence"
-    ]
+    assert "shape_metric_inconclusive_apex_or_height" in row["missing_machine_evidence"]
+    assert (
+        "pattern_metric_inconclusive_apex_or_height" in row["missing_machine_evidence"]
+    )
     assert row["evidence_support_status"] == "machine_observed_partial"
 
 
@@ -1768,9 +1770,7 @@ def test_matrix_rt_drift_policy_can_close_drift_possible_blocker() -> None:
     row = rows[0]
     assert row["rt_basis_status"] == "machine_observed"
     assert "matrix_rt_drift_policy" not in row["missing_machine_evidence"]
-    assert "matrix_rt_drift_status=drift_supported" in row[
-        "observed_machine_metrics"
-    ]
+    assert "matrix_rt_drift_status=drift_supported" in row["observed_machine_metrics"]
     assert row["evidence_support_status"] == "machine_observed_sufficient"
 
 
@@ -1895,12 +1895,14 @@ def test_peak_hypothesis_selection_fails_closed_against_manual_pass() -> None:
 
     row = rows[0]
     assert "peak_hypothesis_not_supportive" in row["missing_machine_evidence"]
-    assert "peak_hypothesis_status=cross_mode_rescue_blocked" in row[
-        "observed_machine_metrics"
-    ]
-    assert "product_selection_action=block_cross_mode_rescue" in row[
-        "observed_machine_metrics"
-    ]
+    assert (
+        "peak_hypothesis_status=cross_mode_rescue_blocked"
+        in row["observed_machine_metrics"]
+    )
+    assert (
+        "product_selection_action=block_cross_mode_rescue"
+        in row["observed_machine_metrics"]
+    )
     assert row["evidence_support_status"] == "machine_observed_conflict"
 
 
@@ -2045,13 +2047,14 @@ def test_machine_evidence_support_keeps_cid_nl_below_sample_ms2_pattern() -> Non
     assert "candidate_aligned_ms2_pattern" in row["missing_machine_evidence"]
     assert "rt_pattern_conflict_gate" not in row["missing_machine_evidence"]
     assert "family_ms2_pattern_context" not in row["missing_machine_evidence"]
-    assert "rt_preferred_window_status=outside_preferred_window" in row[
-        "observed_machine_metrics"
-    ]
+    assert (
+        "rt_preferred_window_status=outside_preferred_window"
+        in row["observed_machine_metrics"]
+    )
     assert "neutral_loss_tag=loss_116" in row["observed_machine_metrics"]
-    assert "cid_nl_pattern_context=family_level_present" in row[
-        "observed_machine_metrics"
-    ]
+    assert (
+        "cid_nl_pattern_context=family_level_present" in row["observed_machine_metrics"]
+    )
 
 
 def test_candidate_ms2_pattern_sidecar_can_close_pattern_mismatch() -> None:
@@ -2117,15 +2120,15 @@ def test_candidate_ms2_pattern_sidecar_can_close_pattern_mismatch() -> None:
     assert row["pattern_basis_status"] == "machine_observed"
     assert row["missing_machine_evidence"] == ""
     assert row["evidence_support_status"] == "machine_observed_sufficient"
-    assert "candidate_ms2_pattern_status=conflict" in row[
-        "observed_machine_metrics"
-    ]
-    assert "candidate_ms2_evidence_level=sample_candidate_aligned" in row[
-        "observed_machine_metrics"
-    ]
-    assert "candidate_ms2_source_neutral_loss_mass_error_ppm=25" in row[
-        "observed_machine_metrics"
-    ]
+    assert "candidate_ms2_pattern_status=conflict" in row["observed_machine_metrics"]
+    assert (
+        "candidate_ms2_evidence_level=sample_candidate_aligned"
+        in row["observed_machine_metrics"]
+    )
+    assert (
+        "candidate_ms2_source_neutral_loss_mass_error_ppm=25"
+        in row["observed_machine_metrics"]
+    )
     assert "candidate_ms2_nl_ppm_warn=20" in row["observed_machine_metrics"]
     assert "candidate_ms2_nl_ppm_max=50" in row["observed_machine_metrics"]
 
@@ -2224,7 +2227,7 @@ def test_candidate_ms2_pattern_sidecar_conflict_stays_fail_closed() -> None:
     assert row["evidence_support_status"] == "machine_observed_conflict"
 
 
-def test_v2_writer_outputs_readiness_report_and_summary(tmp_path: Path) -> None:
+def test_shadow_writer_outputs_readiness_report_and_summary(tmp_path: Path) -> None:
     prior_outputs = _write_prior_outputs(tmp_path)
     shadow_rows = build_shadow_label_rows(
         [
@@ -2236,7 +2239,7 @@ def test_v2_writer_outputs_readiness_report_and_summary(tmp_path: Path) -> None:
         ]
     )
     summary_rows = build_shadow_alignment_summary(shadow_rows)
-    readiness = build_v2_readiness(
+    readiness = build_shadow_readiness(
         run_facts={
             **_slice1_run_facts(),
             "blast_radius_assessed": "not_assessed",
@@ -2245,7 +2248,7 @@ def test_v2_writer_outputs_readiness_report_and_summary(tmp_path: Path) -> None:
         shadow_rows=shadow_rows,
     )
 
-    outputs = write_v2_outputs(
+    outputs = write_shadow_outputs(
         output_dir=tmp_path,
         prior_outputs=prior_outputs,
         shadow_rows=shadow_rows,
@@ -2264,11 +2267,13 @@ def test_v2_writer_outputs_readiness_report_and_summary(tmp_path: Path) -> None:
     assert outputs["shadow_alignment_summary"].name == (
         "shared_peak_identity_shadow_alignment_summary.tsv"
     )
-    assert outputs["v2_readiness"].name == "shared_peak_identity_v2_readiness.tsv"
+    assert (
+        outputs["shadow_readiness"].name == "shared_peak_identity_shadow_readiness.tsv"
+    )
     assert outputs["machine_evidence_support"].name == (
         "shared_peak_identity_machine_evidence_support.tsv"
     )
-    report = (tmp_path / "shared_peak_identity_v2_report.md").read_text(
+    report = (tmp_path / "shared_peak_identity_shadow_report.md").read_text(
         encoding="utf-8"
     )
     assert "exploratory_only" in report
@@ -2333,7 +2338,7 @@ def _machine_match(
 
 def _slice1_run_facts() -> dict[str, str]:
     return {
-        "run_facts_schema_version": "shared_peak_identity_run_facts_v1",
+        "run_facts_schema_version": "shared_peak_identity_run_facts",
         "slice": "slice1",
         "seed_rows_total": "2",
         "seed_rows_explained": "2",

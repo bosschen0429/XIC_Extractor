@@ -22,7 +22,7 @@ def test_current_production_acceptance_manifest_schema_validates() -> None:
         PRODUCTION_ACCEPTANCE_MANIFEST_SCHEMA.read_text(encoding="utf-8"),
     )
 
-    assert schema["schema_version"] == "production_acceptance_manifest_schema_v1"
+    assert schema["schema_version"] == "production_acceptance_manifest_schema"
     assert schema["required_columns"] == list(REQUIRED_COLUMNS)
     assert schema["allowed_acceptance_decisions"] == sorted(ACCEPTANCE_DECISIONS)
     assert schema["authority_rules"]["primary_key"] == [
@@ -179,7 +179,7 @@ def test_checker_rejects_naked_alignment_or_shadow_source_write(
             {
                 "source_artifact_relpath": (
                     "docs/superpowers/validation/"
-                    "lockbox_shadow_automation_cases_v1.tsv"
+                    "lockbox_shadow_automation_cases.tsv"
                 ),
             },
             (
@@ -349,7 +349,7 @@ def test_strict_risk_requires_specific_closure(tmp_path: Path) -> None:
 
 def _valid_accept_row() -> dict[str, str]:
     return {
-        "schema_version": "production_acceptance_manifest_v1",
+        "schema_version": "production_acceptance_manifest",
         "peak_hypothesis_id": "PH001",
         "sample_stem": "Sample001_DNA",
         "feature_family_id": "FAM001",
@@ -382,7 +382,7 @@ def _valid_accept_row() -> dict[str, str]:
         "source_artifact_sha256": "",
         "source_row_sha256": "C" * 64,
         "manifest_sha256": "",
-        "acceptance_contract_version": "production_acceptance_manifest_contract_v1",
+        "acceptance_contract_version": "production_acceptance_manifest_contract",
 }
 
 

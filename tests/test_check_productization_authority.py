@@ -24,12 +24,12 @@ from xic_extractor.alignment.production_acceptance import (
     ProductionAcceptanceManifestError,
 )
 from xic_extractor.alignment.quantitative_projection_authority import (
-    QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_FIELDS_V1,
+    QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_FIELDS,
 )
 
 BACKFILL_EXTERNALIZED_SUMMARY = (
     "docs/superpowers/validation/"
-    "backfill_generated_policy_externalized_artifacts_v1/"
+    "backfill_generated_policy_externalized_artifacts/"
     "backfill_generated_policy_externalized_artifacts_summary.json"
 )
 
@@ -43,7 +43,7 @@ def test_productization_authority_checker_accepts_repo_artifacts() -> None:
 def test_productization_authority_checker_replays_exact_dependent_hold() -> None:
     payload = json.loads(DEFAULT_DEPENDENT_MANIFEST.read_text(encoding="utf-8"))
 
-    assert tuple(payload) == QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_FIELDS_V1
+    assert tuple(payload) == QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_FIELDS
     assert payload["status"] == DEPENDENT_HOLD_STATUS
     assert payload["package_authority_artifact"] == (
         DEPENDENT_PACKAGE_AUTHORITY_ARTIFACT
@@ -255,7 +255,7 @@ def test_productization_authority_checker_rejects_crossed_resealed_or_active(
     payload = json.loads(DEFAULT_DEPENDENT_MANIFEST.read_text(encoding="utf-8"))
     if mutation == "crossed":
         payload["package_authority_artifact"] = (
-            "docs/superpowers/schemas/productization_authority_manifest.v1.json"
+            "docs/superpowers/schemas/productization_authority_manifest.json"
         )
         payload["package_authority_sha256"] = _raw_sha256(DEFAULT_MANIFEST)
     elif mutation == "resealed_hash":
@@ -268,7 +268,7 @@ def test_productization_authority_checker_rejects_crossed_resealed_or_active(
         payload["status"] = "ACTIVE"
         payload["activation_summary_artifact"] = (
             "docs/superpowers/validation/"
-            "untargeted_owner_backfill_canonical_quantitative_activation_v1/"
+            "untargeted_owner_backfill_canonical_quantitative_activation/"
             "activation_summary.json"
         )
         payload["activation_summary_sha256"] = "a" * 64
@@ -295,7 +295,7 @@ def test_productization_authority_checker_keeps_writer_manifest_unchanged(
         )
     else:
         payload["current_authority"][
-            "untargeted_owner_backfill_canonical_quantitative_projection_v1"
+            "untargeted_owner_backfill_canonical_quantitative_projection"
         ] = {"authority_scope": "forbidden_dependent_writer_scope"}
     manifest = tmp_path / f"writer-{mutation}.json"
     manifest.write_text(json.dumps(payload), encoding="utf-8")
@@ -423,7 +423,7 @@ def test_productization_authority_checker_validates_compact_summary_contents(
     summary.parent.mkdir(parents=True)
     shutil.copyfile(
         DEFAULT_MANIFEST.parent.parent
-        / "validation/backfill_generated_policy_externalized_artifacts_v1/"
+        / "validation/backfill_generated_policy_externalized_artifacts/"
         / "backfill_generated_policy_externalized_artifacts_summary.json",
         summary,
     )
@@ -537,7 +537,7 @@ def _raw_sha256(path: Path) -> str:
 def _reseal_dependent_manifest(payload: dict[str, object]) -> None:
     projected = {
         field: payload[field]
-        for field in QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_FIELDS_V1[:-1]
+        for field in QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_FIELDS[:-1]
     }
     digest = hashlib.sha256(
         json.dumps(
@@ -548,5 +548,5 @@ def _reseal_dependent_manifest(payload: dict[str, object]) -> None:
         ).encode("utf-8")
     ).hexdigest()
     payload["manifest_content_id"] = (
-        "quantitative-projection-authority-manifest.v1:" + digest
+        "quantitative-projection-authority-manifest:" + digest
     )

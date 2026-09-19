@@ -120,7 +120,7 @@ def test_oracle_loader_rejects_duplicate_oracle_row_id(tmp_path: Path) -> None:
 def _oracle(tmp_path: Path, *, sample_id: str, duplicate: bool = False) -> Path:
     path = tmp_path / "oracle.tsv"
     row = {
-        "oracle_schema_version": "shared_peak_identity_manual_oracle_v1",
+        "oracle_schema_version": "shared_peak_identity_manual_oracle",
         "oracle_row_id": f"FAMTEST|{sample_id}",
         "feature_family_id": "FAMTEST",
         "sample_id": sample_id,
@@ -211,8 +211,8 @@ def _candidate_gate(tmp_path: Path) -> Path:
                 "feature_family_id": "FAMTEST",
                 "candidate_gate_status": "audit",
                 "recommended_action": "review",
-                "challenge_blockers": "tier2_v0_1_diagnostic_only",
-                "dependent_context": "raw_trace_reread_v0_1",
+                "challenge_blockers": "tier2_diagnostic_only",
+                "dependent_context": "raw_trace_reread_1",
             }
         ],
     )

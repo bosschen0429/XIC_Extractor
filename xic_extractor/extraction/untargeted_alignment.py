@@ -50,8 +50,8 @@ from xic_extractor.peak_detection.signal_processing_profile import (
 from xic_extractor.processing_run_spec import ProcessingAcquisitionInput
 from xic_extractor.sample_metadata import SampleMetadata
 
-_SAMPLE_IDENTITY_NAMESPACE = "alignment-untargeted-cid-nl-v1"
-_RUNTIME_ARTIFACT_NAMESPACE = "untargeted-cid-nl-alignment-v1"
+_SAMPLE_IDENTITY_NAMESPACE = "alignment-untargeted-cid-nl"
+_RUNTIME_ARTIFACT_NAMESPACE = "untargeted-cid-nl-alignment"
 _real_prepare_untargeted_production_plan = prepare_untargeted_production_plan
 prepare_untargeted_cid_nl_production_plan = prepare_untargeted_production_plan
 
@@ -263,7 +263,7 @@ def _load_physical_replay_inputs(
         stem = acquisition_input.sample_stem
         records = read_discovery_physical_fact_records(
             discovery_batch.candidate_csvs[stem].parent
-            / "discovery_physical_facts.v1.json",
+            / "discovery_physical_facts.json",
             expected_run_spec=spec,
             expected_acquisition_input=acquisition_input,
         )

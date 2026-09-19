@@ -38,7 +38,7 @@ def test_external_pregate_marks_schema_only_table_as_mapping_unavailable(
         "area_or_intensity\tarea_or_intensity_semantics\t"
         "mz_tolerance_unit\trt_tolerance_unit\tduplicate_feature_policy\t"
         "missing_value_policy\n"
-        "MZmine\trun1\t4.9.14\tcontract_v1\tS1\tF1\t100.1\t5.2\t"
+        "MZmine\trun1\t4.9.14\tcontract\tS1\tF1\t100.1\t5.2\t"
         "12345\tarea\tppm\tminutes\tbest_quality_score\tblank_is_missing\n",
         encoding="utf-8",
     )

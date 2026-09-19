@@ -867,7 +867,7 @@ def test_decision_and_center_enum_values_are_stable_strings():
     }
 
 
-def test_identity_coherence_config_defaults_match_v04_review_values():
+def test_identity_coherence_config_defaults_match_review_values():
     config = IdentityCoherenceConfig()
 
     assert config.promotion.min_total_coherent_samples == 3

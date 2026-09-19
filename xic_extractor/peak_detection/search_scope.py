@@ -43,7 +43,7 @@ from xic_extractor.processing_identity import (
 )
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 
-SEARCH_SCOPE_SCHEMA_VERSION = "search_scope_v1"
+SEARCH_SCOPE_SCHEMA_VERSION = "search_scope"
 PHYSICAL_CAPTURE_INPUT_KEY = "physical_capture_inputs"
 SearchScopeVariant = Literal["targeted", "untargeted"]
 CaptureBoundaryPolicy = Literal["resolver_interval", "targeted_gaussian15"]
@@ -288,7 +288,7 @@ def physical_capture_input_payload(
 ) -> dict[str, object]:
     """Pin the profile and owner-issued physical answers in request identity."""
     return {
-        "schema_version": "physical_capture_inputs_v1",
+        "schema_version": "physical_capture_inputs",
         "profile": json.loads(canonical_signal_processing_profile_bytes(profile)),
         "candidates": {
             candidate_id: _physical_evaluation_identity(evaluation)
@@ -317,7 +317,7 @@ def request_binds_physical_capture_profile(
     payload = _request_inputs(request).get(PHYSICAL_CAPTURE_INPUT_KEY)
     return (
         isinstance(payload, dict)
-        and payload.get("schema_version") == "physical_capture_inputs_v1"
+        and payload.get("schema_version") == "physical_capture_inputs"
         and payload.get("profile")
         == json.loads(canonical_signal_processing_profile_bytes(profile))
     )

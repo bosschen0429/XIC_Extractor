@@ -21,20 +21,17 @@ from typing import Any
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from scripts.build_quant_matrix_promotion_packet_v2 import (
-    DEFAULT_OUTPUT_DIR as DEFAULT_PACKET_V2_DIR,
+from scripts.build_quant_matrix_promotion_packet import (
+    DEFAULT_OUTPUT_DIR as DEFAULT_PACKET_DIR,
 )
-from scripts.build_quant_matrix_promotion_packet_v2 import (
-    validate_quant_matrix_promotion_packet_v2,
+from scripts.build_quant_matrix_promotion_packet import (
+    resolve_quant_matrix_promotion_packet_real_bundle,
+    validate_quant_matrix_promotion_packet,
 )
 from scripts.build_quant_matrix_real_bundle import (
     DEFAULT_ACCEPTED_BACKFILL_COUNT,
     DEFAULT_DOWNSTREAM_SCOPE,
     DEFAULT_SOURCE_RUN_ID,
-    validate_quant_matrix_real_bundle,
-)
-from scripts.build_quant_matrix_real_bundle import (
-    DEFAULT_OUTPUT_DIR as DEFAULT_REAL_BUNDLE_DIR,
 )
 from scripts.build_quant_matrix_version import run_activation
 from xic_extractor.alignment.quant_matrix_fixture_contract import (
@@ -53,18 +50,15 @@ from xic_extractor.tabular_io import (
 ROOT = Path(__file__).resolve().parents[1]
 
 DEFAULT_ACTIVATION_DRY_RUN_OUTPUT_DIR = Path(
-    "docs/superpowers/validation/quant_matrix_default_activation_dry_run_v1",
+    "docs/superpowers/validation/quant_matrix_default_activation_dry_run",
 )
-DEFAULT_REAL_BUNDLE_SUMMARY_JSON = (
-    DEFAULT_REAL_BUNDLE_DIR / "quant_matrix_real_bundle_summary.json"
-)
-DEFAULT_PROMOTION_PACKET_V2_SUMMARY_JSON = (
-    DEFAULT_PACKET_V2_DIR / "quant_matrix_promotion_packet_v2_summary.json"
+DEFAULT_PROMOTION_PACKET_SUMMARY_JSON = (
+    DEFAULT_PACKET_DIR / "quant_matrix_promotion_packet_summary.json"
 )
 
-DEFAULT_ACTIVATION_DRY_RUN_SCHEMA = "quant_matrix_default_activation_dry_run_v1"
+DEFAULT_ACTIVATION_DRY_RUN_SCHEMA = "quant_matrix_default_activation_dry_run"
 ACTIVATION_DRY_RUN_COMPARISON_SCHEMA = (
-    "quant_matrix_default_activation_dry_run_comparison_v1"
+    "quant_matrix_default_activation_dry_run_comparison"
 )
 
 COMPARISON_COLUMNS = (
@@ -89,33 +83,18 @@ def build_quant_matrix_default_activation_dry_run(
     *,
     output_dir: Path = DEFAULT_ACTIVATION_DRY_RUN_OUTPUT_DIR,
     source_root: Path = ROOT,
-    real_bundle_summary_json: Path = DEFAULT_REAL_BUNDLE_SUMMARY_JSON,
-    promotion_packet_v2_summary_json: Path = DEFAULT_PROMOTION_PACKET_V2_SUMMARY_JSON,
+    promotion_packet_summary_json: Path = DEFAULT_PROMOTION_PACKET_SUMMARY_JSON,
     expected_source_run_id: str = DEFAULT_SOURCE_RUN_ID,
     expected_downstream_scope: str = DEFAULT_DOWNSTREAM_SCOPE,
     expected_accepted_backfill_count: int = DEFAULT_ACCEPTED_BACKFILL_COUNT,
 ) -> Mapping[str, Path]:
-    real_bundle_summary = _resolve_source(
-        real_bundle_summary_json,
-        source_root=source_root,
-    )
     promotion_packet_summary = _resolve_source(
-        promotion_packet_v2_summary_json,
+        promotion_packet_summary_json,
         source_root=source_root,
     )
     _raise_if_problems(
-        "real bundle check failed",
-        validate_quant_matrix_real_bundle(
-            summary_json=real_bundle_summary,
-            repo_root=source_root,
-            expected_source_run_id=expected_source_run_id,
-            expected_downstream_scope=expected_downstream_scope,
-            expected_accepted_backfill_count=expected_accepted_backfill_count,
-        ),
-    )
-    _raise_if_problems(
-        "promotion packet v2 check failed",
-        validate_quant_matrix_promotion_packet_v2(
+        "promotion packet check failed",
+        validate_quant_matrix_promotion_packet(
             summary_json=promotion_packet_summary,
             source_root=source_root,
             expected_source_run_id=expected_source_run_id,
@@ -123,9 +102,12 @@ def build_quant_matrix_default_activation_dry_run(
             expected_accepted_backfill_count=expected_accepted_backfill_count,
         ),
     )
-
-    bundle_payload = _read_json_object(real_bundle_summary)
     packet_payload = _read_json_object(promotion_packet_summary)
+    real_bundle_summary = resolve_quant_matrix_promotion_packet_real_bundle(
+        promotion_packet_summary,
+        source_root=source_root,
+    )
+    bundle_payload = _read_json_object(real_bundle_summary)
     bundle_paths = _real_bundle_paths(bundle_payload, real_bundle_summary)
     dry_run = _run_activation_dry_run(
         bundle_paths=bundle_paths,
@@ -168,11 +150,9 @@ def build_quant_matrix_default_activation_dry_run(
         summary_json,
         output_dir=output_dir,
         source_root=source_root,
-        real_bundle_summary=real_bundle_summary,
         promotion_packet_summary=promotion_packet_summary,
         bundle_payload=bundle_payload,
         packet_payload=packet_payload,
-        bundle_paths=bundle_paths,
         comparison_tsv=comparison_tsv,
         comparison_rows=comparison_rows,
         expected_diff_summary=expected_diff_summary,
@@ -231,32 +211,27 @@ def validate_quant_matrix_default_activation_dry_run(
 
     inputs = _input_artifacts(payload, source_root=source_root, problems=problems)
     artifacts = _output_artifacts(payload, summary_json.parent, problems)
-    real_bundle_summary = inputs.get("real_bundle_summary_json")
-    promotion_packet_summary = inputs.get("promotion_packet_v2_summary_json")
+    promotion_packet_summary = inputs.get("promotion_packet_summary_json")
     comparison_tsv = artifacts.get("comparison_tsv")
 
-    if real_bundle_summary is not None:
-        problems.extend(
-            "real bundle: " + problem
-            for problem in validate_quant_matrix_real_bundle(
-                summary_json=real_bundle_summary,
-                repo_root=source_root,
-                expected_source_run_id=expected_source_run_id,
-                expected_downstream_scope=expected_downstream_scope,
-                expected_accepted_backfill_count=expected_accepted_backfill_count,
-            )
-        )
+    real_bundle_summary: Path | None = None
     if promotion_packet_summary is not None:
-        problems.extend(
-            "promotion packet v2: " + problem
-            for problem in validate_quant_matrix_promotion_packet_v2(
-                summary_json=promotion_packet_summary,
-                source_root=source_root,
-                expected_source_run_id=expected_source_run_id,
-                expected_downstream_scope=expected_downstream_scope,
-                expected_accepted_backfill_count=expected_accepted_backfill_count,
-            )
+        packet_problems = validate_quant_matrix_promotion_packet(
+            summary_json=promotion_packet_summary,
+            source_root=source_root,
+            expected_source_run_id=expected_source_run_id,
+            expected_downstream_scope=expected_downstream_scope,
+            expected_accepted_backfill_count=expected_accepted_backfill_count,
         )
+        problems.extend("promotion packet: " + problem for problem in packet_problems)
+        if not packet_problems:
+            try:
+                real_bundle_summary = resolve_quant_matrix_promotion_packet_real_bundle(
+                    promotion_packet_summary,
+                    source_root=source_root,
+                )
+            except (OSError, ValueError, json.JSONDecodeError) as exc:
+                problems.append(f"promotion packet real bundle input: {exc}")
     if real_bundle_summary is not None and comparison_tsv is not None:
         bundle_payload = _read_json_object(real_bundle_summary)
         bundle_paths = _real_bundle_paths(bundle_payload, real_bundle_summary)
@@ -301,6 +276,39 @@ def validate_quant_matrix_default_activation_dry_run(
             problems,
         )
     return problems
+
+
+def resolve_quant_matrix_default_activation_dry_run_promotion_packet(
+    summary_json: Path,
+    *,
+    source_root: Path = ROOT,
+) -> Path:
+    """Resolve the validated dry-run's direct promotion-packet predecessor."""
+    payload = _read_json_object(summary_json)
+    return _predecessor_input_path(
+        payload,
+        field="promotion_packet_summary_json",
+        source_root=source_root,
+        owner="default activation dry-run",
+    )
+
+
+def resolve_quant_matrix_default_activation_dry_run_real_bundle(
+    summary_json: Path,
+    *,
+    source_root: Path = ROOT,
+) -> Path:
+    """Resolve the real bundle through the dry-run's validated predecessor."""
+    promotion_packet_summary = (
+        resolve_quant_matrix_default_activation_dry_run_promotion_packet(
+            summary_json,
+            source_root=source_root,
+        )
+    )
+    return resolve_quant_matrix_promotion_packet_real_bundle(
+        promotion_packet_summary,
+        source_root=source_root,
+    )
 
 
 class ActivationDryRun:
@@ -497,11 +505,9 @@ def _write_summary(
     *,
     output_dir: Path,
     source_root: Path,
-    real_bundle_summary: Path,
     promotion_packet_summary: Path,
     bundle_payload: Mapping[str, Any],
     packet_payload: Mapping[str, Any],
-    bundle_paths: Mapping[str, Path],
     comparison_tsv: Path,
     comparison_rows: Sequence[Mapping[str, str]],
     expected_diff_summary: Mapping[str, str],
@@ -548,44 +554,13 @@ def _write_summary(
         "broad_backfill_unparked": False,
         "may_enter_product_ready_closeout": True,
         "input_artifacts": {
-            "real_bundle_summary_json": _source_relpath(
-                real_bundle_summary,
-                source_root=source_root,
-            ),
-            "real_bundle_summary_json_sha256": file_sha256(real_bundle_summary),
-            "promotion_packet_v2_summary_json": _source_relpath(
+            "promotion_packet_summary_json": _source_relpath(
                 promotion_packet_summary,
                 source_root=source_root,
             ),
-            "promotion_packet_v2_summary_json_sha256": file_sha256(
+            "promotion_packet_summary_json_sha256": file_sha256(
                 promotion_packet_summary,
             ),
-            "baseline_quant_matrix": _source_relpath(
-                bundle_paths["baseline_quant_matrix"],
-                source_root=source_root,
-            ),
-            "baseline_quant_matrix_sha256": file_sha256(
-                bundle_paths["baseline_quant_matrix"],
-            ),
-            "input_matrix_identity": _source_relpath(
-                bundle_paths["input_matrix_identity"],
-                source_root=source_root,
-            ),
-            "input_matrix_identity_sha256": file_sha256(
-                bundle_paths["input_matrix_identity"],
-            ),
-            "production_acceptance_manifest": _source_relpath(
-                bundle_paths["production_acceptance_manifest"],
-                source_root=source_root,
-            ),
-            "production_acceptance_manifest_sha256": file_sha256(
-                bundle_paths["production_acceptance_manifest"],
-            ),
-            "expected_diff": _source_relpath(
-                bundle_paths["expected_diff"],
-                source_root=source_root,
-            ),
-            "expected_diff_sha256": file_sha256(bundle_paths["expected_diff"]),
         },
         "artifacts": {
             "comparison_tsv": _artifact_record(comparison_tsv, base_dir=output_dir),
@@ -781,14 +756,7 @@ def _input_artifacts(
         problems.append("default activation dry-run input_artifacts must be an object")
         return {}
     result: dict[str, Path] = {}
-    for field in (
-        "real_bundle_summary_json",
-        "promotion_packet_v2_summary_json",
-        "baseline_quant_matrix",
-        "input_matrix_identity",
-        "production_acceptance_manifest",
-        "expected_diff",
-    ):
+    for field in ("promotion_packet_summary_json",):
         path_value = str(raw.get(field, "")).strip()
         sha_value = str(raw.get(f"{field}_sha256", "")).strip()
         if not path_value:
@@ -802,6 +770,25 @@ def _input_artifacts(
         if not _is_sha256(sha_value) or file_sha256(path) != sha_value.upper():
             problems.append(f"default activation dry-run {field}_sha256 mismatch")
     return result
+
+
+def _predecessor_input_path(
+    payload: Mapping[str, Any],
+    *,
+    field: str,
+    source_root: Path,
+    owner: str,
+) -> Path:
+    raw = payload.get("input_artifacts")
+    if not isinstance(raw, dict):
+        raise ValueError(f"{owner} input_artifacts must be an object")
+    path_value = str(raw.get(field, "")).strip()
+    if not path_value:
+        raise ValueError(f"{owner} {field} is missing")
+    path = _resolve_source(Path(path_value), source_root=source_root)
+    if not path.is_file():
+        raise FileNotFoundError(str(path))
+    return path
 
 
 def _output_artifacts(
@@ -926,8 +913,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         outputs = build_quant_matrix_default_activation_dry_run(
             output_dir=args.output_dir,
             source_root=args.source_root,
-            real_bundle_summary_json=args.real_bundle_summary_json,
-            promotion_packet_v2_summary_json=args.promotion_packet_v2_summary_json,
+            promotion_packet_summary_json=args.promotion_packet_summary_json,
             expected_source_run_id=args.expected_source_run_id,
             expected_downstream_scope=args.expected_downstream_scope,
             expected_accepted_backfill_count=args.expected_accepted_backfill_count,
@@ -949,14 +935,9 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     )
     parser.add_argument("--source-root", type=Path, default=ROOT)
     parser.add_argument(
-        "--real-bundle-summary-json",
+        "--promotion-packet-summary-json",
         type=Path,
-        default=DEFAULT_REAL_BUNDLE_SUMMARY_JSON,
-    )
-    parser.add_argument(
-        "--promotion-packet-v2-summary-json",
-        type=Path,
-        default=DEFAULT_PROMOTION_PACKET_V2_SUMMARY_JSON,
+        default=DEFAULT_PROMOTION_PACKET_SUMMARY_JSON,
     )
     parser.add_argument("--expected-source-run-id", default=DEFAULT_SOURCE_RUN_ID)
     parser.add_argument(

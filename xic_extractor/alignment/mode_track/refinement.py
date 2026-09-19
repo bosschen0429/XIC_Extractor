@@ -355,10 +355,10 @@ def _validate_final_attempt_variant(
             "final-attempt variant content crossed its closed meaning"
         )
     expected_result_id = typed_identity_digest(
-        "mode-track-final-result.v1:",
+        "mode-track-final-result:",
         canonical_identity_basis_bytes(
             {
-                "schema_version": "mode_track_final_result_v1",
+                "schema_version": "mode_track_final_result",
                 "final_attempt_id": binding.final_attempt_id,
                 "assignment_batch_ids": list(binding.assignment_batch_ids),
                 "result_discriminant": discriminant,
@@ -657,7 +657,7 @@ def _proposal_identity(proposal: ModeTrackRefinementProposal) -> str:
             "cannot identify an unknown refinement proposal"
         )
     return typed_identity_digest(
-        "mode-track-refinement-proposal.v1:",
+        "mode-track-refinement-proposal:",
         canonical_identity_basis_bytes(payload),
     )
 
@@ -683,17 +683,17 @@ def _mint_final_attempt_result(
     owner_ids = tuple(owner.owner_id for owner in post_repair.post_repair_owners)
     member_ids = post_repair.post_repair_trajectory.member_subject_ids
     owner_census_digest = typed_identity_digest(
-        "mode-track-final-owner-census.v1:",
+        "mode-track-final-owner-census:",
         canonical_identity_basis_bytes({"owner_ids": list(owner_ids)}),
     )
     member_census_digest = typed_identity_digest(
-        "mode-track-final-member-census.v1:",
+        "mode-track-final-member-census:",
         canonical_identity_basis_bytes({"member_ids": list(member_ids)}),
     )
     proposal_id = _proposal_identity(proposal)
     attempt_basis = canonical_identity_basis_bytes(
         {
-            "schema_version": "mode_track_final_attempt_v1",
+            "schema_version": "mode_track_final_attempt",
             "processing_request_id": source.processing_request_id,
             "processing_attempt_id": source.processing_attempt_id,
             "fit_once_source_id": source.fit_once_source_id,
@@ -713,12 +713,12 @@ def _mint_final_attempt_result(
         }
     )
     final_attempt_id = typed_identity_digest(
-        "mode-track-final-attempt.v1:",
+        "mode-track-final-attempt:",
         attempt_basis,
     )
     result_basis = canonical_identity_basis_bytes(
         {
-            "schema_version": "mode_track_final_result_v1",
+            "schema_version": "mode_track_final_result",
             "final_attempt_id": final_attempt_id,
             "assignment_batch_ids": list(assignment_batch_ids),
             "result_discriminant": discriminant,
@@ -728,7 +728,7 @@ def _mint_final_attempt_result(
     binding = ModeTrackFinalAttemptBinding(
         final_attempt_id=final_attempt_id,
         final_result_id=typed_identity_digest(
-            "mode-track-final-result.v1:",
+            "mode-track-final-result:",
             result_basis,
         ),
         processing_request_id=source.processing_request_id,

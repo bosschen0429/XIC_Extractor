@@ -33,7 +33,7 @@ from xic_extractor.tabular_io import (
     write_delimited_rows,
 )
 
-SCHEMA_VERSION = "pt_pattern_ddms2_support_replay.v1"
+SCHEMA_VERSION = "pt_pattern_ddms2_support_replay"
 READINESS_TIER = "diagnostic_only"
 AUTHORITY_SCOPE = "fullscan_seeded_ddms2_support_only"
 DEFAULT_MZ_TOLERANCE_PPM = 20.0

@@ -9,10 +9,6 @@ from collections.abc import Mapping, Sequence
 from typing import Literal, assert_never
 
 from xic_extractor.discovery.pt_pattern_blind_overlay_call import (
-    ANCHOR_LOCAL_SCHEMA_VERSION,
-    LEGACY_MACHINE_CALL_COLUMNS,
-    LEGACY_MACHINE_CALL_REQUIRED_COLUMNS,
-    LEGACY_PACKET_REQUIRED_COLUMNS,
     MACHINE_CALL_COLUMNS,
     PACKET_REQUIRED_COLUMNS,
     SCHEMA_VERSION,
@@ -33,10 +29,6 @@ from xic_extractor.peak_detection.ms1_shape_identity import (
 from xic_extractor.tabular_io import optional_float
 
 __all__ = (
-    "ANCHOR_LOCAL_SCHEMA_VERSION",
-    "LEGACY_MACHINE_CALL_COLUMNS",
-    "LEGACY_MACHINE_CALL_REQUIRED_COLUMNS",
-    "LEGACY_PACKET_REQUIRED_COLUMNS",
     "MACHINE_CALL_COLUMNS",
     "PACKET_REQUIRED_COLUMNS",
     "SCHEMA_VERSION",
