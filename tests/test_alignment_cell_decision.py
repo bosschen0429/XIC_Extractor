@@ -72,16 +72,16 @@ from xic_extractor.extraction.peak_hypothesis_adapter import (
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     mint_cid_nl_method_assessment_ref,
 )
-from xic_extractor.peak_detection.evidence_facts import (
-    evaluate_physical_peak,
-    prepare_physical_signal,
-)
 from xic_extractor.peak_detection.models import (
     PeakCandidate,
     PeakDetectionResult,
     PeakResult,
 )
 from xic_extractor.peak_detection.observations import mint_peak_observation_ref
+from xic_extractor.peak_detection.physical_peak_evaluation import (
+    evaluate_physical_peak,
+    prepare_physical_signal,
+)
 from xic_extractor.peak_detection.signal_processing_profile import (
     SignalProcessingProfile,
 )

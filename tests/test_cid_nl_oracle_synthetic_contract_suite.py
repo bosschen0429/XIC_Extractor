@@ -3,7 +3,7 @@ from __future__ import annotations
 import csv
 from pathlib import Path
 
-from xic_extractor.discovery.cid_nl_oracle_contract import (
+from xic_extractor.discovery.cid_nl_oracle_verdict import (
     aggregate_synthetic_metrics,
     synthetic_contract_violation,
 )

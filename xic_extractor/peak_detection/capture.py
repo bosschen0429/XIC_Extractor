@@ -16,14 +16,6 @@ from xic_extractor.peak_detection.cid_nl_method_subject import (
     cid_nl_method_subjects_from_request,
     validate_cid_nl_method_subject_binding,
 )
-from xic_extractor.peak_detection.evidence_facts import (
-    PHYSICAL_PEAK_WINDOW_POLICY,
-    PhysicalPeakEvaluation,
-    PreparedSignalResult,
-    evaluate_physical_peak,
-    prepare_physical_signal,
-    validate_physical_trace_content_id,
-)
 from xic_extractor.peak_detection.facade import find_peak_and_area
 from xic_extractor.peak_detection.hypotheses import (
     AuditTrail,
@@ -50,6 +42,18 @@ from xic_extractor.peak_detection.observations import (
     mint_peak_observation_ref,
     physical_peak_observation_integration,
     validate_peak_observation_trace_binding,
+)
+from xic_extractor.peak_detection.physical_peak_evaluation import (
+    evaluate_physical_peak,
+    prepare_physical_signal,
+)
+from xic_extractor.peak_detection.physical_peak_identity import (
+    validate_physical_trace_content_id,
+)
+from xic_extractor.peak_detection.physical_peak_models import (
+    PHYSICAL_PEAK_WINDOW_POLICY,
+    PhysicalPeakEvaluation,
+    PreparedSignalResult,
 )
 from xic_extractor.peak_detection.search_scope import (
     CaptureCandidateBinding,

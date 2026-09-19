@@ -24,7 +24,7 @@ def test_physical_sidecar_and_publication_timing_cover_canonical_bytes_without_r
         discovery_settings=_settings(),
     )
     manifest, records = _population(spec, spec.acquisition_inputs[0])
-    from xic_extractor.peak_detection import evidence_facts as owner
+    from xic_extractor.peak_detection import physical_peak_codec as owner
 
     calls = {"prepare": 0, "evaluate": 0}
 

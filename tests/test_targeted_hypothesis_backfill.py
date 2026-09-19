@@ -4,13 +4,13 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-import xic_extractor.alignment.owner_backfill as owner_backfill_module
 from tests.processing_identity_no_raw_fixture import (
     build_processing_identity_no_raw_fixture,
     processing_identity_candidate_set,
     processing_identity_hypothesis,
     processing_identity_selection,
 )
+from xic_extractor.alignment import owner_backfill_evaluation
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.targeted_hypothesis_alignment import (
     TargetedHypothesisAlignmentInput,
@@ -96,12 +96,12 @@ def test_no_profile_targeted_backfill_preserves_activation_base_compatibility(
         )
 
     monkeypatch.setattr(
-        owner_backfill_module,
+        owner_backfill_evaluation,
         "prepare_physical_signal",
         reject_canonical_owner,
     )
     monkeypatch.setattr(
-        owner_backfill_module,
+        owner_backfill_evaluation,
         "evaluate_physical_peak",
         reject_canonical_owner,
     )

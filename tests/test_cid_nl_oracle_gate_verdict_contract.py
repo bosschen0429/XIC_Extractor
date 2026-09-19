@@ -10,13 +10,15 @@ import pytest
 from xic_extractor.discovery.cid_nl_oracle_contract import (
     _NARROW_SCOPE_REQUIRED_FIELDS,
     _NARROW_SCOPE_SEAL_REQUIRED_FIELDS,
+)
+from xic_extractor.discovery.cid_nl_oracle_primitives import (
     OracleContractError,
     canonical_row_sha256,
     canonical_tsv_bytes,
-    reduce_oracle_verdict,
     sha256_bytes,
     sha256_canonical_json,
 )
+from xic_extractor.discovery.cid_nl_oracle_verdict import reduce_oracle_verdict
 
 ROOT = Path(__file__).resolve().parents[1]
 PACKET = (
