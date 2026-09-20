@@ -66,6 +66,32 @@ dated productization control-plane path is compatibility lookup only.
 
 ## Known Diagnostic Conclusions
 
+### 2026-09-20 Shared-Profile 8RAW Completion With Background Qualification
+
+- Evidence: `diagnostic_only`; engineering completion and publication binding
+  passed for the eight-sample CID-NL tissue subset. This is not independent
+  scientific acceptance or an 85RAW/readiness claim.
+- Discovery at `e94fb11e` completed in 89.546s with background qualification
+  enabled: 30,864 archived candidates, including 2,423 background exclusions
+  retained as review-only evidence. Alignment at `afbf4500` reused these
+  Discovery outputs and completed in 171.140s with seven targets-CSV ISTDs and
+  serial Alignment. The shared saved parallel budget was 11, capped to eight
+  Discovery samples.
+- The official explanation reader reports eight samples and
+  `post_matrix_publication`; its 382 Matrix rows and Matrix SHA-256 match the
+  published TSV (`3d8efbc7e69b9cee35469ed0aab3abaeeb8336d7edce1b868c0710e5bd397dec`).
+- Two pre-completion failures were repaired: settings copying duplicated the
+  neutral-loss alias, and the validation adapter omitted Alignment's explicit
+  background-library binding. Discovery was not repeated after completion;
+  the resumed Alignment's complete run-spec hash matches its persisted input.
+  No global free-memory kill rule was used. These timings do not establish a
+  speedup against background-off or differently configured historical runs.
+- Receipts: `output/8raw-rerun-20260920/verification.json`,
+  `reuse-verification.json`, `launch-run2.json`, and
+  `alignment-resume-receipt.json`. Final outputs are under
+  `output/8raw-rerun-20260920/alignment-resumed/`; Discovery is retained under
+  `output/8raw-rerun-20260920/run2/discovery/`.
+
 ### 2026-09-20 Automatic Completion And Hypothesis Handoffs
 
 - Evidence: `diagnostic_only`; lane `exact_safe`, scoped verdict `optimized`.
