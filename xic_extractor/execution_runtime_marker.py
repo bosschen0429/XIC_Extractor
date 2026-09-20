@@ -74,6 +74,7 @@ class OwnerPathRuntimeMarker:
 
     path: Path
     artifact_namespace: str
+    allow_failed_attempt_retry: bool = False
 
     def __post_init__(self) -> None:
         if not isinstance(self.path, Path) or not self.path.name:
@@ -105,11 +106,43 @@ class OwnerPathRuntimeMarker:
                     raise RuntimeFinalizationContractError(
                         "runtime attempt is already durably finalized"
                     )
-                raise RuntimeFinalizationContractError(
-                    "runtime marker path already contains a different attempt scope"
-                )
+                if (
+                    self.allow_failed_attempt_retry
+                    and existing.state is RuntimeMarkerState.FINALIZED
+                    and existing.terminal_outcome
+                    in {AttemptTerminalOutcome.FAILED, AttemptTerminalOutcome.CANCELLED}
+                    and existing.artifact_namespace == self.artifact_namespace
+                    and existing.processing_attempt_id != proposed.processing_attempt_id
+                ):
+                    self._archive_failed_attempt(existing)
+                else:
+                    raise RuntimeFinalizationContractError(
+                        "runtime marker path already contains a different attempt scope"
+                    )
             self._write(proposed)
             return proposed
+
+    def _archive_failed_attempt(self, snapshot: RuntimeMarkerSnapshot) -> None:
+        """Keep the terminal receipt before replacing the current-attempt pointer.
+
+        Both writes occur under the current marker's transaction lock. If the
+        new launch write fails, the old marker remains retryable and its archive
+        is accepted on the next try only when the receipt is identical.
+        """
+        attempt_digest = hashlib.sha256(
+            snapshot.processing_attempt_id.encode("utf-8")
+        ).hexdigest()
+        archive = OwnerPathRuntimeMarker(
+            self.path.with_name(f"{self.path.stem}.{attempt_digest}{self.path.suffix}"),
+            self.artifact_namespace,
+        )
+        retained = archive.read_optional()
+        if retained is None:
+            archive._write(snapshot)
+        elif retained != snapshot:
+            raise RuntimeFinalizationContractError(
+                "runtime attempt archive contains conflicting finalization"
+            )
 
     def __call__(
         self,

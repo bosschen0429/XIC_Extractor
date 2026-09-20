@@ -340,6 +340,14 @@ Retry never reopens a terminal attempt. The lineage owner:
 - validates immutable artifact dependencies for integrity, staleness, source,
   schema, and semantic-role compatibility.
 
+For a caller that enables `OwnerPathRuntimeMarker.allow_failed_attempt_retry`,
+launching a new attempt in the same output directory first archives the prior
+finalized failed/cancelled marker under its attempt digest. The exact terminal
+receipt remains available; replacing the current marker does not promote old
+artifacts or change the predecessor's outcome. Active and successful attempts
+are not replaced. Without this option, a different attempt at the same marker
+path continues to be rejected.
+
 The runtime receives the new attempt identity plus zero or more
 `ValidatedDependencyToken` values. Each token exposes the new attempt identity
 and exactly one manifest work-unit key to the runtime while keeping scientific
