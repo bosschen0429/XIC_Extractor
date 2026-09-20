@@ -75,6 +75,18 @@ def test_preflight_8_and_85_share_science_without_output_or_execution(
         assert not output_dir.exists()
         plans.append(json.loads(capsys.readouterr().out))
 
+    from scripts import run_alignment, run_discovery
+    from xic_extractor.processing_run_spec import CidNlDiscoveryMethodSpec
+
+    for plan in plans:
+        discovery_args = run_discovery._parse_args(plan["commands"]["discovery"][3:])
+        alignment_args = run_alignment._parse_args(plan["commands"]["alignment"][3:])
+        discovery_settings = run_discovery._discovery_settings(discovery_args)
+        _, recipe = run_alignment._resolve_preset(alignment_args)
+        assert CidNlDiscoveryMethodSpec(settings=discovery_settings).method_hash == (
+            CidNlDiscoveryMethodSpec(settings=recipe.discovery_settings).method_hash
+        )
+
     assert executed == []
     assert plans[0]["science"] == plans[1]["science"]
     assert plans[0]["science"]["discovery"]["enable_blank_qualification"] is True

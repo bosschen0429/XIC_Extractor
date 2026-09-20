@@ -179,6 +179,8 @@ def _build_plan(args: argparse.Namespace) -> dict[str, Any]:
         sys.executable,
         "-m",
         "scripts.run_alignment",
+        "--blank-library",
+        str(blank_library),
         "--preset",
         "dna_dr",
         "--discovery-batch-index",
