@@ -46,10 +46,12 @@ def _preflight_args(
     ]
 
 
+@pytest.mark.parametrize("blank_enabled", [False, True])
 def test_preflight_8_and_85_share_science_without_output_or_execution(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
+    blank_enabled: bool,
 ) -> None:
     monkeypatch.setattr(run_tissue_validation, "preflight_raw_reader", lambda _path: [])
     executed: list[tuple[str, ...]] = []
@@ -58,6 +60,11 @@ def test_preflight_8_and_85_share_science_without_output_or_execution(
         "_run_command",
         lambda command, _log: executed.append(tuple(command)) or 0,
     )
+    if not blank_enabled:
+        monkeypatch.setattr(
+            run_tissue_validation.BlankBackgroundLibrary, "load_json",
+            lambda _path: pytest.fail("disabled filtering must not read a library"),
+        )
     plans = []
     for dataset in (8, 85):
         raw_dir, dll_dir, library = _inputs(tmp_path / str(dataset), count=dataset)
@@ -69,7 +76,11 @@ def test_preflight_8_and_85_share_science_without_output_or_execution(
                 raw_dir=raw_dir,
                 dll_dir=dll_dir,
                 library=library,
-            )
+            ) if blank_enabled else [
+                "--dataset", str(dataset), "--raw-dir", str(raw_dir),
+                "--dll-dir", str(dll_dir), "--output-dir", str(output_dir),
+                "--preflight-only",
+            ]
         )
         assert code == 0
         assert not output_dir.exists()
@@ -89,7 +100,11 @@ def test_preflight_8_and_85_share_science_without_output_or_execution(
 
     assert executed == []
     assert plans[0]["science"] == plans[1]["science"]
-    assert plans[0]["science"]["discovery"]["enable_blank_qualification"] is True
+    assert (
+        plans[0]["science"]["discovery"]["enable_blank_qualification"] is blank_enabled
+    )
+    if not blank_enabled:
+        assert all(p["inputs"]["blank_library"] is None for p in plans)
     assert plans[0]["execution"]["parallel_workers"] == default_parallel_workers()
     assert plans[1]["execution"]["parallel_workers"] == default_parallel_workers()
     assert plans[0]["execution"]["alignment_workers"] == 1
@@ -218,23 +233,3 @@ def test_execution_persists_plan_and_stops_after_failed_discovery(
     assert timings["discovery"]["returncode"] == 9
 
 
-def test_8raw_blank_resolution_uses_full_cohort_root_not_subset(tmp_path: Path) -> None:
-    subset = tmp_path / "subset"
-    cohort = tmp_path / "cohort"
-    subset.mkdir()
-    cohort.mkdir()
-    subset_library = subset / "blank_library.json"
-    cohort_library = cohort / "blank_library.json"
-    for path in (subset_library, cohort_library):
-        BlankBackgroundLibrary(
-            ions=(), min_intensity=25_000.0, source_blanks=()
-        ).save_json(path)
-
-    selected = run_tissue_validation._resolve_blank_library(
-        None,
-        environment={"XIC_RAW_ROOT": str(cohort)},
-        dataset=8,
-        raw_dir=subset,
-    )
-
-    assert selected == cohort_library

@@ -421,10 +421,10 @@ def test_valid_canonical_hash_snapshots_match_current_profile(tmp_path: Path) ->
     spec = _compile_paths(_raws(tmp_path))
 
     assert spec.discovery_method.method_hash == (
-        "0969336486afa9462b26fd2ce2b7887bfbae5ba5d06296c4afa2e66f62b2dd7b"
+        "a72a5a8a56e171332c108243a0e679bb0058ed804b218e4727a8ba4392c65c59"
     )
     assert spec.run_spec_hash == (
-        "21da10b3d76d861dca76b8ef4af9d82b58476275338f242b3073c1cb7d234073"
+        "1d64f2943c5d66b684c63f199e15ebb5da24974a1ae813825bac6b4d8ca1ce3d"
     )
 
 

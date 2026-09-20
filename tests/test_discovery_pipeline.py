@@ -104,7 +104,7 @@ def test_single_raw_pipeline_groups_strict_ms2_seeds_and_writes_dual_csvs(
     outputs = run_discovery(
         raw_path,
         output_dir=output_dir,
-        settings=_settings(seed_rt_gap_min=0.20),
+        settings=_settings(seed_rt_gap_min=0.20, enable_blank_qualification=True),
         peak_config=_peak_config(tmp_path),
         raw_opener=lambda path, dll_dir: raw,
     )
@@ -241,7 +241,7 @@ def test_batch_pipeline_writes_per_sample_csvs_and_index(
     outputs = run_discovery_batch(
         raw_paths,
         output_dir=tmp_path / "out",
-        settings=_settings(),
+        settings=_settings(enable_blank_qualification=True),
         peak_config=_peak_config(tmp_path),
         raw_opener=lambda path, dll_dir: raw_by_path[path],
     )
@@ -1283,7 +1283,7 @@ def test_single_raw_pipeline_records_discovery_timing_stages(
     run_discovery(
         tmp_path / "Sample.raw",
         output_dir=tmp_path / "out",
-        settings=_settings(),
+        settings=_settings(enable_blank_qualification=True),
         peak_config=_peak_config(tmp_path),
         raw_opener=lambda path, dll_dir: raw,
         timing_recorder=recorder,

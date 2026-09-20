@@ -50,15 +50,16 @@ they are not product authority by themselves.
 ### Tissue Validation Defaults
 
 The 8RAW validation set is a subset of the 85RAW tissue cohort. Both use the
-same `dna_dr` method and effective scientific settings, including enabled
+same `dna_dr` method and effective scientific settings, including disabled
 blank-background qualification. Dataset selection changes sample scope, not
 the method. The maintained tissue validation runner owns paths, timing, and
 stage launch order; it consumes the shared
 [execution profile](execution-runtime.md#worker-settings) for worker budgets
 and does not maintain a second scientific preset.
 
-Both scales bind one cohort background library (or the packaged default), so a
-library next to only the subset cannot silently change its method. ISTD input
+Neither scale resolves or loads a blank library by default. An explicit
+`--blank-library` opts in and binds the same library in Discovery and Alignment;
+its suitability must be established separately. ISTD input
 follows the normal Alignment targets CSV; a historical reference workbook is
 an explicit override. Resolved inputs and commands are visible before RAW work.
 See [local validation commands](../agent/parameter-settings.md#validation-scale).

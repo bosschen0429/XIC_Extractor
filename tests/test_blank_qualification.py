@@ -235,8 +235,9 @@ def test_resolve_background_library_missing_explicit_path_raises(
 
 
 @pytest.mark.parametrize("preset", [None, "dna_dr"])
-def test_default_discovery_filters_background_and_preserves_real_signal(
-    tmp_path: Path, preset: str | None,
+@pytest.mark.parametrize("enabled", [False, True])
+def test_discovery_only_filters_background_when_explicitly_enabled(
+    tmp_path: Path, preset: str | None, enabled: bool,
 ):
     from scripts.run_discovery import _discovery_settings, _parse_args
     from xic_extractor.diagnostics.timing import TimingRecorder
@@ -374,18 +375,24 @@ def test_default_discovery_filters_background_and_preserves_real_signal(
     raw.write_bytes(b"sample")
     lib.save_json(tmp_path / "blank_library.json")
     args = ["--raw", str(raw), "--dll-dir", "dll"]
+    if enabled:
+        args.append("--enable-blank-qualification")
     if preset is not None:
         args.extend(["--preset", preset])
     settings = _discovery_settings(_parse_args(args))
     spec = compile_discovery_processing_run_spec(
         (raw,), discovery_settings=settings,
     )
-    assert spec.acquisition_inputs[0].blank_library_sha256 is not None
+    assert (spec.acquisition_inputs[0].blank_library_sha256 is not None) is enabled
     qualified = _apply_blank_qualification_if_enabled(
         (c_background, c_override, c_clean), raw_path=raw, settings=settings,
         timing_recorder=TimingRecorder.disabled("discovery"), sample_stem="test",
         acquisition_input=spec.acquisition_inputs[0],
     )
+
+    if not enabled:
+        assert qualified == (c_background, c_override, c_clean)
+        return
 
     # c_background demoted
     assert qualified[0].discovery_candidate_state == "review_only_orphan_nl"
@@ -449,10 +456,10 @@ def test_packaged_default_background_library_loads_successfully() -> None:
 def test_discovery_cli_blank_argument_resolution(tmp_path: Path) -> None:
     from scripts.run_discovery import _discovery_settings, _parse_args
 
-    # 1. Normal Discovery enables background qualification without extra flags.
+    # 1. Normal Discovery preserves candidates unless explicitly opted in.
     args_default = _parse_args(["--raw", "dummy.raw", "--dll-dir", "dll"])
     settings_default = _discovery_settings(args_default)
-    assert settings_default.enable_blank_qualification
+    assert not settings_default.enable_blank_qualification
 
     # 2. --enable-blank-qualification -> True
     args_enable = _parse_args(

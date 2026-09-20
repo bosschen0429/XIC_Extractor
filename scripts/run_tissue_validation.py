@@ -16,10 +16,7 @@ from typing import Any
 from xic_extractor.alignment.drift_evidence import read_known_istd_reference
 from xic_extractor.configuration.models import ConfigError
 from xic_extractor.configuration.targets import read_istd_targets
-from xic_extractor.discovery.blank_qualification import (
-    BlankBackgroundLibrary,
-    get_default_background_library_path,
-)
+from xic_extractor.discovery.blank_qualification import BlankBackgroundLibrary
 from xic_extractor.execution_settings import load_execution_profile
 from xic_extractor.peak_detection.signal_processing_profile import (
     DEFAULT_SIGNAL_PROCESSING_PROFILE,
@@ -30,7 +27,6 @@ from xic_extractor.raw_reader import preflight_raw_reader
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _DEFAULT_TARGETS = _REPO_ROOT / "config" / "targets.example.csv"
 _LOCAL_ENV = _REPO_ROOT / ".env.xic-local"
-_COHORT_LIBRARY_NAMES = ("blank_library.json.gz", "blank_library.json")
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -85,7 +81,10 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument("--alignment-workers", type=_positive_int)
     parser.add_argument("--raw-dir", type=Path)
     parser.add_argument("--dll-dir", type=Path)
-    parser.add_argument("--blank-library", type=Path)
+    parser.add_argument(
+        "--blank-library", type=Path,
+        help="Explicitly opt in to blank filtering with this library (default: off).",
+    )
     istd = parser.add_mutually_exclusive_group()
     istd.add_argument("--targets-csv", type=Path)
     istd.add_argument("--known-istd-reference-workbook", type=Path)
@@ -143,13 +142,10 @@ def _build_plan(args: argparse.Namespace) -> dict[str, Any]:
     if dll_errors:
         raise ValueError("Thermo DLL preflight failed:\n- " + "\n- ".join(dll_errors))
 
-    blank_library = _resolve_blank_library(
-        args.blank_library,
-        environment=environment,
-        dataset=dataset,
-        raw_dir=raw_dir,
-    )
-    BlankBackgroundLibrary.load_json(blank_library)
+    blank_library = None
+    if args.blank_library is not None:
+        blank_library = args.blank_library.resolve()
+        BlankBackgroundLibrary.load_json(blank_library)
     targets_csv, workbook = _validate_istd_input(args)
 
     discovery_dir = output_dir / "discovery"
@@ -171,16 +167,11 @@ def _build_plan(args: argparse.Namespace) -> dict[str, Any]:
         str(execution_profile.parallel_workers),
         "--timing-output",
         str(timing_dir / "discovery.json"),
-        "--blank-library",
-        str(blank_library),
-        "--enable-blank-qualification",
     ]
     alignment_command = [
         sys.executable,
         "-m",
         "scripts.run_alignment",
-        "--blank-library",
-        str(blank_library),
         "--preset",
         "dna_dr",
         "--discovery-batch-index",
@@ -202,6 +193,9 @@ def _build_plan(args: argparse.Namespace) -> dict[str, Any]:
         "--timing-live-output",
         str(timing_dir / "alignment.live.json"),
     ]
+    if blank_library is not None:
+        discovery_command.extend(["--blank-library", str(blank_library)])
+        alignment_command.extend(["--blank-library", str(blank_library)])
     if workbook is not None:
         alignment_command.extend(
             ["--known-istd-reference-workbook", str(workbook)]
@@ -212,7 +206,7 @@ def _build_plan(args: argparse.Namespace) -> dict[str, Any]:
     recipe = bind_cid_nl_recipe(load_preset("dna_dr"), "full")
     effective_discovery = replace(
         recipe.discovery_settings,
-        enable_blank_qualification=True,
+        enable_blank_qualification=blank_library is not None,
         blank_library_path=None,
     )
     return {
@@ -228,7 +222,7 @@ def _build_plan(args: argparse.Namespace) -> dict[str, Any]:
             "raw_dir": str(raw_dir),
             "raw_count": len(raw_paths),
             "dll_dir": str(dll_dir),
-            "blank_library": str(blank_library),
+            "blank_library": str(blank_library) if blank_library is not None else None,
             "targets_csv": str(targets_csv) if targets_csv is not None else None,
             "known_istd_reference_workbook": (
                 str(workbook) if workbook is not None else None
@@ -291,41 +285,6 @@ def _resolve_input_dir(
     if not resolved.is_dir():
         raise ValueError(f"{resolved}: {label} directory does not exist")
     return resolved
-
-
-def _resolve_blank_library(
-    explicit: Path | None,
-    *,
-    environment: Mapping[str, str],
-    dataset: int,
-    raw_dir: Path,
-) -> Path:
-    if explicit is not None:
-        selected = explicit.resolve()
-    else:
-        cohort_root_text = environment.get("XIC_RAW_ROOT")
-        cohort_root = (
-            Path(cohort_root_text).resolve()
-            if cohort_root_text
-            else (raw_dir if dataset == 85 else None)
-        )
-        selected = None
-        if cohort_root is not None:
-            selected = next(
-                (
-                    cohort_root / name
-                    for name in _COHORT_LIBRARY_NAMES
-                    if (cohort_root / name).is_file()
-                ),
-                None,
-            )
-        if selected is None:
-            selected = get_default_background_library_path().resolve()
-    if selected is None:
-        raise ValueError("blank background library could not be resolved")
-    if not selected.is_file():
-        raise ValueError(f"{selected}: blank background library does not exist")
-    return selected
 
 
 def _validate_istd_input(args: argparse.Namespace) -> tuple[Path | None, Path | None]:

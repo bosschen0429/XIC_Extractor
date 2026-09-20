@@ -49,7 +49,7 @@ lifecycle for each provider.
   replay, including merged candidates. Legacy CSVs without provisional evidence
   remain readable; legacy rows marked provisional without the decision field
   are rejected because their final qualification cannot be recovered exactly.
-- Blank qualification is enabled by default for newly configured ordinary
+- Blank qualification is disabled by default for newly configured ordinary
   mainline Discovery runs. Library resolution prefers an explicitly selected
   library, then a sample-local `blank_library.json.gz` or `blank_library.json`,
   then the packaged default library. ProcessingRunSpec binds each input to the
@@ -57,12 +57,25 @@ lifecycle for each provider.
   snapshot. Reading a saved run for execution verifies the selected library
   against that digest. Historical saved settings and run specs keep their stored
   enabled/disabled value, bytes, and identity; changing the default does not
-  retroactively enable qualification when they are read or replayed. An enabled
+  retroactively change qualification when they are read or replayed. An enabled
   run without a library binding must be recompiled before execution. The CLI's
   explicit `--no-blank-qualification` opts out and takes precedence over
   `--blank-dir`. When qualification is enabled, an explicit blank directory is
   extracted anew; matching filenames alone do not establish reusable blank
   content.
+- A short solvent blank with a different LC gradient is diagnostic background
+  evidence, not a validated hard-exclusion reference for a longer sample method.
+  Background references must distinguish clean pre-sample solvent injections
+  from post-standard/post-sample carryover monitors and waste-directed runs.
+  A method-matched blank is a prerequisite for evaluating feature removal, not
+  proof that an m/z-only intensity rule is valid. The current library aggregates
+  centroid m/z and maximum intensity; it does not preserve RT or qualify peak
+  shape. Explicit opt-in requires method-appropriate validation.
+- Instrument acquisition exclusion lists and software blank qualification are
+  separate operations. An acquisition exclusion can prevent an MS/MS trigger;
+  disabling software filtering does not recreate an unacquired spectrum. Do not
+  linearly scale RT between different 15-minute and 60-minute gradients. A larger
+  ion list alone does not establish chemical identity or chromatographic support.
 - Blank qualification matches candidate precursor m/z within 10 ppm by default.
   A matched feature remains feature-backed when its MS1 height is at least 3×
   the matched blank's maximum intensity. Below 3×, it becomes

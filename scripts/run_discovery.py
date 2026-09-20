@@ -294,7 +294,7 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         "--enable-blank-qualification",
         action="store_true",
         help=(
-            "Enable blank background qualification (enabled by default). "
+            "Enable blank background qualification (disabled by default). "
             "Uses an explicit, sample-local, or packaged background library."
         ),
     )
@@ -302,7 +302,7 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         "--no-blank-qualification",
         action="store_true",
         help=(
-            "Explicitly disable default-on blank background qualification "
+            "Explicitly disable blank background qualification "
             "and filtering; overrides other blank options."
         ),
     )
