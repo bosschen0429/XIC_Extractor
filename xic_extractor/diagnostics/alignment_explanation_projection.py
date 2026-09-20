@@ -12,7 +12,10 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from xic_extractor.alignment.cross_sample_neighborhood_graph import INITIAL_PAIR_POLICY
+from xic_extractor.alignment.cross_sample_neighborhood_graph import (
+    INITIAL_GROUPING_POLICY,
+    UNLISTED_PAIR_DISPOSITION,
+)
 from xic_extractor.diagnostics.alignment_explanation import ExplanationReportWriter
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     cid_nl_method_subject_batch_from_request,
@@ -477,8 +480,7 @@ def prepare_alignment_explanation(
                 content.canonical_sample_identity_id,
             ]
             if (
-                content.detector_invocation_id
-                == "untargeted-cid-nl-backfill-recovery"
+                content.detector_invocation_id == "untargeted-cid-nl-backfill-recovery"
                 and content.method_result == "SUPPORT"
             ):
                 # Recovery has no Discovery terminal. Retain its exact physical
@@ -588,28 +590,35 @@ def prepare_alignment_explanation(
                 related.update(keys)
             if stage == "final_groups":
                 group_candidates[group.group_hypothesis_id].update(related)
+            group_payload = {
+                **_fields(
+                    group,
+                    "group_hypothesis_id",
+                    "processing_request_id",
+                    "disposition",
+                ),
+                "member_subjects": [
+                    _fields(
+                        member,
+                        "member_subject_id",
+                        "canonical_sample_identity_id",
+                        "subject_kind",
+                        "subject_id",
+                        "physical_observation_ids",
+                    )
+                    for member in group.member_subjects
+                ],
+            }
+            inference_basis = getattr(group, "inference_basis", None)
+            if stage == "initial_groups" and inference_basis is not None:
+                group_payload["inference_basis"] = asdict(inference_basis)
+                group_payload["inference_decisions"] = [
+                    asdict(decision) for decision in group.inference_decisions
+                ]
             add(
                 stage,
                 group.group_hypothesis_id,
-                {
-                    **_fields(
-                        group,
-                        "group_hypothesis_id",
-                        "processing_request_id",
-                        "disposition",
-                    ),
-                    "member_subjects": [
-                        _fields(
-                            member,
-                            "member_subject_id",
-                            "canonical_sample_identity_id",
-                            "subject_kind",
-                            "subject_id",
-                            "physical_observation_ids",
-                        )
-                        for member in group.member_subjects
-                    ],
-                },
+                group_payload,
                 related,
             )
 
@@ -778,6 +787,9 @@ def prepare_alignment_explanation(
                 matrix_rows = sum(
                     1 for _ in csv.DictReader(matrix_handle, delimiter="\t")
                 )
+            initial_group_member_count = sum(
+                len(group.member_subjects) for group in completed.initial_groups
+            )
             summary = {
                 **_fields(
                     request,
@@ -811,15 +823,21 @@ def prepare_alignment_explanation(
                 "reason_counts": dict(sorted(reasons.items())),
                 "record_counts": dict(sink.record_counts),
                 "initial_edge_coverage": {
-                    "policy": INITIAL_PAIR_POLICY,
-                    "unlisted_pairs": "excluded",
+                    "policy": INITIAL_GROUPING_POLICY,
+                    "unlisted_pairs": UNLISTED_PAIR_DISPOSITION,
                     "rt_pruning": False,
+                    "evaluated_pair_count": len(completed.initial_edges),
+                    "compressed_group_count": len(completed.initial_groups),
+                    "compressed_member_count": initial_group_member_count,
                 },
                 "audit_availability": {
-                    name: "recorded" if (
-                        getattr(completed, name)
-                        or (name == "initial_edges" and completed.initial_groups)
-                    ) else "unavailable"
+                    name: (
+                        "recorded"
+                        if getattr(completed, name)
+                        else "not_evaluated"
+                        if name == "initial_edges" and completed.initial_groups
+                        else "unavailable"
+                    )
                     for name in (
                         "method_assessments",
                         "initial_groups",

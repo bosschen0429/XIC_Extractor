@@ -310,8 +310,8 @@ def test_context_rejects_a_crossed_trajectory_snapshot(tmp_path: Path) -> None:
     )
 
     with pytest.raises(
-        CrossSampleReconciliationContractError,
-        match="trajectory snapshot|processing request",
+        ValueError,
+        match="init=False",
     ):
         replace(context, trajectory_input=other_context.trajectory_input)
 

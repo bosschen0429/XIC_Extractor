@@ -78,7 +78,7 @@ def test_admitted_repair_with_unaffected_group_runs_one_final_assignment_pass(
         ),
         alignment_config=AlignmentConfig(anchor_min_seed_events=100),
         trajectory_policy=ModeTrackTrajectoryPolicy(
-            trajectory_policy_version="anchor-trajectory",
+            trajectory_policy_version="different-anchor-trajectory",
             band_policy_version="fixed-band",
             prediction_half_width_min=0.1,
             max_interpolation_gap=10,
@@ -278,11 +278,6 @@ def test_admitted_repair_with_unaffected_group_runs_one_final_assignment_pass(
         for group_identity in reconciled.mode_track_input.post_repair_population
         for member in group_identity.member_subjects
     }
-    crossed_attempt = refinement_owner.run_post_repair_mode_track_final_attempt(
-        source=crossed_source,
-        repair_receipt=terminal.receipt,
-        post_repair=reconciled.mode_track_input,
-    )
     crossed_context = replace(
         context,
         fit_once_source_id=crossed_source.fit_once_source_id,
@@ -295,5 +290,5 @@ def test_admitted_repair_with_unaffected_group_runs_one_final_assignment_pass(
             context=crossed_context,
             post_repair=reconciled.mode_track_input,
             terminal=terminal,
-            final_attempt=crossed_attempt,
+            final_attempt=accepted_result,
         )

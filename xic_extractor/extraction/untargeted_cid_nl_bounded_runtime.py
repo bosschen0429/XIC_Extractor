@@ -136,7 +136,10 @@ class CidNlPartitionPipelineAdapter:
         context = plan.context
         self._owners = context.processing_owners
         self._prepared_worksets: PreparedCidNlAlignmentSubjectWorksets = (
-            prepare_untargeted_cid_nl_alignment_subject_worksets(plan)
+            prepare_untargeted_cid_nl_alignment_subject_worksets(
+                plan,
+                known_istd_reference=self._known_istd_reference,
+            )
         )
         subjects_per_partition = max(1, max_partition_jobs // len(context.samples))
         subject_partitions_list: list[tuple[CidNlMethodSubject, ...]] = []
@@ -222,6 +225,7 @@ class CidNlPartitionPipelineAdapter:
         self._owner_completeness_attestation = (
             f"{self._owners.request.processing_request_id}:cid-nl-partitioned"
         )
+
     @property
     def partitions(
         self,

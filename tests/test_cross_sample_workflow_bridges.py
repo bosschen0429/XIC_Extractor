@@ -439,14 +439,27 @@ def test_mt0_bridge_preserves_complete_components(tmp_path: Path) -> None:
         ),
         retain_observation_only_candidates=True,
     )
-    components = tuple(
-        tuple(
-            group.group_hypothesis_id
+    assert sorted(
+        sum(
+            len(group.member_subjects)
             for group in transaction.application_context.predecessors
         )
         for transaction in run.transactions
-    )
-    assert sorted(map(len, components)) == [1, 2]
+    ) == [1, 2, 2]
+    for transaction in run.transactions:
+        receipt = transaction.application_context.grouping_receipt
+        assert receipt is not None
+        assert receipt.group_member_sets == tuple(
+            sorted(
+                tuple(
+                    sorted(member.member_subject_id for member in group.member_subjects)
+                )
+                for group in transaction.application_context.predecessors
+            )
+        )
+        assert transaction.trajectory_input.initial_grouping_receipt_id == (
+            receipt.receipt_id
+        )
     captures = _captures_for_run(run, include_retained_candidates=True)
     context = apply_mode_track_refinement_run_for_workflow(
         processing_owners=fixture.owners,
@@ -472,7 +485,7 @@ def test_mt0_bridge_preserves_complete_components(tmp_path: Path) -> None:
         )
         for owner in context.owners
     )
-    first, second = run.transactions
+    first, second, third = run.transactions
     for transactions in (
         (first,),
         (first, first, second),
@@ -494,6 +507,7 @@ def test_mt0_bridge_preserves_complete_components(tmp_path: Path) -> None:
         transactions=(
             replace(second, application_context=first.application_context),
             replace(first, application_context=second.application_context),
+            third,
         ),
         _mint_token=_REFINEMENT_RUN_MINT_TOKEN,
     )

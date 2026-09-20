@@ -31,6 +31,7 @@ from xic_extractor.alignment.cross_sample_identity_models import (
 )
 from xic_extractor.alignment.cross_sample_neighborhood_graph import (
     CrossSampleClassifiedEdge,
+    CrossSampleInitialGroupingReceipt,
     CrossSampleNeighborhoodBudget,
     CrossSampleNeighborhoodEdge,
     CrossSampleRepairAdmissionApplication,
@@ -67,9 +68,7 @@ if TYPE_CHECKING:
 
 _FINAL_RECEIPT_PREFIX = "xic.cross-sample-final-receipt:"
 _NONMEMBER_REPAIR_RESULT_PREFIX = "xic.cross-sample-nonmember-repair:"
-_POST_REPAIR_MODE_TRACK_INPUT_PREFIX = (
-    "xic.cross-sample-post-repair-mode-track-input:"
-)
+_POST_REPAIR_MODE_TRACK_INPUT_PREFIX = "xic.cross-sample-post-repair-mode-track-input:"
 _POST_REPAIR_POPULATION_PREFIX = "xic.cross-sample-post-repair-population:"
 _POST_REPAIR_APPLICATION_PREFIX = "xic.cross-sample-post-repair-application:"
 _EXISTING_MEMBER_REPAIR_RESULT_PREFIX = "xic.cross-sample-existing-member-repair:"
@@ -96,7 +95,6 @@ class CrossSampleReconciliationContractError(CrossSampleContractError):
     """Raised when the CrossSample repair closure cannot close exactly."""
 
 
-
 @dataclass(frozen=True, slots=True)
 class CrossSamplePostMT0Context:
     """Exact post-MT0 CrossSample state needed for one repair reconciliation."""
@@ -111,7 +109,8 @@ class CrossSamplePostMT0Context:
     injection_order: tuple[tuple[str, int], ...]
     evidence_profile: ModeTrackEvidenceProfile
     budget: CrossSampleNeighborhoodBudget
-    trajectory_input: ModeTrackTrajectoryInput
+    trajectory_input: ModeTrackTrajectoryInput = field(init=False)
+    initial_grouping_receipt: CrossSampleInitialGroupingReceipt | None = None
     fit_once_source_id: str | None = None
     drift_lookup: DriftLookupProtocol | None = None
 
@@ -154,7 +153,6 @@ class CrossSamplePostRepairModeTrackInput:
                 "post-repair ModeTrack input must be minted by CrossSample"
             )
         _validate_post_repair_mode_track_input(self)
-
 
 
 def _validate_post_repair_mode_track_input(
@@ -386,7 +384,6 @@ def _validate_post_repair_mode_track_input(
         raise CrossSampleReconciliationContractError(str(exc)) from exc
 
 
-
 @dataclass(frozen=True, slots=True)
 class CrossSampleNonmemberRepairResult:
     """Terminal CrossSample decision for one repaired nonmember candidate."""
@@ -439,7 +436,6 @@ class CrossSampleNonmemberRepairResult:
         return "none"
 
 
-
 def build_cross_sample_post_mt0_context(
     *,
     processing_request_id: str,
@@ -452,6 +448,7 @@ def build_cross_sample_post_mt0_context(
     injection_order: InjectionOrderInput,
     evidence_profile: ModeTrackEvidenceProfile,
     budget: CrossSampleNeighborhoodBudget,
+    initial_grouping_receipt: CrossSampleInitialGroupingReceipt | None = None,
     fit_once_source_id: str | None = None,
 ) -> CrossSamplePostMT0Context:
     """Build and seal the trajectory snapshot for a post-MT0 state."""
@@ -484,16 +481,6 @@ def build_cross_sample_post_mt0_context(
     edges_tuple = tuple(sorted(classified_edges, key=_edge_sort_key))
     anchors_tuple = tuple(sorted(anchors, key=lambda anchor: anchor.anchor_id))
     injection_tuple = _canonical_injection_order(injection_order)
-    trajectory_input = _mint_context_trajectory(
-        request_id=request_id,
-        application=application,
-        owners=owners_tuple,
-        classified_edges=edges_tuple,
-        anchors=anchors_tuple,
-        injection_order=injection_tuple,
-        evidence_profile=evidence_profile,
-        budget=budget,
-    )
     return CrossSamplePostMT0Context(
         processing_request_id=request_id,
         processing_owners=processing_owners,
@@ -505,10 +492,9 @@ def build_cross_sample_post_mt0_context(
         injection_order=injection_tuple,
         evidence_profile=evidence_profile,
         budget=budget,
-        trajectory_input=trajectory_input,
+        initial_grouping_receipt=initial_grouping_receipt,
         fit_once_source_id=fit_once_source_id,
     )
-
 
 
 @dataclass(frozen=True, slots=True)
@@ -614,7 +600,6 @@ class CrossSampleReconciledState:
             raise CrossSampleReconciliationContractError(
                 "CS2 trajectory_changed must be boolean"
             )
-
 
 
 @dataclass(frozen=True, slots=True)
@@ -891,7 +876,6 @@ CrossSamplePostRepairReconciliation: TypeAlias = (
 )
 
 
-
 def _mint_final_receipt(
     *,
     processing_request_id: str,
@@ -938,7 +922,6 @@ def _mint_final_receipt(
         mode_track_final_attempt=mode_track_final_attempt,
         _mint_token=_FINAL_RECEIPT_MINT_TOKEN,
     )
-
 
 
 def _validate_final_repair_binding(
@@ -1014,7 +997,6 @@ def _validate_final_repair_binding(
         )
 
 
-
 def _validate_post_mt0_context(context: CrossSamplePostMT0Context) -> None:
     if type(context) is not CrossSamplePostMT0Context:
         raise CrossSampleReconciliationContractError(
@@ -1076,7 +1058,7 @@ def _validate_post_mt0_context(context: CrossSamplePostMT0Context) -> None:
     members = tuple(
         member for group in application.successors for member in group.member_subjects
     )
-    member_ids = tuple(member.member_subject_id for member in members)
+    member_ids = frozenset(member.member_subject_id for member in members)
     if (
         type(context.owners) is not tuple
         or tuple(
@@ -1131,7 +1113,7 @@ def _validate_post_mt0_context(context: CrossSamplePostMT0Context) -> None:
         raise CrossSampleReconciliationContractError(
             "post-MT0 injection order is not canonical-sorted"
         )
-    _mint_context_trajectory(
+    trajectory = _mint_context_trajectory(
         request_id=request_id,
         application=application,
         owners=context.owners,
@@ -1140,9 +1122,9 @@ def _validate_post_mt0_context(context: CrossSamplePostMT0Context) -> None:
         injection_order=injection_order,
         evidence_profile=context.evidence_profile,
         budget=context.budget,
-        expected=context.trajectory_input,
+        initial_grouping_receipt=context.initial_grouping_receipt,
     )
-
+    object.__setattr__(context, "trajectory_input", trajectory)
 
 
 def _mint_context_trajectory(
@@ -1155,7 +1137,7 @@ def _mint_context_trajectory(
     injection_order: tuple[tuple[str, int], ...],
     evidence_profile: ModeTrackEvidenceProfile,
     budget: CrossSampleNeighborhoodBudget,
-    expected: ModeTrackTrajectoryInput | None = None,
+    initial_grouping_receipt: CrossSampleInitialGroupingReceipt | None = None,
 ) -> ModeTrackTrajectoryInput:
     canonical_injection_order = _canonical_injection_order(injection_order)
     try:
@@ -1168,6 +1150,7 @@ def _mint_context_trajectory(
             evidence_profile=evidence_profile,
             budget=budget,
             processing_request_id=request_id,
+            initial_grouping_receipt=initial_grouping_receipt,
         )
     except (TypeError, ValueError, KeyError) as exc:
         raise CrossSampleReconciliationContractError(
@@ -1177,12 +1160,7 @@ def _mint_context_trajectory(
         raise CrossSampleReconciliationContractError(
             "trajectory input crossed processing request"
         )
-    if expected is not None and trajectory != expected:
-        raise CrossSampleReconciliationContractError(
-            "trajectory snapshot is stale or not exact"
-        )
     return trajectory
-
 
 
 def _canonical_injection_order(
@@ -1232,7 +1210,6 @@ def _canonical_injection_order(
         ) from exc
 
 
-
 def _mint_repaired_candidate_member(
     *,
     candidate: ObservationRepairCandidate,
@@ -1269,7 +1246,6 @@ def _mint_repaired_candidate_member(
         raise CrossSampleReconciliationContractError(str(exc)) from exc
 
 
-
 def _project_repaired_observation(
     *,
     candidate: ObservationRepairCandidate,
@@ -1295,7 +1271,6 @@ def _project_repaired_observation(
     )
 
 
-
 def _classify_candidate_edge(
     *,
     predecessor_owner: SampleLocalMS1Owner,
@@ -1314,7 +1289,6 @@ def _classify_candidate_edge(
         raise CrossSampleReconciliationContractError(
             f"repair candidate edge could not close: {exc}"
         ) from exc
-
 
 
 def _reduce_repair_admission(
@@ -1336,10 +1310,8 @@ def _reduce_repair_admission(
     )
 
 
-
 def _owner_sort_key(owner: SampleLocalMS1Owner) -> tuple[str, str]:
     return (_owner_member_id(owner), owner.owner_id)
-
 
 
 def _processing_owners_reference(
@@ -1382,7 +1354,6 @@ def _processing_owners_reference(
     }
 
 
-
 def _post_repair_population_id(
     population: tuple[CrossSampleGroupIdentity, ...],
 ) -> str:
@@ -1393,7 +1364,6 @@ def _post_repair_population_id(
         }
     )
     return typed_identity_digest(_POST_REPAIR_POPULATION_PREFIX, basis)
-
 
 
 def _post_repair_application_id(
@@ -1410,7 +1380,6 @@ def _post_repair_application_id(
         }
     )
     return typed_identity_digest(_POST_REPAIR_APPLICATION_PREFIX, basis)
-
 
 
 def _existing_member_repair_result_id(
@@ -1440,7 +1409,6 @@ def _existing_member_repair_result_id(
         }
     )
     return typed_identity_digest(_EXISTING_MEMBER_REPAIR_RESULT_PREFIX, basis)
-
 
 
 def _post_repair_mode_track_input_basis(
@@ -1491,7 +1459,6 @@ def _post_repair_mode_track_input_basis(
             "trajectory_changed": trajectory_changed,
         }
     )
-
 
 
 def _mint_post_repair_mode_track_input(
@@ -1572,7 +1539,6 @@ def _mint_post_repair_mode_track_input(
     )
 
 
-
 def _mint_existing_member_post_repair_mode_track_input(
     *,
     context: CrossSamplePostMT0Context,
@@ -1625,7 +1591,6 @@ def _mint_existing_member_post_repair_mode_track_input(
     )
 
 
-
 def _repair_edge_basis(edge: CrossSampleRepairAdmissionEdge) -> dict[str, object]:
     return {
         "left_member_subject_id": edge.left_member_subject_id,
@@ -1640,7 +1605,6 @@ def _repair_edge_basis(edge: CrossSampleRepairAdmissionEdge) -> dict[str, object
         "reason": edge.reason,
         "config": asdict(edge.config),
     }
-
 
 
 def _nonmember_repair_result_basis(
@@ -1684,7 +1648,6 @@ def _nonmember_repair_result_basis(
     )
 
 
-
 def _mint_nonmember_repair_result(
     *,
     processing_request_id: str,
@@ -1725,7 +1688,6 @@ def _mint_nonmember_repair_result(
         basis_bytes=basis,
         _mint_token=_NONMEMBER_REPAIR_RESULT_MINT_TOKEN,
     )
-
 
 
 def _validate_nonmember_repair_result(
@@ -1970,7 +1932,6 @@ def _validate_nonmember_repair_result(
         raise CrossSampleReconciliationContractError(str(exc)) from exc
 
 
-
 def _validate_repair_receipt(receipt: ObservationRepairReceipt) -> None:
     if type(receipt) is not ObservationRepairReceipt:
         raise CrossSampleReconciliationContractError(
@@ -2094,7 +2055,6 @@ def _validate_repair_receipt(receipt: ObservationRepairReceipt) -> None:
             )
 
 
-
 def _validate_proposal_snapshot(
     proposal: CrossSampleProposalOutcome | None,
     *,
@@ -2120,7 +2080,6 @@ def _validate_proposal_snapshot(
         raise CrossSampleReconciliationContractError(
             "MT1 proposal is stale for the repaired trajectory snapshot"
         )
-
 
 
 def _final_population_after_application(
@@ -2152,7 +2111,6 @@ def _final_population_after_application(
     return result
 
 
-
 def _exact_application(
     application: CrossSampleSuccessorApplication,
     *,
@@ -2163,7 +2121,6 @@ def _exact_application(
             f"{field} must be an exact CrossSample application"
         )
     return application
-
 
 
 def _application_reference(
@@ -2184,14 +2141,12 @@ def _application_reference(
     }
 
 
-
 def _group_reference(group: CrossSampleGroupIdentity) -> dict[str, object]:
     return {
         "group_hypothesis_id": group.group_hypothesis_id,
         "basis_hex": group.basis_bytes.hex(),
         "disposition": group.disposition,
     }
-
 
 
 def _final_receipt_basis(
@@ -2244,7 +2199,6 @@ def _final_receipt_basis(
     )
 
 
-
 def _repair_terminal_reference(
     terminal: ObservationRepairTerminalResult | None,
 ) -> dict[str, object] | None:
@@ -2259,7 +2213,6 @@ def _repair_terminal_reference(
         "eligible_cell_ids": list(authorization.eligible_cell_ids),
         "receipt_id": None if terminal.receipt is None else terminal.receipt.receipt_id,
     }
-
 
 
 def _final_attempt_reference(
@@ -2277,7 +2230,6 @@ def _final_attempt_reference(
         "assignment_batch_ids": list(binding.assignment_batch_ids),
         "proposal_id": binding.proposal_id,
     }
-
 
 
 def _proposal_reference(
@@ -2316,7 +2268,6 @@ def _proposal_reference(
     )
 
 
-
 def _owner_member_id(owner: SampleLocalMS1Owner) -> str:
     if type(owner) is not SampleLocalMS1Owner:
         raise CrossSampleReconciliationContractError(
@@ -2328,7 +2279,6 @@ def _owner_member_id(owner: SampleLocalMS1Owner) -> str:
             "owner is missing its exact CrossSample member"
         )
     return member.member_subject_id
-
 
 
 def _edge_sort_key(
@@ -2344,7 +2294,6 @@ def _edge_sort_key(
     return tuple(sorted((edge.left_member_subject_id, edge.right_member_subject_id)))
 
 
-
 def _request_id(value: object) -> str:
     try:
         return validate_typed_identity_id(
@@ -2354,7 +2303,6 @@ def _request_id(value: object) -> str:
         )
     except (TypeError, ValueError) as exc:
         raise CrossSampleReconciliationContractError(str(exc)) from exc
-
 
 
 def _trajectory_id(value: object) -> str:

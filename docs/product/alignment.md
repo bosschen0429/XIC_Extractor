@@ -216,63 +216,51 @@ unresolved and rejected groups remain AuditTrail facts.
   while the seeds sit tens of seconds apart. Below roughly half a peak width the
   trace does not show two apexes, so the pair is not a doublet and its component
   is not discarded. `owner_apex_close_sec` still applies as the lower bound.
-- Cross-sample grouping uses all-pairs admissible-edge complete-link by default.
-  Strong edges are admissible. A weak edge is also admissible when it has no
-  hard-gate failure, uses raw RT inside the preferred window, has clean owner
-  quality, and has moderate seed support; its score, weak decision, selected RT
-  basis, and corrected-RT observation remain unchanged audit facts. A group that
-  actually requires this admission is `owner_complete_link_moderate`; an
-  all-strong group remains `owner_complete_link`. The moderate group uses
-  multi-sample detection identity with medium confidence where legacy Matrix
-  identity decisions are evaluated, including that consumer's existing
-  quantitation-grade guard. The retained finalized Untarget route keeps group
-  disposition independent of unavailable SNR facts and uses its existing cell
-  owner: `primary_matrix_area_from_integration` accepts only the selected
-  morphology or canonical physical area. Its writer confidence remains
-  `owner_finalized`, which records completion authority rather than scientific
-  confidence.
-- After that initial partition, a connected RT/mass continuum may replace a
-  remaining split only when it contains one
-  clean detected owner from every sample in the explicit Alignment batch,
-  every accepted local edge passes the pair hard gates, and complete-link would
-  otherwise split it. Incomplete groups, same-sample recurrences, weak-quality
-  owners, and RT discontinuities remain on complete-link. The recovered family
-  is `owner_full_batch_continuity`; Matrix identity evaluates it through the
-  existing `multi_sample_detected` policy rather than treating it as all-pairs
-  `owner_complete_link` evidence. A later owner may reconcile multiple
-  compatible groups in this connected-link pass only when the combined group
-  passes the hard envelope and every pair is free of a blocked edge.
-  Complete-link remains the downstream hard partition; single-link chaining is
-  not family identity authority.
-- A partial connected component may replace its complete-link split only with
-  complete unique explicit injection order for every owner, the symmetric
-  precursor/product/loss hard envelope, and bounded RT continuity on every
-  adjacent injection-order edge. The recovered family is
-  `owner_injection_trajectory`; the full-batch rescue keeps priority. Missing or
-  duplicate order, a hard-envelope conflict, or an RT discontinuity remains on
-  complete-link; `drift_lookup` is not an alternate order source. Parallel
-  connected components remain separate, and this rule does not bridge groups or
-  add a control plane.
-- A connected component that neither full-batch nor injection-trajectory rescue
-  admits may still replace its complete-link split when the whole component
-  stays inside the symmetric precursor/product/loss hard envelope and its apex
-  RT span stays within the group span bound. The recovered family is
-  `owner_bounded_continuity`; full-batch and injection-trajectory rescues keep
-  priority and their own policy labels.
-- After the partition settles, the grouping owner may resolve a duplicate-owner
-  group only through a typed identity anchor. Current product behavior enables
-  this for validated targeted ISTD trajectories: every subordinate sample is
-  already owned by the larger same-target trajectory, both groups bind to the
-  same owner-minted target snapshot, and the combined precursor envelope stays
-  valid. Aggregate m/z/RT/product/loss geometry alone is not same-peak evidence;
-  an untyped parallel trajectory remains an independent group. A resolved group
-  stays a review row carrying `owner_duplicate_group_resolved_loser;winner=<id>`,
-  `consolidation_state=primary_loser`, and its winner identity; the winner
-  carries `owner_duplicate_group_resolved_winner`. Resolution is one level
-  deep and never bridges groups that would add sample coverage, so it cannot
-  chain. Because a resolved group is `review_only`, Backfill issues no request
-  for it: the duplicate-owner decision belongs to this owner, not to Backfill
-  and not to a second grouping stage.
+- Initial cross-sample membership is owned by
+  `feature_membership_inference.infer_feature_memberships`. Confirmed identity
+  is the scientific constraint; complete-link, pair-graph representation, and
+  historical membership are replaceable implementation choices.
+- Exact `KnownIstdOwnerLookup` bindings are partitioned by identity label before
+  ordinary inference. Every bound owner for one label stays in one group,
+  regardless of RT spread or pairwise product/loss disagreement. Unbound owners
+  cannot enter that known group. Conflicting bindings (multiple owners in one
+  sample or one owner bound to multiple labels) are reported as unresolved
+  input conflicts rather than split or silently selected. Reference mass
+  and neutral-loss tolerance envelopes connect scalar comparison worksets
+  before dispatch, including ppm-near configured losses. Proximity determines
+  comparison scope only, never the exact known-identity binding. Each subject
+  retains its own assessment; sharing a workset does not combine MS2 evidence.
+- Ordinary owners use two finite passes in opposite canonical sample order.
+  A mass/product/loss range index prunes impossible feature candidates. A
+  candidate uses feature extrema and at most two representative observations
+  (seed and most recent); it does not compare every member pair. Per-sample
+  assignment solves only local competing candidates with an explicit unmatched
+  choice. Adjacent observations can support drift without demanding that the
+  first and last observations have a direct RT edge.
+- Final ordinary membership is the equivalence intersection of the two pass
+  results. Direction disagreement, equal-cost competition, and insufficient
+  evidence remain `undecided`/`unresolved`, visible as review rows. This is a
+  finite deterministic inference rule, not a claim of global optimality or
+  chemical proof that separated review rows represent different compounds.
+  Empty samples in the batch universe do not change the rule. Repeated wrappers
+  do not add independent support. Mass/product/loss checks are compatibility
+  filters, not three independent chemical votes.
+- Initial membership is carried as compressed group member sets. Missing pair
+  records mean `not_evaluated`, never `excluded`; an initial group does not
+  manufacture positive pair evidence. ModeTrack and repair consume the same
+  receipt and preserve indivisible confirmed identities. Explicit repair pair
+  evidence remains bounded to the actual repaired candidate and current group.
+  Physical integrations, observed coordinates, sample attribution, and the
+  quantification owner are unchanged by membership inference.
+- An immutable reconciliation context computes its trajectory once when its
+  owner constructs it. Internal consumers trust that state. An unchanged repair
+  reuses the same trajectory; a changed observation computes only the affected
+  component's new trajectory. Consumers still check the actual repair/source
+  binding, and a caller cannot inject a separate trajectory into the context.
+- Batch finalization consumes completed immutable children and checks their
+  parent request, attempt, sample coverage, and cross-child uniqueness. It does
+  not rerun each child's scientific and post-cell completion checks. Explicit
+  finalization and private-spool publication retain their own boundary checks.
 - Cross-sample edge seed support is rated on the peak Alignment resolved, not
   on Discovery's `evidence_score`. Every owner exists because ownership
   re-extracted the XIC and found a peak, so the Discovery score -- which is
@@ -295,27 +283,6 @@ unresolved and rejected groups remain AuditTrail facts.
   boundaries are both interior and its primary Matrix area is valid; an
   endpoint or incomplete rescue is censored by the same rule. This is a
   quantification-authority guard, not a new peak-selection or Backfill route.
-- For the observed, configured DNA dR ISTD lane only, an owner-minted targeted
-  ISTD anchor from the current run's target-list snapshot may reconcile
-  sample-disjoint groups that independently match the same configured m/z/RT
-  target and form one locally continuous injection-order trajectory. Within
-  that bounded anchor, product-m/z or observed-loss disagreement is retained as
-  measurement evidence but is not a chemical-identity hard split; the known
-  standard identity is stronger evidence. Same-sample occupancy, precursor-m/z
-  conflict, missing or duplicate injection order, RT discontinuity, weak owner
-  quality, and untyped/unobserved targets still block reconciliation.
-  `tail_supported` is not weak and remains admissible. Parallel same-sample
-  peaks remain separate. Reconciliation is independent of group processing
-  order: a compatibility component merges only when its complete owner union
-  passes the same hard and trajectory validation. Otherwise every member stays
-  separate instead of choosing a track greedily. A smaller group whose samples
-  are a strict subset of another same-target group cannot bridge into that
-  containing trajectory; it may reconcile only with other subordinate groups
-  and may be demoted only through the existing duplicate-owner review path.
-  Without the mapping or typed snapshot, this rule is absent. This remains
-  inside the Alignment grouping owner: it does not promote a rescued cell,
-  write a Matrix value directly, infer unknown-family chemical identity, add a
-  public knob, or create a second control plane.
 - Retained CID-NL Alignment can optionally use
   `--known-istd-reference-workbook` for batch-local RT alignment. The report's
   `Targets` sheet declares the ISTDs and its `XIC Results` sheet supplies their
@@ -337,17 +304,8 @@ unresolved and rejected groups remain AuditTrail facts.
   production output level. Mass and method evidence gates, current RAW
   integration values, and cell decisions remain authoritative; the map changes
   no observed RT or integrated value, and report areas are not inputs.
-  Omitting the reference keeps the ordinary route. This context does not enable
-  the separate targeted-identity reconciliation rule above.
-- An `owner_bounded_continuity` family reaches the primary matrix only when at
-  least two of its owners carry a resolved peak at or above the quantitation
-  limit. Bounded continuity admits a group on detection-grade evidence, which is
-  the right bar for deciding two peaks are the same entity and the wrong one for
-  publishing a quantity; a family that misses it stays `provisional_discovery`
-  with `bounded_continuity_below_quantitation_limit` and keeps its grouping, so
-  Backfill scope and family identity are unaffected. The gate reads the family
-  evidence, not the primary evidence token, because `promotion_policy` scopes
-  itself on that token; it does not apply to any other grouping policy.
+  Omitting the reference keeps the ordinary route. Exact owner bindings also
+  supply the indivisible identity constraints above.
 - `validation-minimal` is the standard fast public validation profile unless a
   stronger gate is explicitly requested.
 - Alignment may write matrix, review, identity, evidence, and conditional

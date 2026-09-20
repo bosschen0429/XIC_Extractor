@@ -26,7 +26,7 @@ from xic_extractor.alignment.backfill.observation_repair import (
 from xic_extractor.alignment.backfill_transaction import OwnerBackfillSampleResult
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.cross_sample_neighborhood_graph import (
-    iter_cross_sample_initial_owner_pairs,
+    mint_cross_sample_initial_grouping_receipt,
 )
 from xic_extractor.alignment.cross_sample_peak_groups import (
     CrossSampleClassifiedEdge,
@@ -37,7 +37,6 @@ from xic_extractor.alignment.cross_sample_peak_groups import (
     CrossSampleSuccessorApplication,
     _apply_repaired_nonmember_admission,
     _expected_cross_sample_lineage,
-    classify_cross_sample_initial_neighborhood_edge,
     mint_cross_sample_group_identity,
     validate_cross_sample_group_population,
     validate_cross_sample_peak_group_identity,
@@ -71,7 +70,6 @@ from xic_extractor.alignment.cross_sample_reconciliation_models import (
     _owner_member_id,
     _project_repaired_observation,
     _reduce_repair_admission,
-    _validate_post_mt0_context,
     _validate_post_repair_mode_track_input,
     _validate_repair_receipt,
     build_cross_sample_post_mt0_context,
@@ -121,10 +119,6 @@ if TYPE_CHECKING:
         ModeTrackFinalAttemptResult,
         ModeTrackRefinementRun,
     )
-
-
-
-
 
 
 def apply_mode_track_refinement_run_for_workflow(
@@ -278,7 +272,7 @@ def build_initial_cid_nl_cross_sample_context(
             "initial CID-NL context requires an exact trajectory policy"
         )
     batch_samples = processing_owners.sample_resolutions
-    family_context, anchors, sample_candidates, drift_lookup, initial_pair_facts = (
+    family_context, anchors, sample_candidates, drift_lookup = (
         bootstrap_cid_nl_initial_population(
             processing_owners=processing_owners,
             sample_assessments=sample_assessments,
@@ -293,7 +287,6 @@ def build_initial_cid_nl_cross_sample_context(
             },
             drift_lookup=drift_lookup,
             retain_observation_only_candidates=True,
-            retain_initial_pair_facts=True,
             known_istd_reference=known_istd_reference,
             retained_hypotheses_by_assessment=retained_hypotheses_by_assessment,
         )
@@ -321,36 +314,17 @@ def build_initial_cid_nl_cross_sample_context(
     predecessors = validate_cross_sample_group_population(
         tuple(identity for identity in identities if identity is not None)
     )
-    continuity_group_by_owner = {
-        owner.owner_id: group.group_hypothesis_id
-        for group in groups
-        if group.evidence.startswith(
-            (
-                "owner_full_batch_continuity;",
-                "owner_injection_trajectory;",
-                "owner_bounded_continuity;",
-            )
-        )
-        for owner in group.owners
-    }
-    classified_edges = tuple(
-        classify_cross_sample_initial_neighborhood_edge(
-            left_owner=left,
-            right_owner=right,
-            context=(
-                "full_batch_continuity"
-                if left.owner_id in continuity_group_by_owner
-                and continuity_group_by_owner[left.owner_id]
-                == continuity_group_by_owner.get(right.owner_id)
-                else "complete_link"
-            ),
-            config=alignment_config,
-            drift_lookup=drift_lookup,
-            initial_pair_facts=initial_pair_facts,
-        )
-        for left, right in iter_cross_sample_initial_owner_pairs(
-            owners, config=alignment_config,
-        )
+    classified_edges: tuple[CrossSampleNeighborhoodEdge, ...] = ()
+    grouping_receipt = mint_cross_sample_initial_grouping_receipt(
+        processing_request_id=processing_owners.request.processing_request_id,
+        groups=predecessors,
+        evaluated_edges=classified_edges,
+        indivisible_member_sets=tuple(
+            tuple(member.member_subject_id for member in group.member_subjects)
+            for group in groups
+            if group.inference_basis is not None
+            and group.inference_basis.known_identity_label
+        ),
     )
     injection_order: dict[str, int] = {}
     for sample, candidates in sample_candidates:
@@ -388,6 +362,7 @@ def build_initial_cid_nl_cross_sample_context(
             max_extrapolation_gap=trajectory_policy.max_extrapolation_gap,
         ),
         budget=MODE_TRACK_NEIGHBORHOOD_BUDGET,
+        initial_grouping_receipt=grouping_receipt,
     )
     context = replace(context, drift_lookup=drift_lookup)
     retained_candidates = tuple(
@@ -583,6 +558,12 @@ def _build_mode_track_workflow_context(
         evidence_profile=run.evidence_profile,
         budget=run.budget,
         fit_once_source_id=run.fit_once_source.fit_once_source_id,
+        initial_grouping_receipt=mint_cross_sample_initial_grouping_receipt(
+            processing_request_id=processing_owners.request.processing_request_id,
+            groups=population,
+            evaluated_edges=run.classified_edges,
+            indivisible_member_sets=run.initial_grouping_receipt.indivisible_member_sets,
+        ),
     )
 
 
@@ -596,7 +577,6 @@ def reconcile_nonmember_observation_repair(
 ) -> CrossSampleNonmemberRepairResult:
     """Classify and atomically close one exact repaired nonmember candidate."""
 
-    _validate_post_mt0_context(context)
     if type(alignment_config) is not AlignmentConfig:
         raise CrossSampleReconciliationContractError(
             "nonmember repair admission requires an exact AlignmentConfig"
@@ -707,6 +687,20 @@ def reconcile_nonmember_observation_repair(
                 injection_order=injection_order,
                 evidence_profile=context.evidence_profile,
                 budget=context.budget,
+                initial_grouping_receipt=mint_cross_sample_initial_grouping_receipt(
+                    processing_request_id=context.processing_request_id,
+                    groups=(application.successor,),
+                    evaluated_edges=classified_edges,
+                    indivisible_member_sets=tuple(
+                        members
+                        for members in (
+                            context.initial_grouping_receipt.indivisible_member_sets
+                        )
+                        if set(members).issubset(trajectory_member_ids)
+                    )
+                    if context.initial_grouping_receipt is not None
+                    else (),
+                ),
             )
         except (TypeError, ValueError, KeyError) as exc:
             raise CrossSampleReconciliationContractError(
@@ -765,7 +759,6 @@ def reconcile_observation_repair(
 ) -> CrossSamplePostRepairReconciliation:
     """Close one repair handoff and stage changed trajectories for ModeTrack."""
 
-    _validate_post_mt0_context(context)
     _validate_repair_receipt(repair_receipt)
     if repair_receipt.subject.successor_application != context.application:
         raise CrossSampleReconciliationContractError(
@@ -847,8 +840,6 @@ def reconcile_observation_repair(
     )
 
 
-
-
 def consume_observation_repair_terminal(
     *,
     context: CrossSamplePostMT0Context,
@@ -859,7 +850,6 @@ def consume_observation_repair_terminal(
 ) -> CrossSamplePostRepairReconciliation:
     """Consume one exact owner terminal without caller-selected routing."""
 
-    _validate_post_mt0_context(context)
     if type(terminal) is not ObservationRepairTerminalResult:
         raise CrossSampleReconciliationContractError(
             "repair handoff requires an exact ObservationRepair terminal"
@@ -971,7 +961,6 @@ def close_cross_sample_without_observation_repair(
 ) -> CrossSampleFinalReceipt:
     """Close a post-MT0 population when the application requests no repair."""
 
-    _validate_post_mt0_context(context)
     final_application = _mint_unchanged_successor_application(context)
     state = CrossSampleReconciledState(
         processing_request_id=context.processing_request_id,
@@ -1025,7 +1014,6 @@ def consume_mode_track_final_attempt(
         UntrainedModeTrackFinalAttempt,
     )
 
-    _validate_post_mt0_context(context)
     _validate_post_repair_mode_track_input(post_repair)
     if type(terminal) is not ObservationRepairTerminalResult:
         raise CrossSampleReconciliationContractError(
@@ -1494,14 +1482,6 @@ def _apply_final_attempt_population(
     return application, successors
 
 
-
-
-
-
-
-
-
-
 def _reconcile_owner_projection(
     *,
     owners: tuple[SampleLocalMS1Owner, ...],
@@ -1800,14 +1780,6 @@ def _repair_observation_for_receipt(
     return observation
 
 
-
-
-
-
-
-
-
-
 def _replace_exact_population_group(
     *,
     population: tuple[CrossSampleGroupIdentity, ...],
@@ -1900,9 +1872,15 @@ def _existing_member_component_trajectory_projection(
             "existing-member component does not resolve one exact owner"
         )
     target = targets[0]
+    whole_component = len(component_owners) == len(context.owners)
+    apex_changed = (
+        repaired_apex_rt is not None and repaired_apex_rt != target.owner_apex_rt
+    )
+    if whole_component and not apex_changed:
+        return context.trajectory_input, context.trajectory_input, component_owners
     repaired_owners = tuple(
         replace(target, owner_apex_rt=repaired_apex_rt)
-        if owner is target and repaired_apex_rt is not None
+        if owner is target and apex_changed and repaired_apex_rt is not None
         else owner
         for owner in component_owners
     )
@@ -1931,16 +1909,39 @@ def _existing_member_component_trajectory_projection(
         lineage=(),
         reason="unchanged_membership_no_lineage",
     )
-    pre_trajectory = _mint_context_trajectory(
-        request_id=context.processing_request_id,
-        application=component_application,
-        owners=component_owners,
-        classified_edges=component_edges,
-        anchors=component_anchors,
-        injection_order=component_injection_order,
-        evidence_profile=context.evidence_profile,
-        budget=context.budget,
+    component_receipt = (
+        None
+        if context.initial_grouping_receipt is None
+        else mint_cross_sample_initial_grouping_receipt(
+            processing_request_id=context.processing_request_id,
+            groups=(current_group,),
+            evaluated_edges=component_edges,
+            indivisible_member_sets=tuple(
+                members
+                for members in context.initial_grouping_receipt.indivisible_member_sets
+                if set(members).issubset(component_member_ids)
+            )
+            if context.initial_grouping_receipt is not None
+            else (),
+        )
     )
+    pre_trajectory = (
+        context.trajectory_input
+        if whole_component
+        else _mint_context_trajectory(
+            request_id=context.processing_request_id,
+            application=component_application,
+            owners=component_owners,
+            classified_edges=component_edges,
+            anchors=component_anchors,
+            injection_order=component_injection_order,
+            evidence_profile=context.evidence_profile,
+            budget=context.budget,
+            initial_grouping_receipt=component_receipt,
+        )
+    )
+    if not apex_changed:
+        return pre_trajectory, pre_trajectory, component_owners
     post_trajectory = _mint_context_trajectory(
         request_id=context.processing_request_id,
         application=component_application,
@@ -1950,57 +1951,9 @@ def _existing_member_component_trajectory_projection(
         injection_order=component_injection_order,
         evidence_profile=context.evidence_profile,
         budget=context.budget,
+        initial_grouping_receipt=component_receipt,
     )
     return pre_trajectory, post_trajectory, repaired_owners
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 __all__ = (

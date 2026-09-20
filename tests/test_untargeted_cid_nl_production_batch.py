@@ -1839,17 +1839,14 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         assert child.scientific_core.lineage == ()
         assert child.scientific_core.final_cross_sample_receipt.repair_terminal is None
     assert tuple(completed.initial_edges) == tuple(retained_initial_edges)
-    # Global closure checks the reloaded scientific completion once.
     children = completed.application_result.children
     # Completed owner answers flow through projection, spool and writer once.
     assert len(projection_builds) == len(children)
     assert not decision_rechecks
-    assert tuple(completion_checks["scientific"]) == tuple(
-        child.scientific_core for child in children
-    )
-    # Post-cell checks close two distinct graphs: pre-spool and global reload.
+    assert not completion_checks["scientific"]
+    # Post-cell checks close each owner result before spool publication.
     expected_projections = tuple(child.completed_projection for child in children)
-    assert tuple(completion_checks["post_cell"]) == expected_projections * 2
+    assert tuple(completion_checks["post_cell"]) == expected_projections
     assert len({id(value) for value in completion_checks["post_cell"]}) == len(
         completion_checks["post_cell"]
     )
@@ -1934,7 +1931,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         close_and_verify_persisted_curves()
         return
     if nearby:
-        assert len(matrix_rows) == (0 if method_mode == "intersection" else 1)
+        assert len(matrix_rows) == (0 if method_mode != "single" else 1)
         batch = captured_batches[0]
         assert len(batch.subject_batch.subjects) == 1
         for result in runtime_results[0].sample_results:
@@ -1958,6 +1955,23 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
             _assert_composite_no_input_exclusion_coverage(
                 completed, runtime_results[0], batch
             )
+            close_and_verify_persisted_curves()
+            return
+        if method_mode == "union":
+            (child,) = completed.application_result.children
+            assert sorted(
+                len(group.member_subjects)
+                for group in child.scientific_core.final_population
+            ) == [1, 1]
+            selected_cells = tuple(
+                cell for cell in writer.matrix.cells if cell.selected_integration
+            )
+            assert {cell.sample_stem for cell in selected_cells} == set(sample_stems)
+            for cell in selected_cells:
+                facts = physical_facts[cell.sample_stem]
+                assert cell.area == facts.area_counts_seconds
+                assert cell.selected_integration is not None
+                assert cell.selected_integration.rt_apex_min == facts.apex_rt_min
             close_and_verify_persisted_curves()
             return
     assert len(writer.matrix.cells) == len(group_sizes) * len(sample_stems)
@@ -2670,6 +2684,11 @@ def test_alignment_subject_worksets_preserve_only_compatible_overlap() -> None:
         precursor_tolerance_ppm=20.0,
         neutral_loss_da=132.0423,
     )
+    nearby_loss = mint_untargeted_cid_nl_method_subject(
+        precursor_mz=500.05,
+        precursor_tolerance_ppm=20.0,
+        neutral_loss_da=116.0474005,
+    )
     composite = mint_untargeted_cid_nl_method_subject(
         precursor_mz=500.01,
         precursor_tolerance_ppm=20.0,
@@ -2680,10 +2699,21 @@ def test_alignment_subject_worksets_preserve_only_compatible_overlap() -> None:
     )
 
     assert cid_nl_alignment_subject_worksets(
-        (first, overlapping, disconnected, different_loss, composite)
+        (first, overlapping, disconnected, different_loss, nearby_loss, composite)
     ) == (
         (first, overlapping),
         (disconnected,),
+        (different_loss,),
+        (nearby_loss,),
+        (composite,),
+    )
+    # A confirmed identity's search envelope must be compared together before
+    # partition dispatch, even if two resolver windows do not directly overlap.
+    assert cid_nl_alignment_subject_worksets(
+        (first, overlapping, disconnected, different_loss, nearby_loss, composite),
+        comparison_mz_intervals=((116.04739, 116.04741, 499.99, 500.06),),
+    ) == (
+        (first, overlapping, disconnected, nearby_loss),
         (different_loss,),
         (composite,),
     )
@@ -3969,7 +3999,7 @@ def test_production_composition_closes_observation_only_hold_without_membership(
 
 
 @pytest.mark.parametrize("supported_samples", [2, 3])
-def test_production_initial_groups_use_complete_canonical_batch(
+def test_production_initial_groups_use_complete_feature_inference_batch(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     supported_samples: int,
@@ -4048,17 +4078,14 @@ def test_production_initial_groups_use_complete_canonical_batch(
     assert {owner.sample_stem for owner in group.owners} == set(
         stems[:supported_samples]
     )
-    assert group.evidence == (
-        f"owner_complete_link_moderate;owner_count={supported_samples}"
+    assert (
+        group.inference_basis is not None
+        and group.inference_basis.disposition == "assigned"
+        and group.inference_basis.basis == "bidirectional_membership_agreement"
+        and group.inference_basis.reason
+        == "both_finite_directional_passes_support_the_same_membership"
     )
-    assert initial_edges
-    assert all(edge.disposition == "eligible" for edge in initial_edges)
-    assert all(
-        edge.initial_evidence is not None
-        and edge.initial_evidence.seed_support_level == "moderate"
-        and edge.initial_evidence.score == 45
-        for edge in initial_edges
-    )
+    assert initial_edges == []
     assert cell_contexts
     for cell_context in cell_contexts:
         assert cell_context.sample_universe == frozenset(stems)
@@ -4181,6 +4208,15 @@ def test_known_istd_reference_closes_drifting_group_and_cell_proof(
         cell.area is not None and cell.area > 0 for cell in corrected_matrix.cells
     )
     (child,) = corrected.application_result.children
+    support_subject_ids = {
+        source.method_assessment.content.method_subject.method_subject_id
+        for cell in child.scientific_core.cell_observations
+        for source in cell.predecessor_cells
+        if source.content.method_result == "SUPPORT"
+    }
+    assert support_subject_ids == {
+        subject.method_subject_id for subject in batch.subject_batch.subjects
+    }
     contexts = tuple(
         source.group_context
         for cell in child.scientific_core.cell_observations

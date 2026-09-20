@@ -45,25 +45,34 @@ def test_sparse_initial_pairs_preserve_dense_relevant_edges(context, reverse):
         deltas={
             owner.sample_stem: (1.5 if owner.sample_stem == "c" else 0.0)
             for owner in owners
-        }, orders={},
+        },
+        orders={},
     )
 
     def classify(pair):
         return classify_cross_sample_initial_neighborhood_edge(
-            left_owner=pair[0], right_owner=pair[1], context=context,
-            config=config, drift_lookup=drift,
+            left_owner=pair[0],
+            right_owner=pair[1],
+            context=context,
+            config=config,
+            drift_lookup=drift,
         )
 
     def relevant(edges):
         return {
             (edge.left_member_subject_id, edge.right_member_subject_id): edge
-            for edge in edges if edge.disposition != "excluded"
+            for edge in edges
+            if edge.disposition != "excluded"
         }
 
     dense = tuple(map(classify, combinations(owners, 2)))
-    pairs = tuple(iter_cross_sample_initial_owner_pairs(
-        owners, config=config, context=context,
-    ))
+    pairs = tuple(
+        iter_cross_sample_initial_owner_pairs(
+            owners,
+            config=config,
+            context=context,
+        )
+    )
     sparse = tuple(map(classify, pairs))
     assert relevant(sparse) == relevant(dense)
     assert len(pairs) < len(dense)
@@ -76,8 +85,7 @@ def test_disjoint_mass_population_never_classifies_cartesian_pairs(monkeypatch):
     from xic_extractor.alignment import cross_sample_neighborhood_graph as graph
 
     owners = tuple(
-        _owner(f"s{index}", "peak", precursor_mz=100.0 + index)
-        for index in range(600)
+        _owner(f"s{index}", "peak", precursor_mz=100.0 + index) for index in range(600)
     )
     ppm_calls = 0
     original = graph._ppm
@@ -92,9 +100,15 @@ def test_disjoint_mass_population_never_classifies_cartesian_pairs(monkeypatch):
 
     monkeypatch.setattr(graph, "_ppm", count_ppm)
     monkeypatch.setattr(graph, "_hard_gate_failure", no_pair)
-    assert tuple(graph.iter_cross_sample_initial_owner_pairs(
-        owners, config=AlignmentConfig(),
-    )) == ()
+    assert (
+        tuple(
+            graph.iter_cross_sample_initial_owner_pairs(
+                owners,
+                config=AlignmentConfig(),
+            )
+        )
+        == ()
+    )
     assert ppm_calls <= 2 * len(owners)
 
 
@@ -113,79 +127,14 @@ def test_initial_edge_owner_evaluates_pair_once(monkeypatch):
 
     monkeypatch.setattr(graph, "evaluate_owner_edge", counted)
     edge = graph.classify_cross_sample_initial_neighborhood_edge(
-        left_owner=_owner("a", "peak"), right_owner=_owner("b", "peak"),
-        context="complete_link", config=AlignmentConfig(),
+        left_owner=_owner("a", "peak"),
+        right_owner=_owner("b", "peak"),
+        context="complete_link",
+        config=AlignmentConfig(),
     )
     assert calls == 1
     with pytest.raises(ValueError, match="disposition contradicts"):
         replace(edge, disposition="excluded")
-
-
-def test_initial_edge_reuses_only_exact_oriented_grouping_facts(monkeypatch):
-    from tests.test_alignment_owner_clustering import _owner
-    from xic_extractor.alignment import AlignmentConfig
-    from xic_extractor.alignment import cross_sample_neighborhood_graph as graph
-    from xic_extractor.alignment.cross_sample_peak_groups import (
-        construct_cross_sample_peak_group_hypotheses,
-    )
-
-    config = AlignmentConfig()
-    owners = (_owner("a", "peak"), _owner("b", "peak"))
-    evaluated_edges = []
-    edge_cache = {}
-    construct_cross_sample_peak_group_hypotheses(
-        owners,
-        config=config,
-        edge_evidence_sink=evaluated_edges,
-        _initial_edge_cache=edge_cache,
-    )
-    assert len(evaluated_edges) == 1
-    owner_by_id = {owner.owner_id: owner for owner in owners}
-    cached_left = owner_by_id[evaluated_edges[0].left_owner_id]
-    cached_right = owner_by_id[evaluated_edges[0].right_owner_id]
-    facts = graph._retain_cross_sample_initial_pair_facts(
-        owners=owners,
-        config=config,
-        drift_lookup=None,
-        edge_cache=edge_cache,
-    )
-    calls = 0
-    original = graph.evaluate_owner_edge
-
-    def counted(*args, **kwargs):
-        nonlocal calls
-        calls += 1
-        return original(*args, **kwargs)
-
-    monkeypatch.setattr(graph, "evaluate_owner_edge", counted)
-    cached = graph.classify_cross_sample_initial_neighborhood_edge(
-        left_owner=cached_left,
-        right_owner=cached_right,
-        context="complete_link",
-        config=config,
-        initial_pair_facts=facts,
-    )
-    assert calls == 0
-    assert cached.initial_evidence is evaluated_edges[0]
-
-    reversed_edge = graph.classify_cross_sample_initial_neighborhood_edge(
-        left_owner=cached_right,
-        right_owner=cached_left,
-        context="complete_link",
-        config=config,
-        initial_pair_facts=facts,
-    )
-    assert calls == 1
-    assert reversed_edge.initial_evidence.left_owner_id == cached_right.owner_id
-
-    graph.classify_cross_sample_initial_neighborhood_edge(
-        left_owner=cached_left,
-        right_owner=cached_right,
-        context="complete_link",
-        config=replace(config),
-        initial_pair_facts=facts,
-    )
-    assert calls == 2
 
 
 def _application_context(*, predecessors, edges, budget):
@@ -255,7 +204,8 @@ def test_trajectory_input_identity_ignores_value_only_owner_changes() -> None:
 
     original = mint_mode_track_trajectory_input(owners=owners, **kwargs)
     disconnected = mint_mode_track_trajectory_input(
-        owners=owners, **{**kwargs, "classified_edges": ()},
+        owners=owners,
+        **{**kwargs, "classified_edges": ()},
     )
     assert disconnected.trajectory_input_id != original.trajectory_input_id
     assert disconnected.eligible_member_pairs == ()
@@ -287,9 +237,9 @@ def test_trajectory_input_identity_ignores_value_only_owner_changes() -> None:
     )
     assert value_changed.trajectory_input_id == original.trajectory_input_id
     assert context_changed.trajectory_input_id == original.trajectory_input_id
-    assert {
-        field.name for field in fields(type(original))
-    }.isdisjoint({"predecessors", "classified_edges", "budget"})
+    assert {field.name for field in fields(type(original))}.isdisjoint(
+        {"predecessors", "classified_edges", "budget"}
+    )
     with pytest.raises(ModeTrackRefinementContractError, match="exact owner"):
         mint_mode_track_trajectory_input(
             owners=owners,
@@ -667,8 +617,7 @@ def test_accepted_partition_cannot_reopen_excluded_edge(omit_excluded: bool) -> 
         classified_edges=edges,
         anchors=(),
         injection_order={
-            f"sample-{letter}": index + 1
-            for index, letter in enumerate("abc")
+            f"sample-{letter}": index + 1 for index, letter in enumerate("abc")
         },
         evidence_profile=ModeTrackEvidenceProfile(
             "anchor-trajectory", "fixed-band", 0.1, 10, 10
@@ -681,8 +630,8 @@ def test_accepted_partition_cannot_reopen_excluded_edge(omit_excluded: bool) -> 
         successor_member_subject_ids=((member_ids[0], member_ids[2]), (member_ids[1],)),
     )
 
-    with pytest.raises(CrossSampleContractError, match="reopens an excluded"):
-        apply_accepted_mode_track_refinement(
+    if omit_excluded:
+        application = apply_accepted_mode_track_refinement(
             trajectory_input=trajectory_input,
             proposal=proposal,
             application_context=_application_context(
@@ -692,6 +641,26 @@ def test_accepted_partition_cannot_reopen_excluded_edge(omit_excluded: bool) -> 
             ),
             population=predecessors,
         )
+        assert tuple(
+            sorted(
+                tuple(
+                    sorted(member.member_subject_id for member in group.member_subjects)
+                )
+                for group in application.successors
+            )
+        ) == tuple(sorted(proposal.successor_member_subject_ids))
+    else:
+        with pytest.raises(CrossSampleContractError, match="reopens an excluded"):
+            apply_accepted_mode_track_refinement(
+                trajectory_input=trajectory_input,
+                proposal=proposal,
+                application_context=_application_context(
+                    predecessors=predecessors,
+                    edges=edges,
+                    budget=CrossSampleNeighborhoodBudget(86, 3655),
+                ),
+                population=predecessors,
+            )
 
 
 def test_unchanged_cross_sample_application_preserves_full_group_receipt() -> None:
@@ -723,3 +692,68 @@ def test_unchanged_cross_sample_application_preserves_full_group_receipt() -> No
     assert application.successors[0].disposition == "unresolved"
     assert application.lineage == ()
     assert application.reason == "unchanged_membership_no_lineage"
+
+
+def test_trajectory_identity_binds_compressed_grouping_receipt() -> None:
+    from tests.test_alignment_owner_clustering import _owner
+    from xic_extractor.alignment.cross_sample_neighborhood_graph import (
+        mint_cross_sample_initial_grouping_receipt,
+    )
+    from xic_extractor.alignment.cross_sample_peak_groups import (
+        CrossSampleNeighborhoodBudget,
+        mint_cross_sample_group_identity,
+    )
+    from xic_extractor.alignment.mode_track import (
+        ModeTrackEvidenceProfile,
+        mint_mode_track_trajectory_input,
+    )
+
+    owners = (_owner("sample-a", "000001"), _owner("sample-b", "000001"))
+    members = tuple(owner.cross_sample_member_subject for owner in owners)
+    request_id = members[0].processing_request_id
+    group = mint_cross_sample_group_identity(
+        processing_request_id=request_id,
+        member_subjects=members,
+    )
+    splittable = mint_cross_sample_initial_grouping_receipt(
+        processing_request_id=request_id,
+        groups=(group,),
+    )
+    indivisible = mint_cross_sample_initial_grouping_receipt(
+        processing_request_id=request_id,
+        groups=(group,),
+        indivisible_member_sets=(
+            tuple(sorted(member.member_subject_id for member in members)),
+        ),
+    )
+    kwargs = {
+        "predecessors": (group,),
+        "owners": owners,
+        "classified_edges": (),
+        "anchors": (),
+        "injection_order": {
+            owner.sample_stem: index + 1 for index, owner in enumerate(owners)
+        },
+        "evidence_profile": ModeTrackEvidenceProfile(
+            "anchor-trajectory", "fixed-band", 0.1, 10, 10
+        ),
+        "budget": CrossSampleNeighborhoodBudget(86, 3655),
+    }
+
+    splittable_trajectory = mint_mode_track_trajectory_input(
+        **kwargs,
+        initial_grouping_receipt=splittable,
+    )
+    indivisible_trajectory = mint_mode_track_trajectory_input(
+        **kwargs,
+        initial_grouping_receipt=indivisible,
+    )
+
+    assert splittable_trajectory.unlisted_pair_disposition == "not_evaluated"
+    assert splittable_trajectory.initial_group_member_sets == (
+        tuple(sorted(member.member_subject_id for member in members)),
+    )
+    assert (
+        splittable_trajectory.trajectory_input_id
+        != indivisible_trajectory.trajectory_input_id
+    )

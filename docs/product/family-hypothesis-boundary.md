@@ -8,17 +8,19 @@ ModeTrack review, Backfill activation, or any matrix identity sidecar.
 
 ## Contract
 
-Current `FamilyContextRef` and `ModeTrackAssignment` values are internal
-diagnostic structures. Their useful trajectory capability is the migration
-source for a proposal-only `alignment/mode_track/` interface; it must be
-deepened rather than replaced. Neither current nor successor terms rename the
-public/legacy `family` vocabulary or add public schema by implication.
+`FamilyContextRef` and `ModeTrackAssignment` are internal representations of
+observation context and trajectory decisions. Their algorithms and structures
+may be replaced when the scientific decision and its consumers change.
+Preserve physical observations, sample/acquisition provenance, explicit
+uncertainty, and confirmed identity constraints; no particular clustering
+strategy or complete pair graph is an invariant. Public/legacy `family`
+vocabulary and persisted schema changes require explicit consumer updates.
 
 - `peak_anchor_id` (discovery `feature_family_id`) groups candidates that share
   the same MS1 chromatographic peak within a single sample. It is a per-sample
   trace-identity label, not a chemical identity claim.
 - `CrossSamplePeakGroupHypothesis` owns cross-sample group identity:
-  membership, owner edge evidence, hard split gates, review-only records, and
+  membership, feature inference evidence, identity constraints, review-only records, and
   group delivery metadata. Use `group_hypothesis_id` for identity.
 - CrossSample also owns the mutually exclusive group disposition and every
   membership/split/merge successor lineage edge. ModeTrack may propose a change

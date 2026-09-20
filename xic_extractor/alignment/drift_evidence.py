@@ -208,15 +208,17 @@ class KnownIstdReference:
             )
         )
         targets = {target.label: target for target in self.anchor.targets}
+        owners_by_sample: dict[str, list[SampleLocalMS1Owner]] = {}
+        for owner in support_owners:
+            owners_by_sample.setdefault(owner.sample_stem, []).append(owner)
         candidates: list[tuple[str, str, float]] = []
         counts: dict[str, int] = {}
         for label, sample, rt, delta in self.coordinates:
             target = targets[label]
             matches = tuple(
                 owner
-                for owner in support_owners
-                if owner.sample_stem == sample
-                and owner.owner_peak_start_rt <= rt <= owner.owner_peak_end_rt
+                for owner in owners_by_sample.get(sample, ())
+                if owner.owner_peak_start_rt <= rt <= owner.owner_peak_end_rt
                 and owner.primary_identity_event is not None
                 and target.neutral_loss_da is not None
                 and target.nl_ppm_max is not None

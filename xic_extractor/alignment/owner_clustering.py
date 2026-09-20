@@ -14,7 +14,6 @@ from xic_extractor.alignment.cross_sample_peak_groups import (
 from xic_extractor.alignment.edge_scoring import (
     DriftLookupProtocol,
     OwnerEdgeEvidence,
-    evaluate_owner_edge,
 )
 from xic_extractor.alignment.ownership_models import (
     AmbiguousOwnerRecord,
@@ -108,7 +107,6 @@ def cluster_sample_local_owners(
         injection_order=injection_order,
         drift_lookup=drift_lookup,
         edge_evidence_sink=edge_evidence_sink,
-        edge_evaluator=evaluate_owner_edge,
     )
     return tuple(
         _feature_from_peak_group_hypothesis(hypothesis) for hypothesis in hypotheses

@@ -308,13 +308,14 @@ def test_bounded_partition_real_entry_mints_interleaved_worksets_canonically(
     captured_batches = []
     prepare_calls = []
 
-    def capture_prepare(_plan):
+    def capture_prepare(_plan, *, known_istd_reference=None):
         prepare_calls.append(_plan.runtime_subjects)
-        return prepare_worksets(_plan)
+        return prepare_worksets(
+            _plan,
+            known_istd_reference=known_istd_reference,
+        )
 
-    def capture_materialized_partition(
-        _plan, subject_batch, *, prepared_worksets
-    ):
+    def capture_materialized_partition(_plan, subject_batch, *, prepared_worksets):
         assert prepared_worksets.plan is _plan
         captured_batches.append(subject_batch)
         return SimpleNamespace(jobs=())
@@ -509,9 +510,16 @@ def test_bounded_runtime_matches_eager_after_disk_owner_round_trip(
     from xic_extractor.diagnostics.timing import TimingRecorder
     from xic_extractor.extraction.untargeted_cid_nl_bounded_runtime import (
         execute_bounded_untargeted_cid_nl,
+        prepare_untargeted_cid_nl_alignment_subject_worksets,
     )
 
     plan, reference = _plan(tmp_path, monkeypatch, scenario=scenario)
+    prepared_worksets = prepare_untargeted_cid_nl_alignment_subject_worksets(
+        plan,
+        known_istd_reference=reference,
+    )
+    if scenario == "istd":
+        assert tuple(len(workset) for workset in prepared_worksets.worksets) == (3,)
     import xic_extractor.extraction.untargeted_cid_nl_real_data_runtime as runtime_owner
 
     coordinator_thread = get_ident()
@@ -552,6 +560,11 @@ def test_bounded_runtime_matches_eager_after_disk_owner_round_trip(
         progress_events.append(event)
 
     with recorder.stage("alignment.untargeted_cid_nl_runtime"):
+        partition_subject_capacity = (
+            len(prepared_worksets.worksets[0])
+            if scenario == "istd"
+            else subjects_per_partition
+        )
         bounded = execute_bounded_untargeted_cid_nl(
             plan,
             output_dir=tmp_path / "bounded-output",
@@ -560,16 +573,30 @@ def test_bounded_runtime_matches_eager_after_disk_owner_round_trip(
             recovery_marker=marker,
             known_istd_reference=reference,
             progress_callback=report_progress,
-            max_partition_jobs=subjects_per_partition * len(plan.context.samples),
+            max_partition_jobs=(partition_subject_capacity * len(plan.context.samples)),
             raw_workers=raw_workers,
         )
     assert type(bounded) is CompletedUntargetBatchWorkflowResult
     assert bool(warm_threads) is (raw_workers > 1)
     assert all(thread == coordinator_thread for thread in warm_threads)
     assert type(bounded.application_result.children) is ImmutableSequence
-    assert project_completed_untarget_batch_writer_inputs(bounded).matrix == (
-        project_completed_untarget_batch_writer_inputs(eager).matrix
-    )
+    bounded_writer = project_completed_untarget_batch_writer_inputs(bounded)
+    eager_writer = project_completed_untarget_batch_writer_inputs(eager)
+    assert bounded_writer.matrix == eager_writer.matrix
+    if scenario == "istd":
+        expected_areas = {
+            (cell.cluster_id, cell.sample_stem): cell.area
+            for cell in eager_writer.matrix.cells
+            if cell.area is not None
+        }
+        actual_areas = {
+            (cell.cluster_id, cell.sample_stem): cell.area
+            for cell in bounded_writer.matrix.cells
+            if cell.area is not None
+        }
+        assert expected_areas
+        assert actual_areas == pytest.approx(expected_areas)
+        assert all(area > 0 for area in actual_areas.values())
     actual = bounded.application_result
     expected = eager.application_result
     assert actual.candidate_ids == expected.candidate_ids
@@ -615,8 +642,10 @@ def test_bounded_runtime_matches_eager_after_disk_owner_round_trip(
         }
     ]
     partition_count = (
-        len(plan.subject_batch.subjects) + subjects_per_partition - 1
-    ) // subjects_per_partition
+        len(plan.subject_batch.subjects) + partition_subject_capacity - 1
+    ) // partition_subject_capacity
+    if scenario == "istd" and subjects_per_partition == 1:
+        assert partition_count < len(plan.subject_batch.subjects)
     assert partition_stages == [
         event
         for index in range(partition_count)

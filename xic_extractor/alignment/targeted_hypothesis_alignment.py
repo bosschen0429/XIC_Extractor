@@ -145,6 +145,14 @@ def align_selected_targeted_hypotheses(
     groups = construct_cross_sample_peak_group_hypotheses(
         tuple(owners),
         config=config,
+        known_identity_bindings=(
+            tuple(
+                (owner.owner_id, target.definition.target.label)
+                for owner in owners
+            )
+            if target.definition.target.is_istd
+            else ()
+        ),
     )
     grouped_ids = tuple(owner_id for group in groups for owner_id in group.owner_ids)
     if tuple(sorted(grouped_ids)) != tuple(sorted(selected_ids)):

@@ -156,10 +156,12 @@ def test_moderate_group_disposition_controls_current_untarget_route(
         config=AlignmentConfig(),
     )[0]
 
-    assert moderate_group.evidence == "owner_complete_link_moderate;owner_count=2"
+    assert moderate_group.evidence.startswith("owner_feature_inference;assigned;")
+    assert len(moderate_group.owners) == 2
     assert moderate_group.disposition == "established"
     assert moderate_group.review_only is False
-    assert strong_group.evidence == "owner_complete_link;owner_count=2"
+    assert strong_group.evidence.startswith("owner_feature_inference;assigned;")
+    assert len(strong_group.owners) == 2
     assert strong_group.disposition == "established"
     assert strong_group.review_only is False
 

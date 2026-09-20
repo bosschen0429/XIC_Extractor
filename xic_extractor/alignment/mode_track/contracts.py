@@ -7,7 +7,12 @@ from collections.abc import Mapping, Sequence
 from dataclasses import InitVar, dataclass, field
 from typing import Literal, TypeAlias
 
-from xic_extractor.alignment.cross_sample_neighborhood_graph import INITIAL_PAIR_POLICY
+from xic_extractor.alignment.cross_sample_neighborhood_graph import (
+    INITIAL_GROUPING_POLICY,
+    INITIAL_PAIR_POLICY,
+    UNLISTED_PAIR_DISPOSITION,
+    CrossSampleInitialGroupingReceipt,
+)
 from xic_extractor.alignment.cross_sample_peak_groups import (
     CrossSampleClassifiedEdge,
     CrossSampleCoupledProposalContext,
@@ -92,6 +97,10 @@ class ModeTrackTrajectoryInput:
     evidence_profile: ModeTrackEvidenceProfile
     exclusions: tuple[tuple[str, str, str], ...]
     eligible_member_pairs: tuple[tuple[str, str], ...]
+    initial_grouping_receipt_id: str | None
+    initial_group_member_sets: tuple[tuple[str, ...], ...]
+    indivisible_member_sets: tuple[tuple[str, ...], ...]
+    unlisted_pair_disposition: Literal["excluded", "not_evaluated"]
     neighborhood_status: Literal["assessable", "unassessable"]
     _mint_token: InitVar[object] = field(kw_only=True)
 
@@ -118,6 +127,10 @@ class ModeTrackTrajectoryInput:
                     evidence_profile=self.evidence_profile,
                     exclusions=self.exclusions,
                     eligible_member_pairs=self.eligible_member_pairs,
+                    initial_grouping_receipt_id=(self.initial_grouping_receipt_id),
+                    initial_group_member_sets=self.initial_group_member_sets,
+                    indivisible_member_sets=self.indivisible_member_sets,
+                    unlisted_pair_disposition=self.unlisted_pair_disposition,
                 )
             ),
         )
@@ -184,11 +197,7 @@ class AssignedModeTrackRefinementEvidence:
 
         return tuple(
             sorted(
-                (
-                    anchor
-                    for track in self.model_set.tracks
-                    for anchor in track.anchors
-                ),
+                (anchor for track in self.model_set.tracks for anchor in track.anchors),
                 key=lambda anchor: anchor.anchor_id,
             )
         )
@@ -349,6 +358,7 @@ def mint_mode_track_trajectory_input(
     evidence_profile: ModeTrackEvidenceProfile,
     budget: CrossSampleNeighborhoodBudget,
     processing_request_id: str | None = None,
+    initial_grouping_receipt: CrossSampleInitialGroupingReceipt | None = None,
 ) -> ModeTrackTrajectoryInput:
     predecessor_groups = validate_cross_sample_group_population(predecessors)
     request_ids = {group.processing_request_id for group in predecessor_groups}
@@ -456,13 +466,62 @@ def mint_mode_track_trajectory_input(
         injection_order=injection_order,
     )
     edges = tuple(classified_edges)
+    if initial_grouping_receipt is not None:
+        if type(initial_grouping_receipt) is not CrossSampleInitialGroupingReceipt:
+            raise ModeTrackRefinementContractError(
+                "initial grouping receipt must be exact"
+            )
+        if initial_grouping_receipt.processing_request_id != resolved_request_id:
+            raise ModeTrackRefinementContractError(
+                "initial grouping receipt crossed trajectory request"
+            )
+        predecessor_member_sets = tuple(
+            sorted(
+                tuple(
+                    sorted(
+                        member.member_subject_id
+                        for member in predecessor.member_subjects
+                    )
+                )
+                for predecessor in predecessor_groups
+            )
+        )
+        if predecessor_member_sets != initial_grouping_receipt.group_member_sets:
+            raise ModeTrackRefinementContractError(
+                "initial grouping receipt crossed trajectory predecessors"
+            )
+        if _canonical_pair_dispositions(
+            initial_grouping_receipt.evaluated_edges
+        ) != _canonical_pair_dispositions(edges):
+            raise ModeTrackRefinementContractError(
+                "initial grouping receipt crossed sparse evaluated pairs"
+            )
     neighborhood = build_bounded_connected_neighborhood(
         member_subjects=members,
         edges=edges,
         budget=budget,
+        grouping_receipt=initial_grouping_receipt,
     )
     exclusions = _canonical_exclusions(edges)
     eligible_member_pairs = _canonical_eligible_pairs(edges)
+    initial_grouping_receipt_id = (
+        None
+        if initial_grouping_receipt is None
+        else initial_grouping_receipt.receipt_id
+    )
+    initial_group_member_sets = (
+        ()
+        if initial_grouping_receipt is None
+        else initial_grouping_receipt.group_member_sets
+    )
+    indivisible_member_sets = (
+        ()
+        if initial_grouping_receipt is None
+        else initial_grouping_receipt.indivisible_member_sets
+    )
+    unlisted_pair_disposition: Literal["excluded", "not_evaluated"] = (
+        "excluded" if initial_grouping_receipt is None else UNLISTED_PAIR_DISPOSITION
+    )
     payload = _trajectory_input_payload(
         processing_request_id=resolved_request_id,
         anchor_ids=canonical_anchor_ids,
@@ -472,6 +531,10 @@ def mint_mode_track_trajectory_input(
         evidence_profile=evidence_profile,
         exclusions=exclusions,
         eligible_member_pairs=eligible_member_pairs,
+        initial_grouping_receipt_id=initial_grouping_receipt_id,
+        initial_group_member_sets=initial_group_member_sets,
+        indivisible_member_sets=indivisible_member_sets,
+        unlisted_pair_disposition=unlisted_pair_disposition,
     )
     trajectory_input_id = typed_identity_digest(
         _TRAJECTORY_INPUT_PREFIX,
@@ -487,6 +550,10 @@ def mint_mode_track_trajectory_input(
         evidence_profile=evidence_profile,
         exclusions=exclusions,
         eligible_member_pairs=eligible_member_pairs,
+        initial_grouping_receipt_id=initial_grouping_receipt_id,
+        initial_group_member_sets=initial_group_member_sets,
+        indivisible_member_sets=indivisible_member_sets,
+        unlisted_pair_disposition=unlisted_pair_disposition,
         neighborhood_status=neighborhood.status,
         _mint_token=_TRAJECTORY_INPUT_MINT_TOKEN,
     )
@@ -545,10 +612,9 @@ def _mint_accepted_mode_track_refinement(
     if tuple(sorted(proposed)) != proposed:
         proposed = tuple(sorted(proposed))
     flattened = tuple(member_id for group in proposed for member_id in group)
-    if (
-        tuple(sorted(flattened)) != trajectory_input.member_subject_ids
-        or len(flattened) != len(set(flattened))
-    ):
+    if tuple(sorted(flattened)) != trajectory_input.member_subject_ids or len(
+        flattened
+    ) != len(set(flattened)):
         raise ModeTrackRefinementContractError(
             "proposal is not a complete trajectory-input partition"
         )
@@ -624,12 +690,26 @@ def apply_accepted_mode_track_refinement(
         member_subjects=context_members,
         edges=application_context.classified_edges,
         budget=application_context.budget,
+        grouping_receipt=application_context.grouping_receipt,
     )
+    context_receipt = application_context.grouping_receipt
     if (
         _canonical_exclusions(application_context.classified_edges)
         != trajectory_input.exclusions
         or _canonical_eligible_pairs(application_context.classified_edges)
         != trajectory_input.eligible_member_pairs
+        or (None if context_receipt is None else context_receipt.receipt_id)
+        != trajectory_input.initial_grouping_receipt_id
+        or (() if context_receipt is None else context_receipt.group_member_sets)
+        != trajectory_input.initial_group_member_sets
+        or (() if context_receipt is None else context_receipt.indivisible_member_sets)
+        != trajectory_input.indivisible_member_sets
+        or (
+            "excluded"
+            if context_receipt is None
+            else context_receipt.absent_pair_disposition
+        )
+        != trajectory_input.unlisted_pair_disposition
         or context_neighborhood.status != trajectory_input.neighborhood_status
     ):
         raise ModeTrackRefinementContractError(
@@ -650,6 +730,7 @@ def apply_accepted_mode_track_refinement(
         edges=application_context.classified_edges,
         budget=application_context.budget,
         population=population,
+        grouping_receipt=context_receipt,
     )
 
 
@@ -686,11 +767,28 @@ def _trajectory_input_payload(
     evidence_profile: ModeTrackEvidenceProfile,
     exclusions: tuple[tuple[str, str, str], ...],
     eligible_member_pairs: tuple[tuple[str, str], ...],
+    initial_grouping_receipt_id: str | None,
+    initial_group_member_sets: tuple[tuple[str, ...], ...],
+    indivisible_member_sets: tuple[tuple[str, ...], ...],
+    unlisted_pair_disposition: Literal["excluded", "not_evaluated"],
 ) -> dict[str, object]:
     return {
-        "schema_version": "mode_track_trajectory_input_sparse_v1",
-        "initial_pair_policy": INITIAL_PAIR_POLICY,
-        "unlisted_pairs": "excluded",
+        "schema_version": (
+            "mode_track_trajectory_input_sparse_v1"
+            if initial_grouping_receipt_id is None
+            else "mode_track_trajectory_input_grouping_receipt_v2"
+        ),
+        "initial_pair_policy": (
+            INITIAL_PAIR_POLICY
+            if initial_grouping_receipt_id is None
+            else INITIAL_GROUPING_POLICY
+        ),
+        "unlisted_pairs": unlisted_pair_disposition,
+        "initial_grouping_receipt_id": initial_grouping_receipt_id,
+        "initial_group_member_sets": [
+            list(group) for group in initial_group_member_sets
+        ],
+        "indivisible_member_sets": [list(group) for group in indivisible_member_sets],
         "eligible_member_pairs": [list(pair) for pair in eligible_member_pairs],
         "processing_request_id": processing_request_id,
         "anchors": list(anchor_ids),
@@ -715,10 +813,27 @@ def _canonical_eligible_pairs(
 ) -> tuple[tuple[str, str], ...]:
     return tuple(
         sorted(
-            (min(edge.left_member_subject_id, edge.right_member_subject_id),
-             max(edge.left_member_subject_id, edge.right_member_subject_id))
+            (
+                min(edge.left_member_subject_id, edge.right_member_subject_id),
+                max(edge.left_member_subject_id, edge.right_member_subject_id),
+            )
             for edge in edges
             if edge.disposition == "eligible"
+        )
+    )
+
+
+def _canonical_pair_dispositions(
+    edges: tuple[CrossSampleClassifiedEdge, ...],
+) -> tuple[tuple[str, str, str], ...]:
+    return tuple(
+        sorted(
+            (
+                min(edge.left_member_subject_id, edge.right_member_subject_id),
+                max(edge.left_member_subject_id, edge.right_member_subject_id),
+                edge.disposition,
+            )
+            for edge in edges
         )
     )
 

@@ -8,7 +8,8 @@ from typing import TYPE_CHECKING, ClassVar, Literal, TypeAlias, cast
 
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.cross_sample_neighborhood_graph import (
-    iter_cross_sample_initial_owner_pairs,
+    CrossSampleInitialGroupingReceipt,
+    mint_cross_sample_initial_grouping_receipt,
 )
 from xic_extractor.alignment.cross_sample_peak_groups import (
     CrossSampleCoupledProposalContext,
@@ -18,7 +19,6 @@ from xic_extractor.alignment.cross_sample_peak_groups import (
     CrossSampleNeighborhoodEdge,
     CrossSampleRepairedObservation,
     build_bounded_connected_neighborhood,
-    classify_cross_sample_initial_neighborhood_edge,
     validate_cross_sample_group_population,
     validate_cross_sample_peak_group_identity,
 )
@@ -794,6 +794,7 @@ class ModeTrackRefinementRun:
     predecessors: tuple[CrossSampleGroupIdentity, ...]
     owners: tuple[SampleLocalMS1Owner, ...]
     classified_edges: tuple[CrossSampleNeighborhoodEdge, ...]
+    initial_grouping_receipt: CrossSampleInitialGroupingReceipt
     anchors: tuple[ModeTrackSupportAnchor, ...]
     injection_order: tuple[tuple[str, int], ...]
     evidence_profile: ModeTrackEvidenceProfile
@@ -888,17 +889,16 @@ def _bootstrap_mode_track_refinement(
         tuple(_required_group_identity(group) for group in groups)
     )
     owners = tuple(owner for group in groups for owner in group.owners)
-    classified_edges = tuple(
-        classify_cross_sample_initial_neighborhood_edge(
-            left_owner=left,
-            right_owner=right,
-            context="complete_link",
-            config=alignment_config,
-            drift_lookup=drift_lookup,
-        )
-        for left, right in iter_cross_sample_initial_owner_pairs(
-            owners, config=alignment_config,
-        )
+    classified_edges: tuple[CrossSampleNeighborhoodEdge, ...] = ()
+    grouping_receipt = mint_cross_sample_initial_grouping_receipt(
+        processing_request_id=processing_owners.request.processing_request_id,
+        groups=predecessors,
+        indivisible_member_sets=tuple(
+            tuple(member.member_subject_id for member in group.member_subjects)
+            for group in groups
+            if group.inference_basis is not None
+            and group.inference_basis.known_identity_label
+        ),
     )
     injection_order = _injection_order(assignment_batches)
     owner_injection_order = {
@@ -928,6 +928,7 @@ def _bootstrap_mode_track_refinement(
         member_subjects=members,
         edges=classified_edges,
         budget=MODE_TRACK_NEIGHBORHOOD_BUDGET,
+        grouping_receipt=grouping_receipt,
     )
     predecessor_by_member_id = {
         member.member_subject_id: predecessor
@@ -967,6 +968,16 @@ def _bootstrap_mode_track_refinement(
             if edge.left_member_subject_id in component_ids
             and edge.right_member_subject_id in component_ids
         )
+        component_receipt = mint_cross_sample_initial_grouping_receipt(
+            processing_request_id=processing_owners.request.processing_request_id,
+            groups=component_predecessors,
+            evaluated_edges=component_edges,
+            indivisible_member_sets=tuple(
+                members
+                for members in grouping_receipt.indivisible_member_sets
+                if set(members).issubset(component_ids)
+            ),
+        )
         trajectory_input = mint_mode_track_trajectory_input(
             predecessors=component_predecessors,
             owners=component_owners,
@@ -982,6 +993,7 @@ def _bootstrap_mode_track_refinement(
             },
             evidence_profile=evidence_profile,
             budget=MODE_TRACK_NEIGHBORHOOD_BUDGET,
+            initial_grouping_receipt=component_receipt,
         )
         if trajectory_input.neighborhood_status == "unassessable":
             proposal = _mint_unassessable_mode_track_refinement(
@@ -1006,6 +1018,7 @@ def _bootstrap_mode_track_refinement(
                     predecessors=component_predecessors,
                     classified_edges=component_edges,
                     budget=MODE_TRACK_NEIGHBORHOOD_BUDGET,
+                    grouping_receipt=component_receipt,
                 ),
             )
         )
@@ -1023,6 +1036,7 @@ def _bootstrap_mode_track_refinement(
         predecessors=predecessors,
         owners=owners,
         classified_edges=classified_edges,
+        initial_grouping_receipt=grouping_receipt,
         anchors=tuple(
             sorted(anchor_by_owner_id.values(), key=lambda item: item.anchor_id)
         ),
@@ -1236,10 +1250,26 @@ def _validate_owner_derived_partition(
         raise ModeTrackRefinementContractError(
             "owner-derived proposal is not a complete trajectory partition"
         )
-    eligible_pairs = {
-        frozenset((left, right))
-        for left, right in trajectory_input.eligible_member_pairs
+    member_to_successor = {
+        member_id: group_id
+        for group_id, member_ids in successor_members_by_group.items()
+        for member_id in member_ids
     }
+    if any(
+        len({member_to_successor[member] for member in members}) != 1
+        for members in trajectory_input.indivisible_member_sets
+    ):
+        raise ModeTrackRefinementContractError(
+            "owner-derived proposal splits a confirmed identity"
+        )
+    for left, right, disposition in trajectory_input.exclusions:
+        if (
+            disposition == "excluded"
+            and member_to_successor[left] == member_to_successor[right]
+        ):
+            raise ModeTrackRefinementContractError(
+                "owner-derived proposal crosses an explicitly excluded member edge"
+            )
     for member_ids in successor_members_by_group.values():
         samples: set[str] = set()
         for member_id in member_ids:
@@ -1251,12 +1281,6 @@ def _validate_owner_derived_partition(
                     "owner-derived proposal duplicates a sample in one group"
                 )
             samples.add(sample_id)
-        for left_index, left in enumerate(member_ids):
-            for right in member_ids[left_index + 1 :]:
-                if frozenset((left, right)) not in eligible_pairs:
-                    raise ModeTrackRefinementContractError(
-                        "owner-derived proposal crosses a non-eligible member edge"
-                    )
 
 
 def _required_group_identity(group) -> CrossSampleGroupIdentity:
