@@ -38,6 +38,7 @@ from xic_extractor.execution_runtime_owner import (
     RuntimeWorkerPeakRssSample,
     runtime_started_worker_keys,
 )
+from xic_extractor.execution_settings import DEFAULT_ALIGNMENT_WORKERS
 from xic_extractor.extraction.untargeted_cid_nl_bounded_runtime import (
     execute_bounded_untargeted_cid_nl,
 )
@@ -76,7 +77,7 @@ def complete_untargeted_cid_nl_alignment(
     known_istd_reference: KnownIstdReference | None = None,
     timing_recorder: TimingRecorder | None = None,
     signal_processing_profile: SignalProcessingProfile | None = None,
-    raw_workers: int = 1,
+    raw_workers: int = DEFAULT_ALIGNMENT_WORKERS,
     raw_worker_backend: str = "thread",
     should_cancel: Callable[[], bool] | None = None,
     retain_partition_memory: bool = False,
@@ -246,7 +247,7 @@ def _load_physical_replay_inputs(
     raw_paths: tuple[Path, ...],
     settings: DiscoverySettings,
     profile: SignalProcessingProfile,
-    raw_workers: int = 1,
+    raw_workers: int = DEFAULT_ALIGNMENT_WORKERS,
     retained_records_sink: Callable[
         [str, tuple[DiscoveryPhysicalFactRecord, ...]], None
     ]

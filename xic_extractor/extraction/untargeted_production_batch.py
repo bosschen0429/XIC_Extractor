@@ -77,6 +77,7 @@ from xic_extractor.execution_runtime_owner import (
     RuntimeTelemetryProvider,
     start_runtime_attempt,
 )
+from xic_extractor.execution_settings import DEFAULT_ALIGNMENT_WORKERS
 from xic_extractor.extraction.untargeted_cid_nl_real_data_inputs import (
     UntargetedCidNlRealDataContext,
     build_untargeted_cid_nl_real_data_context,
@@ -708,7 +709,7 @@ def compose_and_persist_untargeted_cid_nl_partition(
     known_istd_reference: KnownIstdReference | None = None,
     should_cancel: Callable[[], object] | None = None,
     retain_memory: bool = False,
-    raw_workers: int = 1,
+    raw_workers: int = DEFAULT_ALIGNMENT_WORKERS,
 ) -> UntargetedCidNlPersistedPartition:
     """Compose one child at a time and publish only after the full partition.
 

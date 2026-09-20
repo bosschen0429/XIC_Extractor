@@ -166,6 +166,14 @@ def test_run_discovery_cli_passes_raw_dir_batch_settings(
     dll_dir.mkdir()
     output_dir = tmp_path / "out"
     captured = {}
+    execution_root = tmp_path / "runtime"
+    (execution_root / "config").mkdir(parents=True)
+    (execution_root / "config" / "settings.csv").write_text(
+        "key,value\nparallel_workers,1\n", encoding="utf-8"
+    )
+    from xic_extractor import execution_settings
+
+    monkeypatch.setattr(execution_settings, "_runtime_root", lambda: execution_root)
 
     def _fake_run_discovery_batch(
         raw_paths, *, output_dir, settings, peak_config, run_spec, max_workers
@@ -175,6 +183,7 @@ def test_run_discovery_cli_passes_raw_dir_batch_settings(
         captured["settings"] = settings
         captured["peak_config"] = peak_config
         captured["run_spec"] = run_spec
+        captured["max_workers"] = max_workers
         output_dir.mkdir(parents=True, exist_ok=True)
         output_path = output_dir / "discovery_batch_index.csv"
         sample_outputs = DiscoveryRunOutputs(
@@ -209,6 +218,7 @@ def test_run_discovery_cli_passes_raw_dir_batch_settings(
     assert captured["output_dir"] == output_dir.resolve()
     assert captured["peak_config"].data_dir == raw_dir.resolve()
     assert captured["settings"].resolver_mode == "local_minimum"
+    assert captured["max_workers"] == 1
     assert tuple(
         item.sample_stem for item in captured["run_spec"].acquisition_inputs
     ) == ("A", "B")

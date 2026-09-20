@@ -59,6 +59,7 @@ from xic_extractor.diagnostics.alignment_explanation_projection import (
 from xic_extractor.diagnostics.timing import TimingRecorder
 from xic_extractor.discovery.batch_contract import DiscoveryCandidateUniverseReceipt
 from xic_extractor.discovery.models import DiscoveryCandidate, DiscoverySettings
+from xic_extractor.execution_settings import DEFAULT_ALIGNMENT_WORKERS
 from xic_extractor.extraction.untargeted_alignment import (
     complete_untargeted_alignment as _real_complete_untargeted_alignment,
 )
@@ -144,7 +145,7 @@ def run_alignment(
     emit_alignment_integration_audit: bool = False,
     emit_alignment_backfill_seed_audit: bool = False,
     emit_alignment_backfill_candidate_audit: bool = False,
-    raw_workers: int = 1,
+    raw_workers: int = DEFAULT_ALIGNMENT_WORKERS,
     raw_worker_backend: str = "thread",
     raw_xic_batch_size: int = 1,
     owner_build_xic_backend: OwnerBuildXicBackend = "raw",
@@ -311,7 +312,7 @@ def run_alignment(
 
 def _validate_untargeted_alignment_options(
     *,
-    raw_workers: int = 1,
+    raw_workers: int = DEFAULT_ALIGNMENT_WORKERS,
     raw_worker_backend: str = "thread",
     raw_xic_batch_size: int = 1,
     owner_backfill_xic_backend: OwnerBackfillXicBackend = "raw",

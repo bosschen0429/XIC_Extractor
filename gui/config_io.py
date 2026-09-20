@@ -3,7 +3,10 @@ import sys
 from pathlib import Path
 
 from xic_extractor.configuration.csv_io import TARGET_WRITE_FIELDS
-from xic_extractor.settings_schema import CANONICAL_SETTINGS_DESCRIPTIONS
+from xic_extractor.settings_schema import (
+    CANONICAL_SETTINGS_DEFAULTS,
+    CANONICAL_SETTINGS_DESCRIPTIONS,
+)
 
 if getattr(sys, "frozen", False):
     ROOT = Path(sys.executable).parent  # user-writable: config/, output/
@@ -27,7 +30,10 @@ def _read_path(name: str) -> Path:
 
 def read_settings() -> dict[str, str]:
     with _read_path("settings").open(newline="", encoding="utf-8-sig") as handle:
-        return {row["key"]: row["value"] for row in csv.DictReader(handle)}
+        return {
+            "parallel_workers": CANONICAL_SETTINGS_DEFAULTS["parallel_workers"],
+            **{row["key"]: row["value"] for row in csv.DictReader(handle)},
+        }
 
 
 def write_settings(settings: dict[str, str]) -> None:

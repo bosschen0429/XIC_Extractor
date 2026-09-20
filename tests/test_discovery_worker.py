@@ -220,11 +220,8 @@ def test_gui_batch_discovery_uses_bounded_parallel_workers(
         return SimpleNamespace(batch_index_csv=index_path, per_sample=())
 
     monkeypatch.setattr(module, "run_discovery_batch", fake_run_discovery_batch)
-    monkeypatch.setattr(
-        module,
-        "default_parallel_workers",
-        lambda: 8,
-    )
+    from xic_extractor.execution_settings import ExecutionProfile
+
     request = DiscoveryRequest(
         mode="discovery_only",
         preset="dna_dr",
@@ -234,13 +231,14 @@ def test_gui_batch_discovery_uses_bounded_parallel_workers(
         dll_dir=tmp_path / "dll",
         output_dir=output_dir,
         discovery_batch_index=None,
+        execution_profile=ExecutionProfile(parallel_workers=2),
     )
 
     summary = DiscoveryWorker(request)._run_discovery_only(request)
 
     assert summary is not None
     assert summary["sample_count"] == 8
-    assert captured_discovery["max_workers"] == 8
+    assert captured_discovery["max_workers"] == 2
 
 
 @pytest.mark.parametrize("mode", ["align_only", "full"])
@@ -342,6 +340,7 @@ def test_gui_alignment_modes_apply_product_ready_preset_alignment_runtime(
     assert peak_config.nl_min_intensity_ratio == 0.02
     assert peak_config.resolver_mode == "legacy_savgol"
     assert captured_alignment["alignment_config"] == AlignmentConfig()
+    assert captured_alignment["raw_workers"] == 1
     assert captured_alignment["owner_build_xic_backend"] == "raw_superwindow"
     assert captured_alignment["output_level"] == "production"
     assert captured_alignment["emit_alignment_cells"] is False

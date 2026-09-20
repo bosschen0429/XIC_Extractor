@@ -24,7 +24,6 @@ emit_peak_candidates,false,是否輸出 Peak Candidate TSV（除錯/審計用，
 baseline_audit_method,,Integration audit baseline shadow method; leave empty for default TSV schema or set to asls to emit AsLS comparison columns
 baseline_integration_method,asls,Alignment integration-audit baseline method (asls)
 parallel_mode,process,執行後端（serial 或 process；預設 process）
-parallel_workers,11,Process mode worker 數量（>= 1；預設 CPU 核心數 - 1）
 rt_prior_library_path,,developer/debug RT prior library CSV path; leave empty for normal use
 target_pair_rt_calibration_path,,target pair RT calibration TSV path for shadow auto-reselection diagnostics; leave empty to disable
 model_selection_expected_diff_approval_registry,,Durable expected-diff approval registry TSV for selected-hypothesis model selection; leave empty unless approved real-data evidence exists

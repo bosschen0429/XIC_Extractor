@@ -7,6 +7,7 @@ import pytest
 
 from scripts import run_tissue_validation
 from xic_extractor.discovery.blank_qualification import BlankBackgroundLibrary
+from xic_extractor.execution_settings import default_parallel_workers
 from xic_extractor.raw_reader import EXPECTED_THERMO_DLLS
 
 
@@ -77,8 +78,10 @@ def test_preflight_8_and_85_share_science_without_output_or_execution(
     assert executed == []
     assert plans[0]["science"] == plans[1]["science"]
     assert plans[0]["science"]["discovery"]["enable_blank_qualification"] is True
-    assert plans[0]["execution"]["workers"] == 4
-    assert plans[1]["execution"]["workers"] == 4
+    assert plans[0]["execution"]["parallel_workers"] == default_parallel_workers()
+    assert plans[1]["execution"]["parallel_workers"] == default_parallel_workers()
+    assert plans[0]["execution"]["alignment_workers"] == 1
+    assert plans[1]["execution"]["alignment_workers"] == 1
     assert plans[0]["inputs"]["raw_count"] == 8
     assert plans[1]["inputs"]["raw_count"] == 85
 
@@ -135,6 +138,8 @@ def test_preflight_exposes_overrides_and_rejects_output_reuse(
             str(targets),
             "--workers",
             "2",
+            "--alignment-workers",
+            "3",
             "--output-dir",
             str(output_dir),
             "--preflight-only",
@@ -142,7 +147,12 @@ def test_preflight_exposes_overrides_and_rejects_output_reuse(
     )
     assert code == 0
     plan = json.loads(capsys.readouterr().out)
-    assert plan["execution"]["workers"] == 2
+    assert plan["execution"]["parallel_workers"] == 2
+    assert plan["execution"]["alignment_workers"] == 3
+    discovery_command = plan["commands"]["discovery"]
+    alignment_command = plan["commands"]["alignment"]
+    assert discovery_command[discovery_command.index("--max-workers") + 1] == "2"
+    assert alignment_command[alignment_command.index("--raw-workers") + 1] == "3"
     assert plan["inputs"]["targets_csv"] == str(targets.resolve())
     assert plan["inputs"]["blank_library"] == str(library.resolve())
 

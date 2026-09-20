@@ -52,6 +52,7 @@ from xic_extractor.execution_runtime_owner import (
     execute_runtime_attempt,
     mint_work_unit_settlement,
 )
+from xic_extractor.execution_settings import DEFAULT_ALIGNMENT_WORKERS
 from xic_extractor.extraction.untargeted_cid_nl_real_data_adapter import (
     _supports_direct_precursor_assessment,
     _UntargetedRealDataWorkObserver,
@@ -299,7 +300,7 @@ def execute_untargeted_cid_nl_runtime_partition(
     alignment_config: AlignmentConfig,
     progress_callback: Callable[[Mapping[str, object]], None] | None = None,
     should_cancel: Callable[[], bool] | None = None,
-    raw_workers: int = 1,
+    raw_workers: int = DEFAULT_ALIGNMENT_WORKERS,
     raw_worker_backend: str = "thread",
     pool: WorkerAdmissionPool | None = None,
 ) -> UntargetedCidNlRuntimePartitionResult:
@@ -371,7 +372,7 @@ def _prepare_runtime_work(
     progress_callback: Callable[[Mapping[str, object]], None] | None,
     partition_key: str | None = None,
     should_cancel: Callable[[], bool] | None = None,
-    raw_workers: int = 1,
+    raw_workers: int = DEFAULT_ALIGNMENT_WORKERS,
     raw_worker_backend: str = "thread",
     pool: WorkerAdmissionPool | None = None,
 ) -> _RuntimeWork:

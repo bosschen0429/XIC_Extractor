@@ -52,8 +52,10 @@ they are not product authority by themselves.
 The 8RAW validation set is a subset of the 85RAW tissue cohort. Both use the
 same `dna_dr` method and effective scientific settings, including enabled
 blank-background qualification. Dataset selection changes sample scope, not
-the method. The maintained tissue validation runner owns paths, worker budget,
-timing, and stage launch order; it does not maintain a second scientific preset.
+the method. The maintained tissue validation runner owns paths, timing, and
+stage launch order; it consumes the shared
+[execution profile](execution-runtime.md#worker-settings) for worker budgets
+and does not maintain a second scientific preset.
 
 Both scales bind one cohort background library (or the packaged default), so a
 library next to only the subset cannot silently change its method. ISTD input

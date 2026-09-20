@@ -1,5 +1,4 @@
-import os
-
+from xic_extractor.execution_settings import default_parallel_workers
 from xic_extractor.peak_detection.signal_processing_profile import (
     DEFAULT_SIGNAL_PROCESSING_PROFILE,
 )
@@ -7,12 +6,6 @@ from xic_extractor.targeted_ms1_shape_identity_policy import (
     EXPLICIT_SUPPORT_TSV_POLICY,
     LIMITED_HMDC_MEDC_POLICY,
 )
-
-
-def default_parallel_workers() -> int:
-    cpu_count = os.cpu_count() or 2
-    return max(1, cpu_count - 1)
-
 
 RESOLVER_MODES: tuple[str, ...] = (
     "legacy_savgol",

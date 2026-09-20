@@ -848,14 +848,14 @@ def test_extraction_config_rejects_invalid_signal_processing_profile_fields(
         ExtractionConfig(**kwargs)
 
 
-def test_settings_example_includes_parallel_settings() -> None:
+def test_settings_example_omits_machine_specific_worker_count() -> None:
     example_path = Path("config/settings.example.csv")
 
     with example_path.open(newline="", encoding="utf-8-sig") as handle:
         rows = {row["key"]: row["value"] for row in csv.DictReader(handle)}
 
     assert rows["parallel_mode"] == "process"
-    assert int(rows["parallel_workers"]) >= 1
+    assert "parallel_workers" not in rows
     assert rows["baseline_audit_method"] == ""
     assert rows["baseline_integration_method"] == "asls"
     assert rows["ms1_morphology_smoothing_window_points"] == "15"

@@ -20,6 +20,7 @@ from xic_extractor.discovery.blank_qualification import (
     BlankBackgroundLibrary,
     get_default_background_library_path,
 )
+from xic_extractor.execution_settings import load_execution_profile
 from xic_extractor.peak_detection.signal_processing_profile import (
     DEFAULT_SIGNAL_PROCESSING_PROFILE,
 )
@@ -80,7 +81,8 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument("--dataset", choices=("8", "85"), required=True)
     parser.add_argument("--preflight-only", action="store_true")
     parser.add_argument("--output-dir", type=Path)
-    parser.add_argument("--workers", type=_positive_int, default=4)
+    parser.add_argument("--workers", type=_positive_int)
+    parser.add_argument("--alignment-workers", type=_positive_int)
     parser.add_argument("--raw-dir", type=Path)
     parser.add_argument("--dll-dir", type=Path)
     parser.add_argument("--blank-library", type=Path)
@@ -92,6 +94,10 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
 
 def _build_plan(args: argparse.Namespace) -> dict[str, Any]:
     dataset = int(args.dataset)
+    execution_profile = load_execution_profile(
+        parallel_workers=args.workers,
+        alignment_workers=args.alignment_workers,
+    )
     environment = _effective_environment()
     raw_dir = _resolve_input_dir(
         args.raw_dir,
@@ -162,7 +168,7 @@ def _build_plan(args: argparse.Namespace) -> dict[str, Any]:
         "--preset",
         "dna_dr",
         "--max-workers",
-        str(args.workers),
+        str(execution_profile.parallel_workers),
         "--timing-output",
         str(timing_dir / "discovery.json"),
         "--blank-library",
@@ -184,7 +190,7 @@ def _build_plan(args: argparse.Namespace) -> dict[str, Any]:
         "--output-dir",
         str(alignment_dir),
         "--raw-workers",
-        str(args.workers),
+        str(execution_profile.alignment_workers),
         "--expected-sample-count",
         str(dataset),
         "--output-level",
@@ -227,7 +233,8 @@ def _build_plan(args: argparse.Namespace) -> dict[str, Any]:
             ),
         },
         "execution": {
-            "workers": args.workers,
+            "parallel_workers": execution_profile.parallel_workers,
+            "alignment_workers": execution_profile.alignment_workers,
             "output_dir": str(output_dir),
             "timing_dir": str(timing_dir),
             "logs_dir": str(output_dir / "logs"),
