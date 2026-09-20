@@ -161,6 +161,7 @@ class UntargetedCidNlRealDataRuntimeJob:
     acquisition_source_expectation: AcquisitionSourceExpectation | None = field(
         default=None, compare=False
     )
+    acquisition_cache_dir: Path | None = field(default=None, compare=False)
     _request_subjects: CidNlMethodSubject | UntargetedCidNlMethodSubjectBatch = field(
         init=False, repr=False, compare=False
     )
@@ -231,6 +232,12 @@ class UntargetedCidNlRealDataRuntimeJob:
                 raise UntargetedCidNlRealDataRuntimeError(
                     "acquisition source expectation must match the request sample"
                 )
+        if self.acquisition_cache_dir is not None and not isinstance(
+            self.acquisition_cache_dir, Path
+        ):
+            raise UntargetedCidNlRealDataRuntimeError(
+                "acquisition_cache_dir must be a Path or None"
+            )
         object.__setattr__(
             self,
             "_request_candidates_by_subject",
@@ -261,6 +268,7 @@ def build_untargeted_cid_nl_sample_runtime_jobs(
     acquisition_source_expectation: AcquisitionSourceExpectation | None = None,
     subject_partition: UntargetedCidNlMethodSubjectBatch | None = None,
     support_candidates: tuple[DiscoveryCandidate, ...] = (),
+    acquisition_cache_dir: Path | None = None,
 ) -> tuple[UntargetedCidNlRealDataRuntimeJob, ...]:
     """Validate a sample once, then bind each subject to those same inputs."""
 
@@ -294,6 +302,7 @@ def build_untargeted_cid_nl_sample_runtime_jobs(
         signal_processing_profile=signal_processing_profile,
         physical_records=physical_records,
         acquisition_source_expectation=acquisition_source_expectation,
+        acquisition_cache_dir=acquisition_cache_dir,
     )
     pinned = first._request_subjects
     subjects_by_id = (

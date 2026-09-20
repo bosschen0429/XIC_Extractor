@@ -28,6 +28,10 @@ from xic_extractor.evidence_artifacts import EvidenceArtifactRef
 from xic_extractor.execution_runtime_finalization import (
     RuntimeResourceCleanupOutcome,
 )
+from xic_extractor.extraction.untargeted_acquisition_cache import (
+    CachedUntargetedRaw,
+    bind_untargeted_acquisition_cache,
+)
 from xic_extractor.extraction.untargeted_cid_nl_real_data_adapter import (
     UntargetedCidNlRealDataAdapterResult,
     UntargetedCidNlRecoveryAttemptResult,
@@ -104,22 +108,35 @@ def _runtime_delegate(name: str, fallback):
     return fallback
 
 
-def _open_job_raw(job: UntargetedCidNlRealDataRuntimeJob) -> RawFileHandle:
+def _open_job_raw(
+    job: UntargetedCidNlRealDataRuntimeJob,
+) -> RawFileHandle | CachedUntargetedRaw:
     active_open = _runtime_delegate("open_raw", open_raw)
     expectation = job.acquisition_source_expectation
+    source = (
+        expectation.source
+        if expectation is not None
+        else resolve_request_acquisition_source(
+            processing_owners=job.processing_owners, sample=job.sample
+        )
+    )
     if expectation is not None:
-        return active_open(
+        raw = active_open(
             job.raw_path,
             job.dll_dir,
-            expected_acquisition_source=expectation.source,
+            expected_acquisition_source=source,
             _expected_path_identity=expectation.path_identity,
         )
-    return active_open(
-        job.raw_path,
-        job.dll_dir,
-        expected_acquisition_source=resolve_request_acquisition_source(
-            processing_owners=job.processing_owners, sample=job.sample
-        ),
+    else:
+        raw = active_open(
+            job.raw_path,
+            job.dll_dir,
+            expected_acquisition_source=source,
+        )
+    return bind_untargeted_acquisition_cache(
+        raw,
+        source=source,
+        cache_dir=job.acquisition_cache_dir,
     )
 
 

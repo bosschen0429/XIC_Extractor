@@ -46,7 +46,14 @@ from xic_extractor.immutable_sequence import ImmutableSequence
 from xic_extractor.sample_metadata import SampleMetadata
 
 
-def _plan(tmp_path, monkeypatch, *, scenario="positive"):
+@pytest.fixture(autouse=True)
+def _disable_real_dll_loading(monkeypatch) -> None:
+    import xic_extractor.extraction.untargeted_cid_nl_real_data_runtime as runtime_owner
+
+    monkeypatch.setattr(runtime_owner, "_ensure_assemblies_loaded", lambda *_: None)
+
+
+def _plan(tmp_path, monkeypatch, *, scenario="positive", opened_sink=None):
     paths = tuple(tmp_path / f"S{i}.synthetic" for i in range(4))
     settings = replace(
         _settings(), neutral_loss_profile=None, precursor_mz_tolerance_ppm=1.0
@@ -109,7 +116,11 @@ def _plan(tmp_path, monkeypatch, *, scenario="positive"):
         dll_dir=tmp_path,
         sample_identity_namespace="study:bounded-runtime",
     )
-    _install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
+    opened = _install_runtime_raws(
+        monkeypatch, sources_by_path=raws, tmp_path=tmp_path
+    )
+    if opened_sink is not None:
+        opened_sink.append(opened)
     import xic_extractor.extraction.untargeted_cid_nl_real_data_runtime as runtime_owner
 
     monkeypatch.setattr(
@@ -508,7 +519,13 @@ def test_bounded_partition_real_entry_mints_interleaved_worksets_canonically(
             known_istd_reference=known_istd_reference,
         )
 
-    def capture_materialized_partition(_plan, subject_batch, *, prepared_worksets):
+    def capture_materialized_partition(
+        _plan,
+        subject_batch,
+        *,
+        prepared_worksets,
+        acquisition_cache_dir=None,
+    ):
         assert prepared_worksets.plan is _plan
         captured_batches.append(subject_batch)
         return SimpleNamespace(jobs=())
@@ -945,6 +962,113 @@ def test_bounded_runtime_failure_never_publishes_completed_batch(
     assert snapshot.processing_attempt_id == (
         plan.context.processing_owners.attempt.processing_attempt_id
     )
+
+
+def test_failed_attempt_retry_reuses_completed_raw_facts_and_recomposes(
+    tmp_path: Path, monkeypatch
+) -> None:
+    import xic_extractor.extraction.untargeted_cid_nl_bounded_runtime as owner
+
+    ms2_reads: dict[int, int] = {}
+    original_filter = _FakeThermoRaw.GetFilterForScanNumber
+
+    def count_filter(vendor, scan_number):
+        key = id(vendor)
+        ms2_reads[key] = ms2_reads.get(key, 0) + 1
+        return original_filter(vendor, scan_number)
+
+    monkeypatch.setattr(_FakeThermoRaw, "GetFilterForScanNumber", count_filter)
+    baseline_plan, _ = _plan(tmp_path, monkeypatch)
+    baseline = owner.execute_bounded_untargeted_cid_nl(
+        baseline_plan,
+        output_dir=tmp_path / "cold-output",
+        alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+        recovery_marker=OwnerPathRuntimeMarker(tmp_path / "cold.json", "cold"),
+        max_partition_jobs=len(baseline_plan.context.samples),
+        pipeline_overlap=False,
+    )
+    baseline_writer = project_completed_untarget_batch_writer_inputs(baseline)
+    opened_runs = []
+    plan, _ = _plan(tmp_path, monkeypatch, opened_sink=opened_runs)
+    output_dir = tmp_path / "retry-output"
+    marker = OwnerPathRuntimeMarker(
+        tmp_path / "retry.json",
+        "retry",
+        allow_failed_attempt_retry=True,
+    )
+    original_append = owner.PartitionResultStore.append_children
+    append_calls = 0
+
+    def fail_second(store, *args, **kwargs):
+        nonlocal append_calls
+        append_calls += 1
+        if append_calls == 2:
+            raise OSError("second partition storage unavailable")
+        return original_append(store, *args, **kwargs)
+
+    monkeypatch.setattr(owner.PartitionResultStore, "append_children", fail_second)
+    with pytest.raises(RuntimeError, match="failed before batch publication"):
+        owner.execute_bounded_untargeted_cid_nl(
+            plan,
+            output_dir=output_dir,
+            alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+            telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+            recovery_marker=marker,
+            max_partition_jobs=len(plan.context.samples),
+            pipeline_overlap=False,
+        )
+    failed_attempt_id = plan.context.processing_owners.attempt.processing_attempt_id
+    assert marker.read().terminal_outcome is AttemptTerminalOutcome.FAILED
+
+    monkeypatch.setattr(owner.PartitionResultStore, "append_children", original_append)
+    retry_plan, _ = _plan(tmp_path, monkeypatch, opened_sink=opened_runs)
+    completed = owner.execute_bounded_untargeted_cid_nl(
+        retry_plan,
+        output_dir=output_dir,
+        alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+        recovery_marker=marker,
+        max_partition_jobs=len(retry_plan.context.samples),
+        pipeline_overlap=False,
+    )
+
+    assert completed.runtime_receipt.supervisor.attempt is (
+        retry_plan.context.processing_owners.attempt
+    )
+    assert (
+        retry_plan.context.processing_owners.attempt.processing_attempt_id
+        != failed_attempt_id
+    )
+    writer = project_completed_untarget_batch_writer_inputs(completed)
+    assert writer.matrix.cells
+    assert writer.matrix == baseline_writer.matrix
+    assert completed.application_result.candidate_ids == (
+        baseline.application_result.candidate_ids
+    )
+    assert completed.application_result.physical_observation_ids == (
+        baseline.application_result.physical_observation_ids
+    )
+    completed_samples = tuple(
+        sample.metadata for sample in completed.application_result.canonical_samples
+    )
+    baseline_samples = tuple(
+        sample.metadata for sample in baseline.application_result.canonical_samples
+    )
+    assert completed_samples == baseline_samples
+    assert all(cell.area is None or cell.area > 0 for cell in writer.matrix.cells)
+    assert {
+        sample.metadata.raw_stem
+        for sample in completed.application_result.canonical_samples
+    } == {path.stem for path in retry_plan.context.raw_paths_by_sample.values()}
+
+    retry_vendors = tuple(
+        vendor for vendors in opened_runs[1].values() for vendor in vendors
+    )
+    assert retry_vendors
+    assert any(not vendor.chromatogram_request_counts for vendor in retry_vendors)
+    assert any(vendor.chromatogram_request_counts for vendor in retry_vendors)
+    assert any(ms2_reads.get(id(vendor), 0) == 0 for vendor in retry_vendors)
 
 
 def test_partition_acquisitions_overlap_with_shared_worker_budget_and_ordered_output(

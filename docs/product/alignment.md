@@ -10,6 +10,16 @@ transport contract or let writers recompute science.
 
 ## Execution Boundary
 
+The bounded Untargeted runtime keeps exact source-bound XIC and MS2 acquisition
+facts in the output directory's private `.cid_nl_acquisition_cache`. A retry
+uses a new processing attempt and recomputes scientific decisions; matching
+queries reuse acquisition facts without repeating the vendor query. Source or
+query changes require acquisition for the affected entries. RAW handles may
+still be opened to verify their source and provide metadata. This cache does
+not preserve completed grouping graphs or turn an old failed attempt into a
+successful result. The Alignment entry point archives a finalized failed or
+cancelled runtime marker before launching a new attempt in the same directory.
+
 Targeted and Untargeted CID-NL close through the shared scientific workflow.
 `alignment.pipeline.run_alignment` adapts pure CID-NL inputs to that workflow
 and renders its finalized result. It requires explicit pure CID-NL discovery

@@ -397,6 +397,7 @@ def complete_untargeted_cid_nl_alignment(
                 recovery_marker=OwnerPathRuntimeMarker(
                     output_dir / ".cid_nl_runtime.json",
                     _RUNTIME_ARTIFACT_NAMESPACE,
+                    allow_failed_attempt_retry=True,
                 ),
                 progress_callback=recorder.heartbeat_event,
                 alignment_config=alignment_config,

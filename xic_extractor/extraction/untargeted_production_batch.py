@@ -745,6 +745,7 @@ def materialize_untargeted_cid_nl_partition(
     subject_batch: UntargetedCidNlMethodSubjectBatch,
     *,
     prepared_worksets: PreparedCidNlAlignmentSubjectWorksets | None = None,
+    acquisition_cache_dir: Path | None = None,
 ) -> UntargetedCidNlProductionBatch:
     """Bind a finite subject partition to shared, already-validated inputs."""
 
@@ -802,6 +803,7 @@ def materialize_untargeted_cid_nl_partition(
                     ],
                     subject_partition=subject_batch,
                     support_candidates=support[stem],
+                    acquisition_cache_dir=acquisition_cache_dir,
                 )
             )
         return UntargetedCidNlProductionBatch(subject_batch, context, tuple(jobs))
@@ -817,6 +819,7 @@ def materialize_untargeted_cid_nl_partition(
                 "work_unit_key",
                 f"untargeted-cid-nl:{template.sample.metadata.raw_stem}:{subject_id}",
             )
+            object.__setattr__(job, "acquisition_cache_dir", acquisition_cache_dir)
             jobs.append(job)
     return UntargetedCidNlProductionBatch(
         subject_batch=subject_batch, context=plan.context, jobs=tuple(jobs)

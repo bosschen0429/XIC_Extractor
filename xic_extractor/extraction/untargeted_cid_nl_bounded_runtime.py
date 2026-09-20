@@ -117,6 +117,7 @@ class CidNlPartitionPipelineAdapter:
         raw_workers: int = DEFAULT_ALIGNMENT_WORKERS,
         raw_worker_backend: str = "thread",
         acquisition_workers: int = 1,
+        acquisition_cache_dir: Path | None = None,
     ) -> None:
         if type(acquisition_workers) is not int or acquisition_workers not in (1, 2):
             raise ValueError("acquisition_workers must be 1 or 2")
@@ -139,6 +140,7 @@ class CidNlPartitionPipelineAdapter:
         self._max_partition_jobs = max_partition_jobs
         self._raw_workers = raw_workers
         self._raw_worker_backend = raw_worker_backend
+        self._acquisition_cache_dir = acquisition_cache_dir
 
         context = plan.context
         self._owners = context.processing_owners
@@ -316,6 +318,7 @@ class CidNlPartitionPipelineAdapter:
             self._plan,
             subject_batch,
             prepared_worksets=self._prepared_worksets,
+            acquisition_cache_dir=self._acquisition_cache_dir,
         )
         with WorkerAdmissionPool(
             max_workers=self._partition_raw_workers,
@@ -610,6 +613,7 @@ def execute_bounded_untargeted_cid_nl(
         raw_workers=raw_workers,
         raw_worker_backend=raw_worker_backend,
         acquisition_workers=requested_acquisition_workers,
+        acquisition_cache_dir=Path(output_dir) / ".cid_nl_acquisition_cache",
     )
     return PartitionPipelineScheduler.execute(
         adapter,
