@@ -124,6 +124,12 @@ are outside the first integration. If Targeted or Alignment cannot state its
 complete non-empty work universe up front, stop and redraw the seam rather than
 infer completion from only the units that happened to be submitted.
 
+A settled work unit may report both initial and recovery acquisitions. The
+runtime retains distinct acquisition capabilities and deduplicates an exact
+receipt replay; conflicting content for the same capability remains an error.
+Batch adapters publish the acquisitions held by each phase directly, so a
+later recovery cannot hide the initial acquisition from accounting.
+
 An acquisition session may be reused only within the same attempt, worker,
 `AcquisitionSource`, and owner-supplied compatibility token. Correctness must
 not depend on reuse. Before adapter construction or allocation, the runtime

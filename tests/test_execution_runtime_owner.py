@@ -1722,6 +1722,22 @@ def test_runtime_acquisition_compaction_preserves_counts_replay_and_releases_arr
     initial = _prepare_runtime_attempt(runtime, ())
     worker = replace(_failed_worker_batch(attempt), acquisitions=(receipt,))
     eager = _apply_runtime_worker_batch(initial, worker)
+    recovery_capability = mint_trace_acquisition_capability(
+        _source(tmp_path),
+        adapter_namespace="tests.runtime.compaction.recovery",
+        coordinate_kind=TraceCoordinateKind.NATIVE_SCAN,
+    )
+    recovery_acquired = acquire_trace_batch(
+        recovery_capability,
+        (XICRequest(mz=501.0, rt_min=1.0, rt_max=2.0, ppm_tol=20.0),),
+        _NoRawBatchAdapter(),
+    )
+    recovery_receipt = RuntimeAcquisitionReceipt("raw:a", recovery_acquired)
+    multi_phase = _apply_runtime_worker_batch(
+        initial,
+        replace(worker, acquisitions=(receipt, recovery_receipt)),
+    )
+    assert multi_phase.acquisitions == (receipt, recovery_receipt)
     compressed = _apply_runtime_worker_batch(
         initial, replace(worker, acquisitions=(compact,))
     )
@@ -1729,6 +1745,10 @@ def test_runtime_acquisition_compaction_preserves_counts_replay_and_releases_arr
         eager, replace(worker, acquisitions=(compact,))
     )
     assert replayed.acquisitions == (compact,)
+    replayed_multi_phase = _apply_runtime_worker_batch(
+        multi_phase, replace(worker, acquisitions=(compact,))
+    )
+    assert replayed_multi_phase.acquisitions == (compact, recovery_receipt)
     _apply_runtime_worker_batch(compressed, worker)
     _apply_runtime_worker_batch(compressed, replace(worker, acquisitions=(compact,)))
     expected = _finalize_runtime_attempt(
@@ -1768,7 +1788,15 @@ def test_runtime_acquisition_compaction_preserves_counts_replay_and_releases_arr
             RuntimeAcquisitionReceipt("raw:other", acquired)
         )
         _apply_runtime_worker_batch(initial, replace(worker, acquisitions=(foreign,)))
-    del receipt, acquired, worker, eager, expected
+    del (
+        receipt,
+        acquired,
+        worker,
+        eager,
+        expected,
+        multi_phase,
+        replayed_multi_phase,
+    )
     gc.collect()
     assert array_ref() is None
     assert compressed.acquisitions == (compact,)

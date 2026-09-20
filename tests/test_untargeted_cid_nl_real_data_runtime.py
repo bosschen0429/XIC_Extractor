@@ -714,6 +714,168 @@ def test_batch_candidate_selection_preserves_order_and_request_sample_membership
     )
 
 
+def test_direct_subject_batch_seals_initial_and_recovery_acquisitions_once(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    raw_paths = tuple(tmp_path / f"S{index}.synthetic" for index in range(1, 5))
+    settings = _settings()
+    peak_config = _peak_config(tmp_path)
+    source_raws = {path: _FakeRaw((8.0,)) for path in raw_paths}
+    candidates_by_sample = {}
+    for path in raw_paths:
+        path.write_bytes(path.stem.encode())
+        candidates_by_sample[path.stem] = _current_candidates(
+            source_raws[path],
+            raw_file=path,
+            settings=settings,
+            peak_config=peak_config,
+        )
+    subjects = tuple(
+        sorted(
+            (
+                mint_untargeted_cid_nl_method_subject(
+                    precursor_mz=mz,
+                    precursor_tolerance_ppm=settings.precursor_mz_tolerance_ppm,
+                    neutral_loss_da=116.0474,
+                )
+                for mz in (500.0, 500.004)
+            ),
+            key=lambda subject: subject.method_subject_id,
+        )
+    )
+    subject_batch = mint_untargeted_cid_nl_method_subject_batch(
+        subjects=subjects,
+        candidate_memberships=tuple(
+            (
+                candidate.candidate_id,
+                subjects[index // 2].method_subject_id,
+            )
+            for index, path in enumerate(raw_paths)
+            for candidate in candidates_by_sample[path.stem]
+        ),
+    )
+    context = build_untargeted_cid_nl_real_data_context(
+        raw_paths=raw_paths,
+        sample_metadata=tuple(
+            SampleMetadata(
+                sample_name=path.stem,
+                raw_stem=path.stem,
+                injection_order=index,
+                sample_role="study_sample",
+            )
+            for index, path in enumerate(raw_paths, start=1)
+        ),
+        method_subject=subject_batch,
+        settings=settings,
+        peak_config=peak_config,
+        candidates_by_sample=candidates_by_sample,
+        discovery_receipts_by_sample=_discovery_receipts(
+            tmp_path, raw_paths, candidates_by_sample
+        ),
+        sample_identity_namespace="study:runtime-phase-acquisition-seal",
+    )
+    jobs = tuple(
+        job
+        for sample in context.samples
+        for job in build_untargeted_cid_nl_sample_runtime_jobs(
+            processing_owners=context.processing_owners,
+            sample=sample,
+            subject_work_units=tuple(
+                (
+                    subject,
+                    f"{sample.metadata.raw_stem}:{subject.method_subject_id}",
+                )
+                for subject in subjects
+            ),
+            candidates=context.candidates_by_sample[sample.metadata.raw_stem],
+            discovery_receipt=context.discovery_receipts_by_sample[
+                sample.metadata.raw_stem
+            ],
+            settings=settings,
+            peak_config=peak_config,
+            raw_path=context.raw_paths_by_sample[sample.metadata.raw_stem],
+            dll_dir=tmp_path,
+            acquisition_source_expectation=context.acquisition_sources_by_sample[
+                sample.metadata.raw_stem
+            ],
+        )
+    )
+    _install_runtime_raws(
+        monkeypatch,
+        sources_by_path=source_raws,
+        tmp_path=tmp_path,
+    )
+    observed_phase_acquisitions = []
+    for name in (
+        "acquire_untargeted_cid_nl_sample_trace_batch",
+        "acquire_untargeted_cid_nl_recovery_trace_batch",
+    ):
+        original = getattr(runtime_module, name)
+
+        def observe(*args, _original=original, **kwargs):
+            acquired = _original(*args, **kwargs)
+            if acquired is not None:
+                observed_phase_acquisitions.append(acquired.acquisition)
+            return acquired
+
+        monkeypatch.setattr(runtime_module, name, observe)
+
+    submitted_batches = []
+    execute_attempt = runtime_module.execute_runtime_attempt
+
+    def capture_worker_batch(
+        runtime,
+        reservations,
+        *,
+        worker_batch_provider,
+        telemetry_provider,
+        persister,
+    ):
+        def provide_and_capture(aggregate):
+            batch = worker_batch_provider(aggregate)
+            submitted_batches.append(batch)
+            return batch
+
+        return execute_attempt(
+            runtime,
+            reservations,
+            worker_batch_provider=provide_and_capture,
+            telemetry_provider=telemetry_provider,
+            persister=persister,
+        )
+
+    monkeypatch.setattr(runtime_module, "execute_runtime_attempt", capture_worker_batch)
+    runtime = start_runtime_attempt(
+        attempt=context.processing_owners.attempt,
+        work_unit_keys=tuple(job.work_unit_key for job in jobs),
+        owner_completeness_attestation="runtime-phase-acquisition-seal",
+    )
+    result = execute_untargeted_cid_nl_real_data_runtime(
+        runtime,
+        jobs,
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+        recovery_marker=OwnerPathRuntimeMarker(
+            tmp_path / "runtime.phase-acquisitions.json",
+            "runtime-phase-acquisition-seal:test",
+        ),
+    )
+
+    assert result.succeeded
+    assert len(submitted_batches) == 1
+    receipts = submitted_batches[0].acquisitions
+    assert len(observed_phase_acquisitions) == 8
+    assert len(receipts) == len(observed_phase_acquisitions)
+    assert all(
+        receipt.work_unit_key in runtime.manifest.work_unit_keys
+        for receipt in receipts
+    )
+    assert all(
+        sum(receipt.acquisition is acquisition for receipt in receipts) == 1
+        for acquisition in observed_phase_acquisitions
+    )
+
+
 def test_context_rejects_same_stem_receipt_from_different_acquisition(
     tmp_path: Path,
 ) -> None:

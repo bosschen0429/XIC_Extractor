@@ -356,6 +356,10 @@ def validate_cid_nl_alignment_subject_compatibility(
         raise CidNlMethodSubjectContractError(
             "multi-subject alignment requires scalar Untargeted CID-NL subjects"
         )
+    if len({subject.neutral_loss_da for subject in subjects}) != 1:
+        raise CidNlMethodSubjectContractError(
+            "multi-subject alignment cannot cross configured neutral losses"
+        )
     return subjects
 
 
@@ -365,10 +369,6 @@ def validate_cid_nl_alignment_subject_workset(
     """Validate one overlap-connected, method-compatible Alignment workset."""
 
     validate_cid_nl_alignment_subject_compatibility(subjects)
-    if len({subject.neutral_loss_da for subject in subjects}) != 1:
-        raise CidNlMethodSubjectContractError(
-            "overlap-only worksets cannot cross configured neutral losses"
-        )
     ordered_intervals = sorted(
         (cid_nl_method_subject_resolver_interval(subject) for subject in subjects),
         key=lambda interval: (interval[0], interval[1]),
@@ -386,13 +386,13 @@ def validate_cid_nl_alignment_subject_workset(
 def cid_nl_alignment_subject_worksets(
     subjects: tuple[CidNlMethodSubject, ...],
     *,
-    comparison_mz_intervals: tuple[tuple[float, float, float, float], ...] = (),
+    comparison_mz_intervals: tuple[tuple[float, float], ...] = (),
 ) -> tuple[tuple[CidNlMethodSubject, ...], ...]:
     """Partition subjects into compatible overlap-connected worksets.
 
-    Additional (lower loss, upper loss, lower m/z, upper m/z) intervals connect
-    comparison scopes before dispatch. These search bounds never assert feature
-    identity. CrossSample binds identities from the actual observed evidence.
+    Additional (lower m/z, upper m/z) intervals connect comparison scopes within
+    each configured method before dispatch. These search bounds never assert
+    feature identity. CrossSample binds identities from observed evidence.
     """
 
     if type(subjects) is not tuple or any(
@@ -467,8 +467,8 @@ def cid_nl_alignment_subject_worksets(
                 index = parents[index]
             return index
 
-        # A bridge joins whole comparison components, including ppm-near method
-        # configurations. Each subject still retains its own assessment owner.
+        # A bridge joins whole comparison components before dispatch. Each
+        # subject still retains its own assessment owner.
         scalar_intervals = tuple(
             (
                 index, subject.neutral_loss_da,
@@ -480,17 +480,12 @@ def cid_nl_alignment_subject_worksets(
             and subject.composition is None
             and subject.neutral_loss_da is not None
         )
-        for loss_lower, loss_upper, mz_lower, mz_upper in comparison_mz_intervals:
-            connected = [
-                index
-                for index, loss, lower, upper in scalar_intervals
-                if loss_lower <= loss <= loss_upper
-                and mz_lower <= upper and lower <= mz_upper
-            ]
-            if connected:
-                first = root(connected[0])
-                for index in connected[1:]:
-                    parents[root(index)] = first
+        for mz_lower, mz_upper in comparison_mz_intervals:
+            connected_by_loss: dict[float, int] = {}
+            for index, loss, lower, upper in scalar_intervals:
+                if mz_lower <= upper and lower <= mz_upper:
+                    first = connected_by_loss.setdefault(loss, index)
+                    parents[root(index)] = root(first)
         merged: dict[int, list[CidNlMethodSubject]] = {}
         for index, original_component in enumerate(components):
             merged.setdefault(root(index), []).extend(original_component)

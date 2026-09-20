@@ -252,20 +252,17 @@ def prepare_untargeted_cid_nl_alignment_subject_worksets(
 
 def _known_istd_comparison_intervals(
     reference: KnownIstdReference | None,
-) -> tuple[tuple[float, float, float, float], ...]:
+) -> tuple[tuple[float, float], ...]:
     """Co-locate possible known identities without assigning identity by mass."""
     if reference is None:
         return ()
     return tuple(
         (
-            target.neutral_loss_da * (1 - target.nl_ppm_max / 1_000_000),
-            target.neutral_loss_da * (1 + target.nl_ppm_max / 1_000_000),
             target.mz * (1 - target.ppm_tol / 1_000_000),
             target.mz * (1 + target.ppm_tol / 1_000_000),
         )
         for target in reference.anchor.targets
         if target.neutral_loss_da is not None
-        and target.nl_ppm_max is not None
         and target.label in reference.anchor.observed_labels
     )
 

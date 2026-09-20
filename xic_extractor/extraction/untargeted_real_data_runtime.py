@@ -814,11 +814,6 @@ def _prepare_runtime_work(
                 worker_pool.shutdown()
         apply_stop()
 
-        acquisition_owner_keys = (
-            _batch_acquisition_owner_keys(batch_phases)
-            if partition_key is None
-            else frozenset()
-        )
         result_context = _RuntimeResultContext(jobs)
         for completed, state in enumerate(states, 1):
             observe_cancellation()
@@ -827,10 +822,7 @@ def _prepare_runtime_work(
                 state,
                 include_acquisition_receipt=(
                     partition_key is None
-                    and (
-                        not _request_uses_subject_batch(state.job)
-                        or state.job.work_unit_key in acquisition_owner_keys
-                    )
+                    and not _request_uses_subject_batch(state.job)
                 ),
                 result_context=result_context,
             )
@@ -855,7 +847,18 @@ def _prepare_runtime_work(
                 )
         for phase in batch_phases:
             resource_settlements.extend(_batch_phase_resource_receipts(phase))
-            if partition_key is not None:
+            if partition_key is None:
+                phase_acquisitions = _batch_phase_acquisition_receipts(phase)
+                acquisitions.extend(phase_acquisitions)
+                observed_acquisitions.extend(
+                    acquisition
+                    for acquisition in (
+                        phase.initial_acquisition,
+                        phase.recovery_acquisition,
+                    )
+                    if acquisition is not None
+                )
+            else:
                 sample_id = phase.states[0].job.sample.identity.sample_identity_id
                 for name, acquisition in (
                     ("initial", phase.initial_acquisition),
@@ -920,24 +923,25 @@ def _batch_phase_resource_receipts(
     return tuple(receipts)
 
 
-def _batch_acquisition_owner_keys(
-    phases: list[_BatchSamplePhaseState],
-) -> frozenset[str]:
-    owners: set[str] = set()
-    for phase in phases:
+def _batch_phase_acquisition_receipts(
+    phase: _BatchSamplePhaseState,
+) -> tuple[RuntimeAcquisitionReceipt, ...]:
+    acquisitions = tuple(
+        acquisition
         for acquisition in (
             phase.initial_acquisition,
             phase.recovery_acquisition,
-        ):
-            if acquisition is None:
-                continue
-            owner = next(
-                state
-                for state in phase.states
-                if state.observer.acquisition is acquisition
-            )
-            owners.add(owner.job.work_unit_key)
-    return frozenset(owners)
+        )
+        if acquisition is not None
+    )
+    owner_key = phase.states[0].job.work_unit_key
+    return tuple(
+        RuntimeAcquisitionReceipt(
+            work_unit_key=owner_key,
+            acquisition=acquisition,
+        )
+        for acquisition in acquisitions
+    )
 
 
 def _finalize_job_state(

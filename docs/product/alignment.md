@@ -226,8 +226,7 @@ unresolved and rejected groups remain AuditTrail facts.
   cannot enter that known group. Conflicting bindings (multiple owners in one
   sample or one owner bound to multiple labels) are reported as unresolved
   input conflicts rather than split or silently selected. Reference mass
-  and neutral-loss tolerance envelopes connect scalar comparison worksets
-  before dispatch, including ppm-near configured losses. Proximity determines
+  envelopes connect scalar comparison worksets before dispatch. Proximity determines
   comparison scope only, never the exact known-identity binding. Each subject
   retains its own assessment; sharing a workset does not combine MS2 evidence.
 - Ordinary owners use two finite passes in opposite canonical sample order.

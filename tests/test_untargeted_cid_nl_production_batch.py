@@ -111,7 +111,13 @@ def _forbid_retained_production_repair(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def _assert_partition_composition_parity(
-    batch, runtime_result, completed, *, alignment_config, known_istd_reference=None
+    batch,
+    runtime_result,
+    completed,
+    *,
+    alignment_config,
+    known_istd_reference=None,
+    subject_worksets=None,
 ):
     from xic_extractor.alignment.result.application_result import (
         UntargetBatchApplicationResultRequest,
@@ -122,28 +128,31 @@ def _assert_partition_composition_parity(
     )
 
     parts = []
-    for subject in batch.subject_batch.subjects:
-        subject_id = subject.method_subject_id
+    subject_worksets = subject_worksets or tuple(
+        (subject,) for subject in batch.subject_batch.subjects
+    )
+    for subjects in subject_worksets:
+        subject_ids = {subject.method_subject_id for subject in subjects}
         partition = replace(
             batch,
             subject_batch=mint_untargeted_cid_nl_method_subject_batch(
-                subjects=(subject,),
+                subjects=subjects,
                 candidate_memberships=tuple(
                     item
                     for item in batch.subject_batch.candidate_memberships
-                    if item[1] == subject_id
+                    if item[1] in subject_ids
                 ),
             ),
             jobs=tuple(
                 job
                 for job in batch.jobs
-                if job.method_subject.method_subject_id == subject_id
+                if job.method_subject.method_subject_id in subject_ids
             ),
         )
         results = tuple(
             result
             for result in runtime_result.sample_results
-            if result.job.method_subject.method_subject_id == subject_id
+            if result.job.method_subject.method_subject_id in subject_ids
         )
         with pytest.raises(RuntimeError, match="sample/subject results"):
             compose_untargeted_cid_nl_partition(
@@ -2684,11 +2693,6 @@ def test_alignment_subject_worksets_preserve_only_compatible_overlap() -> None:
         precursor_tolerance_ppm=20.0,
         neutral_loss_da=132.0423,
     )
-    nearby_loss = mint_untargeted_cid_nl_method_subject(
-        precursor_mz=500.05,
-        precursor_tolerance_ppm=20.0,
-        neutral_loss_da=116.0474005,
-    )
     composite = mint_untargeted_cid_nl_method_subject(
         precursor_mz=500.01,
         precursor_tolerance_ppm=20.0,
@@ -2699,21 +2703,20 @@ def test_alignment_subject_worksets_preserve_only_compatible_overlap() -> None:
     )
 
     assert cid_nl_alignment_subject_worksets(
-        (first, overlapping, disconnected, different_loss, nearby_loss, composite)
+        (first, overlapping, disconnected, different_loss, composite)
     ) == (
         (first, overlapping),
         (disconnected,),
         (different_loss,),
-        (nearby_loss,),
         (composite,),
     )
     # A confirmed identity's search envelope must be compared together before
     # partition dispatch, even if two resolver windows do not directly overlap.
     assert cid_nl_alignment_subject_worksets(
-        (first, overlapping, disconnected, different_loss, nearby_loss, composite),
-        comparison_mz_intervals=((116.04739, 116.04741, 499.99, 500.06),),
+        (first, overlapping, disconnected, different_loss, composite),
+        comparison_mz_intervals=((499.99, 500.06),),
     ) == (
-        (first, overlapping, disconnected, nearby_loss),
+        (first, overlapping, disconnected),
         (different_loss,),
         (composite,),
     )
@@ -4110,14 +4113,32 @@ def test_known_istd_reference_closes_drifting_group_and_cell_proof(
     from xic_extractor.alignment.drift_evidence import read_known_istd_reference
 
     paths = tuple(tmp_path / f"S{i}.synthetic" for i in range(2))
-    settings = replace(_settings(), neutral_loss_profile=None, rt_max=10)
+    precursor_mzs = (500.0, 500.03)
+    configured_loss = 116.0474
+    observed_losses = (116.0474, 116.0474005)
+    settings = replace(
+        _settings(),
+        neutral_loss_profile=None,
+        precursor_mz_tolerance_ppm=20.0,
+        rt_max=10,
+    )
     peak_config = _peak_config(tmp_path)
-    raws = {path: _FakeRaw((7.98, 8.0, 8.02)) for path in paths}
+    raws = {
+        path: _FakeRaw(
+            (8.0,),
+            scan_precursor_mz=precursor_mz,
+            neutral_loss_das=(observed_loss,),
+        )
+        for path, precursor_mz, observed_loss in zip(
+            paths, precursor_mzs, observed_losses, strict=True
+        )
+    }
     for i, raw in enumerate(raws.values()):
         raw.rt += i * 1.067
+        raw.intensity *= 1.0 + i * 0.4
         raw.scans = tuple(replace(scan, rt=scan.rt + i * 1.067) for scan in raw.scans)
     candidates = {}
-    for path, raw in raws.items():
+    for path, raw in zip(paths, raws.values(), strict=True):
         path.write_bytes(path.stem.encode())
         candidates[path.stem] = _current_candidates(
             raw,
@@ -4167,7 +4188,9 @@ def test_known_istd_reference_closes_drifting_group_and_cell_proof(
             "ISTD Pair",
         ]
     )
-    targets.append(["known", "ISTD", 500, 7, 10, 20, 116.0474, 20, 50, ""])
+    targets.append(
+        ["known", "ISTD", 500.015, 7, 10, 40, 116.0474, 20, 50, ""]
+    )
     results = workbook.create_sheet("XIC Results")
     results.append(["SampleName", "Target", "Role", "RT", "Area"])
     for i, path in enumerate(paths):
@@ -4175,6 +4198,9 @@ def test_known_istd_reference_closes_drifting_group_and_cell_proof(
     reference_path = tmp_path / "reference.xlsx"
     workbook.save(reference_path)
     reference = read_known_istd_reference(reference_path)
+    assert tuple(
+        sorted(subject.neutral_loss_da for subject in batch.subject_batch.subjects)
+    ) == (configured_loss, configured_loss)
     plain = compose_untargeted_cid_nl_production_result(
         batch,
         runtime,
@@ -4192,6 +4218,7 @@ def test_known_istd_reference_closes_drifting_group_and_cell_proof(
         corrected,
         alignment_config=AlignmentConfig(),
         known_istd_reference=reference,
+        subject_worksets=(batch.subject_batch.subjects,),
     )
     plain_matrix = project_completed_untarget_batch_writer_inputs(plain).matrix
     corrected_matrix = project_completed_untarget_batch_writer_inputs(corrected).matrix
@@ -4207,15 +4234,19 @@ def test_known_istd_reference_closes_drifting_group_and_cell_proof(
     assert all(
         cell.area is not None and cell.area > 0 for cell in corrected_matrix.cells
     )
+    assert len({cell.area for cell in corrected_matrix.cells}) == len(paths)
     (child,) = corrected.application_result.children
-    support_subject_ids = {
-        source.method_assessment.content.method_subject.method_subject_id
+    expected_loss_by_sample = {path.stem: configured_loss for path in paths}
+    support_losses_by_sample = {
+        cell.canonical_sample.metadata.raw_stem: {
+            source.method_assessment.content.method_subject.neutral_loss_da
+            for source in cell.predecessor_cells
+            if source.content.method_result == "SUPPORT"
+        }
         for cell in child.scientific_core.cell_observations
-        for source in cell.predecessor_cells
-        if source.content.method_result == "SUPPORT"
     }
-    assert support_subject_ids == {
-        subject.method_subject_id for subject in batch.subject_batch.subjects
+    assert support_losses_by_sample == {
+        sample: {loss} for sample, loss in expected_loss_by_sample.items()
     }
     contexts = tuple(
         source.group_context
