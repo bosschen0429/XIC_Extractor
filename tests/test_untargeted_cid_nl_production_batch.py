@@ -1923,7 +1923,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         close_and_verify_persisted_curves()
         return
     if nearby:
-        assert len(matrix_rows) == (0 if method_mode != "single" else 1)
+        assert len(matrix_rows) == (0 if method_mode == "intersection" else 1)
         batch = captured_batches[0]
         assert len(batch.subject_batch.subjects) == 1
         for result in runtime_results[0].sample_results:
@@ -1954,7 +1954,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
             assert sorted(
                 len(group.member_subjects)
                 for group in child.scientific_core.final_population
-            ) == [1, 1]
+            ) == [2]
             selected_cells = tuple(
                 cell for cell in writer.matrix.cells if cell.selected_integration
             )
