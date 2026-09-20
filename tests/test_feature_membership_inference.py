@@ -13,6 +13,7 @@ from xic_extractor.alignment.ownership_models import (
     IdentityEvent,
     SampleLocalMS1Owner,
 )
+from xic_extractor.peak_detection.hypotheses import IntegrationResult
 
 
 def _owner(
@@ -57,6 +58,70 @@ def _owner(
 
 def _memberships(result: FeatureMembershipInferenceResult) -> set[frozenset[str]]:
     return {frozenset(group.owner_ids) for group in result.groups}
+
+
+def test_ms1_only_owner_requires_physical_signal_quality() -> None:
+    strong = replace(
+        _owner("a", "ms1"),
+        primary_identity_event=None,
+        selected_integration=IntegrationResult(
+            rt_left_min=9.95,
+            rt_apex_min=10.0,
+            rt_right_min=10.05,
+            raw_apex_rt_min=10.0,
+            rt_width_min=0.1,
+            height_raw=100.0,
+            height_smoothed=100.0,
+            area_raw_counts_seconds=1000.0,
+            baseline_residual_mad=1.0,
+        ),
+    )
+    missing_quality = replace(_owner("b", "ms1"), primary_identity_event=None)
+    result = infer_feature_memberships(
+        (strong, missing_quality),
+        config=AlignmentConfig(),
+        injection_order={"a": 1, "b": 2},
+        drift_lookup=None,
+    )
+    assert _memberships(result) == {
+        frozenset((strong.owner_id,)),
+        frozenset((missing_quality.owner_id,)),
+    }
+    assert all(group.disposition == "undecided" for group in result.groups)
+    assert any(
+        decision.owner_id == missing_quality.owner_id
+        and decision.reason == "weak_identity_evidence"
+        for decision in result.sparse_decisions
+    )
+
+
+def test_ms1_only_and_cid_evidence_do_not_form_a_mixed_group() -> None:
+    ms1 = replace(
+        _owner("a", "ms1"),
+        primary_identity_event=None,
+        selected_integration=IntegrationResult(
+            rt_left_min=9.95,
+            rt_apex_min=10.0,
+            rt_right_min=10.05,
+            raw_apex_rt_min=10.0,
+            rt_width_min=0.1,
+            height_raw=100.0,
+            height_smoothed=100.0,
+            area_raw_counts_seconds=1000.0,
+            baseline_residual_mad=1.0,
+        ),
+    )
+    cid = _owner("b", "cid")
+    result = infer_feature_memberships(
+        (ms1, cid),
+        config=AlignmentConfig(),
+        injection_order={"a": 1, "b": 2},
+        drift_lookup=None,
+    )
+    assert _memberships(result) == {
+        frozenset((ms1.owner_id,)),
+        frozenset((cid.owner_id,)),
+    }
 
 
 def test_true_drift_is_stable_without_requiring_distant_pair_edges() -> None:

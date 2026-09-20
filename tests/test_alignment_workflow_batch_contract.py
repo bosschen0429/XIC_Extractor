@@ -588,9 +588,9 @@ def _fake_application(*, scope, request, attempt, samples, row_id, physical_id):
                 ),
             ),
         ),
-        final_cross_sample_receipt=SimpleNamespace(
+        grouping_result=SimpleNamespace(
             final_population=(group,),
-            final_application=SimpleNamespace(lineage=()),
+            partition_transition=SimpleNamespace(lineage=()),
         ),
     )
     row = SimpleNamespace(

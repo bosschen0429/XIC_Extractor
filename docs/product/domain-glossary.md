@@ -27,7 +27,7 @@ XIC has one shared scientific processing lifecycle. Untargeted extraction is
 its general application; Targeted extraction is a constrained application,
 not a second peer core:
 
-`SearchScope -> provider-specific Discovery/capture -> shared observation/evidence contract -> PeakHypothesis -> CrossSample -> ModeTrack proposal/application -> optional ObservationRepair or Backfill -> CrossSample reconciliation -> optional one final ModeTrack proposal/application -> FinalizedScientificAlignment -> projection binding/subjects -> ProductionCellDecision -> projection completion -> result finalizer`
+`SearchScope -> provider-specific Discovery/capture -> shared observation/evidence contract -> PeakHypothesis/owner evidence -> constrained CrossSample grouping -> optional initial ModeTrack refinement where the workflow uses it -> stable CrossSampleGroupingResult -> optional bounded Backfill/ObservationRepair -> projection binding/subjects -> ProductionCellDecision -> projection completion -> result finalizer`
 
 - Both applications may use a broad candidate-discovery policy. Here, `broad`
   describes which evidence relationships the method may inspect, such as dR,
@@ -47,9 +47,13 @@ Discovery providers such as CID-NL, HCD-PI, and Delta Mass interpret their
 method-specific inputs and produce sample-local evidence and hypotheses through
 the shared contract. Downstream owners may use typed provider provenance,
 capabilities, or an explicit interpretation/integration strategy when required;
-shared does not mean method-blind. `CrossSample` owns group membership,
-identity, disposition, and lineage. `ModeTrack` may propose trajectory-based
-refinements, but only `CrossSample` can apply them. `ObservationRepair` repairs
+shared does not mean method-blind. CrossSample grouping owns group membership,
+identity, disposition, and lineage. It returns one immutable
+`CrossSampleGroupingResult`; the same object is consumed before bounded
+Backfill and through finalization. `ModeTrack` may propose an initial
+trajectory-based refinement only where the workflow explicitly uses it, and
+the grouping workflow applies an accepted complete-partition transition before
+the result becomes stable. `ObservationRepair` repairs
 an existing but incomplete or inconsistent observation. Backfill uses an
 already owner-backed Target or group context to make one bounded revisit of a
 missing or insufficient cell and returns a repaired/new observation or typed
@@ -92,6 +96,14 @@ Use these terms consistently:
 - `CrossSamplePeakGroupHypothesis` (`cross-sample group hypothesis`): successor
   cross-sample owner/group identity, exposed through `group_hypothesis_id`. It
   does not own per-peak integration truth or product projection.
+- `CrossSampleGroupingResult`: one immutable request-bound result containing
+  the exact processing owners, accepted complete-partition transition, and
+  prepared drift lookup. Its groups stay fixed through bounded Backfill,
+  ObservationRepair, cell decisions, and finalization.
+- `CrossSamplePartitionTransition`: the CrossSample-owned mathematical
+  before/after transition between two complete group partitions. It is the
+  application record for an accepted initial refinement, not a mutable
+  successor context or a second grouping lifecycle.
 - `CID-NL method subject`: the exact method-specific acquisition/assessment
   question retained in an assessment's provenance. It is not a cross-sample
   feature or a Matrix row.
@@ -108,8 +120,10 @@ Use these terms consistently:
   disposition of one finalized group: `established`, `provisional`,
   `unresolved`, or `rejected`. Disposition does not decide output inclusion.
 - `ModeTrack`: one request-bound trajectory model over immutable CrossSample
-  evidence. It proposes assessable refinements; it does not mint groups,
-  re-integrate traces, repair observations, or write values.
+  evidence. Where a workflow uses it, it proposes an assessable initial
+  refinement before `CrossSampleGroupingResult` closes. It does not refit after
+  repair, mint groups, re-integrate traces, repair observations, or write
+  values.
 - `ObservationRepair`: one bounded Backfill decision that may produce an
   owner-backed repaired observation for a pre-existing Target or group cell.
   It is not imputation, group membership, or product-value authority.
@@ -117,10 +131,10 @@ Use these terms consistently:
   or typed no-write result for one `TargetCellSubject` or `GroupCellSubject`.
   Observations retain measurement facts; they do not select the delivered
   value themselves.
-- `FinalizedScientificAlignment`: immutable shared core containing request
-  identity, finalized groups, dispositions, membership/lineage, and the closed
-  refinement/repair receipts needed by a workflow projection. It is not an
-  output artifact or mutable Matrix.
+- `FinalizedScientificAlignment`: immutable shared core containing the stable
+  grouping result, dispositions, membership/lineage, and closed repair receipts
+  needed by a workflow projection. It is not an output artifact or mutable
+  Matrix.
 - `TargetRowBinding`: Target projection decision that binds one fixed
   `TargetKey` row to the eligible finalized groups needed by its sample cells.
   Multiple groups are unresolved only when they compete for the same sample

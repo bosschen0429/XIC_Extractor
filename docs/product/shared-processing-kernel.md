@@ -36,7 +36,7 @@ provider-supplied strategy.
 
 XIC has one shared scientific processing lifecycle:
 
-`SearchScope -> provider-specific Discovery/capture -> shared observation/evidence contract -> PeakHypothesis -> CrossSample -> ModeTrack proposal/application -> optional ObservationRepair or Backfill -> CrossSample reconciliation -> optional one final ModeTrack proposal/application -> FinalizedScientificAlignment -> projection binding/subjects -> ProductionCellDecision -> projection completion -> result finalizer`
+`SearchScope -> provider-specific Discovery/capture -> shared observation/evidence contract -> PeakHypothesis -> CrossSample grouping and initial ModeTrack refinement -> CrossSampleGroupingResult -> optional bounded Backfill -> FinalizedScientificAlignment -> projection binding/subjects -> ProductionCellDecision -> projection completion -> result finalizer`
 
 A configured Target constrains search and fixes a projection row; it does not
 prove a sample-local observation, group membership, or selected value.
@@ -147,11 +147,10 @@ RAW/evidence revisit. Backfill may recover the first usable observation for
 that cell, but it cannot bootstrap a Target/group that has no prior owner-backed
 context.
 
-An accepted Backfill result enters the same observation/repair contract as
-other evidence. CrossSample still decides membership and
-`ProductionCellDecision` still decides value/no-write. A repair that changes
-trajectory identity may cause one final ModeTrack pass; value-only area or
-boundary changes do not. There is no recursive repair/refit loop.
+An accepted Backfill result enters the observation/repair contract for cell
+evidence. The existing `CrossSampleGroupingResult` keeps membership fixed;
+`ProductionCellDecision` decides value/no-write. Backfill does not rebuild
+the grouping result or trigger another ModeTrack pass.
 
 ### Cell Decision And Projection
 

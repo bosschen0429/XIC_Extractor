@@ -23,9 +23,6 @@ from xic_extractor.alignment.mode_track.assignment import (
     reinforce_mode_track_model_set,
     validate_mode_track_assignment_batch_for_consumption,
 )
-from xic_extractor.alignment.mode_track.family_context import (
-    mint_family_context_ref,
-)
 from xic_extractor.processing_identity import resolve_request_acquisition_source
 
 
@@ -136,7 +133,6 @@ def test_validator_accepts_all_states_and_exact_replay(
         "same_sources_new_request",
         "sibling_attempt",
         "different_model",
-        "different_family",
         "different_policy",
         "stale_sample",
         "stale_acquisition",
@@ -177,29 +173,14 @@ def test_consumer_validator_rejects_crossed_stale_or_forged_closure(
     elif case == "different_model":
         models = fit_mode_track_model_set(
             processing_owners=owners,
-            family_context=scenario.family_context,
+            assignment_scope=scenario.assignment_scope,
             direct_support_anchors=scenario.track_a_spine.anchors,
-            policy=scenario.policy,
-        )
-    elif case == "different_family":
-        family = mint_family_context_ref(
-            mz_interval=scenario.family_context.mz_interval,
-            rt_interval=scenario.family_context.rt_interval,
-            context_policy_version=scenario.family_context.context_policy_version,
-            source_lineage_refs=("synthetic:different-family",),
-            mode_tracks=scenario.family_context.mode_tracks,
-        )
-        models = fit_mode_track_model_set(
-            processing_owners=owners,
-            family_context=family,
-            direct_support_anchors=scenario.track_a_spine.anchors
-            + scenario.track_b_spine.anchors,
             policy=scenario.policy,
         )
     elif case == "different_policy":
         models = fit_mode_track_model_set(
             processing_owners=owners,
-            family_context=scenario.family_context,
+            assignment_scope=scenario.assignment_scope,
             direct_support_anchors=scenario.track_a_spine.anchors
             + scenario.track_b_spine.anchors,
             policy=replace(scenario.policy, prediction_half_width_min=0.11),
@@ -337,7 +318,7 @@ def test_fit_rejects_digest_consistent_anchor_apex(tmp_path: Path) -> None:
     with pytest.raises(ModeTrackContractError):
         fit_mode_track_model_set(
             processing_owners=scenario.fixture.owners,
-            family_context=scenario.family_context,
+            assignment_scope=scenario.assignment_scope,
             direct_support_anchors=tuple(
                 item for track in scenario.models.tracks for item in track.anchors
             ),

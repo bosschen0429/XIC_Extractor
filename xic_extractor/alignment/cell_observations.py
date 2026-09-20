@@ -784,58 +784,10 @@ def _validate_handoff_repair_closure(
     receipt_by_position: dict[str, tuple[ObservationRepairReceipt, ...]],
     observation_by_receipt: dict[str, tuple[OwnerBackfillPeakFactObservation, ...]],
 ) -> None:
-    """Require an applicable final receipt's complete repair provenance.
-
-    CrossSample's final receipt carries the one repair transaction that closed
-    the handoff.  Supplied repair evidence must therefore belong to that exact
-    receipt object; a caller cannot add a stale transaction, omit an applicable
-    repaired receipt, or replace it with an equal-looking receipt.
-    """
-
-    final_receipt = handoff.final_receipt.repair_receipt
-    if final_receipt is None:
-        if repair_receipts or repaired_observations:
-            raise CellObservationContractError(
-                "receipt-free terminal cannot carry repair evidence"
-            )
-        return
-    if any(receipt is not final_receipt for receipt in repair_receipts):
+    """Reject the retired grouping-time repair injection path."""
+    if repair_receipts or repaired_observations:
         raise CellObservationContractError(
-            "repair evidence does not match the exact final repair receipt"
-        )
-    subject = final_receipt.subject
-    sample_identity_id = subject.sample_identity.identity.sample_identity_id
-    applicable_positions = tuple(
-        position
-        for position in positions
-        if position.sample.identity.sample_identity_id == sample_identity_id
-        and position.group_identity == subject.predecessor_group
-    )
-    if final_receipt.outcome != "repaired" or not applicable_positions:
-        return
-    if len(applicable_positions) != 1:
-        raise CellObservationContractError(
-            "handoff final repair receipt binds multiple coverage positions"
-        )
-    exact_receipts = tuple(
-        receipt for receipt in repair_receipts if receipt is final_receipt
-    )
-    if len(exact_receipts) != 1:
-        raise CellObservationContractError(
-            "applicable repaired handoff requires its exact final repair receipt"
-        )
-    position_id = applicable_positions[0].position_id
-    position_receipts = receipt_by_position.get(position_id, ())
-    if not any(receipt is final_receipt for receipt in position_receipts):
-        raise CellObservationContractError(
-            "final repair receipt is not retained on its exact coverage position"
-        )
-    live_observations = observation_by_receipt.get(final_receipt.receipt_id, ())
-    if len(live_observations) != 1 or not any(
-        observation is live_observations[0] for observation in repaired_observations
-    ):
-        raise CellObservationContractError(
-            "applicable repaired handoff requires its exact live observation"
+            "repair observations must be closed by bounded Backfill before finalization"
         )
 
 

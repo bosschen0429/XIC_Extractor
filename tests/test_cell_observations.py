@@ -20,7 +20,6 @@ from tests.processing_identity_no_raw_fixture import (
     build_processing_identity_no_raw_fixture,
 )
 from tests.test_alignment_owner_backfill import _peak_config
-from tests.test_alignment_owner_clustering import _owner
 from tests.test_cid_nl_evidence_spine import (
     _completed_receipt,
     _truth_table_fixture,
@@ -58,21 +57,14 @@ from xic_extractor.alignment.cross_sample import (
     build_cross_sample_association_lineage_handoff,
 )
 from xic_extractor.alignment.cross_sample_peak_groups import (
-    CrossSampleNeighborhoodBudget,
-    CrossSampleSuccessorApplication,
     construct_cross_sample_peak_group_hypotheses,
     mint_cross_sample_group_identity,
     validate_cross_sample_peak_group_identity,
-)
-from xic_extractor.alignment.cross_sample_reconciliation import (
-    build_cross_sample_post_mt0_context,
-    reconcile_observation_repair,
 )
 from xic_extractor.alignment.hypothesis_owner_adapter import (
     compose_cid_nl_peak_hypotheses_from_assessment,
     owner_from_cid_nl_assessment_support,
 )
-from xic_extractor.alignment.mode_track.contracts import ModeTrackEvidenceProfile
 from xic_extractor.alignment.owner_backfill import build_owner_backfill_result
 from xic_extractor.alignment.owner_backfill_request_plan import (
     OWNER_BACKFILL_TRACE_RESULT_SEMANTICS,
@@ -91,7 +83,8 @@ from xic_extractor.peak_detection.signal_processing_profile import (
 
 
 def _outside_group_fixture(
-    tmp_path: Path, support_centers: tuple[float, ...],
+    tmp_path: Path,
+    support_centers: tuple[float, ...],
 ):
     fixture = build_untargeted_cid_nl_no_raw_fixture(
         tmp_path, sample_roles={"Multi": "study_sample", "Third": "study_sample"}
@@ -100,15 +93,16 @@ def _outside_group_fixture(
     for stem, centers in (("Multi", support_centers), ("Third", (16.0,))):
         peaks = tuple(
             cid_nl_peak(
-                fixture, stem, apex_rt=center,
-                rt_left_min=center - 0.1, rt_right_min=center + 0.1,
+                fixture,
+                stem,
+                apex_rt=center,
+                rt_left_min=center - 0.1,
+                rt_right_min=center + 0.1,
             )
             for center in centers
         )
         evidence = tuple(
-            cid_nl_evidence(
-                fixture, stem, scan_number=100 + index, scan_rt_min=center
-            )
+            cid_nl_evidence(fixture, stem, scan_number=100 + index, scan_rt_min=center)
             for index, center in enumerate(centers)
         )
         supports = tuple(
@@ -149,7 +143,8 @@ def _outside_group_fixture(
 
 @pytest.mark.parametrize("support_centers", [(8.0,), (8.0, 12.0)])
 def test_predecessor_cells_keep_all_supports_with_deterministic_outside_witness(
-    tmp_path: Path, support_centers: tuple[float, ...],
+    tmp_path: Path,
+    support_centers: tuple[float, ...],
 ) -> None:
     fixture, assessments, groups = _outside_group_fixture(tmp_path, support_centers)
     original_contents = None
@@ -185,7 +180,8 @@ def test_predecessor_cells_keep_all_supports_with_deterministic_outside_witness(
         }
         for sample, assessment in assessments:
             sample_cells = tuple(
-                cell for cell in cells
+                cell
+                for cell in cells
                 if cell.content.canonical_sample_identity_id
                 == sample.identity.sample_identity_id
             )
@@ -287,7 +283,8 @@ def _outside_population_handoff(tmp_path: Path):
 
 
 def test_cell_handoff_never_reconstructs_completed_groups(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     constructions = []
 
@@ -304,17 +301,23 @@ def test_cell_handoff_never_reconstructs_completed_groups(
     sources, handoff = _outside_population_handoff(tmp_path)
     assert constructions == []
     first = compose_final_group_cell_observation_population(
-        handoff=handoff, predecessor_cells=sources,
+        handoff=handoff,
+        predecessor_cells=sources,
     )
     assert constructions == []
     second = compose_final_group_cell_observation_population(
-        handoff=handoff, predecessor_cells=sources,
+        handoff=handoff,
+        predecessor_cells=sources,
     )
     assert second == first
     assert constructions == []
-    assert validate_final_group_cell_observation_population(
-        handoff=handoff, cell_observations=second,
-    ) == first
+    assert (
+        validate_final_group_cell_observation_population(
+            handoff=handoff,
+            cell_observations=second,
+        )
+        == first
+    )
 
 
 def test_population_rejects_crossed_artifact_and_context_rejects_invalid_config(
@@ -325,7 +328,8 @@ def test_population_rejects_crossed_artifact_and_context_rejects_invalid_config(
     object.__setattr__(forged, "artifact", sources[0].artifact)
     with pytest.raises(CellObservationContractError):
         compose_final_group_cell_observation_population(
-            handoff=handoff, predecessor_cells=(*sources[:-1], forged),
+            handoff=handoff,
+            predecessor_cells=(*sources[:-1], forged),
         )
     context = sources[0].group_context
     with pytest.raises(CellObservationContractError, match="exact AlignmentConfig"):
@@ -592,116 +596,6 @@ def _source_cell(
         group_context=group_spine.cells[0].group_context,
         method_assessment=assessment,
     )
-
-
-def _repaired_handoff(tmp_path: Path, *, sample_stem: str = "s1"):
-    tmp_path.mkdir(parents=True, exist_ok=True)
-    fixture = build_processing_identity_no_raw_fixture(
-        tmp_path,
-        sample_stems=(sample_stem,),
-    )
-    sample = fixture.sample(sample_stem)
-    assessment = _support_assessment(
-        fixture,
-        sample_stem,
-        suffix="repair",
-        apex_rt=8.0,
-        scan_number=71,
-        seed_count=2,
-    )
-    spine = build_cid_nl_reference_spine(
-        processing_owners=fixture.owners,
-        target=fixture.target,
-        sample_assessments=((sample, assessment),),
-    )
-    group = validate_cross_sample_peak_group_identity(
-        spine.group,
-        require_canonical=True,
-    )
-    feature = _runtime_feature(group)
-    acquisition = fixture.request.acquisition_sources[0]
-    source = _CanonicalOwnerBoundSource(acquisition, empty=False)
-    built = build_owner_backfill_result(
-        (feature,),
-        sample_order=(sample_stem,),
-        raw_sources={sample_stem: source},
-        expected_acquisition_sources={sample_stem: acquisition},
-        alignment_config=AlignmentConfig(max_rt_sec=60.0),
-        peak_config=replace(_peak_config(), resolver_min_scans=3),
-        signal_processing_profile=DEFAULT_SIGNAL_PROCESSING_PROFILE,
-    )
-    assert len(built.peak_fact_observations) == 1
-    observation = built.peak_fact_observations[0]
-    application = CrossSampleSuccessorApplication(
-        status="assessable",
-        predecessors=(group,),
-        successors=(group,),
-        lineage=(),
-        reason="unchanged_membership_no_lineage",
-    )
-    subject = mint_observation_repair_subject(
-        request_identity=observation.request_identity,
-        logical_request=observation.logical_request,
-        predecessor_group=group,
-        member_subject=group.member_subjects[0],
-        sample_identity=sample,
-        successor_application=application,
-    )
-    result = OwnerBackfillSampleResult(
-        sample_index=0,
-        sample_stem=sample_stem,
-        cells=built.cells,
-        peak_fact_observations=(observation,),
-    )
-    repair = close_observation_repair(subject, result)
-    assert repair.outcome == "repaired"
-    owner = replace(
-        _owner(sample_stem, group.group_hypothesis_id[-8:]),
-        cross_sample_member_subject=group.member_subjects[0],
-    )
-    context = build_cross_sample_post_mt0_context(
-        processing_request_id=group.processing_request_id,
-        processing_owners=fixture.owners,
-        population=(group,),
-        application=application,
-        owners=(owner,),
-        classified_edges=(),
-        anchors=(),
-        injection_order={sample_stem: 1},
-        evidence_profile=ModeTrackEvidenceProfile(
-            "anchor-trajectory",
-            "fixed-band",
-            0.1,
-            10,
-            10,
-        ),
-        budget=CrossSampleNeighborhoodBudget(86, 3655),
-    )
-    final_receipt = reconcile_observation_repair(
-        context=context,
-        repair_receipt=repair,
-    )
-    coverage = _coverage_for_groups(
-        fixture,
-        (group,),
-        (sample,),
-        planned=True,
-    )
-    handoff = build_cross_sample_association_lineage_handoff(
-        coverage=coverage,
-        final_receipt=final_receipt,
-    )
-    source_cell = _source_cell(
-        fixture,
-        sample,
-        spine,
-        _not_evaluated_assessment(
-            fixture,
-            sample_stem,
-            suffix="repair-source",
-        ),
-    )
-    return fixture, spine, handoff, source_cell, repair, observation
 
 
 def test_composer_mints_exact_cartesian_owner_population_and_states(
@@ -1103,29 +997,6 @@ def test_composer_split_keeps_cartesian_not_searched_remainder(
     assert not by_key[(right, samples[0])].position_associations
 
 
-def test_composer_retains_exact_repaired_receipt_observation_and_integration(
-    tmp_path: Path,
-) -> None:
-    _fixture, _spine, handoff, source_cell, repair, observation = _repaired_handoff(
-        tmp_path
-    )
-
-    composed = compose_final_group_cell_observation_population(
-        handoff=handoff,
-        predecessor_cells=(source_cell,),
-        repair_receipts=(repair,),
-        repaired_observations=(observation,),
-    )
-
-    assert len(composed) == 1
-    cell = composed[0]
-    assert cell.evidence_state == "repaired_observation"
-    assert cell.repair_receipts == (repair,)
-    assert cell.repaired_observations == (observation,)
-    assert cell.predecessor_cells == (source_cell,)
-    assert cell.integrations == (observation.facts.integration,)  # type: ignore[union-attr]
-
-
 def test_composer_rejects_repair_not_authorized_by_final_receipt(
     tmp_path: Path,
 ) -> None:
@@ -1158,7 +1029,7 @@ def test_composer_rejects_repair_not_authorized_by_final_receipt(
             if member.canonical_sample_identity_id == sample.identity.sample_identity_id
         ),
         sample_identity=sample,
-        successor_application=handoff.final_receipt.post_mt0_application,
+        successor_application=handoff.final_receipt.partition_transition,
     )
     stale_repair = close_observation_repair(
         subject,
@@ -1187,130 +1058,13 @@ def test_composer_rejects_repair_not_authorized_by_final_receipt(
         for cell in spine.cells
     )
 
-    assert handoff.final_receipt.repair_receipt.outcome == "no_repair"
     assert stale_repair.outcome == "repaired"
-    with pytest.raises(CellObservationContractError, match="exact final repair"):
+    with pytest.raises(CellObservationContractError, match="bounded Backfill"):
         compose_final_group_cell_observation_population(
             handoff=handoff,
             predecessor_cells=predecessors,
             repair_receipts=(stale_repair,),
             repaired_observations=(observation,),
-        )
-
-
-def test_composer_rejects_crossed_repaired_member_hypothesis_and_integration(
-    tmp_path: Path,
-) -> None:
-    _, _, handoff, source_cell, repair, observation = _repaired_handoff(
-        tmp_path / "base"
-    )
-    _, _, crossed_handoff, _, crossed_repair, crossed_observation = _repaired_handoff(
-        tmp_path / "crossed", sample_stem="s2"
-    )
-
-    with pytest.raises(
-        CellObservationContractError,
-        match="crossed its processing request|exact final repair",
-    ):
-        compose_final_group_cell_observation_population(
-            handoff=handoff,
-            predecessor_cells=(source_cell,),
-            repair_receipts=(crossed_repair,),
-            repaired_observations=(crossed_observation,),
-        )
-    assert crossed_handoff.final_receipt.repair_receipt is crossed_repair
-
-    crossed_hypothesis = copy(observation)
-    object.__setattr__(
-        crossed_hypothesis,
-        "logical_request",
-        crossed_observation.logical_request,
-    )
-    with pytest.raises(
-        CellObservationContractError,
-        match="not revalidatable|bind exactly one",
-    ):
-        compose_final_group_cell_observation_population(
-            handoff=handoff,
-            predecessor_cells=(source_cell,),
-            repair_receipts=(repair,),
-            repaired_observations=(crossed_hypothesis,),
-        )
-
-    facts = observation.facts
-    assert facts is not None
-    crossed_integration = copy(observation)
-    crossed_facts = copy(facts)
-    object.__setattr__(crossed_facts, "integration", object())
-    object.__setattr__(crossed_integration, "facts", crossed_facts)
-    with pytest.raises(CellObservationContractError, match="revalidatable"):
-        compose_final_group_cell_observation_population(
-            handoff=handoff,
-            predecessor_cells=(source_cell,),
-            repair_receipts=(repair,),
-            repaired_observations=(crossed_integration,),
-        )
-
-
-def test_repaired_final_receipt_cannot_be_omitted_from_applicable_closure() -> None:
-    sample: Any = SimpleNamespace(identity=SimpleNamespace(sample_identity_id="sample"))
-    group: Any = object()
-    receipt: Any = SimpleNamespace(
-        outcome="repaired",
-        receipt_id="receipt",
-        subject=SimpleNamespace(sample_identity=sample, predecessor_group=group),
-    )
-    handoff: Any = SimpleNamespace(
-        final_receipt=SimpleNamespace(repair_receipt=receipt),
-    )
-    position: Any = SimpleNamespace(
-        position_id="position",
-        sample=sample,
-        group_identity=group,
-    )
-
-    with pytest.raises(CellObservationContractError, match="exact final repair"):
-        cell_owner._validate_handoff_repair_closure(
-            handoff=handoff,
-            positions=(position,),
-            repair_receipts=(),
-            repaired_observations=(),
-            receipt_by_position={},
-            observation_by_receipt={},
-        )
-
-
-def test_repaired_final_receipt_rejects_equal_looking_substitution() -> None:
-    sample: Any = SimpleNamespace(identity=SimpleNamespace(sample_identity_id="sample"))
-    group: Any = object()
-    receipt: Any = SimpleNamespace(
-        outcome="repaired",
-        receipt_id="receipt",
-        subject=SimpleNamespace(sample_identity=sample, predecessor_group=group),
-    )
-    substitute: Any = SimpleNamespace(
-        outcome="repaired",
-        receipt_id="receipt",
-        subject=SimpleNamespace(sample_identity=sample, predecessor_group=group),
-    )
-    live_observation: Any = object()
-    handoff: Any = SimpleNamespace(
-        final_receipt=SimpleNamespace(repair_receipt=receipt),
-    )
-    position: Any = SimpleNamespace(
-        position_id="position",
-        sample=sample,
-        group_identity=group,
-    )
-
-    with pytest.raises(CellObservationContractError, match="exact final repair"):
-        cell_owner._validate_handoff_repair_closure(
-            handoff=handoff,
-            positions=(position,),
-            repair_receipts=(substitute,),
-            repaired_observations=(live_observation,),
-            receipt_by_position={"position": (substitute,)},
-            observation_by_receipt={"receipt": (live_observation,)},
         )
 
 

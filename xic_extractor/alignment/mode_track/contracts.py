@@ -19,8 +19,8 @@ from xic_extractor.alignment.cross_sample_peak_groups import (
     CrossSampleGroupIdentity,
     CrossSampleGroupMemberSubject,
     CrossSampleNeighborhoodBudget,
+    CrossSamplePartitionTransition,
     CrossSampleRepairedObservation,
-    CrossSampleSuccessorApplication,
     apply_coupled_successor_proposal,
     build_bounded_connected_neighborhood,
     validate_cross_sample_group_population,
@@ -654,7 +654,7 @@ def apply_accepted_mode_track_refinement(
     proposal: AcceptedModeTrackRefinement,
     application_context: CrossSampleCoupledProposalContext,
     population: Sequence[CrossSampleGroupIdentity],
-) -> CrossSampleSuccessorApplication:
+) -> CrossSamplePartitionTransition:
     if (
         not isinstance(trajectory_input, ModeTrackTrajectoryInput)
         or type(proposal) is not AcceptedModeTrackRefinement

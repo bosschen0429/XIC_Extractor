@@ -1,16 +1,19 @@
 # Peak Anchor, Cross-Sample Group, and Hypothesis Boundary
 
 This page defines the durable boundary between per-sample peak anchors, wide
-Family contexts, cross-sample group hypotheses, peak hypotheses, ModeTrack
+Assignment scopes, cross-sample group hypotheses, peak hypotheses, ModeTrack
 proposals, ObservationRepair, cell decisions, and product projections. Use it when a change touches
 discovery peak-anchor grouping, alignment owner construction, diagnostic
 ModeTrack review, Backfill activation, or any matrix identity sidecar.
 
 ## Contract
 
-`FamilyContextRef` and `ModeTrackAssignment` are internal representations of
-observation context and trajectory decisions. Their algorithms and structures
-may be replaced when the scientific decision and its consumers change.
+`ModeTrackAssignmentScope` and `ModeTrackAssignment` are internal values used
+for an optional initial trajectory decision. The scope contains only actual
+m/z and RT admissibility bounds plus the exact existing groups; it has no
+standalone identity, serialization contract, product authority, or public
+Family meaning. Their algorithms and structures may be replaced when the
+scientific decision and its consumers change.
 Preserve physical observations, sample/acquisition provenance, explicit
 uncertainty, and confirmed identity constraints; no particular clustering
 strategy or complete pair graph is an invariant. Public/legacy `family`
@@ -22,14 +25,15 @@ vocabulary and persisted schema changes require explicit consumer updates.
 - `CrossSamplePeakGroupHypothesis` owns cross-sample group identity:
   membership, feature inference evidence, identity constraints, review-only records, and
   group delivery metadata. Use `group_hypothesis_id` for identity.
-- CrossSample also owns the mutually exclusive group disposition and every
-  membership/split/merge successor lineage edge. ModeTrack may propose a change
-  but cannot apply it or mint the successor.
-- Internal `FamilyContextRef` owns one wide m/z/RT observation universe and
-  references zero or more existing `group_hypothesis_id` ModeTracks. It is
-  owner-minted from canonical context, policy, lineage, and group IDs. Public or
-  legacy family labels, `method_subject_id`, display labels, and ordinals are
-  not substitutes for this identity.
+- CrossSample grouping also owns the mutually exclusive group disposition and
+  every membership/split/merge lineage edge. Its grouping workflow returns one
+  immutable `CrossSampleGroupingResult(processing_owners,
+  partition_transition, drift_lookup)`. The same result is used before bounded
+  Backfill and through finalization; repair does not reopen grouping.
+- `CrossSamplePartitionTransition` records the complete group partition before
+  and after an accepted initial refinement. ModeTrack may propose that initial
+  change where a workflow uses it, but cannot apply it or mint a second group
+  owner.
 - `PeakHypothesis` owns candidate chromatographic identity: the physical peak
   candidate, selected integration, typed evidence, and selected-hypothesis
   decision semantics.
@@ -39,8 +43,8 @@ vocabulary and persisted schema changes require explicit consumer updates.
   outside the model, absent, or technically unassessable. The
   identity-settlement/identity-trajectory boundary mints this internal,
   immutable diagnostic fact.
-  The successor ModeTrack result remains proposal-only; it does not mint a
-  second group owner or select a product value.
+  The ModeTrack result remains proposal-only; it does not mint a second group
+  owner, refit after repair, or select a product value.
 - Backfill may return one independently traceable owner-backed repaired
   observation. It cannot imply group membership or writer authority.
 - Workflow projection first owns Target/Untarget row identity/binding and the
@@ -58,10 +62,11 @@ vocabulary and persisted schema changes require explicit consumer updates.
 | --- | --- | --- |
 | Discovery `peak_anchor_id` / output `feature_family_id` | Per-sample MS1 peak identity and review grouping | Cross-sample identity, Backfill promotion, selected-peak truth |
 | Alignment `public_family_id` (display label) | Stable public row label for output compatibility | Canonical identity proof - use `group_hypothesis_id` instead |
-| Internal `FamilyContextRef` | Wide chromatographic observation context and its zero-or-more existing ModeTracks | Chemical identity, public row identity, same-peak truth, or writer authority |
+| Internal `ModeTrackAssignmentScope` | Actual m/z/RT admissibility bounds and exact existing groups for producer-to-fit handoff | Standalone identity, persistence, chemical identity, public row identity, same-peak truth, or writer authority |
+| `CrossSampleGroupingResult` | One immutable processing-owner-bound grouping result, accepted complete-partition transition, and prepared drift lookup | Post-repair regrouping, selected values, or writer authority |
 | `CrossSamplePeakGroupHypothesis` | Cross-sample owner/group identity, membership, disposition, and lineage via `group_hypothesis_id` | Per-peak integration truth, ModeTrack fitting, repair, or ProductWriter authority |
 | `PeakHypothesis` | Candidate peak identity, evidence context, selected hypothesis semantics | Cross-sample grouping policy or final matrix writing |
-| Current/successor ModeTrack result | Typed sample/acquisition × existing ModeTrack correspondence, exclusions, assessability, and proposal lineage | Applying membership, minting groups, evidence/area transfer, Backfill/Matrix values, or chemical identity |
+| Initial ModeTrack result | Typed sample/acquisition × existing ModeTrack correspondence, exclusions, assessability, and proposal lineage | Applying membership, post-repair refitting, minting groups, evidence/area transfer, Backfill/Matrix values, or chemical identity |
 | ObservationRepair | Bounded local repaired observation or typed no-repair result | Membership, selected value, first hit, or recursive support |
 | ProductionCellDecision | Selected value or typed no-write for an explicit Target/Group subject | Row identity, RAW access, grouping, or rendering |
 | Product projection / ProductWriter | Pre-cell row binding/subject construction; post-cell inclusion, counted detection, product state, routing, delivery shape, and authorized rendering | Low-level evidence extraction, grouping, repair, or value recomputation |
@@ -74,6 +79,8 @@ expose `public_family_id` or legacy `feature_family_id` as cross-sample group
 display labels. Treat this as an adapter state:
 
 1. Preserve legacy IDs when they are public output contracts.
+   Persisted matrix identity field `source_feature_family_ids` keeps its current
+   name and source-lineage meaning; it is not an assignment-scope identity.
 2. Add successor IDs alongside legacy IDs when identity semantics become
    product-relevant.
 3. Use `group_hypothesis_id` for successor alignment identity decisions when a
@@ -99,7 +106,7 @@ display labels. Treat this as an adapter state:
 - Do not use cross-sample group membership as same-peak proof. Same-peak support
   needs a typed anchor, selected mode, or PeakHypothesis-level reason.
 - When a `PeakHypothesis` is already an exact owner of one ModeTrack in the
-  current `FamilyContextRef`, preserve that identity-settlement identity as observed occupancy;
+  current `ModeTrackAssignmentScope`, preserve that exact owner identity as observed occupancy;
   do not reclassify the same owner from aggregate group-center geometry. This
   grants no SUPPORT vote, trajectory reinforcement, or product authority.
 - Do not treat a Family as a same-peak or chemical-identity claim. Two resolved
@@ -113,7 +120,7 @@ display labels. Treat this as an adapter state:
   candidate, and direct-SUPPORT assessment identities. It must not retain or
   depend on `CellObservationRef`; matching only the `PeakHypothesis` is
   insufficient provenance.
-- Do not let a consumer refit ModeTracks or reinterpret an ambiguous,
+- Do not let a consumer or ObservationRepair refit ModeTracks or reinterpret an ambiguous,
   out-of-model, absent, or technically unassessable state as unique. Shadow
   assignments carry no value or writer authority.
 - Do not treat an accepted ObservationRepair as implicit membership or selected

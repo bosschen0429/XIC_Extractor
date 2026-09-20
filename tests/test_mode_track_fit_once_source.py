@@ -108,7 +108,7 @@ def test_bootstrap_returns_fit_once_source_closing_existing_values(
         for sample_stem, scan_number in (("s1", 101), ("s2", 201), ("s3", 301))
     )
 
-    family_context, model_set, batches, source = (
+    assignment_scope, model_set, batches, source = (
         bootstrap_mode_tracks_from_cid_nl_support(
             processing_owners=fixture.owners,
             sample_assessments=sample_assessments,
@@ -123,7 +123,7 @@ def test_bootstrap_returns_fit_once_source_closing_existing_values(
         )
     )
 
-    assert source.family_context is family_context
+    assert model_set.assignment_scope is assignment_scope
     assert source.model_set is model_set
     assert tuple(batch.assignment_batch_id for batch in batches) == tuple(
         sorted(batch.assignment_batch_id for batch in batches)
@@ -176,11 +176,9 @@ def test_bootstrap_returns_fit_once_source_closing_existing_values(
             fit_once_source_id=source.fit_once_source_id,
             processing_request_id=source.processing_request_id,
             processing_attempt_id=source.processing_attempt_id,
-            family_context_id=source.family_context_id,
             model_set_id=source.model_set_id,
             initial_assignment_batch_ids=source.initial_assignment_batch_ids,
             processing_owners=source.processing_owners,
-            family_context=source.family_context,
             model_set=source.model_set,
             sample_sources=source.sample_sources,
             initial_assignment_batches=source.initial_assignment_batches,
@@ -207,7 +205,7 @@ def test_fit_once_source_rejects_batch_from_another_candidate_snapshot(
         )
         for sample_stem, scan_number in (("s1", 101), ("s2", 201), ("s3", 301))
     )
-    family_context, model_set, batches, source = (
+    _assignment_scope, model_set, batches, source = (
         bootstrap_mode_tracks_from_cid_nl_support(
             processing_owners=fixture.owners,
             sample_assessments=sample_assessments,
@@ -240,7 +238,6 @@ def test_fit_once_source_rejects_batch_from_another_candidate_snapshot(
     with pytest.raises(ModeTrackContractError, match="candidate snapshot"):
         mint_mode_track_fit_once_source(
             processing_owners=fixture.owners,
-            family_context=family_context,
             model_set=model_set,
             sample_sources=source.sample_sources,
             initial_assignment_batches=crossed_batches,

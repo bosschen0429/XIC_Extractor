@@ -91,7 +91,7 @@ def test_target_result_binds_exact_owner_graph_and_completion_receipts(
     )
     assert result.scientific_core is scientific_core
     assert result.completed_projection is projection
-    assert result.completion_receipts[0] is scientific_core.final_cross_sample_receipt
+    assert result.completion_receipts[0] is scientific_core.grouping_result
     assert result.completion_receipts[1] is projection
     assert all(
         actual is expected
@@ -179,7 +179,7 @@ def test_untarget_result_binds_complete_rows_without_matrix_reconstruction(
     assert result.scientific_core is scientific_core
     assert result.completed_projection is projection
     assert result.completion_receipts == (
-        scientific_core.final_cross_sample_receipt,
+        scientific_core.grouping_result,
         projection,
     )
     assert result.completed_projection.included_rows == projection.included_rows
@@ -586,8 +586,8 @@ def test_untarget_owner_pickle_rebinds_completion_and_still_rejects_substitution
     assert graph_walks == []
     if tamper == "core":
         object.__setattr__(
-            restored_core, "final_cross_sample_receipt",
-            copy(restored_core.final_cross_sample_receipt),
+            restored_core, "grouping_result",
+            copy(restored_core.grouping_result),
         )
     else:
         object.__setattr__(restored_projection, "rows", ())

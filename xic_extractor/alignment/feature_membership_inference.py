@@ -137,8 +137,6 @@ class _FeatureTrack:
         cls, owner: SampleLocalMS1Owner, *, direction: DecisionDirection
     ) -> _FeatureTrack:
         event = owner.primary_identity_event
-        if event is None:
-            raise ValueError("an indexable feature requires a primary identity event")
         return cls(
             key=f"{direction}:{owner.owner_id}",
             seed=owner,
@@ -146,24 +144,23 @@ class _FeatureTrack:
             sample_stems={owner.sample_stem},
             precursor_min=owner.precursor_mz,
             precursor_max=owner.precursor_mz,
-            product_min=event.product_mz,
-            product_max=event.product_mz,
-            loss_min=event.observed_neutral_loss_da,
-            loss_max=event.observed_neutral_loss_da,
-            neutral_loss_tag=event.neutral_loss_tag,
+            product_min=0.0 if event is None else event.product_mz,
+            product_max=0.0 if event is None else event.product_mz,
+            loss_min=0.0 if event is None else event.observed_neutral_loss_da,
+            loss_max=0.0 if event is None else event.observed_neutral_loss_da,
+            neutral_loss_tag=owner.neutral_loss_tag,
         )
 
     def add(self, owner: SampleLocalMS1Owner) -> None:
         event = owner.primary_identity_event
-        if event is None:
-            raise ValueError("an indexable feature requires a primary identity event")
         self.sample_stems.add(owner.sample_stem)
         self.precursor_min = min(self.precursor_min, owner.precursor_mz)
         self.precursor_max = max(self.precursor_max, owner.precursor_mz)
-        self.product_min = min(self.product_min, event.product_mz)
-        self.product_max = max(self.product_max, event.product_mz)
-        self.loss_min = min(self.loss_min, event.observed_neutral_loss_da)
-        self.loss_max = max(self.loss_max, event.observed_neutral_loss_da)
+        if event is not None:
+            self.product_min = min(self.product_min, event.product_mz)
+            self.product_max = max(self.product_max, event.product_mz)
+            self.loss_min = min(self.loss_min, event.observed_neutral_loss_da)
+            self.loss_max = max(self.loss_max, event.observed_neutral_loss_da)
         self.last = owner
 
     @property
@@ -199,19 +196,21 @@ class _FeatureIndex:
         counts: Counter[str],
     ) -> set[str]:
         event = owner.primary_identity_event
-        if event is None:
-            return set()
         result: set[str] | None = None
-        for axis, value, tolerance in (
-            ("precursor", owner.precursor_mz, config.max_ppm),
-            ("product", event.product_mz, config.product_mz_tolerance_ppm),
-            (
-                "loss",
-                event.observed_neutral_loss_da,
-                config.observed_loss_tolerance_ppm,
-            ),
-        ):
-            items = self._axes.get((event.neutral_loss_tag, axis), ())
+        axes = [("precursor", owner.precursor_mz, config.max_ppm)]
+        if event is not None:
+            axes.extend(
+                (
+                    ("product", event.product_mz, config.product_mz_tolerance_ppm),
+                    (
+                        "loss",
+                        event.observed_neutral_loss_da,
+                        config.observed_loss_tolerance_ppm,
+                    ),
+                )
+            )
+        for axis, value, tolerance in axes:
+            items = self._axes.get((owner.neutral_loss_tag, axis), ())
             fraction = tolerance / 1_000_000.0
             first = bisect_left(items, (value / (1.0 + fraction), ""))
             last = bisect_right(items, (value * (1.0 + fraction), chr(0x10FFFF)))
@@ -224,6 +223,8 @@ class _FeatureIndex:
 
     @staticmethod
     def _values(track: _FeatureTrack) -> tuple[tuple[str, float], ...]:
+        if track.seed.primary_identity_event is None:
+            return (("precursor", track.precursor_min),)
         return (
             ("precursor", track.precursor_min),
             ("product", track.product_min),
@@ -644,17 +645,19 @@ def _feature_hard_reason(
     config: AlignmentConfig,
 ) -> tuple[str, float]:
     event = owner.primary_identity_event
-    if event is None:
-        return "missing_primary_identity_event", math.inf
     if owner.sample_stem in track.sample_stems:
         return "same_sample", math.inf
-    if event.neutral_loss_tag != track.neutral_loss_tag:
+    if (event is None) != (track.seed.primary_identity_event is None):
+        return "identity_evidence_type_mismatch", math.inf
+    if owner.neutral_loss_tag != track.neutral_loss_tag:
         return "neutral_loss_tag_mismatch", math.inf
     mass_fraction = _envelope_fraction(
         track.precursor_min, track.precursor_max, owner.precursor_mz, config.max_ppm
     )
     if mass_fraction > 1.0:
         return "precursor_envelope", mass_fraction
+    if event is None:
+        return "", mass_fraction
     if (
         _envelope_fraction(
             track.product_min,
@@ -855,13 +858,10 @@ def _owner_uncertainty_reason(
     owner: SampleLocalMS1Owner,
     config: AlignmentConfig,
 ) -> str:
-    event = owner.primary_identity_event
     if owner.identity_conflict:
         return "owner_identity_conflict"
     if owner.is_provisional:
         return "provisional_owner"
-    if event is None:
-        return "missing_primary_identity_event"
     if owner.owner_area <= 0.0:
         return "nonpositive_owner_area"
     if "ambiguous" in owner.assignment_reason:

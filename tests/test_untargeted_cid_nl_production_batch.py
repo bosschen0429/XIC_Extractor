@@ -94,7 +94,6 @@ from xic_extractor.sample_metadata import SampleMetadata
 
 
 def _forbid_retained_production_repair(monkeypatch: pytest.MonkeyPatch) -> None:
-    from xic_extractor.alignment import cross_sample_reconciliation
     from xic_extractor.alignment.backfill import observation_repair
 
     def unexpected_repair(*args, **kwargs):
@@ -102,11 +101,6 @@ def _forbid_retained_production_repair(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(
         observation_repair, "execute_observation_repair", unexpected_repair
-    )
-    monkeypatch.setattr(
-        cross_sample_reconciliation,
-        "consume_observation_repair_terminal",
-        unexpected_repair,
     )
 
 
@@ -1253,7 +1247,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         bounded_owner, "materialize_untargeted_cid_nl_partition", retain_batch
     )
     from xic_extractor.alignment import cell_observations as cell_owner
-    from xic_extractor.alignment import cross_sample_reconciliation
+    from xic_extractor.alignment import grouping_workflow as grouping_workflow_owner
     from xic_extractor.alignment import workflow as workflow_owner
     from xic_extractor.alignment.mode_track import producer as producer_owner
     from xic_extractor.alignment.mode_track import refinement as refinement_owner
@@ -1393,7 +1387,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         )
 
     def unexpected_mt0(*args, **kwargs):
-        raise AssertionError("retained production must not execute MT0 refinement")
+        raise AssertionError("retained production must not execute initial refinement")
 
     _forbid_retained_production_repair(monkeypatch)
 
@@ -1442,7 +1436,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         refinement_owner, "_propose_mode_track_refinement", unexpected_mt0
     )
     monkeypatch.setattr(
-        cross_sample_reconciliation,
+        grouping_workflow_owner,
         "apply_accepted_mode_track_refinement",
         unexpected_mt0,
     )
@@ -1454,29 +1448,24 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     consumed_captures = []
     retained_candidate_batches = []
     retained_cell_batches = []
-    build_initial_context = production.build_initial_cid_nl_cross_sample_context
+    build_initial_context = production.build_initial_cid_nl_cross_sample_groups
     compose_predecessor_cells = production.compose_cid_nl_predecessor_cells
-    close_without_repair = workflow_owner.close_cross_sample_without_observation_repair
     finalize_scientific = workflow_owner.finalize_scientific_alignment
 
     def retain_initial_context(**kwargs):
-        family, context, edges, retained_candidates = build_initial_context(**kwargs)
+        assignment_scope, context, retained_candidates = build_initial_context(**kwargs)
         retained_contexts.append(context)
-        retained_initial_edges.extend(edges)
         retained_captures.extend(kwargs["captures"])
         retained_candidate_batches.append(retained_candidates)
-        return family, context, edges, retained_candidates
+        return assignment_scope, context, retained_candidates
 
     def retain_predecessor_cells(**kwargs):
         cells = compose_predecessor_cells(**kwargs)
         retained_cell_batches.append(cells)
         return cells
 
-    def retain_consumed_context(context):
-        consumed_contexts.append(context)
-        return close_without_repair(context)
-
     def retain_scientific_captures(**kwargs):
+        consumed_contexts.append(kwargs["grouping_result"])
         consumed_captures.extend(kwargs["captures"])
         return finalize_scientific(**kwargs)
 
@@ -1487,7 +1476,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     )
     monkeypatch.setattr(
         production,
-        "build_initial_cid_nl_cross_sample_context",
+        "build_initial_cid_nl_cross_sample_groups",
         retain_initial_context,
     )
     monkeypatch.setattr(
@@ -1497,11 +1486,6 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     )
     monkeypatch.setattr(
         workflow_owner, "apply_mode_track_refinement_run_for_workflow", unexpected_mt0
-    )
-    monkeypatch.setattr(
-        workflow_owner,
-        "close_cross_sample_without_observation_repair",
-        retain_consumed_context,
     )
     monkeypatch.setattr(
         workflow_owner, "finalize_scientific_alignment", retain_scientific_captures
@@ -1843,10 +1827,9 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     for context, child in zip(
         retained_contexts, completed.application_result.children, strict=True
     ):
-        assert context.fit_once_source_id is None
-        assert child.scientific_core.final_population == context.population
+        assert child.scientific_core.final_population == context.final_population
         assert child.scientific_core.lineage == ()
-        assert child.scientific_core.final_cross_sample_receipt.repair_terminal is None
+        assert child.scientific_core.grouping_result == context
     assert tuple(completed.initial_edges) == tuple(retained_initial_edges)
     children = completed.application_result.children
     # Completed owner answers flow through projection, spool and writer once.
@@ -4054,17 +4037,16 @@ def test_production_initial_groups_use_complete_feature_inference_batch(
     initial_contexts = []
     initial_edges = []
     cell_contexts = []
-    build_context = production.build_initial_cid_nl_cross_sample_context
+    build_context = production.build_initial_cid_nl_cross_sample_groups
     compose_cells = production.compose_cid_nl_predecessor_cells
 
     def retain_context(**kwargs):
         result = build_context(**kwargs)
         initial_contexts.append(result[0])
-        initial_edges.extend(result[2])
         return result
 
     monkeypatch.setattr(
-        production, "build_initial_cid_nl_cross_sample_context", retain_context
+        production, "build_initial_cid_nl_cross_sample_groups", retain_context
     )
 
     def retain_cells(**kwargs):
@@ -4077,7 +4059,7 @@ def test_production_initial_groups_use_complete_feature_inference_batch(
         batch, runtime, alignment_config=AlignmentConfig()
     )
     (context,) = initial_contexts
-    (group,) = context.mode_tracks
+    (group,) = context.groups
     assert {owner.sample_stem for owner in group.owners} == set(
         stems[:supported_samples]
     )

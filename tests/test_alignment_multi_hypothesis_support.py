@@ -122,7 +122,7 @@ def test_one_assessment_preserves_two_individually_supported_peaks(
         )
         assert owner.owner_id == hypothesis.hypothesis_id
 
-    family_context, model_set, batches, _source = (
+    assignment_scope, model_set, batches, _source = (
         bootstrap_mode_tracks_from_cid_nl_support(
             processing_owners=fixture.owners,
             sample_assessments=((sample, assessment),),
@@ -137,7 +137,7 @@ def test_one_assessment_preserves_two_individually_supported_peaks(
         )
     )
 
-    assert len(family_context.mode_tracks) == 2
+    assert len(assignment_scope.groups) == 2
     assert len(model_set.tracks) == 2
     assert len(batches) == 1
     assert tuple(item.state for item in batches[0].assignments) == (
@@ -171,7 +171,7 @@ def test_identity_membership_is_geometry_not_group_center_reclassification(
         )
     )
 
-    family_context, model_set, batches, _source = (
+    assignment_scope, model_set, batches, _source = (
         bootstrap_mode_tracks_from_cid_nl_support(
             processing_owners=fixture.owners,
             sample_assessments=sample_assessments,
@@ -186,7 +186,7 @@ def test_identity_membership_is_geometry_not_group_center_reclassification(
         )
     )
 
-    assert len(family_context.mode_tracks) == 2
+    assert len(assignment_scope.groups) == 2
     assert len(model_set.tracks) == 2
     assert tuple(len(batch.assignments) for batch in batches) == (2, 2)
     assert {
@@ -196,7 +196,7 @@ def test_identity_membership_is_geometry_not_group_center_reclassification(
         assignment.peak_hypothesis_id
         in next(
             track.owner_ids
-            for track in family_context.mode_tracks
+            for track in assignment_scope.groups
             if track.group_hypothesis_id == assignment.group_hypothesis_id
         )
         for batch in batches

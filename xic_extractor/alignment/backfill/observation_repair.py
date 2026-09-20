@@ -13,7 +13,7 @@ from xic_extractor.alignment.backfill_transaction import OwnerBackfillSampleResu
 from xic_extractor.alignment.cross_sample_peak_groups import (
     CrossSampleGroupIdentity,
     CrossSampleGroupMemberSubject,
-    CrossSampleSuccessorApplication,
+    CrossSamplePartitionTransition,
     mint_cross_sample_group_identity,
 )
 from xic_extractor.alignment.owner_backfill import (
@@ -79,7 +79,7 @@ class ObservationRepairSubject:
     predecessor_group: CrossSampleGroupIdentity
     member_subject: CrossSampleGroupMemberSubject
     sample_identity: ResolvedCanonicalSampleIdentity
-    successor_application: CrossSampleSuccessorApplication
+    successor_application: CrossSamplePartitionTransition
     repair_epoch: int
     _mint_token: InitVar[object] = field(kw_only=True)
 
@@ -330,7 +330,7 @@ def mint_observation_repair_subject(
     predecessor_group: CrossSampleGroupIdentity,
     member_subject: CrossSampleGroupMemberSubject,
     sample_identity: ResolvedCanonicalSampleIdentity,
-    successor_application: CrossSampleSuccessorApplication,
+    successor_application: CrossSamplePartitionTransition,
     repair_epoch: int = 1,
 ) -> ObservationRepairSubject:
     """Mint the only repair subject Backfill is allowed to close."""
@@ -345,8 +345,8 @@ def mint_observation_repair_subject(
         raise TypeError("member subject must be owner-minted")
     if type(sample_identity) is not ResolvedCanonicalSampleIdentity:
         raise TypeError("sample identity must be owner-resolved")
-    if type(successor_application) is not CrossSampleSuccessorApplication:
-        raise TypeError("successor application must be CrossSample-minted")
+    if type(successor_application) is not CrossSamplePartitionTransition:
+        raise TypeError("partition transition must be CrossSample-minted")
     if type(repair_epoch) is not int or repair_epoch != 1:
         raise ObservationRepairContractError("repair epoch must be exactly 1")
     subject_id = _subject_id(
@@ -614,9 +614,9 @@ def _validate_subject(
         raise TypeError("member subject must be owner-minted")
     if type(subject.sample_identity) is not ResolvedCanonicalSampleIdentity:
         raise TypeError("sample identity must be owner-resolved")
-    if type(subject.successor_application) is not CrossSampleSuccessorApplication:
-        raise TypeError("successor application must be CrossSample-minted")
-    replayed_application = CrossSampleSuccessorApplication(
+    if type(subject.successor_application) is not CrossSamplePartitionTransition:
+        raise TypeError("partition transition must be CrossSample-minted")
+    replayed_application = CrossSamplePartitionTransition(
         status=subject.successor_application.status,
         predecessors=subject.successor_application.predecessors,
         successors=subject.successor_application.successors,
@@ -625,7 +625,7 @@ def _validate_subject(
     )
     if replayed_application != subject.successor_application:
         raise ObservationRepairContractError(
-            "repair subject successor application is not canonical"
+            "repair subject partition transition is not canonical"
         )
     resolved_sample = resolve_canonical_sample_identity(
         subject.sample_identity.snapshot,
@@ -671,7 +671,7 @@ def _validate_subject(
         )
     if subject.predecessor_group not in subject.successor_application.successors:
         raise ObservationRepairContractError(
-            "repair subject group is absent from successor application"
+            "repair subject group is absent from partition transition"
         )
     if (
         subject.sample_identity.identity.sample_identity_id
@@ -923,7 +923,7 @@ def _subject_id(
     predecessor_group: CrossSampleGroupIdentity,
     member_subject: CrossSampleGroupMemberSubject,
     sample_identity: ResolvedCanonicalSampleIdentity,
-    successor_application: CrossSampleSuccessorApplication,
+    successor_application: CrossSamplePartitionTransition,
     repair_epoch: int,
 ) -> str:
     return typed_identity_digest(
@@ -952,7 +952,7 @@ def _subject_id(
 
 
 def _successor_application_basis(
-    application: CrossSampleSuccessorApplication,
+    application: CrossSamplePartitionTransition,
 ) -> dict[str, object]:
     return {
         "status": application.status,

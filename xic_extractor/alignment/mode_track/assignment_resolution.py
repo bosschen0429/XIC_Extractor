@@ -17,13 +17,13 @@ from xic_extractor.alignment.mode_track.assignment_contracts import (
     ModeTrackPredictionAssessment,
     ModeTrackRepairAssignmentObservation,
     _mint_assignment,
-    _peak_hypothesis_family_exclusions,
+    _peak_hypothesis_assignment_scope_exclusions,
 )
 from xic_extractor.alignment.mode_track.assignment_prediction import (
     _crossed_track_ids,
 )
-from xic_extractor.alignment.mode_track.family_context import (
-    FamilyContextRef,
+from xic_extractor.alignment.mode_track.assignment_scope import (
+    ModeTrackAssignmentScope,
 )
 from xic_extractor.processing_identity import (
     AcquisitionSourceIdentity,
@@ -86,7 +86,7 @@ def _resolve_candidate_decisions(
     decisions = {
         candidate.candidate_observation_id: _candidate_decision(
             candidate=candidate,
-            family_context=model_set.family_context,
+            assignment_scope=model_set.assignment_scope,
             predictions=predictions,
             global_state=global_state,
             crossed_track_ids=crossed_track_ids,
@@ -108,7 +108,7 @@ def _resolve_candidate_decisions(
     for candidate in candidates:
         if type(candidate) is ModeTrackRepairAssignmentObservation:
             continue
-        for track in model_set.family_context.mode_tracks:
+        for track in model_set.assignment_scope.groups:
             if candidate.peak_hypothesis_id in track.owner_ids:
                 owner_candidates.setdefault(track.group_hypothesis_id, []).append(
                     candidate.peak_hypothesis_id
@@ -159,21 +159,21 @@ def _resolve_candidate_decisions(
 def _candidate_decision(
     *,
     candidate: ModeTrackAssignmentObservation,
-    family_context: FamilyContextRef,
+    assignment_scope: ModeTrackAssignmentScope,
     predictions: tuple[ModeTrackPredictionAssessment, ...],
     global_state: tuple[AssignmentState, tuple[str, ...]] | None,
     crossed_track_ids: frozenset[str],
 ) -> tuple[AssignmentState, str | None, tuple[str, ...]]:
     if type(candidate) is ModeTrackCandidateObservation:
-        family_exclusions = _peak_hypothesis_family_exclusions(
+        scope_exclusions = _peak_hypothesis_assignment_scope_exclusions(
             candidate.peak_hypothesis,
-            family_context=family_context,
+            assignment_scope=assignment_scope,
         )
-        if family_exclusions:
-            return "out_of_model", None, family_exclusions
+        if scope_exclusions:
+            return "out_of_model", None, scope_exclusions
         owner_group_ids = tuple(
             track.group_hypothesis_id
-            for track in family_context.mode_tracks
+            for track in assignment_scope.groups
             if candidate.peak_hypothesis_id in track.owner_ids
         )
         if len(owner_group_ids) > 1:
@@ -211,7 +211,7 @@ def _candidate_decision(
 def _assign_candidate(
     *,
     candidate: ModeTrackAssignmentObservation,
-    family_context: FamilyContextRef,
+    assignment_scope: ModeTrackAssignmentScope,
     sample: ResolvedCanonicalSampleIdentity,
     acquisition_source: AcquisitionSourceIdentity,
     injection_order: int,
@@ -222,7 +222,6 @@ def _assign_candidate(
 ) -> ModeTrackAssignment:
     state, group_id, reasons = decision
     return _mint_assignment(
-        family_context_id=family_context.family_context_id,
         processing_request_id=candidate.processing_request_id,
         processing_attempt_id=candidate.processing_attempt_id,
         sample=sample,

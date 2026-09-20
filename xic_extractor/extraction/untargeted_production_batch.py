@@ -32,10 +32,10 @@ from xic_extractor.alignment.cross_sample_peak_groups import (
     CrossSampleNeighborhoodEdge,
     CrossSamplePeakGroupHypothesis,
 )
-from xic_extractor.alignment.cross_sample_reconciliation import (
-    build_initial_cid_nl_cross_sample_context,
-)
 from xic_extractor.alignment.drift_evidence import KnownIstdReference
+from xic_extractor.alignment.grouping_workflow import (
+    build_initial_cid_nl_cross_sample_groups,
+)
 from xic_extractor.alignment.hypothesis_owner_adapter import (
     compose_peak_hypotheses_from_assessment_universe,
 )
@@ -1295,21 +1295,18 @@ def _build_production_composition_inputs(
         captures = tuple(captures_list)
         capture_inputs = tuple(capture_inputs_list)
         (
-            family_context,
-            cross_sample_context,
-            classified_edges,
+            assignment_scope,
+            grouping_result,
             retained_candidates,
-        ) = build_initial_cid_nl_cross_sample_context(
+        ) = build_initial_cid_nl_cross_sample_groups(
             processing_owners=batch.context.processing_owners,
             captures=captures,
             sample_assessments=assessments,
             alignment_config=alignment_config,
-            trajectory_policy=trajectory_policy,
             known_istd_reference=known_istd_reference,
             retained_hypotheses_by_assessment=(retained_hypotheses_by_assessment),
         )
-        initial_groups.extend(family_context.mode_tracks)
-        initial_edges.extend(classified_edges)
+        initial_groups.extend(assignment_scope.groups)
         retained_cell_hypotheses: dict[tuple[str, str], list[PeakHypothesis]] = {}
         for candidate in retained_candidates:
             assessment = candidate.direct_support_assessment
@@ -1324,10 +1321,10 @@ def _build_production_composition_inputs(
             ).append(candidate.peak_hypothesis)
         predecessor_cells = compose_cid_nl_predecessor_cells(
             processing_owners=batch.context.processing_owners,
-            groups=family_context.mode_tracks,
+            groups=assignment_scope.groups,
             sample_assessments=assessments,
             alignment_config=alignment_config,
-            drift_lookup=cross_sample_context.drift_lookup,
+            drift_lookup=grouping_result.drift_lookup,
             sample_universe=sample_universe,
             injection_order=injection_order,
             recovery_assessments_by_group={
@@ -1336,7 +1333,7 @@ def _build_production_composition_inputs(
                     sample.identity.sample_identity_id,
                     subject.method_subject_id,
                 ): recovery.assessment
-                for group in family_context.mode_tracks
+                for group in assignment_scope.groups
                 for sample in batch.context.samples
                 for subject in subject_workset
                 if group.group_center_rt is not None
@@ -1358,7 +1355,7 @@ def _build_production_composition_inputs(
             group_id = cell.content.group_hypothesis_id
             cell_by_key[(group_id, cell.content.canonical_sample_identity_id)] = cell
             cells_by_group.setdefault(group_id, []).append(cell)
-        repair_groups = cross_sample_context.population
+        repair_groups = grouping_result.final_population
         no_request_proofs = {}
         for group in repair_groups:
             facts = assess_conservative_backfill_group(
@@ -1489,7 +1486,7 @@ def _build_production_composition_inputs(
                 ),
                 adapter=UntargetWorkflowAdapter(
                     capture_inputs=capture_inputs,
-                    completed_cross_sample=cross_sample_context,
+                    completed_grouping=grouping_result,
                     mode_track=ModeTrackWorkflowArguments(
                         sample_assessments=assessments,
                         alignment_config=alignment_config,

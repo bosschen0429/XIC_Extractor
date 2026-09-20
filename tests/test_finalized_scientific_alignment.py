@@ -59,7 +59,7 @@ def test_finalizer_closes_exact_core_with_terminal_subject_variants(
     result = finalize_scientific_alignment(
         scope=scope,
         captures=captures,
-        final_cross_sample_receipt=receipt,
+        grouping_result=receipt,
         cell_observation_handoff=handoff,
         predecessor_cell_observations=predecessor_cells,
     )
@@ -73,11 +73,10 @@ def test_finalizer_closes_exact_core_with_terminal_subject_variants(
             key=lambda sample: sample.identity.sample_identity_id,
         )
     )
-    assert result.final_cross_sample_receipt is receipt
+    assert result.grouping_result is receipt
     assert result.final_population == receipt.final_population
-    assert result.final_application == receipt.final_application
-    assert result.lineage == receipt.final_application.lineage
-    assert result.repair_receipt is receipt.repair_receipt
+    assert result.partition_transition == receipt.partition_transition
+    assert result.lineage == receipt.partition_transition.lineage
     assert result.cell_observation_handoff is handoff
     assert len(composed_populations) == 1
     assert result.cell_observations is composed_populations[0]
@@ -114,14 +113,14 @@ def test_finalizer_is_deterministic_and_results_are_immutable(
     forward = finalize_scientific_alignment(
         scope=scope,
         captures=captures,
-        final_cross_sample_receipt=receipt,
+        grouping_result=receipt,
         cell_observation_handoff=handoff,
         predecessor_cell_observations=predecessor_cells,
     )
     reversed_result = finalize_scientific_alignment(
         scope=scope,
         captures=tuple(reversed(captures)),
-        final_cross_sample_receipt=receipt,
+        grouping_result=receipt,
         cell_observation_handoff=handoff,
         predecessor_cell_observations=tuple(reversed(predecessor_cells)),
     )
@@ -152,7 +151,7 @@ def test_finalizer_rejects_inexact_terminal_population(
         finalize_scientific_alignment(
             scope=scope,
             captures=invalid,
-            final_cross_sample_receipt=receipt,
+            grouping_result=receipt,
             cell_observation_handoff=handoff,
             predecessor_cell_observations=predecessor_cells,
         )
@@ -173,7 +172,7 @@ def test_finalizer_rejects_incomplete_cell_observation_source_population(
         finalize_scientific_alignment(
             scope=scope,
             captures=captures,
-            final_cross_sample_receipt=receipt,
+            grouping_result=receipt,
             cell_observation_handoff=handoff,
             predecessor_cell_observations=predecessor_cells[:-1],
         )
@@ -212,7 +211,7 @@ def test_finalizer_rejects_inconclusive_capture_as_no_observation(
         finalize_scientific_alignment(
             scope=scope,
             captures=(incomplete, captures[1]),
-            final_cross_sample_receipt=receipt,
+            grouping_result=receipt,
             cell_observation_handoff=handoff,
             predecessor_cell_observations=predecessor_cells,
         )
@@ -254,7 +253,7 @@ def test_finalizer_rejects_short_window_capture_as_no_observation(
         finalize_scientific_alignment(
             scope=scope,
             captures=(incomplete, captures[1]),
-            final_cross_sample_receipt=receipt,
+            grouping_result=receipt,
             cell_observation_handoff=handoff,
             predecessor_cell_observations=predecessor_cells,
         )
@@ -276,7 +275,7 @@ def test_finalizer_rejects_crossed_scope_and_request(
         finalize_scientific_alignment(
             scope=equivalent_but_crossed_scope,
             captures=captures,
-            final_cross_sample_receipt=receipt,
+            grouping_result=receipt,
             cell_observation_handoff=handoff,
             predecessor_cell_observations=predecessor_cells,
         )
@@ -301,7 +300,7 @@ def test_finalizer_rejects_crossed_scope_and_request(
         finalize_scientific_alignment(
             scope=crossed_request_scope,
             captures=(),
-            final_cross_sample_receipt=receipt,
+            grouping_result=receipt,
             cell_observation_handoff=handoff,
             predecessor_cell_observations=predecessor_cells,
         )
@@ -346,7 +345,7 @@ def test_finalizer_rejects_search_scope_subclasses(
         finalize_scientific_alignment(
             scope=forged_scope,
             captures=forged_captures,
-            final_cross_sample_receipt=receipt,
+            grouping_result=receipt,
             cell_observation_handoff=handoff,
             predecessor_cell_observations=predecessor_cells,
         )
@@ -362,7 +361,7 @@ def test_finalized_values_cannot_be_forged_by_direct_construction(
     result = finalize_scientific_alignment(
         scope=scope,
         captures=captures,
-        final_cross_sample_receipt=receipt,
+        grouping_result=receipt,
         cell_observation_handoff=handoff,
         predecessor_cell_observations=predecessor_cells,
     )
@@ -395,7 +394,7 @@ def test_finalized_values_cannot_be_forged_by_direct_construction(
             terminal_subjects=result.terminal_subjects,
             cell_observation_handoff=result.cell_observation_handoff,
             cell_observations=result.cell_observations,
-            final_cross_sample_receipt=result.final_cross_sample_receipt,
+            grouping_result=result.grouping_result,
             _mint_token=object(),
         )
 
@@ -410,7 +409,7 @@ def test_finalized_result_revalidates_nested_cell_population(
     result = finalize_scientific_alignment(
         scope=scope,
         captures=captures,
-        final_cross_sample_receipt=receipt,
+        grouping_result=receipt,
         cell_observation_handoff=handoff,
         predecessor_cell_observations=predecessor_cells,
     )
@@ -431,7 +430,7 @@ def test_finalized_result_revalidates_nested_cell_population(
             terminal_subjects=result.terminal_subjects,
             cell_observation_handoff=result.cell_observation_handoff,
             cell_observations=(forged, *result.cell_observations[1:]),
-            final_cross_sample_receipt=result.final_cross_sample_receipt,
+            grouping_result=result.grouping_result,
             _mint_token=finalizer_owner._FINALIZER_MINT_TOKEN,
         )
 

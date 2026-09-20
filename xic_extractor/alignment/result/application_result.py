@@ -6,8 +6,8 @@ import json
 from dataclasses import InitVar, dataclass, field
 from typing import TYPE_CHECKING, Literal, TypeAlias
 
-from xic_extractor.alignment.cross_sample_reconciliation import (
-    CrossSampleFinalReceipt,
+from xic_extractor.alignment.grouping_result import (
+    CrossSampleGroupingResult,
 )
 from xic_extractor.alignment.result.scientific_alignment import (
     FinalizedScientificAlignment,
@@ -275,9 +275,9 @@ class FinalizedTargetApplicationResult:
     @property
     def completion_receipts(
         self,
-    ) -> tuple[CrossSampleFinalReceipt, TargetPostCellProjection]:
+    ) -> tuple[CrossSampleGroupingResult, TargetPostCellProjection]:
         return (
-            self.scientific_core.final_cross_sample_receipt,
+            self.scientific_core.grouping_result,
             self.completed_projection,
         )
 
@@ -309,9 +309,9 @@ class FinalizedUntargetApplicationResult:
     @property
     def completion_receipts(
         self,
-    ) -> tuple[CrossSampleFinalReceipt, UntargetPostCellProjection]:
+    ) -> tuple[CrossSampleGroupingResult, UntargetPostCellProjection]:
         return (
-            self.scientific_core.final_cross_sample_receipt,
+            self.scientific_core.grouping_result,
             self.completed_projection,
         )
 

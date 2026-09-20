@@ -518,7 +518,7 @@ def test_incomplete_coupled_successor_is_rejected_atomically(tmp_path) -> None:
 def test_successor_application_rejects_mutable_closure_containers(tmp_path) -> None:
     from xic_extractor.alignment.cross_sample_peak_groups import (
         CrossSampleContractError,
-        CrossSampleSuccessorApplication,
+        CrossSamplePartitionTransition,
         mint_cross_sample_group_identity,
     )
 
@@ -528,7 +528,7 @@ def test_successor_application_rejects_mutable_closure_containers(tmp_path) -> N
         member_subjects=(member,),
     )
     with pytest.raises(CrossSampleContractError, match="immutable tuples"):
-        CrossSampleSuccessorApplication(
+        CrossSamplePartitionTransition(
             status="unassessable",
             predecessors=[predecessor],  # type: ignore[arg-type]
             successors=[],  # type: ignore[arg-type]

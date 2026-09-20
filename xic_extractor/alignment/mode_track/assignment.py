@@ -37,7 +37,7 @@ from xic_extractor.alignment.mode_track.assignment_contracts import (
     _mint_model_set,
     _mint_support_anchor,
     _ModeTrackAssignmentUnavailableError,  # noqa: F401
-    _peak_hypothesis_family_exclusions,
+    _peak_hypothesis_assignment_scope_exclusions,
     _peak_observation_content_id,
     _positive_int,
     _repair_assignment_observation_payload,
@@ -64,9 +64,8 @@ from xic_extractor.alignment.mode_track.assignment_resolution import (
     _global_no_write_state,  # noqa: F401
     _resolve_candidate_decisions,
 )
-from xic_extractor.alignment.mode_track.family_context import (
-    FamilyContextRef,
-    validate_family_context_ref_for_consumption,
+from xic_extractor.alignment.mode_track.assignment_scope import (
+    ModeTrackAssignmentScope,
 )
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessmentRef,
@@ -241,11 +240,9 @@ class ModeTrackFitOnceSource(_RuntimeFinal):
     fit_once_source_id: str
     processing_request_id: str
     processing_attempt_id: str
-    family_context_id: str
     model_set_id: str
     initial_assignment_batch_ids: tuple[str, ...]
     processing_owners: ProcessingOwnerReferences = field(compare=False, repr=False)
-    family_context: FamilyContextRef = field(compare=False, repr=False)
     model_set: ModeTrackModelSet = field(compare=False, repr=False)
     sample_sources: tuple[ModeTrackFitOnceSampleSource, ...] = field(
         compare=False,
@@ -266,7 +263,6 @@ class ModeTrackFitOnceSource(_RuntimeFinal):
         _required_text(self.fit_once_source_id, field="fit_once_source_id")
         _required_text(self.processing_request_id, field="processing_request_id")
         _required_text(self.processing_attempt_id, field="processing_attempt_id")
-        _required_text(self.family_context_id, field="family_context_id")
         _required_text(self.model_set_id, field="model_set_id")
         _require_canonical_texts(
             self.initial_assignment_batch_ids,
@@ -287,11 +283,6 @@ class ModeTrackFitOnceSource(_RuntimeFinal):
             raise ModeTrackContractError(
                 "fit-once source belongs to a different processing attempt"
             )
-        if type(self.family_context) is not FamilyContextRef:
-            raise ModeTrackContractError("family_context must be owner-minted")
-        validate_family_context_ref_for_consumption(self.family_context)
-        if self.family_context_id != self.family_context.family_context_id:
-            raise ModeTrackContractError("fit-once Family context was substituted")
         if type(self.model_set) is not ModeTrackModelSet:
             raise ModeTrackContractError("model_set must be owner-minted")
         _validate_model_set_binding(
@@ -300,8 +291,6 @@ class ModeTrackFitOnceSource(_RuntimeFinal):
         )
         if (
             self.model_set_id != self.model_set.model_set_id
-            or self.model_set.family_context_id != self.family_context_id
-            or self.model_set.family_context is not self.family_context
         ):
             raise ModeTrackContractError("fit-once model set was crossed")
         if type(self.sample_sources) is not tuple or any(
@@ -508,7 +497,6 @@ def mint_mode_track_fit_once_sample_source(
 def mint_mode_track_fit_once_source(
     *,
     processing_owners: ProcessingOwnerReferences,
-    family_context: FamilyContextRef,
     model_set: ModeTrackModelSet,
     sample_sources: tuple[ModeTrackFitOnceSampleSource, ...],
     initial_assignment_batches: tuple[ModeTrackAssignmentBatch, ...],
@@ -517,8 +505,6 @@ def mint_mode_track_fit_once_source(
 
     if not isinstance(processing_owners, ProcessingOwnerReferences):
         raise ModeTrackContractError("processing_owners must be owner-validated")
-    if type(family_context) is not FamilyContextRef:
-        raise ModeTrackContractError("family_context must be owner-minted")
     if type(model_set) is not ModeTrackModelSet:
         raise ModeTrackContractError("model_set must be owner-minted")
     if type(sample_sources) is not tuple:
@@ -554,7 +540,6 @@ def mint_mode_track_fit_once_source(
     )
     processing_request_id = processing_owners.request.processing_request_id
     processing_attempt_id = processing_owners.attempt.processing_attempt_id
-    family_context_id = family_context.family_context_id
     model_set_id = model_set.model_set_id
     initial_assignment_batch_ids = tuple(
         item.assignment_batch_id for item in canonical_batches
@@ -564,7 +549,6 @@ def mint_mode_track_fit_once_source(
         _fit_once_source_identity_payload_values(
             processing_request_id=processing_request_id,
             processing_attempt_id=processing_attempt_id,
-            family_context_id=family_context_id,
             model_set_id=model_set_id,
             sample_sources=canonical_sources,
             initial_assignment_batch_ids=initial_assignment_batch_ids,
@@ -574,11 +558,9 @@ def mint_mode_track_fit_once_source(
         fit_once_source_id=fit_once_source_id,
         processing_request_id=processing_request_id,
         processing_attempt_id=processing_attempt_id,
-        family_context_id=family_context_id,
         model_set_id=model_set_id,
         initial_assignment_batch_ids=initial_assignment_batch_ids,
         processing_owners=processing_owners,
-        family_context=family_context,
         model_set=model_set,
         sample_sources=canonical_sources,
         initial_assignment_batches=canonical_batches,
@@ -601,7 +583,7 @@ def validate_mode_track_fit_once_source_for_consumption(
 def fit_mode_track_model_set(
     *,
     processing_owners: ProcessingOwnerReferences,
-    family_context: FamilyContextRef,
+    assignment_scope: ModeTrackAssignmentScope,
     direct_support_anchors: tuple[ModeTrackSupportAnchor, ...],
     policy: ModeTrackTrajectoryPolicy,
 ) -> ModeTrackModelSet:
@@ -609,19 +591,18 @@ def fit_mode_track_model_set(
 
     if not isinstance(processing_owners, ProcessingOwnerReferences):
         raise ModeTrackContractError("processing_owners must be owner-validated")
-    if type(family_context) is not FamilyContextRef:
-        raise ModeTrackContractError("family_context must be owner-minted")
-    validate_family_context_ref_for_consumption(family_context)
+    if type(assignment_scope) is not ModeTrackAssignmentScope:
+        raise ModeTrackContractError("assignment_scope must be explicit and typed")
     if type(policy) is not ModeTrackTrajectoryPolicy:
         raise ModeTrackContractError("policy must be explicit and typed")
     ModeTrackTrajectoryPolicy.__post_init__(policy)
     if type(direct_support_anchors) is not tuple:
         raise ModeTrackContractError("direct_support_anchors must be a tuple")
     anchors_by_track: dict[str, list[ModeTrackSupportAnchor]] = {
-        group_id: [] for group_id in family_context.group_hypothesis_ids
+        group.group_hypothesis_id: [] for group in assignment_scope.groups
     }
     track_by_id = {
-        track.group_hypothesis_id: track for track in family_context.mode_tracks
+        group.group_hypothesis_id: group for group in assignment_scope.groups
     }
     if any(
         type(anchor) is not ModeTrackSupportAnchor for anchor in direct_support_anchors
@@ -658,13 +639,13 @@ def fit_mode_track_model_set(
             raise ModeTrackContractError(
                 "training SUPPORT anchor references a stale request binding"
             )
-        family_reasons = _peak_hypothesis_family_exclusions(
+        scope_reasons = _peak_hypothesis_assignment_scope_exclusions(
             anchor.peak_hypothesis,
-            family_context=family_context,
+            assignment_scope=assignment_scope,
         )
-        if family_reasons:
+        if scope_reasons:
             raise ModeTrackContractError(
-                "training SUPPORT anchor is outside the Family context"
+                "training SUPPORT anchor is outside the assignment scope"
             )
         anchors_by_track[group_id].append(anchor)
     tracks = tuple(
@@ -678,13 +659,13 @@ def fit_mode_track_model_set(
                 tuple(anchors_by_track[track.group_hypothesis_id])
             ),
         )
-        for track in family_context.mode_tracks
+        for track in assignment_scope.groups
     )
     lineage_refs = tuple(
         sorted(
             {
-                family_context.family_context_id,
-                *family_context.source_lineage_refs,
+                processing_owners.request.processing_request_id,
+                processing_owners.attempt.processing_attempt_id,
                 *(
                     anchor.support_assessment_artifact_content_id
                     for track in tracks
@@ -694,7 +675,7 @@ def fit_mode_track_model_set(
         )
     )
     return _mint_model_set(
-        family_context=family_context,
+        assignment_scope=assignment_scope,
         processing_request_id=processing_owners.request.processing_request_id,
         processing_attempt_id=processing_owners.attempt.processing_attempt_id,
         policy=policy,
@@ -1013,7 +994,6 @@ def assign_mode_tracks(
     if not canonical_candidates:
         not_observed_assignments = (
             _mint_assignment(
-                family_context_id=model_set.family_context_id,
                 processing_request_id=model_set.processing_request_id,
                 processing_attempt_id=model_set.processing_attempt_id,
                 sample=sample,
@@ -1044,7 +1024,7 @@ def assign_mode_tracks(
     assignments = tuple(
         _assign_candidate(
             candidate=candidate,
-            family_context=model_set.family_context,
+            assignment_scope=model_set.assignment_scope,
             sample=sample,
             acquisition_source=acquisition_source,
             injection_order=injection_order,
@@ -1090,12 +1070,10 @@ def validate_mode_track_assignment_batch_for_consumption(
         raise ModeTrackContractError("inputs belong to different processing owners")
     if (
         batch.model_set_id,
-        batch.family_context_id,
         batch.trajectory_policy_version,
         batch.band_policy_version,
     ) != (
         model_set.model_set_id,
-        model_set.family_context_id,
         model_set.policy.trajectory_policy_version,
         model_set.policy.band_policy_version,
     ):
@@ -1238,7 +1216,7 @@ def reinforce_mode_track_model_set(
         )
     )
     return _mint_model_set(
-        family_context=model_set.family_context,
+        assignment_scope=model_set.assignment_scope,
         processing_request_id=model_set.processing_request_id,
         processing_attempt_id=model_set.processing_attempt_id,
         policy=model_set.policy,
@@ -1311,7 +1289,6 @@ def _fit_once_source_identity_payload(
     return _fit_once_source_identity_payload_values(
         processing_request_id=source.processing_request_id,
         processing_attempt_id=source.processing_attempt_id,
-        family_context_id=source.family_context_id,
         model_set_id=source.model_set_id,
         sample_sources=source.sample_sources,
         initial_assignment_batch_ids=source.initial_assignment_batch_ids,
@@ -1322,7 +1299,6 @@ def _fit_once_source_identity_payload_values(
     *,
     processing_request_id: str,
     processing_attempt_id: str,
-    family_context_id: str,
     model_set_id: str,
     sample_sources: tuple[ModeTrackFitOnceSampleSource, ...],
     initial_assignment_batch_ids: tuple[str, ...],
@@ -1331,7 +1307,6 @@ def _fit_once_source_identity_payload_values(
         "schema": "mode_track_fit_once_source",
         "processing_request_id": processing_request_id,
         "processing_attempt_id": processing_attempt_id,
-        "family_context_id": family_context_id,
         "model_set_id": model_set_id,
         "sample_sources": [
             _fit_once_sample_source_payload(item) for item in sample_sources

@@ -1,0 +1,85 @@
+"""Stable cross-sample membership shared by Backfill and finalization."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+
+from xic_extractor.alignment.cross_sample_peak_groups import (
+    CrossSampleGroupIdentity,
+    CrossSamplePartitionTransition,
+)
+from xic_extractor.alignment.edge_scoring import DriftLookupProtocol
+from xic_extractor.processing_identity import (
+    ProcessingOwnerReferences,
+    canonical_identity_basis_bytes,
+    typed_identity_digest,
+)
+
+
+class CrossSampleGroupingContractError(ValueError):
+    """Raised when a grouping result crosses its processing request."""
+
+
+@dataclass(frozen=True, slots=True)
+class CrossSampleGroupingResult:
+    """One immutable membership result; missing-cell work cannot regroup it.
+
+    The partition owner has already closed membership and lineage. This owner
+    binds that answer to the processing request once, without rebuilding its
+    trajectory or manufacturing later unchanged partition applications.
+    """
+
+    processing_owners: ProcessingOwnerReferences
+    partition_transition: CrossSamplePartitionTransition
+    drift_lookup: DriftLookupProtocol | None = field(default=None, compare=False)
+    receipt_id: str = field(init=False)
+    basis_bytes: bytes = field(init=False, repr=False)
+
+    def __post_init__(self) -> None:
+        if type(self.processing_owners) is not ProcessingOwnerReferences:
+            raise CrossSampleGroupingContractError(
+                "grouping requires processing owners"
+            )
+        if type(self.partition_transition) is not CrossSamplePartitionTransition:
+            raise CrossSampleGroupingContractError(
+                "grouping requires an owned partition"
+            )
+        partition = self.partition_transition
+        if partition.status != "assessable" or any(
+            group.processing_request_id != self.processing_request_id
+            for group in (*partition.predecessors, *partition.successors)
+        ):
+            raise CrossSampleGroupingContractError(
+                "grouping partition crossed its request"
+            )
+        basis = canonical_identity_basis_bytes(
+            {
+                "schema_version": "cross_sample_grouping_result_v1",
+                "processing_request_id": self.processing_request_id,
+                "initial_group_ids": [
+                    group.group_hypothesis_id for group in partition.predecessors
+                ],
+                "final_group_ids": [
+                    group.group_hypothesis_id for group in partition.successors
+                ],
+                "lineage_ids": [edge.lineage_edge_id for edge in partition.lineage],
+            }
+        )
+        object.__setattr__(self, "basis_bytes", basis)
+        object.__setattr__(
+            self,
+            "receipt_id",
+            typed_identity_digest("xic.cross-sample-grouping-result:", basis),
+        )
+
+    @property
+    def processing_request_id(self) -> str:
+        return self.processing_owners.request.processing_request_id
+
+    @property
+    def initial_population(self) -> tuple[CrossSampleGroupIdentity, ...]:
+        return self.partition_transition.predecessors
+
+    @property
+    def final_population(self) -> tuple[CrossSampleGroupIdentity, ...]:
+        return self.partition_transition.successors

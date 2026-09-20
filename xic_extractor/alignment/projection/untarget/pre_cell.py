@@ -10,8 +10,8 @@ from xic_extractor.alignment.cross_sample_peak_groups import (
     CrossSampleGroupMemberSubject,
     CrossSampleLineageEdge,
 )
-from xic_extractor.alignment.cross_sample_reconciliation import (
-    CrossSampleFinalReceipt,
+from xic_extractor.alignment.grouping_result import (
+    CrossSampleGroupingResult,
 )
 from xic_extractor.alignment.result.scientific_alignment import (
     FinalizedScientificAlignment,
@@ -81,13 +81,13 @@ def _validate_request_bindings(
     receipt: object,
     processing_request_id: str,
 ) -> tuple[tuple[CrossSampleGroupIdentity, ...], tuple[CrossSampleLineageEdge, ...]]:
-    if type(receipt) is not CrossSampleFinalReceipt:
+    if type(receipt) is not CrossSampleGroupingResult:
         raise UntargetProjectionContractError(
             "pre-cell projection requires an exact CrossSample final receipt"
         )
     receipt_request_id = _request_id(
         receipt.processing_request_id,
-        field_name="final_cross_sample_receipt.processing_request_id",
+        field_name="grouping_result.processing_request_id",
     )
     if receipt_request_id != processing_request_id:
         raise UntargetProjectionContractError(
@@ -98,7 +98,7 @@ def _validate_request_bindings(
             "final CrossSample population must be an immutable tuple"
         )
     population = receipt.final_population
-    lineage = receipt.final_application.lineage
+    lineage = receipt.partition_transition.lineage
     return population, lineage
 
 
@@ -291,7 +291,7 @@ def project_untarget_pre_cell(
             finalized_alignment.processing_request.processing_request_id,
             field_name="processing_request_id",
         )
-        receipt = finalized_alignment.final_cross_sample_receipt
+        receipt = finalized_alignment.grouping_result
         population, lineage = _validate_request_bindings(
             receipt=receipt,
             processing_request_id=request_id,

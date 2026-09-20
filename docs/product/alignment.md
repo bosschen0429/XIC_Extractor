@@ -45,8 +45,8 @@ map once. No new RAW acquisition, model fit or grouping pass is introduced.
 After a query, correction that worsens the pair by more than the existing
 10-second contradiction threshold, or moves raw RT from inside to outside the
 preferred window, falls back to the raw-only score and decision. Fallback does
-not keep a prior bonus, promote a weak edge to strong, or bypass complete-link
-and hard gates. The existing targeted-ISTD product/loss hard-gate exceptions
+not keep a prior bonus, promote a weak edge to strong, or bypass the applicable
+hard gates. The existing targeted-ISTD product/loss hard-gate exceptions
 retain their RT query. Group ranking reuses the cached edge's chosen coordinate.
 
 Edge evidence and its audit projections record `rt_basis` as `raw` or
@@ -56,30 +56,33 @@ the reason distinguishes raw sufficiency, insufficient non-RT evidence,
 unavailability and post-query fallback. Historical explanation records remain
 readable as recorded; they are not reclassified by this field addition.
 
-The retained Untargeted CID-NL production route carries initial groups directly
-into the CrossSample context without model fitting, assignment, FitOnceSource
-construction, or MT0 split/merge proposals and application. Initial candidates
-retain their request, sample, acquisition, and physical-hypothesis bindings.
-The route preserves group identities, membership and empty lineage, along with
-the trajectory snapshot and initial pair evidence used by downstream diagnostics.
-Other workflow routes retain their refinement behavior, including a final
-ModeTrack pass when an actual repair changes the trajectory input.
+The grouping workflow consumes candidate and exact owner evidence, applies the
+constrained group rules, and returns one immutable
+`CrossSampleGroupingResult(processing_owners, partition_transition,
+drift_lookup)`. Confirmed known-ISTD identity constraints remain indivisible.
+The Target workflow may apply its existing initial ModeTrack refinement before
+this result closes. The retained Untargeted CID-NL route carries its initial
+groups directly into the same result without model fitting or assignment.
+Initial candidates retain their request, sample, acquisition, physical-
+hypothesis, integration, and evidence bindings.
 
-Initial neighborhoods use the `hard-gate-candidates-v1` pair policy. CrossSample
-first sweeps precursor mass windows and applies its necessary compatibility
-gates, then scores only possible pairs. It preserves original ppm orientation,
-composite-subject compatibility and targeted-ISTD product/loss exceptions; RT
-alone never prunes a pair. Unlisted pairs are excluded, including when a
-transitively connected component proposes a successor group. Repair admission
-still evaluates the repaired candidate against every member of its destination.
+The exact same grouping-result object is used before bounded Backfill and
+through finalization. ObservationRepair can supply an owner-backed repaired
+observation for a missing or insufficient cell, but it does not reopen group
+membership, rebuild a grouping snapshot, refit ModeTrack, or mint a post-repair
+grouping context.
 
-The `mode_track_trajectory_input_sparse_v1` identity binds eligible member pairs,
-explicit noneligible evidence and the implicit-exclusion policy. This changes
-trajectory and dependent refinement IDs; physical, candidate and group identity
-schemas remain unchanged. The final receipt ID is part of the association
-handoff basis; that handoff binds the final cell observation and its production
-decision. Their provenance IDs therefore migrate too, even when selected values,
-subjects and scientific evidence remain identical.
+Initial grouping uses the sparse feature index described below. It scores only
+compatible feature candidates and retains the evaluated evidence. Missing pair
+records mean `not_evaluated`; they do not prove incompatibility. Backfill checks
+its repaired observation against the fixed destination group without changing
+membership.
+
+The initial ModeTrack model identity binds its assignment-scope bounds, exact
+group identities, eligible anchors, explicit noneligible evidence, and policy.
+Physical, candidate, integration, and group identity schemas remain unchanged.
+The stable grouping result and repair receipts bind the final cell observation
+and its production decision without a second trajectory or group identity.
 Explanation summaries publish `initial_edge_coverage`
 with this versioned policy, so an empty retained edge set is not missing audit
 evidence. Inspector forwards that coverage with item details. Older explanation
@@ -95,8 +98,8 @@ authorize a separate downstream decision pipeline.
 
 | Owner | Sole responsibility | Output to the next seam |
 | --- | --- | --- |
-| CrossSample | Initial grouping, membership, group identity, disposition, split/merge lineage, and application of accepted proposals | Canonical immutable groups and lineage |
-| ModeTrack | Request-bound trajectory modeling over immutable evidence; proposes only | Typed assessable refinement proposals |
+| CrossSample grouping workflow | Constrained initial grouping, membership, group identity, disposition, lineage, and application of an accepted complete-partition transition | One immutable `CrossSampleGroupingResult` |
+| ModeTrack | Optional request-bound initial trajectory modeling over immutable evidence where the workflow uses it; proposes only | Typed assessable initial refinement proposal |
 | Backfill | One bounded local `ObservationRepair` epoch | Owner-backed repaired observation or typed no-repair result |
 | Scientific alignment closure | Validate request/group/disposition/membership/refinement/repair closure | `FinalizedScientificAlignment` |
 | Workflow projection: binding/subject operation | Target fixed-row binding or Untarget group-row identity, followed by explicit Target/Group cell-subject construction | `TargetRowBinding` + `TargetCellSubject`, or `UntargetRowKey` + `GroupCellSubject` |
@@ -104,8 +107,9 @@ authorize a separate downstream decision pipeline.
 | Workflow projection: completion operation | Consume cell decisions to close row inclusion, counted-detection/count/reason fields, Review Queue refs, and archive routing | Closed typed projection decisions |
 | Result finalizer | Closure validation over the core, completed projection, and cell decisions | Discriminated immutable Targeted or Untargeted result |
 
-CrossSample alone may mint or supersede a group. ModeTrack cannot move a member
-or write a value, and Backfill cannot turn a repaired observation into implicit
+The grouping workflow alone may mint or supersede a group and apply the
+accepted `CrossSamplePartitionTransition`. ModeTrack cannot move a member or
+write a value, and Backfill cannot turn a repaired observation into implicit
 membership. The finalizer cannot rerun RAW access, grouping, ModeTrack,
 Backfill, integration, or selection.
 
@@ -129,9 +133,11 @@ reasons, Review Queue/archive routing, and result finalization close afterward.
 - A group contains at most one identity-bearing member per canonical sample.
   Same-sample distinguishable peaks remain separate; unresolved ambiguity does
   not choose an arbitrary winner.
-- Any accepted membership change or split/merge mints successor identity and
-  immutable lineage. A new processing request creates new group identity; this
-  refactor does not infer cross-request continuity.
+- Any accepted initial membership change or split/merge appears in the one
+  complete before/after `CrossSamplePartitionTransition`, mints the resulting
+  group identity and immutable lineage, and closes before bounded Backfill. A
+  new processing request creates new group identity; this contract does not
+  infer cross-request continuity.
 - `GroupDispositionDecision` is exactly one of `established`, `provisional`,
   `unresolved`, or `rejected`. Established requires accepted identity-bearing
   members from at least two distinct canonical samples plus method hard gates;
@@ -140,9 +146,10 @@ reasons, Review Queue/archive routing, and result finalization close afterward.
 
 ### ModeTrack and repair relationship
 
-- ModeTrack consumes one immutable `trajectory_input_id` containing only the
-  anchors, members, apexes, injection order, evidence profile, and exclusions
-  relevant to its model. Area-only or boundary-only changes do not rerun it.
+- ModeTrack consumes one immutable `ModeTrackAssignmentScope` containing only
+  the actual m/z/RT admissibility bounds and exact existing groups, plus the
+  request-bound anchors and policy used by its model. The scope has no separate
+  domain identity or persistence contract.
 - Model selection uses the simplest validated candidate. RT correction is an
   optional prior; direct local evidence wins and a prior alone cannot reassign
   a member.
@@ -151,10 +158,10 @@ reasons, Review Queue/archive routing, and result finalization close afterward.
   changes and adjacent-injection jumps, uses method-appropriate ISTDs plus
   several high-detection unknown features, and reports where the model is
   unassessable.
-- A bounded ObservationRepair may change trajectory identity once. CrossSample
-  may then rebuild the snapshot and request one final ModeTrack pass. No repair
-  loop, refit loop, arbitrary neighborhood chunking, or singleton-based
-  cross-sample fill is allowed.
+- A bounded ObservationRepair does not change group or trajectory identity and
+  does not request another ModeTrack pass. No repair loop, refit loop,
+  arbitrary neighborhood chunking, or singleton-based cross-sample fill is
+  allowed.
 
 ### Final result and projections
 
@@ -247,15 +254,19 @@ unresolved and rejected groups remain AuditTrail facts.
 - Initial membership is carried as compressed group member sets. Missing pair
   records mean `not_evaluated`, never `excluded`; an initial group does not
   manufacture positive pair evidence. ModeTrack and repair consume the same
-  receipt and preserve indivisible confirmed identities. Explicit repair pair
+  result and preserve indivisible confirmed identities. Explicit repair pair
   evidence remains bounded to the actual repaired candidate and current group.
   Physical integrations, observed coordinates, sample attribution, and the
   quantification owner are unchanged by membership inference.
-- An immutable reconciliation context computes its trajectory once when its
-  owner constructs it. Internal consumers trust that state. An unchanged repair
-  reuses the same trajectory; a changed observation computes only the affected
-  component's new trajectory. Consumers still check the actual repair/source
-  binding, and a caller cannot inject a separate trajectory into the context.
+- MS1-only Target owners use the precursor index and the existing physical
+  signal-quality and RT evidence. Absence of an MS2 event does not itself
+  exclude them. Missing or weak physical quality remains undecided; MS1-only
+  owners do not enter a CID evidence group.
+- `CrossSampleGroupingResult` is constructed once from the processing owners,
+  complete partition transition, and prepared drift lookup. Internal consumers
+  use that same immutable object before bounded Backfill and through
+  finalization. Consumers still check the actual repair/source binding, and a
+  caller cannot inject a replacement partition or trajectory after repair.
 - Batch finalization consumes completed immutable children and checks their
   parent request, attempt, sample coverage, and cross-child uniqueness. It does
   not rerun each child's scientific and post-cell completion checks. Explicit
@@ -451,36 +462,34 @@ not change a productization maturity tier, active lane, public output schema,
 selected area/counting behavior, or Matrix authority, and the productization
 control plane remains unchanged.
 
-## Diagnostic ModeTrack Review
+## ModeTrack Initial Refinement And Diagnostic Review
 
-ModeTrack is an opt-in debug and batch-review diagnostic downstream of the
-existing Alignment group owner. It is not an automatic Alignment stage, a
-fallback grouping route, or a candidate product control plane. Running normal
-Alignment does not invoke it. `FamilyContextRef` describes one wide m/z/RT
-observation universe and references zero or more existing
-`group_hypothesis_id` values for diagnostic comparison. Each existing group is
-one ModeTrack; neither the Family nor the ModeTrack is a chemical-identity
-claim. Public or legacy family labels, `method_subject_id`, display labels, and
-ordinals do not mint or replace the internal Family context.
+ModeTrack is an optional initial refinement and review surface over groups that
+already exist. The Target workflow uses its established initial refinement;
+the retained Untargeted CID-NL route carries initial groups directly. ModeTrack
+is not a fallback grouping route, a post-repair refit, or a product control
+plane. `ModeTrackAssignmentScope` carries only the actual m/z/RT admissibility
+bounds and exact groups from producer to fit. It has no standalone hash,
+serialization, shadow authority, or public Family identity. Each existing group
+is one ModeTrack; neither the assignment scope nor a ModeTrack is a chemical-
+identity claim.
 
-This describes current activation state, not a reason to build another
-trajectory module. The opt-in CID-NL diagnostic workflow now routes this
-capability through the proposal-only `alignment/mode_track/` interface. That
-owner binds each proposal to an immutable trajectory input, returns a closed
-accepted/rejected/insufficient/unassessable result. The workflow passes an
-accepted proposal to the existing CrossSample atomic successor application;
-ModeTrack does not apply or retain successor population state. Rich predecessor,
-owner/edge, and budget objects remain in a separate CrossSample-owned
-application context and are absent from the immutable trajectory snapshot.
+This contract is not a reason to build another trajectory module. The
+proposal-only `alignment/mode_track/` interface binds each proposal to the
+processing request/attempt, model set, exact groups, anchors, and admissibility
+bounds, then returns a closed accepted/rejected/insufficient/unassessable
+result. The grouping workflow alone may apply an accepted proposal as a
+`CrossSamplePartitionTransition` between complete partitions before
+`CrossSampleGroupingResult` closes. ModeTrack does not retain population state.
 Existing diagnostic writers and validation packages remain outside that
-scientific interface; no normal Alignment route or product writer activates it.
+scientific interface; no product writer activates it.
 
-The initial model set is fit once per Family from canonical direct-SUPPORT
-assessment × `PeakHypothesis` anchors. Family ModeTracks must have disjoint
+The initial model set is fit once per assignment scope from canonical direct-
+SUPPORT assessment × `PeakHypothesis` anchors. Scope groups must have disjoint
 owner IDs, and one `PeakHypothesis` or physical peak observation may seed at
-most one track. Fit accepts initial anchors only. A later uniquely assigned
-direct-SUPPORT observation may mint an immutable successor model set; consumers
-still do not refit. Each track follows its own injection-order-local, piecewise-linear
+most one track. Fit accepts initial anchors only. Within the initial refinement,
+a uniquely assigned direct-SUPPORT observation may mint an immutable successor
+model set; ObservationRepair and downstream consumers do not refit. Each track follows its own injection-order-local, piecewise-linear
 trajectory. At fit time, the ModeTrack model/assignment owner projects each existing group's canonical
 center RT into the model as `ordering_reference_rt_min`. This immutable behavior
 snapshot is bound into `model_set_id`, and crossing checks read the snapshot
@@ -505,7 +514,7 @@ the sample is instead `technical_unassessable`.
 
 For one sample, resolved hypotheses may occupy the first track, the second
 track, both through different hypotheses, or neither. A candidate that is
-already an exact owner of one Family ModeTrack is observed occupancy of that
+already an exact owner of one scoped ModeTrack is observed occupancy of that
 existing identity-trajectory identity; ModeTrack preserves that one-to-one owner fact instead of
 reclassifying it from the track's aggregate center or predicted interval. This
 does not make an MS1-only owner a trajectory anchor or a SUPPORT vote. Other
@@ -548,10 +557,11 @@ authorized attempt. Its evidence verdict remains `inconclusive / no-write`;
 historical morphology, intensity, or mode labels cannot seed tracks or grant a
 current-checkout compatibility claim.
 
-The later fresh current-request single-sample canary receipt
+The later fresh current-request saved85/canary receipt
 `docs/superpowers/fixtures/mode_track_assignment_85raw_gate_b.json` closes
-that source gap for the CID-NL 116.0474, precursor 349.215 validation lane. The
-accepted 85-sample run retained 86 physical hypotheses in 11 ModeTracks, with
+that source gap only for the CID-NL 116.0474, precursor 349.215 diagnostic
+slice. It is partial engineering evidence, not a scientific full85 verdict or
+performance baseline. The recorded run retained 86 physical hypotheses in 11 ModeTracks, with
 9 multi-owner tracks, exact owner-to-assignment closure, no same-sample double
 occupancy, and no producer-added RAW calls. In `TumorBC2297_DNA`, the 12.412
 minute direct-SUPPORT peak and 13.035 minute non-training physical observation
@@ -562,10 +572,11 @@ The lane must use the existing `CID_NL_ALIGNMENT_CONFIG` value
 observation event. A rejected control using the generic default value `2`
 degenerated to one singleton track per physical hypothesis, so exact-owner
 assignment alone is not a sufficient single-sample canary oracle. Acceptance also requires
-observed cross-sample multi-owner aggregation. This receipt remains
+observed cross-sample multi-owner aggregation. This receipt remains partial
 `shadow_ready / product_authority=none`; four tracks have no direct-SUPPORT
-anchor, and the evidence grants no Matrix, Backfill, chemical-identity, or
-ProductWriter authority.
+anchor, and the evidence grants no Matrix, Backfill, chemical-identity,
+ProductWriter, full85 readiness, or performance claim. Scientific full85
+evidence remains `inconclusive`.
 
 The bounded closed-writer validation packet at
 `docs/superpowers/validation/issue180_m9_gate_c_closed_writer/README.md`
@@ -580,10 +591,10 @@ is `diagnostic_only`. Neither packet is a replayable writer input or activates
 defaults, changes the CellObservationRef reference spine, establishes chemical identity, or grants a new writer
 authority.
 
-`FamilyContextRef`, the model set, and `ModeTrackAssignment` remain internal
-diagnostic structures with `product_authority=none`. Their owner-specific
-`shadow_ready` token describes retained artifact validity; opt-in runner output
-is `diagnostic_only` and does not register a productization lane. The runner may
+`ModeTrackAssignmentScope`, the model set, and `ModeTrackAssignment` remain
+internal structures and grant no product authority. The scope is a plain
+immutable handoff value rather than an artifact or authority record. Opt-in
+runner output is `diagnostic_only` and does not register a productization lane. The runner may
 write task-local review tables, but those tables do not replace canonical
 Alignment, Backfill,
 QuantMatrixVersion, Matrix, workbook, GUI, configuration, or default outputs.

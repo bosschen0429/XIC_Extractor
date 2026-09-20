@@ -34,9 +34,10 @@ becoming competing authorities.
   successor with complete lineage or applies none. An oversized neighborhood
   fails closed as unassessable; it is not split, truncated, or processed
   greedily to fit a budget.
-- One execution permits at most one ObservationRepair epoch and one final
-  ModeTrack rerun when trajectory identity changes. There is no recursive
-  repair/refit loop.
+- One execution permits at most one bounded Backfill operation after grouping
+  is fixed. Repaired observations affect cell evidence without reopening
+  membership or ModeTrack. This lifecycle restriction follows issue #420;
+  the separate scientific authorities remain unchanged.
 - In a later execution, a repair-derived observation becomes anchor-eligible
   only if the active method-specific evidence owner independently classifies
   its evidence as sufficient. Repair provenance remains attached.

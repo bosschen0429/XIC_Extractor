@@ -1,4 +1,4 @@
-"""Neighborhood graphs, edge evaluations, and successor applications for CrossSample."""
+"""Neighborhood graphs, edge evaluations, and partition transitions for CrossSample."""
 
 from __future__ import annotations
 
@@ -1006,7 +1006,7 @@ class CrossSampleLineageEdge:
 
 
 @dataclass(frozen=True, slots=True)
-class CrossSampleSuccessorApplication:
+class CrossSamplePartitionTransition:
     status: CrossSampleNeighborhoodStatus
     predecessors: tuple[CrossSampleGroupIdentity, ...]
     successors: tuple[CrossSampleGroupIdentity, ...]
@@ -1020,21 +1020,21 @@ class CrossSampleSuccessorApplication:
             or type(self.lineage) is not tuple
         ):
             raise CrossSampleContractError(
-                "successor application closures must be immutable tuples"
+                "partition transition closures must be immutable tuples"
             )
         if any(
             not isinstance(group, CrossSampleGroupIdentity)
             for group in self.predecessors
         ):
             raise CrossSampleContractError(
-                "successor application requires typed predecessors"
+                "partition transition requires typed predecessors"
             )
         predecessor_ids = tuple(
             group.group_hypothesis_id for group in self.predecessors
         )
         if predecessor_ids != tuple(sorted(predecessor_ids)):
             raise CrossSampleContractError(
-                "successor application predecessors are not canonical-sorted"
+                "partition transition predecessors are not canonical-sorted"
             )
         validate_cross_sample_group_population(self.predecessors)
         if self.status == "unassessable":
@@ -1045,17 +1045,17 @@ class CrossSampleSuccessorApplication:
                 or self.reason != ("eligible_neighborhood_exceeds_budget")
             ):
                 raise CrossSampleContractError(
-                    "unassessable successor application is not atomic"
+                    "unassessable partition transition is not atomic"
                 )
             return
         if self.status != "assessable" or bool(self.successors) != bool(
             self.predecessors
         ):
-            raise CrossSampleContractError("successor application status is invalid")
+            raise CrossSampleContractError("partition transition status is invalid")
         successor_ids = tuple(group.group_hypothesis_id for group in self.successors)
         if successor_ids != tuple(sorted(successor_ids)):
             raise CrossSampleContractError(
-                "successor application successors are not canonical-sorted"
+                "partition transition successors are not canonical-sorted"
             )
         predecessor_members = sorted(
             member.member_subject_id
@@ -1069,7 +1069,7 @@ class CrossSampleSuccessorApplication:
         )
         if predecessor_members != successor_members:
             raise CrossSampleContractError(
-                "successor application is not a complete partition"
+                "partition transition is not a complete partition"
             )
         expected_lineage = _expected_cross_sample_lineage(
             predecessors=self.predecessors,
@@ -1077,7 +1077,7 @@ class CrossSampleSuccessorApplication:
         )
         if self.lineage != expected_lineage:
             raise CrossSampleContractError(
-                "successor application lineage is not the complete atomic closure"
+                "partition transition lineage is not the complete atomic closure"
             )
         unchanged = set(predecessor_ids) == set(successor_ids)
         expected_reason = (
@@ -1085,7 +1085,7 @@ class CrossSampleSuccessorApplication:
         )
         if self.reason != expected_reason:
             raise CrossSampleContractError(
-                "successor application reason contradicts its transition"
+                "partition transition reason contradicts its transition"
             )
 
 
@@ -1356,7 +1356,7 @@ def apply_coupled_successor_proposal(
     budget: CrossSampleNeighborhoodBudget,
     population: Sequence[CrossSampleGroupIdentity],
     grouping_receipt: CrossSampleInitialGroupingReceipt | None = None,
-) -> CrossSampleSuccessorApplication:
+) -> CrossSamplePartitionTransition:
     predecessor_groups = tuple(
         sorted(predecessors, key=lambda group: group.group_hypothesis_id)
     )
@@ -1385,7 +1385,7 @@ def apply_coupled_successor_proposal(
         grouping_receipt=grouping_receipt,
     )
     if neighborhood.status == "unassessable":
-        return CrossSampleSuccessorApplication(
+        return CrossSamplePartitionTransition(
             status="unassessable",
             predecessors=predecessor_groups,
             successors=(),
@@ -1469,7 +1469,7 @@ def apply_coupled_successor_proposal(
     predecessor_ids_set = {group.group_hypothesis_id for group in predecessor_groups}
     successor_ids_set = {group.group_hypothesis_id for group in successors}
     if predecessor_ids_set == successor_ids_set:
-        return CrossSampleSuccessorApplication(
+        return CrossSamplePartitionTransition(
             status="assessable",
             predecessors=predecessor_groups,
             successors=successors,
@@ -1480,7 +1480,7 @@ def apply_coupled_successor_proposal(
         predecessors=predecessor_groups,
         successors=successors,
     )
-    return CrossSampleSuccessorApplication(
+    return CrossSamplePartitionTransition(
         status="assessable",
         predecessors=predecessor_groups,
         successors=successors,
@@ -1499,7 +1499,7 @@ __all__ = (
     "CrossSampleNeighborhoodEdge",
     "CrossSampleRepairAdmissionApplication",
     "CrossSampleRepairAdmissionEdge",
-    "CrossSampleSuccessorApplication",
+    "CrossSamplePartitionTransition",
     "INITIAL_GROUPING_POLICY",
     "INITIAL_PAIR_POLICY",
     "InitialPairDisposition",

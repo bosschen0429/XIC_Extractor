@@ -15,8 +15,8 @@ from xic_extractor.alignment.cross_sample_peak_groups import (
     CrossSampleGroupIdentity,
     validate_cross_sample_group_population,
 )
-from xic_extractor.alignment.cross_sample_reconciliation import (
-    CrossSampleFinalReceipt,
+from xic_extractor.alignment.grouping_result import (
+    CrossSampleGroupingResult,
 )
 from xic_extractor.processing_identity import (
     canonical_identity_basis_bytes,
@@ -106,7 +106,7 @@ class CrossSampleAssociationLineageHandoff:
 
     handoff_id: str
     coverage: OwnerBackfillEvaluationCoverageBatch
-    final_receipt: CrossSampleFinalReceipt
+    final_receipt: CrossSampleGroupingResult
     predecessor_associations: tuple[CrossSamplePredecessorAssociation, ...]
     position_associations: tuple[CrossSampleCoveragePositionAssociation, ...]
     final_population: tuple[CrossSampleGroupIdentity, ...]
@@ -148,7 +148,7 @@ class CrossSampleAssociationLineageHandoff:
 def build_cross_sample_association_lineage_handoff(
     *,
     coverage: OwnerBackfillEvaluationCoverageBatch,
-    final_receipt: CrossSampleFinalReceipt,
+    final_receipt: CrossSampleGroupingResult,
 ) -> CrossSampleAssociationLineageHandoff:
     """Compile exact coverage positions onto exact final CrossSample groups."""
 
@@ -190,7 +190,7 @@ def validate_cross_sample_association_lineage_handoff(
 def _validate_inputs(
     *,
     coverage: OwnerBackfillEvaluationCoverageBatch,
-    final_receipt: CrossSampleFinalReceipt,
+    final_receipt: CrossSampleGroupingResult,
 ) -> None:
     if type(coverage) is not OwnerBackfillEvaluationCoverageBatch:
         raise CrossSampleAssociationContractError(
@@ -202,7 +202,7 @@ def _validate_inputs(
         raise CrossSampleAssociationContractError(
             f"coverage is not owner-closed: {exc}"
         ) from exc
-    if type(final_receipt) is not CrossSampleFinalReceipt:
+    if type(final_receipt) is not CrossSampleGroupingResult:
         raise CrossSampleAssociationContractError(
             "final receipt must be an exact CrossSample final receipt"
         )
@@ -217,44 +217,24 @@ def _validate_inputs(
 def _validate_initial_population(
     *,
     coverage: OwnerBackfillEvaluationCoverageBatch,
-    final_receipt: CrossSampleFinalReceipt,
+    final_receipt: CrossSampleGroupingResult,
 ) -> None:
-    application = final_receipt.post_mt0_application
-    if application.status != "assessable" or not application.successors:
-        raise CrossSampleAssociationContractError(
-            "post-MT0 application has no exact successor population"
-        )
-    successor_ids = {group.group_hypothesis_id for group in application.successors}
-    cs2_by_id = _population_by_id(final_receipt.cs2_state.population, field="CS2")
-    if not successor_ids <= set(cs2_by_id):
-        raise CrossSampleAssociationContractError(
-            "post-MT0 successor is missing from the CS2 population"
-        )
-    reconstructed = {
-        group_id: group
-        for group_id, group in cs2_by_id.items()
-        if group_id not in successor_ids
-    }
-    for predecessor in application.predecessors:
-        if predecessor.group_hypothesis_id in reconstructed:
-            raise CrossSampleAssociationContractError(
-                "reconstructed initial population duplicates a predecessor"
-            )
-        reconstructed[predecessor.group_hypothesis_id] = predecessor
     coverage_by_id = _population_by_id(
-        coverage.epoch.group_identities,
-        field="coverage epoch",
+        coverage.epoch.group_identities, field="coverage epoch"
     )
-    if reconstructed != coverage_by_id:
+    initial_by_id = _population_by_id(
+        final_receipt.initial_population, field="initial grouping"
+    )
+    if coverage_by_id != initial_by_id:
         raise CrossSampleAssociationContractError(
-            "coverage groups do not equal the exact reconstructed initial population"
+            "coverage groups do not equal the grouping result's initial population"
         )
 
 
 def _compile_associations(
     *,
     coverage: OwnerBackfillEvaluationCoverageBatch,
-    final_receipt: CrossSampleFinalReceipt,
+    final_receipt: CrossSampleGroupingResult,
 ) -> tuple[
     tuple[CrossSamplePredecessorAssociation, ...],
     tuple[CrossSampleCoveragePositionAssociation, ...],
@@ -271,8 +251,7 @@ def _compile_associations(
         for group in coverage.epoch.group_identities
     )
     predecessor_by_id = {
-        item.predecessor.group_hypothesis_id: item
-        for item in predecessor_associations
+        item.predecessor.group_hypothesis_id: item for item in predecessor_associations
     }
     if len(predecessor_by_id) != len(predecessor_associations):
         raise CrossSampleAssociationContractError(
@@ -358,9 +337,7 @@ def _associate_position(
         )
     member = matching_members[0]
     matching_successors = tuple(
-        successor
-        for successor in successors
-        if member in successor.member_subjects
+        successor for successor in successors if member in successor.member_subjects
     )
     if len(matching_successors) != 1:
         raise CrossSampleAssociationContractError(
@@ -414,7 +391,7 @@ def _validate_handoff(handoff: CrossSampleAssociationLineageHandoff) -> None:
 def _handoff_basis(
     *,
     coverage: OwnerBackfillEvaluationCoverageBatch,
-    final_receipt: CrossSampleFinalReceipt,
+    final_receipt: CrossSampleGroupingResult,
     predecessor_associations: tuple[CrossSamplePredecessorAssociation, ...],
     position_associations: tuple[CrossSampleCoveragePositionAssociation, ...],
     final_population: tuple[CrossSampleGroupIdentity, ...],
@@ -430,8 +407,7 @@ def _handoff_basis(
                         item.predecessor.group_hypothesis_id
                     ),
                     "final_successor_group_hypothesis_ids": [
-                        successor.group_hypothesis_id
-                        for successor in item.successors
+                        successor.group_hypothesis_id for successor in item.successors
                     ],
                 }
                 for item in predecessor_associations

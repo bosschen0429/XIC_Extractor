@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import math
+from collections.abc import Mapping
 from dataclasses import InitVar, dataclass, field
 from typing import Literal, cast, final
 
@@ -55,27 +56,21 @@ from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 POLICY_VERSION = "conservative-backfill"
 VALIDATION_STATUS = "shadow_ready"
 PRODUCT_AUTHORITY = "none"
-RECOVERY_UNIVERSE_SCHEMA_VERSION = (
-    "conservative_backfill_recovery_candidate_universe"
-)
+RECOVERY_UNIVERSE_SCHEMA_VERSION = "conservative_backfill_recovery_candidate_universe"
 RECOVERY_UNIVERSE_ARTIFACT_SEMANTIC_ROLE = (
     "conservative_backfill_recovery_candidate_universe"
 )
-_RECOVERY_UNIVERSE_ARTIFACT_SEMANTIC_CONTRACT = (
-    _mint_artifact_semantic_contract_ref(
-        owner_namespace="xic_extractor.alignment.conservative_backfill",
-        semantic_role=RECOVERY_UNIVERSE_ARTIFACT_SEMANTIC_ROLE,
-        schema_version=RECOVERY_UNIVERSE_SCHEMA_VERSION,
-        validation_status=VALIDATION_STATUS,
-        media_type="application/json",
-        serialization_format="canonical-json-utf8-lf",
-    )
+_RECOVERY_UNIVERSE_ARTIFACT_SEMANTIC_CONTRACT = _mint_artifact_semantic_contract_ref(
+    owner_namespace="xic_extractor.alignment.conservative_backfill",
+    semantic_role=RECOVERY_UNIVERSE_ARTIFACT_SEMANTIC_ROLE,
+    schema_version=RECOVERY_UNIVERSE_SCHEMA_VERSION,
+    validation_status=VALIDATION_STATUS,
+    media_type="application/json",
+    serialization_format="canonical-json-utf8-lf",
 )
 _CELL_DECISION_MINT_TOKEN = object()
 _MODE_TRACK_GROUP_FACTS_MINT_TOKEN = object()
-ACTIVATION_ELIGIBLE_SAMPLE_ROLES = frozenset(
-    {"study_sample", "qc", "pooled_qc"}
-)
+ACTIVATION_ELIGIBLE_SAMPLE_ROLES = frozenset({"study_sample", "qc", "pooled_qc"})
 
 ConservativeBackfillDisposition = Literal[
     "candidate_mapped",
@@ -234,7 +229,7 @@ class ModeTrackConservativeBackfillGroupFacts:
                 "ModeTrack Backfill facts require one exact ModeTrack model set"
             )
         if not any(
-            self.group is item for item in self.model_set.family_context.mode_tracks
+            self.group is item for item in self.model_set.assignment_scope.groups
         ):
             raise ConservativeBackfillContractError(
                 "ModeTrack Backfill group was substituted"
@@ -262,8 +257,7 @@ class ModeTrackConservativeBackfillGroupFacts:
                 "ModeTrack Backfill assignments must be canonical-sorted"
             )
         direct_sample_ids = tuple(
-            assignment.canonical_sample_identity_id
-            for assignment in direct_assignments
+            assignment.canonical_sample_identity_id for assignment in direct_assignments
         )
         if len(direct_sample_ids) != len(set(direct_sample_ids)):
             raise ConservativeBackfillContractError(
@@ -364,8 +358,7 @@ class ConservativeBackfillRecoveryCandidateUniverse:
                 "recovery universe requires an owner-resolved sample"
             )
         if not any(
-            self.sample is owned
-            for owned in self.processing_owners.sample_resolutions
+            self.sample is owned for owned in self.processing_owners.sample_resolutions
         ):
             raise ConservativeBackfillContractError(
                 "recovery universe sample is outside the processing owner closure"
@@ -573,10 +566,13 @@ class ConservativeBackfillCellDecision:
             evidence_peaks = tuple(
                 item.peak_observation for item in self.candidate_evidence
             )
-            if any(
-                item.candidate_universe is not self.candidate_universe
-                for item in self.candidate_evidence
-            ) or evidence_peaks != self.candidate_universe.candidate_peaks:
+            if (
+                any(
+                    item.candidate_universe is not self.candidate_universe
+                    for item in self.candidate_evidence
+                )
+                or evidence_peaks != self.candidate_universe.candidate_peaks
+            ):
                 raise ConservativeBackfillContractError(
                     "cell decision must retain the complete owner-bound universe"
                 )
@@ -727,9 +723,7 @@ def canonical_conservative_backfill_recovery_universe_bytes(
         )
     peaks = candidate_assessment.candidate_peaks
     processing_attempt = processing_owners.attempt
-    request_sample_population = _processing_owner_sample_population(
-        processing_owners
-    )
+    request_sample_population = _processing_owner_sample_population(processing_owners)
     payload = {
         "schema_version": RECOVERY_UNIVERSE_SCHEMA_VERSION,
         "validation_status": VALIDATION_STATUS,
@@ -738,8 +732,7 @@ def canonical_conservative_backfill_recovery_universe_bytes(
         "processing_attempt_id": processing_attempt.processing_attempt_id,
         "canonical_sample_identity_id": sample.identity.sample_identity_id,
         "request_sample_population_ids": [
-            member.identity.sample_identity_id
-            for member in request_sample_population
+            member.identity.sample_identity_id for member in request_sample_population
         ],
         "method_subject_id": facts[0].group_context.method_subject_id,
         "candidate_assessment_artifact_id": (
@@ -805,8 +798,7 @@ def assess_conservative_backfill_group(
         if _sample_is_activation_eligible(sample)
     )
     direct_support_ids = tuple(
-        support.sample.identity.sample_identity_id
-        for support in group_context.supports
+        support.sample.identity.sample_identity_id for support in group_context.supports
     )
     eligible_support_ids = tuple(
         sample_id for sample_id in direct_support_ids if sample_id in eligible_ids
@@ -815,9 +807,7 @@ def assess_conservative_backfill_group(
         _support_trace(support.hypothesis.peak_observation_refs)
         for support in group_context.supports
     )
-    cell_sample_ids = tuple(
-        cell.content.canonical_sample_identity_id for cell in cells
-    )
+    cell_sample_ids = tuple(cell.content.canonical_sample_identity_id for cell in cells)
     sample_ids = tuple(sample.identity.sample_identity_id for sample in samples)
     sample_count = len(eligible_ids)
     minimum_support = minimum_direct_support_count(sample_count)
@@ -875,14 +865,6 @@ def assess_mode_track_conservative_backfill_groups(
         processing_owners=processing_owners,
         model_set=model_set,
     )
-    if any(
-        assessment.artifact.content_identity.artifact_content_id
-        not in model_set.family_context.source_lineage_refs
-        for _, assessment in assessments
-    ):
-        raise ConservativeBackfillContractError(
-            "ModeTrack Backfill assessment is outside the exact Family lineage"
-        )
     assessment_sample_ids = tuple(
         sample.identity.sample_identity_id for sample, _ in assessments
     )
@@ -897,11 +879,14 @@ def assess_mode_track_conservative_backfill_groups(
         for sample, assessment in assessments
     }
     assignments_by_hypothesis_id: dict[str, ModeTrackAssignment] = {}
+    group_by_id = {
+        group.group_hypothesis_id: group for group in model_set.assignment_scope.groups
+    }
     direct_by_group_id: dict[str, list[ModeTrackAssignment]] = {
-        group_id: [] for group_id in model_set.family_context.group_hypothesis_ids
+        group_id: [] for group_id in group_by_id
     }
     candidates_by_group_id: dict[str, list[ModeTrackAssignment]] = {
-        group_id: [] for group_id in model_set.family_context.group_hypothesis_ids
+        group_id: [] for group_id in group_by_id
     }
     for batch in batches:
         assessment = assessment_by_sample_id[batch.canonical_sample_identity_id]
@@ -946,10 +931,7 @@ def assess_mode_track_conservative_backfill_groups(
         }
         for peak_id in support_peak_ids:
             support_assignment = assignment_by_peak_id.get(peak_id)
-            if (
-                support_assignment is None
-                or support_assignment.peak_hypothesis is None
-            ):
+            if support_assignment is None or support_assignment.peak_hypothesis is None:
                 raise ConservativeBackfillContractError(
                     "direct-SUPPORT assessment closure is missing its "
                     "ModeTrack assignment"
@@ -966,7 +948,7 @@ def assess_mode_track_conservative_backfill_groups(
             )
             group_id = _exact_mode_track_owner_group_id(
                 support_assignment,
-                model_set=model_set,
+                group_by_id=group_by_id,
             )
             if group_id is None:
                 raise ConservativeBackfillContractError(
@@ -985,7 +967,7 @@ def assess_mode_track_conservative_backfill_groups(
                 continue
             group_id = _exact_mode_track_owner_group_id(
                 assignment,
-                model_set=model_set,
+                group_by_id=group_by_id,
                 allow_non_owner=True,
             )
             if group_id is not None:
@@ -999,7 +981,7 @@ def assess_mode_track_conservative_backfill_groups(
     )
     minimum_support = minimum_direct_support_count(len(eligible_ids))
     facts = []
-    for group in model_set.family_context.mode_tracks:
+    for group in model_set.assignment_scope.groups:
         direct_assignments = _canonical_mode_track_assignments(
             tuple(direct_by_group_id[group.group_hypothesis_id])
         )
@@ -1007,8 +989,7 @@ def assess_mode_track_conservative_backfill_groups(
             tuple(candidates_by_group_id[group.group_hypothesis_id])
         )
         direct_sample_ids = tuple(
-            assignment.canonical_sample_identity_id
-            for assignment in direct_assignments
+            assignment.canonical_sample_identity_id for assignment in direct_assignments
         )
         if len(direct_sample_ids) != len(set(direct_sample_ids)):
             raise ConservativeBackfillContractError(
@@ -1099,8 +1080,12 @@ def map_conservative_backfill_candidates(
 ) -> tuple[ConservativeBackfillCellDecision, ...]:
     """Map like-to-like candidates jointly by strict cardinality and RT order."""
 
-    if not isinstance(group_facts, tuple) or not group_facts or any(
-        not isinstance(item, ConservativeBackfillGroupFacts) for item in group_facts
+    if (
+        not isinstance(group_facts, tuple)
+        or not group_facts
+        or any(
+            not isinstance(item, ConservativeBackfillGroupFacts) for item in group_facts
+        )
     ):
         raise ConservativeBackfillContractError(
             "mapping requires one or more conservative group facts"
@@ -1147,9 +1132,7 @@ def map_conservative_backfill_candidates(
             if _group_method_subject_id(fact) == universe.method_subject_id
         )
         expected_facts = (
-            _canonical_recovery_group_facts(matching_facts)
-            if matching_facts
-            else ()
+            _canonical_recovery_group_facts(matching_facts) if matching_facts else ()
         )
         if len(expected_facts) != len(universe.group_facts) or any(
             expected is not bound
@@ -1178,12 +1161,8 @@ def map_conservative_backfill_candidates(
     decisions: list[ConservativeBackfillCellDecision | None] = [None] * len(group_facts)
     active_by_subject: dict[str, list[int]] = {}
     for index, (facts, cell) in enumerate(zip(group_facts, target_cells, strict=True)):
-        candidate_universe = universes_by_subject.get(
-            _group_method_subject_id(facts)
-        )
-        target_candidates = _recovery_evidence_from_universe(
-            candidate_universe
-        )
+        candidate_universe = universes_by_subject.get(_group_method_subject_id(facts))
+        target_candidates = _recovery_evidence_from_universe(candidate_universe)
         if cell.content.method_result == "SUPPORT":
             decisions[index] = _decision(
                 facts,
@@ -1343,8 +1322,10 @@ def _canonical_cells(
     *,
     group_context: CidNlCellGroupContext,
 ) -> tuple[CellObservationRef, ...]:
-    if not isinstance(cells, tuple) or not cells or any(
-        not isinstance(item, CellObservationRef) for item in cells
+    if (
+        not isinstance(cells, tuple)
+        or not cells
+        or any(not isinstance(item, CellObservationRef) for item in cells)
     ):
         raise ConservativeBackfillContractError(
             "Backfill facts require immutable canonical CellObservation references"
@@ -1390,12 +1371,8 @@ def _canonical_mode_track_sample_assessments(
         ],
         sample_assessments,
     )
-    ordered = tuple(
-        sorted(typed, key=lambda item: item[0].identity.sample_identity_id)
-    )
-    sample_ids = tuple(
-        sample.identity.sample_identity_id for sample, _ in ordered
-    )
+    ordered = tuple(sorted(typed, key=lambda item: item[0].identity.sample_identity_id))
+    sample_ids = tuple(sample.identity.sample_identity_id for sample, _ in ordered)
     if len(sample_ids) != len(set(sample_ids)):
         raise ConservativeBackfillContractError(
             "each sample may contribute exactly one ModeTrack assessment"
@@ -1431,8 +1408,7 @@ def _canonical_mode_track_sample_assessments(
             "ModeTrack Backfill assessment crossed its owner or sample"
         )
     method_subject_ids = {
-        assessment.content.method_subject.method_subject_id
-        for _, assessment in ordered
+        assessment.content.method_subject.method_subject_id for _, assessment in ordered
     }
     if len(method_subject_ids) != 1:
         raise ConservativeBackfillContractError(
@@ -1454,9 +1430,7 @@ def _canonical_mode_track_assignment_batches(
             "ModeTrack Backfill requires typed immutable assignment batches"
         )
     batches = cast(tuple[ModeTrackAssignmentBatch, ...], assignment_batches)
-    ordered = tuple(
-        sorted(batches, key=lambda item: item.canonical_sample_identity_id)
-    )
+    ordered = tuple(sorted(batches, key=lambda item: item.canonical_sample_identity_id))
     sample_ids = tuple(item.canonical_sample_identity_id for item in ordered)
     if len(sample_ids) != len(set(sample_ids)):
         raise ConservativeBackfillContractError(
@@ -1501,13 +1475,9 @@ def _canonical_mode_track_assignments(
 def _exact_mode_track_owner_group_id(
     assignment: ModeTrackAssignment,
     *,
-    model_set: ModeTrackModelSet,
+    group_by_id: Mapping[str, CrossSamplePeakGroupHypothesis],
     allow_non_owner: bool = False,
 ) -> str | None:
-    group_by_id = {
-        group.group_hypothesis_id: group
-        for group in model_set.family_context.mode_tracks
-    }
     group = group_by_id.get(assignment.group_hypothesis_id or "")
     exact_owner = (
         assignment.state == "uniquely_assigned"
@@ -1527,8 +1497,10 @@ def _exact_mode_track_owner_group_id(
 def _canonical_recovery_group_facts(
     facts: object,
 ) -> tuple[ConservativeBackfillGroupFacts, ...]:
-    if not isinstance(facts, tuple) or not facts or any(
-        not isinstance(item, ConservativeBackfillGroupFacts) for item in facts
+    if (
+        not isinstance(facts, tuple)
+        or not facts
+        or any(not isinstance(item, ConservativeBackfillGroupFacts) for item in facts)
     ):
         raise ConservativeBackfillContractError(
             "recovery universe requires one or more conservative group facts"
@@ -1565,8 +1537,7 @@ def _validate_recovery_sample_and_subject(
             "one recovery universe must bind exactly one method subject"
         )
     if any(
-        not any(sample is member for member in fact.sample_population)
-        for fact in facts
+        not any(sample is member for member in fact.sample_population) for fact in facts
     ):
         raise ConservativeBackfillContractError(
             "recovery universe sample is outside its declared group populations"
@@ -1625,9 +1596,7 @@ def _canonical_recovery_peaks(
             "recovery universe peaks must be immutable PeakObservation references"
         )
     sample_id = sample.identity.sample_identity_id
-    if any(
-        peak.content.canonical_sample_identity_id != sample_id for peak in peaks
-    ):
+    if any(peak.content.canonical_sample_identity_id != sample_id for peak in peaks):
         raise ConservativeBackfillContractError(
             "recovery universe peak belongs to a different sample"
         )
@@ -1637,9 +1606,7 @@ def _canonical_recovery_peaks(
             key=lambda peak: peak.content.peak_observation_content_id,
         )
     )
-    peak_ids = tuple(
-        peak.content.peak_observation_content_id for peak in ordered
-    )
+    peak_ids = tuple(peak.content.peak_observation_content_id for peak in ordered)
     if len(peak_ids) != len(set(peak_ids)):
         raise ConservativeBackfillContractError(
             "recovery universe cannot contain duplicate physical peaks"
@@ -1745,8 +1712,12 @@ def _validate_recovery_cell_attempts(
 def _canonical_samples(
     samples: object,
 ) -> tuple[ResolvedCanonicalSampleIdentity, ...]:
-    if not isinstance(samples, tuple) or not samples or any(
-        not isinstance(item, ResolvedCanonicalSampleIdentity) for item in samples
+    if (
+        not isinstance(samples, tuple)
+        or not samples
+        or any(
+            not isinstance(item, ResolvedCanonicalSampleIdentity) for item in samples
+        )
     ):
         raise ConservativeBackfillContractError(
             "sample_population must contain owner-resolved run samples"

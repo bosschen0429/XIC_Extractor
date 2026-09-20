@@ -276,7 +276,7 @@ def test_cid_nl_workflow_seam_applies_accepted_components_through_cross_sample(
     }
     component_owners = tuple(
         owner
-        for group in result.family_context.mode_tracks
+        for group in result.assignment_scope.groups
         if group.group_hypothesis_id in predecessor_ids
         for owner in group.owners
     )

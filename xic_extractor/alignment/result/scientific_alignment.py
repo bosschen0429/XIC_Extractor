@@ -23,11 +23,10 @@ from xic_extractor.alignment.cross_sample.association import (
 from xic_extractor.alignment.cross_sample_peak_groups import (
     CrossSampleGroupIdentity,
     CrossSampleLineageEdge,
-    CrossSampleSuccessorApplication,
+    CrossSamplePartitionTransition,
 )
-from xic_extractor.alignment.cross_sample_reconciliation import (
-    CrossSampleFinalReceipt,
-    CrossSampleProposalOutcome,
+from xic_extractor.alignment.grouping_result import (
+    CrossSampleGroupingResult,
 )
 from xic_extractor.alignment.owner_backfill import (
     OwnerBackfillPeakFactObservation,
@@ -110,7 +109,7 @@ class FinalizedScientificAlignment:
     terminal_subjects: tuple[TerminalSearchObservation, ...]
     cell_observation_handoff: CrossSampleAssociationLineageHandoff | None
     cell_observations: tuple[FinalGroupCellObservation, ...]
-    final_cross_sample_receipt: CrossSampleFinalReceipt
+    grouping_result: CrossSampleGroupingResult
     _completion_seal: tuple[int, ...] = field(init=False, repr=False, compare=False)
     _mint_token: InitVar[object] = field(kw_only=True, repr=False)
 
@@ -175,30 +174,22 @@ class FinalizedScientificAlignment:
 
     @property
     def final_population(self) -> tuple[CrossSampleGroupIdentity, ...]:
-        return self.final_cross_sample_receipt.final_population
+        return self.grouping_result.final_population
 
     @property
-    def final_application(self) -> CrossSampleSuccessorApplication:
-        return self.final_cross_sample_receipt.final_application
+    def partition_transition(self) -> CrossSamplePartitionTransition:
+        return self.grouping_result.partition_transition
 
     @property
     def lineage(self) -> tuple[CrossSampleLineageEdge, ...]:
-        return self.final_application.lineage
-
-    @property
-    def repair_receipt(self) -> ObservationRepairReceipt | None:
-        return self.final_cross_sample_receipt.repair_receipt
-
-    @property
-    def mode_track_proposal(self) -> CrossSampleProposalOutcome | None:
-        return self.final_cross_sample_receipt.mode_track_proposal
+        return self.partition_transition.lineage
 
 
 def finalize_scientific_alignment(
     *,
     scope: SearchScope,
     captures: Sequence[SampleLocalCapture],
-    final_cross_sample_receipt: CrossSampleFinalReceipt,
+    grouping_result: CrossSampleGroupingResult,
     cell_observation_handoff: CrossSampleAssociationLineageHandoff | None,
     predecessor_cell_observations: Sequence[CellObservationRef],
     repair_receipts: Sequence[ObservationRepairReceipt] = (),
@@ -207,14 +198,11 @@ def finalize_scientific_alignment(
     """Validate one complete capture population and seal its shared core."""
 
     _validate_scope(scope)
-    if type(final_cross_sample_receipt) is not CrossSampleFinalReceipt:
+    if type(grouping_result) is not CrossSampleGroupingResult:
         raise FinalizedScientificAlignmentContractError(
             "finalization requires an exact CrossSample final receipt"
         )
-    if (
-        final_cross_sample_receipt.processing_request_id
-        != scope.request.processing_request_id
-    ):
+    if grouping_result.processing_request_id != scope.request.processing_request_id:
         raise FinalizedScientificAlignmentContractError(
             "CrossSample final receipt crossed the processing request"
         )
@@ -232,13 +220,10 @@ def finalize_scientific_alignment(
     _validate_terminal_population(scope, terminal_subjects)
     canonical_samples: tuple[ResolvedCanonicalSampleIdentity, ...]
     samples = scope.samples
-    if (
-        type(samples) is tuple
-        and all(
-            samples[i].identity.sample_identity_id
-            <= samples[i + 1].identity.sample_identity_id
-            for i in range(len(samples) - 1)
-        )
+    if type(samples) is tuple and all(
+        samples[i].identity.sample_identity_id
+        <= samples[i + 1].identity.sample_identity_id
+        for i in range(len(samples) - 1)
     ):
         canonical_samples = samples
     else:
@@ -250,13 +235,7 @@ def finalize_scientific_alignment(
         )
     canonical_cells: tuple[FinalGroupCellObservation, ...]
     if cell_observation_handoff is None:
-        if (
-            predecessor_cell_observations
-            or repair_receipts
-            or repaired_observations
-            or final_cross_sample_receipt.repair_epoch != 0
-            or final_cross_sample_receipt.repair_receipt is not None
-        ):
+        if predecessor_cell_observations or repair_receipts or repaired_observations:
             raise FinalizedScientificAlignmentContractError(
                 "repair-free finalization cannot carry repair lineage"
             )
@@ -264,7 +243,7 @@ def finalize_scientific_alignment(
     else:
         _validate_cell_observation_handoff(
             handoff=cell_observation_handoff,
-            final_cross_sample_receipt=final_cross_sample_receipt,
+            grouping_result=grouping_result,
             canonical_samples=canonical_samples,
             processing_request_id=scope.request.processing_request_id,
         )
@@ -284,7 +263,7 @@ def finalize_scientific_alignment(
         terminal_subjects=terminal_subjects,
         cell_observation_handoff=cell_observation_handoff,
         cell_observations=canonical_cells,
-        final_cross_sample_receipt=final_cross_sample_receipt,
+        grouping_result=grouping_result,
         # The composer just closed these cells; no callback precedes this mint.
         _mint_token=_FRESH_CELL_POPULATION_MINT_TOKEN,
     )
@@ -325,7 +304,7 @@ def _scientific_completion_state(
         id(result.terminal_subjects),
         id(result.cell_observation_handoff),
         id(result.cell_observations),
-        id(result.final_cross_sample_receipt),
+        id(result.grouping_result),
     )
 
 
@@ -401,12 +380,12 @@ def _validate_finalized_alignment(
             raise FinalizedScientificAlignmentContractError(
                 "finalized result crossed its canonical sample universe"
             )
-    if type(result.final_cross_sample_receipt) is not CrossSampleFinalReceipt:
+    if type(result.grouping_result) is not CrossSampleGroupingResult:
         raise FinalizedScientificAlignmentContractError(
             "finalized result requires an exact CrossSample final receipt"
         )
     if (
-        result.final_cross_sample_receipt.processing_request_id
+        result.grouping_result.processing_request_id
         != result.processing_request.processing_request_id
     ):
         raise FinalizedScientificAlignmentContractError(
@@ -423,10 +402,7 @@ def _validate_finalized_alignment(
         _validate_terminal_population(result.scope, result.terminal_subjects)
     canonical_cells: tuple[FinalGroupCellObservation, ...]
     if result.cell_observation_handoff is None:
-        if (
-            result.cell_observations
-            or result.final_cross_sample_receipt.repair_epoch != 0
-        ):
+        if result.cell_observations:
             raise FinalizedScientificAlignmentContractError(
                 "repair-free finalized alignment carries repair observations"
             )
@@ -435,7 +411,7 @@ def _validate_finalized_alignment(
         if not _reuse_fresh_cells:
             _validate_cell_observation_handoff(
                 handoff=result.cell_observation_handoff,
-                final_cross_sample_receipt=result.final_cross_sample_receipt,
+                grouping_result=result.grouping_result,
                 canonical_samples=result.canonical_samples,
                 processing_request_id=result.processing_request_id,
             )
@@ -540,7 +516,7 @@ def _validate_observed_subject(subject: ObservedSearchSubject) -> None:
 def _validate_cell_observation_handoff(
     *,
     handoff: CrossSampleAssociationLineageHandoff,
-    final_cross_sample_receipt: CrossSampleFinalReceipt,
+    grouping_result: CrossSampleGroupingResult,
     canonical_samples: tuple[ResolvedCanonicalSampleIdentity, ...],
     processing_request_id: str,
 ) -> None:
@@ -548,7 +524,7 @@ def _validate_cell_observation_handoff(
         validate_cross_sample_association_lineage_handoff(handoff)
     except (TypeError, ValueError) as exc:
         raise FinalizedScientificAlignmentContractError(str(exc)) from exc
-    if handoff.final_receipt is not final_cross_sample_receipt:
+    if handoff.final_receipt is not grouping_result:
         raise FinalizedScientificAlignmentContractError(
             "cell-observation handoff substituted the final CrossSample receipt"
         )

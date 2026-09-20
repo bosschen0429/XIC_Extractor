@@ -8,12 +8,14 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import get_args
 
+import numpy as np
 import pytest
 
 import xic_extractor.alignment.workflow as workflow_owner
 from tests.processing_identity_no_raw_fixture import (
     build_processing_identity_no_raw_fixture,
 )
+from tests.test_search_scope_capture import _capture_binding, _peak_config
 from xic_extractor.alignment.workflow import (
     CancelledWorkflowResult,
     CaptureWorkflowArguments,
@@ -31,7 +33,87 @@ from xic_extractor.alignment.workflow import (
     WorkflowTerminalResult,
     execute_alignment_workflow,
 )
-from xic_extractor.processing_identity import issue_processing_attempt
+from xic_extractor.peak_detection.capture import capture_peak_hypotheses
+from xic_extractor.peak_detection.cid_nl_method_subject import CID_NL_PROVIDER_ID
+from xic_extractor.peak_detection.search_scope import (
+    SEARCH_SCOPE_SCHEMA_VERSION,
+    CaptureMethodConstraints,
+    EvidenceProviderBinding,
+    TargetSearchScope,
+)
+from xic_extractor.peak_detection.traces import Trace
+from xic_extractor.processing_identity import (
+    issue_processing_attempt,
+    resolve_request_acquisition_source,
+)
+
+
+def _target_scope_and_captures(fixture, spine, tmp_path: Path):
+    method_subject = spine.cells[0].group_context.method_subject
+    rt = np.linspace(7.7, 8.3, 61)
+    candidate_ids = tuple(
+        f"workflow-final:{sample.lookup_token}" for sample in fixture.samples
+    )
+    bindings = []
+    traces = []
+    for candidate_id, sample in zip(candidate_ids, fixture.samples, strict=True):
+        source = resolve_request_acquisition_source(
+            processing_owners=fixture.owners,
+            sample=sample,
+        )
+        bindings.append(
+            _capture_binding(
+                candidate_id=candidate_id,
+                method_subject_id=method_subject.method_subject_id,
+                sample=sample,
+                acquisition_source_id=source.acquisition_source_id,
+                mz=method_subject.precursor_mz,
+                ppm_tol=method_subject.precursor_tolerance_ppm,
+                rt_min=float(rt[0]),
+                rt_max=float(rt[-1]),
+            )
+        )
+        intensity = np.zeros_like(rt)
+        traces.append(
+            Trace.from_arrays(
+                sample_name=sample.metadata.sample_name,
+                mz=method_subject.precursor_mz,
+                rt=rt,
+                intensity=intensity,
+                rt_min=float(rt[0]),
+                rt_max=float(rt[-1]),
+                ppm_tol=method_subject.precursor_tolerance_ppm,
+                source="alignment_workflow_contract_test",
+                acquisition_source_id=source.acquisition_source_id,
+            )
+        )
+    scope = TargetSearchScope(
+        schema_version=SEARCH_SCOPE_SCHEMA_VERSION,
+        request=fixture.request,
+        samples=fixture.samples,
+        method_constraints=CaptureMethodConstraints(
+            boundary_policy="resolver_interval",
+            peak_config=_peak_config(tmp_path),
+        ),
+        evidence_providers=(
+            EvidenceProviderBinding(
+                provider_id=CID_NL_PROVIDER_ID,
+                method_subject_id=method_subject.method_subject_id,
+            ),
+        ),
+        declared_candidate_ids=candidate_ids,
+        capture_bindings=tuple(bindings),
+        target_snapshot=fixture.target.snapshot,
+        target=fixture.target,
+    )
+    return scope, tuple(
+        capture_peak_hypotheses(
+            scope=scope,
+            candidate_id=candidate_id,
+            trace=trace,
+        )
+        for candidate_id, trace in zip(candidate_ids, traces, strict=True)
+    )
 
 
 def test_public_workflow_surface_is_closed_and_variant_specific() -> None:
@@ -43,7 +125,7 @@ def test_public_workflow_surface_is_closed_and_variant_specific() -> None:
         "runtime",
         "capture",
         "mode_track_bootstrap",
-        "cross_sample_mt0",
+        "cross_sample_grouping",
         "scientific_final",
         "pre_cell_projection",
         "cell_decision",
@@ -80,7 +162,7 @@ def test_public_workflow_surface_is_closed_and_variant_specific() -> None:
     )
     assert tuple(field.name for field in fields(UntargetWorkflowAdapter)) == (
         *common_adapter_fields,
-        "completed_cross_sample",
+        "completed_grouping",
         "closed_cell_coverage",
     )
     assert tuple(field.name for field in fields(TargetWorkflowRequest)) == (
@@ -166,7 +248,6 @@ def test_workflow_rejects_incomplete_or_crossed_owner_population(
     from tests.test_backfill_observation_repair_authorization import (
         _authorization_population,
     )
-    from tests.test_cross_sample_workflow_bridges import _target_scope_and_captures
 
     fixture, spine, coverage, _cells = _authorization_population(
         tmp_path,

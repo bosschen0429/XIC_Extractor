@@ -38,9 +38,8 @@ from xic_extractor.alignment.mode_track.assignment import (
     mint_mode_track_support_anchor,
     validate_mode_track_assignment_batch_for_consumption,
 )
-from xic_extractor.alignment.mode_track.family_context import (
-    FamilyContextRef,
-    mint_family_context_ref,
+from xic_extractor.alignment.mode_track.assignment_scope import (
+    ModeTrackAssignmentScope,
 )
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
@@ -58,9 +57,6 @@ from xic_extractor.peak_detection.peak_hypothesis_identity import (
 from xic_extractor.processing_identity import ProcessingOwnerReferences
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 
-_FAMILY_CONTEXT_POLICY_VERSION = "cid-nl-method-subject-family"
-_MS1_FAMILY_CONTEXT_POLICY_VERSION = "target-ms1-family"
-
 
 class ModeTrackProducerError(ValueError):
     """Raised when direct support cannot close one ModeTrack composition."""
@@ -77,7 +73,7 @@ def bootstrap_mode_tracks_from_cid_nl_support(
     drift_lookup: DriftLookupProtocol | None = None,
     retain_observation_only_candidates: bool = False,
 ) -> tuple[
-    FamilyContextRef,
+    ModeTrackAssignmentScope,
     ModeTrackModelSet,
     tuple[ModeTrackAssignmentBatch, ...],
     ModeTrackFitOnceSource,
@@ -88,16 +84,18 @@ def bootstrap_mode_tracks_from_cid_nl_support(
 
     if type(trajectory_policy) is not ModeTrackTrajectoryPolicy:
         raise ModeTrackProducerError("trajectory_policy must be explicit and typed")
-    family_context, anchors, sample_candidates, _ = bootstrap_cid_nl_initial_population(
-        processing_owners=processing_owners,
-        sample_assessments=sample_assessments,
-        alignment_config=alignment_config,
-        drift_lookup=drift_lookup,
-        retain_observation_only_candidates=retain_observation_only_candidates,
+    assignment_scope, anchors, sample_candidates, _ = (
+        bootstrap_cid_nl_initial_population(
+            processing_owners=processing_owners,
+            sample_assessments=sample_assessments,
+            alignment_config=alignment_config,
+            drift_lookup=drift_lookup,
+            retain_observation_only_candidates=retain_observation_only_candidates,
+        )
     )
     model_set = fit_mode_track_model_set(
         processing_owners=processing_owners,
-        family_context=family_context,
+        assignment_scope=assignment_scope,
         direct_support_anchors=anchors,
         policy=trajectory_policy,
     )
@@ -133,12 +131,11 @@ def bootstrap_mode_tracks_from_cid_nl_support(
     batches_tuple = tuple(sorted(batches, key=lambda batch: batch.assignment_batch_id))
     source = mint_mode_track_fit_once_source(
         processing_owners=processing_owners,
-        family_context=family_context,
         model_set=model_set,
         sample_sources=tuple(sample_sources),
         initial_assignment_batches=batches_tuple,
     )
-    return family_context, model_set, batches_tuple, source
+    return assignment_scope, model_set, batches_tuple, source
 
 
 def bootstrap_cid_nl_initial_population(
@@ -158,7 +155,7 @@ def bootstrap_cid_nl_initial_population(
     ]
     | None = None,
 ) -> tuple[
-    FamilyContextRef,
+    ModeTrackAssignmentScope,
     tuple[ModeTrackSupportAnchor, ...],
     tuple[
         tuple[
@@ -341,7 +338,7 @@ def bootstrap_cid_nl_initial_population(
     method_subject_intervals = tuple(
         cid_nl_method_subject_resolver_interval(subject) for subject in method_subjects
     )
-    family_context = mint_family_context_ref(
+    assignment_scope = ModeTrackAssignmentScope(
         mz_interval=(
             min(interval[0] for interval in method_subject_intervals),
             max(interval[1] for interval in method_subject_intervals),
@@ -360,19 +357,7 @@ def bootstrap_cid_nl_initial_population(
                 for _, assessment in sample_assessments
             ),
         ),
-        context_policy_version=_FAMILY_CONTEXT_POLICY_VERSION,
-        source_lineage_refs=tuple(
-            sorted(
-                {
-                    *(hypothesis.hypothesis_id for hypothesis in hypotheses),
-                    *(
-                        assessment.artifact.content_identity.artifact_content_id
-                        for _, assessment in sample_assessments
-                    ),
-                }
-            )
-        ),
-        mode_tracks=tracks,
+        groups=tracks,
     )
     track_by_id = {track.group_hypothesis_id: track for track in tracks}
     anchors = tuple(
@@ -407,7 +392,7 @@ def bootstrap_cid_nl_initial_population(
         )
         sample_candidates.append((sample, candidates))
     return (
-        family_context,
+        assignment_scope,
         anchors,
         tuple(sample_candidates),
         drift_lookup,
@@ -421,13 +406,13 @@ def bootstrap_mode_tracks_from_ms1_hypotheses(
     sample_hypotheses: tuple[
         tuple[ResolvedCanonicalSampleIdentity, PeakHypothesis], ...
     ],
-    family_mz_interval: tuple[float, float],
-    family_rt_interval: tuple[float, float],
+    scope_mz_interval: tuple[float, float],
+    scope_rt_interval: tuple[float, float],
     alignment_config: AlignmentConfig,
     trajectory_policy: ModeTrackTrajectoryPolicy,
     drift_lookup: DriftLookupProtocol | None = None,
 ) -> tuple[
-    FamilyContextRef,
+    ModeTrackAssignmentScope,
     ModeTrackModelSet,
     tuple[ModeTrackAssignmentBatch, ...],
     ModeTrackFitOnceSource,
@@ -481,19 +466,14 @@ def bootstrap_mode_tracks_from_ms1_hypotheses(
         config=alignment_config,
         drift_lookup=drift_lookup,
     )
-    family_context = mint_family_context_ref(
-        mz_interval=family_mz_interval,
-        rt_interval=family_rt_interval,
-        context_policy_version=_MS1_FAMILY_CONTEXT_POLICY_VERSION,
-        source_lineage_refs=(
-            tuple(sorted(seen_hypothesis_ids))
-            or (processing_owners.request.processing_request_id,)
-        ),
-        mode_tracks=provisional_groups,
+    assignment_scope = ModeTrackAssignmentScope(
+        mz_interval=scope_mz_interval,
+        rt_interval=scope_rt_interval,
+        groups=provisional_groups,
     )
     model_set = fit_mode_track_model_set(
         processing_owners=processing_owners,
-        family_context=family_context,
+        assignment_scope=assignment_scope,
         direct_support_anchors=(),
         policy=trajectory_policy,
     )
@@ -541,12 +521,11 @@ def bootstrap_mode_tracks_from_ms1_hypotheses(
     batches_tuple = tuple(sorted(batches, key=lambda batch: batch.assignment_batch_id))
     source = mint_mode_track_fit_once_source(
         processing_owners=processing_owners,
-        family_context=family_context,
         model_set=model_set,
         sample_sources=tuple(sample_sources),
         initial_assignment_batches=batches_tuple,
     )
-    return family_context, model_set, batches_tuple, source
+    return assignment_scope, model_set, batches_tuple, source
 
 
 __all__ = [

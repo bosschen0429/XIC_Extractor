@@ -19,12 +19,13 @@ from xic_extractor.alignment.cross_sample_peak_groups import (
     CrossSampleNeighborhoodEdge,
     CrossSamplePeakGroupHypothesis,
 )
-from xic_extractor.alignment.cross_sample_reconciliation import (
-    CrossSamplePostMT0Context,
-    apply_mode_track_refinement_run_for_workflow,
-    close_cross_sample_without_observation_repair,
-)
 from xic_extractor.alignment.edge_scoring import DriftLookupProtocol
+from xic_extractor.alignment.grouping_result import (
+    CrossSampleGroupingResult,
+)
+from xic_extractor.alignment.grouping_workflow import (
+    apply_mode_track_refinement_run_for_workflow,
+)
 from xic_extractor.alignment.mode_track.assignment import ModeTrackTrajectoryPolicy
 from xic_extractor.alignment.mode_track.refinement import (
     bootstrap_mode_track_refinement_from_cid_nl_support,
@@ -117,7 +118,7 @@ class WorkflowStage(str, Enum):
     RUNTIME = "runtime"
     CAPTURE = "capture"
     MODE_TRACK_BOOTSTRAP = "mode_track_bootstrap"
-    CROSS_SAMPLE_MT0 = "cross_sample_mt0"
+    CROSS_SAMPLE_GROUPING = "cross_sample_grouping"
     SCIENTIFIC_FINAL = "scientific_final"
     PRE_CELL_PROJECTION = "pre_cell_projection"
     CELL_DECISION = "cell_decision"
@@ -347,7 +348,7 @@ class TargetWorkflowAdapter(_WorkflowAdapterFields):
 
 @dataclass(frozen=True, slots=True)
 class UntargetWorkflowAdapter(_WorkflowAdapterFields):
-    completed_cross_sample: CrossSamplePostMT0Context | None = None
+    completed_grouping: CrossSampleGroupingResult | None = None
     closed_cell_coverage: OwnerBackfillEvaluationCoverageBatch | None = None
 
     def __post_init__(self) -> None:
@@ -362,7 +363,7 @@ class UntargetWorkflowAdapter(_WorkflowAdapterFields):
                 raise AlignmentWorkflowContractError(
                     "closed cell coverage must be exact"
                 )
-            if self.completed_cross_sample is None:
+            if self.completed_grouping is None:
                 raise AlignmentWorkflowContractError(
                     "closed cell coverage requires completed CrossSample"
                 )
@@ -373,8 +374,8 @@ class UntargetWorkflowAdapter(_WorkflowAdapterFields):
                 raise AlignmentWorkflowContractError(
                     "closed cell coverage must contain only unplanned positions"
                 )
-        if self.completed_cross_sample is not None:
-            if type(self.completed_cross_sample) is not CrossSamplePostMT0Context:
+        if self.completed_grouping is not None:
+            if type(self.completed_grouping) is not CrossSampleGroupingResult:
                 raise AlignmentWorkflowContractError(
                     "completed CrossSample requires its exact owner context"
                 )
@@ -383,7 +384,7 @@ class UntargetWorkflowAdapter(_WorkflowAdapterFields):
                     "completed CrossSample requires closed cell coverage"
                 )
             if (
-                self.completed_cross_sample.processing_owners
+                self.completed_grouping.processing_owners
                 is not self.closed_cell_coverage.epoch.processing_owners
             ):
                 raise AlignmentWorkflowContractError(
@@ -829,13 +830,13 @@ def _compose_application_result(
             and type(request.scope) is TargetSearchScope
             and request.scope.target.definition.target.neutral_loss_da is None
         )
-        completed_cross_sample = (
-            adapter.completed_cross_sample
+        completed_grouping = (
+            adapter.completed_grouping
             if type(adapter) is UntargetWorkflowAdapter
             else None
         )
-        if completed_cross_sample is not None:
-            context = completed_cross_sample
+        if completed_grouping is not None:
+            context = completed_grouping
         elif not ms1_only_target:
             run = bootstrap_mode_track_refinement_from_cid_nl_support(
                 processing_owners=owners,
@@ -874,14 +875,14 @@ def _compose_application_result(
                 processing_owners=owners,
                 samples=request.scope.samples,
                 sample_hypotheses=sample_hypotheses,
-                family_mz_interval=(target.mz - mz_delta, target.mz + mz_delta),
-                family_rt_interval=(target.rt_min, target.rt_max),
+                scope_mz_interval=(target.mz - mz_delta, target.mz + mz_delta),
+                scope_rt_interval=(target.rt_min, target.rt_max),
                 alignment_config=adapter.mode_track.alignment_config,
                 trajectory_policy=adapter.mode_track.trajectory_policy,
                 drift_lookup=adapter.drift_lookup,
             )
-        stage = WorkflowStage.CROSS_SAMPLE_MT0
-        if completed_cross_sample is None:
+        stage = WorkflowStage.CROSS_SAMPLE_GROUPING
+        if completed_grouping is None:
             context = apply_mode_track_refinement_run_for_workflow(
                 processing_owners=owners,
                 captures=captures,
@@ -903,7 +904,7 @@ def _compose_application_result(
             raise AlignmentWorkflowContractError(
                 "closed cell coverage crossed exact workflow processing owners"
             )
-        final_receipt = close_cross_sample_without_observation_repair(context)
+        final_receipt = context
         handoff = None
         if closed_coverage is not None:
             stage = WorkflowStage.SCIENTIFIC_FINAL
@@ -914,7 +915,7 @@ def _compose_application_result(
         scientific = finalize_scientific_alignment(
             scope=request.scope,
             captures=captures,
-            final_cross_sample_receipt=final_receipt,
+            grouping_result=final_receipt,
             cell_observation_handoff=handoff,
             predecessor_cell_observations=(
                 adapter.predecessor_cell_observations
@@ -1247,8 +1248,8 @@ def _validate_request_adapter(
         )
     if (
         type(adapter) is UntargetWorkflowAdapter
-        and adapter.completed_cross_sample is not None
-        and adapter.completed_cross_sample.processing_owners is not owners
+        and adapter.completed_grouping is not None
+        and adapter.completed_grouping.processing_owners is not owners
     ):
         raise AlignmentWorkflowContractError(
             "completed CrossSample crossed the workflow processing owners"

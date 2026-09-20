@@ -12,7 +12,7 @@ from xic_extractor.alignment.conservative_backfill import (
     assess_mode_track_conservative_backfill_groups,
 )
 from xic_extractor.alignment.cross_sample_peak_groups import (
-    CrossSampleSuccessorApplication,
+    CrossSamplePartitionTransition,
     validate_cross_sample_group_population,
 )
 from xic_extractor.alignment.csv_io import (
@@ -65,7 +65,7 @@ class ModeTrackWorkflowRun:
     discovery_index: Path
     call_cost: Mapping[str, int]
     refinement_transactions: tuple[ModeTrackRefinementTransaction, ...] = ()
-    cross_sample_applications: tuple[CrossSampleSuccessorApplication, ...] = ()
+    cross_sample_applications: tuple[CrossSamplePartitionTransition, ...] = ()
 
 
 def run_untargeted_cid_nl_mode_track_workflow(
@@ -213,7 +213,7 @@ def run_untargeted_cid_nl_mode_track_workflow(
 
 def _apply_mode_track_refinement_transactions(
     transactions: tuple[ModeTrackRefinementTransaction, ...],
-) -> tuple[CrossSampleSuccessorApplication, ...]:
+) -> tuple[CrossSamplePartitionTransition, ...]:
     if not transactions:
         return ()
     population = validate_cross_sample_group_population(
