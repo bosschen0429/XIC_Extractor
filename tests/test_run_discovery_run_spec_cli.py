@@ -139,6 +139,11 @@ def test_discovery_cli_forwards_worker_budget_and_run_spec(
         assert forwarded["max_workers"] == expected_workers
     assert ("timing_recorder" in forwarded) is timing
     assert forwarded["run_spec"].discovery_method.settings == forwarded["settings"]
+    assert forwarded["settings"].enable_blank_qualification
+    assert all(
+        item.blank_library_sha256 is not None
+        for item in forwarded["run_spec"].acquisition_inputs
+    )
 
 
 @pytest.mark.parametrize("value", ["0", "-1", "1.5"])

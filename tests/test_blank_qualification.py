@@ -234,13 +234,21 @@ def test_resolve_background_library_missing_explicit_path_raises(
         resolve_background_library(library_path=missing)
 
 
-def test_apply_blank_qualification_to_candidates():
+@pytest.mark.parametrize("preset", [None, "dna_dr"])
+def test_default_discovery_filters_background_and_preserves_real_signal(
+    tmp_path: Path, preset: str | None,
+):
+    from scripts.run_discovery import _discovery_settings, _parse_args
+    from xic_extractor.diagnostics.timing import TimingRecorder
     from xic_extractor.discovery.blank_qualification import (
         BlankBackgroundIon,
         BlankBackgroundLibrary,
-        apply_blank_qualification_to_candidates,
     )
     from xic_extractor.discovery.models import DiscoveryCandidate, DiscoverySeed
+    from xic_extractor.discovery.pipeline import _apply_blank_qualification_if_enabled
+    from xic_extractor.discovery.processing_run_spec_adapter import (
+        compile_discovery_processing_run_spec,
+    )
 
     lib = BlankBackgroundLibrary(
         ions=(
@@ -362,11 +370,21 @@ def test_apply_blank_qualification_to_candidates():
         reason="initial candidate",
     )
 
-    qualified = apply_blank_qualification_to_candidates(
-        (c_background, c_override, c_clean),
-        lib,
-        ppm_tol=10.0,
-        fold_change_threshold=3.0,
+    raw = tmp_path / "test.raw"
+    raw.write_bytes(b"sample")
+    lib.save_json(tmp_path / "blank_library.json")
+    args = ["--raw", str(raw), "--dll-dir", "dll"]
+    if preset is not None:
+        args.extend(["--preset", preset])
+    settings = _discovery_settings(_parse_args(args))
+    spec = compile_discovery_processing_run_spec(
+        (raw,), discovery_settings=settings,
+    )
+    assert spec.acquisition_inputs[0].blank_library_sha256 is not None
+    qualified = _apply_blank_qualification_if_enabled(
+        (c_background, c_override, c_clean), raw_path=raw, settings=settings,
+        timing_recorder=TimingRecorder.disabled("discovery"), sample_stem="test",
+        acquisition_input=spec.acquisition_inputs[0],
     )
 
     # c_background demoted
@@ -431,10 +449,10 @@ def test_packaged_default_background_library_loads_successfully() -> None:
 def test_discovery_cli_blank_argument_resolution(tmp_path: Path) -> None:
     from scripts.run_discovery import _discovery_settings, _parse_args
 
-    # 1. Default without blank flags -> enable_blank_qualification is False
+    # 1. Normal Discovery enables background qualification without extra flags.
     args_default = _parse_args(["--raw", "dummy.raw", "--dll-dir", "dll"])
     settings_default = _discovery_settings(args_default)
-    assert not settings_default.enable_blank_qualification
+    assert settings_default.enable_blank_qualification
 
     # 2. --enable-blank-qualification -> True
     args_enable = _parse_args(

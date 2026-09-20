@@ -154,7 +154,7 @@ class DiscoverySettings:
     rt_max: float = 999.0
     resolver_mode: str = "local_minimum"
     evidence_profile: DiscoveryEvidenceProfile = DEFAULT_EVIDENCE_PROFILE
-    enable_blank_qualification: bool = False
+    enable_blank_qualification: bool = True
     blank_library_path: str | None = None
     blank_ppm_tol: float = 10.0
     blank_fold_change_threshold: float = 3.0

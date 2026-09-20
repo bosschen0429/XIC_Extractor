@@ -291,12 +291,18 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument(
         "--enable-blank-qualification",
         action="store_true",
-        help="Enable blank background qualification using packaged default library.",
+        help=(
+            "Enable blank background qualification (enabled by default). "
+            "Uses an explicit, sample-local, or packaged background library."
+        ),
     )
     parser.add_argument(
         "--no-blank-qualification",
         action="store_true",
-        help="Disable automatic blank background qualification and filtering.",
+        help=(
+            "Explicitly disable default-on blank background qualification "
+            "and filtering; overrides other blank options."
+        ),
     )
     parser.add_argument(
         "--blank-ppm-tol",

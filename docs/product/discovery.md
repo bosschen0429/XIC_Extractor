@@ -49,15 +49,28 @@ lifecycle for each provider.
   replay, including merged candidates. Legacy CSVs without provisional evidence
   remain readable; legacy rows marked provisional without the decision field
   are rejected because their final qualification cannot be recovered exactly.
-- Blank qualification uses the selected explicit, sample-local, or packaged
-  background library. ProcessingRunSpec binds each input to that library's
-  content digest, and execution consumes the bound immutable snapshot. Reading
-  a saved run for execution verifies the selected library against that digest.
-  Historical run specs remain readable with their original bytes and identity;
-  an enabled run without a library binding must be recompiled before execution.
-  The CLI's explicit `--no-blank-qualification` takes precedence over `--blank-dir`.
-  When qualification is enabled, an explicit blank directory is extracted anew;
-  matching filenames alone do not establish reusable blank content.
+- Blank qualification is enabled by default for newly configured ordinary
+  mainline Discovery runs. Library resolution prefers an explicitly selected
+  library, then a sample-local `blank_library.json.gz` or `blank_library.json`,
+  then the packaged default library. ProcessingRunSpec binds each input to the
+  selected library's content digest, and execution consumes the bound immutable
+  snapshot. Reading a saved run for execution verifies the selected library
+  against that digest. Historical saved settings and run specs keep their stored
+  enabled/disabled value, bytes, and identity; changing the default does not
+  retroactively enable qualification when they are read or replayed. An enabled
+  run without a library binding must be recompiled before execution. The CLI's
+  explicit `--no-blank-qualification` opts out and takes precedence over
+  `--blank-dir`. When qualification is enabled, an explicit blank directory is
+  extracted anew; matching filenames alone do not establish reusable blank
+  content.
+- Blank qualification matches candidate precursor m/z within 10 ppm by default.
+  A matched feature remains feature-backed when its MS1 height is at least 3×
+  the matched blank's maximum intensity. Below 3×, it becomes
+  `review_only_orphan_nl`, loses its feature-row binding, and is excluded from
+  MS1-feature-backed owner build while remaining in the complete candidate and
+  review universe. Qualification classifies downstream eligibility; it does not
+  undo the physical trace-shape result or change the selected peak's boundaries,
+  apex, or integrated area.
 - CID-NL precursor inference supports both direct scan-precursor seeds and the
   bounded `product_mz + neutral_loss` basis when the inferred precursor remains
   within `DiscoverySettings.ms2_precursor_tol_da` of the measured filter/
@@ -98,11 +111,12 @@ lifecycle for each provider.
   settings. They produce feature candidates plus typed evidence, not
   cross-sample identity or matrix writes by themselves.
 - Discovery validation is method-specific. CID-NL 8RAW/85RAW fixtures are not
-  universal Discovery gates; Pt pattern work should use Pt-method real samples,
-  trace/co-elution evidence, no-write authority checks, and independent human
-  adjudication unless a later Pt owner explicitly names a different fixture.
-  Reviewed Pt labels are method-development evidence, not ground truth or an
-  accuracy oracle by default.
+  universal Discovery gates. The 8RAW fixture is a bounded subset of the 85RAW
+  fixture and uses the same processing recipe, not a separate blank-qualification
+  profile. Pt pattern work should use Pt-method real samples, trace/co-elution
+  evidence, no-write authority checks, and independent human adjudication unless
+  a later Pt owner explicitly names a different fixture. Reviewed Pt labels are
+  method-development evidence, not ground truth or an accuracy oracle by default.
 - Standard per-sample outputs: `discovery_candidates.csv` (archival/alignment
   detail) and `discovery_review.csv` (compact human review).
 - Discovery `feature_family_id` remains a public output header and dataclass

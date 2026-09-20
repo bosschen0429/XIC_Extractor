@@ -63,10 +63,23 @@ from xic_extractor.xic_models import XICRequest, XICTrace
 
 NEUTRAL_LOSS_DA = 116.0474
 
+def _write_sample_background_library(directory: Path) -> None:
+    from xic_extractor.discovery.blank_qualification import (
+        BlankBackgroundIon,
+        BlankBackgroundLibrary,
+    )
+
+    BlankBackgroundLibrary(
+        ions=(BlankBackgroundIon(258.1085, 300.0, 3, "blank"),),
+        min_intensity=0.0,
+        source_blanks=("blank",),
+    ).save_json(directory / "blank_library.json")
+
 def test_single_raw_pipeline_groups_strict_ms2_seeds_and_writes_dual_csvs(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    _write_sample_background_library(tmp_path)
     raw_path = tmp_path / "TumorBC2312_DNA.raw"
     output_dir = tmp_path / "out"
     raw = _FakeRawHandle(
@@ -106,7 +119,9 @@ def test_single_raw_pipeline_groups_strict_ms2_seeds_and_writes_dual_csvs(
     assert rows[0]["best_ms2_scan_id"] == "202"
     assert rows[0]["seed_scan_ids"] == "101;202"
     assert rows[0]["seed_event_count"] == "2"
-    assert rows[0]["ms1_peak_found"] == "TRUE"
+    assert rows[0]["ms1_peak_found"] == "FALSE"
+    assert rows[0]["discovery_candidate_state"] == "review_only_orphan_nl"
+    assert "FC 2.00x < 3.0x" in rows[0]["reason"]
     review_rows = _read_csv(outputs.review_csv)
     assert len(review_rows) == 1
     assert review_rows[0]["candidate_id"] == (
@@ -193,6 +208,7 @@ def test_batch_pipeline_writes_per_sample_csvs_and_index(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    _write_sample_background_library(tmp_path)
     raw_paths = (
         tmp_path / "TumorBC2312_DNA.raw",
         tmp_path / "NormalBC2257_DNA.raw",
@@ -244,7 +260,8 @@ def test_batch_pipeline_writes_per_sample_csvs_and_index(
         row["discovery_receipt_id"].startswith("xic.discovery-candidate-universe:")
         for row in index_rows
     )
-    assert [row["medium_count"] for row in index_rows] == ["1", "1"]
+    assert [row["medium_count"] for row in index_rows] == ["0", "1"]
+    assert [row["low_count"] for row in index_rows] == ["1", "0"]
     assert [row["candidate_csv"] for row in index_rows] == [
         "TumorBC2312_DNA/discovery_candidates.csv",
         "NormalBC2257_DNA/discovery_candidates.csv",
@@ -263,6 +280,10 @@ def test_batch_pipeline_writes_per_sample_csvs_and_index(
     second_rows = _read_csv(
         tmp_path / "out" / "NormalBC2257_DNA" / "discovery_candidates.csv"
     )
+    assert first_rows[0]["ms1_peak_found"] == "FALSE"
+    assert "FC 2.00x < 3.0x" in first_rows[0]["reason"]
+    assert second_rows[0]["ms1_peak_found"] == "TRUE"
+    assert "high abundance tissue signal (3.0x)" in second_rows[0]["reason"]
     assert [row["candidate_id"] for row in first_rows] == [
         "TumorBC2312_DNA#101@mz258.1085_p142.0611"
     ]
@@ -1241,6 +1262,7 @@ def test_single_raw_pipeline_records_discovery_timing_stages(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    _write_sample_background_library(tmp_path)
     raw = _FakeRawHandle(
         [_scan_event(scan_number=101, rt=7.80, product_intensity=3000.0)],
         rt=np.array([7.70, 7.80, 8.00]),
@@ -1273,6 +1295,7 @@ def test_single_raw_pipeline_records_discovery_timing_stages(
         "discover.group_seeds",
         "discover.ms1_backfill",
         "discover.peak_anchor",
+        "discover.blank_qualification",
         "discover.write_candidates_csv",
         "discover.write_review_csv",
         "discover.publish_outputs",
@@ -1282,6 +1305,9 @@ def test_single_raw_pipeline_records_discovery_timing_stages(
     assert records_by_stage["discover.group_seeds"].metrics["group_count"] == 1
     assert records_by_stage["discover.ms1_backfill"].metrics["candidate_count"] == 1
     assert records_by_stage["discover.peak_anchor"].metrics["candidate_count"] == 1
+    assert records_by_stage["discover.blank_qualification"].metrics[
+        "excluded_background_count"
+    ] == 1
     assert records_by_stage["discover.write_candidates_csv"].metrics["row_count"] == 1
     assert records_by_stage["discover.write_review_csv"].metrics["row_count"] == 1
     assert records_by_stage["discover.publish_outputs"].metrics == {
