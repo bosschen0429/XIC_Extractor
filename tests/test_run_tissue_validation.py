@@ -1,0 +1,218 @@
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import pytest
+
+from scripts import run_tissue_validation
+from xic_extractor.discovery.blank_qualification import BlankBackgroundLibrary
+from xic_extractor.raw_reader import EXPECTED_THERMO_DLLS
+
+
+def _inputs(tmp_path: Path, *, count: int) -> tuple[Path, Path, Path]:
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    raw_dir = tmp_path / f"raw-{count}"
+    raw_dir.mkdir()
+    for index in range(count):
+        (raw_dir / f"sample-{index:03d}.raw").write_bytes(b"")
+    dll_dir = tmp_path / "dll"
+    dll_dir.mkdir(exist_ok=True)
+    for name in EXPECTED_THERMO_DLLS:
+        (dll_dir / name).write_bytes(b"")
+    library = tmp_path / "background.json"
+    BlankBackgroundLibrary(ions=(), min_intensity=25_000.0, source_blanks=()).save_json(
+        library
+    )
+    return raw_dir, dll_dir, library
+
+
+def _preflight_args(
+    tmp_path: Path, *, dataset: int, raw_dir: Path, dll_dir: Path, library: Path
+) -> list[str]:
+    return [
+        "--dataset",
+        str(dataset),
+        "--raw-dir",
+        str(raw_dir),
+        "--dll-dir",
+        str(dll_dir),
+        "--blank-library",
+        str(library),
+        "--output-dir",
+        str(tmp_path / f"out-{dataset}"),
+        "--preflight-only",
+    ]
+
+
+def test_preflight_8_and_85_share_science_without_output_or_execution(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(run_tissue_validation, "preflight_raw_reader", lambda _path: [])
+    executed: list[tuple[str, ...]] = []
+    monkeypatch.setattr(
+        run_tissue_validation,
+        "_run_command",
+        lambda command, _log: executed.append(tuple(command)) or 0,
+    )
+    plans = []
+    for dataset in (8, 85):
+        raw_dir, dll_dir, library = _inputs(tmp_path / str(dataset), count=dataset)
+        output_dir = tmp_path / str(dataset) / f"out-{dataset}"
+        code = run_tissue_validation.main(
+            _preflight_args(
+                tmp_path / str(dataset),
+                dataset=dataset,
+                raw_dir=raw_dir,
+                dll_dir=dll_dir,
+                library=library,
+            )
+        )
+        assert code == 0
+        assert not output_dir.exists()
+        plans.append(json.loads(capsys.readouterr().out))
+
+    assert executed == []
+    assert plans[0]["science"] == plans[1]["science"]
+    assert plans[0]["science"]["discovery"]["enable_blank_qualification"] is True
+    assert plans[0]["execution"]["workers"] == 4
+    assert plans[1]["execution"]["workers"] == 4
+    assert plans[0]["inputs"]["raw_count"] == 8
+    assert plans[1]["inputs"]["raw_count"] == 85
+
+
+def test_preflight_rejects_wrong_raw_count_before_creating_output(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    raw_dir, dll_dir, library = _inputs(tmp_path, count=7)
+    output_dir = tmp_path / "out-8"
+    monkeypatch.setattr(run_tissue_validation, "preflight_raw_reader", lambda _path: [])
+
+    code = run_tissue_validation.main(
+        _preflight_args(
+            tmp_path,
+            dataset=8,
+            raw_dir=raw_dir,
+            dll_dir=dll_dir,
+            library=library,
+        )
+    )
+
+    assert code == 2
+    assert "expected 8 nonrecursive .raw files, found 7" in capsys.readouterr().err
+    assert not output_dir.exists()
+
+
+def test_preflight_exposes_overrides_and_rejects_output_reuse(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    raw_dir, dll_dir, library = _inputs(tmp_path, count=8)
+    targets = tmp_path / "targets.csv"
+    targets.write_text(
+        (Path("config") / "targets.example.csv").read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    output_dir = tmp_path / "custom-output"
+    monkeypatch.setattr(run_tissue_validation, "preflight_raw_reader", lambda _path: [])
+
+    code = run_tissue_validation.main(
+        [
+            "--dataset",
+            "8",
+            "--raw-dir",
+            str(raw_dir),
+            "--dll-dir",
+            str(dll_dir),
+            "--blank-library",
+            str(library),
+            "--targets-csv",
+            str(targets),
+            "--workers",
+            "2",
+            "--output-dir",
+            str(output_dir),
+            "--preflight-only",
+        ]
+    )
+    assert code == 0
+    plan = json.loads(capsys.readouterr().out)
+    assert plan["execution"]["workers"] == 2
+    assert plan["inputs"]["targets_csv"] == str(targets.resolve())
+    assert plan["inputs"]["blank_library"] == str(library.resolve())
+
+    reused_output = tmp_path / "out-8"
+    reused_output.mkdir()
+    code = run_tissue_validation.main(
+        _preflight_args(
+            tmp_path,
+            dataset=8,
+            raw_dir=raw_dir,
+            dll_dir=dll_dir,
+            library=library,
+        )
+    )
+    assert code == 2
+    assert "output directory already exists" in capsys.readouterr().err
+
+
+def test_execution_persists_plan_and_stops_after_failed_discovery(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    raw_dir, dll_dir, library = _inputs(tmp_path, count=8)
+    output_dir = tmp_path / "out-8"
+    monkeypatch.setattr(run_tissue_validation, "preflight_raw_reader", lambda _path: [])
+    executed: list[tuple[tuple[str, ...], Path]] = []
+
+    def fail_discovery(command: list[str], log_path: Path) -> int:
+        executed.append((tuple(command), log_path))
+        return 9
+
+    monkeypatch.setattr(run_tissue_validation, "_run_command", fail_discovery)
+
+    code = run_tissue_validation.main(
+        _preflight_args(
+            tmp_path,
+            dataset=8,
+            raw_dir=raw_dir,
+            dll_dir=dll_dir,
+            library=library,
+        )[:-1]
+    )
+
+    assert code == 9
+    assert len(executed) == 1
+    assert "scripts.run_discovery" in executed[0][0]
+    assert (output_dir / "validation_plan.json").is_file()
+    timings = json.loads(
+        (output_dir / "stage_timings.json").read_text(encoding="utf-8")
+    )
+    assert timings["discovery"]["returncode"] == 9
+
+
+def test_8raw_blank_resolution_uses_full_cohort_root_not_subset(tmp_path: Path) -> None:
+    subset = tmp_path / "subset"
+    cohort = tmp_path / "cohort"
+    subset.mkdir()
+    cohort.mkdir()
+    subset_library = subset / "blank_library.json"
+    cohort_library = cohort / "blank_library.json"
+    for path in (subset_library, cohort_library):
+        BlankBackgroundLibrary(
+            ions=(), min_intensity=25_000.0, source_blanks=()
+        ).save_json(path)
+
+    selected = run_tissue_validation._resolve_blank_library(
+        None,
+        environment={"XIC_RAW_ROOT": str(cohort)},
+        dataset=8,
+        raw_dir=subset,
+    )
+
+    assert selected == cohort_library

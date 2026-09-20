@@ -68,6 +68,24 @@ Validation data is method-specific, not a universal ladder.
 Use xic-raw-validation before launching or accepting RAW-backed evidence.
 An inconclusive smaller gate closes its named blocker before a larger run.
 
+For current CID-NL tissue validation, use the shared maintained entry point:
+
+    .venv\Scripts\python.exe -m scripts.run_tissue_validation --dataset 8 --preflight-only
+
+Use `--dataset 85` for the full cohort. Preflight resolves local inputs and
+prints the effective plan without opening RAW files or running analysis.
+After the RAW launch gate is satisfied, the same command without
+`--preflight-only` runs Discovery followed by Alignment. `--help` owns runtime
+overrides; the printed plan owns the actual paths and effective settings.
+
+Both datasets use the same scientific preset, background library, ISTD input,
+and runtime defaults. The runner reads the ignored local environment file;
+explicit CLI arguments and process environment take precedence. It creates a
+fresh run directory and does not select historical Discovery indexes or
+workbooks implicitly. The older targeted validation harness remains a separate
+method, not this mainline's launch recipe. Scripts under `output/` and old
+command transcripts are historical evidence, not defaults.
+
 ## Alignment And Handoff
 
 The current command surface is:

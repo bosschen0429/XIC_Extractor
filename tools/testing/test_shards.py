@@ -217,6 +217,7 @@ SHARD_PATTERNS: ShardPatterns = OrderedDict(
             "tests/test_run_discovery.py",
             "tests/test_run_discovery_run_spec_cli.py",
             "tests/test_run_pt_pattern_discovery.py",
+            "tests/test_run_tissue_validation.py",
             "tests/test_run_untargeted_cid_nl_mode_track.py",
             "tests/test_run_untargeted_cid_nl_real_data.py",
             "tests/test_run_untargeted_provisional_matrix.py",

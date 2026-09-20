@@ -43,6 +43,16 @@ in the entry status text, `docs/product/`, `docs/architecture-contract.md`,
 Pipeline-tier gates that compare candidate configurations against current
 production, or summarize cost/parity for production decisions.
 
+### Tissue mainline validation launch
+
+**Entry point:** `python -m scripts.run_tissue_validation --dataset {8,85}`.
+**Role:** maintained operator interface / evidence producer.
+One launch configuration binds the tissue subset or full cohort to the current
+Discovery and Alignment CLIs. `--preflight-only` prints resolved defaults
+without RAW acquisition. It does not determine scientific readiness.
+See [Local Execution](../../docs/agent/parameter-settings.md#validation-scale)
+and [Presets](../../docs/product/presets.md#tissue-validation-defaults).
+
 Maintenance note: P2/P2b/P2c AsLS-vs-linear-edge gates were retired after the
 baseline decision closed. AsLS is the current production baseline integration
 method, and `linear_edge` is retired as a selectable baseline method. Do not add
