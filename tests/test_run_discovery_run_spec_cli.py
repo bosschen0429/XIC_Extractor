@@ -12,6 +12,7 @@ from xic_extractor.discovery.pipeline import (
     DiscoveryProcessExecutionError,
     DiscoverySampleProcessError,
 )
+from xic_extractor.execution_settings import ExecutionProfile
 from xic_extractor.presets import (
     PresetTag,
     bind_cid_nl_recipe,
@@ -36,7 +37,12 @@ def test_discovery_cli_reports_batch_execution_failure(
         (raw_dir / f"{stem}.raw").write_bytes(stem.encode())
     dll_dir = tmp_path / "dll"
     dll_dir.mkdir()
-    monkeypatch.setattr(run_discovery, "default_parallel_workers", lambda: workers)
+    monkeypatch.setattr(
+        run_discovery, "load_execution_profile",
+        lambda *, parallel_workers=None: ExecutionProfile(
+            parallel_workers=workers if parallel_workers is None else parallel_workers
+        ),
+    )
 
     def fail_batch(_paths, **kwargs):
         assert kwargs["max_workers"] == workers
@@ -82,7 +88,7 @@ def test_discovery_cli_reports_batch_execution_failure(
         ("raw-dir", 8, None, 2),
         ("raw-dir", 1, None, 1),
         ("raw-dir", 8, 1, 1),
-        ("raw-dir", 1, 3, 3),
+        ("raw-dir", 1, 3, 2),
         ("raw", 8, None, None),
         ("raw", 8, 3, None),
     ],
@@ -114,7 +120,12 @@ def test_discovery_cli_forwards_worker_budget_and_run_spec(
         )
 
     monkeypatch.setattr(
-        run_discovery, "default_parallel_workers", lambda: default_workers
+        run_discovery, "load_execution_profile",
+        lambda *, parallel_workers=None: ExecutionProfile(
+            parallel_workers=(
+                default_workers if parallel_workers is None else parallel_workers
+            )
+        )
     )
     monkeypatch.setattr(run_discovery, "run_discovery", capture_pipeline)
     monkeypatch.setattr(run_discovery, "run_discovery_batch", capture_pipeline)
@@ -139,9 +150,9 @@ def test_discovery_cli_forwards_worker_budget_and_run_spec(
         assert forwarded["max_workers"] == expected_workers
     assert ("timing_recorder" in forwarded) is timing
     assert forwarded["run_spec"].discovery_method.settings == forwarded["settings"]
-    assert forwarded["settings"].enable_blank_qualification
+    assert not forwarded["settings"].enable_blank_qualification
     assert all(
-        item.blank_library_sha256 is not None
+        item.blank_library_sha256 is None
         for item in forwarded["run_spec"].acquisition_inputs
     )
 

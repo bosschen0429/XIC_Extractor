@@ -185,8 +185,8 @@ def test_single_file_discovery_only_summary_counts_review_priorities(
     settings = captured_discovery["settings"]
     peak_config = captured_discovery["peak_config"]
     assert run_spec.discovery_method.settings == settings
-    assert settings.enable_blank_qualification
-    assert run_spec.acquisition_inputs[0].blank_library_sha256 is not None
+    assert not settings.enable_blank_qualification
+    assert run_spec.acquisition_inputs[0].blank_library_sha256 is None
     assert run_spec.acquisition_inputs[0].sample_stem == raw_file.stem
     assert (
         run_spec.signal_processing_profile.window_points
