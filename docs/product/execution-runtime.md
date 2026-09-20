@@ -796,6 +796,11 @@ while composing partition \(P_n\) without multiplying RAW acquisition resources:
   units (acquiring, in handoff queue, and composing).
 - **Handoff queue**: bounded queue with `maxsize=1` enforces backpressure so that
   acquisition does not outrun composition.
+- **Independent acquisition**: CID-NL can acquire two complete mass-connected
+  partitions concurrently when overlap is enabled and the configured worker
+  budget is at least two. The budget is divided between the two partitions;
+  the same two admission credits cover acquisition, queued results and composition.
+  Out-of-order acquisition results wait for ordered, single-writer composition.
 - **Bilateral abort**: producer acquisition failures immediately signal the
   consumer thread to drain and abort; consumer composition failures signal the
   producer to stop further acquisition, cancel pending tasks, and clean up spools.

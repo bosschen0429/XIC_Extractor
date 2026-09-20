@@ -154,6 +154,99 @@ class UntargetedCidNlProductionPlan:
     excluded_candidates: tuple[UntargetedCandidateExclusion, ...]
 
 
+@dataclass(frozen=True, slots=True)
+class PreparedCidNlAlignmentSubjectWorksets:
+    """One plan's complete Alignment worksets and partition lookup indexes."""
+
+    plan: UntargetedCidNlProductionPlan
+    worksets: tuple[tuple[CidNlMethodSubject, ...], ...]
+    subjects_by_id: dict[str, CidNlMethodSubject]
+    workset_ids_by_subject: dict[str, frozenset[str]]
+    memberships_by_subject: dict[str, tuple[tuple[str, str], ...]]
+
+    def subject_batch(
+        self,
+        subjects: tuple[CidNlMethodSubject, ...],
+    ) -> UntargetedCidNlMethodSubjectBatch:
+        """Bind whole prepared worksets to their exact candidate memberships."""
+
+        requested_ids: set[str] = set()
+        touched_worksets: set[frozenset[str]] = set()
+        for subject in subjects:
+            expected = self.subjects_by_id.get(subject.method_subject_id)
+            if expected is None or subject != expected:
+                raise ValueError(
+                    "CID-NL partition contains a foreign alignment subject"
+                )
+            requested_ids.add(subject.method_subject_id)
+            touched_worksets.add(
+                self.workset_ids_by_subject[subject.method_subject_id]
+            )
+        if len(requested_ids) != len(subjects):
+            raise ValueError("CID-NL partition contains duplicate alignment subjects")
+        if any(not workset_ids <= requested_ids for workset_ids in touched_worksets):
+            raise ValueError(
+                "CID-NL partition cannot split one alignment subject workset"
+            )
+        return UntargetedCidNlMethodSubjectBatch(
+            subjects=subjects,
+            candidate_memberships=tuple(
+                sorted(
+                    membership
+                    for subject in subjects
+                    for membership in self.memberships_by_subject[
+                        subject.method_subject_id
+                    ]
+                )
+            ),
+        )
+
+
+def prepare_untargeted_cid_nl_alignment_subject_worksets(
+    plan: UntargetedCidNlProductionPlan,
+) -> PreparedCidNlAlignmentSubjectWorksets:
+    """Prepare the complete workset closure once before partition materialization."""
+
+    if type(plan) is not UntargetedCidNlProductionPlan:
+        raise TypeError("Alignment subject worksets require a production plan")
+    worksets = cid_nl_alignment_subject_worksets(plan.runtime_subjects)
+    subjects_by_id = {
+        subject.method_subject_id: subject
+        for workset in worksets
+        for subject in workset
+    }
+    workset_ids_by_subject = {
+        subject.method_subject_id: frozenset(
+            member.method_subject_id for member in workset
+        )
+        for workset in worksets
+        for subject in workset
+    }
+    memberships: dict[str, list[tuple[str, str]]] = {
+        subject_id: [] for subject_id in subjects_by_id
+    }
+    for membership in plan.subject_batch.candidate_memberships:
+        subject_memberships = memberships.get(membership[1])
+        if subject_memberships is not None:
+            subject_memberships.append(membership)
+    memberships_by_subject = {
+        subject_id: tuple(sorted(subject_memberships))
+        for subject_id, subject_memberships in memberships.items()
+    }
+    if any(
+        not subject_memberships
+        for subject_memberships in memberships_by_subject.values()
+    ):
+        raise ValueError("runtime alignment subject has no candidate membership")
+    return PreparedCidNlAlignmentSubjectWorksets(
+        plan=plan,
+        worksets=worksets,
+        subjects_by_id=subjects_by_id,
+        workset_ids_by_subject=workset_ids_by_subject,
+        memberships_by_subject=memberships_by_subject,
+    )
+
+
 def is_pure_single_provider_cid_nl(settings: DiscoverySettings) -> bool:
     """Return whether settings select the production-owned pure CID-NL route."""
 
@@ -527,6 +620,11 @@ def prepare_untargeted_cid_nl_production_plan(
             context.physical_records_by_candidate.items()
         )
     )
+    physical_records_by_sample: dict[str, list[DiscoveryPhysicalFactRecord]] = {}
+    for record in ordered_physical_records:
+        physical_records_by_sample.setdefault(
+            record.work_item.sample_stem, []
+        ).append(record)
     templates = tuple(
         job
         for sample in context.samples
@@ -554,9 +652,7 @@ def prepare_untargeted_cid_nl_production_plan(
             dll_dir=dll_dir,
             signal_processing_profile=context.signal_processing_profile,
             physical_records=tuple(
-                record
-                for record in ordered_physical_records
-                if record.work_item.sample_stem == sample.metadata.raw_stem
+                physical_records_by_sample.get(sample.metadata.raw_stem, ())
             ),
         )
     )
@@ -572,30 +668,37 @@ def prepare_untargeted_cid_nl_production_plan(
 def materialize_untargeted_cid_nl_partition(
     plan: UntargetedCidNlProductionPlan,
     subject_batch: UntargetedCidNlMethodSubjectBatch,
+    *,
+    prepared_worksets: PreparedCidNlAlignmentSubjectWorksets | None = None,
 ) -> UntargetedCidNlProductionBatch:
     """Bind a finite subject partition to shared, already-validated inputs."""
 
-    requested_subject_ids = {
-        subject.method_subject_id for subject in subject_batch.subjects
-    }
-    for workset in cid_nl_alignment_subject_worksets(plan.runtime_subjects):
-        workset_ids = {subject.method_subject_id for subject in workset}
-        requested_members = requested_subject_ids.intersection(workset_ids)
-        if requested_members and requested_members != workset_ids:
-            raise ValueError(
-                "CID-NL partition cannot split one alignment subject workset"
-            )
+    prepared = (
+        prepare_untargeted_cid_nl_alignment_subject_worksets(plan)
+        if prepared_worksets is None
+        else prepared_worksets
+    )
+    if prepared.plan is not plan:
+        raise ValueError("prepared alignment worksets crossed the production plan")
+    expected_batch = (
+        plan.subject_batch
+        if subject_batch == plan.subject_batch
+        else prepared.subject_batch(subject_batch.subjects)
+    )
+    if subject_batch.candidate_memberships != expected_batch.candidate_memberships:
+        raise ValueError("CID-NL partition crossed prepared candidate memberships")
 
     jobs = []
     for template in plan.sample_job_templates:
         for subject in subject_batch.subjects:
             job = copy(template)
+            subject_id = subject.method_subject_id
             object.__setattr__(job, "method_subject", subject)
             object.__setattr__(
                 job,
                 "work_unit_key",
                 "untargeted-cid-nl:"
-                f"{template.sample.metadata.raw_stem}:{subject.method_subject_id}",
+                f"{template.sample.metadata.raw_stem}:{subject_id}",
             )
             jobs.append(job)
     return UntargetedCidNlProductionBatch(
@@ -1444,6 +1547,7 @@ materialize_untargeted_partition = materialize_untargeted_cid_nl_partition
 __all__ = [
     "UntargetedCidNlPartitionComposition",
     "UntargetedCidNlPersistedPartition",
+    "PreparedCidNlAlignmentSubjectWorksets",
     "UntargetedCidNlProductionBatch",
     "UntargetedCidNlProductionPlan",
     "UntargetedProductionBatch",
@@ -1460,6 +1564,7 @@ __all__ = [
     "is_supported_alignment_discovery",
     "materialize_untargeted_cid_nl_partition",
     "materialize_untargeted_partition",
+    "prepare_untargeted_cid_nl_alignment_subject_worksets",
     "prepare_untargeted_cid_nl_production_plan",
     "prepare_untargeted_production_plan",
 ]
