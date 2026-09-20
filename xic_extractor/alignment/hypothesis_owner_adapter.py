@@ -15,6 +15,7 @@ from xic_extractor.peak_detection.cid_nl_chromatographic_support import (
 from xic_extractor.peak_detection.cid_nl_evidence import CidNlEvidenceRef
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessmentRef,
+    supported_cid_nl_peak_ids,
 )
 from xic_extractor.peak_detection.cid_nl_peak_support import (
     DdaCidNlPeakSupportRef,
@@ -22,6 +23,7 @@ from xic_extractor.peak_detection.cid_nl_peak_support import (
 from xic_extractor.peak_detection.hypotheses import PeakHypothesis
 from xic_extractor.peak_detection.observations import PeakObservationRef
 from xic_extractor.peak_detection.peak_hypothesis_identity import (
+    HYPOTHESIS_METHOD_DDA_CID_NL,
     HYPOTHESIS_METHOD_MS1_OBSERVATION,
     compose_cid_nl_peak_hypothesis,
     compose_ms1_observation_peak_hypothesis,
@@ -42,6 +44,22 @@ def compose_cid_nl_peak_hypotheses_from_assessment(
     assessment: CidNlMethodAssessmentRef,
 ) -> tuple[PeakHypothesis, ...]:
     """Preserve every individually supported physical peak as one hypothesis."""
+
+    return _compose_cid_nl_peak_hypotheses_from_assessment(
+        processing_owners=processing_owners,
+        sample=sample,
+        assessment=assessment,
+        retained_by_peak_id={},
+    )
+
+
+def _compose_cid_nl_peak_hypotheses_from_assessment(
+    *,
+    processing_owners: ProcessingOwnerReferences,
+    sample: ResolvedCanonicalSampleIdentity,
+    assessment: CidNlMethodAssessmentRef,
+    retained_by_peak_id: dict[str, PeakHypothesis],
+) -> tuple[PeakHypothesis, ...]:
 
     if not isinstance(assessment, CidNlMethodAssessmentRef):
         raise HypothesisOwnerAdapterError(
@@ -71,16 +89,16 @@ def compose_cid_nl_peak_hypotheses_from_assessment(
             [],
         ).append(relation)
     hypotheses: list[PeakHypothesis] = []
-    from xic_extractor.peak_detection.cid_nl_method_assessment import (
-        supported_cid_nl_peak_ids,
-    )
-
     for peak_id in sorted(supported_cid_nl_peak_ids(assessment)):
         peak = peak_by_id.get(peak_id)
         if peak is None:
             raise HypothesisOwnerAdapterError(
                 "assessment support references a physical peak outside its universe"
             )
+        hypothesis = retained_by_peak_id.get(peak_id)
+        if hypothesis is not None:
+            hypotheses.append(hypothesis)
+            continue
         try:
             support = compose_cid_nl_chromatographic_support_ref(
                 processing_owners=processing_owners,
@@ -120,20 +138,29 @@ def compose_peak_hypotheses_from_assessment_universe(
     processing_owners: ProcessingOwnerReferences,
     sample: ResolvedCanonicalSampleIdentity,
     assessment: CidNlMethodAssessmentRef,
+    retained_hypotheses: tuple[PeakHypothesis, ...] = (),
 ) -> tuple[PeakHypothesis, ...]:
     """Preserve direct and observation-only physical peaks without relabeling."""
 
-    direct = compose_cid_nl_peak_hypotheses_from_assessment(
+    retained_by_peak_id = _bind_retained_assessment_hypotheses(
         processing_owners=processing_owners,
         sample=sample,
         assessment=assessment,
+        retained_hypotheses=retained_hypotheses,
+    )
+    direct = _compose_cid_nl_peak_hypotheses_from_assessment(
+        processing_owners=processing_owners,
+        sample=sample,
+        assessment=assessment,
+        retained_by_peak_id=retained_by_peak_id,
     )
     direct_observation_ids = {
         item.peak_observation_refs[0].content.peak_observation_content_id
         for item in direct
     }
     observation_only = tuple(
-        compose_ms1_observation_peak_hypothesis(
+        retained_by_peak_id.get(observation.content.peak_observation_content_id)
+        or compose_ms1_observation_peak_hypothesis(
             processing_owners=processing_owners,
             sample=sample,
             peak_observation=observation,
@@ -144,6 +171,89 @@ def compose_peak_hypotheses_from_assessment_universe(
     return tuple(
         sorted((*direct, *observation_only), key=lambda item: item.hypothesis_id)
     )
+
+
+def bind_retained_peak_hypotheses_to_assessment_universe(
+    *,
+    processing_owners: ProcessingOwnerReferences,
+    sample: ResolvedCanonicalSampleIdentity,
+    assessment: CidNlMethodAssessmentRef,
+    retained_hypotheses: tuple[PeakHypothesis, ...],
+) -> tuple[PeakHypothesis, ...]:
+    """Bind a complete earlier owner result to the same assessment universe."""
+
+    retained_by_peak_id = _bind_retained_assessment_hypotheses(
+        processing_owners=processing_owners,
+        sample=sample,
+        assessment=assessment,
+        retained_hypotheses=retained_hypotheses,
+    )
+    candidate_peak_ids = {
+        candidate.content.peak_observation_content_id
+        for candidate in assessment.candidate_peaks
+    }
+    if set(retained_by_peak_id) != candidate_peak_ids:
+        raise HypothesisOwnerAdapterError(
+            "retained hypotheses do not cover the exact assessment universe"
+        )
+    return tuple(sorted(retained_hypotheses, key=lambda item: item.hypothesis_id))
+
+
+def _bind_retained_assessment_hypotheses(
+    *,
+    processing_owners: ProcessingOwnerReferences,
+    sample: ResolvedCanonicalSampleIdentity,
+    assessment: CidNlMethodAssessmentRef,
+    retained_hypotheses: tuple[PeakHypothesis, ...],
+) -> dict[str, PeakHypothesis]:
+    if not isinstance(retained_hypotheses, tuple):
+        raise HypothesisOwnerAdapterError(
+            "retained hypotheses must be an immutable owner result"
+        )
+    if not retained_hypotheses:
+        return {}
+    candidate_by_peak_id = {
+        candidate.content.peak_observation_content_id: candidate
+        for candidate in assessment.candidate_peaks
+    }
+    supported_peak_ids = supported_cid_nl_peak_ids(assessment)
+    retained_by_peak_id: dict[str, PeakHypothesis] = {}
+    for hypothesis in retained_hypotheses:
+        if (
+            not isinstance(hypothesis, PeakHypothesis)
+            or not hypothesis.is_owner_backed
+            or hypothesis.artifact is None
+            or hypothesis.artifact.producer_processing_request_id
+            != processing_owners.request.processing_request_id
+            or hypothesis.artifact.producer_processing_attempt_id
+            != processing_owners.attempt.processing_attempt_id
+            or len(hypothesis.peak_observation_refs) != 1
+        ):
+            raise HypothesisOwnerAdapterError(
+                "retained hypothesis crossed its processing owner"
+            )
+        observation = hypothesis.peak_observation_refs[0]
+        peak_id = observation.content.peak_observation_content_id
+        if (
+            candidate_by_peak_id.get(peak_id) is not observation
+            or observation.content.canonical_sample_identity_id
+            != sample.identity.sample_identity_id
+            or peak_id in retained_by_peak_id
+        ):
+            raise HypothesisOwnerAdapterError(
+                "retained hypothesis crossed its assessment sample or observation"
+            )
+        expected_method = (
+            HYPOTHESIS_METHOD_DDA_CID_NL
+            if peak_id in supported_peak_ids
+            else HYPOTHESIS_METHOD_MS1_OBSERVATION
+        )
+        if hypothesis.hypothesis_method != expected_method:
+            raise HypothesisOwnerAdapterError(
+                "retained hypothesis crossed its assessment support class"
+            )
+        retained_by_peak_id[peak_id] = hypothesis
+    return retained_by_peak_id
 
 
 def owner_from_cid_nl_assessment_support(
@@ -447,6 +557,7 @@ def _assessment_hypothesis_components(
 
 __all__ = [
     "HypothesisOwnerAdapterError",
+    "bind_retained_peak_hypotheses_to_assessment_universe",
     "compose_cid_nl_peak_hypotheses_from_assessment",
     "compose_peak_hypotheses_from_assessment_universe",
     "owner_from_cid_nl_assessment_observation",

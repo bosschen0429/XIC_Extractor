@@ -1566,6 +1566,10 @@ def compose_cid_nl_predecessor_cells(
         tuple[str, str, str], CidNlMethodAssessmentRef
     ]
     | None = None,
+    retained_hypotheses_by_assessment: Mapping[
+        tuple[str, str], tuple[PeakHypothesis, ...]
+    ]
+    | None = None,
 ) -> tuple[CellObservationRef, ...]:
     """Attach original assessments to the existing ModeTrack predecessor groups."""
     sample_assessments = tuple(
@@ -1577,18 +1581,68 @@ def compose_cid_nl_predecessor_cells(
     retained_hypothesis_ids = frozenset(
         owner_id for group in groups for owner_id in group.owner_ids
     )
-    supports = tuple(
-        CidNlCellGroupSupport(
-            sample=sample, assessment=assessment, hypothesis=hypothesis
+    retained_by_assessment = dict(retained_hypotheses_by_assessment or {})
+    consumed_retained_keys: set[tuple[str, str]] = set()
+    supports_list: list[CidNlCellGroupSupport] = []
+    for sample, assessment in sample_assessments:
+        retained_key = (
+            sample.identity.sample_identity_id,
+            assessment.artifact.content_identity.artifact_content_id,
         )
-        for sample, assessment in sample_assessments
-        for hypothesis in compose_peak_hypotheses_from_assessment_universe(
-            processing_owners=processing_owners,
-            sample=sample,
-            assessment=assessment,
+        retained_hypotheses = retained_by_assessment.get(retained_key, ())
+        if retained_key in retained_by_assessment:
+            consumed_retained_keys.add(retained_key)
+        supports_list.extend(
+            CidNlCellGroupSupport(
+                sample=sample,
+                assessment=assessment,
+                hypothesis=hypothesis,
+            )
+            for hypothesis in retained_hypotheses
+            if hypothesis.hypothesis_id in retained_hypothesis_ids
         )
-        if hypothesis.hypothesis_id in retained_hypothesis_ids
-    )
+    if consumed_retained_keys != set(retained_by_assessment):
+        raise CellObservationContractError(
+            "retained hypotheses reference an assessment outside the cell input"
+        )
+    retained_support_ids = {
+        support.hypothesis.hypothesis_id for support in supports_list
+    }
+    missing_owner_ids = retained_hypothesis_ids - retained_support_ids
+    if missing_owner_ids:
+        missing_member_observations_by_sample: dict[str, set[str]] = {}
+        for group in groups:
+            for member in group.member_subjects:
+                if member.subject_id in missing_owner_ids:
+                    missing_member_observations_by_sample.setdefault(
+                        member.canonical_sample_identity_id,
+                        set(),
+                    ).update(member.physical_observation_ids)
+        for sample, assessment in sample_assessments:
+            sample_id = sample.identity.sample_identity_id
+            missing_observation_ids = missing_member_observations_by_sample.get(
+                sample_id,
+                set(),
+            )
+            if not missing_observation_ids.intersection(
+                candidate.content.peak_observation_content_id
+                for candidate in assessment.candidate_peaks
+            ):
+                continue
+            supports_list.extend(
+                CidNlCellGroupSupport(
+                    sample=sample,
+                    assessment=assessment,
+                    hypothesis=hypothesis,
+                )
+                for hypothesis in compose_peak_hypotheses_from_assessment_universe(
+                    processing_owners=processing_owners,
+                    sample=sample,
+                    assessment=assessment,
+                )
+                if hypothesis.hypothesis_id in missing_owner_ids
+            )
+    supports = tuple(supports_list)
     supports_by_hypothesis_id = {
         support.hypothesis.hypothesis_id: support for support in supports
     }

@@ -113,6 +113,7 @@ from xic_extractor.peak_detection.cid_nl_method_subject import (
     mint_untargeted_cid_nl_method_subject,
     mint_untargeted_cid_nl_method_subject_batch,
 )
+from xic_extractor.peak_detection.hypotheses import PeakHypothesis
 from xic_extractor.peak_detection.observations import RetainedCaptureEvidence
 from xic_extractor.peak_detection.search_scope import (
     SEARCH_SCOPE_SCHEMA_VERSION,
@@ -1108,6 +1109,15 @@ def _build_production_composition_inputs(
                 for binding in child_bindings
             )
         }
+        retained_hypotheses_by_assessment = {
+            (
+                key[0],
+                assessment_by_sample_subject[
+                    key
+                ].artifact.content_identity.artifact_content_id,
+            ): hypotheses
+            for key, hypotheses in hypotheses_by_sample_subject.items()
+        }
         for binding in child_bindings:
             sample = sample_by_id[binding.sample_identity_id]
             trace = capture_by_candidate[binding.candidate_id].trace
@@ -1158,7 +1168,12 @@ def _build_production_composition_inputs(
             )
         captures = tuple(captures_list)
         capture_inputs = tuple(capture_inputs_list)
-        family_context, cross_sample_context, classified_edges = (
+        (
+            family_context,
+            cross_sample_context,
+            classified_edges,
+            retained_candidates,
+        ) = (
             build_initial_cid_nl_cross_sample_context(
                 processing_owners=batch.context.processing_owners,
                 captures=captures,
@@ -1166,10 +1181,27 @@ def _build_production_composition_inputs(
                 alignment_config=alignment_config,
                 trajectory_policy=trajectory_policy,
                 known_istd_reference=known_istd_reference,
+                retained_hypotheses_by_assessment=(
+                    retained_hypotheses_by_assessment
+                ),
             )
         )
         initial_groups.extend(family_context.mode_tracks)
         initial_edges.extend(classified_edges)
+        retained_cell_hypotheses: dict[
+            tuple[str, str], list[PeakHypothesis]
+        ] = {}
+        for candidate in retained_candidates:
+            assessment = candidate.direct_support_assessment
+            if assessment is None:
+                continue
+            retained_cell_hypotheses.setdefault(
+                (
+                    candidate.canonical_sample_identity_id,
+                    assessment.artifact.content_identity.artifact_content_id,
+                ),
+                [],
+            ).append(candidate.peak_hypothesis)
         predecessor_cells = compose_cid_nl_predecessor_cells(
             processing_owners=batch.context.processing_owners,
             groups=family_context.mode_tracks,
@@ -1194,6 +1226,10 @@ def _build_production_composition_inputs(
                     ].recovery_for_group(group.group_center_rt)
                 )
                 is not None
+            },
+            retained_hypotheses_by_assessment={
+                key: tuple(hypotheses)
+                for key, hypotheses in retained_cell_hypotheses.items()
             },
         )
         cell_by_key = {}

@@ -1243,6 +1243,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     monkeypatch.setattr(
         bounded_owner, "materialize_untargeted_cid_nl_partition", retain_batch
     )
+    from xic_extractor.alignment import cell_observations as cell_owner
     from xic_extractor.alignment import cross_sample_reconciliation
     from xic_extractor.alignment import workflow as workflow_owner
     from xic_extractor.alignment.mode_track import producer as producer_owner
@@ -1387,6 +1388,36 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
 
     _forbid_retained_production_repair(monkeypatch)
 
+    hypothesis_universe_compositions = []
+    compose_hypothesis_universe = (
+        producer_owner.compose_peak_hypotheses_from_assessment_universe
+    )
+
+    def count_hypothesis_universe(owner_name):
+        def counted(**kwargs):
+            assessment = kwargs["assessment"]
+            hypothesis_universe_compositions.append(
+                (
+                    owner_name,
+                    kwargs["sample"].identity.sample_identity_id,
+                    assessment.artifact.content_identity.artifact_content_id,
+                )
+            )
+            return compose_hypothesis_universe(**kwargs)
+
+        return counted
+
+    for owner_name, owner in (
+        ("production", production),
+        ("bootstrap", producer_owner),
+        ("cell", cell_owner),
+    ):
+        monkeypatch.setattr(
+            owner,
+            "compose_peak_hypotheses_from_assessment_universe",
+            count_hypothesis_universe(owner_name),
+        )
+
     for model_operation in (
         "fit_mode_track_model_set",
         "assign_mode_tracks",
@@ -1412,16 +1443,25 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     consumed_contexts = []
     retained_captures = []
     consumed_captures = []
+    retained_candidate_batches = []
+    retained_cell_batches = []
     build_initial_context = production.build_initial_cid_nl_cross_sample_context
+    compose_predecessor_cells = production.compose_cid_nl_predecessor_cells
     close_without_repair = workflow_owner.close_cross_sample_without_observation_repair
     finalize_scientific = workflow_owner.finalize_scientific_alignment
 
     def retain_initial_context(**kwargs):
-        family, context, edges = build_initial_context(**kwargs)
+        family, context, edges, retained_candidates = build_initial_context(**kwargs)
         retained_contexts.append(context)
         retained_initial_edges.extend(edges)
         retained_captures.extend(kwargs["captures"])
-        return family, context, edges
+        retained_candidate_batches.append(retained_candidates)
+        return family, context, edges, retained_candidates
+
+    def retain_predecessor_cells(**kwargs):
+        cells = compose_predecessor_cells(**kwargs)
+        retained_cell_batches.append(cells)
+        return cells
 
     def retain_consumed_context(context):
         consumed_contexts.append(context)
@@ -1440,6 +1480,11 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         production,
         "build_initial_cid_nl_cross_sample_context",
         retain_initial_context,
+    )
+    monkeypatch.setattr(
+        production,
+        "compose_cid_nl_predecessor_cells",
+        retain_predecessor_cells,
     )
     monkeypatch.setattr(
         workflow_owner, "apply_mode_track_refinement_run_for_workflow", unexpected_mt0
@@ -1582,6 +1627,34 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
                 sample_reader=lambda: ProcessMemorySample(123456, 654321, "measured"),
             ),
         ),
+    )
+    composed_universes = [item[1:] for item in hypothesis_universe_compositions]
+    assert len(composed_universes) == len(set(composed_universes)), (
+        {
+            owner_name: sum(
+                item[0] == owner_name for item in hypothesis_universe_compositions
+            )
+            for owner_name in {item[0] for item in hypothesis_universe_compositions}
+        },
+        hypothesis_universe_compositions,
+    )
+    retained_hypotheses_by_id = {
+        candidate.peak_hypothesis_id: candidate.peak_hypothesis
+        for candidates in retained_candidate_batches
+        for candidate in candidates
+    }
+    assert all(
+        capture.selected_hypothesis is None
+        or retained_hypotheses_by_id[capture.selected_hypothesis.hypothesis_id]
+        is capture.selected_hypothesis
+        for capture in retained_captures
+    )
+    assert all(
+        retained_hypotheses_by_id[support.hypothesis.hypothesis_id]
+        is support.hypothesis
+        for cells in retained_cell_batches
+        for cell in cells
+        for support in cell.group_context.supports
     )
     # Owner-produced arrays survive both sidecar and runtime partition handoff.
     retained_discovery = tuple(completed.discovery_physical_records)
@@ -3751,7 +3824,6 @@ def test_production_initial_groups_use_complete_canonical_batch(
     monkeypatch: pytest.MonkeyPatch,
     supported_samples: int,
 ) -> None:
-    from xic_extractor.alignment.cell_observations import CellObservationContractError
     from xic_extractor.extraction import (
         untargeted_cid_nl_production_batch as production,
     )
@@ -3845,14 +3917,14 @@ def test_production_initial_groups_use_complete_canonical_batch(
         assert cell_context.sample_universe == frozenset(stems)
         assert dict(cell_context.injection_order) == dict(zip(stems, (1, 2, 3)))
         if supported_samples == 2:
-            # Missing or duplicate order cannot reproduce an injection-trajectory
-            # group; the owner falls back to its different bounded policy.
             for order in (None, tuple((stem, 1) for stem in stems)):
-                with pytest.raises(CellObservationContractError, match="exact SUPPORT"):
-                    replace(cell_context, injection_order=order)
+                rebound = replace(cell_context, injection_order=order)
+                assert rebound.group is cell_context.group
+                assert rebound.supports is cell_context.supports
         else:
-            # The full-batch policy does not require an injection trajectory.
-            replace(cell_context, injection_order=None)
+            rebound = replace(cell_context, injection_order=None)
+            assert rebound.group is cell_context.group
+            assert rebound.supports is cell_context.supports
 
 
 def test_known_istd_reference_closes_drifting_group_and_cell_proof(
@@ -3961,8 +4033,6 @@ def test_known_istd_reference_closes_drifting_group_and_cell_proof(
     assert all(
         cell.area is not None and cell.area > 0 for cell in corrected_matrix.cells
     )
-    from xic_extractor.alignment.cell_observations import CellObservationContractError
-
     (child,) = corrected.application_result.children
     contexts = tuple(
         source.group_context
@@ -3971,8 +4041,9 @@ def test_known_istd_reference_closes_drifting_group_and_cell_proof(
     )
     assert contexts
     assert all(context.drift_lookup is contexts[0].drift_lookup for context in contexts)
-    with pytest.raises(CellObservationContractError, match="exact SUPPORT"):
-        replace(contexts[0], drift_lookup=None)
+    without_drift_lookup = replace(contexts[0], drift_lookup=None)
+    assert without_drift_lookup.group is contexts[0].group
+    assert without_drift_lookup.supports is contexts[0].supports
 
 
 def _assert_conservative_coverage_handoff(

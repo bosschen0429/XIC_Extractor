@@ -79,6 +79,7 @@ from xic_extractor.alignment.cross_sample_reconciliation_models import (
 from xic_extractor.alignment.drift_evidence import KnownIstdReference
 from xic_extractor.alignment.edge_scoring import DriftLookupProtocol
 from xic_extractor.alignment.mode_track.assignment import (
+    ModeTrackCandidateObservation,
     ModeTrackTrajectoryPolicy,
 )
 from xic_extractor.alignment.mode_track.contracts import (
@@ -249,10 +250,15 @@ def build_initial_cid_nl_cross_sample_context(
     trajectory_policy: ModeTrackTrajectoryPolicy,
     drift_lookup: DriftLookupProtocol | None = None,
     known_istd_reference: KnownIstdReference | None = None,
+    retained_hypotheses_by_assessment: Mapping[
+        tuple[str, str], tuple[PeakHypothesis, ...]
+    ]
+    | None = None,
 ) -> tuple[
     FamilyContextRef,
     CrossSamplePostMT0Context,
     tuple[CrossSampleNeighborhoodEdge, ...],
+    tuple[ModeTrackCandidateObservation, ...],
 ]:
     """Close initial CID-NL groups without fitting or assigning ModeTracks."""
 
@@ -288,6 +294,7 @@ def build_initial_cid_nl_cross_sample_context(
             drift_lookup=drift_lookup,
             retain_observation_only_candidates=True,
             known_istd_reference=known_istd_reference,
+            retained_hypotheses_by_assessment=retained_hypotheses_by_assessment,
         )
     )
     groups = family_context.mode_tracks
@@ -381,7 +388,17 @@ def build_initial_cid_nl_cross_sample_context(
         budget=MODE_TRACK_NEIGHBORHOOD_BUDGET,
     )
     context = replace(context, drift_lookup=drift_lookup)
-    return family_context, context, classified_edges
+    retained_candidates = tuple(
+        sorted(
+            (
+                candidate
+                for _, candidates in sample_candidates
+                for candidate in candidates
+            ),
+            key=lambda candidate: candidate.candidate_observation_id,
+        )
+    )
+    return family_context, context, classified_edges, retained_candidates
 
 
 def _validate_mode_track_run_for_workflow(

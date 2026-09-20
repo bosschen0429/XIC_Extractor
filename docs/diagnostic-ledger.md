@@ -65,6 +65,32 @@ dated productization control-plane path is compatibility lookup only.
 
 ## Known Diagnostic Conclusions
 
+### 2026-09-20 Automatic Completion And Hypothesis Handoffs
+
+- Evidence: `diagnostic_only`; lane `exact_safe`, scoped verdict `optimized`.
+  Against cumulative baseline `f0a55121`, the retained four-sample, 12-job,
+  two-child composition replay preserves all scientific values, all IDs and
+  Matrix bytes exactly. No RAW rerun or readiness promotion.
+- Scientific completion and Untarget projection bind their direct immutable
+  owner answers instead of recursively digesting the retained graph at each
+  handoff. Construction retains scientific validation; the private same-process
+  spool retains export binding, shared-reference and record-cardinality checks.
+  Recursive completion digests fall from 12 to zero in this replay.
+- Capture, bootstrap, recovery preparation and cell composition pass existing
+  sample/assessment-bound hypotheses forward. Missing assessments retain the
+  ordinary composer. Hypothesis-universe compositions fall from 28 to 12;
+  integrated tests also cover observation-only/MS1 reuse and sample attribution.
+- Seven pairs per backend compare identical backends separately. Native
+  composition medians are 82.391 -> 45.988 ms (44.18% lower); Python medians
+  are 153.427 -> 47.111 ms (69.29% lower). Every candidate composition is faster
+  than its paired baseline. These are bounded composition results, not complete
+  acquisition/RAW analysis times or a claim about memory release speed.
+- Local receipts: `output/data-flow-efficiency-20260920/automatic-handoffs/`
+  `paired-native-final/receipt.json`, `paired-python-final/receipt.json`,
+  `boundaries.md`, `hypothesis.md` and `verification.md`. Reuse this diagnosis
+  unless the authoritative handoff or hypothesis binding changes; do not restore
+  recursive frozen-object mutation audits to normal downstream execution.
+
 ### 2026-09-20 Alignment Preparation And Output Reuse
 
 - Evidence: `diagnostic_only`; optimization lane `exact_safe`, scoped verdict

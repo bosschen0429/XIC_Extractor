@@ -287,6 +287,7 @@ def _prepare_subject_authorized_recoveries(
     ):
         return
     support_owners: list[SampleLocalMS1Owner] = []
+    retained_hypotheses_by_assessment = {}
     for state in states:
         result = state.adapter_result
         if result is None:
@@ -299,6 +300,12 @@ def _prepare_subject_authorized_recoveries(
             sample=state.job.sample,
             assessment=assessment,
         )
+        retained_hypotheses_by_assessment[
+            (
+                state.job.sample.identity.sample_identity_id,
+                assessment.artifact.content_identity.artifact_content_id,
+            )
+        ] = hypotheses
         support_owners.extend(
             owner_from_cid_nl_assessment_support(
                 sample=state.job.sample, assessment=assessment, hypothesis=hypothesis
@@ -318,6 +325,7 @@ def _prepare_subject_authorized_recoveries(
             for state, result in zip(states, adapter_results, strict=True)
         ),
         alignment_config=alignment_config,
+        retained_hypotheses_by_assessment=retained_hypotheses_by_assessment,
     )
     for group in groups:
         facts = assess_conservative_backfill_group(
