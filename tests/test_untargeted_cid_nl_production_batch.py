@@ -2709,6 +2709,120 @@ def test_alignment_subject_worksets_preserve_only_compatible_overlap() -> None:
         validate_cid_nl_alignment_subject_workset((first, first))
 
 
+def test_completed_empty_recovery_preserves_each_compatible_source_subject(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    stems = ("SupportA1", "SupportA2", "SupportB1", "SupportB2", "Missing")
+    raw_paths = tuple(tmp_path / f"{stem}.synthetic" for stem in stems)
+    for raw_path in raw_paths:
+        raw_path.write_bytes(f"compatible-source-subject:{raw_path.stem}".encode())
+    settings = replace(
+        _settings(), neutral_loss_profile=None, precursor_mz_tolerance_ppm=20.0
+    )
+    peak_config = _peak_config(tmp_path)
+    source_raws = {}
+    selected_candidates = {}
+    for raw_path, precursor_mz in zip(
+        raw_paths[:4], (500.0, 500.0, 500.0105, 500.0105), strict=True
+    ):
+        source_raw = _FakeRaw(
+            (7.98,),
+            scan_precursor_mz=precursor_mz,
+            neutral_loss_das=(116.0474,),
+        )
+        candidates = _current_candidates(
+            source_raw,
+            raw_file=raw_path,
+            settings=settings,
+            peak_config=peak_config,
+        )
+        source_raws[raw_path] = source_raw
+        selected_candidates[raw_path.stem] = candidates[0]
+    missing_raw = _FakeRaw((7.98,))
+    missing_raw.intensity[:] = 0.0
+    source_raws[raw_paths[4]] = missing_raw
+    candidates_by_sample = {
+        stem: (selected_candidates[stem],) for stem in stems[:4]
+    }
+    candidates_by_sample["Missing"] = ()
+    batch = build_untargeted_cid_nl_production_batch(
+        raw_paths=raw_paths,
+        sample_metadata=tuple(
+            SampleMetadata(
+                sample_name=stem,
+                raw_stem=stem,
+                injection_order=index,
+                sample_role="study_sample",
+            )
+            for index, stem in enumerate(stems, start=1)
+        ),
+        settings=settings,
+        peak_config=peak_config,
+        candidates_by_sample=candidates_by_sample,
+        discovery_receipts_by_sample=_discovery_receipts(
+            tmp_path,
+            raw_paths,
+            candidates_by_sample,
+        ),
+        dll_dir=tmp_path,
+        sample_identity_namespace="study:compatible-source-subject",
+    )
+    assert len(batch.subject_batch.subjects) == 2
+    assert len(
+        {
+            subject.method_subject_id
+            for subject in batch.subject_batch.subjects
+        }
+    ) == 2
+    _install_runtime_raws(
+        monkeypatch,
+        sources_by_path=source_raws,
+        tmp_path=tmp_path,
+    )
+    runtime = execute_untargeted_cid_nl_production_batch(
+        batch,
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+        recovery_marker=OwnerPathRuntimeMarker(
+            tmp_path / "compatible-source-subject.runtime.json",
+            "compatible-source-subject",
+        ),
+    )
+    assert runtime.succeeded
+
+    alignment_config = AlignmentConfig(
+        anchor_min_seed_events=1,
+        product_mz_tolerance_ppm=30.0,
+    )
+    completed = compose_untargeted_cid_nl_production_result(
+        batch,
+        runtime,
+        alignment_config=alignment_config,
+    )
+
+    (child,) = completed.application_result.children
+    (group,) = child.scientific_core.final_population
+    source_subject_ids = {
+        source.method_assessment.content.method_subject.method_subject_id
+        for cell in child.scientific_core.cell_observations
+        for source in cell.predecessor_cells
+        if source.content.method_result == "SUPPORT"
+    }
+    assert source_subject_ids == {
+        subject.method_subject_id for subject in batch.subject_batch.subjects
+    }
+    position = next(
+        position
+        for position in (
+            child.scientific_core.cell_observation_handoff.coverage.epoch.positions
+        )
+        if position.sample.metadata.raw_stem == "Missing"
+        and position.group_identity.group_hypothesis_id == group.group_hypothesis_id
+    )
+    assert position.conservative_no_request_proof is not None
+    assert position.conservative_no_request_proof.variant == "completed_recovery_empty"
+
+
 @pytest.mark.parametrize(
     ("masses", "losses", "ppm", "centers"),
     (
@@ -3934,12 +4048,9 @@ def test_production_initial_groups_use_complete_canonical_batch(
     assert {owner.sample_stem for owner in group.owners} == set(
         stems[:supported_samples]
     )
-    policy = (
-        "owner_full_batch_continuity"
-        if supported_samples == len(stems)
-        else "owner_injection_trajectory"
+    assert group.evidence == (
+        f"owner_complete_link_moderate;owner_count={supported_samples}"
     )
-    assert group.evidence.startswith(f"{policy};")
     assert initial_edges
     assert all(edge.disposition == "eligible" for edge in initial_edges)
     assert all(
