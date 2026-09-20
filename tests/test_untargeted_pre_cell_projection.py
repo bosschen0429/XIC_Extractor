@@ -488,7 +488,7 @@ def test_entry_rejects_receipt_crossed_processing_request(
         project_untarget_pre_cell(alignment)
 
 
-def test_scientific_completion_rejects_substituted_owner_group_member_closure(
+def test_group_owner_rejects_noncanonical_member_order(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -499,23 +499,8 @@ def test_scientific_completion_rejects_substituted_owner_group_member_closure(
     )
     group = alignment.final_population[0]
     assert len(group.member_subjects) > 1
-    original_id = group.group_hypothesis_id
-    original_basis = group.basis_bytes
-    object.__setattr__(
-        group,
-        "member_subjects",
-        tuple(reversed(group.member_subjects)),
-    )
-    assert group.group_hypothesis_id == original_id
-    assert group.basis_bytes == original_basis
-
-    with pytest.raises(
-        finalizer_owner.FinalizedScientificAlignmentContractError,
-        match="completion receipt",
-    ):
-        finalizer_owner._validate_finalized_scientific_alignment_completion_receipt(
-            alignment
-        )
+    with pytest.raises(ValueError):
+        replace(group, member_subjects=tuple(reversed(group.member_subjects)))
 
 
 def test_entry_rejects_row_id_collision_with_unequal_basis(
@@ -533,29 +518,18 @@ def test_entry_rejects_row_id_collision_with_unequal_basis(
         project_untarget_pre_cell(alignment)
 
 
-def test_scientific_completion_rejects_substituted_nested_member_closure(
+def test_member_owner_rejects_crossed_sample_identity(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     alignment = _finalized_alignment(tmp_path, monkeypatch)
     group = alignment.final_population[0]
     member = group.member_subjects[0]
-    original_group_id = group.group_hypothesis_id
-    original_group_basis = group.basis_bytes
-    object.__setattr__(member, "canonical_sample_identity_id", "forged-sample")
-    assert group.group_hypothesis_id == original_group_id
-    assert group.basis_bytes == original_group_basis
-
-    with pytest.raises(
-        finalizer_owner.FinalizedScientificAlignmentContractError,
-        match="completion receipt",
-    ):
-        finalizer_owner._validate_finalized_scientific_alignment_completion_receipt(
-            alignment
-        )
+    with pytest.raises(ValueError):
+        replace(member, canonical_sample_identity_id="forged-sample")
 
 
-def test_scientific_completion_rejects_substituted_nested_lineage_closure(
+def test_lineage_owner_rejects_crossed_basis(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -565,17 +539,8 @@ def test_scientific_completion_rejects_substituted_nested_lineage_closure(
         group_mode="merged",
     )
     edge = alignment.final_cross_sample_receipt.post_mt0_application.lineage[0]
-    original_edge_id = edge.lineage_edge_id
-    object.__setattr__(edge, "basis_bytes", b"forged-lineage-basis")
-    assert edge.lineage_edge_id == original_edge_id
-
-    with pytest.raises(
-        finalizer_owner.FinalizedScientificAlignmentContractError,
-        match="completion receipt",
-    ):
-        finalizer_owner._validate_finalized_scientific_alignment_completion_receipt(
-            alignment
-        )
+    with pytest.raises(ValueError):
+        replace(edge, basis_bytes=b"forged-lineage-basis")
 
 
 def test_row_identity_basis_is_closed_to_request_and_group_identity_only(

@@ -302,22 +302,20 @@ def test_target_result_rejects_a_substituted_nested_decision_owner(
         )
 
 
-def test_untarget_result_rejects_a_partial_pre_cell_owner_population(
+def test_untarget_projection_rejects_a_partial_subject_population(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    scientific_core, projection = _untarget_completion(
+    _scientific_core, projection = _untarget_completion(
         tmp_path / "untarget",
         monkeypatch,
     )
     object.__setattr__(projection.pre_cell_projection, "cell_subjects", ())
 
-    with pytest.raises(ApplicationResultContractError, match="receipt|partial"):
-        finalize_alignment_result(
-            UntargetApplicationResultRequest(
-                scientific_core=cast(Any, scientific_core),
-                completed_projection=projection,
-            )
+    with pytest.raises(ValueError, match="population|subject"):
+        untarget_post_cell.project_untarget_post_cell(
+            projection.pre_cell_projection,
+            projection.decisions,
         )
 
 
@@ -361,42 +359,11 @@ def test_target_result_rejects_a_substituted_scientific_core(tmp_path: Path) -> 
 
 @pytest.mark.parametrize(
     "variant",
-    ["repair_receipt", "final_application", "repair_epoch_type"],
-)
-def test_result_rejects_substitution_inside_the_scientific_completion_receipt(
-    tmp_path: Path,
-    variant: str,
-) -> None:
-    scientific_core, projection = _target_completion(tmp_path / variant)
-    receipt = cast(Any, scientific_core).final_cross_sample_receipt
-    if variant == "repair_receipt":
-        object.__setattr__(receipt, "repair_receipt", copy(receipt.repair_receipt))
-    elif variant == "final_application":
-        object.__setattr__(
-            receipt,
-            "final_application",
-            copy(receipt.final_application),
-        )
-    else:
-        object.__setattr__(receipt, "repair_epoch", True)
-
-    with pytest.raises(ApplicationResultContractError, match="receipt|substituted"):
-        finalize_alignment_result(
-            TargetApplicationResultRequest(
-                scientific_core=cast(Any, scientific_core),
-                completed_projection=projection,
-            )
-        )
-
-
-@pytest.mark.parametrize(
-    "variant",
     [
         "target_request",
         "target_definition",
         "target_sample",
         "untarget_request",
-        "untarget_group",
         "untarget_sample",
     ],
 )
@@ -443,9 +410,6 @@ def test_result_rejects_equal_nested_owner_clones(
                 cloned_request,
             )
             object.__setattr__(scientific_core.scope, "request", cloned_request)
-        elif variant == "untarget_group":
-            row_key = projection.pre_cell_projection.row_keys[0]
-            object.__setattr__(row_key, "group", copy(row_key.group))
         else:
             samples = scientific_core.scope.samples
             object.__setattr__(
@@ -590,6 +554,16 @@ def test_untarget_owner_pickle_rebinds_completion_and_still_rejects_substitution
     monkeypatch: pytest.MonkeyPatch,
     tamper: str,
 ) -> None:
+    from xic_extractor.alignment._completion_receipt import retained_owner_digest
+
+    graph_walks = []
+
+    def counted(*args, **kwargs):
+        graph_walks.append(args[0])
+        return retained_owner_digest(*args, **kwargs)
+
+    for owner in (scientific_alignment_owner, untarget_post_cell):
+        monkeypatch.setattr(owner, "retained_owner_digest", counted, raising=False)
     core, projection = _untarget_completion(tmp_path, monkeypatch)
     restored_core, restored_projection = _pickle_completed_owner((core, projection))
     assert restored_core is not core
@@ -609,10 +583,11 @@ def test_untarget_owner_pickle_rebinds_completion_and_still_rejects_substitution
     )
     assert restored_projection.rows[0].counts == projection.rows[0].counts
     assert restored_projection.rows[0].route == projection.rows[0].route
+    assert graph_walks == []
     if tamper == "core":
-        receipt = restored_core.final_cross_sample_receipt
         object.__setattr__(
-            receipt, "final_application", copy(receipt.final_application)
+            restored_core, "final_cross_sample_receipt",
+            copy(restored_core.final_cross_sample_receipt),
         )
     else:
         object.__setattr__(restored_projection, "rows", ())

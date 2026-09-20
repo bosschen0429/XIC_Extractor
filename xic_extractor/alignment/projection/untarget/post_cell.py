@@ -7,9 +7,6 @@ from collections.abc import Callable, Sequence
 from dataclasses import InitVar, dataclass, field, fields
 from typing import TYPE_CHECKING, Literal, TypeAlias, cast
 
-from xic_extractor.alignment._completion_receipt import (
-    retained_owner_digest,
-)
 from xic_extractor.alignment.cross_sample_peak_groups import (
     CrossSampleGroupDisposition,
     CrossSampleLineageEdge,
@@ -203,7 +200,7 @@ class UntargetPostCellProjection:
         return (self.pre_cell_projection, self.rows)
 
     def __setstate__(self, state: tuple[object, ...]) -> None:
-        """Rebind the completion seal to the restored owner graph."""
+        """Restore direct bindings from the private same-process spool."""
         if (
             hasattr(self, "_completion_seal")
             or type(state) is not tuple
@@ -322,17 +319,8 @@ def _untarget_completion_state(
 ) -> tuple[object, ...]:
     return (
         id(projection),
-        retained_owner_digest(
-            projection.pre_cell_projection,
-            identity_only=(
-                projection.pre_cell_projection.finalized_alignment,
-                projection.pre_cell_projection.processing_request,
-            ),
-        ),
-        retained_owner_digest(
-            projection.rows,
-            identity_only=(projection.pre_cell_projection.processing_request,),
-        ),
+        id(projection.pre_cell_projection),
+        id(projection.rows),
     )
 
 

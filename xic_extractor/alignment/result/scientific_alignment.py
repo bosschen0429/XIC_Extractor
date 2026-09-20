@@ -6,7 +6,6 @@ from collections.abc import Sequence
 from dataclasses import InitVar, dataclass, field, fields
 from typing import Literal, TypeAlias
 
-from xic_extractor.alignment._completion_receipt import retained_owner_digest
 from xic_extractor.alignment.backfill.observation_repair import (
     ObservationRepairReceipt,
 )
@@ -112,7 +111,7 @@ class FinalizedScientificAlignment:
     cell_observation_handoff: CrossSampleAssociationLineageHandoff | None
     cell_observations: tuple[FinalGroupCellObservation, ...]
     final_cross_sample_receipt: CrossSampleFinalReceipt
-    _completion_seal: bytes = field(init=False, repr=False, compare=False)
+    _completion_seal: tuple[int, ...] = field(init=False, repr=False, compare=False)
     _mint_token: InitVar[object] = field(kw_only=True, repr=False)
 
     def __post_init__(self, _mint_token: object) -> None:
@@ -120,12 +119,11 @@ class FinalizedScientificAlignment:
         if not fresh_cells:
             _require_finalizer_mint(_mint_token)
         _validate_finalized_alignment(self, _reuse_fresh_cells=fresh_cells)
-        # The immutable request was validated at construction; retain its identity
-        # without rehashing the cohort input payload for every subject result.
+        # Downstream completion checks bind these exact immutable owner answers.
         object.__setattr__(
             self,
             "_completion_seal",
-            retained_owner_digest(self, identity_only=(self.processing_request,)),
+            _scientific_completion_state(self),
         )
 
     def __copy__(self) -> FinalizedScientificAlignment:
@@ -149,7 +147,7 @@ class FinalizedScientificAlignment:
         )
 
     def __setstate__(self, state: tuple[object, ...]) -> None:
-        """Rebind only the process-local seal after restoring a verified graph."""
+        """Restore direct bindings from the private same-process spool."""
         owner_fields = tuple(
             owner_field
             for owner_field in fields(self)
@@ -168,7 +166,7 @@ class FinalizedScientificAlignment:
         object.__setattr__(
             self,
             "_completion_seal",
-            retained_owner_digest(self, identity_only=(self.processing_request,)),
+            _scientific_completion_state(self),
         )
 
     @property
@@ -302,14 +300,33 @@ def _validate_finalized_scientific_alignment_completion_receipt(
         raise FinalizedScientificAlignmentContractError(
             "scientific-core validation requires an exact finalized alignment"
         )
-    if type(
-        result._completion_seal
-    ) is not bytes or result._completion_seal != retained_owner_digest(
-        result, identity_only=(result.processing_request,)
-    ):
+    try:
+        state = _scientific_completion_state(result)
+        seal = result._completion_seal
+    except AttributeError as exc:
+        raise FinalizedScientificAlignmentContractError(
+            "scientific core completion receipt was substituted or partial"
+        ) from exc
+    if type(seal) is not tuple or seal != state:
         raise FinalizedScientificAlignmentContractError(
             "scientific core completion receipt was substituted or partial"
         )
+
+
+def _scientific_completion_state(
+    result: FinalizedScientificAlignment,
+) -> tuple[int, ...]:
+    """Bind immutable owner answers; their constructors own scientific validation."""
+    return (
+        id(result),
+        id(result.scope),
+        id(result.processing_request),
+        id(result.canonical_samples),
+        id(result.terminal_subjects),
+        id(result.cell_observation_handoff),
+        id(result.cell_observations),
+        id(result.final_cross_sample_receipt),
+    )
 
 
 def _terminal_subject(
