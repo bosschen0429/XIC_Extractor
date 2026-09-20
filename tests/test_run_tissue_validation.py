@@ -231,5 +231,3 @@ def test_execution_persists_plan_and_stops_after_failed_discovery(
         (output_dir / "stage_timings.json").read_text(encoding="utf-8")
     )
     assert timings["discovery"]["returncode"] == 9
-
-
