@@ -2945,21 +2945,57 @@ def test_run_spec_expectation_rejects_change_after_fingerprint(
         )
 
 
+@pytest.mark.parametrize("stems", [("B", "A"), ("a_sample", "B_sample"), ("A", "B")])
 def test_reused_run_spec_source_preserves_plan_request_and_candidates(
-    tmp_path: Path,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, stems: tuple[str, str],
 ) -> None:
-    path, _raw, arguments = _source_verification_inputs(tmp_path)
+    settings = replace(
+        _settings(), neutral_loss_profile=None, precursor_mz_tolerance_ppm=1.0
+    )
+    peak_config = _peak_config(tmp_path)
+    paths = tuple(tmp_path / f"{stem}.synthetic" for stem in stems)
+    candidates = {}
+    for path in paths:
+        path.write_bytes(f"source-verification:{path.stem}".encode())
+        _, candidates[path.stem] = _nearby_subject_candidates(
+            path, settings=settings, peak_config=peak_config
+        )
+    arguments = dict(
+        raw_paths=paths,
+        sample_metadata=tuple(
+            SampleMetadata(
+                sample_name=stem, raw_stem=stem, injection_order=index,
+                sample_role="study_sample",
+            ) for index, stem in enumerate(stems, 1)
+        ),
+        settings=settings, peak_config=peak_config,
+        candidates_by_sample=candidates,
+        discovery_receipts_by_sample=_discovery_receipts(tmp_path, paths, candidates),
+        dll_dir=tmp_path, sample_identity_namespace="study:source-verification",
+    )
     baseline = prepare_untargeted_cid_nl_production_plan(**arguments)
     spec, expectations = compile_discovery_processing_run_spec_with_expectations(
-        (path,),
-        discovery_settings=arguments["settings"],
+        paths, discovery_settings=settings,
     )
-    reused = prepare_untargeted_cid_nl_production_plan(
-        **arguments,
-        acquisition_source_expectations=expectations,
-    )
+    fingerprints = []
+    fingerprint = identity_owner.fingerprint_file_content
 
-    assert spec.acquisition_inputs[0].acquisition_source == expectations[0].source
+    def count_fingerprint(source, **kwargs):
+        fingerprints.append(source)
+        return fingerprint(source, **kwargs)
+
+    monkeypatch.setattr(identity_owner, "fingerprint_file_content", count_fingerprint)
+    monkeypatch.setattr(raw_reader_owner, "fingerprint_file_content", count_fingerprint)
+    reused = prepare_untargeted_cid_nl_production_plan(
+        **arguments, acquisition_source_expectations=expectations,
+    )
+    assert fingerprints == []
+    for path, expectation, acquisition in zip(
+        paths, expectations, spec.acquisition_inputs, strict=True
+    ):
+        assert acquisition.acquisition_source == expectation.source
+        assert reused.context.acquisition_sources_by_sample[path.stem] is expectation
+        assert reused.context.raw_paths_by_sample[path.stem] == path
     assert reused.subject_batch == baseline.subject_batch
     assert reused.context.processing_owners.request == (
         baseline.context.processing_owners.request

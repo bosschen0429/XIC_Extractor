@@ -176,9 +176,14 @@ def build_untargeted_cid_nl_real_data_context(
             raise IdentityContractError(
                 "source expectations must cover every RAW source exactly once"
             )
-        for (stem, path), expectation in zip(
-            paths_by_stem.items(), acquisition_source_expectations, strict=True
-        ):
+        expectations_by_stem = {
+            path.stem: expectation
+            for path, expectation in zip(
+                raw_paths, acquisition_source_expectations, strict=True
+            )
+        }
+        for stem, path in paths_by_stem.items():
+            expectation = expectations_by_stem[stem]
             if not isinstance(expectation, AcquisitionSourceExpectation):
                 raise IdentityContractError(
                     "source expectations must be owner-verified bindings"
