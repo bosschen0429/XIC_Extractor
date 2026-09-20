@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import threading
 from collections.abc import Callable, Sequence
 from concurrent.futures import (
@@ -11,12 +12,59 @@ from concurrent.futures import (
     ThreadPoolExecutor,
     wait,
 )
+from dataclasses import dataclass
 from multiprocessing import get_context
 from multiprocessing.context import BaseContext
-from typing import TypeVar
+from typing import TypeVar, cast
+
+from xic_extractor.execution_engine.owner_pickle import (
+    owner_pickle_dumps,
+    owner_pickle_loads,
+)
 
 TItem = TypeVar("TItem")
 TResult = TypeVar("TResult")
+
+_PROCESS_SHARED_OBJECTS: tuple[object, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class WorkerTransportMetrics:
+    shared_bootstrap_bytes: int
+    task_request_bytes: int
+    task_response_bytes: int
+    worker_pids: tuple[int, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class _OwnerProcessResult:
+    payload: bytes
+    worker_pid: int
+
+
+def _initialize_owner_worker(
+    bootstrap_payload: bytes,
+    initializer: Callable[[], None] | None,
+) -> None:
+    global _PROCESS_SHARED_OBJECTS
+    shared = owner_pickle_loads(bootstrap_payload, ())
+    if type(shared) is not tuple:
+        raise TypeError("worker shared owner bootstrap must be a tuple")
+    _PROCESS_SHARED_OBJECTS = shared
+    if initializer is not None:
+        initializer()
+
+
+def _execute_owner_task(
+    worker_fn: Callable[..., object],
+    request_payload: bytes,
+) -> _OwnerProcessResult:
+    request = owner_pickle_loads(request_payload, _PROCESS_SHARED_OBJECTS)
+    result = worker_fn(request)
+    return _OwnerProcessResult(
+        payload=owner_pickle_dumps(result, _PROCESS_SHARED_OBJECTS),
+        worker_pid=os.getpid(),
+    )
 
 
 class WorkerAdmissionPool:
@@ -30,21 +78,29 @@ class WorkerAdmissionPool:
         thread_name_prefix: str = "execution-worker",
         initializer: Callable[[], None] | None = None,
         mp_context: BaseContext | None = None,
+        shared_objects: tuple[object, ...] = (),
     ) -> None:
         if type(max_workers) is not int or max_workers < 1:
             raise ValueError("max_workers must be a positive integer")
         if backend not in {"thread", "process"}:
             raise ValueError("backend must be 'thread' or 'process'")
+        if not isinstance(shared_objects, tuple):
+            raise TypeError("shared_objects must be a tuple")
         self._max_workers = max_workers
         self._backend = backend
         self._thread_name_prefix = thread_name_prefix
         self._initializer = initializer
         self._mp_context = mp_context
+        self._shared_objects = shared_objects
         self._executor: ThreadPoolExecutor | ProcessPoolExecutor | None = None
         self._stopped = threading.Event()
         self._stop_lock = threading.Lock()
         self._first_error: Exception | None = None
         self._closed = False
+        self._shared_bootstrap_bytes: int | None = None
+        self._task_request_bytes = 0
+        self._task_response_bytes = 0
+        self._worker_pids: set[int] = set()
 
     @property
     def max_workers(self) -> int:
@@ -57,6 +113,19 @@ class WorkerAdmissionPool:
     @property
     def initializer(self) -> Callable[[], None] | None:
         return self._initializer
+
+    @property
+    def transport_metrics(self) -> WorkerTransportMetrics | None:
+        """Return measured owner transport bytes for shared process execution."""
+
+        if self._shared_bootstrap_bytes is None:
+            return None
+        return WorkerTransportMetrics(
+            shared_bootstrap_bytes=self._shared_bootstrap_bytes,
+            task_request_bytes=self._task_request_bytes,
+            task_response_bytes=self._task_response_bytes,
+            worker_pids=tuple(sorted(self._worker_pids)),
+        )
 
     def set_initializer(self, initializer: Callable[[], None]) -> None:
         if self._executor is not None:
@@ -91,10 +160,20 @@ class WorkerAdmissionPool:
             return self._executor
         effective_workers = min(self._max_workers, max(1, capacity))
         if self._backend == "process":
-            self._executor = ProcessPoolExecutor(
-                max_workers=effective_workers,
-                mp_context=self._mp_context or get_context("spawn"),
-            )
+            if self._shared_objects:
+                bootstrap = owner_pickle_dumps(self._shared_objects, ())
+                self._shared_bootstrap_bytes = len(bootstrap) * effective_workers
+                self._executor = ProcessPoolExecutor(
+                    max_workers=effective_workers,
+                    mp_context=self._mp_context or get_context("spawn"),
+                    initializer=_initialize_owner_worker,
+                    initargs=(bootstrap, self._initializer),
+                )
+            else:
+                self._executor = ProcessPoolExecutor(
+                    max_workers=effective_workers,
+                    mp_context=self._mp_context or get_context("spawn"),
+                )
         elif effective_workers > 1:
             if self._initializer is not None:
                 self._initializer()
@@ -150,7 +229,7 @@ class WorkerAdmissionPool:
             return
 
         effective_workers = min(self._max_workers, len(items))
-        pending: dict[Future[TResult], TItem] = {}
+        pending: dict[Future[object], TItem] = {}
         remaining = iter(items)
 
         def fill_window() -> None:
@@ -168,8 +247,20 @@ class WorkerAdmissionPool:
                         on_completed(completed, total, item, None)  # type: ignore[arg-type]
                     continue
                 arg = task_arg_fn(item) if task_arg_fn is not None else item
-                fut = executor.submit(worker_fn, arg)
-                pending[fut] = item
+                if self._backend == "process" and self._shared_objects:
+                    request_payload = owner_pickle_dumps(arg, self._shared_objects)
+                    self._task_request_bytes += len(request_payload)
+                    submitted = cast(
+                        Future[object],
+                        executor.submit(
+                            _execute_owner_task,
+                            worker_fn,
+                            request_payload,
+                        ),
+                    )
+                else:
+                    submitted = cast(Future[object], executor.submit(worker_fn, arg))
+                pending[submitted] = item
 
         try:
             fill_window()
@@ -183,7 +274,18 @@ class WorkerAdmissionPool:
                 for future in done:
                     item = pending.pop(future)
                     try:
-                        res = future.result()
+                        raw_result = future.result()
+                        if self._backend == "process" and self._shared_objects:
+                            if not isinstance(raw_result, _OwnerProcessResult):
+                                raise TypeError(
+                                    "shared process worker returned an invalid envelope"
+                                )
+                            self._task_response_bytes += len(raw_result.payload)
+                            self._worker_pids.add(raw_result.worker_pid)
+                            raw_result = owner_pickle_loads(
+                                raw_result.payload, self._shared_objects
+                            )
+                        res = cast(TResult, raw_result)
                         completed += 1
                         if on_completed is not None:
                             on_completed(completed, total, item, res)

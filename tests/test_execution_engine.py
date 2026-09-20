@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import pickle
 import threading
 import time
@@ -88,6 +89,38 @@ class CustomPayload:
 class RefPayload:
     children: tuple
     ref: object = None
+
+
+@dataclass(frozen=True)
+class SharedProcessTask:
+    owner: object
+    value: int
+
+
+@dataclass(frozen=True)
+class SharedProcessResult:
+    owner: object
+    value: int
+    worker_pid: int
+    initialized: bool
+
+
+_SHARED_PROCESS_INITIALIZED = False
+
+
+def _initialize_shared_process_test() -> None:
+    global _SHARED_PROCESS_INITIALIZED
+    _SHARED_PROCESS_INITIALIZED = True
+
+
+def _execute_shared_process_task(task: SharedProcessTask) -> SharedProcessResult:
+    time.sleep(0.2)
+    return SharedProcessResult(
+        task.owner,
+        task.value * 10,
+        os.getpid(),
+        _SHARED_PROCESS_INITIALIZED,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1201,6 +1234,43 @@ def test_worker_admission_pool_thread_single_worker_inline() -> None:
 
     assert results == [(1, 4, 1, 10), (2, 4, 2, 20), (3, 4, 3, 30), (4, 4, 4, 40)]
     assert all(t == coordinator_thread for t in execution_threads)
+    assert pool.transport_metrics is None
+
+
+def test_worker_admission_pool_process_shares_owner_once_and_restores_identity(
+) -> None:
+    owner = {"global_request": "x" * 1_000_000}
+    results: list[SharedProcessResult] = []
+    pool = WorkerAdmissionPool(
+        max_workers=2,
+        backend="process",
+        shared_objects=(owner,),
+        initializer=_initialize_shared_process_test,
+    )
+
+    with pool:
+        pool.run_windowed(
+            tuple(range(1, 21)),
+            _execute_shared_process_task,
+            task_arg_fn=lambda value: SharedProcessTask(owner, value),
+            on_completed=lambda _c, _t, _item, result: results.append(result),
+        )
+
+    assert sorted(result.value for result in results) == [
+        value * 10 for value in range(1, 21)
+    ]
+    assert all(result.owner is owner for result in results)
+    assert all(result.initialized for result in results)
+    assert len({result.worker_pid for result in results}) == 2
+    assert all(result.worker_pid != os.getpid() for result in results)
+    metrics = pool.transport_metrics
+    assert metrics is not None
+    assert metrics.shared_bootstrap_bytes >= 2_000_000
+    assert metrics.task_request_bytes < 10_000
+    assert metrics.task_response_bytes < 10_000
+    assert metrics.worker_pids == tuple(
+        sorted({result.worker_pid for result in results})
+    )
 
 
 def test_worker_admission_pool_thread_multi_worker_bounded() -> None:

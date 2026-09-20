@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import importlib
 import json
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import fields
+from functools import partial
 from pathlib import Path
 from typing import cast
 
@@ -73,6 +75,7 @@ from xic_extractor.peak_detection.search_scope import (
     UntargetedSearchScope,
 )
 from xic_extractor.processing_identity import resolve_request_acquisition_source
+from xic_extractor.raw_reader import _ensure_assemblies_loaded
 
 PartitionResultStore = StreamedResultStore
 
@@ -93,6 +96,10 @@ _GLOBAL_CLOSURE_CONTRACT = _mint_artifact_semantic_contract_ref(
     media_type="application/json",
     serialization_format="canonical-json-utf8-lf",
 )
+
+
+def _initialize_sample_process(dll_dir: Path) -> None:
+    _ensure_assemblies_loaded(dll_dir, importlib.import_module)
 
 
 class CidNlPartitionPipelineAdapter:
@@ -314,6 +321,16 @@ class CidNlPartitionPipelineAdapter:
             max_workers=self._partition_raw_workers,
             backend=self._raw_worker_backend,
             thread_name_prefix="cid-nl-sample",
+            initializer=(
+                partial(_initialize_sample_process, batch.jobs[0].dll_dir)
+                if self._raw_worker_backend == "process"
+                else None
+            ),
+            shared_objects=(
+                _sample_worker_shared_objects(batch)
+                if self._raw_worker_backend == "process"
+                else ()
+            ),
         ) as pool:
             leaf = execute_untargeted_cid_nl_runtime_partition(
                 batch.jobs,
@@ -627,6 +644,21 @@ def _shared_objects(plan: UntargetedCidNlProductionPlan) -> tuple[object, ...]:
     for sample in context.samples:
         values.extend(getattr(sample, field.name) for field in fields(sample))
     return tuple({id(value): value for value in values if value is not None}.values())
+
+
+def _sample_worker_shared_objects(
+    batch: UntargetedCidNlProductionBatch,
+) -> tuple[object, ...]:
+    """Select immutable global owners that process sample tasks reference."""
+
+    first = batch.jobs[0]
+    owners = first.processing_owners
+    values = [
+        owners,
+        *tuple(getattr(owners, field.name) for field in fields(owners)),
+        first._request_subjects,
+    ]
+    return tuple({id(value): value for value in values}.values())
 
 
 def _ordered_exclusions(

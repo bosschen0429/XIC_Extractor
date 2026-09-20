@@ -110,6 +110,13 @@ def _plan(tmp_path, monkeypatch, *, scenario="positive"):
         sample_identity_namespace="study:bounded-runtime",
     )
     _install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
+    import xic_extractor.extraction.untargeted_cid_nl_real_data_runtime as runtime_owner
+
+    monkeypatch.setattr(
+        runtime_owner,
+        "_ensure_assemblies_loaded",
+        lambda *_args: None,
+    )
     reference = None
     if scenario == "istd":
         workbook = Workbook()
@@ -726,6 +733,7 @@ def test_bounded_runtime_matches_eager_after_disk_owner_round_trip(
     eager = compose_untargeted_cid_nl_production_result(
         batch, eager_runtime, alignment_config=config, known_istd_reference=reference
     )
+    warm_threads.clear()
     marker = OwnerPathRuntimeMarker(tmp_path / "bounded.json", "bounded")
     progress_events = []
     live_path = tmp_path / "alignment-live.json"
@@ -1363,3 +1371,30 @@ def test_sample_failure_drains_without_more_samples_or_partition_publication(
         if "partition-00001:" in receipt.resource_key
     )
     assert list((tmp_path / "failed").glob(".cid_nl_partitions-*")) == []
+
+
+def test_sample_worker_transport_references_global_request_owners(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    from xic_extractor.execution_engine.owner_pickle import (
+        owner_pickle_dumps,
+        owner_pickle_loads,
+    )
+    from xic_extractor.extraction.untargeted_cid_nl_bounded_runtime import (
+        _sample_worker_shared_objects,
+    )
+
+    plan, _reference = _plan(tmp_path, monkeypatch)
+    batch = materialize_untargeted_cid_nl_partition(plan, plan.subject_batch)
+    shared = _sample_worker_shared_objects(batch)
+    source = batch.jobs[0]
+
+    restored = owner_pickle_loads(owner_pickle_dumps(source, shared), shared)
+
+    assert restored.processing_owners is source.processing_owners
+    assert restored.processing_owners.request is source.processing_owners.request
+    assert restored.processing_owners.attempt is source.processing_owners.attempt
+    assert restored._request_subjects is source._request_subjects
+    assert restored.sample == source.sample
+    assert restored.candidates == source.candidates
