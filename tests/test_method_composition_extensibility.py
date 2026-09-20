@@ -4,12 +4,11 @@ and SQLite explanation.
 
 from __future__ import annotations
 
-import argparse
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Mapping
 
-from scripts.run_alignment import _resolve_preset
+from scripts.run_alignment import _parse_args, _resolve_preset
 from tests.test_processing_run_spec import _compile_paths, _raws
 from xic_extractor.diagnostics.cid_nl_explanation import (
     GENERIC_REPORT_FILENAME,
@@ -202,7 +201,12 @@ def test_is_supported_alignment_discovery_accepts_composite_and_multi_tag():
 
 
 def test_run_alignment_script_resolves_supported_preset():
-    args = argparse.Namespace(preset="dna_dr", owner_build_xic_backend=None)
+    args = _parse_args([
+        "--preset", "dna_dr",
+        "--discovery-batch-index", "discovery_batch_index.csv",
+        "--raw-dir", "raws",
+        "--dll-dir", "dll",
+    ])
     preset, recipe = _resolve_preset(args)
     assert preset.name == "DNA dR"
     assert is_supported_alignment_discovery(recipe.discovery_settings) is True
