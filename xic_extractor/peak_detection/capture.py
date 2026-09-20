@@ -47,9 +47,6 @@ from xic_extractor.peak_detection.physical_peak_evaluation import (
     evaluate_physical_peak,
     prepare_physical_signal,
 )
-from xic_extractor.peak_detection.physical_peak_identity import (
-    validate_physical_trace_content_id,
-)
 from xic_extractor.peak_detection.physical_peak_models import (
     PHYSICAL_PEAK_WINDOW_POLICY,
     PhysicalPeakEvaluation,
@@ -89,6 +86,8 @@ class _CaptureOwnerSeal:
     selected_hypothesis: PeakHypothesis | None
     physical_evaluation: PhysicalPeakEvaluation | None = None
     physical_selection_intensity: tuple[float, ...] | None = None
+    physical_observation_content: PeakObservationContent | None = None
+    physical_observation_provenance: PeakObservationGenerationProvenance | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -419,6 +418,8 @@ def _project_physical_capture(
 ) -> SampleLocalCapture:
     selected: PeakHypothesis | None = None
     selection_intensity: tuple[float, ...] | None = None
+    observation_content: PeakObservationContent | None = None
+    observation_provenance: PeakObservationGenerationProvenance | None = None
     if evaluation.state == "available":
         facts = evaluation.facts
         integration = evaluation.integration
@@ -441,6 +442,15 @@ def _project_physical_capture(
                 selection_reference_rt_min=binding.preferred_rt,
             ),
         )
+        observation_content, observation_provenance = _project_peak_observation_values(
+            canonical_sample_identity_id=binding.sample_identity_id,
+            trace=trace,
+            integration=selected.integration,
+            selection_values=np.asarray(selection_intensity, dtype=float),
+            selected_indices=selected.integration.raw_scan_indices,
+            resolver_mode=scope.method_constraints.peak_config.resolver_mode,
+            proposal_sources=selected.audit.proposal_sources,
+        )
     detection = Ms1TracePeakDetection(
         status="detected" if selected is not None else "not_detected",
         rt=trace.rt,
@@ -458,6 +468,8 @@ def _project_physical_capture(
         selected_hypothesis=selected,
         physical_evaluation=evaluation,
         physical_selection_intensity=selection_intensity,
+        physical_observation_content=observation_content,
+        physical_observation_provenance=observation_provenance,
     )
     return SampleLocalCapture(
         _owner_seal=seal,
@@ -667,30 +679,17 @@ def _project_captured_physical_observation(
         raise PeakObservationContractError(
             "physical observation requires the capture owner answer"
         )
-    try:
-        validate_physical_trace_content_id(
-            evaluation.prepared.trace_content_id,
-            capture.trace.rt,
-            capture.trace.intensity,
-        )
-    except ValueError as exc:
-        raise PeakObservationContractError(str(exc)) from exc
     if (
         capture.receipt_hypothesis is None
         or selected.integration != capture.receipt_hypothesis.integration
     ):
         raise PeakObservationContractError("capture selection changed")
-    content, provenance = _project_peak_observation_values(
-        canonical_sample_identity_id=binding.sample_identity_id,
-        trace=capture.trace,
-        integration=selected.integration,
-        selection_values=np.asarray(
-            capture._owner_seal.physical_selection_intensity, dtype=float
-        ),
-        selected_indices=selected.integration.raw_scan_indices,
-        resolver_mode=capture.scope.method_constraints.peak_config.resolver_mode,
-        proposal_sources=selected.audit.proposal_sources,
-    )
+    content = capture._owner_seal.physical_observation_content
+    provenance = capture._owner_seal.physical_observation_provenance
+    if content is None or provenance is None:
+        raise PeakObservationContractError(
+            "physical observation requires the capture owner projection"
+        )
     return binding.sample_identity_id, content, provenance
 
 
@@ -758,6 +757,12 @@ def bind_owner_backed_capture_hypothesis(
         selected_hypothesis=hypothesis,
         physical_evaluation=capture.physical_evaluation,
         physical_selection_intensity=capture._owner_seal.physical_selection_intensity,
+        physical_observation_content=(
+            capture._owner_seal.physical_observation_content
+        ),
+        physical_observation_provenance=(
+            capture._owner_seal.physical_observation_provenance
+        ),
     )
     return SampleLocalCapture(
         _owner_seal=seal,

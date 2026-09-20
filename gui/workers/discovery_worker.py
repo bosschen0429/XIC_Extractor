@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import csv
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
@@ -17,6 +17,7 @@ from xic_extractor.discovery.pipeline import run_discovery, run_discovery_batch
 from xic_extractor.discovery.processing_run_spec_adapter import (
     compile_discovery_processing_run_spec_from_config as _compile_processing_run_spec,
 )
+from xic_extractor.execution_settings import ExecutionProfile
 from xic_extractor.presets import (
     BoundCidNlRecipe,
     Preset,
@@ -28,7 +29,6 @@ from xic_extractor.raw_reader import RawReaderError
 from xic_extractor.sample_metadata import SampleMetadata
 from xic_extractor.settings_schema import (
     CANONICAL_SETTINGS_DEFAULTS,
-    default_parallel_workers,
 )
 
 DiscoveryMode = Literal["full", "discovery_only", "align_only"]
@@ -69,6 +69,7 @@ class DiscoveryRequest:
     targets_csv: Path | None = None
     sample_metadata: tuple[SampleMetadata, ...] | None = None
     preset_snapshot: Preset | None = None
+    execution_profile: ExecutionProfile = field(default_factory=ExecutionProfile)
 
 
 class DiscoveryWorker(QThread):
@@ -127,7 +128,7 @@ class DiscoveryWorker(QThread):
             settings=settings,
             peak_config=peak_config,
             run_spec=run_spec,
-            max_workers=_batch_discovery_workers(raw_paths),
+            max_workers=_batch_discovery_workers(raw_paths, request.execution_profile),
         )
         index_path = _batch_index_path(batch_outputs, request.output_dir)
         if self.isInterruptionRequested():
@@ -193,7 +194,7 @@ class DiscoveryWorker(QThread):
             settings=settings,
             peak_config=peak_config,
             run_spec=run_spec,
-            max_workers=_batch_discovery_workers(raw_paths),
+            max_workers=_batch_discovery_workers(raw_paths, request.execution_profile),
         )
         if self.isInterruptionRequested():
             return None
@@ -260,6 +261,7 @@ class DiscoveryWorker(QThread):
             owner_build_xic_backend=recipe.owner_build_xic_backend,
             sample_metadata=request.sample_metadata,
             targets_csv=request.targets_csv,
+            raw_workers=request.execution_profile.alignment_workers,
             should_cancel=self.isInterruptionRequested,
             **_GUI_ALIGNMENT_KWARGS,
         )
@@ -438,10 +440,12 @@ def _raw_paths_from_dir(raw_dir: Path | None) -> tuple[Path, ...]:
     )
 
 
-def _batch_discovery_workers(raw_paths: tuple[Path, ...]) -> int:
+def _batch_discovery_workers(
+    raw_paths: tuple[Path, ...], profile: ExecutionProfile
+) -> int:
     if not raw_paths:
         raise ValueError("batch Discovery requires at least one RAW path")
-    return min(len(raw_paths), default_parallel_workers())
+    return min(len(raw_paths), profile.parallel_workers)
 
 
 def _read_batch_counts(index_path: Path) -> tuple[dict[str, int] | None, int]:

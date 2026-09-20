@@ -10,7 +10,7 @@ from __future__ import annotations
 import math
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from xic_extractor.alignment.drift_evidence import interpolate_calibrated_rt_min
 from xic_extractor.diagnostics.cid_nl_explanation import (
@@ -466,6 +466,10 @@ class CidNlSource:
                 "sample_status": sample_status,
                 "support_origins": origins,
                 "review_summary": review_summary,
+                "initial_edge_coverage": self.summary.get(
+                    "initial_edge_coverage",
+                    {"policy": "legacy-unspecified", "unlisted_pairs": "unrecorded"},
+                ),
                 "records": [
                     {"kind": k, "ref": r, "facts": f}
                     for (k, r), f in sorted(facts.items())
@@ -719,6 +723,9 @@ class CidNlSource:
             right_id = edge.get("right_member_subject_id")
             if left_id not in members_by_id or right_id not in members_by_id:
                 continue
+            # Membership above admits only the string IDs collected from members.
+            left_id = cast(str, left_id)
+            right_id = cast(str, right_id)
             disposition = edge.get("disposition")
             if disposition not in {"eligible", "review_only"}:
                 continue

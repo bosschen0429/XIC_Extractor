@@ -312,7 +312,7 @@ def test_refinement_bootstrap_forwards_exact_drift_lookup(
     )
 
     fixture = build_processing_identity_no_raw_fixture(
-        tmp_path, sample_stems=("early",)
+        tmp_path, sample_stems=("early", "late")
     )
     assessment = _assessment_with_observation_only_peak(
         fixture,
@@ -346,7 +346,19 @@ def test_refinement_bootstrap_forwards_exact_drift_lookup(
     )
     bootstrap_mode_track_refinement_from_cid_nl_support(
         processing_owners=fixture.owners,
-        sample_assessments=((fixture.sample("early"), assessment),),
+        sample_assessments=(
+            (fixture.sample("early"), assessment),
+            (
+                fixture.sample("late"),
+                _assessment_with_observation_only_peak(
+                    fixture,
+                    sample_stem="late",
+                    direct_apex_rt=7.80,
+                    observed_apex_rt=8.40,
+                    scan_number=202,
+                ),
+            ),
+        ),
         alignment_config=AlignmentConfig(anchor_min_seed_events=1),
         trajectory_policy=ModeTrackTrajectoryPolicy(
             trajectory_policy_version="anchor-trajectory",

@@ -41,10 +41,30 @@ they are not product authority by themselves.
 | `xic_extractor/presets/data/` | Built-in TOML preset resources |
 | `scripts/run_discovery.py --preset ...` | Discovery CLI using the same recipe binder; only explicit tuning flags override the method |
 | `scripts/run_alignment.py --preset ...` | CLI path that activates alignment presets |
+| `scripts/run_tissue_validation.py --dataset {8,85}` | Shared tissue validation launch defaults; delegates Discovery and Alignment to their current CLIs |
 | Resolver settings in config/GUI | Public behavior surface for peak detection choices |
 | Runner metadata and sidecars | Provenance for preset-backed runs |
 
 ## CID-NL Workflow Composition
+
+### Tissue Validation Defaults
+
+The 8RAW validation set is a subset of the 85RAW tissue cohort. Both use the
+same `dna_dr` method and effective scientific settings, including disabled
+blank-background qualification. Dataset selection changes sample scope, not
+the method. The maintained tissue validation runner owns paths, timing, and
+stage launch order; it consumes the shared
+[execution profile](execution-runtime.md#worker-settings) for worker budgets
+and does not maintain a second scientific preset.
+
+Neither scale resolves or loads a blank library by default. An explicit
+`--blank-library` opts in and binds the same library in Discovery and Alignment;
+its suitability must be established separately. ISTD input
+follows the normal Alignment targets CSV; a historical reference workbook is
+an explicit override. Resolved inputs and commands are visible before RAW work.
+See [local validation commands](../agent/parameter-settings.md#validation-scale).
+
+### Recipe Binding
 
 A CID-NL preset is bound once, before expensive work, to one immutable
 in-memory recipe. The recipe contains the existing typed Discovery and

@@ -7,6 +7,7 @@ import os
 import pstats
 import sys
 from collections.abc import Sequence
+from dataclasses import replace
 from pathlib import Path
 from zipfile import BadZipFile
 
@@ -32,6 +33,7 @@ from xic_extractor.config import ExtractionConfig
 from xic_extractor.configuration.models import ConfigError
 from xic_extractor.diagnostics.process_memory import ProcessTreeMemorySampler
 from xic_extractor.diagnostics.timing import TimingRecorder
+from xic_extractor.execution_settings import load_execution_profile
 from xic_extractor.extraction.untargeted_cid_nl_production_batch import (
     is_supported_alignment_discovery,
 )
@@ -53,6 +55,12 @@ from xic_extractor.settings_schema import CANONICAL_SETTINGS_DEFAULTS
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parse_args(argv)
+    try:
+        execution_profile = load_execution_profile(alignment_workers=args.raw_workers)
+    except (ConfigError, ValueError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    args.raw_workers = execution_profile.alignment_workers
     try:
         preset, recipe = _resolve_preset(args)
     except PresetError as exc:
@@ -379,6 +387,11 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--blank-library",
+        type=Path,
+        help="Use the same explicit background library binding as Discovery.",
+    )
+    parser.add_argument(
         "--known-istd-reference-workbook",
         type=Path,
         help=(
@@ -414,10 +427,9 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument(
         "--raw-workers",
         type=_positive_int,
-        default=1,
         help=(
             "Concurrent RAW sample phases within each bounded CID-NL partition "
-            "(default: 1)."
+            "(default: shared execution profile alignment_workers, normally 1)."
         ),
     )
     parser.add_argument(
@@ -646,6 +658,18 @@ def _resolve_preset(args: argparse.Namespace) -> tuple[Preset, BoundCidNlRecipe]
     recipe = bind_cid_nl_recipe(
         preset, "align_only", recipe_overrides=recipe_overrides or None
     )
+    if args.blank_library is not None:
+        blank_library = args.blank_library.resolve()
+        if not blank_library.is_file():
+            raise PresetError(f"{blank_library}: blank library does not exist")
+        recipe = replace(
+            recipe,
+            discovery_settings=replace(
+                recipe.discovery_settings,
+                enable_blank_qualification=True,
+                blank_library_path=str(blank_library),
+            ),
+        )
     if not is_supported_alignment_discovery(recipe.discovery_settings):
         raise PresetError(
             f"Alignment does not support discovery settings in preset {preset.name}"

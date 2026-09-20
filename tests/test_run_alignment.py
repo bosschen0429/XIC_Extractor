@@ -274,6 +274,14 @@ def test_run_alignment_env_enables_asls_baseline_audit(
     dll_dir.mkdir()
     output_dir = tmp_path / "alignment"
     captured = {}
+    execution_root = tmp_path / "runtime"
+    (execution_root / "config").mkdir(parents=True)
+    (execution_root / "config" / "settings.csv").write_text(
+        "key,value\nparallel_workers,7\n", encoding="utf-8"
+    )
+    from xic_extractor import execution_settings
+
+    monkeypatch.setattr(execution_settings, "_runtime_root", lambda: execution_root)
 
     def fake_run_alignment(**kwargs):
         captured.update(kwargs)
@@ -299,6 +307,7 @@ def test_run_alignment_env_enables_asls_baseline_audit(
 
     assert code == 0
     assert captured["peak_config"].baseline_audit_method == "asls"
+    assert captured["raw_workers"] == 1
 
 
 @pytest.mark.parametrize("raw_workers", [1, 2])

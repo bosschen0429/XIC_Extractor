@@ -6,6 +6,7 @@ from typing import Any, cast
 from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtWidgets import QVBoxLayout, QWidget
 
+from gui.config_io import read_settings
 from gui.dialogs import confirm_stop
 from gui.discovery_config_io import read_discovery_config, write_discovery_config
 from gui.sections.discovery_method_section import DiscoveryMethodSection
@@ -19,6 +20,7 @@ from gui.workers.discovery_worker import (
     DiscoveryRequest,
     DiscoveryWorker,
 )
+from xic_extractor.execution_settings import resolve_execution_profile
 from xic_extractor.presets import filter_cid_nl_recipe_presets, list_presets
 
 
@@ -186,8 +188,12 @@ class UntargetedView(QWidget):
             return
 
         config = self._current_config()
+        try:
+            request = self._build_request(config)
+        except (OSError, ValueError) as exc:
+            self.status_message.emit(f"執行設定無效：{exc}", 5000)
+            return
         write_discovery_config(config)
-        request = self._build_request(config)
         self._terminal_state = None
         self._stop_requested = False
         self._results.clear_results()
@@ -229,6 +235,7 @@ class UntargetedView(QWidget):
             targets_csv=_optional_path(config.get("targets_csv")),
             sample_metadata=self._samples.get_sample_metadata(),
             preset_snapshot=self._method.selected_method(),
+            execution_profile=resolve_execution_profile(read_settings()),
         )
 
     def _on_stop(self, *, confirm: bool = True) -> None:

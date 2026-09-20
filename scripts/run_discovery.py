@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from xic_extractor.config import ExtractionConfig
+from xic_extractor.configuration.models import ConfigError
 from xic_extractor.diagnostics.timing import TimingRecorder
 from xic_extractor.discovery.blank_qualification import (
     extract_blank_background_library,
@@ -24,13 +25,13 @@ from xic_extractor.discovery.tag_profiles import (
     load_feature_tag_profiles,
     resolve_selected_tag_profiles,
 )
+from xic_extractor.execution_settings import load_execution_profile
 from xic_extractor.presets import PresetError, bind_cid_nl_recipe, load_preset
 from xic_extractor.raw_reader import RawReaderError
 from xic_extractor.settings_schema import (
     ARBITRATED_RESOLVER_RETIRED_MESSAGE,
     CANONICAL_SETTINGS_DEFAULTS,
     RESOLVER_MODES,
-    default_parallel_workers,
 )
 
 _RT_BOUND_ERROR = "RT bounds must be finite values >= 0"
@@ -39,6 +40,11 @@ _RUN_SPEC_ERROR_TEXT_LIMIT = 400
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parse_args(argv)
+    try:
+        execution_profile = load_execution_profile(parallel_workers=args.max_workers)
+    except (ConfigError, ValueError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
     raw_path = args.raw.resolve() if args.raw is not None else None
     raw_dir = args.raw_dir.resolve() if args.raw_dir is not None else None
     dll_dir = args.dll_dir.resolve()
@@ -146,11 +152,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"Discovery candidates CSV: {single_outputs.candidates_csv}")
             print(f"Discovery review CSV: {single_outputs.review_csv}")
         else:
-            max_workers = (
-                args.max_workers
-                if args.max_workers is not None
-                else min(len(raw_paths), default_parallel_workers())
-            )
+            max_workers = min(len(raw_paths), execution_profile.parallel_workers)
             if timing_recorder is None:
                 batch_outputs = run_discovery_batch(
                     raw_paths,
@@ -291,12 +293,18 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument(
         "--enable-blank-qualification",
         action="store_true",
-        help="Enable blank background qualification using packaged default library.",
+        help=(
+            "Enable blank background qualification (disabled by default). "
+            "Uses an explicit, sample-local, or packaged background library."
+        ),
     )
     parser.add_argument(
         "--no-blank-qualification",
         action="store_true",
-        help="Disable automatic blank background qualification and filtering.",
+        help=(
+            "Explicitly disable blank background qualification "
+            "and filtering; overrides other blank options."
+        ),
     )
     parser.add_argument(
         "--blank-ppm-tol",

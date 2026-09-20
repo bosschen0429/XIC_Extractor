@@ -26,6 +26,18 @@ def test_read_settings(tmp_config, monkeypatch):
     assert read_settings()["smooth_sigma"] == "3.0"
 
 
+def test_saved_worker_budget_reaches_shared_execution_profile(tmp_config, monkeypatch):
+    from xic_extractor.execution_settings import resolve_execution_profile
+
+    monkeypatch.setattr("gui.config_io.CONFIG_DIR", tmp_config)
+    settings = read_settings()
+    settings["parallel_workers"] = "3"
+    write_settings(settings)
+    profile = resolve_execution_profile(read_settings())
+    assert profile.parallel_workers == 3
+    assert profile.alignment_workers == 1
+
+
 def test_write_settings_round_trips(tmp_config, monkeypatch):
     monkeypatch.setattr("gui.config_io.CONFIG_DIR", tmp_config)
     write_settings(

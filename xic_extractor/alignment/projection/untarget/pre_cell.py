@@ -9,8 +9,6 @@ from xic_extractor.alignment.cross_sample_peak_groups import (
     CrossSampleGroupIdentity,
     CrossSampleGroupMemberSubject,
     CrossSampleLineageEdge,
-    CrossSampleSuccessorApplication,
-    validate_cross_sample_group_population,
 )
 from xic_extractor.alignment.cross_sample_reconciliation import (
     CrossSampleFinalReceipt,
@@ -51,167 +49,12 @@ def _request_id(value: object, *, field_name: str) -> str:
         raise UntargetProjectionContractError(str(exc)) from exc
 
 
-def _revalidate_owner_group(
-    group: object,
-    *,
-    processing_request_id: str | None = None,
-) -> CrossSampleGroupIdentity:
+def _require_owner_group(group: object) -> CrossSampleGroupIdentity:
     if type(group) is not CrossSampleGroupIdentity:
         raise UntargetProjectionContractError(
             "pre-cell projection requires exact owner CrossSample groups"
         )
-    group_request_id = _request_id(
-        group.processing_request_id,
-        field_name="group.processing_request_id",
-    )
-    if (
-        processing_request_id is not None
-        and group_request_id != processing_request_id
-    ):
-        raise UntargetProjectionContractError(
-            "CrossSample group crossed the processing request"
-        )
-    try:
-        members = tuple(
-            _revalidate_owner_member(member)
-            for member in group.member_subjects
-        )
-        canonical_group = CrossSampleGroupIdentity(
-            group_hypothesis_id=group.group_hypothesis_id,
-            processing_request_id=group_request_id,
-            member_subjects=members,
-            basis_bytes=group.basis_bytes,
-            disposition=group.disposition,
-        )
-    except (AttributeError, TypeError, ValueError) as exc:
-        raise UntargetProjectionContractError(
-            f"CrossSample group owner closure is invalid: {exc}"
-        ) from exc
-    if canonical_group != group:
-        raise UntargetProjectionContractError(
-            "CrossSample group owner identity closure is not exact"
-        )
     return group
-
-
-def _revalidate_owner_member(
-    member: object,
-) -> CrossSampleGroupMemberSubject:
-    if type(member) is not CrossSampleGroupMemberSubject:
-        raise UntargetProjectionContractError(
-            "pre-cell projection requires exact owner group members"
-        )
-    try:
-        canonical_member = CrossSampleGroupMemberSubject(
-            member_subject_id=member.member_subject_id,
-            processing_request_id=member.processing_request_id,
-            canonical_sample_identity_id=member.canonical_sample_identity_id,
-            subject_kind=member.subject_kind,
-            subject_id=member.subject_id,
-            physical_observation_ids=member.physical_observation_ids,
-            basis_bytes=member.basis_bytes,
-        )
-    except (AttributeError, TypeError, ValueError) as exc:
-        raise UntargetProjectionContractError(
-            f"CrossSample group member owner closure is invalid: {exc}"
-        ) from exc
-    if canonical_member != member:
-        raise UntargetProjectionContractError(
-            "CrossSample group member owner identity closure is not exact"
-        )
-    return member
-
-
-def _revalidate_owner_lineage(
-    edge: object,
-    *,
-    processing_request_id: str,
-) -> CrossSampleLineageEdge:
-    if type(edge) is not CrossSampleLineageEdge:
-        raise UntargetProjectionContractError(
-            "finalized group lineage is not owner-backed"
-        )
-    edge_request_id = _request_id(
-        edge.processing_request_id,
-        field_name="lineage.processing_request_id",
-    )
-    if edge_request_id != processing_request_id:
-        raise UntargetProjectionContractError(
-            "finalized group lineage crossed the processing request"
-        )
-    try:
-        canonical_edge = CrossSampleLineageEdge(
-            lineage_edge_id=edge.lineage_edge_id,
-            predecessor_group_hypothesis_id=(
-                edge.predecessor_group_hypothesis_id
-            ),
-            successor_group_hypothesis_id=edge.successor_group_hypothesis_id,
-            processing_request_id=edge_request_id,
-            predecessor_identity_basis_bytes=edge.predecessor_identity_basis_bytes,
-            predecessor_group_hypothesis_ids=edge.predecessor_group_hypothesis_ids,
-            member_subject_ids=edge.member_subject_ids,
-            basis_bytes=edge.basis_bytes,
-        )
-    except (AttributeError, TypeError, ValueError) as exc:
-        raise UntargetProjectionContractError(
-            f"CrossSample lineage owner closure is invalid: {exc}"
-        ) from exc
-    if canonical_edge != edge:
-        raise UntargetProjectionContractError(
-            "CrossSample lineage owner identity closure is not exact"
-        )
-    return edge
-
-
-def _revalidate_owner_application(
-    application: object,
-    *,
-    processing_request_id: str,
-) -> CrossSampleSuccessorApplication:
-    if type(application) is not CrossSampleSuccessorApplication:
-        raise UntargetProjectionContractError(
-            "final CrossSample application is not owner-backed"
-        )
-    try:
-        predecessors = tuple(
-            _revalidate_owner_group(
-                group,
-                processing_request_id=processing_request_id,
-            )
-            for group in application.predecessors
-        )
-        successors = tuple(
-            _revalidate_owner_group(
-                group,
-                processing_request_id=processing_request_id,
-            )
-            for group in application.successors
-        )
-        lineage = tuple(
-            _revalidate_owner_lineage(
-                edge,
-                processing_request_id=processing_request_id,
-            )
-            for edge in application.lineage
-        )
-        canonical_application = CrossSampleSuccessorApplication(
-            status=application.status,
-            predecessors=predecessors,
-            successors=successors,
-            lineage=lineage,
-            reason=application.reason,
-        )
-    except UntargetProjectionContractError:
-        raise
-    except (AttributeError, TypeError, ValueError) as exc:
-        raise UntargetProjectionContractError(
-            f"CrossSample application owner closure is invalid: {exc}"
-        ) from exc
-    if canonical_application != application:
-        raise UntargetProjectionContractError(
-            "CrossSample application owner identity closure is not exact"
-        )
-    return application
 
 
 def _untarget_row_key_basis(
@@ -236,7 +79,6 @@ def _untarget_row_key_id(basis_bytes: bytes) -> str:
 def _validate_request_bindings(
     *,
     receipt: object,
-    finalized_alignment: FinalizedScientificAlignment,
     processing_request_id: str,
 ) -> tuple[tuple[CrossSampleGroupIdentity, ...], tuple[CrossSampleLineageEdge, ...]]:
     if type(receipt) is not CrossSampleFinalReceipt:
@@ -256,24 +98,7 @@ def _validate_request_bindings(
             "final CrossSample population must be an immutable tuple"
         )
     population = receipt.final_population
-    _revalidate_owner_application(
-        receipt.post_mt0_application,
-        processing_request_id=processing_request_id,
-    )
-    final_application = _revalidate_owner_application(
-        receipt.final_application,
-        processing_request_id=processing_request_id,
-    )
-    lineage = final_application.lineage
-    if type(lineage) is not tuple:
-        raise UntargetProjectionContractError(
-            "finalized group lineage must be an immutable tuple"
-        )
-    for group in population:
-        _revalidate_owner_group(
-            group,
-            processing_request_id=processing_request_id,
-        )
+    lineage = receipt.final_application.lineage
     return population, lineage
 
 
@@ -286,7 +111,7 @@ class UntargetRowKey:
     basis_bytes: bytes
 
     def __post_init__(self) -> None:
-        group = _revalidate_owner_group(self.group)
+        group = _require_owner_group(self.group)
         request_id = _request_id(
             group.processing_request_id,
             field_name="group.processing_request_id",
@@ -324,7 +149,7 @@ class UntargetRowKey:
 def _mint_untarget_row_key(group: CrossSampleGroupIdentity) -> UntargetRowKey:
     """Mint the row key from an owner-validated canonical group."""
 
-    group = _revalidate_owner_group(group)
+    group = _require_owner_group(group)
     request_id = _request_id(
         group.processing_request_id,
         field_name="group.processing_request_id",
@@ -351,8 +176,9 @@ class GroupCellSubject:
     row_key: UntargetRowKey
     canonical_sample: ResolvedCanonicalSampleIdentity
     member_subject: CrossSampleGroupMemberSubject | None
+    _mint_token: InitVar[object | None] = field(default=None, kw_only=True, repr=False)
 
-    def __post_init__(self) -> None:
+    def __post_init__(self, _mint_token: object | None) -> None:
         if type(self.row_key) is not UntargetRowKey:
             raise UntargetProjectionContractError(
                 "GroupCellSubject requires an exact UntargetRowKey"
@@ -368,7 +194,10 @@ class GroupCellSubject:
             raise UntargetProjectionContractError(
                 "GroupCellSubject member must be an exact CrossSample subject"
             )
-        if self.member_subject not in group.member_subjects:
+        if (
+            _mint_token is not _PROJECTION_MINT_TOKEN
+            and self.member_subject not in group.member_subjects
+        ):
             raise UntargetProjectionContractError(
                 "GroupCellSubject member is absent from its group"
             )
@@ -429,7 +258,6 @@ class UntargetPreCellProjection:
             raise UntargetProjectionContractError(
                 "pre-cell projection must be minted by its owner entry point"
             )
-        _validate_projection(self)
 
     @property
     def processing_request_id(self) -> str:
@@ -439,7 +267,11 @@ class UntargetPreCellProjection:
 def project_untarget_pre_cell(
     finalized_alignment: FinalizedScientificAlignment,
 ) -> UntargetPreCellProjection:
-    """Project one exact finalized Untargeted alignment before cell decisions."""
+    """Project closed scientific owners once into row keys and Group x sample.
+
+    Group, member and lineage closure belong to the scientific owners. This
+    handoff validates its request binding and creates only projection-owned data.
+    """
 
     if type(finalized_alignment) is not FinalizedScientificAlignment:
         raise UntargetProjectionContractError(
@@ -462,10 +294,8 @@ def project_untarget_pre_cell(
         receipt = finalized_alignment.final_cross_sample_receipt
         population, lineage = _validate_request_bindings(
             receipt=receipt,
-            finalized_alignment=finalized_alignment,
             processing_request_id=request_id,
         )
-        validate_cross_sample_group_population(population)
         groups = tuple(
             sorted(population, key=lambda group: group.group_hypothesis_id)
         )
@@ -509,22 +339,21 @@ def _build_cell_subjects(
             raise UntargetProjectionContractError(
                 "GroupCellSubject row crossed its owner group"
             )
-        for sample in samples:
-            matching = tuple(
-                member
-                for member in group.member_subjects
-                if member.canonical_sample_identity_id
-                == sample.identity.sample_identity_id
+        members_by_sample = {
+            member.canonical_sample_identity_id: member
+            for member in group.member_subjects
+        }
+        if len(members_by_sample) != len(group.member_subjects):
+            raise UntargetProjectionContractError(
+                "group has duplicate members for one canonical sample"
             )
-            if len(matching) > 1:
-                raise UntargetProjectionContractError(
-                    "group has duplicate members for one canonical sample"
-                )
+        for sample in samples:
             result.append(
                 GroupCellSubject(
                     row_key=row,
                     canonical_sample=sample,
-                    member_subject=matching[0] if matching else None,
+                    member_subject=members_by_sample.get(sample.identity.sample_identity_id),
+                    _mint_token=_PROJECTION_MINT_TOKEN,
                 )
             )
     return tuple(result)
@@ -545,69 +374,6 @@ def _validate_row_key_population(
                 "row-key identity collision has unequal basis bytes"
             )
         basis_by_id[row_key.untarget_row_key_id] = row_key.basis_bytes
-
-
-def _validate_projection(result: UntargetPreCellProjection) -> None:
-    source = result.finalized_alignment
-    if type(source) is not FinalizedScientificAlignment:
-        raise UntargetProjectionContractError(
-            "projection source must be an exact FinalizedScientificAlignment"
-        )
-    if type(source.scope) is not UntargetedSearchScope:
-        raise UntargetProjectionContractError(
-            "projection source must use an Untargeted SearchScope"
-        )
-    if result.processing_request is not source.processing_request:
-        raise UntargetProjectionContractError(
-            "projection crossed its exact processing request"
-        )
-    expected_samples = tuple(source.canonical_samples)
-    if result.canonical_samples != expected_samples:
-        raise UntargetProjectionContractError(
-            "projection crossed its canonical sample universe"
-        )
-    if result.final_population != tuple(source.final_population):
-        raise UntargetProjectionContractError(
-            "projection crossed its finalized group population"
-        )
-    if result.lineage != tuple(source.lineage):
-        raise UntargetProjectionContractError(
-            "projection lost finalized group lineage"
-        )
-    if type(result.row_keys) is not tuple or type(result.cell_subjects) is not tuple:
-        raise UntargetProjectionContractError(
-            "pre-cell projection collections must be immutable tuples"
-        )
-    _validate_row_key_population(result.row_keys)
-    population = result.final_population
-    try:
-        _validate_request_bindings(
-            receipt=source.final_cross_sample_receipt,
-            finalized_alignment=source,
-            processing_request_id=result.processing_request_id,
-        )
-        validate_cross_sample_group_population(population)
-    except (TypeError, ValueError) as exc:
-        raise UntargetProjectionContractError(str(exc)) from exc
-    expected_groups = tuple(
-        sorted(population, key=lambda group: group.group_hypothesis_id)
-    )
-    expected_rows = tuple(
-        _mint_untarget_row_key(group) for group in expected_groups
-    )
-    if result.row_keys != expected_rows:
-        raise UntargetProjectionContractError(
-            "projection row-key population is missing, duplicated, or crossed"
-        )
-    expected_cells = _build_cell_subjects(
-        groups=expected_groups,
-        samples=expected_samples,
-        rows=expected_rows,
-    )
-    if result.cell_subjects != expected_cells:
-        raise UntargetProjectionContractError(
-            "projection Group×sample population is missing, duplicated, or crossed"
-        )
 
 
 __all__ = (

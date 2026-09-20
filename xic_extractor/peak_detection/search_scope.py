@@ -688,6 +688,7 @@ def _validate_untargeted_capture_bindings(
 @dataclass(frozen=True, slots=True)
 class _BatchCaptureIndex:
     subject_ids: tuple[str, ...]
+    subject_positions: Mapping[str, int]
     subjects_by_id: Mapping[str, CidNlMethodSubject]
     memberships_by_subject: Mapping[str, tuple[tuple[str, str], ...]]
 
@@ -703,6 +704,12 @@ def _request_batch_capture_index(
         memberships.setdefault(membership[1], []).append(membership)
     return _BatchCaptureIndex(
         subject_ids=tuple(subject.method_subject_id for subject in batch.subjects),
+        subject_positions=MappingProxyType(
+            {
+                subject.method_subject_id: position
+                for position, subject in enumerate(batch.subjects)
+            }
+        ),
         subjects_by_id=MappingProxyType(
             {subject.method_subject_id: subject for subject in batch.subjects}
         ),
@@ -722,9 +729,7 @@ def _untargeted_batch_view_memberships(
     provider_subject_ids = tuple(
         provider.method_subject_id for provider in providers
     )
-    parent_positions = {
-        subject_id: position for position, subject_id in enumerate(index.subject_ids)
-    }
+    parent_positions = index.subject_positions
     if (
         not providers
         or any(provider.provider_id != CID_NL_PROVIDER_ID for provider in providers)
@@ -741,24 +746,28 @@ def _untargeted_batch_view_memberships(
             "Untargeted SearchScope evidence providers must match the request "
             "subject batch or one exact compatible subject workset"
         )
-    if provider_subject_ids != index.subject_ids:
-        try:
-            validate_cid_nl_alignment_subject_workset(
-                tuple(
-                    index.subjects_by_id[subject_id]
-                    for subject_id in provider_subject_ids
-                )
+    if provider_subject_ids == index.subject_ids:
+        return batch.candidate_memberships
+    try:
+        validate_cid_nl_alignment_subject_workset(
+            tuple(
+                index.subjects_by_id[subject_id]
+                for subject_id in provider_subject_ids
             )
-        except CidNlMethodSubjectContractError as exc:
-            raise SearchScopeContractError(
-                "Untargeted SearchScope evidence providers must match the request "
-                f"subject batch or one exact compatible subject workset: {exc}"
-            ) from exc
-    included_subject_ids = frozenset(provider_subject_ids)
+        )
+    except CidNlMethodSubjectContractError as exc:
+        raise SearchScopeContractError(
+            "Untargeted SearchScope evidence providers must match the request "
+            f"subject batch or one exact compatible subject workset: {exc}"
+        ) from exc
+    # Memberships are canonically ordered by candidate ID, independent of subject
+    # order. Only merge the requested workset's already-indexed memberships.
     return tuple(
-        membership
-        for membership in batch.candidate_memberships
-        if membership[1] in included_subject_ids
+        sorted(
+            membership
+            for subject_id in provider_subject_ids
+            for membership in index.memberships_by_subject[subject_id]
+        )
     )
 
 

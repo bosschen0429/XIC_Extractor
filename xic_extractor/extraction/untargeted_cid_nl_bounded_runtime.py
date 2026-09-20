@@ -46,6 +46,7 @@ from xic_extractor.execution_runtime_owner import (
     execute_runtime_attempt,
     mint_work_unit_settlement,
 )
+from xic_extractor.execution_settings import DEFAULT_ALIGNMENT_WORKERS
 from xic_extractor.extraction.untargeted_cid_nl_production_batch import (
     UntargetedCidNlPersistedPartition,
     UntargetedCidNlProductionBatch,
@@ -106,7 +107,7 @@ class CidNlPartitionPipelineAdapter:
         alignment_config: AlignmentConfig,
         known_istd_reference: KnownIstdReference | None = None,
         max_partition_jobs: int = 100_000,
-        raw_workers: int = 1,
+        raw_workers: int = DEFAULT_ALIGNMENT_WORKERS,
         raw_worker_backend: str = "thread",
     ) -> None:
         self._plan = plan
@@ -499,7 +500,7 @@ def execute_bounded_untargeted_cid_nl(
     progress_callback: Callable[[Mapping[str, object]], None] | None = None,
     known_istd_reference: KnownIstdReference | None = None,
     max_partition_jobs: int = 100_000,
-    raw_workers: int = 1,
+    raw_workers: int = DEFAULT_ALIGNMENT_WORKERS,
     raw_worker_backend: str = "thread",
     should_cancel: Callable[[], bool] | None = None,
     retain_partition_memory: bool = False,

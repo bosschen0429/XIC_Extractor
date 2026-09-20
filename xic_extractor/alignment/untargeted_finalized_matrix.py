@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal, cast
 
@@ -32,6 +32,9 @@ if TYPE_CHECKING:
     )
     from xic_extractor.alignment.owner_backfill import (
         OwnerBackfillPeakFactObservation,
+    )
+    from xic_extractor.alignment.result.application_result import (
+        FinalizedUntargetApplicationResult,
     )
 
 PRESENTATION_FORMULA_VERSION = "cross_sample_owner_arithmetic_mean"
@@ -96,15 +99,13 @@ class CompletedUntargetBatchWriterInputs:
 
 def project_completed_untarget_batch_writer_inputs(
     completed: CompletedUntargetBatchWorkflowResult,
+    *,
+    consume_child: Callable[[FinalizedUntargetApplicationResult], None] | None = None,
 ) -> CompletedUntargetBatchWriterInputs:
-    """Translate one successful finalized batch without rerunning decisions."""
+    """Project the batch and share each loaded child with an output consumer."""
 
     if type(completed) is not CompletedUntargetBatchWorkflowResult:
         raise TypeError("writer projection requires a completed Untarget batch")
-    from xic_extractor.alignment.cell_decision.owner import (
-        validate_production_cell_decision,
-    )
-
     application = completed.application_result
     canonical_samples = tuple(application.canonical_samples)
     injection_orders = tuple(
@@ -146,8 +147,6 @@ def project_completed_untarget_batch_writer_inputs(
             seen_group_ids.add(group_id)
 
             closed_decisions = tuple(projected.decisions)
-            for owner_decision in closed_decisions:
-                validate_production_cell_decision(owner_decision)
             decisions_by_sample = {
                 (
                     owner_decision.subject.canonical_sample.metadata.raw_stem
@@ -239,6 +238,8 @@ def project_completed_untarget_batch_writer_inputs(
                 owner_counts=projected.counts,
                 route_reason=projected.route.reason,
             )
+        if consume_child is not None:
+            consume_child(child)
 
     matrix = AlignmentMatrix(
         clusters=tuple(rows),

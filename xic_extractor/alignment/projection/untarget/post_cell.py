@@ -7,9 +7,6 @@ from collections.abc import Callable, Sequence
 from dataclasses import InitVar, dataclass, field, fields
 from typing import TYPE_CHECKING, Literal, TypeAlias, cast
 
-from xic_extractor.alignment._completion_receipt import (
-    retained_owner_digest,
-)
 from xic_extractor.alignment.cross_sample_peak_groups import (
     CrossSampleGroupDisposition,
     CrossSampleLineageEdge,
@@ -162,7 +159,6 @@ class UntargetPostCellRow:
             raise UntargetProjectionContractError(
                 "post-cell row must be minted by its owner entry point"
             )
-        _validate_post_cell_row(self)
 
 
 @dataclass(frozen=True, slots=True)
@@ -183,7 +179,6 @@ class UntargetPostCellProjection:
             raise UntargetProjectionContractError(
                 "post-cell projection must be minted by its owner entry point"
             )
-        _validate_post_cell_projection(self)
         object.__setattr__(
             self,
             "_completion_seal",
@@ -205,7 +200,7 @@ class UntargetPostCellProjection:
         return (self.pre_cell_projection, self.rows)
 
     def __setstate__(self, state: tuple[object, ...]) -> None:
-        """Rebind the completion seal to the restored owner graph."""
+        """Restore direct bindings from the private same-process spool."""
         if (
             hasattr(self, "_completion_seal")
             or type(state) is not tuple
@@ -243,26 +238,28 @@ def project_untarget_post_cell(
     pre_cell_projection: UntargetPreCellProjection,
     decisions: Sequence[ProductionCellDecision],
 ) -> UntargetPostCellProjection:
-    """Close exact Untarget rows over one complete #308 Group decision set."""
+    """Bind owner decisions once to their exact projection subjects and rows.
 
-    _validate_pre_cell_projection(pre_cell_projection)
+    The decision owner has already selected and sealed each payload. Deep
+    reconstruction is reserved for the explicit projection audit entry point.
+    """
+
+    if type(pre_cell_projection) is not UntargetPreCellProjection:
+        raise UntargetProjectionContractError(
+            "post-cell projection requires an exact UntargetPreCellProjection"
+        )
     ordered_decisions = _bind_exact_decisions(
         pre_cell_projection,
         decisions=decisions,
     )
-    decision_by_subject_id = {
-        cast(GroupCellSubject, item.subject).subject_id: item
-        for item in ordered_decisions
-    }
+    decisions_by_row: dict[str, list[ProductionCellDecision]] = {}
+    for decision in ordered_decisions:
+        row_id = cast(GroupCellSubject, decision.subject).row_key.untarget_row_key_id
+        decisions_by_row.setdefault(row_id, []).append(decision)
     rows = tuple(
         _mint_post_cell_row(
             row_key,
-            subjects=tuple(
-                subject
-                for subject in pre_cell_projection.cell_subjects
-                if subject.row_key is row_key
-            ),
-            decision_by_subject_id=decision_by_subject_id,
+            decisions=tuple(decisions_by_row.get(row_key.untarget_row_key_id, ())),
         )
         for row_key in pre_cell_projection.row_keys
     )
@@ -322,17 +319,8 @@ def _untarget_completion_state(
 ) -> tuple[object, ...]:
     return (
         id(projection),
-        retained_owner_digest(
-            projection.pre_cell_projection,
-            identity_only=(
-                projection.pre_cell_projection.finalized_alignment,
-                projection.pre_cell_projection.processing_request,
-            ),
-        ),
-        retained_owner_digest(
-            projection.rows,
-            identity_only=(projection.pre_cell_projection.processing_request,),
-        ),
+        id(projection.pre_cell_projection),
+        id(projection.rows),
     )
 
 
@@ -361,64 +349,45 @@ def _bind_exact_decisions(
         raise UntargetProjectionContractError(
             "Group decisions must be one finite complete population"
         ) from exc
-    owner_subjects = tuple(projection.cell_subjects)
-    owner_by_id = {item.subject_id: item for item in owner_subjects}
-    if len(owner_by_id) != len(owner_subjects):
-        raise UntargetProjectionContractError(
-            "Untarget pre-cell projection contains duplicate subjects"
-        )
-
-    decision_type, validate_decision = _decision_contract()
-    by_subject_id: dict[str, ProductionCellDecision] = {}
+    # Subjects are private-minted by pre_cell. Exact object binding is sufficient;
+    # reserializing their semantic IDs would repeat the upstream identity work.
+    owner_subjects = projection.cell_subjects
+    owner_ids = {id(item) for item in owner_subjects}
+    decision_type, _validate_decision = _decision_contract()
+    by_subject: dict[int, ProductionCellDecision] = {}
     for decision in requested:
         if type(decision) is not decision_type:
             raise UntargetProjectionContractError(
                 "post-cell projection requires exact ProductionCellDecision values"
             )
-        try:
-            validate_decision(decision)
-        except (TypeError, ValueError) as exc:
-            raise UntargetProjectionContractError(str(exc)) from exc
         subject = decision.subject
         if type(subject) is not GroupCellSubject:
             raise UntargetProjectionContractError(
                 "Untarget post-cell decision crossed the Target subject lane"
             )
-        subject_id = subject.subject_id
-        owner_subject = owner_by_id.get(subject_id)
-        if owner_subject is None:
+        owner_id = id(subject)
+        if owner_id not in owner_ids:
             raise UntargetProjectionContractError(
-                "Group decision is crossed or extra for this projection"
+                "Group decision crossed or substituted its exact projection subject"
             )
-        if subject is not owner_subject:
-            raise UntargetProjectionContractError(
-                "Group decision substituted its exact #307 subject"
-            )
-        if subject_id in by_subject_id:
+        if owner_id in by_subject:
             raise UntargetProjectionContractError(
                 "Group decision population contains a duplicate subject"
             )
-        by_subject_id[subject_id] = decision
+        by_subject[owner_id] = decision
 
-    missing = tuple(
-        subject_id for subject_id in owner_by_id if subject_id not in by_subject_id
-    )
-    if missing or len(requested) != len(owner_subjects):
+    if len(requested) != len(owner_subjects):
         raise UntargetProjectionContractError(
             "Group decision population is missing, partial, or extra"
         )
-    return tuple(by_subject_id[item.subject_id] for item in owner_subjects)
+    return tuple(by_subject[id(item)] for item in owner_subjects)
 
 
 def _mint_post_cell_row(
     row_key: UntargetRowKey,
     *,
-    subjects: tuple[GroupCellSubject, ...],
-    decision_by_subject_id: dict[str, ProductionCellDecision],
+    decisions: tuple[ProductionCellDecision, ...],
 ) -> UntargetPostCellRow:
-    decisions = tuple(
-        decision_by_subject_id[subject.subject_id] for subject in subjects
-    )
     return UntargetPostCellRow(
         row_key=row_key,
         decisions=decisions,

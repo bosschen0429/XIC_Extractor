@@ -1,3 +1,4 @@
+from contextlib import contextmanager, nullcontext
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
@@ -124,7 +125,7 @@ def test_pure_cid_nl_wrapper_reports_retained_route_and_typed_handoff(
     monkeypatch.setattr(
         pipeline_module,
         "project_completed_untarget_batch_writer_inputs",
-        lambda value: writer_inputs if value is completed else pytest.fail(),
+        lambda value, **_kwargs: writer_inputs if value is completed else pytest.fail(),
     )
 
     def write_outputs(*_args: object, **kwargs: object) -> None:
@@ -137,19 +138,26 @@ def test_pure_cid_nl_wrapper_reports_retained_route_and_typed_handoff(
 
     report = tmp_path / "out" / "cid_nl_explanation.sqlite"
 
-    def write_explanation(path: Path, **kwargs: object) -> Path:
+    @contextmanager
+    def prepare_explanation(path: Path, **kwargs: object):
         assert kwargs["completed"] is completed
-        assert kwargs["writer_inputs"] is writer_inputs
-        assert kwargs["matrix_path"].read_text(encoding="utf-8") == "Mz\tRT\tS1\n"
         assert kwargs["known_istd_reference_provenance"] == (
-            reference.explanation_provenance if with_reference else None
+            reference.explanation_provenance
+            if with_reference and not writer_fails
+            else None
         )
-        path.write_text("published", encoding="utf-8")
-        return path
+
+        def finalize(inputs, matrix_path: Path) -> Path:
+            assert inputs is writer_inputs
+            assert matrix_path.read_text(encoding="utf-8") == "Mz\tRT\tS1\n"
+            path.write_text("published", encoding="utf-8")
+            return path
+
+        yield SimpleNamespace(consume_child=lambda _child: None, finalize=finalize)
 
     monkeypatch.setattr(pipeline_module, "_write_outputs_atomic", write_outputs)
     monkeypatch.setattr(
-        pipeline_module, "write_cid_nl_explanation", write_explanation, raising=False
+        pipeline_module, "prepare_alignment_explanation", prepare_explanation
     )
 
     if writer_fails:
@@ -267,7 +275,7 @@ def test_pure_cid_nl_cancellation_during_projection_skips_publication(
         lambda **_kwargs: completed,
     )
 
-    def project(value: object) -> object:
+    def project(value: object, **_kwargs: object) -> object:
         assert value is completed
         return writer_inputs
 
@@ -275,6 +283,10 @@ def test_pure_cid_nl_cancellation_during_projection_skips_publication(
         pipeline_module,
         "project_completed_untarget_batch_writer_inputs",
         project,
+    )
+    monkeypatch.setattr(
+        pipeline_module, "prepare_alignment_explanation",
+        lambda *_args, **_kwargs: nullcontext(SimpleNamespace(consume_child=None)),
     )
     monkeypatch.setattr(
         pipeline_module,
@@ -410,7 +422,7 @@ def test_pure_cid_nl_projection_failure_publishes_no_owned_outputs(
         lambda **_kwargs: completed,
     )
 
-    def reject_projection(value: object) -> object:
+    def reject_projection(value: object, **_kwargs: object) -> object:
         assert value is completed
         raise ValueError("invalid finalized projection")
 
@@ -418,6 +430,10 @@ def test_pure_cid_nl_projection_failure_publishes_no_owned_outputs(
         pipeline_module,
         "project_completed_untarget_batch_writer_inputs",
         reject_projection,
+    )
+    monkeypatch.setattr(
+        pipeline_module, "prepare_alignment_explanation",
+        lambda *_args, **_kwargs: nullcontext(SimpleNamespace(consume_child=None)),
     )
 
     with pytest.raises(ValueError, match="invalid finalized projection"):
@@ -434,6 +450,191 @@ def test_pure_cid_nl_projection_failure_publishes_no_owned_outputs(
     assert not (output_dir / "alignment_matrix.tsv").exists()
     assert not (output_dir / "alignment_results.xlsx").exists()
     assert not (output_dir / "review_report.html").exists()
+
+
+@pytest.mark.parametrize("failure", (None, "projection", "matrix"))
+def test_pipeline_streams_partition_children_once_and_cleans_up(
+    tmp_path,
+    monkeypatch,
+    failure,
+):
+    import gc
+    import sqlite3
+
+    from tests.runtime_telemetry_fixtures import (
+        build_runtime_telemetry_samples_from_coordinator,
+    )
+    from tests.test_untargeted_cid_nl_bounded_runtime import _plan
+    from xic_extractor.alignment.result.application_result import (
+        FinalizedUntargetApplicationResult,
+    )
+    from xic_extractor.alignment.tsv_writer import write_alignment_matrix_tsv
+    from xic_extractor.diagnostics.alignment_explanation import (
+        read_alignment_explanation,
+    )
+    from xic_extractor.diagnostics.alignment_explanation_projection import (
+        write_alignment_explanation,
+    )
+    from xic_extractor.execution_engine.streamed_result_store import StreamedResultStore
+    from xic_extractor.execution_runtime_marker import OwnerPathRuntimeMarker
+    from xic_extractor.extraction.untargeted_cid_nl_bounded_runtime import (
+        execute_bounded_untargeted_cid_nl,
+    )
+
+    plan, _ = _plan(tmp_path, monkeypatch)
+    config = AlignmentConfig(anchor_min_seed_events=1)
+    completed = execute_bounded_untargeted_cid_nl(
+        plan,
+        output_dir=tmp_path / "runtime",
+        alignment_config=config,
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+        recovery_marker=OwnerPathRuntimeMarker(
+            tmp_path / "runtime.json", "output-test"
+        ),
+        max_partition_jobs=4,
+        retain_partition_memory=False,
+    )
+    assert len(completed.application_result.children) == 3
+    candidates = plan.context.candidates_by_sample
+    output_dir = tmp_path / "out"
+    output_dir.mkdir()
+    matrix_path = output_dir / "alignment_matrix.tsv"
+    report_path = output_dir / "cid_nl_explanation.sqlite"
+    reference = tmp_path / "reference.sqlite"
+
+    def rows(path):
+        with sqlite3.connect(path) as connection:
+            return {
+                table: sorted(connection.execute(f"SELECT * FROM {table}").fetchall())
+                for table in (
+                    "metadata",
+                    "candidates",
+                    "records",
+                    "links",
+                    "curve_payloads",
+                )
+            }
+
+    if failure is None:
+        writer = pipeline_module.project_completed_untarget_batch_writer_inputs(
+            completed
+        )
+        write_alignment_matrix_tsv(
+            matrix_path,
+            writer.matrix,
+            alignment_config=config,
+            production_decisions=writer.production_decisions,
+        )
+        matrix_bytes = matrix_path.read_bytes()
+        write_alignment_explanation(
+            reference,
+            completed=completed,
+            writer_inputs=writer,
+            candidates_by_sample=candidates,
+            matrix_path=matrix_path,
+            alignment_config=config,
+        )
+        matrix_path.unlink()
+
+    batch_index = _write_batch(tmp_path, tuple(candidates))
+    batch = pipeline_module.read_discovery_batch_index(
+        batch_index, require_owner_closure=True
+    )
+    candidate_inputs = {
+        batch.candidate_csvs[stem]: values for stem, values in candidates.items()
+    }
+    monkeypatch.setattr(
+        pipeline_module,
+        "read_owner_bound_discovery_candidates_csv",
+        lambda path, **_kwargs: candidate_inputs[path],
+    )
+    monkeypatch.setattr(
+        pipeline_module,
+        "complete_untargeted_cid_nl_alignment",
+        lambda **_kwargs: completed,
+    )
+    restored_ids = set()
+    restores = 0
+    read_record = StreamedResultStore._read_record
+
+    def live_children():
+        gc.collect()
+        return sum(
+            id(value) in restored_ids
+            and type(value) is FinalizedUntargetApplicationResult
+            for value in gc.get_objects()
+        )
+
+    def counted_read(store, *args):
+        nonlocal restores
+        # The preceding loop item may still be live; earlier partitions must be gone.
+        assert live_children() <= 1
+        values = read_record(store, *args)
+        for value in values:
+            if type(value) is FinalizedUntargetApplicationResult:
+                restores += 1
+                restored_ids.add(id(value))
+        return values
+
+    monkeypatch.setattr(StreamedResultStore, "_read_record", counted_read)
+
+    if failure == "projection":
+        project = pipeline_module.project_completed_untarget_batch_writer_inputs
+
+        def fail_projection(*args, **kwargs):
+            project(*args, **kwargs)
+            raise OSError("projection failed")
+
+        monkeypatch.setattr(
+            pipeline_module,
+            "project_completed_untarget_batch_writer_inputs",
+            fail_projection,
+        )
+    elif failure == "matrix":
+
+        def fail_matrix(*_args, **_kwargs):
+            raise OSError("matrix failed")
+
+        monkeypatch.setattr(pipeline_module, "_write_outputs_atomic", fail_matrix)
+
+    def run():
+        return pipeline_module.run_alignment(
+            discovery_batch_index=batch_index,
+            raw_dir=tmp_path,
+            dll_dir=tmp_path,
+            output_dir=output_dir,
+            alignment_config=config,
+            peak_config=_peak_config(),
+            discovery_settings=_settings(),
+        )
+
+    try:
+        if failure is None:
+            result = run()
+            assert result.evidence.report_path == report_path
+            assert matrix_path.read_bytes() == matrix_bytes
+            assert rows(report_path) == rows(reference)
+            assert read_alignment_explanation(
+                report_path
+            ) == read_alignment_explanation(reference)
+            for values in candidates.values():
+                for candidate in values:
+                    assert read_alignment_explanation(
+                        report_path,
+                        candidate_id=candidate.candidate_id,
+                    ) == read_alignment_explanation(
+                        reference, candidate_id=candidate.candidate_id
+                    )
+        else:
+            with pytest.raises(OSError, match=f"{failure} failed"):
+                run()
+            assert not matrix_path.exists()
+            assert not report_path.exists()
+        assert restores == 3
+        assert not report_path.with_name(report_path.name + ".tmp").exists()
+        assert live_children() == 0
+    finally:
+        completed.close()
 
 
 def test_pipeline_rejects_profile_config_conflict_before_read_or_raw(
@@ -625,7 +826,7 @@ def test_pure_cid_nl_targets_csv_integration(
     monkeypatch.setattr(
         pipeline_module,
         "project_completed_untarget_batch_writer_inputs",
-        lambda _value: writer_inputs,
+        lambda _value, **_kwargs: writer_inputs,
     )
     monkeypatch.setattr(
         pipeline_module,
@@ -634,9 +835,10 @@ def test_pure_cid_nl_targets_csv_integration(
     )
     monkeypatch.setattr(
         pipeline_module,
-        "write_cid_nl_explanation",
-        lambda *_args, **_kwargs: tmp_path / "out" / "cid_nl_explanation.sqlite",
-        raising=False,
+        "prepare_alignment_explanation",
+        lambda path, **_kwargs: nullcontext(SimpleNamespace(
+            consume_child=None, finalize=lambda _inputs, _matrix: path,
+        )),
     )
     (tmp_path / "out").mkdir(parents=True, exist_ok=True)
 

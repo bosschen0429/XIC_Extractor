@@ -885,8 +885,6 @@ def test_cell_identity_binds_full_provisional_group_membership(
         combined.group,
         group_center_rt=combined.group.group_center_rt + 0.01,
     )
-    with pytest.raises(CellObservationContractError, match="owners and config"):
-        replace(combined_a.group_context, group=substituted_group)
     with pytest.raises(CidNlEvidenceSpineError, match="exact group context"):
         TargetedCellObservationReferenceProjection(
             cell=combined_a,

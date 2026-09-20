@@ -21,6 +21,7 @@ from xic_extractor.alignment.hypothesis_owner_adapter import (
 )
 from xic_extractor.config import ExtractionConfig
 from xic_extractor.peak_detection import capture as capture_owner
+from xic_extractor.peak_detection import search_scope as scope_owner
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlEvaluationReceipt,
     mint_cid_nl_method_assessment_ref,
@@ -31,6 +32,10 @@ from xic_extractor.peak_detection.cid_nl_method_subject import (
     cid_nl_method_subject_from_target,
     mint_untargeted_cid_nl_method_subject,
     mint_untargeted_cid_nl_method_subject_batch,
+)
+from xic_extractor.peak_detection.physical_peak_evaluation import (
+    evaluate_physical_peak,
+    prepare_physical_signal,
 )
 from xic_extractor.peak_detection.search_scope import (
     SEARCH_SCOPE_SCHEMA_VERSION,
@@ -43,6 +48,9 @@ from xic_extractor.peak_detection.search_scope import (
     UntargetedSearchScope,
     require_capture_binding,
     scope_allows_evidence_inspection,
+)
+from xic_extractor.peak_detection.signal_processing_profile import (
+    SignalProcessingProfile,
 )
 from xic_extractor.peak_detection.traces import Trace
 from xic_extractor.processing_identity import (
@@ -823,14 +831,45 @@ def test_untargeted_batch_scope_accepts_one_exact_compatible_subject_workset(
         for binding in bindings
         if binding.method_subject_id in workset_subject_ids
     )
-    workset_scope = replace(
-        parent_scope,
-        evidence_providers=workset_providers,
-        declared_candidate_ids=tuple(
-            binding.candidate_id for binding in workset_bindings
-        ),
-        capture_bindings=workset_bindings,
+    # The parent owner has already validated and indexed its immutable population.
+    # Instrument iteration without changing any values to reject per-child rescans.
+    visited = {"subjects": 0, "memberships": 0}
+
+    class CountedTuple(tuple):
+        def __new__(cls, values, field):
+            result = super().__new__(cls, values)
+            result.field = field
+            return result
+
+        def __iter__(self):
+            for value in super().__iter__():
+                visited[self.field] += 1
+                yield value
+
+    index = scope_owner._request_batch_capture_index(request)
+    pinned = scope_owner.cid_nl_method_subjects_from_request(request)
+    parent_subject_ids = index.subject_ids
+    parent_memberships = pinned.candidate_memberships
+    object.__setattr__(
+        index, "subject_ids", CountedTuple(parent_subject_ids, "subjects")
     )
+    object.__setattr__(
+        pinned, "candidate_memberships", CountedTuple(parent_memberships, "memberships")
+    )
+    try:
+        workset_scope = replace(
+            parent_scope,
+            evidence_providers=workset_providers,
+            declared_candidate_ids=tuple(
+                binding.candidate_id for binding in workset_bindings
+            ),
+            capture_bindings=workset_bindings,
+        )
+    finally:
+        object.__setattr__(index, "subject_ids", parent_subject_ids)
+        object.__setattr__(pinned, "candidate_memberships", parent_memberships)
+
+    assert visited == {"subjects": 0, "memberships": 0}
 
     assert len(workset_scope.evidence_providers) == 2
     assert len(workset_scope.evidence_providers) < len(parent_scope.evidence_providers)
@@ -1030,6 +1069,167 @@ def test_owner_binding_rejects_observation_from_other_capture_trace(
             observation=observation,
             hypothesis=hypothesis,
         )
+
+
+def test_physical_capture_projects_trace_identity_once_across_mint_and_bind(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import json
+
+    from xic_extractor.peak_detection import physical_peak_evaluation as physical_owner
+    from xic_extractor.peak_detection import physical_peak_identity as physical_identity
+    from xic_extractor.peak_detection.peak_hypothesis_identity import (
+        compose_ms1_observation_peak_hypothesis,
+    )
+    from xic_extractor.peak_detection.search_scope import (
+        PHYSICAL_CAPTURE_INPUT_KEY,
+        physical_capture_input_payload,
+    )
+    from xic_extractor.processing_identity import (
+        build_processing_request_identity,
+        compose_processing_owner_references,
+        issue_processing_attempt,
+    )
+
+    fixture = build_untargeted_cid_nl_no_raw_fixture(
+        tmp_path,
+        sample_roles={"S1": "study_sample"},
+    )
+    sample = fixture.sample("S1")
+    method_subject = fixture.method_subject
+    source = resolve_request_acquisition_source(
+        processing_owners=fixture.owners,
+        sample=sample,
+    )
+    rt = np.linspace(7.7, 8.3, 61)
+    intensity = 100.0 * np.exp(-0.5 * ((rt - 8.0) / 0.06) ** 2)
+    profile = SignalProcessingProfile(window_points=15)
+    prepared = prepare_physical_signal(rt, intensity, profile=profile)
+    evaluation = evaluate_physical_peak(
+        prepared,
+        selection_subject_id=method_subject.method_subject_id,
+        query_rt_min=8.0,
+        request_context_rt_start_min=float(rt[0]),
+        request_context_rt_end_min=float(rt[-1]),
+    )
+    binding = replace(
+        _capture_binding(
+            candidate_id="candidate-a",
+            method_subject_id=method_subject.method_subject_id,
+            sample=sample,
+            acquisition_source_id=source.acquisition_source_id,
+            mz=method_subject.precursor_mz,
+            ppm_tol=method_subject.precursor_tolerance_ppm,
+            rt_min=float(rt[0]),
+            rt_max=float(rt[-1]),
+        ),
+        physical_evaluation=evaluation,
+    )
+    old_request = fixture.owners.request
+    request = build_processing_request_identity(
+        acquisition_sources=old_request.acquisition_sources,
+        acquisition_bindings=old_request.acquisition_bindings,
+        scientific_input_schema_version=old_request.scientific_input_schema_version,
+        processing_algorithm_version=old_request.processing_algorithm_version,
+        processing_contract_version=old_request.processing_contract_version,
+        scientific_inputs=json.loads(old_request.normalized_scientific_inputs_json)
+        | {
+            PHYSICAL_CAPTURE_INPUT_KEY: physical_capture_input_payload(
+                profile,
+                {binding.candidate_id: evaluation},
+            )
+        },
+    )
+    owners = compose_processing_owner_references(
+        request=request,
+        attempt=issue_processing_attempt(request),
+        sample_snapshot=fixture.owners.sample_snapshot,
+        sample_resolutions=fixture.samples,
+    )
+    scope = UntargetedSearchScope(
+        schema_version=SEARCH_SCOPE_SCHEMA_VERSION,
+        request=request,
+        samples=fixture.samples,
+        method_constraints=CaptureMethodConstraints(
+            boundary_policy="resolver_interval",
+            peak_config=_peak_config(tmp_path),
+            signal_processing_profile=profile,
+        ),
+        evidence_providers=(
+            EvidenceProviderBinding(
+                provider_id=CID_NL_PROVIDER_ID,
+                method_subject_id=method_subject.method_subject_id,
+            ),
+        ),
+        declared_candidate_ids=(binding.candidate_id,),
+        capture_bindings=(binding,),
+    )
+    trace_hashes = 0
+    projections = 0
+    real_trace_hash = physical_owner.mint_physical_trace_content_id
+    real_projection = capture_owner._project_peak_observation_values
+
+    def count_trace_hash(*args, **kwargs):
+        nonlocal trace_hashes
+        trace_hashes += 1
+        return real_trace_hash(*args, **kwargs)
+
+    def count_projection(**kwargs):
+        nonlocal projections
+        projections += 1
+        return real_projection(**kwargs)
+
+    monkeypatch.setattr(
+        physical_owner,
+        "mint_physical_trace_content_id",
+        count_trace_hash,
+    )
+    monkeypatch.setattr(
+        physical_identity,
+        "mint_physical_trace_content_id",
+        count_trace_hash,
+    )
+    monkeypatch.setattr(
+        capture_owner,
+        "_project_peak_observation_values",
+        count_projection,
+    )
+    capture = capture_owner.capture_peak_hypotheses(
+        scope=scope,
+        candidate_id=binding.candidate_id,
+        trace=Trace.from_arrays(
+            sample_name=sample.metadata.sample_name,
+            mz=binding.query_mz,
+            rt=rt,
+            intensity=intensity,
+            rt_min=binding.query_rt_min,
+            rt_max=binding.query_rt_max,
+            ppm_tol=binding.query_ppm_tol,
+            source="physical-owner",
+            acquisition_source_id=source.acquisition_source_id,
+        ),
+    )
+    observation = capture_owner.mint_captured_peak_observation(
+        capture,
+        processing_owners=owners,
+        sample=sample,
+    )
+    assert capture.selected_hypothesis is not None
+    owner_hypothesis = compose_ms1_observation_peak_hypothesis(
+        processing_owners=owners,
+        sample=sample,
+        peak_observation=observation,
+    )
+    bound = capture_owner.bind_owner_backed_capture_hypothesis(
+        capture,
+        observation=observation,
+        hypothesis=owner_hypothesis,
+    )
+
+    assert bound.selected_hypothesis is owner_hypothesis
+    assert trace_hashes == 1
+    assert projections == 1
 
 
 def test_untargeted_scope_rejects_targeted_request_variant(tmp_path: Path) -> None:

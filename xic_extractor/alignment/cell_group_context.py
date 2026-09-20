@@ -3,20 +3,16 @@
 from __future__ import annotations
 
 import re
-from contextvars import ContextVar
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from typing import Literal, TypeAlias
 
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.cross_sample_peak_groups import (
     CrossSamplePeakGroupHypothesis,
-    construct_cross_sample_peak_group_hypotheses,
-    validate_cross_sample_peak_group_identity,
 )
 from xic_extractor.alignment.edge_scoring import DriftLookupProtocol
 from xic_extractor.alignment.hypothesis_owner_adapter import (
     HypothesisOwnerAdapterError,
-    owner_from_cid_nl_assessment_support,
     validate_cid_nl_assessment_hypothesis_closure,
 )
 from xic_extractor.evidence_artifacts import (
@@ -159,15 +155,9 @@ class CidNlCellGroupContext:
             validate_cid_nl_alignment_subject_compatibility(self.method_subjects)
         except CidNlMethodSubjectContractError as exc:
             raise CellObservationContractError(str(exc)) from exc
-        expected_owners = tuple(
-            owner_from_cid_nl_assessment_support(
-                sample=support.sample,
-                assessment=support.assessment,
-                hypothesis=support.hypothesis,
-            )
-            for support in self.supports
+        expected_owner_ids = tuple(
+            support.hypothesis.hypothesis_id for support in self.supports
         )
-        expected_owner_ids = tuple(owner.owner_id for owner in expected_owners)
         if len(set(expected_owner_ids)) != len(self.supports):
             raise CellObservationContractError(
                 "group SUPPORT closures contain duplicate hypotheses"
@@ -176,25 +166,43 @@ class CidNlCellGroupContext:
             self.supports,
             producer_attempt=self.processing_attempt,
         )
-        expected_groups = construct_cross_sample_peak_group_hypotheses(
-            expected_owners,
-            config=self.config,
-            drift_lookup=self.drift_lookup,
-            sample_universe=self.sample_universe,
-            injection_order=(
-                None if self.injection_order is None else dict(self.injection_order)
-            ),
-        )
-        validate_cross_sample_peak_group_identity(self.group, require_canonical=True)
-        # Public family ordinals belong to the complete population's presentation.
         if (
-            len(expected_groups) != 1
-            or replace(expected_groups[0], public_family_id=self.group.public_family_id)
-            != self.group
+            self.group.processing_request_id
+            != self.processing_attempt.processing_request_id
+            or len(self.group.owner_ids) != len(expected_owner_ids)
+            or frozenset(self.group.owner_ids) != frozenset(expected_owner_ids)
         ):
             raise CellObservationContractError(
-                "group context does not close its exact SUPPORT owners and config"
+                "group context does not bind its exact SUPPORT owners and request"
             )
+        members_by_hypothesis_id = {
+            member.subject_id: member for member in self.group.member_subjects
+        }
+        if len(members_by_hypothesis_id) != len(self.supports):
+            raise CellObservationContractError(
+                "group context does not bind one member subject per SUPPORT"
+            )
+        for support in self.supports:
+            hypothesis = support.hypothesis
+            member = members_by_hypothesis_id.get(hypothesis.hypothesis_id)
+            sample_id = support.sample.identity.sample_identity_id
+            physical_observation_ids = tuple(
+                sorted(
+                    observation.content.peak_observation_content_id
+                    for observation in hypothesis.peak_observation_refs
+                )
+            )
+            if (
+                member is None
+                or member.subject_kind != "peak_hypothesis"
+                or member.processing_request_id
+                != self.processing_attempt.processing_request_id
+                or member.canonical_sample_identity_id != sample_id
+                or member.physical_observation_ids != physical_observation_ids
+            ):
+                raise CellObservationContractError(
+                    "group member subject crossed its SUPPORT owner binding"
+                )
 
     @property
     def method_subjects(self) -> tuple[CidNlMethodSubject, ...]:
@@ -249,11 +257,6 @@ class CidNlCellGroupContext:
                 for support in self.supports
             )
         )
-
-_population_group_context_validation: ContextVar[
-    tuple[dict[int, CidNlCellGroupContext], set[int]] | None
-] = ContextVar("population_group_context_validation", default=None)
-
 
 def _group_support_artifacts(
     supports: tuple[CidNlCellGroupSupport, ...],

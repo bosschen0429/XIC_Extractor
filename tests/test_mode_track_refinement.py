@@ -7,6 +7,120 @@ from dataclasses import replace
 import pytest
 
 
+@pytest.mark.parametrize(
+    "context", ["complete_link", "full_batch_continuity", "targeted_istd_continuity"]
+)
+@pytest.mark.parametrize("reverse", [False, True])
+def test_sparse_initial_pairs_preserve_dense_relevant_edges(context, reverse):
+    import math
+    from itertools import combinations
+
+    from tests.test_alignment_owner_clustering import _DriftLookup, _owner
+    from xic_extractor.alignment import AlignmentConfig
+    from xic_extractor.alignment.cross_sample_neighborhood_graph import (
+        classify_cross_sample_initial_neighborhood_edge,
+        iter_cross_sample_initial_owner_pairs,
+    )
+
+    config = AlignmentConfig()
+    owners = (
+        _owner("a", "base"),
+        _owner("a", "same-sample"),
+        _owner("b", "weak", evidence_score=45, seed_event_count=1),
+        _owner("c", "drift", apex_rt=10.0),
+        _owner("d", "mass", precursor_mz=900.0),
+        _owner("e", "tag", neutral_loss_tag="different"),
+        _owner("f", "conflict", identity_conflict=True),
+        _owner("g", "product", product_mz=390.0),
+        _owner("h", "loss", observed_loss=120.0),
+        _owner("i", "boundary", precursor_mz=500.025),
+        _owner("j", "above", precursor_mz=math.nextafter(500.025, math.inf)),
+        _owner("k", "below", precursor_mz=math.nextafter(500.025, -math.inf)),
+        replace(_owner("l", "physical"), primary_identity_event=None),
+        replace(_owner("m", "physical"), primary_identity_event=None),
+    )
+    if reverse:
+        owners = tuple(reversed(owners))
+    drift = _DriftLookup(
+        deltas={
+            owner.sample_stem: (1.5 if owner.sample_stem == "c" else 0.0)
+            for owner in owners
+        }, orders={},
+    )
+
+    def classify(pair):
+        return classify_cross_sample_initial_neighborhood_edge(
+            left_owner=pair[0], right_owner=pair[1], context=context,
+            config=config, drift_lookup=drift,
+        )
+
+    def relevant(edges):
+        return {
+            (edge.left_member_subject_id, edge.right_member_subject_id): edge
+            for edge in edges if edge.disposition != "excluded"
+        }
+
+    dense = tuple(map(classify, combinations(owners, 2)))
+    pairs = tuple(iter_cross_sample_initial_owner_pairs(
+        owners, config=config, context=context,
+    ))
+    sparse = tuple(map(classify, pairs))
+    assert relevant(sparse) == relevant(dense)
+    assert len(pairs) < len(dense)
+    assert len({(left.owner_id, right.owner_id) for left, right in pairs}) == len(pairs)
+
+
+def test_disjoint_mass_population_never_classifies_cartesian_pairs(monkeypatch):
+    from tests.test_alignment_owner_clustering import _owner
+    from xic_extractor.alignment import AlignmentConfig
+    from xic_extractor.alignment import cross_sample_neighborhood_graph as graph
+
+    owners = tuple(
+        _owner(f"s{index}", "peak", precursor_mz=100.0 + index)
+        for index in range(600)
+    )
+    ppm_calls = 0
+    original = graph._ppm
+
+    def count_ppm(*args):
+        nonlocal ppm_calls
+        ppm_calls += 1
+        return original(*args)
+
+    def no_pair(*args, **kwargs):
+        pytest.fail("disjoint mass windows must not visit hard-gate pairs")
+
+    monkeypatch.setattr(graph, "_ppm", count_ppm)
+    monkeypatch.setattr(graph, "_hard_gate_failure", no_pair)
+    assert tuple(graph.iter_cross_sample_initial_owner_pairs(
+        owners, config=AlignmentConfig(),
+    )) == ()
+    assert ppm_calls <= 2 * len(owners)
+
+
+def test_initial_edge_owner_evaluates_pair_once(monkeypatch):
+    from tests.test_alignment_owner_clustering import _owner
+    from xic_extractor.alignment import AlignmentConfig
+    from xic_extractor.alignment import cross_sample_neighborhood_graph as graph
+
+    calls = 0
+    original = graph.evaluate_owner_edge
+
+    def counted(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(graph, "evaluate_owner_edge", counted)
+    edge = graph.classify_cross_sample_initial_neighborhood_edge(
+        left_owner=_owner("a", "peak"), right_owner=_owner("b", "peak"),
+        context="complete_link", config=AlignmentConfig(),
+    )
+    assert calls == 1
+    with pytest.raises(ValueError, match="disposition contradicts"):
+        replace(edge, disposition="excluded")
+
+
 def _application_context(*, predecessors, edges, budget):
     from xic_extractor.alignment.cross_sample_peak_groups import (
         CrossSampleCoupledProposalContext,
@@ -73,6 +187,11 @@ def test_trajectory_input_identity_ignores_value_only_owner_changes() -> None:
     }
 
     original = mint_mode_track_trajectory_input(owners=owners, **kwargs)
+    disconnected = mint_mode_track_trajectory_input(
+        owners=owners, **{**kwargs, "classified_edges": ()},
+    )
+    assert disconnected.trajectory_input_id != original.trajectory_input_id
+    assert disconnected.eligible_member_pairs == ()
     value_changed = mint_mode_track_trajectory_input(
         owners=tuple(
             replace(
@@ -425,7 +544,8 @@ def test_successor_partition_is_complete_and_order_independent() -> None:
         )
 
 
-def test_accepted_partition_cannot_reopen_excluded_edge() -> None:
+@pytest.mark.parametrize("omit_excluded", [False, True])
+def test_accepted_partition_cannot_reopen_excluded_edge(omit_excluded: bool) -> None:
     from tests.test_alignment_owner_clustering import _owner
     from xic_extractor.alignment import AlignmentConfig
     from xic_extractor.alignment.cross_sample_peak_groups import (
@@ -472,6 +592,8 @@ def test_accepted_partition_cannot_reopen_excluded_edge() -> None:
         "excluded",
         "eligible",
     ]
+    if omit_excluded:
+        edges = tuple(edge for edge in edges if edge.disposition != "excluded")
     trajectory_input = mint_mode_track_trajectory_input(
         predecessors=predecessors,
         owners=owners,

@@ -25,6 +25,9 @@ from xic_extractor.alignment.backfill.observation_repair import (
 )
 from xic_extractor.alignment.backfill_transaction import OwnerBackfillSampleResult
 from xic_extractor.alignment.config import AlignmentConfig
+from xic_extractor.alignment.cross_sample_neighborhood_graph import (
+    iter_cross_sample_initial_owner_pairs,
+)
 from xic_extractor.alignment.cross_sample_peak_groups import (
     CrossSampleClassifiedEdge,
     CrossSampleGroupIdentity,
@@ -76,6 +79,7 @@ from xic_extractor.alignment.cross_sample_reconciliation_models import (
 from xic_extractor.alignment.drift_evidence import KnownIstdReference
 from xic_extractor.alignment.edge_scoring import DriftLookupProtocol
 from xic_extractor.alignment.mode_track.assignment import (
+    ModeTrackCandidateObservation,
     ModeTrackTrajectoryPolicy,
 )
 from xic_extractor.alignment.mode_track.contracts import (
@@ -246,10 +250,15 @@ def build_initial_cid_nl_cross_sample_context(
     trajectory_policy: ModeTrackTrajectoryPolicy,
     drift_lookup: DriftLookupProtocol | None = None,
     known_istd_reference: KnownIstdReference | None = None,
+    retained_hypotheses_by_assessment: Mapping[
+        tuple[str, str], tuple[PeakHypothesis, ...]
+    ]
+    | None = None,
 ) -> tuple[
     FamilyContextRef,
     CrossSamplePostMT0Context,
     tuple[CrossSampleNeighborhoodEdge, ...],
+    tuple[ModeTrackCandidateObservation, ...],
 ]:
     """Close initial CID-NL groups without fitting or assigning ModeTracks."""
 
@@ -285,6 +294,7 @@ def build_initial_cid_nl_cross_sample_context(
             drift_lookup=drift_lookup,
             retain_observation_only_candidates=True,
             known_istd_reference=known_istd_reference,
+            retained_hypotheses_by_assessment=retained_hypotheses_by_assessment,
         )
     )
     groups = family_context.mode_tracks
@@ -324,20 +334,21 @@ def build_initial_cid_nl_cross_sample_context(
     }
     classified_edges = tuple(
         classify_cross_sample_initial_neighborhood_edge(
-            left_owner=owners[left_index],
-            right_owner=owners[right_index],
+            left_owner=left,
+            right_owner=right,
             context=(
                 "full_batch_continuity"
-                if owners[left_index].owner_id in continuity_group_by_owner
-                and continuity_group_by_owner[owners[left_index].owner_id]
-                == continuity_group_by_owner.get(owners[right_index].owner_id)
+                if left.owner_id in continuity_group_by_owner
+                and continuity_group_by_owner[left.owner_id]
+                == continuity_group_by_owner.get(right.owner_id)
                 else "complete_link"
             ),
             config=alignment_config,
             drift_lookup=drift_lookup,
         )
-        for left_index in range(len(owners))
-        for right_index in range(left_index + 1, len(owners))
+        for left, right in iter_cross_sample_initial_owner_pairs(
+            owners, config=alignment_config,
+        )
     )
     injection_order: dict[str, int] = {}
     for sample, candidates in sample_candidates:
@@ -377,7 +388,17 @@ def build_initial_cid_nl_cross_sample_context(
         budget=MODE_TRACK_NEIGHBORHOOD_BUDGET,
     )
     context = replace(context, drift_lookup=drift_lookup)
-    return family_context, context, classified_edges
+    retained_candidates = tuple(
+        sorted(
+            (
+                candidate
+                for _, candidates in sample_candidates
+                for candidate in candidates
+            ),
+            key=lambda candidate: candidate.candidate_observation_id,
+        )
+    )
+    return family_context, context, classified_edges, retained_candidates
 
 
 def _validate_mode_track_run_for_workflow(

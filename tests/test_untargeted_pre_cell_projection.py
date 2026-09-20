@@ -488,7 +488,7 @@ def test_entry_rejects_receipt_crossed_processing_request(
         project_untarget_pre_cell(alignment)
 
 
-def test_entry_revalidates_owner_group_member_closure(
+def test_group_owner_rejects_noncanonical_member_order(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -499,18 +499,8 @@ def test_entry_revalidates_owner_group_member_closure(
     )
     group = alignment.final_population[0]
     assert len(group.member_subjects) > 1
-    original_id = group.group_hypothesis_id
-    original_basis = group.basis_bytes
-    object.__setattr__(
-        group,
-        "member_subjects",
-        tuple(reversed(group.member_subjects)),
-    )
-    assert group.group_hypothesis_id == original_id
-    assert group.basis_bytes == original_basis
-
-    with pytest.raises(UntargetProjectionContractError, match="group|member"):
-        project_untarget_pre_cell(alignment)
+    with pytest.raises(ValueError):
+        replace(group, member_subjects=tuple(reversed(group.member_subjects)))
 
 
 def test_entry_rejects_row_id_collision_with_unequal_basis(
@@ -528,24 +518,18 @@ def test_entry_rejects_row_id_collision_with_unequal_basis(
         project_untarget_pre_cell(alignment)
 
 
-def test_entry_revalidates_nested_member_closure(
+def test_member_owner_rejects_crossed_sample_identity(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     alignment = _finalized_alignment(tmp_path, monkeypatch)
     group = alignment.final_population[0]
     member = group.member_subjects[0]
-    original_group_id = group.group_hypothesis_id
-    original_group_basis = group.basis_bytes
-    object.__setattr__(member, "canonical_sample_identity_id", "forged-sample")
-    assert group.group_hypothesis_id == original_group_id
-    assert group.basis_bytes == original_group_basis
-
-    with pytest.raises(UntargetProjectionContractError, match="member|group"):
-        project_untarget_pre_cell(alignment)
+    with pytest.raises(ValueError):
+        replace(member, canonical_sample_identity_id="forged-sample")
 
 
-def test_entry_revalidates_nested_lineage_closure(
+def test_lineage_owner_rejects_crossed_basis(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -555,12 +539,8 @@ def test_entry_revalidates_nested_lineage_closure(
         group_mode="merged",
     )
     edge = alignment.final_cross_sample_receipt.post_mt0_application.lineage[0]
-    original_edge_id = edge.lineage_edge_id
-    object.__setattr__(edge, "basis_bytes", b"forged-lineage-basis")
-    assert edge.lineage_edge_id == original_edge_id
-
-    with pytest.raises(UntargetProjectionContractError, match="lineage"):
-        project_untarget_pre_cell(alignment)
+    with pytest.raises(ValueError):
+        replace(edge, basis_bytes=b"forged-lineage-basis")
 
 
 def test_row_identity_basis_is_closed_to_request_and_group_identity_only(
@@ -581,25 +561,51 @@ def test_row_identity_basis_is_closed_to_request_and_group_identity_only(
     assert row_key.group_identity_basis_bytes == group.basis_bytes
 
 
-def test_entry_rejects_incomplete_group_sample_population(
+def test_entry_builds_group_sample_population_once(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     alignment = _finalized_alignment(tmp_path, monkeypatch)
     original = projection_owner._build_cell_subjects
     calls = 0
+    scans = []
+    membership_checks = []
 
-    def missing_one(**kwargs):
+    class CountedMembers(tuple):
+        def __iter__(self):
+            scans.append(len(self))
+            return super().__iter__()
+
+        def __contains__(self, value):
+            membership_checks.append(value)
+            return super().__contains__(value)
+
+    original_members = [group.member_subjects for group in alignment.final_population]
+    for group, members in zip(
+        alignment.final_population, original_members, strict=True,
+    ):
+        object.__setattr__(group, "member_subjects", CountedMembers(members))
+
+    def record_build(**kwargs):
         nonlocal calls
         calls += 1
-        subjects = original(**kwargs)
-        return subjects[:-1] if calls == 1 else subjects
+        return original(**kwargs)
 
-    monkeypatch.setattr(projection_owner, "_build_cell_subjects", missing_one)
+    monkeypatch.setattr(projection_owner, "_build_cell_subjects", record_build)
 
-    with pytest.raises(UntargetProjectionContractError, match="Group×sample"):
-        project_untarget_pre_cell(alignment)
-    assert calls >= 2
+    try:
+        projection = project_untarget_pre_cell(alignment)
+    finally:
+        for group, members in zip(
+            alignment.final_population, original_members, strict=True,
+        ):
+            object.__setattr__(group, "member_subjects", members)
+    assert len(projection.cell_subjects) == (
+        len(alignment.final_population) * len(alignment.canonical_samples)
+    )
+    assert calls == 1
+    assert len(scans) == len(alignment.final_population)
+    assert membership_checks == []
 
 
 def test_projection_values_are_immutable_and_direct_result_mint_is_closed(

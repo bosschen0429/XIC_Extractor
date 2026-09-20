@@ -7,10 +7,12 @@ import hashlib
 import json
 from collections import Counter, defaultdict
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence, Sized
-from dataclasses import asdict
+from contextlib import contextmanager
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from xic_extractor.alignment.cross_sample_neighborhood_graph import INITIAL_PAIR_POLICY
 from xic_extractor.diagnostics.alignment_explanation import ExplanationReportWriter
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     cid_nl_method_subject_batch_from_request,
@@ -19,6 +21,9 @@ from xic_extractor.peak_detection.traces import Trace
 
 if TYPE_CHECKING:
     from xic_extractor.alignment.config import AlignmentConfig
+    from xic_extractor.alignment.result.application_result import (
+        FinalizedUntargetApplicationResult,
+    )
     from xic_extractor.alignment.untargeted_finalized_matrix import (
         CompletedUntargetBatchWriterInputs,
     )
@@ -203,6 +208,14 @@ def _emit_curve_payload(
     )
 
 
+@dataclass(frozen=True)
+class PreparedAlignmentExplanation:
+    """Consume owner results now; publish only after the Matrix is available."""
+
+    consume_child: Callable[[FinalizedUntargetApplicationResult], None]
+    finalize: Callable[[CompletedUntargetBatchWriterInputs, Path], Path]
+
+
 def write_cid_nl_explanation(
     path: Path,
     *,
@@ -215,6 +228,30 @@ def write_cid_nl_explanation(
     progress_callback: Callable[[Mapping[str, object]], None] | None = None,
 ) -> Path:
     """Persist exact owner identities, reasons and Matrix publication provenance."""
+    with prepare_alignment_explanation(
+        path,
+        completed=completed,
+        candidates_by_sample=candidates_by_sample,
+        alignment_config=alignment_config,
+        known_istd_reference_provenance=known_istd_reference_provenance,
+        progress_callback=progress_callback,
+    ) as explanation:
+        for child in completed.application_result.children:
+            explanation.consume_child(child)
+        return explanation.finalize(writer_inputs, matrix_path)
+
+
+@contextmanager
+def prepare_alignment_explanation(
+    path: Path,
+    *,
+    completed: CompletedUntargetBatchWorkflowResult,
+    candidates_by_sample: Mapping[str, Sequence[DiscoveryCandidate]],
+    alignment_config: AlignmentConfig,
+    known_istd_reference_provenance: Mapping[str, object] | None = None,
+    progress_callback: Callable[[Mapping[str, object]], None] | None = None,
+) -> Iterator[PreparedAlignmentExplanation]:
+    """Keep one bounded transaction while outputs share the loaded children."""
     with ExplanationReportWriter(path) as sink:
         application = completed.application_result
         request = application.processing_request
@@ -576,7 +613,11 @@ def write_cid_nl_explanation(
                 related,
             )
 
-        for child in phase_items("children", application.children):
+        child_count = 0
+        report_progress("children", 0, len(application.children))
+
+        def consume_child(child: FinalizedUntargetApplicationResult) -> None:
+            nonlocal child_count
             core = child.scientific_core
             for terminal in core.terminal_subjects:
                 key = terminal.candidate_id, terminal.canonical_sample_identity_id
@@ -692,75 +733,105 @@ def write_cid_nl_explanation(
                         },
                         related,
                     )
+            child_count += 1
+            if child_count % 256 == 0:
+                report_progress("children", child_count, len(application.children))
 
-        for group in phase_items("initial_groups", completed.initial_groups):
-            emit_group("initial_groups", group, set())
+        def finalize(
+            writer_inputs: CompletedUntargetBatchWriterInputs, matrix_path: Path
+        ) -> Path:
+            if child_count != len(application.children):
+                raise ValueError("explanation did not consume every finalized child")
+            if child_count % 256:
+                report_progress("children", child_count, len(application.children))
+            for group in phase_items("initial_groups", completed.initial_groups):
+                emit_group("initial_groups", group, set())
 
-        for edge in phase_items("initial_edges", completed.initial_edges):
-            related = (
-                member_candidates[edge.left_member_subject_id]
-                | member_candidates[edge.right_member_subject_id]
-            )
-            add(
-                "initial_edges",
-                _key(edge.left_member_subject_id, edge.right_member_subject_id),
-                {
-                    **_fields(
-                        edge,
-                        "left_member_subject_id",
-                        "right_member_subject_id",
-                        "disposition",
-                    ),
-                    "initial_evidence": asdict(edge.initial_evidence),
-                    "initial_context": edge.initial_context,
-                    "alignment_config": asdict(edge.config),
+            for edge in phase_items("initial_edges", completed.initial_edges):
+                related = (
+                    member_candidates[edge.left_member_subject_id]
+                    | member_candidates[edge.right_member_subject_id]
+                )
+                add(
+                    "initial_edges",
+                    _key(edge.left_member_subject_id, edge.right_member_subject_id),
+                    {
+                        **_fields(
+                            edge,
+                            "left_member_subject_id",
+                            "right_member_subject_id",
+                            "disposition",
+                        ),
+                        "initial_evidence": asdict(edge.initial_evidence),
+                        "initial_context": edge.initial_context,
+                        "alignment_config": asdict(edge.config),
+                    },
+                    related,
+                )
+
+            report_progress("finalizing", sum(sink.record_counts.values()), None)
+            with Path(matrix_path).open("rb") as handle:
+                matrix_hash = hashlib.file_digest(handle, "sha256").hexdigest()
+            with Path(matrix_path).open(
+                encoding="utf-8-sig", newline=""
+            ) as matrix_handle:
+                matrix_rows = sum(
+                    1 for _ in csv.DictReader(matrix_handle, delimiter="\t")
+                )
+            summary = {
+                **_fields(
+                    request,
+                    "processing_request_id",
+                    "scientific_input_schema_version",
+                    "processing_algorithm_version",
+                    "processing_contract_version",
+                ),
+                "processing_attempt_id": (
+                    application.processing_attempt.processing_attempt_id
+                ),
+                "samples": [
+                    {
+                        "sample_stem": stem,
+                        "canonical_sample_identity_id": (
+                            sample.identity.sample_identity_id
+                        ),
+                    }
+                    for stem, sample in samples.items()
+                ],
+                "acquisition_sources": [
+                    asdict(source) for source in request.acquisition_sources
+                ],
+                "candidate_count": sink.candidate_count,
+                "matrix_row_count": matrix_rows,
+                "candidate_examples": sink.candidate_examples(),
+                "writer_row_count": len(writer_inputs.matrix.clusters),
+                "matrix_path": str(matrix_path),
+                "matrix_sha256": matrix_hash,
+                "alignment_config": asdict(alignment_config),
+                "reason_counts": dict(sorted(reasons.items())),
+                "record_counts": dict(sink.record_counts),
+                "initial_edge_coverage": {
+                    "policy": INITIAL_PAIR_POLICY,
+                    "unlisted_pairs": "excluded",
+                    "rt_pruning": False,
                 },
-                related,
-            )
+                "audit_availability": {
+                    name: "recorded" if (
+                        getattr(completed, name)
+                        or (name == "initial_edges" and completed.initial_groups)
+                    ) else "unavailable"
+                    for name in (
+                        "method_assessments",
+                        "initial_groups",
+                        "initial_edges",
+                    )
+                },
+            }
+            if known_istd_reference_provenance is not None:
+                summary["known_istd_reference"] = dict(known_istd_reference_provenance)
+            return sink.finalize(summary)
 
-        report_progress("finalizing", sum(sink.record_counts.values()), None)
-        with Path(matrix_path).open("rb") as handle:
-            matrix_hash = hashlib.file_digest(handle, "sha256").hexdigest()
-        with Path(matrix_path).open(encoding="utf-8-sig", newline="") as matrix_handle:
-            matrix_rows = sum(1 for _ in csv.DictReader(matrix_handle, delimiter="\t"))
-        summary = {
-            **_fields(
-                request,
-                "processing_request_id",
-                "scientific_input_schema_version",
-                "processing_algorithm_version",
-                "processing_contract_version",
-            ),
-            "processing_attempt_id": (
-                application.processing_attempt.processing_attempt_id
-            ),
-            "samples": [
-                {
-                    "sample_stem": stem,
-                    "canonical_sample_identity_id": sample.identity.sample_identity_id,
-                }
-                for stem, sample in samples.items()
-            ],
-            "acquisition_sources": [
-                asdict(source) for source in request.acquisition_sources
-            ],
-            "candidate_count": sink.candidate_count,
-            "matrix_row_count": matrix_rows,
-            "candidate_examples": sink.candidate_examples(),
-            "writer_row_count": len(writer_inputs.matrix.clusters),
-            "matrix_path": str(matrix_path),
-            "matrix_sha256": matrix_hash,
-            "alignment_config": asdict(alignment_config),
-            "reason_counts": dict(sorted(reasons.items())),
-            "record_counts": dict(sink.record_counts),
-            "audit_availability": {
-                name: "recorded" if getattr(completed, name) else "unavailable"
-                for name in ("method_assessments", "initial_groups", "initial_edges")
-            },
-        }
-        if known_istd_reference_provenance is not None:
-            summary["known_istd_reference"] = dict(known_istd_reference_provenance)
-        return sink.finalize(summary)
+        yield PreparedAlignmentExplanation(consume_child, finalize)
 
 
 write_alignment_explanation = write_cid_nl_explanation

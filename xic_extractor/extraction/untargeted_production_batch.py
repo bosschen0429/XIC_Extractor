@@ -77,6 +77,7 @@ from xic_extractor.execution_runtime_owner import (
     RuntimeTelemetryProvider,
     start_runtime_attempt,
 )
+from xic_extractor.execution_settings import DEFAULT_ALIGNMENT_WORKERS
 from xic_extractor.extraction.untargeted_cid_nl_real_data_inputs import (
     UntargetedCidNlRealDataContext,
     build_untargeted_cid_nl_real_data_context,
@@ -113,6 +114,7 @@ from xic_extractor.peak_detection.cid_nl_method_subject import (
     mint_untargeted_cid_nl_method_subject,
     mint_untargeted_cid_nl_method_subject_batch,
 )
+from xic_extractor.peak_detection.hypotheses import PeakHypothesis
 from xic_extractor.peak_detection.observations import RetainedCaptureEvidence
 from xic_extractor.peak_detection.search_scope import (
     SEARCH_SCOPE_SCHEMA_VERSION,
@@ -125,6 +127,7 @@ from xic_extractor.peak_detection.search_scope import (
 from xic_extractor.peak_detection.signal_processing_profile import (
     SignalProcessingProfile,
 )
+from xic_extractor.processing_identity import AcquisitionSourceExpectation
 from xic_extractor.processing_run_spec import CidNlDiscoveryMethodSpec
 from xic_extractor.sample_metadata import (
     SampleMetadata,
@@ -364,6 +367,8 @@ def prepare_untargeted_cid_nl_production_plan(
     signal_processing_profile: SignalProcessingProfile | None = None,
     physical_records_by_candidate: Mapping[str, DiscoveryPhysicalFactRecord]
     | None = None,
+    acquisition_source_expectations: tuple[AcquisitionSourceExpectation, ...]
+    | None = None,
 ) -> UntargetedCidNlProductionPlan:
     """Seal exact candidate membership before any subject-local runtime work."""
 
@@ -481,6 +486,7 @@ def prepare_untargeted_cid_nl_production_plan(
         sample_identity_namespace=sample_identity_namespace,
         signal_processing_profile=signal_processing_profile,
         physical_records_by_candidate=physical_records_by_candidate,
+        acquisition_source_expectations=acquisition_source_expectations,
     )
     candidate_by_id = {candidate.candidate_id: candidate for candidate in candidates}
     eligible_subject_ids = {
@@ -703,7 +709,7 @@ def compose_and_persist_untargeted_cid_nl_partition(
     known_istd_reference: KnownIstdReference | None = None,
     should_cancel: Callable[[], object] | None = None,
     retain_memory: bool = False,
-    raw_workers: int = 1,
+    raw_workers: int = DEFAULT_ALIGNMENT_WORKERS,
 ) -> UntargetedCidNlPersistedPartition:
     """Compose one child at a time and publish only after the full partition.
 
@@ -895,13 +901,14 @@ def _build_production_composition_inputs(
         for candidates in batch.context.candidates_by_sample.values()
         for candidate in candidates
     }
+    ordered_samples = tuple(
+        sorted(batch.context.samples, key=lambda item: item.identity.sample_identity_id)
+    )
     unsupported_subjects = {}
     for subject in batch.subject_batch.subjects:
         subject_assessments = tuple(
             assessment
-            for sample in sorted(
-                batch.context.samples, key=lambda item: item.identity.sample_identity_id
-            )
+            for sample in ordered_samples
             for assessment in result_by_key[
                 (sample.metadata.raw_stem, subject.method_subject_id)
             ].effective_assessments
@@ -1010,9 +1017,6 @@ def _build_production_composition_inputs(
     bindings_by_subject: dict[str, list[CaptureCandidateBinding]] = {}
     for binding in bindings:
         bindings_by_subject.setdefault(binding.method_subject_id, []).append(binding)
-    ordered_samples = tuple(
-        sorted(batch.context.samples, key=lambda item: item.identity.sample_identity_id)
-    )
     sample_by_id = {
         sample.identity.sample_identity_id: sample for sample in batch.context.samples
     }
@@ -1045,11 +1049,15 @@ def _build_production_composition_inputs(
         if bindings_by_subject.get(subject.method_subject_id)
     )
     for subject_workset in cid_nl_alignment_subject_worksets(active_subjects):
-        workset_subject_ids = {subject.method_subject_id for subject in subject_workset}
         child_bindings = tuple(
-            binding
-            for binding in bindings
-            if binding.method_subject_id in workset_subject_ids
+            sorted(
+                (
+                    binding
+                    for subject in subject_workset
+                    for binding in bindings_by_subject[subject.method_subject_id]
+                ),
+                key=lambda binding: binding.candidate_id,
+            )
         )
         child_scope = UntargetedSearchScope(
             schema_version=scope.schema_version,
@@ -1102,6 +1110,15 @@ def _build_production_composition_inputs(
                 for binding in child_bindings
             )
         }
+        retained_hypotheses_by_assessment = {
+            (
+                key[0],
+                assessment_by_sample_subject[
+                    key
+                ].artifact.content_identity.artifact_content_id,
+            ): hypotheses
+            for key, hypotheses in hypotheses_by_sample_subject.items()
+        }
         for binding in child_bindings:
             sample = sample_by_id[binding.sample_identity_id]
             trace = capture_by_candidate[binding.candidate_id].trace
@@ -1152,7 +1169,12 @@ def _build_production_composition_inputs(
             )
         captures = tuple(captures_list)
         capture_inputs = tuple(capture_inputs_list)
-        family_context, cross_sample_context, classified_edges = (
+        (
+            family_context,
+            cross_sample_context,
+            classified_edges,
+            retained_candidates,
+        ) = (
             build_initial_cid_nl_cross_sample_context(
                 processing_owners=batch.context.processing_owners,
                 captures=captures,
@@ -1160,10 +1182,27 @@ def _build_production_composition_inputs(
                 alignment_config=alignment_config,
                 trajectory_policy=trajectory_policy,
                 known_istd_reference=known_istd_reference,
+                retained_hypotheses_by_assessment=(
+                    retained_hypotheses_by_assessment
+                ),
             )
         )
         initial_groups.extend(family_context.mode_tracks)
         initial_edges.extend(classified_edges)
+        retained_cell_hypotheses: dict[
+            tuple[str, str], list[PeakHypothesis]
+        ] = {}
+        for candidate in retained_candidates:
+            assessment = candidate.direct_support_assessment
+            if assessment is None:
+                continue
+            retained_cell_hypotheses.setdefault(
+                (
+                    candidate.canonical_sample_identity_id,
+                    assessment.artifact.content_identity.artifact_content_id,
+                ),
+                [],
+            ).append(candidate.peak_hypothesis)
         predecessor_cells = compose_cid_nl_predecessor_cells(
             processing_owners=batch.context.processing_owners,
             groups=family_context.mode_tracks,
@@ -1188,6 +1227,10 @@ def _build_production_composition_inputs(
                     ].recovery_for_group(group.group_center_rt)
                 )
                 is not None
+            },
+            retained_hypotheses_by_assessment={
+                key: tuple(hypotheses)
+                for key, hypotheses in retained_cell_hypotheses.items()
             },
         )
         cell_by_key = {}

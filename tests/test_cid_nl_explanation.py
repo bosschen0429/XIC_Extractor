@@ -148,6 +148,11 @@ def test_owner_facts_survive_persisted_candidate_query(tmp_path, monkeypatch, sc
     )
     summary = read_cid_nl_explanation(report)
     assert summary["diagnostic_only"] is True
+    assert summary["initial_edge_coverage"] == {
+        "policy": "hard-gate-candidates-v1",
+        "unlisted_pairs": "excluded",
+        "rt_pruning": False,
+    }
     assert summary["matrix_sha256"] == hashlib.sha256(matrix.read_bytes()).hexdigest()
     assert summary["matrix_row_count"] == (1 if scenario == "positive" else 0)
     assert summary["candidate_count"] == sum(map(len, candidates.values()))

@@ -151,7 +151,7 @@ def test_complete_decisions_are_canonicalized_without_caller_precedence(
     "variant",
     ["missing", "partial", "duplicate", "extra", "crossed", "substituted"],
 )
-def test_missing_crossed_duplicate_partial_or_substituted_decisions_fail(
+def test_post_cell_binding_and_explicit_audit_reject_invalid_inputs(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     variant: str,
@@ -185,7 +185,15 @@ def test_missing_crossed_duplicate_partial_or_substituted_decisions_fail(
         UntargetProjectionContractError,
         match="missing|partial|duplicate|extra|crossed|substituted|basis",
     ):
-        project_untarget_post_cell(pre_cell, changed)
+        if variant == "substituted":
+            # Deliberate mutation of a frozen owner is an explicit audit concern.
+            row = copy(_completed.rows[0])
+            object.__setattr__(row, "decisions", changed)
+            audited = copy(_completed)
+            object.__setattr__(audited, "rows", (row,))
+            validate_untarget_post_cell_projection(audited)
+        else:
+            project_untarget_post_cell(pre_cell, changed)
 
 
 def test_post_cell_projection_cannot_be_directly_minted(

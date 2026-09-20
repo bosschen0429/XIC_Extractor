@@ -1,6 +1,7 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
+from xic_extractor.execution_settings import default_parallel_workers
 from xic_extractor.peak_detection.signal_processing_profile import (
     DEFAULT_SIGNAL_PROCESSING_PROFILE,
     resolve_signal_processing_profile,
@@ -55,7 +56,7 @@ class ExtractionConfig:
     baseline_audit_method: str = ""
     baseline_integration_method: str = "asls"
     parallel_mode: str = "serial"
-    parallel_workers: int = 1
+    parallel_workers: int = field(default_factory=default_parallel_workers)
     config_hash: str = ""
     target_config_hash: str = ""
     signal_processing_method: str = DEFAULT_SIGNAL_PROCESSING_PROFILE.method

@@ -18,6 +18,7 @@ from tests.untargeted_cid_nl_no_raw_fixture import (
 )
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.hypothesis_owner_adapter import (
+    bind_retained_peak_hypotheses_to_assessment_universe,
     compose_peak_hypotheses_from_assessment_universe,
 )
 from xic_extractor.alignment.mode_track.assignment import (
@@ -1053,6 +1054,16 @@ def test_adapter_preserves_supported_and_observation_only_physical_peaks(
         "dda_cid_nl",
         "ms1_physical_observation",
     }
+    rebound = bind_retained_peak_hypotheses_to_assessment_universe(
+        processing_owners=fixture.owners,
+        sample=fixture.sample("S1"),
+        assessment=assessment,
+        retained_hypotheses=hypotheses,
+    )
+    assert all(
+        rebound_by_id is source_by_id
+        for rebound_by_id, source_by_id in zip(rebound, hypotheses, strict=True)
+    )
     family_context, model_set, batches, _source = (
         bootstrap_mode_tracks_from_cid_nl_support(
             processing_owners=fixture.owners,

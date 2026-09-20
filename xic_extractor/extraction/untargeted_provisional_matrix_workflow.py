@@ -21,6 +21,7 @@ from xic_extractor.config import ExtractionConfig
 from xic_extractor.diagnostics.timing import TimingRecorder
 from xic_extractor.discovery.models import DiscoverySettings
 from xic_extractor.discovery.pipeline import run_discovery_batch
+from xic_extractor.execution_settings import DEFAULT_ALIGNMENT_WORKERS
 from xic_extractor.extraction.untargeted_cid_nl_production_batch import (
     is_pure_single_provider_cid_nl,
 )
@@ -41,7 +42,7 @@ def run_untargeted_provisional_matrix_workflow(
     output_dir: Path,
     discovery_settings: DiscoverySettings,
     alignment_config: AlignmentConfig,
-    raw_workers: int = 1,
+    raw_workers: int = DEFAULT_ALIGNMENT_WORKERS,
     raw_xic_batch_size: int = 1,
     owner_build_xic_backend: OwnerBuildXicBackend = "raw",
     owner_backfill_xic_backend: OwnerBackfillXicBackend = "raw",

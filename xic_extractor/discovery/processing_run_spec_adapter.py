@@ -19,7 +19,11 @@ from xic_extractor.peak_detection.signal_processing_profile import (
     SignalProcessingProfile,
     resolve_signal_processing_profile,
 )
-from xic_extractor.processing_identity import build_acquisition_source_identity
+from xic_extractor.processing_identity import (
+    AcquisitionSourceExpectation,
+    IdentityContractError,
+    build_acquisition_source_identity,
+)
 from xic_extractor.processing_run_spec import (
     CidNlDiscoveryMethodSpec,
     ProcessingAcquisitionInput,
@@ -29,6 +33,7 @@ from xic_extractor.processing_run_spec import (
 from xic_extractor.raw_reader import (
     THERMO_RAW_ACQUISITION_FORMAT,
     THERMO_RAW_OBSERVATION_NAMESPACE,
+    _stat_identity,
 )
 
 
@@ -50,6 +55,24 @@ def compile_discovery_processing_run_spec(
 ) -> ProcessingRunSpec:
     """Validate method/profile, fingerprint each path once, then compile."""
 
+    spec, _expectations = compile_discovery_processing_run_spec_with_expectations(
+        raw_paths,
+        discovery_settings=discovery_settings,
+        signal_processing_profile=signal_processing_profile,
+    )
+    return spec
+
+
+def compile_discovery_processing_run_spec_with_expectations(
+    raw_paths: tuple[Path, ...],
+    *,
+    discovery_settings: DiscoverySettings,
+    signal_processing_profile: SignalProcessingProfile = (
+        DEFAULT_SIGNAL_PROCESSING_PROFILE
+    ),
+) -> tuple[ProcessingRunSpec, tuple[AcquisitionSourceExpectation, ...]]:
+    """Compile a run spec and retain each fingerprint's exact local path state."""
+
     if not isinstance(raw_paths, tuple) or not raw_paths:
         raise ValueError("raw_paths must be a non-empty Path tuple")
     if any(not isinstance(path, Path) for path in raw_paths):
@@ -62,25 +85,39 @@ def compile_discovery_processing_run_spec(
 
     snapshots: dict[str, tuple[str | None, str | None]] = {}
     libraries: _LibrarySnapshots = {}
-    inputs = tuple(
-        ProcessingAcquisitionInput(
-            input_ordinal=ordinal,
-            adapter_input_key=path.name,
-            sample_stem=path.stem,
-            acquisition_source=build_acquisition_source_identity(
-                path,
-                acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
-                observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
-            ),
-            **_blank_library_binding(path, discovery_settings, snapshots, libraries),
+    inputs = []
+    expectations = []
+    for ordinal, path in enumerate(raw_paths):
+        before = _stat_identity(path.stat())
+        source = build_acquisition_source_identity(
+            path,
+            acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
+            observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
         )
-        for ordinal, path in enumerate(raw_paths)
-    )
-    return compile_processing_run_spec(
-        inputs,
+        if _stat_identity(path.stat()) != before:
+            raise IdentityContractError(
+                "acquisition source changed during run-spec fingerprinting"
+            )
+        inputs.append(
+            ProcessingAcquisitionInput(
+                input_ordinal=ordinal,
+                adapter_input_key=path.name,
+                sample_stem=path.stem,
+                acquisition_source=source,
+                **_blank_library_binding(
+                    path, discovery_settings, snapshots, libraries
+                ),
+            )
+        )
+        expectations.append(
+            AcquisitionSourceExpectation(source=source, path_identity=before)
+        )
+    spec = compile_processing_run_spec(
+        tuple(inputs),
         discovery_settings=discovery_settings,
         signal_processing_profile=signal_processing_profile,
     )
+    return spec, tuple(expectations)
 
 
 def compile_discovery_processing_run_spec_from_config(
@@ -206,6 +243,7 @@ def validate_processing_run_spec_call(
 
 __all__ = [
     "compile_discovery_processing_run_spec",
+    "compile_discovery_processing_run_spec_with_expectations",
     "compile_discovery_processing_run_spec_from_config",
     "processing_run_input_for_path",
     "validate_processing_run_spec_call",

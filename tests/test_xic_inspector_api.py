@@ -1068,11 +1068,29 @@ def test_recovery_origin_survives_zero_terminal_final_cell_binding(tmp_path):
     }
 
 
-def test_initial_edge_adds_one_exact_peer_without_expanding_selection(tmp_path):
+@pytest.mark.parametrize("sparse_coverage", [False, True])
+def test_initial_edge_adds_one_exact_peer_without_expanding_selection(
+    tmp_path, sparse_coverage,
+):
     import zlib
 
     report, _, _ = _create_mock_db(tmp_path)
     with sqlite3.connect(report) as connection:
+        coverage = {
+            "policy": "hard-gate-candidates-v1", "unlisted_pairs": "excluded",
+            "rt_pruning": False,
+        } if sparse_coverage else {
+            "policy": "legacy-unspecified", "unlisted_pairs": "unrecorded",
+        }
+        if sparse_coverage:
+            summary = json.loads(connection.execute(
+                "SELECT payload FROM metadata WHERE key='summary'"
+            ).fetchone()[0])
+            summary["initial_edge_coverage"] = coverage
+            connection.execute(
+                "UPDATE metadata SET payload=? WHERE key='summary'",
+                (json.dumps(summary),),
+            )
         original = json.loads(
             zlib.decompress(
                 connection.execute("SELECT payload FROM curve_payloads").fetchone()[0]
@@ -1174,6 +1192,7 @@ def test_initial_edge_adds_one_exact_peer_without_expanding_selection(tmp_path):
     assert result.selected_count == 1
     assert len(data["items"]) == 1
     item = data["items"][0]
+    assert item["details"]["initial_edge_coverage"] == coverage
     assert item["review_summary"]["related_group_count"] == 1
     assert len(item["related_groups"]) == 1
     peer = item["related_groups"][0]

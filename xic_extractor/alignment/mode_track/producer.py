@@ -15,6 +15,7 @@ from xic_extractor.alignment.drift_evidence import (
 )
 from xic_extractor.alignment.edge_scoring import DriftLookupProtocol
 from xic_extractor.alignment.hypothesis_owner_adapter import (
+    bind_retained_peak_hypotheses_to_assessment_universe,
     compose_peak_hypotheses_from_assessment_universe,
     owner_from_cid_nl_assessment_observation,
     owner_from_cid_nl_assessment_support,
@@ -150,6 +151,10 @@ def bootstrap_cid_nl_initial_population(
     drift_lookup: DriftLookupProtocol | None = None,
     known_istd_reference: KnownIstdReference | None = None,
     retain_observation_only_candidates: bool = False,
+    retained_hypotheses_by_assessment: Mapping[
+        tuple[str, str], tuple[PeakHypothesis, ...]
+    ]
+    | None = None,
 ) -> tuple[
     FamilyContextRef,
     tuple[ModeTrackSupportAnchor, ...],
@@ -192,12 +197,30 @@ def bootstrap_cid_nl_initial_population(
     assessment_by_hypothesis: dict[str, CidNlMethodAssessmentRef] = {}
     sample_by_id: dict[str, ResolvedCanonicalSampleIdentity] = {}
     owners: list[SampleLocalMS1Owner] = []
+    retained_by_assessment = dict(retained_hypotheses_by_assessment or {})
+    consumed_retained_assessment_ids: set[tuple[str, str]] = set()
     for sample, assessment in sample_assessments:
         sample_id = sample.identity.sample_identity_id
-        hypotheses = compose_peak_hypotheses_from_assessment_universe(
-            processing_owners=processing_owners,
-            sample=sample,
-            assessment=assessment,
+        assessment_content_id = (
+            assessment.artifact.content_identity.artifact_content_id
+        )
+        retained_key = (sample_id, assessment_content_id)
+        retained_hypotheses = retained_by_assessment.get(retained_key, ())
+        if retained_key in retained_by_assessment:
+            consumed_retained_assessment_ids.add(retained_key)
+        hypotheses = (
+            bind_retained_peak_hypotheses_to_assessment_universe(
+                processing_owners=processing_owners,
+                sample=sample,
+                assessment=assessment,
+                retained_hypotheses=retained_hypotheses,
+            )
+            if retained_hypotheses
+            else compose_peak_hypotheses_from_assessment_universe(
+                processing_owners=processing_owners,
+                sample=sample,
+                assessment=assessment,
+            )
         )
         existing = hypotheses_by_sample.get(sample_id, ())
         known = {hypothesis.hypothesis_id for hypothesis in existing}
@@ -209,6 +232,10 @@ def bootstrap_cid_nl_initial_population(
         for hypothesis in hypotheses:
             assessment_by_hypothesis.setdefault(hypothesis.hypothesis_id, assessment)
         sample_by_id[sample_id] = sample
+    if consumed_retained_assessment_ids != set(retained_by_assessment):
+        raise ModeTrackProducerError(
+            "retained hypotheses reference an assessment outside the bootstrap input"
+        )
     has_direct_support = any(
         hypothesis.hypothesis_method == HYPOTHESIS_METHOD_DDA_CID_NL
         for hypotheses in hypotheses_by_sample.values()

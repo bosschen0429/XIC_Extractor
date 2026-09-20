@@ -253,7 +253,10 @@ def test_untargeted_view_builds_request_with_sample_metadata_and_targets(
     )
     assert view._samples.load_sequence_source(metadata_csv)
 
+    monkeypatch.setattr(module, "read_settings", lambda: {"parallel_workers": "3"})
     req = view._build_request(view._current_config())
+    assert req.execution_profile.parallel_workers == 3
+    assert req.execution_profile.alignment_workers == 1
     assert req.targets_csv == targets_csv
     assert req.sample_metadata is not None
     assert req.sample_metadata[0].raw_stem == "Sample_QC_01"

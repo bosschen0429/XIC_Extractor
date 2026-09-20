@@ -7,6 +7,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import InitVar, dataclass, field
 from typing import Literal, TypeAlias
 
+from xic_extractor.alignment.cross_sample_neighborhood_graph import INITIAL_PAIR_POLICY
 from xic_extractor.alignment.cross_sample_peak_groups import (
     CrossSampleClassifiedEdge,
     CrossSampleCoupledProposalContext,
@@ -90,6 +91,7 @@ class ModeTrackTrajectoryInput:
     injection_order: tuple[tuple[str, int], ...]
     evidence_profile: ModeTrackEvidenceProfile
     exclusions: tuple[tuple[str, str, str], ...]
+    eligible_member_pairs: tuple[tuple[str, str], ...]
     neighborhood_status: Literal["assessable", "unassessable"]
     _mint_token: InitVar[object] = field(kw_only=True)
 
@@ -115,6 +117,7 @@ class ModeTrackTrajectoryInput:
                     injection_order=self.injection_order,
                     evidence_profile=self.evidence_profile,
                     exclusions=self.exclusions,
+                    eligible_member_pairs=self.eligible_member_pairs,
                 )
             ),
         )
@@ -453,16 +456,13 @@ def mint_mode_track_trajectory_input(
         injection_order=injection_order,
     )
     edges = tuple(classified_edges)
-    _validate_complete_classification(
-        member_subject_ids=member_subject_ids,
-        edges=edges,
-    )
     neighborhood = build_bounded_connected_neighborhood(
         member_subjects=members,
         edges=edges,
         budget=budget,
     )
     exclusions = _canonical_exclusions(edges)
+    eligible_member_pairs = _canonical_eligible_pairs(edges)
     payload = _trajectory_input_payload(
         processing_request_id=resolved_request_id,
         anchor_ids=canonical_anchor_ids,
@@ -471,6 +471,7 @@ def mint_mode_track_trajectory_input(
         injection_order=canonical_injection_order,
         evidence_profile=evidence_profile,
         exclusions=exclusions,
+        eligible_member_pairs=eligible_member_pairs,
     )
     trajectory_input_id = typed_identity_digest(
         _TRAJECTORY_INPUT_PREFIX,
@@ -485,6 +486,7 @@ def mint_mode_track_trajectory_input(
         injection_order=canonical_injection_order,
         evidence_profile=evidence_profile,
         exclusions=exclusions,
+        eligible_member_pairs=eligible_member_pairs,
         neighborhood_status=neighborhood.status,
         _mint_token=_TRAJECTORY_INPUT_MINT_TOKEN,
     )
@@ -626,6 +628,8 @@ def apply_accepted_mode_track_refinement(
     if (
         _canonical_exclusions(application_context.classified_edges)
         != trajectory_input.exclusions
+        or _canonical_eligible_pairs(application_context.classified_edges)
+        != trajectory_input.eligible_member_pairs
         or context_neighborhood.status != trajectory_input.neighborhood_status
     ):
         raise ModeTrackRefinementContractError(
@@ -681,9 +685,13 @@ def _trajectory_input_payload(
     injection_order: tuple[tuple[str, int], ...],
     evidence_profile: ModeTrackEvidenceProfile,
     exclusions: tuple[tuple[str, str, str], ...],
+    eligible_member_pairs: tuple[tuple[str, str], ...],
 ) -> dict[str, object]:
     return {
-        "schema_version": "mode_track_trajectory_input",
+        "schema_version": "mode_track_trajectory_input_sparse_v1",
+        "initial_pair_policy": INITIAL_PAIR_POLICY,
+        "unlisted_pairs": "excluded",
+        "eligible_member_pairs": [list(pair) for pair in eligible_member_pairs],
         "processing_request_id": processing_request_id,
         "anchors": list(anchor_ids),
         "members": list(member_subject_ids),
@@ -702,24 +710,17 @@ def _trajectory_input_payload(
     }
 
 
-def _validate_complete_classification(
-    *,
-    member_subject_ids: tuple[str, ...],
+def _canonical_eligible_pairs(
     edges: tuple[CrossSampleClassifiedEdge, ...],
-) -> None:
-    expected_pairs = {
-        (left_id, right_id)
-        for left_index, left_id in enumerate(member_subject_ids)
-        for right_id in member_subject_ids[left_index + 1 :]
-    }
-    observed_pairs = {
-        tuple(sorted((edge.left_member_subject_id, edge.right_member_subject_id)))
-        for edge in edges
-    }
-    if len(observed_pairs) != len(edges) or observed_pairs != expected_pairs:
-        raise ModeTrackRefinementContractError(
-            "trajectory requires one exact classification for every member pair"
+) -> tuple[tuple[str, str], ...]:
+    return tuple(
+        sorted(
+            (min(edge.left_member_subject_id, edge.right_member_subject_id),
+             max(edge.left_member_subject_id, edge.right_member_subject_id))
+            for edge in edges
+            if edge.disposition == "eligible"
         )
+    )
 
 
 def _canonical_exclusions(

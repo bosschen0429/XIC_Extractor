@@ -5,14 +5,19 @@ from pathlib import Path
 import pytest
 
 from scripts import run_discovery
+from xic_extractor.discovery.blank_qualification import (
+    get_default_background_library_path,
+)
 from xic_extractor.discovery.models import DiscoveryBatchOutputs, DiscoveryRunOutputs
 from xic_extractor.raw_reader import RawReaderError
 
 
+@pytest.mark.parametrize("blank_override", [False, True])
 def test_run_discovery_cli_passes_single_raw_settings(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
+    blank_override: bool,
 ) -> None:
     raw_path = tmp_path / "TumorBC2312_DNA.raw"
     raw_path.write_text("", encoding="utf-8")
@@ -57,7 +62,11 @@ def test_run_discovery_cli_passes_single_raw_settings(
             "0.75",
             "--resolver-mode",
             "local_minimum",
-        ]
+        ] + (
+            ["--enable-blank-qualification", "--blank-library",
+             str(get_default_background_library_path())]
+            if blank_override else []
+        )
     )
 
     assert code == 0
@@ -66,6 +75,7 @@ def test_run_discovery_cli_passes_single_raw_settings(
     settings = captured["settings"]
     assert settings.neutral_loss_profile.tag == "DNA_dR"
     assert settings.neutral_loss_profile.neutral_loss_da == 116.0474
+    assert len(settings.neutral_loss_profiles) == 1
     assert settings.ms2_precursor_tol_da == pytest.approx(0.75)
     assert settings.resolver_mode == "local_minimum"
     peak_config = captured["peak_config"]
@@ -166,6 +176,14 @@ def test_run_discovery_cli_passes_raw_dir_batch_settings(
     dll_dir.mkdir()
     output_dir = tmp_path / "out"
     captured = {}
+    execution_root = tmp_path / "runtime"
+    (execution_root / "config").mkdir(parents=True)
+    (execution_root / "config" / "settings.csv").write_text(
+        "key,value\nparallel_workers,1\n", encoding="utf-8"
+    )
+    from xic_extractor import execution_settings
+
+    monkeypatch.setattr(execution_settings, "_runtime_root", lambda: execution_root)
 
     def _fake_run_discovery_batch(
         raw_paths, *, output_dir, settings, peak_config, run_spec, max_workers
@@ -175,6 +193,7 @@ def test_run_discovery_cli_passes_raw_dir_batch_settings(
         captured["settings"] = settings
         captured["peak_config"] = peak_config
         captured["run_spec"] = run_spec
+        captured["max_workers"] = max_workers
         output_dir.mkdir(parents=True, exist_ok=True)
         output_path = output_dir / "discovery_batch_index.csv"
         sample_outputs = DiscoveryRunOutputs(
@@ -209,6 +228,7 @@ def test_run_discovery_cli_passes_raw_dir_batch_settings(
     assert captured["output_dir"] == output_dir.resolve()
     assert captured["peak_config"].data_dir == raw_dir.resolve()
     assert captured["settings"].resolver_mode == "local_minimum"
+    assert captured["max_workers"] == 1
     assert tuple(
         item.sample_stem for item in captured["run_spec"].acquisition_inputs
     ) == ("A", "B")

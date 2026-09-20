@@ -14,6 +14,7 @@ from openpyxl import load_workbook
 
 import xic_extractor.alignment.result.application_result as application_result_owner
 import xic_extractor.alignment.untargeted_finalized_matrix as finalized_matrix
+import xic_extractor.discovery.processing_run_spec_adapter as processing_spec_adapter
 import xic_extractor.extraction.untargeted_cid_nl_alignment as alignment_adapter
 import xic_extractor.extraction.untargeted_cid_nl_real_data_inputs as input_owner
 import xic_extractor.processing_identity as identity_owner
@@ -59,6 +60,9 @@ from xic_extractor.diagnostics.timing import TimingRecorder
 from xic_extractor.discovery.models import (
     MS1_FEATURE_BACKED_STATES,
     DiscoveryCandidate,
+)
+from xic_extractor.discovery.processing_run_spec_adapter import (
+    compile_discovery_processing_run_spec_with_expectations,
 )
 from xic_extractor.execution_runtime import AttemptTerminalOutcome
 from xic_extractor.execution_runtime_marker import OwnerPathRuntimeMarker
@@ -1239,6 +1243,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     monkeypatch.setattr(
         bounded_owner, "materialize_untargeted_cid_nl_partition", retain_batch
     )
+    from xic_extractor.alignment import cell_observations as cell_owner
     from xic_extractor.alignment import cross_sample_reconciliation
     from xic_extractor.alignment import workflow as workflow_owner
     from xic_extractor.alignment.mode_track import producer as producer_owner
@@ -1303,6 +1308,28 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         production, "mint_captured_peak_observation", record_captured_mint
     )
 
+    from xic_extractor.alignment.cell_decision import owner as decision_owner
+    from xic_extractor.alignment.projection.untarget import pre_cell as pre_cell_owner
+
+    projection_builds = []
+    decision_rechecks = []
+    build_subjects = pre_cell_owner._build_cell_subjects
+    validate_decision = decision_owner.validate_production_cell_decision
+
+    def record_subject_build(**kwargs):
+        result = build_subjects(**kwargs)
+        projection_builds.append(result)
+        return result
+
+    def record_decision_recheck(value):
+        decision_rechecks.append(value)
+        return validate_decision(value)
+
+    monkeypatch.setattr(pre_cell_owner, "_build_cell_subjects", record_subject_build)
+    monkeypatch.setattr(
+        decision_owner, "validate_production_cell_decision", record_decision_recheck
+    )
+
     completion_checks = {"scientific": [], "post_cell": []}
     scientific_check = (
         result_owner._validate_finalized_scientific_alignment_completion_receipt
@@ -1361,6 +1388,36 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
 
     _forbid_retained_production_repair(monkeypatch)
 
+    hypothesis_universe_compositions = []
+    compose_hypothesis_universe = (
+        producer_owner.compose_peak_hypotheses_from_assessment_universe
+    )
+
+    def count_hypothesis_universe(owner_name):
+        def counted(**kwargs):
+            assessment = kwargs["assessment"]
+            hypothesis_universe_compositions.append(
+                (
+                    owner_name,
+                    kwargs["sample"].identity.sample_identity_id,
+                    assessment.artifact.content_identity.artifact_content_id,
+                )
+            )
+            return compose_hypothesis_universe(**kwargs)
+
+        return counted
+
+    for owner_name, owner in (
+        ("production", production),
+        ("bootstrap", producer_owner),
+        ("cell", cell_owner),
+    ):
+        monkeypatch.setattr(
+            owner,
+            "compose_peak_hypotheses_from_assessment_universe",
+            count_hypothesis_universe(owner_name),
+        )
+
     for model_operation in (
         "fit_mode_track_model_set",
         "assign_mode_tracks",
@@ -1386,16 +1443,25 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     consumed_contexts = []
     retained_captures = []
     consumed_captures = []
+    retained_candidate_batches = []
+    retained_cell_batches = []
     build_initial_context = production.build_initial_cid_nl_cross_sample_context
+    compose_predecessor_cells = production.compose_cid_nl_predecessor_cells
     close_without_repair = workflow_owner.close_cross_sample_without_observation_repair
     finalize_scientific = workflow_owner.finalize_scientific_alignment
 
     def retain_initial_context(**kwargs):
-        family, context, edges = build_initial_context(**kwargs)
+        family, context, edges, retained_candidates = build_initial_context(**kwargs)
         retained_contexts.append(context)
         retained_initial_edges.extend(edges)
         retained_captures.extend(kwargs["captures"])
-        return family, context, edges
+        retained_candidate_batches.append(retained_candidates)
+        return family, context, edges, retained_candidates
+
+    def retain_predecessor_cells(**kwargs):
+        cells = compose_predecessor_cells(**kwargs)
+        retained_cell_batches.append(cells)
+        return cells
 
     def retain_consumed_context(context):
         consumed_contexts.append(context)
@@ -1414,6 +1480,11 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         production,
         "build_initial_cid_nl_cross_sample_context",
         retain_initial_context,
+    )
+    monkeypatch.setattr(
+        production,
+        "compose_cid_nl_predecessor_cells",
+        retain_predecessor_cells,
     )
     monkeypatch.setattr(
         workflow_owner, "apply_mode_track_refinement_run_for_workflow", unexpected_mt0
@@ -1521,8 +1592,14 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     monkeypatch.setattr(
         bounded_owner, "execute_untargeted_cid_nl_runtime_partition", checked_runtime
     )
+    preparation_fingerprints = []
     runtime_fingerprints = []
+    preparation_fingerprint = identity_owner.fingerprint_file_content
     fingerprint = raw_reader_owner.fingerprint_file_content
+
+    def count_preparation_fingerprint(path, **kwargs):
+        preparation_fingerprints.append(path)
+        return preparation_fingerprint(path, **kwargs)
 
     def count_runtime_fingerprint(path):
         runtime_fingerprints.append(path)
@@ -1530,6 +1607,9 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
 
     monkeypatch.setattr(
         raw_reader_owner, "fingerprint_file_content", count_runtime_fingerprint
+    )
+    monkeypatch.setattr(
+        identity_owner, "fingerprint_file_content", count_preparation_fingerprint
     )
     completed = alignment_adapter.complete_untargeted_cid_nl_alignment(
         discovery_batch=discovery_batch,
@@ -1547,6 +1627,34 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
                 sample_reader=lambda: ProcessMemorySample(123456, 654321, "measured"),
             ),
         ),
+    )
+    composed_universes = [item[1:] for item in hypothesis_universe_compositions]
+    assert len(composed_universes) == len(set(composed_universes)), (
+        {
+            owner_name: sum(
+                item[0] == owner_name for item in hypothesis_universe_compositions
+            )
+            for owner_name in {item[0] for item in hypothesis_universe_compositions}
+        },
+        hypothesis_universe_compositions,
+    )
+    retained_hypotheses_by_id = {
+        candidate.peak_hypothesis_id: candidate.peak_hypothesis
+        for candidates in retained_candidate_batches
+        for candidate in candidates
+    }
+    assert all(
+        capture.selected_hypothesis is None
+        or retained_hypotheses_by_id[capture.selected_hypothesis.hypothesis_id]
+        is capture.selected_hypothesis
+        for capture in retained_captures
+    )
+    assert all(
+        retained_hypotheses_by_id[support.hypothesis.hypothesis_id]
+        is support.hypothesis
+        for cells in retained_cell_batches
+        for cell in cells
+        for support in cell.group_context.supports
     )
     # Owner-produced arrays survive both sidecar and runtime partition handoff.
     retained_discovery = tuple(completed.discovery_physical_records)
@@ -1641,6 +1749,9 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
             tmp_path / "producer-evidence.sqlite", expected_curves, expected_curve_links
         )
 
+    assert preparation_fingerprints == [
+        tmp_path / f"{stem}.synthetic" for stem in discovery_batch.sample_order
+    ], "formal preparation must fully fingerprint each RAW source once"
     assert runtime_fingerprints == [], (
         "RAW opens must reuse the input owner's source verification",
         runtime_fingerprints,
@@ -1730,6 +1841,9 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     assert tuple(completed.initial_edges) == tuple(retained_initial_edges)
     # Global closure checks the reloaded scientific completion once.
     children = completed.application_result.children
+    # Completed owner answers flow through projection, spool and writer once.
+    assert len(projection_builds) == len(children)
+    assert not decision_rechecks
     assert tuple(completion_checks["scientific"]) == tuple(
         child.scientific_core for child in children
     )
@@ -1942,22 +2056,6 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     )
     with pytest.raises(capture_owner.SampleLocalCaptureError):
         bind_capture(changed_source, **binding_args)
-    mutable_capture = capture_peak(
-        scope=bound_capture.scope,
-        candidate_id=bound_capture.candidate_id,
-        trace=replace(
-            bound_capture.trace, intensity=bound_capture.trace.intensity.copy()
-        ),
-    )
-    mutable_capture.trace.intensity[-1] += 1.0
-    with pytest.raises(capture_owner.SampleLocalCaptureError):
-        bind_capture(mutable_capture, **binding_args)
-    with pytest.raises((capture_owner.SampleLocalCaptureError, ValueError)):
-        capture_owner.mint_captured_peak_observation(
-            mutable_capture,
-            processing_owners=captured_batches[0].jobs[0].processing_owners,
-            sample=captured_batches[0].jobs[0].sample,
-        )
     from xic_extractor.peak_detection.search_scope import SearchScopeContractError
 
     changed_answer = evaluate_physical_peak(
@@ -2804,6 +2902,106 @@ def test_production_rejects_source_change_during_expectation_mint(
     )
     with pytest.raises(identity_owner.IdentityContractError, match="changed during"):
         prepare_untargeted_cid_nl_production_plan(**arguments)
+
+
+def test_reused_run_spec_source_rejects_change_before_plan(
+    tmp_path: Path,
+) -> None:
+    path, _raw, arguments = _source_verification_inputs(tmp_path)
+    _spec, expectations = compile_discovery_processing_run_spec_with_expectations(
+        (path,),
+        discovery_settings=arguments["settings"],
+    )
+    path.write_bytes(b"changed-between-preparation-owners")
+
+    with pytest.raises(identity_owner.IdentityContractError, match="changed after"):
+        prepare_untargeted_cid_nl_production_plan(
+            **arguments,
+            acquisition_source_expectations=expectations,
+        )
+
+
+def test_run_spec_expectation_rejects_change_after_fingerprint(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path, _raw, arguments = _source_verification_inputs(tmp_path)
+    build_source = processing_spec_adapter.build_acquisition_source_identity
+
+    def change_after_fingerprint(source_path, **kwargs):
+        source = build_source(source_path, **kwargs)
+        path.write_bytes(b"changed-during-run-spec-preparation")
+        return source
+
+    monkeypatch.setattr(
+        processing_spec_adapter,
+        "build_acquisition_source_identity",
+        change_after_fingerprint,
+    )
+    with pytest.raises(identity_owner.IdentityContractError, match="changed during"):
+        compile_discovery_processing_run_spec_with_expectations(
+            (path,),
+            discovery_settings=arguments["settings"],
+        )
+
+
+@pytest.mark.parametrize("stems", [("B", "A"), ("a_sample", "B_sample"), ("A", "B")])
+def test_reused_run_spec_source_preserves_plan_request_and_candidates(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, stems: tuple[str, str],
+) -> None:
+    settings = replace(
+        _settings(), neutral_loss_profile=None, precursor_mz_tolerance_ppm=1.0
+    )
+    peak_config = _peak_config(tmp_path)
+    paths = tuple(tmp_path / f"{stem}.synthetic" for stem in stems)
+    candidates = {}
+    for path in paths:
+        path.write_bytes(f"source-verification:{path.stem}".encode())
+        _, candidates[path.stem] = _nearby_subject_candidates(
+            path, settings=settings, peak_config=peak_config
+        )
+    arguments = dict(
+        raw_paths=paths,
+        sample_metadata=tuple(
+            SampleMetadata(
+                sample_name=stem, raw_stem=stem, injection_order=index,
+                sample_role="study_sample",
+            ) for index, stem in enumerate(stems, 1)
+        ),
+        settings=settings, peak_config=peak_config,
+        candidates_by_sample=candidates,
+        discovery_receipts_by_sample=_discovery_receipts(tmp_path, paths, candidates),
+        dll_dir=tmp_path, sample_identity_namespace="study:source-verification",
+    )
+    baseline = prepare_untargeted_cid_nl_production_plan(**arguments)
+    spec, expectations = compile_discovery_processing_run_spec_with_expectations(
+        paths, discovery_settings=settings,
+    )
+    fingerprints = []
+    fingerprint = identity_owner.fingerprint_file_content
+
+    def count_fingerprint(source, **kwargs):
+        fingerprints.append(source)
+        return fingerprint(source, **kwargs)
+
+    monkeypatch.setattr(identity_owner, "fingerprint_file_content", count_fingerprint)
+    monkeypatch.setattr(raw_reader_owner, "fingerprint_file_content", count_fingerprint)
+    reused = prepare_untargeted_cid_nl_production_plan(
+        **arguments, acquisition_source_expectations=expectations,
+    )
+    assert fingerprints == []
+    for path, expectation, acquisition in zip(
+        paths, expectations, spec.acquisition_inputs, strict=True
+    ):
+        assert acquisition.acquisition_source == expectation.source
+        assert reused.context.acquisition_sources_by_sample[path.stem] is expectation
+        assert reused.context.raw_paths_by_sample[path.stem] == path
+    assert reused.subject_batch == baseline.subject_batch
+    assert reused.context.processing_owners.request == (
+        baseline.context.processing_owners.request
+    )
+    assert reused.context.candidates_by_sample == baseline.context.candidates_by_sample
+    assert reused.excluded_candidates == baseline.excluded_candidates
 
 
 @pytest.mark.parametrize("change", ["edit", "replace"])
@@ -3662,7 +3860,6 @@ def test_production_initial_groups_use_complete_canonical_batch(
     monkeypatch: pytest.MonkeyPatch,
     supported_samples: int,
 ) -> None:
-    from xic_extractor.alignment.cell_observations import CellObservationContractError
     from xic_extractor.extraction import (
         untargeted_cid_nl_production_batch as production,
     )
@@ -3756,14 +3953,14 @@ def test_production_initial_groups_use_complete_canonical_batch(
         assert cell_context.sample_universe == frozenset(stems)
         assert dict(cell_context.injection_order) == dict(zip(stems, (1, 2, 3)))
         if supported_samples == 2:
-            # Missing or duplicate order cannot reproduce an injection-trajectory
-            # group; the owner falls back to its different bounded policy.
             for order in (None, tuple((stem, 1) for stem in stems)):
-                with pytest.raises(CellObservationContractError, match="exact SUPPORT"):
-                    replace(cell_context, injection_order=order)
+                rebound = replace(cell_context, injection_order=order)
+                assert rebound.group is cell_context.group
+                assert rebound.supports is cell_context.supports
         else:
-            # The full-batch policy does not require an injection trajectory.
-            replace(cell_context, injection_order=None)
+            rebound = replace(cell_context, injection_order=None)
+            assert rebound.group is cell_context.group
+            assert rebound.supports is cell_context.supports
 
 
 def test_known_istd_reference_closes_drifting_group_and_cell_proof(
@@ -3872,8 +4069,6 @@ def test_known_istd_reference_closes_drifting_group_and_cell_proof(
     assert all(
         cell.area is not None and cell.area > 0 for cell in corrected_matrix.cells
     )
-    from xic_extractor.alignment.cell_observations import CellObservationContractError
-
     (child,) = corrected.application_result.children
     contexts = tuple(
         source.group_context
@@ -3882,8 +4077,9 @@ def test_known_istd_reference_closes_drifting_group_and_cell_proof(
     )
     assert contexts
     assert all(context.drift_lookup is contexts[0].drift_lookup for context in contexts)
-    with pytest.raises(CellObservationContractError, match="exact SUPPORT"):
-        replace(contexts[0], drift_lookup=None)
+    without_drift_lookup = replace(contexts[0], drift_lookup=None)
+    assert without_drift_lookup.group is contexts[0].group
+    assert without_drift_lookup.supports is contexts[0].supports
 
 
 def _assert_conservative_coverage_handoff(

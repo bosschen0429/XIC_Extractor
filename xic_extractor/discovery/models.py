@@ -161,7 +161,11 @@ class DiscoverySettings:
 
     def __post_init__(self) -> None:
         profiles = self.neutral_loss_profiles
-        if self.neutral_loss_profile is not None:
+        # The singular field also aliases profiles[0] after normalization.
+        # dataclasses.replace carries both fields; do not append that alias again.
+        if self.neutral_loss_profile is not None and (
+            not profiles or self.neutral_loss_profile != profiles[0]
+        ):
             profiles = (self.neutral_loss_profile,) + profiles
         if not profiles:
             raise ValueError("at least one neutral-loss profile is required")

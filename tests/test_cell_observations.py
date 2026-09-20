@@ -286,39 +286,38 @@ def _outside_population_handoff(tmp_path: Path):
     )
 
 
-def test_population_reuses_group_construction_within_each_exact_input_call(
+def test_cell_handoff_never_reconstructs_completed_groups(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    sources, handoff = _outside_population_handoff(tmp_path)
-    original = cell_group_context_owner.construct_cross_sample_peak_group_hypotheses
     constructions = []
 
     def counted(*args, **kwargs):
         constructions.append(args[0])
-        return original(*args, **kwargs)
+        return construct_cross_sample_peak_group_hypotheses(*args, **kwargs)
 
     monkeypatch.setattr(
         cell_group_context_owner,
         "construct_cross_sample_peak_group_hypotheses",
         counted,
+        raising=False,
     )
-    expected_context_count = len({id(cell.group_context) for cell in sources})
+    sources, handoff = _outside_population_handoff(tmp_path)
+    assert constructions == []
     first = compose_final_group_cell_observation_population(
         handoff=handoff, predecessor_cells=sources,
     )
-    assert len(constructions) == expected_context_count
-    constructions.clear()
+    assert constructions == []
     second = compose_final_group_cell_observation_population(
         handoff=handoff, predecessor_cells=sources,
     )
     assert second == first
-    assert len(constructions) == expected_context_count
+    assert constructions == []
     assert validate_final_group_cell_observation_population(
         handoff=handoff, cell_observations=second,
     ) == first
 
 
-def test_population_revalidates_after_failure_and_changed_group_context(
+def test_population_rejects_crossed_artifact_and_context_rejects_invalid_config(
     tmp_path: Path,
 ) -> None:
     sources, handoff = _outside_population_handoff(tmp_path)
@@ -328,22 +327,9 @@ def test_population_revalidates_after_failure_and_changed_group_context(
         compose_final_group_cell_observation_population(
             handoff=handoff, predecessor_cells=(*sources[:-1], forged),
         )
-    expected = compose_final_group_cell_observation_population(
-        handoff=handoff, predecessor_cells=sources,
-    )
     context = sources[0].group_context
-    config = context.config
-    object.__setattr__(context, "config", None)
-    try:
-        with pytest.raises(CellObservationContractError, match="exact AlignmentConfig"):
-            compose_final_group_cell_observation_population(
-                handoff=handoff, predecessor_cells=sources,
-            )
-    finally:
-        object.__setattr__(context, "config", config)
-    assert compose_final_group_cell_observation_population(
-        handoff=handoff, predecessor_cells=sources,
-    ) == expected
+    with pytest.raises(CellObservationContractError, match="exact AlignmentConfig"):
+        replace(context, config=None)
 
 
 def _owner_handoff(tmp_path: Path):

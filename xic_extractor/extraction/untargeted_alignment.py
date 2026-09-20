@@ -27,7 +27,7 @@ from xic_extractor.discovery.physical_fact_persistence import (
 )
 from xic_extractor.discovery.physical_fact_record import DiscoveryPhysicalFactRecord
 from xic_extractor.discovery.processing_run_spec_adapter import (
-    compile_discovery_processing_run_spec,
+    compile_discovery_processing_run_spec_with_expectations,
 )
 from xic_extractor.execution_engine.streamed_result_store import StreamedResultStore
 from xic_extractor.execution_runtime_marker import OwnerPathRuntimeMarker
@@ -38,6 +38,7 @@ from xic_extractor.execution_runtime_owner import (
     RuntimeWorkerPeakRssSample,
     runtime_started_worker_keys,
 )
+from xic_extractor.execution_settings import DEFAULT_ALIGNMENT_WORKERS
 from xic_extractor.extraction.untargeted_cid_nl_bounded_runtime import (
     execute_bounded_untargeted_cid_nl,
 )
@@ -47,6 +48,7 @@ from xic_extractor.extraction.untargeted_production_batch import (
 from xic_extractor.peak_detection.signal_processing_profile import (
     SignalProcessingProfile,
 )
+from xic_extractor.processing_identity import AcquisitionSourceExpectation
 from xic_extractor.processing_run_spec import ProcessingAcquisitionInput
 from xic_extractor.sample_metadata import SampleMetadata
 
@@ -75,7 +77,7 @@ def complete_untargeted_cid_nl_alignment(
     known_istd_reference: KnownIstdReference | None = None,
     timing_recorder: TimingRecorder | None = None,
     signal_processing_profile: SignalProcessingProfile | None = None,
-    raw_workers: int = 1,
+    raw_workers: int = DEFAULT_ALIGNMENT_WORKERS,
     raw_worker_backend: str = "thread",
     should_cancel: Callable[[], bool] | None = None,
     retain_partition_memory: bool = False,
@@ -151,9 +153,16 @@ def complete_untargeted_cid_nl_alignment(
 
     try:
         physical_records: dict[str, DiscoveryPhysicalFactRecord] = {}
+        acquisition_source_expectations: (
+            tuple[AcquisitionSourceExpectation, ...] | None
+        ) = None
         if signal_processing_profile is not None:
             with recorder.stage("alignment.load_physical_facts"):
-                candidates_by_sample, physical_records = _load_physical_replay_inputs(
+                (
+                    candidates_by_sample,
+                    physical_records,
+                    acquisition_source_expectations,
+                ) = _load_physical_replay_inputs(
                     discovery_batch=discovery_batch,
                     candidates_by_sample=candidates_by_sample,
                     raw_paths=ordered_raw_paths,
@@ -179,6 +188,7 @@ def complete_untargeted_cid_nl_alignment(
             sample_identity_namespace=_SAMPLE_IDENTITY_NAMESPACE,
             signal_processing_profile=signal_processing_profile,
             physical_records_by_candidate=physical_records,
+            acquisition_source_expectations=acquisition_source_expectations,
         )
 
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -237,7 +247,7 @@ def _load_physical_replay_inputs(
     raw_paths: tuple[Path, ...],
     settings: DiscoverySettings,
     profile: SignalProcessingProfile,
-    raw_workers: int = 1,
+    raw_workers: int = DEFAULT_ALIGNMENT_WORKERS,
     retained_records_sink: Callable[
         [str, tuple[DiscoveryPhysicalFactRecord, ...]], None
     ]
@@ -245,11 +255,14 @@ def _load_physical_replay_inputs(
 ) -> tuple[
     dict[str, tuple[DiscoveryCandidate, ...]],
     dict[str, DiscoveryPhysicalFactRecord],
+    tuple[AcquisitionSourceExpectation, ...],
 ]:
-    spec = compile_discovery_processing_run_spec(
-        raw_paths,
-        discovery_settings=settings,
-        signal_processing_profile=profile,
+    spec, acquisition_source_expectations = (
+        compile_discovery_processing_run_spec_with_expectations(
+            raw_paths,
+            discovery_settings=settings,
+            signal_processing_profile=profile,
+        )
     )
 
     def _load_sample_input(
@@ -317,7 +330,7 @@ def _load_physical_replay_inputs(
                     )
                 selected_records[cid] = rec
 
-    return restored, selected_records
+    return restored, selected_records, acquisition_source_expectations
 
 
 def _restore_physical_candidate(

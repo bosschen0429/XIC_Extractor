@@ -10,6 +10,24 @@ contract. That evidence posture belongs to future validation artifacts, not to
 this topic page. The contract grants no selected-value, counted-detection,
 Matrix, workbook, Backfill-write, activation, publication, or export authority.
 
+## Worker Settings
+
+`xic_extractor.execution_settings` owns the shared execution profile and worker
+defaults. The existing `config/settings.csv` owns the saved `parallel_workers`
+value used by Targeted, Discovery CLI/GUI, and tissue validation. When absent,
+the profile supplies the CPU-count-minus-one default (at least one). An explicit
+CLI override takes precedence for that invocation; it does not rewrite saved
+settings. Scientific presets do not carry machine resource settings.
+
+Alignment defaults to serial execution in the same profile. A shared source
+does not require identical concurrency for algorithms with different cost
+characteristics. Its explicit worker override remains available. Discovery
+bounds its active workers by sample count; that cap is scheduling, not another
+default. The profile is a settings snapshot, not a shared persistent worker pool.
+
+The tissue validation plan exposes both parallel and Alignment worker budgets.
+Changing from 8RAW to 85RAW does not choose a different execution profile.
+
 ## Decision
 
 Targeted extraction, Alignment, and RAW-backed diagnostics currently implement

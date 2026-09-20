@@ -428,8 +428,10 @@ def test_valid_canonical_hash_snapshots_match_current_profile(tmp_path: Path) ->
     )
 
 
+@pytest.mark.parametrize("enabled", [False, True])
 def test_processing_run_spec_preserves_custom_blank_settings_roundtrip(
     tmp_path: Path,
+    enabled: bool,
 ) -> None:
     raws = _raws(tmp_path)
     library_path = tmp_path / "blank_library.json"
@@ -439,7 +441,7 @@ def test_processing_run_spec_preserves_custom_blank_settings_roundtrip(
             tag="DNA_dR",
             neutral_loss_da=116.0474,
         ),
-        enable_blank_qualification=True,
+        enable_blank_qualification=enabled,
         blank_library_path=str(library_path),
         blank_ppm_tol=12.5,
         blank_fold_change_threshold=4.5,
@@ -452,7 +454,7 @@ def test_processing_run_spec_preserves_custom_blank_settings_roundtrip(
     deserialized = deserialize_processing_run_spec(serialized)
 
     deserialized_settings = deserialized.discovery_method.settings
-    assert deserialized_settings.enable_blank_qualification is True
+    assert deserialized_settings.enable_blank_qualification is enabled
     assert deserialized_settings.blank_library_path == str(library_path)
     assert deserialized_settings.blank_ppm_tol == 12.5
     assert deserialized_settings.blank_fold_change_threshold == 4.5
