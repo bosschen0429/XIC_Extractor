@@ -281,6 +281,9 @@ def _assert_composite_labels_cannot_grant_membership(batch, runtime):
         iter_cross_sample_initial_owner_pairs,
     )
     from xic_extractor.alignment.edge_scoring import evaluate_owner_edge
+    from xic_extractor.alignment.feature_membership_inference import (
+        infer_feature_memberships,
+    )
     from xic_extractor.alignment.hypothesis_owner_adapter import (
         compose_cid_nl_peak_hypotheses_from_assessment,
         owner_from_cid_nl_assessment_support,
@@ -300,9 +303,12 @@ def _assert_composite_labels_cannot_grant_membership(batch, runtime):
             )
         )
     assert evaluate_owner_edge(*owners, config=AlignmentConfig()).failure_reason == ""
-    assert tuple(iter_cross_sample_initial_owner_pairs(
-        owners, config=AlignmentConfig(),
-    )) == (tuple(owners),)
+    assert tuple(
+        iter_cross_sample_initial_owner_pairs(
+            owners,
+            config=AlignmentConfig(),
+        )
+    ) == (tuple(owners),)
     unbound = tuple(
         replace(owner, cid_nl_composite_assessment=None) for owner in owners
     )
@@ -311,9 +317,15 @@ def _assert_composite_labels_cannot_grant_membership(batch, runtime):
         evaluate_owner_edge(*unbound, config=AlignmentConfig()).failure_reason
         == "product_mz_out_of_tolerance"
     )
-    assert tuple(iter_cross_sample_initial_owner_pairs(
-        unbound, config=AlignmentConfig(),
-    )) == ()
+    assert (
+        tuple(
+            iter_cross_sample_initial_owner_pairs(
+                unbound,
+                config=AlignmentConfig(),
+            )
+        )
+        == ()
+    )
     crossed = replace(
         owners[1], cid_nl_composite_assessment=owners[0].cid_nl_composite_assessment
     )
@@ -321,9 +333,30 @@ def _assert_composite_labels_cannot_grant_membership(batch, runtime):
         evaluate_owner_edge(owners[0], crossed, config=AlignmentConfig()).failure_reason
         == "product_mz_out_of_tolerance"
     )
-    assert tuple(iter_cross_sample_initial_owner_pairs(
-        (owners[0], crossed), config=AlignmentConfig(),
-    )) == ()
+    assert (
+        tuple(
+            iter_cross_sample_initial_owner_pairs(
+                (owners[0], crossed),
+                config=AlignmentConfig(),
+            )
+        )
+        == ()
+    )
+
+    # The sparse feature index must preserve the same typed-composition gate
+    # as pair scoring, including rejection of missing or crossed provenance.
+    for population, expected_groups in (
+        (tuple(owners), 1),
+        (unbound, 2),
+        ((owners[0], crossed), 2),
+    ):
+        inferred = infer_feature_memberships(
+            population,
+            config=AlignmentConfig(anchor_min_seed_events=1),
+            injection_order=None,
+            drift_lookup=None,
+        )
+        assert len(inferred.groups) == expected_groups
 
 
 def _assert_duplicate_loss_evidence_rejected(batch, runtime):

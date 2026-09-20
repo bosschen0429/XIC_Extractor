@@ -15,6 +15,7 @@ from xic_extractor.alignment.drift_evidence import KnownIstdOwnerLookup
 from xic_extractor.alignment.edge_scoring import (
     DriftLookupProtocol,
     OwnerEdgeEvidence,
+    _compatible_composite_owners,
     _seed_support_level,
     evaluate_owner_edge,
 )
@@ -131,6 +132,7 @@ class _FeatureTrack:
     loss_min: float
     loss_max: float
     neutral_loss_tag: str
+    composite_subject_id: str | None
 
     @classmethod
     def from_owner(
@@ -149,10 +151,20 @@ class _FeatureTrack:
             loss_min=0.0 if event is None else event.observed_neutral_loss_da,
             loss_max=0.0 if event is None else event.observed_neutral_loss_da,
             neutral_loss_tag=owner.neutral_loss_tag,
+            composite_subject_id=(
+                owner.cid_nl_composite_assessment.content.method_subject.method_subject_id
+                if owner.cid_nl_composite_assessment is not None
+                and _compatible_composite_owners(owner, owner)
+                else None
+            ),
         )
 
     def add(self, owner: SampleLocalMS1Owner) -> None:
         event = owner.primary_identity_event
+        if self.composite_subject_id is not None and not _compatible_composite_owners(
+            owner, self.seed
+        ):
+            self.composite_subject_id = None
         self.sample_stems.add(owner.sample_stem)
         self.precursor_min = min(self.precursor_min, owner.precursor_mz)
         self.precursor_max = max(self.precursor_max, owner.precursor_mz)
@@ -177,12 +189,12 @@ class _FeatureIndex:
         self._axes: dict[tuple[str, str], list[tuple[float, str]]] = defaultdict(list)
 
     def add(self, track: _FeatureTrack) -> None:
-        for axis, value in self._values(track):
-            insort(self._axes[(track.neutral_loss_tag, axis)], (value, track.key))
+        for key, value in self._entries(track):
+            insort(self._axes[key], (value, track.key))
 
     def remove(self, track: _FeatureTrack) -> None:
-        for axis, value in self._values(track):
-            items = self._axes[(track.neutral_loss_tag, axis)]
+        for key, value in self._entries(track):
+            items = self._axes[key]
             item = (value, track.key)
             index = bisect_left(items, item)
             if index < len(items) and items[index] == item:
@@ -210,16 +222,59 @@ class _FeatureIndex:
                 )
             )
         for axis, value, tolerance in axes:
-            items = self._axes.get((owner.neutral_loss_tag, axis), ())
-            fraction = tolerance / 1_000_000.0
-            first = bisect_left(items, (value / (1.0 + fraction), ""))
-            last = bisect_right(items, (value * (1.0 + fraction), chr(0x10FFFF)))
-            counts["index_entries_scanned"] += last - first
-            matches = {feature_key for _, feature_key in items[first:last]}
+            matches = self._matches(
+                (owner.neutral_loss_tag, axis), value, tolerance, counts
+            )
             result = matches if result is None else result.intersection(matches)
             if not result:
                 break
-        return result or set()
+        result = result or set()
+        assessment = owner.cid_nl_composite_assessment
+        if assessment is not None:
+            # A composition may be supported by different scalar losses. This
+            # range lookup only proposes candidates; exact owner/assessment
+            # binding remains the hard gate before any membership decision.
+            result.update(
+                self._matches(
+                    (
+                        assessment.content.method_subject.method_subject_id,
+                        "composition",
+                    ),
+                    owner.precursor_mz,
+                    config.max_ppm,
+                    counts,
+                )
+            )
+        return result
+
+    def _matches(
+        self,
+        key: tuple[str, str],
+        value: float,
+        tolerance: float,
+        counts: Counter[str],
+    ) -> set[str]:
+        items = self._axes.get(key, ())
+        fraction = tolerance / 1_000_000.0
+        first = bisect_left(items, (value / (1.0 + fraction), ""))
+        last = bisect_right(items, (value * (1.0 + fraction), chr(0x10FFFF)))
+        counts["index_entries_scanned"] += last - first
+        return {feature_key for _, feature_key in items[first:last]}
+
+    @classmethod
+    def _entries(
+        cls,
+        track: _FeatureTrack,
+    ) -> tuple[tuple[tuple[str, str], float], ...]:
+        entries = tuple(
+            ((track.neutral_loss_tag, axis), value)
+            for axis, value in cls._values(track)
+        )
+        if track.composite_subject_id is not None:
+            entries += (
+                ((track.composite_subject_id, "composition"), track.precursor_min),
+            )
+        return entries
 
     @staticmethod
     def _values(track: _FeatureTrack) -> tuple[tuple[str, float], ...]:
@@ -649,14 +704,18 @@ def _feature_hard_reason(
         return "same_sample", math.inf
     if (event is None) != (track.seed.primary_identity_event is None):
         return "identity_evidence_type_mismatch", math.inf
-    if owner.neutral_loss_tag != track.neutral_loss_tag:
+    composite_compatible = (
+        track.composite_subject_id is not None
+        and _compatible_composite_owners(owner, track.seed)
+    )
+    if not composite_compatible and owner.neutral_loss_tag != track.neutral_loss_tag:
         return "neutral_loss_tag_mismatch", math.inf
     mass_fraction = _envelope_fraction(
         track.precursor_min, track.precursor_max, owner.precursor_mz, config.max_ppm
     )
     if mass_fraction > 1.0:
         return "precursor_envelope", mass_fraction
-    if event is None:
+    if event is None or composite_compatible:
         return "", mass_fraction
     if (
         _envelope_fraction(
