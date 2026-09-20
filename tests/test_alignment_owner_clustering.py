@@ -81,8 +81,8 @@ def test_degraded_drift_uses_moderate_complete_link_admission() -> None:
     assert all(edge.rt_basis == "raw" and edge.score == 45 for edge in edges)
     assert all(edge.decision == "weak_edge" for edge in edges)
     assert features[0].evidence == "owner_complete_link_moderate;owner_count=3"
-    assert features[0].disposition == "provisional"
-    assert features[0].review_only is True
+    assert features[0].disposition == "established"
+    assert features[0].review_only is False
 
 
 def test_owner_clustering_allows_plausible_rt_drift_with_complete_link() -> None:
@@ -491,7 +491,7 @@ def test_owner_clustering_separates_fixture_cohort_rt_outlier() -> None:
 
 
 def test_owner_clustering_connects_full_batch_with_moderate_seed_edge() -> None:
-    raw_owners = (
+    owners = (
         _owner("sample-a", "a", apex_rt=10.00),
         _owner(
             "sample-b",
@@ -500,16 +500,6 @@ def test_owner_clustering_connects_full_batch_with_moderate_seed_edge() -> None:
             evidence_score=53,
             seed_event_count=1,
         ),
-    )
-    owners = tuple(
-        replace(
-            owner,
-            selected_integration=replace(
-                owner.selected_integration,
-                baseline_residual_mad=1.0,
-            ),
-        )
-        for owner in raw_owners
     )
     config = AlignmentConfig(preferred_rt_sec=60.0, max_rt_sec=180.0)
 

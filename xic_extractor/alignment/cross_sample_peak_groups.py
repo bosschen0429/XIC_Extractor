@@ -65,7 +65,6 @@ from xic_extractor.alignment.edge_scoring import (
     RTEvidenceBasis,
     _compatible_composite_owners,
     evaluate_owner_edge,
-    owner_peak_meets_quantitation_limit,
 )
 from xic_extractor.alignment.ownership_models import (
     AmbiguousOwnerRecord,
@@ -437,7 +436,6 @@ def construct_cross_sample_peak_group_hypotheses(
         else {}
     )
     moderate_complete_link_sets: set[frozenset[str]] = set()
-    moderate_review_sets: set[frozenset[str]] = set()
     rescue_owner_sets = (
         full_batch_continuity_owner_sets,
         injection_trajectory_owner_sets,
@@ -455,10 +453,7 @@ def construct_cross_sample_peak_group_hypotheses(
         ):
             continue
         moderate_complete_link_sets.add(owner_id_set)
-        if sum(owner_peak_meets_quantitation_limit(owner) for owner in group) < 2:
-            moderate_review_sets.add(owner_id_set)
     moderate_complete_link_owner_sets = frozenset(moderate_complete_link_sets)
-    moderate_review_owner_sets = frozenset(moderate_review_sets)
     public_group_ids = tuple(
         f"FAM{index + len(conflict_hypotheses):06d}"
         for index in range(1, len(groups) + 1)
@@ -468,12 +463,7 @@ def construct_cross_sample_peak_group_hypotheses(
             tuple(group),
             processing_request_id=request_id,
             disposition=(
-                "unresolved"
-                if index in resolved_duplicate_owner_groups
-                else "provisional"
-                if frozenset(owner.owner_id for owner in group)
-                in moderate_review_owner_sets
-                else None
+                "unresolved" if index in resolved_duplicate_owner_groups else None
             ),
         )
         for index, group in enumerate(groups)
@@ -508,7 +498,6 @@ def construct_cross_sample_peak_group_hypotheses(
             owner_id_set in targeted_istd_trajectory_owner_sets
         )
         moderate_complete_link = owner_id_set in moderate_complete_link_owner_sets
-        moderate_review = owner_id_set in moderate_review_owner_sets
         evidence = _group_evidence(
             group,
             full_batch_continuity=full_batch_continuity,
@@ -546,7 +535,6 @@ def construct_cross_sample_peak_group_hypotheses(
                     group_identity=group_identity,
                     public_family_id=public_group_id,
                     evidence=evidence,
-                    review_only=moderate_review,
                 ),
             )
             continue
@@ -559,7 +547,6 @@ def construct_cross_sample_peak_group_hypotheses(
                     f"{evidence};{_DUPLICATE_OWNER_GROUP_POLICY}_winner;"
                     f"resolved_group_count={len(resolved_ids)}"
                 ),
-                review_only=moderate_review,
                 consolidation_state="primary_winner",
                 consolidation_winner_group_hypothesis_id=(
                     group_identity.group_hypothesis_id

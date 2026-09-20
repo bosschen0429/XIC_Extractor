@@ -223,13 +223,14 @@ unresolved and rejected groups remain AuditTrail facts.
   basis, and corrected-RT observation remain unchanged audit facts. A group that
   actually requires this admission is `owner_complete_link_moderate`; an
   all-strong group remains `owner_complete_link`. The moderate group uses
-  multi-sample detection identity with medium confidence where Matrix identity
-  decisions are evaluated. It needs at least two quantitation-grade observed
-  owners before publication. The retained finalized Untarget route enforces the
-  same guard at group disposition: a moderate group below that count is
-  `provisional` and review-only, so post-cell projection archives it; a passing
-  group remains `established`. Its writer confidence stays `owner_finalized`,
-  which records completion authority rather than scientific confidence.
+  multi-sample detection identity with medium confidence where legacy Matrix
+  identity decisions are evaluated, including that consumer's existing
+  quantitation-grade guard. The retained finalized Untarget route keeps group
+  disposition independent of unavailable SNR facts and uses its existing cell
+  owner: `primary_matrix_area_from_integration` accepts only the selected
+  morphology or canonical physical area. Its writer confidence remains
+  `owner_finalized`, which records completion authority rather than scientific
+  confidence.
 - After that initial partition, a connected RT/mass continuum may replace a
   remaining split only when it contains one
   clean detected owner from every sample in the explicit Alignment batch,
