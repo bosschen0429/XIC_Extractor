@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import cast
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
@@ -153,15 +154,17 @@ class InspectorExportDialog(QDialog):
                 raise ValueError("請選擇 HTML 輸出路徑")
             strategy = self.strategy.currentData()
             query = strategy == "query"
+            sample_ids = []
+            for index in range(self.samples.count()):
+                # Valid indices remain populated during this synchronous slot.
+                item = cast(QListWidgetItem, self.samples.item(index))
+                if item.checkState() == Qt.CheckState.Checked:
+                    sample_ids.append(item.data(Qt.ItemDataRole.UserRole))
             selection = SelectionRequest(
                 strategy=strategy,
                 limit=self.limit.value(),
                 seed=_integer(self.seed.text(), "Seed"),
-                sample_ids=tuple(
-                    self.samples.item(index).data(Qt.ItemDataRole.UserRole)
-                    for index in range(self.samples.count())
-                    if self.samples.item(index).checkState() == Qt.CheckState.Checked
-                ),
+                sample_ids=tuple(sample_ids),
                 candidate_ids=_ids(self.candidates.text()) if query else (),
                 group_ids=_ids(self.groups.text()) if query else (),
                 mz_min=_number(self.mz_min.text()) if query else None,
