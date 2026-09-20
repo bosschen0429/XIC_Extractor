@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import InitVar, dataclass, field
 from itertools import combinations
+from types import MappingProxyType
 from typing import TypeAlias
 
 from xic_extractor.alignment.config import AlignmentConfig
@@ -48,6 +49,73 @@ _CROSS_SAMPLE_REPAIR_APPLICATION_PREFIX = (
 _CROSS_SAMPLE_REPAIR_APPLICATION_MINT_TOKEN = object()
 _INITIAL_EDGE_MINT_TOKEN = object()
 INITIAL_PAIR_POLICY = "hard-gate-candidates-v1"
+
+
+@dataclass(frozen=True, slots=True)
+class _CrossSampleInitialPairFacts:
+    """Invocation-bound owner-pair evidence retained by initial grouping."""
+
+    config: AlignmentConfig = field(repr=False, compare=False)
+    drift_lookup: DriftLookupProtocol | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+    )
+    _owners_by_id: Mapping[str, SampleLocalMS1Owner] = field(
+        default_factory=dict,
+        repr=False,
+        compare=False,
+    )
+    _edge_cache: Mapping[tuple[str, str], OwnerEdgeEvidence] = field(
+        default_factory=dict,
+        repr=False,
+        compare=False,
+    )
+
+    def evidence_for(
+        self,
+        left_owner: SampleLocalMS1Owner,
+        right_owner: SampleLocalMS1Owner,
+        *,
+        config: AlignmentConfig,
+        drift_lookup: DriftLookupProtocol | None,
+    ) -> OwnerEdgeEvidence | None:
+        """Return a hit only for the exact scoring invocation and orientation."""
+
+        if config is not self.config or drift_lookup is not self.drift_lookup:
+            return None
+        if (
+            self._owners_by_id.get(left_owner.owner_id) is not left_owner
+            or self._owners_by_id.get(right_owner.owner_id) is not right_owner
+        ):
+            return None
+        key = tuple(sorted((left_owner.owner_id, right_owner.owner_id)))
+        edge = self._edge_cache.get((key[0], key[1]))
+        if (
+            edge is None
+            or edge.left_owner_id != left_owner.owner_id
+            or edge.right_owner_id != right_owner.owner_id
+        ):
+            return None
+        return edge
+
+
+def _retain_cross_sample_initial_pair_facts(
+    *,
+    owners: tuple[SampleLocalMS1Owner, ...],
+    config: AlignmentConfig,
+    drift_lookup: DriftLookupProtocol | None,
+    edge_cache: dict[tuple[str, str], OwnerEdgeEvidence],
+) -> _CrossSampleInitialPairFacts:
+    """Retain authoritative grouping facts for this in-memory invocation."""
+
+    owners_by_id = {owner.owner_id: owner for owner in owners}
+    return _CrossSampleInitialPairFacts(
+        config=config,
+        drift_lookup=drift_lookup,
+        _owners_by_id=MappingProxyType(owners_by_id),
+        _edge_cache=MappingProxyType(edge_cache),
+    )
 
 
 def iter_cross_sample_initial_owner_pairs(
@@ -167,15 +235,32 @@ def classify_cross_sample_initial_neighborhood_edge(
     context: CrossSampleInitialEdgeContext,
     config: AlignmentConfig,
     drift_lookup: DriftLookupProtocol | None = None,
+    initial_pair_facts: _CrossSampleInitialPairFacts | None = None,
 ) -> CrossSampleNeighborhoodEdge:
     """Mint a sealed edge by evaluating the exact owner pair inside CrossSample."""
 
-    edge = evaluate_owner_edge(
-        left_owner,
-        right_owner,
-        config=config,
-        drift_lookup=drift_lookup,
+    if (
+        initial_pair_facts is not None
+        and type(initial_pair_facts) is not _CrossSampleInitialPairFacts
+    ):
+        raise CrossSampleContractError("initial pair facts must be exact")
+    edge = (
+        initial_pair_facts.evidence_for(
+            left_owner,
+            right_owner,
+            config=config,
+            drift_lookup=drift_lookup,
+        )
+        if initial_pair_facts is not None
+        else None
     )
+    if edge is None:
+        edge = evaluate_owner_edge(
+            left_owner,
+            right_owner,
+            config=config,
+            drift_lookup=drift_lookup,
+        )
     disposition = classify_cross_sample_initial_edge(
         edge,
         context=context,

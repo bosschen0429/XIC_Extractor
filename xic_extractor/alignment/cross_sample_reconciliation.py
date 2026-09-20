@@ -278,7 +278,7 @@ def build_initial_cid_nl_cross_sample_context(
             "initial CID-NL context requires an exact trajectory policy"
         )
     batch_samples = processing_owners.sample_resolutions
-    family_context, anchors, sample_candidates, drift_lookup = (
+    family_context, anchors, sample_candidates, drift_lookup, initial_pair_facts = (
         bootstrap_cid_nl_initial_population(
             processing_owners=processing_owners,
             sample_assessments=sample_assessments,
@@ -293,6 +293,7 @@ def build_initial_cid_nl_cross_sample_context(
             },
             drift_lookup=drift_lookup,
             retain_observation_only_candidates=True,
+            retain_initial_pair_facts=True,
             known_istd_reference=known_istd_reference,
             retained_hypotheses_by_assessment=retained_hypotheses_by_assessment,
         )
@@ -345,6 +346,7 @@ def build_initial_cid_nl_cross_sample_context(
             ),
             config=alignment_config,
             drift_lookup=drift_lookup,
+            initial_pair_facts=initial_pair_facts,
         )
         for left, right in iter_cross_sample_initial_owner_pairs(
             owners, config=alignment_config,

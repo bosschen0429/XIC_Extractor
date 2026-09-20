@@ -329,6 +329,7 @@ def construct_cross_sample_peak_group_hypotheses(
     edge_evidence_sink: list[OwnerEdgeEvidence] | None = None,
     edge_evaluator: OwnerEdgeEvaluator = evaluate_owner_edge,
     processing_request_id: str | None = None,
+    _initial_edge_cache: dict[tuple[str, str], OwnerEdgeEvidence] | None = None,
 ) -> tuple[CrossSamplePeakGroupHypothesis, ...]:
     if not owners:
         return ()
@@ -367,7 +368,7 @@ def construct_cross_sample_peak_group_hypotheses(
             start=1,
         )
     )
-    edge_cache: dict[tuple[str, str], OwnerEdgeEvidence] = {}
+    edge_cache = {} if _initial_edge_cache is None else _initial_edge_cache
     full_batch_continuity_owner_sets: frozenset[frozenset[str]] = frozenset()
     injection_trajectory_owner_sets: frozenset[frozenset[str]] = frozenset()
     bounded_continuity_owner_sets: frozenset[frozenset[str]] = frozenset()
@@ -845,15 +846,31 @@ def _link_groups(
                     group_indexes_by_precursor_bucket=group_indexes_by_precursor_bucket,
                 )
                 continue
-        best_index = min(
-            compatible_group_indexes,
-            key=lambda index: _group_match_score(
-                owner, groups[index], config, drift_lookup=drift_lookup,
-                edge_evidence_sink=edge_evidence_sink,
-                edge_cache=edge_cache,
-                edge_evaluator=edge_evaluator,
-            ),
-        )
+        best_index = compatible_group_indexes[0]
+        if len(compatible_group_indexes) == 1:
+            # Ranking used to populate every destination-pair fact as a side
+            # effect. Retain that evidence/cache order without calculating a
+            # score whose sole destination cannot change.
+            for existing in groups[best_index]:
+                _edge_for_pair(
+                    owner,
+                    existing,
+                    config=config,
+                    drift_lookup=drift_lookup,
+                    edge_evidence_sink=edge_evidence_sink,
+                    edge_cache=edge_cache,
+                    edge_evaluator=edge_evaluator,
+                )
+        else:
+            best_index = min(
+                compatible_group_indexes,
+                key=lambda index: _group_match_score(
+                    owner, groups[index], config, drift_lookup=drift_lookup,
+                    edge_evidence_sink=edge_evidence_sink,
+                    edge_cache=edge_cache,
+                    edge_evaluator=edge_evaluator,
+                ),
+            )
         groups[best_index].append(owner)
         envelopes[best_index] = _extend_group_envelope(envelopes[best_index], owner)
         _add_group_precursor_bucket_index(

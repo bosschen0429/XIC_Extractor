@@ -121,6 +121,73 @@ def test_initial_edge_owner_evaluates_pair_once(monkeypatch):
         replace(edge, disposition="excluded")
 
 
+def test_initial_edge_reuses_only_exact_oriented_grouping_facts(monkeypatch):
+    from tests.test_alignment_owner_clustering import _owner
+    from xic_extractor.alignment import AlignmentConfig
+    from xic_extractor.alignment import cross_sample_neighborhood_graph as graph
+    from xic_extractor.alignment.cross_sample_peak_groups import (
+        construct_cross_sample_peak_group_hypotheses,
+    )
+
+    config = AlignmentConfig()
+    owners = (_owner("a", "peak"), _owner("b", "peak"))
+    evaluated_edges = []
+    edge_cache = {}
+    construct_cross_sample_peak_group_hypotheses(
+        owners,
+        config=config,
+        edge_evidence_sink=evaluated_edges,
+        _initial_edge_cache=edge_cache,
+    )
+    assert len(evaluated_edges) == 1
+    owner_by_id = {owner.owner_id: owner for owner in owners}
+    cached_left = owner_by_id[evaluated_edges[0].left_owner_id]
+    cached_right = owner_by_id[evaluated_edges[0].right_owner_id]
+    facts = graph._retain_cross_sample_initial_pair_facts(
+        owners=owners,
+        config=config,
+        drift_lookup=None,
+        edge_cache=edge_cache,
+    )
+    calls = 0
+    original = graph.evaluate_owner_edge
+
+    def counted(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(graph, "evaluate_owner_edge", counted)
+    cached = graph.classify_cross_sample_initial_neighborhood_edge(
+        left_owner=cached_left,
+        right_owner=cached_right,
+        context="complete_link",
+        config=config,
+        initial_pair_facts=facts,
+    )
+    assert calls == 0
+    assert cached.initial_evidence is evaluated_edges[0]
+
+    reversed_edge = graph.classify_cross_sample_initial_neighborhood_edge(
+        left_owner=cached_right,
+        right_owner=cached_left,
+        context="complete_link",
+        config=config,
+        initial_pair_facts=facts,
+    )
+    assert calls == 1
+    assert reversed_edge.initial_evidence.left_owner_id == cached_right.owner_id
+
+    graph.classify_cross_sample_initial_neighborhood_edge(
+        left_owner=cached_left,
+        right_owner=cached_right,
+        context="complete_link",
+        config=replace(config),
+        initial_pair_facts=facts,
+    )
+    assert calls == 2
+
+
 def _application_context(*, predecessors, edges, budget):
     from xic_extractor.alignment.cross_sample_peak_groups import (
         CrossSampleCoupledProposalContext,

@@ -38,6 +38,62 @@ from xic_extractor.processing_identity import (
 _TEST_PROCESSING_REQUEST_ID = "xic.processing-request:" + "0" * 64
 
 
+def test_single_compatible_group_skips_destination_ranking(monkeypatch) -> None:
+    def unexpected_ranking(*args, **kwargs):
+        raise AssertionError("one compatible destination does not need ranking")
+
+    monkeypatch.setattr(
+        peak_groups_module,
+        "_group_match_score",
+        unexpected_ranking,
+    )
+    owners = [_owner("a", "main"), _owner("b", "main")]
+
+    groups = peak_groups_module._complete_link_groups(
+        owners,
+        AlignmentConfig(),
+        drift_lookup=None,
+        edge_evidence_sink=[],
+        edge_cache={},
+        edge_evaluator=evaluate_owner_edge,
+    )
+
+    assert groups == (tuple(owners),)
+
+
+def test_multiple_compatible_groups_keep_destination_ranking(monkeypatch) -> None:
+    ranking_calls = 0
+    original = peak_groups_module._group_match_score
+
+    def counted_ranking(*args, **kwargs):
+        nonlocal ranking_calls
+        ranking_calls += 1
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(
+        peak_groups_module,
+        "_group_match_score",
+        counted_ranking,
+    )
+    owners = [
+        _owner("a", "first", apex_rt=10.0),
+        _owner("a", "second", apex_rt=10.1),
+        _owner("b", "candidate", apex_rt=10.05),
+    ]
+
+    groups = peak_groups_module._complete_link_groups(
+        owners,
+        AlignmentConfig(),
+        drift_lookup=None,
+        edge_evidence_sink=[],
+        edge_cache={},
+        edge_evaluator=evaluate_owner_edge,
+    )
+
+    assert ranking_calls == 2
+    assert sorted(len(group) for group in groups) == [1, 2]
+
+
 def test_raw_sufficient_group_skips_drift_in_admission_and_ranking() -> None:
     class UnneededDrift(_DriftLookup):
         def sample_delta_min(self, sample_stem: str) -> float | None:

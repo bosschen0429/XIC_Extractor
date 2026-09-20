@@ -5,6 +5,10 @@ from __future__ import annotations
 from collections.abc import Mapping
 
 from xic_extractor.alignment.config import AlignmentConfig
+from xic_extractor.alignment.cross_sample_neighborhood_graph import (
+    _CrossSampleInitialPairFacts,
+    _retain_cross_sample_initial_pair_facts,
+)
 from xic_extractor.alignment.cross_sample_peak_groups import (
     construct_cross_sample_peak_group_hypotheses,
 )
@@ -13,7 +17,10 @@ from xic_extractor.alignment.drift_evidence import (
     LocalTrajectoryEvidenceLookup,
     assess_local_trajectory,
 )
-from xic_extractor.alignment.edge_scoring import DriftLookupProtocol
+from xic_extractor.alignment.edge_scoring import (
+    DriftLookupProtocol,
+    OwnerEdgeEvidence,
+)
 from xic_extractor.alignment.hypothesis_owner_adapter import (
     bind_retained_peak_hypotheses_to_assessment_universe,
     compose_peak_hypotheses_from_assessment_universe,
@@ -86,12 +93,14 @@ def bootstrap_mode_tracks_from_cid_nl_support(
 
     if type(trajectory_policy) is not ModeTrackTrajectoryPolicy:
         raise ModeTrackProducerError("trajectory_policy must be explicit and typed")
-    family_context, anchors, sample_candidates, _ = bootstrap_cid_nl_initial_population(
-        processing_owners=processing_owners,
-        sample_assessments=sample_assessments,
-        alignment_config=alignment_config,
-        drift_lookup=drift_lookup,
-        retain_observation_only_candidates=retain_observation_only_candidates,
+    family_context, anchors, sample_candidates, _, _ = (
+        bootstrap_cid_nl_initial_population(
+            processing_owners=processing_owners,
+            sample_assessments=sample_assessments,
+            alignment_config=alignment_config,
+            drift_lookup=drift_lookup,
+            retain_observation_only_candidates=retain_observation_only_candidates,
+        )
     )
     model_set = fit_mode_track_model_set(
         processing_owners=processing_owners,
@@ -151,6 +160,7 @@ def bootstrap_cid_nl_initial_population(
     drift_lookup: DriftLookupProtocol | None = None,
     known_istd_reference: KnownIstdReference | None = None,
     retain_observation_only_candidates: bool = False,
+    retain_initial_pair_facts: bool = False,
     retained_hypotheses_by_assessment: Mapping[
         tuple[str, str], tuple[PeakHypothesis, ...]
     ]
@@ -165,6 +175,7 @@ def bootstrap_cid_nl_initial_population(
         ...,
     ],
     DriftLookupProtocol | None,
+    _CrossSampleInitialPairFacts | None,
 ]:
     """Build initial groups and their physical candidate bindings."""
 
@@ -178,6 +189,8 @@ def bootstrap_cid_nl_initial_population(
         raise ModeTrackProducerError(
             "retain_observation_only_candidates must be boolean"
         )
+    if not isinstance(retain_initial_pair_facts, bool):
+        raise ModeTrackProducerError("retain_initial_pair_facts must be boolean")
 
     method_subjects_by_id = {
         assessment.content.method_subject.method_subject_id: (
@@ -292,12 +305,26 @@ def bootstrap_cid_nl_initial_population(
             sample_universe=sample_universe,
             injection_order=injection_order,
         )
+    initial_edge_cache: dict[tuple[str, str], OwnerEdgeEvidence] | None = (
+        {} if retain_initial_pair_facts else None
+    )
     provisional_groups = construct_cross_sample_peak_group_hypotheses(
         tuple(owners),
         config=alignment_config,
         sample_universe=sample_universe,
         injection_order=injection_order,
         drift_lookup=drift_lookup,
+        _initial_edge_cache=initial_edge_cache,
+    )
+    initial_pair_facts = (
+        _retain_cross_sample_initial_pair_facts(
+            owners=tuple(owners),
+            config=alignment_config,
+            drift_lookup=drift_lookup,
+            edge_cache=initial_edge_cache or {},
+        )
+        if retain_initial_pair_facts
+        else None
     )
     if (not provisional_groups and not searched_no_observation) or any(
         track.review_only for track in provisional_groups
@@ -408,7 +435,13 @@ def bootstrap_cid_nl_initial_population(
             for hypothesis in hypotheses_by_sample[sample_id]
         )
         sample_candidates.append((sample, candidates))
-    return family_context, anchors, tuple(sample_candidates), drift_lookup
+    return (
+        family_context,
+        anchors,
+        tuple(sample_candidates),
+        drift_lookup,
+        initial_pair_facts,
+    )
 
 
 def bootstrap_mode_tracks_from_ms1_hypotheses(
