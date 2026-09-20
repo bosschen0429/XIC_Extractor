@@ -238,6 +238,12 @@ def _assert_jobs_match_direct_construction(batch) -> None:
                 f"{sample.metadata.raw_stem}:{subject.method_subject_id}"
             ),
             signal_processing_profile=context.signal_processing_profile,
+            subject_partition=batch.jobs[0].subject_partition,
+            acquisition_source_expectation=(
+                context.acquisition_sources_by_sample.get(sample.metadata.raw_stem)
+                if batch.jobs[0].subject_partition is not None
+                else None
+            ),
             physical_records=tuple(
                 record
                 for _candidate_id, record in sorted(
@@ -923,6 +929,7 @@ print(json.dumps({'curves': curves, 'links': links}))
         ),
     ),
 )
+@pytest.mark.parametrize("indexed_input", (False, True), ids=("eager", "indexed"))
 def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     tmp_path: Path,
     monkeypatch,
@@ -931,6 +938,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     nearby,
     family_context,
     family_precursor_delta,
+    indexed_input,
 ) -> None:
     from xic_extractor.alignment.csv_io import read_owner_bound_discovery_candidates_csv
     from xic_extractor.discovery.grouping import group_discovery_seeds
@@ -1087,6 +1095,26 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         folder = tmp_path / path.stem
         folder.mkdir()
         persisted_candidates = discovery.candidates
+        if indexed_input:
+            from xic_extractor.discovery.models import build_discovery_candidate_id
+
+            # Audit-only observations deliberately precede the real feature in
+            # m/z. They must not choose its query center or demand a curve load.
+            audit = replace(
+                persisted_candidates[0],
+                candidate_id=build_discovery_candidate_id(
+                    sample_stem=path.stem,
+                    best_ms2_scan_id=persisted_candidates[0].best_ms2_scan_id,
+                    precursor_mz=persisted_candidates[0].precursor_mz - 0.001,
+                    product_mz=persisted_candidates[0].product_mz,
+                ),
+                precursor_mz=persisted_candidates[0].precursor_mz - 0.001,
+                precursor_mz_basis="product_plus_neutral_loss",
+                ms1_peak_found=False,
+                ms1_feature_row_id="",
+                discovery_candidate_state="review_only_orphan_nl",
+            )
+            persisted_candidates = (*persisted_candidates, audit)
         receipts.update(
             _discovery_receipts(folder, (path,), {path.stem: persisted_candidates})
         )
@@ -1098,8 +1126,12 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
             work_manifest=discovery.physical_work_manifest,
             records=discovery.physical_evaluations,
         )
-        candidates[path.stem] = read_owner_bound_discovery_candidates_csv(
-            csvs[path.stem], receipt=receipts[path.stem]
+        candidates[path.stem] = tuple(
+            candidate
+            for candidate in read_owner_bound_discovery_candidates_csv(
+                csvs[path.stem], receipt=receipts[path.stem]
+            )
+            if candidate.ms1_peak_found
         )
         source_records.update(
             (record.candidate_id, record) for record in discovery.physical_evaluations
@@ -1604,9 +1636,13 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     monkeypatch.setattr(
         identity_owner, "fingerprint_file_content", count_preparation_fingerprint
     )
+    from xic_extractor.alignment.discovery_input_source import DiscoveryInputSource
+
     completed = alignment_adapter.complete_untargeted_cid_nl_alignment(
         discovery_batch=discovery_batch,
-        candidates_by_sample=candidates,
+        candidates_by_sample=(
+            DiscoveryInputSource(discovery_batch) if indexed_input else candidates
+        ),
         raw_dir=tmp_path,
         dll_dir=tmp_path,
         output_dir=tmp_path / "alignment",
@@ -2307,22 +2343,25 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
             build_untargeted_cid_nl_sample_runtime_jobs(
                 **(sample_inputs | changed), subject_work_units=subject_work_units
             )
-    wrong_records = dict(batch.context.physical_records_by_candidate)
-    keys = tuple(wrong_records)
-    wrong_records[keys[0]] = wrong_records[keys[1]]
-    with pytest.raises(IdentityContractError, match="crossed candidate"):
-        alignment_adapter.prepare_untargeted_cid_nl_production_plan(
-            raw_paths=paths,
-            sample_metadata=tuple(sample.metadata for sample in batch.context.samples),
-            settings=settings,
-            peak_config=peak_config,
-            candidates_by_sample=batch.context.candidates_by_sample,
-            discovery_receipts_by_sample=receipts,
-            dll_dir=tmp_path,
-            sample_identity_namespace="test:physical-replay",
-            signal_processing_profile=profile,
-            physical_records_by_candidate=wrong_records,
-        )
+    if not indexed_input:
+        wrong_records = dict(batch.context.physical_records_by_candidate)
+        keys = tuple(wrong_records)
+        wrong_records[keys[0]] = wrong_records[keys[1]]
+        with pytest.raises(IdentityContractError, match="crossed candidate"):
+            alignment_adapter.prepare_untargeted_cid_nl_production_plan(
+                raw_paths=paths,
+                sample_metadata=tuple(
+                    sample.metadata for sample in batch.context.samples
+                ),
+                settings=settings,
+                peak_config=peak_config,
+                candidates_by_sample=batch.context.candidates_by_sample,
+                discovery_receipts_by_sample=receipts,
+                dll_dir=tmp_path,
+                sample_identity_namespace="test:physical-replay",
+                signal_processing_profile=profile,
+                physical_records_by_candidate=wrong_records,
+            )
     close_and_verify_persisted_curves()
 
 
@@ -2758,9 +2797,7 @@ def test_completed_empty_recovery_preserves_each_compatible_source_subject(
     missing_raw = _FakeRaw((7.98,))
     missing_raw.intensity[:] = 0.0
     source_raws[raw_paths[4]] = missing_raw
-    candidates_by_sample = {
-        stem: (selected_candidates[stem],) for stem in stems[:4]
-    }
+    candidates_by_sample = {stem: (selected_candidates[stem],) for stem in stems[:4]}
     candidates_by_sample["Missing"] = ()
     batch = build_untargeted_cid_nl_production_batch(
         raw_paths=raw_paths,
@@ -2785,12 +2822,10 @@ def test_completed_empty_recovery_preserves_each_compatible_source_subject(
         sample_identity_namespace="study:compatible-source-subject",
     )
     assert len(batch.subject_batch.subjects) == 2
-    assert len(
-        {
-            subject.method_subject_id
-            for subject in batch.subject_batch.subjects
-        }
-    ) == 2
+    assert (
+        len({subject.method_subject_id for subject in batch.subject_batch.subjects})
+        == 2
+    )
     _install_runtime_raws(
         monkeypatch,
         sources_by_path=source_raws,
@@ -3077,7 +3112,9 @@ def test_run_spec_expectation_rejects_change_after_fingerprint(
 
 @pytest.mark.parametrize("stems", [("B", "A"), ("a_sample", "B_sample"), ("A", "B")])
 def test_reused_run_spec_source_preserves_plan_request_and_candidates(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, stems: tuple[str, str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    stems: tuple[str, str],
 ) -> None:
     settings = replace(
         _settings(), neutral_loss_profile=None, precursor_mz_tolerance_ppm=1.0
@@ -3094,18 +3131,24 @@ def test_reused_run_spec_source_preserves_plan_request_and_candidates(
         raw_paths=paths,
         sample_metadata=tuple(
             SampleMetadata(
-                sample_name=stem, raw_stem=stem, injection_order=index,
+                sample_name=stem,
+                raw_stem=stem,
+                injection_order=index,
                 sample_role="study_sample",
-            ) for index, stem in enumerate(stems, 1)
+            )
+            for index, stem in enumerate(stems, 1)
         ),
-        settings=settings, peak_config=peak_config,
+        settings=settings,
+        peak_config=peak_config,
         candidates_by_sample=candidates,
         discovery_receipts_by_sample=_discovery_receipts(tmp_path, paths, candidates),
-        dll_dir=tmp_path, sample_identity_namespace="study:source-verification",
+        dll_dir=tmp_path,
+        sample_identity_namespace="study:source-verification",
     )
     baseline = prepare_untargeted_cid_nl_production_plan(**arguments)
     spec, expectations = compile_discovery_processing_run_spec_with_expectations(
-        paths, discovery_settings=settings,
+        paths,
+        discovery_settings=settings,
     )
     fingerprints = []
     fingerprint = identity_owner.fingerprint_file_content
@@ -3117,7 +3160,8 @@ def test_reused_run_spec_source_preserves_plan_request_and_candidates(
     monkeypatch.setattr(identity_owner, "fingerprint_file_content", count_fingerprint)
     monkeypatch.setattr(raw_reader_owner, "fingerprint_file_content", count_fingerprint)
     reused = prepare_untargeted_cid_nl_production_plan(
-        **arguments, acquisition_source_expectations=expectations,
+        **arguments,
+        acquisition_source_expectations=expectations,
     )
     assert fingerprints == []
     for path, expectation, acquisition in zip(
@@ -4170,9 +4214,7 @@ def test_known_istd_reference_closes_drifting_group_and_cell_proof(
             "ISTD Pair",
         ]
     )
-    targets.append(
-        ["known", "ISTD", 500.015, 7, 10, 40, 116.0474, 20, 50, ""]
-    )
+    targets.append(["known", "ISTD", 500.015, 7, 10, 40, 116.0474, 20, 50, ""])
     results = workbook.create_sheet("XIC Results")
     results.append(["SampleName", "Target", "Role", "RT", "Area"])
     for i, path in enumerate(paths):

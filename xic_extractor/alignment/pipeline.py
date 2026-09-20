@@ -15,8 +15,8 @@ from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.csv_io import (
     DiscoveryBatchInput,
     read_discovery_batch_index,
-    read_owner_bound_discovery_candidates_csv,
 )
+from xic_extractor.alignment.discovery_input_source import DiscoveryInputSource
 from xic_extractor.alignment.drift_evidence import (
     KnownIstdReference,
     mint_known_istd_reference_from_measurements,
@@ -57,7 +57,6 @@ from xic_extractor.diagnostics.alignment_explanation_projection import (
     prepare_alignment_explanation,
 )
 from xic_extractor.diagnostics.timing import TimingRecorder
-from xic_extractor.discovery.batch_contract import DiscoveryCandidateUniverseReceipt
 from xic_extractor.discovery.models import DiscoveryCandidate, DiscoverySettings
 from xic_extractor.execution_settings import DEFAULT_ALIGNMENT_WORKERS
 from xic_extractor.extraction.untargeted_alignment import (
@@ -226,14 +225,11 @@ def run_alignment(
             discovery_batch_index, require_owner_closure=True
         )
     with recorder.stage("alignment.read_candidates") as stage:
-        candidates_by_sample = {
-            sample_stem: read_owner_bound_discovery_candidates_csv(
-                batch.candidate_csvs[sample_stem],
-                receipt=_required_candidate_receipt(batch, sample_stem),
-            )
-            for sample_stem in batch.sample_order
-        }
-        stage.metrics["candidate_count"] = sum(map(len, candidates_by_sample.values()))
+        candidates_by_sample = DiscoveryInputSource(batch)
+        stage.metrics["candidate_count"] = len(candidates_by_sample.locations)
+        stage.metrics["feature_candidate_count"] = len(
+            candidates_by_sample.feature_candidate_ids()
+        )
     owner_build_route_receipt = _mint_retained_untargeted_cid_nl_route_receipt(
         configured_backend=owner_build_xic_backend,
     )
@@ -437,7 +433,7 @@ def _run_untargeted_alignment(
                 raw_workers=raw_workers,
                 raw_worker_backend=raw_worker_backend,
                 should_cancel=should_cancel,
-                retain_partition_memory=True,
+                retain_partition_memory=False,
                 max_partition_jobs=max_partition_jobs,
             )
         else:
@@ -457,7 +453,7 @@ def _run_untargeted_alignment(
                 raw_workers=raw_workers,
                 raw_worker_backend=raw_worker_backend,
                 should_cancel=should_cancel,
-                retain_partition_memory=True,
+                retain_partition_memory=False,
                 max_partition_jobs=max_partition_jobs,
             )
     except RuntimeError as exc:
@@ -476,7 +472,11 @@ def _run_untargeted_alignment(
                 prepare_alignment_explanation(
                     output_dir / "cid_nl_explanation.sqlite",
                     completed=completed,
-                    candidates_by_sample=candidates_by_sample,
+                    candidates_by_sample=(
+                        candidates_by_sample.feature_view()
+                        if isinstance(candidates_by_sample, DiscoveryInputSource)
+                        else candidates_by_sample
+                    ),
                     alignment_config=alignment_config,
                     known_istd_reference_provenance=(
                         None
@@ -659,15 +659,3 @@ def _owned_path_collisions(paths: Iterable[Path]) -> list[Path]:
             if candidate.exists():
                 collisions.append(candidate)
     return collisions
-
-
-def _required_candidate_receipt(
-    batch: DiscoveryBatchInput,
-    sample_stem: str,
-) -> DiscoveryCandidateUniverseReceipt:
-    receipt = batch.candidate_receipts[sample_stem]
-    if receipt is None:
-        raise ValueError(
-            f"{sample_stem}: owner-closed Alignment requires a candidate receipt"
-        )
-    return receipt

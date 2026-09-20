@@ -598,6 +598,7 @@ def adapt_current_discovery_sample_subject(
     sample: ResolvedCanonicalSampleIdentity,
     method_subject: CidNlMethodSubject,
     candidates: tuple[DiscoveryCandidate, ...],
+    support_candidates: tuple[DiscoveryCandidate, ...] = (),
     settings: DiscoverySettings,
     peak_config: ExtractionConfig,
     raw: UntargetedCidNlRealDataRaw | None,
@@ -613,6 +614,7 @@ def adapt_current_discovery_sample_subject(
         sample=sample,
         method_subject=method_subject,
         candidates=candidates,
+        support_candidates=support_candidates,
         settings=settings,
         peak_config=peak_config,
     )
@@ -622,6 +624,18 @@ def adapt_current_discovery_sample_subject(
         method_subject=method_subject,
         settings=settings,
     )
+    support_bounded = _bounded_subject_candidates(
+        support_candidates,
+        sample=sample,
+        method_subject=method_subject,
+        settings=settings,
+    )
+    if {candidate.candidate_id for candidate in bounded} & {
+        candidate.candidate_id for candidate in support_bounded
+    }:
+        raise UntargetedCidNlRealDataAdapterError(
+            "support candidates must be distinct from feature candidates"
+        )
     support_policy = DdaCidNlPeakSupportPolicy(
         precursor_tolerance_da=max(
             method_subject.precursor_mz
@@ -645,6 +659,11 @@ def adapt_current_discovery_sample_subject(
         for candidate in bounded
         if candidate.ms1_peak_found
         and candidate.discovery_candidate_state in MS1_FEATURE_BACKED_STATES
+    )
+    support_seed_candidates = tuple(
+        candidate
+        for candidate in support_bounded
+        if candidate.precursor_mz_basis in {"scan_precursor", "mixed"}
     )
     if not seed_candidates and not peak_candidates:
         assessment = _mint_assessment(
@@ -691,7 +710,7 @@ def adapt_current_discovery_sample_subject(
     try:
         scan_seeds = read_complete_discovery_scan_seeds(
             bound_raw,
-            candidates=seed_candidates,
+            candidates=seed_candidates + support_seed_candidates,
             settings=settings,
             preserve_configured_losses=method_subject.composition is not None,
             include_inferred=True,
@@ -1672,6 +1691,7 @@ def _validate_inputs(**values: object) -> None:
         "sample": ResolvedCanonicalSampleIdentity,
         "method_subject": CidNlMethodSubject,
         "candidates": tuple,
+        "support_candidates": tuple,
         "settings": DiscoverySettings,
         "peak_config": ExtractionConfig,
     }
@@ -1685,6 +1705,12 @@ def _validate_inputs(**values: object) -> None:
     if any(not isinstance(item, DiscoveryCandidate) for item in candidates):
         raise UntargetedCidNlRealDataAdapterError(
             "candidates must contain current DiscoveryCandidate values"
+        )
+    support_candidates = values["support_candidates"]
+    assert isinstance(support_candidates, tuple)
+    if any(not isinstance(item, DiscoveryCandidate) for item in support_candidates):
+        raise UntargetedCidNlRealDataAdapterError(
+            "support_candidates must contain current DiscoveryCandidate values"
         )
     method_subject = values["method_subject"]
     settings = values["settings"]

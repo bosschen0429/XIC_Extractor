@@ -20,6 +20,7 @@ from xic_extractor.discovery.models import (
     DiscoveryCandidateState,
 )
 from xic_extractor.extraction.untargeted_cid_nl_real_data_inputs import (
+    ALIGNMENT_FEATURE_INPUT_KEY,
     CANDIDATE_UNIVERSE_INPUT_KEY,
     validate_candidate_universe_payload,
 )
@@ -1048,6 +1049,25 @@ def _candidate_sample_ids_from_request(
                     "Untarget batch candidate/sample universe is not unique"
                 )
             candidate_sample_ids[candidate_id] = sample_id
+    feature_ids = request_inputs.get(ALIGNMENT_FEATURE_INPUT_KEY)
+    if feature_ids is not None:
+        if (
+            not isinstance(feature_ids, list)
+            or any(not isinstance(cid, str) for cid in feature_ids)
+            or feature_ids != sorted(set(feature_ids))
+            or not set(feature_ids).issubset(candidate_sample_ids)
+        ):
+            raise ApplicationResultContractError(
+                "Alignment feature selection is invalid"
+            )
+        subject_batch = cid_nl_method_subject_batch_from_request(request)
+        if tuple(feature_ids) != tuple(
+            cid for cid, _ in subject_batch.candidate_memberships
+        ):
+            raise ApplicationResultContractError(
+                "Alignment feature selection crossed subject membership"
+            )
+        return {cid: candidate_sample_ids[cid] for cid in feature_ids}
     return candidate_sample_ids
 
 

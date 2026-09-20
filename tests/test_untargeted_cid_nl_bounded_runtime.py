@@ -202,6 +202,192 @@ def test_bounded_partition_keeps_alignment_workset_atomic(
         )
 
 
+def test_indexed_mass_partition_keeps_closed_worksets_and_budgets_neighbors(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from xic_extractor.extraction import (
+        untargeted_cid_nl_bounded_runtime as bounded_owner,
+    )
+    from xic_extractor.extraction.untargeted_cid_nl_production_batch import (
+        PreparedCidNlAlignmentSubjectWorksets,
+    )
+    from xic_extractor.peak_detection.cid_nl_method_subject import (
+        cid_nl_alignment_subject_worksets,
+        mint_untargeted_cid_nl_method_subject,
+        mint_untargeted_cid_nl_method_subject_batch,
+    )
+
+    plan, _reference = _plan(tmp_path, monkeypatch)
+    subjects = tuple(
+        sorted(
+            (
+                mint_untargeted_cid_nl_method_subject(
+                    precursor_mz=mz,
+                    precursor_tolerance_ppm=20.0,
+                    neutral_loss_da=loss,
+                )
+                for mz, loss in (
+                    (99.0, 116.0474),
+                    (201.0, 116.0474),
+                    (250.0, 114.0),
+                    (251.0, 112.0),
+                )
+            ),
+            key=lambda subject: subject.method_subject_id,
+        )
+    )
+    worksets = cid_nl_alignment_subject_worksets(
+        subjects,
+        comparison_mz_intervals=((90.0, 210.0),),
+    )
+    closed = next(workset for workset in worksets if len(workset) == 2)
+    assert {subject.precursor_mz for subject in closed} == {99.0, 201.0}
+    membership_counts = {
+        subject.method_subject_id: (
+            600 if subject.precursor_mz in {250.0, 251.0} else 1
+        )
+        for subject in subjects
+    }
+    memberships = tuple(
+        sorted(
+            (
+                f"candidate-{subject.method_subject_id}-{index:04d}",
+                subject.method_subject_id,
+            )
+            for subject in subjects
+            for index in range(membership_counts[subject.method_subject_id])
+        )
+    )
+    packing_plan = replace(
+        plan,
+        subject_batch=mint_untargeted_cid_nl_method_subject_batch(
+            subjects=subjects,
+            candidate_memberships=memberships,
+        ),
+        runtime_subjects=subjects,
+        partition_input_loader=lambda _candidate_ids: ({}, {}, {}),
+    )
+    memberships_by_subject = {
+        subject.method_subject_id: tuple(
+            membership
+            for membership in memberships
+            if membership[1] == subject.method_subject_id
+        )
+        for subject in subjects
+    }
+    prepared = PreparedCidNlAlignmentSubjectWorksets(
+        plan=packing_plan,
+        worksets=worksets,
+        subjects_by_id={subject.method_subject_id: subject for subject in subjects},
+        workset_ids_by_subject={
+            subject.method_subject_id: frozenset(
+                member.method_subject_id for member in workset
+            )
+            for workset in worksets
+            for subject in workset
+        },
+        memberships_by_subject=memberships_by_subject,
+    )
+    monkeypatch.setattr(
+        bounded_owner,
+        "prepare_untargeted_cid_nl_alignment_subject_worksets",
+        lambda active_plan, **_kwargs: prepared
+        if active_plan is packing_plan
+        else pytest.fail("partition preparation crossed its indexed plan"),
+    )
+
+    adapter = bounded_owner.CidNlPartitionPipelineAdapter(
+        packing_plan,
+        alignment_config=AlignmentConfig(),
+        max_partition_jobs=len(plan.context.samples) * len(subjects),
+    )
+    payloads = tuple(
+        adapter_partition.payload for adapter_partition in adapter.partitions
+    )
+
+    assert any(set(payload) == set(closed) for payload in payloads)
+    assert all(
+        not ({250.0, 251.0} <= {subject.precursor_mz for subject in payload})
+        for payload in payloads
+    )
+    assert len(payloads) == 3
+
+
+def test_indexed_finalization_orders_children_by_canonical_subject(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from types import SimpleNamespace
+
+    from xic_extractor.extraction import (
+        untargeted_cid_nl_bounded_runtime as bounded_owner,
+    )
+
+    plan, _reference = _plan(tmp_path, monkeypatch)
+    indexed_plan = replace(
+        plan,
+        partition_input_loader=lambda _candidate_ids: ({}, {}, {}),
+    )
+    adapter = bounded_owner.CidNlPartitionPipelineAdapter(
+        indexed_plan,
+        alignment_config=AlignmentConfig(),
+        max_partition_jobs=len(plan.context.samples),
+    )
+    canonical_ids = tuple(
+        subject.method_subject_id for subject in plan.subject_batch.subjects
+    )
+    mass_execution_ids = tuple(reversed(canonical_ids))
+
+    class StoredChildren:
+        def sequence(self, field_name: str):
+            assert field_name == "children"
+            return (None,) * len(mass_execution_ids)
+
+        def read_selected(
+            self,
+            index: int,
+            field_name: str,
+            positions: tuple[int, ...],
+        ):
+            assert field_name == "children"
+            assert positions == (0,)
+            return (mass_execution_ids[index],)
+
+    outputs = tuple(
+        SimpleNamespace(
+            result=SimpleNamespace(
+                capture_bindings=(),
+                excluded_candidates=(),
+                child_order_keys=(subject_id,),
+                sealed=SimpleNamespace(index=index),
+            )
+        )
+        for index, subject_id in enumerate(mass_execution_ids)
+    )
+    captured = []
+
+    def capture_finalization(request):
+        captured.append(request)
+        return request
+
+    monkeypatch.setattr(
+        bounded_owner,
+        "finalize_alignment_result",
+        capture_finalization,
+    )
+    monkeypatch.setattr(
+        bounded_owner,
+        "UntargetBatchApplicationResultRequest",
+        lambda **values: SimpleNamespace(**values),
+    )
+
+    finalized = adapter.finalize_application(StoredChildren(), outputs)
+
+    assert captured == [finalized]
+    assert tuple(finalized.children) == canonical_ids
+
+
 def test_bounded_partition_real_entry_mints_interleaved_worksets_canonically(
     tmp_path,
     monkeypatch,

@@ -713,9 +713,224 @@ def test_read_discovery_candidates_csv_rejects_malformed_typed_fields_with_row_n
         read_discovery_candidates_csv(csv_path)
 
 
+def test_discovery_input_source_defers_typed_rows_and_loads_selected_features(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from xic_extractor.alignment import discovery_input_source as source_owner
+
+    rows = [
+        _indexed_candidate_row(
+            tmp_path,
+            sample="Sample_1",
+            scan=6095,
+            state="ms1_feature_nl_supported",
+            reason="多行證據\n第二行",
+        ),
+        _indexed_candidate_row(
+            tmp_path,
+            sample="Sample_1",
+            scan=6096,
+            state="review_only_orphan_nl",
+        ),
+    ]
+    batch = _discovery_input_batch(tmp_path, {"Sample_1": rows})
+    parsed_rows: list[str] = []
+    real_parse = source_owner._parse_candidate_row
+
+    def observe_parse(path: Path, row_number: int, row: dict[str, str]):
+        parsed_rows.append(row["candidate_id"])
+        return real_parse(path, row_number, row)
+
+    monkeypatch.setattr(source_owner, "_parse_candidate_row", observe_parse)
+
+    source = source_owner.DiscoveryInputSource(batch)
+
+    assert parsed_rows == []
+    (feature,) = source.feature_view()["Sample_1"]
+    assert feature.candidate_id == rows[0]["candidate_id"]
+    assert feature.reason == "多行證據\n第二行"
+    assert parsed_rows == [rows[0]["candidate_id"]]
+    loaded = source.load_candidates((rows[1]["candidate_id"],))
+    assert [item.candidate_id for item in loaded["Sample_1"]] == [
+        rows[1]["candidate_id"]
+    ]
+    assert parsed_rows == [rows[0]["candidate_id"], rows[1]["candidate_id"]]
+
+
+def test_discovery_input_source_selects_only_direct_mixed_review_support(
+    tmp_path: Path,
+) -> None:
+    from xic_extractor.alignment.discovery_input_source import DiscoveryInputSource
+
+    sample_1_rows = [
+        _indexed_candidate_row(
+            tmp_path,
+            sample="Sample_1",
+            scan=6095,
+            state="ms1_feature_nl_supported",
+        ),
+        _indexed_candidate_row(
+            tmp_path,
+            sample="Sample_1",
+            scan=6096,
+            state="review_only_orphan_nl",
+            basis="scan_precursor",
+        ),
+        _indexed_candidate_row(
+            tmp_path,
+            sample="Sample_1",
+            scan=6097,
+            state="review_only_orphan_nl",
+            basis="mixed",
+            mz=500.223456,
+        ),
+        _indexed_candidate_row(
+            tmp_path,
+            sample="Sample_1",
+            scan=6098,
+            state="review_only_orphan_nl",
+            basis="product_plus_neutral_loss",
+        ),
+    ]
+    sample_2_rows = [
+        _indexed_candidate_row(
+            tmp_path,
+            sample="Sample_2",
+            scan=7096,
+            state="review_only_orphan_nl",
+            basis="scan_precursor",
+        )
+    ]
+    source = DiscoveryInputSource(
+        _discovery_input_batch(
+            tmp_path,
+            {"Sample_1": sample_1_rows, "Sample_2": sample_2_rows},
+        )
+    )
+
+    selected = source.load_review_support(
+        ((500.1, 500.3),),
+        sample_stems=frozenset({"Sample_1"}),
+    )
+
+    assert [item.candidate_id for item in selected["Sample_1"]] == sorted(
+        (sample_1_rows[1]["candidate_id"], sample_1_rows[2]["candidate_id"])
+    )
+    assert selected["Sample_2"] == ()
+
+
+def test_discovery_input_source_rejects_changed_csv(tmp_path: Path) -> None:
+    from xic_extractor.alignment.discovery_input_source import DiscoveryInputSource
+
+    row = _indexed_candidate_row(
+        tmp_path,
+        sample="Sample_1",
+        scan=6095,
+        state="ms1_feature_nl_supported",
+    )
+    batch = _discovery_input_batch(tmp_path, {"Sample_1": [row]})
+    source = DiscoveryInputSource(batch)
+
+    with batch.candidate_csvs["Sample_1"].open("a", encoding="utf-8") as handle:
+        handle.write(" ")
+
+    with pytest.raises(ValueError, match="changed after indexing"):
+        source.load_candidates((row["candidate_id"],))
+
+
 def _read_csv(path: Path) -> list[dict[str, str]]:
     with path.open(newline="", encoding="utf-8") as handle:
         return list(csv.DictReader(handle))
+
+
+def _discovery_input_batch(
+    root: Path,
+    rows_by_sample: dict[str, list[dict[str, str]]],
+):
+    from xic_extractor.alignment.csv_io import (
+        DiscoveryBatchInput,
+        read_discovery_candidates_csv,
+    )
+    from xic_extractor.discovery.batch_contract import (
+        mint_discovery_candidate_universe_receipt,
+    )
+    from xic_extractor.processing_identity import build_acquisition_source_identity
+
+    candidate_csvs = {}
+    raw_files = {}
+    receipts = {}
+    for stem, rows in rows_by_sample.items():
+        path = root / stem / "discovery_candidates.csv"
+        _write_csv(path, DISCOVERY_CANDIDATE_COLUMNS, rows)
+        raw_path = root / f"{stem}.raw"
+        raw_path.write_bytes(stem.encode())
+        candidates = read_discovery_candidates_csv(path)
+        source = build_acquisition_source_identity(
+            raw_path,
+            acquisition_format="thermo_raw",
+            observation_namespace="test",
+        )
+        candidate_csvs[stem] = path
+        raw_files[stem] = raw_path
+        receipts[stem] = mint_discovery_candidate_universe_receipt(
+            sample_stem=stem,
+            acquisition_source=source,
+            candidate_csv=path,
+            candidates=candidates,
+        )
+    order = tuple(rows_by_sample)
+    return DiscoveryBatchInput(
+        sample_order=order,
+        candidate_csvs=candidate_csvs,
+        raw_files=raw_files,
+        review_csvs={stem: None for stem in order},
+        candidate_receipts=receipts,
+    )
+
+
+def _indexed_candidate_row(
+    root: Path,
+    *,
+    sample: str,
+    scan: int,
+    state: str,
+    basis: str = "scan_precursor",
+    mz: float = 500.123456,
+    reason: str = "strict NL seed",
+) -> dict[str, str]:
+    product_mz = mz - 116.0474
+    row = _candidate_row(
+        candidate_id=f"{sample}#{scan}@mz{mz:.6f}_p{product_mz:.6f}",
+        precursor_mz=f"{mz:.6f}",
+        product_mz=f"{product_mz:.6f}",
+        scan_precursor_mz=f"{mz:.6f}",
+        raw_file=str(root / f"{sample}.raw"),
+        sample_stem=sample,
+        best_ms2_scan_id=str(scan),
+        seed_scan_ids=str(scan),
+        precursor_mz_basis=basis,
+        reason=reason,
+    )
+    if state == "review_only_orphan_nl":
+        row.update(
+            discovery_candidate_state=state,
+            ms1_feature_row_id="",
+            ms1_peak_found="FALSE",
+            ms1_apex_rt="",
+            ms1_area="",
+            ms1_peak_rt_start="",
+            ms1_peak_rt_end="",
+            ms1_height="",
+            ms1_trace_quality="missing",
+            ms1_scan_support_score="",
+        )
+    else:
+        row.update(
+            discovery_candidate_state=state,
+            ms1_feature_row_id=f"{sample}|DNA_dR|{mz:.6f}|8.48",
+        )
+    return row
 
 
 def _write_csv(

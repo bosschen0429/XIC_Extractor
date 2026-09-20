@@ -27,6 +27,7 @@ from xic_extractor.discovery.physical_fact_persistence import (
     serialize_discovery_physical_fact_sidecar,
     write_discovery_physical_fact_sidecar,
 )
+from xic_extractor.discovery.physical_fact_source import PhysicalFactSource
 from xic_extractor.discovery.processing_run_spec_adapter import (
     compile_discovery_processing_run_spec,
 )
@@ -592,3 +593,239 @@ def test_read_discovery_physical_fact_records_rejects_profile_mismatch(
             expected_run_spec=spec,
             expected_acquisition_input=acquisition_input,
         )
+
+
+def _physical_source_payload(
+    *,
+    manifest: list[dict] | None = None,
+    records: list[dict] | None = None,
+) -> bytes:
+    return json.dumps(
+        {
+            "schema_version": "discovery_physical_fact_sidecar",
+            "run_spec": {"name": "規格", "nested": [1, {"escaped": "a\\\"b"}]},
+            "sample": {"sample_stem": "樣本-α"},
+            "work_manifest": manifest
+            if manifest is not None
+            else [{"ordinal": index, "label": f"工作-{index}"} for index in range(5)],
+            "records": records
+            if records is not None
+            else [
+                {
+                    "ordinal": index,
+                    "text": f"訊號-{index}",
+                    "nested": {"arrays": [[index], ["x,y", "[z]"]]},
+                }
+                for index in range(5)
+            ],
+        },
+        ensure_ascii=False,
+        separators=(",", ":"),
+    ).encode("utf-8")
+
+
+def test_physical_fact_source_indexes_existing_canonical_sidecar(
+    tmp_path: Path,
+) -> None:
+    _, spec, acquisition_input = _spec(tmp_path)
+    manifest, records = _population(spec, acquisition_input)
+    payload = serialize_discovery_physical_fact_sidecar(
+        run_spec=spec,
+        acquisition_input=acquisition_input,
+        work_manifest=manifest,
+        records=records,
+    )
+    expected = json.loads(payload)
+    path = tmp_path / "canonical.json"
+    path.write_bytes(payload)
+
+    source = PhysicalFactSource(path)
+
+    assert source.header == {
+        key: expected[key] for key in ("schema_version", "run_spec", "sample")
+    }
+    assert list(source.iter_manifest()) == expected["work_manifest"]
+    assert source.read_record(2) == expected["records"][2]
+
+
+def test_physical_fact_source_recovers_unicode_nested_items_and_random_subset(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from xic_extractor.discovery import physical_fact_source as source_owner
+
+    monkeypatch.setattr(source_owner, "_CHUNK_BYTES", 17)
+    path = tmp_path / "indexed.json"
+    path.write_bytes(_physical_source_payload())
+
+    with PhysicalFactSource(path) as source:
+        assert source.header == {
+            "schema_version": "discovery_physical_fact_sidecar",
+            "run_spec": {"name": "規格", "nested": [1, {"escaped": 'a\\"b'}]},
+            "sample": {"sample_stem": "樣本-α"},
+        }
+        assert source.manifest_count == source.record_count == 5
+        assert [item["ordinal"] for item in source.iter_manifest()] == list(range(5))
+        assert source.read_record(4) == {
+            "ordinal": 4,
+            "text": "訊號-4",
+            "nested": {"arrays": [[4], ["x,y", "[z]"]]},
+        }
+        assert source.read_record(1)["text"] == "訊號-1"
+
+    with pytest.raises(ValueError, match="closed"):
+        source.read_record(0)
+
+
+def test_physical_fact_source_visits_each_item_once_and_iterates_records(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "visited.json"
+    path.write_bytes(_physical_source_payload())
+    manifest_visits: list[tuple[int, int]] = []
+    record_visits: list[tuple[int, str]] = []
+
+    with PhysicalFactSource(
+        path,
+        manifest_visitor=lambda index, item: manifest_visits.append(
+            (index, item["ordinal"])
+        ),
+        record_visitor=lambda index, item: record_visits.append(
+            (index, item["text"])
+        ),
+    ) as source:
+        assert [item["ordinal"] for item in source.iter_records()] == list(range(5))
+
+    assert manifest_visits == [(index, index) for index in range(5)]
+    assert record_visits == [(index, f"訊號-{index}") for index in range(5)]
+
+
+def test_physical_fact_source_retains_selected_records_without_hiding_visits(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "filtered.json"
+    path.write_bytes(_physical_source_payload())
+    record_visits: list[int] = []
+
+    with PhysicalFactSource(
+        path,
+        record_visitor=lambda _index, item: record_visits.append(item["ordinal"]),
+        retain_record=lambda _index, item: item["ordinal"] % 2 == 0,
+    ) as source:
+        assert source.record_count == 5
+        assert source.retained_record_count == 3
+        assert [item["ordinal"] for item in source.iter_records()] == [0, 2, 4]
+        assert source.read_record(4)["ordinal"] == 4
+        with pytest.raises(LookupError, match="records index 1 was not retained"):
+            source.read_record(1)
+
+    assert record_visits == [0, 1, 2, 3, 4]
+
+
+@pytest.mark.parametrize(
+    "payload",
+    (
+        b'{"schema_version":"discovery_physical_fact_sidecar",'
+        b'"run_spec":{},"sample":{},"work_manifest":[],"records":[]',
+        b'{"schema_version":"discovery_physical_fact_sidecar",'
+        b'"schema_version":"discovery_physical_fact_sidecar",'
+        b'"run_spec":{},"sample":{},"work_manifest":[],"records":[]}',
+        b'{"schema_version":"discovery_physical_fact_sidecar",'
+        b'"run_spec":{"x":1,"x":2},"sample":{},'
+        b'"work_manifest":[],"records":[]}',
+        b'{"schema_version":"discovery_physical_fact_sidecar",'
+        b'"run_spec":{},"sample":{},"work_manifest":[{"x":1,"x":2}],'
+        b'"records":[{}]}',
+        b'{"schema_version":"discovery_physical_fact_sidecar",'
+        b'"run_spec":{},"sample":{},"work_manifest":[],"records":[],"extra":1}',
+        b'{"schema_version":"discovery_physical_fact_sidecar",'
+        b'"run_spec":{},"work_manifest":[],"records":[]}',
+        b'{"schema_version":"discovery_physical_fact_sidecar",'
+        b'"run_spec":{},"sample":{},"work_manifest":[{}],"records":[]}',
+    ),
+    ids=(
+        "truncated",
+        "duplicate-root",
+        "duplicate-header-object",
+        "duplicate-array-object",
+        "unexpected-root-key",
+        "missing-root-key",
+        "count-mismatch",
+    ),
+)
+def test_physical_fact_source_rejects_malformed_duplicate_or_incomplete_sidecar(
+    tmp_path: Path,
+    payload: bytes,
+) -> None:
+    path = tmp_path / "invalid.json"
+    path.write_bytes(payload)
+
+    with pytest.raises(ValueError):
+        PhysicalFactSource(path)
+
+
+def test_physical_fact_source_rejects_file_changed_after_index(tmp_path: Path) -> None:
+    path = tmp_path / "changed.json"
+    payload = _physical_source_payload()
+    path.write_bytes(payload)
+    source = PhysicalFactSource(path)
+
+    path.write_bytes(payload + b" ")
+
+    with pytest.raises(ValueError, match="changed after indexing"):
+        source.read_record(0)
+
+
+def test_physical_fact_source_never_requests_an_unbounded_or_whole_file_read(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from xic_extractor.discovery import physical_fact_source as source_owner
+
+    path = tmp_path / "bounded.json"
+    path.write_bytes(
+        _physical_source_payload(
+            manifest=[{"ordinal": index, "padding": "m" * 80} for index in range(4)],
+            records=[{"ordinal": index, "padding": "r" * 500} for index in range(4)],
+        )
+    )
+    monkeypatch.setattr(source_owner, "_CHUNK_BYTES", 31)
+    original_open = Path.open
+    requested_sizes: list[int] = []
+
+    class TrackingReader:
+        def __init__(self, handle) -> None:
+            self._handle = handle
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc_info: object) -> None:
+            self._handle.close()
+
+        def read(self, size: int = -1):
+            requested_sizes.append(size)
+            assert 0 <= size <= 31
+            return self._handle.read(size)
+
+        def readinto(self, buffer) -> int:
+            requested_sizes.append(len(buffer))
+            assert len(buffer) <= 31
+            return self._handle.readinto(buffer)
+
+        def __getattr__(self, name: str):
+            return getattr(self._handle, name)
+
+    def tracking_open(candidate: Path, *args: object, **kwargs: object):
+        handle = original_open(candidate, *args, **kwargs)  # type: ignore[arg-type]
+        mode = args[0] if args else kwargs.get("mode", "r")
+        if candidate == path and "r" in str(mode):
+            return TrackingReader(handle)
+        return handle
+
+    monkeypatch.setattr(Path, "open", tracking_open)
+
+    source = PhysicalFactSource(path)
+    assert source.read_record(3)["ordinal"] == 3
+    assert requested_sizes and max(requested_sizes) == 31
+    assert path.stat().st_size > max(requested_sizes)

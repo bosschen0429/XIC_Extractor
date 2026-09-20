@@ -7,6 +7,7 @@ import json
 from collections.abc import Callable, Mapping
 from copy import copy
 from dataclasses import dataclass, field, replace
+from functools import lru_cache
 from pathlib import Path
 from types import MappingProxyType
 
@@ -49,6 +50,7 @@ from xic_extractor.extraction.untargeted_cid_nl_real_data_adapter import (
     _bounded_subject_candidates,
 )
 from xic_extractor.extraction.untargeted_cid_nl_real_data_inputs import (
+    ALIGNMENT_FEATURE_INPUT_KEY,
     CANDIDATE_UNIVERSE_INPUT_KEY,
     DISCOVERY_SETTINGS_INPUT_KEY,
     PEAK_SETTINGS_INPUT_KEY,
@@ -152,6 +154,8 @@ class UntargetedCidNlRealDataRuntimeJob:
     raw_path: Path
     dll_dir: Path
     work_unit_key: str
+    subject_partition: UntargetedCidNlMethodSubjectBatch | None = None
+    support_candidates: tuple[DiscoveryCandidate, ...] = ()
     signal_processing_profile: SignalProcessingProfile | None = None
     physical_records: tuple[DiscoveryPhysicalFactRecord, ...] = ()
     acquisition_source_expectation: AcquisitionSourceExpectation | None = field(
@@ -189,6 +193,18 @@ class UntargetedCidNlRealDataRuntimeJob:
         ):
             raise UntargetedCidNlRealDataRuntimeError(
                 "candidates must contain current DiscoveryCandidate values"
+            )
+        if self.subject_partition is not None and not isinstance(
+            self.subject_partition, UntargetedCidNlMethodSubjectBatch
+        ):
+            raise UntargetedCidNlRealDataRuntimeError(
+                "subject_partition must be an owner-normalized subject batch or None"
+            )
+        if not isinstance(self.support_candidates, tuple) or any(
+            not isinstance(item, DiscoveryCandidate) for item in self.support_candidates
+        ):
+            raise UntargetedCidNlRealDataRuntimeError(
+                "support_candidates must contain current DiscoveryCandidate values"
             )
         _required_text(self.work_unit_key, field="work_unit_key")
         object.__setattr__(
@@ -243,11 +259,24 @@ def build_untargeted_cid_nl_sample_runtime_jobs(
     signal_processing_profile: SignalProcessingProfile | None = None,
     physical_records: tuple[DiscoveryPhysicalFactRecord, ...] = (),
     acquisition_source_expectation: AcquisitionSourceExpectation | None = None,
+    subject_partition: UntargetedCidNlMethodSubjectBatch | None = None,
+    support_candidates: tuple[DiscoveryCandidate, ...] = (),
 ) -> tuple[UntargetedCidNlRealDataRuntimeJob, ...]:
     """Validate a sample once, then bind each subject to those same inputs."""
 
     if not subject_work_units:
         return ()
+    if subject_partition is not None:
+        if not isinstance(subject_partition, UntargetedCidNlMethodSubjectBatch):
+            raise UntargetedCidNlRealDataRuntimeError(
+                "subject_partition must be an owner-normalized subject batch or None"
+            )
+        if tuple(
+            subject for subject, _work_unit_key in subject_work_units
+        ) != subject_partition.subjects:
+            raise UntargetedCidNlRealDataRuntimeError(
+                "subject work units must exactly match the declared subject partition"
+            )
     first_subject, first_key = subject_work_units[0]
     first = UntargetedCidNlRealDataRuntimeJob(
         processing_owners=processing_owners,
@@ -260,6 +289,8 @@ def build_untargeted_cid_nl_sample_runtime_jobs(
         raw_path=raw_path,
         dll_dir=dll_dir,
         work_unit_key=first_key,
+        subject_partition=subject_partition,
+        support_candidates=support_candidates,
         signal_processing_profile=signal_processing_profile,
         physical_records=physical_records,
         acquisition_source_expectation=acquisition_source_expectation,
@@ -792,7 +823,18 @@ def _validate_request_bound_inputs(
         raise UntargetedCidNlRealDataRuntimeError(
             "processing request does not use the supported real-data runtime contract"
         )
-    request_inputs = json.loads(request.normalized_scientific_inputs_json)
+    expected_stems = tuple(
+        binding.adapter_input_key for binding in request.acquisition_bindings
+    )
+    try:
+        request_inputs, universe_by_sample, feature_ids = _request_input_index(
+            request.normalized_scientific_inputs_json,
+            expected_stems,
+        )
+    except (IdentityContractError, TypeError, ValueError) as exc:
+        raise UntargetedCidNlRealDataRuntimeError(
+            "processing request scientific inputs are malformed"
+        ) from exc
     physical_payload = request_inputs.get(PHYSICAL_CAPTURE_INPUT_KEY)
     if job.signal_processing_profile is None:
         if physical_payload is not None or job.physical_records:
@@ -869,13 +911,21 @@ def _validate_request_bound_inputs(
             "peak settings do not match the processing request"
         )
     universe = request_inputs.get(CANDIDATE_UNIVERSE_INPUT_KEY)
-    expected_stems = tuple(
-        binding.adapter_input_key for binding in request.acquisition_bindings
-    )
-    validate_candidate_universe_payload(
-        universe,
-        expected_sample_stems=expected_stems,
-    )
+    sample_entry = universe_by_sample.get(job.sample.metadata.raw_stem)
+    if sample_entry is None:
+        raise UntargetedCidNlRealDataRuntimeError(
+            "candidate universe does not contain the request sample"
+        )
+    active_subjects = _validate_subject_partition(job, pinned)
+    if job.subject_partition is not None or feature_ids is not None:
+        _validate_partition_candidates(
+            job,
+            pinned=pinned,
+            active_subjects=active_subjects,
+            sample_entry=sample_entry,
+            feature_ids=feature_ids,
+        )
+        return active_subjects
     try:
         expected_payload = candidate_universe_payload(
             {job.sample.metadata.raw_stem: job.candidates},
@@ -903,7 +953,171 @@ def _validate_request_bound_inputs(
         raise UntargetedCidNlRealDataRuntimeError(
             "candidate universe does not match the processing request"
         )
-    return pinned
+    if job.support_candidates:
+        raise UntargetedCidNlRealDataRuntimeError(
+            "support candidates require an alignment feature selection"
+        )
+    return active_subjects
+
+
+@lru_cache(maxsize=1)
+def _request_input_index(
+    normalized_inputs_json: str,
+    expected_sample_stems: tuple[str, ...],
+) -> tuple[
+    dict[str, object],
+    Mapping[str, dict[str, object]],
+    frozenset[str] | None,
+]:
+    values = json.loads(normalized_inputs_json)
+    if not isinstance(values, dict):
+        raise UntargetedCidNlRealDataRuntimeError(
+            "processing request scientific inputs must be a mapping"
+        )
+    entries = validate_candidate_universe_payload(
+        values.get(CANDIDATE_UNIVERSE_INPUT_KEY),
+        expected_sample_stems=expected_sample_stems,
+    )
+    by_sample = MappingProxyType(
+        {str(entry["sample_stem"]): entry for entry in entries}
+    )
+    raw_feature_ids = values.get(ALIGNMENT_FEATURE_INPUT_KEY)
+    feature_ids: frozenset[str] | None = None
+    if raw_feature_ids is not None:
+        if (
+            not isinstance(raw_feature_ids, list)
+            or any(not isinstance(item, str) or not item for item in raw_feature_ids)
+            or raw_feature_ids != sorted(set(raw_feature_ids))
+        ):
+            raise UntargetedCidNlRealDataRuntimeError(
+                "alignment feature candidate IDs are malformed"
+            )
+        universe_ids: set[str] = set()
+        for entry in entries:
+            entry_ids = entry["candidate_ids"]
+            assert isinstance(entry_ids, list)
+            universe_ids.update(entry_ids)
+        if not set(raw_feature_ids).issubset(universe_ids):
+            raise UntargetedCidNlRealDataRuntimeError(
+                "alignment feature candidates are outside the Discovery universe"
+            )
+        feature_ids = frozenset(raw_feature_ids)
+    return values, by_sample, feature_ids
+
+
+def _validate_subject_partition(
+    job: UntargetedCidNlRealDataRuntimeJob,
+    pinned: CidNlMethodSubject | UntargetedCidNlMethodSubjectBatch,
+) -> CidNlMethodSubject | UntargetedCidNlMethodSubjectBatch:
+    partition = job.subject_partition
+    if partition is None:
+        return pinned
+    if not isinstance(pinned, UntargetedCidNlMethodSubjectBatch):
+        raise UntargetedCidNlRealDataRuntimeError(
+            "subject partition requires a batched processing request"
+        )
+    pinned_subjects = {
+        subject.method_subject_id: subject for subject in pinned.subjects
+    }
+    if any(
+        pinned_subjects.get(subject.method_subject_id) != subject
+        for subject in partition.subjects
+    ):
+        raise UntargetedCidNlRealDataRuntimeError(
+            "subject partition contains a foreign method subject"
+        )
+    if not set(partition.candidate_memberships).issubset(
+        pinned.candidate_memberships
+    ):
+        raise UntargetedCidNlRealDataRuntimeError(
+            "subject partition contains a foreign candidate membership"
+        )
+    if job.method_subject not in partition.subjects:
+        raise UntargetedCidNlRealDataRuntimeError(
+            "method subject is outside the declared subject partition"
+        )
+    return partition
+
+
+def _validate_partition_candidates(
+    job: UntargetedCidNlRealDataRuntimeJob,
+    *,
+    pinned: CidNlMethodSubject | UntargetedCidNlMethodSubjectBatch,
+    active_subjects: CidNlMethodSubject | UntargetedCidNlMethodSubjectBatch,
+    sample_entry: dict[str, object],
+    feature_ids: frozenset[str] | None,
+) -> None:
+    raw_source_ids = sample_entry["candidate_ids"]
+    assert isinstance(raw_source_ids, list)
+    source_ids = frozenset(raw_source_ids)
+    selected_ids = source_ids if feature_ids is None else source_ids & feature_ids
+    if isinstance(active_subjects, UntargetedCidNlMethodSubjectBatch):
+        selected_ids &= {
+            candidate_id
+            for candidate_id, _subject_id in active_subjects.candidate_memberships
+        }
+    actual_ids = tuple(candidate.candidate_id for candidate in job.candidates)
+    if len(actual_ids) != len(set(actual_ids)) or set(actual_ids) != selected_ids:
+        raise UntargetedCidNlRealDataRuntimeError(
+            "partition candidates do not exactly cover its selected feature IDs"
+        )
+    _validate_sample_candidates(job.candidates, job=job, label="partition")
+    support_ids = tuple(candidate.candidate_id for candidate in job.support_candidates)
+    membership_ids = (
+        {
+            candidate_id
+            for candidate_id, _subject_id in pinned.candidate_memberships
+        }
+        if isinstance(pinned, UntargetedCidNlMethodSubjectBatch)
+        else selected_ids
+    )
+    if (
+        len(support_ids) != len(set(support_ids))
+        or not set(support_ids).issubset(source_ids)
+        or set(support_ids) & (set(actual_ids) | membership_ids)
+    ):
+        raise UntargetedCidNlRealDataRuntimeError(
+            "support candidates must be distinct non-member rows from this "
+            "source universe"
+        )
+    _validate_sample_candidates(job.support_candidates, job=job, label="support")
+    receipt = job.discovery_receipt
+    expected_receipt_values = (
+        ("discovery_receipt_id", receipt.discovery_receipt_id),
+        ("candidate_payload_sha256", receipt.candidate_payload_sha256),
+        (
+            "candidate_artifact_schema_version",
+            receipt.candidate_artifact_schema_version,
+        ),
+        ("candidate_artifact_sha256", receipt.candidate_artifact_sha256),
+        ("candidate_artifact_byte_size", receipt.candidate_artifact_byte_size),
+        (
+            "acquisition_source_id",
+            receipt.acquisition_source.acquisition_source_id,
+        ),
+    )
+    if receipt.sample_stem != job.sample.metadata.raw_stem or any(
+        sample_entry.get(key) != value for key, value in expected_receipt_values
+    ):
+        raise UntargetedCidNlRealDataRuntimeError(
+            "Discovery receipt metadata does not match the source universe"
+        )
+
+
+def _validate_sample_candidates(
+    candidates: tuple[DiscoveryCandidate, ...],
+    *,
+    job: UntargetedCidNlRealDataRuntimeJob,
+    label: str,
+) -> None:
+    if any(
+        candidate.sample_stem != job.sample.metadata.raw_stem
+        or candidate.raw_file.stem != job.sample.metadata.raw_stem
+        for candidate in candidates
+    ):
+        raise UntargetedCidNlRealDataRuntimeError(
+            f"{label} candidate references a different sample"
+        )
 
 
 def _index_request_subject_candidates(

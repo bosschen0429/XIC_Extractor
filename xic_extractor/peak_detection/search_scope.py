@@ -726,9 +726,7 @@ def _untargeted_batch_view_memberships(
     batch: UntargetedCidNlMethodSubjectBatch,
 ) -> tuple[tuple[str, str], ...]:
     index = _request_batch_capture_index(request)
-    provider_subject_ids = tuple(
-        provider.method_subject_id for provider in providers
-    )
+    provider_subject_ids = tuple(provider.method_subject_id for provider in providers)
     parent_positions = index.subject_positions
     if (
         not providers
@@ -751,8 +749,7 @@ def _untargeted_batch_view_memberships(
     try:
         validate_cid_nl_alignment_subject_workset(
             tuple(
-                index.subjects_by_id[subject_id]
-                for subject_id in provider_subject_ids
+                index.subjects_by_id[subject_id] for subject_id in provider_subject_ids
             )
         )
     except CidNlMethodSubjectContractError as exc:
@@ -814,6 +811,13 @@ def _request_sample_candidate_ids(
         raise SearchScopeContractError(
             "Untargeted batch candidate universe omitted a scope sample"
         )
+    feature_ids = request_inputs.get("alignment_feature_candidate_ids")
+    if feature_ids is not None:
+        if not isinstance(feature_ids, list) or any(
+            not isinstance(cid, str) for cid in feature_ids
+        ):
+            raise SearchScopeContractError("Alignment feature selection is malformed")
+        candidate_ids.intersection_update(feature_ids)
     return frozenset(candidate_ids)
 
 

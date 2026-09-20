@@ -152,6 +152,18 @@ class UntargetedCidNlProductionPlan:
     sample_job_templates: tuple[UntargetedCidNlRealDataRuntimeJob, ...]
     runtime_subjects: tuple[CidNlMethodSubject, ...]
     excluded_candidates: tuple[UntargetedCandidateExclusion, ...]
+    partition_input_loader: (
+        Callable[
+            [tuple[str, ...]],
+            tuple[
+                dict[str, tuple[DiscoveryCandidate, ...]],
+                dict[str, DiscoveryPhysicalFactRecord],
+                dict[str, tuple[DiscoveryCandidate, ...]],
+            ],
+        ]
+        | None
+    ) = None
+    dll_dir: Path | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -464,6 +476,138 @@ def _physical_subject_units(
     )
 
 
+def prepare_untargeted_subject_membership(
+    *,
+    candidates_by_sample: Mapping[str, tuple[DiscoveryCandidate, ...]],
+    settings: DiscoverySettings,
+    physical_records_by_candidate: Mapping[str, DiscoveryPhysicalFactRecord]
+    | None = None,
+) -> UntargetedCidNlMethodSubjectBatch:
+    """Resolve exact subject membership for a closed precursor working set."""
+    candidates = tuple(
+        candidate
+        for sample_candidates in candidates_by_sample.values()
+        for candidate in sample_candidates
+    )
+    if not candidates:
+        raise ValueError("Untargeted CID-NL production requires candidates")
+    candidate_ids = tuple(candidate.candidate_id for candidate in candidates)
+    if len(candidate_ids) != len(set(candidate_ids)):
+        raise ValueError("Discovery candidate identity must be globally unique")
+
+    composition = cid_nl_composition(settings)
+    for candidate in candidates:
+        precursor_mz = float(candidate.precursor_mz)
+        neutral_loss_da = float(candidate.configured_neutral_loss_da)
+        if (
+            not math.isfinite(precursor_mz)
+            or precursor_mz <= 0.0
+            or not math.isfinite(neutral_loss_da)
+            or neutral_loss_da <= 0.0
+        ):
+            raise ValueError("Discovery candidate lacks finite CID-NL owner facts")
+    subject_units = _physical_subject_units(
+        candidates,
+        physical_records_by_candidate=physical_records_by_candidate or {},
+        composition=composition,
+        precursor_tolerance_ppm=settings.precursor_mz_tolerance_ppm,
+    )
+    return mint_subject_membership_from_physical_units(
+        subject_units=tuple(
+            (requirement, tuple(candidate.candidate_id for candidate in unit))
+            for requirement, unit in subject_units
+        ),
+        precursor_by_id={
+            candidate.candidate_id: candidate.precursor_mz for candidate in candidates
+        },
+        settings=settings,
+        composition=composition,
+    )
+
+
+def cid_nl_composition(settings: DiscoverySettings) -> CidNlComposition | None:
+    """Resolve the configured requirement shared by all precursor worksets."""
+    combine_mode = settings.tag_combine_mode
+    if len(settings.neutral_loss_profiles) > 1 and combine_mode == "single":
+        raise ValueError("Multiple CID-NL tags require union or intersection")
+    return (
+        CidNlComposition(
+            tags=tuple(
+                (profile.tag, profile.neutral_loss_da)
+                for profile in settings.neutral_loss_profiles
+            ),
+            combine_mode=combine_mode,
+        )
+        if len(settings.neutral_loss_profiles) > 1 and combine_mode != "single"
+        else None
+    )
+
+
+def mint_subject_membership_from_physical_units(
+    *,
+    subject_units: tuple[tuple[float | None, tuple[str, ...]], ...],
+    precursor_by_id: Mapping[str, float],
+    settings: DiscoverySettings,
+    composition: CidNlComposition | None,
+) -> UntargetedCidNlMethodSubjectBatch:
+    """Assign fixed query centers from compact, physically closed units."""
+    subject_by_key: dict[tuple[float, float | None], CidNlMethodSubject] = {}
+    membership_keys: list[tuple[str, tuple[float, float | None]]] = []
+    key_by_requirement: dict[float | None, tuple[float, float | None]] = {}
+    for requirement, unit_candidates in subject_units:
+        key = key_by_requirement.get(requirement)
+        # A proven physical unit is indivisible. Existing fixed centers may host
+        # it only when every original query remains inside the method window.
+        if key is None or any(
+            abs(precursor_by_id[candidate] - key[0]) / key[0] * 1_000_000.0
+            > settings.precursor_mz_tolerance_ppm
+            for candidate in unit_candidates
+        ):
+            if len(unit_candidates) == 1:
+                center = precursor_by_id[unit_candidates[0]]
+            else:
+                center_intervals = tuple(
+                    _method_center_interval(
+                        precursor_by_id[candidate],
+                        settings.precursor_mz_tolerance_ppm,
+                    )
+                    for candidate in unit_candidates
+                )
+                lower = max(interval[0] for interval in center_intervals)
+                upper = min(interval[1] for interval in center_intervals)
+                if lower > upper:
+                    raise RuntimeError(
+                        "physical subject unit lacks a common method center"
+                    )
+                center = (lower + upper) / 2.0
+            key = (center, requirement)
+            key_by_requirement[requirement] = key
+            subject_by_key[key] = mint_untargeted_cid_nl_method_subject(
+                precursor_mz=center,
+                precursor_tolerance_ppm=settings.precursor_mz_tolerance_ppm,
+                neutral_loss_da=requirement,
+                composition=composition,
+            )
+        membership_keys.extend((candidate, key) for candidate in unit_candidates)
+
+    subjects = tuple(
+        sorted(subject_by_key.values(), key=lambda subject: subject.method_subject_id)
+    )
+    subject_batch = mint_untargeted_cid_nl_method_subject_batch(
+        subjects=subjects,
+        candidate_memberships=tuple(
+            sorted(
+                (
+                    candidate_id,
+                    subject_by_key[key].method_subject_id,
+                )
+                for candidate_id, key in membership_keys
+            )
+        ),
+    )
+    return subject_batch
+
+
 def prepare_untargeted_cid_nl_production_plan(
     *,
     raw_paths: tuple[Path, ...],
@@ -491,102 +635,13 @@ def prepare_untargeted_cid_nl_production_plan(
         )
     if not isinstance(dll_dir, Path):
         raise TypeError("dll_dir must be a Path")
+    subject_batch = prepare_untargeted_subject_membership(
+        candidates_by_sample=candidates_by_sample,
+        settings=settings,
+        physical_records_by_candidate=physical_records_by_candidate,
+    )
     candidates = tuple(
-        candidate
-        for sample_candidates in candidates_by_sample.values()
-        for candidate in sample_candidates
-    )
-    if not candidates:
-        raise ValueError("Untargeted CID-NL production requires candidates")
-    candidate_ids = tuple(candidate.candidate_id for candidate in candidates)
-    if len(candidate_ids) != len(set(candidate_ids)):
-        raise ValueError("Discovery candidate identity must be globally unique")
-
-    combine_mode = settings.tag_combine_mode
-    if len(settings.neutral_loss_profiles) > 1 and combine_mode == "single":
-        raise ValueError("Multiple CID-NL tags require union or intersection")
-    composition = (
-        CidNlComposition(
-            tags=tuple(
-                (profile.tag, profile.neutral_loss_da)
-                for profile in settings.neutral_loss_profiles
-            ),
-            combine_mode=combine_mode,
-        )
-        if len(settings.neutral_loss_profiles) > 1 and combine_mode != "single"
-        else None
-    )
-    for candidate in candidates:
-        precursor_mz = float(candidate.precursor_mz)
-        neutral_loss_da = float(candidate.configured_neutral_loss_da)
-        if (
-            not math.isfinite(precursor_mz)
-            or precursor_mz <= 0.0
-            or not math.isfinite(neutral_loss_da)
-            or neutral_loss_da <= 0.0
-        ):
-            raise ValueError("Discovery candidate lacks finite CID-NL owner facts")
-    subject_units = _physical_subject_units(
-        candidates,
-        physical_records_by_candidate=physical_records_by_candidate or {},
-        composition=composition,
-        precursor_tolerance_ppm=settings.precursor_mz_tolerance_ppm,
-    )
-    subject_by_key: dict[tuple[float, float | None], CidNlMethodSubject] = {}
-    membership_keys: list[tuple[str, tuple[float, float | None]]] = []
-    key_by_requirement: dict[float | None, tuple[float, float | None]] = {}
-    for requirement, unit_candidates in subject_units:
-        key = key_by_requirement.get(requirement)
-        # A proven physical unit is indivisible. Existing fixed centers may host
-        # it only when every original query remains inside the method window.
-        if key is None or any(
-            abs(candidate.precursor_mz - key[0]) / key[0] * 1_000_000.0
-            > settings.precursor_mz_tolerance_ppm
-            for candidate in unit_candidates
-        ):
-            if len(unit_candidates) == 1:
-                center = unit_candidates[0].precursor_mz
-            else:
-                center_intervals = tuple(
-                    _method_center_interval(
-                        candidate.precursor_mz,
-                        settings.precursor_mz_tolerance_ppm,
-                    )
-                    for candidate in unit_candidates
-                )
-                lower = max(interval[0] for interval in center_intervals)
-                upper = min(interval[1] for interval in center_intervals)
-                if lower > upper:
-                    raise RuntimeError(
-                        "physical subject unit lacks a common method center"
-                    )
-                center = (lower + upper) / 2.0
-            key = (center, requirement)
-            key_by_requirement[requirement] = key
-            subject_by_key[key] = mint_untargeted_cid_nl_method_subject(
-                precursor_mz=center,
-                precursor_tolerance_ppm=settings.precursor_mz_tolerance_ppm,
-                neutral_loss_da=requirement,
-                composition=composition,
-            )
-        membership_keys.extend(
-            (candidate.candidate_id, key) for candidate in unit_candidates
-        )
-
-    subjects = tuple(
-        sorted(subject_by_key.values(), key=lambda subject: subject.method_subject_id)
-    )
-    subject_batch = mint_untargeted_cid_nl_method_subject_batch(
-        subjects=subjects,
-        candidate_memberships=tuple(
-            sorted(
-                (
-                    candidate_id,
-                    subject_by_key[key].method_subject_id,
-                )
-                for candidate_id, key in membership_keys
-            )
-        ),
+        candidate for values in candidates_by_sample.values() for candidate in values
     )
     context = build_untargeted_cid_nl_real_data_context(
         raw_paths=raw_paths,
@@ -708,6 +763,49 @@ def materialize_untargeted_cid_nl_partition(
     if subject_batch.candidate_memberships != expected_batch.candidate_memberships:
         raise ValueError("CID-NL partition crossed prepared candidate memberships")
 
+    if plan.partition_input_loader is not None:
+        candidates, records, support = plan.partition_input_loader(
+            tuple(cid for cid, _ in subject_batch.candidate_memberships)
+        )
+        context = replace(
+            plan.context,
+            candidates_by_sample=candidates,
+            physical_records_by_candidate=records,
+        )
+        assert plan.dll_dir is not None
+        jobs: list[UntargetedCidNlRealDataRuntimeJob] = []
+        for sample in context.samples:
+            stem = sample.metadata.raw_stem
+            jobs.extend(
+                build_untargeted_cid_nl_sample_runtime_jobs(
+                    processing_owners=context.processing_owners,
+                    sample=sample,
+                    subject_work_units=tuple(
+                        (
+                            subject,
+                            f"untargeted-cid-nl:{stem}:{subject.method_subject_id}",
+                        )
+                        for subject in subject_batch.subjects
+                    ),
+                    candidates=candidates[stem],
+                    discovery_receipt=context.discovery_receipts_by_sample[stem],
+                    settings=context.settings,
+                    peak_config=context.peak_config,
+                    raw_path=context.raw_paths_by_sample[stem],
+                    dll_dir=plan.dll_dir,
+                    signal_processing_profile=context.signal_processing_profile,
+                    physical_records=tuple(
+                        records[item.candidate_id] for item in candidates[stem]
+                    ),
+                    acquisition_source_expectation=context.acquisition_sources_by_sample[
+                        stem
+                    ],
+                    subject_partition=subject_batch,
+                    support_candidates=support[stem],
+                )
+            )
+        return UntargetedCidNlProductionBatch(subject_batch, context, tuple(jobs))
+
     jobs = []
     for template in plan.sample_job_templates:
         for subject in subject_batch.subjects:
@@ -819,6 +917,7 @@ class UntargetedCidNlPersistedPartition:
     child_count: int
     excluded_candidates: tuple[UntargetedCandidateExclusion, ...]
     capture_bindings: tuple[CaptureCandidateBinding, ...]
+    child_order_keys: tuple[str, ...] = ()
 
 
 def compose_and_persist_untargeted_cid_nl_partition(
@@ -847,6 +946,7 @@ def compose_and_persist_untargeted_cid_nl_partition(
         known_istd_reference=known_istd_reference,
     )
     child_count = 0
+    child_order_keys: list[str] = []
 
     def check_cancellation() -> None:
         if should_cancel is not None and should_cancel():
@@ -864,6 +964,12 @@ def compose_and_persist_untargeted_cid_nl_partition(
                 completed_captures=captures,
             )
             child_count += 1
+            child_order_keys.append(
+                min(
+                    provider.method_subject_id
+                    for provider in child.scientific_core.scope.evidence_providers
+                )
+            )
             yield child
             del child
 
@@ -888,6 +994,7 @@ def compose_and_persist_untargeted_cid_nl_partition(
         child_count=child_count,
         excluded_candidates=inputs.request.excluded_candidates,
         capture_bindings=inputs.request.scope.capture_bindings,
+        child_order_keys=tuple(child_order_keys),
     )
 
 

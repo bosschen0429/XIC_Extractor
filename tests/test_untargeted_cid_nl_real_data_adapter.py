@@ -857,6 +857,83 @@ def test_adapter_closes_empty_subject_universe_as_not_evaluated_without_xic(
     assert vendor_raw.chromatogram_request_counts == []
 
 
+def test_adapter_uses_orphan_support_without_giving_it_feature_standing(
+    tmp_path: Path,
+) -> None:
+    fixture = build_untargeted_cid_nl_no_raw_fixture(
+        tmp_path,
+        sample_roles={"S1": "study_sample"},
+        thermo_raw_sources=True,
+    )
+    source_raw = _FakeRaw((7.8, 8.2))
+    settings = _settings()
+    peak_config = _peak_config(tmp_path)
+    feature, support_source = _current_candidates(
+        source_raw,
+        raw_file=fixture.source_paths["S1"],
+        settings=settings,
+        peak_config=peak_config,
+    )
+    support = _without_ms1_peak(support_source)
+    raw, _vendor_raw = _open_bound_raw(
+        fixture, "S1", source_raw, tmp_path=tmp_path
+    )
+
+    result = adapt_current_discovery_sample_subject(
+        processing_owners=fixture.owners,
+        sample=fixture.sample("S1"),
+        method_subject=fixture.method_subject,
+        candidates=(feature,),
+        support_candidates=(support,),
+        settings=settings,
+        peak_config=peak_config,
+        raw=raw,
+    )
+
+    assert result.source_candidate_ids == (feature.candidate_id,)
+    assert {capture.candidate_id for capture in result.captures} == {
+        feature.candidate_id
+    }
+    assert len(result.assessment_input.assessment.candidate_peaks) == 1
+    assert result.strict_scan_count == 2
+    assert len(result.assessment_input.discovery_projections) == 2
+
+
+def test_adapter_does_not_read_raw_for_orphan_only_support(tmp_path: Path) -> None:
+    fixture = build_untargeted_cid_nl_no_raw_fixture(
+        tmp_path,
+        sample_roles={"S1": "study_sample"},
+        thermo_raw_sources=True,
+    )
+    source_raw = _FakeRaw((8.0,))
+    settings = _settings()
+    support = _without_ms1_peak(
+        _current_candidates(
+            source_raw,
+            raw_file=fixture.source_paths["S1"],
+            settings=settings,
+            peak_config=_peak_config(tmp_path),
+        )[0]
+    )
+
+    result = adapt_current_discovery_sample_subject(
+        processing_owners=fixture.owners,
+        sample=fixture.sample("S1"),
+        method_subject=fixture.method_subject,
+        candidates=(),
+        support_candidates=(support,),
+        settings=settings,
+        peak_config=_peak_config(tmp_path),
+        raw=None,
+    )
+
+    assert result.assessment_input.assessment.content.technical_state == (
+        "not_evaluated"
+    )
+    assert result.assessment_input.discovery_projections == ()
+    assert result.captures == ()
+
+
 @pytest.mark.parametrize("include_direct_candidate", [False, True])
 def test_adapter_requires_raw_to_preserve_inferred_physical_observations(
     tmp_path: Path,

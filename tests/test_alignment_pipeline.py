@@ -537,16 +537,10 @@ def test_pipeline_streams_partition_children_once_and_cleans_up(
         matrix_path.unlink()
 
     batch_index = _write_batch(tmp_path, tuple(candidates))
-    batch = pipeline_module.read_discovery_batch_index(
-        batch_index, require_owner_closure=True
-    )
-    candidate_inputs = {
-        batch.candidate_csvs[stem]: values for stem, values in candidates.items()
-    }
     monkeypatch.setattr(
-        pipeline_module,
-        "read_owner_bound_discovery_candidates_csv",
-        lambda path, **_kwargs: candidate_inputs[path],
+        pipeline_module.DiscoveryInputSource,
+        "feature_view",
+        lambda _source: candidates,
     )
     monkeypatch.setattr(
         pipeline_module,

@@ -11,6 +11,7 @@ from typing import Any
 
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.csv_io import DiscoveryBatchInput
+from xic_extractor.alignment.discovery_input_source import DiscoveryInputSource
 from xic_extractor.alignment.drift_evidence import KnownIstdReference
 from xic_extractor.alignment.raw_sources import existing_raw_paths
 from xic_extractor.alignment.workflow import CompletedUntargetBatchWorkflowResult
@@ -23,6 +24,7 @@ from xic_extractor.discovery.batch_contract import (
 from xic_extractor.discovery.csv_writer import format_discovery_csv_value
 from xic_extractor.discovery.models import DiscoveryCandidate, DiscoverySettings
 from xic_extractor.discovery.physical_fact_persistence import (
+    IndexedDiscoveryPhysicalFacts,
     read_discovery_physical_fact_records,
 )
 from xic_extractor.discovery.physical_fact_record import DiscoveryPhysicalFactRecord
@@ -42,9 +44,13 @@ from xic_extractor.execution_settings import DEFAULT_ALIGNMENT_WORKERS
 from xic_extractor.extraction.untargeted_cid_nl_bounded_runtime import (
     execute_bounded_untargeted_cid_nl,
 )
+from xic_extractor.extraction.untargeted_input_planning import (
+    prepare_indexed_untargeted_plan,
+)
 from xic_extractor.extraction.untargeted_production_batch import (
     prepare_untargeted_production_plan,
 )
+from xic_extractor.immutable_sequence import ImmutableSequence
 from xic_extractor.peak_detection.signal_processing_profile import (
     SignalProcessingProfile,
 )
@@ -142,6 +148,7 @@ def complete_untargeted_cid_nl_alignment(
             individually_addressable_fields=frozenset({"discovery_physical_records"}),
         )
         if signal_processing_profile is not None
+        and not isinstance(candidates_by_sample, DiscoveryInputSource)
         else None
     )
 
@@ -151,12 +158,68 @@ def complete_untargeted_cid_nl_alignment(
         assert evidence_store is not None
         evidence_store.append(stem, _DiscoveryEvidencePartition(records))
 
+    physical_sources: dict[str, IndexedDiscoveryPhysicalFacts] = {}
     try:
         physical_records: dict[str, DiscoveryPhysicalFactRecord] = {}
         acquisition_source_expectations: (
             tuple[AcquisitionSourceExpectation, ...] | None
         ) = None
-        if signal_processing_profile is not None:
+        if isinstance(candidates_by_sample, DiscoveryInputSource):
+            if signal_processing_profile is None:
+                raise ValueError(
+                    "indexed Alignment requires a physical processing profile"
+                )
+            with recorder.stage("alignment.index_physical_facts") as stage:
+                spec, expectations = (
+                    compile_discovery_processing_run_spec_with_expectations(
+                        ordered_raw_paths,
+                        discovery_settings=settings,
+                        signal_processing_profile=signal_processing_profile,
+                    )
+                )
+                for acquisition_input in spec.acquisition_inputs:
+                    if should_cancel is not None and should_cancel():
+                        raise InterruptedError("Alignment input indexing cancelled")
+                    stem = acquisition_input.sample_stem
+                    feature_ids = candidates_by_sample.feature_candidate_ids(stem)
+                    if not feature_ids:
+                        continue
+                    physical_sources[stem] = IndexedDiscoveryPhysicalFacts(
+                        discovery_batch.candidate_csvs[stem].parent
+                        / "discovery_physical_facts.json",
+                        expected_run_spec=spec,
+                        expected_acquisition_input=acquisition_input,
+                        candidate_ids=frozenset(feature_ids),
+                    )
+                    recorder.heartbeat_event(
+                        {
+                            "event": "alignment_input_index",
+                            "sample_stem": stem,
+                            "completed": len(physical_sources),
+                            "total": len(spec.acquisition_inputs),
+                        }
+                    )
+                stage.metrics["feature_candidate_count"] = len(
+                    candidates_by_sample.feature_candidate_ids()
+                )
+                stage.metrics["discovery_record_count"] = len(
+                    candidates_by_sample.locations
+                )
+            with recorder.stage("alignment.prepare_feature_inputs"):
+                plan = prepare_indexed_untargeted_plan(
+                    source=candidates_by_sample,
+                    physical_sources=physical_sources,
+                    raw_paths=ordered_raw_paths,
+                    sample_metadata=retained_sample_metadata,
+                    settings=settings,
+                    peak_config=peak_config,
+                    dll_dir=dll_dir,
+                    profile=signal_processing_profile,
+                    acquisition_source_expectations=expectations,
+                    sample_identity_namespace=_SAMPLE_IDENTITY_NAMESPACE,
+                    restore_candidate=_restore_physical_candidate,
+                )
+        elif signal_processing_profile is not None:
             with recorder.stage("alignment.load_physical_facts"):
                 (
                     candidates_by_sample,
@@ -177,19 +240,20 @@ def complete_untargeted_cid_nl_alignment(
             is not _real_prepare_untargeted_production_plan
         ):
             _prepare_plan = prepare_untargeted_cid_nl_production_plan
-        plan = _prepare_plan(
-            raw_paths=ordered_raw_paths,
-            sample_metadata=retained_sample_metadata,
-            settings=settings,
-            peak_config=peak_config,
-            candidates_by_sample=candidates_by_sample,
-            discovery_receipts_by_sample=receipts,
-            dll_dir=dll_dir,
-            sample_identity_namespace=_SAMPLE_IDENTITY_NAMESPACE,
-            signal_processing_profile=signal_processing_profile,
-            physical_records_by_candidate=physical_records,
-            acquisition_source_expectations=acquisition_source_expectations,
-        )
+        if not isinstance(candidates_by_sample, DiscoveryInputSource):
+            plan = _prepare_plan(
+                raw_paths=ordered_raw_paths,
+                sample_metadata=retained_sample_metadata,
+                settings=settings,
+                peak_config=peak_config,
+                candidates_by_sample=candidates_by_sample,
+                discovery_receipts_by_sample=receipts,
+                dll_dir=dll_dir,
+                sample_identity_namespace=_SAMPLE_IDENTITY_NAMESPACE,
+                signal_processing_profile=signal_processing_profile,
+                physical_records_by_candidate=physical_records,
+                acquisition_source_expectations=acquisition_source_expectations,
+            )
 
         output_dir.mkdir(parents=True, exist_ok=True)
         with (
@@ -217,6 +281,36 @@ def complete_untargeted_cid_nl_alignment(
                 max_partition_jobs=max_partition_jobs,
             )
 
+        if physical_sources:
+            chunks = tuple(
+                (stem, indices[start : start + 64])
+                for stem, physical_source in physical_sources.items()
+                for indices in (
+                    tuple(sorted(physical_source.candidate_ordinals.values())),
+                )
+                for start in range(0, len(indices), 64)
+            )
+
+            def load_records(index: int) -> tuple[DiscoveryPhysicalFactRecord, ...]:
+                stem, indices = chunks[index]
+                return tuple(
+                    physical_sources[stem].read_record(item) for item in indices
+                )
+
+            def close_indexed_result() -> None:
+                try:
+                    completed.close()
+                finally:
+                    for physical_source in physical_sources.values():
+                        physical_source.close()
+
+            return replace(
+                completed,
+                discovery_physical_records=ImmutableSequence(
+                    tuple(len(ids) for _, ids in chunks), load_records
+                ),
+                cleanup_action=close_indexed_result,
+            )
         if evidence_store is None:
             return completed
         evidence_store.seal()
@@ -235,6 +329,8 @@ def complete_untargeted_cid_nl_alignment(
             cleanup_action=cleanup,
         )
     except BaseException:
+        for physical_source in physical_sources.values():
+            physical_source.close()
         if evidence_store is not None:
             evidence_store.cleanup()
         raise

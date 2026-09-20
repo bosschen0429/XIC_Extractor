@@ -144,13 +144,42 @@ class CidNlPartitionPipelineAdapter:
         subjects_per_partition = max(1, max_partition_jobs // len(context.samples))
         subject_partitions_list: list[tuple[CidNlMethodSubject, ...]] = []
         current_subjects: list[CidNlMethodSubject] = []
-        for workset in self._prepared_worksets.worksets:
+        current_candidate_count = 0
+        current_mass_bin: int | None = None
+        worksets = self._prepared_worksets.worksets
+        if plan.partition_input_loader is not None:
+            worksets = tuple(
+                sorted(
+                    worksets,
+                    key=lambda workset: (
+                        min(subject.precursor_mz for subject in workset),
+                        min(subject.method_subject_id for subject in workset),
+                    ),
+                )
+            )
+        for workset in worksets:
+            mass_bin = int(min(subject.precursor_mz for subject in workset) // 100.0)
+            candidate_count = sum(
+                len(
+                    self._prepared_worksets.memberships_by_subject.get(
+                        subject.method_subject_id, ()
+                    )
+                )
+                for subject in workset
+            )
             if len(workset) > subjects_per_partition:
                 raise ValueError(
                     "max_partition_jobs cannot contain one alignment subject workset"
                 )
             if current_subjects and (
                 len(current_subjects) + len(workset) > subjects_per_partition
+                or (
+                    plan.partition_input_loader is not None
+                    and (
+                        current_mass_bin != mass_bin
+                        or current_candidate_count + candidate_count > 1024
+                    )
+                )
             ):
                 subject_partitions_list.append(
                     tuple(
@@ -161,7 +190,10 @@ class CidNlPartitionPipelineAdapter:
                     )
                 )
                 current_subjects = []
+                current_candidate_count = 0
             current_subjects.extend(workset)
+            current_candidate_count += candidate_count
+            current_mass_bin = mass_bin
         if current_subjects:
             subject_partitions_list.append(
                 tuple(
@@ -405,9 +437,14 @@ class CidNlPartitionPipelineAdapter:
         context = self._plan.context
         bindings: list[CaptureCandidateBinding] = []
         exclusion_positions: list[tuple[str, int, int]] = []
+        child_positions: list[tuple[str, int, int]] = []
         for index, comp_out in enumerate(composition_outputs):
             persisted = comp_out.result
             bindings.extend(persisted.capture_bindings)
+            child_positions.extend(
+                (key, persisted.sealed.index, offset)
+                for offset, key in enumerate(persisted.child_order_keys)
+            )
             exclusion_positions.extend(
                 (exclusion.candidate_id, index, offset)
                 for offset, exclusion in enumerate(persisted.excluded_candidates)
@@ -433,6 +470,19 @@ class CidNlPartitionPipelineAdapter:
                 sorted(bindings, key=lambda binding: binding.candidate_id)
             ),
         )
+        children = store.sequence("children")
+        if child_positions:
+            ordered_children = tuple(sorted(child_positions))
+            if len(ordered_children) != len(children):
+                raise ValueError("partition child order lost a scientific result")
+            children = ImmutableSequence(
+                (1,) * len(ordered_children),
+                lambda index: store.read_selected(
+                    ordered_children[index][1],
+                    "children",
+                    (ordered_children[index][2],),
+                ),
+            )
         return cast(
             FinalizedUntargetBatchApplicationResult,
             finalize_alignment_result(
@@ -440,7 +490,7 @@ class CidNlPartitionPipelineAdapter:
                     scope=scope,
                     processing_request=self._owners.request,
                     processing_attempt=self._owners.attempt,
-                    children=store.sequence("children"),
+                    children=children,
                     excluded_candidates=_ordered_exclusions(
                         store, exclusion_positions, self._plan.excluded_candidates
                     ),

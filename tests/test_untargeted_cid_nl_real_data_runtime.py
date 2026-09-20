@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
@@ -34,6 +35,7 @@ from xic_extractor.extraction import (
     untargeted_cid_nl_real_data_runtime as runtime_module,
 )
 from xic_extractor.extraction.untargeted_cid_nl_real_data_inputs import (
+    ALIGNMENT_FEATURE_INPUT_KEY,
     build_untargeted_cid_nl_real_data_context,
 )
 from xic_extractor.extraction.untargeted_cid_nl_real_data_runtime import (
@@ -51,6 +53,9 @@ from xic_extractor.peak_detection.cid_nl_method_subject import (
 from xic_extractor.processing_identity import (
     IdentityContractError,
     build_acquisition_source_identity,
+    build_processing_request_identity,
+    compose_processing_owner_references,
+    issue_processing_attempt,
 )
 from xic_extractor.raw_reader import (
     EXPECTED_THERMO_DLLS,
@@ -712,6 +717,149 @@ def test_batch_candidate_selection_preserves_order_and_request_sample_membership
         for job in selected_jobs
         if job.sample == sample
     )
+
+
+def test_partition_runtime_job_requires_exact_local_feature_membership(
+    tmp_path: Path,
+) -> None:
+    from xic_extractor.extraction import untargeted_real_data_models as models_owner
+
+    raw_path = tmp_path / "S1.synthetic"
+    raw_path.write_bytes(b"partition-runtime")
+    settings = _settings()
+    peak_config = _peak_config(tmp_path)
+    candidates = _current_candidates(
+        _FakeRaw((7.8, 8.2)),
+        raw_file=raw_path,
+        settings=settings,
+        peak_config=peak_config,
+    )
+    assert len(candidates) == 2
+    subjects = tuple(
+        sorted(
+            (
+                mint_untargeted_cid_nl_method_subject(
+                    precursor_mz=mz,
+                    precursor_tolerance_ppm=settings.precursor_mz_tolerance_ppm,
+                    neutral_loss_da=116.0474,
+                )
+                for mz in (500.0, 500.004)
+            ),
+            key=lambda subject: subject.method_subject_id,
+        )
+    )
+    memberships = tuple(
+        sorted(
+            (
+                candidate.candidate_id,
+                subjects[index].method_subject_id,
+            )
+            for index, candidate in enumerate(candidates)
+        )
+    )
+    subject_batch = mint_untargeted_cid_nl_method_subject_batch(
+        subjects=subjects,
+        candidate_memberships=memberships,
+    )
+    receipts = _discovery_receipts(
+        tmp_path,
+        (raw_path,),
+        {"S1": candidates},
+    )
+    context = build_untargeted_cid_nl_real_data_context(
+        raw_paths=(raw_path,),
+        sample_metadata=(
+            SampleMetadata(
+                sample_name="S1",
+                raw_stem="S1",
+                injection_order=1,
+                sample_role="study_sample",
+            ),
+        ),
+        method_subject=subject_batch,
+        settings=settings,
+        peak_config=peak_config,
+        candidates_by_sample={"S1": candidates},
+        discovery_receipts_by_sample=receipts,
+        sample_identity_namespace="study:partition-runtime-job",
+    )
+    old_request = context.processing_owners.request
+    request = build_processing_request_identity(
+        acquisition_sources=old_request.acquisition_sources,
+        acquisition_bindings=old_request.acquisition_bindings,
+        scientific_input_schema_version=old_request.scientific_input_schema_version,
+        processing_algorithm_version=old_request.processing_algorithm_version,
+        processing_contract_version=old_request.processing_contract_version,
+        scientific_inputs=json.loads(old_request.normalized_scientific_inputs_json)
+        | {
+            ALIGNMENT_FEATURE_INPUT_KEY: sorted(
+                candidate.candidate_id for candidate in candidates
+            )
+        },
+    )
+    owners = compose_processing_owner_references(
+        request=request,
+        attempt=issue_processing_attempt(request),
+        sample_snapshot=context.processing_owners.sample_snapshot,
+        sample_resolutions=context.samples,
+    )
+    partition_subject = subjects[0]
+    partition_membership = next(
+        membership
+        for membership in memberships
+        if membership[1] == partition_subject.method_subject_id
+    )
+    partition = mint_untargeted_cid_nl_method_subject_batch(
+        subjects=(partition_subject,),
+        candidate_memberships=(partition_membership,),
+    )
+    local_candidate = next(
+        candidate
+        for candidate in candidates
+        if candidate.candidate_id == partition_membership[0]
+    )
+
+    models_owner._request_input_index.cache_clear()
+    build_args = dict(
+        processing_owners=owners,
+        sample=context.sample("S1"),
+        subject_work_units=((partition_subject, "partition:S1"),),
+        subject_partition=partition,
+        candidates=(local_candidate,),
+        discovery_receipt=receipts["S1"],
+        settings=settings,
+        peak_config=peak_config,
+        raw_path=raw_path,
+        dll_dir=tmp_path,
+        acquisition_source_expectation=context.acquisition_sources_by_sample["S1"],
+    )
+    (job,) = build_untargeted_cid_nl_sample_runtime_jobs(**build_args)
+    build_untargeted_cid_nl_sample_runtime_jobs(**build_args)
+    request_index_cache = models_owner._request_input_index.cache_info()
+    assert request_index_cache.misses == 1
+    assert request_index_cache.hits == 1
+    assert runtime_module._request_subject_candidates(job) == (local_candidate,)
+
+    with pytest.raises(
+        UntargetedCidNlRealDataRuntimeError,
+        match="exactly cover its selected feature IDs",
+    ):
+        replace(job, candidates=())
+
+    foreign_membership = next(
+        membership for membership in memberships if membership != partition_membership
+    )
+    foreign_partition = mint_untargeted_cid_nl_method_subject_batch(
+        subjects=(partition_subject,),
+        candidate_memberships=(
+            (foreign_membership[0], partition_subject.method_subject_id),
+        ),
+    )
+    with pytest.raises(
+        UntargetedCidNlRealDataRuntimeError,
+        match="foreign candidate membership",
+    ):
+        replace(job, subject_partition=foreign_partition)
 
 
 def test_direct_subject_batch_seals_initial_and_recovery_acquisitions_once(

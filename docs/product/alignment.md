@@ -196,6 +196,17 @@ unresolved and rejected groups remain AuditTrail facts.
   search merely by entering Alignment. This keeps candidate recall available
   for review without turning an unavailable physical feature into owner-build,
   group, Matrix, or Backfill work.
+- Persisted-input routing selects MS1-feature-backed candidates before minting
+  method subjects. Review-only observations cannot choose feature query centers.
+  Direct/mixed precursor NL observations may supply local scan evidence for an
+  existing feature; their own physical curves are not loaded for grouping.
+  Original Discovery artifacts retain the complete observation population.
+- Alignment retains compact cohort identities globally and restores candidate
+  rows and physical records per closed working set. Scheduling packs worksets
+  by 100 Da ownership and a 1,024-candidate budget; an indivisible scientific
+  workset may exceed that budget or cross a mass boundary. Mass partitions are
+  scheduling units, not scientific exclusion boundaries. Final children retain
+  canonical subject order independently of execution order.
 - Retained CID-NL capture preserves each candidate's extraction m/z and ppm
   when combining overlapping RT contexts. Preparation sharing may extend the
   RT interval; it does not replace the candidate center with a method-subject

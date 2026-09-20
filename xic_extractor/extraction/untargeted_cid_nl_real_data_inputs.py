@@ -63,6 +63,7 @@ DISCOVERY_SETTINGS_INPUT_KEY = "current_discovery_settings"
 DISCOVERY_SETTINGS_SCHEMA_VERSION = "current_discovery_settings"
 CANDIDATE_UNIVERSE_INPUT_KEY = "current_discovery_candidate_universe"
 CANDIDATE_UNIVERSE_SCHEMA_VERSION = "current_discovery_candidate_universe"
+ALIGNMENT_FEATURE_INPUT_KEY = "alignment_feature_candidate_ids"
 PEAK_SETTINGS_INPUT_KEY = "peak_detection_settings"
 
 
@@ -265,6 +266,54 @@ def build_untargeted_cid_nl_real_data_context(
                 raise IdentityContractError(
                     "physical replay crossed candidate, acquisition, or profile"
                 )
+    return compose_untargeted_real_data_context(
+        method_subject=method_subject,
+        settings=settings,
+        peak_config=peak_config,
+        paths_by_stem=paths_by_stem,
+        metadata_by_stem=metadata_by_stem,
+        sources_by_stem=sources_by_stem,
+        source_expectations=source_expectations,
+        candidate_map=candidate_map,
+        receipt_map=receipt_map,
+        physical_records=physical_records,
+        sample_identity_namespace=sample_identity_namespace,
+        signal_processing_profile=signal_processing_profile,
+        candidate_universe=candidate_universe_payload(
+            candidate_map,
+            discovery_receipts_by_sample=receipt_map,
+            expected_sample_stems=tuple(paths_by_stem),
+        ),
+        physical_capture=(
+            physical_capture_input_payload(
+                signal_processing_profile,
+                {cid: record.evaluation for cid, record in physical_records.items()},
+            )
+            if signal_processing_profile is not None
+            else None
+        ),
+    )
+
+
+def compose_untargeted_real_data_context(
+    *,
+    method_subject: CidNlMethodSubject | UntargetedCidNlMethodSubjectBatch,
+    settings: DiscoverySettings,
+    peak_config: ExtractionConfig,
+    paths_by_stem: Mapping[str, Path],
+    metadata_by_stem: Mapping[str, SampleMetadata],
+    sources_by_stem: Mapping[str, AcquisitionSourceIdentity],
+    source_expectations: dict[str, AcquisitionSourceExpectation],
+    candidate_map: Mapping[str, tuple[DiscoveryCandidate, ...]],
+    receipt_map: Mapping[str, DiscoveryCandidateUniverseReceipt],
+    physical_records: dict[str, DiscoveryPhysicalFactRecord],
+    sample_identity_namespace: str,
+    signal_processing_profile: SignalProcessingProfile | None,
+    candidate_universe: dict[str, object],
+    physical_capture: dict[str, object] | None,
+    feature_candidate_ids: tuple[str, ...] | None = None,
+) -> UntargetedCidNlRealDataContext:
+    """Compose request identity from input-owner verified compact facts."""
     ordered_stems = tuple(
         stem
         for stem, _metadata in sorted(
@@ -291,26 +340,19 @@ def build_untargeted_cid_nl_real_data_context(
         scientific_inputs={
             REQUEST_INPUT_KEY: method_subject.request_payload(),
             DISCOVERY_SETTINGS_INPUT_KEY: discovery_settings_payload(settings),
-            CANDIDATE_UNIVERSE_INPUT_KEY: candidate_universe_payload(
-                candidate_map,
-                discovery_receipts_by_sample=receipt_map,
-                expected_sample_stems=ordered_stems,
-            ),
+            CANDIDATE_UNIVERSE_INPUT_KEY: candidate_universe,
             PEAK_SETTINGS_INPUT_KEY: {
                 field: getattr(peak_config, field)
                 for field in TARGETED_SCIENTIFIC_SETTING_FIELDS
             },
             **(
-                {
-                    PHYSICAL_CAPTURE_INPUT_KEY: physical_capture_input_payload(
-                        signal_processing_profile,
-                        {
-                            candidate_id: record.evaluation
-                            for candidate_id, record in physical_records.items()
-                        },
-                    )
-                }
-                if signal_processing_profile is not None
+                {PHYSICAL_CAPTURE_INPUT_KEY: physical_capture}
+                if physical_capture is not None
+                else {}
+            ),
+            **(
+                {ALIGNMENT_FEATURE_INPUT_KEY: list(feature_candidate_ids)}
+                if feature_candidate_ids is not None
                 else {}
             ),
         },
