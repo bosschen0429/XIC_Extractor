@@ -19,9 +19,8 @@ the profile supplies the CPU-count-minus-one default (at least one). An explicit
 CLI override takes precedence for that invocation; it does not rewrite saved
 settings. Scientific presets do not carry machine resource settings.
 
-Alignment defaults to serial execution in the same profile. A shared source
-does not require identical concurrency for algorithms with different cost
-characteristics. Its explicit worker override remains available. Discovery
+Alignment defaults to four workers in the same profile. Its explicit worker
+override remains available, including one for serial execution. Discovery
 bounds its active workers by sample count; that cap is scheduling, not another
 default. The profile is a settings snapshot, not a shared persistent worker pool.
 

@@ -307,7 +307,7 @@ def test_run_alignment_env_enables_asls_baseline_audit(
 
     assert code == 0
     assert captured["peak_config"].baseline_audit_method == "asls"
-    assert captured["raw_workers"] == 1
+    assert captured["raw_workers"] == 4
 
 
 @pytest.mark.parametrize("raw_workers", [1, 2])

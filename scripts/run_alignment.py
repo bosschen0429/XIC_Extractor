@@ -430,7 +430,7 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         help=(
             "Worker budget for source fingerprinting, persisted-input indexing, "
             "and RAW sample phases within each bounded CID-NL partition "
-            "(default: shared execution profile alignment_workers, normally 1)."
+            "(default: shared execution profile alignment_workers, normally 4)."
         ),
     )
     parser.add_argument(
