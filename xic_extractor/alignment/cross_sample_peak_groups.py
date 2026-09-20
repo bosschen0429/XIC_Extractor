@@ -65,6 +65,7 @@ from xic_extractor.alignment.edge_scoring import (
     RTEvidenceBasis,
     _compatible_composite_owners,
     evaluate_owner_edge,
+    owner_peak_meets_quantitation_limit,
 )
 from xic_extractor.alignment.ownership_models import (
     AmbiguousOwnerRecord,
@@ -435,6 +436,29 @@ def construct_cross_sample_peak_group_hypotheses(
         if sample_universe is not None
         else {}
     )
+    moderate_complete_link_sets: set[frozenset[str]] = set()
+    moderate_review_sets: set[frozenset[str]] = set()
+    rescue_owner_sets = (
+        full_batch_continuity_owner_sets,
+        injection_trajectory_owner_sets,
+        bounded_continuity_owner_sets,
+        targeted_istd_trajectory_owner_sets,
+    )
+    for group in groups:
+        owner_id_set = frozenset(owner.owner_id for owner in group)
+        if any(owner_id_set in owner_sets for owner_sets in rescue_owner_sets):
+            continue
+        if not _group_requires_moderate_complete_link_admission(
+            tuple(group),
+            edge_cache=edge_cache,
+            config=config,
+        ):
+            continue
+        moderate_complete_link_sets.add(owner_id_set)
+        if sum(owner_peak_meets_quantitation_limit(owner) for owner in group) < 2:
+            moderate_review_sets.add(owner_id_set)
+    moderate_complete_link_owner_sets = frozenset(moderate_complete_link_sets)
+    moderate_review_owner_sets = frozenset(moderate_review_sets)
     public_group_ids = tuple(
         f"FAM{index + len(conflict_hypotheses):06d}"
         for index in range(1, len(groups) + 1)
@@ -444,7 +468,12 @@ def construct_cross_sample_peak_group_hypotheses(
             tuple(group),
             processing_request_id=request_id,
             disposition=(
-                "unresolved" if index in resolved_duplicate_owner_groups else None
+                "unresolved"
+                if index in resolved_duplicate_owner_groups
+                else "provisional"
+                if frozenset(owner.owner_id for owner in group)
+                in moderate_review_owner_sets
+                else None
             ),
         )
         for index, group in enumerate(groups)
@@ -472,14 +501,21 @@ def construct_cross_sample_peak_group_hypotheses(
         group_identity = group_identities[index]
         public_group_id = public_group_ids[index]
         owner_id_set = frozenset(owner.owner_id for owner in group)
+        full_batch_continuity = owner_id_set in full_batch_continuity_owner_sets
+        injection_trajectory = owner_id_set in injection_trajectory_owner_sets
+        bounded_continuity = owner_id_set in bounded_continuity_owner_sets
+        targeted_istd_trajectory = (
+            owner_id_set in targeted_istd_trajectory_owner_sets
+        )
+        moderate_complete_link = owner_id_set in moderate_complete_link_owner_sets
+        moderate_review = owner_id_set in moderate_review_owner_sets
         evidence = _group_evidence(
             group,
-            full_batch_continuity=(owner_id_set in full_batch_continuity_owner_sets),
-            injection_trajectory=(owner_id_set in injection_trajectory_owner_sets),
-            bounded_continuity=(owner_id_set in bounded_continuity_owner_sets),
-            targeted_istd_trajectory=(
-                owner_id_set in targeted_istd_trajectory_owner_sets
-            ),
+            full_batch_continuity=full_batch_continuity,
+            injection_trajectory=injection_trajectory,
+            bounded_continuity=bounded_continuity,
+            targeted_istd_trajectory=targeted_istd_trajectory,
+            moderate_complete_link=moderate_complete_link,
         )
         winner_index = resolved_duplicate_owner_groups.get(index)
         if winner_index is not None:
@@ -510,6 +546,7 @@ def construct_cross_sample_peak_group_hypotheses(
                     group_identity=group_identity,
                     public_family_id=public_group_id,
                     evidence=evidence,
+                    review_only=moderate_review,
                 ),
             )
             continue
@@ -522,6 +559,7 @@ def construct_cross_sample_peak_group_hypotheses(
                     f"{evidence};{_DUPLICATE_OWNER_GROUP_POLICY}_winner;"
                     f"resolved_group_count={len(resolved_ids)}"
                 ),
+                review_only=moderate_review,
                 consolidation_state="primary_winner",
                 consolidation_winner_group_hypothesis_id=(
                     group_identity.group_hypothesis_id
@@ -2074,6 +2112,7 @@ def _group_evidence(
     injection_trajectory: bool,
     bounded_continuity: bool = False,
     targeted_istd_trajectory: bool = False,
+    moderate_complete_link: bool = False,
 ) -> str:
     if len(group) == 1:
         return "single_sample_local_owner"
@@ -2085,9 +2124,41 @@ def _group_evidence(
         policy = "owner_injection_trajectory"
     elif bounded_continuity:
         policy = "owner_bounded_continuity"
+    elif moderate_complete_link:
+        policy = "owner_complete_link_moderate"
     else:
         policy = "owner_complete_link"
     return f"{policy};owner_count={len(group)}"
+
+
+def _group_requires_moderate_complete_link_admission(
+    group: tuple[SampleLocalMS1Owner, ...],
+    *,
+    edge_cache: Mapping[tuple[str, str], OwnerEdgeEvidence],
+    config: AlignmentConfig,
+) -> bool:
+    for index, left in enumerate(group):
+        for right in group[index + 1 :]:
+            key = cast(
+                tuple[str, str],
+                tuple(sorted((left.owner_id, right.owner_id))),
+            )
+            edge = edge_cache.get(key)
+            if edge is None:
+                raise CrossSampleContractError(
+                    "complete-link group is missing its evaluated pair evidence"
+                )
+            if (
+                edge.decision == "weak_edge"
+                and classify_cross_sample_initial_edge(
+                    edge,
+                    context="complete_link",
+                    config=config,
+                )
+                == "eligible"
+            ):
+                return True
+    return False
 
 
 def _owner_sort_key(owner: SampleLocalMS1Owner) -> tuple[object, ...]:
@@ -2175,4 +2246,3 @@ __all__ = (
     "validate_cross_sample_group_population",
     "validate_cross_sample_peak_group_identity",
 )
-

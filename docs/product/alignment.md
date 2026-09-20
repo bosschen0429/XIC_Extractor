@@ -216,8 +216,22 @@ unresolved and rejected groups remain AuditTrail facts.
   while the seeds sit tens of seconds apart. Below roughly half a peak width the
   trace does not show two apexes, so the pair is not a doublet and its component
   is not discarded. `owner_apex_close_sec` still applies as the lower bound.
-- Cross-sample grouping uses all-pairs strong-edge complete-link by default. A
-  connected RT/mass continuum may replace the split only when it contains one
+- Cross-sample grouping uses all-pairs admissible-edge complete-link by default.
+  Strong edges are admissible. A weak edge is also admissible when it has no
+  hard-gate failure, uses raw RT inside the preferred window, has clean owner
+  quality, and has moderate seed support; its score, weak decision, selected RT
+  basis, and corrected-RT observation remain unchanged audit facts. A group that
+  actually requires this admission is `owner_complete_link_moderate`; an
+  all-strong group remains `owner_complete_link`. The moderate group uses
+  multi-sample detection identity with medium confidence where Matrix identity
+  decisions are evaluated. It needs at least two quantitation-grade observed
+  owners before publication. The retained finalized Untarget route enforces the
+  same guard at group disposition: a moderate group below that count is
+  `provisional` and review-only, so post-cell projection archives it; a passing
+  group remains `established`. Its writer confidence stays `owner_finalized`,
+  which records completion authority rather than scientific confidence.
+- After that initial partition, a connected RT/mass continuum may replace a
+  remaining split only when it contains one
   clean detected owner from every sample in the explicit Alignment batch,
   every accepted local edge passes the pair hard gates, and complete-link would
   otherwise split it. Incomplete groups, same-sample recurrences, weak-quality

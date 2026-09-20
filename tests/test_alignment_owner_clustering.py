@@ -55,9 +55,11 @@ def test_raw_sufficient_group_skips_drift_in_admission_and_ranking() -> None:
     ]
     assert len(edges) == 1
     assert edges[0].rt_basis == "raw"
+    assert features[0].disposition == "established"
+    assert features[0].review_only is False
 
 
-def test_degraded_drift_keeps_raw_full_batch_continuity() -> None:
+def test_degraded_drift_uses_moderate_complete_link_admission() -> None:
     owners = tuple(
         _owner(sample, "main", apex_rt=10.0 + index * 0.05,
                evidence_score=45, seed_event_count=1)
@@ -78,7 +80,9 @@ def test_degraded_drift_keeps_raw_full_batch_continuity() -> None:
     ]
     assert all(edge.rt_basis == "raw" and edge.score == 45 for edge in edges)
     assert all(edge.decision == "weak_edge" for edge in edges)
-    assert features[0].evidence == "owner_full_batch_continuity;owner_count=3"
+    assert features[0].evidence == "owner_complete_link_moderate;owner_count=3"
+    assert features[0].disposition == "provisional"
+    assert features[0].review_only is True
 
 
 def test_owner_clustering_allows_plausible_rt_drift_with_complete_link() -> None:
@@ -487,7 +491,7 @@ def test_owner_clustering_separates_fixture_cohort_rt_outlier() -> None:
 
 
 def test_owner_clustering_connects_full_batch_with_moderate_seed_edge() -> None:
-    owners = (
+    raw_owners = (
         _owner("sample-a", "a", apex_rt=10.00),
         _owner(
             "sample-b",
@@ -497,12 +501,30 @@ def test_owner_clustering_connects_full_batch_with_moderate_seed_edge() -> None:
             seed_event_count=1,
         ),
     )
+    owners = tuple(
+        replace(
+            owner,
+            selected_integration=replace(
+                owner.selected_integration,
+                baseline_residual_mad=1.0,
+            ),
+        )
+        for owner in raw_owners
+    )
     config = AlignmentConfig(preferred_rt_sec=60.0, max_rt_sec=180.0)
 
     assert evaluate_owner_edge(owners[0], owners[1], config=config).decision == (
         "weak_edge"
     )
-    assert len(cluster_sample_local_owners(owners, config=config)) == 2
+    initial_features = cluster_sample_local_owners(owners, config=config)
+    assert [feature.event_cluster_ids for feature in initial_features] == [
+        ("OWN-sample-a-a", "OWN-sample-b-b"),
+    ]
+    assert initial_features[0].evidence == (
+        "owner_complete_link_moderate;owner_count=2"
+    )
+    assert initial_features[0].disposition == "established"
+    assert initial_features[0].review_only is False
 
     features = cluster_sample_local_owners(
         owners,
@@ -516,7 +538,82 @@ def test_owner_clustering_connects_full_batch_with_moderate_seed_edge() -> None:
             "OWN-sample-b-b",
         )
     ]
-    assert features[0].evidence == "owner_full_batch_continuity;owner_count=2"
+    assert features[0].evidence == "owner_complete_link_moderate;owner_count=2"
+
+
+def test_moderate_complete_link_keeps_incompatible_pairs_separate() -> None:
+    base = _owner(
+        "sample-a", "base", apex_rt=10.0, evidence_score=45, seed_event_count=1,
+    )
+    controls = (
+        _owner(
+            "sample-b", "weak-seed", apex_rt=10.1,
+            evidence_score=35, seed_event_count=1,
+        ),
+        replace(
+            _owner(
+                "sample-c", "ambiguous", apex_rt=10.1,
+                evidence_score=45, seed_event_count=1,
+            ),
+            assignment_reason="ambiguous_nearby",
+        ),
+        _owner(
+            "sample-d", "rt-outside", apex_rt=11.2,
+            evidence_score=45, seed_event_count=1,
+        ),
+        _owner(
+            "sample-e", "mass-conflict", apex_rt=10.1, precursor_mz=501.0,
+            evidence_score=45, seed_event_count=1,
+        ),
+        _owner(
+            "sample-f", "product-conflict", apex_rt=10.1, product_mz=390.0,
+            evidence_score=45, seed_event_count=1,
+        ),
+        _owner(
+            "sample-a", "same-sample", apex_rt=10.1,
+            evidence_score=45, seed_event_count=1,
+        ),
+    )
+
+    for control in controls:
+        features = cluster_sample_local_owners(
+            (base, control),
+            config=AlignmentConfig(preferred_rt_sec=60.0, max_rt_sec=180.0),
+        )
+        assert len(features) == 2, control.owner_id
+
+
+def test_moderate_complete_link_label_reuses_cached_pair_evidence() -> None:
+    owners = (
+        _owner(
+            "sample-a", "a", apex_rt=10.0,
+            evidence_score=45, seed_event_count=1,
+        ),
+        _owner(
+            "sample-b", "b", apex_rt=10.1,
+            evidence_score=45, seed_event_count=1,
+        ),
+    )
+    calls = 0
+
+    def evaluator(left, right, *, config, drift_lookup):
+        nonlocal calls
+        calls += 1
+        return evaluate_owner_edge(
+            left,
+            right,
+            config=config,
+            drift_lookup=drift_lookup,
+        )
+
+    hypotheses = peak_groups_module.construct_cross_sample_peak_group_hypotheses(
+        owners,
+        config=AlignmentConfig(),
+        edge_evaluator=evaluator,
+    )
+
+    assert calls == 1
+    assert hypotheses[0].evidence == "owner_complete_link_moderate;owner_count=2"
 
 
 def test_owner_clustering_keeps_complete_full_batch_on_complete_link() -> None:

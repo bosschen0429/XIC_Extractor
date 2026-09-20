@@ -294,7 +294,7 @@ def test_degraded_drift_falls_back_without_keeping_prior_bonus(
     ) == "eligible"
     assert classify_cross_sample_initial_edge(
         edge, context="complete_link", config=config,
-    ) == "review_only"
+    ) == "eligible"
 
 
 def test_insufficient_raw_keeps_helpful_drift() -> None:

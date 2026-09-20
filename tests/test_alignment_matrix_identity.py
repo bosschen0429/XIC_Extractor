@@ -126,6 +126,38 @@ def test_full_batch_continuity_uses_existing_multi_sample_identity_policy() -> N
     assert decision.identity_reason == "multi_sample_detected"
 
 
+def test_moderate_complete_link_uses_medium_multi_sample_identity_policy() -> None:
+    matrix = _bounded_continuity_matrix(
+        snr=50.0,
+        evidence="owner_complete_link_moderate;owner_count=2",
+    )
+
+    decision = build_matrix_identity_decisions(matrix, AlignmentConfig()).row("FAM001")
+
+    assert decision.include_in_primary_matrix is True
+    assert decision.identity_decision == "production_family"
+    assert decision.identity_confidence == "medium"
+    assert decision.primary_evidence == "multi_sample_detected"
+    assert decision.identity_reason == "multi_sample_detected"
+
+
+def test_moderate_complete_link_requires_two_quantitation_grade_owners() -> None:
+    matrix = _bounded_continuity_matrix(
+        snr=4.0,
+        evidence="owner_complete_link_moderate;owner_count=2",
+    )
+
+    decision = build_matrix_identity_decisions(matrix, AlignmentConfig()).row("FAM001")
+
+    assert decision.include_in_primary_matrix is False
+    assert decision.identity_decision == "provisional_discovery"
+    assert decision.identity_confidence == "review"
+    assert decision.primary_evidence == "multi_sample_detected"
+    assert decision.identity_reason == (
+        "moderate_complete_link_below_quantitation_limit"
+    )
+
+
 def test_matrix_identity_decision_record_explains_row_projection_policy() -> None:
     matrix = _matrix(
         _feature("FAM001", evidence="owner_complete_link;owner_count=2"),

@@ -433,10 +433,10 @@ def classify_cross_sample_initial_edge(
         return "eligible"
     if edge.decision == "strong_edge":
         return "eligible"
-    if context == "complete_link":
-        return "review_only"
     if _full_batch_weak_edge_is_eligible(edge, config=config):
         return "eligible"
+    if context == "complete_link":
+        return "review_only"
     if context == "targeted_istd_continuity":
         return _targeted_istd_rt_disposition(edge, config=config)
     return "review_only"
