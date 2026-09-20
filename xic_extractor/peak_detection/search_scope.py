@@ -21,7 +21,7 @@ from xic_extractor.peak_detection.cid_nl_method_subject import (
     UntargetedCidNlMethodSubjectBatch,
     cid_nl_method_subject_from_target,
     cid_nl_method_subjects_from_request,
-    validate_cid_nl_alignment_subject_workset,
+    validate_cid_nl_alignment_subject_compatibility,
 )
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     REQUEST_INPUT_KEY as CID_NL_REQUEST_INPUT_KEY,
@@ -747,7 +747,10 @@ def _untargeted_batch_view_memberships(
     if provider_subject_ids == index.subject_ids:
         return batch.candidate_memberships
     try:
-        validate_cid_nl_alignment_subject_workset(
+        # Dispatch may have connected native resolver components through a known
+        # standard comparison envelope. SearchScope does not own that envelope,
+        # so it can recheck method compatibility but cannot reconstruct closure.
+        validate_cid_nl_alignment_subject_compatibility(
             tuple(
                 index.subjects_by_id[subject_id] for subject_id in provider_subject_ids
             )

@@ -213,12 +213,15 @@ unresolved and rejected groups remain AuditTrail facts.
   center. Only identical resulting requests share an acquired trace.
 - A CID-NL method subject identifies an acquisition/assessment question, not a
   feature boundary. Non-composite Untargeted subjects with the same scalar
-  neutral loss and overlap-connected resolver intervals form one alignment
-  workset. Execution keeps each workset atomic, and its formal workflow child
+  neutral loss form alignment worksets using resolver intervals together with
+  the known-reference comparison envelopes described below. Execution keeps
+  each connected workset atomic, and its formal workflow child
   carries all original assessment bindings through grouping and final cells.
   Sharing a workset permits comparison; the existing CrossSample gates still
-  decide membership. Different losses, disconnected intervals, and composite
-  subjects remain separate worksets.
+  decide membership. Different losses, scopes that remain disconnected after
+  those envelopes are applied, and composite subjects remain separate worksets.
+  SearchScope preserves request-bound provider and candidate membership; it
+  does not re-partition an upstream workset using resolver intervals alone.
 - A cross-subject group retains each SUPPORT cell's exact assessment and
   hypothesis binding. Its canonical recovery subject is the supporting subject
   nearest the formal group center, with method-subject ID breaking ties.

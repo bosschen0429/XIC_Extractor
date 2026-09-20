@@ -29,6 +29,7 @@ from xic_extractor.peak_detection.cid_nl_method_assessment import (
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     CID_NL_PROVIDER_ID,
     REQUEST_INPUT_KEY,
+    cid_nl_alignment_subject_worksets,
     cid_nl_method_subject_from_target,
     mint_untargeted_cid_nl_method_subject,
     mint_untargeted_cid_nl_method_subject_batch,
@@ -727,7 +728,7 @@ def test_untargeted_batch_scope_uses_exact_candidate_subject_membership(
         )
 
 
-def test_untargeted_batch_scope_accepts_one_exact_compatible_subject_workset(
+def test_untargeted_batch_scope_accepts_known_comparison_bridged_workset(
     tmp_path: Path,
 ) -> None:
     fixture = build_untargeted_cid_nl_no_raw_fixture(
@@ -744,8 +745,8 @@ def test_untargeted_batch_scope_accepts_one_exact_compatible_subject_workset(
                 )
                 for precursor_mz, neutral_loss_da in (
                     (243.098, 116.0474),
-                    (243.099, 116.0474),
                     (243.2, 116.0474),
+                    (244.0, 116.0474),
                     (243.0985, 114.0),
                 )
             ),
@@ -763,8 +764,8 @@ def test_untargeted_batch_scope_accepts_one_exact_compatible_subject_workset(
         )
         for candidate_id, precursor_mz, neutral_loss_da in (
             ("candidate-a", 243.098, 116.0474),
-            ("candidate-b", 243.099, 116.0474),
-            ("candidate-c", 243.2, 116.0474),
+            ("candidate-b", 243.2, 116.0474),
+            ("candidate-c", 244.0, 116.0474),
             ("candidate-d", 243.0985, 114.0),
         )
     )
@@ -819,8 +820,20 @@ def test_untargeted_batch_scope_accepts_one_exact_compatible_subject_workset(
     )
     workset_subject_ids = {
         subject_by_mz_loss[(243.098, 116.0474)].method_subject_id,
-        subject_by_mz_loss[(243.099, 116.0474)].method_subject_id,
+        subject_by_mz_loss[(243.2, 116.0474)].method_subject_id,
     }
+    assert not any(
+        {subject.method_subject_id for subject in workset} == workset_subject_ids
+        for workset in cid_nl_alignment_subject_worksets(subjects)
+    )
+    bridged_worksets = cid_nl_alignment_subject_worksets(
+        subjects,
+        comparison_mz_intervals=((243.0, 243.3),),
+    )
+    assert any(
+        {subject.method_subject_id for subject in workset} == workset_subject_ids
+        for workset in bridged_worksets
+    )
     workset_providers = tuple(
         provider
         for provider in parent_scope.evidence_providers
@@ -898,10 +911,6 @@ def test_untargeted_batch_scope_accepts_one_exact_compatible_subject_workset(
         (
             (workset_providers[0], workset_providers[0]),
             "duplicate evidence providers",
-        ),
-        (
-            providers_for({(243.098, 116.0474), (243.2, 116.0474)}),
-            "exact compatible subject workset",
         ),
         (
             providers_for({(243.098, 116.0474), (243.0985, 114.0)}),
