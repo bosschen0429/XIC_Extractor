@@ -470,6 +470,7 @@ def _run_untargeted_alignment(
         matrix_path = outputs.matrix_tsv
         if matrix_path is None:
             raise RuntimeError("CID-NL explanation requires the published Matrix")
+        output_dir.mkdir(parents=True, exist_ok=True)
         with timing_recorder.stage("alignment.prepare_explanation"):
             explanation = output_stack.enter_context(
                 prepare_alignment_explanation(
