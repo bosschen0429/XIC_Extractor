@@ -1441,6 +1441,10 @@ def test_run_alignment_cli_preflight_only_prints_launch_contract(
             str(output_dir / "timing.json"),
             "--timing-live-output",
             str(output_dir / "timing.live.json"),
+            "--raw-workers",
+            "4",
+            "--raw-worker-backend",
+            "process",
             "--preflight-only",
             *reference_args,
         ]
@@ -1474,6 +1478,9 @@ def test_run_alignment_cli_preflight_only_prints_launch_contract(
     assert "Candidate CSVs found: 2" in stdout
     assert "RAW paths found: 2" in stdout
     assert "Output level: validation-minimal" in stdout
+    assert "Alignment worker budget: 4" in stdout
+    assert "Input indexing / RAW backend: process" in stdout
+    assert "Source fingerprint backend: thread" in stdout
     assert "Effective owner-build route: <not executed>" in stdout
     assert "Effective route validation: not_executed" in stdout
     assert "owner_validated" not in stdout

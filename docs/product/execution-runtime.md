@@ -25,6 +25,14 @@ characteristics. Its explicit worker override remains available. Discovery
 bounds its active workers by sample count; that cap is scheduling, not another
 default. The profile is a settings snapshot, not a shared persistent worker pool.
 
+For Alignment, `--raw-workers` also bounds persisted physical-input indexing.
+`--raw-worker-backend process` runs the CPU-heavy sidecar parsers in separate
+processes; only compact indices and private spool ownership cross that boundary.
+Source fingerprinting uses the same worker budget with threads. These input
+phases finish before RAW runtime, so their pools do not multiply the RAW worker
+budget. A value of one keeps serial behavior; concurrency does not change
+scientific identity or sample order.
+
 The tissue validation plan exposes both parallel and Alignment worker budgets.
 Changing from 8RAW to 85RAW does not choose a different execution profile.
 

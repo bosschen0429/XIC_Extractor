@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import asdict, replace
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
@@ -21,7 +21,10 @@ from xic_extractor.discovery.physical_fact_record import (
     DiscoveryPhysicalFactRecord,
     validate_discovery_physical_fact_record,
 )
-from xic_extractor.discovery.physical_fact_source import PhysicalFactSource
+from xic_extractor.discovery.physical_fact_source import (
+    DetachedPhysicalFactSource,
+    PhysicalFactSource,
+)
 from xic_extractor.peak_detection.physical_peak_codec import (
     _physical_evaluation_from_payload,
     deserialize_physical_peak_evaluation,
@@ -309,6 +312,17 @@ def serialize_discovery_physical_fact_sidecar(
     )
 
 
+@dataclass(frozen=True, slots=True)
+class DetachedIndexedDiscoveryPhysicalFacts:
+    """Compact worker result whose spool remains owned by the caller."""
+
+    source: DetachedPhysicalFactSource
+    candidate_ordinals: dict[str, int]
+    precursor_mz: dict[str, float]
+    physical_identities: dict[str, dict[str, str]]
+    physical_apices: dict[str, float]
+
+
 class IndexedDiscoveryPhysicalFacts:
     """Verified manifest routing with physical graphs restored on demand."""
 
@@ -319,6 +333,7 @@ class IndexedDiscoveryPhysicalFacts:
         expected_run_spec: ProcessingRunSpec,
         expected_acquisition_input: ProcessingAcquisitionInput,
         candidate_ids: frozenset[str],
+        spool_dir: Path | None = None,
     ) -> None:
         _validate_acquisition_input(expected_run_spec, expected_acquisition_input)
         self.run_spec = expected_run_spec
@@ -404,6 +419,7 @@ class IndexedDiscoveryPhysicalFacts:
             retain_record=lambda _index, value: (
                 value.get("candidate_id") in candidate_ids
             ),
+            spool_dir=spool_dir,
         )
         try:
             if manifest_ids != record_ids:
@@ -437,6 +453,37 @@ class IndexedDiscoveryPhysicalFacts:
 
     def close(self) -> None:
         self.source.close()
+
+    def detach(self) -> DetachedIndexedDiscoveryPhysicalFacts:
+        """Transfer compact indexes and the private spool to another owner."""
+
+        return DetachedIndexedDiscoveryPhysicalFacts(
+            source=self.source.detach(),
+            candidate_ordinals=self.candidate_ordinals,
+            precursor_mz=self.precursor_mz,
+            physical_identities=self.physical_identities,
+            physical_apices=self.physical_apices,
+        )
+
+    @classmethod
+    def from_detached(
+        cls,
+        transfer: DetachedIndexedDiscoveryPhysicalFacts,
+        *,
+        expected_run_spec: ProcessingRunSpec,
+    ) -> IndexedDiscoveryPhysicalFacts:
+        """Adopt a validated worker index without hydrating physical graphs."""
+
+        if not isinstance(transfer, DetachedIndexedDiscoveryPhysicalFacts):
+            raise TypeError("indexed physical transfer has the wrong owner type")
+        value = object.__new__(cls)
+        value.run_spec = expected_run_spec
+        value.candidate_ordinals = transfer.candidate_ordinals
+        value.precursor_mz = transfer.precursor_mz
+        value.physical_identities = transfer.physical_identities
+        value.physical_apices = transfer.physical_apices
+        value.source = PhysicalFactSource.from_detached(transfer.source)
+        return value
 
 
 def read_discovery_physical_fact_sidecar(

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import hashlib
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import ExitStack
 from dataclasses import replace
 from pathlib import Path
 from typing import TypedDict
@@ -70,6 +72,7 @@ def compile_discovery_processing_run_spec_with_expectations(
     signal_processing_profile: SignalProcessingProfile = (
         DEFAULT_SIGNAL_PROCESSING_PROFILE
     ),
+    fingerprint_workers: int = 1,
 ) -> tuple[ProcessingRunSpec, tuple[AcquisitionSourceExpectation, ...]]:
     """Compile a run spec and retain each fingerprint's exact local path state."""
 
@@ -77,6 +80,8 @@ def compile_discovery_processing_run_spec_with_expectations(
         raise ValueError("raw_paths must be a non-empty Path tuple")
     if any(not isinstance(path, Path) for path in raw_paths):
         raise TypeError("raw_paths must contain Path values")
+    if type(fingerprint_workers) is not int or fingerprint_workers < 1:
+        raise ValueError("fingerprint_workers must be a positive integer")
 
     # Fail before touching the filesystem for invalid semantic inputs.
     CidNlDiscoveryMethodSpec(settings=discovery_settings)
@@ -87,7 +92,8 @@ def compile_discovery_processing_run_spec_with_expectations(
     libraries: _LibrarySnapshots = {}
     inputs = []
     expectations = []
-    for ordinal, path in enumerate(raw_paths):
+
+    def fingerprint(path: Path) -> AcquisitionSourceExpectation:
         before = _stat_identity(path.stat())
         source = build_acquisition_source_identity(
             path,
@@ -98,20 +104,31 @@ def compile_discovery_processing_run_spec_with_expectations(
             raise IdentityContractError(
                 "acquisition source changed during run-spec fingerprinting"
             )
+        return AcquisitionSourceExpectation(source=source, path_identity=before)
+
+    with ExitStack() as stack:
+        if fingerprint_workers > 1:
+            executor = stack.enter_context(
+                ThreadPoolExecutor(max_workers=min(fingerprint_workers, len(raw_paths)))
+            )
+            verified = tuple(executor.map(fingerprint, raw_paths))
+        else:
+            verified = tuple(map(fingerprint, raw_paths))
+    for ordinal, (path, expectation) in enumerate(
+        zip(raw_paths, verified, strict=True)
+    ):
         inputs.append(
             ProcessingAcquisitionInput(
                 input_ordinal=ordinal,
                 adapter_input_key=path.name,
                 sample_stem=path.stem,
-                acquisition_source=source,
+                acquisition_source=expectation.source,
                 **_blank_library_binding(
                     path, discovery_settings, snapshots, libraries
                 ),
             )
         )
-        expectations.append(
-            AcquisitionSourceExpectation(source=source, path_identity=before)
-        )
+        expectations.append(expectation)
     spec = compile_processing_run_spec(
         tuple(inputs),
         discovery_settings=discovery_settings,

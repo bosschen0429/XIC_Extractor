@@ -428,7 +428,8 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         "--raw-workers",
         type=_positive_int,
         help=(
-            "Concurrent RAW sample phases within each bounded CID-NL partition "
+            "Worker budget for source fingerprinting, persisted-input indexing, "
+            "and RAW sample phases within each bounded CID-NL partition "
             "(default: shared execution profile alignment_workers, normally 1)."
         ),
     )
@@ -437,8 +438,8 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         choices=("process", "thread"),
         default="thread",
         help=(
-            "Worker backend for concurrent RAW sample execution within each "
-            "partition ('process' or 'thread', default: 'thread')."
+            "Backend for persisted-input indexing and RAW sample execution "
+            "('process' or 'thread', default: 'thread'). Fingerprinting uses threads."
         ),
     )
     parser.add_argument(
@@ -741,6 +742,9 @@ def _print_preflight_summary(
     print(f"DLL dir: {dll_dir}")
     print(f"Output dir: {output_dir}")
     print(f"Output level: {args.output_level}")
+    print(f"Alignment worker budget: {args.raw_workers}")
+    print(f"Input indexing / RAW backend: {args.raw_worker_backend}")
+    print("Source fingerprint backend: thread")
     _print_owner_build_route_preflight(owner_build_xic_backend)
     print(
         "Timing JSON: "

@@ -6,6 +6,7 @@ import copy
 import pickle
 import tempfile
 from collections.abc import Callable, Iterator
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, BinaryIO, Protocol
 
@@ -21,6 +22,17 @@ _Span = tuple[int, int]
 _IndexedSpans = tuple[_Span | None, ...]
 
 
+@dataclass(frozen=True, slots=True)
+class DetachedPhysicalFactSource:
+    """Pickle-safe ownership transfer for one validated private spool."""
+
+    path: Path
+    signature: tuple[int, int, int, int]
+    manifest_spans: _IndexedSpans
+    record_spans: _IndexedSpans
+    spool_path: Path
+
+
 class PhysicalFactSource:
     """Index one physical sidecar into a private, bounded-lifetime item spool."""
 
@@ -31,6 +43,7 @@ class PhysicalFactSource:
         manifest_visitor: Callable[[int, dict], None] | None = None,
         record_visitor: Callable[[int, dict], None] | None = None,
         retain_record: Callable[[int, dict], bool] | None = None,
+        spool_dir: Path | None = None,
     ) -> None:
         if not isinstance(path, Path):
             raise TypeError("physical fact source path must be a Path")
@@ -43,12 +56,14 @@ class PhysicalFactSource:
         self._path = path
         self._closed = False
         self._spool_path: Path | None = None
+        self._header: dict[str, Any] | None = None
         self._signature = _stat_signature(path)
         try:
             header, manifest_spans, record_spans, spool_path = self._build_index(
                 manifest_visitor=manifest_visitor,
                 record_visitor=record_visitor,
                 retain_record=retain_record,
+                spool_dir=spool_dir,
             )
             self._spool_path = spool_path
             if _stat_signature(path) != self._signature:
@@ -65,6 +80,8 @@ class PhysicalFactSource:
     @property
     def header(self) -> dict:
         self._ensure_current()
+        if self._header is None:
+            raise ValueError("physical fact source header was not transferred")
         return copy.deepcopy(self._header)
 
     @property
@@ -101,6 +118,44 @@ class PhysicalFactSource:
             self._spool_path.unlink(missing_ok=True)
             self._spool_path = None
 
+    def detach(self) -> DetachedPhysicalFactSource:
+        """Transfer spool ownership without copying retained record graphs."""
+
+        self._ensure_current()
+        spool_path = self._require_spool()
+        transfer = DetachedPhysicalFactSource(
+            path=self._path,
+            signature=self._signature,
+            manifest_spans=self._manifest_spans,
+            record_spans=self._record_spans,
+            spool_path=spool_path,
+        )
+        self._spool_path = None
+        self._closed = True
+        return transfer
+
+    @classmethod
+    def from_detached(
+        cls, transfer: DetachedPhysicalFactSource
+    ) -> PhysicalFactSource:
+        """Adopt a worker-produced spool after process-safe transport."""
+
+        if not isinstance(transfer, DetachedPhysicalFactSource):
+            raise TypeError("physical fact source transfer has the wrong owner type")
+        if not transfer.spool_path.is_file():
+            raise ValueError("physical fact source transfer spool is unavailable")
+        if _stat_signature(transfer.path) != transfer.signature:
+            raise ValueError("Discovery physical fact source changed after indexing")
+        value = object.__new__(cls)
+        value._path = transfer.path
+        value._closed = False
+        value._spool_path = transfer.spool_path
+        value._signature = transfer.signature
+        value._header = None
+        value._manifest_spans = transfer.manifest_spans
+        value._record_spans = transfer.record_spans
+        return value
+
     def __enter__(self) -> PhysicalFactSource:
         self._ensure_current()
         return self
@@ -120,6 +175,7 @@ class PhysicalFactSource:
         manifest_visitor: Callable[[int, dict], None] | None,
         record_visitor: Callable[[int, dict], None] | None,
         retain_record: Callable[[int, dict], bool] | None,
+        spool_dir: Path | None,
     ) -> tuple[
         dict[str, Any],
         _IndexedSpans,
@@ -127,7 +183,11 @@ class PhysicalFactSource:
         Path,
     ]:
         temporary = tempfile.NamedTemporaryFile(
-            mode="w+b", prefix="xic-physical-facts-", suffix=".spool", delete=False
+            mode="w+b",
+            prefix="xic-physical-facts-",
+            suffix=".spool",
+            delete=False,
+            dir=spool_dir,
         )
         spool_path = Path(temporary.name)
         try:
@@ -381,4 +441,4 @@ def _stat_signature(path: Path) -> tuple[int, int, int, int]:
     return stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns
 
 
-__all__ = ["PhysicalFactSource"]
+__all__ = ["DetachedPhysicalFactSource", "PhysicalFactSource"]

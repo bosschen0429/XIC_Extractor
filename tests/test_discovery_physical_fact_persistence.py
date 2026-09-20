@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import json
+import os
+import threading
+import time
 from dataclasses import replace
 from pathlib import Path
 
@@ -183,6 +186,49 @@ def _population(spec, acquisition_input):
             )
         )
     return tuple(manifest), tuple(records)
+
+
+def _physical_index_jobs(tmp_path: Path, *, count: int):
+    from xic_extractor.extraction.untargeted_alignment import _PhysicalIndexJob
+
+    raw_paths = tuple(tmp_path / f"sample_{index}.raw" for index in range(count))
+    for raw_path in raw_paths:
+        raw_path.write_bytes(f"acquisition {raw_path.stem}".encode())
+    spec = compile_discovery_processing_run_spec(
+        raw_paths,
+        discovery_settings=_settings(),
+        signal_processing_profile=SignalProcessingProfile(window_points=3),
+    )
+    spool_dir = tmp_path / "spools"
+    spool_dir.mkdir()
+    jobs = []
+    expected: dict[str, tuple[str, ...]] = {}
+    for acquisition_input in spec.acquisition_inputs:
+        manifest, records = _population(spec, acquisition_input)
+        sidecar = (
+            tmp_path
+            / acquisition_input.sample_stem
+            / "discovery_physical_facts.json"
+        )
+        write_discovery_physical_fact_sidecar(
+            sidecar,
+            run_spec=spec,
+            acquisition_input=acquisition_input,
+            work_manifest=manifest,
+            records=records,
+        )
+        candidate_ids = tuple(record.candidate_id for record in records)
+        expected[acquisition_input.sample_stem] = candidate_ids
+        jobs.append(
+            _PhysicalIndexJob(
+                path=sidecar,
+                expected_run_spec=spec,
+                expected_acquisition_input=acquisition_input,
+                candidate_ids=frozenset(candidate_ids),
+                spool_dir=spool_dir,
+            )
+        )
+    return tuple(jobs), expected, spool_dir
 
 
 def test_discovery_sidecar_roundtrips_complete_independent_work_manifest(
@@ -829,3 +875,105 @@ def test_physical_fact_source_never_requests_an_unbounded_or_whole_file_read(
     assert source.read_record(3)["ordinal"] == 3
     assert requested_sizes and max(requested_sizes) == 31
     assert path.stat().st_size > max(requested_sizes)
+
+
+@pytest.mark.parametrize(
+    ("backend", "workers"),
+    (("thread", 1), ("thread", 2), ("process", 2)),
+)
+def test_parallel_physical_indexing_is_deterministic_and_transfers_spool_ownership(
+    tmp_path: Path,
+    backend: str,
+    workers: int,
+) -> None:
+    from xic_extractor.extraction.untargeted_alignment import (
+        _index_discovery_physical_sources,
+    )
+
+    jobs, expected, spool_dir = _physical_index_jobs(tmp_path, count=3)
+    result = _index_discovery_physical_sources(
+        jobs,
+        raw_workers=workers,
+        raw_worker_backend=backend,
+    )
+    try:
+        assert tuple(result.sources) == tuple(expected)
+        observed = {
+            stem: tuple(
+                record.candidate_id
+                for record in source.load_candidates(expected[stem]).values()
+            )
+            for stem, source in result.sources.items()
+        }
+        assert observed == expected
+        if backend == "process":
+            assert result.worker_pids
+            assert all(pid != os.getpid() for pid in result.worker_pids)
+        else:
+            assert set(result.worker_pids) == {os.getpid()}
+    finally:
+        for source in result.sources.values():
+            source.close()
+
+    assert not tuple(spool_dir.iterdir())
+
+
+def test_threaded_physical_indexing_bounds_active_jobs(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from xic_extractor.extraction import untargeted_alignment as owner
+
+    jobs, _expected, _spool_dir = _physical_index_jobs(tmp_path, count=4)
+    original = owner._index_discovery_physical_source
+    lock = threading.Lock()
+    active = 0
+    peak = 0
+
+    def observed(job):
+        nonlocal active, peak
+        with lock:
+            active += 1
+            peak = max(peak, active)
+        try:
+            time.sleep(0.02)
+            return original(job)
+        finally:
+            with lock:
+                active -= 1
+
+    monkeypatch.setattr(owner, "_index_discovery_physical_source", observed)
+    result = owner._index_discovery_physical_sources(
+        jobs,
+        raw_workers=2,
+        raw_worker_backend="thread",
+    )
+    try:
+        assert peak == 2
+    finally:
+        for source in result.sources.values():
+            source.close()
+
+
+def test_parallel_physical_indexing_cleans_adopted_spools_after_failure(
+    tmp_path: Path,
+) -> None:
+    from dataclasses import replace as dataclass_replace
+
+    from xic_extractor.extraction.untargeted_alignment import (
+        _index_discovery_physical_sources,
+    )
+
+    jobs, _expected, spool_dir = _physical_index_jobs(tmp_path, count=3)
+    invalid = tmp_path / "invalid.json"
+    invalid.write_text("{", encoding="utf-8")
+    failing_jobs = (jobs[0], dataclass_replace(jobs[1], path=invalid), jobs[2])
+
+    with pytest.raises(ValueError):
+        _index_discovery_physical_sources(
+            failing_jobs,
+            raw_workers=2,
+            raw_worker_backend="process",
+        )
+
+    assert not tuple(spool_dir.iterdir())

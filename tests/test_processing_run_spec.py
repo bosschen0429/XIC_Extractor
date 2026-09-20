@@ -87,6 +87,62 @@ def test_run_spec_roundtrip_closes_content_hash_profile_and_order(
     assert reversed_spec.run_spec_id != spec.run_spec_id
 
 
+def test_parallel_fingerprints_preserve_identity_order_and_overlap(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import threading
+
+    from xic_extractor.discovery import processing_run_spec_adapter as adapter
+
+    paths = _raws(tmp_path)
+    expected = adapter.compile_discovery_processing_run_spec_with_expectations(
+        paths, discovery_settings=_settings()
+    )
+    original = adapter.build_acquisition_source_identity
+    barrier = threading.Barrier(2)
+    thread_ids: set[int] = set()
+    lock = threading.Lock()
+
+    def concurrent_fingerprint(*args, **kwargs):
+        with lock:
+            thread_ids.add(threading.get_ident())
+        barrier.wait(timeout=10)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(
+        adapter, "build_acquisition_source_identity", concurrent_fingerprint
+    )
+    actual = adapter.compile_discovery_processing_run_spec_with_expectations(
+        paths, discovery_settings=_settings(), fingerprint_workers=2
+    )
+    assert actual == expected
+    assert len(thread_ids) == 2
+
+
+def test_parallel_fingerprints_reject_source_changed_during_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from xic_extractor.discovery import processing_run_spec_adapter as adapter
+    from xic_extractor.processing_identity import IdentityContractError
+
+    paths = _raws(tmp_path)
+    original = adapter.build_acquisition_source_identity
+
+    def mutate_after_fingerprint(path, **kwargs):
+        source = original(path, **kwargs)
+        if path == paths[0]:
+            path.write_bytes(b"changed source with different size")
+        return source
+
+    monkeypatch.setattr(
+        adapter, "build_acquisition_source_identity", mutate_after_fingerprint
+    )
+    with pytest.raises(IdentityContractError, match="changed during"):
+        adapter.compile_discovery_processing_run_spec_with_expectations(
+            paths, discovery_settings=_settings(), fingerprint_workers=2
+        )
+
+
 @pytest.mark.parametrize(
     "mutation",
     [
