@@ -66,6 +66,62 @@ dated productization control-plane path is compatibility lookup only.
 
 ## Known Diagnostic Conclusions
 
+### 2026-09-22 Three-Partition Admission And Process11 Acceptance
+
+- At `38e9d092`, the real scheduler/adapter completes four retained partitions
+  and all 85 samples in 71.539890 seconds: 150 children (46/20/44/40), 680
+  worker tasks, eight process workers, two acquisition lanes and at most three
+  resident partitions. Peak tree RSS is 4,050,800,640 bytes. There are 11,420
+  cache reads and zero cache misses, writes, rejections or native-open attempts.
+- All 150 typed evidence states, direct physical identities and integrals match
+  the retained same-source oracle. Scalar parity passes only after the already
+  approved, baseline-proven synthetic-no-input administrative normalization;
+  strict byte parity remains false (48,636 administrative differences). This
+  diagnostic does not publish a formal Matrix. Reuse
+  `fusion-ab/owner-checks/capacity3-150-comparison.json` and
+  `capacity3-overlap-and-init.json` under
+  `output/issue422-bounded-worksets-20260921/`.
+- The small slice has no composition interval with two active acquisitions.
+  Its exact timeline shows that partition 1 is ready before partition 0,
+  partition 2 starts before partition 0 composes, and partition 3 starts after
+  partition 0 releases. This is not evidence of another scheduler blockage.
+  Per-worker native initialization max is 1.244 seconds; overlapping sums are
+  not critical-path wall time.
+- Full85 process11 at the same source still fails the cooperative execution
+  budget: 39/46 partitions complete, three fail and four cancel. Elapsed time
+  is 1,092.188 seconds including finalization/cleanup; tree RSS peaks at
+  6,421,622,784 bytes. Request/response transport is 783,389,295 /
+  1,207,508,903 bytes. The 2,555 retained child captures have no recorded capture
+  error, but there is no formal Matrix and the verifier is UNKNOWN. Native/cache
+  counters and exact cancellation/cleanup boundary timestamps were not recorded;
+  do not replace them with zero or attribute the excess to a specific phase.
+  Reuse `alignment85-process11/process11-final-report.md`, its failed receipt
+  and retained spools. No unchanged retry or Discovery rerun is justified.
+- The seventh configured ISTD, `[13C,15N2]-8-oxo-Guo`, is an RNA/NL132 target.
+  This retained Discovery uses `dna_dr`/NL116. The two mixed DNA/RNA samples have
+  target-like precursor rows, but none under RNA/NL132. That does not prove RAW
+  MS1 absence and is not a split-group failure. Report six DNA labels separately
+  and keep RNA coverage unmet/unknown; do not claim seven-label acceptance or
+  synthesize a feature. Reuse `fusion-ab/owner-checks/istd7-label-gap.md`.
+- `43d41eee` removes read-side reconstruction of the private cache transport
+  envelope. Source, request key, schema and numeric payload hashes remain
+  checked, along with unique envelope fields and valid base64. Cache payloads
+  and writer format are unchanged; byte-for-byte outer JSON formatting is no
+  longer an acceptance condition. Three focused cache checks and the normal
+  staged-file checks pass; no throughput claim is inferred from the call removal.
+- `6d182f7b` shares one process-worker budget across acquisition lanes instead
+  of reserving half for each lane. Lazy executor creation and transport counters
+  support overlapping batches; a small first batch no longer permanently shrinks
+  a reusable process executor. The three-partition residency limit is unchanged.
+  Mocked process concurrency, real spawn/shared-owner identity and the affected
+  90-test runtime/engine suite pass, as do Ruff, mypy and normal commit checks.
+  A prior failure assertion incorrectly excluded a partition already admitted
+  before global cancellation was published; it now preserves the actual budget,
+  original error-cause and failed-terminal-outcome oracles. Reuse
+  `fusion-ab/owner-checks/shared-pool-cache-checks.md`. The new retained-input
+  throughput and scientific-parity candidate is pending; do not repeat the
+  completed baseline or launch another full85 solely from these unit results.
+
 ### 2026-09-22 Retained Owner Results And Partition Lifetime
 
 - `207d9bd5` removes a second decision-basis derivation inside sealed decision
