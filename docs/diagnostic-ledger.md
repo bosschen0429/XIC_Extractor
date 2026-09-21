@@ -195,6 +195,17 @@ dated productization control-plane path is compatibility lookup only.
   `composition-replay/subject-lookup-pairs.json` and
   `owner-checks/subject-lookup-checks.md` under the same root.
 
+- Canonical cell and assessment JSON now projects immutable tuple fields
+  directly instead of recursively copying their primitive IDs before encoding.
+  Nested dataclass records retain their explicit projection. Luna's AB/BA/AB
+  replay preserves all bytes for 9,520 cells (25,132,741 bytes) and 6,481
+  assessments (9,383,606 bytes). Median original/candidate seconds are
+  0.2048/0.1633 and 0.1473/0.1250: a small serialization saving, not a cohort
+  speed claim. The final source recheck passes 55 tests, Ruff and two-source
+  mypy after the earlier commit-hook stash window. No accepted benchmark arm
+  was repeated. Artifacts: `composition-replay/immutable-json-pairs.json` and
+  `owner-checks/full85-prep-and-json-recheck.md` under the same root.
+
 ### 2026-09-21 Sealed Composition Replay Shows Distributed Construction Cost
 
 - Decision: isolate composition costs without repeating acquisition or grouping.

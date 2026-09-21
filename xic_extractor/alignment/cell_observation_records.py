@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import InitVar, asdict, dataclass, field
+from dataclasses import InitVar, asdict, dataclass, field, fields
 from typing import Literal
 
 from xic_extractor.alignment.backfill.observation_repair import (
@@ -957,7 +957,11 @@ def canonical_cell_observation_bytes(content: CellObservationContent) -> bytes:
         raise CellObservationContractError(
             "canonical serialization requires CellObservation content"
         )
-    values = asdict(content)
+    # JSON reads immutable tuples directly; copying every group-support ID for
+    # every sample adds a second population traversal without changing bytes.
+    values = {item.name: getattr(content, item.name) for item in fields(content)}
+    if content.outside_group is not None:
+        values["outside_group"] = asdict(content.outside_group)
     payload = {
         "schema_version": SCHEMA_VERSION,
         "validation_status": VALIDATION_STATUS,

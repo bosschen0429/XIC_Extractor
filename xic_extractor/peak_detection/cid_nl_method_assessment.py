@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import math
 import re
-from dataclasses import InitVar, asdict, dataclass
+from dataclasses import InitVar, asdict, dataclass, fields
 from dataclasses import field as dataclass_field
 from typing import Literal, TypeAlias
 
@@ -530,7 +530,11 @@ def canonical_cid_nl_method_assessment_bytes(
         raise CidNlMethodAssessmentContractError(
             "canonical serialization requires method assessment content"
         )
-    content_payload = asdict(content)
+    content_payload = {
+        item.name: getattr(content, item.name) for item in fields(content)
+    }
+    content_payload["method_subject"] = asdict(content.method_subject)
+    content_payload["evaluation_receipt"] = asdict(content.evaluation_receipt)
     payload = {
         "schema_version": SCHEMA_VERSION,
         "validation_status": VALIDATION_STATUS,
