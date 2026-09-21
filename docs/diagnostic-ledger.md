@@ -118,9 +118,31 @@ dated productization control-plane path is compatibility lookup only.
   A prior failure assertion incorrectly excluded a partition already admitted
   before global cancellation was published; it now preserves the actual budget,
   original error-cause and failed-terminal-outcome oracles. Reuse
-  `fusion-ab/owner-checks/shared-pool-cache-checks.md`. The new retained-input
-  throughput and scientific-parity candidate is pending; do not repeat the
-  completed baseline or launch another full85 solely from these unit results.
+  `fusion-ab/owner-checks/shared-pool-cache-checks.md`.
+- At `dd120300`, the shared-pool candidate completes the same four partitions,
+  85 samples and 680 tasks in 67.052493 seconds. All 150 scalar and typed child
+  records are exact against the preceding capacity-three candidate. One pool
+  serves eight worker PIDs; peak tree RSS is 3,996,311,552 bytes, maximum resident
+  partitions remains three, and all 11,420 cache reads complete with zero
+  misses, writes, rejections or native attempts. This single diagnostic pair
+  does not isolate a speedup. Worker start/end times are unavailable, so active
+  acquisition-lane overlap must not be reported as active worker concurrency.
+  Reuse `fusion-ab/owner-checks/shared-pool-candidate-report.md`; full-cohort
+  acceptance remains incomplete.
+- The runtime owner now reserves resources and applies ordered open/cleanup
+  reports in batches. Each batch builds one resource-key index and one validated
+  immutable state, instead of rescanning and rebuilding the growing complete
+  ledger for every resource. Resource order, event sequence, failure deduplication
+  and canonical terminal bytes match the frozen `dd120300` reducers at 40 and
+  1,000 resources; all 58 affected runtime owner/finalization tests pass. At
+  1,000 resources the new reserve/open/cleanup batch takes 0.008643 seconds.
+  The retained old measurement covers reservation only (0.232470 seconds), so
+  these are not equal phase timings. This is synthetic mechanical evidence,
+  not an attributed saving from the failed full85 run. A candidate-only
+  7,820-resource case completes reserve/open/cleanup in 0.018875 / 0.065829 /
+  0.040426 seconds with exactly one full-state validation per phase and 23,460
+  ordered events. Ruff, mypy and architecture census pass. Reuse
+  `fusion-ab/owner-checks/runtime-resource-batch-checks.md`.
 
 ### 2026-09-22 Retained Owner Results And Partition Lifetime
 

@@ -66,36 +66,56 @@ def reserve_runtime_resource(
 ) -> AttemptFinalizationState:
     """Record a reservation before the adapter allocates or dispatches it."""
 
+    return _reserve_runtime_resources(state, (reservation,))
+
+
+def _reserve_runtime_resources(
+    state: AttemptFinalizationState,
+    reservations: Iterable[RuntimeResourceReservation],
+) -> AttemptFinalizationState:
+    """Apply ordered reservations without rebuilding the ledger per resource."""
+
     _require_mutable_state(state)
-    if not isinstance(reservation, RuntimeResourceReservation):
-        raise RuntimeFinalizationContractError(
-            "reservation must be a RuntimeResourceReservation"
-        )
-    if reservation.attempt != state.runtime.manifest.attempt:
-        raise RuntimeFinalizationContractError(
-            "resource reservation must bind the runtime attempt"
-        )
-    existing = _resource(state, reservation.resource_key)
-    if existing is not None:
-        if existing.reservation == reservation:
-            return state
-        return _record_failure(
-            state,
-            RuntimeLifecycleFailureKind.CONFLICTING_RESOURCE_RESERVATION,
-            reservation.resource_key,
-            "resource key was reserved with different owner content",
-        )
-    return replace(
-        state,
-        resources=(*state.resources, RuntimeResourceRecord(reservation)),
-        events=(
-            *state.events,
+    resources = {item.reservation.resource_key: item for item in state.resources}
+    events: list[RuntimeLifecycleEvent] = []
+    failures = dict.fromkeys(state.failures)
+    for reservation in reservations:
+        if not isinstance(reservation, RuntimeResourceReservation):
+            raise RuntimeFinalizationContractError(
+                "reservation must be a RuntimeResourceReservation"
+            )
+        if reservation.attempt != state.runtime.manifest.attempt:
+            raise RuntimeFinalizationContractError(
+                "resource reservation must bind the runtime attempt"
+            )
+        key = reservation.resource_key
+        existing = resources.get(key)
+        if existing is not None:
+            if existing.reservation != reservation:
+                failures.setdefault(
+                    RuntimeLifecycleFailure(
+                        RuntimeLifecycleFailureKind.CONFLICTING_RESOURCE_RESERVATION,
+                        key,
+                        "resource key was reserved with different owner content",
+                    )
+                )
+            continue
+        resources[key] = RuntimeResourceRecord(reservation)
+        events.append(
             _event(
                 state,
                 RuntimeLifecycleEventKind.RESOURCE_RESERVED,
-                reservation.resource_key,
-            ),
-        ),
+                key,
+                offset=len(events),
+            )
+        )
+    if not events and len(failures) == len(state.failures):
+        return state
+    return replace(
+        state,
+        resources=tuple(resources.values()),
+        events=(*state.events, *events),
+        failures=tuple(failures),
     )
 
 
@@ -128,48 +148,67 @@ def record_runtime_resource_open(
 ) -> AttemptFinalizationState:
     """Accept the first open outcome; identical replay is idempotent."""
 
+    return _record_runtime_resource_opens(state, ((resource_key, outcome),))
+
+
+def _record_runtime_resource_opens(
+    state: AttemptFinalizationState,
+    reports: Iterable[tuple[str, RuntimeResourceOpenOutcome]],
+) -> AttemptFinalizationState:
+    """Apply ordered open reports with one indexed, validated state update."""
+
     _require_mutable_state(state)
-    key = _required_text(resource_key, field="resource_key")
-    if not isinstance(outcome, RuntimeResourceOpenOutcome):
-        raise RuntimeFinalizationContractError(
-            "outcome must be a RuntimeResourceOpenOutcome"
+    resources = {item.reservation.resource_key: item for item in state.resources}
+    events: list[RuntimeLifecycleEvent] = []
+    failures = dict.fromkeys(state.failures)
+    for resource_key, outcome in reports:
+        key = _required_text(resource_key, field="resource_key")
+        if not isinstance(outcome, RuntimeResourceOpenOutcome):
+            raise RuntimeFinalizationContractError(
+                "outcome must be a RuntimeResourceOpenOutcome"
+            )
+        existing = resources.get(key)
+        if existing is None:
+            failures.setdefault(
+                RuntimeLifecycleFailure(
+                    RuntimeLifecycleFailureKind.UNREGISTERED_RESOURCE,
+                    key,
+                    "resource open report arrived without a reservation",
+                )
+            )
+            continue
+        if existing.open_outcome is not None:
+            if existing.open_outcome is not outcome:
+                failures.setdefault(
+                    RuntimeLifecycleFailure(
+                        RuntimeLifecycleFailureKind.CONFLICTING_RESOURCE_REPORT,
+                        key,
+                        "late open report conflicts with the accepted resource record",
+                    )
+                )
+            continue
+        if (
+            outcome is RuntimeResourceOpenOutcome.CONDITION_NOT_ACTIVATED
+            and not existing.reservation.owner_conditional
+        ):
+            failures.setdefault(
+                RuntimeLifecycleFailure(
+                    RuntimeLifecycleFailureKind.CONFLICTING_RESOURCE_REPORT,
+                    key,
+                    "required resource cannot close as condition_not_activated",
+                )
+            )
+        resources[key] = replace(existing, open_outcome=outcome)
+        events.append(
+            _event(state, _open_event_kind(outcome), key, offset=len(events))
         )
-    existing = _resource(state, key)
-    if existing is None:
-        return _record_failure(
-            state,
-            RuntimeLifecycleFailureKind.UNREGISTERED_RESOURCE,
-            key,
-            "resource open report arrived without a reservation",
-        )
-    if existing.open_outcome is not None:
-        if existing.open_outcome is outcome:
-            return state
-        return _record_failure(
-            state,
-            RuntimeLifecycleFailureKind.CONFLICTING_RESOURCE_REPORT,
-            key,
-            "late open report conflicts with the accepted resource record",
-        )
-    if (
-        outcome is RuntimeResourceOpenOutcome.CONDITION_NOT_ACTIVATED
-        and not existing.reservation.owner_conditional
-    ):
-        state = _record_failure(
-            state,
-            RuntimeLifecycleFailureKind.CONFLICTING_RESOURCE_REPORT,
-            key,
-            "required resource cannot close as condition_not_activated",
-        )
-        existing = _resource(state, key)
-        assert existing is not None
-    updated = replace(existing, open_outcome=outcome)
+    if not events and len(failures) == len(state.failures):
+        return state
     return replace(
         state,
-        resources=tuple(
-            updated if item is existing else item for item in state.resources
-        ),
-        events=(*state.events, _event(state, _open_event_kind(outcome), key)),
+        resources=tuple(resources.values()),
+        events=(*state.events, *events),
+        failures=tuple(failures),
     )
 
 
@@ -181,40 +220,61 @@ def record_runtime_resource_cleanup(
 ) -> AttemptFinalizationState:
     """Accept the first terminal cleanup; identical replay is idempotent."""
 
+    return _record_runtime_resource_cleanups(state, ((resource_key, outcome),))
+
+
+def _record_runtime_resource_cleanups(
+    state: AttemptFinalizationState,
+    reports: Iterable[tuple[str, RuntimeResourceCleanupOutcome]],
+) -> AttemptFinalizationState:
+    """Apply ordered cleanup reports with one indexed, validated state update."""
+
     _require_mutable_state(state)
-    key = _required_text(resource_key, field="resource_key")
-    if not isinstance(outcome, RuntimeResourceCleanupOutcome):
-        raise RuntimeFinalizationContractError(
-            "outcome must be a RuntimeResourceCleanupOutcome"
+    resources = {item.reservation.resource_key: item for item in state.resources}
+    events: list[RuntimeLifecycleEvent] = []
+    failures = dict.fromkeys(state.failures)
+    for resource_key, outcome in reports:
+        key = _required_text(resource_key, field="resource_key")
+        if not isinstance(outcome, RuntimeResourceCleanupOutcome):
+            raise RuntimeFinalizationContractError(
+                "outcome must be a RuntimeResourceCleanupOutcome"
+            )
+        existing = resources.get(key)
+        if existing is None:
+            failures.setdefault(
+                RuntimeLifecycleFailure(
+                    RuntimeLifecycleFailureKind.UNREGISTERED_RESOURCE,
+                    key,
+                    "resource cleanup report arrived without a reservation",
+                )
+            )
+            continue
+        if existing.open_outcome is None:
+            raise RuntimeFinalizationContractError(
+                "resource cleanup requires an accepted open outcome"
+            )
+        if existing.cleanup_outcome is not None:
+            if existing.cleanup_outcome is not outcome:
+                failures.setdefault(
+                    RuntimeLifecycleFailure(
+                        RuntimeLifecycleFailureKind.CONFLICTING_RESOURCE_REPORT,
+                        key,
+                        "late cleanup report conflicts with the terminal "
+                        "resource record",
+                    )
+                )
+            continue
+        resources[key] = replace(existing, cleanup_outcome=outcome)
+        events.append(
+            _event(state, _cleanup_event_kind(outcome), key, offset=len(events))
         )
-    existing = _resource(state, key)
-    if existing is None:
-        return _record_failure(
-            state,
-            RuntimeLifecycleFailureKind.UNREGISTERED_RESOURCE,
-            key,
-            "resource cleanup report arrived without a reservation",
-        )
-    if existing.open_outcome is None:
-        raise RuntimeFinalizationContractError(
-            "resource cleanup requires an accepted open outcome"
-        )
-    if existing.cleanup_outcome is not None:
-        if existing.cleanup_outcome is outcome:
-            return state
-        return _record_failure(
-            state,
-            RuntimeLifecycleFailureKind.CONFLICTING_RESOURCE_REPORT,
-            key,
-            "late cleanup report conflicts with the terminal resource record",
-        )
-    updated = replace(existing, cleanup_outcome=outcome)
+    if not events and len(failures) == len(state.failures):
+        return state
     return replace(
         state,
-        resources=tuple(
-            updated if item is existing else item for item in state.resources
-        ),
-        events=(*state.events, _event(state, _cleanup_event_kind(outcome), key)),
+        resources=tuple(resources.values()),
+        events=(*state.events, *events),
+        failures=tuple(failures),
     )
 
 
@@ -788,20 +848,6 @@ def _proposed_outcome(state: AttemptFinalizationState) -> AttemptTerminalOutcome
     if state.runtime.history.cancellation_accepted:
         return AttemptTerminalOutcome.CANCELLED
     return AttemptTerminalOutcome.SUCCEEDED
-
-
-def _resource(
-    state: AttemptFinalizationState,
-    resource_key: str,
-) -> RuntimeResourceRecord | None:
-    return next(
-        (
-            item
-            for item in state.resources
-            if item.reservation.resource_key == resource_key
-        ),
-        None,
-    )
 
 
 def _record_failure(
