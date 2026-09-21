@@ -251,6 +251,9 @@ def test_require_lower_sha256() -> None:
         require_lower_sha256("g" * 64, field="hash")
     with pytest.raises(ValueError, match="hash must be a lowercase SHA-256"):
         require_lower_sha256(12345, field="hash")
+    for invalid in (valid + "\n", "a" * 63 + "\n", "ａ" * 64, "a" * 65):
+        with pytest.raises(ValueError, match="hash must be a lowercase SHA-256"):
+            require_lower_sha256(invalid, field="hash")
 
     assert require_optional_lower_sha256(None, field="hash") is None
     assert require_optional_lower_sha256(valid, field="hash") == valid
@@ -276,4 +279,3 @@ def test_sha256_hexdigest() -> None:
 
     assert sha256_hexdigest(data_bytes) == expected
     assert sha256_hexdigest(data_str) == expected
-

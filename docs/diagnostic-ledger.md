@@ -96,6 +96,16 @@ dated productization control-plane path is compatibility lookup only.
   transport savings only, not an 85RAW speedup or scientific acceptance.
   Evidence: `diagnostic_only`; receipt and report are under
   `output/issue422-bounded-worksets-20260921/pool-reuse-probe/`.
+- The retained first-partition probe used 65 subjects with cache-only numeric
+  facts: acquisition took 88.343s and composition 74.422s under profiling.
+  Composition called assessment binding 551,894 times and SHA validation
+  975,366 times. Per-cell no-request proof construction revisited every source
+  cell in the same frozen group. The production path now binds that group once
+  and checks each proof's exact group, sample and decision separately; proof
+  identity content is unchanged. SHA syntax checks use an equivalent compiled
+  full-string match. These changes do not establish an end-to-end speedup.
+  Parent profile costs overlap and exclude child CPU attribution; the retained
+  report is `output/issue422-bounded-worksets-20260921/profile-first-cached-partition/report.md`.
 
 ### 2026-09-20 Shared-Profile 8RAW Completion With Background Qualification
 

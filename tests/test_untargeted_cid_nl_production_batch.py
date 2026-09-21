@@ -4398,6 +4398,43 @@ def _assert_conservative_proof_seals(
     )
     from xic_extractor.processing_identity import issue_processing_attempt
 
+    # The group binding is shared across cell proofs; minting again must keep
+    # identical persisted identities without revisiting all source assessments.
+    with pytest.MonkeyPatch.context() as counted:
+        bindings = []
+        validate_binding = owner.validate_cid_nl_method_assessment_binding
+
+        def record_binding(reference, **kwargs):
+            bindings.append(reference)
+            return validate_binding(reference, **kwargs)
+
+        counted.setattr(
+            owner, "validate_cid_nl_method_assessment_binding", record_binding
+        )
+        builder = owner.ConservativeNoRequestProofBuilder(
+            processing_owners=proof.processing_owners,
+            group_identity=proof.group_identity,
+            group_facts=proof.decision.group_facts,
+        )
+        assert len(bindings) == len(proof.decision.group_facts.source_cells)
+        for _ in range(3):
+            rebuilt = builder.mint(
+                sample=proof.sample,
+                decision=proof.decision,
+                completion=proof.completion,
+            )
+            assert rebuilt == proof
+        assert len(bindings) == len(proof.decision.group_facts.source_cells)
+        with pytest.raises(ValueError, match="bound group facts"):
+            owner.mint_owner_backfill_conservative_no_request_proof(
+                processing_owners=proof.processing_owners,
+                group_identity=proof.group_identity,
+                sample=proof.sample,
+                decision=proof.decision,
+                completion=proof.completion,
+                _group_binding=replace(builder, group_facts=copy(builder.group_facts)),
+            )
+
     epoch = coverage.epoch
     epoch_args = {
         field.name: getattr(epoch, field.name)

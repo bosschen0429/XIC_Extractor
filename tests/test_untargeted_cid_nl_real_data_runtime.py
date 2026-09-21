@@ -1411,6 +1411,7 @@ def _install_runtime_raw(
     raw_path: Path,
     tmp_path: Path,
 ) -> _FakeThermoRaw:
+    monkeypatch.setattr(runtime_module, "_ensure_assemblies_loaded", lambda *_: None)
     reset_reader_state()
     for filename in EXPECTED_THERMO_DLLS:
         (tmp_path / filename).write_bytes(b"dll")
@@ -1451,6 +1452,8 @@ def _install_runtime_raws(
     sources_by_path: dict[Path, _FakeRaw],
     tmp_path: Path,
 ) -> dict[Path, list[_FakeThermoRaw]]:
+    # Callers importing this helper do not inherit this module's autouse fixture.
+    monkeypatch.setattr(runtime_module, "_ensure_assemblies_loaded", lambda *_: None)
     reset_reader_state()
     for filename in EXPECTED_THERMO_DLLS:
         (tmp_path / filename).write_bytes(b"dll")

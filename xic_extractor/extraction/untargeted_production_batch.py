@@ -11,9 +11,9 @@ from pathlib import Path
 from typing import Any, cast
 
 from xic_extractor.alignment.backfill.evaluation_coverage import (
+    ConservativeNoRequestProofBuilder,
     OwnerBackfillPlanningPosition,
     build_owner_backfill_evaluation_coverage,
-    mint_owner_backfill_conservative_no_request_proof,
     mint_owner_backfill_planning_epoch,
     mint_owner_backfill_position_id,
 )
@@ -1472,6 +1472,7 @@ def _build_production_composition_inputs(
                 tuple(cells_by_group[group.group_hypothesis_id]),
                 sample_population=batch.context.samples,
             )
+            proof_builder = None
             for sample in batch.context.samples:
                 key = (group.group_hypothesis_id, sample.identity.sample_identity_id)
                 cell = cell_by_key[key]
@@ -1520,14 +1521,16 @@ def _build_production_composition_inputs(
                 (decision,) = map_conservative_backfill_candidates(
                     (facts,), sample=sample, candidate_universes=universes
                 )
-                no_request_proofs[key] = (
-                    mint_owner_backfill_conservative_no_request_proof(
+                if proof_builder is None:
+                    proof_builder = ConservativeNoRequestProofBuilder(
                         processing_owners=batch.context.processing_owners,
                         group_identity=group,
-                        sample=sample,
-                        decision=decision,
-                        completion=completion,
+                        group_facts=facts,
                     )
+                no_request_proofs[key] = proof_builder.mint(
+                    sample=sample,
+                    decision=decision,
+                    completion=completion,
                 )
         positions = tuple(
             OwnerBackfillPlanningPosition(

@@ -9,8 +9,11 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import re
 from collections.abc import Callable, Mapping, Sequence
 from numbers import Integral, Real
+
+_LOWER_SHA256 = re.compile(r"[0-9a-f]{64}")
 
 
 def sha256_hexdigest(data: bytes | str) -> str:
@@ -330,7 +333,7 @@ def require_lower_sha256(
         if type_error_factory is not None:
             raise type_error_factory(f"{field} must be text")
         raise error_factory(f"{field} must be a lowercase SHA-256")
-    if len(value) != 64 or any(c not in "0123456789abcdef" for c in value):
+    if _LOWER_SHA256.fullmatch(value) is None:
         raise error_factory(f"{field} must be a lowercase SHA-256")
     return value
 

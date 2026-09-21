@@ -4,7 +4,7 @@ import hashlib
 import json
 from collections import Counter
 from collections.abc import Mapping, Sequence
-from dataclasses import asdict, dataclass, replace
+from dataclasses import InitVar, asdict, dataclass, replace
 from typing import TYPE_CHECKING, Literal, cast
 
 from xic_extractor.acquisition_contract import TraceCoordinate
@@ -58,6 +58,7 @@ if TYPE_CHECKING:
     from xic_extractor.alignment.cell_observations import CellObservationRef
     from xic_extractor.alignment.conservative_backfill import (
         ConservativeBackfillCellDecision,
+        ConservativeBackfillGroupFacts,
     )
 
 OwnerBackfillPlanningState = Literal["planned", "not_planned"]
@@ -283,6 +284,36 @@ def _completed_recovery_projection_bytes(
 
 
 @dataclass(frozen=True, slots=True)
+class ConservativeNoRequestProofBuilder:
+    """Bind a frozen group's shared evidence once before minting its cells."""
+
+    processing_owners: ProcessingOwnerReferences
+    group_identity: CrossSampleGroupIdentity
+    group_facts: ConservativeBackfillGroupFacts
+
+    def __post_init__(self) -> None:
+        _validate_conservative_group_binding(
+            self.processing_owners, self.group_identity, self.group_facts
+        )
+
+    def mint(
+        self,
+        *,
+        sample: ResolvedCanonicalSampleIdentity,
+        decision: ConservativeBackfillCellDecision,
+        completion: OwnerBackfillCompletedRecoveryProjection | None = None,
+    ) -> OwnerBackfillConservativeNoRequestProof:
+        return mint_owner_backfill_conservative_no_request_proof(
+            processing_owners=self.processing_owners,
+            group_identity=self.group_identity,
+            sample=sample,
+            decision=decision,
+            completion=completion,
+            _group_binding=self,
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class OwnerBackfillConservativeNoRequestProof:
     """Exact conservative decision retained across a no-request coverage lane."""
 
@@ -292,6 +323,9 @@ class OwnerBackfillConservativeNoRequestProof:
     sample: ResolvedCanonicalSampleIdentity
     decision: ConservativeBackfillCellDecision
     completion: OwnerBackfillCompletedRecoveryProjection | None = None
+    # Construction-only: persisted proof fields and IDs remain unchanged.
+    # Direct construction/replacement still validates the complete binding.
+    _group_binding: InitVar[ConservativeNoRequestProofBuilder | None] = None
 
     @property
     def variant(self) -> Literal["threshold_not_met", "completed_recovery_empty"]:
@@ -309,8 +343,10 @@ class OwnerBackfillConservativeNoRequestProof:
             else "recovery_search_completed_empty"
         )
 
-    def __post_init__(self) -> None:
-        _validate_conservative_no_request(self)
+    def __post_init__(
+        self, _group_binding: ConservativeNoRequestProofBuilder | None
+    ) -> None:
+        _validate_conservative_no_request(self, _group_binding)
         if self.proof_id != _typed_id(
             "xic.owner-backfill-conservative-no-request:",
             _conservative_no_request_basis(
@@ -331,6 +367,7 @@ def mint_owner_backfill_conservative_no_request_proof(
     sample: ResolvedCanonicalSampleIdentity,
     decision: ConservativeBackfillCellDecision,
     completion: OwnerBackfillCompletedRecoveryProjection | None = None,
+    _group_binding: ConservativeNoRequestProofBuilder | None = None,
 ) -> OwnerBackfillConservativeNoRequestProof:
     return OwnerBackfillConservativeNoRequestProof(
         proof_id=_typed_id(
@@ -348,11 +385,52 @@ def mint_owner_backfill_conservative_no_request_proof(
         sample=sample,
         decision=decision,
         completion=completion,
+        _group_binding=_group_binding,
     )
+
+
+def _validate_conservative_group_binding(
+    owners: ProcessingOwnerReferences,
+    group_identity: CrossSampleGroupIdentity,
+    facts: ConservativeBackfillGroupFacts,
+) -> None:
+    if not isinstance(owners, ProcessingOwnerReferences):
+        raise ValueError("no-request proof crossed its exact sample owners")
+    canonical_samples = tuple(
+        sorted(owners.sample_resolutions, key=lambda x: x.identity.sample_identity_id)
+    )
+    if len(facts.sample_population) != len(canonical_samples) or any(
+        left is not right
+        for left, right in zip(facts.sample_population, canonical_samples, strict=True)
+    ):
+        raise ValueError("no-request proof crossed its complete sample population")
+    samples_by_id = {
+        sample.identity.sample_identity_id: sample for sample in canonical_samples
+    }
+    for cell in facts.source_cells:
+        source_sample = samples_by_id[cell.content.canonical_sample_identity_id]
+        validate_cid_nl_method_assessment_binding(
+            cell.method_assessment,
+            processing_owners=owners,
+            sample=source_sample,
+            method_subject=cell.method_assessment.content.method_subject,
+        )
+        if cell.group_context.processing_attempt is not owners.attempt or (
+            cell.artifact.producer_processing_attempt_id
+            != owners.attempt.processing_attempt_id
+        ):
+            raise ValueError("no-request proof crossed its current source attempt")
+    if not facts.group_frozen:
+        raise ValueError("no-request proof requires exact frozen conservative facts")
+    if group_identity != validate_cross_sample_peak_group_identity(
+        facts.group_context.group, require_canonical=True
+    ):
+        raise ValueError("no-request proof crossed its exact group")
 
 
 def _validate_conservative_no_request(
     proof: OwnerBackfillConservativeNoRequestProof,
+    group_binding: ConservativeNoRequestProofBuilder | None = None,
 ) -> None:
     # These owners consume coverage types; defer their validation imports.
     from xic_extractor.alignment.conservative_backfill import (
@@ -368,38 +446,15 @@ def _validate_conservative_no_request(
     if type(decision) is not ConservativeBackfillCellDecision:
         raise TypeError("no-request proof requires a conservative owner decision")
     facts = decision.group_facts
-    canonical_samples = tuple(
-        sorted(owners.sample_resolutions, key=lambda x: x.identity.sample_identity_id)
-    )
-    if len(facts.sample_population) != len(canonical_samples) or any(
-        left is not right
-        for left, right in zip(facts.sample_population, canonical_samples, strict=True)
+    if group_binding is None:
+        _validate_conservative_group_binding(owners, proof.group_identity, facts)
+    elif (
+        type(group_binding) is not ConservativeNoRequestProofBuilder
+        or group_binding.processing_owners is not owners
+        or group_binding.group_identity is not proof.group_identity
+        or group_binding.group_facts is not facts
     ):
-        raise ValueError("no-request proof crossed its complete sample population")
-    for cell in facts.source_cells:
-        source_sample = next(
-            sample
-            for sample in canonical_samples
-            if sample.identity.sample_identity_id
-            == cell.content.canonical_sample_identity_id
-        )
-        validate_cid_nl_method_assessment_binding(
-            cell.method_assessment,
-            processing_owners=owners,
-            sample=source_sample,
-            method_subject=cell.method_assessment.content.method_subject,
-        )
-        if cell.group_context.processing_attempt is not owners.attempt or (
-            cell.artifact.producer_processing_attempt_id
-            != owners.attempt.processing_attempt_id
-        ):
-            raise ValueError("no-request proof crossed its current source attempt")
-    if not facts.group_frozen:
-        raise ValueError("no-request proof requires exact frozen conservative facts")
-    if proof.group_identity != validate_cross_sample_peak_group_identity(
-        facts.group_context.group, require_canonical=True
-    ):
-        raise ValueError("no-request proof crossed its exact group")
+        raise ValueError("no-request proof crossed its bound group facts")
     target = decision.target_cell
     if (
         target.content.canonical_sample_identity_id
