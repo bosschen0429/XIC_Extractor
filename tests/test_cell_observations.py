@@ -9,8 +9,8 @@ from typing import Any
 
 import pytest
 
-import xic_extractor.alignment.cell_group_context as cell_group_context_owner
 import xic_extractor.alignment.cell_observations as cell_owner
+import xic_extractor.alignment.cross_sample_peak_groups as group_owner
 from tests.cid_nl_peak_support_no_raw_fixture import (
     cid_nl_evidence,
     cid_nl_peak,
@@ -286,20 +286,19 @@ def test_cell_handoff_never_reconstructs_completed_groups(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    sources, handoff = _outside_population_handoff(tmp_path)
     constructions = []
+    identity_type = group_owner.CrossSampleGroupIdentity
 
     def counted(*args, **kwargs):
-        constructions.append(args[0])
-        return construct_cross_sample_peak_group_hypotheses(*args, **kwargs)
+        constructions.append(kwargs["group_hypothesis_id"])
+        return identity_type(*args, **kwargs)
 
     monkeypatch.setattr(
-        cell_group_context_owner,
-        "construct_cross_sample_peak_group_hypotheses",
+        group_owner,
+        "CrossSampleGroupIdentity",
         counted,
-        raising=False,
     )
-    sources, handoff = _outside_population_handoff(tmp_path)
-    assert constructions == []
     first = compose_final_group_cell_observation_population(
         handoff=handoff,
         predecessor_cells=sources,

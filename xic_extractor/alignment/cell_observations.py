@@ -41,7 +41,6 @@ from xic_extractor.alignment.cross_sample_peak_groups import (
     CrossSampleGroupIdentity,
     CrossSampleGroupMemberSubject,
     CrossSamplePeakGroupHypothesis,
-    validate_cross_sample_peak_group_identity,
 )
 from xic_extractor.alignment.edge_scoring import DriftLookupProtocol
 from xic_extractor.alignment.hypothesis_owner_adapter import (
@@ -351,24 +350,28 @@ def _compose_final_group_cell_observation_population(
         receipt_by_position=receipt_by_position,
         observation_by_receipt=observation_by_receipt,
     )
-    terminals_by_position: dict[str, tuple[OwnerBackfillAttemptTerminal, ...]] = {
-        position.position_id: tuple(
-            terminal
-            for terminal in handoff.coverage.terminals
-            if terminal.position_id == position.position_id
-        )
+    terminal_lists: dict[str, list[OwnerBackfillAttemptTerminal]] = {}
+    for terminal in handoff.coverage.terminals:
+        terminal_lists.setdefault(terminal.position_id, []).append(terminal)
+    terminals_by_position = {
+        position.position_id: tuple(terminal_lists.get(position.position_id, ()))
         for position in positions
     }
+    associations_by_key: dict[
+        tuple[int, int], list[CrossSampleCoveragePositionAssociation]
+    ] = {}
+    for association in handoff.position_associations:
+        associations_by_key.setdefault(
+            (id(association.final_successor), id(association.position.sample)), []
+        ).append(association)
     cells: list[FinalGroupCellObservation] = []
     for group in handoff.final_population:
         for sample in handoff.coverage.epoch.samples:
-            associations = _associations_for_final_key(
-                handoff.position_associations,
-                group=group,
-                sample=sample,
-            )
             associations = tuple(
-                sorted(associations, key=lambda item: item.position.position_id)
+                sorted(
+                    associations_by_key.get((id(group), id(sample)), ()),
+                    key=lambda item: item.position.position_id,
+                )
             )
             source_lanes = tuple(
                 source_by_position[item.position.position_id]
@@ -410,7 +413,10 @@ def _compose_final_group_cell_observation_population(
                 (group.group_hypothesis_id, sample.identity.sample_identity_id), None
             )
             if recovered is not None:
-                if len(associations) != 1 or _source_group_identity(recovered) != group:
+                if (
+                    len(associations) != 1
+                    or recovered.group_context.group_identity != group
+                ):
                     raise CellObservationContractError(
                         "recovery must extend one exact predecessor"
                     )
@@ -604,31 +610,19 @@ def _validate_final_handoff(
         raise CellObservationContractError(
             "handoff final population is not the exact retained CrossSample receipt"
         )
-    for group in handoff.final_population:
-        if not any(group is item for item in handoff.final_receipt.final_population):
-            raise CellObservationContractError(
-                "handoff final population substituted an equivalent group"
-            )
-    epoch_groups = handoff.coverage.epoch.group_identities
-    epoch_samples = handoff.coverage.epoch.samples
+    final_groups = {id(group) for group in handoff.final_population}
+    epoch_groups = {id(group) for group in handoff.coverage.epoch.group_identities}
+    epoch_samples = {id(sample) for sample in handoff.coverage.epoch.samples}
     for position_association in handoff.position_associations:
-        if not any(
-            position_association.final_successor is group
-            for group in handoff.final_population
-        ):
+        if id(position_association.final_successor) not in final_groups:
             raise CellObservationContractError(
                 "handoff position association substituted its final group"
             )
-        if not any(
-            position_association.position.group_identity is group
-            for group in epoch_groups
-        ):
+        if id(position_association.position.group_identity) not in epoch_groups:
             raise CellObservationContractError(
                 "handoff position association substituted its predecessor group"
             )
-        if not any(
-            position_association.position.sample is sample for sample in epoch_samples
-        ):
+        if id(position_association.position.sample) not in epoch_samples:
             raise CellObservationContractError(
                 "handoff position association substituted its canonical sample"
             )
@@ -665,7 +659,7 @@ def _index_predecessor_cells(
         positions_by_key.setdefault(key, []).append(position)
     for cell in cells:
         _validate_source_cell(cell, processing_request_id=processing_request_id)
-        source_identity = _source_group_identity(cell)
+        source_identity = cell.group_context.group_identity
         matches = tuple(
             position
             for position in positions_by_key.get(
@@ -720,23 +714,6 @@ def _validate_source_cell(
         raise CellObservationContractError(
             "predecessor CellObservationRef crossed its processing request"
         )
-
-
-def _source_group_identity(cell: CellObservationRef) -> CrossSampleGroupIdentity:
-    try:
-        identity = validate_cross_sample_peak_group_identity(
-            cell.group_context.group,
-            require_canonical=True,
-        )
-    except (TypeError, ValueError) as exc:
-        raise CellObservationContractError(
-            f"predecessor CellObservationRef lacks a canonical group identity: {exc}"
-        ) from exc
-    if identity is None:
-        raise CellObservationContractError(
-            "predecessor CellObservationRef lacks a canonical group identity"
-        )
-    return identity
 
 
 def _index_repair_inputs(
@@ -876,30 +853,6 @@ def _validate_handoff_repair_closure(
         )
 
 
-def _associations_for_final_key(
-    associations: tuple[CrossSampleCoveragePositionAssociation, ...],
-    *,
-    group: CrossSampleGroupIdentity,
-    sample: ResolvedCanonicalSampleIdentity,
-) -> tuple[CrossSampleCoveragePositionAssociation, ...]:
-    sample_id = sample.identity.sample_identity_id
-    result = tuple(
-        association
-        for association in associations
-        if association.final_successor is group
-        and association.position.sample is sample
-    )
-    if any(
-        association.final_successor != group
-        or association.position.sample.identity.sample_identity_id != sample_id
-        for association in result
-    ):
-        raise CellObservationContractError(
-            "position association crosses the exact final Group x sample key"
-        )
-    return result
-
-
 def _canonical_terminal_subset(
     associations: tuple[CrossSampleCoveragePositionAssociation, ...],
     terminals_by_position: dict[str, tuple[OwnerBackfillAttemptTerminal, ...]],
@@ -954,7 +907,7 @@ def _derive_lane_evidence_state(
             )
         return "not_searched"
     _validate_source_cell(source_cell, processing_request_id=processing_request_id)
-    source_identity = _source_group_identity(source_cell)
+    source_identity = source_cell.group_context.group_identity
     if source_identity != association.position.group_identity:
         raise CellObservationContractError(
             "source CellObservationRef crossed the exact predecessor group identity"

@@ -8,7 +8,9 @@ from typing import Literal, TypeAlias
 
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.cross_sample_peak_groups import (
+    CrossSampleGroupIdentity,
     CrossSamplePeakGroupHypothesis,
+    validate_cross_sample_peak_group_identity,
 )
 from xic_extractor.alignment.edge_scoring import DriftLookupProtocol
 from xic_extractor.alignment.hypothesis_owner_adapter import (
@@ -119,6 +121,9 @@ class CidNlCellGroupContext:
     sample_universe: frozenset[str] | None = None
     injection_order: tuple[tuple[str, int], ...] | None = None
     drift_lookup: DriftLookupProtocol | None = None
+    _group_identity: CrossSampleGroupIdentity = field(
+        init=False, repr=False, compare=False
+    )
     _method_subjects: tuple[CidNlMethodSubject, ...] = field(
         init=False, repr=False, compare=False
     )
@@ -245,6 +250,16 @@ class CidNlCellGroupContext:
                 )
         # These immutable group facts are shared by every sample cell. Derive
         # them once here instead of sorting/scanning all members for each cell.
+        try:
+            identity = validate_cross_sample_peak_group_identity(
+                self.group, require_canonical=True
+            )
+        except (TypeError, ValueError) as exc:
+            raise CellObservationContractError(
+                f"group context lacks a canonical group identity: {exc}"
+            ) from exc
+        assert identity is not None
+        object.__setattr__(self, "_group_identity", identity)
         object.__setattr__(self, "_method_subjects", subjects)
         object.__setattr__(
             self,
@@ -265,6 +280,10 @@ class CidNlCellGroupContext:
         object.__setattr__(
             self, "_support_artifacts", _group_support_artifacts(self.supports)
         )
+
+    @property
+    def group_identity(self) -> CrossSampleGroupIdentity:
+        return self._group_identity
 
     @property
     def method_subjects(self) -> tuple[CidNlMethodSubject, ...]:
