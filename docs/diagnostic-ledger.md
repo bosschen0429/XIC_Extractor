@@ -183,6 +183,18 @@ dated productization control-plane path is compatibility lookup only.
   `grouping-owner-pairs.md`. Reuse `first-acquisition.pickle` for further
   parent-owner checks instead of repeating sample execution.
 
+- The capture label projection also uses the method-subject owner's existing
+  request index. Its former per-feature linear scan visits 98,330,284 subject
+  entries for the retained 41,741 candidate memberships across 4,819 subjects.
+  Luna's AB/BA/AB metadata-only comparison against `6bf3a12e` preserves every
+  context label; median original/indexed times are 2.0064/0.0381 s. The operation
+  count is derived from membership order, not a full-runtime counter. No new
+  cache is added. All 51 affected scope/golden-path/adapter tests, Ruff and mypy
+  pass; the scope test proves the real capture-label path does not iterate the
+  global subject population and rejects an ID outside the request. Artifacts:
+  `composition-replay/subject-lookup-pairs.json` and
+  `owner-checks/subject-lookup-checks.md` under the same root.
+
 ### 2026-09-21 Sealed Composition Replay Shows Distributed Construction Cost
 
 - Decision: isolate composition costs without repeating acquisition or grouping.

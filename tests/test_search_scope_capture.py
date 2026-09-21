@@ -29,7 +29,9 @@ from xic_extractor.peak_detection.cid_nl_method_assessment import (
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     CID_NL_PROVIDER_ID,
     REQUEST_INPUT_KEY,
+    CidNlMethodSubjectContractError,
     cid_nl_alignment_subject_worksets,
+    cid_nl_method_subject_from_request,
     cid_nl_method_subject_from_target,
     mint_untargeted_cid_nl_method_subject,
     mint_untargeted_cid_nl_method_subject_batch,
@@ -907,10 +909,12 @@ def test_untargeted_batch_scope_accepts_known_comparison_bridged_workset(
     index = scope_owner._request_batch_capture_index(request)
     pinned = scope_owner.cid_nl_method_subjects_from_request(request)
     parent_subject_ids = index.subject_ids
+    parent_subjects = pinned.subjects
     parent_memberships = pinned.candidate_memberships
     object.__setattr__(
         index, "subject_ids", CountedTuple(parent_subject_ids, "subjects")
     )
+    object.__setattr__(pinned, "subjects", CountedTuple(parent_subjects, "subjects"))
     object.__setattr__(
         pinned, "candidate_memberships", CountedTuple(parent_memberships, "memberships")
     )
@@ -923,8 +927,22 @@ def test_untargeted_batch_scope_accepts_known_comparison_bridged_workset(
             ),
             capture_bindings=workset_bindings,
         )
+        for binding in workset_bindings:
+            subject = cid_nl_method_subject_from_request(
+                request, method_subject_id=binding.method_subject_id
+            )
+            label, role, pair, source_label = capture_owner._hypothesis_context(
+                workset_scope,
+                query_mz=binding.query_mz,
+                method_subject_id=binding.method_subject_id,
+            )
+            assert label == f"untargeted:{binding.query_mz:.8g}:{subject.label}"
+            assert (role, pair, source_label) == ("Analyte", "", label)
+        with pytest.raises(CidNlMethodSubjectContractError, match="not pinned"):
+            cid_nl_method_subject_from_request(request, method_subject_id="missing")
     finally:
         object.__setattr__(index, "subject_ids", parent_subject_ids)
+        object.__setattr__(pinned, "subjects", parent_subjects)
         object.__setattr__(pinned, "candidate_memberships", parent_memberships)
 
     assert visited == {"subjects": 0, "memberships": 0}

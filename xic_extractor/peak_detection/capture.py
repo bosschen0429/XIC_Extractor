@@ -12,8 +12,7 @@ from xic_extractor.peak_detection.capture_boundary_policy import (
 )
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     CidNlMethodSubject,
-    UntargetedCidNlMethodSubjectBatch,
-    cid_nl_method_subjects_from_request,
+    cid_nl_method_subject_from_request,
     validate_cid_nl_method_subject_binding,
 )
 from xic_extractor.peak_detection.facade import find_peak_and_area
@@ -871,15 +870,9 @@ def _hypothesis_context(
             target.istd_pair,
             target.label,
         )
-    pinned = cid_nl_method_subjects_from_request(scope.request)
-    if isinstance(pinned, UntargetedCidNlMethodSubjectBatch):
-        method_subject = next(
-            subject
-            for subject in pinned.subjects
-            if subject.method_subject_id == method_subject_id
-        )
-    else:
-        method_subject = pinned
+    method_subject = cid_nl_method_subject_from_request(
+        scope.request, method_subject_id=method_subject_id
+    )
     label = f"untargeted:{query_mz:.8g}:{method_subject.label}"
     return label, "Analyte", "", label
 

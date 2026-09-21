@@ -558,15 +558,24 @@ def _subjects_from_normalized_inputs(
 
 def cid_nl_method_subject_from_request(
     request: ProcessingRequestIdentity,
+    *,
+    method_subject_id: str | None = None,
 ) -> CidNlMethodSubject:
-    """Rehydrate the exact Untargeted provider configuration pinned by a request."""
+    """Resolve a request's singular subject or one explicitly named batch member."""
 
-    payload = _request_cid_nl_payload(request)
-    if payload.get("schema_version") == BATCH_SCHEMA_VERSION:
+    pinned, subjects_by_id = _request_subject_context(request)
+    if method_subject_id is not None:
+        try:
+            return subjects_by_id[method_subject_id]
+        except KeyError as exc:
+            raise CidNlMethodSubjectContractError(
+                "CID-NL method subject is not pinned by the processing request"
+            ) from exc
+    if isinstance(pinned, UntargetedCidNlMethodSubjectBatch):
         raise CidNlMethodSubjectContractError(
             "Untargeted request pins a CID-NL method subject batch"
         )
-    return _subject_from_payload(payload)
+    return pinned
 
 
 def cid_nl_method_subject_batch_from_request(
