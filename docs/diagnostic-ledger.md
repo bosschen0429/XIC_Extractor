@@ -66,6 +66,50 @@ dated productization control-plane path is compatibility lookup only.
 
 ## Known Diagnostic Conclusions
 
+### 2026-09-21 Frozen-Fact Profile Identifies Repeated Request-Wide Validation
+
+- Decision: locate scientific acquisition/composition costs remaining after the
+  four-partition cached data-plane comparison. Product source remains `dfc22127`;
+  this diagnostic makes no product change or readiness claim.
+- Reused the saved plan and B1 physical facts for `partition-00000`, all 85
+  samples, four process workers. No Discovery, RAW acquisition, new harvest, or
+  full85 run. Artifacts:
+  `output/issue422-bounded-worksets-20260921/fusion-ab/science-profile-00000/`
+  and `fusion-ab/scientific-cpu-source-map.md` under the same task root.
+- The corrected instrumentation saved 170 worker profiles (85 initial and 85
+  recovery) and the parent acquisition profile. It observed 925 initial subject
+  adaptations and 3,548,070 generator calls in `search_scope.py`'s request-wide
+  `alignment_feature_candidate_ids` validation. `_request_sample_candidate_ids`
+  includes sample scope in its one-entry memoization key, so changing samples
+  repeats the global feature-list traversal. This proves repeated work, not its
+  uninstrumented contribution to total alignment time.
+- `cProfile(time.process_time)` acquisition wall was 117.557 s; the earlier
+  uninstrumented first-partition acquisition was 19.152 s. These are not a
+  comparable performance pair. The diagnostic reached its 300 s cancellation
+  cap during composition; only 31 of 46 scientific rows were captured, all 31
+  equal to the retained harvest. Complete scientific/ambiguity parity remains
+  **UNKNOWN**. No composition profile survived exceptional exit.
+- Do not sum cumulative function times: nested calls overlap. In particular,
+  the generated 739.453125 s cumulative sum is not worker CPU or elapsed time.
+  Do not infer production speed from the profiled run or label this gate PASS.
+- The uninstrumented request-only microprobe ran three A-then-B comparisons
+  over 85 samples and 41,741 feature IDs. Current helper times were
+  0.533689/0.365622/0.317895 s. This measured absolute cost is too small to
+  explain the workflow's large remaining cost. Prototype lookup times were
+  0.054102/0.046764/0.035398 s with exact per-sample set equality, but its set
+  preparation was outside the timer and some validation was omitted. Thus B
+  is an optimistic valid-input lookup, not an isolated production speedup or
+  error-semantics proof. The union field compares unions of sample results,
+  not a separate all-sample scope invocation. Receipt:
+  `science-profile-00000/candidate-scope-microprobe.json`.
+- Disposition: `diagnosis_ready`, `diagnostic_only`; no product candidate to
+  accept. Do not turn this small repeated scan into the primary optimization
+  claim. Composition attribution and worker-side codec costs remain unknown:
+  worker profiles start after request decoding and stop before response encoding.
+  Reuse these artifacts; do not replay the workflow merely to repair profiling
+  or reporting gaps. Any further probe must isolate a new decision and avoid
+  per-call process-time instrumentation of the complete workflow.
+
 ### 2026-09-21 Four-Partition RAW-Major Replay Does Not Establish A Scheduler Win
 
 - Evidence: `diagnostic_only`, product source `dfc22127`, fixed canonical
