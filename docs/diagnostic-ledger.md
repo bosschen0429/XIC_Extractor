@@ -66,6 +66,27 @@ dated productization control-plane path is compatibility lookup only.
 
 ## Known Diagnostic Conclusions
 
+### 2026-09-21 Full85 Remains Incomplete After Recovery Admission Fix
+
+- Evidence: `diagnostic_only`, producer `97bb9225f79a5d2665b9775c13d9125a851ef108`.
+  The four-process run reused Discovery, the verified 595 ISTD coordinates,
+  and acquisition cache. It cancelled at the 1,800-second budget and returned
+  failure after 1,931.625 seconds. The coordinator records 33 of 46 partitions
+  complete; no formal Matrix or final known-ISTD/integration acceptance exists.
+- Recorded partial-work counters: 3,359 RAW opens, 51,956 chromatogram calls,
+  96,003 logical XIC requests, and sampled tree peak RSS 7,063,678,976 bytes.
+  Largest assignment component: four owners and seven features. These counters
+  do not establish which phase dominates wall time. Per-partition timing and
+  cache-hit/miss breakdown were not retained and remain unknown.
+- The CLI returned from its error handler before writing `--timing-output`.
+  Timing publication now runs after sampler shutdown in `finally`; the failure
+  regression checks both stage records and sampled-memory observations.
+- Receipt, live timing, transport records, and acceptance report are under
+  `output/issue422-bounded-worksets-20260921/alignment85-process7/`.
+  Keep the acquisition cache and prior runtime marker. Quarantined work-unit
+  artifacts cannot resume scientific composition. Do not rerun Discovery or
+  the completed baseline, or automatically retry this full-cohort attempt.
+
 ### 2026-09-21 Successful Recovery Must Admit Its Missing Sample
 
 - The existing composite CID-NL `intersection-recovery_complete` fixture

@@ -1021,9 +1021,12 @@ def test_run_alignment_cli_stops_memory_sampler_on_failure(
     sampler = _FakeCliMemorySampler()
     monkeypatch.setattr(run_alignment, "ProcessTreeMemorySampler", lambda: sampler)
 
-    def fail_run_alignment(**_kwargs):
+    def fail_run_alignment(**kwargs):
         assert sampler.running
-        raise ValueError("failed in foreground")
+        with kwargs["timing_recorder"].stage(
+            "alignment.failed_runtime", metrics={"completed_partitions": 33}
+        ):
+            raise ValueError("failed in foreground")
 
     monkeypatch.setattr(run_alignment, "run_alignment", fail_run_alignment)
 
@@ -1039,11 +1042,20 @@ def test_run_alignment_cli_stops_memory_sampler_on_failure(
             str(dll_dir),
             "--timing-live-output",
             str(tmp_path / "timing.live.json"),
+            "--timing-output",
+            str(tmp_path / "timing.json"),
         ]
     )
 
     assert code == 2
     assert (sampler.start_count, sampler.stop_count) == (1, 1)
+    payload = json.loads((tmp_path / "timing.json").read_text())
+    assert payload["records"][0]["stage"] == "alignment.failed_runtime"
+    assert payload["records"][0]["metrics"] == {"completed_partitions": 33}
+    assert any(
+        row["metric"] == "process_tree_sampled_peak_rss_bytes"
+        for row in payload["measurement_observations"]
+    )
 
 
 class _FakeCliMemorySampler:

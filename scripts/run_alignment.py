@@ -258,6 +258,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     finally:
         if timing_recorder is not None:
             timing_recorder.stop_process_memory(scope="foreground")
+            if args.timing_output is not None:
+                timing_path = args.timing_output.resolve()
+                timing_recorder.write_json(timing_path)
+                print(f"Timing JSON: {timing_path}")
 
     if outputs.workbook is not None:
         print(f"Alignment workbook: {outputs.workbook}")
@@ -298,10 +302,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     if timing_recorder is not None:
         if args.timing_live_output is not None:
             print(f"Timing live JSON: {args.timing_live_output.resolve()}")
-        if args.timing_output is not None:
-            timing_path = args.timing_output.resolve()
-            timing_recorder.write_json(timing_path)
-            print(f"Timing JSON: {timing_path}")
     return 0
 
 
