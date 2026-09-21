@@ -1953,22 +1953,17 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
                 and cell.canonical_sample_identity_id == sample_id_by_stem["S3"]
             )
             (joint_cell,) = joint_final_cell.predecessor_cells
-            foreign_same_sample_assessment = next(
-                assessment
-                for assessment in completed.method_assessments
-                if assessment.content.canonical_sample_identity_id
+            assert any(
+                support.assessment is joint_cell.method_assessment
+                and support.sample.identity.sample_identity_id
                 == sample_id_by_stem["S3"]
-                and assessment.content.method_subject
-                != joint_cell.group_context.method_subject
+                for support in joint_cell.group_context.supports
             )
-            with pytest.raises(
-                ValueError,
-                match="without an exact group SUPPORT binding",
-            ):
-                replace(
-                    joint_cell,
-                    method_assessment=foreign_same_sample_assessment,
-                )
+            assert all(
+                assessment.content.reason_codes
+                != ("no_search_eligible_discovery_input",)
+                for assessment in completed.method_assessments
+            )
             assert len(writer.matrix.clusters) == 3
             assert len(writer.matrix.cells) == 3 * len(sample_stems)
             (matrix_row,) = matrix_rows
@@ -3881,6 +3876,21 @@ def test_production_composition_closes_observation_only_hold_without_membership(
         (child,) = completed.application_result.children
         assert len(child.scientific_core.final_population) == 1
         assert len(writer_inputs.matrix.clusters) == 1
+        cells = {
+            cell.canonical_sample.metadata.raw_stem: cell
+            for cell in child.scientific_core.cell_observations
+        }
+        assert cells["Support"].integrations
+        assert cells["Hold"].evidence_state == "not_searched"
+        assert cells["Hold"].predecessor_cells == ()
+        assert cells["Hold"].method_assessments == ()
+        assert cells["Hold"].integrations == ()
+        (association,) = cells["Hold"].position_associations
+        assert association.position.planning_reason == "no_discovery_input"
+        assert association.position.primary_logical_requests == ()
+        for decision in writer_inputs.production_decisions.cells.values():
+            assert decision.write_matrix_value is (decision.sample_stem == "Support")
+            assert (decision.matrix_value is None) is (decision.sample_stem == "Hold")
         return
     if scenario == "mixed":
         (child,) = completed.application_result.children
@@ -4352,12 +4362,14 @@ def _assert_conservative_coverage_handoff(
         if position.sample.metadata.raw_stem == "Hold"
     )
     proof = position.conservative_no_request_proof
-    assert proof is not None
-    assert proof.variant == (
-        "threshold_not_met" if threshold else "completed_recovery_empty"
-    )
-    assert proof.decision.group_facts.direct_support_count_s == (1 if threshold else 3)
-    assert proof.decision.group_facts.minimum_support_k == 2
+    if threshold:
+        assert proof is None
+        assert position.planning_reason == "no_discovery_input"
+    else:
+        assert proof is not None
+        assert proof.variant == "completed_recovery_empty"
+        assert proof.decision.group_facts.direct_support_count_s == 3
+        assert proof.decision.group_facts.minimum_support_k == 2
     assert position.planning_state == "not_planned"
     assert position.primary_logical_requests == ()
     assert coverage.terminals == ()
@@ -4370,21 +4382,21 @@ def _assert_conservative_coverage_handoff(
         ("not_searched",) if threshold else ("unavailable",)
     )
     assert hold_cell.repair_receipts == hold_cell.repaired_observations == ()
-    (source,) = hold_cell.predecessor_cells
-    assert source is proof.decision.target_cell
-    assert source.method_assessment is next(
-        result.effective_assessment
-        for result in runtime_result.sample_results
-        if result.job.sample is position.sample
-    )
-    assert source.content.method_result == (None if threshold else "HOLD")
-    assert source.content.technical_state == (
-        "not_evaluated" if threshold else "evaluated"
-    )
-    assert source.method_assessment.content.evaluation_receipt.search_completed is (
-        not threshold
-    )
-    assert source.peak_observation is source.peak_hypothesis is None
+    if threshold:
+        assert hold_cell.predecessor_cells == ()
+        assert hold_cell.method_assessments == ()
+    else:
+        (source,) = hold_cell.predecessor_cells
+        assert source is proof.decision.target_cell
+        assert source.method_assessment is next(
+            result.effective_assessment
+            for result in runtime_result.sample_results
+            if result.job.sample is position.sample
+        )
+        assert source.content.method_result == "HOLD"
+        assert source.content.technical_state == "evaluated"
+        assert source.method_assessment.content.evaluation_receipt.search_completed
+        assert source.peak_observation is source.peak_hypothesis is None
     authorization = authorize_observation_repair(
         processing_owners=batch.context.processing_owners,
         coverage=coverage,
@@ -4420,9 +4432,10 @@ def _assert_conservative_coverage_handoff(
             float(matrix_rows[0][stem]) > 0
             for stem in ("Support1", "Support2", "Support3")
         )
-    _assert_conservative_proof_seals(
-        proof, position, coverage, handoff, hold_cell, batch, runtime_result
-    )
+    if proof is not None:
+        _assert_conservative_proof_seals(
+            proof, position, coverage, handoff, hold_cell, batch, runtime_result
+        )
 
 
 def _assert_conservative_proof_seals(

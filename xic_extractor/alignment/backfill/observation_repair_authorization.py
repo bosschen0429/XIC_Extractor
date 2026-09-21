@@ -350,7 +350,11 @@ def authorize_observation_repair(
                 (cell_id, cell, position, logical_request, request_identity)
             )
 
-    expected_keys = set(positions_by_key)
+    expected_keys = {
+        key
+        for key, position in positions_by_key.items()
+        if position.planning_reason != "no_discovery_input"
+    }
     if seen_keys != expected_keys:
         missing = sorted(expected_keys - seen_keys)
         extra = sorted(seen_keys - expected_keys)

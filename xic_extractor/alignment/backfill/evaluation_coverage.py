@@ -76,6 +76,7 @@ OwnerBackfillPlanningReason = Literal[
     "local_owner_not_supersedable",
     "direct_support_threshold_not_met",
     "recovery_search_completed_empty",
+    "no_discovery_input",
 ]
 OWNER_BACKFILL_PLANNING_REASONS: tuple[OwnerBackfillPlanningReason, ...] = (
     "planned",
@@ -89,6 +90,7 @@ OWNER_BACKFILL_PLANNING_REASONS: tuple[OwnerBackfillPlanningReason, ...] = (
     "local_owner_not_supersedable",
     "direct_support_threshold_not_met",
     "recovery_search_completed_empty",
+    "no_discovery_input",
 )
 
 OwnerBackfillCandidatePhase = Literal[
@@ -525,7 +527,7 @@ def _conservative_no_request_basis(
     completion: OwnerBackfillCompletedRecoveryProjection | None,
 ) -> Mapping[str, object]:
     facts = decision.group_facts
-    return {
+    basis: dict[str, object] = {
         "schema": "owner_backfill_conservative_no_request",
         "variant": "threshold_not_met"
         if completion is None
@@ -575,6 +577,10 @@ def _conservative_no_request_basis(
             else decision.candidate_universe.artifact.evidence_artifact_id
         ),
     }
+    if facts.unsearched_sample_ids:
+        basis["schema"] = "owner_backfill_conservative_no_request_v2"
+        basis["unsearched_sample_ids"] = facts.unsearched_sample_ids
+    return basis
 
 
 def _canonical_proof_bytes(basis: Mapping[str, object]) -> bytes:
@@ -697,6 +703,12 @@ class OwnerBackfillPlanningPosition:
                 raise ValueError("planned position requires primary logical requests")
         elif self.planning_reason == "planned" or self.primary_logical_requests:
             raise ValueError("not-planned position cannot retain logical requests")
+        if self.planning_reason == "no_discovery_input" and any(
+            member.canonical_sample_identity_id
+            == self.sample.identity.sample_identity_id
+            for member in self.group_identity.member_subjects
+        ):
+            raise ValueError("no-input position cannot discard a group member")
         proof = self.conservative_no_request_proof
         if proof is not None:
             if not isinstance(proof, OwnerBackfillConservativeNoRequestProof):

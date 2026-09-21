@@ -1283,9 +1283,18 @@ def _validate_request_adapter(
         expected_by_id = {
             sample.identity.sample_identity_id: sample for sample in expected_samples
         }
+        # Completed Untarget grouping already carries the cohort and coverage.
+        # Its assessments contain real searches, not placeholders for no input.
+        completed_grouping = (
+            type(adapter) is UntargetWorkflowAdapter
+            and adapter.completed_grouping is not None
+        )
         if (
             ordered_ids != tuple(sorted(ordered_ids))
-            or tuple(dict.fromkeys(ordered_ids)) != tuple(expected_by_id)
+            or (
+                not completed_grouping
+                and tuple(dict.fromkeys(ordered_ids)) != tuple(expected_by_id)
+            )
             or any(
                 sample is not expected_by_id.get(sample.identity.sample_identity_id)
                 for sample in assessment_samples

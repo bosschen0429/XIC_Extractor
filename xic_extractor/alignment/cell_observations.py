@@ -128,11 +128,11 @@ FinalCellEvidenceAggregate: TypeAlias = FinalCellEvidenceState | Literal["mixed"
 class FinalGroupCellObservation:
     """One immutable final ``CrossSampleGroupIdentity × sample`` closure.
 
-    ``position_associations`` and ``predecessor_cells`` are parallel canonical
-    lanes.  A merge keeps every lane, while a split remainder is represented by
-    an empty lane tuple only after the complete owner handoff has proved that no
-    position maps to this final key.  This object carries evidence only; it has
-    no value, Matrix, writer, or quantifiability authority.
+    ``position_associations`` retain every coverage lane. ``predecessor_cells``
+    retain actual method evidence; a declared no-input position has no synthetic
+    cell. A merge keeps every lane, while a split remainder has no associations.
+    This object carries evidence only; it has no value, Matrix, writer, or
+    quantifiability authority.
     """
 
     cell_observation_id: str
@@ -267,9 +267,9 @@ def compose_final_group_cell_observation_population(
     """Compose one exact final closure for every final Group × sample key.
 
     The complete Backfill coverage and CrossSample handoff are the only source
-    of correlation.  ``predecessor_cells`` must cover every handoff position
-    exactly once; caller-authored mappings, incomplete populations, and scalar
-    group substitutions are rejected before a final object is minted.
+    of correlation. ``predecessor_cells`` cover every searched handoff position
+    exactly once. Declared no-input positions remain explicit coverage without
+    materializing method evidence.
     """
 
     if isinstance(predecessor_cells, (str, bytes)):
@@ -319,12 +319,23 @@ def _compose_final_group_cell_observation_population(
         positions=positions,
         processing_request_id=request_id,
     )
+    sources_by_group: dict[str, list[CellObservationRef]] = {}
+    for cell in predecessor_cells:
+        sources_by_group.setdefault(cell.content.group_hypothesis_id, []).append(cell)
+    checked_facts: set[int] = set()
     for position in positions:
-        validate_owner_backfill_conservative_no_request_position(
+        proof = validate_owner_backfill_conservative_no_request_position(
             position,
-            source_cell=source_by_position[position.position_id],
-            source_population=tuple(predecessor_cells),
+            source_cell=source_by_position.get(position.position_id),
         )
+        if proof is not None and id(proof.decision.group_facts) not in checked_facts:
+            validate_owner_backfill_conservative_no_request_position(
+                position,
+                source_population=tuple(
+                    sources_by_group[position.group_identity.group_hypothesis_id]
+                ),
+            )
+            checked_facts.add(id(proof.decision.group_facts))
     receipt_by_position, observation_by_receipt = _index_repair_inputs(
         repair_receipts,
         repaired_observations,
@@ -360,7 +371,9 @@ def _compose_final_group_cell_observation_population(
                 sorted(associations, key=lambda item: item.position.position_id)
             )
             source_lanes = tuple(
-                source_by_position[item.position.position_id] for item in associations
+                source_by_position[item.position.position_id]
+                for item in associations
+                if item.position.position_id in source_by_position
             )
             coverage_lanes = _canonical_terminal_subset(
                 associations,
@@ -436,9 +449,9 @@ def _compose_final_group_cell_observation_population(
                 states = tuple(
                     _derive_lane_evidence_state(
                         association=association,
-                        source_cell=source_by_position[
+                        source_cell=source_by_position.get(
                             association.position.position_id
-                        ],
+                        ),
                         coverage_terminals=terminals_by_position[
                             association.position.position_id
                         ],
@@ -676,7 +689,11 @@ def _index_predecessor_cells(
                 "position"
             )
         result[position.position_id] = cell
-    expected_ids = {position.position_id for position in positions}
+    expected_ids = {
+        position.position_id
+        for position in positions
+        if position.planning_reason != "no_discovery_input"
+    }
     if set(result) != expected_ids:
         raise CellObservationContractError(
             "predecessor CellObservationRef population is incomplete or extra"
@@ -914,7 +931,7 @@ def _canonical_terminal_subset(
 def _derive_lane_evidence_state(
     *,
     association: CrossSampleCoveragePositionAssociation,
-    source_cell: CellObservationRef,
+    source_cell: CellObservationRef | None,
     coverage_terminals: tuple[OwnerBackfillAttemptTerminal, ...],
     repair_receipts: tuple[ObservationRepairReceipt, ...],
     repaired_observations: tuple[OwnerBackfillPeakFactObservation, ...],
@@ -922,6 +939,20 @@ def _derive_lane_evidence_state(
     canonical_sample: ResolvedCanonicalSampleIdentity,
     processing_request_id: str,
 ) -> FinalCellEvidenceState:
+    if source_cell is None:
+        if (
+            association.position.planning_reason != "no_discovery_input"
+            or association.position.planning_state != "not_planned"
+            or association.position.sample is not canonical_sample
+            or association.final_successor is not final_group
+            or coverage_terminals
+            or repair_receipts
+            or repaired_observations
+        ):
+            raise CellObservationContractError(
+                "missing source cell requires exact no-input coverage"
+            )
+        return "not_searched"
     _validate_source_cell(source_cell, processing_request_id=processing_request_id)
     source_identity = _source_group_identity(source_cell)
     if source_identity != association.position.group_identity:
@@ -1217,7 +1248,7 @@ def _final_closure_basis(
     if resolved_handoff_id is None:
         raise CellObservationContractError("final cell basis requires exact handoff")
     payload = {
-        "schema_version": "final_group_cell_observation_v2",
+        "schema_version": "final_group_cell_observation_v3",
         "processing_request_id": processing_request_id,
         "handoff_id": resolved_handoff_id,
         "group": {
@@ -1599,10 +1630,6 @@ def compose_cid_nl_predecessor_cells(
             canonical_refs = assessments_by_sample_subject.get(
                 (sample_id, method_subject_id), ()
             )
-            if not canonical_refs:
-                raise CellObservationContractError(
-                    "group recovery subject lacks an exact sample assessment"
-                )
             recovered = (recovery_assessments_by_group or {}).get(
                 (
                     context.group.group_hypothesis_id,
@@ -1617,17 +1644,14 @@ def compose_cid_nl_predecessor_cells(
                 raise CellObservationContractError(
                     "group recovery is outside the assessment population"
                 )
-            if len(local_refs) > 1:
-                raise CellObservationContractError(
-                    "group contains multiple SUPPORT owners for one sample"
-                )
-            assessment = (
-                local_refs[0]
-                if local_refs
-                else recovered
-                if recovered is not None
-                else canonical_refs[0]
-            )
+            if local_refs:
+                assessment = local_refs[0]
+            elif recovered is not None:
+                assessment = recovered
+            elif canonical_refs:
+                assessment = canonical_refs[0]
+            else:
+                continue
             local = (
                 ()
                 if local_support is None

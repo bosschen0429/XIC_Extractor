@@ -239,6 +239,37 @@ dated productization control-plane path is compatibility lookup only.
   under `output/issue422-bounded-worksets-20260921/`; paired receipts are
   `fusion-ab/composition-replay/{artifact-owner-pairs,final-closure-digest-pairs}.json`.
 
+- Group subject, SUPPORT artifact and owner-ID tuples are now computed once in
+  the immutable group context. A retained-input remint preserves all 9,520 cell
+  IDs, canonical bytes and assessment/peak references across 112 groups;
+  113 affected tests and source Ruff/mypy pass. This is exact reuse evidence,
+  not a whole-run timing claim. Receipt:
+  `fusion-ab/composition-replay/group-context-reuse.json`.
+- Failed execution now retains completed typed partition files and a read-only
+  shared-owner snapshot instead of deleting them. The 36 execution-engine tests
+  pass. A fresh-process, child-at-a-time restore preserves all 46 retained
+  children, IDs, integrals, provenance and shared request/attempt/sample refs.
+  Store/snapshot sizes are 138,945,861/50,384,430 bytes; producer/consumer walls
+  are 8.382/2.370 s. This enables diagnostic replay, not automatic workflow
+  resume or publication. The existing process9 store was already deleted and
+  cannot be recovered by this change. Receipt:
+  `fusion-ab/owner-checks/failure-store-replay-checks.md`.
+- Process9's scalar capture has 678,470 group/sample positions, including
+  533,671 `not_searched` positions. This is population evidence, not timing
+  attribution. Composition now omits synthetic no-input assessments and
+  predecessor cells, while retaining explicit `no_discovery_input` coverage
+  and the final empty Matrix position. Actual negative searches, failures,
+  ambiguity, physical observations and integrals remain evidence-bearing.
+  Conservative eligibility still uses the complete sample denominator.
+  Shared no-request source populations are checked once per group facts object.
+- The no-input production case changed from RED to GREEN; 216 affected tests,
+  six-source mypy and source/test Ruff pass. Final-cell canonical schema is v3;
+  sparse conservative proof bases include declared unsearched sample IDs in v2.
+  These administrative identities intentionally change; scientific output
+  parity and cost remain pending the retained-fact candidate run. Receipts:
+  `fusion-ab/owner-checks/sparse-{affected-suite-rerun,static-final}.txt` and
+  `sparse-replay-green-final.txt` in that same directory.
+
 ### 2026-09-21 Sealed Composition Replay Shows Distributed Construction Cost
 
 - Decision: isolate composition costs without repeating acquisition or grouping.

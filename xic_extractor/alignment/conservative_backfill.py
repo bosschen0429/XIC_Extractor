@@ -104,6 +104,7 @@ class ConservativeBackfillGroupFacts:
     policy_version: str = POLICY_VERSION
     validation_status: str = VALIDATION_STATUS
     product_authority: str = PRODUCT_AUTHORITY
+    unsearched_sample_ids: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if not isinstance(self.group_context, CidNlCellGroupContext):
@@ -118,6 +119,16 @@ class ConservativeBackfillGroupFacts:
         cell_sample_ids = tuple(
             cell.content.canonical_sample_identity_id for cell in cells
         )
+        unsearched_ids = self.unsearched_sample_ids
+        if (
+            type(unsearched_ids) is not tuple
+            or unsearched_ids != tuple(sorted(set(unsearched_ids)))
+            or set(unsearched_ids).intersection(cell_sample_ids)
+            or not set(unsearched_ids).issubset(sample_by_id)
+        ):
+            raise ConservativeBackfillContractError(
+                "unsearched samples must be distinct declared positions without cells"
+            )
         unknown_cell_samples = set(cell_sample_ids).difference(sample_by_id)
         if unknown_cell_samples:
             raise ConservativeBackfillContractError(
@@ -128,6 +139,7 @@ class ConservativeBackfillGroupFacts:
             if (
                 sample_id not in sample_by_id
                 or sample_by_id[sample_id] is not support.sample
+                or sample_id in unsearched_ids
             ):
                 raise ConservativeBackfillContractError(
                     "group SUPPORT sample is not the exact declared run sample"
@@ -152,7 +164,7 @@ class ConservativeBackfillGroupFacts:
         sample_count = len(eligible_ids)
         minimum_support = minimum_direct_support_count(sample_count)
         support_count = len(eligible_support_ids)
-        frozen = cell_sample_ids == tuple(sample_by_id)
+        frozen = set(cell_sample_ids).union(unsearched_ids) == set(sample_by_id)
         may_attempt = frozen and support_count >= minimum_support
         reasons = _group_reason_codes(
             group_frozen=frozen,
@@ -805,6 +817,7 @@ def assess_conservative_backfill_group(
     source_cells: tuple[CellObservationRef, ...],
     *,
     sample_population: tuple[ResolvedCanonicalSampleIdentity, ...],
+    unsearched_sample_ids: tuple[str, ...] = (),
 ) -> ConservativeBackfillGroupFacts:
     """Derive no-write S/K facts without creating a group or cell."""
 
@@ -844,7 +857,7 @@ def assess_conservative_backfill_group(
     sample_count = len(eligible_ids)
     minimum_support = minimum_direct_support_count(sample_count)
     support_count = len(eligible_support_ids)
-    frozen = cell_sample_ids == sample_ids
+    frozen = set(cell_sample_ids).union(unsearched_sample_ids) == set(sample_ids)
     return ConservativeBackfillGroupFacts(
         group_context=group_context,
         source_cells=cells,
@@ -863,6 +876,7 @@ def assess_conservative_backfill_group(
             direct_support_count=support_count,
             minimum_support=minimum_support,
         ),
+        unsearched_sample_ids=unsearched_sample_ids,
     )
 
 

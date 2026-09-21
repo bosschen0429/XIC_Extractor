@@ -156,6 +156,7 @@ def test_public_workflow_surface_is_closed_and_variant_specific() -> None:
         "mode_track",
         "predecessor_cell_observations",
         "drift_lookup",
+        "recovery_cell_observations",
     )
     assert tuple(field.name for field in fields(TargetWorkflowAdapter)) == (
         common_adapter_fields

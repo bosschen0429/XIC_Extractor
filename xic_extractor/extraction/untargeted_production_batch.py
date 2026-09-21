@@ -82,9 +82,6 @@ from xic_extractor.execution_runtime_owner import (
     start_runtime_attempt,
 )
 from xic_extractor.execution_settings import DEFAULT_ALIGNMENT_WORKERS
-from xic_extractor.extraction.untargeted_cid_nl_real_data_adapter import (
-    adapt_current_discovery_sample_subject,
-)
 from xic_extractor.extraction.untargeted_cid_nl_real_data_inputs import (
     UntargetedCidNlRealDataContext,
     build_untargeted_cid_nl_real_data_context,
@@ -1530,6 +1527,7 @@ def _build_production_composition_inputs(
         assessment
         for result in sample_results
         for assessment in result.effective_assessments
+        if not is_unsearched_cid_nl_discovery_assessment(assessment)
     ]
 
     prepared = batch.prepared_grouping or prepare_untargeted_cid_nl_grouping(
@@ -1584,28 +1582,9 @@ def _build_production_composition_inputs(
             for subject in subject_workset
             for result in results_by_subject.get(subject.method_subject_id, ())
             for assessment in result.effective_assessments
+            if not is_unsearched_cid_nl_discovery_assessment(assessment)
         )
         initial_groups.extend(assignment_scope.groups)
-        if batch.sample_job_templates:
-            unsearched = []
-            for sample in ordered_samples:
-                for subject in subject_workset:
-                    key = (sample.metadata.raw_stem, subject.method_subject_id)
-                    if key in result_by_key:
-                        continue
-                    unsearched_assessment = adapt_current_discovery_sample_subject(
-                        processing_owners=batch.context.processing_owners,
-                        sample=sample,
-                        method_subject=subject,
-                        candidates=(),
-                        settings=batch.context.settings,
-                        peak_config=batch.context.peak_config,
-                        raw=None,
-                        signal_processing_profile=batch.context.signal_processing_profile,
-                    ).assessment_input.assessment
-                    unsearched.append((sample, unsearched_assessment))
-                    final_method_assessments.append(unsearched_assessment)
-            assessments = (*assessments, *unsearched)
         subject_order = {
             subject.method_subject_id: index
             for index, subject in enumerate(subject_workset)
@@ -1719,30 +1698,35 @@ def _build_production_composition_inputs(
         )
         cell_by_key = {}
         cells_by_group: dict[str, list[CellObservationRef]] = {}
-        for cell in predecessor_cells:
-            group_id = cell.content.group_hypothesis_id
-            cell_by_key[(group_id, cell.content.canonical_sample_identity_id)] = cell
-            cells_by_group.setdefault(group_id, []).append(cell)
+        for predecessor_cell in predecessor_cells:
+            group_id = predecessor_cell.content.group_hypothesis_id
+            sample_id = predecessor_cell.content.canonical_sample_identity_id
+            cell_by_key[(group_id, sample_id)] = predecessor_cell
+            cells_by_group.setdefault(group_id, []).append(predecessor_cell)
         repair_groups = grouping_result.initial_population
         no_request_proofs = {}
         for group in repair_groups:
+            group_cells = tuple(cells_by_group[group.group_hypothesis_id])
+            searched_sample_ids = {
+                cell.content.canonical_sample_identity_id for cell in group_cells
+            }
             facts = assess_conservative_backfill_group(
-                tuple(cells_by_group[group.group_hypothesis_id]),
+                group_cells,
                 sample_population=batch.context.samples,
+                unsearched_sample_ids=tuple(
+                    sample.identity.sample_identity_id
+                    for sample in ordered_samples
+                    if sample.identity.sample_identity_id not in searched_sample_ids
+                ),
             )
             proof_builder = None
             for sample in batch.context.samples:
                 key = (group.group_hypothesis_id, sample.identity.sample_identity_id)
-                cell = cell_by_key[key]
-                if key in recovered_positions:
+                cell = cell_by_key.get(key)
+                if cell is None or key in recovered_positions:
                     continue
                 if (
-                    not (
-                        cell.content.method_result == "HOLD"
-                        or is_unsearched_cid_nl_discovery_assessment(
-                            cell.method_assessment
-                        )
-                    )
+                    cell.content.method_result != "HOLD"
                     or cell.peak_observation is not None
                 ):
                     continue
@@ -1805,15 +1789,15 @@ def _build_production_composition_inputs(
                 sample=sample,
                 planning_state="not_planned",
                 planning_reason=(
-                    no_request_proofs[
+                    "no_discovery_input"
+                    if cell is None
+                    else no_request_proofs[
                         (group.group_hypothesis_id, sample.identity.sample_identity_id)
                     ].planning_reason
                     if (group.group_hypothesis_id, sample.identity.sample_identity_id)
                     in no_request_proofs
                     else "local_owner_not_supersedable"
                     if cell.content.outside_group is not None
-                    else "review_only"
-                    if is_unsearched_cid_nl_discovery_assessment(cell.method_assessment)
                     else "retained_unresolved_candidates"
                     if (
                         cell.content.technical_state == "evaluated"
@@ -1831,9 +1815,9 @@ def _build_production_composition_inputs(
             for group in repair_groups
             for sample in batch.context.samples
             for cell in (
-                cell_by_key[
+                cell_by_key.get(
                     (group.group_hypothesis_id, sample.identity.sample_identity_id)
-                ],
+                ),
             )
         )
         epoch = mint_owner_backfill_planning_epoch(
