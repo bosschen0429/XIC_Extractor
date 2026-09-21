@@ -25,7 +25,6 @@ from xic_extractor.alignment.cell_group_context import (
     CidNlCellGroupContext,
     TerminalObservationVariant,
     _canonical_typed_ids,
-    _group_support_artifacts,
     _required_text,
     _validate_group_support_attempts,
     _validate_typed_digest_id,
@@ -895,7 +894,7 @@ def mint_cell_observation_ref(
     content = CellObservationContent(
         canonical_sample_identity_id=sample.identity.sample_identity_id,
         group_hypothesis_id=group.group_hypothesis_id,
-        group_owner_ids=tuple(sorted(group.owner_ids)),
+        group_owner_ids=group_context.sorted_owner_ids,
         group_method_subject_id=group_context.method_subject_id,
         group_target_key_id=group_context.target_key_id,
         group_target_definition_id=group_context.target_definition_id,
@@ -992,14 +991,8 @@ def _cell_upstream_artifacts(
 ) -> tuple[EvidenceArtifactRef, ...]:
     artifacts = [method_assessment.artifact]
     if outside_group_context is not None:
-        artifacts.extend(_group_support_artifacts(outside_group_context.supports))
-    for support in group_context.supports:
-        artifacts.append(support.assessment.artifact)
-        if support.hypothesis.artifact is None:
-            raise CellObservationContractError(
-                "group SUPPORT hypothesis is missing its immutable artifact"
-            )
-        artifacts.append(support.hypothesis.artifact)
+        artifacts.extend(outside_group_context.support_artifacts)
+    artifacts.extend(group_context.support_artifacts)
     if peak_observation is not None:
         artifacts.append(peak_observation.artifact)
     if peak_hypothesis is not None:

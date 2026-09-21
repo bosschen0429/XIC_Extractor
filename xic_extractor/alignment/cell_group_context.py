@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Literal, TypeAlias
 
 from xic_extractor.alignment.config import AlignmentConfig
@@ -119,6 +119,17 @@ class CidNlCellGroupContext:
     sample_universe: frozenset[str] | None = None
     injection_order: tuple[tuple[str, int], ...] | None = None
     drift_lookup: DriftLookupProtocol | None = None
+    _method_subjects: tuple[CidNlMethodSubject, ...] = field(
+        init=False, repr=False, compare=False
+    )
+    _method_subject: CidNlMethodSubject = field(init=False, repr=False, compare=False)
+    _owner_ids: tuple[str, ...] = field(init=False, repr=False, compare=False)
+    _support_content_ids: tuple[str, ...] = field(
+        init=False, repr=False, compare=False
+    )
+    _support_artifacts: tuple[EvidenceArtifactRef, ...] = field(
+        init=False, repr=False, compare=False
+    )
 
     def __post_init__(self) -> None:
         if self.sample_universe is not None and not isinstance(
@@ -169,8 +180,19 @@ class CidNlCellGroupContext:
             raise CellObservationContractError(
                 "group SUPPORT closures must be unique and canonical-sorted by sample"
             )
+        subjects = tuple(
+            sorted(
+                {
+                    support.assessment.content.method_subject.method_subject_id: (
+                        support.assessment.content.method_subject
+                    )
+                    for support in self.supports
+                }.values(),
+                key=lambda subject: subject.method_subject_id,
+            )
+        )
         try:
-            validate_cid_nl_alignment_subject_compatibility(self.method_subjects)
+            validate_cid_nl_alignment_subject_compatibility(subjects)
         except CidNlMethodSubjectContractError as exc:
             raise CellObservationContractError(str(exc)) from exc
         expected_owner_ids = tuple(
@@ -221,24 +243,36 @@ class CidNlCellGroupContext:
                 raise CellObservationContractError(
                     "group member subject crossed its SUPPORT owner binding"
                 )
-
-    @property
-    def method_subjects(self) -> tuple[CidNlMethodSubject, ...]:
-        return tuple(
-            sorted(
-                {
-                    support.assessment.content.method_subject.method_subject_id: (
-                        support.assessment.content.method_subject
-                    )
+        # These immutable group facts are shared by every sample cell. Derive
+        # them once here instead of sorting/scanning all members for each cell.
+        object.__setattr__(self, "_method_subjects", subjects)
+        object.__setattr__(
+            self,
+            "_method_subject",
+            select_cid_nl_group_recovery_subject(self.group, subjects),
+        )
+        object.__setattr__(self, "_owner_ids", tuple(sorted(self.group.owner_ids)))
+        object.__setattr__(
+            self,
+            "_support_content_ids",
+            tuple(
+                sorted(
+                    support.assessment.artifact.content_identity.artifact_content_id
                     for support in self.supports
-                }.values(),
-                key=lambda subject: subject.method_subject_id,
-            )
+                )
+            ),
+        )
+        object.__setattr__(
+            self, "_support_artifacts", _group_support_artifacts(self.supports)
         )
 
     @property
+    def method_subjects(self) -> tuple[CidNlMethodSubject, ...]:
+        return self._method_subjects
+
+    @property
     def method_subject(self) -> CidNlMethodSubject:
-        return select_cid_nl_group_recovery_subject(self.group, self.method_subjects)
+        return self._method_subject
 
     @property
     def method_subject_id(self) -> str:
@@ -258,12 +292,15 @@ class CidNlCellGroupContext:
 
     @property
     def support_assessment_artifact_content_ids(self) -> tuple[str, ...]:
-        return tuple(
-            sorted(
-                support.assessment.artifact.content_identity.artifact_content_id
-                for support in self.supports
-            )
-        )
+        return self._support_content_ids
+
+    @property
+    def sorted_owner_ids(self) -> tuple[str, ...]:
+        return self._owner_ids
+
+    @property
+    def support_artifacts(self) -> tuple[EvidenceArtifactRef, ...]:
+        return self._support_artifacts
 
 
 def _group_support_artifacts(
