@@ -27,6 +27,7 @@ from tests.test_targeted_real_data_adapter import (
 from tests.test_untargeted_cid_nl_real_data_adapter import _without_ms1_peak
 from xic_extractor.acquisition_contract import (
     TraceCoordinateKind,
+    acquire_trace_batch,
     mint_trace_acquisition_capability,
     serialize_acquired_trace,
 )
@@ -264,6 +265,57 @@ def test_acquisition_cache_replays_xic_and_ms2_and_reacquires_only_rejected_quer
         )
     assert len(second_batch.traces) == 1
     assert second_vendor.chromatogram_request_counts == [1]
+
+
+@pytest.mark.parametrize("use_cache", (False, True))
+def test_untargeted_acquisition_batches_overlapping_scan_windows_exactly(
+    tmp_path: Path, use_cache: bool
+) -> None:
+    fixture = build_targeted_processing_identity_raw_fixture(
+        tmp_path,
+        sample_stems=("S1",),
+        peak_config=_peak_config(tmp_path),
+    )
+    source = _source_for(fixture, "S1")
+    capability = mint_trace_acquisition_capability(
+        source,
+        adapter_namespace="untargeted-window-batch-test",
+        coordinate_kind=TraceCoordinateKind.NATIVE_SCAN,
+    )
+    requests = (
+        XICRequest(mz=502.0, rt_min=8.351, rt_max=8.421, ppm_tol=10.0),
+        XICRequest(mz=501.0, rt_min=7.851, rt_max=8.201, ppm_tol=10.0),
+        XICRequest(mz=500.0, rt_min=7.751, rt_max=8.101, ppm_tol=10.0),
+    )
+    source_raw = _FakeRaw((8.0, 8.39))
+    baseline_handle, baseline_vendor = _open_bound_raw(
+        fixture, "S1", source_raw, tmp_path=tmp_path
+    )
+    with baseline_handle:
+        baseline = acquire_trace_batch(capability, requests, baseline_handle)
+    assert baseline_vendor.chromatogram_request_counts == [1, 1, 1]
+
+    handle, vendor = _open_bound_raw(fixture, "S1", source_raw, tmp_path=tmp_path)
+    cache_dir = tmp_path / "cache" if use_cache else None
+    raw = bind_untargeted_acquisition_cache(handle, source=source, cache_dir=cache_dir)
+    with raw:
+        actual = acquire_untargeted_trace_batch(capability, requests, raw)
+    assert vendor.chromatogram_request_counts == [2, 1]
+    assert actual.adapter_chromatogram_call_count == 2
+    expected = tuple(map(serialize_acquired_trace, baseline.traces))
+    assert tuple(map(serialize_acquired_trace, actual.traces)) == expected
+
+    if cache_dir is not None:
+        def forbid_open():
+            raise AssertionError("cached exact requests must not reopen RAW")
+
+        with CachedUntargetedRaw(
+            forbid_open, source=source, cache_dir=cache_dir
+        ) as warm:
+            replay = acquire_untargeted_trace_batch(capability, requests, warm)
+        assert not warm.native_open_attempted
+        assert replay.adapter_chromatogram_call_count == 0
+        assert tuple(map(serialize_acquired_trace, replay.traces)) == expected
 
 
 def test_lazy_acquisition_cache_replay_skips_opener_and_opens_once_on_miss(

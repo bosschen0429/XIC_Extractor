@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Any, Literal
 
 import numpy as np
@@ -122,10 +123,11 @@ class RawSuperWindowSource:
 
     def extract_xic_many(
         self,
-        requests: tuple[XICRequest, ...],
+        requests: Sequence[XICRequest],
     ) -> tuple[XICTrace, ...]:
         if not requests:
             return ()
+        requests = tuple(requests)
         groups = _superwindow_groups(
             self,
             requests,

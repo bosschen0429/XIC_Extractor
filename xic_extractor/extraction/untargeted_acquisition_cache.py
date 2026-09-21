@@ -24,6 +24,7 @@ from xic_extractor.acquisition_contract import (
     deserialize_acquired_trace,
     serialize_acquired_trace,
 )
+from xic_extractor.alignment.ms1_index_source import RawSuperWindowSource
 from xic_extractor.processing_identity import AcquisitionSourceIdentity
 from xic_extractor.raw_reader import (
     Ms2Scan,
@@ -156,7 +157,7 @@ class CachedUntargetedRaw:
             acquired_missing = acquire_trace_batch(
                 capability,
                 tuple(request for _index, request, _key in missing),
-                self._raw,
+                RawSuperWindowSource(self._raw),
             )
             adapter_calls = acquired_missing.adapter_chromatogram_call_count
             for (index, _request, key), acquired in zip(
@@ -212,7 +213,7 @@ def acquire_untargeted_trace_batch(
     if isinstance(raw, CachedUntargetedRaw):
         return raw.acquire_trace_batch(capability, requests)
     owner_bound = require_owner_bound_raw_handle(raw, capability.acquisition_source)
-    return acquire_trace_batch(capability, requests, owner_bound)
+    return acquire_trace_batch(capability, requests, RawSuperWindowSource(owner_bound))
 
 
 class _FactCache:

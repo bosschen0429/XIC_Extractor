@@ -66,6 +66,27 @@ dated productization control-plane path is compatibility lookup only.
 
 ## Known Diagnostic Conclusions
 
+### 2026-09-21 Native Recovery Queries Can Share Scan-Window Reads
+
+- The retained full85 resource receipts split the 3,359 native opens into
+  680 initial and 2,679 recovery opens. Chromatogram call counts lack phase
+  binding; do not label all 51,956 calls as recovery.
+- On `BenignfatBC0979_DNA.raw`, a single-handle probe used the canonical first
+  50 of 1,429 retained recovery requests. Direct acquisition made 48 native
+  chromatogram calls in 0.678907 seconds; the existing `RawSuperWindowSource`
+  made two calls in 0.029216 seconds. All 50 serialized acquired traces were
+  byte-identical, including the original request, native coordinates and
+  14,571 total points. No Discovery or full85 rerun was performed.
+- Untargeted acquisition now uses that existing bounded super-window adapter
+  for missing native facts and uncached batches. Cache keys and scientific
+  requests remain unchanged; each returned trace is cropped to its original
+  scan window. Cold/warm regression cases preserve exact trace bytes and warm
+  replay performs no native open. This establishes the tested acquisition
+  mechanism, not a full-cohort speedup or completed scientific acceptance.
+- Evidence: `diagnostic_only`, source `23985f13` plus recorded dirty source
+  hashes; receipts are `raw-native-recovery-parity-{receipt,result}.json` under
+  `output/issue422-bounded-worksets-20260921/`.
+
 ### 2026-09-21 Full85 Remains Incomplete After Recovery Admission Fix
 
 - Evidence: `diagnostic_only`, producer `97bb9225f79a5d2665b9775c13d9125a851ef108`.
