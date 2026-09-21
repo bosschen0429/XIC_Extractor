@@ -66,6 +66,43 @@ dated productization control-plane path is compatibility lookup only.
 
 ## Known Diagnostic Conclusions
 
+### 2026-09-21 Four-Partition RAW-Major Replay Does Not Establish A Scheduler Win
+
+- Evidence: `diagnostic_only`, product source `dfc22127`, fixed canonical
+  partitions 00000–00003 and all 85 samples. Reused Discovery and cache; no
+  additional full85 or Discovery run. Task-local drivers freeze actual initial
+  and recovery requests before comparing the physical execution axes.
+- Three paired four-process replays (A→B, B→A, A→B) have partition-major A
+  wall median/range 9.069/9.023–9.758 seconds and sample-major B
+  8.799/8.238–9.239 seconds. Diagnostic artifact persistence medians are
+  1.261 and 0.225 seconds. Timing overlaps and this measurement overhead is
+  larger than the median wall difference; a production broker benefit is not
+  established. OS cache is warm, and both arms make zero native opens/calls.
+- Sessions fall from 680 to 85, but logical XIC requests remain 6,934 and
+  cache bytes only fall from 952,428,976 to 920,637,788. All 5,166 query results
+  in every arm exactly match the harvested serialized facts, with per-partition
+  coverage. B facts actually reproduce all 150 captured scientific children.
+  Additional read-only extraction from sealed stores confirms 391 initial
+  groups' ambiguity/inference decisions and final disposition/route reasons;
+  no rerun was needed to recover those omitted scalar fields.
+- With compact frozen facts, scientific replay still takes 106.141 seconds:
+  adapter acquisition phase 50.723 seconds and composition 51.209 seconds.
+  That acquisition phase includes scientific computation and object transport;
+  do not equate it with the isolated physical replay. The original 140.984-second
+  harvest had 118.470 summed worker seconds of cache file reads versus roughly
+  2–3 in warm replay; cache/OS state prevents a simple causal subtraction.
+- Architecture-adoption verdict: `inconclusive`; no production scheduler
+  change. Reuse retained facts to separate scientific computation/transport
+  from physical I/O before another rewrite. This does not test cold native
+  batching or establish full85/ISTD acceptance. Prior process8 failed after
+  1,985.016 seconds, with 40/46 partitions and no formal Matrix.
+- Artifacts: `output/issue422-bounded-worksets-20260921/fusion-ab/`:
+  `decision-report.md`, `physical-parity-123.json`, `scientific-parity-1.json`,
+  `ambiguity-parity-1.json`, frozen `prepared/`, requests/facts under `harvest/`,
+  and per-arm receipts. These are task-local diagnostic evidence, not a new
+  reusable public cache or store format. Do not repeat preparation, harvesting,
+  or completed arms merely to repair reporting.
+
 ### 2026-09-21 Cached Acquisition Still Hydrates Unrequested MS2 Spectra
 
 - At `259b8c9d`, a diagnostic profile of partition 00000 (65 subjects,
