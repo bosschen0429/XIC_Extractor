@@ -73,7 +73,6 @@ from xic_extractor.peak_detection.cid_nl_method_subject import (
 )
 from xic_extractor.peak_detection.search_scope import (
     SEARCH_SCOPE_SCHEMA_VERSION,
-    CaptureCandidateBinding,
     CaptureMethodConstraints,
     EvidenceProviderBinding,
     UntargetedSearchScope,
@@ -545,19 +544,17 @@ class CidNlPartitionPipelineAdapter:
         ],
     ) -> FinalizedUntargetBatchApplicationResult:
         context = self._plan.context
-        bindings: list[CaptureCandidateBinding] = []
         exclusion_positions: list[tuple[str, int, int]] = []
         child_positions: list[tuple[str, int, int]] = []
-        for index, comp_out in enumerate(composition_outputs):
+        for comp_out in composition_outputs:
             persisted = comp_out.result
-            bindings.extend(persisted.capture_bindings)
             child_positions.extend(
                 (key, persisted.sealed.index, offset)
                 for offset, key in enumerate(persisted.child_order_keys)
             )
             exclusion_positions.extend(
-                (exclusion.candidate_id, index, offset)
-                for offset, exclusion in enumerate(persisted.excluded_candidates)
+                (candidate_id, persisted.sealed.index, offset)
+                for offset, candidate_id in enumerate(persisted.excluded_candidate_ids)
             )
         scope = UntargetedSearchScope(
             schema_version=SEARCH_SCOPE_SCHEMA_VERSION,
@@ -576,9 +573,9 @@ class CidNlPartitionPipelineAdapter:
                 candidate_id
                 for candidate_id, _ in self._plan.subject_batch.candidate_memberships
             ),
-            capture_bindings=tuple(
-                sorted(bindings, key=lambda binding: binding.candidate_id)
-            ),
+            # Batch closure checks request membership and exact child owners.
+            # Capture authorization and physical evidence belong to each child.
+            capture_bindings=(),
         )
         children = store.sequence("children")
         if child_positions:

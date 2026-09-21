@@ -562,6 +562,37 @@ def test_scheduler_execute_success(tmp_path: Path) -> None:
     ]
 
 
+@pytest.mark.parametrize("pipeline_overlap", [False, True])
+def test_scheduler_does_not_force_full_gc_after_partition(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    pipeline_overlap: bool,
+) -> None:
+    import gc
+
+    fixture = build_processing_identity_no_raw_fixture(
+        tmp_path, sample_stems=("sample-1", "sample-2")
+    )
+    adapter = MockAdapter(fixture.owners, num_partitions=2)
+    explicit_collects: list[int] = []
+    monkeypatch.setattr(
+        gc,
+        "collect",
+        lambda: explicit_collects.append(1),
+    )
+
+    result = PartitionPipelineScheduler.execute(
+        adapter,
+        output_dir=tmp_path / "gc-output",
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+        recovery_marker=OwnerPathRuntimeMarker(tmp_path / "gc-marker.json", "gc"),
+        pipeline_overlap=pipeline_overlap,
+    )
+
+    assert result["application_result"]["total_children"] == 2
+    assert explicit_collects == []
+
+
 def test_scheduler_closes_acquisition_resources_before_terminal_acknowledgement(
     tmp_path: Path,
 ) -> None:

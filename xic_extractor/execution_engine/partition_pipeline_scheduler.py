@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import gc
 import queue
 import threading
 import time
@@ -294,7 +293,6 @@ class PartitionPipelineScheduler:
                         artifacts.extend(part_artifacts)
                         settlements.extend(part_settlements)
                         del acq_out, comp_out
-                        gc.collect()
                         progress("partition_released", index + 1)
                 else:
                     admission_credits = threading.Semaphore(2)
@@ -491,7 +489,6 @@ class PartitionPipelineScheduler:
                                         artifacts.extend(part_artifacts)
                                         settlements.extend(part_settlements)
                                     del acq_out, comp_out
-                                    gc.collect()
                                     progress("partition_released", partition.index + 1)
                                     next_index += 1
                                 finally:

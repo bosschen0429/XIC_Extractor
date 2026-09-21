@@ -955,12 +955,11 @@ class UntargetedCidNlPartitionComposition:
 
 @dataclass(frozen=True, slots=True)
 class UntargetedCidNlPersistedPartition:
-    """Metadata for one atomically persisted, streamed scientific partition."""
+    """Lightweight positions for one persisted scientific partition."""
 
     sealed: SealedPartition
     child_count: int
-    excluded_candidates: tuple[UntargetedCandidateExclusion, ...]
-    capture_bindings: tuple[CaptureCandidateBinding, ...]
+    excluded_candidate_ids: tuple[str, ...]
     child_order_keys: tuple[str, ...] = ()
 
 
@@ -1020,7 +1019,9 @@ def compose_and_persist_untargeted_cid_nl_partition(
     metadata_payload = UntargetedCidNlPartitionComposition(
         children=(),
         excluded_candidates=inputs.request.excluded_candidates,
-        capture_bindings=inputs.request.scope.capture_bindings,
+        # Child scopes and capture_evidence retain the complete physical facts.
+        # The partition index does not need a second copy of their graphs.
+        capture_bindings=(),
         method_assessments=inputs.method_assessments,
         initial_groups=inputs.initial_groups,
         initial_edges=inputs.initial_edges,
@@ -1036,8 +1037,9 @@ def compose_and_persist_untargeted_cid_nl_partition(
     return UntargetedCidNlPersistedPartition(
         sealed=sealed,
         child_count=child_count,
-        excluded_candidates=inputs.request.excluded_candidates,
-        capture_bindings=inputs.request.scope.capture_bindings,
+        excluded_candidate_ids=tuple(
+            item.candidate_id for item in inputs.request.excluded_candidates
+        ),
         child_order_keys=tuple(child_order_keys),
     )
 

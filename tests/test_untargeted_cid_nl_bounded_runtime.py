@@ -399,8 +399,7 @@ def test_indexed_finalization_orders_children_by_canonical_subject(
     outputs = tuple(
         SimpleNamespace(
             result=SimpleNamespace(
-                capture_bindings=(),
-                excluded_candidates=(),
+                excluded_candidate_ids=(),
                 child_order_keys=(subject_id,),
                 sealed=SimpleNamespace(index=index),
             )
@@ -1864,6 +1863,67 @@ def test_formal_partition_reuses_prepared_group_ids_for_recovery_and_composition
         for child in persisted.children
         for group in child.scientific_core.grouping_result.final_population
     } == prepared_group_ids
+
+
+def test_completed_partition_retains_only_light_parent_capture_metadata(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Parent closure keeps IDs while children retain exact capture evidence."""
+
+    import xic_extractor.extraction.untargeted_cid_nl_bounded_runtime as bounded_owner
+    from xic_extractor.execution_engine.streamed_result_store import StreamedResultStore
+
+    plan, _reference = _plan(tmp_path, monkeypatch, scenario="mixed_eligibility")
+    adapter = bounded_owner.CidNlPartitionPipelineAdapter(
+        plan,
+        alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+        max_partition_jobs=100,
+    )
+    partition = adapter.partitions[0]
+    acquisition = adapter.execute_acquisition(partition)
+    assert acquisition.succeeded
+    store = StreamedResultStore(
+        tmp_path / "retention-spool", adapter.get_shared_objects()
+    )
+    composed = adapter.execute_composition(partition, acquisition, store)
+    persisted = composed.result
+
+    stored = store.read(composed.sealed.index)
+    child_before = store.read_selected(
+        composed.sealed.index, "children", (0,)
+    )[0]
+    child_scope = child_before.scientific_core.scope
+    assert child_scope.capture_bindings
+    child_observations = child_before.scientific_core.cell_observations
+    child_decision = child_before.completed_projection.decisions[0]
+    expected_excluded_ids = tuple(
+        exclusion.candidate_id for exclusion in stored.excluded_candidates
+    )
+
+    assert persisted.excluded_candidate_ids == expected_excluded_ids
+    assert not hasattr(persisted, "excluded_candidates")
+    assert not hasattr(persisted, "capture_bindings")
+    assert stored.capture_bindings == ()
+    assert stored.capture_evidence
+
+    store.seal()
+    finalized = adapter.finalize_application(store, (composed,))
+    assert finalized.scope.capture_bindings == ()
+    assert tuple(finalized.excluded_candidates) == tuple(plan.excluded_candidates)
+    child_after = store.read_selected(
+        composed.sealed.index, "children", (0,)
+    )[0]
+    assert (
+        child_after.scientific_core.scope.capture_bindings
+        == child_scope.capture_bindings
+    )
+    assert child_after.scientific_core.cell_observations == child_observations
+    assert (
+        child_after.completed_projection.decisions[0].basis_bytes
+        == child_decision.basis_bytes
+    )
+    assert child_after.completed_projection.decisions[0].value == child_decision.value
 
 
 def test_process_backend_reuses_one_pool_per_acquisition_lane_and_closes_once(
