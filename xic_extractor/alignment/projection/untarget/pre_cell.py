@@ -21,6 +21,7 @@ from xic_extractor.processing_identity import (
     PROCESSING_REQUEST_ID_PREFIX,
     ProcessingRequestIdentity,
     canonical_identity_basis_bytes,
+    mint_typed_identity,
     typed_identity_digest,
     validate_typed_identity_id,
 )
@@ -228,7 +229,8 @@ class GroupCellSubject:
 
     @property
     def subject_id(self) -> str:
-        basis = canonical_identity_basis_bytes(
+        identity, _ = mint_typed_identity(
+            _GROUP_CELL_SUBJECT_PREFIX,
             {
                 "schema_version": _GROUP_CELL_SUBJECT_SCHEMA_VERSION,
                 "untarget_row_key_id": self.row_key.untarget_row_key_id,
@@ -237,7 +239,7 @@ class GroupCellSubject:
                 ),
             }
         )
-        return typed_identity_digest(_GROUP_CELL_SUBJECT_PREFIX, basis)
+        return identity
 
 
 @dataclass(frozen=True, slots=True)

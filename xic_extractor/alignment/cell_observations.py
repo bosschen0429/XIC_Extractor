@@ -61,8 +61,7 @@ from xic_extractor.peak_detection.integration_result import IntegrationResult
 from xic_extractor.peak_detection.observations import PeakObservationRef
 from xic_extractor.processing_identity import (
     ProcessingOwnerReferences,
-    canonical_identity_basis_bytes,
-    typed_identity_digest,
+    mint_typed_identity,
 )
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 
@@ -1147,7 +1146,7 @@ def _mint_final_group_cell_observation(
     evidence_states: tuple[FinalCellEvidenceState, ...],
     recovery_cell: CellObservationRef | None = None,
 ) -> FinalGroupCellObservation:
-    basis = _final_closure_basis(
+    payload = _final_closure_basis(
         processing_request_id=processing_request_id,
         handoff=handoff,
         group=group,
@@ -1160,11 +1159,9 @@ def _mint_final_group_cell_observation(
         evidence_states=evidence_states,
         recovery_cell=recovery_cell,
     )
+    identity, basis = mint_typed_identity(_FINAL_CELL_OBSERVATION_ID_PREFIX, payload)
     return FinalGroupCellObservation(
-        cell_observation_id=typed_identity_digest(
-            _FINAL_CELL_OBSERVATION_ID_PREFIX,
-            basis,
-        ),
+        cell_observation_id=identity,
         processing_request_id=processing_request_id,
         group=group,
         canonical_sample=canonical_sample,
@@ -1194,13 +1191,13 @@ def _final_closure_basis(
     repaired_observations: tuple[OwnerBackfillPeakFactObservation, ...],
     evidence_states: tuple[FinalCellEvidenceState, ...],
     recovery_cell: CellObservationRef | None = None,
-) -> bytes:
+) -> dict[str, object]:
     resolved_handoff_id = handoff_id or (
         handoff.handoff_id if handoff is not None else None
     )
     if resolved_handoff_id is None:
         raise CellObservationContractError("final cell basis requires exact handoff")
-    payload = {
+    payload: dict[str, object] = {
         "schema_version": "final_group_cell_observation_v3",
         "processing_request_id": processing_request_id,
         "handoff_id": resolved_handoff_id,
@@ -1273,7 +1270,7 @@ def _final_closure_basis(
         payload["recovery_cell_artifact_id"] = (
             recovery_cell.artifact.evidence_artifact_id
         )
-    return canonical_identity_basis_bytes(payload)
+    return payload
 
 
 def _final_cell_sort_key(
