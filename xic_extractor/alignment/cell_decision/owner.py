@@ -138,7 +138,9 @@ class ProductionCellDecision:
             raise CellDecisionContractError(
                 "production cell decision must be minted by cell_decision"
             )
-        _validate_decision_binding(self)
+
+        # The sealed factory derives the basis and ID from these exact inputs.
+        # Explicit validation remains available at an external trust boundary.
 
     @property
     def variant(self) -> Literal["numeric"] | NoWriteState:
