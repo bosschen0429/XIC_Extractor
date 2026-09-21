@@ -884,43 +884,92 @@ def test_pipeline_overlap_single_partition_serial(tmp_path: Path) -> None:
 def test_pipeline_overlap_backpressure(
     tmp_path: Path, acquisition_workers: int
 ) -> None:
-    """Slow consumer holds 2 credits, blocking producer before partition 2."""
+    """A composition slot leaves one extra acquisition credit available."""
     fixture = build_processing_identity_no_raw_fixture(
-        tmp_path, sample_stems=("sample-1", "sample-2", "sample-3")
+        tmp_path,
+        sample_stems=("sample-1", "sample-2", "sample-3", "sample-4"),
     )
+    p0_compose_started = threading.Event()
+    release_p0_compose = threading.Event()
     p0_compose_ended: list[float] = []
-    p2_acquire_started: list[float] = []
+    acquire_started = {index: threading.Event() for index in range(1, 4)}
+    acquire_times: dict[int, float] = {}
 
     def on_comp(idx: int) -> None:
         if idx == 0:
-            time.sleep(0.08)
+            p0_compose_started.set()
+            if acquisition_workers == 2:
+                assert release_p0_compose.wait(timeout=5)
+            else:
+                time.sleep(0.08)
             p0_compose_ended.append(time.perf_counter())
 
     def on_acq(idx: int) -> None:
-        if idx == 2:
-            p2_acquire_started.append(time.perf_counter())
+        if idx in acquire_started:
+            acquire_times[idx] = time.perf_counter()
+            acquire_started[idx].set()
 
     adapter = MockAdapter(
         fixture.owners,
-        num_partitions=3,
+        num_partitions=4,
         on_acquisition=on_acq,
         on_composition=on_comp,
     )
     output_dir = tmp_path / "output"
     marker = OwnerPathRuntimeMarker(tmp_path / "marker.json", "test-backpressure")
 
-    result = PartitionPipelineScheduler.execute(
-        adapter,
-        output_dir=output_dir,
-        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-        recovery_marker=marker,
-        pipeline_overlap=True,
-        acquisition_workers=acquisition_workers,
-    )
-    assert result["application_result"]["total_children"] == 3
+    if acquisition_workers == 1:
+        result = PartitionPipelineScheduler.execute(
+            adapter,
+            output_dir=output_dir,
+            telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+            recovery_marker=marker,
+            pipeline_overlap=True,
+            acquisition_workers=acquisition_workers,
+        )
+    else:
+        result_holder: list[dict[str, Any]] = []
+        error_holder: list[BaseException] = []
+
+        def run_scheduler() -> None:
+            try:
+                result_holder.append(
+                    PartitionPipelineScheduler.execute(
+                        adapter,
+                        output_dir=output_dir,
+                        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+                        recovery_marker=marker,
+                        pipeline_overlap=True,
+                        acquisition_workers=acquisition_workers,
+                    )
+                )
+            except BaseException as exc:  # pragma: no cover - surfaced below
+                error_holder.append(exc)
+
+        scheduler_thread = threading.Thread(target=run_scheduler)
+        scheduler_thread.start()
+        try:
+            assert p0_compose_started.wait(timeout=5)
+            assert acquire_started[1].wait(timeout=5)
+            p2_started_while_compose_open = acquire_started[2].wait(timeout=1)
+            p3_started_while_compose_open = acquire_started[3].is_set()
+        finally:
+            release_p0_compose.set()
+        scheduler_thread.join(timeout=5)
+        assert not scheduler_thread.is_alive()
+        if error_holder:
+            raise error_holder[0]
+        assert result_holder
+        result = result_holder[0]
+
+    assert result["application_result"]["total_children"] == 4
     assert len(p0_compose_ended) == 1
-    assert len(p2_acquire_started) == 1
-    assert p2_acquire_started[0] >= p0_compose_ended[0] - 0.02
+    assert set(acquire_times) == {1, 2, 3}
+    if acquisition_workers == 1:
+        assert acquire_times[2] >= p0_compose_ended[0] - 0.02
+    else:
+        assert p2_started_while_compose_open
+        assert not p3_started_while_compose_open
 
 
 @pytest.mark.parametrize("acquisition_workers", [1, 2])

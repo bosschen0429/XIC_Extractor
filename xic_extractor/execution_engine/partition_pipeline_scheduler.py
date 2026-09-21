@@ -295,7 +295,9 @@ class PartitionPipelineScheduler:
                         del acq_out, comp_out
                         progress("partition_released", index + 1)
                 else:
-                    admission_credits = threading.Semaphore(2)
+                    # Composition keeps one partition resident while each
+                    # acquisition lane can prepare its next partition.
+                    admission_credits = threading.Semaphore(acquisition_workers + 1)
                     handoff_queue: queue.Queue[
                         tuple[
                             WorkPartition[TPartitionPayload],
