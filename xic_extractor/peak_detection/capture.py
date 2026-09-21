@@ -43,6 +43,7 @@ from xic_extractor.peak_detection.observations import (
     validate_peak_observation_trace_binding,
 )
 from xic_extractor.peak_detection.physical_peak_evaluation import (
+    _physical_owner_context,
     evaluate_physical_peak,
     prepare_physical_signal,
 )
@@ -334,26 +335,26 @@ def _capture_physical_peak(
         profile=profile,
         trace_content_id=expected.prepared.trace_content_id,
     )
-    # Physical context follows acquired scan RTs, independently of XIC bounds.
-    if prepared.trace_context_rt_start_min is not None and (
-        expected.question.context_rt_start_min != prepared.trace_context_rt_start_min
-        or expected.question.context_rt_end_min != prepared.trace_context_rt_end_min
+    context = _physical_owner_context(
+        prepared,
+        request_context_rt_start_min=binding.query_rt_min,
+        request_context_rt_end_min=binding.query_rt_max,
+    )
+    if context != (
+        expected.question.context_rt_start_min,
+        expected.question.context_rt_end_min,
     ):
         raise SampleLocalCaptureError(
             "physical capture changed the exact acquired trace context"
         )
-    evaluation = evaluate_physical_peak(
-        prepared,
-        selection_subject_id=expected.question.selection_subject_id,
-        query_rt_min=binding.preferred_rt,
-        request_context_rt_start_min=binding.query_rt_min,
-        request_context_rt_end_min=binding.query_rt_max,
-        selection_policy_version=expected.question.selection_policy_version,
-    )
-    if evaluation != expected:
+    if prepared.projection != expected.prepared:
         raise SampleLocalCaptureError(
             "physical capture changed the retained owner answer"
         )
+    # The binding owns this exact question and answer. Preparing its verified
+    # trace supplies observation values and fresh diagnostic curves; it does
+    # not require repeating segmentation, selection, and integration.
+    evaluation = replace(expected, retained_prepared_signal=prepared.prepared)
     return _project_physical_capture(
         scope=scope,
         binding=binding,

@@ -1256,8 +1256,10 @@ def test_physical_capture_projects_trace_identity_once_across_mint_and_bind(
     )
     trace_hashes = 0
     projections = 0
+    evaluation_calls = 0
     real_trace_hash = physical_owner.mint_physical_trace_content_id
     real_projection = capture_owner._project_peak_observation_values
+    real_evaluation = capture_owner.evaluate_physical_peak
 
     def count_trace_hash(*args, **kwargs):
         nonlocal trace_hashes
@@ -1268,6 +1270,11 @@ def test_physical_capture_projects_trace_identity_once_across_mint_and_bind(
         nonlocal projections
         projections += 1
         return real_projection(**kwargs)
+
+    def count_evaluation(*args, **kwargs):
+        nonlocal evaluation_calls
+        evaluation_calls += 1
+        return real_evaluation(*args, **kwargs)
 
     monkeypatch.setattr(
         physical_owner,
@@ -1284,6 +1291,7 @@ def test_physical_capture_projects_trace_identity_once_across_mint_and_bind(
         "_project_peak_observation_values",
         count_projection,
     )
+    monkeypatch.setattr(capture_owner, "evaluate_physical_peak", count_evaluation)
     capture = capture_owner.capture_peak_hypotheses(
         scope=scope,
         candidate_id=binding.candidate_id,
@@ -1339,6 +1347,7 @@ def test_physical_capture_projects_trace_identity_once_across_mint_and_bind(
     assert bound.selected_hypothesis is owner_hypothesis
     assert trace_hashes == 1
     assert projections == 1
+    assert evaluation_calls == 0
 
 
 def test_untargeted_scope_rejects_targeted_request_variant(tmp_path: Path) -> None:
