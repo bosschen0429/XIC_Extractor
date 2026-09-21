@@ -494,7 +494,13 @@ def _prepare_runtime_work(
                         worker_key=f"inline-acquisition:{job.work_unit_key}",
                         source_reference=source.acquisition_source_id,
                         compatibility_token=_RUNTIME_COMPATIBILITY_TOKEN,
-                        owner_conditional=not initial_requires_raw,
+                        owner_conditional=(
+                            not initial_requires_raw
+                            or (
+                                job.acquisition_cache_dir is not None
+                                and job.acquisition_source_expectation is not None
+                            )
+                        ),
                     )
                 )
         except Exception as exc:
@@ -562,7 +568,14 @@ def _prepare_runtime_work(
                     worker_key=f"inline-acquisition:{phase}:{first.work_unit_key}",
                     source_reference=source.acquisition_source_id,
                     compatibility_token=_RUNTIME_COMPATIBILITY_TOKEN,
-                    owner_conditional=owner_conditional or partition_key is not None,
+                    owner_conditional=(
+                        owner_conditional
+                        or partition_key is not None
+                        or (
+                            first.acquisition_cache_dir is not None
+                            and first.acquisition_source_expectation is not None
+                        )
+                    ),
                 )
             )
         batch_phases.append(

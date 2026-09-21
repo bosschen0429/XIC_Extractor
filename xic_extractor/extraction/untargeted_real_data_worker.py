@@ -59,6 +59,7 @@ from xic_extractor.processing_identity import resolve_request_acquisition_source
 from xic_extractor.raw_reader import (
     RawFileHandle,
     RawReaderOpenError,
+    _bind_expected_path_identity,
     _ensure_assemblies_loaded,
     open_raw,
 )
@@ -130,19 +131,27 @@ def _open_job_raw(
             processing_owners=job.processing_owners, sample=job.sample
         )
     )
-    if expectation is not None:
-        raw = active_open(
-            job.raw_path,
-            job.dll_dir,
-            expected_acquisition_source=source,
-            _expected_path_identity=expectation.path_identity,
+
+    def open_native():
+        if expectation is not None:
+            return active_open(
+                job.raw_path,
+                job.dll_dir,
+                expected_acquisition_source=source,
+                _expected_path_identity=expectation.path_identity,
+            )
+        return active_open(
+            job.raw_path, job.dll_dir, expected_acquisition_source=source
         )
-    else:
-        raw = active_open(
-            job.raw_path,
-            job.dll_dir,
-            expected_acquisition_source=source,
+
+    if expectation is not None and job.acquisition_cache_dir is not None:
+        # The input owner already verified the content. Cache replay still checks
+        # that this path has that exact identity before returning any facts.
+        _bind_expected_path_identity(job.raw_path, source, expectation.path_identity)
+        return CachedUntargetedRaw(
+            open_native, source=source, cache_dir=job.acquisition_cache_dir
         )
+    raw = open_native()
     return bind_untargeted_acquisition_cache(
         raw,
         source=source,
@@ -187,6 +196,9 @@ def _execute_initial_assessment(state: _RuntimeJobState) -> None:
         state.error = exc
     finally:
         if raw is not None:
+            if isinstance(raw, CachedUntargetedRaw):
+                state.open_attempted = raw.native_open_attempted
+                state.opened = raw.native_opened
             try:
                 raw.__exit__(None, None, None)
             except Exception as exc:
@@ -277,6 +289,9 @@ def _execute_initial_assessment_batch(
                 state.error = exc
     finally:
         if raw is not None:
+            if isinstance(raw, CachedUntargetedRaw):
+                phase.initial_open_attempted = raw.native_open_attempted
+                phase.initial_opened = raw.native_opened
             try:
                 raw.__exit__(None, None, None)
             except Exception as exc:
@@ -510,6 +525,8 @@ def _execute_recovery(
         )
         return
     raw = None
+    initial_open_attempted = state.open_attempted
+    initial_opened = state.opened
     try:
         state.open_attempted = True
         raw = _open_job_raw(job)
@@ -567,6 +584,11 @@ def _execute_recovery(
         state.error = exc
     finally:
         if raw is not None:
+            if isinstance(raw, CachedUntargetedRaw):
+                state.open_attempted = (
+                    initial_open_attempted or raw.native_open_attempted
+                )
+                state.opened = initial_opened or raw.native_opened
             try:
                 raw.__exit__(None, None, None)
             except Exception as exc:
@@ -667,6 +689,9 @@ def _execute_recovery_batch(phase: _BatchSamplePhaseState) -> None:
             state.error = exc
     finally:
         if raw is not None:
+            if isinstance(raw, CachedUntargetedRaw):
+                phase.recovery_open_attempted = raw.native_open_attempted
+                phase.recovery_opened = raw.native_opened
             try:
                 raw.__exit__(None, None, None)
             except Exception as exc:

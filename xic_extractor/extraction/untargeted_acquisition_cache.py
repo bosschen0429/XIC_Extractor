@@ -10,7 +10,7 @@ import logging
 import math
 import os
 import tempfile
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
 
@@ -42,18 +42,32 @@ class UntargetedAcquisitionCacheError(ValueError):
 
 
 class CachedUntargetedRaw:
-    """Owner-bound RAW handle whose exact MS2 windows can be replayed."""
+    """Source-bound facts, opening a native handle only for a cache miss."""
 
     def __init__(
         self,
-        raw: RawFileHandle,
+        raw: RawFileHandle | Callable[[], RawFileHandle],
         *,
         source: AcquisitionSourceIdentity,
         cache_dir: Path,
     ) -> None:
-        self._raw = require_owner_bound_raw_handle(raw, source)
+        self._opener = raw if callable(raw) else None
+        self._handle = (
+            None if callable(raw) else require_owner_bound_raw_handle(raw, source)
+        )
+        self.native_open_attempted = self._handle is not None
+        self.native_opened = self._handle is not None
         self._source = source
         self._cache = _FactCache(cache_dir, source.acquisition_source_id)
+
+    @property
+    def _raw(self) -> RawFileHandle:
+        if self._handle is None:
+            assert self._opener is not None
+            self.native_open_attempted = True
+            self._handle = require_owner_bound_raw_handle(self._opener(), self._source)
+            self.native_opened = True
+        return self._handle
 
     @property
     def acquisition_source(self) -> AcquisitionSourceIdentity:
@@ -61,17 +75,18 @@ class CachedUntargetedRaw:
 
     @property
     def raw_open_receipt(self) -> object:
-        return self._raw.raw_open_receipt
+        return None if self._handle is None else self._handle.raw_open_receipt
 
     @property
     def raw_chromatogram_call_count(self) -> int:
-        return self._raw.raw_chromatogram_call_count
+        return 0 if self._handle is None else self._handle.raw_chromatogram_call_count
 
     def __enter__(self) -> CachedUntargetedRaw:
         return self
 
     def __exit__(self, *args: object) -> None:
-        self._raw.__exit__(*args)
+        if self._handle is not None:
+            self._handle.__exit__(*args)
 
     def extract_xic_many(self, requests):
         return self._raw.extract_xic_many(requests)
@@ -405,14 +420,19 @@ def _ms2_event_from_payload(value: object) -> Ms2ScanEvent:
         if parse_error is None:
             raise UntargetedAcquisitionCacheError("cached MS2 failure lacks an error")
         return Ms2ScanEvent(None, parse_error, scan_number)
-    if parse_error is not None or not isinstance(raw_scan, dict) or set(raw_scan) != {
-        "scan_number",
-        "rt",
-        "precursor_mz",
-        "masses",
-        "intensities",
-        "base_peak",
-    }:
+    if (
+        parse_error is not None
+        or not isinstance(raw_scan, dict)
+        or set(raw_scan)
+        != {
+            "scan_number",
+            "rt",
+            "precursor_mz",
+            "masses",
+            "intensities",
+            "base_peak",
+        }
+    ):
         raise UntargetedAcquisitionCacheError("cached MS2 scan is malformed")
     masses = _float_array(raw_scan["masses"], field="masses")
     intensities = _float_array(raw_scan["intensities"], field="intensities")

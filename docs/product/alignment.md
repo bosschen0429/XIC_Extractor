@@ -31,8 +31,12 @@ The bounded Untargeted runtime keeps exact source-bound XIC and MS2 acquisition
 facts in the output directory's private `.cid_nl_acquisition_cache`. A retry
 uses a new processing attempt and recomputes scientific decisions; matching
 queries reuse acquisition facts without repeating the vendor query. Source or
-query changes require acquisition for the affected entries. RAW handles may
-still be opened to verify their source and provide metadata. This cache does
+query changes require acquisition for the affected entries. Sample batches with
+an input-owner-verified source check its current path identity before replay;
+they open a native RAW handle only when a missing query or metadata needs it.
+Runtime resource receipts report whether that native open actually occurred.
+Without a verified source expectation, the existing native-open source check
+remains in force. This cache does
 not preserve completed grouping graphs or turn an old failed attempt into a
 successful result. The Alignment entry point archives a finalized failed or
 cancelled runtime marker before launching a new attempt in the same directory.

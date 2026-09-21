@@ -46,6 +46,7 @@ from xic_extractor.extraction import (
     untargeted_cid_nl_real_data_runtime as runtime_module,
 )
 from xic_extractor.extraction.untargeted_acquisition_cache import (
+    CachedUntargetedRaw,
     acquire_untargeted_trace_batch,
     bind_untargeted_acquisition_cache,
 )
@@ -76,6 +77,7 @@ from xic_extractor.raw_reader import (
     EXPECTED_THERMO_DLLS,
     THERMO_RAW_ACQUISITION_FORMAT,
     THERMO_RAW_OBSERVATION_NAMESPACE,
+    RawReaderError,
     open_raw,
     reset_reader_state,
 )
@@ -223,8 +225,7 @@ def test_acquisition_cache_replays_xic_and_ms2_and_reacquires_only_rejected_quer
         healthy_events = tuple(healthy_cached.iter_ms2_scans(7.95, 8.05))
     assert healthy_events
     assert all(
-        event.scan is not None and event.parse_error is None
-        for event in healthy_events
+        event.scan is not None and event.parse_error is None for event in healthy_events
     )
     assert len(set(cache_dir.glob("*/ms2/*.json"))) == len(ms2_entries_before) + 1
 
@@ -263,6 +264,121 @@ def test_acquisition_cache_replays_xic_and_ms2_and_reacquires_only_rejected_quer
         )
     assert len(second_batch.traces) == 1
     assert second_vendor.chromatogram_request_counts == [1]
+
+
+def test_lazy_acquisition_cache_replay_skips_opener_and_opens_once_on_miss(
+    tmp_path: Path,
+) -> None:
+    from xic_extractor.extraction import untargeted_acquisition_cache as cache_owner
+
+    fixture = build_targeted_processing_identity_raw_fixture(
+        tmp_path,
+        sample_stems=("S1",),
+        peak_config=_peak_config(tmp_path),
+    )
+    source_raw = _FakeRaw((8.0,))
+    source = _source_for(fixture, "S1")
+    cache_dir = tmp_path / ".cid_nl_acquisition_cache"
+    capability = mint_trace_acquisition_capability(
+        source,
+        adapter_namespace="untargeted-cache-lazy-test",
+        coordinate_kind=TraceCoordinateKind.NATIVE_SCAN,
+    )
+    first_request = XICRequest(mz=500.0, rt_min=7.8, rt_max=8.2, ppm_tol=10.0)
+    third_request = replace(first_request, mz=500.02)
+
+    cold_handle, cold_vendor = _open_bound_raw(
+        fixture, "S1", source_raw, tmp_path=tmp_path
+    )
+    cold_cached = bind_untargeted_acquisition_cache(
+        cold_handle, source=source, cache_dir=cache_dir
+    )
+    with cold_cached:
+        cold_batch = acquire_untargeted_trace_batch(
+            capability, (first_request,), cold_cached
+        )
+        cold_events = tuple(cold_cached.iter_ms2_scans(7.8, 8.2))
+
+    opener_calls: list[_FakeThermoRaw] = []
+
+    def forbidden_opener():
+        raise AssertionError("warm cache replay must not open the native handle")
+
+    lazy_warm = CachedUntargetedRaw(
+        forbidden_opener, source=source, cache_dir=cache_dir
+    )
+    with lazy_warm:
+        warm_batch = acquire_untargeted_trace_batch(
+            capability, (first_request,), lazy_warm
+        )
+        warm_events = tuple(lazy_warm.iter_ms2_scans(7.8, 8.2))
+    assert opener_calls == []
+    assert lazy_warm.native_open_attempted is False
+    assert lazy_warm.native_opened is False
+    assert tuple(map(serialize_acquired_trace, warm_batch.traces)) == tuple(
+        map(serialize_acquired_trace, cold_batch.traces)
+    )
+
+    def event_payload(event):
+        scan = event.scan
+        return (
+            event.scan_number,
+            event.parse_error,
+            None
+            if scan is None
+            else (
+                scan.scan_number,
+                scan.rt,
+                scan.precursor_mz,
+                tuple(scan.masses),
+                tuple(scan.intensities),
+                scan.base_peak,
+            ),
+        )
+
+    assert tuple(map(event_payload, warm_events)) == tuple(
+        map(event_payload, cold_events)
+    )
+    assert cold_vendor.disposed is True
+
+    missing_handles: list[tuple[object, _FakeThermoRaw]] = []
+
+    def open_missing():
+        handle, vendor = _open_bound_raw(fixture, "S1", source_raw, tmp_path=tmp_path)
+        missing_handles.append((handle, vendor))
+        return handle
+
+    lazy_missing = CachedUntargetedRaw(open_missing, source=source, cache_dir=cache_dir)
+    with lazy_missing:
+        missing_batch = acquire_untargeted_trace_batch(
+            capability, (third_request,), lazy_missing
+        )
+    assert len(missing_batch.traces) == 1
+    assert len(missing_handles) == 1
+    assert missing_handles[0][1].disposed is True
+    assert lazy_missing.native_open_attempted is True
+    assert lazy_missing.native_opened is True
+
+    cache = cache_owner._FactCache(cache_dir, source.acquisition_source_id)
+    cache_path = cache._path("xic", cache_owner._trace_key(capability, third_request))
+    cache_path.write_bytes(b"rejected cache payload")
+    rejected_handles: list[tuple[object, _FakeThermoRaw]] = []
+
+    def open_rejected():
+        handle, vendor = _open_bound_raw(fixture, "S1", source_raw, tmp_path=tmp_path)
+        rejected_handles.append((handle, vendor))
+        return handle
+
+    lazy_rejected = CachedUntargetedRaw(
+        open_rejected, source=source, cache_dir=cache_dir
+    )
+    with lazy_rejected:
+        rejected_batch = acquire_untargeted_trace_batch(
+            capability, (third_request,), lazy_rejected
+        )
+    assert len(rejected_batch.traces) == 1
+    assert len(rejected_handles) == 1
+    assert rejected_handles[0][1].disposed is True
 
 
 def test_runtime_delivers_one_real_subject_cohort_into_golden_path(
@@ -341,9 +457,22 @@ def test_runtime_delivers_one_real_subject_cohort_into_golden_path(
             raw_path=context.raw_paths_by_sample[sample.metadata.raw_stem],
             dll_dir=tmp_path,
             work_unit_key=f"untargeted-cid-nl:{sample.metadata.raw_stem}",
+            acquisition_source_expectation=context.acquisition_sources_by_sample[
+                sample.metadata.raw_stem
+            ],
+            acquisition_cache_dir=tmp_path / "runtime-cache",
         )
         for sample in context.samples
     )
+    from xic_extractor.extraction.untargeted_real_data_worker import _open_job_raw
+
+    changed_path = tmp_path / "Support.changed.synthetic"
+    changed_path.write_bytes(b"changed-after-source-verification")
+    with pytest.raises(
+        RawReaderError,
+        match="RAW path state does not match expected acquisition source",
+    ):
+        _open_job_raw(replace(jobs[0], raw_path=changed_path))
     runtime = start_runtime_attempt(
         attempt=context.processing_owners.attempt,
         work_unit_keys=tuple(job.work_unit_key for job in jobs),
@@ -384,6 +513,74 @@ def test_runtime_delivers_one_real_subject_cohort_into_golden_path(
     assert vendor_raw.chromatogram_request_counts == [1]
     assert vendor_raw.disposed is True
 
+    warm_vendor_raw = _install_runtime_raw(
+        monkeypatch,
+        source_raw=source_raw,
+        raw_path=raw_paths[0],
+        tmp_path=tmp_path,
+    )
+    warm_open_calls: list[Path] = []
+    installed_warm_open = runtime_module.open_raw
+
+    def count_warm_open(path: Path, *args: object, **kwargs: object):
+        warm_open_calls.append(path)
+        return installed_warm_open(path, *args, **kwargs)
+
+    monkeypatch.setattr(runtime_module, "open_raw", count_warm_open)
+    warm_runtime = start_runtime_attempt(
+        attempt=context.processing_owners.attempt,
+        work_unit_keys=tuple(job.work_unit_key for job in jobs),
+        owner_completeness_attestation="untargeted-cid-nl-real-data-runtime-warm-test",
+    )
+    warm_result = execute_untargeted_cid_nl_real_data_runtime(
+        warm_runtime,
+        jobs,
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+        recovery_marker=OwnerPathRuntimeMarker(
+            tmp_path / "real_data_runtime.warm.json",
+            "untargeted-cid-nl-real-data-runtime:warm-test",
+        ),
+    )
+    assert warm_result.succeeded is True, (
+        warm_result.finalization.coordinator.proposed_outcome,
+        warm_result.finalization.supervisor.terminal_outcome,
+        warm_result.finalization.coordinator.state.runtime.settlements,
+        warm_result.finalization.coordinator.state.resources,
+        warm_result.finalization.coordinator.state.failures,
+        warm_result.sample_results,
+    )
+    warm_by_stem = {
+        item.job.sample.metadata.raw_stem: item for item in warm_result.sample_results
+    }
+    warm_s1 = warm_by_stem["S1"].adapter_result
+    assert warm_s1.assessment_input.assessment.content == (s1_assessment.content)
+    assert warm_s1.assessment_input.assessment.artifact.evidence_artifact_id == (
+        s1_assessment.artifact.evidence_artifact_id
+    )
+    assert warm_s1.acquisition is not None
+    assert by_stem["S1"].adapter_result.acquisition is not None
+    assert tuple(map(serialize_acquired_trace, warm_s1.acquisition.traces)) == tuple(
+        map(serialize_acquired_trace, by_stem["S1"].adapter_result.acquisition.traces)
+    )
+    assert warm_vendor_raw.chromatogram_request_counts == []
+    assert warm_vendor_raw.disposed is False, (
+        warm_open_calls,
+        sorted(str(path) for path in (tmp_path / "runtime-cache").rglob("*.json")),
+        by_stem["S1"].recovery_attempt,
+        warm_by_stem["S1"].recovery_attempt,
+    )
+    warm_resources = warm_result.finalization.coordinator.state.resources
+    assert any(
+        item.open_outcome is RuntimeResourceOpenOutcome.CONDITION_NOT_ACTIVATED
+        for item in warm_resources
+    )
+    assert all(
+        item.open_outcome is not RuntimeResourceOpenOutcome.OPENED
+        for item in warm_resources
+        if item.reservation.resource_key.endswith(":S1")
+    )
+    _assert_partition_matches_runtime(jobs, result, monkeypatch)
+
     projection = build_untargeted_cid_nl_golden_path(
         processing_owners=context.processing_owners,
         method_subject=context.method_subject,
@@ -398,7 +595,6 @@ def test_runtime_delivers_one_real_subject_cohort_into_golden_path(
     assert projection.matrix_header == ("Mz", "RT", "S1", "S2")
     assert projection.input_quant_matrix_rows[0]["S1"]
     assert projection.input_quant_matrix_rows[0]["S2"] == ""
-    _assert_partition_matches_runtime(jobs, result, monkeypatch)
 
 
 def test_runtime_does_not_evaluate_ineligible_inferred_precursor(
@@ -1224,8 +1420,7 @@ def test_direct_subject_batch_seals_initial_and_recovery_acquisitions_once(
     assert len(observed_phase_acquisitions) == 8
     assert len(receipts) == len(observed_phase_acquisitions)
     assert all(
-        receipt.work_unit_key in runtime.manifest.work_unit_keys
-        for receipt in receipts
+        receipt.work_unit_key in runtime.manifest.work_unit_keys for receipt in receipts
     )
     assert all(
         sum(receipt.acquisition is acquisition for receipt in receipts) == 1
@@ -1383,9 +1578,7 @@ def test_runtime_does_not_open_recovery_resource_when_owner_condition_is_false(
     runtime = start_runtime_attempt(
         attempt=context.processing_owners.attempt,
         work_unit_keys=tuple(job.work_unit_key for job in jobs),
-        owner_completeness_attestation=(
-            "real-data-runtime-conditional-resource-test"
-        ),
+        owner_completeness_attestation=("real-data-runtime-conditional-resource-test"),
     )
 
     result = execute_untargeted_cid_nl_real_data_runtime(
@@ -1605,8 +1798,12 @@ def _assert_partition_matches_runtime(jobs, full_result, monkeypatch):
         assert progress[-1]["completed"] == progress[-1]["total"]
     # An acquisition failure must settle its jobs and return all resource cleanup facts.
     monkeypatch.setattr(runtime_module, "open_raw", forbidden)
+    from xic_extractor.extraction import untargeted_real_data_worker as worker_module
+
+    monkeypatch.setattr(worker_module, "open_raw", forbidden)
+    failed_jobs = tuple(replace(job, acquisition_cache_dir=None) for job in jobs)
     failed = runtime_module.execute_untargeted_cid_nl_runtime_partition(
-        jobs,
+        failed_jobs,
         partition_key="part-error",
         alignment_config=runtime_module.CID_NL_ALIGNMENT_CONFIG,
     )
