@@ -66,6 +66,60 @@ dated productization control-plane path is compatibility lookup only.
 
 ## Known Diagnostic Conclusions
 
+### 2026-09-21 Sealed Composition Replay Shows Distributed Construction Cost
+
+- Decision: isolate composition costs without repeating acquisition or grouping.
+  Evidence is `diagnostic_only`, product source `dfc22127`. Luna replayed the
+  retained first-partition B1 store and portable plan: 46 scientific children,
+  all 85 samples, 9,520 predecessor/final cells. These are 46 children of one
+  partition, not 46 mass partitions. No Discovery, RAW, harvest, or full85 run.
+- Completed coarse replay preserves proof IDs, association handoff IDs/bases,
+  final-cell scalar content and projection scalar content for all 46 children.
+  Separately timed function totals are proof remint 1.692 s, association handoff
+  0.141 s, final-cell composition 3.319 s, cell decision 1.216 s, pre/post
+  projection 0.020/0.009 s, and child serialization 1.502 s. Final-cell timing
+  here includes source extraction and parity bookkeeping; it is an inclusive
+  upper bound, not pure owner-function time. Serialization produces 88,539,573
+  bytes but excludes disk/hash-writer I/O and process transport.
+- A separate replay of `mint_cell_observation_ref` reconstructs 9,520
+  predecessor cells in 2.691 s. All artifact IDs, canonical cell content bytes,
+  and assessment/peak/hypothesis reference identities match. This partition
+  has zero recovery cells, so the replay says nothing about recovery-cell
+  admission cost. Group-context construction and empty assessments are also
+  outside its timing.
+- The diagnostic final-cell lookup candidate indexes position associations
+  and predecessor groups while retaining the original join validators. Three
+  paired function-only trials, AB/BA/AB, include candidate index construction
+  and exclude input loading, source extraction and parity comparison. A/B
+  seconds are 3.412/3.003, 3.077/2.839, and 2.919/2.816. All six arms preserve
+  all 9,520 final-cell scalar oracles, including IDs, basis bytes, states,
+  provenance IDs and integrals. Median A/B is 3.077/2.839 s: only 0.238 s
+  (7.74%) difference. Baseline range is 0.493 s and the paired gains decrease;
+  this does not establish a stable cohort-speed benefit. Malformed-input error
+  behavior was not accepted as part of this valid-input prototype.
+- Interpretation: measured composition work is spread across predecessor
+  construction, proof minting, final-cell construction, decisions and large
+  object serialization. The association lookup alone does not explain the
+  historical 14.350-second first-partition composition. Do not sum these
+  independently replayed timings and subtract them from that historical span:
+  warm state, reused intermediates and timing coverage differ. Worker codec,
+  group-context/empty-assessment preparation and final store I/O remain
+  unattributed. No dominant remaining mechanism or full85 speedup is proved.
+- Workflow verdict `diagnosis_ready`; lookup performance verdict
+  `inconclusive`; candidate disposition `retain_unaccepted` in ignored
+  diagnostic scripts only. No product implementation change. The next decision
+  is whether worker encoding/decoding and retained object volume dominate
+  acquisition/composition; reuse the sealed inputs and measure the actual codec
+  boundary before considering transport or representation changes. Do not
+  repeat completed replay arms or full workflows to repair reporting gaps.
+- Artifacts under
+  `output/issue422-bounded-worksets-20260921/fusion-ab/`:
+  `composition-replay/report.json`, `composition-replay/index-pairs.json`,
+  `composition-replay/predecessor-mint.json`; runnable task-local drivers are
+  `composition-replay/composition_replay.py`, `composition_index_pairs.py`
+  and `predecessor_cell_replay.py`. These receipts establish bounded replay
+  equality, not full85 Matrix or known-ISTD acceptance.
+
 ### 2026-09-21 Frozen-Fact Profile Identifies Repeated Request-Wide Validation
 
 - Decision: locate scientific acquisition/composition costs remaining after the
