@@ -147,6 +147,42 @@ dated productization control-plane path is compatibility lookup only.
   Evidence remains `diagnostic_only`; continue with coarse parent-phase
   attribution and cohort acceptance rather than another baseline rerun.
 
+#### Grouping reuses the worker's completed capture
+
+- `prepare_untargeted_cid_nl_grouping` now asks the capture owner to move an
+  existing capture into its workset scope. It requires the same Untargeted
+  request, candidate binding and method constraints; it preserves the exact
+  trace, hypotheses, physical answer, integration and observation provenance.
+  Grouping preparation no longer repeats sample-local signal processing just
+  because the enclosing scope changes. No cache or scientific selection rule
+  was added.
+- Luna's four-partition/all85 integration reused 3,924 captures in 0.404 s and
+  preserved all 150 scientific children exactly. Parent physical preparation
+  and evaluation wrappers observed no calls. The 2-second native memory sampler
+  measured peak process-tree RSS 2,284,892,160 bytes and parent RSS 751,259,648
+  bytes. These are sampled bounds on this four-partition run, not full85 bounds.
+  Wall time was 133.562 s, with acquisition 64.943 s and composition 62.140 s;
+  both phases slowed relative to the prior observation. This run therefore
+  does not prove an end-to-end speedup. Its first-input diagnostic retention
+  costs 2.677 s and 50,888,945 bytes, included in acquisition wall time.
+- That retained input permits a same-process AB/BA/AB comparison of original
+  grouping preparation (`c477c551`) and capture reuse without acquisition or
+  workflow repetition. All six arms preserve exact groups, captures and scope
+  for 46 children and 925 initial jobs. Each original arm performs 1,005
+  physical preparations and evaluations; every candidate arm performs zero.
+  Wall medians are 3.2404/1.2732 s; process CPU medians are
+  1.4531/0.6094 s. GC is measured without policy changes and is not dominant.
+- Focused capture/production/adapter tests: 104 passed; affected source mypy
+  and Ruff pass. The capture tests also reject changed questions and prove
+  no signal evaluation during equivalent physical/nonphysical scope changes.
+- Evidence remains `diagnostic_only`, disposition `keep` for this measured
+  removal. Full85 acceptance remains open. Artifacts under the same root:
+  `science-capture-reuse/{receipt,parity,owner-costs,input-capture}.json`,
+  `composition-replay/grouping-owner-pairs.json`,
+  `owner-checks/capture-scope-checks.md`, `capture-scope-integration.md` and
+  `grouping-owner-pairs.md`. Reuse `first-acquisition.pickle` for further
+  parent-owner checks instead of repeating sample execution.
+
 ### 2026-09-21 Sealed Composition Replay Shows Distributed Construction Cost
 
 - Decision: isolate composition costs without repeating acquisition or grouping.

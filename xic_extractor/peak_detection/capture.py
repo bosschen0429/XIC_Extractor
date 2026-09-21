@@ -57,6 +57,7 @@ from xic_extractor.peak_detection.search_scope import (
     SearchScope,
     SearchScopeContractError,
     TargetSearchScope,
+    UntargetedSearchScope,
     request_binds_physical_capture_profile,
     require_capture_binding,
     validate_scope_owner_binding,
@@ -246,6 +247,30 @@ def capture_peak_hypotheses(
         hypotheses=hypotheses,
         receipt_hypothesis=receipt_hypothesis,
         selected_hypothesis=selected,
+    )
+
+
+def rebind_untargeted_capture_scope(
+    capture: SampleLocalCapture, *, scope: UntargetedSearchScope
+) -> SampleLocalCapture:
+    """Reuse a completed capture in an equivalent sample or workset view."""
+    if (
+        not isinstance(capture, SampleLocalCapture)
+        or not isinstance(capture.scope, UntargetedSearchScope)
+        or not isinstance(scope, UntargetedSearchScope)
+    ):
+        raise SampleLocalCaptureError("scope rebinding requires Untargeted capture")
+    if (
+        scope.request != capture.scope.request
+        or scope.method_constraints != capture.scope.method_constraints
+        or require_capture_binding(scope, capture.candidate_id)
+        != require_capture_binding(capture.scope, capture.candidate_id)
+    ):
+        raise SampleLocalCaptureError("scope rebinding changed the capture question")
+    return replace(
+        capture,
+        scope=scope,
+        _owner_seal=replace(capture._owner_seal, scope=scope),
     )
 
 
@@ -866,4 +891,5 @@ __all__ = (
     "capture_peak_hypotheses",
     "capture_physical_recovery_observation",
     "mint_captured_peak_observation",
+    "rebind_untargeted_capture_scope",
 )

@@ -110,8 +110,8 @@ from xic_extractor.extraction.untargeted_real_data_runtime import (
 from xic_extractor.peak_detection.capture import (
     SampleLocalCapture,
     bind_owner_backed_capture_hypothesis,
-    capture_peak_hypotheses,
     mint_captured_peak_observation,
+    rebind_untargeted_capture_scope,
 )
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessmentRef,
@@ -1357,10 +1357,9 @@ def prepare_untargeted_cid_nl_grouping(
         for binding in child_bindings:
             sample = sample_by_id[binding.sample_identity_id]
             trace = capture_by_candidate[binding.candidate_id].trace
-            captured = capture_peak_hypotheses(
+            captured = rebind_untargeted_capture_scope(
+                capture_by_candidate[binding.candidate_id],
                 scope=child_scope,
-                candidate_id=binding.candidate_id,
-                trace=trace,
             )
             if captured.selected_hypothesis is None:
                 captures_list.append(captured)
