@@ -32,6 +32,7 @@ from xic_extractor.alignment.mode_track.producer import (
 from xic_extractor.discovery.models import DiscoveryCandidate
 from xic_extractor.extraction.untargeted_cid_nl_real_data_adapter import (
     UntargetedCidNlRealDataAdapterError,
+    acquire_untargeted_cid_nl_recovery_trace_batch,
     acquire_untargeted_cid_nl_sample_trace_batch,
     adapt_current_discovery_sample_subject,
     recover_untargeted_cid_nl_sample_subject,
@@ -722,6 +723,67 @@ def test_sample_trace_batch_is_acquired_once_and_reused_by_subject_adapters(
     assert vendor_raw.chromatogram_request_counts == [2]
 
 
+def test_recovery_batch_canonicalizes_shared_group_queries_without_merging_centers(
+    tmp_path: Path,
+) -> None:
+    fixture = build_untargeted_cid_nl_no_raw_fixture(
+        tmp_path,
+        sample_roles={"S1": "study_sample"},
+        thermo_raw_sources=True,
+    )
+    source_raw = _FakeRaw((7.8, 8.2))
+    source_raw.intensity = 450.0 * np.exp(
+        -0.5 * ((source_raw.rt - 7.8) / 0.035) ** 2
+    ) + 1200.0 * np.exp(-0.5 * ((source_raw.rt - 8.2) / 0.035) ** 2)
+    raw, vendor_raw = _open_bound_raw(
+        fixture,
+        "S1",
+        source_raw,
+        tmp_path=tmp_path,
+    )
+
+    batch = acquire_untargeted_cid_nl_recovery_trace_batch(
+        processing_owners=fixture.owners,
+        sample=fixture.sample("S1"),
+        recovery_requests=(
+            (fixture.method_subject, 8.2),
+            (fixture.method_subject, 7.8),
+            (fixture.method_subject, 8.2),
+        ),
+        peak_config=_peak_config(tmp_path),
+        raw=raw,
+    )
+
+    assert batch.group_center_rts == (7.8, 8.2)
+    assert batch.method_subject_ids == (
+        fixture.method_subject.method_subject_id,
+        fixture.method_subject.method_subject_id,
+    )
+    assert batch.acquisition.logical_xic_request_count == 2
+    assert vendor_raw.chromatogram_request_counts == [2]
+    first = batch.acquired_trace(
+        method_subject_id=fixture.method_subject.method_subject_id,
+        group_center_rt=7.8,
+        request=batch.requests[0],
+    )
+    second = batch.acquired_trace(
+        method_subject_id=fixture.method_subject.method_subject_id,
+        group_center_rt=8.2,
+        request=batch.requests[1],
+    )
+    assert first.coordinate.request == batch.requests[0]
+    assert second.coordinate.request == batch.requests[1]
+    assert first.coordinate.request.rt_min < second.coordinate.request.rt_min
+    assert (
+        batch.acquired_trace(
+            method_subject_id=fixture.method_subject.method_subject_id,
+            group_center_rt=7.8,
+            request=batch.requests[0],
+        )
+        is first
+    )
+
+
 def test_adapter_receipt_covers_candidate_search_beyond_seed_window(
     tmp_path: Path,
 ) -> None:
@@ -847,9 +909,7 @@ def test_adapter_closes_empty_subject_universe_as_not_evaluated_without_xic(
     assessment = result.assessment_input.assessment
     assert assessment.content.technical_state == "not_evaluated"
     assert assessment.content.method_result is None
-    assert assessment.content.reason_codes == (
-        "no_search_eligible_discovery_input",
-    )
+    assert assessment.content.reason_codes == ("no_search_eligible_discovery_input",)
     assert assessment.content.evaluation_receipt.search_completed is False
     assert assessment.content.evaluation_receipt.scanned_event_count == 0
     assert result.assessment_input.discovery_projections == ()
@@ -875,9 +935,7 @@ def test_adapter_uses_orphan_support_without_giving_it_feature_standing(
         peak_config=peak_config,
     )
     support = _without_ms1_peak(support_source)
-    raw, _vendor_raw = _open_bound_raw(
-        fixture, "S1", source_raw, tmp_path=tmp_path
-    )
+    raw, _vendor_raw = _open_bound_raw(fixture, "S1", source_raw, tmp_path=tmp_path)
 
     result = adapt_current_discovery_sample_subject(
         processing_owners=fixture.owners,

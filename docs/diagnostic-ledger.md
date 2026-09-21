@@ -66,6 +66,29 @@ dated productization control-plane path is compatibility lookup only.
 
 ## Known Diagnostic Conclusions
 
+### 2026-09-21 Recovery Query Order In Real Workset Acceptance
+
+- Evidence: `diagnostic_only`; the 65-subject, 85-sample representative workset
+  stopped during acquisition before composition. The retained receipt is
+  `output/issue422-bounded-worksets-20260921/profile-first-cached-partition-current/receipt.json`.
+  Its 64.25-second profile span includes 0.391-second setup and 63.859-second
+  acquisition/cleanup, not the earlier input-indexing stages. It records
+  2,027 cache hits and 7,443,505,152-byte peak tree RSS. There is no final Matrix
+  and no function-level profile from this failed invocation.
+- The acquisition adapter rejected group-ordered recovery requests because it
+  required callers to supply unique RT-sorted `(subject ID, center)` keys.
+  The acquisition boundary now canonicalizes those query keys; every
+  group-bound recovery attempt remains separate. This is not group merging or
+  a new cache format. The c76ab790 adapter reproduces the rejection; the fixed
+  adapter suite passes 23 cases and two shared-support/group-binding cases pass.
+  Receipts remain under the same task root, including
+  `adapter-recovery-canonical-red.log`.
+- Existing Discovery, verified ISTD coordinates and source-bound acquisition
+  facts remain reusable. The failed invocation did not retain an initial
+  assessment or prepared-group checkpoint, so a corrected workset validation
+  must rebuild that in-memory state. Do not treat its partial timing as a
+  completed speedup measurement or rerun the whole cohort to test this fix.
+
 ### 2026-09-21 RT Feasibility And Scalar Assignment Cost
 
 - Evidence: `diagnostic_only`; bounded synthetic parity/cost evidence against
@@ -89,6 +112,12 @@ dated productization control-plane path is compatibility lookup only.
   TSV formatting is incremental. Production (67), finalized-matrix/TSV (67),
   timing (32), and streaming (3) test cases pass; changed-source mypy, Ruff and
   architecture census pass. These checks do not establish real-cohort cost.
+- The 5,000-cell writer probe preserves exact TSV bytes and SHA-256, including
+  4,545 integration-audit rows and distinct sample values. Baseline/current
+  `tracemalloc` peaks are `11,314.97 / 1,308.78 KiB` for cells and
+  `5,559.79 / 1,306.50 KiB` for integration audit. These are Python allocation
+  peaks, not process RSS. The source-bound receipt is
+  `output/issue422-bounded-worksets-20260921/writer-streaming-parity-receipt.md`.
 - Reuse existing Discovery85, verified ISTD coordinates and compatible
   acquisition cache. Current real-workset and cohort completion must be
   established separately; historical failed process5/process6 attempts do not

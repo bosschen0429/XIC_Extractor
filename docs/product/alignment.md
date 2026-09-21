@@ -110,6 +110,9 @@ subject in the runtime result. RT bounds describe the acquisition query rather
 than identify the destination group. The direct production API therefore takes
 its alignment configuration and known-ISTD reference at execution time;
 composition cannot replace that grouping context.
+The acquisition boundary canonicalizes repeated or unordered subject/RT
+queries. Different groups may reuse the same physical trace while retaining
+separate group-bound recovery attempts and decisions.
 
 Initial grouping uses the sparse feature index described below. It scores only
 compatible feature candidates and retains the evaluated evidence. Missing pair

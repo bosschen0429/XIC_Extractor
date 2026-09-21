@@ -540,14 +540,6 @@ def acquire_untargeted_cid_nl_recovery_trace_batch(
         raise UntargetedCidNlRealDataAdapterError(
             "recovery requests must be a non-empty typed tuple"
         )
-    method_subject_ids = tuple(item[0].method_subject_id for item in recovery_requests)
-    request_keys = tuple(
-        (subject.method_subject_id, center) for subject, center in recovery_requests
-    )
-    if request_keys != tuple(sorted(set(request_keys))):
-        raise UntargetedCidNlRealDataAdapterError(
-            "recovery requests must be canonical and unique"
-        )
     for method_subject, _group_center_rt in recovery_requests:
         try:
             validate_cid_nl_method_subject_binding(
@@ -556,6 +548,14 @@ def acquire_untargeted_cid_nl_recovery_trace_batch(
             )
         except CidNlMethodSubjectContractError as exc:
             raise UntargetedCidNlRealDataAdapterError(str(exc)) from exc
+    # Group identity owns each recovery attempt. Acquisition owns the physical
+    # query: different groups can reuse one subject/RT trace, in any input order.
+    unique_requests = {
+        (subject.method_subject_id, float(center)): (subject, float(center))
+        for subject, center in recovery_requests
+    }
+    recovery_requests = tuple(unique_requests[key] for key in sorted(unique_requests))
+    method_subject_ids = tuple(item[0].method_subject_id for item in recovery_requests)
     _validate_raw_adapter(raw)
     source = resolve_request_acquisition_source(
         processing_owners=processing_owners,
