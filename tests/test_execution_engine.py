@@ -196,10 +196,16 @@ def test_streamed_result_store_retained_memory_bypass(
     assert len(opened) == 0
 
 
-def test_streamed_result_store_shared_objects_identity(tmp_path: Path) -> None:
+@pytest.mark.parametrize("duplicate_shared_root", [False, True])
+def test_streamed_result_store_shared_objects_identity(
+    tmp_path: Path, duplicate_shared_root: bool
+) -> None:
     shared_config = {"anchor": 42}
     shared_ref = ["shared_authority"]
-    store = StreamedResultStore(tmp_path / "spool", (shared_config, shared_ref))
+    shared = (shared_config, shared_ref)
+    if duplicate_shared_root:
+        shared += (shared_config,)
+    store = StreamedResultStore(tmp_path / "spool", shared)
 
     payload = RefPayload(
         children=((shared_config, shared_ref),), ref=shared_config
@@ -225,21 +231,14 @@ def test_streamed_result_store_shared_objects_identity(tmp_path: Path) -> None:
 def test_streamed_result_store_unknown_shared_identity_rejected() -> None:
     shared_objects = (object(),)
     bio = io.BytesIO()
-    # Write a pickle opcode using persistent load with an invalid identity
-    # Protocol 2+ persistent load opcode: BINPERSID
-    # Write int 99 which is out of range for shared_objects (length 1)
-    # Manually pickling with persistent id out of range
+    # A memo reference cannot bind an authority absent from this record.
     bio.write(pickle.PROTO + b"\x04")
-    bio.write(pickle.BININT1 + b"\x63")  # 99
-    bio.write(pickle.BINPERSID)
+    bio.write(pickle.BINGET + b"\x63")  # 99
     bio.write(pickle.STOP)
     bio.seek(0)
 
-    unpickler = _OwnerUnpickler(bio, shared_objects)
-    with pytest.raises(
-        pickle.UnpicklingError, match="unknown same-process owner reference"
-    ):
-        unpickler.load()
+    with pytest.raises(pickle.UnpicklingError):
+        _OwnerUnpickler(bio, shared_objects).load()
 
 
 def test_streamed_result_store_individually_addressable_fields(

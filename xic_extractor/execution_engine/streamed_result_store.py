@@ -63,9 +63,6 @@ class StreamedResultStore:
         self._directory = Path(directory).resolve()
         self._directory.mkdir(parents=True, exist_ok=True)
         self._shared_objects = shared_objects
-        self._shared_ids = {
-            id(value): index for index, value in enumerate(shared_objects)
-        }
         self._individually_addressable_fields = frozenset(
             individually_addressable_fields
         )
@@ -163,7 +160,7 @@ class StreamedResultStore:
                         if item.name not in lengths
                     },
                 )
-                _OwnerPickler(writer, self._shared_ids).dump(header)
+                _OwnerPickler(writer, self._shared_objects).dump(header)
                 records = {}
                 cached_fields: dict[str, tuple[tuple[Any, ...], ...]] = {}
                 for name in field_names:
@@ -174,7 +171,7 @@ class StreamedResultStore:
                         )
                         for value in children:
                             entries.append((writer.size_bytes, 1))
-                            _OwnerPickler(writer, self._shared_ids).dump((value,))
+                            _OwnerPickler(writer, self._shared_objects).dump((value,))
                             if cached_items is not None:
                                 cached_items.append((value,))
                             del value
@@ -199,7 +196,7 @@ class StreamedResultStore:
                     for start in range(0, len(values), width):
                         chunk = values[start : start + width]
                         entries.append((writer.size_bytes, len(chunk)))
-                        _OwnerPickler(writer, self._shared_ids).dump(chunk)
+                        _OwnerPickler(writer, self._shared_objects).dump(chunk)
                         if cached_chunks is not None:
                             cached_chunks.append(chunk)
                     records[name] = tuple(entries)
@@ -343,7 +340,6 @@ class StreamedResultStore:
         snapshot = copy(self)
         snapshot._sealed = True
         snapshot._field_caches = []
-        snapshot._shared_ids = {}
         destination = self._directory / "failed-results.pickle"
         temporary = destination.with_suffix(".tmp")
         if destination.exists():
@@ -351,7 +347,7 @@ class StreamedResultStore:
         stream = temporary.open("xb")
         try:
             with stream:
-                _OwnerPickler(stream, {}).dump(snapshot)
+                _OwnerPickler(stream, ()).dump(snapshot)
             os.replace(temporary, destination)
         finally:
             temporary.unlink(missing_ok=True)
