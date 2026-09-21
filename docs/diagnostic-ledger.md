@@ -209,6 +209,43 @@ dated productization control-plane path is compatibility lookup only.
   contaminated by enormous object representations and abandoned diagnostic
   processes; they are not evidence of slow product pickle decoding.
 
+### 2026-09-22 Current Four-Partition Scheduler And Cache Attribution
+
+- Source `29ff04a3` completes the same four partitions and 85 samples in
+  70.301941 seconds, versus the retained `dd120300` run's 67.052493 seconds.
+  All 150 scalar and typed child results are exact against that current
+  comparison. This does not demonstrate an end-to-end speedup. Eight workers,
+  two acquisition lanes and three resident partitions produce the same IPC
+  byte counts; native opens, cache misses, writes and rejections are all zero.
+- Across overlapping worker tasks, `Path.read_bytes` totals 140.220 seconds
+  for 952,428,976 bytes. The enclosing cache reader totals 146.312 seconds;
+  neither sum is cohort wall time. MS2 numeric decoding occurs outside that
+  reader; the separately reported request decoder measures IPC, not MS2.
+  Peak tree RSS is 4,000,444,416 bytes and private bytes are 10,992,189,440.
+- An offline replay of the saved partition-0 diagnostic observers takes
+  0.182843 seconds for 46 children (capture 0.050729, typed observer 0.070568,
+  JSON/file writes 0.061546), with exact applicable scalar and typed facts.
+  Restoration is measured separately. This cost does not explain the
+  concurrent composition interval. No scientific work is repeated.
+- A separate warm file/SQLite probe covers only 264 files and 2,933,020 bytes.
+  File reads take 0.03543/0.03731 seconds; packed reads 0.01726/0.01571 seconds,
+  plus 0.06628 seconds to build the pack. Exact bytes match, but this small,
+  single-process sample does not explain the scheduler's read time or justify
+  a persistent cache-format change. No such change is adopted from it.
+- The MS2 cache decoder now returns the validated selected spectra without
+  re-encoding the entire cached window solely to compare JSON formatting.
+  Source/request/schema/content-hash checks, duplicate-key rejection, exact
+  window binding and selected spectrum/numeric validation remain. Six cache
+  replay/window tests, three source/request tests and seven adapter/strict-scan
+  tests pass, along with source Ruff and mypy. No performance claim follows
+  from this removal alone. Reuse `fusion-ab/owner-checks/ms2-cache-decode-checks/`.
+- Evidence is `diagnostic_only`; the optimization objective remains open.
+  Reuse `fusion-ab/owner-checks/shared-pool-29ff-run-report.md`,
+  `shared-pool-pair-comparison-29ff.json`,
+  `observer-overhead/observer-overhead-summary.md`, and
+  `cache-io-packing-decision.md` under
+  `output/issue422-bounded-worksets-20260921/`.
+
 ### 2026-09-22 Three-Partition Admission And Process11 Acceptance
 
 - At `38e9d092`, the real scheduler/adapter completes four retained partitions

@@ -422,9 +422,8 @@ def _decode_ms2_events(
         raise UntargetedAcquisitionCacheError("cached MS2 event key changed")
     if scan_numbers is not None:
         # The cache envelope already binds the complete payload to its source
-        # and key. Only requested spectra become domain objects for this query.
-        if _canonical_json(value) != payload:
-            raise UntargetedAcquisitionCacheError("cached MS2 events are not canonical")
+        # and key. Validate and hydrate requested spectra without re-encoding
+        # every unrelated spectrum just to reproduce transport formatting.
         selected = []
         for item in value["events"]:
             if not isinstance(item, dict):
@@ -433,10 +432,7 @@ def _decode_ms2_events(
             if number in scan_numbers:
                 selected.append(_ms2_event_from_payload(item))
         return tuple(selected)
-    events = tuple(_ms2_event_from_payload(item) for item in value["events"])
-    if _encode_ms2_events(events, rt_min=rt_min, rt_max=rt_max) != payload:
-        raise UntargetedAcquisitionCacheError("cached MS2 events are not canonical")
-    return events
+    return tuple(_ms2_event_from_payload(item) for item in value["events"])
 
 
 def _ms2_event_payload(event: Ms2ScanEvent) -> dict[str, object]:
