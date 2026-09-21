@@ -95,9 +95,14 @@ def _plan(tmp_path, monkeypatch, *, scenario="positive", opened_sink=None):
                 raw, raw_file=path, settings=settings, peak_config=peak_config
             )
         raws[path] = raw
-        candidates[path.stem] = (
-            () if scenario == "recovery" and path == paths[-1] else sample_candidates
-        )
+        if scenario == "recovery" and path == paths[-1]:
+            candidates[path.stem] = ()
+        elif scenario == "below_threshold" and path != paths[0]:
+            candidates[path.stem] = ()
+        elif scenario == "blank_missing" and path == paths[-1]:
+            candidates[path.stem] = ()
+        else:
+            candidates[path.stem] = sample_candidates
         if scenario == "partial_recovery" and path == paths[-1]:
             candidates[path.stem] = sample_candidates[:1]
     plan = prepare_untargeted_cid_nl_production_plan(
@@ -107,7 +112,11 @@ def _plan(tmp_path, monkeypatch, *, scenario="positive", opened_sink=None):
                 sample_name=path.stem,
                 raw_stem=path.stem,
                 injection_order=index + 1,
-                sample_role="study_sample",
+                sample_role=(
+                    "blank"
+                    if scenario == "blank_missing" and path == paths[-1]
+                    else "study_sample"
+                ),
             )
             for index, path in enumerate(paths)
         ),
@@ -527,10 +536,12 @@ def test_bounded_partition_real_entry_mints_interleaved_worksets_canonically(
         *,
         prepared_worksets,
         acquisition_cache_dir=None,
-    ):
-        assert prepared_worksets.plan is _plan
-        captured_batches.append(subject_batch)
-        return SimpleNamespace(jobs=())
+        sparse=False,
+        ):
+            assert prepared_worksets.plan is _plan
+            assert sparse is True
+            captured_batches.append(subject_batch)
+            return SimpleNamespace(jobs=(), sample_job_templates=())
 
     def close_without_raw(*_args, **_kwargs):
         return SimpleNamespace(
@@ -1280,7 +1291,19 @@ def test_sample_parallelism_keeps_partition_and_acquisition_counts_fixed(
         nonlocal live_jobs
         assert get_ident() == coordinator and live_jobs == 0
         batch = original_materialize(*args, **kwargs)
-        assert {job.sample for job in batch.jobs} == set(plan.context.samples)
+        from xic_extractor.extraction.untargeted_real_data_models import (
+            _request_subject_candidates,
+        )
+
+        expected_initial_sample_ids = {
+            sample.identity.sample_identity_id
+            for sample in plan.context.samples
+            if plan.context.candidates_by_sample[sample.metadata.raw_stem]
+        }
+        assert {
+            job.sample.identity.sample_identity_id for job in batch.jobs
+        } == expected_initial_sample_ids
+        assert all(_request_subject_candidates(job) for job in batch.jobs)
         assert all(
             job.processing_owners is plan.context.processing_owners
             for job in batch.jobs
@@ -1359,7 +1382,12 @@ def test_sample_parallelism_keeps_partition_and_acquisition_counts_fixed(
         progress_callback=progress,
     )
     assert type(result) is CompletedUntargetBatchWorkflowResult
-    assert job_counts == [8, 4] and live_jobs == 0
+    initial_sample_count = sum(
+        bool(plan.context.candidates_by_sample[sample.metadata.raw_stem])
+        for sample in plan.context.samples
+    )
+    assert job_counts == [initial_sample_count * 2, initial_sample_count]
+    assert live_jobs == 0
     assert append_order == ["partition-00000", "partition-00001"]
     assert len(handle_threads) == len(acquisitions) == 8
     assert barrier_checks == [3, 7]
@@ -1575,6 +1603,123 @@ def test_process_recovery_dispatches_only_missing_subjects(tmp_path, monkeypatch
         assert bool(sample_result.recovery_attempts) is (
             sample_result.job.work_unit_key in selected
         )
+
+
+def test_sparse_partition_materializes_only_samples_with_request_candidates(
+    tmp_path, monkeypatch
+):
+    from xic_extractor.extraction.untargeted_real_data_models import (
+        _request_subject_candidates,
+    )
+
+    plan, _ = _plan(tmp_path, monkeypatch, scenario="recovery")
+    batch = materialize_untargeted_cid_nl_partition(
+        plan,
+        plan.subject_batch,
+        sparse=True,
+    )
+
+    assert len(batch.sample_job_templates) == len(plan.context.samples)
+    assert batch.jobs
+    assert all(_request_subject_candidates(job) for job in batch.jobs)
+    initial_sample_ids = {
+        job.sample.identity.sample_identity_id for job in batch.jobs
+    }
+    assert len(initial_sample_ids) >= 2
+    missing_sample_id = plan.context.samples[-1].identity.sample_identity_id
+    assert missing_sample_id not in initial_sample_ids
+
+
+@pytest.mark.parametrize(
+    "scenario,expected_sparse_jobs,expected_sparse_results",
+    [("recovery", 9, 12), ("below_threshold", 3, 3), ("blank_missing", 9, 9)],
+)
+def test_sparse_recovery_partition_matches_dense_composition(
+    tmp_path, monkeypatch, scenario, expected_sparse_jobs, expected_sparse_results
+):
+    from xic_extractor.extraction.untargeted_production_batch import (
+        compose_untargeted_cid_nl_partition,
+        execute_untargeted_cid_nl_production_batch,
+    )
+    from xic_extractor.extraction.untargeted_real_data_runtime import (
+        execute_untargeted_cid_nl_runtime_partition,
+    )
+
+    plan, reference = _plan(tmp_path, monkeypatch, scenario=scenario)
+    config = AlignmentConfig(anchor_min_seed_events=1)
+    dense_batch = materialize_untargeted_cid_nl_partition(
+        plan, plan.subject_batch
+    )
+    assert len(dense_batch.jobs) == 12
+    dense_runtime = execute_untargeted_cid_nl_production_batch(
+        dense_batch,
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+        recovery_marker=OwnerPathRuntimeMarker(tmp_path / "dense.json", "dense"),
+        alignment_config=config,
+    )
+    assert dense_runtime.succeeded
+    dense_composition = compose_untargeted_cid_nl_partition(
+        dense_batch,
+        dense_runtime.sample_results,
+        alignment_config=config,
+        known_istd_reference=reference,
+    )
+
+    sparse_batch = materialize_untargeted_cid_nl_partition(
+        plan, plan.subject_batch, sparse=True
+    )
+    assert len(sparse_batch.jobs) == expected_sparse_jobs
+    sparse_runtime = execute_untargeted_cid_nl_runtime_partition(
+        sparse_batch.jobs,
+        recovery_templates=sparse_batch.sample_job_templates,
+        partition_key="sparse-recovery",
+        alignment_config=config,
+    )
+    assert sparse_runtime.succeeded
+    assert len(sparse_runtime.sample_results) == expected_sparse_results
+    sparse_composition = compose_untargeted_cid_nl_partition(
+        sparse_batch,
+        sparse_runtime.sample_results,
+        alignment_config=config,
+        known_istd_reference=reference,
+    )
+
+    dense_by_key = {
+        (
+            result.job.sample.metadata.raw_stem,
+            result.job.method_subject.method_subject_id,
+        ): result
+        for result in dense_runtime.sample_results
+    }
+    sparse_by_key = {
+        (
+            result.job.sample.metadata.raw_stem,
+            result.job.method_subject.method_subject_id,
+        ): result
+        for result in sparse_runtime.sample_results
+    }
+    missing_stem = plan.context.samples[-1].metadata.raw_stem
+    if scenario == "recovery":
+        missing_results = [
+            result
+            for result in sparse_runtime.sample_results
+            if result.job.sample.metadata.raw_stem == missing_stem
+        ]
+        assert missing_results
+        assert all(result.recovery_attempts for result in missing_results)
+        assert set(sparse_by_key) == set(dense_by_key)
+    else:
+        assert missing_stem not in {
+            result.job.sample.metadata.raw_stem
+            for result in sparse_runtime.sample_results
+        }
+    assert dense_composition.children == sparse_composition.children
+    assert dense_composition.initial_groups == sparse_composition.initial_groups
+    assert dense_composition.initial_edges == sparse_composition.initial_edges
+    assert (
+        dense_composition.excluded_candidates
+        == sparse_composition.excluded_candidates
+    )
 
 
 def test_process_backend_reuses_one_pool_per_acquisition_lane_and_closes_once(

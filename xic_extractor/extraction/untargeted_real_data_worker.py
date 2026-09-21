@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib
+from copy import copy
 from dataclasses import dataclass
 
 from xic_extractor.acquisition_contract import TraceAcquisitionBatch
@@ -94,6 +95,13 @@ class _BatchSamplePhaseState:
     )
     initial_acquisition: TraceAcquisitionBatch | None = None
     recovery_acquisition: TraceAcquisitionBatch | None = None
+    sample_template: UntargetedCidNlRealDataRuntimeJob | None = None
+
+    @property
+    def job(self) -> UntargetedCidNlRealDataRuntimeJob:
+        if self.sample_template is not None:
+            return self.sample_template
+        return self.states[0].job
 
 
 def _runtime_delegate(name: str, fallback):
@@ -277,6 +285,7 @@ def _prepare_owner_authorized_recoveries(
     states: list[_RuntimeJobState],
     *,
     alignment_config: AlignmentConfig,
+    sample_templates: tuple[UntargetedCidNlRealDataRuntimeJob, ...] = (),
 ) -> None:
     by_subject: dict[str, list[_RuntimeJobState]] = {}
     for state in states:
@@ -285,18 +294,21 @@ def _prepare_owner_authorized_recoveries(
             [],
         ).append(state)
     for method_subject_id in sorted(by_subject):
-        _prepare_subject_authorized_recoveries(
-            tuple(by_subject[method_subject_id]), alignment_config=alignment_config
-        )
+        states.extend(_prepare_subject_authorized_recoveries(
+            tuple(by_subject[method_subject_id]),
+            alignment_config=alignment_config,
+            sample_templates=sample_templates,
+        ))
 
 
 def _prepare_subject_authorized_recoveries(
     states: tuple[_RuntimeJobState, ...],
     *,
     alignment_config: AlignmentConfig,
-) -> None:
+    sample_templates: tuple[UntargetedCidNlRealDataRuntimeJob, ...] = (),
+) -> tuple[_RuntimeJobState, ...]:
     if any(state.error is not None or state.adapter_result is None for state in states):
-        return
+        return ()
     adapter_results = tuple(
         state.adapter_result for state in states if state.adapter_result is not None
     )
@@ -304,7 +316,7 @@ def _prepare_subject_authorized_recoveries(
         result.assessment_input.assessment.content.method_result == "SUPPORT"
         for result in adapter_results
     ):
-        return
+        return ()
     support_owners: list[SampleLocalMS1Owner] = []
     for state in states:
         result = state.adapter_result
@@ -331,8 +343,17 @@ def _prepare_subject_authorized_recoveries(
     states_by_sample = {
         state.job.sample.identity.sample_identity_id: state for state in states
     }
+    templates_by_sample = {
+        job.sample.identity.sample_identity_id: job for job in sample_templates
+    }
+    population = (
+        tuple(job.sample for job in sample_templates)
+        if sample_templates
+        else tuple(state.job.sample for state in states)
+    )
+    added_states: list[_RuntimeJobState] = []
     for group, target_sample_ids in plan_conservative_recovery_targets(
-        groups, sample_population=tuple(state.job.sample for state in states)
+        groups, sample_population=population
     ):
         center = group.group_center_rt
         if center is None:
@@ -340,7 +361,25 @@ def _prepare_subject_authorized_recoveries(
                 "authorized recovery requires a frozen RT group"
             )
         for sample_id in sorted(target_sample_ids):
+            if sample_id not in states_by_sample:
+                job = copy(templates_by_sample[sample_id])
+                subject = states[0].job.method_subject
+                object.__setattr__(job, "method_subject", subject)
+                object.__setattr__(
+                    job, "work_unit_key",
+                    f"untargeted-cid-nl:{job.sample.metadata.raw_stem}:"
+                    f"{subject.method_subject_id}",
+                )
+                state = _RuntimeJobState(
+                    job=job, resource_key=None, initial_requires_raw=False,
+                    observer=_UntargetedRealDataWorkObserver(job.processing_owners),
+                )
+                _execute_initial_assessment(state)
+                states_by_sample[sample_id] = state
+                added_states.append(state)
             state = states_by_sample[sample_id]
+            if state.error is not None:
+                continue
             result = state.adapter_result
             assert result is not None
             assessment = result.assessment_input.assessment
@@ -359,6 +398,7 @@ def _prepare_subject_authorized_recoveries(
                 state.recovery_group_center_rts = tuple(
                     sorted((*state.recovery_group_center_rts, center))
                 )
+    return tuple(added_states)
 
 
 def _execute_recovery(

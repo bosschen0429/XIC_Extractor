@@ -379,6 +379,7 @@ class CidNlPartitionPipelineAdapter:
             subject_batch,
             prepared_worksets=self._prepared_worksets,
             acquisition_cache_dir=self._acquisition_cache_dir,
+            sparse=True,
         )
         if self._raw_worker_backend == "process":
             if self._process_pools_closed:
@@ -389,6 +390,7 @@ class CidNlPartitionPipelineAdapter:
             try:
                 leaf = execute_untargeted_cid_nl_runtime_partition(
                     batch.jobs,
+                    recovery_templates=batch.sample_job_templates,
                     partition_key=partition.partition_key,
                     alignment_config=self._alignment_config,
                     progress_callback=progress_callback,
@@ -409,6 +411,7 @@ class CidNlPartitionPipelineAdapter:
             ) as pool:
                 leaf = execute_untargeted_cid_nl_runtime_partition(
                     batch.jobs,
+                    recovery_templates=batch.sample_job_templates,
                     partition_key=partition.partition_key,
                     alignment_config=self._alignment_config,
                     progress_callback=progress_callback,

@@ -10,6 +10,14 @@ transport contract or let writers recompute science.
 
 ## Execution Boundary
 
+The bounded production entry creates initial jobs only for sample/subject pairs
+with Discovery candidates. One shared template per sample retains the complete
+sample population and acquisition settings. Recovery creates a missing pair's
+job only after a direct-SUPPORT group meets the population support threshold.
+Unsearched pairs receive their method assessment during final cell composition,
+without a worker dispatch or a runtime sample-result artifact. The direct batch
+interface retains its declared, complete job manifest.
+
 Acquisition recovery planning uses direct-SUPPORT group membership and the
 eligible sample population to apply the conservative support threshold. It
 does not construct a dense group-by-sample CellObservation population merely

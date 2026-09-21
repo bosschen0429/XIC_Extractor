@@ -276,8 +276,12 @@ class _FactCache:
                 os.fsync(stream.fileno())
             try:
                 os.replace(temporary, path)
-            except FileExistsError:
+            except (FileExistsError, PermissionError):
+                # Windows can deny replacement while another worker reads the
+                # winner. An identical committed fact already satisfies this write.
                 existing = self.read(kind, key)
+                if existing is None:
+                    raise
                 if existing != payload:
                     raise UntargetedAcquisitionCacheError(
                         "acquisition cache race produced conflicting facts"

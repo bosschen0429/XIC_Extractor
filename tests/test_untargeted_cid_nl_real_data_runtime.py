@@ -88,6 +88,35 @@ def _disable_real_dll_loading(monkeypatch) -> None:
     monkeypatch.setattr(runtime_module, "_ensure_assemblies_loaded", lambda *_: None)
 
 
+@pytest.mark.parametrize("winner", [b"same facts", b"different facts", None])
+def test_acquisition_cache_windows_publish_race(tmp_path, monkeypatch, winner):
+    from xic_extractor.extraction import untargeted_acquisition_cache as cache_owner
+
+    cache = cache_owner._FactCache(tmp_path, "source")
+    key = b"query"
+    payload = b"same facts"
+
+    def concurrent_publish(temporary, destination):
+        if winner is not None:
+            destination.write_bytes(
+                cache_owner._canonical_json(cache._envelope(key, winner))
+            )
+        raise PermissionError("destination is held by a concurrent reader")
+
+    monkeypatch.setattr(cache_owner.os, "replace", concurrent_publish)
+    if winner == payload:
+        cache.write("ms2", key, payload)
+        assert cache.read("ms2", key) == payload
+    elif winner is None:
+        with pytest.raises(PermissionError):
+            cache.write("ms2", key, payload)
+    else:
+        with pytest.raises(cache_owner.UntargetedAcquisitionCacheError):
+            cache.write("ms2", key, payload)
+        assert cache.read("ms2", key) == winner
+    assert not tuple(tmp_path.rglob("*.tmp"))
+
+
 def test_acquisition_cache_replays_xic_and_ms2_and_reacquires_only_rejected_query(
     tmp_path: Path,
 ) -> None:

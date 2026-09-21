@@ -66,6 +66,25 @@ dated productization control-plane path is compatibility lookup only.
 
 ## Known Diagnostic Conclusions
 
+### 2026-09-21 Sparse Alignment Acquisition Work
+
+- Evidence: `diagnostic_only`; synthetic bounded-entry and dense/sparse
+  composition oracles, not a new RAW run. The bounded entry dispatches only
+  sample/subject pairs with candidates, creates missing recovery jobs after
+  the complete-population support threshold, and leaves unsearched assessments
+  to final cell composition. Runtime result counts describe actual work.
+- The recovery fixture preserves complete children, initial groups/edges, and
+  candidate exclusions against the dense direct interface. Source integration
+  and sample provenance remain in those owner results. Focused receipts are in
+  `output/issue422-bounded-worksets-20260921/sparse-recovery-parity.stdout.log`.
+- Parallel validation reproduced Windows `PermissionError` during cache
+  publication when an identical destination was already committed. That exact
+  winning fact is accepted without retry; missing or conflicting facts still
+  fail. Three deterministic cases and the original parallel node pass.
+- These operation-boundary checks do not establish 85RAW wall time or complete
+  scientific acceptance. Preserve existing Discovery and interrupted-run cache;
+  do not repeat the full cohort merely to re-prove these local mechanisms.
+
 ### 2026-09-21 Interrupted 85RAW Alignment Runtime Cost
 
 - Evidence: `diagnostic_only`; run at `2f7e89ec`, `dna_dr`, four process

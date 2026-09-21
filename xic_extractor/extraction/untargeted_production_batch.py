@@ -78,6 +78,9 @@ from xic_extractor.execution_runtime_owner import (
     start_runtime_attempt,
 )
 from xic_extractor.execution_settings import DEFAULT_ALIGNMENT_WORKERS
+from xic_extractor.extraction.untargeted_cid_nl_real_data_adapter import (
+    adapt_current_discovery_sample_subject,
+)
 from xic_extractor.extraction.untargeted_cid_nl_real_data_inputs import (
     UntargetedCidNlRealDataContext,
     build_untargeted_cid_nl_real_data_context,
@@ -136,11 +139,12 @@ from xic_extractor.sample_metadata import (
 
 @dataclass(frozen=True, slots=True)
 class UntargetedCidNlProductionBatch:
-    """One complete request context and its canonical sample/subject jobs."""
+    """Partition inputs, executable jobs, and optional sparse recovery templates."""
 
     subject_batch: UntargetedCidNlMethodSubjectBatch
     context: UntargetedCidNlRealDataContext
     jobs: tuple[UntargetedCidNlRealDataRuntimeJob, ...]
+    sample_job_templates: tuple[UntargetedCidNlRealDataRuntimeJob, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -746,6 +750,7 @@ def materialize_untargeted_cid_nl_partition(
     *,
     prepared_worksets: PreparedCidNlAlignmentSubjectWorksets | None = None,
     acquisition_cache_dir: Path | None = None,
+    sparse: bool = False,
 ) -> UntargetedCidNlProductionBatch:
     """Bind a finite subject partition to shared, already-validated inputs."""
 
@@ -774,10 +779,10 @@ def materialize_untargeted_cid_nl_partition(
             physical_records_by_candidate=records,
         )
         assert plan.dll_dir is not None
-        jobs: list[UntargetedCidNlRealDataRuntimeJob] = []
+        templates: list[UntargetedCidNlRealDataRuntimeJob] = []
         for sample in context.samples:
             stem = sample.metadata.raw_stem
-            jobs.extend(
+            templates.extend(
                 build_untargeted_cid_nl_sample_runtime_jobs(
                     processing_owners=context.processing_owners,
                     sample=sample,
@@ -786,7 +791,7 @@ def materialize_untargeted_cid_nl_partition(
                             subject,
                             f"untargeted-cid-nl:{stem}:{subject.method_subject_id}",
                         )
-                        for subject in subject_batch.subjects
+                        for subject in subject_batch.subjects[:1]
                     ),
                     candidates=candidates[stem],
                     discovery_receipt=context.discovery_receipts_by_sample[stem],
@@ -806,11 +811,29 @@ def materialize_untargeted_cid_nl_partition(
                     acquisition_cache_dir=acquisition_cache_dir,
                 )
             )
-        return UntargetedCidNlProductionBatch(subject_batch, context, tuple(jobs))
-
+    else:
+        context = plan.context
+        templates = list(plan.sample_job_templates)
     jobs = []
-    for template in plan.sample_job_templates:
-        for subject in subject_batch.subjects:
+    subjects_by_id = {
+        subject.method_subject_id: subject for subject in subject_batch.subjects
+    }
+    bound_templates = []
+    for source_template in templates:
+        template = copy(source_template)
+        object.__setattr__(template, "acquisition_cache_dir", acquisition_cache_dir)
+        bound_templates.append(template)
+        subject_ids = (
+            tuple(
+                subject_id
+                for subject_id in subjects_by_id
+                if template._request_candidates_by_subject.get(subject_id)
+            )
+            if sparse
+            else tuple(subjects_by_id)
+        )
+        for subject_id in subject_ids:
+            subject = subjects_by_id[subject_id]
             job = copy(template)
             subject_id = subject.method_subject_id
             object.__setattr__(job, "method_subject", subject)
@@ -822,7 +845,10 @@ def materialize_untargeted_cid_nl_partition(
             object.__setattr__(job, "acquisition_cache_dir", acquisition_cache_dir)
             jobs.append(job)
     return UntargetedCidNlProductionBatch(
-        subject_batch=subject_batch, context=plan.context, jobs=tuple(jobs)
+        subject_batch=subject_batch,
+        context=context,
+        jobs=tuple(jobs),
+        sample_job_templates=tuple(bound_templates) if sparse else (),
     )
 
 
@@ -1097,7 +1123,9 @@ def _build_production_composition_inputs(
         raise TypeError("sample_results must be an immutable typed runtime population")
     if not isinstance(alignment_config, AlignmentConfig):
         raise TypeError("alignment_config must be an AlignmentConfig")
-    result_context = _RuntimeResultContext(batch.jobs)
+    result_context = _RuntimeResultContext(
+        tuple(result.job for result in sample_results)
+    )
     result_by_key = {
         (
             result.job.sample.metadata.raw_stem,
@@ -1105,27 +1133,59 @@ def _build_production_composition_inputs(
         ): result
         for result in sample_results
     }
-    expected_keys = {
-        (sample.metadata.raw_stem, subject.method_subject_id)
-        for sample in batch.context.samples
-        for subject in batch.subject_batch.subjects
-    }
     jobs_by_key = {
         (job.sample.metadata.raw_stem, job.method_subject.method_subject_id): job
         for job in batch.jobs
     }
+    subject_ids = {
+        subject.method_subject_id for subject in batch.subject_batch.subjects
+    }
+    templates_by_stem = {
+        job.sample.metadata.raw_stem: job for job in batch.sample_job_templates
+    }
+    extra_keys = set(result_by_key) - set(jobs_by_key)
+    dense_keys = (
+        {
+            (sample.metadata.raw_stem, subject.method_subject_id)
+            for sample in batch.context.samples
+            for subject in batch.subject_batch.subjects
+        }
+        if not batch.sample_job_templates
+        else set(jobs_by_key)
+    )
     if (
         len(result_by_key) != len(sample_results)
         or len(jobs_by_key) != len(batch.jobs)
-        or set(result_by_key) != expected_keys
-        or set(jobs_by_key) != expected_keys
+        or set(jobs_by_key) != dense_keys
+        or not set(jobs_by_key) <= set(result_by_key)
         or any(
-            result.job is not jobs_by_key[key] for key, result in result_by_key.items()
+            result_by_key[key].job is not job for key, job in jobs_by_key.items()
+        )
+        or any(
+            key[0] not in templates_by_stem
+            or key[1] not in subject_ids
+            or result_by_key[key].job.sample is not templates_by_stem[key[0]].sample
+            or result_by_key[key].job.processing_owners
+            is not batch.context.processing_owners
+            for key in extra_keys
         )
     ):
         raise RuntimeError(
             "CID-NL production runtime lost exact sample/subject results"
         )
+
+    results_by_subject: dict[str, list[UntargetedCidNlRuntimeSampleResult]] = {}
+    for result in sample_results:
+        results_by_subject.setdefault(
+            result.job.method_subject.method_subject_id, []
+        ).append(result)
+    for results in results_by_subject.values():
+        results.sort(key=lambda result: result.job.sample.identity.sample_identity_id)
+    final_method_assessments = [
+        assessment
+        for result in sample_results
+        for assessment in result.effective_assessments
+    ]
 
     capture_by_candidate = _runtime_captures_by_candidate(batch, sample_results)
     candidate_by_id = {
@@ -1140,10 +1200,8 @@ def _build_production_composition_inputs(
     for subject in batch.subject_batch.subjects:
         subject_assessments = tuple(
             assessment
-            for sample in ordered_samples
-            for assessment in result_by_key[
-                (sample.metadata.raw_stem, subject.method_subject_id)
-            ].effective_assessments
+            for result in results_by_subject.get(subject.method_subject_id, ())
+            for assessment in result.effective_assessments
         )
         evaluated_unsupported = tuple(
             ref.content.technical_state == "evaluated"
@@ -1313,26 +1371,25 @@ def _build_production_composition_inputs(
         )
         assessments = tuple(
             (
-                sample,
+                result.job.sample,
                 assessment,
             )
-            for sample in ordered_samples
             for subject in subject_workset
-            for assessment in result_by_key[
-                (sample.metadata.raw_stem, subject.method_subject_id)
-            ].effective_assessments
+            for result in results_by_subject.get(subject.method_subject_id, ())
+            for assessment in result.effective_assessments
+        )
+        assessments = tuple(
+            sorted(assessments, key=lambda pair: pair[0].identity.sample_identity_id)
         )
         capture_inputs_list = []
         captures_list = []
         assessment_by_sample_subject = {
             (
-                sample.identity.sample_identity_id,
+                result.job.sample.identity.sample_identity_id,
                 subject.method_subject_id,
-            ): result_by_key[
-                (sample.metadata.raw_stem, subject.method_subject_id)
-            ].adapter_result.assessment_input.assessment
-            for sample in batch.context.samples
+            ): result.adapter_result.assessment_input.assessment
             for subject in subject_workset
+            for result in results_by_subject.get(subject.method_subject_id, ())
         }
         hypotheses_by_sample_subject = {
             key: compose_peak_hypotheses_from_assessment_universe(
@@ -1417,6 +1474,37 @@ def _build_production_composition_inputs(
             retained_hypotheses_by_assessment=(retained_hypotheses_by_assessment),
         )
         initial_groups.extend(assignment_scope.groups)
+        if batch.sample_job_templates:
+            unsearched = []
+            for sample in ordered_samples:
+                for subject in subject_workset:
+                    key = (sample.metadata.raw_stem, subject.method_subject_id)
+                    if key in result_by_key:
+                        continue
+                    unsearched_assessment = adapt_current_discovery_sample_subject(
+                        processing_owners=batch.context.processing_owners,
+                        sample=sample,
+                        method_subject=subject,
+                        candidates=(),
+                        settings=batch.context.settings,
+                        peak_config=batch.context.peak_config,
+                        raw=None,
+                        signal_processing_profile=batch.context.signal_processing_profile,
+                    ).assessment_input.assessment
+                    unsearched.append((sample, unsearched_assessment))
+                    final_method_assessments.append(unsearched_assessment)
+            assessments = (*assessments, *unsearched)
+        subject_order = {
+            subject.method_subject_id: index
+            for index, subject in enumerate(subject_workset)
+        }
+        assessments = tuple(sorted(
+            assessments,
+            key=lambda pair: (
+                pair[0].identity.sample_identity_id,
+                subject_order[pair[1].content.method_subject.method_subject_id],
+            ),
+        ))
         retained_cell_hypotheses: dict[tuple[str, str], list[PeakHypothesis]] = {}
         for candidate in retained_candidates:
             assessment = candidate.direct_support_assessment
@@ -1440,17 +1528,17 @@ def _build_production_composition_inputs(
             recovery_assessments_by_group={
                 (
                     group.group_hypothesis_id,
-                    sample.identity.sample_identity_id,
-                    subject.method_subject_id,
+                    sample_result.job.sample.identity.sample_identity_id,
+                    sample_result.job.method_subject.method_subject_id,
                 ): recovery.assessment
-                for group in assignment_scope.groups
-                for sample in batch.context.samples
                 for subject in subject_workset
-                if group.group_center_rt is not None
-                and (
-                    recovery := result_by_key[
-                        (sample.metadata.raw_stem, subject.method_subject_id)
-                    ].recovery_for_group(group.group_center_rt)
+                for sample_result in results_by_subject.get(
+                    subject.method_subject_id, ()
+                )
+                if sample_result.recovery_attempts
+                for group in assignment_scope.groups
+                if group.group_center_rt is not None and (
+                    recovery := sample_result.recovery_for_group(group.group_center_rt)
                 )
                 is not None
             },
@@ -1496,11 +1584,12 @@ def _build_production_composition_inputs(
                     method_subject_id = (
                         cell.method_assessment.content.method_subject.method_subject_id
                     )
-                    sample_result = result_by_key[
+                    sample_result = result_by_key.get(
                         (sample.metadata.raw_stem, method_subject_id)
-                    ]
+                    )
                     if (
-                        facts.group_context.group.group_center_rt is None
+                        sample_result is None
+                        or facts.group_context.group.group_center_rt is None
                         or sample_result.recovery_for_group(
                             facts.group_context.group.group_center_rt
                         )
@@ -1615,11 +1704,7 @@ def _build_production_composition_inputs(
     return _ProductionCompositionInputs(
         request=parent_request,
         bundles=tuple(bundles),
-        method_assessments=tuple(
-            assessment
-            for result in sample_results
-            for assessment in result.effective_assessments
-        ),
+        method_assessments=tuple(final_method_assessments),
         initial_groups=tuple(initial_groups),
         initial_edges=tuple(initial_edges),
         completed_captures=tuple(completed_captures),

@@ -279,11 +279,15 @@ def build_untargeted_cid_nl_sample_runtime_jobs(
             raise UntargetedCidNlRealDataRuntimeError(
                 "subject_partition must be an owner-normalized subject batch or None"
             )
-        if tuple(
-            subject for subject, _work_unit_key in subject_work_units
-        ) != subject_partition.subjects:
+        partition_subjects = {
+            subject.method_subject_id: subject for subject in subject_partition.subjects
+        }
+        if any(
+            partition_subjects.get(subject.method_subject_id) != subject
+            for subject, _work_unit_key in subject_work_units
+        ):
             raise UntargetedCidNlRealDataRuntimeError(
-                "subject work units must exactly match the declared subject partition"
+                "subject work units must belong to the declared subject partition"
             )
     first_subject, first_key = subject_work_units[0]
     first = UntargetedCidNlRealDataRuntimeJob(
