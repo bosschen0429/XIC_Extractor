@@ -86,9 +86,16 @@ dated productization control-plane path is compatibility lookup only.
   missing pstats file or treat its timeout as a scientific failure.
 - Evidence: `diagnostic_only`; artifacts are under
   `output/issue422-bounded-worksets-20260921/profile-first-cached-partition-current-259b8c9d-cost/`.
-  The next exact-safe change is selective materialization of declared MS2
-  scans, preserving the native RT-to-scan window and missing/duplicate-scan
-  rejection. Unknown-scan recovery still requires the complete window.
+  Selective materialization of declared MS2 scans is implemented in `13d39594`,
+  preserving the native RT-to-scan window and missing/duplicate-scan rejection.
+  Unknown-scan recovery still requires the complete window.
+- A single retained 233-scan payload reconstructs one selected spectrum with
+  exact serialized bytes: 233 versus one hydration, 11.28 versus 1.62 ms.
+  Timing excludes file opening and is not a cohort-speed claim. The no-RAW
+  receipt is `ms2-subset-decode-probe/receipt.json` under the same issue output
+  root. All 83 affected raw-reader, adapter and runtime regressions pass,
+  along with three-source mypy, Ruff and normal commit hooks. The tests retain
+  complete-window cache isolation and reject missing/duplicate/failed scans.
 
 ### 2026-09-21 Native Recovery Queries Can Share Scan-Window Reads
 
