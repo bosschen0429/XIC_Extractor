@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 from collections import Counter
 from collections.abc import Iterable, Mapping, Sequence
+from contextlib import ExitStack
 from pathlib import Path
 from typing import Any
 
@@ -13,6 +14,7 @@ from xic_extractor.alignment.backfill_evidence_contract import (
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.matrix import AlignedCell, AlignmentMatrix
 from xic_extractor.alignment.matrix_output_contract import (
+    bind_matrix_identity_row,
     canonical_mz_text,
     serialize_public_matrix_table,
 )
@@ -38,11 +40,15 @@ from xic_extractor.alignment.owner_group_delivery import (
 )
 from xic_extractor.alignment.product_matrix import (
     ALIGNMENT_MATRIX_IDENTITY_COLUMNS,
+    build_product_matrix_rows,
     formatted_identity_rows,
     product_matrix_tsv_rows,
 )
 from xic_extractor.alignment.production_decisions import (
     ProductionDecisionSet,
+)
+from xic_extractor.alignment.untargeted_finalized_matrix import (
+    CompletedUntargetBatchWriterInputs,
 )
 from xic_extractor.peak_detection.baseline import LINEAR_EDGE_RETIRED_MESSAGE
 
@@ -243,6 +249,100 @@ def _require_production_decisions(value: object) -> ProductionDecisionSet:
     if not isinstance(value, ProductionDecisionSet):
         raise TypeError("production_decisions must be owner-minted")
     return value
+
+
+def write_alignment_tsv_row_batches(
+    paths: Mapping[str, Path],
+    batches: Iterable[CompletedUntargetBatchWriterInputs],
+    *,
+    sample_order: tuple[str, ...],
+    alignment_config: AlignmentConfig,
+) -> int:
+    """Render finalized rows to their TSV consumers in one bounded pass."""
+
+    matrix_header = serialize_public_matrix_table(
+        (), sample_columns=sample_order
+    ).header
+    headers = {
+        "matrix": matrix_header,
+        "identity": ALIGNMENT_MATRIX_IDENTITY_COLUMNS,
+        "review": ALIGNMENT_REVIEW_COLUMNS,
+        "backfill": ALIGNMENT_BACKFILL_CELL_EVIDENCE_COLUMNS,
+        "cells": ALIGNMENT_CELLS_COLUMNS,
+        "integration": ALIGNMENT_CELL_INTEGRATION_AUDIT_COLUMNS,
+    }
+    source_candidate_owners: dict[str, str] = {}
+    product_count = 0
+    writer_row_count = 0
+    with ExitStack() as stack:
+        writers = {}
+        for name, path in paths.items():
+            path.parent.mkdir(parents=True, exist_ok=True)
+            handle = stack.enter_context(
+                path.open("w", newline="", encoding="utf-8", buffering=1024 * 1024)
+            )
+            writer = csv.writer(handle, delimiter="\t", lineterminator="\n")
+            writer.writerow([escape_excel_formula(column) for column in headers[name]])
+            writers[name] = writer
+
+        def emit(name: str, rows: Iterable[Mapping[str, object]]) -> None:
+            if name in writers:
+                for row in rows:
+                    writers[name].writerow(
+                        [format_value(row.get(column, "")) for column in headers[name]]
+                    )
+
+        for batch in batches:
+            matrix = batch.matrix
+            decisions = batch.production_decisions
+            writer_row_count += len(matrix.clusters)
+            products = build_product_matrix_rows(
+                matrix,
+                alignment_config=alignment_config,
+                production_decisions=decisions,
+                source_candidate_owners=source_candidate_owners,
+            )
+            for product in products:
+                product_count += 1
+                table = serialize_public_matrix_table(
+                    ({"Mz": product.mz, "RT": product.rt, **product.sample_values},),
+                    sample_columns=sample_order,
+                )
+                emit("matrix", table.rows)
+                if "identity" in writers:
+                    emit(
+                        "identity",
+                        (
+                            bind_matrix_identity_row(
+                                matrix_header=matrix_header,
+                                matrix_row=table.rows[0],
+                                identity_columns=ALIGNMENT_MATRIX_IDENTITY_COLUMNS,
+                                source_identity=product.identity,
+                                index=product_count,
+                            ),
+                        ),
+                    )
+            if "review" in writers:
+                emit(
+                    "review",
+                    _format_alignment_review_rows(
+                        _review_rows(
+                            matrix,
+                            alignment_config=alignment_config,
+                            production_decisions=decisions,
+                        )
+                    ),
+                )
+            if "backfill" in writers:
+                for values in _backfill_cell_evidence_rows(matrix, decisions):
+                    writers["backfill"].writerow(
+                        [format_value(value) for value in values]
+                    )
+            if "cells" in writers:
+                emit("cells", _alignment_cell_rows(matrix))
+            if "integration" in writers:
+                emit("integration", _cell_integration_audit_rows(matrix))
+    return writer_row_count
 
 
 def write_alignment_review_tsv(
@@ -465,6 +565,17 @@ def write_alignment_backfill_cell_evidence_tsv(
 ) -> Path:
     """Write the compact cell ledger needed by backfill evidence review surfaces."""
 
+    return _write_tsv_sequences(
+        path,
+        ALIGNMENT_BACKFILL_CELL_EVIDENCE_COLUMNS,
+        _backfill_cell_evidence_rows(matrix, production_decisions),
+    )
+
+
+def _backfill_cell_evidence_rows(
+    matrix: AlignmentMatrix,
+    production_decisions: ProductionDecisionSet,
+) -> Iterable[tuple[object, ...]]:
     decisions = _require_production_decisions(production_decisions)
     clusters_by_id = {row_id(cluster): cluster for cluster in matrix.clusters}
     backfill_family_ids = _backfill_evidence_family_ids(matrix, decisions)
@@ -514,7 +625,7 @@ def write_alignment_backfill_cell_evidence_tsv(
                 cell.reason,
             )
 
-    return _write_tsv_sequences(path, ALIGNMENT_BACKFILL_CELL_EVIDENCE_COLUMNS, rows())
+    return rows()
 
 
 def write_alignment_cell_integration_audit_tsv(

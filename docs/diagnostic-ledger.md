@@ -66,6 +66,37 @@ dated productization control-plane path is compatibility lookup only.
 
 ## Known Diagnostic Conclusions
 
+### 2026-09-21 Representative Workset After Recovery Normalization
+
+- Evidence: `diagnostic_only`, incomplete. At launch SHA `19b43756`, the
+  65-subject / 1,005-membership / 85-sample workset passed acquisition in
+  130.797 seconds and entered composition. The runner's actual 180-second
+  profile budget cancelled it at 180.406 seconds; the intended 300-second
+  budget was not applied. There is no sealed child or final Matrix. Receipt,
+  finally-saved profiles and timing are under
+  `output/issue422-bounded-worksets-20260921/profile-first-cached-partition-recovery-normalized/`.
+- Acquisition recorded 170 RAW opens, 2,834 cache hits, 707 misses and 708
+  writes. Peak sampled tree RSS was 7,061,385,216 bytes. The parent profiler
+  attributes 117.202 cumulative seconds to worker waiting; child RAW/cache/
+  analysis time is not separately measured. Group preparation is 12.563
+  cumulative seconds, including capture work. Do not call the total grouping
+  time or infer a completed full85 speedup.
+- Composition's partial profile contains 9,520 cell-mint calls (20.198
+  cumulative seconds), 6,965 no-request-proof calls (13.072 seconds) and
+  213,578 JSON dumps. These overlapping cumulative values are attribution,
+  not additive stage durations. Later source edits are not part of this
+  launch's evidence. Retain the existing acquisition facts; do not rerun
+  Discovery or this completed diagnostic merely to correct its timeout label.
+- The subsequent no-RAW artifact probe compares the `19b43756` implementation
+  with direct length/SHA verification of an already-bound immutable reference.
+  Content, evidence and upstream identities match exactly; changed bytes,
+  length, non-bytes payloads and duplicate upstreams remain rejected. For
+  10,240 valid checks, observed baseline/current time is `0.29843 / 0.02086 s`
+  and profiler call counts are `696,321 / 71,681`. Minting itself did not show
+  a wall-time improvement in this probe. Evidence is in
+  `output/issue422-bounded-worksets-20260921/evidence-artifact-paired-probe/`;
+  do not extrapolate these isolated timings to full85.
+
 ### 2026-09-21 Recovery Query Order In Real Workset Acceptance
 
 - Evidence: `diagnostic_only`; the 65-subject, 85-sample representative workset

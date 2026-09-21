@@ -111,8 +111,6 @@ TerminalObservationVariant: TypeAlias = Literal[
 ]
 
 
-
-
 # ---------------------------------------------------------------------------
 # Exact CrossSample/Backfill handoff closure
 # ---------------------------------------------------------------------------
@@ -1524,9 +1522,21 @@ def compose_cid_nl_predecessor_cells(
     | None = None,
 ) -> tuple[CellObservationRef, ...]:
     """Attach original assessments to the existing ModeTrack predecessor groups."""
+    # Assessment artifacts already own their identity. Hashing the frozen
+    # assessment itself recursively visits its entire evidence/curve graph.
+    unique_assessments: dict[
+        tuple[str, str],
+        tuple[ResolvedCanonicalSampleIdentity, CidNlMethodAssessmentRef],
+    ] = {}
+    for sample, assessment in sample_assessments:
+        key = (
+            sample.identity.sample_identity_id,
+            assessment.artifact.evidence_artifact_id,
+        )
+        unique_assessments.setdefault(key, (sample, assessment))
     sample_assessments = tuple(
         sorted(
-            dict.fromkeys(sample_assessments),
+            unique_assessments.values(),
             key=lambda pair: pair[0].identity.sample_identity_id,
         )
     )
@@ -1627,14 +1637,18 @@ def compose_cid_nl_predecessor_cells(
         )
         for group in groups
     )
-    assessments_by_sample: dict[str, list[CidNlMethodAssessmentRef]] = {}
+    assessments_by_sample_subject: dict[
+        tuple[str, str], list[CidNlMethodAssessmentRef]
+    ] = {}
+    assessment_objects_by_sample: dict[str, set[int]] = {}
     samples = {}
     for sample, assessment in sample_assessments:
         sample_id = sample.identity.sample_identity_id
         samples[sample_id] = sample
-        refs = assessments_by_sample.setdefault(sample_id, [])
-        if assessment not in refs:
-            refs.append(assessment)
+        assessments_by_sample_subject.setdefault(
+            (sample_id, assessment.content.method_subject.method_subject_id), []
+        ).append(assessment)
+        assessment_objects_by_sample.setdefault(sample_id, set()).add(id(assessment))
     support_contexts: dict[tuple[str, int], list[CidNlCellGroupContext]] = {}
     for context in contexts:
         for support in context.supports:
@@ -1647,18 +1661,17 @@ def compose_cid_nl_predecessor_cells(
             ).append(context)
     cells = []
     for context in contexts:
+        method_subject_id = context.method_subject_id
         context_support_by_sample_id = {
             support.sample.identity.sample_identity_id: support
             for support in context.supports
         }
-        for sample_id, refs in assessments_by_sample.items():
+        for sample_id in samples:
             sample = samples[sample_id]
             local_support = context_support_by_sample_id.get(sample_id)
             local_refs = () if local_support is None else (local_support.assessment,)
-            canonical_refs = tuple(
-                ref
-                for ref in refs
-                if ref.content.method_subject == context.method_subject
+            canonical_refs = assessments_by_sample_subject.get(
+                (sample_id, method_subject_id), ()
             )
             if not canonical_refs:
                 raise CellObservationContractError(
@@ -1668,10 +1681,13 @@ def compose_cid_nl_predecessor_cells(
                 (
                     context.group.group_hypothesis_id,
                     sample_id,
-                    context.method_subject_id,
+                    method_subject_id,
                 )
             )
-            if recovered is not None and not any(recovered is ref for ref in refs):
+            if (
+                recovered is not None
+                and id(recovered) not in (assessment_objects_by_sample[sample_id])
+            ):
                 raise CellObservationContractError(
                     "group recovery is outside the assessment population"
                 )
@@ -1708,8 +1724,7 @@ def compose_cid_nl_predecessor_cells(
                 )
                 if not siblings:
                     raise ValueError(
-                        "outside-group cell requires one exact sibling "
-                        "SUPPORT context"
+                        "outside-group cell requires one exact sibling SUPPORT context"
                     )
                 outside_context = min(
                     siblings, key=lambda sibling: sibling.group.group_hypothesis_id

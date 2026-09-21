@@ -44,10 +44,14 @@ from xic_extractor.alignment.pipeline_outputs import (
     AlignmentRunOutputs,
     alignment_metadata,
     output_paths,
+    supports_streamed_untargeted_outputs,
     write_outputs_atomic,
+    write_streamed_untargeted_outputs_atomic,
 )
 from xic_extractor.alignment.process_execution import AlignmentProcessExecutionError
 from xic_extractor.alignment.untargeted_finalized_matrix import (
+    completed_untarget_batch_sample_order,
+    iter_completed_untarget_batch_writer_inputs,
     project_completed_untarget_batch_writer_inputs,
 )
 from xic_extractor.config import ExtractionConfig
@@ -486,10 +490,13 @@ def _run_untargeted_alignment(
                     progress_callback=timing_recorder.heartbeat_event,
                 )
             )
-        with timing_recorder.stage("alignment.project_outputs"):
-            writer_inputs = project_completed_untarget_batch_writer_inputs(
-                completed, consume_child=explanation.consume_child
-            )
+        stream_outputs = supports_streamed_untargeted_outputs(outputs)
+        writer_inputs = None
+        if not stream_outputs:
+            with timing_recorder.stage("alignment.project_outputs"):
+                writer_inputs = project_completed_untarget_batch_writer_inputs(
+                    completed, consume_child=explanation.consume_child
+                )
         if should_cancel is not None and should_cancel():
             raise InterruptedError("Alignment cancelled before output publication")
         metadata = _metadata(
@@ -534,23 +541,42 @@ def _run_untargeted_alignment(
                 }
             )
         with timing_recorder.stage("alignment.write_outputs"):
-            artifact_fingerprint_batch = _write_outputs_atomic(
-                outputs,
-                writer_inputs.matrix,
-                metadata=metadata,
-                ownership=OwnershipBuildResult(
-                    owners=(), assignments=(), ambiguous_records=()
-                ),
-                alignment_config=alignment_config,
-                owner_backfill_peak_fact_provenance=EMPTY_OWNER_BACKFILL_PEAK_FACT_PROVENANCE_BATCH,
-                production_decisions=writer_inputs.production_decisions,
-                baseline_integration_method=getattr(
-                    peak_config, "baseline_integration_method", "asls"
-                ),
-                baseline_audit_method=getattr(peak_config, "baseline_audit_method", ""),
-                timing_recorder=timing_recorder,
-                capture_artifact_fingerprints=capture_artifact_fingerprints,
-            )
+            if stream_outputs:
+                writer_row_count, artifact_fingerprint_batch = (
+                    write_streamed_untargeted_outputs_atomic(
+                        outputs,
+                        iter_completed_untarget_batch_writer_inputs(
+                            completed, consume_child=explanation.consume_child
+                        ),
+                        sample_order=completed_untarget_batch_sample_order(completed),
+                        metadata=metadata,
+                        alignment_config=alignment_config,
+                        timing_recorder=timing_recorder,
+                        capture_artifact_fingerprints=capture_artifact_fingerprints,
+                    )
+                )
+            else:
+                assert writer_inputs is not None
+                writer_row_count = len(writer_inputs.matrix.clusters)
+                artifact_fingerprint_batch = _write_outputs_atomic(
+                    outputs,
+                    writer_inputs.matrix,
+                    metadata=metadata,
+                    ownership=OwnershipBuildResult(
+                        owners=(), assignments=(), ambiguous_records=()
+                    ),
+                    alignment_config=alignment_config,
+                    owner_backfill_peak_fact_provenance=EMPTY_OWNER_BACKFILL_PEAK_FACT_PROVENANCE_BATCH,
+                    production_decisions=writer_inputs.production_decisions,
+                    baseline_integration_method=getattr(
+                        peak_config, "baseline_integration_method", "asls"
+                    ),
+                    baseline_audit_method=getattr(
+                        peak_config, "baseline_audit_method", ""
+                    ),
+                    timing_recorder=timing_recorder,
+                    capture_artifact_fingerprints=capture_artifact_fingerprints,
+                )
         if capture_artifact_fingerprints:
             if not isinstance(
                 artifact_fingerprint_batch, AlignmentArtifactFingerprintBatch
@@ -562,7 +588,7 @@ def _run_untargeted_alignment(
                 outputs, artifact_fingerprint_batch=artifact_fingerprint_batch
             )
         with timing_recorder.stage("alignment.write_cid_nl_explanation"):
-            db_path = explanation.finalize(writer_inputs, matrix_path)
+            db_path = explanation.finalize(writer_row_count, matrix_path)
         evidence: EvidenceLocator | None = None
         if outputs.matrix_tsv is not None and outputs.matrix_tsv.is_file():
             with outputs.matrix_tsv.open("rb") as handle:

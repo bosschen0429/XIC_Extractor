@@ -3,12 +3,18 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal, cast
 
 from xic_extractor.alignment.cell_observations import FinalGroupCellObservation
-from xic_extractor.alignment.matrix import AlignedCell, AlignmentMatrix, CellStatus
+from xic_extractor.alignment.matrix import (
+    AlignedCell,
+    AlignmentMatrix,
+    AlignmentRowLike,
+    CellStatus,
+)
+from xic_extractor.alignment.models import AlignmentCluster
 from xic_extractor.alignment.production_decisions import (
     ProductionCellDecision,
     ProductionDecisionSet,
@@ -102,7 +108,35 @@ def project_completed_untarget_batch_writer_inputs(
     *,
     consume_child: Callable[[FinalizedUntargetApplicationResult], None] | None = None,
 ) -> CompletedUntargetBatchWriterInputs:
-    """Project the batch and share each loaded child with an output consumer."""
+    """Materialize writer inputs for consumers that require a complete matrix."""
+
+    rows: list[AlignmentCluster | AlignmentRowLike] = []
+    cells: list[AlignedCell] = []
+    cell_decisions = {}
+    row_decisions = {}
+    for projected in iter_completed_untarget_batch_writer_inputs(
+        completed, consume_child=consume_child
+    ):
+        rows.extend(projected.matrix.clusters)
+        cells.extend(projected.matrix.cells)
+        cell_decisions.update(projected.production_decisions.cells)
+        row_decisions.update(projected.production_decisions.rows)
+    return CompletedUntargetBatchWriterInputs(
+        matrix=AlignmentMatrix(
+            clusters=tuple(rows),
+            cells=tuple(cells),
+            sample_order=completed_untarget_batch_sample_order(completed),
+        ),
+        production_decisions=ProductionDecisionSet(
+            cells=cell_decisions, rows=row_decisions
+        ),
+    )
+
+
+def completed_untarget_batch_sample_order(
+    completed: CompletedUntargetBatchWorkflowResult,
+) -> tuple[str, ...]:
+    """Return the canonical output columns, including for an empty batch."""
 
     if type(completed) is not CompletedUntargetBatchWorkflowResult:
         raise TypeError("writer projection requires a completed Untarget batch")
@@ -127,12 +161,20 @@ def project_completed_untarget_batch_writer_inputs(
     sample_stems = tuple(sample.metadata.raw_stem for sample in ordered_samples)
     if not sample_stems or len(sample_stems) != len(set(sample_stems)):
         raise ValueError("writer projection requires unique canonical sample stems")
-    sample_set = frozenset(sample_stems)
+    return sample_stems
 
-    rows: list[FinalizedUntargetMatrixRow] = []
-    cells: list[AlignedCell] = []
-    cell_decisions: dict[tuple[str, str], ProductionCellDecision] = {}
-    row_decisions: dict[str, ProductionRowDecision] = {}
+
+def iter_completed_untarget_batch_writer_inputs(
+    completed: CompletedUntargetBatchWorkflowResult,
+    *,
+    consume_child: Callable[[FinalizedUntargetApplicationResult], None] | None = None,
+) -> Iterator[CompletedUntargetBatchWriterInputs]:
+    """Project one finalized row at a time while retaining only identity census."""
+
+    sample_stems = completed_untarget_batch_sample_order(completed)
+    sample_set = frozenset(sample_stems)
+    application = completed.application_result
+
     seen_row_ids: set[str] = set()
     seen_group_ids: set[str] = set()
     seen_physical_ids: set[str] = set()
@@ -189,7 +231,7 @@ def project_completed_untarget_batch_writer_inputs(
             row = FinalizedUntargetMatrixRow(
                 feature_family_id=row_id,
                 group_hypothesis_id=group_id,
-                public_family_id=f"FAM{len(rows) + 1:06d}",
+                public_family_id=f"FAM{len(seen_row_ids):06d}",
                 destination=projected.route.destination,
                 family_center_mz=center_mz,
                 family_center_rt=center_rt,
@@ -202,8 +244,6 @@ def project_completed_untarget_batch_writer_inputs(
                     )
                 ),
             )
-            rows.append(row)
-
             projected_cells = tuple(
                 _aligned_cell(
                     row=row,
@@ -212,7 +252,6 @@ def project_completed_untarget_batch_writer_inputs(
                 )
                 for owner_decision in owner_decisions
             )
-            cells.extend(projected_cells)
             writer_cell_decisions = tuple(
                 _writer_cell_decision(
                     row_id=row_id,
@@ -225,36 +264,29 @@ def project_completed_untarget_batch_writer_inputs(
                     strict=True,
                 )
             )
-            for writer_decision in writer_cell_decisions:
-                key = (
-                    writer_decision.feature_family_id,
-                    writer_decision.sample_stem,
-                )
-                if key in cell_decisions:
-                    raise ValueError("writer projection produced duplicate cells")
-                cell_decisions[key] = writer_decision
-            row_decisions[row_id] = _writer_row_decision(
+            row_decision = _writer_row_decision(
                 row=row,
                 cells=projected_cells,
                 decisions=writer_cell_decisions,
                 owner_counts=projected.counts,
                 route_reason=projected.route.reason,
             )
+            yield CompletedUntargetBatchWriterInputs(
+                matrix=AlignmentMatrix(
+                    clusters=(row,),
+                    cells=projected_cells,
+                    sample_order=sample_stems,
+                ),
+                production_decisions=ProductionDecisionSet(
+                    cells={
+                        (decision.feature_family_id, decision.sample_stem): decision
+                        for decision in writer_cell_decisions
+                    },
+                    rows={row_id: row_decision},
+                ),
+            )
         if consume_child is not None:
             consume_child(child)
-
-    matrix = AlignmentMatrix(
-        clusters=tuple(rows),
-        cells=tuple(cells),
-        sample_order=sample_stems,
-    )
-    return CompletedUntargetBatchWriterInputs(
-        matrix=matrix,
-        production_decisions=ProductionDecisionSet(
-            cells=cell_decisions,
-            rows=row_decisions,
-        ),
-    )
 
 
 def _presentation_facts(
@@ -593,5 +625,7 @@ __all__ = [
     "CompletedUntargetBatchWriterInputs",
     "FinalizedUntargetMatrixRow",
     "PRESENTATION_FORMULA_VERSION",
+    "completed_untarget_batch_sample_order",
+    "iter_completed_untarget_batch_writer_inputs",
     "project_completed_untarget_batch_writer_inputs",
 ]

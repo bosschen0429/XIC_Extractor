@@ -697,7 +697,12 @@ CID-NL runs also emit `cid_nl_explanation.sqlite` after successful Matrix
 publication, alongside their runtime marker.
 Identity, review, provenance, backfill evidence, HTML, and workbook artifacts
 remain explicit machine, validation, diagnostic, or compatibility outputs;
-their schemas and writers are unchanged.
+their schemas and value policies are unchanged. TSV-only `production` and
+`validation-minimal` publication consumes finalized rows in one pass, retaining
+the identity census rather than the complete cell and decision populations.
+Public row numbering and identity hashes span that complete ordered stream.
+Workbook, HTML and additional whole-matrix consumers retain the materialized
+projection API. Both routes use the same atomic publication and rollback owner.
 
 | Output | Role |
 | --- | --- |

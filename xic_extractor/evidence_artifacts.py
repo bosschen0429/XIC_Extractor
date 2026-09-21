@@ -208,12 +208,16 @@ def verify_evidence_artifact_payload(
         raise EvidenceArtifactContractError(
             "reference must be an owner-minted EvidenceArtifactRef"
         )
-    observed = _build_artifact_content_identity(
-        payload_bytes,
-        media_type=reference.semantic_contract.media_type,
-        serialization_format=reference.semantic_contract.serialization_format,
-    )
-    if observed != reference.content_identity:
+    if not isinstance(payload_bytes, bytes):
+        raise EvidenceArtifactContractError("payload_bytes must be exact bytes")
+    # The immutable reference already binds its format and derived content ID.
+    # Verifying new bytes needs only their length and digest, not another value
+    # object plus repeated canonical JSON serialization of the same identity.
+    expected = reference.content_identity
+    if (
+        len(payload_bytes) != expected.byte_size
+        or hashlib.sha256(payload_bytes).hexdigest() != expected.content_sha256
+    ):
         raise EvidenceArtifactContractError(
             "artifact payload content does not match its immutable reference"
         )
@@ -294,9 +298,7 @@ def _mint_evidence_artifact_ref(
         raise EvidenceArtifactContractError(
             "upstream_artifacts must contain immutable artifact references"
         )
-    upstream_ids = _canonical_upstream_ids(
-        tuple(item.evidence_artifact_id for item in upstream_refs)
-    )
+    upstream_ids = tuple(sorted({item.evidence_artifact_id for item in upstream_refs}))
     if len(upstream_ids) != len(upstream_refs):
         raise EvidenceArtifactContractError(
             "upstream_artifacts must not contain duplicates"
@@ -466,7 +468,6 @@ def _validate_sha256(value: object, *, field: str) -> str:
             f"{field} must be a lower-case SHA-256 digest"
         ),
     )
-
 
 
 def _validate_typed_digest_id(

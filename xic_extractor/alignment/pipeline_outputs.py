@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
@@ -73,6 +73,10 @@ from xic_extractor.alignment.tsv_writer import (
     write_alignment_owner_backfill_seed_audit_tsv,
     write_alignment_review_tsv,
     write_alignment_status_matrix_tsv,
+    write_alignment_tsv_row_batches,
+)
+from xic_extractor.alignment.untargeted_finalized_matrix import (
+    CompletedUntargetBatchWriterInputs,
 )
 from xic_extractor.alignment.xlsx_writer import write_alignment_results_xlsx
 from xic_extractor.config import ExtractionConfig
@@ -110,12 +114,11 @@ class AlignmentRunOutputs:
     provisional_summary_json: Path | None = None
     artifact_fingerprint_batch: AlignmentArtifactFingerprintBatch | None = None
     owner_build_route_receipt: OwnerBuildRouteReceipt | None = None
-    owner_backfill_evaluation_coverage: (
-        OwnerBackfillEvaluationCoverageBatch | None
-    ) = None
+    owner_backfill_evaluation_coverage: OwnerBackfillEvaluationCoverageBatch | None = (
+        None
+    )
     untargeted_cid_nl_result: CompletedUntargetBatchWorkflowResult | None = None
     evidence: EvidenceLocator | None = None
-
 
 
 def output_paths(
@@ -640,6 +643,107 @@ def write_outputs_atomic(
                 ),
             )
         )
+    return _write_artifacts_atomic(
+        output_paths_and_writers,
+        recorder=recorder,
+        capture_artifact_fingerprints=capture_artifact_fingerprints,
+    )
+
+
+def supports_streamed_untargeted_outputs(outputs: AlignmentRunOutputs) -> bool:
+    """TSV-only finalized output needs no global cell or decision population."""
+
+    return outputs.matrix_tsv is not None and not any(
+        (
+            outputs.workbook,
+            outputs.review_html,
+            outputs.status_matrix_tsv,
+            outputs.backfill_seed_audit_tsv,
+            outputs.backfill_candidate_audit_tsv,
+            outputs.event_to_owner_tsv,
+            outputs.ambiguous_owners_tsv,
+            outputs.edge_evidence_tsv,
+            outputs.skipped_evidence_ledger_tsv,
+            outputs.provisional_matrix_tsv,
+            outputs.provisional_identity_tsv,
+            outputs.provisional_cell_provenance_tsv,
+            outputs.provisional_summary_json,
+        )
+    )
+
+
+def write_streamed_untargeted_outputs_atomic(
+    outputs: AlignmentRunOutputs,
+    batches: Iterable[CompletedUntargetBatchWriterInputs],
+    *,
+    sample_order: tuple[str, ...],
+    metadata: dict[str, str],
+    alignment_config: AlignmentConfig,
+    timing_recorder: TimingRecorder,
+    capture_artifact_fingerprints: bool = False,
+) -> tuple[int, AlignmentArtifactFingerprintBatch | None]:
+    """Render finalized rows once, then use the existing publication transaction."""
+
+    if not supports_streamed_untargeted_outputs(outputs):
+        raise ValueError("requested output consumer requires a materialized matrix")
+    row_paths = {
+        name: path
+        for name, path in (
+            ("matrix", outputs.matrix_tsv),
+            ("identity", outputs.matrix_identity_tsv),
+            ("review", outputs.review_tsv),
+            ("backfill", outputs.backfill_cell_evidence_tsv),
+            ("cells", outputs.cells_tsv),
+            ("integration", outputs.integration_audit_tsv),
+        )
+        if path is not None
+    }
+    paths = list(row_paths.values())
+    if outputs.owner_backfill_peak_fact_provenance_tsv is not None:
+        paths.append(outputs.owner_backfill_peak_fact_provenance_tsv)
+    if outputs.run_metadata_json is not None:
+        paths.append(outputs.run_metadata_json)
+    row_count = 0
+
+    def render_all(temp_paths: Mapping[Path, Path]) -> None:
+        nonlocal row_count
+        row_count = write_alignment_tsv_row_batches(
+            {name: temp_paths[path] for name, path in row_paths.items()},
+            batches,
+            sample_order=sample_order,
+            alignment_config=alignment_config,
+        )
+        if outputs.owner_backfill_peak_fact_provenance_tsv is not None:
+            _write_owner_backfill_peak_fact_provenance_temp(
+                temp_paths[outputs.owner_backfill_peak_fact_provenance_tsv],
+                EMPTY_OWNER_BACKFILL_PEAK_FACT_PROVENANCE_BATCH,
+            )
+        if outputs.run_metadata_json is not None:
+            _write_metadata_json(
+                temp_paths[outputs.run_metadata_json],
+                _metadata_bound_to_peak_fact_provenance(metadata, row_count=0),
+            )
+
+    fingerprints = _write_artifacts_atomic(
+        [(path, None) for path in paths],
+        recorder=(
+            timing_recorder
+            if timing_recorder.instrument_writers
+            else TimingRecorder.disabled("writer")
+        ),
+        capture_artifact_fingerprints=capture_artifact_fingerprints,
+        render_all=render_all,
+    )
+    return row_count, fingerprints
+
+
+def _write_artifacts_atomic(
+    output_paths_and_writers: Sequence[tuple[Path, Callable[[Path], Path] | None]],
+    *,
+    recorder: TimingRecorder,
+    capture_artifact_fingerprints: bool,
+    render_all: Callable[[Mapping[Path, Path]], None] | None = None,
+) -> AlignmentArtifactFingerprintBatch | None:
     temp_paths = [
         _temp_path(final_path) for final_path, _writer in output_paths_and_writers
     ]
@@ -649,27 +753,43 @@ def write_outputs_atomic(
     backups: list[tuple[Path, Path]] = []
     replaced_paths: list[Path] = []
     try:
+        if render_all is not None:
+            with recorder.stage("writer.streamed_rows.render"):
+                render_all(
+                    {path: _temp_path(path) for path, _ in output_paths_and_writers}
+                )
         for final_path, writer in output_paths_and_writers:
             temp_path = _temp_path(final_path)
             artifact = _writer_artifact_name(final_path)
-            with recorder.stage(f"writer.{artifact}.render") as stage:
-                writer(temp_path)
-                rendered_bytes = (
-                    temp_path.stat().st_size if temp_path.exists() else None
-                )
-                stage.metrics["bytes"] = rendered_bytes
-                stage.metrics["availability"] = "partial"
-                stage.metrics["reason"] = (
-                    "renderer combines serialization and temp-file write"
-                )
+            render_elapsed = None
+            if render_all is None:
+                with recorder.stage(f"writer.{artifact}.render") as stage:
+                    assert writer is not None
+                    writer(temp_path)
+                    stage.metrics["bytes"] = (
+                        temp_path.stat().st_size if temp_path.exists() else None
+                    )
+                    stage.metrics["availability"] = "partial"
+                    stage.metrics["reason"] = (
+                        "renderer combines serialization and temp-file write"
+                    )
+                render_elapsed = stage.elapsed_sec
+            rendered_bytes = temp_path.stat().st_size if temp_path.exists() else None
             recorder.observe(
                 "writer_render_time_sec",
-                value=stage.elapsed_sec,
+                value=render_elapsed,
                 scope=artifact,
                 unit="seconds",
                 source="alignment.pipeline_outputs",
-                availability="partial",
-                reason=("render timing includes the renderer's temp-file write"),
+                availability="partial" if render_all is None else "unavailable",
+                reason=(
+                    "render timing includes the renderer's temp-file write"
+                    if render_all is None
+                    else (
+                        "one shared streamed render is measured by "
+                        "writer.streamed_rows.render"
+                    )
+                ),
             )
             recorder.observe(
                 "writer_render_bytes",

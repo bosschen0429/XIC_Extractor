@@ -98,19 +98,23 @@ def test_pure_cid_nl_wrapper_reports_retained_route_and_typed_handoff(
     captured_retained: dict[str, object] = {}
     captured_write: dict[str, object] = {}
     reference_provenance = {
-        "workbook_sha256": "a" * 64, "content_sha256": "b" * 64,
+        "workbook_sha256": "a" * 64,
+        "content_sha256": "b" * 64,
     }
     reference = SimpleNamespace(
         provenance=reference_provenance,
         explanation_provenance={
             **reference_provenance,
             "calibration": {
-                "schema_version": "known_istd_calibration", "samples": [],
+                "schema_version": "known_istd_calibration",
+                "samples": [],
             },
         },
     )
     monkeypatch.setattr(
-        pipeline_module, "read_known_istd_reference", lambda _path: reference,
+        pipeline_module,
+        "read_known_istd_reference",
+        lambda _path: reference,
     )
 
     def complete(**kwargs: object) -> object:
@@ -126,6 +130,9 @@ def test_pure_cid_nl_wrapper_reports_retained_route_and_typed_handoff(
         pipeline_module,
         "project_completed_untarget_batch_writer_inputs",
         lambda value, **_kwargs: writer_inputs if value is completed else pytest.fail(),
+    )
+    monkeypatch.setattr(
+        pipeline_module, "supports_streamed_untargeted_outputs", lambda _outputs: False
     )
 
     def write_outputs(*_args: object, **kwargs: object) -> None:
@@ -147,8 +154,8 @@ def test_pure_cid_nl_wrapper_reports_retained_route_and_typed_handoff(
             else None
         )
 
-        def finalize(inputs, matrix_path: Path) -> Path:
-            assert inputs is writer_inputs
+        def finalize(row_count: int, matrix_path: Path) -> Path:
+            assert row_count == len(writer_inputs.matrix.clusters)
             assert matrix_path.read_text(encoding="utf-8") == "Mz\tRT\tS1\n"
             path.write_text("published", encoding="utf-8")
             return path
@@ -285,7 +292,8 @@ def test_pure_cid_nl_cancellation_during_projection_skips_publication(
         project,
     )
     monkeypatch.setattr(
-        pipeline_module, "prepare_alignment_explanation",
+        pipeline_module,
+        "prepare_alignment_explanation",
         lambda *_args, **_kwargs: nullcontext(SimpleNamespace(consume_child=None)),
     )
     monkeypatch.setattr(
@@ -432,7 +440,11 @@ def test_pure_cid_nl_projection_failure_publishes_no_owned_outputs(
         reject_projection,
     )
     monkeypatch.setattr(
-        pipeline_module, "prepare_alignment_explanation",
+        pipeline_module, "supports_streamed_untargeted_outputs", lambda _outputs: False
+    )
+    monkeypatch.setattr(
+        pipeline_module,
+        "prepare_alignment_explanation",
         lambda *_args, **_kwargs: nullcontext(SimpleNamespace(consume_child=None)),
     )
 
@@ -573,23 +585,29 @@ def test_pipeline_streams_partition_children_once_and_cleans_up(
     monkeypatch.setattr(StreamedResultStore, "_read_record", counted_read)
 
     if failure == "projection":
-        project = pipeline_module.project_completed_untarget_batch_writer_inputs
+        project = pipeline_module.iter_completed_untarget_batch_writer_inputs
 
         def fail_projection(*args, **kwargs):
-            project(*args, **kwargs)
+            yield from project(*args, **kwargs)
             raise OSError("projection failed")
 
         monkeypatch.setattr(
             pipeline_module,
-            "project_completed_untarget_batch_writer_inputs",
+            "iter_completed_untarget_batch_writer_inputs",
             fail_projection,
         )
     elif failure == "matrix":
+        from xic_extractor.alignment import pipeline_outputs
 
-        def fail_matrix(*_args, **_kwargs):
+        write_rows = pipeline_outputs.write_alignment_tsv_row_batches
+
+        def fail_matrix(*args, **kwargs):
+            write_rows(*args, **kwargs)
             raise OSError("matrix failed")
 
-        monkeypatch.setattr(pipeline_module, "_write_outputs_atomic", fail_matrix)
+        monkeypatch.setattr(
+            pipeline_outputs, "write_alignment_tsv_row_batches", fail_matrix
+        )
 
     def run():
         return pipeline_module.run_alignment(
@@ -751,8 +769,11 @@ def test_known_reference_provenance_survives_sqlite_summary(tmp_path, monkeypatc
         tmp_path, monkeypatch, "positive"
     )
     arguments = dict(
-        completed=completed, writer_inputs=writer,
-        candidates_by_sample=candidates, matrix_path=matrix, alignment_config=config,
+        completed=completed,
+        writer_inputs=writer,
+        candidates_by_sample=candidates,
+        matrix_path=matrix,
+        alignment_config=config,
     )
     plain = write_cid_nl_explanation(tmp_path / "plain.sqlite", **arguments)
     plain_summary = read_cid_nl_explanation(plain)
@@ -763,11 +784,13 @@ def test_known_reference_provenance_survives_sqlite_summary(tmp_path, monkeypatc
     provenance = read_known_istd_reference(reference_path).provenance
     assert "content_sha256" in provenance
     report = write_cid_nl_explanation(
-        tmp_path / "reference.sqlite", **arguments,
+        tmp_path / "reference.sqlite",
+        **arguments,
         known_istd_reference_provenance=provenance,
     )
     assert read_cid_nl_explanation(report) == {
-        **plain_summary, "known_istd_reference": provenance,
+        **plain_summary,
+        "known_istd_reference": provenance,
     }
     candidate_id = candidates["S1"][0].candidate_id
     assert read_cid_nl_explanation(report, candidate_id=candidate_id) == (
@@ -801,7 +824,8 @@ def test_pure_cid_nl_targets_csv_integration(
         explanation_provenance={
             "workbook_sha256": "b" * 64,
             "calibration": {
-                "schema_version": "known_istd_calibration", "samples": [],
+                "schema_version": "known_istd_calibration",
+                "samples": [],
             },
         },
     )
@@ -828,11 +852,17 @@ def test_pure_cid_nl_targets_csv_integration(
         lambda *_args, **_kwargs: None,
     )
     monkeypatch.setattr(
+        pipeline_module, "supports_streamed_untargeted_outputs", lambda _outputs: False
+    )
+    monkeypatch.setattr(
         pipeline_module,
         "prepare_alignment_explanation",
-        lambda path, **_kwargs: nullcontext(SimpleNamespace(
-            consume_child=None, finalize=lambda _inputs, _matrix: path,
-        )),
+        lambda path, **_kwargs: nullcontext(
+            SimpleNamespace(
+                consume_child=None,
+                finalize=lambda _inputs, _matrix: path,
+            )
+        ),
     )
     (tmp_path / "out").mkdir(parents=True, exist_ok=True)
 
@@ -852,7 +882,8 @@ def test_pure_cid_nl_targets_csv_integration(
 
 
 def test_mixed_target_list_only_supplies_istds_to_untargeted_alignment(
-    tmp_path, monkeypatch,
+    tmp_path,
+    monkeypatch,
 ):
     import xic_extractor.alignment.raw_sources as raw_sources
     from xic_extractor.configuration.targets import read_targets
@@ -868,16 +899,23 @@ def test_mixed_target_list_only_supplies_istds_to_untargeted_alignment(
 
     monkeypatch.setattr(raw_sources, "existing_raw_paths", lambda **kwargs: {})
     monkeypatch.setattr(
-        pipeline_module, "extract_batch_known_istd_reference", extract_reference,
+        pipeline_module,
+        "extract_batch_known_istd_reference",
+        extract_reference,
     )
     monkeypatch.setattr(
-        pipeline_module, "_run_untargeted_cid_nl_alignment", lambda **kwargs: None,
+        pipeline_module,
+        "_run_untargeted_cid_nl_alignment",
+        lambda **kwargs: None,
     )
     pipeline_module.run_alignment(
         discovery_batch_index=batch_index,
-        raw_dir=tmp_path / "raw", dll_dir=tmp_path / "dll",
-        output_dir=tmp_path / "out", alignment_config=AlignmentConfig(),
-        peak_config=_peak_config(), discovery_settings=_settings(),
+        raw_dir=tmp_path / "raw",
+        dll_dir=tmp_path / "dll",
+        output_dir=tmp_path / "out",
+        alignment_config=AlignmentConfig(),
+        peak_config=_peak_config(),
+        discovery_settings=_settings(),
         targets_csv=source,
     )
     assert captured["targets"] == tuple(t for t in all_targets if t.is_istd)

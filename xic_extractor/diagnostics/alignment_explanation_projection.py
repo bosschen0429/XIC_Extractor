@@ -216,7 +216,7 @@ class PreparedAlignmentExplanation:
     """Consume owner results now; publish only after the Matrix is available."""
 
     consume_child: Callable[[FinalizedUntargetApplicationResult], None]
-    finalize: Callable[[CompletedUntargetBatchWriterInputs, Path], Path]
+    finalize: Callable[[int, Path], Path]
 
 
 def write_cid_nl_explanation(
@@ -241,7 +241,7 @@ def write_cid_nl_explanation(
     ) as explanation:
         for child in completed.application_result.children:
             explanation.consume_child(child)
-        return explanation.finalize(writer_inputs, matrix_path)
+        return explanation.finalize(len(writer_inputs.matrix.clusters), matrix_path)
 
 
 @contextmanager
@@ -746,9 +746,7 @@ def prepare_alignment_explanation(
             if child_count % 256 == 0:
                 report_progress("children", child_count, len(application.children))
 
-        def finalize(
-            writer_inputs: CompletedUntargetBatchWriterInputs, matrix_path: Path
-        ) -> Path:
+        def finalize(writer_row_count: int, matrix_path: Path) -> Path:
             if child_count != len(application.children):
                 raise ValueError("explanation did not consume every finalized child")
             if child_count % 256:
@@ -816,7 +814,7 @@ def prepare_alignment_explanation(
                 "candidate_count": sink.candidate_count,
                 "matrix_row_count": matrix_rows,
                 "candidate_examples": sink.candidate_examples(),
-                "writer_row_count": len(writer_inputs.matrix.clusters),
+                "writer_row_count": writer_row_count,
                 "matrix_path": str(matrix_path),
                 "matrix_sha256": matrix_hash,
                 "alignment_config": asdict(alignment_config),
@@ -825,7 +823,7 @@ def prepare_alignment_explanation(
                 "initial_edge_coverage": {
                     "policy": INITIAL_GROUPING_POLICY,
                     "unlisted_pairs": UNLISTED_PAIR_DISPOSITION,
-                    "rt_pruning": False,
+                    "rt_pruning": True,
                     "evaluated_pair_count": len(completed.initial_edges),
                     "compressed_group_count": len(completed.initial_groups),
                     "compressed_member_count": initial_group_member_count,
