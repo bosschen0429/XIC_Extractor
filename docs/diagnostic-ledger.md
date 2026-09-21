@@ -7,7 +7,7 @@ Repo owner: docs/diagnostic-ledger.md
 Doc exit rule: Keep active while expensive RAW rerun memory is needed; retire only after durable diagnostic memory moves to a replacement canonical owner.
 
 **Status:** maintained repo-local diagnostic memory
-**Last updated:** 2026-09-20
+**Last updated:** 2026-09-21
 
 This ledger records diagnostic conclusions that should survive branch and
 worktree changes. Use it before rerunning expensive RAW validation or treating a
@@ -65,6 +65,37 @@ dated productization control-plane path is compatibility lookup only.
 | Thermo DLL dir | `$env:THERMO_RAWFILE_READER_DLL_DIR` |
 
 ## Known Diagnostic Conclusions
+
+### 2026-09-21 Interrupted 85RAW Alignment Runtime Cost
+
+- Evidence: `diagnostic_only`; run at `2f7e89ec`, `dna_dr`, four process
+  workers, retained Discovery85 and 595 verified ISTD coordinates. Cooperative
+  1800s cancellation ended execution after 1973.109s without a final Matrix or
+  groups. Known-ISTD grouping and complete scientific acceptance remain unknown.
+- Input preparation took about 56s; the enclosing runtime span took 1889.818s.
+  The 22 observed pool records carried 1982.0 MiB of shared bootstrap,
+  916.6 MiB of requests and 645.6 MiB of responses. They do not identify
+  individual acquisition, serialization or scientific-composition elapsed costs;
+  these totals cannot rank the runtime's internal bottlenecks.
+- The failed run retained 50,420 XIC and 22,535 MS2 cache entries across 85
+  sources (3,774,874,608 bytes). These are acquisition facts, not resumable
+  grouping results. A fresh attempt can reuse the same output-local cache;
+  changing output directories alone does not carry that cache forward.
+- Partition acquisition/composition spans were emitted but absent from the live
+  timing projection. `f6e17624` preserves them on receipt, including failure
+  paths; it cannot reconstruct the discarded spans from this earlier run.
+- Retain this evidence for bounded runtime diagnosis. The previous input-only
+  270.890s measurement is not a comparable full-runtime baseline.
+- Locators: `output/issue422-bounded-worksets-20260921/alignment85-process5-report.md`
+  and `alignment85-process5-diagnosis.md` in the same directory.
+- An isolated process-pool comparison at `f6e17624` plus the pool-reuse change
+  used identical 45 MiB owners, two lanes with two workers each, and three
+  batches per lane. Across three interleaved pairs, median elapsed time fell
+  from 3.139s to 1.222s and bootstrap bytes from 540 MiB to 180 MiB; output
+  digests and parent-owner identity matched. This establishes lifecycle and
+  transport savings only, not an 85RAW speedup or scientific acceptance.
+  Evidence: `diagnostic_only`; receipt and report are under
+  `output/issue422-bounded-worksets-20260921/pool-reuse-probe/`.
 
 ### 2026-09-20 Shared-Profile 8RAW Completion With Background Qualification
 

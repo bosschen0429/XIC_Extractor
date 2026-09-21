@@ -82,6 +82,7 @@ class PartitionPipelineScheduler:
         store_factory: Callable[[Path, tuple[object, ...]], StreamedResultStore] = (
             StreamedResultStore
         ),
+        acquisition_cleanup: Callable[[], None] | None = None,
     ) -> TFinalResult:
         """Execute finite partitions under one runtime attempt."""
         if type(acquisition_workers) is not int or acquisition_workers not in (1, 2):
@@ -715,10 +716,51 @@ class PartitionPipelineScheduler:
 
         try:
             recovery_marker.record_launch(runtime)
+            def provide_worker_batch_and_cleanup(
+                aggregate: object,
+            ) -> RuntimeWorkerBatchReceipt:
+                try:
+                    batch = provide_worker_batch(aggregate)
+                except Exception:
+                    if acquisition_cleanup is not None:
+                        try:
+                            acquisition_cleanup()
+                        except Exception:
+                            pass
+                    raise
+                if acquisition_cleanup is None:
+                    return batch
+                try:
+                    acquisition_cleanup()
+                except Exception as exc:
+                    nonlocal failure
+                    failure = exc
+                    cleanup_failure = WorkUnitFailureDetail(
+                        category=WorkUnitFailureCategory.EXECUTION_ERROR,
+                        stage="partition-acquisition-pool-shutdown",
+                        source_reference=owners.attempt.processing_attempt_id,
+                        message=(str(exc).strip() or type(exc).__name__)[:2000],
+                    )
+                    return RuntimeWorkerBatchReceipt(
+                        settlements=tuple(
+                            mint_work_unit_settlement(
+                                attempt=owners.attempt,
+                                work_unit_key=key,
+                                outcome=WorkUnitTerminalOutcome.FAILED,
+                                failure_detail=cleanup_failure,
+                            )
+                            for key in work_unit_keys
+                        ),
+                        resource_settlements=batch.resource_settlements,
+                        artifact_registrations=batch.artifact_registrations,
+                        acquisitions=batch.acquisitions,
+                    )
+                return batch
+
             finalization = execute_runtime_attempt(
                 runtime,
                 resource_reservations,
-                worker_batch_provider=provide_worker_batch,
+                worker_batch_provider=provide_worker_batch_and_cleanup,
                 telemetry_provider=telemetry_provider,
                 persister=recovery_marker,
                 cancellation_ingress=cancellation_ingress,

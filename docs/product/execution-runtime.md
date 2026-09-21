@@ -32,6 +32,14 @@ phases finish before RAW runtime, so their pools do not multiply the RAW worker
 budget. A value of one keeps serial behavior; concurrency does not change
 scientific identity or sample order.
 
+The bounded CID-NL process backend retains one worker pool per acquisition
+lane for the processing attempt. Partitions lease those pools and share the
+same immutable owner bootstrap; local candidates and physical facts remain
+partition-bounded. The combined pool capacity stays within the configured RAW
+worker budget. Sample RAW handles still close at their acquisition boundaries.
+Process pools drain and close before terminal acknowledgement, including on
+failure or cancellation; a cleanup failure prevents successful publication.
+
 The tissue validation plan exposes both parallel and Alignment worker budgets.
 Changing from 8RAW to 85RAW does not choose a different execution profile.
 

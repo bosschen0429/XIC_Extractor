@@ -48,7 +48,10 @@ from xic_extractor.execution_runtime_finalization import (
     RuntimeResourceOpenOutcome,
     RuntimeResourceReservation,
 )
-from xic_extractor.execution_runtime_marker import OwnerPathRuntimeMarker
+from xic_extractor.execution_runtime_marker import (
+    OwnerPathRuntimeMarker,
+    RuntimeMarkerState,
+)
 from xic_extractor.execution_runtime_owner import (
     RuntimeArtifactRegistrationReceipt,
     RuntimeCancellationIngress,
@@ -550,6 +553,62 @@ def test_scheduler_execute_success(tmp_path: Path) -> None:
     ]
 
 
+def test_scheduler_closes_acquisition_resources_before_terminal_acknowledgement(
+    tmp_path: Path,
+) -> None:
+    fixture = build_processing_identity_no_raw_fixture(
+        tmp_path, sample_stems=("sample-1",)
+    )
+    adapter = MockAdapter(fixture.owners, num_partitions=2)
+    marker = OwnerPathRuntimeMarker(tmp_path / "cleanup-marker.json", "cleanup")
+    cleanup_states: list[RuntimeMarkerState] = []
+
+    def cleanup() -> None:
+        cleanup_states.append(marker.read().state)
+
+    result = PartitionPipelineScheduler.execute(
+        adapter,
+        output_dir=tmp_path / "cleanup-output",
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+        recovery_marker=marker,
+        acquisition_cleanup=cleanup,
+    )
+
+    assert result["application_result"]["total_children"] == 2
+    assert cleanup_states == [RuntimeMarkerState.LAUNCHED]
+    assert marker.read().state is RuntimeMarkerState.FINALIZED
+
+
+def test_scheduler_cleanup_failure_prevents_successful_terminal_acknowledgement(
+    tmp_path: Path,
+) -> None:
+    fixture = build_processing_identity_no_raw_fixture(
+        tmp_path, sample_stems=("sample-1",)
+    )
+    adapter = MockAdapter(fixture.owners, num_partitions=1)
+    marker = OwnerPathRuntimeMarker(
+        tmp_path / "cleanup-failure-marker.json", "cleanup-failure"
+    )
+    cleanup_calls = 0
+
+    def cleanup() -> None:
+        nonlocal cleanup_calls
+        cleanup_calls += 1
+        raise OSError("process pool shutdown failed")
+
+    with pytest.raises(RuntimeError, match="failed before batch publication"):
+        PartitionPipelineScheduler.execute(
+            adapter,
+            output_dir=tmp_path / "cleanup-failure-output",
+            telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+            recovery_marker=marker,
+            acquisition_cleanup=cleanup,
+        )
+
+    assert cleanup_calls == 1
+    assert marker.read().terminal_outcome is AttemptTerminalOutcome.FAILED
+
+
 def test_scheduler_execute_single_partition_retains_memory(tmp_path: Path) -> None:
     fixture = build_processing_identity_no_raw_fixture(
         tmp_path, sample_stems=("sample-1",)
@@ -579,12 +638,17 @@ def test_scheduler_execute_cancellation_cleans_up(tmp_path: Path) -> None:
     marker = OwnerPathRuntimeMarker(tmp_path / "marker.json", "test-cancel")
 
     call_count = 0
+    cleanup_calls = 0
 
     def should_cancel() -> bool:
         nonlocal call_count
         call_count += 1
         # Cancel during the second partition processing
         return call_count >= 5
+
+    def cleanup() -> None:
+        nonlocal cleanup_calls
+        cleanup_calls += 1
 
     with pytest.raises(
         RuntimeError,
@@ -596,11 +660,13 @@ def test_scheduler_execute_cancellation_cleans_up(tmp_path: Path) -> None:
             telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
             recovery_marker=marker,
             should_cancel=should_cancel,
+            acquisition_cleanup=cleanup,
         )
 
     # Verify spool directory was cleaned up
     spool_dirs = list(output_dir.glob(".partition_spool-*"))
     assert len(spool_dirs) == 0
+    assert cleanup_calls == 1
 
 
 def test_scheduler_execute_acquisition_failure_cleans_up(tmp_path: Path) -> None:
@@ -612,6 +678,11 @@ def test_scheduler_execute_acquisition_failure_cleans_up(tmp_path: Path) -> None
     )
     output_dir = tmp_path / "output"
     marker = OwnerPathRuntimeMarker(tmp_path / "marker.json", "test-acq-fail")
+    cleanup_calls = 0
+
+    def cleanup() -> None:
+        nonlocal cleanup_calls
+        cleanup_calls += 1
 
     with pytest.raises(
         RuntimeError,
@@ -622,11 +693,13 @@ def test_scheduler_execute_acquisition_failure_cleans_up(tmp_path: Path) -> None
             output_dir=output_dir,
             telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
             recovery_marker=marker,
+            acquisition_cleanup=cleanup,
         )
 
     # Verify spool directory was cleaned up
     spool_dirs = list(output_dir.glob(".partition_spool-*"))
     assert len(spool_dirs) == 0
+    assert cleanup_calls == 1
 
 
 def test_scheduler_execute_composition_failure_cleans_up(tmp_path: Path) -> None:
@@ -1240,7 +1313,8 @@ def test_worker_admission_pool_thread_single_worker_inline() -> None:
 def test_worker_admission_pool_process_shares_owner_once_and_restores_identity(
 ) -> None:
     owner = {"global_request": "x" * 1_000_000}
-    results: list[SharedProcessResult] = []
+    first_results: list[SharedProcessResult] = []
+    second_results: list[SharedProcessResult] = []
     pool = WorkerAdmissionPool(
         max_workers=2,
         backend="process",
@@ -1253,11 +1327,20 @@ def test_worker_admission_pool_process_shares_owner_once_and_restores_identity(
             tuple(range(1, 21)),
             _execute_shared_process_task,
             task_arg_fn=lambda value: SharedProcessTask(owner, value),
-            on_completed=lambda _c, _t, _item, result: results.append(result),
+            on_completed=lambda _c, _t, _item, result: first_results.append(result),
+        )
+        first_metrics = pool.transport_metrics
+        assert first_metrics is not None
+        pool.run_windowed(
+            tuple(range(21, 41)),
+            _execute_shared_process_task,
+            task_arg_fn=lambda value: SharedProcessTask(owner, value),
+            on_completed=lambda _c, _t, _item, result: second_results.append(result),
         )
 
+    results = (*first_results, *second_results)
     assert sorted(result.value for result in results) == [
-        value * 10 for value in range(1, 21)
+        value * 10 for value in range(1, 41)
     ]
     assert all(result.owner is owner for result in results)
     assert all(result.initialized for result in results)
@@ -1265,6 +1348,10 @@ def test_worker_admission_pool_process_shares_owner_once_and_restores_identity(
     assert all(result.worker_pid != os.getpid() for result in results)
     metrics = pool.transport_metrics
     assert metrics is not None
+    assert metrics.shared_bootstrap_bytes == first_metrics.shared_bootstrap_bytes
+    assert {result.worker_pid for result in second_results} == {
+        result.worker_pid for result in first_results
+    }
     assert metrics.shared_bootstrap_bytes >= 2_000_000
     assert metrics.task_request_bytes < 10_000
     assert metrics.task_response_bytes < 10_000

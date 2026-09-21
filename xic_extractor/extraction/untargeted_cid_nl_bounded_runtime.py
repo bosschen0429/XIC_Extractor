@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import importlib
 import json
+import queue
+import threading
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import fields
 from functools import partial
@@ -32,6 +34,7 @@ from xic_extractor.execution_engine import (
     WorkerAdmissionPool,
     WorkPartition,
 )
+from xic_extractor.execution_engine.worker_pool import WorkerTransportMetrics
 from xic_extractor.execution_runtime import (
     WorkUnitSettlement,
     WorkUnitTerminalOutcome,
@@ -229,6 +232,41 @@ class CidNlPartitionPipelineAdapter:
             )
             for index, subjects in enumerate(subject_partitions)
         )
+        self._partition_subject_batches = {
+            partition.partition_key: self._prepared_worksets.subject_batch(
+                partition.payload
+            )
+            for partition in self._partitions
+        }
+        self._process_pool_lock = threading.Lock()
+        self._process_pools_closed = False
+        self._process_pools_failed = threading.Event()
+        self._available_process_pools: queue.Queue[WorkerAdmissionPool] = queue.Queue()
+        self._process_pools: tuple[WorkerAdmissionPool, ...] = ()
+        if raw_worker_backend == "process":
+            shared_objects = _sample_worker_shared_objects(
+                self._owners,
+                _sample_worker_subject_owners(
+                    plan,
+                    tuple(
+                        self._partition_subject_batches[partition.partition_key]
+                        for partition in self._partitions
+                    ),
+                ),
+            )
+            dll_dir = _plan_dll_dir(plan)
+            self._process_pools = tuple(
+                WorkerAdmissionPool(
+                    max_workers=self._partition_raw_workers,
+                    backend="process",
+                    thread_name_prefix="cid-nl-sample",
+                    initializer=partial(_initialize_sample_process, dll_dir),
+                    shared_objects=shared_objects,
+                )
+                for _lane in range(self._acquisition_workers)
+            )
+            for pool in self._process_pools:
+                self._available_process_pools.put(pool)
         self._global_closure_work_unit_key = (
             f"global-closure:{self._owners.request.processing_request_id}"
         )
@@ -297,6 +335,29 @@ class CidNlPartitionPipelineAdapter:
     def partition_raw_workers(self) -> int:
         return self._partition_raw_workers
 
+    @property
+    def process_pool_transport_metrics(
+        self,
+    ) -> tuple[WorkerTransportMetrics | None, ...]:
+        return tuple(pool.transport_metrics for pool in self._process_pools)
+
+    def close_process_worker_pools(self) -> None:
+        """Close attempt-scoped process workers before terminal acknowledgement."""
+
+        with self._process_pool_lock:
+            if self._process_pools_closed:
+                return
+            self._process_pools_closed = True
+        first_error: Exception | None = None
+        for pool in self._process_pools:
+            try:
+                pool.__exit__(None, None, None)
+            except Exception as exc:
+                if first_error is None:
+                    first_error = exc
+        if first_error is not None:
+            raise first_error
+
     def get_shared_objects(self) -> tuple[object, ...]:
         return _shared_objects(self._plan)
 
@@ -312,39 +373,50 @@ class CidNlPartitionPipelineAdapter:
             UntargetedCidNlRuntimePartitionResult,
         ]
     ]:
-        subjects = partition.payload
-        subject_batch = self._prepared_worksets.subject_batch(subjects)
+        subject_batch = self._partition_subject_batches[partition.partition_key]
         batch = materialize_untargeted_cid_nl_partition(
             self._plan,
             subject_batch,
             prepared_worksets=self._prepared_worksets,
             acquisition_cache_dir=self._acquisition_cache_dir,
         )
-        with WorkerAdmissionPool(
-            max_workers=self._partition_raw_workers,
-            backend=self._raw_worker_backend,
-            thread_name_prefix="cid-nl-sample",
-            initializer=(
-                partial(_initialize_sample_process, batch.jobs[0].dll_dir)
-                if self._raw_worker_backend == "process"
-                else None
-            ),
-            shared_objects=(
-                _sample_worker_shared_objects(batch)
-                if self._raw_worker_backend == "process"
-                else ()
-            ),
-        ) as pool:
-            leaf = execute_untargeted_cid_nl_runtime_partition(
-                batch.jobs,
-                partition_key=partition.partition_key,
-                alignment_config=self._alignment_config,
-                progress_callback=progress_callback,
-                should_cancel=should_cancel,
-                raw_workers=self._partition_raw_workers,
-                raw_worker_backend=self._raw_worker_backend,
-                pool=pool,
-            )
+        if self._raw_worker_backend == "process":
+            if self._process_pools_closed:
+                raise RuntimeError("process worker pools are already closed")
+            if self._process_pools_failed.is_set():
+                raise RuntimeError("process worker pool failure stopped admission")
+            pool = self._available_process_pools.get()
+            try:
+                leaf = execute_untargeted_cid_nl_runtime_partition(
+                    batch.jobs,
+                    partition_key=partition.partition_key,
+                    alignment_config=self._alignment_config,
+                    progress_callback=progress_callback,
+                    should_cancel=should_cancel,
+                    raw_workers=self._partition_raw_workers,
+                    raw_worker_backend=self._raw_worker_backend,
+                    pool=pool,
+                )
+            finally:
+                if pool.stopped:
+                    self._process_pools_failed.set()
+                self._available_process_pools.put(pool)
+        else:
+            with WorkerAdmissionPool(
+                max_workers=self._partition_raw_workers,
+                backend=self._raw_worker_backend,
+                thread_name_prefix="cid-nl-sample",
+            ) as pool:
+                leaf = execute_untargeted_cid_nl_runtime_partition(
+                    batch.jobs,
+                    partition_key=partition.partition_key,
+                    alignment_config=self._alignment_config,
+                    progress_callback=progress_callback,
+                    should_cancel=should_cancel,
+                    raw_workers=self._partition_raw_workers,
+                    raw_worker_backend=self._raw_worker_backend,
+                    pool=pool,
+                )
         failure_detail = None
         if not leaf.succeeded:
             failed = next(
@@ -615,19 +687,23 @@ def execute_bounded_untargeted_cid_nl(
         acquisition_workers=requested_acquisition_workers,
         acquisition_cache_dir=Path(output_dir) / ".cid_nl_acquisition_cache",
     )
-    return PartitionPipelineScheduler.execute(
-        adapter,
-        output_dir=output_dir,
-        telemetry_provider=telemetry_provider,
-        recovery_marker=recovery_marker,
-        progress_callback=progress_callback,
-        should_cancel=should_cancel,
-        retain_partition_memory=retain_partition_memory,
-        pipeline_overlap=pipeline_overlap,
-        acquisition_workers=adapter.acquisition_workers,
-        execute_runtime_attempt=execute_runtime_attempt,
-        store_factory=PartitionResultStore,
-    )
+    try:
+        return PartitionPipelineScheduler.execute(
+            adapter,
+            output_dir=output_dir,
+            telemetry_provider=telemetry_provider,
+            recovery_marker=recovery_marker,
+            progress_callback=progress_callback,
+            should_cancel=should_cancel,
+            retain_partition_memory=retain_partition_memory,
+            pipeline_overlap=pipeline_overlap,
+            acquisition_workers=adapter.acquisition_workers,
+            execute_runtime_attempt=execute_runtime_attempt,
+            store_factory=PartitionResultStore,
+            acquisition_cleanup=adapter.close_process_worker_pools,
+        )
+    finally:
+        adapter.close_process_worker_pools()
 
 
 def _shared_objects(plan: UntargetedCidNlProductionPlan) -> tuple[object, ...]:
@@ -651,18 +727,36 @@ def _shared_objects(plan: UntargetedCidNlProductionPlan) -> tuple[object, ...]:
 
 
 def _sample_worker_shared_objects(
-    batch: UntargetedCidNlProductionBatch,
+    owners: ProcessingOwners,
+    subject_batches: tuple[object, ...],
 ) -> tuple[object, ...]:
     """Select immutable global owners that process sample tasks reference."""
 
-    first = batch.jobs[0]
-    owners = first.processing_owners
     values = [
         owners,
         *tuple(getattr(owners, field.name) for field in fields(owners)),
-        first._request_subjects,
+        *subject_batches,
     ]
     return tuple({id(value): value for value in values}.values())
+
+
+def _sample_worker_subject_owners(
+    plan: UntargetedCidNlProductionPlan,
+    partition_batches: tuple[object, ...],
+) -> tuple[object, ...]:
+    values = [plan.subject_batch, *partition_batches]
+    values.extend(
+        template._request_subjects for template in plan.sample_job_templates
+    )
+    return tuple({id(value): value for value in values}.values())
+
+
+def _plan_dll_dir(plan: UntargetedCidNlProductionPlan) -> Path:
+    if plan.dll_dir is not None:
+        return plan.dll_dir
+    if plan.sample_job_templates:
+        return plan.sample_job_templates[0].dll_dir
+    raise RuntimeError("process worker pool requires a planned DLL directory")
 
 
 def _ordered_exclusions(

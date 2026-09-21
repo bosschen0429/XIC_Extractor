@@ -1511,7 +1511,10 @@ def test_sample_worker_transport_references_global_request_owners(
 
     plan, _reference = _plan(tmp_path, monkeypatch)
     batch = materialize_untargeted_cid_nl_partition(plan, plan.subject_batch)
-    shared = _sample_worker_shared_objects(batch)
+    shared = _sample_worker_shared_objects(
+        plan.context.processing_owners,
+        (batch.jobs[0]._request_subjects, batch.subject_batch),
+    )
     source = batch.jobs[0]
 
     restored = owner_pickle_loads(owner_pickle_dumps(source, shared), shared)
@@ -1522,3 +1525,62 @@ def test_sample_worker_transport_references_global_request_owners(
     assert restored._request_subjects is source._request_subjects
     assert restored.sample == source.sample
     assert restored.candidates == source.candidates
+
+
+def test_process_backend_reuses_one_pool_per_acquisition_lane_and_closes_once(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    import xic_extractor.extraction.untargeted_cid_nl_bounded_runtime as owner
+
+    created = []
+
+    class RecordingPool:
+        def __init__(self, **kwargs):
+            self.max_workers = kwargs["max_workers"]
+            self.backend = kwargs["backend"]
+            self.initializer = kwargs["initializer"]
+            self.shared_objects = kwargs["shared_objects"]
+            self.stopped = False
+            self.first_error = None
+            self.transport_metrics = None
+            self.exit_calls = 0
+            created.append(self)
+
+        def __exit__(self, *_args):
+            self.exit_calls += 1
+
+    monkeypatch.setattr(owner, "WorkerAdmissionPool", RecordingPool)
+    plan, _reference = _plan(tmp_path, monkeypatch)
+    adapter = owner.CidNlPartitionPipelineAdapter(
+        plan,
+        alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+        max_partition_jobs=len(plan.context.samples),
+        raw_workers=4,
+        raw_worker_backend="process",
+        acquisition_workers=2,
+    )
+
+    assert adapter.acquisition_workers == 2
+    assert adapter.partition_raw_workers == 2
+    assert len(created) == 2
+    assert sum(pool.max_workers for pool in created) == 4
+    assert {id(pool.shared_objects) for pool in created} == {
+        id(created[0].shared_objects)
+    }
+    shared = created[0].shared_objects
+    for partition in adapter.partitions:
+        subject_batch = adapter._partition_subject_batches[partition.partition_key]
+        assert any(value is subject_batch for value in shared)
+
+    adapter._process_pools_failed.set()
+    with pytest.raises(RuntimeError, match="failure stopped admission"):
+        adapter.execute_acquisition(adapter.partitions[0])
+    adapter._process_pools_failed.clear()
+
+    adapter.close_process_worker_pools()
+    adapter.close_process_worker_pools()
+    assert [pool.exit_calls for pool in created] == [1, 1]
+
+    with pytest.raises(RuntimeError, match="already closed"):
+        adapter.execute_acquisition(adapter.partitions[0])
