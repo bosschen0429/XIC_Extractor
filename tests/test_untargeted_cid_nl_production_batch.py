@@ -514,9 +514,20 @@ def _assert_single_unsupported_exclusion(
                 discovery_candidate_state="review_only_orphan_nl",
                 method_assessments=(unsearched,),
             )
-    for proof in ((own_assessment,), (own_assessment, own_assessment)):
+    # A sample with no Discovery input for this subject needs no placeholder
+    # assessment. Sparse execution retains all input-bearing evidence only.
+    sparse_proof = tuple(
+        assessment
+        for assessment in retained
+        if not is_unsearched_cid_nl_discovery_assessment(assessment)
+    )
+    validate(replace(first, method_assessments=sparse_proof))
+    incomplete_proofs = [(own_assessment, own_assessment)]
+    if len(sparse_proof) > 1:
+        incomplete_proofs.append((own_assessment,))
+    for proof in incomplete_proofs:
         with pytest.raises(
-            ApplicationResultContractError, match="complete sample coverage"
+            ApplicationResultContractError, match="input sample coverage"
         ):
             validate(replace(first, method_assessments=proof))
     for substitution in (
