@@ -85,10 +85,15 @@ def _read_exact_scans(
     matches_by_scan: dict[int, list[Ms2Scan]] = {
         scan_number: [] for scan_number in declared
     }
-    for event in raw.iter_ms2_scans(
-        candidate.rt_seed_min - _WRITER_ROUNDING_ABS_TOL,
-        candidate.rt_seed_max + _WRITER_ROUNDING_ABS_TOL,
-    ):
+    rt_min = candidate.rt_seed_min - _WRITER_ROUNDING_ABS_TOL
+    rt_max = candidate.rt_seed_max + _WRITER_ROUNDING_ABS_TOL
+    read_subset = getattr(raw, "iter_ms2_scan_subset", None)
+    events = (
+        read_subset(rt_min, rt_max, frozenset(declared))
+        if callable(read_subset)
+        else raw.iter_ms2_scans(rt_min, rt_max)
+    )
+    for event in events:
         if (
             event.parse_error is None
             and event.scan is not None

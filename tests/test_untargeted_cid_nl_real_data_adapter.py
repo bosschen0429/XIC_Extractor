@@ -664,6 +664,48 @@ def test_merged_inferred_member_outside_final_mass_window_is_not_support(
     }
 
 
+@pytest.mark.parametrize("variant", ["missing", "duplicate", "parse_error"])
+def test_declared_strict_scan_subset_rejects_non_exact_events(variant: str) -> None:
+    from types import SimpleNamespace
+
+    from xic_extractor.discovery.strict_seed_receipts import (
+        StrictSeedReceiptError,
+        _read_exact_scans,
+    )
+    from xic_extractor.raw_reader import Ms2ScanEvent
+
+    candidate = SimpleNamespace(
+        candidate_id="candidate-1",
+        seed_scan_ids=(11, 12),
+        rt_seed_min=8.0,
+        rt_seed_max=8.2,
+    )
+
+    def scan(number):
+        return SimpleNamespace(scan_number=number)
+
+    if variant == "missing":
+        events = (Ms2ScanEvent(scan(11), None, 11),)
+    elif variant == "duplicate":
+        events = (
+            Ms2ScanEvent(scan(11), None, 11),
+            Ms2ScanEvent(scan(11), None, 11),
+            Ms2ScanEvent(scan(12), None, 12),
+        )
+    else:
+        events = (
+            Ms2ScanEvent(None, "malformed scan", 11),
+            Ms2ScanEvent(scan(12), None, 12),
+        )
+
+    class _SubsetRaw:
+        def iter_ms2_scan_subset(self, _rt_min, _rt_max, _scan_numbers):
+            return iter(events)
+
+    with pytest.raises(StrictSeedReceiptError, match="not exact"):
+        _read_exact_scans(_SubsetRaw(), candidate)
+
+
 def test_sample_trace_batch_is_acquired_once_and_reused_by_subject_adapters(
     tmp_path: Path,
 ) -> None:

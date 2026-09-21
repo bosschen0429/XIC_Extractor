@@ -267,6 +267,132 @@ def test_acquisition_cache_replays_xic_and_ms2_and_reacquires_only_rejected_quer
     assert second_vendor.chromatogram_request_counts == [1]
 
 
+def test_warm_ms2_full_window_subset_hydrates_selected_scan_without_opening_raw(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from xic_extractor.extraction import untargeted_acquisition_cache as cache_module
+
+    fixture = build_targeted_processing_identity_raw_fixture(
+        tmp_path,
+        sample_stems=("S1",),
+        peak_config=_peak_config(tmp_path),
+    )
+    source = _source_for(fixture, "S1")
+    source_raw = _FakeRaw((7.95, 8.05))
+    cache_dir = tmp_path / "full-window-cache"
+    cold_handle, _cold_vendor = _open_bound_raw(
+        fixture,
+        "S1",
+        source_raw,
+        tmp_path=tmp_path,
+    )
+    with CachedUntargetedRaw(
+        cold_handle,
+        source=source,
+        cache_dir=cache_dir,
+    ) as cold:
+        full_events = tuple(cold.iter_ms2_scans(7.8, 8.2))
+    assert len(full_events) == 2
+    selected_number = full_events[-1].scan_number
+    full_cache_before = {path: path.read_bytes() for path in cache_dir.rglob("*.json")}
+
+    hydration_calls = 0
+    original_hydrator = cache_module._ms2_event_from_payload
+
+    def count_hydration(payload):
+        nonlocal hydration_calls
+        hydration_calls += 1
+        return original_hydrator(payload)
+
+    monkeypatch.setattr(cache_module, "_ms2_event_from_payload", count_hydration)
+
+    def forbidden_open():
+        raise AssertionError("warm subset replay attempted native open")
+
+    warm = CachedUntargetedRaw(
+        forbidden_open,
+        source=source,
+        cache_dir=cache_dir,
+    )
+    with warm:
+        selected_events = tuple(
+            warm.iter_ms2_scan_subset(
+                7.8,
+                8.2,
+                frozenset({selected_number}),
+            )
+        )
+
+    assert warm.native_open_attempted is False
+    assert warm.native_opened is False
+    assert hydration_calls == 1
+    assert len(selected_events) == 1
+    assert selected_events[0].scan_number == selected_number
+    assert selected_events[0].scan is not None
+    assert full_events[-1].scan is not None
+    np.testing.assert_array_equal(
+        selected_events[0].scan.masses,
+        full_events[-1].scan.masses,
+    )
+    np.testing.assert_array_equal(
+        selected_events[0].scan.intensities,
+        full_events[-1].scan.intensities,
+    )
+    assert full_cache_before == {
+        path: path.read_bytes() for path in cache_dir.rglob("*.json")
+    }
+
+
+def test_ms2_subset_cache_miss_writes_subset_key_without_full_window_pollution(
+    tmp_path: Path,
+) -> None:
+    fixture = build_targeted_processing_identity_raw_fixture(
+        tmp_path,
+        sample_stems=("S1",),
+        peak_config=_peak_config(tmp_path),
+    )
+    source = _source_for(fixture, "S1")
+    source_raw = _FakeRaw((7.95, 8.05))
+    selected_number = source_raw.scans[-1].scan_number
+    handle, vendor = _open_bound_raw(
+        fixture,
+        "S1",
+        source_raw,
+        tmp_path=tmp_path,
+    )
+    native_scan_reads = []
+    original_scan_reader = vendor.GetSimplifiedScan
+
+    def count_native_scan_read(scan_number):
+        native_scan_reads.append(scan_number)
+        return original_scan_reader(scan_number)
+
+    vendor.GetSimplifiedScan = count_native_scan_read
+    cache_dir = tmp_path / "subset-only-cache"
+    cached = CachedUntargetedRaw(handle, source=source, cache_dir=cache_dir)
+    with cached:
+        events = tuple(
+            cached.iter_ms2_scan_subset(
+                7.8,
+                8.2,
+                frozenset({selected_number}),
+            )
+        )
+        native_scan_reads.clear()
+        full_events = tuple(cached.iter_ms2_scans(7.8, 8.2))
+
+    assert [event.scan_number for event in events] == [selected_number]
+    assert sorted(event.scan_number for event in full_events) == sorted(
+        scan.scan_number for scan in source_raw.scans
+    )
+    assert native_scan_reads == sorted(scan.scan_number for scan in source_raw.scans)
+    cache_files = tuple(cache_dir.rglob("*.json"))
+    assert len(cache_files) == 2
+    assert {path.parent.name for path in cache_files} == {"ms2"}
+    assert cached.native_open_attempted is True
+
+
 @pytest.mark.parametrize("use_cache", (False, True))
 def test_untargeted_acquisition_batches_overlapping_scan_windows_exactly(
     tmp_path: Path, use_cache: bool
@@ -306,6 +432,7 @@ def test_untargeted_acquisition_batches_overlapping_scan_windows_exactly(
     assert tuple(map(serialize_acquired_trace, actual.traces)) == expected
 
     if cache_dir is not None:
+
         def forbid_open():
             raise AssertionError("cached exact requests must not reopen RAW")
 

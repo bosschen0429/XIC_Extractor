@@ -66,6 +66,30 @@ dated productization control-plane path is compatibility lookup only.
 
 ## Known Diagnostic Conclusions
 
+### 2026-09-21 Cached Acquisition Still Hydrates Unrequested MS2 Spectra
+
+- At `259b8c9d`, a diagnostic profile of partition 00000 (65 subjects,
+  1,005 memberships, 85 samples) observed 3,470 cache-hit events and no
+  cache-miss or native-open event. Acquisition wall time was 58.235 seconds;
+  its 46 initial grouping calls took 1.484 cumulative profile seconds.
+  This does not identify the assignment solver as the dominant cost.
+- The two worker profiles reconstructed 71,157 and 81,010 MS2 scan objects.
+  `strict_seed_receipts._read_exact_scans` requested a complete RT window,
+  then discarded all events outside already-declared scan IDs. Full-window
+  decoding took 6.028 and 6.884 cumulative seconds. Cache file reads separately
+  took 16.149 and 16.094 cumulative seconds; these are actual payload reads,
+  not guard-log writes. Nested durations must not be added as wall time.
+- The bounded probe was interrupted without completed composition or scientific
+  output. Its 8.019-second composition profile is partial; it is not the full
+  composition cost. Only text profiles were saved: the diagnostic runner did
+  not implement binary pstats export. Do not repeat this probe to recover a
+  missing pstats file or treat its timeout as a scientific failure.
+- Evidence: `diagnostic_only`; artifacts are under
+  `output/issue422-bounded-worksets-20260921/profile-first-cached-partition-current-259b8c9d-cost/`.
+  The next exact-safe change is selective materialization of declared MS2
+  scans, preserving the native RT-to-scan window and missing/duplicate-scan
+  rejection. Unknown-scan recovery still requires the complete window.
+
 ### 2026-09-21 Native Recovery Queries Can Share Scan-Window Reads
 
 - The retained full85 resource receipts split the 3,359 native opens into
