@@ -142,6 +142,33 @@ def test_timing_recorder_live_output_updates_on_each_record(tmp_path: Path) -> N
     assert payload["recent_records"][1]["elapsed_sec"] == pytest.approx(0.5)
 
 
+def test_failed_partition_timeline_survives_without_final_report(
+    tmp_path: Path,
+) -> None:
+    live_path = tmp_path / "timing.live.json"
+    recorder = TimingRecorder("alignment", live_output_path=live_path)
+    timeline = [
+        {
+            "partition_key": "partition-00000",
+            "acquire_start": 10.0,
+            "acquire_end": 12.0,
+            "compose_start": 12.0,
+            "compose_end": 15.0,
+            "status": "failed",
+        }
+    ]
+
+    with pytest.raises(InterruptedError, match="cancelled"):
+        recorder.heartbeat_event({"event": "partition_timeline", "timeline": timeline})
+        raise InterruptedError("cancelled before final timing publication")
+
+    payload = json.loads(live_path.read_text(encoding="utf-8"))
+    assert payload["partition_timeline"] == timeline
+    assert payload["partition_timeline"] == recorder.to_json_dict()[
+        "partition_timeline"
+    ]
+
+
 def test_live_output_replace_failure_preserves_last_good_artifact(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
