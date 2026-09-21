@@ -128,12 +128,21 @@ dated productization control-plane path is compatibility lookup only.
   Record bodies in this comparison are synthetic. It predates the final compact
   record-JSON change and is not an end-to-end or complete-report speed claim.
 - Curve storage now owns the single compact JSON encoding used for both its
-  unchanged content-derived ID and zlib6 payload. All 2,000 retained sampled
+  unchanged content-derived ID and zlib payload. All 2,000 retained sampled
   payload IDs and decoded objects match. Local encoding/compression falls from
   0.7114 to 0.4608 seconds, with 1.76% fewer compressed bytes. A separate
   persisted writer check also preserves exact curve ID/envelope; its total DB
   timing includes the concurrent normalized-link schema change and does not
   isolate curve encoding.
+- The same retained probe measures compact zlib1 compression at 0.168806
+  seconds versus 0.243262 seconds for zlib6, with 5,906,043 versus 5,697,884
+  compressed bytes (3.65% more). The writer now uses level 1; the codec and
+  pre-compression content-ID basis are unchanged. This is local compression
+  work, not a full85 speedup measurement. The 76 affected tests, Ruff and mypy
+  pass again; a current/frozen persisted writer check preserves the decoded
+  envelope, ID and binding. Reuse `fusion-ab/owner-checks/zlib1-focused-receipt.md`
+  and `zlib1-writer-ab/curve-writer-ab.json` below that owner-checks directory;
+  earlier writer artifacts are not overwritten.
 - Scalar record JSON also omits insignificant whitespace. On 1,792 retained
   records, bytes fall from 5,655,944 to 5,508,510 (2.607%) with exact decoded
   objects and effectively unchanged encoding time (0.033917 / 0.033985 seconds).
@@ -188,6 +197,17 @@ dated productization control-plane path is compatibility lookup only.
   `output/issue422-bounded-worksets-20260921/`. The initial baseline helper
   import failure is retained separately; it occurred before science or input
   loading. The full85 optimization objective remains open.
+- A subsequent output-only measurement restores the saved store and consumes
+  these 46 children without reacquisition, grouping or composition. Explanation
+  preparation takes 1.384 seconds and child consumption 0.546 seconds; total
+  including input restoration is 5.269 seconds (2.734 CPU). It writes 9,520
+  observations, 9,520 decisions and 2,515 curves into a 110,329,856-byte partial
+  SQLite file. No Matrix is available for this slice, so formal explanation
+  finalization is deliberately unmeasured. Reuse
+  `fusion-ab/current-explanation-cost/run-20260922-storeindex/receipt.json` and
+  its explicitly unpublished partial DB. The earlier diagnostic stalls were
+  contaminated by enormous object representations and abandoned diagnostic
+  processes; they are not evidence of slow product pickle decoding.
 
 ### 2026-09-22 Three-Partition Admission And Process11 Acceptance
 

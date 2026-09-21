@@ -370,7 +370,7 @@ class ExplanationReportWriter:
                 )
             return payload_id
         self._curve_hashes[payload_id] = digest
-        compressed = zlib.compress(encoded_json, level=6)
+        compressed = zlib.compress(encoded_json, level=1)
         self._buffered_curve_payloads.append(
             (payload_id, sample_id, kind, record_id, codec, compressed)
         )
