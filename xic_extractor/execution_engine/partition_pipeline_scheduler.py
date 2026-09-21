@@ -788,9 +788,7 @@ class PartitionPipelineScheduler:
                 # Keep the original failure and every sealed file even if the
                 # diagnostic metadata cannot be written (for example, disk full).
                 exc.add_note(f"Could not retain replay metadata: {preservation_error}")
-                raise exc from preservation_error
+                raise exc
             if checkpoint is not None:
-                raise RuntimeError(
-                    f"{exc}; completed partition results retained at {checkpoint}"
-                ) from exc
+                exc.add_note(f"Completed partition results retained at {checkpoint}")
             raise

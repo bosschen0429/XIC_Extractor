@@ -1003,6 +1003,10 @@ def test_bounded_runtime_failure_never_publishes_completed_batch(
         )
     assert len(calls) == 2
     assert error.value.__cause__ is original_error
+    (retained,) = (tmp_path / "failed-output").glob(
+        ".partition_spool-*/failed-results.pickle"
+    )
+    assert any(str(retained) in note for note in error.value.__notes__)
     snapshot = marker.read()
     assert snapshot.terminal_outcome is AttemptTerminalOutcome.FAILED
     assert snapshot.processing_attempt_id == (
@@ -1111,10 +1115,21 @@ def test_failed_attempt_retry_reuses_completed_raw_facts_and_recomposes(
     retry_vendors = tuple(
         vendor for vendors in opened_runs[1].values() for vendor in vendors
     )
-    assert retry_vendors
-    assert any(not vendor.chromatogram_request_counts for vendor in retry_vendors)
-    assert any(vendor.chromatogram_request_counts for vendor in retry_vendors)
-    assert any(ms2_reads.get(id(vendor), 0) == 0 for vendor in retry_vendors)
+    failed_vendors = tuple(
+        vendor for vendors in opened_runs[0].values() for vendor in vendors
+    )
+    # Fully cached samples need no native handle. Measure avoided work across
+    # the complete attempt, including those samples absent from retry_vendors.
+    failed_queries = sum(
+        sum(vendor.chromatogram_request_counts) for vendor in failed_vendors
+    )
+    retry_queries = sum(
+        sum(vendor.chromatogram_request_counts) for vendor in retry_vendors
+    )
+    assert retry_queries < failed_queries
+    assert sum(ms2_reads.get(id(vendor), 0) for vendor in retry_vendors) < sum(
+        ms2_reads.get(id(vendor), 0) for vendor in failed_vendors
+    )
 
 
 def test_partition_acquisitions_overlap_with_shared_worker_budget_and_ordered_output(
