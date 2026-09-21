@@ -816,14 +816,25 @@ def _request_sample_candidate_ids(
         raise SearchScopeContractError(
             "Untargeted batch candidate universe omitted a scope sample"
         )
-    feature_ids = request_inputs.get("alignment_feature_candidate_ids")
+    feature_ids = _request_alignment_feature_ids(request)
     if feature_ids is not None:
-        if not isinstance(feature_ids, list) or any(
-            not isinstance(cid, str) for cid in feature_ids
-        ):
-            raise SearchScopeContractError("Alignment feature selection is malformed")
         candidate_ids.intersection_update(feature_ids)
     return frozenset(candidate_ids)
+
+
+@lru_cache(maxsize=1)
+def _request_alignment_feature_ids(
+    request: ProcessingRequestIdentity,
+) -> frozenset[str] | None:
+    """Index the immutable batch selection once, independently of sample views."""
+    feature_ids = _request_inputs(request).get("alignment_feature_candidate_ids")
+    if feature_ids is None:
+        return None
+    if not isinstance(feature_ids, list) or any(
+        not isinstance(cid, str) for cid in feature_ids
+    ):
+        raise SearchScopeContractError("Alignment feature selection is malformed")
+    return frozenset(feature_ids)
 
 
 def _request_inputs(request: ProcessingRequestIdentity) -> dict[str, object]:

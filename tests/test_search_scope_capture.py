@@ -668,7 +668,21 @@ def test_untargeted_batch_scope_uses_exact_candidate_subject_membership(
         scientific_inputs={
             REQUEST_INPUT_KEY: batch.request_payload(),
             "current_discovery_candidate_universe": {"samples": universe_samples},
+            "alignment_feature_candidate_ids": [item[0] for item in memberships],
         },
+    )
+    feature_visits = 0
+
+    class CountedFeatures(list):
+        def __iter__(self):
+            nonlocal feature_visits
+            for value in super().__iter__():
+                feature_visits += 1
+                yield value
+
+    request_inputs = scope_owner._request_inputs(sample_request)
+    request_inputs["alignment_feature_candidate_ids"] = CountedFeatures(
+        request_inputs["alignment_feature_candidate_ids"]
     )
     with pytest.raises(SearchScopeContractError, match="request subject memberships"):
         replace(scope, request=sample_request)
@@ -685,6 +699,7 @@ def test_untargeted_batch_scope_uses_exact_candidate_subject_membership(
         sample_name=other_sample.metadata.sample_name,
         acquisition_source_id=other_source.acquisition_source_id,
     )
+    prepared_feature_visits = feature_visits
     for _ in range(2):
         assert replace(
             scope,
@@ -696,6 +711,8 @@ def test_untargeted_batch_scope_uses_exact_candidate_subject_membership(
         assert replace(subject_view, request=sample_request).capture_bindings == (
             view_binding,
         )
+    assert prepared_feature_visits > 0
+    assert feature_visits == prepared_feature_visits
     malformed_request = build_processing_request_identity(
         acquisition_sources=request.acquisition_sources,
         acquisition_bindings=request.acquisition_bindings,
