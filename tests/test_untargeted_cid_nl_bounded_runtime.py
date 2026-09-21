@@ -56,7 +56,11 @@ def _disable_real_dll_loading(monkeypatch) -> None:
 def _plan(tmp_path, monkeypatch, *, scenario="positive", opened_sink=None):
     paths = tuple(tmp_path / f"S{i}.synthetic" for i in range(4))
     settings = replace(
-        _settings(), neutral_loss_profile=None, precursor_mz_tolerance_ppm=1.0
+        _settings(),
+        neutral_loss_profile=None,
+        precursor_mz_tolerance_ppm=(
+            5.0 if scenario == "cross_subject_recovery" else 1.0
+        ),
     )
     peak_config = _peak_config(tmp_path)
     raws = {}
@@ -105,6 +109,13 @@ def _plan(tmp_path, monkeypatch, *, scenario="positive", opened_sink=None):
             candidates[path.stem] = sample_candidates
         if scenario == "partial_recovery" and path == paths[-1]:
             candidates[path.stem] = sample_candidates[:1]
+        if scenario == "cross_subject_recovery":
+            precursor = 500.0 if path == paths[0] else 500.004
+            candidates[path.stem] = (
+                tuple(c for c in sample_candidates if c.precursor_mz == precursor)
+                if path in paths[:2]
+                else ()
+            )
     plan = prepare_untargeted_cid_nl_production_plan(
         raw_paths=paths,
         sample_metadata=tuple(
@@ -127,9 +138,7 @@ def _plan(tmp_path, monkeypatch, *, scenario="positive", opened_sink=None):
         dll_dir=tmp_path,
         sample_identity_namespace="study:bounded-runtime",
     )
-    opened = _install_runtime_raws(
-        monkeypatch, sources_by_path=raws, tmp_path=tmp_path
-    )
+    opened = _install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
     if opened_sink is not None:
         opened_sink.append(opened)
     import xic_extractor.extraction.untargeted_cid_nl_real_data_runtime as runtime_owner
@@ -166,7 +175,9 @@ def _plan(tmp_path, monkeypatch, *, scenario="positive", opened_sink=None):
         reference_path = tmp_path / "reference.xlsx"
         workbook.save(reference_path)
         reference = read_known_istd_reference(reference_path)
-    assert len(plan.subject_batch.subjects) == 3
+    assert len(plan.subject_batch.subjects) == (
+        2 if scenario == "cross_subject_recovery" else 3
+    )
     return plan, reference
 
 
@@ -321,9 +332,11 @@ def test_indexed_mass_partition_keeps_closed_worksets_and_budgets_neighbors(
     monkeypatch.setattr(
         bounded_owner,
         "prepare_untargeted_cid_nl_alignment_subject_worksets",
-        lambda active_plan, **_kwargs: prepared
-        if active_plan is packing_plan
-        else pytest.fail("partition preparation crossed its indexed plan"),
+        lambda active_plan, **_kwargs: (
+            prepared
+            if active_plan is packing_plan
+            else pytest.fail("partition preparation crossed its indexed plan")
+        ),
     )
 
     adapter = bounded_owner.CidNlPartitionPipelineAdapter(
@@ -470,13 +483,16 @@ def test_bounded_partition_real_entry_mints_interleaved_worksets_canonically(
         bounded_owner.prepare_untargeted_cid_nl_alignment_subject_worksets
     )
     prepared = prepare_worksets(packing_plan)
-    assert materialize_untargeted_cid_nl_partition(
-        packing_plan,
-        packing_plan.subject_batch,
-        prepared_worksets=prepared,
-    ).jobs == materialize_untargeted_cid_nl_partition(
-        packing_plan, packing_plan.subject_batch
-    ).jobs
+    assert (
+        materialize_untargeted_cid_nl_partition(
+            packing_plan,
+            packing_plan.subject_batch,
+            prepared_worksets=prepared,
+        ).jobs
+        == materialize_untargeted_cid_nl_partition(
+            packing_plan, packing_plan.subject_batch
+        ).jobs
+    )
     split = worksets[0][:1]
     split_ids = {subject.method_subject_id for subject in split}
     split_batch = mint_untargeted_cid_nl_method_subject_batch(
@@ -522,6 +538,9 @@ def test_bounded_partition_real_entry_mints_interleaved_worksets_canonically(
         )
     captured_batches = []
     prepare_calls = []
+    original_materialize_partition = (
+        bounded_owner.materialize_untargeted_cid_nl_partition
+    )
 
     def capture_prepare(_plan, *, known_istd_reference=None):
         prepare_calls.append(_plan.runtime_subjects)
@@ -537,17 +556,24 @@ def test_bounded_partition_real_entry_mints_interleaved_worksets_canonically(
         prepared_worksets,
         acquisition_cache_dir=None,
         sparse=False,
-        ):
-            assert prepared_worksets.plan is _plan
-            assert sparse is True
-            captured_batches.append(subject_batch)
-            return SimpleNamespace(jobs=(), sample_job_templates=())
+    ):
+        assert prepared_worksets.plan is _plan
+        assert sparse is True
+        captured_batches.append(subject_batch)
+        return original_materialize_partition(
+            _plan,
+            subject_batch,
+            prepared_worksets=prepared_worksets,
+            acquisition_cache_dir=acquisition_cache_dir,
+            sparse=sparse,
+        )
 
     def close_without_raw(*_args, **_kwargs):
         return SimpleNamespace(
             succeeded=True,
             worker_batch=SimpleNamespace(resource_settlements=()),
             acquisitions=(),
+            prepared_grouping=None,
         )
 
     def forbid_raw_open(*_args, **_kwargs):
@@ -603,7 +629,7 @@ def test_bounded_runtime_skips_subjects_without_ms1_features(
         execute_bounded_untargeted_cid_nl,
     )
 
-    plan, _ = _plan(tmp_path, monkeypatch, scenario=scenario)
+    plan, reference = _plan(tmp_path, monkeypatch, scenario=scenario)
     request_payload = plan.subject_batch.request_payload()
     candidate_by_id = {
         candidate.candidate_id: candidate
@@ -634,9 +660,14 @@ def test_bounded_runtime_skips_subjects_without_ms1_features(
             batch,
             telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
             recovery_marker=OwnerPathRuntimeMarker(tmp_path / "eager.json", "eager"),
+            alignment_config=config,
+            known_istd_reference=reference,
         )
         eager = compose_untargeted_cid_nl_production_result(
-            batch, runtime, alignment_config=config
+            batch,
+            runtime,
+            alignment_config=config,
+            known_istd_reference=reference,
         )
     if not eligible_subject_ids:
 
@@ -759,6 +790,8 @@ def test_bounded_runtime_matches_eager_after_disk_owner_round_trip(
         batch,
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
         recovery_marker=OwnerPathRuntimeMarker(tmp_path / "eager.json", "eager"),
+        alignment_config=config,
+        known_istd_reference=reference,
     )
     eager = compose_untargeted_cid_nl_production_result(
         batch, eager_runtime, alignment_config=config, known_istd_reference=reference
@@ -1284,7 +1317,7 @@ def test_sample_parallelism_keeps_partition_and_acquisition_counts_fixed(
     original_init = _FakeThermoRaw.__init__
     original_dispose = _FakeThermoRaw.Dispose
     original_append = owner.PartitionResultStore.append_children
-    original_prepare = runtime_owner._prepare_owner_authorized_recoveries
+    original_prepare = runtime_owner._prepare_group_authorized_recoveries
     original_execute = owner.execute_runtime_attempt
 
     def materialize(*args, **kwargs):
@@ -1366,7 +1399,7 @@ def test_sample_parallelism_keeps_partition_and_acquisition_counts_fixed(
 
     monkeypatch.setattr(owner, "materialize_untargeted_cid_nl_partition", materialize)
     monkeypatch.setattr(owner, "execute_runtime_attempt", execute)
-    monkeypatch.setattr(runtime_owner, "_prepare_owner_authorized_recoveries", prepare)
+    monkeypatch.setattr(runtime_owner, "_prepare_group_authorized_recoveries", prepare)
     monkeypatch.setattr(_FakeThermoRaw, "__init__", initialize)
     monkeypatch.setattr(_FakeThermoRaw, "Dispose", dispose)
     monkeypatch.setattr(_FakeThermoRaw, "GetChromatogramData", chromatogram)
@@ -1487,9 +1520,7 @@ def test_sample_failure_drains_without_more_samples_or_partition_publication(
     monkeypatch.setattr(_FakeThermoRaw, "Dispose", dispose)
     monkeypatch.setattr(_FakeThermoRaw, "GetChromatogramData", chromatogram)
     if failure_mode == "spool_failure":
-        monkeypatch.setattr(
-            owner.PartitionResultStore, "append_children", fail_spool
-        )
+        monkeypatch.setattr(owner.PartitionResultStore, "append_children", fail_spool)
     marker = OwnerPathRuntimeMarker(tmp_path / "failure.json", "parallel-failure")
     with pytest.raises(RuntimeError, match="failed before batch publication") as error:
         owner.execute_bounded_untargeted_cid_nl(
@@ -1622,9 +1653,7 @@ def test_sparse_partition_materializes_only_samples_with_request_candidates(
     assert len(batch.sample_job_templates) == len(plan.context.samples)
     assert batch.jobs
     assert all(_request_subject_candidates(job) for job in batch.jobs)
-    initial_sample_ids = {
-        job.sample.identity.sample_identity_id for job in batch.jobs
-    }
+    initial_sample_ids = {job.sample.identity.sample_identity_id for job in batch.jobs}
     assert len(initial_sample_ids) >= 2
     missing_sample_id = plan.context.samples[-1].identity.sample_identity_id
     assert missing_sample_id not in initial_sample_ids
@@ -1647,9 +1676,7 @@ def test_sparse_recovery_partition_matches_dense_composition(
 
     plan, reference = _plan(tmp_path, monkeypatch, scenario=scenario)
     config = AlignmentConfig(anchor_min_seed_events=1)
-    dense_batch = materialize_untargeted_cid_nl_partition(
-        plan, plan.subject_batch
-    )
+    dense_batch = materialize_untargeted_cid_nl_partition(plan, plan.subject_batch)
     assert len(dense_batch.jobs) == 12
     dense_runtime = execute_untargeted_cid_nl_production_batch(
         dense_batch,
@@ -1717,9 +1744,111 @@ def test_sparse_recovery_partition_matches_dense_composition(
     assert dense_composition.initial_groups == sparse_composition.initial_groups
     assert dense_composition.initial_edges == sparse_composition.initial_edges
     assert (
-        dense_composition.excluded_candidates
-        == sparse_composition.excluded_candidates
+        dense_composition.excluded_candidates == sparse_composition.excluded_candidates
     )
+
+
+def test_formal_partition_reuses_prepared_group_ids_for_recovery_and_composition(
+    tmp_path, monkeypatch
+):
+    import xic_extractor.extraction.untargeted_cid_nl_bounded_runtime as bounded_owner
+    import xic_extractor.extraction.untargeted_production_batch as production_owner
+    from xic_extractor.execution_engine.streamed_result_store import StreamedResultStore
+
+    plan, _ = _plan(tmp_path, monkeypatch, scenario="cross_subject_recovery")
+    calls = []
+    original_group_builder = production_owner.build_initial_cid_nl_cross_sample_groups
+
+    def observe_group_build(*args, **kwargs):
+        calls.append(1)
+        return original_group_builder(*args, **kwargs)
+
+    monkeypatch.setattr(
+        production_owner,
+        "build_initial_cid_nl_cross_sample_groups",
+        observe_group_build,
+    )
+    adapter = bounded_owner.CidNlPartitionPipelineAdapter(
+        plan,
+        alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+        max_partition_jobs=100,
+    )
+    assert len(adapter.partitions) == 1
+    partition = adapter.partitions[0]
+    acquisition = adapter.execute_acquisition(partition)
+    assert acquisition.succeeded
+    batch, leaf = acquisition.result
+    prepared = leaf.prepared_grouping
+    assert prepared is not None
+    assert len(prepared.worksets) == 1
+    # N=4 and K=2: neither subject qualifies alone, but their one SUPPORT
+    # sample each belongs to the same compatible group.
+    assert len(batch.jobs) == 2
+    assert len({job.method_subject.method_subject_id for job in batch.jobs}) == 2
+    assert len(leaf.sample_results) == 4
+    assert calls == [1] * len(prepared.worksets)
+    prepared_group_ids = {
+        group.group_hypothesis_id
+        for workset in prepared.worksets
+        for group in workset.assignment_scope.groups
+    }
+    assert len(prepared_group_ids) == 1
+    recovery_group_ids = {
+        attempt.group_hypothesis_id
+        for result in leaf.sample_results
+        for attempt in result.recovery_attempts
+        if attempt.group_hypothesis_id is not None
+    }
+    assert recovery_group_ids
+    assert recovery_group_ids == prepared_group_ids
+    assert {
+        result.job.sample.metadata.raw_stem
+        for result in leaf.sample_results
+        if result.recovery_attempts
+    } == {"S2", "S3"}
+    recovery_result = next(
+        result for result in leaf.sample_results if result.recovery_attempts
+    )
+    recovery_attempt = recovery_result.recovery_attempts[0]
+    same_rt_different_groups = replace(
+        recovery_result,
+        recovery_attempts=(
+            replace(recovery_attempt, group_hypothesis_id="group-a"),
+            replace(recovery_attempt, group_hypothesis_id="group-b"),
+        ),
+    )
+    assert (
+        same_rt_different_groups.recovery_for_group(
+            0.0, group_hypothesis_id="group-b"
+        ).group_hypothesis_id
+        == "group-b"
+    )
+    assert (
+        same_rt_different_groups.recovery_for_group(
+            0.0, group_hypothesis_id="wrong-group"
+        )
+        is None
+    )
+    calls_before_composition = len(calls)
+    store = StreamedResultStore(tmp_path / "formal-spool", adapter.get_shared_objects())
+    composed = adapter.execute_composition(
+        partition,
+        acquisition,
+        store,
+        retain_memory=True,
+    )
+    assert composed.result.child_count == 1
+    assert len(calls) == calls_before_composition
+    assert batch.prepared_grouping is prepared
+    persisted = store.read(composed.sealed.index)
+    assert {
+        group.group_hypothesis_id for group in persisted.initial_groups
+    } == prepared_group_ids
+    assert {
+        group.group_hypothesis_id
+        for child in persisted.children
+        for group in child.scientific_core.grouping_result.final_population
+    } == prepared_group_ids
 
 
 def test_process_backend_reuses_one_pool_per_acquisition_lane_and_closes_once(

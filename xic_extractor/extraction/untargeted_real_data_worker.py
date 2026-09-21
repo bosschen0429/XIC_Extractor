@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import importlib
 from copy import copy
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from xic_extractor.acquisition_contract import TraceAcquisitionBatch
+from xic_extractor.alignment.cell_group_context import (
+    select_cid_nl_group_recovery_subject,
+)
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.conservative_backfill import (
     plan_conservative_recovery_targets,
@@ -42,6 +45,7 @@ from xic_extractor.extraction.untargeted_cid_nl_real_data_adapter import (
     recover_untargeted_cid_nl_sample_subject,
 )
 from xic_extractor.extraction.untargeted_real_data_models import (
+    UntargetedCidNlPreparedGrouping,
     UntargetedCidNlRealDataRuntimeError,
     UntargetedCidNlRealDataRuntimeJob,
     _request_subject_candidates,
@@ -71,6 +75,7 @@ class _RuntimeJobState:
     recovery_input: UntargetedCidNlRecoveryInput | None = None
     recovery_attempts: tuple[UntargetedCidNlRecoveryAttemptResult, ...] = ()
     recovery_group_center_rts: tuple[float, ...] = ()
+    recovery_group_ids: tuple[str, ...] = ()
     open_attempted: bool = False
     opened: bool = False
     cleanup_outcome: RuntimeResourceCleanupOutcome = (
@@ -281,6 +286,89 @@ def _execute_initial_assessment_batch(
                         state.error = exc
 
 
+def _prepare_group_authorized_recoveries(
+    states: list[_RuntimeJobState],
+    *,
+    prepared: UntargetedCidNlPreparedGrouping,
+    sample_templates: tuple[UntargetedCidNlRealDataRuntimeJob, ...] = (),
+) -> None:
+    """Schedule searches from frozen workset membership, without regrouping."""
+    templates = {
+        job.sample.identity.sample_identity_id: job
+        for job in sample_templates or tuple(state.job for state in states)
+    }
+    by_key = {
+        (
+            state.job.sample.identity.sample_identity_id,
+            state.job.method_subject.method_subject_id,
+        ): state
+        for state in states
+    }
+    population = tuple(job.sample for job in templates.values())
+    for workset in prepared.worksets:
+        direct = {
+            candidate.peak_hypothesis_id: candidate.direct_support_assessment
+            for candidate in workset.retained_candidates
+            if candidate.direct_support_assessment is not None
+        }
+        groups = tuple(
+            group
+            for group in workset.assignment_scope.groups
+            if all(owner_id in direct for owner_id in group.owner_ids)
+        )
+        for group, target_ids in plan_conservative_recovery_targets(
+            groups, sample_population=population
+        ):
+            subject = select_cid_nl_group_recovery_subject(
+                group,
+                tuple(
+                    {
+                        direct[owner_id].content.method_subject
+                        for owner_id in group.owner_ids
+                    }
+                ),
+            )
+            assert group.group_center_rt is not None
+            for sample_id in sorted(target_ids):
+                key = (sample_id, subject.method_subject_id)
+                if key not in by_key:
+                    job = copy(templates[sample_id])
+                    object.__setattr__(job, "method_subject", subject)
+                    object.__setattr__(
+                        job,
+                        "work_unit_key",
+                        f"untargeted-cid-nl:{job.sample.metadata.raw_stem}:"
+                        f"{subject.method_subject_id}",
+                    )
+                    state = _RuntimeJobState(
+                        job=job,
+                        resource_key=None,
+                        initial_requires_raw=False,
+                        observer=_UntargetedRealDataWorkObserver(job.processing_owners),
+                    )
+                    _execute_initial_assessment(state)
+                    states.append(state)
+                    by_key[key] = state
+                state = by_key[key]
+                if state.error is not None or state.adapter_result is None:
+                    continue
+                assessment = state.adapter_result.assessment_input.assessment
+                if not (
+                    assessment.content.method_result == "HOLD"
+                    or is_unsearched_cid_nl_discovery_assessment(assessment)
+                    or is_cid_nl_missing_ms1_rejection(assessment)
+                ):
+                    continue
+                if assessment.candidate_peaks:
+                    state.recovery_input = UntargetedCidNlRecoveryInput(
+                        sample=state.job.sample,
+                        candidate_assessment=assessment,
+                    )
+                else:
+                    state.recovery_group_center_rts += (group.group_center_rt,)
+                    state.recovery_group_ids += (group.group_hypothesis_id,)
+
+
 def _prepare_owner_authorized_recoveries(
     states: list[_RuntimeJobState],
     *,
@@ -294,11 +382,13 @@ def _prepare_owner_authorized_recoveries(
             [],
         ).append(state)
     for method_subject_id in sorted(by_subject):
-        states.extend(_prepare_subject_authorized_recoveries(
-            tuple(by_subject[method_subject_id]),
-            alignment_config=alignment_config,
-            sample_templates=sample_templates,
-        ))
+        states.extend(
+            _prepare_subject_authorized_recoveries(
+                tuple(by_subject[method_subject_id]),
+                alignment_config=alignment_config,
+                sample_templates=sample_templates,
+            )
+        )
 
 
 def _prepare_subject_authorized_recoveries(
@@ -366,12 +456,15 @@ def _prepare_subject_authorized_recoveries(
                 subject = states[0].job.method_subject
                 object.__setattr__(job, "method_subject", subject)
                 object.__setattr__(
-                    job, "work_unit_key",
+                    job,
+                    "work_unit_key",
                     f"untargeted-cid-nl:{job.sample.metadata.raw_stem}:"
                     f"{subject.method_subject_id}",
                 )
                 state = _RuntimeJobState(
-                    job=job, resource_key=None, initial_requires_raw=False,
+                    job=job,
+                    resource_key=None,
+                    initial_requires_raw=False,
                     observer=_UntargetedRealDataWorkObserver(job.processing_owners),
                 )
                 _execute_initial_assessment(state)
@@ -435,7 +528,7 @@ def _execute_recovery(
             peak_config=job.peak_config,
             raw=raw,
         )
-        for center in state.recovery_group_center_rts:
+        for index, center in enumerate(state.recovery_group_center_rts):
             recovery = recover_untargeted_cid_nl_sample_subject(
                 processing_owners=job.processing_owners,
                 sample=job.sample,
@@ -456,6 +549,10 @@ def _execute_recovery(
                 signal_processing_profile=job.signal_processing_profile,
                 _preacquired_traces=trace_batch,
             )
+            if state.recovery_group_ids:
+                recovery = replace(
+                    recovery, group_hypothesis_id=state.recovery_group_ids[index]
+                )
             state.recovery_attempts += (recovery,)
         if len(state.recovery_attempts) == 1:
             state.recovery_input = state.recovery_attempts[0].recovery_input
@@ -527,7 +624,7 @@ def _execute_recovery_batch(phase: _BatchSamplePhaseState) -> None:
         for state in pending:
             result = state.adapter_result
             assert result is not None
-            for center in state.recovery_group_center_rts:
+            for index, center in enumerate(state.recovery_group_center_rts):
                 recovery = recover_untargeted_cid_nl_sample_subject(
                     processing_owners=state.job.processing_owners,
                     sample=state.job.sample,
@@ -550,6 +647,10 @@ def _execute_recovery_batch(phase: _BatchSamplePhaseState) -> None:
                     _observer=state.observer,
                     _preacquired_traces=trace_batch,
                 )
+                if state.recovery_group_ids:
+                    recovery = replace(
+                        recovery, group_hypothesis_id=state.recovery_group_ids[index]
+                    )
                 state.recovery_attempts += (recovery,)
             if len(state.recovery_attempts) == 1:
                 state.recovery_input = state.recovery_attempts[0].recovery_input
@@ -635,6 +736,7 @@ def _execute_sample_initial_worker(
 class _SampleRecoveryWorkerRequest:
     jobs: tuple[UntargetedCidNlRealDataRuntimeJob, ...]
     recovery_group_center_rts_by_key: dict[str, tuple[float, ...]]
+    recovery_group_ids_by_key: dict[str, tuple[str, ...]]
     recovery_inputs_by_key: dict[str, UntargetedCidNlRecoveryInput | None]
     adapter_results_by_key: dict[str, UntargetedCidNlRealDataAdapterResult | None]
     recovery_resource_key: str | None
@@ -670,6 +772,9 @@ def _execute_sample_recovery_worker(
             adapter_result=request.adapter_results_by_key.get(job.work_unit_key),
             recovery_input=request.recovery_inputs_by_key.get(job.work_unit_key),
             recovery_group_center_rts=request.recovery_group_center_rts_by_key.get(
+                job.work_unit_key, ()
+            ),
+            recovery_group_ids=request.recovery_group_ids_by_key.get(
                 job.work_unit_key, ()
             ),
         )

@@ -66,6 +66,34 @@ dated productization control-plane path is compatibility lookup only.
 
 ## Known Diagnostic Conclusions
 
+### 2026-09-21 One Production Grouping Before Recovery
+
+- Evidence: `diagnostic_only`; synthetic production-interface checks. Formal
+  CID-NL worksets now group initial evidence once with known-ISTD context and
+  reuse that result for recovery and final composition. Runtime result schema
+  v2 seals recovery group IDs alongside sample/subject/query provenance.
+- The four-sample fixture has two compatible subjects, each with one distinct
+  supporting sample (5 ppm resolver windows, 8 ppm precursor separation).
+  The group meets K=2: the formal route executes two initial jobs and two
+  missing-sample recoveries, retaining one group through persisted composition.
+  The same fixture on the single-subject planning path has two runtime results
+  and zero recoveries. This is an expected recovery-coverage change, not a
+  byte-identical performance refactor.
+- Luna's bounded suite passes 49 tests; production coverage closes 67 cases
+  (62 passed initially, then the five failed cases passed after correction),
+  and 18 legacy runtime cases pass. The known-ISTD production regression
+  retains its one-group and physical-value oracles. Initial-read failure still
+  follows the existing atomic runtime finalization instead of entering grouping.
+  Receipts:
+  `output/issue422-bounded-worksets-20260921/bounded-full-final2.stdout.log`,
+  `formal-cross-subject-after-tolerance.stdout.log`, and
+  `cross-subject-legacy-low-level-probe.log`, `production-repaired-five.log`, and
+  `legacy-runtime-synthetic-regression.log` in the same directory.
+- Grouping now falls within the acquisition callback's elapsed span. Compare
+  total workset time, not composition time alone. No RAW/Discovery/85RAW run was
+  launched for this slice; full-cohort performance and scientific acceptance
+  remain unestablished.
+
 ### 2026-09-21 Sparse Alignment Acquisition Work
 
 - Evidence: `diagnostic_only`; synthetic bounded-entry and dense/sparse

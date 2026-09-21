@@ -89,6 +89,11 @@ from xic_extractor.extraction.untargeted_cid_nl_result_store import (
     PartitionResultStore,
     SealedPartition,
 )
+from xic_extractor.extraction.untargeted_real_data_models import (
+    UntargetedCidNlInitialSampleResult,
+    UntargetedCidNlPreparedGrouping,
+    UntargetedCidNlWorksetGrouping,
+)
 from xic_extractor.extraction.untargeted_real_data_runtime import (
     UntargetedCidNlRealDataRuntimeApplicationResult,
     UntargetedCidNlRealDataRuntimeJob,
@@ -145,6 +150,7 @@ class UntargetedCidNlProductionBatch:
     context: UntargetedCidNlRealDataContext
     jobs: tuple[UntargetedCidNlRealDataRuntimeJob, ...]
     sample_job_templates: tuple[UntargetedCidNlRealDataRuntimeJob, ...] = ()
+    prepared_grouping: UntargetedCidNlPreparedGrouping | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -890,6 +896,7 @@ def execute_untargeted_cid_nl_production_batch(
     recovery_marker: OwnerPathRuntimeMarker,
     progress_callback: Callable[[Mapping[str, object]], None] | None = None,
     alignment_config: AlignmentConfig = CID_NL_ALIGNMENT_CONFIG,
+    known_istd_reference: KnownIstdReference | None = None,
 ) -> UntargetedCidNlRealDataRuntimeApplicationResult:
     """Execute the sealed universe once and enforce its per-sample phase bound."""
 
@@ -910,6 +917,12 @@ def execute_untargeted_cid_nl_production_batch(
         recovery_marker=recovery_marker,
         progress_callback=progress_callback,
         alignment_config=alignment_config,
+        prepare_grouping=lambda results: prepare_untargeted_cid_nl_grouping(
+            batch,
+            results,
+            alignment_config=alignment_config,
+            known_istd_reference=known_istd_reference,
+        ),
     )
     if not result.succeeded or len(result.sample_results) != len(batch.jobs):
         raise RuntimeError("Untargeted CID-NL production did not complete atomically")
@@ -1049,6 +1062,7 @@ def compose_untargeted_cid_nl_production_result(
 
     if not runtime_result.succeeded:
         raise RuntimeError("CID-NL production cannot compose a partial runtime")
+    batch = replace(batch, prepared_grouping=runtime_result.prepared_grouping)
     inputs = _build_production_composition_inputs(
         batch,
         runtime_result.sample_results,
@@ -1109,93 +1123,28 @@ def compose_untargeted_cid_nl_partition(
     )
 
 
-def _build_production_composition_inputs(
+def prepare_untargeted_cid_nl_grouping(
     batch: UntargetedCidNlProductionBatch,
-    sample_results: tuple[UntargetedCidNlRuntimeSampleResult, ...],
+    sample_results: tuple[UntargetedCidNlInitialSampleResult, ...],
     *,
     alignment_config: AlignmentConfig,
-    known_istd_reference: KnownIstdReference | None,
-) -> _ProductionCompositionInputs:
-    if type(sample_results) is not tuple or any(
-        type(result) is not UntargetedCidNlRuntimeSampleResult
-        for result in sample_results
-    ):
-        raise TypeError("sample_results must be an immutable typed runtime population")
-    if not isinstance(alignment_config, AlignmentConfig):
-        raise TypeError("alignment_config must be an AlignmentConfig")
-    result_context = _RuntimeResultContext(
-        tuple(result.job for result in sample_results)
-    )
-    result_by_key = {
-        (
-            result.job.sample.metadata.raw_stem,
-            result.job.method_subject.method_subject_id,
-        ): result
-        for result in sample_results
-    }
-    jobs_by_key = {
-        (job.sample.metadata.raw_stem, job.method_subject.method_subject_id): job
-        for job in batch.jobs
-    }
-    subject_ids = {
-        subject.method_subject_id for subject in batch.subject_batch.subjects
-    }
-    templates_by_stem = {
-        job.sample.metadata.raw_stem: job for job in batch.sample_job_templates
-    }
-    extra_keys = set(result_by_key) - set(jobs_by_key)
-    dense_keys = (
-        {
-            (sample.metadata.raw_stem, subject.method_subject_id)
-            for sample in batch.context.samples
-            for subject in batch.subject_batch.subjects
-        }
-        if not batch.sample_job_templates
-        else set(jobs_by_key)
-    )
-    if (
-        len(result_by_key) != len(sample_results)
-        or len(jobs_by_key) != len(batch.jobs)
-        or set(jobs_by_key) != dense_keys
-        or not set(jobs_by_key) <= set(result_by_key)
-        or any(
-            result_by_key[key].job is not job for key, job in jobs_by_key.items()
-        )
-        or any(
-            key[0] not in templates_by_stem
-            or key[1] not in subject_ids
-            or result_by_key[key].job.sample is not templates_by_stem[key[0]].sample
-            or result_by_key[key].job.processing_owners
-            is not batch.context.processing_owners
-            for key in extra_keys
-        )
-    ):
-        raise RuntimeError(
-            "CID-NL production runtime lost exact sample/subject results"
-        )
-
-    results_by_subject: dict[str, list[UntargetedCidNlRuntimeSampleResult]] = {}
+    known_istd_reference: KnownIstdReference | None = None,
+) -> UntargetedCidNlPreparedGrouping:
+    """Freeze compatible-workset membership once, before any recovery search."""
+    requested_reference = known_istd_reference
+    results_by_subject: dict[str, list[UntargetedCidNlInitialSampleResult]] = {}
     for result in sample_results:
         results_by_subject.setdefault(
             result.job.method_subject.method_subject_id, []
         ).append(result)
     for results in results_by_subject.values():
         results.sort(key=lambda result: result.job.sample.identity.sample_identity_id)
-    final_method_assessments = [
-        assessment
-        for result in sample_results
-        for assessment in result.effective_assessments
-    ]
-
     capture_by_candidate = _runtime_captures_by_candidate(batch, sample_results)
     candidate_by_id = {
         candidate.candidate_id: candidate
         for candidates in batch.context.candidates_by_sample.values()
         for candidate in candidates
     }
-    ordered_samples = tuple(
-        sorted(batch.context.samples, key=lambda item: item.identity.sample_identity_id)
-    )
     unsupported_subjects = {}
     for subject in batch.subject_batch.subjects:
         subject_assessments = tuple(
@@ -1300,23 +1249,13 @@ def _build_production_composition_inputs(
         excluded_candidates=exclusions,
     )
 
-    bundles = []
-    completed_captures = []
-    initial_groups: list[CrossSamplePeakGroupHypothesis] = []
-    initial_edges: list[CrossSampleNeighborhoodEdge] = []
+    prepared_worksets = []
     bindings_by_subject: dict[str, list[CaptureCandidateBinding]] = {}
     for binding in bindings:
         bindings_by_subject.setdefault(binding.method_subject_id, []).append(binding)
     sample_by_id = {
         sample.identity.sample_identity_id: sample for sample in batch.context.samples
     }
-    trajectory_policy = ModeTrackTrajectoryPolicy(
-        trajectory_policy_version="anchor-trajectory",
-        band_policy_version="fixed-band",
-        prediction_half_width_min=2 / 60,
-        max_interpolation_gap=10,
-        max_extrapolation_gap=10,
-    )
     sample_universe = frozenset(
         sample.metadata.raw_stem
         for sample in batch.context.processing_owners.sample_resolutions
@@ -1331,8 +1270,6 @@ def _build_production_composition_inputs(
             sample_universe=sample_universe,
             injection_order=injection_order,
         )
-    raw_sample_stems = frozenset(batch.context.raw_paths_by_sample)
-    empty_family_ids: frozenset[str] = frozenset()
     active_subjects = tuple(
         subject
         for subject in batch.subject_batch.subjects
@@ -1473,6 +1410,154 @@ def _build_production_composition_inputs(
             known_istd_reference=known_istd_reference,
             retained_hypotheses_by_assessment=(retained_hypotheses_by_assessment),
         )
+        prepared_worksets.append(
+            UntargetedCidNlWorksetGrouping(
+                subjects=subject_workset,
+                scope=child_scope,
+                captures=captures,
+                capture_inputs=capture_inputs,
+                assignment_scope=assignment_scope,
+                grouping_result=grouping_result,
+                retained_candidates=retained_candidates,
+            )
+        )
+    return UntargetedCidNlPreparedGrouping(
+        request=parent_request,
+        worksets=tuple(prepared_worksets),
+        alignment_config=alignment_config,
+        known_istd_reference=requested_reference,
+    )
+
+
+def _build_production_composition_inputs(
+    batch: UntargetedCidNlProductionBatch,
+    sample_results: tuple[UntargetedCidNlRuntimeSampleResult, ...],
+    *,
+    alignment_config: AlignmentConfig,
+    known_istd_reference: KnownIstdReference | None,
+) -> _ProductionCompositionInputs:
+    if type(sample_results) is not tuple or any(
+        type(result) is not UntargetedCidNlRuntimeSampleResult
+        for result in sample_results
+    ):
+        raise TypeError("sample_results must be an immutable typed runtime population")
+    if not isinstance(alignment_config, AlignmentConfig):
+        raise TypeError("alignment_config must be an AlignmentConfig")
+    result_context = _RuntimeResultContext(
+        tuple(result.job for result in sample_results)
+    )
+    result_by_key = {
+        (
+            result.job.sample.metadata.raw_stem,
+            result.job.method_subject.method_subject_id,
+        ): result
+        for result in sample_results
+    }
+    jobs_by_key = {
+        (job.sample.metadata.raw_stem, job.method_subject.method_subject_id): job
+        for job in batch.jobs
+    }
+    subject_ids = {
+        subject.method_subject_id for subject in batch.subject_batch.subjects
+    }
+    templates_by_stem = {
+        job.sample.metadata.raw_stem: job for job in batch.sample_job_templates
+    }
+    extra_keys = set(result_by_key) - set(jobs_by_key)
+    dense_keys = (
+        {
+            (sample.metadata.raw_stem, subject.method_subject_id)
+            for sample in batch.context.samples
+            for subject in batch.subject_batch.subjects
+        }
+        if not batch.sample_job_templates
+        else set(jobs_by_key)
+    )
+    if (
+        len(result_by_key) != len(sample_results)
+        or len(jobs_by_key) != len(batch.jobs)
+        or set(jobs_by_key) != dense_keys
+        or not set(jobs_by_key) <= set(result_by_key)
+        or any(result_by_key[key].job is not job for key, job in jobs_by_key.items())
+        or any(
+            key[0] not in templates_by_stem
+            or key[1] not in subject_ids
+            or result_by_key[key].job.sample is not templates_by_stem[key[0]].sample
+            or result_by_key[key].job.processing_owners
+            is not batch.context.processing_owners
+            for key in extra_keys
+        )
+    ):
+        raise RuntimeError(
+            "CID-NL production runtime lost exact sample/subject results"
+        )
+
+    results_by_subject: dict[str, list[UntargetedCidNlRuntimeSampleResult]] = {}
+    for result in sample_results:
+        results_by_subject.setdefault(
+            result.job.method_subject.method_subject_id, []
+        ).append(result)
+    for results in results_by_subject.values():
+        results.sort(key=lambda result: result.job.sample.identity.sample_identity_id)
+    final_method_assessments = [
+        assessment
+        for result in sample_results
+        for assessment in result.effective_assessments
+    ]
+
+    prepared = batch.prepared_grouping or prepare_untargeted_cid_nl_grouping(
+        batch,
+        tuple(
+            UntargetedCidNlInitialSampleResult(item.job, item.adapter_result)
+            for item in sample_results
+        ),
+        alignment_config=alignment_config,
+        known_istd_reference=known_istd_reference,
+    )
+    if prepared.alignment_config != alignment_config or (
+        known_istd_reference is not None
+        and prepared.known_istd_reference != known_istd_reference
+    ):
+        raise RuntimeError("grouping context must be supplied before recovery")
+    parent_request = prepared.request
+    bundles = []
+    completed_captures = []
+    initial_groups: list[CrossSamplePeakGroupHypothesis] = []
+    initial_edges: list[CrossSampleNeighborhoodEdge] = []
+    ordered_samples = tuple(
+        sorted(
+            batch.context.samples, key=lambda sample: sample.identity.sample_identity_id
+        )
+    )
+    sample_universe = frozenset(sample.metadata.raw_stem for sample in ordered_samples)
+    injection_order = {
+        sample.metadata.raw_stem: sample.metadata.injection_order
+        for sample in ordered_samples
+        if sample.metadata.injection_order is not None
+    }
+    raw_sample_stems = frozenset(batch.context.raw_paths_by_sample)
+    empty_family_ids: frozenset[str] = frozenset()
+    trajectory_policy = ModeTrackTrajectoryPolicy(
+        trajectory_policy_version="anchor-trajectory",
+        band_policy_version="fixed-band",
+        prediction_half_width_min=2 / 60,
+        max_interpolation_gap=10,
+        max_extrapolation_gap=10,
+    )
+    for workset in prepared.worksets:
+        subject_workset = workset.subjects
+        child_scope = workset.scope
+        captures = workset.captures
+        capture_inputs = workset.capture_inputs
+        assignment_scope = workset.assignment_scope
+        grouping_result = workset.grouping_result
+        retained_candidates = workset.retained_candidates
+        assessments = tuple(
+            (result.job.sample, assessment)
+            for subject in subject_workset
+            for result in results_by_subject.get(subject.method_subject_id, ())
+            for assessment in result.effective_assessments
+        )
         initial_groups.extend(assignment_scope.groups)
         if batch.sample_job_templates:
             unsearched = []
@@ -1498,13 +1583,15 @@ def _build_production_composition_inputs(
             subject.method_subject_id: index
             for index, subject in enumerate(subject_workset)
         }
-        assessments = tuple(sorted(
-            assessments,
-            key=lambda pair: (
-                pair[0].identity.sample_identity_id,
-                subject_order[pair[1].content.method_subject.method_subject_id],
-            ),
-        ))
+        assessments = tuple(
+            sorted(
+                assessments,
+                key=lambda pair: (
+                    pair[0].identity.sample_identity_id,
+                    subject_order[pair[1].content.method_subject.method_subject_id],
+                ),
+            )
+        )
         retained_cell_hypotheses: dict[tuple[str, str], list[PeakHypothesis]] = {}
         for candidate in retained_candidates:
             assessment = candidate.direct_support_assessment
@@ -1537,8 +1624,12 @@ def _build_production_composition_inputs(
                 )
                 if sample_result.recovery_attempts
                 for group in assignment_scope.groups
-                if group.group_center_rt is not None and (
-                    recovery := sample_result.recovery_for_group(group.group_center_rt)
+                if group.group_center_rt is not None
+                and (
+                    recovery := sample_result.recovery_for_group(
+                        group.group_center_rt,
+                        group_hypothesis_id=group.group_hypothesis_id,
+                    )
                 )
                 is not None
             },
@@ -1591,7 +1682,8 @@ def _build_production_composition_inputs(
                         sample_result is None
                         or facts.group_context.group.group_center_rt is None
                         or sample_result.recovery_for_group(
-                            facts.group_context.group.group_center_rt
+                            facts.group_context.group.group_center_rt,
+                            group_hypothesis_id=group.group_hypothesis_id,
                         )
                         is None
                     ):
@@ -1725,7 +1817,7 @@ def _build_production_composition_inputs(
 
 def _runtime_captures_by_candidate(
     batch: UntargetedCidNlProductionBatch,
-    sample_results: tuple[UntargetedCidNlRuntimeSampleResult, ...],
+    sample_results: tuple[UntargetedCidNlInitialSampleResult, ...],
 ) -> dict[str, SampleLocalCapture]:
     captures: dict[str, SampleLocalCapture] = {}
     for result in sample_results:
@@ -1776,6 +1868,7 @@ __all__ = [
     "materialize_untargeted_cid_nl_partition",
     "materialize_untargeted_partition",
     "prepare_untargeted_cid_nl_alignment_subject_worksets",
+    "prepare_untargeted_cid_nl_grouping",
     "prepare_untargeted_cid_nl_production_plan",
     "prepare_untargeted_production_plan",
 ]

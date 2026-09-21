@@ -66,9 +66,27 @@ TerminalObservationVariant: TypeAlias = Literal[
 ]
 
 
-
 class CellObservationContractError(ValueError):
     """Raised when one assessment cannot enter an existing group cell exactly."""
+
+
+def select_cid_nl_group_recovery_subject(
+    group: CrossSamplePeakGroupHypothesis,
+    subjects: tuple[CidNlMethodSubject, ...],
+) -> CidNlMethodSubject:
+    """Select the same canonical search subject before and after cell assembly."""
+    center = group.group_center_mz
+    if center is None:
+        raise CellObservationContractError(
+            "group recovery subject requires a finite group center m/z"
+        )
+    return min(
+        subjects,
+        key=lambda subject: (
+            abs(subject.precursor_mz - center) / max(abs(center), 1e-12),
+            subject.method_subject_id,
+        ),
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -220,18 +238,7 @@ class CidNlCellGroupContext:
 
     @property
     def method_subject(self) -> CidNlMethodSubject:
-        center = self.group.group_center_mz
-        if center is None:
-            raise CellObservationContractError(
-                "group recovery subject requires a finite group center m/z"
-            )
-        return min(
-            self.method_subjects,
-            key=lambda subject: (
-                abs(subject.precursor_mz - center) / max(abs(center), 1e-12),
-                subject.method_subject_id,
-            ),
-        )
+        return select_cid_nl_group_recovery_subject(self.group, self.method_subjects)
 
     @property
     def method_subject_id(self) -> str:
@@ -257,6 +264,7 @@ class CidNlCellGroupContext:
                 for support in self.supports
             )
         )
+
 
 def _group_support_artifacts(
     supports: tuple[CidNlCellGroupSupport, ...],

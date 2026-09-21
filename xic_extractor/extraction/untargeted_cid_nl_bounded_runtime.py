@@ -7,7 +7,7 @@ import json
 import queue
 import threading
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import fields
+from dataclasses import fields, replace
 from functools import partial
 from pathlib import Path
 from typing import cast
@@ -60,6 +60,7 @@ from xic_extractor.extraction.untargeted_cid_nl_production_batch import (
     compose_and_persist_untargeted_cid_nl_partition,
     materialize_untargeted_cid_nl_partition,
     prepare_untargeted_cid_nl_alignment_subject_worksets,
+    prepare_untargeted_cid_nl_grouping,
 )
 from xic_extractor.extraction.untargeted_cid_nl_real_data_runtime import (
     UntargetedCidNlRuntimePartitionResult,
@@ -390,6 +391,12 @@ class CidNlPartitionPipelineAdapter:
             try:
                 leaf = execute_untargeted_cid_nl_runtime_partition(
                     batch.jobs,
+                    prepare_grouping=partial(
+                        prepare_untargeted_cid_nl_grouping,
+                        batch,
+                        alignment_config=self._alignment_config,
+                        known_istd_reference=self._known_istd_reference,
+                    ),
                     recovery_templates=batch.sample_job_templates,
                     partition_key=partition.partition_key,
                     alignment_config=self._alignment_config,
@@ -411,6 +418,12 @@ class CidNlPartitionPipelineAdapter:
             ) as pool:
                 leaf = execute_untargeted_cid_nl_runtime_partition(
                     batch.jobs,
+                    prepare_grouping=partial(
+                        prepare_untargeted_cid_nl_grouping,
+                        batch,
+                        alignment_config=self._alignment_config,
+                        known_istd_reference=self._known_istd_reference,
+                    ),
                     recovery_templates=batch.sample_job_templates,
                     partition_key=partition.partition_key,
                     alignment_config=self._alignment_config,
@@ -429,7 +442,7 @@ class CidNlPartitionPipelineAdapter:
             )
             failure_detail = failed.failure_detail
         return PartitionAcquisitionOutput(
-            result=(batch, leaf),
+            result=(replace(batch, prepared_grouping=leaf.prepared_grouping), leaf),
             resources=leaf.worker_batch.resource_settlements,
             acquisitions=leaf.acquisitions,
             succeeded=leaf.succeeded,
@@ -748,9 +761,7 @@ def _sample_worker_subject_owners(
     partition_batches: tuple[object, ...],
 ) -> tuple[object, ...]:
     values = [plan.subject_batch, *partition_batches]
-    values.extend(
-        template._request_subjects for template in plan.sample_job_templates
-    )
+    values.extend(template._request_subjects for template in plan.sample_job_templates)
     return tuple({id(value): value for value in values}.values())
 
 

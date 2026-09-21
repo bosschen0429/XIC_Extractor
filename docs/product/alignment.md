@@ -99,6 +99,18 @@ observation for a missing or insufficient cell, but it does not reopen group
 membership, rebuild a grouping snapshot, refit ModeTrack, or mint a post-repair
 grouping context.
 
+The production CID-NL runtime prepares that result after initial assessments,
+once per compatible subject workset, using the complete sample population and
+the supplied known-ISTD context. Recovery eligibility counts distinct supporting
+samples across the frozen group, including compatible subjects. It does not
+regroup each method subject separately. Missing sample jobs are created only
+after this eligibility decision; dense cells are assembled during final
+composition. Recovery attempts bind the group ID to their sample and method
+subject in the runtime result. RT bounds describe the acquisition query rather
+than identify the destination group. The direct production API therefore takes
+its alignment configuration and known-ISTD reference at execution time;
+composition cannot replace that grouping context.
+
 Initial grouping uses the sparse feature index described below. It scores only
 compatible feature candidates and retains the evaluated evidence. Missing pair
 records mean `not_evaluated`; they do not prove incompatibility. Backfill checks

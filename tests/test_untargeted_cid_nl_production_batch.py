@@ -220,6 +220,13 @@ def _assert_jobs_match_direct_construction(batch) -> None:
     )
 
     context = batch.context
+    memberships = dict(batch.subject_batch.candidate_memberships)
+    candidate_keys = {
+        (sample.identity.sample_identity_id, memberships[candidate.candidate_id])
+        for sample in context.samples
+        for candidate in context.candidates_by_sample[sample.metadata.raw_stem]
+        if candidate.candidate_id in memberships
+    }
     expected = tuple(
         UntargetedCidNlRealDataRuntimeJob(
             processing_owners=context.processing_owners,
@@ -251,9 +258,13 @@ def _assert_jobs_match_direct_construction(batch) -> None:
                 )
                 if record.work_item.sample_stem == sample.metadata.raw_stem
             ),
+            acquisition_cache_dir=batch.jobs[0].acquisition_cache_dir,
         )
         for sample in context.samples
         for subject in batch.subject_batch.subjects
+        if not batch.sample_job_templates
+        or (sample.identity.sample_identity_id, subject.method_subject_id)
+        in candidate_keys
     )
     assert batch.jobs == expected
     assert tuple(job._request_subjects for job in batch.jobs) == tuple(
@@ -1932,11 +1943,11 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
             )
             (joint_cell,) = joint_final_cell.predecessor_cells
             foreign_same_sample_assessment = next(
-                sample_result.effective_assessment
-                for runtime_result in runtime_results
-                for sample_result in runtime_result.sample_results
-                if sample_result.job.sample.metadata.raw_stem == "S3"
-                and sample_result.job.method_subject
+                assessment
+                for assessment in completed.method_assessments
+                if assessment.content.canonical_sample_identity_id
+                == sample_id_by_stem["S3"]
+                and assessment.content.method_subject
                 != joint_cell.group_context.method_subject
             )
             with pytest.raises(
@@ -2831,6 +2842,10 @@ def test_completed_empty_recovery_preserves_each_compatible_source_subject(
         sources_by_path=source_raws,
         tmp_path=tmp_path,
     )
+    alignment_config = AlignmentConfig(
+        anchor_min_seed_events=1,
+        product_mz_tolerance_ppm=30.0,
+    )
     runtime = execute_untargeted_cid_nl_production_batch(
         batch,
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
@@ -2838,13 +2853,9 @@ def test_completed_empty_recovery_preserves_each_compatible_source_subject(
             tmp_path / "compatible-source-subject.runtime.json",
             "compatible-source-subject",
         ),
+        alignment_config=alignment_config,
     )
     assert runtime.succeeded
-
-    alignment_config = AlignmentConfig(
-        anchor_min_seed_events=1,
-        product_mz_tolerance_ppm=30.0,
-    )
     completed = compose_untargeted_cid_nl_production_result(
         batch,
         runtime,
@@ -4070,14 +4081,6 @@ def test_production_initial_groups_use_complete_feature_inference_batch(
         sample_identity_namespace="study:canonical-batch",
     )
     _install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
-    runtime = execute_untargeted_cid_nl_production_batch(
-        batch,
-        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-        recovery_marker=OwnerPathRuntimeMarker(
-            tmp_path / "canonical-batch.runtime.json", "canonical-batch"
-        ),
-    )
-    assert runtime.succeeded
     initial_contexts = []
     initial_edges = []
     cell_contexts = []
@@ -4099,6 +4102,15 @@ def test_production_initial_groups_use_complete_feature_inference_batch(
         return cells
 
     monkeypatch.setattr(production, "compose_cid_nl_predecessor_cells", retain_cells)
+    runtime = execute_untargeted_cid_nl_production_batch(
+        batch,
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+        recovery_marker=OwnerPathRuntimeMarker(
+            tmp_path / "canonical-batch.runtime.json", "canonical-batch"
+        ),
+        alignment_config=AlignmentConfig(),
+    )
+    assert runtime.succeeded
     compose_untargeted_cid_nl_production_result(
         batch, runtime, alignment_config=AlignmentConfig()
     )
@@ -4191,12 +4203,15 @@ def test_known_istd_reference_closes_drifting_group_and_cell_proof(
         sample_identity_namespace="study:known-istd",
     )
     _install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
-    runtime = execute_untargeted_cid_nl_production_batch(
+    runtime_plain = execute_untargeted_cid_nl_production_batch(
         batch,
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-        recovery_marker=OwnerPathRuntimeMarker(tmp_path / "runtime.json", "reference"),
+        recovery_marker=OwnerPathRuntimeMarker(
+            tmp_path / "runtime-plain.json", "plain"
+        ),
+        alignment_config=AlignmentConfig(),
     )
-    assert runtime.succeeded
+    assert runtime_plain.succeeded
     workbook = Workbook()
     targets = workbook.active
     targets.title = "Targets"
@@ -4222,25 +4237,34 @@ def test_known_istd_reference_closes_drifting_group_and_cell_proof(
     reference_path = tmp_path / "reference.xlsx"
     workbook.save(reference_path)
     reference = read_known_istd_reference(reference_path)
+    config = AlignmentConfig()
+    runtime = execute_untargeted_cid_nl_production_batch(
+        batch,
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+        recovery_marker=OwnerPathRuntimeMarker(tmp_path / "runtime.json", "reference"),
+        alignment_config=config,
+        known_istd_reference=reference,
+    )
+    assert runtime.succeeded
     assert tuple(
         sorted(subject.neutral_loss_da for subject in batch.subject_batch.subjects)
     ) == (configured_loss, configured_loss)
     plain = compose_untargeted_cid_nl_production_result(
         batch,
-        runtime,
+        runtime_plain,
         alignment_config=AlignmentConfig(),
     )
     corrected = compose_untargeted_cid_nl_production_result(
         batch,
         runtime,
-        alignment_config=AlignmentConfig(),
+        alignment_config=config,
         known_istd_reference=reference,
     )
     _assert_partition_composition_parity(
         batch,
         runtime,
         corrected,
-        alignment_config=AlignmentConfig(),
+        alignment_config=config,
         known_istd_reference=reference,
         subject_worksets=(batch.subject_batch.subjects,),
     )

@@ -159,6 +159,7 @@ class UntargetedCidNlRecoveryAttemptResult:
     acquisition: TraceAcquisitionBatch
     lineage_artifacts: tuple[EvidenceArtifactRef, ...]
     validation_status: str = VALIDATION_STATUS
+    group_hypothesis_id: str | None = None
     capture_evidence: tuple[RetainedCaptureEvidence, ...] = dataclass_field(
         default=(), compare=False
     )

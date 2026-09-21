@@ -18,11 +18,20 @@ from xic_extractor.alignment.backfill.evaluation_coverage import (
     _completed_recovery_projection_bytes,
 )
 from xic_extractor.alignment.cell_observations import CidNlCellGroupContext
+from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.cross_sample_peak_groups import (
     validate_cross_sample_peak_group_identity,
 )
+from xic_extractor.alignment.drift_evidence import KnownIstdReference
+from xic_extractor.alignment.grouping_result import CrossSampleGroupingResult
+from xic_extractor.alignment.mode_track.assignment import ModeTrackCandidateObservation
+from xic_extractor.alignment.mode_track.assignment_scope import ModeTrackAssignmentScope
 from xic_extractor.alignment.untargeted_cid_nl_golden_path import (
     UntargetedCidNlRecoveryInput,
+)
+from xic_extractor.alignment.workflow import (
+    CaptureWorkflowArguments,
+    UntargetWorkflowCompositionRequest,
 )
 from xic_extractor.config import ExtractionConfig
 from xic_extractor.discovery.batch_contract import (
@@ -61,6 +70,7 @@ from xic_extractor.extraction.untargeted_cid_nl_real_data_inputs import (
     discovery_settings_payload,
     validate_candidate_universe_payload,
 )
+from xic_extractor.peak_detection.capture import SampleLocalCapture
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessmentRef,
     validate_cid_nl_method_assessment_binding,
@@ -73,6 +83,7 @@ from xic_extractor.peak_detection.cid_nl_method_subject import (
 )
 from xic_extractor.peak_detection.search_scope import (
     PHYSICAL_CAPTURE_INPUT_KEY,
+    UntargetedSearchScope,
     physical_capture_input_payload,
 )
 from xic_extractor.peak_detection.signal_processing_profile import (
@@ -110,7 +121,7 @@ def _reduce_mapping_proxy(
 copyreg.pickle(MappingProxyType, _reduce_mapping_proxy)
 
 
-SCHEMA_VERSION = "untargeted_cid_nl_real_data_runtime_result"
+SCHEMA_VERSION = "untargeted_cid_nl_real_data_runtime_result_v2"
 VALIDATION_STATUS = "diagnostic_only"
 RUNTIME_CALL_COST_METRIC_NAMES = (
     "raw_open_count",
@@ -355,6 +366,7 @@ def canonical_untargeted_cid_nl_sample_result_bytes(
         acquisition_sha256=reference.acquisition_sha256,
         recovery_assessment_artifact_ids=reference.recovery_assessment_artifact_ids,
         recovery_query_bounds=reference.recovery_query_bounds,
+        recovery_group_hypothesis_ids=reference.recovery_group_hypothesis_ids,
     )
 
 
@@ -390,6 +402,7 @@ class UntargetedCidNlSampleResultRef:
     acquisition_sha256: str | None
     recovery_assessment_artifact_ids: tuple[str, ...]
     recovery_query_bounds: tuple[tuple[float, float], ...]
+    recovery_group_hypothesis_ids: tuple[str | None, ...]
     artifact: EvidenceArtifactRef
 
     def __post_init__(self) -> None:
@@ -406,6 +419,39 @@ class UntargetedCidNlSampleResultRef:
             raise UntargetedCidNlRealDataRuntimeError(
                 "sample result mismatches its immutable artifact"
             ) from exc
+
+
+@dataclass(frozen=True, slots=True)
+class UntargetedCidNlInitialSampleResult:
+    """Initial evidence available before recovery and runtime result sealing."""
+
+    job: UntargetedCidNlRealDataRuntimeJob
+    adapter_result: UntargetedCidNlRealDataAdapterResult
+
+    @property
+    def effective_assessments(self) -> tuple[CidNlMethodAssessmentRef, ...]:
+        return (self.adapter_result.assessment_input.assessment,)
+
+
+@dataclass(frozen=True, slots=True)
+class UntargetedCidNlWorksetGrouping:
+    """The existing grouping owner's answer and its exact capture inputs."""
+
+    subjects: tuple[CidNlMethodSubject, ...]
+    scope: UntargetedSearchScope
+    captures: tuple[SampleLocalCapture, ...]
+    capture_inputs: tuple[CaptureWorkflowArguments, ...]
+    assignment_scope: ModeTrackAssignmentScope
+    grouping_result: CrossSampleGroupingResult
+    retained_candidates: tuple[ModeTrackCandidateObservation, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class UntargetedCidNlPreparedGrouping:
+    request: UntargetWorkflowCompositionRequest
+    worksets: tuple[UntargetedCidNlWorksetGrouping, ...]
+    alignment_config: AlignmentConfig
+    known_istd_reference: KnownIstdReference | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -440,17 +486,27 @@ class UntargetedCidNlRuntimeSampleResult:
         )
 
     def recovery_for_group(
-        self, center: float
+        self, center: float, *, group_hypothesis_id: str | None = None
     ) -> UntargetedCidNlRecoveryAttemptResult | None:
-        half_window = self.job.peak_config.nl_rt_anchor_half_window_min
-        matches = tuple(
-            attempt
-            for attempt in self.recovery_attempts
-            if attempt.assessment.content.evaluation_receipt.query_rt_min
-            == max(0.0, center - half_window)
-            and attempt.assessment.content.evaluation_receipt.query_rt_max
-            == center + half_window
-        )
+        bound = any(a.group_hypothesis_id is not None for a in self.recovery_attempts)
+        if bound:
+            matches = tuple(
+                attempt
+                for attempt in self.recovery_attempts
+                if group_hypothesis_id is not None
+                and attempt.group_hypothesis_id == group_hypothesis_id
+            )
+        else:
+            # The standalone single-subject runtime predates workset grouping.
+            half_window = self.job.peak_config.nl_rt_anchor_half_window_min
+            matches = tuple(
+                attempt
+                for attempt in self.recovery_attempts
+                if attempt.assessment.content.evaluation_receipt.query_rt_min
+                == max(0.0, center - half_window)
+                and attempt.assessment.content.evaluation_receipt.query_rt_max
+                == center + half_window
+            )
         if len(matches) > 1:
             raise UntargetedCidNlRealDataRuntimeError(
                 "group has duplicate recovery attempts"
@@ -497,7 +553,9 @@ def _project_completed_recovery(
         or center is None
     ):
         raise UntargetedCidNlRealDataRuntimeError("recovery crossed its owner group")
-    recovery = result.recovery_for_group(center)
+    recovery = result.recovery_for_group(
+        center, group_hypothesis_id=group_context.group.group_hypothesis_id
+    )
     if recovery is None:
         raise UntargetedCidNlRealDataRuntimeError(
             "initial assessment is not a recovery"
@@ -595,6 +653,7 @@ class UntargetedCidNlRuntimePartitionResult:
     sample_results: tuple[UntargetedCidNlRuntimeSampleResult, ...]
     worker_batch: RuntimeWorkerBatchReceipt
     acquisitions: tuple[RuntimeAcquisitionReceipt, ...]
+    prepared_grouping: UntargetedCidNlPreparedGrouping | None = None
 
     @property
     def succeeded(self) -> bool:
@@ -704,6 +763,9 @@ def _mint_sample_result_ref(
             else None
         ),
         "recovery_candidate_count": recovery_candidate_count,
+        "recovery_group_hypothesis_ids": tuple(
+            attempt.group_hypothesis_id for attempt in recovery_attempts
+        ),
         "recovery_assessment_artifact_ids": tuple(
             ref.artifact.evidence_artifact_id for ref in recovery_assessments
         ),
@@ -758,6 +820,9 @@ def _mint_sample_result_ref(
             else None
         ),
         recovery_candidate_count=recovery_candidate_count,
+        recovery_group_hypothesis_ids=tuple(
+            attempt.group_hypothesis_id for attempt in recovery_attempts
+        ),
         acquisition_sha256=acquisition_sha256,
         recovery_assessment_artifact_ids=tuple(
             ref.artifact.evidence_artifact_id for ref in recovery_assessments
@@ -1039,9 +1104,7 @@ def _validate_subject_partition(
         raise UntargetedCidNlRealDataRuntimeError(
             "subject partition contains a foreign method subject"
         )
-    if not set(partition.candidate_memberships).issubset(
-        pinned.candidate_memberships
-    ):
+    if not set(partition.candidate_memberships).issubset(pinned.candidate_memberships):
         raise UntargetedCidNlRealDataRuntimeError(
             "subject partition contains a foreign candidate membership"
         )
@@ -1077,10 +1140,7 @@ def _validate_partition_candidates(
     _validate_sample_candidates(job.candidates, job=job, label="partition")
     support_ids = tuple(candidate.candidate_id for candidate in job.support_candidates)
     membership_ids = (
-        {
-            candidate_id
-            for candidate_id, _subject_id in pinned.candidate_memberships
-        }
+        {candidate_id for candidate_id, _subject_id in pinned.candidate_memberships}
         if isinstance(pinned, UntargetedCidNlMethodSubjectBatch)
         else selected_ids
     )
