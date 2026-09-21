@@ -181,16 +181,8 @@ def _emit_curve_payload(
         "provenance": actual,
     }
     # One envelope per actual content/binding; candidate associations are links.
-    encoded = json.dumps(
-        envelope,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-        allow_nan=False,
-    ).encode("utf-8")
-    payload_id = "xic.inspector-curve:" + hashlib.sha256(encoded).hexdigest()
-    sink.add_curve_payload(
-        payload_id=payload_id,
+    payload_id = sink.add_curve_payload(
+        payload_id=None,
         sample_id=sample_id,
         kind=kind,
         record_id=record_id,

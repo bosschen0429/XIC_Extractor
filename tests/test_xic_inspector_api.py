@@ -32,6 +32,36 @@ def _report_data(path: Path) -> dict:
     return json.loads(match.group(1))
 
 
+def _insert_link(
+    connection: sqlite3.Connection, row: tuple[str, str, str, str]
+) -> None:
+    """Insert one flat link through the normalized persisted representation."""
+    candidate_id, sample_id, kind, record_id = row
+    set_id = connection.execute(
+        "SELECT COALESCE(MAX(set_id), 0) + 1 FROM link_members"
+    ).fetchone()[0]
+    connection.execute(
+        "INSERT OR IGNORE INTO link_members VALUES (?, ?, ?)",
+        (set_id, candidate_id, sample_id),
+    )
+    connection.execute(
+        "INSERT OR IGNORE INTO record_links VALUES (?, ?, ?)",
+        (set_id, kind, record_id),
+    )
+
+
+def _delete_links(
+    connection: sqlite3.Connection, *, kind: str, record_id: str | None = None
+) -> None:
+    if record_id is None:
+        connection.execute("DELETE FROM record_links WHERE kind=?", (kind,))
+    else:
+        connection.execute(
+            "DELETE FROM record_links WHERE kind=? AND record_id=?",
+            (kind, record_id),
+        )
+
+
 def _create_mock_db(
     directory: Path,
     *,
@@ -155,6 +185,25 @@ def _create_mock_db(
     return db_path, matrix_path, matrix_hash
 
 
+def test_normalized_links_preserve_candidate_query_and_inspector_scope(tmp_path):
+    from xic_extractor.diagnostics.cid_nl_explanation import read_cid_nl_explanation
+
+    report, _, _ = _create_mock_db(tmp_path)
+    detail = read_cid_nl_explanation(report, candidate_id="C1")
+    output = tmp_path / "candidate-query.html"
+    result = generate_report(
+        report,
+        SelectionRequest(strategy="query", candidate_ids=("C1",)),
+        output,
+    )
+
+    assert result.selected_count == 1
+    item = _report_data(output)["items"][0]
+    assert json.loads(item["id"])[-1] == "row-01"
+    assert item["details"]["readable_records"]
+    assert {"rows", "final_groups", "cell_decisions"}.issubset(detail["records"])
+
+
 def test_generate_report_sample_strategy_success() -> None:
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp = Path(tmpdir)
@@ -255,9 +304,7 @@ def test_group_query_keeps_unlinked_stored_cells_scoped_and_readable(tmp_path):
                 "INSERT INTO records VALUES (?, ?, ?)",
                 (kind, ref, json.dumps(facts)),
             )
-        connection.execute(
-            "INSERT INTO links VALUES (?, ?, ?, ?)",
-            ("C1", "S1", "method_assessments", "assessment-hold"),
+        _insert_link(connection, ("C1", "S1", "method_assessments", "assessment-hold"),
         )
 
     output = tmp_path / "all-samples.html"
@@ -504,9 +551,7 @@ def test_row_curves_follow_exact_witnesses_and_shared_payload_is_read_once(
                     json.dumps({"row_key_id": rid, "group_hypothesis_id": "G1"}),
                 ),
             )
-            connection.execute(
-                "INSERT INTO links VALUES (?, ?, ?, ?)",
-                ("C1", "S1", "rows", rid),
+            _insert_link(connection, ("C1", "S1", "rows", rid),
             )
     reads = []
     real_reader = cid_nl.read_cid_nl_curves
@@ -559,15 +604,14 @@ def test_real_source_query_uses_one_scoped_candidate_observation(tmp_path):
     report, _, _ = _create_mock_db(tmp_path)
     with sqlite3.connect(report) as connection:
         connection.execute("DELETE FROM records WHERE kind='rows'")
-        connection.execute("DELETE FROM links WHERE kind='rows'")
+        _delete_links(connection, kind="rows")
         connection.execute("DELETE FROM records WHERE kind='terminal_subjects'")
-        connection.execute("DELETE FROM links WHERE kind='terminal_subjects'")
+        _delete_links(connection, kind="terminal_subjects")
         connection.execute(
             "INSERT INTO candidates VALUES (?, ?, ?)",
             ("C2", "S2", json.dumps({"candidate_id": "C2", "precursor_mz": 600.0})),
         )
-        connection.execute(
-            "INSERT INTO links VALUES (?, ?, ?, ?)", ("C2", "S2", "final_groups", "G1")
+        _insert_link(connection, ("C2", "S2", "final_groups", "G1")
         )
         for cid, sid, rt in (("C1", "S1", 1.0), ("C2", "S2", 8.0)):
             connection.execute(
@@ -589,9 +633,7 @@ def test_real_source_query_uses_one_scoped_candidate_observation(tmp_path):
                     ),
                 ),
             )
-            connection.execute(
-                "INSERT INTO links VALUES (?, ?, ?, ?)",
-                (cid, sid, "terminal_subjects", cid),
+            _insert_link(connection, (cid, sid, "terminal_subjects", cid),
             )
     result = generate_report(
         report,
@@ -639,8 +681,7 @@ def test_source_strata_use_only_selected_samples_actual_cells(tmp_path):
             ("final_groups", "G1"),
             ("cell_decisions", "cd-01"),
         ):
-            connection.execute(
-                "INSERT INTO links VALUES (?, ?, ?, ?)", ("C2", "S2", kind, rid)
+            _insert_link(connection, ("C2", "S2", kind, rid)
             )
         connection.execute(
             "INSERT INTO records VALUES (?, ?, ?)",
@@ -659,9 +700,7 @@ def test_source_strata_use_only_selected_samples_actual_cells(tmp_path):
             ),
         )
         for cid, sid in (("C1", "S1"), ("C2", "S2")):
-            connection.execute(
-                "INSERT INTO links VALUES (?, ?, ?, ?)",
-                (cid, sid, "cell_decisions", "cd-02"),
+            _insert_link(connection, (cid, sid, "cell_decisions", "cd-02"),
             )
     full = tmp_path / "full.html"
     generate_report(report, SelectionRequest(), full)
@@ -810,9 +849,7 @@ def test_selected_capture_stages_preserve_each_payload_and_reject_partial_loss(
                 "INSERT INTO records VALUES (?, ?, ?)",
                 ("capture_evidence", pid, json.dumps(capture)),
             )
-            connection.execute(
-                "INSERT INTO links VALUES (?, ?, ?, ?)",
-                ("C1", "S1", "capture_evidence", pid),
+            _insert_link(connection, ("C1", "S1", "capture_evidence", pid),
             )
     output = tmp_path / "stages.html"
     generate_report(report, SelectionRequest(), output)
@@ -916,8 +953,7 @@ def test_sample_support_origin_uses_exact_method_capture_and_observation(
             ("capture_evidence", "recovery-curve"),
             ("method_assessments", "recovery-method"),
         ):
-            connection.execute(
-                "INSERT INTO links VALUES (?, ?, ?, ?)", ("C1", "S1", kind, ref)
+            _insert_link(connection, ("C1", "S1", kind, ref)
             )
 
     output = tmp_path / "recovery-origin.html"
@@ -940,10 +976,7 @@ def test_recovery_origin_survives_zero_terminal_final_cell_binding(tmp_path):
 
     report, _, _ = _create_mock_db(tmp_path)
     with sqlite3.connect(report) as connection:
-        connection.execute(
-            "DELETE FROM links WHERE kind='terminal_subjects' "
-            "AND record_id='terminal-01'"
-        )
+        _delete_links(connection, kind="terminal_subjects", record_id="terminal-01")
         final_group = json.loads(
             connection.execute(
                 "SELECT payload FROM records WHERE kind='final_groups' "
@@ -1048,8 +1081,7 @@ def test_recovery_origin_survives_zero_terminal_final_cell_binding(tmp_path):
                 "INSERT INTO records VALUES (?, ?, ?)",
                 (kind, ref, json.dumps(facts)),
             )
-            connection.execute(
-                "INSERT INTO links VALUES (?, ?, ?, ?)", ("C1", "S1", kind, ref)
+            _insert_link(connection, ("C1", "S1", kind, ref)
             )
 
     output = tmp_path / "zero-terminal-recovery.html"
@@ -1142,9 +1174,7 @@ def test_initial_edge_adds_one_exact_peer_without_expanding_selection(
                     "INSERT INTO records VALUES (?, ?, ?)",
                     (kind, ref, json.dumps(facts)),
                 )
-                connection.execute(
-                    "INSERT INTO links VALUES (?, ?, ?, ?)",
-                    (candidate_id, "S1", kind, ref),
+                _insert_link(connection, (candidate_id, "S1", kind, ref),
                 )
             curve = {
                 **original,
@@ -1176,9 +1206,8 @@ def test_initial_edge_adds_one_exact_peer_without_expanding_selection(
             ),
         )
         for candidate_id in ("C1", "C2"):
-            connection.execute(
-                "INSERT INTO links VALUES (?, ?, ?, ?)",
-                (candidate_id, "S1", "initial_edges", "edge-c1-c2"),
+            _insert_link(
+                connection, (candidate_id, "S1", "initial_edges", "edge-c1-c2")
             )
 
     output = tmp_path / "peer.html"
@@ -1233,9 +1262,7 @@ def test_internal_pair_support_preserves_edge_identity_and_disposition(tmp_path)
             )
         for candidate_id, sample_id in (("C1-duplicate", "S1"), ("C2", "S2")):
             for kind, ref in (("rows", "row-01"), ("final_groups", "G1")):
-                connection.execute(
-                    "INSERT INTO links VALUES (?, ?, ?, ?)",
-                    (candidate_id, sample_id, kind, ref),
+                _insert_link(connection, (candidate_id, sample_id, kind, ref),
                 )
         connection.execute(
             "UPDATE records SET payload=? WHERE kind='final_groups' AND record_id='G1'",
@@ -1283,9 +1310,7 @@ def test_internal_pair_support_preserves_edge_identity_and_disposition(tmp_path)
                 "INSERT INTO records VALUES (?, ?, ?)",
                 (kind, ref, json.dumps(payload)),
             )
-            connection.execute(
-                "INSERT INTO links VALUES (?, ?, ?, ?)",
-                ("C3", "S3", kind, ref),
+            _insert_link(connection, ("C3", "S3", kind, ref),
             )
         edges = (
             (
@@ -1343,9 +1368,8 @@ def test_internal_pair_support_preserves_edge_identity_and_disposition(tmp_path)
                 ),
             )
             for candidate_id, sample_id in links:
-                connection.execute(
-                    "INSERT INTO links VALUES (?, ?, ?, ?)",
-                    (candidate_id, sample_id, "initial_edges", ref),
+                _insert_link(
+                    connection, (candidate_id, sample_id, "initial_edges", ref)
                 )
 
     output = tmp_path / "internal-pair-support.html"
@@ -1429,9 +1453,7 @@ def test_initial_edge_peer_join_preserves_shared_candidate_multirow_identity(tmp
                     "INSERT INTO records VALUES (?, ?, ?)",
                     (kind, ref, json.dumps(facts)),
                 )
-                connection.execute(
-                    "INSERT INTO links VALUES (?, ?, ?, ?)",
-                    (candidate_id, "S1", kind, ref),
+                _insert_link(connection, (candidate_id, "S1", kind, ref),
                 )
         connection.execute(
             "INSERT INTO records VALUES (?, ?, ?)",
@@ -1447,8 +1469,8 @@ def test_initial_edge_peer_join_preserves_shared_candidate_multirow_identity(tmp
             ),
         )
         for candidate_id in ("C1", "C2"):
-            connection.execute(
-                "INSERT INTO links VALUES (?, ?, ?, ?)",
+            _insert_link(
+                connection,
                 (candidate_id, "S1", "initial_edges", "edge-shared-multirow"),
             )
 
@@ -1666,8 +1688,7 @@ def test_fact_summary_and_readable_records_keep_null_zero_and_unknown_distinct(
             ("final_groups", "G1"),
             ("cell_decisions", "cd-02"),
         ):
-            connection.execute(
-                "INSERT INTO links VALUES (?, ?, ?, ?)", ("C2", "S2", kind, ref)
+            _insert_link(connection, ("C2", "S2", kind, ref)
             )
 
     output = tmp_path / "null-zero.html"
@@ -1715,9 +1736,7 @@ def test_multiple_decisions_keep_all_exact_refs_without_a_single_value(tmp_path)
                 ),
             ),
         )
-        connection.execute(
-            "INSERT INTO links VALUES (?, ?, ?, ?)",
-            ("C1", "S1", "cell_decisions", "cd-extra"),
+        _insert_link(connection, ("C1", "S1", "cell_decisions", "cd-extra"),
         )
 
     output = tmp_path / "multiple.html"
@@ -1758,9 +1777,7 @@ def test_structured_external_evidence_refs_remain_technical_without_fake_links(
                 ),
             ),
         )
-        connection.execute(
-            "INSERT INTO links VALUES (?, ?, ?, ?)",
-            ("C1", "S1", "method_assessments", "assessment-01"),
+        _insert_link(connection, ("C1", "S1", "method_assessments", "assessment-01"),
         )
 
     output = tmp_path / "structured-external-ref.html"
@@ -1807,8 +1824,7 @@ def test_decision_and_curve_link_only_exact_sample_method_and_edge_records(tmp_p
             ("final_groups", "G1"),
             ("cell_decisions", "cd-02"),
         ):
-            connection.execute(
-                "INSERT INTO links VALUES (?, ?, ?, ?)", ("C2", "S2", kind, ref)
+            _insert_link(connection, ("C2", "S2", kind, ref)
             )
         for ref, sample_id, reason_code in (
             (
@@ -1833,9 +1849,7 @@ def test_decision_and_curve_link_only_exact_sample_method_and_edge_records(tmp_p
                     ),
                 ),
             )
-            connection.execute(
-                "INSERT INTO links VALUES (?, ?, ?, ?)",
-                (
+            _insert_link(connection, (
                     "C1" if sample_id == "S1" else "C2",
                     sample_id,
                     "method_assessments",
@@ -1865,9 +1879,8 @@ def test_decision_and_curve_link_only_exact_sample_method_and_edge_records(tmp_p
                 ),
             )
             for candidate_id, sample_id in links:
-                connection.execute(
-                    "INSERT INTO links VALUES (?, ?, ?, ?)",
-                    (candidate_id, sample_id, "initial_edges", ref),
+                _insert_link(
+                    connection, (candidate_id, sample_id, "initial_edges", ref)
                 )
 
     output = tmp_path / "related-records.html"
@@ -1937,9 +1950,7 @@ def test_excluded_candidate_exposes_exact_exclusion_without_curve(tmp_path):
                     ),
                 ),
             )
-            connection.execute(
-                "INSERT INTO links VALUES (?, ?, ?, ?)",
-                (
+            _insert_link(connection, (
                     candidate_id,
                     "S2",
                     "exclusions",
@@ -2001,9 +2012,7 @@ def test_readable_numeric_formatting_keeps_scientific_payload_precision(tmp_path
                 ),
             ),
         )
-        connection.execute(
-            "INSERT INTO links VALUES (?, ?, ?, ?)",
-            ("C1", "S1", "method_subjects", "format-01"),
+        _insert_link(connection, ("C1", "S1", "method_subjects", "format-01"),
         )
         connection.execute(
             "UPDATE records SET payload=? WHERE kind='cell_decisions'",
@@ -2097,9 +2106,7 @@ def test_source_labels_explain_recorded_group_and_sample_outcome(
             "INSERT INTO records VALUES (?, ?, ?)",
             ("method_subjects", "method-01", json.dumps({"neutral_loss_da": 116.0474})),
         )
-        connection.execute(
-            "INSERT INTO links VALUES (?, ?, ?, ?)",
-            ("C1", "S1", "method_subjects", "method-01"),
+        _insert_link(connection, ("C1", "S1", "method_subjects", "method-01"),
         )
         if sample_count == 2:
             connection.execute(
@@ -2127,8 +2134,7 @@ def test_source_labels_explain_recorded_group_and_sample_outcome(
                 ("final_groups", "G1"),
                 ("cell_decisions", "cd-02"),
             ):
-                connection.execute(
-                    "INSERT INTO links VALUES (?, ?, ?, ?)", ("C2", "S2", kind, rid)
+                _insert_link(connection, ("C2", "S2", kind, rid)
                 )
     output = tmp_path / "labels.html"
     generate_report(report, SelectionRequest(), output)
