@@ -116,6 +116,37 @@ dated productization control-plane path is compatibility lookup only.
   `corrective-checks.md`. Task-local `composition-replay/optimization.md`
   records the changed boundary and acceptance scope.
 
+#### Candidate integration and assessment construction
+
+- Luna completed the four-partition/all85 candidate integration at `1fb63bbd`
+  using the retained prepared plan and B1 physical facts. All 150 children
+  (46/20/44/40) preserve the complete captured scientific oracle with no
+  excluded fields. Wall time was 98.578 s; acquisition 48.113 s and composition
+  44.978 s. The retained baseline was 106.141 s; this single historical
+  comparison does not establish a general end-to-end speedup. No Discovery,
+  native RAW acquisition or completed baseline was repeated.
+- Actual process codec measurements cover 680 worker calls across four PIDs:
+  84,013,663 request bytes and 107,225,783 response bytes. Summed worker decode
+  and encode times were 1.202/3.831 s; parent encode/decode were 2.152/2.883 s.
+  Parent encode includes shared bootstrap. These sums are not additive wall
+  phases, exclude executor framing and do not measure IPC transfer duration.
+  RSS was unavailable in this run. Four workers were active; this probe uses
+  one acquisition lane and does not halve the per-partition worker budget.
+- Method-assessment construction now also avoids repeating canonical
+  normalization and artifact hashing immediately after its owner factory
+  derived those exact values. Direct and replacement construction still run
+  their checks. Luna's AB/BA/AB replay against `1fb63bbd` preserves exact
+  artifact IDs, content bytes and upstream object refs for 6,481 retained
+  assessments. Median original/candidate time is 2.4131/1.7954 s. The three
+  affected CID-NL test files pass all 56 tests. These are separate function
+  timings, not a claim that acquisition or full85 acceptance is complete.
+- Reuse `science-owner-candidate/{receipt,parity,codec-parent}.json`, its
+  `codec-worker-*.jsonl`, `owner-checks/integration-report.md`,
+  `composition-replay/assessment-owner-pairs.json` and
+  `owner-checks/assessment-checks.md` under the same artifact root above.
+  Evidence remains `diagnostic_only`; continue with coarse parent-phase
+  attribution and cohort acceptance rather than another baseline rerun.
+
 ### 2026-09-21 Sealed Composition Replay Shows Distributed Construction Cost
 
 - Decision: isolate composition costs without repeating acquisition or grouping.

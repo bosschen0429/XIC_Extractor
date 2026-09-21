@@ -10,7 +10,8 @@ from __future__ import annotations
 import json
 import math
 import re
-from dataclasses import asdict, dataclass
+from dataclasses import InitVar, asdict, dataclass
+from dataclasses import field as dataclass_field
 from typing import Literal, TypeAlias
 
 from xic_extractor.configuration.target_identity import ResolvedTargetDefinition
@@ -78,6 +79,7 @@ _SAMPLE_ID_PREFIX = "xic.sample:"
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _TECHNICAL_STATES = frozenset({"evaluated", "unsupported", "failed", "not_evaluated"})
 _METHOD_RESULTS = frozenset({"SUPPORT", "HOLD", "REJECT"})
+_ASSESSMENT_MINT_TOKEN = object()
 _ARTIFACT_SEMANTIC_CONTRACT = _mint_artifact_semantic_contract_ref(
     owner_namespace="xic_extractor.peak_detection.cid_nl_method_assessment",
     semantic_role=ARTIFACT_SEMANTIC_ROLE,
@@ -156,7 +158,7 @@ class CidNlMethodAssessmentContent:
     reason_codes: tuple[str, ...]
 
     def __post_init__(self) -> None:
-        for value, prefix, field in (
+        for value, prefix, field_name in (
             (
                 self.canonical_sample_identity_id,
                 _SAMPLE_ID_PREFIX,
@@ -168,7 +170,7 @@ class CidNlMethodAssessmentContent:
                 "acquisition_source_id",
             ),
         ):
-            _validate_typed_digest_id(value, prefix=prefix, field=field)
+            _validate_typed_digest_id(value, prefix=prefix, field=field_name)
         if not isinstance(self.method_subject, CidNlMethodSubject):
             raise CidNlMethodAssessmentContractError(
                 "method_subject must be owner-normalized"
@@ -272,8 +274,13 @@ class CidNlMethodAssessmentRef:
     individual_support_refs: tuple[DdaCidNlPeakSupportRef, ...]
     set_relation_refs: tuple[DdaCidNlCandidateSetRelationRef, ...]
     artifact: EvidenceArtifactRef
+    _mint_token: InitVar[object] = dataclass_field(default=None, kw_only=True)
 
-    def __post_init__(self) -> None:
+    def __post_init__(self, _mint_token: object = None) -> None:
+        # The mint derives canonical content and artifact from the validated
+        # upstreams. Supplied content and dataclass replacement still validate.
+        if _mint_token is _ASSESSMENT_MINT_TOKEN:
+            return
         if not isinstance(self.content, CidNlMethodAssessmentContent):
             raise CidNlMethodAssessmentContractError(
                 "content must be an owner-normalized method assessment"
@@ -460,6 +467,7 @@ def mint_cid_nl_method_assessment_ref(
         individual_support_refs=individual,
         set_relation_refs=set_relations,
         artifact=artifact,
+        _mint_token=_ASSESSMENT_MINT_TOKEN,
     )
 
 
