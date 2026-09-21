@@ -4,7 +4,7 @@ import hashlib
 import json
 from collections import Counter
 from collections.abc import Mapping, Sequence
-from dataclasses import InitVar, asdict, dataclass, replace
+from dataclasses import InitVar, asdict, dataclass, field, replace
 from typing import TYPE_CHECKING, Literal, cast
 
 from xic_extractor.acquisition_contract import TraceCoordinate
@@ -60,6 +60,8 @@ if TYPE_CHECKING:
         ConservativeBackfillCellDecision,
         ConservativeBackfillGroupFacts,
     )
+
+_CONSERVATIVE_PROOF_MINT_TOKEN = object()
 
 OwnerBackfillPlanningState = Literal["planned", "not_planned"]
 OwnerBackfillPlanningReason = Literal[
@@ -326,6 +328,7 @@ class OwnerBackfillConservativeNoRequestProof:
     # Construction-only: persisted proof fields and IDs remain unchanged.
     # Direct construction/replacement still validates the complete binding.
     _group_binding: InitVar[ConservativeNoRequestProofBuilder | None] = None
+    _mint_token: InitVar[object] = field(default=None, kw_only=True)
 
     @property
     def variant(self) -> Literal["threshold_not_met", "completed_recovery_empty"]:
@@ -344,9 +347,15 @@ class OwnerBackfillConservativeNoRequestProof:
         )
 
     def __post_init__(
-        self, _group_binding: ConservativeNoRequestProofBuilder | None
+        self,
+        _group_binding: ConservativeNoRequestProofBuilder | None,
+        _mint_token: object,
     ) -> None:
         _validate_conservative_no_request(self, _group_binding)
+        # The mint just derived this ID from these exact immutable arguments.
+        # Direct construction/replacement must still verify a supplied ID.
+        if _mint_token is _CONSERVATIVE_PROOF_MINT_TOKEN:
+            return
         if self.proof_id != _typed_id(
             "xic.owner-backfill-conservative-no-request:",
             _conservative_no_request_basis(
@@ -386,6 +395,7 @@ def mint_owner_backfill_conservative_no_request_proof(
         decision=decision,
         completion=completion,
         _group_binding=_group_binding,
+        _mint_token=_CONSERVATIVE_PROOF_MINT_TOKEN,
     )
 
 

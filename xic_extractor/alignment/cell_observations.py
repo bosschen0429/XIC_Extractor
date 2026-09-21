@@ -20,7 +20,6 @@ from xic_extractor.alignment.backfill.observation_repair import (
 from xic_extractor.alignment.cell_group_context import (
     CidNlCellGroupContext,
     CidNlCellGroupSupport,
-    _validate_typed_digest_id,
 )
 from xic_extractor.alignment.cell_observation_records import (
     CellObservationContent,
@@ -28,7 +27,6 @@ from xic_extractor.alignment.cell_observation_records import (
     CellObservationRef,
     OutsideGroupCellRelation,
     _direct_member_integration,
-    _processing_request_id,
     _repaired_member_integration,
     canonical_cell_observation_bytes,
     mint_cell_observation_ref,
@@ -43,7 +41,6 @@ from xic_extractor.alignment.cross_sample_peak_groups import (
     CrossSampleGroupIdentity,
     CrossSampleGroupMemberSubject,
     CrossSamplePeakGroupHypothesis,
-    validate_cross_sample_group_population,
     validate_cross_sample_peak_group_identity,
 )
 from xic_extractor.alignment.edge_scoring import DriftLookupProtocol
@@ -157,7 +154,7 @@ class FinalGroupCellObservation:
             raise CellObservationContractError(
                 "final cell observation must be minted by CellObservation"
             )
-        _validate_final_group_cell_observation(self)
+        # The composer validates the input joins and derives these fields once.
 
     @property
     def group_hypothesis_id(self) -> str:
@@ -1197,183 +1194,6 @@ def _mint_final_group_cell_observation(
         recovery_cell=recovery_cell,
         _mint_token=_FINAL_CELL_MINT_TOKEN,
     )
-
-
-def _validate_final_group_cell_observation(
-    cell: FinalGroupCellObservation,
-) -> None:
-    request_id = _processing_request_id(cell.processing_request_id)
-    _validate_typed_digest_id(
-        cell.cell_observation_id,
-        prefix=_FINAL_CELL_OBSERVATION_ID_PREFIX,
-        field="cell_observation_id",
-    )
-    if type(cell.group) is not CrossSampleGroupIdentity:
-        raise CellObservationContractError("final cell group is not owner-backed")
-    try:
-        validate_cross_sample_group_population((cell.group,))
-    except (TypeError, ValueError) as exc:
-        raise CellObservationContractError(str(exc)) from exc
-    if cell.group.processing_request_id != request_id:
-        raise CellObservationContractError(
-            "final cell group crossed the processing request"
-        )
-    if type(cell.canonical_sample) is not ResolvedCanonicalSampleIdentity:
-        raise CellObservationContractError("final cell sample is not owner-resolved")
-    if not isinstance(cell.position_associations, tuple):
-        raise CellObservationContractError(
-            "final cell position associations must be an immutable tuple"
-        )
-    if any(
-        type(item) is not CrossSampleCoveragePositionAssociation
-        for item in cell.position_associations
-    ):
-        raise CellObservationContractError(
-            "final cell contains a non-owner position association"
-        )
-    if cell.position_associations != tuple(
-        sorted(cell.position_associations, key=lambda item: item.position.position_id)
-    ):
-        raise CellObservationContractError(
-            "final cell position associations are not canonical-sorted"
-        )
-    position_ids = tuple(
-        item.position.position_id for item in cell.position_associations
-    )
-    if len(position_ids) != len(set(position_ids)):
-        raise CellObservationContractError(
-            "final cell duplicates a position association"
-        )
-    if not isinstance(cell.predecessor_cells, tuple) or len(
-        cell.predecessor_cells
-    ) != len(cell.position_associations):
-        raise CellObservationContractError(
-            "final cell source-cell lanes do not match position associations"
-        )
-    if cell.recovery_cell is not None:
-        _validate_source_cell(cell.recovery_cell, processing_request_id=request_id)
-        if (
-            _source_group_identity(cell.recovery_cell) != cell.group
-            or cell.recovery_cell.content.canonical_sample_identity_id
-            != cell.canonical_sample_identity_id
-        ):
-            raise CellObservationContractError(
-                "recovery cell crossed its final group or sample"
-            )
-    for association, source_cell in zip(
-        cell.position_associations,
-        cell.predecessor_cells,
-        strict=True,
-    ):
-        _validate_source_cell(source_cell, processing_request_id=request_id)
-        if source_cell.content.canonical_sample_identity_id != (
-            association.position.sample.identity.sample_identity_id
-        ):
-            raise CellObservationContractError(
-                "final cell source lane crossed its canonical sample"
-            )
-        if _source_group_identity(source_cell) != association.position.group_identity:
-            raise CellObservationContractError(
-                "final cell source lane crossed its predecessor group identity"
-            )
-        if association.final_successor != cell.group:
-            raise CellObservationContractError(
-                "final cell position association crossed its final group"
-            )
-        if association.position.sample.identity.sample_identity_id != (
-            cell.canonical_sample.identity.sample_identity_id
-        ):
-            raise CellObservationContractError(
-                "final cell position association crossed its canonical sample"
-            )
-    if not isinstance(cell.coverage_terminals, tuple):
-        raise CellObservationContractError(
-            "final cell coverage terminals must be an immutable tuple"
-        )
-    if any(
-        type(item) is not OwnerBackfillAttemptTerminal
-        for item in cell.coverage_terminals
-    ):
-        raise CellObservationContractError(
-            "final cell contains a non-owner coverage terminal"
-        )
-    if any(item.position_id not in position_ids for item in cell.coverage_terminals):
-        raise CellObservationContractError(
-            "final cell coverage terminal crossed its retained position lanes"
-        )
-    if not isinstance(cell.repair_receipts, tuple) or any(
-        type(item) is not ObservationRepairReceipt for item in cell.repair_receipts
-    ):
-        raise CellObservationContractError(
-            "final cell repair receipts must be an immutable owner tuple"
-        )
-    if not isinstance(cell.repaired_observations, tuple) or any(
-        type(item) is not OwnerBackfillPeakFactObservation
-        for item in cell.repaired_observations
-    ):
-        raise CellObservationContractError(
-            "final cell repaired observations must be an immutable owner tuple"
-        )
-    if not isinstance(cell.evidence_states, tuple) or not cell.evidence_states:
-        raise CellObservationContractError(
-            "final cell must retain one state per lane, or explicit zero-lane state"
-        )
-    if len(cell.evidence_states) != max(1, len(cell.position_associations)):
-        raise CellObservationContractError(
-            "final cell evidence states do not match retained lane cardinality"
-        )
-    if any(
-        state
-        not in {
-            "direct_observation",
-            "repaired_observation",
-            "unresolved",
-            "rejected_observation",
-            "searched_no_observation",
-            "unavailable",
-            "not_searched",
-        }
-        for state in cell.evidence_states
-    ):
-        raise CellObservationContractError("final cell evidence state is not closed")
-    expected_basis = _final_closure_basis(
-        processing_request_id=request_id,
-        handoff_id=_handoff_id_for_basis(cell),
-        group=cell.group,
-        canonical_sample=cell.canonical_sample,
-        position_associations=cell.position_associations,
-        predecessor_cells=cell.predecessor_cells,
-        coverage_terminals=cell.coverage_terminals,
-        repair_receipts=cell.repair_receipts,
-        repaired_observations=cell.repaired_observations,
-        evidence_states=cell.evidence_states,
-        recovery_cell=cell.recovery_cell,
-    )
-    if cell.basis_bytes != expected_basis:
-        raise CellObservationContractError(
-            "final cell basis bytes do not bind its complete owner content"
-        )
-    if cell.cell_observation_id != typed_identity_digest(
-        _FINAL_CELL_OBSERVATION_ID_PREFIX,
-        expected_basis,
-    ):
-        raise CellObservationContractError(
-            "final cell identity does not bind its complete owner content"
-        )
-
-
-def _handoff_id_for_basis(cell: FinalGroupCellObservation) -> str:
-    # The handoff ID is encoded in the closure basis.  Revalidation extracts it
-    # without trusting any caller-provided scalar mapping.
-    marker = b'"handoff_id":"'
-    start = cell.basis_bytes.find(marker)
-    if start < 0:
-        raise CellObservationContractError("final cell basis omits exact handoff")
-    start += len(marker)
-    end = cell.basis_bytes.find(b'"', start)
-    if end < 0:
-        raise CellObservationContractError("final cell basis has malformed handoff")
-    return cell.basis_bytes[start:end].decode("utf-8")
 
 
 def _final_closure_basis(

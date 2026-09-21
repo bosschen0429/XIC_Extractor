@@ -66,6 +66,56 @@ dated productization control-plane path is compatibility lookup only.
 
 ## Known Diagnostic Conclusions
 
+### 2026-09-21 Owner Construction Avoids Revalidating Its Own Results
+
+- Product changes remove duplicate validation from private final-cell
+  construction, duplicate predecessor content/artifact checks within its mint,
+  repeated same-attempt group SUPPORT checks, duplicate proof hashing and
+  repeated physical-evaluation validation inside SearchScope identity
+  projection. Input joins, direct/replacement construction and external
+  population validation retain their boundaries. Persisted fields, canonical
+  bytes and IDs are unchanged. The old final-cell validator and basis parser
+  are removed rather than cached.
+- Luna compared original owner code at `817c93c2` (product `dfc22127`) with
+  these changes in the same process, using AB/BA/AB order and the sealed first
+  partition: 46 children, 85 samples, 9,520 cells, 6,965 proofs and 1,005
+  physical capture bindings. Timers exclude loading and parity checks; proof
+  builder preparation is included. Median seconds:
+
+  | Owner operation | Original | Candidate |
+  | --- | ---: | ---: |
+  | Final-cell composition | 2.9712 | 1.9218 |
+  | Predecessor mint | 2.7691 | 2.4185 |
+  | Conservative proof mint | 1.5529 | 0.9849 |
+  | SearchScope construction over retained bindings | 0.1466 | 0.0259 |
+
+- Every arm passes its exact oracle: final-cell IDs/basis/states/integrals and
+  provenance; predecessor artifact IDs/content bytes and assessment/peak refs;
+  proof IDs and decision/sample/group/completion refs; scope equality and exact
+  request/binding refs. This is owner-function evidence, not end-to-end or
+  full85 speedup. Child scopes are not worker sample scopes. No acquisition,
+  grouping, RAW, Discovery or full workflow was run by these probes.
+- Focused regressions pass: 74 cell/finalization/decision/projection tests,
+  37 search-scope/capture/adapter tests and four known-ISTD/recovery tests.
+  Four-source Ruff and mypy pass. Testing exposed an existing explicit
+  `cell.__post_init__()` call; the new construction-only argument now defaults
+  to `None`, retaining that complete validation call. Only failed checks were
+  rerun after correction. No accepted benchmark arm was repeated.
+- Workflow verdict `optimized` for the bounded construction changes;
+  candidate disposition `keep`; Evidence `diagnostic_only`. Integration and
+  full85 acceptance remain open. Exact worker requests/responses were not
+  retained, so previous artifacts cannot establish worker codec cost. Measure
+  that boundary during necessary candidate integration, not a separate
+  recapture workflow. Reuse prepared inputs and B1 physical facts for the
+  four-partition/all85 candidate integration; keep the completed baseline.
+- Artifacts under
+  `output/issue422-bounded-worksets-20260921/fusion-ab/`:
+  `composition-replay/owner-pairs.json`, `cell-proof-owner-pairs.json` and
+  `search-scope-owner-pairs.json` in the same directory; commands/results in
+  `owner-checks/owner-checks.md`, `search-scope-checks.md` and
+  `corrective-checks.md`. Task-local `composition-replay/optimization.md`
+  records the changed boundary and acceptance scope.
+
 ### 2026-09-21 Sealed Composition Replay Shows Distributed Construction Cost
 
 - Decision: isolate composition costs without repeating acquisition or grouping.

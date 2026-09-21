@@ -287,18 +287,20 @@ def physical_capture_input_payload(
     evaluations: Mapping[str, PhysicalPeakEvaluation],
 ) -> dict[str, object]:
     """Pin the profile and owner-issued physical answers in request identity."""
+    candidates = {}
+    for candidate_id, evaluation in sorted(evaluations.items()):
+        validate_bounded_physical_peak_evaluation(evaluation)
+        candidates[candidate_id] = _physical_evaluation_identity(evaluation)
     return {
         "schema_version": "physical_capture_inputs",
         "profile": json.loads(canonical_signal_processing_profile_bytes(profile)),
-        "candidates": {
-            candidate_id: _physical_evaluation_identity(evaluation)
-            for candidate_id, evaluation in sorted(evaluations.items())
-        },
+        "candidates": candidates,
     }
 
 
 def _physical_evaluation_identity(evaluation: PhysicalPeakEvaluation) -> dict[str, str]:
-    validate_bounded_physical_peak_evaluation(evaluation)
+    # Raw payload inputs are validated above; scope bindings validated their
+    # physical owners at construction. This projection only joins identities.
     return {
         "prepared_signal_id": evaluation.prepared.prepared_signal_id,
         "physical_question_id": evaluation.question.physical_question_id,

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import asdict, dataclass
+from dataclasses import InitVar, asdict, dataclass, field
 from typing import Literal
 
 from xic_extractor.alignment.backfill.observation_repair import (
@@ -72,6 +72,8 @@ from xic_extractor.processing_identity import (
 )
 from xic_extractor.review_records import ResolvedReviewRecordRef
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
+
+_CELL_OBSERVATION_MINT_TOKEN = object()
 
 
 @dataclass(frozen=True, slots=True)
@@ -285,8 +287,13 @@ class CellObservationRef:
     human_disposition: ResolvedReviewRecordRef | None
     artifact: EvidenceArtifactRef
     outside_group_context: CidNlCellGroupContext | None = None
+    _mint_token: InitVar[object] = field(default=None, kw_only=True)
 
-    def __post_init__(self) -> None:
+    def __post_init__(self, _mint_token: object = None) -> None:
+        # The factory binds inputs and derives content/artifact together. Direct
+        # construction and dataclass replacement still verify supplied content.
+        if _mint_token is _CELL_OBSERVATION_MINT_TOKEN:
+            return
         if not isinstance(self.content, CellObservationContent):
             raise CellObservationContractError(
                 "content must be an owner-normalized CellObservation"
@@ -727,10 +734,11 @@ def mint_cell_observation_ref(
         raise CellObservationContractError(
             "group SUPPORT closure is outside the current attempt or retry lineage"
         )
-    _validate_group_support_attempts(
-        group_context.supports,
-        producer_attempt=processing_owners.attempt,
-    )
+    if group_context.processing_attempt is not processing_owners.attempt:
+        _validate_group_support_attempts(
+            group_context.supports,
+            producer_attempt=processing_owners.attempt,
+        )
     group = group_context.group
     subject = method_assessment.content.method_subject
     exact_context_support = any(
@@ -940,6 +948,7 @@ def mint_cell_observation_ref(
         human_disposition=human_disposition,
         artifact=artifact,
         outside_group_context=outside_group_context,
+        _mint_token=_CELL_OBSERVATION_MINT_TOKEN,
     )
 
 
