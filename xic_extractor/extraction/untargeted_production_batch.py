@@ -1598,6 +1598,13 @@ def _build_production_composition_inputs(
                 ),
             )
         )
+        initial_assessments = tuple(
+            (result.job.sample, assessment)
+            for subject in subject_workset
+            for result in results_by_subject.get(subject.method_subject_id, ())
+            for assessment in (result.adapter_result.assessment_input.assessment,)
+            if not is_unsearched_cid_nl_discovery_assessment(assessment)
+        )
         retained_cell_hypotheses: dict[tuple[str, str], list[PeakHypothesis]] = {}
         for candidate in retained_candidates:
             assessment = candidate.direct_support_assessment
@@ -1649,15 +1656,15 @@ def _build_production_composition_inputs(
         predecessor_cells = compose_cid_nl_predecessor_cells(
             processing_owners=batch.context.processing_owners,
             groups=assignment_scope.groups,
-            sample_assessments=assessments,
+            sample_assessments=initial_assessments,
             alignment_config=alignment_config,
             drift_lookup=grouping_result.drift_lookup,
             sample_universe=sample_universe,
             injection_order=injection_order,
             recovery_assessments_by_group={
-                key: assessment
-                for key, (_, assessment) in group_recoveries.items()
-                if assessment.content.method_result != "SUPPORT"
+                key: pair
+                for key, pair in group_recoveries.items()
+                if pair[1].content.method_result != "SUPPORT"
             },
             retained_hypotheses_by_assessment={
                 key: tuple(hypotheses)
@@ -1668,18 +1675,19 @@ def _build_production_composition_inputs(
             compose_cid_nl_predecessor_cells(
                 processing_owners=batch.context.processing_owners,
                 groups=recovered_groups,
-                sample_assessments=assessments,
+                sample_assessments=initial_assessments,
                 alignment_config=alignment_config,
                 drift_lookup=grouping_result.drift_lookup,
                 sample_universe=sample_universe,
                 injection_order=injection_order,
                 recovery_assessments_by_group={
-                    (successor_ids[group_id], sample_id, subject_id): assessment
-                    for (group_id, sample_id, subject_id), (
-                        _,
-                        assessment,
-                    ) in group_recoveries.items()
-                    if assessment.content.method_result == "SUPPORT"
+                    (successor_ids[group_id], sample_id, subject_id): pair
+                    for (
+                        group_id,
+                        sample_id,
+                        subject_id,
+                    ), pair in group_recoveries.items()
+                    if pair[1].content.method_result == "SUPPORT"
                 },
                 retained_hypotheses_by_assessment={
                     **{

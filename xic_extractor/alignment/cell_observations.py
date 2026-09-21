@@ -1464,7 +1464,8 @@ def compose_cid_nl_predecessor_cells(
     drift_lookup: DriftLookupProtocol | None = None,
     injection_order: Mapping[str, int] | None = None,
     recovery_assessments_by_group: Mapping[
-        tuple[str, str, str], CidNlMethodAssessmentRef
+        tuple[str, str, str],
+        tuple[ResolvedCanonicalSampleIdentity, CidNlMethodAssessmentRef],
     ]
     | None = None,
     selected_cells: frozenset[tuple[str, str]] | None = None,
@@ -1473,14 +1474,27 @@ def compose_cid_nl_predecessor_cells(
     ]
     | None = None,
 ) -> tuple[CellObservationRef, ...]:
-    """Attach original assessments to the existing ModeTrack predecessor groups."""
+    """Attach initial evidence and only each group's own recovery assessment."""
+    initial_assessment_objects = {
+        id(assessment) for _, assessment in sample_assessments
+    }
+    recoveries = recovery_assessments_by_group or {}
+    for (_, sample_id, subject_id), (sample, assessment) in recoveries.items():
+        if (
+            sample.identity.sample_identity_id != sample_id
+            or assessment.content.canonical_sample_identity_id != sample_id
+            or assessment.content.method_subject.method_subject_id != subject_id
+        ):
+            raise CellObservationContractError(
+                "group recovery crossed its sample or method subject"
+            )
     # Assessment artifacts already own their identity. Hashing the frozen
     # assessment itself recursively visits its entire evidence/curve graph.
     unique_assessments: dict[
         tuple[str, str],
         tuple[ResolvedCanonicalSampleIdentity, CidNlMethodAssessmentRef],
     ] = {}
-    for sample, assessment in sample_assessments:
+    for sample, assessment in (*sample_assessments, *recoveries.values()):
         key = (
             sample.identity.sample_identity_id,
             assessment.artifact.evidence_artifact_id,
@@ -1592,15 +1606,14 @@ def compose_cid_nl_predecessor_cells(
     assessments_by_sample_subject: dict[
         tuple[str, str], list[CidNlMethodAssessmentRef]
     ] = {}
-    assessment_objects_by_sample: dict[str, set[int]] = {}
     samples = {}
     for sample, assessment in sample_assessments:
         sample_id = sample.identity.sample_identity_id
         samples[sample_id] = sample
-        assessments_by_sample_subject.setdefault(
-            (sample_id, assessment.content.method_subject.method_subject_id), []
-        ).append(assessment)
-        assessment_objects_by_sample.setdefault(sample_id, set()).add(id(assessment))
+        if id(assessment) in initial_assessment_objects:
+            assessments_by_sample_subject.setdefault(
+                (sample_id, assessment.content.method_subject.method_subject_id), []
+            ).append(assessment)
     support_contexts: dict[tuple[str, int], list[CidNlCellGroupContext]] = {}
     for context in contexts:
         for support in context.supports:
@@ -1630,20 +1643,14 @@ def compose_cid_nl_predecessor_cells(
             canonical_refs = assessments_by_sample_subject.get(
                 (sample_id, method_subject_id), ()
             )
-            recovered = (recovery_assessments_by_group or {}).get(
+            recovery = recoveries.get(
                 (
                     context.group.group_hypothesis_id,
                     sample_id,
                     method_subject_id,
                 )
             )
-            if (
-                recovered is not None
-                and id(recovered) not in (assessment_objects_by_sample[sample_id])
-            ):
-                raise CellObservationContractError(
-                    "group recovery is outside the assessment population"
-                )
+            recovered = recovery[1] if recovery is not None else None
             if local_refs:
                 assessment = local_refs[0]
             elif recovered is not None:

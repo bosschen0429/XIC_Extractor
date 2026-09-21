@@ -320,6 +320,57 @@ def test_cell_handoff_never_reconstructs_completed_groups(
     )
 
 
+def test_recovery_evidence_stays_with_its_group_when_peer_has_no_input(
+    tmp_path: Path,
+) -> None:
+    fixture, assessments, all_groups = _outside_group_fixture(tmp_path, (8.0, 12.0))
+    initial_sample, initial_assessment = assessments[0]
+    recovered_sample = fixture.sample("Third")
+    groups = tuple(
+        group
+        for group in all_groups
+        if group.member_subjects[0].canonical_sample_identity_id
+        == initial_sample.identity.sample_identity_id
+    )
+    assert len(groups) == 2
+    recovered_group = min(groups, key=lambda group: group.family_center_rt)
+    recovered_peak = cid_nl_peak(fixture, "Third", apex_rt=8.0)
+    recovery_assessment = mint_cid_nl_method_assessment_ref(
+        processing_owners=fixture.owners,
+        sample=recovered_sample,
+        method_subject=fixture.method_subject,
+        detector_invocation_id="group-local-recovery",
+        evaluation_receipt=_completed_receipt(scanned_event_count=0),
+        candidate_peaks=(recovered_peak,),
+    )
+    assert recovery_assessment.content.method_result == "HOLD"
+    cells = cell_owner.compose_cid_nl_predecessor_cells(
+        processing_owners=fixture.owners,
+        groups=groups,
+        sample_assessments=((initial_sample, initial_assessment),),
+        recovery_assessments_by_group={
+            (
+                recovered_group.group_hypothesis_id,
+                recovered_sample.identity.sample_identity_id,
+                fixture.method_subject.method_subject_id,
+            ): (recovered_sample, recovery_assessment)
+        },
+        alignment_config=CID_NL_ALIGNMENT_CONFIG,
+    )
+    assert len(cells) == 3
+    recovered_cells = tuple(
+        cell
+        for cell in cells
+        if cell.content.canonical_sample_identity_id
+        == recovered_sample.identity.sample_identity_id
+    )
+    assert len(recovered_cells) == 1
+    assert recovered_cells[0].content.group_hypothesis_id == (
+        recovered_group.group_hypothesis_id
+    )
+    assert recovered_cells[0].peak_observation is recovered_peak
+
+
 def test_cell_owner_rejects_crossed_artifact_and_context_rejects_invalid_config(
     tmp_path: Path,
 ) -> None:
