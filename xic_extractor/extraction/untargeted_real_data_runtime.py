@@ -690,21 +690,26 @@ def _prepare_runtime_work(
         ) -> _SampleRecoveryWorkerRequest:
             sample_id = sample_states[0].job.sample.identity.sample_identity_id
             phase = phases_by_sample[sample_id]
+            pending = tuple(
+                state
+                for state in sample_states
+                if state.error is None and state.recovery_group_center_rts
+            )
             return _SampleRecoveryWorkerRequest(
-                jobs=tuple(s.job for s in sample_states),
+                jobs=tuple(s.job for s in pending),
                 recovery_group_center_rts_by_key={
                     s.job.work_unit_key: s.recovery_group_center_rts
-                    for s in sample_states
+                    for s in pending
                     if s.recovery_group_center_rts
                 },
                 recovery_inputs_by_key={
                     s.job.work_unit_key: s.recovery_input
-                    for s in sample_states
+                    for s in pending
                     if s.recovery_input is not None
                 },
                 adapter_results_by_key={
                     s.job.work_unit_key: s.adapter_result
-                    for s in sample_states
+                    for s in pending
                     if s.adapter_result is not None
                 },
                 recovery_resource_key=phase.recovery_resource_key,
@@ -723,8 +728,11 @@ def _prepare_runtime_work(
                 phase.recovery_opened = resp.recovery_opened
                 phase.recovery_cleanup_outcome = resp.recovery_cleanup_outcome
                 phase.recovery_acquisition = resp.recovery_acquisition
+                states_by_key = {
+                    state.job.work_unit_key: state for state in sample_states
+                }
                 for state, obs_artifacts, has_acq, err in zip(
-                    sample_states,
+                    (states_by_key[key] for key in resp.work_unit_keys),
                     resp.observer_artifacts,
                     resp.observer_has_acquisitions,
                     resp.errors,

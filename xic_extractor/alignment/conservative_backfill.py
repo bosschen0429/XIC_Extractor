@@ -1,7 +1,8 @@
 """Conservative no-write Backfill eligibility and mapping facts.
 
-This module consumes the canonical CellObservationRef reference-spine owner.  It may
-decide whether an already-existing, frozen group is eligible for a bounded
+This module plans recovery from direct-SUPPORT group membership and consumes
+canonical CellObservationRef evidence for final decisions. It may decide
+whether an already-existing, frozen group is eligible for a bounded
 Backfill revisit and whether supplied recovery evidence has an unambiguous
 ordered one-to-one mapping.  It never creates a group, mints a cell, selects a
 numeric product value, or calls a writer.
@@ -767,6 +768,37 @@ def canonical_conservative_backfill_recovery_universe_bytes(
         )
         + "\n"
     ).encode("utf-8")
+
+
+def plan_conservative_recovery_targets(
+    groups: tuple[CrossSamplePeakGroupHypothesis, ...],
+    *,
+    sample_population: tuple[ResolvedCanonicalSampleIdentity, ...],
+) -> tuple[tuple[CrossSamplePeakGroupHypothesis, frozenset[str]], ...]:
+    """Plan missing-sample work from frozen direct-SUPPORT membership.
+
+    The acquisition caller supplies groups constructed only from direct SUPPORT
+    owners and a complete sample population. Scheduling needs their sample votes,
+    not a dense population of CellObservationRefs or quantitation artifacts.
+    Final cell composition remains responsible for the output evidence.
+    """
+    eligible_ids = frozenset(
+        sample.identity.sample_identity_id
+        for sample in sample_population
+        if _sample_is_activation_eligible(sample)
+    )
+    minimum_support = minimum_direct_support_count(len(eligible_ids))
+    planned = []
+    for group in groups:
+        support_ids = frozenset(
+            member.canonical_sample_identity_id for member in group.member_subjects
+        )
+        if len(support_ids & eligible_ids) < minimum_support:
+            continue
+        targets = eligible_ids - support_ids
+        if targets:
+            planned.append((group, targets))
+    return tuple(planned)
 
 
 def assess_conservative_backfill_group(

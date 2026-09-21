@@ -35,6 +35,7 @@ from xic_extractor.alignment.conservative_backfill import (
     map_conservative_backfill_candidates,
     minimum_direct_support_count,
     mint_conservative_backfill_recovery_candidate_universe,
+    plan_conservative_recovery_targets,
 )
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlEvaluationReceipt,
@@ -123,6 +124,14 @@ def test_roles_votes_and_full_support_trace_set_are_owner_derived(
     assert not any("median" in field.name.lower() for field in fields(type(targeted)))
     assert targeted.product_authority == "none"
     assert targeted.validation_status == "shadow_ready"
+    assert plan_conservative_recovery_targets(
+        (spine.group,), sample_population=fixture.samples
+    ) == (
+        (
+            spine.group,
+            frozenset({fixture.sample("pooled").identity.sample_identity_id}),
+        ),
+    )
 
 
 def test_group_exists_below_threshold_but_cannot_trigger_recovery(
@@ -156,6 +165,9 @@ def test_group_exists_below_threshold_but_cannot_trigger_recovery(
     assert facts.direct_support_count_s == 1
     assert facts.minimum_support_k == 2
     assert facts.may_attempt_recovery is False
+    assert plan_conservative_recovery_targets(
+        (spine.group,), sample_population=fixture.samples
+    ) == ()
     assert decision.disposition == "hold"
     assert decision.matched_candidate is None
     assert decision.reason_codes == ("direct_support_threshold_not_met",)

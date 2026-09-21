@@ -480,6 +480,16 @@ def test_runtime_recovers_from_single_scan_cid_nl_support_owners(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
+    from xic_extractor.alignment.cell_observation_records import CellObservationRef
+
+    validate_cell = CellObservationRef.__post_init__
+
+    def reject_cell_materialization(_self):
+        raise AssertionError("recovery planning must not materialize matrix cells")
+
+    monkeypatch.setattr(
+        CellObservationRef, "__post_init__", reject_cell_materialization
+    )
     stems = ("S1", "S2", "Missing", "NoPeak", "Blank")
     raw_paths = tuple(tmp_path / f"{stem}.synthetic" for stem in stems)
     for path in raw_paths:
@@ -601,6 +611,7 @@ def test_runtime_recovers_from_single_scan_cid_nl_support_owners(
     )
 
     assert result.succeeded is True
+    monkeypatch.setattr(CellObservationRef, "__post_init__", validate_cell)
     by_stem = {
         item.job.sample.metadata.raw_stem: item for item in result.sample_results
     }

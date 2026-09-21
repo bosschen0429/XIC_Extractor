@@ -98,6 +98,8 @@ def _plan(tmp_path, monkeypatch, *, scenario="positive", opened_sink=None):
         candidates[path.stem] = (
             () if scenario == "recovery" and path == paths[-1] else sample_candidates
         )
+        if scenario == "partial_recovery" and path == paths[-1]:
+            candidates[path.stem] = sample_candidates[:1]
     plan = prepare_untargeted_cid_nl_production_plan(
         raw_paths=paths,
         sample_metadata=tuple(
@@ -1525,6 +1527,54 @@ def test_sample_worker_transport_references_global_request_owners(
     assert restored._request_subjects is source._request_subjects
     assert restored.sample == source.sample
     assert restored.candidates == source.candidates
+
+
+def test_process_recovery_dispatches_only_missing_subjects(tmp_path, monkeypatch):
+    from xic_extractor.execution_engine.worker_pool import WorkerAdmissionPool
+    from xic_extractor.extraction import (
+        untargeted_real_data_runtime as runtime,
+    )
+    from xic_extractor.extraction import (
+        untargeted_real_data_worker as worker,
+    )
+
+    # Exercise process message construction/consumption with synthetic RAW I/O.
+    # Native spawning and transport identity have their own existing coverage.
+    class LocalProcessMessages(WorkerAdmissionPool):
+        @property
+        def backend(self):
+            return "process"
+
+    plan, _ = _plan(tmp_path, monkeypatch, scenario="partial_recovery")
+    batch = materialize_untargeted_cid_nl_partition(plan, plan.subject_batch)
+    monkeypatch.setattr(worker, "_ensure_assemblies_loaded", lambda *_: None)
+    requests = []
+    execute_recovery = runtime._execute_sample_recovery_worker
+
+    def observe_request(request):
+        requests.append(request)
+        keys = {job.work_unit_key for job in request.jobs}
+        assert keys == set(request.recovery_group_center_rts_by_key)
+        assert set(request.adapter_results_by_key) == keys
+        assert len(keys) < len(plan.subject_batch.subjects)
+        return execute_recovery(request)
+
+    monkeypatch.setattr(runtime, "_execute_sample_recovery_worker", observe_request)
+    with LocalProcessMessages(max_workers=1) as pool:
+        result = runtime.execute_untargeted_cid_nl_runtime_partition(
+            batch.jobs,
+            partition_key="sparse-recovery",
+            alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+            pool=pool,
+        )
+    assert result.succeeded
+    assert len(requests) == 1
+    assert len(result.sample_results) == len(batch.jobs)
+    selected = {job.work_unit_key for job in requests[0].jobs}
+    for sample_result in result.sample_results:
+        assert bool(sample_result.recovery_attempts) is (
+            sample_result.job.work_unit_key in selected
+        )
 
 
 def test_process_backend_reuses_one_pool_per_acquisition_lane_and_closes_once(

@@ -10,6 +10,15 @@ transport contract or let writers recompute science.
 
 ## Execution Boundary
 
+Acquisition recovery planning uses direct-SUPPORT group membership and the
+eligible sample population to apply the conservative support threshold. It
+does not construct a dense group-by-sample CellObservation population merely
+to decide which missing samples to search. Cell evidence and quantitation
+remain responsibilities of the later composition stage.
+Process recovery requests contain only subjects with scheduled searches;
+responses use work-unit keys to update those subjects while retaining the
+other subjects' initial results.
+
 The bounded Untargeted runtime keeps exact source-bound XIC and MS2 acquisition
 facts in the output directory's private `.cid_nl_acquisition_cache`. A retry
 uses a new processing attempt and recomputes scientific decisions; matching

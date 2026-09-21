@@ -6,12 +6,9 @@ import importlib
 from dataclasses import dataclass
 
 from xic_extractor.acquisition_contract import TraceAcquisitionBatch
-from xic_extractor.alignment.cell_observations import (
-    compose_cid_nl_predecessor_cells,
-)
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.conservative_backfill import (
-    assess_conservative_backfill_group,
+    plan_conservative_recovery_targets,
 )
 from xic_extractor.alignment.cross_sample_peak_groups import (
     construct_cross_sample_peak_group_hypotheses,
@@ -309,7 +306,6 @@ def _prepare_subject_authorized_recoveries(
     ):
         return
     support_owners: list[SampleLocalMS1Owner] = []
-    retained_hypotheses_by_assessment = {}
     for state in states:
         result = state.adapter_result
         if result is None:
@@ -322,12 +318,6 @@ def _prepare_subject_authorized_recoveries(
             sample=state.job.sample,
             assessment=assessment,
         )
-        retained_hypotheses_by_assessment[
-            (
-                state.job.sample.identity.sample_identity_id,
-                assessment.artifact.content_identity.artifact_content_id,
-            )
-        ] = hypotheses
         support_owners.extend(
             owner_from_cid_nl_assessment_support(
                 sample=state.job.sample, assessment=assessment, hypothesis=hypothesis
@@ -338,45 +328,26 @@ def _prepare_subject_authorized_recoveries(
         tuple(support_owners),
         config=alignment_config,
     )
-    first = states[0].job
-    cells = compose_cid_nl_predecessor_cells(
-        processing_owners=first.processing_owners,
-        groups=groups,
-        sample_assessments=tuple(
-            (state.job.sample, result.assessment_input.assessment)
-            for state, result in zip(states, adapter_results, strict=True)
-        ),
-        alignment_config=alignment_config,
-        retained_hypotheses_by_assessment=retained_hypotheses_by_assessment,
-    )
-    for group in groups:
-        facts = assess_conservative_backfill_group(
-            tuple(
-                cell
-                for cell in cells
-                if cell.content.group_hypothesis_id == group.group_hypothesis_id
-            ),
-            sample_population=tuple(state.job.sample for state in states),
-        )
-        if not facts.may_attempt_recovery:
-            continue
+    states_by_sample = {
+        state.job.sample.identity.sample_identity_id: state for state in states
+    }
+    for group, target_sample_ids in plan_conservative_recovery_targets(
+        groups, sample_population=tuple(state.job.sample for state in states)
+    ):
         center = group.group_center_rt
         if center is None:
             raise UntargetedCidNlRealDataRuntimeError(
                 "authorized recovery requires a frozen RT group"
             )
-        for state in states:
+        for sample_id in sorted(target_sample_ids):
+            state = states_by_sample[sample_id]
             result = state.adapter_result
             assert result is not None
             assessment = result.assessment_input.assessment
-            if (
-                state.job.sample.identity.sample_identity_id
-                not in facts.activation_eligible_sample_ids
-                or not (
-                    assessment.content.method_result == "HOLD"
-                    or is_unsearched_cid_nl_discovery_assessment(assessment)
-                    or is_cid_nl_missing_ms1_rejection(assessment)
-                )
+            if not (
+                assessment.content.method_result == "HOLD"
+                or is_unsearched_cid_nl_discovery_assessment(assessment)
+                or is_cid_nl_missing_ms1_rejection(assessment)
             ):
                 continue
             if assessment.candidate_peaks:
@@ -631,6 +602,7 @@ class _SampleRecoveryWorkerRequest:
 
 @dataclass(slots=True)
 class _SampleRecoveryWorkerResponse:
+    work_unit_keys: tuple[str, ...]
     recovery_attempts_by_key: dict[
         str, tuple[UntargetedCidNlRecoveryAttemptResult, ...]
     ]
@@ -670,6 +642,7 @@ def _execute_sample_recovery_worker(
     )
     _execute_recovery_batch(phase)
     return _SampleRecoveryWorkerResponse(
+        work_unit_keys=tuple(state.job.work_unit_key for state in states),
         recovery_attempts_by_key={
             s.job.work_unit_key: s.recovery_attempts
             for s in states
