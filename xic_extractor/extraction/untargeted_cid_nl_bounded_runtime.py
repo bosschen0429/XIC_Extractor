@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import importlib
 import json
-import queue
 import threading
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import fields, replace
@@ -223,7 +222,11 @@ class CidNlPartitionPipelineAdapter:
             and raw_workers >= 2
             else 1
         )
-        self._partition_raw_workers = raw_workers // self._acquisition_workers
+        self._partition_raw_workers = (
+            raw_workers
+            if raw_worker_backend == "process"
+            else raw_workers // self._acquisition_workers
+        )
         self._partitions = tuple(
             WorkPartition(
                 index=index,
@@ -240,8 +243,6 @@ class CidNlPartitionPipelineAdapter:
         }
         self._process_pool_lock = threading.Lock()
         self._process_pools_closed = False
-        self._process_pools_failed = threading.Event()
-        self._available_process_pools: queue.Queue[WorkerAdmissionPool] = queue.Queue()
         self._process_pools: tuple[WorkerAdmissionPool, ...] = ()
         if raw_worker_backend == "process":
             shared_objects = _sample_worker_shared_objects(
@@ -255,18 +256,17 @@ class CidNlPartitionPipelineAdapter:
                 ),
             )
             dll_dir = _plan_dll_dir(plan)
-            self._process_pools = tuple(
+            # Both acquisition lanes share the full process budget. A lane
+            # waiting on grouping/composition does not strand half the workers.
+            self._process_pools = (
                 WorkerAdmissionPool(
                     max_workers=self._partition_raw_workers,
                     backend="process",
                     thread_name_prefix="cid-nl-sample",
                     initializer=partial(_initialize_sample_process, dll_dir),
                     shared_objects=shared_objects,
-                )
-                for _lane in range(self._acquisition_workers)
+                ),
             )
-            for pool in self._process_pools:
-                self._available_process_pools.put(pool)
         self._global_closure_work_unit_key = (
             f"global-closure:{self._owners.request.processing_request_id}"
         )
@@ -384,32 +384,27 @@ class CidNlPartitionPipelineAdapter:
         if self._raw_worker_backend == "process":
             if self._process_pools_closed:
                 raise RuntimeError("process worker pools are already closed")
-            if self._process_pools_failed.is_set():
+            pool = self._process_pools[0]
+            if pool.stopped:
                 raise RuntimeError("process worker pool failure stopped admission")
-            pool = self._available_process_pools.get()
-            try:
-                leaf = execute_untargeted_cid_nl_runtime_partition(
-                    batch.jobs,
-                    prepare_grouping=partial(
-                        prepare_untargeted_cid_nl_grouping,
-                        batch,
-                        alignment_config=self._alignment_config,
-                        known_istd_reference=self._known_istd_reference,
-                        progress_callback=progress_callback,
-                    ),
-                    recovery_templates=batch.sample_job_templates,
-                    partition_key=partition.partition_key,
+            leaf = execute_untargeted_cid_nl_runtime_partition(
+                batch.jobs,
+                prepare_grouping=partial(
+                    prepare_untargeted_cid_nl_grouping,
+                    batch,
                     alignment_config=self._alignment_config,
+                    known_istd_reference=self._known_istd_reference,
                     progress_callback=progress_callback,
-                    should_cancel=should_cancel,
-                    raw_workers=self._partition_raw_workers,
-                    raw_worker_backend=self._raw_worker_backend,
-                    pool=pool,
-                )
-            finally:
-                if pool.stopped:
-                    self._process_pools_failed.set()
-                self._available_process_pools.put(pool)
+                ),
+                recovery_templates=batch.sample_job_templates,
+                partition_key=partition.partition_key,
+                alignment_config=self._alignment_config,
+                progress_callback=progress_callback,
+                should_cancel=should_cancel,
+                raw_workers=self._partition_raw_workers,
+                raw_worker_backend=self._raw_worker_backend,
+                pool=pool,
+            )
         else:
             with WorkerAdmissionPool(
                 max_workers=self._partition_raw_workers,

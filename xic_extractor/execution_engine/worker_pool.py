@@ -93,6 +93,8 @@ class WorkerAdmissionPool:
         self._mp_context = mp_context
         self._shared_objects = shared_objects
         self._executor: ThreadPoolExecutor | ProcessPoolExecutor | None = None
+        self._executor_lock = threading.Lock()
+        self._metrics_lock = threading.Lock()
         self._stopped = threading.Event()
         self._stop_lock = threading.Lock()
         self._first_error: Exception | None = None
@@ -118,19 +120,21 @@ class WorkerAdmissionPool:
     def transport_metrics(self) -> WorkerTransportMetrics | None:
         """Return measured owner transport bytes for shared process execution."""
 
-        if self._shared_bootstrap_bytes is None:
-            return None
-        return WorkerTransportMetrics(
-            shared_bootstrap_bytes=self._shared_bootstrap_bytes,
-            task_request_bytes=self._task_request_bytes,
-            task_response_bytes=self._task_response_bytes,
-            worker_pids=tuple(sorted(self._worker_pids)),
-        )
+        with self._metrics_lock:
+            if self._shared_bootstrap_bytes is None:
+                return None
+            return WorkerTransportMetrics(
+                shared_bootstrap_bytes=self._shared_bootstrap_bytes,
+                task_request_bytes=self._task_request_bytes,
+                task_response_bytes=self._task_response_bytes,
+                worker_pids=tuple(sorted(self._worker_pids)),
+            )
 
     def set_initializer(self, initializer: Callable[[], None]) -> None:
-        if self._executor is not None:
-            raise RuntimeError("cannot set initializer after executor has started")
-        self._initializer = initializer
+        with self._executor_lock:
+            if self._executor is not None:
+                raise RuntimeError("cannot set initializer after executor has started")
+            self._initializer = initializer
 
     @property
     def stopped(self) -> bool:
@@ -156,32 +160,42 @@ class WorkerAdmissionPool:
     def _ensure_executor(
         self, capacity: int
     ) -> ThreadPoolExecutor | ProcessPoolExecutor | None:
-        if self._executor is not None or self._closed:
+        # Process batches may overlap on the same pool. Their request windows
+        # are local; the executor owns the shared active-worker budget.
+        with self._executor_lock:
+            if self._closed:
+                raise RuntimeError("worker admission pool is closed")
+            if self._executor is not None:
+                return self._executor
+            effective_workers = min(self._max_workers, max(1, capacity))
+            if self._backend == "process":
+                # A small first batch must not permanently shrink a reused pool.
+                effective_workers = self._max_workers
+                if self._shared_objects:
+                    bootstrap = owner_pickle_dumps(self._shared_objects, ())
+                    with self._metrics_lock:
+                        self._shared_bootstrap_bytes = (
+                            len(bootstrap) * effective_workers
+                        )
+                    self._executor = ProcessPoolExecutor(
+                        max_workers=effective_workers,
+                        mp_context=self._mp_context or get_context("spawn"),
+                        initializer=_initialize_owner_worker,
+                        initargs=(bootstrap, self._initializer),
+                    )
+                else:
+                    self._executor = ProcessPoolExecutor(
+                        max_workers=effective_workers,
+                        mp_context=self._mp_context or get_context("spawn"),
+                    )
+            elif effective_workers > 1:
+                if self._initializer is not None:
+                    self._initializer()
+                self._executor = ThreadPoolExecutor(
+                    max_workers=effective_workers,
+                    thread_name_prefix=self._thread_name_prefix,
+                )
             return self._executor
-        effective_workers = min(self._max_workers, max(1, capacity))
-        if self._backend == "process":
-            if self._shared_objects:
-                bootstrap = owner_pickle_dumps(self._shared_objects, ())
-                self._shared_bootstrap_bytes = len(bootstrap) * effective_workers
-                self._executor = ProcessPoolExecutor(
-                    max_workers=effective_workers,
-                    mp_context=self._mp_context or get_context("spawn"),
-                    initializer=_initialize_owner_worker,
-                    initargs=(bootstrap, self._initializer),
-                )
-            else:
-                self._executor = ProcessPoolExecutor(
-                    max_workers=effective_workers,
-                    mp_context=self._mp_context or get_context("spawn"),
-                )
-        elif effective_workers > 1:
-            if self._initializer is not None:
-                self._initializer()
-            self._executor = ThreadPoolExecutor(
-                max_workers=effective_workers,
-                thread_name_prefix=self._thread_name_prefix,
-            )
-        return self._executor
 
     def run_windowed(
         self,
@@ -249,7 +263,8 @@ class WorkerAdmissionPool:
                 arg = task_arg_fn(item) if task_arg_fn is not None else item
                 if self._backend == "process" and self._shared_objects:
                     request_payload = owner_pickle_dumps(arg, self._shared_objects)
-                    self._task_request_bytes += len(request_payload)
+                    with self._metrics_lock:
+                        self._task_request_bytes += len(request_payload)
                     submitted = cast(
                         Future[object],
                         executor.submit(
@@ -280,8 +295,9 @@ class WorkerAdmissionPool:
                                 raise TypeError(
                                     "shared process worker returned an invalid envelope"
                                 )
-                            self._task_response_bytes += len(raw_result.payload)
-                            self._worker_pids.add(raw_result.worker_pid)
+                            with self._metrics_lock:
+                                self._task_response_bytes += len(raw_result.payload)
+                                self._worker_pids.add(raw_result.worker_pid)
                             raw_result = owner_pickle_loads(
                                 raw_result.payload, self._shared_objects
                             )
@@ -306,10 +322,12 @@ class WorkerAdmissionPool:
                     pass
 
     def shutdown(self) -> None:
-        self._closed = True
-        if self._executor is not None:
-            self._executor.shutdown(wait=True)
+        with self._executor_lock:
+            self._closed = True
+            executor = self._executor
             self._executor = None
+        if executor is not None:
+            executor.shutdown(wait=True)
 
     def __enter__(self) -> WorkerAdmissionPool:
         return self

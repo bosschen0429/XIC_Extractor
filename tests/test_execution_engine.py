@@ -109,6 +109,9 @@ class SharedProcessResult:
 
 
 _SHARED_PROCESS_INITIALIZED = False
+_MOCK_PROCESS_ACTIVE = 0
+_MOCK_PROCESS_MAX_ACTIVE = 0
+_MOCK_PROCESS_LOCK = threading.Lock()
 
 
 def _initialize_shared_process_test() -> None:
@@ -124,6 +127,26 @@ def _execute_shared_process_task(task: SharedProcessTask) -> SharedProcessResult
         os.getpid(),
         _SHARED_PROCESS_INITIALIZED,
     )
+
+
+def _execute_shared_process_budget_task(task: SharedProcessTask) -> SharedProcessResult:
+    global _MOCK_PROCESS_ACTIVE, _MOCK_PROCESS_MAX_ACTIVE
+    with _MOCK_PROCESS_LOCK:
+        _MOCK_PROCESS_ACTIVE += 1
+        _MOCK_PROCESS_MAX_ACTIVE = max(
+            _MOCK_PROCESS_MAX_ACTIVE, _MOCK_PROCESS_ACTIVE
+        )
+    try:
+        time.sleep(0.02)
+        return SharedProcessResult(
+            task.owner,
+            task.value,
+            os.getpid(),
+            _SHARED_PROCESS_INITIALIZED,
+        )
+    finally:
+        with _MOCK_PROCESS_LOCK:
+            _MOCK_PROCESS_ACTIVE -= 1
 
 
 # ---------------------------------------------------------------------------
@@ -1497,6 +1520,135 @@ def test_worker_admission_pool_thread_multi_worker_bounded() -> None:
     assert len(results) == 10
     assert sorted(results) == [x * 2 for x in range(10)]
     assert max_concurrent <= 3
+
+
+def test_worker_admission_pool_concurrent_batches_share_one_executor_and_budget(
+    monkeypatch,
+) -> None:
+    import xic_extractor.execution_engine.worker_pool as owner
+
+    created = []
+    original_executor = owner.ThreadPoolExecutor
+
+    class RecordingExecutor:
+        def __init__(
+            self,
+            *,
+            max_workers: int,
+            mp_context: object,
+            initializer: object,
+            initargs: tuple[object, ...],
+        ) -> None:
+            self.max_workers = max_workers
+            self.mp_context = mp_context
+            with creation_gate_lock:
+                first_constructor = not creation_gate_used[0]
+                if first_constructor:
+                    creation_gate_used[0] = True
+            self._executor = original_executor(max_workers=max_workers)
+            created.append(self)
+            if first_constructor:
+                creation_started.set()
+                if not release_creation.wait(5):
+                    raise AssertionError("timed out releasing executor construction")
+            if initializer is not None:
+                initializer(*initargs)
+
+        def submit(self, *args: object, **kwargs: object):
+            return self._executor.submit(*args, **kwargs)
+
+        def shutdown(self, **kwargs: object) -> None:
+            self._executor.shutdown(**kwargs)
+
+    monkeypatch.setattr(owner, "ProcessPoolExecutor", RecordingExecutor)
+    creation_gate_lock = threading.Lock()
+    creation_gate_used = [False]
+    creation_started = threading.Event()
+    release_creation = threading.Event()
+    global _MOCK_PROCESS_ACTIVE, _MOCK_PROCESS_MAX_ACTIVE
+    with _MOCK_PROCESS_LOCK:
+        _MOCK_PROCESS_ACTIVE = 0
+        _MOCK_PROCESS_MAX_ACTIVE = 0
+    shared_owner = object()
+    cold_pool = WorkerAdmissionPool(
+        max_workers=4,
+        backend="process",
+        shared_objects=(shared_owner,),
+    )
+    cold_barrier = threading.Barrier(2)
+    cold_errors: list[BaseException] = []
+    cold_results: list[SharedProcessResult] = []
+
+    def run_cold_batch() -> None:
+        try:
+            cold_barrier.wait(timeout=5)
+            cold_pool.run_windowed(
+                (0, 1),
+                _execute_shared_process_budget_task,
+                task_arg_fn=lambda value: SharedProcessTask(shared_owner, value),
+                on_completed=lambda _c, _t, _item, result: cold_results.append(result),
+            )
+        except BaseException as exc:  # pragma: no cover - surfaced below
+            cold_errors.append(exc)
+
+    cold_threads = [threading.Thread(target=run_cold_batch) for _ in range(2)]
+    for thread in cold_threads:
+        thread.start()
+    assert creation_started.wait(5)
+    release_creation.set()
+    for thread in cold_threads:
+        thread.join(timeout=10)
+    cold_pool.shutdown()
+    assert not cold_errors
+    assert all(not thread.is_alive() for thread in cold_threads)
+    assert len(created) == 1
+    assert len(cold_results) == 4
+
+    created.clear()
+    with _MOCK_PROCESS_LOCK:
+        _MOCK_PROCESS_ACTIVE = 0
+        _MOCK_PROCESS_MAX_ACTIVE = 0
+    pool = WorkerAdmissionPool(
+        max_workers=4,
+        backend="process",
+        shared_objects=(shared_owner,),
+    )
+    barrier = threading.Barrier(2)
+    results: list[SharedProcessResult] = []
+    errors: list[BaseException] = []
+
+    def run_batch(_name: str) -> None:
+        try:
+            barrier.wait(timeout=5)
+            pool.run_windowed(
+                tuple(range(4)),
+                _execute_shared_process_budget_task,
+                task_arg_fn=lambda value: SharedProcessTask(shared_owner, value),
+                on_completed=lambda _c, _t, _item, result: results.append(result),
+            )
+        except BaseException as exc:  # pragma: no cover - surfaced below
+            errors.append(exc)
+
+    pool.run_windowed(
+        (0,),
+        _execute_shared_process_budget_task,
+        task_arg_fn=lambda value: SharedProcessTask(shared_owner, value),
+        on_completed=lambda _c, _t, _item, result: results.append(result),
+    )
+    threads = [threading.Thread(target=run_batch, args=(name,)) for name in ("a", "b")]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=10)
+    with pool:
+        pass
+
+    assert not errors
+    assert len(created) == 1
+    assert created[0].max_workers == 4
+    assert _MOCK_PROCESS_MAX_ACTIVE == 4
+    assert len(results) == 9
+    assert all(result.owner is shared_owner for result in results)
 
 
 def test_worker_admission_pool_skip_and_task_arg_fn() -> None:

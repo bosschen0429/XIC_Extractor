@@ -1282,10 +1282,8 @@ def test_overlapped_partition_acquisition_failure_propagates(
             pipeline_overlap=True,
         )
     assert error.value.__cause__ is injected_error
-    assert observed_budgets == {
-        "partition-00000": 2,
-        "partition-00001": 2,
-    }
+    assert {"partition-00000", "partition-00001"} <= observed_budgets.keys()
+    assert all(budget == 2 for budget in observed_budgets.values())
     assert marker.read().terminal_outcome is AttemptTerminalOutcome.FAILED
     assert list((tmp_path / "overlapped-failure").glob(".cid_nl_partitions-*")) == []
 
@@ -1926,7 +1924,7 @@ def test_completed_partition_retains_only_light_parent_capture_metadata(
     assert child_after.completed_projection.decisions[0].value == child_decision.value
 
 
-def test_process_backend_reuses_one_pool_per_acquisition_lane_and_closes_once(
+def test_process_backend_reuses_one_shared_pool_and_closes_once(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
@@ -1949,21 +1947,26 @@ def test_process_backend_reuses_one_pool_per_acquisition_lane_and_closes_once(
         def __exit__(self, *_args):
             self.exit_calls += 1
 
+        def stop(self, error):
+            self.first_error = error
+            self.stopped = True
+
     monkeypatch.setattr(owner, "WorkerAdmissionPool", RecordingPool)
     plan, _reference = _plan(tmp_path, monkeypatch)
     adapter = owner.CidNlPartitionPipelineAdapter(
         plan,
         alignment_config=AlignmentConfig(anchor_min_seed_events=1),
         max_partition_jobs=len(plan.context.samples),
-        raw_workers=4,
+        raw_workers=8,
         raw_worker_backend="process",
         acquisition_workers=2,
     )
 
     assert adapter.acquisition_workers == 2
-    assert adapter.partition_raw_workers == 2
-    assert len(created) == 2
-    assert sum(pool.max_workers for pool in created) == 4
+    assert adapter.partition_raw_workers == 8
+    assert len(created) == 1
+    assert created[0].max_workers == 8
+    assert sum(pool.max_workers for pool in created) == 8
     assert {id(pool.shared_objects) for pool in created} == {
         id(created[0].shared_objects)
     }
@@ -1972,14 +1975,13 @@ def test_process_backend_reuses_one_pool_per_acquisition_lane_and_closes_once(
         subject_batch = adapter._partition_subject_batches[partition.partition_key]
         assert any(value is subject_batch for value in shared)
 
-    adapter._process_pools_failed.set()
+    created[0].stop(RuntimeError("failure stopped admission"))
     with pytest.raises(RuntimeError, match="failure stopped admission"):
         adapter.execute_acquisition(adapter.partitions[0])
-    adapter._process_pools_failed.clear()
 
     adapter.close_process_worker_pools()
     adapter.close_process_worker_pools()
-    assert [pool.exit_calls for pool in created] == [1, 1]
+    assert [pool.exit_calls for pool in created] == [1]
 
     with pytest.raises(RuntimeError, match="already closed"):
         adapter.execute_acquisition(adapter.partitions[0])
