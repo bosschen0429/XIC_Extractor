@@ -161,7 +161,7 @@ def test_predecessor_cells_keep_all_supports_with_deterministic_outside_witness(
             for cell in cells
         ]
         assert {payload["schema_version"] for payload in payloads} == {
-            "cell_observation"
+            "cell_observation_v2"
         }
         assert all("outside_group" in payload["content"] for payload in payloads)
         assert len({frozenset(payload["content"]) for payload in payloads}) == 1
@@ -320,17 +320,12 @@ def test_cell_handoff_never_reconstructs_completed_groups(
     )
 
 
-def test_population_rejects_crossed_artifact_and_context_rejects_invalid_config(
+def test_cell_owner_rejects_crossed_artifact_and_context_rejects_invalid_config(
     tmp_path: Path,
 ) -> None:
-    sources, handoff = _outside_population_handoff(tmp_path)
-    forged = copy(sources[-1])
-    object.__setattr__(forged, "artifact", sources[0].artifact)
+    sources, _handoff = _outside_population_handoff(tmp_path)
     with pytest.raises(CellObservationContractError):
-        compose_final_group_cell_observation_population(
-            handoff=handoff,
-            predecessor_cells=(*sources[:-1], forged),
-        )
+        replace(sources[-1], artifact=sources[0].artifact)
     context = sources[0].group_context
     with pytest.raises(CellObservationContractError, match="exact AlignmentConfig"):
         replace(context, config=None)

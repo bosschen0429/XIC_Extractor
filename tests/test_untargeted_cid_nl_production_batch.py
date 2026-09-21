@@ -313,7 +313,7 @@ def _assert_outside_group_cells(scientific, batch, tmp_path: Path) -> None:
         expected = (
             json.dumps(
                 {
-                    "schema_version": "cell_observation",
+                    "schema_version": "cell_observation_v2",
                     "validation_status": cell_owner.VALIDATION_STATUS,
                     "content": current_content,
                 },
@@ -328,7 +328,7 @@ def _assert_outside_group_cells(scientific, batch, tmp_path: Path) -> None:
             cell_owner.canonical_cell_observation_bytes(source.content)
             == expected.encode()
         )
-        assert source.artifact.semantic_contract.schema_version == "cell_observation"
+        assert source.artifact.semantic_contract.schema_version == "cell_observation_v2"
     outside = outside_cells[0]
     relation = outside.content.outside_group
     assert relation is not None
@@ -357,11 +357,11 @@ def _assert_outside_group_cells(scientific, batch, tmp_path: Path) -> None:
         payload = json.loads(
             cell_owner.canonical_cell_observation_bytes(source.content)
         )
-        assert payload["schema_version"] == "cell_observation"
+        assert payload["schema_version"] == "cell_observation_v2"
         assert payload["content"]["outside_group"] == asdict(
             source.content.outside_group
         )
-        assert source.artifact.semantic_contract.schema_version == "cell_observation"
+        assert source.artifact.semantic_contract.schema_version == "cell_observation_v2"
         assert source.peak_observation is None and source.peak_hypothesis is None
         assert source.content.method_result == "SUPPORT"
         assert (
@@ -4512,7 +4512,7 @@ def _assert_conservative_proof_seals(
         json.loads(
             canonical_cell_observation_bytes(proof.decision.target_cell.content)
         )["schema_version"]
-        == "cell_observation"
+        == "cell_observation_v2"
     )
 
     def canonical(value):

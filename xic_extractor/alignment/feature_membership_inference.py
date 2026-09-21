@@ -679,6 +679,24 @@ def _feature_rt_may_support(
     return False
 
 
+def supports_existing_feature(
+    owner: SampleLocalMS1Owner,
+    members: tuple[SampleLocalMS1Owner, ...],
+    *,
+    config: AlignmentConfig,
+    drift_lookup: DriftLookupProtocol | None,
+) -> bool:
+    """Apply the same feature evidence rule without fitting or assigning again."""
+    ordered = sorted(members, key=lambda item: (item.sample_stem, item.owner_id))
+    track = _FeatureTrack.from_owner(ordered[0], direction="forward")
+    for member in ordered[1:]:
+        track.add(member)
+    candidate = _compare_owner_to_feature(
+        owner, track, config=config, drift_lookup=drift_lookup, counts=Counter()
+    )
+    return candidate.cost is not None and candidate.cost < _UNASSIGNED_COST
+
+
 def _compare_owner_to_feature(
     owner: SampleLocalMS1Owner,
     track: _FeatureTrack,

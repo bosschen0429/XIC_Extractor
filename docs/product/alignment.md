@@ -97,11 +97,18 @@ groups directly into the same result without model fitting or assignment.
 Initial candidates retain their request, sample, acquisition, physical-
 hypothesis, integration, and evidence bindings.
 
-The exact same grouping-result object is used before bounded Backfill and
-through finalization. ObservationRepair can supply an owner-backed repaired
-observation for a missing or insufficient cell, but it does not reopen group
-membership, rebuild a grouping snapshot, refit ModeTrack, or mint a post-repair
-grouping context.
+Initial members stay in their original groups through bounded recovery.
+A group-bound recovery with unique SUPPORT may add a missing sample member
+when it passes the existing feature evidence rule. The grouping owner records
+the admitted member and exact predecessor/successor lineage; it does not refit,
+move original members, split known ISTD bindings, or create new groups.
+Competing claims on the same physical content remain unresolved and supply no
+numeric value. Final cells retain the original cell for provenance and the
+completed recovery assessment/observation for the final decision and integral.
+Cell evidence uses `cell_observation_v2` and final-cell canonical bases use
+`final_group_cell_observation_v2` to bind unresolved SUPPORT and recovery
+provenance explicitly. Old diagnostic evidence remains historical; acquisition
+cache facts do not depend on these cell schemas.
 
 The production CID-NL runtime prepares that result after initial assessments,
 once per compatible subject workset, using the complete sample population and
@@ -120,9 +127,8 @@ separate group-bound recovery attempts and decisions.
 
 Initial grouping uses the sparse feature index described below. It scores only
 compatible feature candidates and retains the evaluated evidence. Missing pair
-records mean `not_evaluated`; they do not prove incompatibility. Backfill checks
-its repaired observation against the fixed destination group without changing
-membership.
+records mean `not_evaluated`; they do not prove incompatibility. Recovery checks
+its observation against the fixed destination group before admission.
 
 Before scoring, a feature candidate must have a seed or most-recent witness
 that can support the preferred RT window in raw or corrected coordinates.

@@ -19,6 +19,16 @@ from tests.test_untargeted_cid_nl_real_data_runtime import (
     _install_runtime_raws,
 )
 from xic_extractor.alignment.config import AlignmentConfig
+from xic_extractor.alignment.cross_sample_neighborhood_graph import (
+    CrossSamplePartitionTransition,
+)
+from xic_extractor.alignment.grouping_result import CrossSampleGroupingResult
+from xic_extractor.alignment.grouping_workflow import (
+    admit_cid_nl_group_recoveries,
+)
+from xic_extractor.alignment.untargeted_finalized_matrix import (
+    project_completed_untarget_batch_writer_inputs,
+)
 from xic_extractor.execution_runtime_marker import OwnerPathRuntimeMarker
 from xic_extractor.execution_runtime_owner import start_runtime_attempt
 from xic_extractor.extraction import (
@@ -318,12 +328,17 @@ def test_runtime_recovers_every_authorized_rt_group(
                 for rt in (7.99, 8.01)
             )
         raws[path] = raw
+        current_candidates = _current_candidates(
+            raw, raw_file=path, settings=settings, peak_config=peak_config
+        )
         candidates[path.stem] = (
-            _current_candidates(
-                raw, raw_file=path, settings=settings, peak_config=peak_config
-            )
+            current_candidates
             if path.stem in support
-            else ()
+            else (
+                tuple(_without_ms1_peak(candidate) for candidate in current_candidates)
+                if recovery_peaks == (8.0, 12.0) and shared_support == "separate"
+                else ()
+            )
         )
     kwargs = dict(
         raw_paths=paths,
@@ -470,12 +485,180 @@ def test_runtime_recovers_every_authorized_rt_group(
 
         (child,) = completed.application_result.children
         scientific = child.scientific_core
+        transition = scientific.partition_transition
+        assert len(transition.predecessors) == len(transition.successors) == 2
+        assert len(completed.initial_groups) == len(transition.predecessors)
+        for predecessor in transition.predecessors:
+            successors = tuple(
+                successor
+                for successor in transition.successors
+                if set(predecessor.member_subjects).issubset(successor.member_subjects)
+            )
+            assert len(successors) == 1
+        recovery_is_support = all(
+            attempt.assessment.content.method_result == "SUPPORT"
+            for attempt in missing.recovery_attempts
+        )
+        if recovery_peaks == (8.0, 12.0) and shared_support == "separate":
+            assert recovery_is_support, tuple(
+                attempt.assessment.content.method_result
+                for attempt in missing.recovery_attempts
+            )
+        if (
+            recovery_peaks == (8.0, 12.0)
+            and shared_support == "separate"
+            and recovery_is_support
+        ):
+            assert len(transition.admitted_members) == 2
+            assert all(
+                member.canonical_sample_identity_id
+                == missing.job.sample.identity.sample_identity_id
+                for member in transition.admitted_members
+            )
         missing_cells = tuple(
             cell
             for cell in scientific.cell_observations
             if cell.canonical_sample.metadata.raw_stem == "Missing"
         )
         assert len(missing_cells) == 2
+        if recovery_peaks == (8.0, 12.0) and recovery_is_support:
+            assert all(cell.recovery_cell is not None for cell in missing_cells)
+            assert all(
+                cell.recovery_cell.content.method_result == "SUPPORT"
+                for cell in missing_cells
+            )
+        if (
+            recovery_peaks == (8.0, 12.0)
+            and shared_support == "separate"
+            and recovery_is_support
+        ):
+            initial_groups = tuple(completed.initial_groups)
+            initial_transition = CrossSamplePartitionTransition(
+                status="assessable",
+                predecessors=transition.predecessors,
+                successors=transition.predecessors,
+                lineage=(),
+                reason="unchanged_membership_no_lineage",
+            )
+            initial_result = CrossSampleGroupingResult(
+                processing_owners=scientific.grouping_result.processing_owners,
+                partition_transition=initial_transition,
+                drift_lookup=scientific.grouping_result.drift_lookup,
+            )
+            bound_recoveries = {
+                (
+                    group.group_hypothesis_id,
+                    missing.job.sample.identity.sample_identity_id,
+                    missing.job.method_subject.method_subject_id,
+                ): (
+                    missing.job.sample,
+                    missing.recovery_for_group(
+                        next(
+                            source.group_context.group.group_center_rt
+                            for cell in missing_cells
+                            for source in cell.predecessor_cells
+                            if (
+                                source.group_context.group.group_hypothesis_id
+                                == group.group_hypothesis_id
+                            )
+                        ),
+                        group_hypothesis_id=group.group_hypothesis_id,
+                    ).assessment,
+                )
+                for group in transition.predecessors
+            }
+            forward = admit_cid_nl_group_recoveries(
+                result=initial_result,
+                groups=initial_groups,
+                recoveries=bound_recoveries,
+                alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+            )
+            reverse = admit_cid_nl_group_recoveries(
+                result=initial_result,
+                groups=tuple(reversed(initial_groups)),
+                recoveries=dict(reversed(tuple(bound_recoveries.items()))),
+                alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+            )
+
+            def normalized_admission(admission):
+                grouping, groups, successor_ids, hypotheses = admission
+                return (
+                    tuple(
+                        sorted(
+                            (
+                                group.group_hypothesis_id,
+                                tuple(
+                                    sorted(
+                                        member.member_subject_id
+                                        for member in group.member_subjects
+                                    )
+                                ),
+                            )
+                            for group in groups
+                        )
+                    ),
+                    tuple(sorted(successor_ids.items())),
+                    tuple(
+                        sorted(
+                            (
+                                key,
+                                tuple(
+                                    sorted(
+                                        hypothesis.hypothesis_id
+                                        for hypothesis in values
+                                    )
+                                ),
+                            )
+                            for key, values in hypotheses.items()
+                        )
+                    ),
+                    tuple(
+                        sorted(
+                            member.member_subject_id
+                            for member in grouping.partition_transition.admitted_members
+                        )
+                    ),
+                )
+
+            assert normalized_admission(forward) == normalized_admission(reverse)
+
+            first_group, second_group = initial_groups
+            shared_recovery = next(iter(bound_recoveries.values()))
+            ambiguous = {
+                (
+                    first_group.group_hypothesis_id,
+                    missing.job.sample.identity.sample_identity_id,
+                    missing.job.method_subject.method_subject_id,
+                ): shared_recovery,
+                (
+                    second_group.group_hypothesis_id,
+                    missing.job.sample.identity.sample_identity_id,
+                    missing.job.method_subject.method_subject_id,
+                ): shared_recovery,
+            }
+            rejected = admit_cid_nl_group_recoveries(
+                result=initial_result,
+                groups=initial_groups,
+                recoveries=ambiguous,
+                alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+            )
+            rejected_reverse = admit_cid_nl_group_recoveries(
+                result=initial_result,
+                groups=tuple(reversed(initial_groups)),
+                recoveries=dict(reversed(tuple(ambiguous.items()))),
+                alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+            )
+            assert len(rejected[0].partition_transition.admitted_members) == 1
+            assert normalized_admission(rejected) == normalized_admission(
+                rejected_reverse
+            )
+            assert (
+                sum(
+                    group_id != successor_id
+                    for group_id, successor_id in rejected[2].items()
+                )
+                == 1
+            )
         allocated = []
         for cell in missing_cells:
             (source,) = cell.predecessor_cells
@@ -532,10 +715,20 @@ def test_runtime_recovers_every_authorized_rt_group(
                             ),
                         )
             else:
-                assert source.method_assessment is recovery.assessment
-                allocated.append(
-                    source.peak_observation.content.peak_observation_content_id
-                )
+                if recovery_is_support:
+                    assert source.method_assessment is (
+                        missing.adapter_result.assessment_input.assessment
+                    )
+                    assert cell.recovery_cell is not None
+                    assert cell.recovery_cell.method_assessment is recovery.assessment
+                    allocated.append(
+                        cell.recovery_cell.peak_observation.content.peak_observation_content_id
+                    )
+                else:
+                    assert source.method_assessment is recovery.assessment
+                    allocated.append(
+                        source.peak_observation.content.peak_observation_content_id
+                    )
         assert len(set(allocated)) == len(allocated)
         assert set(completed.method_assessments) == {
             assessment
@@ -553,13 +746,22 @@ def test_runtime_recovers_every_authorized_rt_group(
             for decision in writer.production_decisions.cells.values()
             if decision.sample_stem == "Missing"
         )
-        assert all(
-            not decision.write_matrix_value and decision.matrix_value is None
-            for decision in decisions
-        )
-        assert sorted(decision.blank_reason for decision in decisions) == sorted(
-            cell.evidence_state for cell in missing_cells
-        )
+        if recovery_is_support:
+            assert all(
+                decision.write_matrix_value and decision.matrix_value is not None
+                for decision in decisions
+            )
+        else:
+            assert all(
+                not decision.write_matrix_value and decision.matrix_value is None
+                for decision in decisions
+            )
+        if recovery_is_support:
+            assert all(decision.blank_reason == "" for decision in decisions)
+        else:
+            assert sorted(decision.blank_reason for decision in decisions) == sorted(
+                cell.evidence_state for cell in missing_cells
+            )
         # Single CID-NL recovery retains MS1 candidates without direct SUPPORT.
         assert all(
             cell.evidence_states == ("unresolved",)
@@ -599,6 +801,126 @@ def test_runtime_recovers_every_authorized_rt_group(
                 **options,
             )
             assert replayed == baseline
+
+
+def test_shared_physical_recovery_claim_is_not_assigned_to_two_groups(
+    tmp_path, monkeypatch
+):
+    """A shared physical peak must not be assigned to both groups."""
+
+    centers = {"S1": (8.0, 8.12), "S2": (8.0, 8.12), "Missing": (8.06,)}
+    paths = tuple(tmp_path / f"{stem}.synthetic" for stem in centers)
+    # Keep the two synthetic discovery peaks as separate fixture groups; this
+    # changes only this test input, never the production/default threshold.
+    settings, peak_config = (
+        replace(
+            _settings(), neutral_loss_profile=None, rt_max=8.6, seed_rt_gap_min=0.1
+        ),
+        _peak_config(tmp_path),
+    )
+    raws, candidates = {}, {}
+    for path in paths:
+        path.write_bytes(path.stem.encode())
+        raw = _FakeRaw(centers[path.stem])
+        raw.rt = np.linspace(7.4, 8.7, 521)
+        raw.intensity = sum(
+            (
+                1000 * np.exp(-0.5 * ((raw.rt - center) / 0.018) ** 2)
+                for center in centers[path.stem]
+            ),
+            np.zeros_like(raw.rt),
+        )
+        raw.scans = tuple(
+            replace(scan, scan_number=int(np.argmin(np.abs(raw.rt - scan.rt))) + 1)
+            for scan in raw.scans
+        )
+        raws[path] = raw
+        current = _current_candidates(
+            raw, raw_file=path, settings=settings, peak_config=peak_config
+        )
+        candidates[path.stem] = (
+            current
+            if path.stem != "Missing"
+            else tuple(_without_ms1_peak(candidate) for candidate in current)
+        )
+    batch = build_untargeted_cid_nl_production_batch(
+        raw_paths=paths,
+        sample_metadata=tuple(
+            SampleMetadata(
+                sample_name=stem,
+                raw_stem=stem,
+                injection_order=index + 1,
+                sample_role="study_sample",
+            )
+            for index, stem in enumerate(centers)
+        ),
+        settings=settings,
+        peak_config=peak_config,
+        candidates_by_sample=candidates,
+        discovery_receipts_by_sample=_discovery_receipts(tmp_path, paths, candidates),
+        sample_identity_namespace="study:shared-recovery-claim",
+        dll_dir=tmp_path,
+    )
+    _install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
+    runtime = start_runtime_attempt(
+        attempt=batch.context.processing_owners.attempt,
+        work_unit_keys=tuple(job.work_unit_key for job in batch.jobs),
+        owner_completeness_attestation="shared-recovery-claim",
+    )
+    result = execute_untargeted_cid_nl_real_data_runtime(
+        runtime,
+        batch.jobs,
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+        recovery_marker=OwnerPathRuntimeMarker(
+            tmp_path / "runtime.json", "shared-recovery-claim"
+        ),
+    )
+    assert result.succeeded
+    missing = next(
+        item
+        for item in result.sample_results
+        if item.job.sample.metadata.raw_stem == "Missing"
+    )
+    completed = compose_untargeted_cid_nl_production_result(
+        batch, result, alignment_config=AlignmentConfig(anchor_min_seed_events=1)
+    )
+    assert len(missing.recovery_attempts) == 2, (
+        missing.result_ref.recovery_candidate_count,
+        len(completed.initial_groups),
+        tuple(group.group_center_rt for group in completed.initial_groups),
+    )
+    assert all(
+        attempt.assessment.content.method_result == "SUPPORT"
+        for attempt in missing.recovery_attempts
+    )
+    physical_ids = tuple(
+        attempt.assessment.candidate_peaks[0].content.peak_observation_content_id
+        for attempt in missing.recovery_attempts
+    )
+    assert physical_ids[0] == physical_ids[1]
+
+    (child,) = completed.application_result.children
+    transition = child.scientific_core.partition_transition
+    assert len(transition.predecessors) == len(transition.successors) == 2
+    assert transition.admitted_members == ()
+    missing_cells = tuple(
+        cell
+        for cell in child.scientific_core.cell_observations
+        if cell.canonical_sample.metadata.raw_stem == "Missing"
+    )
+    assert len(missing_cells) == 2
+    assert all(cell.recovery_cell is not None for cell in missing_cells)
+    assert all(cell.evidence_states == ("unresolved",) for cell in missing_cells)
+    writer = project_completed_untarget_batch_writer_inputs(completed)
+    missing_decisions = tuple(
+        decision
+        for decision in writer.production_decisions.cells.values()
+        if decision.sample_stem == "Missing"
+    )
+    assert all(
+        not decision.write_matrix_value and decision.matrix_value is None
+        for decision in missing_decisions
+    )
 
 
 def test_alignment_uses_configured_recovery_groups(tmp_path, monkeypatch):

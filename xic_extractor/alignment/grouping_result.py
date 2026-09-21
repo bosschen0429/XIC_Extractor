@@ -22,11 +22,12 @@ class CrossSampleGroupingContractError(ValueError):
 
 @dataclass(frozen=True, slots=True)
 class CrossSampleGroupingResult:
-    """One immutable membership result; missing-cell work cannot regroup it.
+    """One immutable membership result, including explicit recovery admissions.
 
     The partition owner has already closed membership and lineage. This owner
     binds that answer to the processing request once, without rebuilding its
-    trajectory or manufacturing later unchanged partition applications.
+    trajectory. Recovery may extend a missing sample with exact lineage while
+    preserving every original group and member.
     """
 
     processing_owners: ProcessingOwnerReferences

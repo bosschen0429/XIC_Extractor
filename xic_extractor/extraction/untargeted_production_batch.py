@@ -37,6 +37,7 @@ from xic_extractor.alignment.feature_membership_inference import (
     FeatureInferenceOperationCounts,
 )
 from xic_extractor.alignment.grouping_workflow import (
+    admit_cid_nl_group_recoveries,
     build_initial_cid_nl_cross_sample_groups,
 )
 from xic_extractor.alignment.hypothesis_owner_adapter import (
@@ -1631,6 +1632,42 @@ def _build_production_composition_inputs(
                 ),
                 [],
             ).append(candidate.peak_hypothesis)
+        group_recoveries = {
+            (
+                group.group_hypothesis_id,
+                sample_result.job.sample.identity.sample_identity_id,
+                sample_result.job.method_subject.method_subject_id,
+            ): (sample_result.job.sample, recovery.assessment)
+            for subject in subject_workset
+            for sample_result in results_by_subject.get(subject.method_subject_id, ())
+            if sample_result.recovery_attempts
+            for group in assignment_scope.groups
+            if group.group_center_rt is not None
+            and not any(
+                member.canonical_sample_identity_id
+                == sample_result.job.sample.identity.sample_identity_id
+                for member in group.member_subjects
+            )
+            and (
+                recovery := sample_result.recovery_for_group(
+                    group.group_center_rt, group_hypothesis_id=group.group_hypothesis_id
+                )
+            )
+            is not None
+        }
+        grouping_result, recovered_groups, successor_ids, recovered_hypotheses = (
+            admit_cid_nl_group_recoveries(
+                result=grouping_result,
+                groups=assignment_scope.groups,
+                recoveries=group_recoveries,
+                alignment_config=alignment_config,
+            )
+        )
+        recovered_positions = frozenset(
+            (group_id, sample_id)
+            for (group_id, sample_id, _), (_, assessment) in group_recoveries.items()
+            if assessment.content.method_result == "SUPPORT"
+        )
         predecessor_cells = compose_cid_nl_predecessor_cells(
             processing_owners=batch.context.processing_owners,
             groups=assignment_scope.groups,
@@ -1640,30 +1677,46 @@ def _build_production_composition_inputs(
             sample_universe=sample_universe,
             injection_order=injection_order,
             recovery_assessments_by_group={
-                (
-                    group.group_hypothesis_id,
-                    sample_result.job.sample.identity.sample_identity_id,
-                    sample_result.job.method_subject.method_subject_id,
-                ): recovery.assessment
-                for subject in subject_workset
-                for sample_result in results_by_subject.get(
-                    subject.method_subject_id, ()
-                )
-                if sample_result.recovery_attempts
-                for group in assignment_scope.groups
-                if group.group_center_rt is not None
-                and (
-                    recovery := sample_result.recovery_for_group(
-                        group.group_center_rt,
-                        group_hypothesis_id=group.group_hypothesis_id,
-                    )
-                )
-                is not None
+                key: assessment
+                for key, (_, assessment) in group_recoveries.items()
+                if assessment.content.method_result != "SUPPORT"
             },
             retained_hypotheses_by_assessment={
                 key: tuple(hypotheses)
                 for key, hypotheses in retained_cell_hypotheses.items()
             },
+        )
+        recovery_cells = (
+            compose_cid_nl_predecessor_cells(
+                processing_owners=batch.context.processing_owners,
+                groups=recovered_groups,
+                sample_assessments=assessments,
+                alignment_config=alignment_config,
+                drift_lookup=grouping_result.drift_lookup,
+                sample_universe=sample_universe,
+                injection_order=injection_order,
+                recovery_assessments_by_group={
+                    (successor_ids[group_id], sample_id, subject_id): assessment
+                    for (group_id, sample_id, subject_id), (
+                        _,
+                        assessment,
+                    ) in group_recoveries.items()
+                    if assessment.content.method_result == "SUPPORT"
+                },
+                retained_hypotheses_by_assessment={
+                    **{
+                        key: tuple(hypotheses)
+                        for key, hypotheses in retained_cell_hypotheses.items()
+                    },
+                    **recovered_hypotheses,
+                },
+                selected_cells=frozenset(
+                    (successor_ids[group_id], sample_id)
+                    for group_id, sample_id in recovered_positions
+                ),
+            )
+            if recovered_positions
+            else ()
         )
         cell_by_key = {}
         cells_by_group: dict[str, list[CellObservationRef]] = {}
@@ -1671,7 +1724,7 @@ def _build_production_composition_inputs(
             group_id = cell.content.group_hypothesis_id
             cell_by_key[(group_id, cell.content.canonical_sample_identity_id)] = cell
             cells_by_group.setdefault(group_id, []).append(cell)
-        repair_groups = grouping_result.final_population
+        repair_groups = grouping_result.initial_population
         no_request_proofs = {}
         for group in repair_groups:
             facts = assess_conservative_backfill_group(
@@ -1682,6 +1735,8 @@ def _build_production_composition_inputs(
             for sample in batch.context.samples:
                 key = (group.group_hypothesis_id, sample.identity.sample_identity_id)
                 cell = cell_by_key[key]
+                if key in recovered_positions:
+                    continue
                 if (
                     not (
                         cell.content.method_result == "HOLD"
@@ -1816,6 +1871,7 @@ def _build_production_composition_inputs(
                     ),
                     closed_cell_coverage=coverage,
                     predecessor_cell_observations=predecessor_cells,
+                    recovery_cell_observations=recovery_cells,
                 ),
             )
         )

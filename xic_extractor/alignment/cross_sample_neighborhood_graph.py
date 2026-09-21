@@ -1012,12 +1012,14 @@ class CrossSamplePartitionTransition:
     successors: tuple[CrossSampleGroupIdentity, ...]
     lineage: tuple[CrossSampleLineageEdge, ...]
     reason: str
+    admitted_members: tuple[CrossSampleGroupMemberSubject, ...] = ()
 
     def __post_init__(self) -> None:
         if (
             type(self.predecessors) is not tuple
             or type(self.successors) is not tuple
             or type(self.lineage) is not tuple
+            or type(self.admitted_members) is not tuple
         ):
             raise CrossSampleContractError(
                 "partition transition closures must be immutable tuples"
@@ -1042,6 +1044,7 @@ class CrossSamplePartitionTransition:
                 not self.predecessors
                 or self.successors
                 or self.lineage
+                or self.admitted_members
                 or self.reason != ("eligible_neighborhood_exceeds_budget")
             ):
                 raise CrossSampleContractError(
@@ -1067,10 +1070,44 @@ class CrossSamplePartitionTransition:
             for group in self.successors
             for member in group.member_subjects
         )
-        if predecessor_members != successor_members:
+        admitted_ids = [member.member_subject_id for member in self.admitted_members]
+        if (
+            len(admitted_ids) != len(set(admitted_ids))
+            or set(admitted_ids).intersection(predecessor_members)
+            or sorted([*predecessor_members, *admitted_ids]) != successor_members
+        ):
             raise CrossSampleContractError(
                 "partition transition is not a complete partition"
             )
+        if self.admitted_members:
+            # Recovery extends an existing group; it cannot repartition the
+            # original owners, create a feature, or move an internal standard.
+            if (
+                len(self.successors) != len(self.predecessors)
+                or any(
+                    sum(
+                        set(predecessor.member_subjects).issubset(
+                            successor.member_subjects
+                        )
+                        for successor in self.successors
+                    )
+                    != 1
+                    for predecessor in self.predecessors
+                )
+                or any(
+                    sum(
+                        set(predecessor.member_subjects).issubset(
+                            successor.member_subjects
+                        )
+                        for predecessor in self.predecessors
+                    )
+                    != 1
+                    for successor in self.successors
+                )
+            ):
+                raise CrossSampleContractError(
+                    "recovery must preserve every original group"
+                )
         expected_lineage = _expected_cross_sample_lineage(
             predecessors=self.predecessors,
             successors=self.successors,

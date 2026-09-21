@@ -294,6 +294,7 @@ class _WorkflowAdapterFields:
     mode_track: ModeTrackWorkflowArguments
     predecessor_cell_observations: tuple[CellObservationRef, ...]
     drift_lookup: DriftLookupProtocol | None = None
+    recovery_cell_observations: tuple[CellObservationRef, ...] = ()
 
     def __post_init__(self) -> None:
         if type(self.capture_inputs) is not tuple or any(
@@ -922,6 +923,7 @@ def _compose_application_result(
                 if closed_coverage is not None
                 else ()
             ),
+            recovery_cell_observations=adapter.recovery_cell_observations,
         )
         return _finish_variant(
             request=request,

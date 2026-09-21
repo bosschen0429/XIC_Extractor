@@ -66,6 +66,47 @@ dated productization control-plane path is compatibility lookup only.
 
 ## Known Diagnostic Conclusions
 
+### 2026-09-21 Successful Recovery Must Admit Its Missing Sample
+
+- The existing composite CID-NL `intersection-recovery_complete` fixture
+  reproduced a production composition failure on both `c095cbb7` and the
+  subsequent lazy-RAW change: recovery returned SUPPORT, but frozen initial
+  membership left that observation outside every group. This was a membership
+  admission defect, not a cache miss or a reason to rerun Discovery.
+- The grouping owner now preserves all original members and admits a uniquely
+  supported missing sample into its requested group with explicit lineage.
+  Shared eligible claims remain unresolved. Final cells retain predecessor
+  provenance and the recovery observation's original integration.
+- Evidence remains engineering regression coverage until the complete85
+  acceptance finishes. The composition fixture checks three original members,
+  one admitted member, one successor, exact recovery assessment/integration,
+  and a numeric S4 Matrix cell. Local logs are under
+  `output/issue422-bounded-worksets-20260921/`; this does not certify the full
+  cohort or replace the known-ISTD acceptance oracle.
+
+### 2026-09-21 Completed Representative Acquisition And Composition
+
+- Evidence: `diagnostic_only`, not full85 acceptance. At `c095cbb7`, the same
+  65-subject / 1,005-membership / 85-sample workset completed acquisition in
+  81.141 seconds and composition in 42.719 seconds (124.485 seconds including
+  setup). It sealed 46 children, then stopped at the diagnostic sentinel before
+  final Matrix publication. Peak sampled tree RSS was 9.41 GiB. Receipt and
+  parent/worker profile excerpts are in
+  `output/issue422-bounded-worksets-20260921/profile-first-cached-partition-recovery-300s/`.
+- Initial grouping took 1.594 cumulative seconds; 5,017 owner-edge evaluations
+  and 18 solver calls were recorded. Each worker spent about 26.6 seconds in
+  native RAW `Dispose()`. Composition's 27.423-second append span includes its
+  21.868-second child generator; these are not additive serialization costs.
+  Reconstructing source cells for downstream validation occurred 28,560 times
+  (6.882 cumulative seconds). Cache telemetry reports 3,531 hits; RAW attempt
+  and success counters disagree (169/170), so those counters remain partial.
+- Only profile text excerpts were saved, not complete pstats. The sealed spool
+  is a same-process store and cannot be reopened from its path after exit;
+  its presence does not prove scientific or writer acceptance. The next formal
+  run must capture scientific checks and publish outputs before closing the
+  process. Reuse acquisition facts and existing Discovery; do not repeat this
+  diagnostic to regenerate a richer profile or reopen its spool.
+
 ### 2026-09-21 Representative Workset After Recovery Normalization
 
 - Evidence: `diagnostic_only`, incomplete. At launch SHA `19b43756`, the

@@ -192,6 +192,7 @@ def finalize_scientific_alignment(
     grouping_result: CrossSampleGroupingResult,
     cell_observation_handoff: CrossSampleAssociationLineageHandoff | None,
     predecessor_cell_observations: Sequence[CellObservationRef],
+    recovery_cell_observations: Sequence[CellObservationRef] = (),
     repair_receipts: Sequence[ObservationRepairReceipt] = (),
     repaired_observations: Sequence[OwnerBackfillPeakFactObservation] = (),
 ) -> FinalizedScientificAlignment:
@@ -235,7 +236,12 @@ def finalize_scientific_alignment(
         )
     canonical_cells: tuple[FinalGroupCellObservation, ...]
     if cell_observation_handoff is None:
-        if predecessor_cell_observations or repair_receipts or repaired_observations:
+        if (
+            predecessor_cell_observations
+            or recovery_cell_observations
+            or repair_receipts
+            or repaired_observations
+        ):
             raise FinalizedScientificAlignmentContractError(
                 "repair-free finalization cannot carry repair lineage"
             )
@@ -251,6 +257,7 @@ def finalize_scientific_alignment(
             canonical_cells = compose_final_group_cell_observation_population(
                 handoff=cell_observation_handoff,
                 predecessor_cells=predecessor_cell_observations,
+                recovery_cells=recovery_cell_observations,
                 repair_receipts=repair_receipts,
                 repaired_observations=repaired_observations,
             )

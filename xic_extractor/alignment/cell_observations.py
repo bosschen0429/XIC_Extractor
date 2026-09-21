@@ -70,7 +70,7 @@ from xic_extractor.processing_identity import (
 )
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 
-SCHEMA_VERSION = "cell_observation"
+SCHEMA_VERSION = "cell_observation_v2"
 ARTIFACT_SEMANTIC_ROLE = "diagnostic_cell_observation"
 VALIDATION_STATUS = "diagnostic_only"
 MEDIA_TYPE = "application/json"
@@ -149,6 +149,7 @@ class FinalGroupCellObservation:
     repaired_observations: tuple[OwnerBackfillPeakFactObservation, ...]
     evidence_states: tuple[FinalCellEvidenceState, ...]
     basis_bytes: bytes
+    recovery_cell: CellObservationRef | None = None
     _mint_token: InitVar[object] = field(kw_only=True, repr=False)
 
     def __post_init__(self, _mint_token: object) -> None:
@@ -179,13 +180,21 @@ class FinalGroupCellObservation:
 
     @property
     def method_assessments(self) -> tuple[CidNlMethodAssessmentRef, ...]:
-        return tuple(cell.method_assessment for cell in self.predecessor_cells)
+        return tuple(cell.method_assessment for cell in self.effective_cells)
+
+    @property
+    def effective_cells(self) -> tuple[CellObservationRef, ...]:
+        return (
+            (self.recovery_cell,)
+            if self.recovery_cell is not None
+            else self.predecessor_cells
+        )
 
     @property
     def direct_observations(self) -> tuple[PeakObservationRef, ...]:
         return tuple(
             cell.peak_observation
-            for cell in self.predecessor_cells
+            for cell in self.effective_cells
             if cell.peak_observation is not None
         )
 
@@ -193,7 +202,7 @@ class FinalGroupCellObservation:
     def direct_hypotheses(self) -> tuple[PeakHypothesis, ...]:
         return tuple(
             cell.peak_hypothesis
-            for cell in self.predecessor_cells
+            for cell in self.effective_cells
             if cell.peak_hypothesis is not None
         )
 
@@ -214,14 +223,13 @@ class FinalGroupCellObservation:
     @property
     def provider_ids(self) -> tuple[str, ...]:
         return tuple(
-            cell.method_assessment.content.provider_id
-            for cell in self.predecessor_cells
+            cell.method_assessment.content.provider_id for cell in self.effective_cells
         )
 
     @property
     def method_subject_ids(self) -> tuple[str, ...]:
         return tuple(
-            cell.group_context.method_subject_id for cell in self.predecessor_cells
+            cell.group_context.method_subject_id for cell in self.effective_cells
         )
 
     @property
@@ -234,7 +242,11 @@ class FinalGroupCellObservation:
     @property
     def source_cell_artifact_ids(self) -> tuple[str, ...]:
         return tuple(
-            cell.artifact.evidence_artifact_id for cell in self.predecessor_cells
+            cell.artifact.evidence_artifact_id
+            for cell in (
+                *self.predecessor_cells,
+                *((self.recovery_cell,) if self.recovery_cell is not None else ()),
+            )
         )
 
     @property
@@ -253,6 +265,7 @@ def compose_final_group_cell_observation_population(
     predecessor_cells: Sequence[CellObservationRef],
     repair_receipts: Sequence[ObservationRepairReceipt] = (),
     repaired_observations: Sequence[OwnerBackfillPeakFactObservation] = (),
+    recovery_cells: Sequence[CellObservationRef] = (),
 ) -> tuple[FinalGroupCellObservation, ...]:
     """Compose one exact final closure for every final Group × sample key.
 
@@ -280,6 +293,7 @@ def compose_final_group_cell_observation_population(
         predecessor_cells=sources,
         repair_receipts=receipts,
         repaired_observations=observations,
+        recovery_cells=tuple(recovery_cells),
     )
 
 
@@ -289,8 +303,19 @@ def _compose_final_group_cell_observation_population(
     predecessor_cells: tuple[CellObservationRef, ...],
     repair_receipts: tuple[ObservationRepairReceipt, ...],
     repaired_observations: tuple[OwnerBackfillPeakFactObservation, ...],
+    recovery_cells: tuple[CellObservationRef, ...] = (),
 ) -> tuple[FinalGroupCellObservation, ...]:
     request_id = _validate_final_handoff(handoff)
+    recovered_by_key: dict[tuple[str, str], CellObservationRef] = {}
+    for recovery_ref in recovery_cells:
+        _validate_source_cell(recovery_ref, processing_request_id=request_id)
+        key = (
+            recovery_ref.content.group_hypothesis_id,
+            recovery_ref.content.canonical_sample_identity_id,
+        )
+        if key in recovered_by_key:
+            raise CellObservationContractError("duplicate completed recovery cell")
+        recovered_by_key[key] = recovery_ref
     positions = tuple(handoff.coverage.epoch.positions)
     source_by_position = _index_predecessor_cells(
         predecessor_cells,
@@ -371,7 +396,44 @@ def _compose_final_group_cell_observation_population(
                 )
             )
             states: tuple[FinalCellEvidenceState, ...]
-            if not associations:
+            recovered = recovered_by_key.pop(
+                (group.group_hypothesis_id, sample.identity.sample_identity_id), None
+            )
+            if recovered is not None:
+                if len(associations) != 1 or _source_group_identity(recovered) != group:
+                    raise CellObservationContractError(
+                        "recovery must extend one exact predecessor"
+                    )
+                predecessor = associations[0].position.group_identity
+                if not set(predecessor.member_subjects).issubset(group.member_subjects):
+                    raise CellObservationContractError(
+                        "recovery changed original group membership"
+                    )
+                if (
+                    _member_for_sample(predecessor, sample.identity.sample_identity_id)
+                    is not None
+                ):
+                    raise CellObservationContractError(
+                        "recovery cannot replace an existing sample member"
+                    )
+                if (
+                    recovered.content.unassigned_support
+                    or recovered.content.outside_group is not None
+                ):
+                    states = ("unresolved",)
+                elif recovered.peak_hypothesis is not None:
+                    states = ("direct_observation",)
+                elif recovered.content.method_result == "HOLD":
+                    states = (
+                        "unresolved"
+                        if recovered.method_assessment.candidate_peaks
+                        else "searched_no_observation",
+                    )
+                elif recovered.content.method_result == "REJECT":
+                    states = ("rejected_observation",)
+                else:
+                    states = ("unavailable",)
+            elif not associations:
                 states = ("not_searched",)
             else:
                 states = tuple(
@@ -416,8 +478,13 @@ def _compose_final_group_cell_observation_population(
                     repair_receipts=receipts,
                     repaired_observations=repaired,
                     evidence_states=states,
+                    recovery_cell=recovered,
                 )
             )
+    if recovered_by_key:
+        raise CellObservationContractError(
+            "recovery cells are outside the final population"
+        )
     return tuple(sorted(cells, key=_final_cell_sort_key))
 
 
@@ -478,6 +545,11 @@ def validate_final_group_cell_observation_population(
         predecessor_cells=source_cells,
         repair_receipts=receipts,
         repaired_observations=repaired,
+        recovery_cells=tuple(
+            item.recovery_cell
+            for item in observations
+            if item.recovery_cell is not None
+        ),
     )
     expected_by_key = {
         (item.group_hypothesis_id, item.canonical_sample_identity_id): item
@@ -574,15 +646,26 @@ def _index_predecessor_cells(
             "predecessor cell population duplicates an exact source object"
         )
     result: dict[str, CellObservationRef] = {}
+    positions_by_key: dict[tuple[str, str], list[OwnerBackfillPlanningPosition]] = {}
+    for position in positions:
+        key = (
+            position.sample.identity.sample_identity_id,
+            position.group_identity.group_hypothesis_id,
+        )
+        positions_by_key.setdefault(key, []).append(position)
     for cell in cells:
         _validate_source_cell(cell, processing_request_id=processing_request_id)
         source_identity = _source_group_identity(cell)
         matches = tuple(
             position
-            for position in positions
-            if position.sample.identity.sample_identity_id
-            == cell.content.canonical_sample_identity_id
-            and source_identity == position.group_identity
+            for position in positions_by_key.get(
+                (
+                    cell.content.canonical_sample_identity_id,
+                    source_identity.group_hypothesis_id,
+                ),
+                (),
+            )
+            if source_identity == position.group_identity
         )
         if len(matches) != 1:
             raise CellObservationContractError(
@@ -613,26 +696,16 @@ def _validate_source_cell(
         raise CellObservationContractError(
             "predecessor population contains a non-owner CellObservationRef"
         )
-    try:
-        CellObservationRef(
-            content=cell.content,
-            group_context=cell.group_context,
-            method_assessment=cell.method_assessment,
-            peak_observation=cell.peak_observation,
-            peak_hypothesis=cell.peak_hypothesis,
-            human_disposition=cell.human_disposition,
-            artifact=cell.artifact,
-            outside_group_context=cell.outside_group_context,
-        )
-    except (TypeError, ValueError) as exc:
+    # CellObservationRef validated its immutable content at construction. This
+    # consumer checks the new request/group/sample join, not that owner again.
+    if cell.content.group_hypothesis_id != cell.group_context.group.group_hypothesis_id:
         raise CellObservationContractError(
-            f"predecessor CellObservationRef is not revalidatable: {exc}"
-        ) from exc
+            "predecessor CellObservationRef crossed its group identity"
+        )
     if cell.group_context.group.processing_request_id != processing_request_id:
         raise CellObservationContractError(
             "predecessor CellObservationRef crossed its processing request"
         )
-    _source_group_identity(cell)
 
 
 def _source_group_identity(cell: CellObservationRef) -> CrossSampleGroupIdentity:
@@ -890,6 +963,12 @@ def _derive_lane_evidence_state(
     assessment = source_cell.method_assessment
     technical_state = assessment.content.technical_state
     method_result = assessment.content.method_result
+    if source_cell.content.unassigned_support:
+        if final_member is not None:
+            raise CellObservationContractError(
+                "unassigned support cannot supply a final member"
+            )
+        return "unresolved"
     if source_cell.content.outside_group is not None:
         if (
             source_member is not None
@@ -1085,6 +1164,7 @@ def _mint_final_group_cell_observation(
     repair_receipts: tuple[ObservationRepairReceipt, ...],
     repaired_observations: tuple[OwnerBackfillPeakFactObservation, ...],
     evidence_states: tuple[FinalCellEvidenceState, ...],
+    recovery_cell: CellObservationRef | None = None,
 ) -> FinalGroupCellObservation:
     basis = _final_closure_basis(
         processing_request_id=processing_request_id,
@@ -1097,6 +1177,7 @@ def _mint_final_group_cell_observation(
         repair_receipts=repair_receipts,
         repaired_observations=repaired_observations,
         evidence_states=evidence_states,
+        recovery_cell=recovery_cell,
     )
     return FinalGroupCellObservation(
         cell_observation_id=typed_identity_digest(
@@ -1113,6 +1194,7 @@ def _mint_final_group_cell_observation(
         repaired_observations=repaired_observations,
         evidence_states=evidence_states,
         basis_bytes=basis,
+        recovery_cell=recovery_cell,
         _mint_token=_FINAL_CELL_MINT_TOKEN,
     )
 
@@ -1168,6 +1250,16 @@ def _validate_final_group_cell_observation(
         raise CellObservationContractError(
             "final cell source-cell lanes do not match position associations"
         )
+    if cell.recovery_cell is not None:
+        _validate_source_cell(cell.recovery_cell, processing_request_id=request_id)
+        if (
+            _source_group_identity(cell.recovery_cell) != cell.group
+            or cell.recovery_cell.content.canonical_sample_identity_id
+            != cell.canonical_sample_identity_id
+        ):
+            raise CellObservationContractError(
+                "recovery cell crossed its final group or sample"
+            )
     for association, source_cell in zip(
         cell.position_associations,
         cell.predecessor_cells,
@@ -1255,6 +1347,7 @@ def _validate_final_group_cell_observation(
         repair_receipts=cell.repair_receipts,
         repaired_observations=cell.repaired_observations,
         evidence_states=cell.evidence_states,
+        recovery_cell=cell.recovery_cell,
     )
     if cell.basis_bytes != expected_basis:
         raise CellObservationContractError(
@@ -1296,6 +1389,7 @@ def _final_closure_basis(
     repair_receipts: tuple[ObservationRepairReceipt, ...],
     repaired_observations: tuple[OwnerBackfillPeakFactObservation, ...],
     evidence_states: tuple[FinalCellEvidenceState, ...],
+    recovery_cell: CellObservationRef | None = None,
 ) -> bytes:
     resolved_handoff_id = handoff_id or (
         handoff.handoff_id if handoff is not None else None
@@ -1303,7 +1397,7 @@ def _final_closure_basis(
     if resolved_handoff_id is None:
         raise CellObservationContractError("final cell basis requires exact handoff")
     payload = {
-        "schema_version": "final_group_cell_observation",
+        "schema_version": "final_group_cell_observation_v2",
         "processing_request_id": processing_request_id,
         "handoff_id": resolved_handoff_id,
         "group": {
@@ -1373,6 +1467,10 @@ def _final_closure_basis(
         ],
         "evidence_states": list(evidence_states),
     }
+    if recovery_cell is not None:
+        payload["recovery_cell_artifact_id"] = (
+            recovery_cell.artifact.evidence_artifact_id
+        )
     return canonical_identity_basis_bytes(payload)
 
 
@@ -1420,6 +1518,10 @@ def _require_same_refs(
     actual: FinalGroupCellObservation,
     expected: FinalGroupCellObservation,
 ) -> None:
+    if actual.recovery_cell is not expected.recovery_cell:
+        raise CellObservationContractError(
+            "final cell substituted its completed recovery reference"
+        )
     if (
         actual.group is not expected.group
         or actual.canonical_sample is not expected.canonical_sample
@@ -1516,6 +1618,7 @@ def compose_cid_nl_predecessor_cells(
         tuple[str, str, str], CidNlMethodAssessmentRef
     ]
     | None = None,
+    selected_cells: frozenset[tuple[str, str]] | None = None,
     retained_hypotheses_by_assessment: Mapping[
         tuple[str, str], tuple[PeakHypothesis, ...]
     ]
@@ -1667,6 +1770,11 @@ def compose_cid_nl_predecessor_cells(
             for support in context.supports
         }
         for sample_id in samples:
+            if (
+                selected_cells is not None
+                and (context.group.group_hypothesis_id, sample_id) not in selected_cells
+            ):
+                continue
             sample = samples[sample_id]
             local_support = context_support_by_sample_id.get(sample_id)
             local_refs = () if local_support is None else (local_support.assessment,)
@@ -1722,12 +1830,14 @@ def compose_cid_nl_predecessor_cells(
                     for sibling in support_contexts.get((sample_id, id(assessment)), ())
                     if sibling is not context
                 )
-                if not siblings:
+                if not siblings and recovered is not assessment:
                     raise ValueError(
                         "outside-group cell requires one exact sibling SUPPORT context"
                     )
-                outside_context = min(
-                    siblings, key=lambda sibling: sibling.group.group_hypothesis_id
+                outside_context = (
+                    min(siblings, key=lambda sibling: sibling.group.group_hypothesis_id)
+                    if siblings
+                    else None
                 )
             elif (
                 assessment.content.method_result == "HOLD"
@@ -1743,6 +1853,11 @@ def compose_cid_nl_predecessor_cells(
                     peak_observation=observation,
                     peak_hypothesis=hypothesis,
                     outside_group_context=outside_context,
+                    unassigned_support=(
+                        assessment.content.method_result == "SUPPORT"
+                        and not local
+                        and outside_context is None
+                    ),
                 )
             )
     return tuple(cells)

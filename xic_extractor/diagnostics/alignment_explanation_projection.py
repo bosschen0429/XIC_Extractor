@@ -706,6 +706,18 @@ def prepare_alignment_explanation(
                             }
                             for ref in observation.predecessor_cells
                         ],
+                        "recovery_cell": (
+                            None
+                            if observation.recovery_cell is None
+                            else {
+                                "content": _cell_observation_content_payload(
+                                    observation.recovery_cell.content
+                                ),
+                                "artifact": _artifact(
+                                    observation.recovery_cell.artifact
+                                ),
+                            }
+                        ),
                     },
                     related,
                 )
