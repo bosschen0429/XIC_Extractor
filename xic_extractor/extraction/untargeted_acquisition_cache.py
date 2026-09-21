@@ -277,6 +277,14 @@ class _FactCache:
                 raise UntargetedAcquisitionCacheError(
                     "acquisition cache entry has an invalid envelope"
                 )
+            if (
+                envelope["schema_version"] != _CACHE_SCHEMA
+                or envelope["source_id"] != self._source_id
+                or envelope["key_sha256"] != hashlib.sha256(key).hexdigest()
+            ):
+                raise UntargetedAcquisitionCacheError(
+                    "acquisition cache entry crossed its source or request identity"
+                )
             encoded = envelope["payload_base64"]
             if not isinstance(encoded, str):
                 raise UntargetedAcquisitionCacheError(
@@ -286,12 +294,13 @@ class _FactCache:
                 content = base64.b64decode(encoded, validate=True)
             except (ValueError, binascii.Error) as exc:
                 raise UntargetedAcquisitionCacheError(
-                    "acquisition cache payload is not canonical base64"
+                    "acquisition cache payload is not valid base64"
                 ) from exc
-            expected = self._envelope(key, content)
-            if envelope != expected or payload != _canonical_json(expected):
+            # Verify the numeric bytes directly. Re-encoding their transport
+            # envelope adds no source, request, or content identity evidence.
+            if envelope["payload_sha256"] != hashlib.sha256(content).hexdigest():
                 raise UntargetedAcquisitionCacheError(
-                    "acquisition cache entry failed identity or canonical validation"
+                    "acquisition cache entry failed content identity validation"
                 )
             return content
         except (

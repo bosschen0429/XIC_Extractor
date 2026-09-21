@@ -120,6 +120,56 @@ def test_acquisition_cache_windows_publish_race(tmp_path, monkeypatch, winner):
     assert not tuple(tmp_path.rglob("*.tmp"))
 
 
+def test_fact_cache_read_preserves_facts_without_outer_reencoding(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from xic_extractor.extraction import untargeted_acquisition_cache as cache_owner
+
+    cache = cache_owner._FactCache(tmp_path, "source")
+    key = b"numeric-fact-key"
+    payload = b'{"area": "1.25", "height": "2.5"}'
+    cache.write("ms2", key, payload)
+    calls = {"envelope": 0, "canonical_json": 0}
+    original_envelope = cache_owner._FactCache._envelope
+    original_canonical_json = cache_owner._canonical_json
+
+    def count_envelope(self, envelope_key, envelope_payload):
+        calls["envelope"] += 1
+        return original_envelope(self, envelope_key, envelope_payload)
+
+    def count_canonical_json(value):
+        calls["canonical_json"] += 1
+        return original_canonical_json(value)
+
+    monkeypatch.setattr(cache_owner._FactCache, "_envelope", count_envelope)
+    monkeypatch.setattr(cache_owner, "_canonical_json", count_canonical_json)
+    assert cache.read("ms2", key) == payload
+    assert calls == {"envelope": 0, "canonical_json": 0}
+
+
+def test_fact_cache_rejects_wrong_identity_and_invalid_base64(tmp_path: Path) -> None:
+    from xic_extractor.extraction import untargeted_acquisition_cache as cache_owner
+
+    mutations = {
+        "schema_version": "wrong-schema",
+        "source_id": "wrong-source",
+        "key_sha256": "0" * 64,
+        "payload_sha256": "1" * 64,
+        "payload_base64": "not-base64!",
+    }
+    for index, (field, value) in enumerate(mutations.items()):
+        cache = cache_owner._FactCache(tmp_path / field, "source")
+        key = f"key-{index}".encode()
+        payload = b'{"numeric": "3.5"}'
+        cache.write("ms2", key, payload)
+        path = cache._path("ms2", key)
+        envelope = json.loads(path.read_text(encoding="utf-8"))
+        envelope[field] = value
+        path.write_text(json.dumps(envelope), encoding="utf-8")
+        assert cache.read("ms2", key) is None
+        assert not path.exists()
+
+
 def test_acquisition_cache_replays_xic_and_ms2_and_reacquires_only_rejected_query(
     tmp_path: Path,
 ) -> None:
