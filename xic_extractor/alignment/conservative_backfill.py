@@ -40,7 +40,6 @@ from xic_extractor.evidence_artifacts import (
     EvidenceArtifactRef,
     _mint_artifact_semantic_contract_ref,
     _mint_evidence_artifact_ref,
-    verify_evidence_artifact_payload,
 )
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessmentRef,
@@ -71,6 +70,7 @@ _RECOVERY_UNIVERSE_ARTIFACT_SEMANTIC_CONTRACT = _mint_artifact_semantic_contract
 )
 _CELL_DECISION_MINT_TOKEN = object()
 _MODE_TRACK_GROUP_FACTS_MINT_TOKEN = object()
+_RECOVERY_UNIVERSE_MINT_TOKEN = object()
 ACTIVATION_ELIGIBLE_SAMPLE_ROLES = frozenset({"study_sample", "qc", "pooled_qc"})
 
 ConservativeBackfillDisposition = Literal[
@@ -350,104 +350,14 @@ class ConservativeBackfillRecoveryCandidateUniverse:
     group_facts: tuple[ConservativeBackfillGroupFacts, ...]
     candidate_assessment: CidNlMethodAssessmentRef
     artifact: EvidenceArtifactRef
+    _mint_token: InitVar[object] = field(kw_only=True)
     validation_status: str = VALIDATION_STATUS
     product_authority: str = PRODUCT_AUTHORITY
 
-    def __post_init__(self) -> None:
-        if not isinstance(self.processing_owners, ProcessingOwnerReferences):
+    def __post_init__(self, _mint_token: object) -> None:
+        if _mint_token is not _RECOVERY_UNIVERSE_MINT_TOKEN:
             raise ConservativeBackfillContractError(
-                "recovery universe requires validated processing owners"
-            )
-        if not isinstance(self.processing_attempt, ProcessingAttemptIdentity):
-            raise ConservativeBackfillContractError(
-                "recovery universe requires an owner-issued processing attempt"
-            )
-        if self.processing_attempt is not self.processing_owners.attempt:
-            raise ConservativeBackfillContractError(
-                "recovery universe attempt is not the exact processing owner attempt"
-            )
-        if not isinstance(self.sample, ResolvedCanonicalSampleIdentity):
-            raise ConservativeBackfillContractError(
-                "recovery universe requires an owner-resolved sample"
-            )
-        if not any(
-            self.sample is owned for owned in self.processing_owners.sample_resolutions
-        ):
-            raise ConservativeBackfillContractError(
-                "recovery universe sample is outside the processing owner closure"
-            )
-        facts = _canonical_recovery_group_facts(self.group_facts)
-        if facts != self.group_facts:
-            raise ConservativeBackfillContractError(
-                "recovery universe group facts must be canonical-sorted"
-            )
-        _validate_recovery_group_populations(
-            facts,
-            processing_owners=self.processing_owners,
-        )
-        _validate_recovery_sample_and_subject(facts, sample=self.sample)
-        _validate_recovery_candidate_assessment(
-            self.candidate_assessment,
-            processing_attempt=self.processing_attempt,
-            sample=self.sample,
-            group_facts=facts,
-        )
-        _validate_recovery_cell_attempts(
-            facts,
-            processing_attempt=self.processing_attempt,
-        )
-        if not isinstance(self.artifact, EvidenceArtifactRef):
-            raise ConservativeBackfillContractError(
-                "recovery universe requires an owner-minted artifact"
-            )
-        if (
-            self.artifact.semantic_contract
-            != _RECOVERY_UNIVERSE_ARTIFACT_SEMANTIC_CONTRACT
-        ):
-            raise ConservativeBackfillContractError(
-                "recovery universe artifact is not owned by conservative Backfill"
-            )
-        if (
-            self.artifact.producer_processing_request_id
-            != self.processing_attempt.processing_request_id
-            or self.artifact.producer_processing_attempt_id
-            != self.processing_attempt.processing_attempt_id
-        ):
-            raise ConservativeBackfillContractError(
-                "recovery universe artifact references a different attempt"
-            )
-        expected_upstream_ids = tuple(
-            artifact.evidence_artifact_id
-            for artifact in _recovery_universe_upstream_artifacts(
-                facts,
-                self.candidate_assessment,
-            )
-        )
-        if self.artifact.upstream_artifact_ids != expected_upstream_ids:
-            raise ConservativeBackfillContractError(
-                "recovery universe artifact does not bind its exact cells and peaks"
-            )
-        try:
-            verify_evidence_artifact_payload(
-                self.artifact,
-                canonical_conservative_backfill_recovery_universe_bytes(
-                    processing_owners=self.processing_owners,
-                    sample=self.sample,
-                    group_facts=facts,
-                    candidate_assessment=self.candidate_assessment,
-                ),
-            )
-        except ValueError as exc:
-            raise ConservativeBackfillContractError(
-                "recovery universe mismatches its immutable artifact"
-            ) from exc
-        if self.validation_status != VALIDATION_STATUS:
-            raise ConservativeBackfillContractError(
-                f"validation_status must be {VALIDATION_STATUS!r}"
-            )
-        if self.product_authority != PRODUCT_AUTHORITY:
-            raise ConservativeBackfillContractError(
-                "recovery universe cannot grant product authority"
+                "recovery universe must be minted by the conservative Backfill owner"
             )
 
     @property
@@ -666,7 +576,7 @@ def mint_conservative_backfill_recovery_candidate_universe(
             "recovery universe sample is outside the processing owner closure"
         )
     facts = _canonical_recovery_group_facts(group_facts)
-    _validate_recovery_group_populations(
+    population = _validate_recovery_group_populations(
         facts,
         processing_owners=processing_owners,
     )
@@ -681,11 +591,12 @@ def mint_conservative_backfill_recovery_candidate_universe(
         facts,
         processing_attempt=processing_owners.attempt,
     )
-    payload = canonical_conservative_backfill_recovery_universe_bytes(
+    payload = _recovery_universe_bytes(
         processing_owners=processing_owners,
         sample=sample,
         group_facts=facts,
         candidate_assessment=candidate_assessment,
+        request_sample_population=population,
     )
     artifact = _mint_evidence_artifact_ref(
         producer_processing_request_id=(
@@ -708,6 +619,7 @@ def mint_conservative_backfill_recovery_candidate_universe(
         group_facts=facts,
         candidate_assessment=candidate_assessment,
         artifact=artifact,
+        _mint_token=_RECOVERY_UNIVERSE_MINT_TOKEN,
     )
 
 
@@ -725,7 +637,7 @@ def canonical_conservative_backfill_recovery_universe_bytes(
             "recovery universe requires validated processing owners"
         )
     facts = _canonical_recovery_group_facts(group_facts)
-    _validate_recovery_group_populations(
+    population = _validate_recovery_group_populations(
         facts,
         processing_owners=processing_owners,
     )
@@ -734,9 +646,25 @@ def canonical_conservative_backfill_recovery_universe_bytes(
         raise ConservativeBackfillContractError(
             "recovery universe requires an owner-minted method assessment"
         )
+    return _recovery_universe_bytes(
+        processing_owners=processing_owners,
+        sample=sample,
+        group_facts=facts,
+        candidate_assessment=candidate_assessment,
+        request_sample_population=population,
+    )
+
+
+def _recovery_universe_bytes(
+    *,
+    processing_owners: ProcessingOwnerReferences,
+    sample: ResolvedCanonicalSampleIdentity,
+    group_facts: tuple[ConservativeBackfillGroupFacts, ...],
+    candidate_assessment: CidNlMethodAssessmentRef,
+    request_sample_population: tuple[ResolvedCanonicalSampleIdentity, ...],
+) -> bytes:
     peaks = candidate_assessment.candidate_peaks
     processing_attempt = processing_owners.attempt
-    request_sample_population = _processing_owner_sample_population(processing_owners)
     payload = {
         "schema_version": RECOVERY_UNIVERSE_SCHEMA_VERSION,
         "validation_status": VALIDATION_STATUS,
@@ -747,7 +675,7 @@ def canonical_conservative_backfill_recovery_universe_bytes(
         "request_sample_population_ids": [
             member.identity.sample_identity_id for member in request_sample_population
         ],
-        "method_subject_id": facts[0].group_context.method_subject_id,
+        "method_subject_id": group_facts[0].group_context.method_subject_id,
         "candidate_assessment_artifact_id": (
             candidate_assessment.artifact.evidence_artifact_id
         ),
@@ -758,7 +686,7 @@ def canonical_conservative_backfill_recovery_universe_bytes(
                     cell.artifact.evidence_artifact_id for cell in fact.source_cells
                 ],
             }
-            for fact in facts
+            for fact in group_facts
         ],
         "candidate_peaks": [
             {
@@ -1611,7 +1539,7 @@ def _validate_recovery_group_populations(
     facts: tuple[ConservativeBackfillGroupFacts, ...],
     *,
     processing_owners: ProcessingOwnerReferences,
-) -> None:
+) -> tuple[ResolvedCanonicalSampleIdentity, ...]:
     owner_population = _processing_owner_sample_population(processing_owners)
     if any(
         len(fact.sample_population) != len(owner_population)
@@ -1628,6 +1556,7 @@ def _validate_recovery_group_populations(
         raise ConservativeBackfillContractError(
             "recovery group population must close the full processing request"
         )
+    return owner_population
 
 
 def _canonical_recovery_peaks(

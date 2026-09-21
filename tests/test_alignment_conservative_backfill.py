@@ -678,10 +678,7 @@ def test_recovery_receipt_rejects_truncated_processing_request_population(
         "s03",
         (_peak(fixture, "s03", apex_rt=8.0),),
     )
-    with pytest.raises(
-        ConservativeBackfillContractError,
-        match="full processing request",
-    ):
+    with pytest.raises(ValueError, match="_mint_token"):
         replace(valid_universe, group_facts=(facts,))
 
     payload = json.loads(

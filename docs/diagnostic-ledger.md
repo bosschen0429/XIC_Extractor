@@ -152,6 +152,43 @@ dated productization control-plane path is compatibility lookup only.
   under `output/issue422-bounded-worksets-20260921/`. Evidence remains
   `diagnostic_only`; the process12 full85 timing belongs to its older source.
 
+### 2026-09-22 Composition Reuses Minted Identities And Recovery Results
+
+- Identity owners now return the canonical basis and digest from one encoding;
+  cell observation, decision and subject minting no longer decode and validate
+  the bytes they just produced. Standalone byte replay remains strict. Recovery
+  composition uses the producer-sealed result and computes each recovery
+  universe's request population once; the standalone recovery projection still
+  rejects changed acquisition or truncated result provenance.
+- Against `d7aaba96`, the same retained partition (46 children) takes 4.593
+  seconds for formal composition plus spool writes versus 6.070 seconds
+  (24.3% less wall time); CPU falls from 4.500 to 3.313 seconds (26.4%).
+  Preparation is 2.139 versus 2.912 seconds and child composition totals
+  1.043 versus 1.764 seconds. `store.seal()` is outside this measured span.
+  Both spool files contain 115,074,919 bytes; their pickle hashes differ.
+  This is a single-partition stage measurement, not full85 end-to-end timing.
+- All 46 children preserve the retained scientific oracle: 9,520 cells and
+  9,520 decisions, their actual canonical bases/IDs, physical integrals,
+  sample/group provenance, group membership and row/value/state. Coverage
+  comparisons directly check populated position IDs, planning reasons and
+  proof IDs; nonexistent position group/sample/proof-basis attributes are
+  excluded from the claim. No acquisition, grouping or Discovery is rerun.
+- Focused identity/recovery tests pass (59), as do final cell, decision and
+  pre-cell projection tests (80). The multi-group suite's nine old no-input
+  predecessor assumptions also fail at `d7aaba96`; updated oracles derive
+  initial evidence from fixture candidates and positions from associations,
+  retaining physical, recovery, ambiguity and standalone rejection assertions.
+  All 25 multi-group tests pass, including explicit empty predecessor assertions
+  for no-input positions. Ruff, mypy, architecture census and shard checks pass.
+- Evidence: `diagnostic_only`. Reuse
+  `fusion-ab/current-composition-cost/timing-pair-summary.json`,
+  `candidate-partition0-acceptance-summary.json`,
+  `candidate-partition0-acceptance-amendment.md` and the saved native stores in
+  `timing-baseline-retry/` and `timing-candidate/`, under
+  `output/issue422-bounded-worksets-20260921/`. The initial baseline helper
+  import failure is retained separately; it occurred before science or input
+  loading. The full85 optimization objective remains open.
+
 ### 2026-09-22 Three-Partition Admission And Process11 Acceptance
 
 - At `38e9d092`, the real scheduler/adapter completes four retained partitions

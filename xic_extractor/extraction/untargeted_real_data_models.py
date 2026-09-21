@@ -523,25 +523,44 @@ def project_untargeted_cid_nl_completed_recovery(
     if type(result) is not UntargetedCidNlRuntimeSampleResult:
         raise UntargetedCidNlRealDataRuntimeError("recovery requires a runtime result")
     replace(result.job)
-    return _project_completed_recovery(
+    replace(group_context)
+    projection = _project_completed_recovery(
         result,
         group_context=group_context,
-        acquisition_content=_canonical_acquisition_content,
         exact_traces=_exact_acquisition_traces,
     )
+    recovery = result.recovery_for_group(
+        projection.group_center_rt,
+        group_hypothesis_id=group_context.group.group_hypothesis_id,
+    )
+    assert recovery is not None
+    replace(result.result_ref)
+    expected_result = _mint_sample_result_ref(
+        job=result.job,
+        result=result.adapter_result,
+        recovery_input=result.recovery_input,
+        recovery_attempt=None,
+        recovery_attempts=result.recovery_attempts,
+        acquisition=recovery.acquisition,
+        acquisition_content=_canonical_acquisition_content,
+    )
+    if result.result_ref != expected_result:
+        raise UntargetedCidNlRealDataRuntimeError(
+            "completed recovery lost its sealed runtime result"
+        )
+    return projection
 
 
 def _project_completed_recovery(
     result: UntargetedCidNlRuntimeSampleResult,
     *,
     group_context: CidNlCellGroupContext,
-    acquisition_content: Callable[[TraceAcquisitionBatch], tuple[bytes, str]],
     exact_traces: Callable[
         [TraceAcquisitionBatch, XICRequest, str], tuple[AcquiredTrace, ...]
     ],
 ) -> OwnerBackfillCompletedRecoveryProjection:
+    """Bind an admitted batch result; standalone replay validates at its entry."""
     job = result.job
-    replace(group_context)
     group = validate_cross_sample_peak_group_identity(
         group_context.group, require_canonical=True
     )
@@ -583,20 +602,6 @@ def _project_completed_recovery(
         raise UntargetedCidNlRealDataRuntimeError(
             "recovery is not a completed empty epoch"
         )
-    replace(result.result_ref)
-    expected_result = _mint_sample_result_ref(
-        job=job,
-        result=result.adapter_result,
-        recovery_input=result.recovery_input,
-        recovery_attempt=None,
-        recovery_attempts=result.recovery_attempts,
-        acquisition=recovery.acquisition,
-        acquisition_content=acquisition_content,
-    )
-    if result.result_ref != expected_result:
-        raise UntargetedCidNlRealDataRuntimeError(
-            "completed recovery lost its sealed runtime result"
-        )
     expected_request = XICRequest(
         mz=job.method_subject.precursor_mz,
         rt_min=max(0.0, center - job.peak_config.nl_rt_anchor_half_window_min),
@@ -614,7 +619,6 @@ def _project_completed_recovery(
             "recovery crossed its exact request coordinates"
         )
     (acquired,) = exact
-    replace(acquired)
     digest = result.result_ref.acquisition_sha256
     assert digest is not None
     artifact = _mint_evidence_artifact_ref(
@@ -879,7 +883,7 @@ def _exact_acquisition_traces(
     acquisition: TraceAcquisitionBatch, request: XICRequest, source_id: str
 ) -> tuple[AcquiredTrace, ...]:
     return tuple(
-        acquired
+        replace(acquired)
         for acquired in acquisition.traces
         if acquired.coordinate.request == request
         and acquired.coordinate.acquisition_source_id == source_id

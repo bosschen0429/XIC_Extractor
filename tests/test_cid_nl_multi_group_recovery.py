@@ -659,33 +659,73 @@ def test_runtime_recovers_every_authorized_rt_group(
                 )
                 == 1
             )
+        initial_groups_by_id = {
+            group.group_hypothesis_id: group for group in completed.initial_groups
+        }
+        has_initial_evidence = bool(missing.job.candidates)
         allocated = []
         for cell in missing_cells:
-            (source,) = cell.predecessor_cells
-            center = source.group_context.group.group_center_rt
-            recovery = missing.recovery_for_group(center)
+            predecessor_group_ids = {
+                association.position.group_identity.group_hypothesis_id
+                for association in cell.position_associations
+            }
+            assert len(predecessor_group_ids) <= 1
+            source = cell.predecessor_cells[0] if cell.predecessor_cells else None
+            if has_initial_evidence:
+                assert source is not None
+                assert len(predecessor_group_ids) == 1
+                predecessor_group_id = next(iter(predecessor_group_ids))
+                initial_group = initial_groups_by_id[predecessor_group_id]
+                assert source.group_context.group is initial_group
+                center = initial_group.group_center_rt
+            else:
+                center = (
+                    initial_groups_by_id[next(iter(predecessor_group_ids))].group_center_rt
+                    if predecessor_group_ids
+                    else None
+                )
+            recovery = (
+                missing.recovery_for_group(center) if center is not None else None
+            )
             if recovery is None:
                 assert cell.evidence_states == ("not_searched",)
-                assert (
-                    source.method_assessment
-                    is missing.adapter_result.assessment_input.assessment
-                )
+                assert cell.recovery_cell is None
+                if not has_initial_evidence:
+                    assert cell.predecessor_cells == ()
+                if source is not None:
+                    assert (
+                        source.method_assessment
+                        is missing.adapter_result.assessment_input.assessment
+                    )
+                    assert source.peak_observation is None
+                    assert source.peak_hypothesis is None
+                assert cell.integrations == ()
             elif not recovery.assessment.candidate_peaks:
                 assert cell.evidence_states == ("unavailable",)
-                assert source.method_assessment is recovery.assessment
+                if source is not None:
+                    assert source.method_assessment is recovery.assessment
+                    assert source.peak_observation is None
+                    assert source.peak_hypothesis is None
+                    recovery_context = source.group_context
+                else:
+                    assert cell.recovery_cell is not None
+                    assert (
+                        cell.recovery_cell.method_assessment is recovery.assessment
+                    )
+                    recovery_context = cell.recovery_cell.group_context
                 completion = project_untargeted_cid_nl_completed_recovery(
-                    missing, group_context=source.group_context
+                    missing, group_context=recovery_context
                 )
                 assert (
                     projection_context.project_completed_recovery(
-                        missing, group_context=source.group_context
+                        missing, group_context=recovery_context
                     )
                     == completion
                 )
                 with pytest.raises(ValueError, match="exact runtime batch job"):
                     projection_context.project_completed_recovery(
                         replace(missing, job=replace(missing.job)),
-                        group_context=source.group_context,
+                        group_context=recovery_context,
                     )
                 changed_acquisition = deepcopy(recovery.acquisition)
                 changed_trace = changed_acquisition.traces[0].trace
@@ -698,14 +738,14 @@ def test_runtime_recovers_every_authorized_rt_group(
                 with pytest.raises(ValueError, match="sealed runtime result"):
                     project_untargeted_cid_nl_completed_recovery(
                         replace(missing, recovery_attempts=changed_recoveries),
-                        group_context=source.group_context,
+                        group_context=recovery_context,
                     )
                 assert completion.recovery_assessment is recovery.assessment
                 if len(missing.recovery_attempts) > 1:
                     with pytest.raises(ValueError, match="sealed runtime result"):
                         project_untargeted_cid_nl_completed_recovery(
                             replace(missing, recovery_attempts=(recovery,)),
-                            group_context=source.group_context,
+                            group_context=recovery_context,
                         )
                     with pytest.raises(ValueError):
                         replace(
@@ -716,25 +756,38 @@ def test_runtime_recovers_every_authorized_rt_group(
                         )
             else:
                 if recovery_is_support:
-                    assert source.method_assessment is (
-                        missing.adapter_result.assessment_input.assessment
-                    )
+                    if source is not None:
+                        assert source.method_assessment is (
+                            missing.adapter_result.assessment_input.assessment
+                        )
                     assert cell.recovery_cell is not None
                     assert cell.recovery_cell.method_assessment is recovery.assessment
                     allocated.append(
                         cell.recovery_cell.peak_observation.content.peak_observation_content_id
                     )
-                else:
+                elif source is not None:
                     assert source.method_assessment is recovery.assessment
                     allocated.append(
                         source.peak_observation.content.peak_observation_content_id
                     )
+                else:
+                    assert cell.recovery_cell is not None
+                    assert cell.recovery_cell.method_assessment is recovery.assessment
+                    allocated.append(
+                        cell.recovery_cell.peak_observation.content.peak_observation_content_id
+                    )
         assert len(set(allocated)) == len(allocated)
-        assert set(completed.method_assessments) == {
-            assessment
+        expected_assessments = {
+            item.adapter_result.assessment_input.assessment
             for item in result.sample_results
-            for assessment in item.effective_assessments
+            if item.job.candidates
         }
+        expected_assessments.update(
+            attempt.assessment
+            for item in result.sample_results
+            for attempt in item.recovery_attempts
+        )
+        assert set(completed.method_assessments) == expected_assessments
 
         from xic_extractor.alignment.untargeted_finalized_matrix import (
             project_completed_untarget_batch_writer_inputs,
@@ -766,7 +819,8 @@ def test_runtime_recovers_every_authorized_rt_group(
         assert all(
             cell.evidence_states == ("unresolved",)
             for cell in missing_cells
-            if cell.predecessor_cells[0].peak_observation is not None
+            if cell.predecessor_cells
+            and cell.predecessor_cells[0].peak_observation is not None
         )
         if shared_support == "shared" and recovery_peaks == (8.0, 12.0):
             from xic_extractor.alignment.mode_track import (
@@ -1004,14 +1058,40 @@ def _assert_alignment_uses_configured_recovery_groups(
         for cell in child.scientific_core.cell_observations
         if cell.canonical_sample.metadata.raw_stem == "Missing"
     )
+    initial_groups_by_id = {
+        group.group_hypothesis_id: group for group in completed.initial_groups
+    }
+
+    def predecessor_center(cell):
+        predecessor_group_ids = {
+            association.position.group_identity.group_hypothesis_id
+            for association in cell.position_associations
+        }
+        assert len(predecessor_group_ids) == 1
+        return initial_groups_by_id[next(iter(predecessor_group_ids))].group_center_rt
+
     recovered = next(
-        cell
-        for cell in missing_cells
-        if cell.predecessor_cells[0].group_context.group.group_center_rt == 8.0
+        cell for cell in missing_cells if predecessor_center(cell) == 8.0
     )
-    # The partition store restores assessment values from the completed runtime.
-    assert recovered.predecessor_cells[0].method_assessment == recovery.assessment
+    no_input = next(cell for cell in missing_cells if predecessor_center(cell) != 8.0)
+    # The partition store restores the empty recovery assessment from the
+    # completed runtime and leaves the other no-input position unsearched.
+    assert all(
+        cell.peak_observation is None and cell.peak_hypothesis is None
+        for cell in recovered.predecessor_cells
+    )
+    if recovered.recovery_cell is not None:
+        assert recovered.recovery_cell.method_assessment is recovery.assessment
+    else:
+        assert len(recovered.predecessor_cells) == 1
+        assert recovered.predecessor_cells[0].method_assessment == recovery.assessment
+        assert recovered.predecessor_cells[0].peak_observation is None
+        assert recovered.predecessor_cells[0].peak_hypothesis is None
     assert recovered.evidence_states == ("unavailable",)
+    assert no_input.predecessor_cells == ()
+    assert no_input.recovery_cell is None
+    assert no_input.evidence_states == ("not_searched",)
+    assert no_input.integrations == ()
     writer = project_completed_untarget_batch_writer_inputs(completed)
     assert all(
         not decision.write_matrix_value and decision.matrix_value is None

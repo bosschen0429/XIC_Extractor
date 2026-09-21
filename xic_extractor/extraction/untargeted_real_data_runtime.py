@@ -170,7 +170,6 @@ class _RuntimeResultContext:
         return _project_completed_recovery(
             result,
             group_context=group_context,
-            acquisition_content=self.acquisition_content,
             exact_traces=self.exact_traces,
         )
 
