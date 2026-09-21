@@ -7,7 +7,7 @@ Repo owner: docs/diagnostic-ledger.md
 Doc exit rule: Keep active while expensive RAW rerun memory is needed; retire only after durable diagnostic memory moves to a replacement canonical owner.
 
 **Status:** maintained repo-local diagnostic memory
-**Last updated:** 2026-09-21
+**Last updated:** 2026-09-22
 
 This ledger records diagnostic conclusions that should survive branch and
 worktree changes. Use it before rerunning expensive RAW validation or treating a
@@ -65,6 +65,71 @@ dated productization control-plane path is compatibility lookup only.
 | Thermo DLL dir | `$env:THERMO_RAWFILE_READER_DLL_DIR` |
 
 ## Known Diagnostic Conclusions
+
+### 2026-09-22 Retained Owner Results And Partition Lifetime
+
+- `207d9bd5` removes a second decision-basis derivation inside sealed decision
+  construction. Explicit boundary validation remains available. Luna's retained
+  remint preserves all 9,520 decisions across 46 children exactly, including
+  basis, IDs, payloads and subject/evidence references; 74 affected tests pass.
+- `f1b7f8e7` returns only exclusion IDs and child positions after persisting a
+  partition. Full exclusion assessments and child captures remain in the result
+  store; the global parent scope no longer retains the same physical capture
+  graphs. A retained-input replay preserves all 46 scalar/typed child oracles
+  and all 80,610,468 child bytes. Store size changes from 119,655,479 to
+  112,863,383 bytes, removing 6,792,096 bytes of duplicate metadata. The affected
+  183-test suite, Ruff and mypy pass.
+- The same checkpoint removes unconditional full-heap `gc.collect()` after
+  every partition; ordinary automatic GC remains active. Both serial/overlap
+  regressions and all 39 execution-engine tests pass. Completed process10
+  timeline gaps do not isolate GC time, so no cohort speedup is attributed to
+  this removal.
+- The current-source p00000 acquisition profile completed 170 sample jobs
+  with 3,552 cache hits and no native opens, misses, rejection or writes.
+  Acquisition wall was 43.889 seconds; aggregate worker process CPU was
+  24.672 seconds. `_capture_physical_peak` repeated physical evaluation 967
+  times. Cache-read cumulative CPU was 0.797 seconds, which does not measure
+  filesystem waiting. These data do not justify a cache-format rewrite or
+  explain the full wall-time gap. The p00013 attempt stopped before acquisition
+  because the retained snapshot set only covers p00000 through p00003.
+- Evidence is `diagnostic_only`; full85 remains incomplete after process10's
+  cancellation. Reuse `fusion-ab/owner-checks/decision-basis-checks.md`,
+  `retention-checks.md`, and
+  `fusion-ab/profile-acquisition-00000-current/profile-report-corrected.md`
+  under `output/issue422-bounded-worksets-20260921/`. The corrected profile
+  counts 925 adapter calls; the earlier value 85 counted containing profiles,
+  not calls. Do not repeat those probes to reconstruct missing wall phases.
+- Process10's 34 completed partitions span 741.725080 seconds. Their
+  acquisition union is 602.293858 seconds and composition union is 345.063952
+  seconds. Composition overlaps zero active acquisition spans for 131.144384
+  seconds, one for 213.919568 seconds, and two for zero seconds. The scheduler
+  has two acquisition lanes but only two admission credits, held through
+  composition and artifact creation. This supports investigating admission
+  capacity; it does not measure worker-idle time or make all 131 seconds
+  recoverable. Reuse `alignment85-process10/process10-overlap-attribution.md`
+  and the completed timing artifact instead of rerunning the old scheduler.
+- Same-question capture now verifies the raw trace, prepared projection and
+  physical question context, then reuses the bound physical answer instead of
+  repeating segmentation and integration. Fresh diagnostic curves remain
+  available; changed acquisition still evaluates its new question. Luna's
+  same-boundary comparison against `f1b7f8e7` uses 64 retained captures (58
+  available, six unavailable): all hypotheses, detections, physical evaluations,
+  trace groups and observation content/provenance match exactly; evaluation
+  calls change from 64 to zero. The 37 affected tests, three existing
+  missing-signal/empty-trace cases, Ruff and mypy pass. Reuse
+  `fusion-ab/owner-checks/same-boundary-f1b7f8e7-vs-current-64.json` and
+  `physical-capture-reuse-check.md`. Comparing the historical post-binding
+  hypothesis with pre-binding capture had shown a cross-stage representation
+  difference; the same-boundary comparison closes that uncertainty without
+  rerunning acquisition or composition.
+- `2ac8a9d5` gives the scheduler one composition slot alongside its acquisition
+  lanes: a single lane retains a two-partition limit; two lanes retain three.
+  The four-partition event-gated regression demonstrates that partition 2 can
+  acquire while partition 0 composes, while partition 3 remains blocked until
+  a credit is released. Both capacity cases and ten affected overlap,
+  cancellation and failure tests pass; Ruff/mypy and the normal commit checks
+  pass. Actual multi-partition throughput and memory acceptance remain pending;
+  the unit result alone is not evidence of a full85 speedup.
 
 ### 2026-09-21 Owner Construction Avoids Revalidating Its Own Results
 
@@ -269,6 +334,82 @@ dated productization control-plane path is compatibility lookup only.
   parity and cost remain pending the retained-fact candidate run. Receipts:
   `fusion-ab/owner-checks/sparse-{affected-suite-rerun,static-final}.txt` and
   `sparse-replay-green-final.txt` in that same directory.
+
+#### Sparse evidence parity and native execution serialization
+
+- Sparse no-input composition initially exposed a recovery lookup that could
+  borrow an assessment from another group. Recovery now uses its exact
+  group/sample/subject binding; fallback considers initial assessments only.
+  Retained-input replays at `7c46b9ab`, `69da3a97` and `39113cf8` each preserve
+  the accepted B1 scalar and typed scientific oracle for 46 children, 112
+  groups and 9,520 group/sample positions. Allowed differences are restricted
+  to administrative evidence for baseline-proven unsearched positions; states,
+  physical IDs, integrals and provenance remain exact. No acquisition,
+  Discovery or completed baseline was repeated.
+- Feature selection is indexed once per request. Final-cell assembly also
+  indexes terminal and association joins and reuses its immutable group
+  identity. The regression oracle observes zero reconstructed group identities
+  in final-cell handoff; the affected cell/production tests pass all 81 cases.
+  The `69da3a97` uninstrumented composition took 10.1033 s versus the earlier
+  9.9006 s, so that pair does not establish a stage speedup.
+- The existing-input composition profile at `69da3a97` attributes 7,531,953
+  Python callbacks to the private pickle encoder's per-object `persistent_id`.
+  Execution transport and partition storage now seed the native encoder memo
+  with the exact shared authorities. A small explicit pickle prefix establishes
+  those references in the native decoder; numeric trace values no longer call
+  back into Python. The private encoding changes, not scientific identities or
+  RAW-cache facts. Old diagnostic inputs use a task-local legacy reader.
+- At `39113cf8`, the real payload comparison covers 2,113 sample results and
+  5,170 shared objects. Exact typed values and declared shared-object identity
+  pass for both codecs. One legacy/native observation measured encoding
+  1.6422/1.0096 s and decoding 1.3971/1.0832 s; payload sizes are
+  50,389,388/50,702,747 bytes. These are bounded codec timings, not a cohort
+  performance claim.
+- One unprofiled composition-only replay at `39113cf8` completed in 7.2922 s,
+  with 1.3088 s input loading and 8.6038 s total elapsed. Scalar and typed
+  comparisons both report zero mismatches. The new store is 119,655,479 bytes,
+  compared with 115,846,583 bytes in the retained `7c46b9ab` store: the faster
+  measured path has a 3.29% storage increase. Independent records were decoded
+  and released without loading the complete child graph.
+- Execution-engine, bounded-runtime and finalized-result suites pass all 115
+  cases; affected source Ruff/mypy and commit checks pass. Failure retention
+  adds the checkpoint locator to the original exception instead of replacing
+  its cause. Cache retry coverage measures actual avoided native work and
+  permits fully cached samples to open no native handle.
+- Evidence remains `diagnostic_only`; full85 formal completion and scaling
+  acceptance remain open. Reuse the same artifact root above:
+  `sparse-composition-39113cf8/receipt.json`,
+  `owner-checks/sparse-composition-39113cf8-comparison.json`,
+  `owner-checks/real-payload-codec-check-v2.json`,
+  `owner-checks/memo-codec-tests-final.txt` and
+  `owner-checks/sparse-composition-profile-69da3a97.md`.
+
+#### Full85 at `39113cf8`: composition improves, acquisition remains dominant
+
+- Process10 reused the existing Discovery85 and a compatible private copy of
+  the acquisition cache, with eight process workers in two acquisition lanes.
+  It exited 2 after 1,030.266 s through cooperative cancellation. Of 46
+  partitions, 34 completed, partition 34 failed after sealing its store, and
+  the remaining 11 were cancelled. The 35 retained partition files contain
+  4,449,968,836 bytes; no formal Matrix, identity or review output was published.
+- The common 34 completed partitions have acquisition/composition inclusive
+  sums of 964.181/345.064 s, versus process9's 1,087.834/653.789 s. These spans
+  overlap and are not additive wall time or an isolated causal A/B experiment.
+  Composition decreased substantially; acquisition remains the next target.
+- Runtime wall is 929.905 s. Separately recorded preparation includes physical
+  indexing 27.684 s, source verification 10.855 s, feature preparation 8.693 s
+  and candidate reading 6.600 s. Peak sampled process-tree RSS is
+  8,013,565,952 bytes; private bytes are 15,012,491,264.
+- The two pools each report 202,113,168 bootstrap bytes. Task requests total
+  704,996,967 bytes and responses total 1,102,524,110 bytes. The retained child
+  capture contains 2,021 rows in 388,370,526 bytes. Cache-read/decode, native
+  calls, serialization and IPC-wait durations were not isolated by this run.
+- Evidence remains `diagnostic_only`: `run_ok=false`, scientific verifier
+  `UNKNOWN` because the completion receipt failed. Partial output does not
+  establish known-ISTD, integration/provenance or formal batch closure. No
+  unchanged retry was started. Reuse `alignment85-process10/` under the same
+  task root, especially `process10-final-report.md`,
+  `process10-cost-diagnosis.md` and the retained private partition spool.
 
 ### 2026-09-21 Sealed Composition Replay Shows Distributed Construction Cost
 
