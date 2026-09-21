@@ -210,6 +210,16 @@ def test_streamed_result_store_shared_objects_identity(tmp_path: Path) -> None:
     assert restored.ref is shared_config
     assert restored.children[0][0] is shared_config
     assert restored.children[0][1] is shared_ref
+    checkpoint = store.preserve_failed_results()
+    assert checkpoint is not None
+    with checkpoint.open("rb") as stream:
+        retained = _OwnerUnpickler(stream, ()).load()
+    replay = retained.read(0)
+    assert replay.ref == shared_config
+    assert replay.children[0][1] == shared_ref
+    assert replay.ref is retained._shared_objects[0]
+    assert replay.children[0][0] is replay.ref
+    assert replay.children[0][1] is retained._shared_objects[1]
 
 
 def test_streamed_result_store_unknown_shared_identity_rejected() -> None:
@@ -702,7 +712,9 @@ def test_scheduler_execute_acquisition_failure_cleans_up(tmp_path: Path) -> None
     assert cleanup_calls == 1
 
 
-def test_scheduler_execute_composition_failure_cleans_up(tmp_path: Path) -> None:
+def test_scheduler_composition_failure_retains_completed_results(
+    tmp_path: Path,
+) -> None:
     fixture = build_processing_identity_no_raw_fixture(
         tmp_path, sample_stems=("sample-1", "sample-2")
     )
@@ -723,12 +735,18 @@ def test_scheduler_execute_composition_failure_cleans_up(tmp_path: Path) -> None
             recovery_marker=marker,
         )
 
-    # Verify spool directory was cleaned up
     spool_dirs = list(output_dir.glob(".partition_spool-*"))
-    assert len(spool_dirs) == 0
+    assert len(spool_dirs) == 1
+    with (spool_dirs[0] / "failed-results.pickle").open("rb") as stream:
+        retained = _OwnerUnpickler(stream, ()).load()
+    assert tuple(retained.sequence("children")) == ("child-0",)
+    assert tuple(retained.sequence("method_assessments")) == ("assess-0",)
+    assert not list(spool_dirs[0].glob("*.tmp"))
+    with pytest.raises(ValueError, match="sealed"):
+        retained.append("new-partition", MockPayload(children=("invented",)))
 
 
-def test_scheduler_execute_finalize_failure_cleans_up(tmp_path: Path) -> None:
+def test_scheduler_finalize_failure_retains_completed_results(tmp_path: Path) -> None:
     fixture = build_processing_identity_no_raw_fixture(
         tmp_path, sample_stems=("sample-1", "sample-2")
     )
@@ -749,9 +767,13 @@ def test_scheduler_execute_finalize_failure_cleans_up(tmp_path: Path) -> None:
             recovery_marker=marker,
         )
 
-    # Verify spool directory was cleaned up
     spool_dirs = list(output_dir.glob(".partition_spool-*"))
-    assert len(spool_dirs) == 0
+    assert len(spool_dirs) == 1
+    with (spool_dirs[0] / "failed-results.pickle").open("rb") as stream:
+        retained = _OwnerUnpickler(stream, ()).load()
+    assert tuple(retained.sequence("children")) == ("child-0", "child-1")
+    assert tuple(retained.sequence("method_assessments")) == ("assess-0", "assess-1")
+    assert marker.read().state == RuntimeMarkerState.FINALIZED
 
 
 def test_pipeline_overlap_temporal_intersection(tmp_path: Path) -> None:

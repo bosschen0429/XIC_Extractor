@@ -766,7 +766,6 @@ class PartitionPipelineScheduler:
                 cancellation_ingress=cancellation_ingress,
             )
             if failure is not None:
-                store.cleanup()
                 raise RuntimeError(
                     f"Partition pipeline execution failed before batch publication: "
                     f"{failure}"
@@ -775,7 +774,6 @@ class PartitionPipelineScheduler:
             if outcome is not AttemptTerminalOutcome.SUCCEEDED or (
                 application_result is None
             ):
-                store.cleanup()
                 raise RuntimeError(
                     "Partition pipeline runtime did not complete atomically"
                 )
@@ -783,6 +781,16 @@ class PartitionPipelineScheduler:
             return adapter.build_workflow_result(
                 finalization, application_result, store
             )
-        except Exception:
-            store.cleanup()
+        except Exception as exc:
+            try:
+                checkpoint = store.preserve_failed_results()
+            except Exception as preservation_error:
+                # Keep the original failure and every sealed file even if the
+                # diagnostic metadata cannot be written (for example, disk full).
+                exc.add_note(f"Could not retain replay metadata: {preservation_error}")
+                raise exc from preservation_error
+            if checkpoint is not None:
+                raise RuntimeError(
+                    f"{exc}; completed partition results retained at {checkpoint}"
+                ) from exc
             raise

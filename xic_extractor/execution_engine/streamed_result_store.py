@@ -7,6 +7,7 @@ import os
 import re
 import shutil
 from collections.abc import Callable, Iterable
+from copy import copy
 from dataclasses import dataclass, fields, is_dataclass
 from pathlib import Path
 from typing import Any, BinaryIO
@@ -44,9 +45,10 @@ class SealedPartition:
 class StreamedResultStore:
     """Spool private payloads while retaining only explicit shared authorities.
 
-    This object owns every readable path and its metadata for this process.
-    There is no reopening or external pickle import route. Reads reuse the
+    This object owns every readable path and its metadata. Reads reuse the
     append receipt rather than rehashing owner-controlled, unchanged files.
+    A failure snapshot retains this private store for diagnostic replay; it
+    neither resumes a runtime attempt nor grants publication authority.
     """
 
     def __init__(
@@ -58,7 +60,7 @@ class StreamedResultStore:
             {"children", "excluded_candidates"}
         ),
     ):
-        self._directory = Path(directory)
+        self._directory = Path(directory).resolve()
         self._directory.mkdir(parents=True, exist_ok=True)
         self._shared_objects = shared_objects
         self._shared_ids = {
@@ -327,6 +329,34 @@ class StreamedResultStore:
         return ImmutableSequence(
             tuple(length for _, _, length in chunks), load_chunk, load_chunks
         )
+
+    def preserve_failed_results(self) -> Path | None:
+        """Retain sealed records and their shared references after a failure.
+
+        Only the already-written partitions are retained. The private snapshot
+        uses the same pickle codec and is read-only; it is not an external input
+        format or a completed workflow result.
+        """
+        if not self._partitions:
+            self.cleanup()
+            return None
+        snapshot = copy(self)
+        snapshot._sealed = True
+        snapshot._field_caches = []
+        snapshot._shared_ids = {}
+        destination = self._directory / "failed-results.pickle"
+        temporary = destination.with_suffix(".tmp")
+        if destination.exists():
+            raise FileExistsError(destination)
+        stream = temporary.open("xb")
+        try:
+            with stream:
+                _OwnerPickler(stream, {}).dump(snapshot)
+            os.replace(temporary, destination)
+        finally:
+            temporary.unlink(missing_ok=True)
+        self._field_caches.clear()
+        return destination
 
     def cleanup(self) -> None:
         """Remove private spool directory and release in-memory caches."""
