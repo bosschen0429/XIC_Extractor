@@ -206,6 +206,39 @@ dated productization control-plane path is compatibility lookup only.
   was repeated. Artifacts: `composition-replay/immutable-json-pairs.json` and
   `owner-checks/full85-prep-and-json-recheck.md` under the same root.
 
+#### Full85 completion failure and further exact reuse
+
+- Process9 at `f3715ce7` completed all 46 partitions with eight process workers,
+  then failed global closure: `Method exclusion requires exact complete sample
+  coverage`. Wall time was 1,978.297 s; sampled tree RSS peaked at
+  10,072,944,640 bytes. Acquisition and composition sums were 1,736.619 and
+  1,074.701 s; overlapping sums are not additive wall time. Transport payloads
+  totalled 883,151,798 request bytes and 1,414,753,069 response bytes.
+- No formal Matrix was published. Cleanup removed the typed result store;
+  3,710 child diagnostic records remain, not a resumable scientific result.
+  Six DNA ISTD labels each occur in one final group. Bound physical sample
+  counts are 85/78/82/69/64/81 respectively for 15N5-8-oxodG, d3-5-hmdC,
+  d3-5-medC, d3-N6-medA, d3-dG-C8-MeIQx and d4-N6-2HE-dA. The seventh configured
+  standard uses NL132 and has no binding in this DNA NL116 run. These facts do
+  not pass the seven-label or formal Matrix/integral/provenance acceptance.
+- A synthetic no-input case reproduces the closure failure. The owner now
+  requires assessment coverage for the subject's request-bound input samples,
+  with no empty assessment required from other samples. Missing input-sample
+  evidence, duplicate artifacts and crossed bindings remain rejected. The
+  focused case changes from FAIL to PASS without RAW execution.
+- The common artifact factory no longer recomputes identities immediately
+  after deriving them, and final-cell closure reuses the predecessor artifact's
+  content digest. AB/BA/AB retained-input comparisons preserve all IDs, values
+  and lineage: 16,001 artifact constructions take median 1.1619/0.4610 s;
+  9,520 final cells take 2.0431/1.6177 s. The latter CPU medians are both
+  0.90625 s, so its wall difference is not a demonstrated CPU speedup.
+- Seven affected regression files pass all 194 tests; three-source mypy and
+  changed-source/test Ruff pass. Evidence remains `diagnostic_only`; cohort
+  acceptance and elimination of avoidable restart costs remain open.
+  Reuse `alignment85-process9/` and `fusion-ab/owner-checks/completed-run-analysis.md`
+  under `output/issue422-bounded-worksets-20260921/`; paired receipts are
+  `fusion-ab/composition-replay/{artifact-owner-pairs,final-closure-digest-pairs}.json`.
+
 ### 2026-09-21 Sealed Composition Replay Shows Distributed Construction Cost
 
 - Decision: isolate composition costs without repeating acquisition or grouping.

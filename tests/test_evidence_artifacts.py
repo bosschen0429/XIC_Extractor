@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import replace
+from dataclasses import fields, replace
 from pathlib import Path
 
 import pytest
@@ -90,6 +90,24 @@ def test_artifact_role_and_schema_substitution_fail_closed(tmp_path: Path) -> No
             artifact.semantic_contract,
             schema_version="caller_selected_schema",
         )
+    for original, mutation, message in (
+        (
+            artifact,
+            {"evidence_artifact_id": "xic.evidence-artifact:" + "0" * 64},
+            "immutable artifact content",
+        ),
+        (
+            artifact.content_identity,
+            {"byte_size": artifact.content_identity.byte_size + 1},
+            "exact payload content",
+        ),
+    ):
+        with pytest.raises(EvidenceArtifactContractError, match=message):
+            replace(original, **mutation)
+        values = {item.name: getattr(original, item.name) for item in fields(original)}
+        with pytest.raises(EvidenceArtifactContractError, match=message):
+            type(original)(**(values | mutation))
+        type(original)(**values).__post_init__()
     with pytest.raises(ValueError, match="owner-issued"):
         mint_targeted_ms1_shape_identity_artifact_ref(
             processing_attempt="attempt-id",

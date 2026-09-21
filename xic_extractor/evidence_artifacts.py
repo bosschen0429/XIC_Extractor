@@ -11,7 +11,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import InitVar, dataclass, field
 from typing import Any
 
 from xic_extractor.validation_primitives import (
@@ -29,6 +29,7 @@ _ARTIFACT_SEMANTIC_CONTRACT_ID_PREFIX = "xic.artifact-semantic-contract:"
 _EVIDENCE_ARTIFACT_ID_PREFIX = "xic.evidence-artifact:"
 _PROCESSING_REQUEST_ID_PREFIX = "xic.processing-request:"
 _PROCESSING_ATTEMPT_ID_PREFIX = "xic.processing-attempt:"
+_ARTIFACT_MINT_TOKEN = object()
 
 
 @dataclass(frozen=True, slots=True)
@@ -91,8 +92,11 @@ class ArtifactContentIdentity:
     byte_size: int
     media_type: str
     serialization_format: str
+    _mint_token: InitVar[object] = field(default=None, kw_only=True)
 
-    def __post_init__(self) -> None:
+    def __post_init__(self, _mint_token: object = None) -> None:
+        if _mint_token is _ARTIFACT_MINT_TOKEN:
+            return
         artifact_content_id = _validate_typed_digest_id(
             self.artifact_content_id,
             prefix=_ARTIFACT_CONTENT_ID_PREFIX,
@@ -140,8 +144,11 @@ class EvidenceArtifactRef:
     semantic_contract: ArtifactSemanticContractRef
     content_identity: ArtifactContentIdentity
     upstream_artifact_ids: tuple[str, ...] = ()
+    _mint_token: InitVar[object] = field(default=None, kw_only=True)
 
-    def __post_init__(self) -> None:
+    def __post_init__(self, _mint_token: object = None) -> None:
+        if _mint_token is _ARTIFACT_MINT_TOKEN:
+            return
         evidence_artifact_id = _validate_typed_digest_id(
             self.evidence_artifact_id,
             prefix=_EVIDENCE_ARTIFACT_ID_PREFIX,
@@ -315,13 +322,21 @@ def _mint_evidence_artifact_ref(
         content_identity=content_identity,
         upstream_artifact_ids=upstream_ids,
     )
+    artifact_id = _typed_digest(_EVIDENCE_ARTIFACT_ID_PREFIX, basis)
+    if artifact_id in upstream_ids:
+        raise EvidenceArtifactContractError(
+            "an evidence artifact cannot depend on itself"
+        )
+    # Input joins and canonicalization are complete; construction adds no input
+    # that would require hashing these same identities and upstream IDs again.
     return EvidenceArtifactRef(
-        evidence_artifact_id=_typed_digest(_EVIDENCE_ARTIFACT_ID_PREFIX, basis),
+        evidence_artifact_id=artifact_id,
         producer_processing_request_id=request_id,
         producer_processing_attempt_id=attempt_id,
         semantic_contract=semantic_contract,
         content_identity=content_identity,
         upstream_artifact_ids=upstream_ids,
+        _mint_token=_ARTIFACT_MINT_TOKEN,
     )
 
 
@@ -351,6 +366,7 @@ def _build_artifact_content_identity(
         byte_size=len(payload_bytes),
         media_type=normalized_media_type,
         serialization_format=normalized_serialization_format,
+        _mint_token=_ARTIFACT_MINT_TOKEN,
     )
 
 

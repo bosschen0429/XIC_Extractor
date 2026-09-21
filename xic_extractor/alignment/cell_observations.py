@@ -1250,9 +1250,7 @@ def _final_closure_basis(
         "predecessor_cells": [
             {
                 "artifact_id": cell.artifact.evidence_artifact_id,
-                "content_sha256": hashlib.sha256(
-                    canonical_cell_observation_bytes(cell.content)
-                ).hexdigest(),
+                "content_sha256": cell.artifact.content_identity.content_sha256,
                 "group_hypothesis_id": cell.group_context.group.group_hypothesis_id,
                 "sample_identity_id": cell.content.canonical_sample_identity_id,
                 "method_assessment_artifact_content_id": (
