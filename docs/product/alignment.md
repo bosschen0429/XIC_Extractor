@@ -117,6 +117,24 @@ records mean `not_evaluated`; they do not prove incompatibility. Backfill checks
 its repaired observation against the fixed destination group without changing
 membership.
 
+Before scoring, a feature candidate must have a seed or most-recent witness
+that can support the preferred RT window in raw or corrected coordinates.
+Unavailable correction remains eligible; a raw-compatible pair also remains
+eligible when correction would be contradictory. Index axes are updated only
+when their stored extrema or composition key change. Runtime progress records
+the inference operation counts, including RT pruning, actual edge evaluations,
+index updates, and assignment solver calls.
+Single-owner and single-feature competitions use their analytical optimum and
+next-best cost, including the private unassigned option. Equal or near-equal
+optima retain ambiguity. A stable ID selects the diagnostic representative of
+an exact tie; it does not authorize membership. General multi-owner,
+multi-feature components retain the joint assignment solver.
+
+Writer projection checks sample completeness per finalized row without building
+a second global row-by-sample key set. Cell and integration-audit TSV writers
+consume formatted rows incrementally instead of retaining a second complete
+population of cell dictionaries.
+
 The initial ModeTrack model identity binds its assignment-scope bounds, exact
 group identities, eligible anchors, explicit noneligible evidence, and policy.
 Physical, candidate, integration, and group identity schemas remain unchanged.

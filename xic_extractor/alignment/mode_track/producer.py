@@ -16,6 +16,9 @@ from xic_extractor.alignment.drift_evidence import (
 from xic_extractor.alignment.edge_scoring import (
     DriftLookupProtocol,
 )
+from xic_extractor.alignment.feature_membership_inference import (
+    FeatureInferenceOperationCounts,
+)
 from xic_extractor.alignment.hypothesis_owner_adapter import (
     bind_retained_peak_hypotheses_to_assessment_universe,
     compose_peak_hypotheses_from_assessment_universe,
@@ -149,6 +152,7 @@ def bootstrap_cid_nl_initial_population(
     injection_order: Mapping[str, int] | None = None,
     drift_lookup: DriftLookupProtocol | None = None,
     known_istd_reference: KnownIstdReference | None = None,
+    operation_counts_sink: list[FeatureInferenceOperationCounts] | None = None,
     retain_observation_only_candidates: bool = False,
     retained_hypotheses_by_assessment: Mapping[
         tuple[str, str], tuple[PeakHypothesis, ...]
@@ -295,6 +299,7 @@ def bootstrap_cid_nl_initial_population(
         sample_universe=sample_universe,
         injection_order=injection_order,
         drift_lookup=drift_lookup,
+        operation_counts_sink=operation_counts_sink,
     )
     if not provisional_groups and not searched_no_observation:
         raise ModeTrackProducerError(

@@ -14,6 +14,9 @@ from xic_extractor.alignment.cross_sample_peak_groups import (
 )
 from xic_extractor.alignment.drift_evidence import KnownIstdReference
 from xic_extractor.alignment.edge_scoring import DriftLookupProtocol
+from xic_extractor.alignment.feature_membership_inference import (
+    FeatureInferenceOperationCounts,
+)
 from xic_extractor.alignment.grouping_result import (
     CrossSampleGroupingContractError,
     CrossSampleGroupingResult,
@@ -102,6 +105,7 @@ def build_initial_cid_nl_cross_sample_groups(
     alignment_config: AlignmentConfig,
     drift_lookup: DriftLookupProtocol | None = None,
     known_istd_reference: KnownIstdReference | None = None,
+    operation_counts_sink: list[FeatureInferenceOperationCounts] | None = None,
     retained_hypotheses_by_assessment: Mapping[
         tuple[str, str], tuple[PeakHypothesis, ...]
     ]
@@ -133,6 +137,7 @@ def build_initial_cid_nl_cross_sample_groups(
             drift_lookup=drift_lookup,
             retain_observation_only_candidates=True,
             known_istd_reference=known_istd_reference,
+            operation_counts_sink=operation_counts_sink,
             retained_hypotheses_by_assessment=retained_hypotheses_by_assessment,
         )
     )

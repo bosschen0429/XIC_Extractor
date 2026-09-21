@@ -63,6 +63,7 @@ from xic_extractor.alignment.edge_scoring import (
     RTEvidenceBasis,
 )
 from xic_extractor.alignment.feature_membership_inference import (
+    FeatureInferenceOperationCounts,
     FeatureMembershipGroup,
     SparseFeatureDecision,
     infer_feature_memberships,
@@ -296,6 +297,7 @@ def construct_cross_sample_peak_group_hypotheses(
     edge_evidence_sink: list[OwnerEdgeEvidence] | None = None,
     processing_request_id: str | None = None,
     known_identity_bindings: Sequence[tuple[str, str]] = (),
+    operation_counts_sink: list[FeatureInferenceOperationCounts] | None = None,
 ) -> tuple[CrossSamplePeakGroupHypothesis, ...]:
     """Infer feature membership and mint its canonical CrossSample identity.
 
@@ -329,6 +331,8 @@ def construct_cross_sample_peak_group_hypotheses(
         drift_lookup=drift_lookup,
         known_identity_bindings=known_identity_bindings,
     )
+    if operation_counts_sink is not None:
+        operation_counts_sink.append(inference.operation_counts)
     by_id = {owner.owner_id: owner for owner in owners}
     decisions_by_owner: dict[str, list[SparseFeatureDecision]] = {}
     for decision in inference.sparse_decisions:

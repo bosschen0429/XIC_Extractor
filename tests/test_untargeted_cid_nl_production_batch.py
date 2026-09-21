@@ -4102,6 +4102,7 @@ def test_production_initial_groups_use_complete_feature_inference_batch(
         return cells
 
     monkeypatch.setattr(production, "compose_cid_nl_predecessor_cells", retain_cells)
+    progress_events = []
     runtime = execute_untargeted_cid_nl_production_batch(
         batch,
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
@@ -4109,8 +4110,21 @@ def test_production_initial_groups_use_complete_feature_inference_batch(
             tmp_path / "canonical-batch.runtime.json", "canonical-batch"
         ),
         alignment_config=AlignmentConfig(),
+        progress_callback=progress_events.append,
     )
     assert runtime.succeeded
+    membership_events = [
+        event
+        for event in progress_events
+        if event.get("event") == "feature_membership_inference"
+    ]
+    assert len(membership_events) == 1
+    membership_counts = membership_events[0]["operation_counts"]
+    assert membership_events[0]["subject_count"] == 1
+    assert membership_events[0]["group_count"] == 1
+    assert membership_counts["input_owner_rows"] == supported_samples
+    assert membership_counts["unique_owners"] == supported_samples
+    assert membership_counts["owner_edge_evaluations"] > 0
     compose_untargeted_cid_nl_production_result(
         batch, runtime, alignment_config=AlignmentConfig()
     )

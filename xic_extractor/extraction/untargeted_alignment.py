@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import os
 import shutil
+from collections import Counter
 from collections.abc import Callable, Mapping
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, replace
 from pathlib import Path
 from tempfile import mkdtemp
+from threading import Lock
 from typing import Any
 
 from xic_extractor.alignment.config import AlignmentConfig
@@ -302,7 +304,9 @@ def complete_untargeted_cid_nl_alignment(
             jobs = tuple(
                 _PhysicalIndexJob(
                     path=(
-                        discovery_batch.candidate_csvs[acquisition_input.sample_stem].parent
+                        discovery_batch.candidate_csvs[
+                            acquisition_input.sample_stem
+                        ].parent
                         / "discovery_physical_facts.json"
                     ),
                     expected_run_spec=spec,
@@ -384,8 +388,30 @@ def complete_untargeted_cid_nl_alignment(
             )
 
         output_dir.mkdir(parents=True, exist_ok=True)
+        inference_counts: Counter[str] = Counter()
+        inference_counts_lock = Lock()
+
+        def runtime_progress(event: Mapping[str, object]) -> None:
+            counts = event.get("operation_counts")
+            if event.get("event") == "feature_membership_inference" and isinstance(
+                counts, dict
+            ):
+                with inference_counts_lock:
+                    for key, value in counts.items():
+                        if key.startswith("largest_"):
+                            inference_counts[key] = max(inference_counts[key], value)
+                        else:
+                            inference_counts[key] += value
+                    runtime_stage.metrics.update(
+                        {
+                            f"feature_inference_{key}": value
+                            for key, value in inference_counts.items()
+                        }
+                    )
+            recorder.heartbeat_event(event)
+
         with (
-            recorder.stage("alignment.untargeted_cid_nl_runtime"),
+            recorder.stage("alignment.untargeted_cid_nl_runtime") as runtime_stage,
             recorder.process_memory_scope("retained_runtime") as runtime_peak,
         ):
             completed = execute_bounded_untargeted_cid_nl(
@@ -399,7 +425,7 @@ def complete_untargeted_cid_nl_alignment(
                     _RUNTIME_ARTIFACT_NAMESPACE,
                     allow_failed_attempt_retry=True,
                 ),
-                progress_callback=recorder.heartbeat_event,
+                progress_callback=runtime_progress,
                 alignment_config=alignment_config,
                 known_istd_reference=known_istd_reference,
                 raw_workers=raw_workers,

@@ -127,6 +127,7 @@ def project_completed_untarget_batch_writer_inputs(
     sample_stems = tuple(sample.metadata.raw_stem for sample in ordered_samples)
     if not sample_stems or len(sample_stems) != len(set(sample_stems)):
         raise ValueError("writer projection requires unique canonical sample stems")
+    sample_set = frozenset(sample_stems)
 
     rows: list[FinalizedUntargetMatrixRow] = []
     cells: list[AlignedCell] = []
@@ -153,9 +154,10 @@ def project_completed_untarget_batch_writer_inputs(
                 ): owner_decision
                 for owner_decision in closed_decisions
             }
-            if len(decisions_by_sample) != len(closed_decisions) or set(
-                decisions_by_sample
-            ) != set(sample_stems):
+            if (
+                len(decisions_by_sample) != len(closed_decisions)
+                or set(decisions_by_sample) != sample_set
+            ):
                 raise ValueError("writer projection crossed canonical sample order")
             owner_decisions = tuple(
                 decisions_by_sample[sample_stem] for sample_stem in sample_stems
@@ -246,13 +248,6 @@ def project_completed_untarget_batch_writer_inputs(
         cells=tuple(cells),
         sample_order=sample_stems,
     )
-    expected_keys = {
-        (row.feature_family_id, sample_stem)
-        for row in rows
-        for sample_stem in sample_stems
-    }
-    if set(cell_decisions) != expected_keys:
-        raise ValueError("writer projection omitted or added finalized cells")
     return CompletedUntargetBatchWriterInputs(
         matrix=matrix,
         production_decisions=ProductionDecisionSet(

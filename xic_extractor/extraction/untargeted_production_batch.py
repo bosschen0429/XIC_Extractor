@@ -33,6 +33,9 @@ from xic_extractor.alignment.cross_sample_peak_groups import (
     CrossSamplePeakGroupHypothesis,
 )
 from xic_extractor.alignment.drift_evidence import KnownIstdReference
+from xic_extractor.alignment.feature_membership_inference import (
+    FeatureInferenceOperationCounts,
+)
 from xic_extractor.alignment.grouping_workflow import (
     build_initial_cid_nl_cross_sample_groups,
 )
@@ -922,6 +925,7 @@ def execute_untargeted_cid_nl_production_batch(
             results,
             alignment_config=alignment_config,
             known_istd_reference=known_istd_reference,
+            progress_callback=progress_callback,
         ),
     )
     if not result.succeeded or len(result.sample_results) != len(batch.jobs):
@@ -1129,6 +1133,7 @@ def prepare_untargeted_cid_nl_grouping(
     *,
     alignment_config: AlignmentConfig,
     known_istd_reference: KnownIstdReference | None = None,
+    progress_callback: Callable[[Mapping[str, object]], None] | None = None,
 ) -> UntargetedCidNlPreparedGrouping:
     """Freeze compatible-workset membership once, before any recovery search."""
     requested_reference = known_istd_reference
@@ -1398,6 +1403,7 @@ def prepare_untargeted_cid_nl_grouping(
             )
         captures = tuple(captures_list)
         capture_inputs = tuple(capture_inputs_list)
+        operation_counts: list[FeatureInferenceOperationCounts] = []
         (
             assignment_scope,
             grouping_result,
@@ -1409,7 +1415,28 @@ def prepare_untargeted_cid_nl_grouping(
             alignment_config=alignment_config,
             known_istd_reference=known_istd_reference,
             retained_hypotheses_by_assessment=(retained_hypotheses_by_assessment),
+            operation_counts_sink=operation_counts,
         )
+        if progress_callback is not None:
+            progress_callback(
+                {
+                    "event": "feature_membership_inference",
+                    "stage": "feature_membership_inference",
+                    "subject_count": len(subject_workset),
+                    "group_count": len(assignment_scope.groups),
+                    "operation_counts": {
+                        key: (
+                            max(
+                                (getattr(item, key) for item in operation_counts),
+                                default=0,
+                            )
+                            if key.startswith("largest_")
+                            else sum(getattr(item, key) for item in operation_counts)
+                        )
+                        for key in FeatureInferenceOperationCounts.__dataclass_fields__
+                    },
+                }
+            )
         prepared_worksets.append(
             UntargetedCidNlWorksetGrouping(
                 subjects=subject_workset,

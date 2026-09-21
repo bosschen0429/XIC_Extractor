@@ -66,6 +66,34 @@ dated productization control-plane path is compatibility lookup only.
 
 ## Known Diagnostic Conclusions
 
+### 2026-09-21 RT Feasibility And Scalar Assignment Cost
+
+- Evidence: `diagnostic_only`; bounded synthetic parity/cost evidence against
+  `3c6a4453`, not full-cohort acceptance. The retained receipt is
+  `output/issue422-bounded-worksets-20260921/grouping-final-validation-receipt.md`,
+  with exact baseline/candidate source hashes and command/log locators.
+- Same-mass RT-wide populations retain identical membership at 100 and 1,000
+  owners. Recorded baseline/current times are `0.1337 / 0.0062 s` and
+  `13.4429 / 0.4235 s`; the candidate omits 9,900 and 999,000 impossible RT
+  candidates. These are single paired mechanism measurements, not a general
+  speedup estimate. Omitted sparse decisions mean not evaluated.
+- Raw fallback, available corrected RT, unavailable correction, drift and
+  competing-track fixtures retain their scientific outcomes. Scalar assignment
+  handles 1xN and Nx1 components without a dense matrix or general solver.
+  Exact ties may use a different stable diagnostic representative than SciPy;
+  ambiguity still prevents membership. Exhaustive 2x2/2x3/3x2 comparisons have
+  no exact mismatches. The focused feature suite passes 22 cases.
+- Unchanged index extrema no longer trigger removal/reinsertion. Inference
+  counters and largest competition sizes flow into existing runtime timing.
+  Writer projection drops a redundant global cell-key set, and cell/integration
+  TSV formatting is incremental. Production (67), finalized-matrix/TSV (67),
+  timing (32), and streaming (3) test cases pass; changed-source mypy, Ruff and
+  architecture census pass. These checks do not establish real-cohort cost.
+- Reuse existing Discovery85, verified ISTD coordinates and compatible
+  acquisition cache. Current real-workset and cohort completion must be
+  established separately; historical failed process5/process6 attempts do not
+  supply final Matrix or current-version acceptance.
+
 ### 2026-09-21 One Production Grouping Before Recovery
 
 - Evidence: `diagnostic_only`; synthetic production-interface checks. Formal
