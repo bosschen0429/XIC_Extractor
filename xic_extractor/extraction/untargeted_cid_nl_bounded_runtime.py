@@ -120,9 +120,11 @@ class CidNlPartitionPipelineAdapter:
         raw_worker_backend: str = "thread",
         acquisition_workers: int = 1,
         acquisition_cache_dir: Path | None = None,
+        retain_partition_spool: bool = False,
     ) -> None:
         if type(acquisition_workers) is not int or acquisition_workers not in (1, 2):
             raise ValueError("acquisition_workers must be 1 or 2")
+        self._retain_partition_spool = bool(retain_partition_spool)
         self._plan = plan
         self._alignment_config = alignment_config
         self._known_istd_reference = (
@@ -651,8 +653,23 @@ class CidNlPartitionPipelineAdapter:
             initial_groups=store.sequence("initial_groups"),
             initial_edges=store.sequence("initial_edges"),
             capture_evidence=store.sequence("capture_evidence"),
-            cleanup_action=store.cleanup,
+            cleanup_action=self._release_store(store),
         )
+
+    def _release_store(self, store: StreamedResultStore) -> Callable[[], None]:
+        """Decide what closing the workflow result does to the spool.
+
+        Retaining publishes the record index and keeps the partition files, so
+        a later reader can restore one record instead of receiving a copy of
+        every record. The default still deletes the spool.
+        """
+        if not self._retain_partition_spool:
+            return store.cleanup
+
+        def retain() -> None:
+            store.preserve_results()
+
+        return retain
 
 
 def execute_bounded_untargeted_cid_nl(
@@ -669,6 +686,7 @@ def execute_bounded_untargeted_cid_nl(
     raw_worker_backend: str = "thread",
     should_cancel: Callable[[], bool] | None = None,
     retain_partition_memory: bool = False,
+    retain_partition_spool: bool = False,
     pipeline_overlap: bool = False,
 ) -> CompletedUntargetBatchWorkflowResult:
     """Spill complete subject results, then close the exact global population.
@@ -696,6 +714,7 @@ def execute_bounded_untargeted_cid_nl(
         raw_worker_backend=raw_worker_backend,
         acquisition_workers=requested_acquisition_workers,
         acquisition_cache_dir=Path(output_dir) / ".cid_nl_acquisition_cache",
+        retain_partition_spool=retain_partition_spool,
     )
     try:
         return PartitionPipelineScheduler.execute(

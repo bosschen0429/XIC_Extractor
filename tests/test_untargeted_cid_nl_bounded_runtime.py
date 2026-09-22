@@ -1992,3 +1992,85 @@ def test_process_backend_reuses_one_shared_pool_and_closes_once(
 
     with pytest.raises(RuntimeError, match="already closed"):
         adapter.execute_acquisition(adapter.partitions[0])
+
+
+def _spool_dirs(output_dir):
+    return sorted(output_dir.glob(".partition_spool-*"))
+
+
+def _run_for_spool(tmp_path, monkeypatch, *, retain):
+    from xic_extractor.extraction.untargeted_cid_nl_bounded_runtime import (
+        execute_bounded_untargeted_cid_nl,
+    )
+
+    plan, reference = _plan(tmp_path, monkeypatch)
+    output_dir = tmp_path / ("retained" if retain else "released")
+    result = execute_bounded_untargeted_cid_nl(
+        plan,
+        output_dir=output_dir,
+        alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+        recovery_marker=OwnerPathRuntimeMarker(
+            tmp_path / f"spool-{retain}.json", "spool"
+        ),
+        known_istd_reference=reference,
+        max_partition_jobs=len(plan.context.samples),
+        retain_partition_spool=retain,
+    )
+    spools = _spool_dirs(output_dir)
+    assert len(spools) == 1
+    child_ids = tuple(
+        tuple(
+            observation.cell_observation_id
+            for observation in child.scientific_core.cell_observations
+        )
+        for child in result.application_result.children
+    )
+    result.close()
+    return spools[0], child_ids
+
+
+def test_released_spool_is_deleted_when_the_workflow_result_closes(
+    tmp_path, monkeypatch
+):
+    """The default still owns the spool and removes it; nothing is left behind."""
+    spool, _ = _run_for_spool(tmp_path, monkeypatch, retain=False)
+    assert not spool.exists()
+
+
+def test_retained_spool_keeps_its_partitions_and_publishes_a_readable_index(
+    tmp_path, monkeypatch
+):
+    """Retention leaves an index a separate reader can restore records from."""
+    from xic_extractor.execution_engine.streamed_result_store import (
+        PRESERVED_INDEX_NAME,
+        open_preserved_results,
+    )
+
+    spool, child_ids = _run_for_spool(tmp_path, monkeypatch, retain=True)
+    assert spool.is_dir()
+    index = spool / PRESERVED_INDEX_NAME
+    assert index.is_file()
+    assert sorted(path.name for path in spool.glob("*.pickle")) != [
+        PRESERVED_INDEX_NAME
+    ], "retention must keep the partition files, not only the index"
+
+    restored = open_preserved_results(index)
+    recovered = tuple(
+        tuple(
+            observation.cell_observation_id
+            for observation in child.scientific_core.cell_observations
+        )
+        for child in restored.sequence("children")
+    )
+    assert recovered == child_ids
+
+    # The point of the index: one record, addressed by position, off disk.
+    first = restored.read_selected(0, "children", (0,))[0]
+    assert (
+        tuple(
+            observation.cell_observation_id
+            for observation in first.scientific_core.cell_observations
+        )
+        == child_ids[0]
+    )
