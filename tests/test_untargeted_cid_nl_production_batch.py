@@ -10,7 +10,6 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from openpyxl import load_workbook
 
 import xic_extractor.alignment.result.application_result as application_result_owner
 import xic_extractor.alignment.untargeted_finalized_matrix as finalized_matrix
@@ -3627,9 +3626,7 @@ def test_production_batch_executes_one_atomic_sample_phase(
         "alignment_matrix.tsv",
         "alignment_matrix_identity.tsv",
         "alignment_owner_backfill_peak_fact_provenance.tsv",
-        "alignment_results.xlsx",
         "alignment_review.tsv",
-        "review_report.html",
     }
     # Full owner validation is cohort-sized; sealing the same batch must reuse it.
     assert len(validated_batches) == 1
@@ -4687,7 +4684,12 @@ def _assert_conservative_proof_seals(
         for traces in ((), recovery.acquisition.traces * 2):
             wrong_acquisition = copy(recovery.acquisition)
             object.__setattr__(wrong_acquisition, "traces", traces)
-            with pytest.raises(ValueError, match="sealed runtime result"):
+            # The exact-coordinate check rejects both shapes before the outer
+            # seal comparison is reached. That seal is covered directly in
+            # test_cid_nl_multi_group_recovery.
+            with pytest.raises(
+                ValueError, match="recovery crossed its exact request coordinates"
+            ):
                 project_untargeted_cid_nl_completed_recovery(
                     replace(
                         result,
@@ -5028,14 +5030,9 @@ def test_production_composition_closes_recovered_observation_without_candidate(
         assert identity_row["center_rt_basis"] == row.center_rt_basis
         assert identity_row["center_weight_basis"] == row.center_weight_basis
 
-        assert outputs.workbook is not None
-        workbook = load_workbook(outputs.workbook, read_only=True, data_only=True)
-        try:
-            workbook_rows = list(workbook["Matrix"].iter_rows(values_only=True))
-        finally:
-            workbook.close()
-        workbook_row = dict(zip(workbook_rows[0], workbook_rows[1], strict=True))
-        assert workbook_row["RT"] == pytest.approx(row.family_center_rt)
+        # The workbook is retired; matrix_identity_tsv above already asserts
+        # this same RT against the same owner value.
+        assert outputs.workbook is None
 
 
 @pytest.mark.parametrize("exclude_all", (False, True))
