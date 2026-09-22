@@ -661,10 +661,13 @@ _write_outputs_atomic = write_outputs_atomic
 _RETIRED_ALIGNMENT_ARTIFACT_NAMES = (
     "alignment_results.xlsx",
     "review_report.html",
+    "event_to_ms1_owner.tsv",
+    "ambiguous_ms1_owners.tsv",
 )
 
 _CONDITIONAL_ALIGNMENT_ARTIFACT_NAMES = (
     "cid_nl_explanation.sqlite",
+    "alignment_matrix_status.tsv",
     "alignment_cell_integration_audit.tsv",
     "alignment_owner_backfill_seed_audit.tsv",
     "alignment_owner_backfill_candidate_audit.tsv",
