@@ -66,6 +66,69 @@ dated productization control-plane path is compatibility lookup only.
 
 ## Known Diagnostic Conclusions
 
+### 2026-09-22 Wall Noise Band And Three Falsified Evidence-Cost Claims
+
+- Eight four-partition cache-only runs at `005fd18f` produce byte-identical
+  deterministic output: 150 children, 82,336,732 request bytes and 103,023,549
+  response bytes in every run. Wall ranges from 49.519 to 70.461 seconds. Three
+  back-to-back uninstrumented `shared_pool_no_overlap_7f.py` runs alone give
+  70.232, 50.848 and 49.519 seconds, a 20.713-second spread (42% of the
+  minimum) with no source, input or configuration change. Treat any single-run
+  wall comparison on this runner as uninformative; compare repeated runs or
+  deterministic counters only. Earlier single-run wall differences in this
+  ledger, such as 70.302 against 67.052 against 55.537 seconds, fall inside this
+  band and must not be attributed to their code or configuration deltas. Reuse
+  `baseline-1`, `baseline-2` and `baseline-3` under
+  `output/issue423-evidence-duplication-20260922/`.
+- Repeated evidence requests are not the cost. The 11,420 cache reads resolve to
+  11,260 unique source-bound keys: 159 repeats inside one task and 1 across
+  tasks. Reusing every exact-key repeat would save 23,802,912 of 711,432,392
+  payload bytes (3.3%). All 6,934 XIC reads are unique. MS2 windows hold
+  686,358,946 of those payload bytes across 4,486 parses over 4,326 unique
+  windows, and each parse returns a mean 3.47 requested scans; unique
+  (sample, scan) decodes are 11,956 of 15,567. A longer-lived sample evidence
+  session, a sample-affinity scheduler and cross-task evidence caching are not
+  justified by this data. Reuse `run-1/evidence-duplication-summary.json`.
+- Worker parallelism is not the gap. The 680 tasks total 71.70 worker-seconds
+  (initial mean 0.168s, recovery mean 0.043s), but workers are active for only
+  11.60 seconds of a 57.60-second run; while active, mean concurrency is 6.18 of
+  8. Worker-side optimisation is therefore bounded by roughly 20-24% of wall.
+  Parent-side `owner_pickle_dumps`/`owner_pickle_loads` for all 680 tasks cost
+  1.17 and 3.57 seconds, and each worker bootstrap is 50,528,292 bytes decoded
+  in 0.45-0.67 seconds in parallel. Neither is the bottleneck.
+- `pipeline_overlap` shows no measurable wall effect at fixed source. Overlap
+  cuts idle gaps from 29.07 to 14.12 seconds and finishes all worker work 9.8
+  seconds earlier, but the freed time moves into the tail (12.74 to 21.61
+  seconds) because the four compositions stay a strict serial chain in the
+  parent. The 57.60 against 56.63 second pair is inside the noise band above.
+- Identity minting is not a duplication problem. Parent-side `_typed_digest` is
+  115,992 calls over 86,519 unique results in 1.560 seconds;
+  `_build_artifact_content_identity` is 53,054 calls over 42,024 unique results
+  in 0.708 seconds across 173,058,870 bytes; `_canonical_basis_digest` is 1,144
+  calls over 230 unique results in 0.385 seconds. Total 2.654 seconds;
+  memoising every repeat recovers at most 0.851 seconds. Reuse
+  `run-5-identity/identity.json`.
+- Closing the eight process workers takes 6.636 and 6.686 seconds in two
+  independent runs, unaffected by the overlap setting. It is the only cleanly
+  isolated named block left in the parent-serial region; the remaining
+  composition cost is distributed across `_build_production_composition_inputs`
+  and streamed store writes, not concentrated in one owner.
+- Method caveats for reuse. A 5ms parent stack sampler reported an effective
+  18.8ms interval, and its proportions overstated CPU-bound hot spots about
+  fourfold: it read identity minting as roughly 19% of the main thread against
+  4.9% measured directly. Use its ordering, never its percentages. A timer
+  placed on `execute_runtime_attempt` measures the whole pipeline, because the
+  scheduler passes the pipeline itself as that call's `worker_batch_provider`.
+  The sampler run's 70.461-second wall was initially read as sampler overhead;
+  `baseline-1` reached 70.232 seconds with no sampler, so that attribution does
+  not hold either.
+- Evidence is `diagnostic_only`. No product code was modified to measure any of
+  this; the probes are `evidence_duplication_423.py`, `evidence_timeline_423.py`,
+  `evidence_timeline_423_overlap.py`, `evidence_tail_423.py` and
+  `evidence_identity_423.py` under
+  `output/issue422-bounded-worksets-20260921/fusion-ab/`, each a copy of the
+  retained runner plus read-only counters.
+
 ### 2026-09-22 Process12 Completes Full85; Explanation Cost Remains
 
 - At `645fd3f2`, process12 completes all 46 partitions in 1,613.343 seconds
