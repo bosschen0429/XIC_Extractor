@@ -212,6 +212,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             "signal_processing_profile": signal_processing_profile,
             "output_level": args.output_level,
             "emit_alignment_cells": args.emit_alignment_cells,
+            "emit_cid_nl_explanation": args.emit_cid_nl_explanation,
             "emit_alignment_status_matrix": args.emit_alignment_status_matrix,
             "emit_alignment_integration_audit": args.emit_alignment_integration_audit,
             "emit_alignment_backfill_seed_audit": (
@@ -530,6 +531,15 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         ),
     )
     parser.add_argument("--emit-alignment-cells", action="store_true")
+    parser.add_argument(
+        "--emit-cid-nl-explanation",
+        action="store_true",
+        help=(
+            "write cid_nl_explanation.sqlite, a per-cell projection of results "
+            "already written elsewhere; the debug and validation levels "
+            "include it already"
+        ),
+    )
     parser.add_argument("--emit-alignment-integration-audit", action="store_true")
     parser.add_argument(
         "--emit-baseline-audit-asls",
