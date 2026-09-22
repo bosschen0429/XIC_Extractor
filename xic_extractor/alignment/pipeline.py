@@ -27,6 +27,7 @@ from xic_extractor.alignment.ms1_index_source import (
     OwnerBuildXicBackend,
 )
 from xic_extractor.alignment.output_levels import (
+    EXPLANATION_ARTIFACT_NAME,
     AlignmentOutputLevel,
     artifact_names_for_output_level,
 )
@@ -58,6 +59,7 @@ from xic_extractor.config import ExtractionConfig
 from xic_extractor.configuration.models import Target
 from xic_extractor.diagnostics.alignment_explanation import EvidenceLocator
 from xic_extractor.diagnostics.alignment_explanation_projection import (
+    PreparedAlignmentExplanation,
     prepare_alignment_explanation,
 )
 from xic_extractor.diagnostics.timing import TimingRecorder
@@ -145,6 +147,7 @@ def run_alignment(
     output_level: AlignmentOutputLevel = "production",
     emit_alignment_cells: bool = False,
     emit_alignment_status_matrix: bool = False,
+    emit_cid_nl_explanation: bool = False,
     emit_alignment_integration_audit: bool = False,
     emit_alignment_backfill_seed_audit: bool = False,
     emit_alignment_backfill_candidate_audit: bool = False,
@@ -287,6 +290,7 @@ def run_alignment(
         alignment_config=alignment_config,
         outputs=outputs,
         output_level=output_level,
+        emit_cid_nl_explanation=emit_cid_nl_explanation,
         owner_build_route_receipt=owner_build_route_receipt,
         timing_recorder=recorder,
         capture_artifact_fingerprints=capture_artifact_fingerprints,
@@ -376,6 +380,7 @@ def _run_untargeted_alignment(
     alignment_config: AlignmentConfig,
     outputs: AlignmentRunOutputs,
     output_level: AlignmentOutputLevel,
+    emit_cid_nl_explanation: bool = False,
     owner_build_route_receipt: OwnerBuildRouteReceipt,
     timing_recorder: TimingRecorder,
     capture_artifact_fingerprints: bool,
@@ -468,34 +473,39 @@ def _run_untargeted_alignment(
         if should_cancel is not None and should_cancel():
             raise InterruptedError("Alignment cancelled before output publication")
         matrix_path = outputs.matrix_tsv
-        if matrix_path is None:
+        write_explanation = emit_cid_nl_explanation or EXPLANATION_ARTIFACT_NAME in (
+            artifact_names_for_output_level(output_level)
+        )
+        if write_explanation and matrix_path is None:
             raise RuntimeError("CID-NL explanation requires the published Matrix")
         output_dir.mkdir(parents=True, exist_ok=True)
-        with timing_recorder.stage("alignment.prepare_explanation"):
-            explanation = output_stack.enter_context(
-                prepare_alignment_explanation(
-                    output_dir / "cid_nl_explanation.sqlite",
-                    completed=completed,
-                    candidates_by_sample=(
-                        candidates_by_sample.feature_view()
-                        if isinstance(candidates_by_sample, DiscoveryInputSource)
-                        else candidates_by_sample
-                    ),
-                    alignment_config=alignment_config,
-                    known_istd_reference_provenance=(
-                        None
-                        if known_istd_reference is None
-                        else known_istd_reference.explanation_provenance
-                    ),
-                    progress_callback=timing_recorder.heartbeat_event,
+        explanation = None
+        if write_explanation:
+            with timing_recorder.stage("alignment.prepare_explanation"):
+                explanation = output_stack.enter_context(
+                    prepare_alignment_explanation(
+                        output_dir / EXPLANATION_ARTIFACT_NAME,
+                        completed=completed,
+                        candidates_by_sample=(
+                            candidates_by_sample.feature_view()
+                            if isinstance(candidates_by_sample, DiscoveryInputSource)
+                            else candidates_by_sample
+                        ),
+                        alignment_config=alignment_config,
+                        known_istd_reference_provenance=(
+                            None
+                            if known_istd_reference is None
+                            else known_istd_reference.explanation_provenance
+                        ),
+                        progress_callback=timing_recorder.heartbeat_event,
+                    )
                 )
-            )
         stream_outputs = supports_streamed_untargeted_outputs(outputs)
         writer_inputs = None
         if not stream_outputs:
             with timing_recorder.stage("alignment.project_outputs"):
                 writer_inputs = project_completed_untarget_batch_writer_inputs(
-                    completed, consume_child=explanation.consume_child
+                    completed, consume_child=_explanation_sink(explanation)
                 )
         if should_cancel is not None and should_cancel():
             raise InterruptedError("Alignment cancelled before output publication")
@@ -546,7 +556,7 @@ def _run_untargeted_alignment(
                     write_streamed_untargeted_outputs_atomic(
                         outputs,
                         iter_completed_untarget_batch_writer_inputs(
-                            completed, consume_child=explanation.consume_child
+                            completed, consume_child=_explanation_sink(explanation)
                         ),
                         sample_order=completed_untarget_batch_sample_order(completed),
                         metadata=metadata,
@@ -587,10 +597,15 @@ def _run_untargeted_alignment(
             outputs = replace(
                 outputs, artifact_fingerprint_batch=artifact_fingerprint_batch
             )
-        with timing_recorder.stage("alignment.write_cid_nl_explanation"):
-            db_path = explanation.finalize(writer_row_count, matrix_path)
+        db_path: Path | None = None
+        if explanation is not None:
+            assert matrix_path is not None
+            with timing_recorder.stage("alignment.write_cid_nl_explanation"):
+                db_path = explanation.finalize(writer_row_count, matrix_path)
         evidence: EvidenceLocator | None = None
-        if outputs.matrix_tsv is not None and outputs.matrix_tsv.is_file():
+        if db_path is not None and outputs.matrix_tsv is not None and (
+            outputs.matrix_tsv.is_file()
+        ):
             with outputs.matrix_tsv.open("rb") as handle:
                 matrix_sha256 = hashlib.file_digest(handle, "sha256").hexdigest()
 
@@ -612,6 +627,17 @@ def _run_untargeted_alignment(
             untargeted_cid_nl_result=completed,
             evidence=evidence,
         )
+
+
+def _explanation_sink(
+    explanation: PreparedAlignmentExplanation | None,
+) -> Callable[[Any], None] | None:
+    """Consume children only when a report will be written from them.
+
+    Without a report nothing needs the children after they compose, which is
+    what lets the run release them instead of retaining every one.
+    """
+    return None if explanation is None else explanation.consume_child
 
 
 def _run_untargeted_cid_nl_alignment(*args: Any, **kwargs: Any) -> AlignmentRunOutputs:

@@ -177,6 +177,7 @@ def test_pure_cid_nl_wrapper_reports_retained_route_and_typed_handoff(
                 alignment_config=AlignmentConfig(),
                 peak_config=_peak_config(),
                 discovery_settings=_settings(),
+                emit_cid_nl_explanation=True,
                 raw_workers=raw_workers,
             )
         assert not report.exists()
@@ -191,6 +192,7 @@ def test_pure_cid_nl_wrapper_reports_retained_route_and_typed_handoff(
         alignment_config=AlignmentConfig(),
         peak_config=_peak_config(),
         discovery_settings=_settings(),
+        emit_cid_nl_explanation=True,
         owner_build_xic_backend="raw_superwindow",
         raw_workers=raw_workers,
         sample_metadata=retained_sample_metadata,
@@ -464,11 +466,13 @@ def test_pure_cid_nl_projection_failure_publishes_no_owned_outputs(
     assert not (output_dir / "review_report.html").exists()
 
 
+@pytest.mark.parametrize("emit_explanation", (True, False))
 @pytest.mark.parametrize("failure", (None, "projection", "matrix"))
 def test_pipeline_streams_partition_children_once_and_cleans_up(
     tmp_path,
     monkeypatch,
     failure,
+    emit_explanation,
 ):
     import gc
     import sqlite3
@@ -618,25 +622,32 @@ def test_pipeline_streams_partition_children_once_and_cleans_up(
             alignment_config=config,
             peak_config=_peak_config(),
             discovery_settings=_settings(),
+            emit_cid_nl_explanation=emit_explanation,
         )
 
     try:
         if failure is None:
             result = run()
-            assert result.evidence.report_path == report_path
             assert matrix_path.read_bytes() == matrix_bytes
-            assert rows(report_path) == rows(reference)
-            assert read_alignment_explanation(
-                report_path
-            ) == read_alignment_explanation(reference)
-            for values in candidates.values():
-                for candidate in values:
-                    assert read_alignment_explanation(
-                        report_path,
-                        candidate_id=candidate.candidate_id,
-                    ) == read_alignment_explanation(
-                        reference, candidate_id=candidate.candidate_id
-                    )
+            if not emit_explanation:
+                # Nothing consumes the children, so nothing is written for them
+                # and the run still releases every one.
+                assert not report_path.exists()
+                assert result.evidence is None
+            else:
+                assert result.evidence.report_path == report_path
+                assert rows(report_path) == rows(reference)
+                assert read_alignment_explanation(
+                    report_path
+                ) == read_alignment_explanation(reference)
+                for values in candidates.values():
+                    for candidate in values:
+                        assert read_alignment_explanation(
+                            report_path,
+                            candidate_id=candidate.candidate_id,
+                        ) == read_alignment_explanation(
+                            reference, candidate_id=candidate.candidate_id
+                        )
         else:
             with pytest.raises(OSError, match=f"{failure} failed"):
                 run()
