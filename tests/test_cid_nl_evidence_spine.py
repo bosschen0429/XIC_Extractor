@@ -432,7 +432,6 @@ def test_reference_spine_mints_once_and_fans_out_same_cell(
         "xic_extractor.output.csv_writers.write_score_breakdown_csv",
         "xic_extractor.output.workbook_builder.write_workbook_from_rows",
         "xic_extractor.alignment.tsv_writer.write_alignment_matrix_tsv",
-        "xic_extractor.alignment.xlsx_writer.write_alignment_results_xlsx",
         "xic_extractor.alignment.product_matrix.build_product_matrix_rows",
         "xic_extractor.alignment.pipeline_outputs.write_outputs_atomic",
     ):

@@ -265,10 +265,6 @@ def main(argv: Sequence[str] | None = None) -> int:
                 timing_recorder.write_json(timing_path)
                 print(f"Timing JSON: {timing_path}")
 
-    if outputs.workbook is not None:
-        print(f"Alignment workbook: {outputs.workbook}")
-    if outputs.review_html is not None:
-        print(f"Alignment review HTML: {outputs.review_html}")
     if outputs.review_tsv is not None:
         print(f"Alignment review TSV: {outputs.review_tsv}")
     if outputs.matrix_tsv is not None:
@@ -286,10 +282,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
     if outputs.status_matrix_tsv is not None:
         print(f"Alignment status matrix TSV: {outputs.status_matrix_tsv}")
-    if outputs.event_to_owner_tsv is not None:
-        print(f"Event to MS1 owner TSV: {outputs.event_to_owner_tsv}")
-    if outputs.ambiguous_owners_tsv is not None:
-        print(f"Ambiguous MS1 owners TSV: {outputs.ambiguous_owners_tsv}")
     if outputs.edge_evidence_tsv is not None:
         print(f"Owner edge evidence TSV: {outputs.edge_evidence_tsv}")
     if outputs.skipped_evidence_ledger_tsv is not None:

@@ -146,8 +146,6 @@ def test_run_alignment_accepts_asls_baseline_integration_method_override(
         for path in (review, matrix):
             path.write_text("x\n", encoding="utf-8")
         return AlignmentRunOutputs(
-            workbook=None,
-            review_html=None,
             review_tsv=review,
             matrix_tsv=matrix,
             cells_tsv=None,

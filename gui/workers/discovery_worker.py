@@ -47,8 +47,6 @@ _GALLERY_PARK_REASON = (
 )
 
 _ALIGNMENT_OUTPUT_ATTRS = (
-    "workbook",
-    "review_html",
     "review_tsv",
     "matrix_tsv",
     "cells_tsv",

@@ -5030,9 +5030,6 @@ def test_production_composition_closes_recovered_observation_without_candidate(
         assert identity_row["center_rt_basis"] == row.center_rt_basis
         assert identity_row["center_weight_basis"] == row.center_weight_basis
 
-        # The workbook is retired; matrix_identity_tsv above already asserts
-        # this same RT against the same owner value.
-        assert outputs.workbook is None
 
 
 @pytest.mark.parametrize("exclude_all", (False, True))

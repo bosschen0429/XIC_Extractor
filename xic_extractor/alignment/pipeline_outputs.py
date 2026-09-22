@@ -30,13 +30,8 @@ from xic_extractor.alignment.backfill_scope import (
     write_skipped_evidence_ledger_tsv,
 )
 from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.alignment.debug_writer import (
-    write_ambiguous_ms1_owners_tsv,
-    write_event_to_ms1_owner_tsv,
-    write_owner_edge_evidence_tsv,
-)
+from xic_extractor.alignment.debug_writer import write_owner_edge_evidence_tsv
 from xic_extractor.alignment.edge_scoring import OwnerEdgeEvidence
-from xic_extractor.alignment.html_report import write_alignment_review_html
 from xic_extractor.alignment.matrix import AlignmentMatrix
 from xic_extractor.alignment.ms1_index_source import (
     OwnerBackfillXicBackend,
@@ -78,7 +73,6 @@ from xic_extractor.alignment.tsv_writer import (
 from xic_extractor.alignment.untargeted_finalized_matrix import (
     CompletedUntargetBatchWriterInputs,
 )
-from xic_extractor.alignment.xlsx_writer import write_alignment_results_xlsx
 from xic_extractor.config import ExtractionConfig
 from xic_extractor.diagnostics.timing import TimingRecorder
 from xic_extractor.peak_detection.signal_processing_profile import (
@@ -90,8 +84,6 @@ from xic_extractor.processing_identity import fingerprint_file_content
 
 @dataclass(frozen=True)
 class AlignmentRunOutputs:
-    workbook: Path | None = None
-    review_html: Path | None = None
     review_tsv: Path | None = None
     matrix_tsv: Path | None = None
     matrix_identity_tsv: Path | None = None
@@ -102,8 +94,6 @@ class AlignmentRunOutputs:
     backfill_seed_audit_tsv: Path | None = None
     backfill_candidate_audit_tsv: Path | None = None
     status_matrix_tsv: Path | None = None
-    event_to_owner_tsv: Path | None = None
-    ambiguous_owners_tsv: Path | None = None
     edge_evidence_tsv: Path | None = None
     skipped_evidence_ledger_tsv: Path | None = None
     run_metadata_json: Path | None = None
@@ -140,16 +130,6 @@ def output_paths(
     if emit_alignment_status_matrix:
         artifacts.add("alignment_matrix_status.tsv")
     return AlignmentRunOutputs(
-        workbook=(
-            output_dir / "alignment_results.xlsx"
-            if "alignment_results.xlsx" in artifacts
-            else None
-        ),
-        review_html=(
-            output_dir / "review_report.html"
-            if "review_report.html" in artifacts
-            else None
-        ),
         review_tsv=(
             output_dir / "alignment_review.tsv"
             if "alignment_review.tsv" in artifacts
@@ -198,16 +178,6 @@ def output_paths(
         status_matrix_tsv=(
             output_dir / "alignment_matrix_status.tsv"
             if "alignment_matrix_status.tsv" in artifacts
-            else None
-        ),
-        event_to_owner_tsv=(
-            output_dir / "event_to_ms1_owner.tsv"
-            if "event_to_ms1_owner.tsv" in artifacts
-            else None
-        ),
-        ambiguous_owners_tsv=(
-            output_dir / "ambiguous_ms1_owners.tsv"
-            if "ambiguous_ms1_owners.tsv" in artifacts
             else None
         ),
         edge_evidence_tsv=(
@@ -444,30 +414,6 @@ def write_outputs_atomic(
             if timing_recorder is not None and timing_recorder.instrument_writers
             else TimingRecorder.disabled("writer")
         )
-    if outputs.workbook is not None:
-        output_paths_and_writers.append(
-            (
-                outputs.workbook,
-                lambda path: write_alignment_results_xlsx(
-                    path,
-                    matrix,
-                    metadata=metadata,
-                    production_decisions=production_decisions,
-                    alignment_config=alignment_config,
-                ),
-            ),
-        )
-    if outputs.review_html is not None:
-        output_paths_and_writers.append(
-            (
-                outputs.review_html,
-                lambda path: write_alignment_review_html(
-                    path,
-                    matrix,
-                    production_decisions=production_decisions,
-                ),
-            ),
-        )
     if outputs.matrix_tsv is not None:
         output_paths_and_writers.append(
             (
@@ -568,23 +514,6 @@ def write_outputs_atomic(
                 lambda path: write_alignment_status_matrix_tsv(path, matrix),
             )
         )
-    if outputs.event_to_owner_tsv is not None:
-        output_paths_and_writers.append(
-            (
-                outputs.event_to_owner_tsv,
-                lambda path: write_event_to_ms1_owner_tsv(path, ownership.assignments),
-            ),
-        )
-    if outputs.ambiguous_owners_tsv is not None:
-        output_paths_and_writers.append(
-            (
-                outputs.ambiguous_owners_tsv,
-                lambda path: write_ambiguous_ms1_owners_tsv(
-                    path,
-                    ownership.ambiguous_records,
-                ),
-            ),
-        )
     if outputs.edge_evidence_tsv is not None:
         output_paths_and_writers.append(
             (
@@ -655,13 +584,9 @@ def supports_streamed_untargeted_outputs(outputs: AlignmentRunOutputs) -> bool:
 
     return outputs.matrix_tsv is not None and not any(
         (
-            outputs.workbook,
-            outputs.review_html,
             outputs.status_matrix_tsv,
             outputs.backfill_seed_audit_tsv,
             outputs.backfill_candidate_audit_tsv,
-            outputs.event_to_owner_tsv,
-            outputs.ambiguous_owners_tsv,
             outputs.edge_evidence_tsv,
             outputs.skipped_evidence_ledger_tsv,
             outputs.provisional_matrix_tsv,

@@ -8,7 +8,6 @@ import pytest
 import xic_extractor.alignment.pipeline_outputs as pipeline_outputs_module
 from tests.alignment_pipeline_helpers import matrix as _matrix
 from xic_extractor.alignment import AlignmentConfig
-from xic_extractor.alignment.html_report import write_alignment_review_html
 from xic_extractor.alignment.pipeline_outputs import output_paths
 from xic_extractor.alignment.production_decisions import (
     ProductionDecisionSet,
@@ -20,7 +19,6 @@ from xic_extractor.alignment.tsv_writer import (
     write_alignment_matrix_tsv,
     write_alignment_review_tsv,
 )
-from xic_extractor.alignment.xlsx_writer import write_alignment_results_xlsx
 
 
 def test_output_transaction_requires_owner_minted_decisions_before_writes(
@@ -94,10 +92,8 @@ def test_matrix_only_output_plan_omits_unselected_provenance(
         ("matrix", "matrix/matrix.tsv"),
         ("identity", "identity/identity.tsv"),
         ("backfill", "backfill/evidence.tsv"),
-        ("xlsx", "xlsx/results.xlsx"),
-        ("html", "html/review.html"),
     ),
-    ids=("review-tsv", "matrix-tsv", "identity-tsv", "backfill-tsv", "xlsx", "html"),
+    ids=("review-tsv", "matrix-tsv", "identity-tsv", "backfill-tsv"),
 )
 def test_activated_renderers_reject_wrong_decision_type_before_writes(
     tmp_path: Path,
@@ -127,18 +123,6 @@ def test_activated_renderers_reject_wrong_decision_type_before_writes(
             production_decisions=wrong_decisions,  # type: ignore[arg-type]
         ),
         "backfill": lambda path: write_alignment_backfill_cell_evidence_tsv(
-            path,
-            matrix,
-            production_decisions=wrong_decisions,  # type: ignore[arg-type]
-        ),
-        "xlsx": lambda path: write_alignment_results_xlsx(
-            path,
-            matrix,
-            metadata={},
-            alignment_config=config,
-            production_decisions=wrong_decisions,  # type: ignore[arg-type]
-        ),
-        "html": lambda path: write_alignment_review_html(
             path,
             matrix,
             production_decisions=wrong_decisions,  # type: ignore[arg-type]
@@ -185,10 +169,6 @@ def test_activated_renderers_use_supplied_owner_values_statuses_and_counts(
     assert review_row["absent_count"] == "2"
     assert review_row["representative_samples"] == ""
 
-    # alignment_results.xlsx and review_report.html are retired; no level
-    # writes them, so there is nothing left here to assert about them.
-    assert outputs.workbook is None
-    assert outputs.review_html is None
 
 
 def test_a_withheld_owner_decision_leaves_the_matrix_cell_empty(
