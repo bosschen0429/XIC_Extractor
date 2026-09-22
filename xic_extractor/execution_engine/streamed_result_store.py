@@ -10,7 +10,7 @@ from collections.abc import Callable, Iterable
 from copy import copy
 from dataclasses import dataclass, fields, is_dataclass
 from pathlib import Path
-from typing import Any, BinaryIO
+from typing import Any, BinaryIO, Protocol
 
 from xic_extractor.execution_engine.owner_pickle import (
     _OwnerPickler,
@@ -49,6 +49,32 @@ class PartitionReservation:
     index: int
     key: str
     path: Path
+
+
+class PartitionChildSink(Protocol):
+    """What composing a partition needs from a store: one atomic append.
+
+    Composition does not read, index, or publish; narrowing the dependency to
+    this call is what lets a worker compose into a reserved slot.
+    """
+
+    def append_children(
+        self,
+        partition_key: str,
+        metadata_payload: object,
+        children: Iterable[object],
+        before_publish: Callable[[], None] | None = None,
+        retain_memory: bool = False,
+    ) -> SealedPartition: ...
+
+
+def _require_streaming_payload(metadata_payload: object) -> None:
+    if not is_dataclass(metadata_payload) or isinstance(metadata_payload, type):
+        raise TypeError("partition payload requires a dataclass result")
+    if not hasattr(metadata_payload, "children"):
+        raise TypeError("streaming partition payload requires children")
+    if getattr(metadata_payload, "children") != ():
+        raise ValueError("streaming metadata payload must have empty children")
 
 
 def write_partition_payload(
@@ -158,6 +184,64 @@ def write_partition_payload(
     return digest, size_bytes, lengths, records, cached_fields
 
 
+class ReservedPartitionWriter:
+    """Publish one reserved partition from outside the store's process.
+
+    It accepts the composition owner's `append_children` calls, writes the
+    reserved path with the same writer the store uses, and keeps the record
+    table the store needs to adopt those bytes. It grants no index, path, or
+    identity authority: the store derives those when it adopts.
+    """
+
+    def __init__(
+        self,
+        reservation: PartitionReservation,
+        shared_objects: tuple[object, ...],
+        *,
+        individually_addressable_fields: frozenset[str] = frozenset(
+            {"children", "excluded_candidates"}
+        ),
+    ) -> None:
+        self._reservation = reservation
+        self._shared_objects = shared_objects
+        self._individually_addressable_fields = frozenset(
+            individually_addressable_fields
+        )
+        self.lengths: dict[str, int] = {}
+        self.records: dict[str, tuple[tuple[int, int], ...]] = {}
+        self._written = False
+
+    def append_children(
+        self,
+        partition_key: str,
+        metadata_payload: object,
+        children: Iterable[object],
+        before_publish: Callable[[], None] | None = None,
+        retain_memory: bool = False,
+    ) -> SealedPartition:
+        if partition_key != self._reservation.key:
+            raise ValueError("partition key does not match its reservation")
+        if self._written:
+            raise ValueError("reserved partition is already written")
+        _require_streaming_payload(metadata_payload)
+        digest, size_bytes, lengths, records, _ = write_partition_payload(
+            self._reservation.path,
+            metadata_payload,
+            shared_objects=self._shared_objects,
+            children=children,
+            individually_addressable_fields=self._individually_addressable_fields,
+            before_publish=before_publish,
+            # Retaining children here would strand them in the writing process.
+            retain_memory=False,
+        )
+        self.lengths = lengths
+        self.records = records
+        self._written = True
+        return SealedPartition(
+            self._reservation.index, partition_key, digest, size_bytes
+        )
+
+
 class StreamedResultStore:
     """Spool private payloads while retaining only explicit shared authorities.
 
@@ -191,6 +275,12 @@ class StreamedResultStore:
         self._reservations: dict[int, PartitionReservation] = {}
         self._sealed = False
 
+    @property
+    def individually_addressable_fields(self) -> frozenset[str]:
+        """Fields a reserved writer must chunk the same way this store does."""
+
+        return self._individually_addressable_fields
+
     def _path(self, index: int) -> Path:
         return self._directory / f"{index:08d}.pickle"
 
@@ -213,12 +303,7 @@ class StreamedResultStore:
     ) -> SealedPartition:
         """Atomically append children while composing them one at a time."""
 
-        if not is_dataclass(metadata_payload) or isinstance(metadata_payload, type):
-            raise TypeError("partition payload requires a dataclass result")
-        if not hasattr(metadata_payload, "children"):
-            raise TypeError("streaming partition payload requires children")
-        if getattr(metadata_payload, "children") != ():
-            raise ValueError("streaming metadata payload must have empty children")
+        _require_streaming_payload(metadata_payload)
         return self._append_payload(
             partition_key,
             metadata_payload,

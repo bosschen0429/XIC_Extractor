@@ -87,7 +87,7 @@ from xic_extractor.extraction.untargeted_cid_nl_real_data_inputs import (
     build_untargeted_cid_nl_real_data_context,
 )
 from xic_extractor.extraction.untargeted_cid_nl_result_store import (
-    PartitionResultStore,
+    PartitionChildSink,
     SealedPartition,
 )
 from xic_extractor.extraction.untargeted_real_data_models import (
@@ -967,7 +967,7 @@ def compose_and_persist_untargeted_cid_nl_partition(
     batch: UntargetedCidNlProductionBatch,
     sample_results: tuple[UntargetedCidNlRuntimeSampleResult, ...],
     *,
-    store: PartitionResultStore,
+    store: PartitionChildSink,
     partition_key: str,
     alignment_config: AlignmentConfig,
     known_istd_reference: KnownIstdReference | None = None,
