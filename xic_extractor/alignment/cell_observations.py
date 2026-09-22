@@ -55,6 +55,7 @@ from xic_extractor.evidence_artifacts import (
 )
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessmentRef,
+    is_ms1_only_cid_nl_backfill_assessment,
 )
 from xic_extractor.peak_detection.hypotheses import PeakHypothesis
 from xic_extractor.peak_detection.integration_result import IntegrationResult
@@ -94,6 +95,7 @@ _ARTIFACT_SEMANTIC_CONTRACT = _mint_artifact_semantic_contract_ref(
 FinalCellEvidenceState: TypeAlias = Literal[
     "direct_observation",
     "repaired_observation",
+    "ms1_only_backfill_observation",
     "unresolved",
     "rejected_observation",
     "searched_no_observation",
@@ -213,7 +215,19 @@ class FinalGroupCellObservation:
             for observation in self.repaired_observations
             if observation.facts is not None
         )
-        return direct + repaired
+        ms1_only = tuple(
+            observation.content.integration
+            for observation in self.ms1_only_backfill_observations
+        )
+        return direct + repaired + ms1_only
+
+    @property
+    def ms1_only_backfill_observations(self) -> tuple[PeakObservationRef, ...]:
+        """The single MS1 peak a group-bounded Backfill found without CID-NL."""
+
+        if self.evidence_state != "ms1_only_backfill_observation":
+            return ()
+        return self.direct_observations
 
     @property
     def provider_ids(self) -> tuple[str, ...]:
@@ -1113,6 +1127,11 @@ def _derive_lane_evidence_state(
         raise CellObservationContractError(
             "unresolved source evidence is outside the exact candidate universe"
         )
+    if (
+        source_cell.peak_observation is not None
+        and is_ms1_only_cid_nl_backfill_assessment(assessment)
+    ):
+        return "ms1_only_backfill_observation"
     return "unresolved"
 
 

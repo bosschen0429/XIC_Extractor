@@ -488,6 +488,13 @@ def _decide_group(
         raise CellDecisionContractError(
             "Group nonmember cannot use observation evidence"
         )
+    if "ms1_only_backfill_observation" in states:
+        # A nonmember value never counts as a detection. Any competing lane
+        # leaves the single MS1 peak as unresolved.
+        integrations = observation.integrations
+        if state == "ms1_only_backfill_observation" and len(integrations) == 1:
+            return _payload_from_integration(integrations[0])
+        return NoWriteCellDecision("unresolved")
     if state == "mixed":
         raise CellDecisionContractError(
             "Group closure contains unsupported mixed terminal states"

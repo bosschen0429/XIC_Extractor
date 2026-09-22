@@ -428,7 +428,13 @@ def _aligned_cell(
         group_delivery_role=row.group_delivery_role,
         group_membership_source=row.group_membership_source,
         gap_fill_state=("accepted" if status == "rescued" else "not_applicable"),
-        gap_fill_reason=(owner_decision.source if status == "rescued" else ""),
+        gap_fill_reason=(
+            ""
+            if status != "rescued"
+            else "ms1_only_backfill_observation"
+            if evidence.ms1_only_backfill_observations
+            else owner_decision.source
+        ),
         missing_observation_state=(
             owner_decision.variant if owner_decision.value is None else ""
         ),
@@ -455,7 +461,7 @@ def _selected_cell_source(
     *,
     direct_candidate_ids: Mapping[tuple[str, str], str],
 ) -> tuple[str | None, OwnerBackfillPeakFactObservation | None]:
-    if decision.value is None:
+    if decision.value is None or evidence.ms1_only_backfill_observations:
         return None, None
     direct = tuple(evidence.direct_observations)
     repaired = tuple(
@@ -535,6 +541,8 @@ def _cell_status(
     evidence: FinalGroupCellObservation,
 ) -> CellStatus:
     if decision.value is not None:
+        if evidence.ms1_only_backfill_observations:
+            return "rescued"
         return "detected" if evidence.direct_observations else "rescued"
     if decision.variant == "not_searched":
         return "unchecked"

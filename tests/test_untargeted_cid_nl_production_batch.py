@@ -4888,7 +4888,13 @@ def test_production_composition_closes_recovered_observation_without_candidate(
                         assert decision.subject.canonical_sample.metadata.raw_stem == (
                             "Hold"
                         )
-                        assert decision.value is None
+                        # The group-bounded MS1 peak fills the Matrix without
+                        # joining the group or its presentation facts.
+                        assert decision.evidence.evidence_states == (
+                            "ms1_only_backfill_observation",
+                        )
+                        assert decision.subject.member_subject is None
+                        assert decision.value is not None
                         diagnostic_observation_ids.add(physical_id)
                         continue
                     expected_presentation_facts[physical_id] = (
