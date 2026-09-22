@@ -16,6 +16,7 @@ from xic_extractor.alignment.pipeline_outputs import (
     AlignmentRunOutputs as _AlignmentRunOutputs,
 )
 from xic_extractor.config import ExtractionConfig
+from xic_extractor.execution_settings import DEFAULT_ALIGNMENT_WORKERS
 from xic_extractor.sample_metadata import SampleMetadata
 
 
@@ -340,7 +341,7 @@ def test_gui_alignment_modes_apply_product_ready_preset_alignment_runtime(
     assert peak_config.nl_min_intensity_ratio == 0.02
     assert peak_config.resolver_mode == "legacy_savgol"
     assert captured_alignment["alignment_config"] == AlignmentConfig()
-    assert captured_alignment["raw_workers"] == 1
+    assert captured_alignment["raw_workers"] == DEFAULT_ALIGNMENT_WORKERS
     assert captured_alignment["owner_build_xic_backend"] == "raw_superwindow"
     assert captured_alignment["output_level"] == "production"
     assert captured_alignment["emit_alignment_cells"] is False

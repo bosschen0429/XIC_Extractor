@@ -10,7 +10,6 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from openpyxl import load_workbook
 
 import xic_extractor.alignment.result.application_result as application_result_owner
 import xic_extractor.alignment.untargeted_finalized_matrix as finalized_matrix
@@ -220,6 +219,13 @@ def _assert_jobs_match_direct_construction(batch) -> None:
     )
 
     context = batch.context
+    memberships = dict(batch.subject_batch.candidate_memberships)
+    candidate_keys = {
+        (sample.identity.sample_identity_id, memberships[candidate.candidate_id])
+        for sample in context.samples
+        for candidate in context.candidates_by_sample[sample.metadata.raw_stem]
+        if candidate.candidate_id in memberships
+    }
     expected = tuple(
         UntargetedCidNlRealDataRuntimeJob(
             processing_owners=context.processing_owners,
@@ -238,6 +244,12 @@ def _assert_jobs_match_direct_construction(batch) -> None:
                 f"{sample.metadata.raw_stem}:{subject.method_subject_id}"
             ),
             signal_processing_profile=context.signal_processing_profile,
+            subject_partition=batch.jobs[0].subject_partition,
+            acquisition_source_expectation=(
+                context.acquisition_sources_by_sample.get(sample.metadata.raw_stem)
+                if batch.jobs[0].subject_partition is not None
+                else None
+            ),
             physical_records=tuple(
                 record
                 for _candidate_id, record in sorted(
@@ -245,9 +257,13 @@ def _assert_jobs_match_direct_construction(batch) -> None:
                 )
                 if record.work_item.sample_stem == sample.metadata.raw_stem
             ),
+            acquisition_cache_dir=batch.jobs[0].acquisition_cache_dir,
         )
         for sample in context.samples
         for subject in batch.subject_batch.subjects
+        if not batch.sample_job_templates
+        or (sample.identity.sample_identity_id, subject.method_subject_id)
+        in candidate_keys
     )
     assert batch.jobs == expected
     assert tuple(job._request_subjects for job in batch.jobs) == tuple(
@@ -296,7 +312,7 @@ def _assert_outside_group_cells(scientific, batch, tmp_path: Path) -> None:
         expected = (
             json.dumps(
                 {
-                    "schema_version": "cell_observation",
+                    "schema_version": "cell_observation_v2",
                     "validation_status": cell_owner.VALIDATION_STATUS,
                     "content": current_content,
                 },
@@ -311,7 +327,7 @@ def _assert_outside_group_cells(scientific, batch, tmp_path: Path) -> None:
             cell_owner.canonical_cell_observation_bytes(source.content)
             == expected.encode()
         )
-        assert source.artifact.semantic_contract.schema_version == "cell_observation"
+        assert source.artifact.semantic_contract.schema_version == "cell_observation_v2"
     outside = outside_cells[0]
     relation = outside.content.outside_group
     assert relation is not None
@@ -340,11 +356,11 @@ def _assert_outside_group_cells(scientific, batch, tmp_path: Path) -> None:
         payload = json.loads(
             cell_owner.canonical_cell_observation_bytes(source.content)
         )
-        assert payload["schema_version"] == "cell_observation"
+        assert payload["schema_version"] == "cell_observation_v2"
         assert payload["content"]["outside_group"] == asdict(
             source.content.outside_group
         )
-        assert source.artifact.semantic_contract.schema_version == "cell_observation"
+        assert source.artifact.semantic_contract.schema_version == "cell_observation_v2"
         assert source.peak_observation is None and source.peak_hypothesis is None
         assert source.content.method_result == "SUPPORT"
         assert (
@@ -497,9 +513,20 @@ def _assert_single_unsupported_exclusion(
                 discovery_candidate_state="review_only_orphan_nl",
                 method_assessments=(unsearched,),
             )
-    for proof in ((own_assessment,), (own_assessment, own_assessment)):
+    # A sample with no Discovery input for this subject needs no placeholder
+    # assessment. Sparse execution retains all input-bearing evidence only.
+    sparse_proof = tuple(
+        assessment
+        for assessment in retained
+        if not is_unsearched_cid_nl_discovery_assessment(assessment)
+    )
+    validate(replace(first, method_assessments=sparse_proof))
+    incomplete_proofs = [(own_assessment, own_assessment)]
+    if len(sparse_proof) > 1:
+        incomplete_proofs.append((own_assessment,))
+    for proof in incomplete_proofs:
         with pytest.raises(
-            ApplicationResultContractError, match="complete sample coverage"
+            ApplicationResultContractError, match="input sample coverage"
         ):
             validate(replace(first, method_assessments=proof))
     for substitution in (
@@ -923,6 +950,7 @@ print(json.dumps({'curves': curves, 'links': links}))
         ),
     ),
 )
+@pytest.mark.parametrize("indexed_input", (False, True), ids=("eager", "indexed"))
 def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     tmp_path: Path,
     monkeypatch,
@@ -931,6 +959,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     nearby,
     family_context,
     family_precursor_delta,
+    indexed_input,
 ) -> None:
     from xic_extractor.alignment.csv_io import read_owner_bound_discovery_candidates_csv
     from xic_extractor.discovery.grouping import group_discovery_seeds
@@ -1087,6 +1116,26 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         folder = tmp_path / path.stem
         folder.mkdir()
         persisted_candidates = discovery.candidates
+        if indexed_input:
+            from xic_extractor.discovery.models import build_discovery_candidate_id
+
+            # Audit-only observations deliberately precede the real feature in
+            # m/z. They must not choose its query center or demand a curve load.
+            audit = replace(
+                persisted_candidates[0],
+                candidate_id=build_discovery_candidate_id(
+                    sample_stem=path.stem,
+                    best_ms2_scan_id=persisted_candidates[0].best_ms2_scan_id,
+                    precursor_mz=persisted_candidates[0].precursor_mz - 0.001,
+                    product_mz=persisted_candidates[0].product_mz,
+                ),
+                precursor_mz=persisted_candidates[0].precursor_mz - 0.001,
+                precursor_mz_basis="product_plus_neutral_loss",
+                ms1_peak_found=False,
+                ms1_feature_row_id="",
+                discovery_candidate_state="review_only_orphan_nl",
+            )
+            persisted_candidates = (*persisted_candidates, audit)
         receipts.update(
             _discovery_receipts(folder, (path,), {path.stem: persisted_candidates})
         )
@@ -1098,8 +1147,12 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
             work_manifest=discovery.physical_work_manifest,
             records=discovery.physical_evaluations,
         )
-        candidates[path.stem] = read_owner_bound_discovery_candidates_csv(
-            csvs[path.stem], receipt=receipts[path.stem]
+        candidates[path.stem] = tuple(
+            candidate
+            for candidate in read_owner_bound_discovery_candidates_csv(
+                csvs[path.stem], receipt=receipts[path.stem]
+            )
+            if candidate.ms1_peak_found
         )
         source_records.update(
             (record.candidate_id, record) for record in discovery.physical_evaluations
@@ -1604,9 +1657,13 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     monkeypatch.setattr(
         identity_owner, "fingerprint_file_content", count_preparation_fingerprint
     )
+    from xic_extractor.alignment.discovery_input_source import DiscoveryInputSource
+
     completed = alignment_adapter.complete_untargeted_cid_nl_alignment(
         discovery_batch=discovery_batch,
-        candidates_by_sample=candidates,
+        candidates_by_sample=(
+            DiscoveryInputSource(discovery_batch) if indexed_input else candidates
+        ),
         raw_dir=tmp_path,
         dll_dir=tmp_path,
         output_dir=tmp_path / "alignment",
@@ -1895,22 +1952,17 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
                 and cell.canonical_sample_identity_id == sample_id_by_stem["S3"]
             )
             (joint_cell,) = joint_final_cell.predecessor_cells
-            foreign_same_sample_assessment = next(
-                sample_result.effective_assessment
-                for runtime_result in runtime_results
-                for sample_result in runtime_result.sample_results
-                if sample_result.job.sample.metadata.raw_stem == "S3"
-                and sample_result.job.method_subject
-                != joint_cell.group_context.method_subject
+            assert any(
+                support.assessment is joint_cell.method_assessment
+                and support.sample.identity.sample_identity_id
+                == sample_id_by_stem["S3"]
+                for support in joint_cell.group_context.supports
             )
-            with pytest.raises(
-                ValueError,
-                match="without an exact group SUPPORT binding",
-            ):
-                replace(
-                    joint_cell,
-                    method_assessment=foreign_same_sample_assessment,
-                )
+            assert all(
+                assessment.content.reason_codes
+                != ("no_search_eligible_discovery_input",)
+                for assessment in completed.method_assessments
+            )
             assert len(writer.matrix.clusters) == 3
             assert len(writer.matrix.cells) == 3 * len(sample_stems)
             (matrix_row,) = matrix_rows
@@ -2307,22 +2359,25 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
             build_untargeted_cid_nl_sample_runtime_jobs(
                 **(sample_inputs | changed), subject_work_units=subject_work_units
             )
-    wrong_records = dict(batch.context.physical_records_by_candidate)
-    keys = tuple(wrong_records)
-    wrong_records[keys[0]] = wrong_records[keys[1]]
-    with pytest.raises(IdentityContractError, match="crossed candidate"):
-        alignment_adapter.prepare_untargeted_cid_nl_production_plan(
-            raw_paths=paths,
-            sample_metadata=tuple(sample.metadata for sample in batch.context.samples),
-            settings=settings,
-            peak_config=peak_config,
-            candidates_by_sample=batch.context.candidates_by_sample,
-            discovery_receipts_by_sample=receipts,
-            dll_dir=tmp_path,
-            sample_identity_namespace="test:physical-replay",
-            signal_processing_profile=profile,
-            physical_records_by_candidate=wrong_records,
-        )
+    if not indexed_input:
+        wrong_records = dict(batch.context.physical_records_by_candidate)
+        keys = tuple(wrong_records)
+        wrong_records[keys[0]] = wrong_records[keys[1]]
+        with pytest.raises(IdentityContractError, match="crossed candidate"):
+            alignment_adapter.prepare_untargeted_cid_nl_production_plan(
+                raw_paths=paths,
+                sample_metadata=tuple(
+                    sample.metadata for sample in batch.context.samples
+                ),
+                settings=settings,
+                peak_config=peak_config,
+                candidates_by_sample=batch.context.candidates_by_sample,
+                discovery_receipts_by_sample=receipts,
+                dll_dir=tmp_path,
+                sample_identity_namespace="test:physical-replay",
+                signal_processing_profile=profile,
+                physical_records_by_candidate=wrong_records,
+            )
     close_and_verify_persisted_curves()
 
 
@@ -2758,9 +2813,7 @@ def test_completed_empty_recovery_preserves_each_compatible_source_subject(
     missing_raw = _FakeRaw((7.98,))
     missing_raw.intensity[:] = 0.0
     source_raws[raw_paths[4]] = missing_raw
-    candidates_by_sample = {
-        stem: (selected_candidates[stem],) for stem in stems[:4]
-    }
+    candidates_by_sample = {stem: (selected_candidates[stem],) for stem in stems[:4]}
     candidates_by_sample["Missing"] = ()
     batch = build_untargeted_cid_nl_production_batch(
         raw_paths=raw_paths,
@@ -2785,16 +2838,18 @@ def test_completed_empty_recovery_preserves_each_compatible_source_subject(
         sample_identity_namespace="study:compatible-source-subject",
     )
     assert len(batch.subject_batch.subjects) == 2
-    assert len(
-        {
-            subject.method_subject_id
-            for subject in batch.subject_batch.subjects
-        }
-    ) == 2
+    assert (
+        len({subject.method_subject_id for subject in batch.subject_batch.subjects})
+        == 2
+    )
     _install_runtime_raws(
         monkeypatch,
         sources_by_path=source_raws,
         tmp_path=tmp_path,
+    )
+    alignment_config = AlignmentConfig(
+        anchor_min_seed_events=1,
+        product_mz_tolerance_ppm=30.0,
     )
     runtime = execute_untargeted_cid_nl_production_batch(
         batch,
@@ -2803,13 +2858,9 @@ def test_completed_empty_recovery_preserves_each_compatible_source_subject(
             tmp_path / "compatible-source-subject.runtime.json",
             "compatible-source-subject",
         ),
+        alignment_config=alignment_config,
     )
     assert runtime.succeeded
-
-    alignment_config = AlignmentConfig(
-        anchor_min_seed_events=1,
-        product_mz_tolerance_ppm=30.0,
-    )
     completed = compose_untargeted_cid_nl_production_result(
         batch,
         runtime,
@@ -3077,7 +3128,9 @@ def test_run_spec_expectation_rejects_change_after_fingerprint(
 
 @pytest.mark.parametrize("stems", [("B", "A"), ("a_sample", "B_sample"), ("A", "B")])
 def test_reused_run_spec_source_preserves_plan_request_and_candidates(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, stems: tuple[str, str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    stems: tuple[str, str],
 ) -> None:
     settings = replace(
         _settings(), neutral_loss_profile=None, precursor_mz_tolerance_ppm=1.0
@@ -3094,18 +3147,24 @@ def test_reused_run_spec_source_preserves_plan_request_and_candidates(
         raw_paths=paths,
         sample_metadata=tuple(
             SampleMetadata(
-                sample_name=stem, raw_stem=stem, injection_order=index,
+                sample_name=stem,
+                raw_stem=stem,
+                injection_order=index,
                 sample_role="study_sample",
-            ) for index, stem in enumerate(stems, 1)
+            )
+            for index, stem in enumerate(stems, 1)
         ),
-        settings=settings, peak_config=peak_config,
+        settings=settings,
+        peak_config=peak_config,
         candidates_by_sample=candidates,
         discovery_receipts_by_sample=_discovery_receipts(tmp_path, paths, candidates),
-        dll_dir=tmp_path, sample_identity_namespace="study:source-verification",
+        dll_dir=tmp_path,
+        sample_identity_namespace="study:source-verification",
     )
     baseline = prepare_untargeted_cid_nl_production_plan(**arguments)
     spec, expectations = compile_discovery_processing_run_spec_with_expectations(
-        paths, discovery_settings=settings,
+        paths,
+        discovery_settings=settings,
     )
     fingerprints = []
     fingerprint = identity_owner.fingerprint_file_content
@@ -3117,7 +3176,8 @@ def test_reused_run_spec_source_preserves_plan_request_and_candidates(
     monkeypatch.setattr(identity_owner, "fingerprint_file_content", count_fingerprint)
     monkeypatch.setattr(raw_reader_owner, "fingerprint_file_content", count_fingerprint)
     reused = prepare_untargeted_cid_nl_production_plan(
-        **arguments, acquisition_source_expectations=expectations,
+        **arguments,
+        acquisition_source_expectations=expectations,
     )
     assert fingerprints == []
     for path, expectation, acquisition in zip(
@@ -3566,9 +3626,7 @@ def test_production_batch_executes_one_atomic_sample_phase(
         "alignment_matrix.tsv",
         "alignment_matrix_identity.tsv",
         "alignment_owner_backfill_peak_fact_provenance.tsv",
-        "alignment_results.xlsx",
         "alignment_review.tsv",
-        "review_report.html",
     }
     # Full owner validation is cohort-sized; sealing the same batch must reuse it.
     assert len(validated_batches) == 1
@@ -3815,6 +3873,21 @@ def test_production_composition_closes_observation_only_hold_without_membership(
         (child,) = completed.application_result.children
         assert len(child.scientific_core.final_population) == 1
         assert len(writer_inputs.matrix.clusters) == 1
+        cells = {
+            cell.canonical_sample.metadata.raw_stem: cell
+            for cell in child.scientific_core.cell_observations
+        }
+        assert cells["Support"].integrations
+        assert cells["Hold"].evidence_state == "not_searched"
+        assert cells["Hold"].predecessor_cells == ()
+        assert cells["Hold"].method_assessments == ()
+        assert cells["Hold"].integrations == ()
+        (association,) = cells["Hold"].position_associations
+        assert association.position.planning_reason == "no_discovery_input"
+        assert association.position.primary_logical_requests == ()
+        for decision in writer_inputs.production_decisions.cells.values():
+            assert decision.write_matrix_value is (decision.sample_stem == "Support")
+            assert (decision.matrix_value is None) is (decision.sample_stem == "Hold")
         return
     if scenario == "mixed":
         (child,) = completed.application_result.children
@@ -4026,14 +4099,6 @@ def test_production_initial_groups_use_complete_feature_inference_batch(
         sample_identity_namespace="study:canonical-batch",
     )
     _install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
-    runtime = execute_untargeted_cid_nl_production_batch(
-        batch,
-        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-        recovery_marker=OwnerPathRuntimeMarker(
-            tmp_path / "canonical-batch.runtime.json", "canonical-batch"
-        ),
-    )
-    assert runtime.succeeded
     initial_contexts = []
     initial_edges = []
     cell_contexts = []
@@ -4055,6 +4120,29 @@ def test_production_initial_groups_use_complete_feature_inference_batch(
         return cells
 
     monkeypatch.setattr(production, "compose_cid_nl_predecessor_cells", retain_cells)
+    progress_events = []
+    runtime = execute_untargeted_cid_nl_production_batch(
+        batch,
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+        recovery_marker=OwnerPathRuntimeMarker(
+            tmp_path / "canonical-batch.runtime.json", "canonical-batch"
+        ),
+        alignment_config=AlignmentConfig(),
+        progress_callback=progress_events.append,
+    )
+    assert runtime.succeeded
+    membership_events = [
+        event
+        for event in progress_events
+        if event.get("event") == "feature_membership_inference"
+    ]
+    assert len(membership_events) == 1
+    membership_counts = membership_events[0]["operation_counts"]
+    assert membership_events[0]["subject_count"] == 1
+    assert membership_events[0]["group_count"] == 1
+    assert membership_counts["input_owner_rows"] == supported_samples
+    assert membership_counts["unique_owners"] == supported_samples
+    assert membership_counts["owner_edge_evaluations"] > 0
     compose_untargeted_cid_nl_production_result(
         batch, runtime, alignment_config=AlignmentConfig()
     )
@@ -4147,12 +4235,15 @@ def test_known_istd_reference_closes_drifting_group_and_cell_proof(
         sample_identity_namespace="study:known-istd",
     )
     _install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
-    runtime = execute_untargeted_cid_nl_production_batch(
+    runtime_plain = execute_untargeted_cid_nl_production_batch(
         batch,
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-        recovery_marker=OwnerPathRuntimeMarker(tmp_path / "runtime.json", "reference"),
+        recovery_marker=OwnerPathRuntimeMarker(
+            tmp_path / "runtime-plain.json", "plain"
+        ),
+        alignment_config=AlignmentConfig(),
     )
-    assert runtime.succeeded
+    assert runtime_plain.succeeded
     workbook = Workbook()
     targets = workbook.active
     targets.title = "Targets"
@@ -4170,9 +4261,7 @@ def test_known_istd_reference_closes_drifting_group_and_cell_proof(
             "ISTD Pair",
         ]
     )
-    targets.append(
-        ["known", "ISTD", 500.015, 7, 10, 40, 116.0474, 20, 50, ""]
-    )
+    targets.append(["known", "ISTD", 500.015, 7, 10, 40, 116.0474, 20, 50, ""])
     results = workbook.create_sheet("XIC Results")
     results.append(["SampleName", "Target", "Role", "RT", "Area"])
     for i, path in enumerate(paths):
@@ -4180,25 +4269,34 @@ def test_known_istd_reference_closes_drifting_group_and_cell_proof(
     reference_path = tmp_path / "reference.xlsx"
     workbook.save(reference_path)
     reference = read_known_istd_reference(reference_path)
+    config = AlignmentConfig()
+    runtime = execute_untargeted_cid_nl_production_batch(
+        batch,
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+        recovery_marker=OwnerPathRuntimeMarker(tmp_path / "runtime.json", "reference"),
+        alignment_config=config,
+        known_istd_reference=reference,
+    )
+    assert runtime.succeeded
     assert tuple(
         sorted(subject.neutral_loss_da for subject in batch.subject_batch.subjects)
     ) == (configured_loss, configured_loss)
     plain = compose_untargeted_cid_nl_production_result(
         batch,
-        runtime,
+        runtime_plain,
         alignment_config=AlignmentConfig(),
     )
     corrected = compose_untargeted_cid_nl_production_result(
         batch,
         runtime,
-        alignment_config=AlignmentConfig(),
+        alignment_config=config,
         known_istd_reference=reference,
     )
     _assert_partition_composition_parity(
         batch,
         runtime,
         corrected,
-        alignment_config=AlignmentConfig(),
+        alignment_config=config,
         known_istd_reference=reference,
         subject_worksets=(batch.subject_batch.subjects,),
     )
@@ -4261,12 +4359,14 @@ def _assert_conservative_coverage_handoff(
         if position.sample.metadata.raw_stem == "Hold"
     )
     proof = position.conservative_no_request_proof
-    assert proof is not None
-    assert proof.variant == (
-        "threshold_not_met" if threshold else "completed_recovery_empty"
-    )
-    assert proof.decision.group_facts.direct_support_count_s == (1 if threshold else 3)
-    assert proof.decision.group_facts.minimum_support_k == 2
+    if threshold:
+        assert proof is None
+        assert position.planning_reason == "no_discovery_input"
+    else:
+        assert proof is not None
+        assert proof.variant == "completed_recovery_empty"
+        assert proof.decision.group_facts.direct_support_count_s == 3
+        assert proof.decision.group_facts.minimum_support_k == 2
     assert position.planning_state == "not_planned"
     assert position.primary_logical_requests == ()
     assert coverage.terminals == ()
@@ -4279,21 +4379,21 @@ def _assert_conservative_coverage_handoff(
         ("not_searched",) if threshold else ("unavailable",)
     )
     assert hold_cell.repair_receipts == hold_cell.repaired_observations == ()
-    (source,) = hold_cell.predecessor_cells
-    assert source is proof.decision.target_cell
-    assert source.method_assessment is next(
-        result.effective_assessment
-        for result in runtime_result.sample_results
-        if result.job.sample is position.sample
-    )
-    assert source.content.method_result == (None if threshold else "HOLD")
-    assert source.content.technical_state == (
-        "not_evaluated" if threshold else "evaluated"
-    )
-    assert source.method_assessment.content.evaluation_receipt.search_completed is (
-        not threshold
-    )
-    assert source.peak_observation is source.peak_hypothesis is None
+    if threshold:
+        assert hold_cell.predecessor_cells == ()
+        assert hold_cell.method_assessments == ()
+    else:
+        (source,) = hold_cell.predecessor_cells
+        assert source is proof.decision.target_cell
+        assert source.method_assessment is next(
+            result.effective_assessment
+            for result in runtime_result.sample_results
+            if result.job.sample is position.sample
+        )
+        assert source.content.method_result == "HOLD"
+        assert source.content.technical_state == "evaluated"
+        assert source.method_assessment.content.evaluation_receipt.search_completed
+        assert source.peak_observation is source.peak_hypothesis is None
     authorization = authorize_observation_repair(
         processing_owners=batch.context.processing_owners,
         coverage=coverage,
@@ -4329,9 +4429,10 @@ def _assert_conservative_coverage_handoff(
             float(matrix_rows[0][stem]) > 0
             for stem in ("Support1", "Support2", "Support3")
         )
-    _assert_conservative_proof_seals(
-        proof, position, coverage, handoff, hold_cell, batch, runtime_result
-    )
+    if proof is not None:
+        _assert_conservative_proof_seals(
+            proof, position, coverage, handoff, hold_cell, batch, runtime_result
+        )
 
 
 def _assert_conservative_proof_seals(
@@ -4355,6 +4456,43 @@ def _assert_conservative_proof_seals(
         project_untargeted_cid_nl_completed_recovery,
     )
     from xic_extractor.processing_identity import issue_processing_attempt
+
+    # The group binding is shared across cell proofs; minting again must keep
+    # identical persisted identities without revisiting all source assessments.
+    with pytest.MonkeyPatch.context() as counted:
+        bindings = []
+        validate_binding = owner.validate_cid_nl_method_assessment_binding
+
+        def record_binding(reference, **kwargs):
+            bindings.append(reference)
+            return validate_binding(reference, **kwargs)
+
+        counted.setattr(
+            owner, "validate_cid_nl_method_assessment_binding", record_binding
+        )
+        builder = owner.ConservativeNoRequestProofBuilder(
+            processing_owners=proof.processing_owners,
+            group_identity=proof.group_identity,
+            group_facts=proof.decision.group_facts,
+        )
+        assert len(bindings) == len(proof.decision.group_facts.source_cells)
+        for _ in range(3):
+            rebuilt = builder.mint(
+                sample=proof.sample,
+                decision=proof.decision,
+                completion=proof.completion,
+            )
+            assert rebuilt == proof
+        assert len(bindings) == len(proof.decision.group_facts.source_cells)
+        with pytest.raises(ValueError, match="bound group facts"):
+            owner.mint_owner_backfill_conservative_no_request_proof(
+                processing_owners=proof.processing_owners,
+                group_identity=proof.group_identity,
+                sample=proof.sample,
+                decision=proof.decision,
+                completion=proof.completion,
+                _group_binding=replace(builder, group_facts=copy(builder.group_facts)),
+            )
 
     epoch = coverage.epoch
     epoch_args = {
@@ -4395,7 +4533,7 @@ def _assert_conservative_proof_seals(
         json.loads(
             canonical_cell_observation_bytes(proof.decision.target_cell.content)
         )["schema_version"]
-        == "cell_observation"
+        == "cell_observation_v2"
     )
 
     def canonical(value):
@@ -4546,7 +4684,12 @@ def _assert_conservative_proof_seals(
         for traces in ((), recovery.acquisition.traces * 2):
             wrong_acquisition = copy(recovery.acquisition)
             object.__setattr__(wrong_acquisition, "traces", traces)
-            with pytest.raises(ValueError, match="sealed runtime result"):
+            # The exact-coordinate check rejects both shapes before the outer
+            # seal comparison is reached. That seal is covered directly in
+            # test_cid_nl_multi_group_recovery.
+            with pytest.raises(
+                ValueError, match="recovery crossed its exact request coordinates"
+            ):
                 project_untargeted_cid_nl_completed_recovery(
                     replace(
                         result,
@@ -4887,14 +5030,6 @@ def test_production_composition_closes_recovered_observation_without_candidate(
         assert identity_row["center_rt_basis"] == row.center_rt_basis
         assert identity_row["center_weight_basis"] == row.center_weight_basis
 
-        assert outputs.workbook is not None
-        workbook = load_workbook(outputs.workbook, read_only=True, data_only=True)
-        try:
-            workbook_rows = list(workbook["Matrix"].iter_rows(values_only=True))
-        finally:
-            workbook.close()
-        workbook_row = dict(zip(workbook_rows[0], workbook_rows[1], strict=True))
-        assert workbook_row["RT"] == pytest.approx(row.family_center_rt)
 
 
 @pytest.mark.parametrize("exclude_all", (False, True))

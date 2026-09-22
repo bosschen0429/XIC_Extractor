@@ -8,7 +8,7 @@ from xic_extractor import execution_settings
 from xic_extractor.configuration.models import ExtractionConfig
 
 
-def test_canonical_profile_uses_cpu_budget_and_serial_alignment(
+def test_canonical_profile_uses_cpu_budget_and_parallel_alignment(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(execution_settings.os, "cpu_count", lambda: 12)
@@ -16,7 +16,7 @@ def test_canonical_profile_uses_cpu_budget_and_serial_alignment(
     profile = execution_settings.resolve_execution_profile()
 
     assert profile.parallel_workers == 11
-    assert profile.alignment_workers == 1
+    assert profile.alignment_workers == 4
 
 
 def test_settings_and_explicit_overrides_have_one_precedence_chain() -> None:
@@ -27,7 +27,7 @@ def test_settings_and_explicit_overrides_have_one_precedence_chain() -> None:
         {"parallel_workers": "6"}, parallel_workers=3, alignment_workers=2
     )
 
-    assert from_settings == execution_settings.ExecutionProfile(6, 1)
+    assert from_settings == execution_settings.ExecutionProfile(6, 4)
     assert explicit == execution_settings.ExecutionProfile(3, 2)
 
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import sqlite3
 import tempfile
@@ -197,6 +198,48 @@ def _bound_curve_payload():
         "integration": None,
         "provenance": {"profile_id": None, "trace_content_id": None},
     }
+
+
+def test_automatic_curve_id_uses_legacy_canonical_envelope_and_persists_exact_payload(
+    tmp_path,
+):
+    payload = _bound_curve_payload()
+    canonical = json.dumps(
+        payload,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    ).encode("utf-8")
+    expected_payload_id = "xic.inspector-curve:" + hashlib.sha256(canonical).hexdigest()
+
+    with ExplanationReportWriter(tmp_path / "automatic-id.sqlite") as writer:
+        payload_id = writer.add_curve_payload(
+            payload_id=None,
+            sample_id="S1",
+            kind="initial_capture",
+            record_id="obs-1",
+            payload=payload,
+        )
+        report = writer.finalize({"samples": []})
+
+    assert payload_id == expected_payload_id
+    with sqlite3.connect(report) as connection:
+        row = connection.execute(
+            "SELECT payload_id, sample_id, kind, record_id, codec, payload "
+            "FROM curve_payloads"
+        ).fetchone()
+    assert row[:5] == (
+        expected_payload_id,
+        "S1",
+        "initial_capture",
+        "obs-1",
+        "zlib-json-utf8",
+    )
+    assert zlib.decompress(row[5]) == canonical
+    assert read_cid_nl_curves(report, record_ids=["obs-1"]) == [
+        {**payload, "payload_id": expected_payload_id}
+    ]
 
 
 def test_shared_curve_is_reused_and_conflicting_same_identity_rejected(tmp_path):

@@ -62,6 +62,8 @@ from xic_extractor.extraction.untargeted_cid_nl_real_data_adapter import (
 from xic_extractor.extraction.untargeted_real_data_models import (
     _RUNTIME_COMPATIBILITY_TOKEN,
     RUNTIME_CALL_COST_METRIC_NAMES,
+    UntargetedCidNlInitialSampleResult,
+    UntargetedCidNlPreparedGrouping,
     UntargetedCidNlRealDataRuntimeError,
     UntargetedCidNlRealDataRuntimeJob,
     UntargetedCidNlRuntimePartitionResult,
@@ -91,7 +93,9 @@ from xic_extractor.extraction.untargeted_real_data_worker import (
     _execute_recovery_batch,
     _execute_sample_initial_worker,
     _execute_sample_recovery_worker,
+    _prepare_group_authorized_recoveries,
     _prepare_owner_authorized_recoveries,  # noqa: F401
+    _recovery_support_context,
     _RuntimeJobState,
     _SampleInitialWorkerRequest,
     _SampleInitialWorkerResponse,
@@ -167,16 +171,15 @@ class _RuntimeResultContext:
         return _project_completed_recovery(
             result,
             group_context=group_context,
-            acquisition_content=self.acquisition_content,
             exact_traces=self.exact_traces,
         )
-
 
 
 @dataclass(frozen=True, slots=True)
 class UntargetedCidNlRealDataRuntimeApplicationResult:
     finalization: RuntimeFinalizationReceipt
     sample_results: tuple[UntargetedCidNlRuntimeSampleResult, ...]
+    prepared_grouping: UntargetedCidNlPreparedGrouping | None = None
 
     @property
     def succeeded(self) -> bool:
@@ -230,6 +233,11 @@ def execute_untargeted_cid_nl_real_data_runtime(
     recovery_marker: OwnerPathRuntimeMarker,
     progress_callback: Callable[[Mapping[str, object]], None] | None = None,
     alignment_config: AlignmentConfig = CID_NL_ALIGNMENT_CONFIG,
+    prepare_grouping: Callable[
+        [tuple[UntargetedCidNlInitialSampleResult, ...]],
+        UntargetedCidNlPreparedGrouping,
+    ]
+    | None = None,
 ) -> UntargetedCidNlRealDataRuntimeApplicationResult:
     """Execute every request sample through one attempt and one finalization."""
 
@@ -268,7 +276,10 @@ def execute_untargeted_cid_nl_real_data_runtime(
         )
 
     work = _prepare_runtime_work(
-        jobs, alignment_config=alignment_config, progress_callback=progress_callback
+        jobs,
+        alignment_config=alignment_config,
+        progress_callback=progress_callback,
+        prepare_grouping=prepare_grouping,
     )
     recovery_marker.record_launch(runtime)
     finalization = execute_runtime_attempt(
@@ -288,9 +299,8 @@ def execute_untargeted_cid_nl_real_data_runtime(
     return UntargetedCidNlRealDataRuntimeApplicationResult(
         finalization=finalization,
         sample_results=(tuple(work.results) if succeeded else ()),
+        prepared_grouping=work.prepared_grouping,
     )
-
-
 
 
 def execute_untargeted_cid_nl_runtime_partition(
@@ -303,6 +313,12 @@ def execute_untargeted_cid_nl_runtime_partition(
     raw_workers: int = DEFAULT_ALIGNMENT_WORKERS,
     raw_worker_backend: str = "thread",
     pool: WorkerAdmissionPool | None = None,
+    recovery_templates: tuple[UntargetedCidNlRealDataRuntimeJob, ...] = (),
+    prepare_grouping: Callable[
+        [tuple[UntargetedCidNlInitialSampleResult, ...]],
+        UntargetedCidNlPreparedGrouping,
+    ]
+    | None = None,
 ) -> UntargetedCidNlRuntimePartitionResult:
     """Execute one complete subject partition under the caller's runtime attempt."""
     _required_text(partition_key, field="partition_key")
@@ -350,10 +366,15 @@ def execute_untargeted_cid_nl_runtime_partition(
         raw_workers=raw_workers,
         raw_worker_backend=raw_worker_backend,
         pool=pool,
+        recovery_templates=recovery_templates,
+        prepare_grouping=prepare_grouping,
     )
     batch = work.provide_worker_batch(None)
     return UntargetedCidNlRuntimePartitionResult(
-        tuple(work.results), batch, batch.acquisitions
+        tuple(work.results),
+        batch,
+        batch.acquisitions,
+        work.prepared_grouping,
     )
 
 
@@ -363,6 +384,7 @@ class _RuntimeWork:
     provide_worker_batch: Callable[[object], RuntimeWorkerBatchReceipt]
     results: list[UntargetedCidNlRuntimeSampleResult]
     acquisitions: list[TraceAcquisitionBatch]
+    prepared_grouping: UntargetedCidNlPreparedGrouping | None = None
 
 
 def _prepare_runtime_work(
@@ -375,6 +397,12 @@ def _prepare_runtime_work(
     raw_workers: int = DEFAULT_ALIGNMENT_WORKERS,
     raw_worker_backend: str = "thread",
     pool: WorkerAdmissionPool | None = None,
+    recovery_templates: tuple[UntargetedCidNlRealDataRuntimeJob, ...] = (),
+    prepare_grouping: Callable[
+        [tuple[UntargetedCidNlInitialSampleResult, ...]],
+        UntargetedCidNlPreparedGrouping,
+    ]
+    | None = None,
 ) -> _RuntimeWork:
     if pool is not None:
         raw_workers = pool.max_workers
@@ -405,6 +433,8 @@ def _prepare_runtime_work(
             bounded = _request_subject_candidates(job)
             direct_assessment_by_key[job.work_unit_key] = (
                 _supports_direct_precursor_assessment(bounded)
+                if prepare_grouping is None
+                else False
             )
             initial_raw_by_key[job.work_unit_key] = bool(bounded)
         except Exception as exc:
@@ -412,15 +442,16 @@ def _prepare_runtime_work(
             initial_raw_by_key[job.work_unit_key] = False
             planning_errors[job.work_unit_key] = exc
     eligible_by_subject: dict[str, list[UntargetedCidNlRealDataRuntimeJob]] = {}
-    for job in jobs:
-        if (
-            not job.sample.metadata.excluded
-            and job.sample.metadata.sample_role in ACTIVATION_ELIGIBLE_SAMPLE_ROLES
-        ):
-            eligible_by_subject.setdefault(
-                job.method_subject.method_subject_id,
-                [],
-            ).append(job)
+    if prepare_grouping is None:
+        for job in jobs:
+            if (
+                not job.sample.metadata.excluded
+                and job.sample.metadata.sample_role in ACTIVATION_ELIGIBLE_SAMPLE_ROLES
+            ):
+                eligible_by_subject.setdefault(
+                    job.method_subject.method_subject_id,
+                    [],
+                ).append(job)
     recovery_subject_ids = {
         method_subject_id
         for method_subject_id, subject_jobs in eligible_by_subject.items()
@@ -437,7 +468,10 @@ def _prepare_runtime_work(
         try:
             recovery_may_need_raw = (
                 error is None
-                and job.method_subject.method_subject_id in recovery_subject_ids
+                and (
+                    prepare_grouping is not None
+                    or job.method_subject.method_subject_id in recovery_subject_ids
+                )
                 and not initial_requires_raw
                 and not job.sample.metadata.excluded
                 and job.sample.metadata.sample_role in ACTIVATION_ELIGIBLE_SAMPLE_ROLES
@@ -460,7 +494,13 @@ def _prepare_runtime_work(
                         worker_key=f"inline-acquisition:{job.work_unit_key}",
                         source_reference=source.acquisition_source_id,
                         compatibility_token=_RUNTIME_COMPATIBILITY_TOKEN,
-                        owner_conditional=not initial_requires_raw,
+                        owner_conditional=(
+                            not initial_requires_raw
+                            or (
+                                job.acquisition_cache_dir is not None
+                                and job.acquisition_source_expectation is not None
+                            )
+                        ),
                     )
                 )
         except Exception as exc:
@@ -476,13 +516,20 @@ def _prepare_runtime_work(
         )
 
     sample_groups = _runtime_sample_groups(states)
+    initial_groups_by_sample = {
+        group[0].job.sample.identity.sample_identity_id: group
+        for group in sample_groups
+    }
+    phase_templates = recovery_templates or tuple(
+        group[0].job for group in sample_groups
+    )
     batch_phases: list[_BatchSamplePhaseState] = []
-    for sample_states in sample_groups:
-        if partition_key is None and not _request_uses_subject_batch(
-            sample_states[0].job
-        ):
+    for first in phase_templates:
+        sample_states = initial_groups_by_sample.get(
+            first.sample.identity.sample_identity_id, ()
+        )
+        if partition_key is None and not _request_uses_subject_batch(first):
             continue
-        first = sample_states[0].job
         sample_id = first.sample.identity.sample_identity_id
         source = resolve_request_acquisition_source(
             processing_owners=first.processing_owners,
@@ -497,7 +544,7 @@ def _prepare_runtime_work(
             f"acquisition-session:recovery:{sample_id}"
             if not first.sample.metadata.excluded
             and first.sample.metadata.sample_role in ACTIVATION_ELIGIBLE_SAMPLE_ROLES
-            and recovery_subject_ids
+            and (prepare_grouping is not None or recovery_subject_ids)
             else None
         )
         if partition_key is not None:
@@ -521,7 +568,14 @@ def _prepare_runtime_work(
                     worker_key=f"inline-acquisition:{phase}:{first.work_unit_key}",
                     source_reference=source.acquisition_source_id,
                     compatibility_token=_RUNTIME_COMPATIBILITY_TOKEN,
-                    owner_conditional=owner_conditional or partition_key is not None,
+                    owner_conditional=(
+                        owner_conditional
+                        or partition_key is not None
+                        or (
+                            first.acquisition_cache_dir is not None
+                            and first.acquisition_source_expectation is not None
+                        )
+                    ),
                 )
             )
         batch_phases.append(
@@ -529,6 +583,7 @@ def _prepare_runtime_work(
                 states=sample_states,
                 initial_resource_key=initial_resource_key,
                 recovery_resource_key=recovery_resource_key,
+                sample_template=first,
             )
         )
 
@@ -571,7 +626,7 @@ def _prepare_runtime_work(
                         state.error = worker_pool.first_error
 
         phases_by_sample = {
-            phase.states[0].job.sample.identity.sample_identity_id: phase
+            phase.job.sample.identity.sample_identity_id: phase
             for phase in batch_phases
         }
 
@@ -690,21 +745,29 @@ def _prepare_runtime_work(
         ) -> _SampleRecoveryWorkerRequest:
             sample_id = sample_states[0].job.sample.identity.sample_identity_id
             phase = phases_by_sample[sample_id]
+            pending = tuple(
+                state
+                for state in sample_states
+                if state.error is None and state.recovery_group_center_rts
+            )
             return _SampleRecoveryWorkerRequest(
-                jobs=tuple(s.job for s in sample_states),
+                jobs=tuple(s.job for s in pending),
                 recovery_group_center_rts_by_key={
                     s.job.work_unit_key: s.recovery_group_center_rts
-                    for s in sample_states
+                    for s in pending
                     if s.recovery_group_center_rts
+                },
+                recovery_group_ids_by_key={
+                    s.job.work_unit_key: s.recovery_group_ids for s in pending
                 },
                 recovery_inputs_by_key={
                     s.job.work_unit_key: s.recovery_input
-                    for s in sample_states
+                    for s in pending
                     if s.recovery_input is not None
                 },
-                adapter_results_by_key={
-                    s.job.work_unit_key: s.adapter_result
-                    for s in sample_states
+                recovery_support_by_key={
+                    s.job.work_unit_key: _recovery_support_context(s.adapter_result)
+                    for s in pending
                     if s.adapter_result is not None
                 },
                 recovery_resource_key=phase.recovery_resource_key,
@@ -723,8 +786,11 @@ def _prepare_runtime_work(
                 phase.recovery_opened = resp.recovery_opened
                 phase.recovery_cleanup_outcome = resp.recovery_cleanup_outcome
                 phase.recovery_acquisition = resp.recovery_acquisition
+                states_by_key = {
+                    state.job.work_unit_key: state for state in sample_states
+                }
                 for state, obs_artifacts, has_acq, err in zip(
-                    sample_states,
+                    (states_by_key[key] for key in resp.work_unit_keys),
                     resp.observer_artifacts,
                     resp.observer_has_acquisitions,
                     resp.errors,
@@ -780,12 +846,41 @@ def _prepare_runtime_work(
                         stop_on_error=partition_key is not None,
                     )
             if not observe_cancellation():
-                _prepare_owner_authorized_recoveries(
-                    states, alignment_config=alignment_config
-                )
+                if prepare_grouping is not None:
+                    if all(
+                        state.error is None and state.adapter_result is not None
+                        for state in states
+                    ):
+                        work.prepared_grouping = prepare_grouping(
+                            tuple(
+                                UntargetedCidNlInitialSampleResult(
+                                    state.job, state.adapter_result
+                                )
+                                for state in states
+                                if state.adapter_result is not None
+                            )
+                        )
+                        _prepare_group_authorized_recoveries(
+                            states,
+                            prepared=work.prepared_grouping,
+                            sample_templates=recovery_templates,
+                        )
+                else:
+                    _prepare_owner_authorized_recoveries(
+                        states,
+                        alignment_config=alignment_config,
+                        sample_templates=recovery_templates,
+                    )
+                recovery_groups = _runtime_sample_groups(states)
+                for sample_states in recovery_groups:
+                    phase = phases_by_sample.get(
+                        sample_states[0].job.sample.identity.sample_identity_id
+                    )
+                    if phase is not None:
+                        phase.states = sample_states
                 if raw_worker_backend == "process":
                     worker_pool.run_windowed(
-                        sample_groups,
+                        recovery_groups,
                         _execute_sample_recovery_worker,
                         task_arg_fn=make_process_recovery_req,
                         skip_fn=skip_recovery,
@@ -796,7 +891,7 @@ def _prepare_runtime_work(
                     )
                 else:
                     worker_pool.run_windowed(
-                        sample_groups,
+                        recovery_groups,
                         recovery,
                         on_completed=lambda c, t, s, r: on_sample_thread_completed(
                             "partition_recovery", c, t, s, r
@@ -814,15 +909,14 @@ def _prepare_runtime_work(
                 worker_pool.shutdown()
         apply_stop()
 
-        result_context = _RuntimeResultContext(jobs)
+        result_context = _RuntimeResultContext(tuple(state.job for state in states))
         for completed, state in enumerate(states, 1):
             observe_cancellation()
             apply_stop()
             batch, sample_result, acquisition = _finalize_job_state(
                 state,
                 include_acquisition_receipt=(
-                    partition_key is None
-                    and not _request_uses_subject_batch(state.job)
+                    partition_key is None and not _request_uses_subject_batch(state.job)
                 ),
                 result_context=result_context,
             )
@@ -859,7 +953,7 @@ def _prepare_runtime_work(
                     if acquisition is not None
                 )
             else:
-                sample_id = phase.states[0].job.sample.identity.sample_identity_id
+                sample_id = phase.job.sample.identity.sample_identity_id
                 for name, acquisition in (
                     ("initial", phase.initial_acquisition),
                     ("recovery", phase.recovery_acquisition),
@@ -878,15 +972,16 @@ def _prepare_runtime_work(
             acquisitions=tuple(acquisitions),
         )
 
-    return _RuntimeWork(
+    work = _RuntimeWork(
         reservations, provide_worker_batch, observed_results, observed_acquisitions
     )
+    return work
 
 
 def _batch_phase_resource_receipts(
     phase: _BatchSamplePhaseState,
 ) -> tuple[RuntimeResourceSettlementReceipt, ...]:
-    attempt = phase.states[0].job.processing_owners.attempt
+    attempt = phase.job.processing_owners.attempt
     receipts: list[RuntimeResourceSettlementReceipt] = []
     for resource_key, attempted, opened, cleanup in (
         (
@@ -934,7 +1029,7 @@ def _batch_phase_acquisition_receipts(
         )
         if acquisition is not None
     )
-    owner_key = phase.states[0].job.work_unit_key
+    owner_key = phase.job.work_unit_key
     return tuple(
         RuntimeAcquisitionReceipt(
             work_unit_key=owner_key,
@@ -1166,9 +1261,7 @@ build_untargeted_sample_runtime_jobs = build_untargeted_cid_nl_sample_runtime_jo
 
 
 UntargetedRuntimePartitionResult = UntargetedCidNlRuntimePartitionResult
-execute_untargeted_runtime_partition = (
-    execute_untargeted_cid_nl_runtime_partition
-)
+execute_untargeted_runtime_partition = execute_untargeted_cid_nl_runtime_partition
 
 
 __all__ = (

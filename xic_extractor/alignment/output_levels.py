@@ -2,6 +2,10 @@ from __future__ import annotations
 
 from typing import Literal, cast
 
+# The explanation report is a per-cell projection of results already written
+# elsewhere. It is diagnostic, so only the diagnostic levels produce it.
+EXPLANATION_ARTIFACT_NAME = "cid_nl_explanation.sqlite"
+
 AlignmentOutputLevel = Literal[
     "production",
     "machine",
@@ -15,38 +19,28 @@ _ARTIFACTS: dict[AlignmentOutputLevel, tuple[str, ...]] = {
         "alignment_matrix.tsv",
     ),
     "machine": (
-        "alignment_results.xlsx",
-        "review_report.html",
         "alignment_matrix.tsv",
         "alignment_matrix_identity.tsv",
         "alignment_owner_backfill_peak_fact_provenance.tsv",
         "alignment_review.tsv",
     ),
     "debug": (
-        "alignment_results.xlsx",
-        "review_report.html",
         "alignment_matrix.tsv",
         "alignment_matrix_identity.tsv",
         "alignment_owner_backfill_peak_fact_provenance.tsv",
         "alignment_review.tsv",
         "alignment_cells.tsv",
-        "alignment_matrix_status.tsv",
-        "event_to_ms1_owner.tsv",
-        "ambiguous_ms1_owners.tsv",
         "owner_edge_evidence.tsv",
+        EXPLANATION_ARTIFACT_NAME,
     ),
     "validation": (
-        "alignment_results.xlsx",
-        "review_report.html",
         "alignment_matrix.tsv",
         "alignment_matrix_identity.tsv",
         "alignment_owner_backfill_peak_fact_provenance.tsv",
         "alignment_review.tsv",
         "alignment_cells.tsv",
-        "alignment_matrix_status.tsv",
-        "event_to_ms1_owner.tsv",
-        "ambiguous_ms1_owners.tsv",
         "owner_edge_evidence.tsv",
+        EXPLANATION_ARTIFACT_NAME,
     ),
     "validation-minimal": (
         "alignment_matrix.tsv",

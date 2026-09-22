@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 from time import perf_counter
-from typing import Any
+from typing import Any, cast
 
 from xic_extractor.artifact_lineage import (
     EvidenceArtifactClosureError,
@@ -73,6 +73,19 @@ def canonical_identity_basis_bytes(value: Mapping[str, object]) -> bytes:
         raise IdentityContractError("identity basis must be a JSON object")
     _validate_json_object_keys(value)
     return _canonical_json(dict(value)).encode("utf-8")
+
+
+def mint_typed_identity(
+    prefix: str, basis: Mapping[str, object]
+) -> tuple[str, bytes]:
+    """Encode an owner-built basis once and return its identity and exact bytes."""
+
+    if not isinstance(prefix, str) or not prefix or not prefix.endswith(":"):
+        raise IdentityContractError(
+            "typed identity prefix must be non-empty and end in ':'"
+        )
+    basis_bytes = canonical_identity_basis_bytes(basis)
+    return f"{prefix}{hashlib.sha256(basis_bytes).hexdigest()}", basis_bytes
 
 
 def typed_identity_digest(prefix: str, basis_bytes: bytes) -> str:
@@ -153,13 +166,16 @@ def _canonical_object_json(value: Mapping[str, object]) -> str:
 
 
 def _validate_json_object_keys(value: object) -> None:
-    if isinstance(value, Mapping):
-        for key, nested_value in value.items():
+    value_type = type(value)
+    if value_type in (str, int, float, bool, type(None)):
+        return
+    if value_type is dict or isinstance(value, Mapping):
+        for key, nested_value in cast("Mapping[object, object]", value).items():
             if not isinstance(key, str):
                 raise IdentityContractError("JSON object keys must be strings")
             _validate_json_object_keys(nested_value)
-    elif isinstance(value, (list, tuple)):
-        for nested_value in value:
+    elif value_type in (list, tuple) or isinstance(value, (list, tuple)):
+        for nested_value in cast("list[object] | tuple[object, ...]", value):
             _validate_json_object_keys(nested_value)
 
 
@@ -178,7 +194,7 @@ def _validate_typed_id(value: object, *, prefix: str, field: str) -> str:
 
 
 def _typed_digest(prefix: str, basis: Mapping[str, object]) -> str:
-    return typed_identity_digest(prefix, canonical_identity_basis_bytes(basis))
+    return mint_typed_identity(prefix, basis)[0]
 
 
 def _require_nonempty_text(value: object, *, field: str) -> str:
@@ -1143,6 +1159,7 @@ __all__ = [
     "build_acquisition_source_identity",
     "build_processing_request_identity",
     "canonical_identity_basis_bytes",
+    "mint_typed_identity",
     "canonical_current_attempt_artifact_closure",
     "canonical_evidence_artifact_closure",
     "compose_processing_owner_references",

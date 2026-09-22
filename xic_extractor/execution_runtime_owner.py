@@ -41,13 +41,13 @@ from xic_extractor.execution_runtime_finalization import (
     RuntimeResourceReservation,
     SupervisorFinalizationEventKind,
     SupervisorFinalizationRecord,
+    _record_runtime_resource_cleanups,
+    _record_runtime_resource_opens,
     _register_runtime_artifacts,
+    _reserve_runtime_resources,
     begin_attempt_finalization,
     mint_supervisor_finalization,
     propose_attempt_terminal,
-    record_runtime_resource_cleanup,
-    record_runtime_resource_open,
-    reserve_runtime_resource,
 )
 from xic_extractor.execution_runtime_observability import (
     RuntimeMetricAvailability,
@@ -291,12 +291,16 @@ def _prepare_runtime_attempt(
         raise RuntimeFinalizationContractError(
             "reservations must contain RuntimeResourceReservation values"
         ) from exc
-    for reservation in batch:
-        if not isinstance(reservation, RuntimeResourceReservation):
-            raise RuntimeFinalizationContractError(
-                "reservations must contain RuntimeResourceReservation values"
-            )
-        state = reserve_runtime_resource(state, reservation)
+
+    def checked_reservations() -> Iterable[RuntimeResourceReservation]:
+        for reservation in batch:
+            if not isinstance(reservation, RuntimeResourceReservation):
+                raise RuntimeFinalizationContractError(
+                    "reservations must contain RuntimeResourceReservation values"
+                )
+            yield reservation
+
+    state = _reserve_runtime_resources(state, checked_reservations())
     return _mint_runtime_attempt_aggregate(state=state)
 
 
@@ -341,12 +345,10 @@ def _apply_runtime_worker_batch(
             raise RuntimeFinalizationContractError(
                 "resource receipt references a different runtime attempt"
             )
-    for resource_receipt in resource_settlements:
-        state = record_runtime_resource_open(
-            state,
-            resource_key=resource_receipt.resource_key,
-            outcome=resource_receipt.open_outcome,
-        )
+    state = _record_runtime_resource_opens(
+        state,
+        ((item.resource_key, item.open_outcome) for item in resource_settlements),
+    )
 
     def ordered_settlements() -> Iterable[WorkUnitSettlement]:
         for settlement in sorted(
@@ -381,12 +383,13 @@ def _apply_runtime_worker_batch(
         ),
     )
 
-    for resource_receipt in resource_settlements:
-        state = record_runtime_resource_cleanup(
-            state,
-            resource_key=resource_receipt.resource_key,
-            outcome=resource_receipt.cleanup_outcome,
-        )
+    state = _record_runtime_resource_cleanups(
+        state,
+        (
+            (item.resource_key, item.cleanup_outcome)
+            for item in resource_settlements
+        ),
+    )
 
     accepted_acquisitions: dict[str, list[RuntimeAcquisitionReceipt]] = {}
     for existing in aggregate.acquisitions:

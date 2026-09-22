@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 from collections import Counter
 from collections.abc import Iterable, Mapping, Sequence
+from contextlib import ExitStack
 from pathlib import Path
 from typing import Any
 
@@ -13,6 +14,7 @@ from xic_extractor.alignment.backfill_evidence_contract import (
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.matrix import AlignedCell, AlignmentMatrix
 from xic_extractor.alignment.matrix_output_contract import (
+    bind_matrix_identity_row,
     canonical_mz_text,
     serialize_public_matrix_table,
 )
@@ -38,11 +40,15 @@ from xic_extractor.alignment.owner_group_delivery import (
 )
 from xic_extractor.alignment.product_matrix import (
     ALIGNMENT_MATRIX_IDENTITY_COLUMNS,
+    build_product_matrix_rows,
     formatted_identity_rows,
     product_matrix_tsv_rows,
 )
 from xic_extractor.alignment.production_decisions import (
     ProductionDecisionSet,
+)
+from xic_extractor.alignment.untargeted_finalized_matrix import (
+    CompletedUntargetBatchWriterInputs,
 )
 from xic_extractor.peak_detection.baseline import LINEAR_EDGE_RETIRED_MESSAGE
 
@@ -245,6 +251,100 @@ def _require_production_decisions(value: object) -> ProductionDecisionSet:
     return value
 
 
+def write_alignment_tsv_row_batches(
+    paths: Mapping[str, Path],
+    batches: Iterable[CompletedUntargetBatchWriterInputs],
+    *,
+    sample_order: tuple[str, ...],
+    alignment_config: AlignmentConfig,
+) -> int:
+    """Render finalized rows to their TSV consumers in one bounded pass."""
+
+    matrix_header = serialize_public_matrix_table(
+        (), sample_columns=sample_order
+    ).header
+    headers = {
+        "matrix": matrix_header,
+        "identity": ALIGNMENT_MATRIX_IDENTITY_COLUMNS,
+        "review": ALIGNMENT_REVIEW_COLUMNS,
+        "backfill": ALIGNMENT_BACKFILL_CELL_EVIDENCE_COLUMNS,
+        "cells": ALIGNMENT_CELLS_COLUMNS,
+        "integration": ALIGNMENT_CELL_INTEGRATION_AUDIT_COLUMNS,
+    }
+    source_candidate_owners: dict[str, str] = {}
+    product_count = 0
+    writer_row_count = 0
+    with ExitStack() as stack:
+        writers = {}
+        for name, path in paths.items():
+            path.parent.mkdir(parents=True, exist_ok=True)
+            handle = stack.enter_context(
+                path.open("w", newline="", encoding="utf-8", buffering=1024 * 1024)
+            )
+            writer = csv.writer(handle, delimiter="\t", lineterminator="\n")
+            writer.writerow([escape_excel_formula(column) for column in headers[name]])
+            writers[name] = writer
+
+        def emit(name: str, rows: Iterable[Mapping[str, object]]) -> None:
+            if name in writers:
+                for row in rows:
+                    writers[name].writerow(
+                        [format_value(row.get(column, "")) for column in headers[name]]
+                    )
+
+        for batch in batches:
+            matrix = batch.matrix
+            decisions = batch.production_decisions
+            writer_row_count += len(matrix.clusters)
+            products = build_product_matrix_rows(
+                matrix,
+                alignment_config=alignment_config,
+                production_decisions=decisions,
+                source_candidate_owners=source_candidate_owners,
+            )
+            for product in products:
+                product_count += 1
+                table = serialize_public_matrix_table(
+                    ({"Mz": product.mz, "RT": product.rt, **product.sample_values},),
+                    sample_columns=sample_order,
+                )
+                emit("matrix", table.rows)
+                if "identity" in writers:
+                    emit(
+                        "identity",
+                        (
+                            bind_matrix_identity_row(
+                                matrix_header=matrix_header,
+                                matrix_row=table.rows[0],
+                                identity_columns=ALIGNMENT_MATRIX_IDENTITY_COLUMNS,
+                                source_identity=product.identity,
+                                index=product_count,
+                            ),
+                        ),
+                    )
+            if "review" in writers:
+                emit(
+                    "review",
+                    _format_alignment_review_rows(
+                        _review_rows(
+                            matrix,
+                            alignment_config=alignment_config,
+                            production_decisions=decisions,
+                        )
+                    ),
+                )
+            if "backfill" in writers:
+                for values in _backfill_cell_evidence_rows(matrix, decisions):
+                    writers["backfill"].writerow(
+                        [format_value(value) for value in values]
+                    )
+            if "cells" in writers:
+                emit("cells", _alignment_cell_rows(matrix))
+            if "integration" in writers:
+                emit("integration", _cell_integration_audit_rows(matrix))
+    return writer_row_count
+
+
 def write_alignment_review_tsv(
     path: Path,
     matrix: AlignmentMatrix,
@@ -318,153 +418,143 @@ def write_alignment_matrix_identity_tsv(
 
 
 def write_alignment_cells_tsv(path: Path, matrix: AlignmentMatrix) -> Path:
+    return _write_tsv(path, ALIGNMENT_CELLS_COLUMNS, _alignment_cell_rows(matrix))
+
+
+def _alignment_cell_rows(matrix: AlignmentMatrix) -> Iterable[dict[str, object]]:
     clusters_by_id = {row_id(cluster): cluster for cluster in matrix.clusters}
-    rows: list[dict[str, object]] = []
     for cell in matrix.cells:
         cluster = clusters_by_id[cell.cluster_id]
-        rows.append(
-            {
-                "feature_family_id": cell.cluster_id,
-                "group_hypothesis_id": cell.group_hypothesis_id,
-                "public_family_id": cell.public_family_id,
-                "group_construction_role": cell.group_construction_role,
-                "group_delivery_role": cell.group_delivery_role,
-                "group_membership_source": cell.group_membership_source,
-                "gap_fill_state": cell.gap_fill_state,
-                "gap_fill_reason": cell.gap_fill_reason,
-                "missing_observation_state": cell.missing_observation_state,
-                "peak_hypothesis_status": cell.peak_hypothesis_status,
-                "product_selection_blocker": cell.product_selection_blocker,
-                "rt_mode_status": cell.rt_mode_status,
-                "group_claim_state": cell.group_claim_state,
-                "claim_winner_group_hypothesis_id": (
-                    cell.claim_winner_group_hypothesis_id
-                ),
-                "claim_source_group_hypothesis_id": (
-                    cell.claim_source_group_hypothesis_id
-                ),
-                "consolidation_state": cell.consolidation_state,
-                "consolidation_winner_group_hypothesis_id": (
-                    cell.consolidation_winner_group_hypothesis_id
-                ),
-                "consolidation_source_group_hypothesis_id": (
-                    cell.consolidation_source_group_hypothesis_id
-                ),
-                "sample_stem": cell.sample_stem,
-                "status": cell.status,
-                "area": format_value(cell.area),
-                "primary_matrix_area": format_value(cell.matrix_area),
-                "primary_matrix_area_source": cell.matrix_area_source,
-                "primary_matrix_area_reason": cell.matrix_area_missing_reason,
-                "apex_rt": format_value(cell.apex_rt),
-                "height": format_value(cell.height),
-                "peak_start_rt": format_value(cell.peak_start_rt),
-                "peak_end_rt": format_value(cell.peak_end_rt),
-                "rt_delta_sec": format_value(cell.rt_delta_sec),
-                "trace_quality": cell.trace_quality,
-                "scan_support_score": format_value(cell.scan_support_score),
-                "source_candidate_id": cell.source_candidate_id or "",
-                "source_raw_file": str(cell.source_raw_file or ""),
-                "neutral_loss_tag": cluster.neutral_loss_tag,
-                "family_center_mz": format_value(_family_center_mz(cluster)),
-                "family_center_rt": format_value(_family_center_rt(cluster)),
-                "reason": cell.reason,
-                "backfill_ms1_pattern_status": cell.backfill_ms1_pattern_status,
-                "backfill_ms1_pattern_evidence_level": (
-                    cell.backfill_ms1_pattern_evidence_level
-                ),
-                "backfill_ms1_product_authority_status": (
-                    cell.backfill_ms1_product_authority_status
-                ),
-                "backfill_ms1_product_authority_scope": (
-                    cell.backfill_ms1_product_authority_scope
-                ),
-                "backfill_ms1_product_authority_source": (
-                    cell.backfill_ms1_product_authority_source
-                ),
-                "backfill_ms1_product_authority_reason": (
-                    cell.backfill_ms1_product_authority_reason
-                ),
-                "backfill_ms1_product_authority_evidence_sha256": (
-                    cell.backfill_ms1_product_authority_evidence_sha256
-                ),
-                "backfill_qc_reference_status": cell.backfill_qc_reference_status,
-                "backfill_qc_reference_evidence_level": (
-                    cell.backfill_qc_reference_evidence_level
-                ),
-                "backfill_matrix_rt_drift_status": (
-                    cell.backfill_matrix_rt_drift_status
-                ),
-                "backfill_drift_evidence_level": cell.backfill_drift_evidence_level,
-                "backfill_drift_compatible_status": (
-                    cell.backfill_drift_compatible_status
-                ),
-                "backfill_drift_corrected_delta_sec": format_value(
-                    cell.backfill_drift_corrected_delta_sec
-                ),
-                "backfill_candidate_ms2_pattern_status": (
-                    cell.backfill_candidate_ms2_pattern_status
-                ),
-                "backfill_candidate_ms2_evidence_level": (
-                    cell.backfill_candidate_ms2_evidence_level
-                ),
-                "backfill_candidate_ms2_product_authority_status": (
-                    cell.backfill_candidate_ms2_product_authority_status
-                ),
-                "backfill_candidate_ms2_product_authority_scope": (
-                    cell.backfill_candidate_ms2_product_authority_scope
-                ),
-                "backfill_candidate_ms2_product_authority_source": (
-                    cell.backfill_candidate_ms2_product_authority_source
-                ),
-                "backfill_candidate_ms2_product_authority_reason": (
-                    cell.backfill_candidate_ms2_product_authority_reason
-                ),
-                "backfill_candidate_ms2_product_authority_evidence_sha256": (
-                    cell.backfill_candidate_ms2_product_authority_evidence_sha256
-                ),
-                "backfill_ms2_trigger_scan_count": format_value(
-                    cell.backfill_ms2_trigger_scan_count
-                ),
-                "backfill_strict_nl_scan_count": format_value(
-                    cell.backfill_strict_nl_scan_count
-                ),
-                "backfill_ms2_trace_strength": cell.backfill_ms2_trace_strength,
-                "backfill_dda_missing_nl_policy_status": (
-                    cell.backfill_dda_missing_nl_policy_status
-                ),
-                "backfill_family_ms2_required_tag_status": (
-                    cell.backfill_family_ms2_required_tag_status
-                ),
-                "backfill_evidence_reason": cell.backfill_evidence_reason,
-                "region_candidate_count": format_value(cell.region_candidate_count),
-                "region_selected_proposal_sources": ";".join(
-                    cell.region_selected_proposal_sources
-                ),
-                "region_selected_merge_note": cell.region_selected_merge_note,
-                "region_shadow_status": cell.region_shadow_status,
-                "region_shadow_verdict": cell.region_shadow_verdict,
-                "region_merge_suggestion_source": cell.region_merge_suggestion_source,
-                "region_area_ratio": format_value(cell.region_area_ratio),
-                "region_selected_interval_count": format_value(
-                    cell.region_selected_interval_count
-                ),
-                "region_selected_interval_gap_max_min": format_value(
-                    cell.region_selected_interval_gap_max_min
-                ),
-                "region_local_mixture_diagnostic": (
-                    cell.region_local_mixture_diagnostic
-                ),
-                "region_local_mixture_reason": cell.region_local_mixture_reason,
-                "region_review_reason": cell.region_review_reason,
-                "region_decision_status": cell.region_decision_status,
-                "region_decision_class": cell.region_decision_class,
-                "region_product_action": cell.region_product_action,
-                "region_promotion_reason": cell.region_promotion_reason,
-                "region_baseline_method": cell.region_baseline_method,
-            }
-        )
-    return _write_tsv(path, ALIGNMENT_CELLS_COLUMNS, rows)
+        yield {
+            "feature_family_id": cell.cluster_id,
+            "group_hypothesis_id": cell.group_hypothesis_id,
+            "public_family_id": cell.public_family_id,
+            "group_construction_role": cell.group_construction_role,
+            "group_delivery_role": cell.group_delivery_role,
+            "group_membership_source": cell.group_membership_source,
+            "gap_fill_state": cell.gap_fill_state,
+            "gap_fill_reason": cell.gap_fill_reason,
+            "missing_observation_state": cell.missing_observation_state,
+            "peak_hypothesis_status": cell.peak_hypothesis_status,
+            "product_selection_blocker": cell.product_selection_blocker,
+            "rt_mode_status": cell.rt_mode_status,
+            "group_claim_state": cell.group_claim_state,
+            "claim_winner_group_hypothesis_id": (cell.claim_winner_group_hypothesis_id),
+            "claim_source_group_hypothesis_id": (cell.claim_source_group_hypothesis_id),
+            "consolidation_state": cell.consolidation_state,
+            "consolidation_winner_group_hypothesis_id": (
+                cell.consolidation_winner_group_hypothesis_id
+            ),
+            "consolidation_source_group_hypothesis_id": (
+                cell.consolidation_source_group_hypothesis_id
+            ),
+            "sample_stem": cell.sample_stem,
+            "status": cell.status,
+            "area": format_value(cell.area),
+            "primary_matrix_area": format_value(cell.matrix_area),
+            "primary_matrix_area_source": cell.matrix_area_source,
+            "primary_matrix_area_reason": cell.matrix_area_missing_reason,
+            "apex_rt": format_value(cell.apex_rt),
+            "height": format_value(cell.height),
+            "peak_start_rt": format_value(cell.peak_start_rt),
+            "peak_end_rt": format_value(cell.peak_end_rt),
+            "rt_delta_sec": format_value(cell.rt_delta_sec),
+            "trace_quality": cell.trace_quality,
+            "scan_support_score": format_value(cell.scan_support_score),
+            "source_candidate_id": cell.source_candidate_id or "",
+            "source_raw_file": str(cell.source_raw_file or ""),
+            "neutral_loss_tag": cluster.neutral_loss_tag,
+            "family_center_mz": format_value(_family_center_mz(cluster)),
+            "family_center_rt": format_value(_family_center_rt(cluster)),
+            "reason": cell.reason,
+            "backfill_ms1_pattern_status": cell.backfill_ms1_pattern_status,
+            "backfill_ms1_pattern_evidence_level": (
+                cell.backfill_ms1_pattern_evidence_level
+            ),
+            "backfill_ms1_product_authority_status": (
+                cell.backfill_ms1_product_authority_status
+            ),
+            "backfill_ms1_product_authority_scope": (
+                cell.backfill_ms1_product_authority_scope
+            ),
+            "backfill_ms1_product_authority_source": (
+                cell.backfill_ms1_product_authority_source
+            ),
+            "backfill_ms1_product_authority_reason": (
+                cell.backfill_ms1_product_authority_reason
+            ),
+            "backfill_ms1_product_authority_evidence_sha256": (
+                cell.backfill_ms1_product_authority_evidence_sha256
+            ),
+            "backfill_qc_reference_status": cell.backfill_qc_reference_status,
+            "backfill_qc_reference_evidence_level": (
+                cell.backfill_qc_reference_evidence_level
+            ),
+            "backfill_matrix_rt_drift_status": (cell.backfill_matrix_rt_drift_status),
+            "backfill_drift_evidence_level": cell.backfill_drift_evidence_level,
+            "backfill_drift_compatible_status": (cell.backfill_drift_compatible_status),
+            "backfill_drift_corrected_delta_sec": format_value(
+                cell.backfill_drift_corrected_delta_sec
+            ),
+            "backfill_candidate_ms2_pattern_status": (
+                cell.backfill_candidate_ms2_pattern_status
+            ),
+            "backfill_candidate_ms2_evidence_level": (
+                cell.backfill_candidate_ms2_evidence_level
+            ),
+            "backfill_candidate_ms2_product_authority_status": (
+                cell.backfill_candidate_ms2_product_authority_status
+            ),
+            "backfill_candidate_ms2_product_authority_scope": (
+                cell.backfill_candidate_ms2_product_authority_scope
+            ),
+            "backfill_candidate_ms2_product_authority_source": (
+                cell.backfill_candidate_ms2_product_authority_source
+            ),
+            "backfill_candidate_ms2_product_authority_reason": (
+                cell.backfill_candidate_ms2_product_authority_reason
+            ),
+            "backfill_candidate_ms2_product_authority_evidence_sha256": (
+                cell.backfill_candidate_ms2_product_authority_evidence_sha256
+            ),
+            "backfill_ms2_trigger_scan_count": format_value(
+                cell.backfill_ms2_trigger_scan_count
+            ),
+            "backfill_strict_nl_scan_count": format_value(
+                cell.backfill_strict_nl_scan_count
+            ),
+            "backfill_ms2_trace_strength": cell.backfill_ms2_trace_strength,
+            "backfill_dda_missing_nl_policy_status": (
+                cell.backfill_dda_missing_nl_policy_status
+            ),
+            "backfill_family_ms2_required_tag_status": (
+                cell.backfill_family_ms2_required_tag_status
+            ),
+            "backfill_evidence_reason": cell.backfill_evidence_reason,
+            "region_candidate_count": format_value(cell.region_candidate_count),
+            "region_selected_proposal_sources": ";".join(
+                cell.region_selected_proposal_sources
+            ),
+            "region_selected_merge_note": cell.region_selected_merge_note,
+            "region_shadow_status": cell.region_shadow_status,
+            "region_shadow_verdict": cell.region_shadow_verdict,
+            "region_merge_suggestion_source": cell.region_merge_suggestion_source,
+            "region_area_ratio": format_value(cell.region_area_ratio),
+            "region_selected_interval_count": format_value(
+                cell.region_selected_interval_count
+            ),
+            "region_selected_interval_gap_max_min": format_value(
+                cell.region_selected_interval_gap_max_min
+            ),
+            "region_local_mixture_diagnostic": (cell.region_local_mixture_diagnostic),
+            "region_local_mixture_reason": cell.region_local_mixture_reason,
+            "region_review_reason": cell.region_review_reason,
+            "region_decision_status": cell.region_decision_status,
+            "region_decision_class": cell.region_decision_class,
+            "region_product_action": cell.region_product_action,
+            "region_promotion_reason": cell.region_promotion_reason,
+            "region_baseline_method": cell.region_baseline_method,
+        }
 
 
 def write_alignment_backfill_cell_evidence_tsv(
@@ -475,6 +565,17 @@ def write_alignment_backfill_cell_evidence_tsv(
 ) -> Path:
     """Write the compact cell ledger needed by backfill evidence review surfaces."""
 
+    return _write_tsv_sequences(
+        path,
+        ALIGNMENT_BACKFILL_CELL_EVIDENCE_COLUMNS,
+        _backfill_cell_evidence_rows(matrix, production_decisions),
+    )
+
+
+def _backfill_cell_evidence_rows(
+    matrix: AlignmentMatrix,
+    production_decisions: ProductionDecisionSet,
+) -> Iterable[tuple[object, ...]]:
     decisions = _require_production_decisions(production_decisions)
     clusters_by_id = {row_id(cluster): cluster for cluster in matrix.clusters}
     backfill_family_ids = _backfill_evidence_family_ids(matrix, decisions)
@@ -524,7 +625,7 @@ def write_alignment_backfill_cell_evidence_tsv(
                 cell.reason,
             )
 
-    return _write_tsv_sequences(path, ALIGNMENT_BACKFILL_CELL_EVIDENCE_COLUMNS, rows())
+    return rows()
 
 
 def write_alignment_cell_integration_audit_tsv(
@@ -547,9 +648,17 @@ def write_alignment_cell_integration_audit_tsv(
         raise ValueError("baseline_integration_method must be 'asls'")
     if baseline_audit_method not in {"", "asls"}:
         raise ValueError("baseline_audit_method must be empty or 'asls'")
-    columns = ALIGNMENT_CELL_INTEGRATION_AUDIT_COLUMNS
+    return _write_tsv(
+        path,
+        ALIGNMENT_CELL_INTEGRATION_AUDIT_COLUMNS,
+        _cell_integration_audit_rows(matrix),
+    )
+
+
+def _cell_integration_audit_rows(
+    matrix: AlignmentMatrix,
+) -> Iterable[dict[str, object]]:
     clusters_by_id = {row_id(cluster): cluster for cluster in matrix.clusters}
-    rows: list[dict[str, object]] = []
     for cell in matrix.cells:
         audit = cell.integration_audit
         if audit is None or audit.is_empty:
@@ -579,8 +688,7 @@ def write_alignment_cell_integration_audit_tsv(
             "baseline_fraction": format_value(audit.baseline_fraction),
             "integration_scan_count": format_value(audit.integration_scan_count),
         }
-        rows.append(row)
-    return _write_tsv(path, columns, rows)
+        yield row
 
 
 def write_alignment_owner_backfill_seed_audit_tsv(

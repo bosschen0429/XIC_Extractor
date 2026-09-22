@@ -20,6 +20,7 @@ from xic_extractor.discovery.models import (
     DiscoveryCandidateState,
 )
 from xic_extractor.extraction.untargeted_cid_nl_real_data_inputs import (
+    ALIGNMENT_FEATURE_INPUT_KEY,
     CANDIDATE_UNIVERSE_INPUT_KEY,
     validate_candidate_universe_payload,
 )
@@ -749,6 +750,14 @@ def _validate_untarget_batch_request(
     subject_by_id = {
         subject.method_subject_id: subject for subject in subject_batch.subjects
     }
+    samples_by_id = {
+        sample.identity.sample_identity_id: sample for sample in parent_samples
+    }
+    input_sample_ids_by_subject: dict[str, set[str]] = {}
+    for candidate_id, subject_id in parent_memberships.items():
+        sample_id = candidate_sample_ids.get(candidate_id)
+        if sample_id is not None:
+            input_sample_ids_by_subject.setdefault(subject_id, set()).add(sample_id)
     # Rebuilding this shared binding would reparse the full request per candidate.
     exclusion_owners: ProcessingOwnerReferences | None = None
     for exclusion in exclusions:
@@ -785,12 +794,24 @@ def _validate_untarget_batch_request(
                 if exclusion.reason_code == "composite_requirement_not_supported"
                 else exclusion.method_assessments
             )
+            assessment_sample_ids = tuple(
+                ref.content.canonical_sample_identity_id for ref in assessments
+            )
+            required_sample_ids = input_sample_ids_by_subject.get(
+                exclusion.method_subject_id, parent_sample_ids_set
+            )
+            # Exclusion closes the subject's actual Discovery inputs. Samples
+            # without an input need no synthetic no-search assessment; multiple
+            # distinct candidate peaks in one sample may have distinct answers.
             if (
-                tuple(ref.content.canonical_sample_identity_id for ref in assessments)
-                != parent_sample_ids
+                assessment_sample_ids != tuple(sorted(assessment_sample_ids))
+                or not required_sample_ids.issubset(assessment_sample_ids)
+                or not set(assessment_sample_ids).issubset(parent_sample_ids_set)
+                or len({ref.artifact.evidence_artifact_id for ref in assessments})
+                != len(assessments)
             ):
                 raise ApplicationResultContractError(
-                    "Method exclusion requires exact complete sample coverage"
+                    "Method exclusion requires exact input sample coverage"
                 )
             if exclusion_owners is None:
                 exclusion_owners = ProcessingOwnerReferences(
@@ -799,13 +820,8 @@ def _validate_untarget_batch_request(
                     sample_snapshot=parent_samples[0].snapshot,
                     sample_resolutions=parent_samples,
                 )
-            for sample, assessment in zip(
-                sorted(
-                    parent_samples, key=lambda item: item.identity.sample_identity_id
-                ),
-                assessments,
-                strict=True,
-            ):
+            for assessment in assessments:
+                sample = samples_by_id[assessment.content.canonical_sample_identity_id]
                 try:
                     validate_cid_nl_method_assessment_binding(
                         assessment,
@@ -1048,6 +1064,25 @@ def _candidate_sample_ids_from_request(
                     "Untarget batch candidate/sample universe is not unique"
                 )
             candidate_sample_ids[candidate_id] = sample_id
+    feature_ids = request_inputs.get(ALIGNMENT_FEATURE_INPUT_KEY)
+    if feature_ids is not None:
+        if (
+            not isinstance(feature_ids, list)
+            or any(not isinstance(cid, str) for cid in feature_ids)
+            or feature_ids != sorted(set(feature_ids))
+            or not set(feature_ids).issubset(candidate_sample_ids)
+        ):
+            raise ApplicationResultContractError(
+                "Alignment feature selection is invalid"
+            )
+        subject_batch = cid_nl_method_subject_batch_from_request(request)
+        if tuple(feature_ids) != tuple(
+            cid for cid, _ in subject_batch.candidate_memberships
+        ):
+            raise ApplicationResultContractError(
+                "Alignment feature selection crossed subject membership"
+            )
+        return {cid: candidate_sample_ids[cid] for cid in feature_ids}
     return candidate_sample_ids
 
 

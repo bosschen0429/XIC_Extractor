@@ -61,12 +61,15 @@ def build_product_matrix_rows(
     *,
     alignment_config: AlignmentConfig | None = None,
     production_decisions: ProductionDecisionSet | None = None,
+    source_candidate_owners: dict[str, str] | None = None,
 ) -> tuple[ProductMatrixRow, ...]:
     config = alignment_config or AlignmentConfig()
     decisions = production_decisions or build_production_decisions(matrix, config)
     grouped_cells = cells_by_cluster(matrix)
     rows: list[ProductMatrixRow] = []
-    seen_source_candidates: dict[str, str] = {}
+    seen_source_candidates: dict[str, str] = (
+        {} if source_candidate_owners is None else source_candidate_owners
+    )
     seen_peak_hypothesis_ids: dict[str, str] = {}
 
     for cluster in matrix.clusters:
@@ -261,7 +264,8 @@ def _identity_row(
         ),
         "accepted_cell_count": len(product_cells),
         "accepted_sample_count": len(accepted_samples),
-        "evidence_status": str(getattr(cluster, "evidence_status", "")) or (
+        "evidence_status": str(getattr(cluster, "evidence_status", ""))
+        or (
             "product_matrix_split_identity_complete"
             if row_identity_basis == "split_peak_hypothesis"
             else "product_matrix_identity_complete"
@@ -287,8 +291,7 @@ def _validate_identity_tokens(
         )
     if row_identity_basis not in _ALLOWED_ROW_IDENTITY_BASIS:
         raise ValueError(
-            f"{cluster_id}: unsupported product row_identity_basis "
-            f"{row_identity_basis}"
+            f"{cluster_id}: unsupported product row_identity_basis {row_identity_basis}"
         )
     if split_evaluation_status not in _ALLOWED_SPLIT_EVALUATION_STATUS:
         raise ValueError(

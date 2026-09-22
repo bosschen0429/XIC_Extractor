@@ -19,11 +19,26 @@ the profile supplies the CPU-count-minus-one default (at least one). An explicit
 CLI override takes precedence for that invocation; it does not rewrite saved
 settings. Scientific presets do not carry machine resource settings.
 
-Alignment defaults to serial execution in the same profile. A shared source
-does not require identical concurrency for algorithms with different cost
-characteristics. Its explicit worker override remains available. Discovery
+Alignment defaults to four workers in the same profile. Its explicit worker
+override remains available, including one for serial execution. Discovery
 bounds its active workers by sample count; that cap is scheduling, not another
 default. The profile is a settings snapshot, not a shared persistent worker pool.
+
+For Alignment, `--raw-workers` also bounds persisted physical-input indexing.
+`--raw-worker-backend process` runs the CPU-heavy sidecar parsers in separate
+processes; only compact indices and private spool ownership cross that boundary.
+Source fingerprinting uses the same worker budget with threads. These input
+phases finish before RAW runtime, so their pools do not multiply the RAW worker
+budget. A value of one keeps serial behavior; concurrency does not change
+scientific identity or sample order.
+
+The bounded CID-NL process backend retains one worker pool per acquisition
+lane for the processing attempt. Partitions lease those pools and share the
+same immutable owner bootstrap; local candidates and physical facts remain
+partition-bounded. The combined pool capacity stays within the configured RAW
+worker budget. Sample RAW handles still close at their acquisition boundaries.
+Process pools drain and close before terminal acknowledgement, including on
+failure or cancellation; a cleanup failure prevents successful publication.
 
 The tissue validation plan exposes both parallel and Alignment worker budgets.
 Changing from 8RAW to 85RAW does not choose a different execution profile.
@@ -332,6 +347,14 @@ Retry never reopens a terminal attempt. The lineage owner:
 - records the predecessor/retry relationship;
 - validates immutable artifact dependencies for integrity, staleness, source,
   schema, and semantic-role compatibility.
+
+For a caller that enables `OwnerPathRuntimeMarker.allow_failed_attempt_retry`,
+launching a new attempt in the same output directory first archives the prior
+finalized failed/cancelled marker under its attempt digest. The exact terminal
+receipt remains available; replacing the current marker does not promote old
+artifacts or change the predecessor's outcome. Active and successful attempts
+are not replaced. Without this option, a different attempt at the same marker
+path continues to be rejected.
 
 The runtime receives the new attempt identity plus zero or more
 `ValidatedDependencyToken` values. Each token exposes the new attempt identity

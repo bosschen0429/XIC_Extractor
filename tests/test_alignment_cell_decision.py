@@ -44,6 +44,7 @@ from xic_extractor.alignment.cell_decision import (
     decide_target_cell_population,
     validate_production_cell_decision,
 )
+from xic_extractor.alignment.cell_decision import owner as decision_owner
 from xic_extractor.alignment.cell_observations import (
     CellObservationContractError,
     FinalGroupCellObservation,
@@ -104,7 +105,19 @@ def test_target_population_emits_one_numeric_or_no_write_per_exact_subject(
     )
     projection = project_target_pre_cell(alignment)
 
-    decisions = decide_target_cell_population(projection)
+    basis_calls: list[tuple[object, object, object]] = []
+    original_basis = decision_owner._decision_basis
+
+    def count_basis_calls(
+        *, subject: object, evidence: object, payload: object
+    ) -> bytes:
+        basis_calls.append((subject, evidence, payload))
+        return original_basis(subject=subject, evidence=evidence, payload=payload)
+
+    with monkeypatch.context() as counted:
+        counted.setattr(decision_owner, "_decision_basis", count_basis_calls)
+        decisions = decide_target_cell_population(projection)
+    assert len(basis_calls) == len(decisions) == len(projection.subjects)
     reordered = decide_target_cell_population(
         projection,
         subjects=tuple(reversed(projection.subjects)),

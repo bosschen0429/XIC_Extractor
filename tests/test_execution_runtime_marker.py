@@ -172,6 +172,68 @@ def test_finalization_atomically_replaces_launch_and_survives_loss(
     )
 
 
+def test_failed_attempt_retry_preserves_receipt_and_uses_new_attempt(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    marker = OwnerPathRuntimeMarker(
+        tmp_path / "attempt.runtime.json",
+        "runtime-attempt-artifacts:a",
+        allow_failed_attempt_retry=True,
+    )
+    failed = _attempt(tmp_path, stem="first")
+    retry = _attempt(tmp_path, stem="second")
+    marker.record_launch(_runtime(failed))
+    marker(_terminal_records(failed, outcome=WorkUnitTerminalOutcome.FAILED))
+    failed_bytes = marker.path.read_bytes()
+    original_write = OwnerPathRuntimeMarker._write
+
+    def fail_new_launch(owner, snapshot):
+        if owner.path == marker.path and snapshot.state is RuntimeMarkerState.LAUNCHED:
+            raise OSError("injected launch write failure")
+        return original_write(owner, snapshot)
+
+    monkeypatch.setattr(OwnerPathRuntimeMarker, "_write", fail_new_launch)
+    with pytest.raises(OSError, match="injected launch"):
+        marker.record_launch(_runtime(retry))
+    assert marker.path.read_bytes() == failed_bytes
+    monkeypatch.setattr(OwnerPathRuntimeMarker, "_write", original_write)
+
+    launch = marker.record_launch(_runtime(retry))
+    archives = [path for path in tmp_path.glob("attempt.runtime.*.json")]
+    assert len(archives) == 1
+    assert archives[0].read_bytes() == failed_bytes
+    old_marker = OwnerPathRuntimeMarker(archives[0], marker.artifact_namespace)
+    assert old_marker.recover_after_coordinator_loss(failed).terminal_outcome is (
+        AttemptTerminalOutcome.FAILED
+    )
+    assert launch.processing_attempt_id == retry.processing_attempt_id
+    marker(_terminal_records(retry, outcome=WorkUnitTerminalOutcome.SUCCEEDED))
+    assert marker.recover_after_coordinator_loss(retry).terminal_outcome is (
+        AttemptTerminalOutcome.SUCCEEDED
+    )
+    assert archives[0].read_bytes() == failed_bytes
+
+
+@pytest.mark.parametrize("terminal", [None, WorkUnitTerminalOutcome.SUCCEEDED])
+def test_retry_option_does_not_replace_active_or_successful_attempt(
+    tmp_path: Path, terminal: WorkUnitTerminalOutcome | None
+) -> None:
+    marker = OwnerPathRuntimeMarker(
+        tmp_path / "attempt.runtime.json",
+        "runtime-attempt-artifacts:a",
+        allow_failed_attempt_retry=True,
+    )
+    first = _attempt(tmp_path, stem="first")
+    marker.record_launch(_runtime(first))
+    if terminal is not None:
+        marker(_terminal_records(first, outcome=terminal))
+    original_bytes = marker.path.read_bytes()
+    with pytest.raises(RuntimeFinalizationContractError, match="different attempt"):
+        marker.record_launch(_runtime(_attempt(tmp_path, stem="second")))
+    assert marker.path.read_bytes() == original_bytes
+
+
 def test_marker_reader_rejects_obsolete_outer_schema(tmp_path: Path) -> None:
     attempt = _attempt(tmp_path)
     marker = OwnerPathRuntimeMarker(

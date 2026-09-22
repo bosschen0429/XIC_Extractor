@@ -220,12 +220,8 @@ def test_validation_minimal_outputs_keep_gate_artifacts_without_debug_surfaces(
         tmp_path / "alignment_owner_backfill_peak_fact_provenance.tsv"
     )
     assert outputs.cells_tsv is None
-    assert outputs.workbook is None
-    assert outputs.review_html is None
     assert outputs.edge_evidence_tsv is None
     assert outputs.status_matrix_tsv is None
-    assert outputs.event_to_owner_tsv is None
-    assert outputs.ambiguous_owners_tsv is None
     assert (
         outputs.skipped_evidence_ledger_tsv == tmp_path / "skipped_evidence_ledger.tsv"
     )

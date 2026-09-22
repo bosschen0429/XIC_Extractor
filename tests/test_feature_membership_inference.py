@@ -1,12 +1,17 @@
 from __future__ import annotations
 
-from dataclasses import replace
+from collections import Counter
+from dataclasses import asdict, dataclass, replace
 from typing import Any, cast
+
+import pytest
 
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.drift_evidence import KnownIstdOwnerLookup
 from xic_extractor.alignment.feature_membership_inference import (
     FeatureMembershipInferenceResult,
+    _Candidate,
+    _solve_sample_assignment,
     infer_feature_memberships,
 )
 from xic_extractor.alignment.ownership_models import (
@@ -14,6 +19,19 @@ from xic_extractor.alignment.ownership_models import (
     SampleLocalMS1Owner,
 )
 from xic_extractor.peak_detection.hypotheses import IntegrationResult
+
+
+@dataclass(frozen=True, slots=True)
+class _DriftLookup:
+    deltas: dict[str, float | None]
+    orders: dict[str, int]
+    source: str = "batch_istd_trend"
+
+    def sample_delta_min(self, sample_stem: str) -> float | None:
+        return self.deltas.get(sample_stem)
+
+    def injection_order(self, sample_stem: str) -> int | None:
+        return self.orders.get(sample_stem)
 
 
 def _owner(
@@ -230,6 +248,262 @@ def test_bridge_with_equal_competing_tracks_remains_undecided() -> None:
     assert any(
         decision.reason == "alternative_assignment_has_equal_objective"
         for decision in result.sparse_decisions
+    )
+
+
+@pytest.mark.parametrize(
+    ("delta", "ambiguous"),
+    [(0.0, True), (0.5e-9, True), (1.0e-9, True), (1.1e-9, False)],
+)
+def test_one_by_many_assignment_uses_sorted_feature_tie_break(
+    delta: float, ambiguous: bool
+) -> None:
+    owner = _owner("a", "single")
+    assignments, ambiguous_owners = _solve_sample_assignment(
+        (owner,),
+        {
+            owner.owner_id: (
+                _Candidate("feature-b", 0.25 + delta, "supported", "probe", ()),
+                _Candidate("feature-a", 0.25, "supported", "probe", ()),
+            )
+        },
+        Counter(),
+    )
+
+    assert assignments == {owner.owner_id: "feature-a"}
+    assert ambiguous_owners == (
+        frozenset((owner.owner_id,)) if ambiguous else frozenset()
+    )
+
+
+@pytest.mark.parametrize(
+    ("delta", "selected_owner", "ambiguous"),
+    [
+        (0.0, "first", True),
+        (0.5e-9, "first", True),
+        (1.0e-9, "first", True),
+        (1.1e-9, "first", False),
+    ],
+)
+def test_many_by_one_assignment_uses_stable_owner_tie_representative(
+    delta: float, selected_owner: str, ambiguous: bool
+) -> None:
+    first = _owner("a", "first")
+    second = _owner("b", "second")
+    assignments, ambiguous_owners = _solve_sample_assignment(
+        (first, second),
+        {
+            first.owner_id: (_Candidate("feature-a", 0.25, "supported", "probe", ()),),
+            second.owner_id: (
+                _Candidate("feature-a", 0.25 + delta, "supported", "probe", ()),
+            ),
+        },
+        Counter(),
+    )
+
+    selected = first if selected_owner == "first" else second
+    assert assignments == {selected.owner_id: "feature-a"}
+    assert ambiguous_owners == (
+        frozenset((selected.owner_id,)) if ambiguous else frozenset()
+    )
+
+
+def _long_rt_same_mass_owners(
+    *, evidence_score: int = 80, seed_event_count: int = 2
+) -> tuple[SampleLocalMS1Owner, ...]:
+    return tuple(
+        _owner(
+            f"s{index}",
+            "long-rt",
+            apex_rt=10.0 + index,
+            evidence_score=evidence_score,
+            seed_event_count=seed_event_count,
+        )
+        for index in range(3)
+    )
+
+
+def _long_rt_config() -> AlignmentConfig:
+    return AlignmentConfig(preferred_rt_sec=30.0, max_rt_sec=120.0)
+
+
+def test_sparse_long_rt_same_mass_without_drift_is_undecided() -> None:
+    owners = _long_rt_same_mass_owners()
+    result = infer_feature_memberships(
+        owners,
+        config=_long_rt_config(),
+        injection_order={
+            owner.sample_stem: index for index, owner in enumerate(owners)
+        },
+        drift_lookup=None,
+    )
+
+    assert {
+        (group.owner_ids, group.disposition, group.basis, group.reason)
+        for group in result.groups
+    } == {
+        (
+            (owner.owner_id,),
+            "undecided",
+            "insufficient_cross_sample_evidence",
+            "no_supported_cross_sample_membership",
+        )
+        for owner in owners
+    }
+    assert result.operation_counts.input_owner_rows == 3
+    assert result.operation_counts.unique_owners == 3
+    assert result.operation_counts.directional_passes == 2
+    assert result.operation_counts.rt_candidate_features_pruned == 6
+    assert result.operation_counts.candidate_features_considered == 0
+    assert result.operation_counts.owner_edge_evaluations == 0
+    assert result.operation_counts.supported_candidate_arcs == 0
+
+
+def test_sparse_long_rt_same_mass_uses_drift_corrected_support() -> None:
+    owners = _long_rt_same_mass_owners()
+    result = infer_feature_memberships(
+        owners,
+        config=_long_rt_config(),
+        injection_order={
+            owner.sample_stem: index for index, owner in enumerate(owners)
+        },
+        drift_lookup=_DriftLookup(
+            deltas={"s0": 0.0, "s1": 0.5, "s2": 1.0},
+            orders={"s0": 1, "s1": 2, "s2": 3},
+        ),
+    )
+
+    assert len(result.groups) == 1
+    assert result.groups[0].owner_ids == tuple(owner.owner_id for owner in owners)
+    assert result.groups[0].disposition == "assigned"
+    assert result.groups[0].basis == "bidirectional_membership_agreement"
+    assigned_decisions = [
+        decision for decision in result.sparse_decisions if decision.state == "assigned"
+    ]
+    assert assigned_decisions
+    assert all(decision.cost is not None for decision in assigned_decisions)
+    assert any("strong_edge" in decision.reason for decision in result.sparse_decisions)
+
+
+def test_sparse_same_mass_raw_fallback_remains_assignable() -> None:
+    owners = (
+        _owner(
+            "s0", "raw-fallback", apex_rt=10.0, evidence_score=45, seed_event_count=1
+        ),
+        _owner(
+            "s1", "raw-fallback", apex_rt=10.1, evidence_score=45, seed_event_count=1
+        ),
+    )
+    result = infer_feature_memberships(
+        owners,
+        config=AlignmentConfig(preferred_rt_sec=60.0, max_rt_sec=120.0),
+        injection_order={"s0": 1, "s1": 2},
+        drift_lookup=_DriftLookup(
+            deltas={"s0": 0.0, "s1": -0.3}, orders={"s0": 1, "s1": 2}
+        ),
+    )
+
+    assert len(result.groups) == 1
+    assert result.groups[0].owner_ids == tuple(owner.owner_id for owner in owners)
+    assert result.groups[0].disposition == "assigned"
+    assert any(
+        "drift=raw_fallback" in decision.reason for decision in result.sparse_decisions
+    )
+
+
+def test_assigned_sparse_decisions_record_the_witness_and_rt_basis_used() -> None:
+    """An audit must be able to tell which witness and which RT coordinate decided.
+
+    ``witness_owner_ids`` names every candidate witness, not the one whose edge
+    carried the cost, and without the basis an auditor cannot separate a
+    membership that stood on raw RT from one that only held after the ISTD
+    correction. The explanation serialises these decisions with ``asdict``, so
+    whatever is absent here is absent from the delivered audit.
+    """
+
+    owners = _long_rt_same_mass_owners()
+    corrected = infer_feature_memberships(
+        owners,
+        config=_long_rt_config(),
+        injection_order={
+            owner.sample_stem: index for index, owner in enumerate(owners)
+        },
+        drift_lookup=_DriftLookup(
+            deltas={"s0": 0.0, "s1": 0.5, "s2": 1.0},
+            orders={"s0": 1, "s1": 2, "s2": 3},
+        ),
+    )
+    owner_ids = {owner.owner_id for owner in owners}
+    assigned = [
+        decision for decision in corrected.sparse_decisions
+        if decision.state == "assigned"
+    ]
+    assert assigned
+    for decision in assigned:
+        assert decision.selected_witness_owner_id in owner_ids
+        assert decision.selected_witness_owner_id != decision.owner_id
+        assert decision.selected_witness_owner_id in decision.witness_owner_ids
+        assert decision.rt_basis in {"raw", "drift_corrected"}
+        assert decision.rt_raw_delta_sec is not None
+    assert any(decision.rt_basis == "drift_corrected" for decision in assigned)
+    assert all(
+        decision.rt_drift_corrected_delta_sec is not None
+        for decision in assigned
+        if decision.rt_basis == "drift_corrected"
+    )
+    assert {
+        "selected_witness_owner_id",
+        "rt_basis",
+        "rt_raw_delta_sec",
+        "rt_drift_corrected_delta_sec",
+    } <= asdict(assigned[0]).keys()
+
+    fallback = infer_feature_memberships(
+        (
+            _owner(
+                "s0", "raw-fallback", apex_rt=10.0, evidence_score=45,
+                seed_event_count=1,
+            ),
+            _owner(
+                "s1", "raw-fallback", apex_rt=10.1, evidence_score=45,
+                seed_event_count=1,
+            ),
+        ),
+        config=AlignmentConfig(preferred_rt_sec=60.0, max_rt_sec=120.0),
+        injection_order={"s0": 1, "s1": 2},
+        drift_lookup=_DriftLookup(
+            deltas={"s0": 0.0, "s1": -0.3}, orders={"s0": 1, "s1": 2}
+        ),
+    )
+    raw_assigned = [
+        decision for decision in fallback.sparse_decisions
+        if decision.state == "assigned"
+    ]
+    assert raw_assigned
+    assert all(decision.rt_basis == "raw" for decision in raw_assigned)
+    assert all(
+        decision.selected_witness_owner_id is not None
+        for decision in raw_assigned
+    )
+
+
+def test_sparse_long_rt_missing_drift_is_unassessable() -> None:
+    owners = _long_rt_same_mass_owners(evidence_score=45, seed_event_count=1)[:2]
+    result = infer_feature_memberships(
+        owners,
+        config=_long_rt_config(),
+        injection_order={"s0": 1, "s1": 2},
+        drift_lookup=_DriftLookup(
+            deltas={"s0": 0.0, "s1": None}, orders={"s0": 1, "s1": 2}
+        ),
+    )
+
+    assert {group.disposition for group in result.groups} == {"undecided"}
+    assert {group.basis for group in result.groups} == {
+        "insufficient_cross_sample_evidence"
+    }
+    assert any(
+        "drift=unavailable" in decision.reason for decision in result.sparse_decisions
     )
 
 

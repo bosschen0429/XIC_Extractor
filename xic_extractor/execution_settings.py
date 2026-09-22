@@ -6,7 +6,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 
-DEFAULT_ALIGNMENT_WORKERS = 1
+DEFAULT_ALIGNMENT_WORKERS = 4
 
 
 def default_parallel_workers() -> int:

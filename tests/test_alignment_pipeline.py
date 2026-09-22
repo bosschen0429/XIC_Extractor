@@ -1,5 +1,5 @@
 from contextlib import contextmanager, nullcontext
-from dataclasses import replace
+from dataclasses import fields, replace
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -98,19 +98,23 @@ def test_pure_cid_nl_wrapper_reports_retained_route_and_typed_handoff(
     captured_retained: dict[str, object] = {}
     captured_write: dict[str, object] = {}
     reference_provenance = {
-        "workbook_sha256": "a" * 64, "content_sha256": "b" * 64,
+        "workbook_sha256": "a" * 64,
+        "content_sha256": "b" * 64,
     }
     reference = SimpleNamespace(
         provenance=reference_provenance,
         explanation_provenance={
             **reference_provenance,
             "calibration": {
-                "schema_version": "known_istd_calibration", "samples": [],
+                "schema_version": "known_istd_calibration",
+                "samples": [],
             },
         },
     )
     monkeypatch.setattr(
-        pipeline_module, "read_known_istd_reference", lambda _path: reference,
+        pipeline_module,
+        "read_known_istd_reference",
+        lambda _path: reference,
     )
 
     def complete(**kwargs: object) -> object:
@@ -126,6 +130,9 @@ def test_pure_cid_nl_wrapper_reports_retained_route_and_typed_handoff(
         pipeline_module,
         "project_completed_untarget_batch_writer_inputs",
         lambda value, **_kwargs: writer_inputs if value is completed else pytest.fail(),
+    )
+    monkeypatch.setattr(
+        pipeline_module, "supports_streamed_untargeted_outputs", lambda _outputs: False
     )
 
     def write_outputs(*_args: object, **kwargs: object) -> None:
@@ -147,8 +154,8 @@ def test_pure_cid_nl_wrapper_reports_retained_route_and_typed_handoff(
             else None
         )
 
-        def finalize(inputs, matrix_path: Path) -> Path:
-            assert inputs is writer_inputs
+        def finalize(row_count: int, matrix_path: Path) -> Path:
+            assert row_count == len(writer_inputs.matrix.clusters)
             assert matrix_path.read_text(encoding="utf-8") == "Mz\tRT\tS1\n"
             path.write_text("published", encoding="utf-8")
             return path
@@ -170,6 +177,7 @@ def test_pure_cid_nl_wrapper_reports_retained_route_and_typed_handoff(
                 alignment_config=AlignmentConfig(),
                 peak_config=_peak_config(),
                 discovery_settings=_settings(),
+                emit_cid_nl_explanation=True,
                 raw_workers=raw_workers,
             )
         assert not report.exists()
@@ -184,6 +192,7 @@ def test_pure_cid_nl_wrapper_reports_retained_route_and_typed_handoff(
         alignment_config=AlignmentConfig(),
         peak_config=_peak_config(),
         discovery_settings=_settings(),
+        emit_cid_nl_explanation=True,
         owner_build_xic_backend="raw_superwindow",
         raw_workers=raw_workers,
         sample_metadata=retained_sample_metadata,
@@ -193,7 +202,6 @@ def test_pure_cid_nl_wrapper_reports_retained_route_and_typed_handoff(
     )
 
     assert report.read_text(encoding="utf-8") == "published"
-    assert result.untargeted_cid_nl_result is completed
     assert captured_retained["sample_metadata"] is retained_sample_metadata
     assert captured_retained["raw_workers"] == raw_workers
     assert captured_retained["known_istd_reference"] is (
@@ -285,7 +293,8 @@ def test_pure_cid_nl_cancellation_during_projection_skips_publication(
         project,
     )
     monkeypatch.setattr(
-        pipeline_module, "prepare_alignment_explanation",
+        pipeline_module,
+        "prepare_alignment_explanation",
         lambda *_args, **_kwargs: nullcontext(SimpleNamespace(consume_child=None)),
     )
     monkeypatch.setattr(
@@ -432,7 +441,11 @@ def test_pure_cid_nl_projection_failure_publishes_no_owned_outputs(
         reject_projection,
     )
     monkeypatch.setattr(
-        pipeline_module, "prepare_alignment_explanation",
+        pipeline_module, "supports_streamed_untargeted_outputs", lambda _outputs: False
+    )
+    monkeypatch.setattr(
+        pipeline_module,
+        "prepare_alignment_explanation",
         lambda *_args, **_kwargs: nullcontext(SimpleNamespace(consume_child=None)),
     )
 
@@ -452,11 +465,13 @@ def test_pure_cid_nl_projection_failure_publishes_no_owned_outputs(
     assert not (output_dir / "review_report.html").exists()
 
 
+@pytest.mark.parametrize("emit_explanation", (True, False))
 @pytest.mark.parametrize("failure", (None, "projection", "matrix"))
 def test_pipeline_streams_partition_children_once_and_cleans_up(
     tmp_path,
     monkeypatch,
     failure,
+    emit_explanation,
 ):
     import gc
     import sqlite3
@@ -537,16 +552,10 @@ def test_pipeline_streams_partition_children_once_and_cleans_up(
         matrix_path.unlink()
 
     batch_index = _write_batch(tmp_path, tuple(candidates))
-    batch = pipeline_module.read_discovery_batch_index(
-        batch_index, require_owner_closure=True
-    )
-    candidate_inputs = {
-        batch.candidate_csvs[stem]: values for stem, values in candidates.items()
-    }
     monkeypatch.setattr(
-        pipeline_module,
-        "read_owner_bound_discovery_candidates_csv",
-        lambda path, **_kwargs: candidate_inputs[path],
+        pipeline_module.DiscoveryInputSource,
+        "feature_view",
+        lambda _source: candidates,
     )
     monkeypatch.setattr(
         pipeline_module,
@@ -579,23 +588,29 @@ def test_pipeline_streams_partition_children_once_and_cleans_up(
     monkeypatch.setattr(StreamedResultStore, "_read_record", counted_read)
 
     if failure == "projection":
-        project = pipeline_module.project_completed_untarget_batch_writer_inputs
+        project = pipeline_module.iter_completed_untarget_batch_writer_inputs
 
         def fail_projection(*args, **kwargs):
-            project(*args, **kwargs)
+            yield from project(*args, **kwargs)
             raise OSError("projection failed")
 
         monkeypatch.setattr(
             pipeline_module,
-            "project_completed_untarget_batch_writer_inputs",
+            "iter_completed_untarget_batch_writer_inputs",
             fail_projection,
         )
     elif failure == "matrix":
+        from xic_extractor.alignment import pipeline_outputs
 
-        def fail_matrix(*_args, **_kwargs):
+        write_rows = pipeline_outputs.write_alignment_tsv_row_batches
+
+        def fail_matrix(*args, **kwargs):
+            write_rows(*args, **kwargs)
             raise OSError("matrix failed")
 
-        monkeypatch.setattr(pipeline_module, "_write_outputs_atomic", fail_matrix)
+        monkeypatch.setattr(
+            pipeline_outputs, "write_alignment_tsv_row_batches", fail_matrix
+        )
 
     def run():
         return pipeline_module.run_alignment(
@@ -606,25 +621,32 @@ def test_pipeline_streams_partition_children_once_and_cleans_up(
             alignment_config=config,
             peak_config=_peak_config(),
             discovery_settings=_settings(),
+            emit_cid_nl_explanation=emit_explanation,
         )
 
     try:
         if failure is None:
             result = run()
-            assert result.evidence.report_path == report_path
             assert matrix_path.read_bytes() == matrix_bytes
-            assert rows(report_path) == rows(reference)
-            assert read_alignment_explanation(
-                report_path
-            ) == read_alignment_explanation(reference)
-            for values in candidates.values():
-                for candidate in values:
-                    assert read_alignment_explanation(
-                        report_path,
-                        candidate_id=candidate.candidate_id,
-                    ) == read_alignment_explanation(
-                        reference, candidate_id=candidate.candidate_id
-                    )
+            if not emit_explanation:
+                # Nothing consumes the children, so nothing is written for them
+                # and the run still releases every one.
+                assert not report_path.exists()
+                assert result.evidence is None
+            else:
+                assert result.evidence.report_path == report_path
+                assert rows(report_path) == rows(reference)
+                assert read_alignment_explanation(
+                    report_path
+                ) == read_alignment_explanation(reference)
+                for values in candidates.values():
+                    for candidate in values:
+                        assert read_alignment_explanation(
+                            report_path,
+                            candidate_id=candidate.candidate_id,
+                        ) == read_alignment_explanation(
+                            reference, candidate_id=candidate.candidate_id
+                        )
         else:
             with pytest.raises(OSError, match=f"{failure} failed"):
                 run()
@@ -757,8 +779,11 @@ def test_known_reference_provenance_survives_sqlite_summary(tmp_path, monkeypatc
         tmp_path, monkeypatch, "positive"
     )
     arguments = dict(
-        completed=completed, writer_inputs=writer,
-        candidates_by_sample=candidates, matrix_path=matrix, alignment_config=config,
+        completed=completed,
+        writer_inputs=writer,
+        candidates_by_sample=candidates,
+        matrix_path=matrix,
+        alignment_config=config,
     )
     plain = write_cid_nl_explanation(tmp_path / "plain.sqlite", **arguments)
     plain_summary = read_cid_nl_explanation(plain)
@@ -769,11 +794,13 @@ def test_known_reference_provenance_survives_sqlite_summary(tmp_path, monkeypatc
     provenance = read_known_istd_reference(reference_path).provenance
     assert "content_sha256" in provenance
     report = write_cid_nl_explanation(
-        tmp_path / "reference.sqlite", **arguments,
+        tmp_path / "reference.sqlite",
+        **arguments,
         known_istd_reference_provenance=provenance,
     )
     assert read_cid_nl_explanation(report) == {
-        **plain_summary, "known_istd_reference": provenance,
+        **plain_summary,
+        "known_istd_reference": provenance,
     }
     candidate_id = candidates["S1"][0].candidate_id
     assert read_cid_nl_explanation(report, candidate_id=candidate_id) == (
@@ -807,7 +834,8 @@ def test_pure_cid_nl_targets_csv_integration(
         explanation_provenance={
             "workbook_sha256": "b" * 64,
             "calibration": {
-                "schema_version": "known_istd_calibration", "samples": [],
+                "schema_version": "known_istd_calibration",
+                "samples": [],
             },
         },
     )
@@ -834,15 +862,21 @@ def test_pure_cid_nl_targets_csv_integration(
         lambda *_args, **_kwargs: None,
     )
     monkeypatch.setattr(
+        pipeline_module, "supports_streamed_untargeted_outputs", lambda _outputs: False
+    )
+    monkeypatch.setattr(
         pipeline_module,
         "prepare_alignment_explanation",
-        lambda path, **_kwargs: nullcontext(SimpleNamespace(
-            consume_child=None, finalize=lambda _inputs, _matrix: path,
-        )),
+        lambda path, **_kwargs: nullcontext(
+            SimpleNamespace(
+                consume_child=None,
+                finalize=lambda _inputs, _matrix: path,
+            )
+        ),
     )
     (tmp_path / "out").mkdir(parents=True, exist_ok=True)
 
-    result = pipeline_module.run_alignment(
+    pipeline_module.run_alignment(
         discovery_batch_index=batch_index,
         raw_dir=raw_dir,
         dll_dir=tmp_path / "dll",
@@ -853,12 +887,12 @@ def test_pure_cid_nl_targets_csv_integration(
         targets_csv=targets_csv,
     )
 
-    assert result.untargeted_cid_nl_result is completed
     assert captured["known_istd_reference"] is fake_ref
 
 
 def test_mixed_target_list_only_supplies_istds_to_untargeted_alignment(
-    tmp_path, monkeypatch,
+    tmp_path,
+    monkeypatch,
 ):
     import xic_extractor.alignment.raw_sources as raw_sources
     from xic_extractor.configuration.targets import read_targets
@@ -874,17 +908,40 @@ def test_mixed_target_list_only_supplies_istds_to_untargeted_alignment(
 
     monkeypatch.setattr(raw_sources, "existing_raw_paths", lambda **kwargs: {})
     monkeypatch.setattr(
-        pipeline_module, "extract_batch_known_istd_reference", extract_reference,
+        pipeline_module,
+        "extract_batch_known_istd_reference",
+        extract_reference,
     )
     monkeypatch.setattr(
-        pipeline_module, "_run_untargeted_cid_nl_alignment", lambda **kwargs: None,
+        pipeline_module,
+        "_run_untargeted_cid_nl_alignment",
+        lambda **kwargs: None,
     )
     pipeline_module.run_alignment(
         discovery_batch_index=batch_index,
-        raw_dir=tmp_path / "raw", dll_dir=tmp_path / "dll",
-        output_dir=tmp_path / "out", alignment_config=AlignmentConfig(),
-        peak_config=_peak_config(), discovery_settings=_settings(),
+        raw_dir=tmp_path / "raw",
+        dll_dir=tmp_path / "dll",
+        output_dir=tmp_path / "out",
+        alignment_config=AlignmentConfig(),
+        peak_config=_peak_config(),
+        discovery_settings=_settings(),
         targets_csv=source,
     )
     assert captured["targets"] == tuple(t for t in all_targets if t.is_istd)
     assert len(captured["targets"]) < len(all_targets)
+
+
+def test_alignment_outputs_publish_no_live_workflow_result() -> None:
+    """A run that closes its partition store must not hand that store back.
+
+    The formal run sets retain_partition_memory False, so children and
+    assessments load through a spool that close() deletes on the way out of
+    run_alignment. A returned live result still answers lengths and identity
+    after that, and fails only when something reads actual content, so the
+    object looks complete while already being unreadable. Callers get the
+    durable locator in `evidence` instead.
+    """
+
+    field_names = {field.name for field in fields(pipeline_module.AlignmentRunOutputs)}
+    assert "untargeted_cid_nl_result" not in field_names
+    assert "evidence" in field_names

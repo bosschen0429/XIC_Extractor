@@ -10,6 +10,37 @@ transport contract or let writers recompute science.
 
 ## Execution Boundary
 
+The bounded production entry creates initial jobs only for sample/subject pairs
+with Discovery candidates. One shared template per sample retains the complete
+sample population and acquisition settings. Recovery creates a missing pair's
+job only after a direct-SUPPORT group meets the population support threshold.
+Unsearched pairs receive their method assessment during final cell composition,
+without a worker dispatch or a runtime sample-result artifact. The direct batch
+interface retains its declared, complete job manifest.
+
+Acquisition recovery planning uses direct-SUPPORT group membership and the
+eligible sample population to apply the conservative support threshold. It
+does not construct a dense group-by-sample CellObservation population merely
+to decide which missing samples to search. Cell evidence and quantitation
+remain responsibilities of the later composition stage.
+Process recovery requests contain only subjects with scheduled searches;
+responses use work-unit keys to update those subjects while retaining the
+other subjects' initial results.
+
+The bounded Untargeted runtime keeps exact source-bound XIC and MS2 acquisition
+facts in the output directory's private `.cid_nl_acquisition_cache`. A retry
+uses a new processing attempt and recomputes scientific decisions; matching
+queries reuse acquisition facts without repeating the vendor query. Source or
+query changes require acquisition for the affected entries. Sample batches with
+an input-owner-verified source check its current path identity before replay;
+they open a native RAW handle only when a missing query or metadata needs it.
+Runtime resource receipts report whether that native open actually occurred.
+Without a verified source expectation, the existing native-open source check
+remains in force. This cache does
+not preserve completed grouping graphs or turn an old failed attempt into a
+successful result. The Alignment entry point archives a finalized failed or
+cancelled runtime marker before launching a new attempt in the same directory.
+
 Targeted and Untargeted CID-NL close through the shared scientific workflow.
 `alignment.pipeline.run_alignment` adapts pure CID-NL inputs to that workflow
 and renders its finalized result. It requires explicit pure CID-NL discovery
@@ -66,17 +97,56 @@ groups directly into the same result without model fitting or assignment.
 Initial candidates retain their request, sample, acquisition, physical-
 hypothesis, integration, and evidence bindings.
 
-The exact same grouping-result object is used before bounded Backfill and
-through finalization. ObservationRepair can supply an owner-backed repaired
-observation for a missing or insufficient cell, but it does not reopen group
-membership, rebuild a grouping snapshot, refit ModeTrack, or mint a post-repair
-grouping context.
+Initial members stay in their original groups through bounded recovery.
+A group-bound recovery with unique SUPPORT may add a missing sample member
+when it passes the existing feature evidence rule. The grouping owner records
+the admitted member and exact predecessor/successor lineage; it does not refit,
+move original members, split known ISTD bindings, or create new groups.
+Competing claims on the same physical content remain unresolved and supply no
+numeric value. Final cells retain the original cell for provenance and the
+completed recovery assessment/observation for the final decision and integral.
+Cell evidence uses `cell_observation_v2` and final-cell canonical bases use
+`final_group_cell_observation_v2` to bind unresolved SUPPORT and recovery
+provenance explicitly. Old diagnostic evidence remains historical; acquisition
+cache facts do not depend on these cell schemas.
+
+The production CID-NL runtime prepares that result after initial assessments,
+once per compatible subject workset, using the complete sample population and
+the supplied known-ISTD context. Recovery eligibility counts distinct supporting
+samples across the frozen group, including compatible subjects. It does not
+regroup each method subject separately. Missing sample jobs are created only
+after this eligibility decision; dense cells are assembled during final
+composition. Recovery attempts bind the group ID to their sample and method
+subject in the runtime result. RT bounds describe the acquisition query rather
+than identify the destination group. The direct production API therefore takes
+its alignment configuration and known-ISTD reference at execution time;
+composition cannot replace that grouping context.
+The acquisition boundary canonicalizes repeated or unordered subject/RT
+queries. Different groups may reuse the same physical trace while retaining
+separate group-bound recovery attempts and decisions.
 
 Initial grouping uses the sparse feature index described below. It scores only
 compatible feature candidates and retains the evaluated evidence. Missing pair
-records mean `not_evaluated`; they do not prove incompatibility. Backfill checks
-its repaired observation against the fixed destination group without changing
-membership.
+records mean `not_evaluated`; they do not prove incompatibility. Recovery checks
+its observation against the fixed destination group before admission.
+
+Before scoring, a feature candidate must have a seed or most-recent witness
+that can support the preferred RT window in raw or corrected coordinates.
+Unavailable correction remains eligible; a raw-compatible pair also remains
+eligible when correction would be contradictory. Index axes are updated only
+when their stored extrema or composition key change. Runtime progress records
+the inference operation counts, including RT pruning, actual edge evaluations,
+index updates, and assignment solver calls.
+Single-owner and single-feature competitions use their analytical optimum and
+next-best cost, including the private unassigned option. Equal or near-equal
+optima retain ambiguity. A stable ID selects the diagnostic representative of
+an exact tie; it does not authorize membership. General multi-owner,
+multi-feature components retain the joint assignment solver.
+
+Writer projection checks sample completeness per finalized row without building
+a second global row-by-sample key set. Cell and integration-audit TSV writers
+consume formatted rows incrementally instead of retaining a second complete
+population of cell dictionaries.
 
 The initial ModeTrack model identity binds its assignment-scope bounds, exact
 group identities, eligible anchors, explicit noneligible evidence, and policy.
@@ -196,18 +266,32 @@ unresolved and rejected groups remain AuditTrail facts.
   search merely by entering Alignment. This keeps candidate recall available
   for review without turning an unavailable physical feature into owner-build,
   group, Matrix, or Backfill work.
+- Persisted-input routing selects MS1-feature-backed candidates before minting
+  method subjects. Review-only observations cannot choose feature query centers.
+  Direct/mixed precursor NL observations may supply local scan evidence for an
+  existing feature; their own physical curves are not loaded for grouping.
+  Original Discovery artifacts retain the complete observation population.
+- Alignment retains compact cohort identities globally and restores candidate
+  rows and physical records per closed working set. Scheduling packs worksets
+  by 100 Da ownership and a 1,024-candidate budget; an indivisible scientific
+  workset may exceed that budget or cross a mass boundary. Mass partitions are
+  scheduling units, not scientific exclusion boundaries. Final children retain
+  canonical subject order independently of execution order.
 - Retained CID-NL capture preserves each candidate's extraction m/z and ppm
   when combining overlapping RT contexts. Preparation sharing may extend the
   RT interval; it does not replace the candidate center with a method-subject
   center. Only identical resulting requests share an acquired trace.
 - A CID-NL method subject identifies an acquisition/assessment question, not a
   feature boundary. Non-composite Untargeted subjects with the same scalar
-  neutral loss and overlap-connected resolver intervals form one alignment
-  workset. Execution keeps each workset atomic, and its formal workflow child
+  neutral loss form alignment worksets using resolver intervals together with
+  the known-reference comparison envelopes described below. Execution keeps
+  each connected workset atomic, and its formal workflow child
   carries all original assessment bindings through grouping and final cells.
   Sharing a workset permits comparison; the existing CrossSample gates still
-  decide membership. Different losses, disconnected intervals, and composite
-  subjects remain separate worksets.
+  decide membership. Different losses, scopes that remain disconnected after
+  those envelopes are applied, and composite subjects remain separate worksets.
+  SearchScope preserves request-bound provider and candidate membership; it
+  does not re-partition an upstream workset using resolver intervals alone.
 - A cross-subject group retains each SUPPORT cell's exact assessment and
   hypothesis binding. Its canonical recovery subject is the supporting subject
   nearest the formal group center, with method-subject ID breaking ties.
@@ -623,7 +707,12 @@ CID-NL runs also emit `cid_nl_explanation.sqlite` after successful Matrix
 publication, alongside their runtime marker.
 Identity, review, provenance, backfill evidence, HTML, and workbook artifacts
 remain explicit machine, validation, diagnostic, or compatibility outputs;
-their schemas and writers are unchanged.
+their schemas and value policies are unchanged. TSV-only `production` and
+`validation-minimal` publication consumes finalized rows in one pass, retaining
+the identity census rather than the complete cell and decision populations.
+Public row numbering and identity hashes span that complete ordered stream.
+Workbook, HTML and additional whole-matrix consumers retain the materialized
+projection API. Both routes use the same atomic publication and rollback owner.
 
 | Output | Role |
 | --- | --- |

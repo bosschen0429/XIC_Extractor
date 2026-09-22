@@ -221,9 +221,27 @@ class RawFileHandle:
         return float(self._raw_file.RetentionTimeFromScanNumber(scan_number))
 
     def iter_ms2_scans(self, rt_min: float, rt_max: float) -> Iterator[Ms2ScanEvent]:
+        yield from self._iter_ms2_scans(rt_min, rt_max, scan_numbers=None)
+
+    def iter_ms2_scan_subset(
+        self, rt_min: float, rt_max: float, scan_numbers: frozenset[int]
+    ) -> Iterator[Ms2ScanEvent]:
+        """Read declared scans within the same native RT-to-scan window."""
+        yield from self._iter_ms2_scans(rt_min, rt_max, scan_numbers=scan_numbers)
+
+    def _iter_ms2_scans(
+        self, rt_min: float, rt_max: float, *, scan_numbers: frozenset[int] | None
+    ) -> Iterator[Ms2ScanEvent]:
         start_scan = self._raw_file.ScanNumberFromRetentionTime(rt_min)
         end_scan = self._raw_file.ScanNumberFromRetentionTime(rt_max)
-        for scan_number in range(start_scan, end_scan + 1):
+        selected = (
+            range(start_scan, end_scan + 1)
+            if scan_numbers is None
+            else sorted(
+                number for number in scan_numbers if start_scan <= number <= end_scan
+            )
+        )
+        for scan_number in selected:
             try:
                 filter_obj = self._raw_file.GetFilterForScanNumber(scan_number)
                 if getattr(filter_obj, "MSOrder", None) != self._thermo.ms2_order:

@@ -29,6 +29,9 @@ from xic_extractor.peak_detection.cid_nl_method_assessment import (
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     CID_NL_PROVIDER_ID,
     REQUEST_INPUT_KEY,
+    CidNlMethodSubjectContractError,
+    cid_nl_alignment_subject_worksets,
+    cid_nl_method_subject_from_request,
     cid_nl_method_subject_from_target,
     mint_untargeted_cid_nl_method_subject,
     mint_untargeted_cid_nl_method_subject_batch,
@@ -62,6 +65,7 @@ from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 
 def test_no_raw_scopes_share_capture_observation_and_hypothesis_owner(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     (tmp_path / "targeted").mkdir()
     (tmp_path / "untargeted").mkdir()
@@ -240,6 +244,50 @@ def test_no_raw_scopes_share_capture_observation_and_hypothesis_owner(
     assert require_capture_binding(untargeted, "candidate-b").candidate_id == (
         "candidate-b"
     )
+
+    child_scope = replace(
+        untargeted,
+        declared_candidate_ids=("candidate-a",),
+        capture_bindings=(untargeted_binding,),
+    )
+
+    def unexpected_detection(*args, **kwargs):
+        pytest.fail("scope changes must not repeat sample-local peak detection")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(capture_owner, "detect_ms1_trace_peak", unexpected_detection)
+        rebound = capture_owner.rebind_untargeted_capture_scope(
+            untargeted_capture, scope=child_scope
+        )
+    assert rebound.scope is child_scope
+    assert rebound.trace is untargeted_capture.trace
+    assert rebound.selected_hypothesis is untargeted_capture.selected_hypothesis
+    assert capture_owner.mint_captured_peak_observation(
+        rebound, processing_owners=untargeted_fixture.owners, sample=untargeted_sample
+    ) == untargeted_observation
+    for changed in (
+        replace(
+            child_scope,
+            capture_bindings=(replace(untargeted_binding, preferred_rt=8.1),),
+        ),
+        replace(
+            child_scope,
+            method_constraints=replace(
+                child_scope.method_constraints,
+                peak_config=replace(peak_config, smooth_window=17),
+            ),
+        ),
+    ):
+        with pytest.raises(
+            capture_owner.SampleLocalCaptureError, match="capture question"
+        ):
+            capture_owner.rebind_untargeted_capture_scope(
+                untargeted_capture, scope=changed
+            )
+    with pytest.raises(capture_owner.SampleLocalCaptureError, match="Untargeted"):
+        capture_owner.rebind_untargeted_capture_scope(
+            targeted_capture, scope=child_scope
+        )
 
 
 def test_capture_binds_trace_coordinates_to_both_scope_variants(
@@ -620,7 +668,21 @@ def test_untargeted_batch_scope_uses_exact_candidate_subject_membership(
         scientific_inputs={
             REQUEST_INPUT_KEY: batch.request_payload(),
             "current_discovery_candidate_universe": {"samples": universe_samples},
+            "alignment_feature_candidate_ids": [item[0] for item in memberships],
         },
+    )
+    feature_visits = 0
+
+    class CountedFeatures(list):
+        def __iter__(self):
+            nonlocal feature_visits
+            for value in super().__iter__():
+                feature_visits += 1
+                yield value
+
+    request_inputs = scope_owner._request_inputs(sample_request)
+    request_inputs["alignment_feature_candidate_ids"] = CountedFeatures(
+        request_inputs["alignment_feature_candidate_ids"]
     )
     with pytest.raises(SearchScopeContractError, match="request subject memberships"):
         replace(scope, request=sample_request)
@@ -637,6 +699,7 @@ def test_untargeted_batch_scope_uses_exact_candidate_subject_membership(
         sample_name=other_sample.metadata.sample_name,
         acquisition_source_id=other_source.acquisition_source_id,
     )
+    prepared_feature_visits = feature_visits
     for _ in range(2):
         assert replace(
             scope,
@@ -648,6 +711,8 @@ def test_untargeted_batch_scope_uses_exact_candidate_subject_membership(
         assert replace(subject_view, request=sample_request).capture_bindings == (
             view_binding,
         )
+    assert prepared_feature_visits > 0
+    assert feature_visits == prepared_feature_visits
     malformed_request = build_processing_request_identity(
         acquisition_sources=request.acquisition_sources,
         acquisition_bindings=request.acquisition_bindings,
@@ -727,7 +792,7 @@ def test_untargeted_batch_scope_uses_exact_candidate_subject_membership(
         )
 
 
-def test_untargeted_batch_scope_accepts_one_exact_compatible_subject_workset(
+def test_untargeted_batch_scope_accepts_known_comparison_bridged_workset(
     tmp_path: Path,
 ) -> None:
     fixture = build_untargeted_cid_nl_no_raw_fixture(
@@ -744,8 +809,8 @@ def test_untargeted_batch_scope_accepts_one_exact_compatible_subject_workset(
                 )
                 for precursor_mz, neutral_loss_da in (
                     (243.098, 116.0474),
-                    (243.099, 116.0474),
                     (243.2, 116.0474),
+                    (244.0, 116.0474),
                     (243.0985, 114.0),
                 )
             ),
@@ -763,8 +828,8 @@ def test_untargeted_batch_scope_accepts_one_exact_compatible_subject_workset(
         )
         for candidate_id, precursor_mz, neutral_loss_da in (
             ("candidate-a", 243.098, 116.0474),
-            ("candidate-b", 243.099, 116.0474),
-            ("candidate-c", 243.2, 116.0474),
+            ("candidate-b", 243.2, 116.0474),
+            ("candidate-c", 244.0, 116.0474),
             ("candidate-d", 243.0985, 114.0),
         )
     )
@@ -819,8 +884,20 @@ def test_untargeted_batch_scope_accepts_one_exact_compatible_subject_workset(
     )
     workset_subject_ids = {
         subject_by_mz_loss[(243.098, 116.0474)].method_subject_id,
-        subject_by_mz_loss[(243.099, 116.0474)].method_subject_id,
+        subject_by_mz_loss[(243.2, 116.0474)].method_subject_id,
     }
+    assert not any(
+        {subject.method_subject_id for subject in workset} == workset_subject_ids
+        for workset in cid_nl_alignment_subject_worksets(subjects)
+    )
+    bridged_worksets = cid_nl_alignment_subject_worksets(
+        subjects,
+        comparison_mz_intervals=((243.0, 243.3),),
+    )
+    assert any(
+        {subject.method_subject_id for subject in workset} == workset_subject_ids
+        for workset in bridged_worksets
+    )
     workset_providers = tuple(
         provider
         for provider in parent_scope.evidence_providers
@@ -849,10 +926,12 @@ def test_untargeted_batch_scope_accepts_one_exact_compatible_subject_workset(
     index = scope_owner._request_batch_capture_index(request)
     pinned = scope_owner.cid_nl_method_subjects_from_request(request)
     parent_subject_ids = index.subject_ids
+    parent_subjects = pinned.subjects
     parent_memberships = pinned.candidate_memberships
     object.__setattr__(
         index, "subject_ids", CountedTuple(parent_subject_ids, "subjects")
     )
+    object.__setattr__(pinned, "subjects", CountedTuple(parent_subjects, "subjects"))
     object.__setattr__(
         pinned, "candidate_memberships", CountedTuple(parent_memberships, "memberships")
     )
@@ -865,8 +944,22 @@ def test_untargeted_batch_scope_accepts_one_exact_compatible_subject_workset(
             ),
             capture_bindings=workset_bindings,
         )
+        for binding in workset_bindings:
+            subject = cid_nl_method_subject_from_request(
+                request, method_subject_id=binding.method_subject_id
+            )
+            label, role, pair, source_label = capture_owner._hypothesis_context(
+                workset_scope,
+                query_mz=binding.query_mz,
+                method_subject_id=binding.method_subject_id,
+            )
+            assert label == f"untargeted:{binding.query_mz:.8g}:{subject.label}"
+            assert (role, pair, source_label) == ("Analyte", "", label)
+        with pytest.raises(CidNlMethodSubjectContractError, match="not pinned"):
+            cid_nl_method_subject_from_request(request, method_subject_id="missing")
     finally:
         object.__setattr__(index, "subject_ids", parent_subject_ids)
+        object.__setattr__(pinned, "subjects", parent_subjects)
         object.__setattr__(pinned, "candidate_memberships", parent_memberships)
 
     assert visited == {"subjects": 0, "memberships": 0}
@@ -898,10 +991,6 @@ def test_untargeted_batch_scope_accepts_one_exact_compatible_subject_workset(
         (
             (workset_providers[0], workset_providers[0]),
             "duplicate evidence providers",
-        ),
-        (
-            providers_for({(243.098, 116.0474), (243.2, 116.0474)}),
-            "exact compatible subject workset",
         ),
         (
             providers_for({(243.098, 116.0474), (243.0985, 114.0)}),
@@ -1167,8 +1256,10 @@ def test_physical_capture_projects_trace_identity_once_across_mint_and_bind(
     )
     trace_hashes = 0
     projections = 0
+    evaluation_calls = 0
     real_trace_hash = physical_owner.mint_physical_trace_content_id
     real_projection = capture_owner._project_peak_observation_values
+    real_evaluation = capture_owner.evaluate_physical_peak
 
     def count_trace_hash(*args, **kwargs):
         nonlocal trace_hashes
@@ -1179,6 +1270,11 @@ def test_physical_capture_projects_trace_identity_once_across_mint_and_bind(
         nonlocal projections
         projections += 1
         return real_projection(**kwargs)
+
+    def count_evaluation(*args, **kwargs):
+        nonlocal evaluation_calls
+        evaluation_calls += 1
+        return real_evaluation(*args, **kwargs)
 
     monkeypatch.setattr(
         physical_owner,
@@ -1195,6 +1291,7 @@ def test_physical_capture_projects_trace_identity_once_across_mint_and_bind(
         "_project_peak_observation_values",
         count_projection,
     )
+    monkeypatch.setattr(capture_owner, "evaluate_physical_peak", count_evaluation)
     capture = capture_owner.capture_peak_hypotheses(
         scope=scope,
         candidate_id=binding.candidate_id,
@@ -1209,6 +1306,26 @@ def test_physical_capture_projects_trace_identity_once_across_mint_and_bind(
             source="physical-owner",
             acquisition_source_id=source.acquisition_source_id,
         ),
+    )
+    original_capture = capture
+
+    def unexpected_evaluation(*args, **kwargs):
+        pytest.fail("scope changes must not repeat physical preparation or evaluation")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(capture_owner, "prepare_physical_signal", unexpected_evaluation)
+        patch.setattr(capture_owner, "evaluate_physical_peak", unexpected_evaluation)
+        capture = capture_owner.rebind_untargeted_capture_scope(
+            capture, scope=replace(scope)
+        )
+    assert capture.physical_evaluation is original_capture.physical_evaluation
+    assert (
+        capture._owner_seal.physical_observation_content
+        is original_capture._owner_seal.physical_observation_content
+    )
+    assert (
+        capture._owner_seal.physical_observation_provenance
+        is original_capture._owner_seal.physical_observation_provenance
     )
     observation = capture_owner.mint_captured_peak_observation(
         capture,
@@ -1230,6 +1347,7 @@ def test_physical_capture_projects_trace_identity_once_across_mint_and_bind(
     assert bound.selected_hypothesis is owner_hypothesis
     assert trace_hashes == 1
     assert projections == 1
+    assert evaluation_calls == 0
 
 
 def test_untargeted_scope_rejects_targeted_request_variant(tmp_path: Path) -> None:

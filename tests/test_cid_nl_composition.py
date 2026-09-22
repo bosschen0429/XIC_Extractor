@@ -122,8 +122,10 @@ def test_configured_composition_runs_discovery_to_owner_matrix(
     )
     assert len(batch.subject_batch.subjects) == 1
     _install_runtime_raws(monkeypatch, sources_by_path=sources, tmp_path=tmp_path)
+    alignment_config = AlignmentConfig(anchor_min_seed_events=1)
     runtime = execute_untargeted_cid_nl_production_batch(
         batch,
+        alignment_config=alignment_config,
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
         recovery_marker=OwnerPathRuntimeMarker(
             tmp_path / "runtime.json", "composition"
@@ -166,7 +168,7 @@ def test_configured_composition_runs_discovery_to_owner_matrix(
             for assessment in by_sample.values()
         )
     completed = compose_untargeted_cid_nl_production_result(
-        batch, runtime, alignment_config=AlignmentConfig(anchor_min_seed_events=1)
+        batch, runtime, alignment_config=alignment_config
     )
     writer = project_completed_untarget_batch_writer_inputs(completed)
     if scenario == "pooled":
@@ -217,6 +219,33 @@ def test_configured_composition_runs_discovery_to_owner_matrix(
         assert rows[0]["S4"] == ""
     if scenario == "recovery_complete":
         assert float(rows[0]["S4"]) > 0
+        (child,) = completed.application_result.children
+        core = child.scientific_core
+        (before,) = core.grouping_result.initial_population
+        (after,) = core.final_population
+        assert len(before.member_subjects) == 3
+        assert len(after.member_subjects) == 4
+        assert set(before.member_subjects).issubset(after.member_subjects)
+        assert len(core.partition_transition.admitted_members) == 1
+        assert len(core.lineage) == 1
+        recovered_cell = next(
+            cell
+            for cell in core.cell_observations
+            if cell.canonical_sample.metadata.raw_stem == "S4"
+        )
+        assert recovered_cell.recovery_cell is not None
+        assert (
+            recovered_cell.recovery_cell.method_assessment
+            is recovered.effective_assessment
+        )
+        assert recovered_cell.integrations == (
+            recovered.effective_assessment.candidate_peaks[0].content.integration,
+        )
+        assert recovered_cell.predecessor_cells == ()
+        assert [
+            association.position.group_identity.group_hypothesis_id
+            for association in recovered_cell.position_associations
+        ] == [before.group_hypothesis_id]
         assert (
             next(
                 cell for cell in writer.matrix.cells if cell.sample_stem == "S4"
@@ -252,9 +281,7 @@ def _assert_unsupported_exclusion_closes_exact_coverage(completed):
             reason_code="discovery_candidate_not_search_eligible",
             composite_assessments=(),
         )
-    with pytest.raises(
-        ApplicationResultContractError, match="complete sample coverage"
-    ):
+    with pytest.raises(ApplicationResultContractError, match="input sample coverage"):
         UntargetBatchApplicationResultRequest(
             scope=result.scope,
             processing_request=result.processing_request,

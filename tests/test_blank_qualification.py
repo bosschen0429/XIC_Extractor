@@ -219,9 +219,12 @@ def test_default_background_library_packaged_and_loadable():
     assert len(lib.ions) == 34659
     assert len(lib.source_blanks) == 11
 
-    # resolve_background_library fallback
-    resolved = resolve_background_library()
-    assert resolved is lib
+    # The packaged library stays loadable on request, but a run never inherits
+    # it. It was measured on a 15-minute gradient; applying it to a run acquired
+    # on another method would demote candidates to review_only_orphan_nl with
+    # ms1_peak_found=False against a background population that run never saw.
+    assert resolve_background_library() is None
+    assert resolve_background_library(raw_dir=None, library_path=path) is not None
 
 
 def test_resolve_background_library_missing_explicit_path_raises(

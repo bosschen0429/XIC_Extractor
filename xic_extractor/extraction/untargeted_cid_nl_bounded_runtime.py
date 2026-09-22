@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import importlib
 import json
+import shutil
+import threading
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import fields
+from dataclasses import fields, replace
+from functools import partial
 from pathlib import Path
 from typing import cast
 
@@ -30,6 +34,7 @@ from xic_extractor.execution_engine import (
     WorkerAdmissionPool,
     WorkPartition,
 )
+from xic_extractor.execution_engine.worker_pool import WorkerTransportMetrics
 from xic_extractor.execution_runtime import (
     WorkUnitSettlement,
     WorkUnitTerminalOutcome,
@@ -55,6 +60,7 @@ from xic_extractor.extraction.untargeted_cid_nl_production_batch import (
     compose_and_persist_untargeted_cid_nl_partition,
     materialize_untargeted_cid_nl_partition,
     prepare_untargeted_cid_nl_alignment_subject_worksets,
+    prepare_untargeted_cid_nl_grouping,
 )
 from xic_extractor.extraction.untargeted_cid_nl_real_data_runtime import (
     UntargetedCidNlRuntimePartitionResult,
@@ -67,12 +73,12 @@ from xic_extractor.peak_detection.cid_nl_method_subject import (
 )
 from xic_extractor.peak_detection.search_scope import (
     SEARCH_SCOPE_SCHEMA_VERSION,
-    CaptureCandidateBinding,
     CaptureMethodConstraints,
     EvidenceProviderBinding,
     UntargetedSearchScope,
 )
 from xic_extractor.processing_identity import resolve_request_acquisition_source
+from xic_extractor.raw_reader import _ensure_assemblies_loaded
 
 PartitionResultStore = StreamedResultStore
 
@@ -95,6 +101,10 @@ _GLOBAL_CLOSURE_CONTRACT = _mint_artifact_semantic_contract_ref(
 )
 
 
+def _initialize_sample_process(dll_dir: Path) -> None:
+    _ensure_assemblies_loaded(dll_dir, importlib.import_module)
+
+
 class CidNlPartitionPipelineAdapter:
     """Adapts CID-NL partition acquisition, composition, and closure to the
     generic execution engine.
@@ -110,9 +120,12 @@ class CidNlPartitionPipelineAdapter:
         raw_workers: int = DEFAULT_ALIGNMENT_WORKERS,
         raw_worker_backend: str = "thread",
         acquisition_workers: int = 1,
+        acquisition_cache_dir: Path | None = None,
+        retain_partition_spool: bool = False,
     ) -> None:
         if type(acquisition_workers) is not int or acquisition_workers not in (1, 2):
             raise ValueError("acquisition_workers must be 1 or 2")
+        self._retain_partition_spool = bool(retain_partition_spool)
         self._plan = plan
         self._alignment_config = alignment_config
         self._known_istd_reference = (
@@ -132,6 +145,7 @@ class CidNlPartitionPipelineAdapter:
         self._max_partition_jobs = max_partition_jobs
         self._raw_workers = raw_workers
         self._raw_worker_backend = raw_worker_backend
+        self._acquisition_cache_dir = acquisition_cache_dir
 
         context = plan.context
         self._owners = context.processing_owners
@@ -144,13 +158,42 @@ class CidNlPartitionPipelineAdapter:
         subjects_per_partition = max(1, max_partition_jobs // len(context.samples))
         subject_partitions_list: list[tuple[CidNlMethodSubject, ...]] = []
         current_subjects: list[CidNlMethodSubject] = []
-        for workset in self._prepared_worksets.worksets:
+        current_candidate_count = 0
+        current_mass_bin: int | None = None
+        worksets = self._prepared_worksets.worksets
+        if plan.partition_input_loader is not None:
+            worksets = tuple(
+                sorted(
+                    worksets,
+                    key=lambda workset: (
+                        min(subject.precursor_mz for subject in workset),
+                        min(subject.method_subject_id for subject in workset),
+                    ),
+                )
+            )
+        for workset in worksets:
+            mass_bin = int(min(subject.precursor_mz for subject in workset) // 100.0)
+            candidate_count = sum(
+                len(
+                    self._prepared_worksets.memberships_by_subject.get(
+                        subject.method_subject_id, ()
+                    )
+                )
+                for subject in workset
+            )
             if len(workset) > subjects_per_partition:
                 raise ValueError(
                     "max_partition_jobs cannot contain one alignment subject workset"
                 )
             if current_subjects and (
                 len(current_subjects) + len(workset) > subjects_per_partition
+                or (
+                    plan.partition_input_loader is not None
+                    and (
+                        current_mass_bin != mass_bin
+                        or current_candidate_count + candidate_count > 1024
+                    )
+                )
             ):
                 subject_partitions_list.append(
                     tuple(
@@ -161,7 +204,10 @@ class CidNlPartitionPipelineAdapter:
                     )
                 )
                 current_subjects = []
+                current_candidate_count = 0
             current_subjects.extend(workset)
+            current_candidate_count += candidate_count
+            current_mass_bin = mass_bin
         if current_subjects:
             subject_partitions_list.append(
                 tuple(
@@ -179,7 +225,11 @@ class CidNlPartitionPipelineAdapter:
             and raw_workers >= 2
             else 1
         )
-        self._partition_raw_workers = raw_workers // self._acquisition_workers
+        self._partition_raw_workers = (
+            raw_workers
+            if raw_worker_backend == "process"
+            else raw_workers // self._acquisition_workers
+        )
         self._partitions = tuple(
             WorkPartition(
                 index=index,
@@ -188,6 +238,38 @@ class CidNlPartitionPipelineAdapter:
             )
             for index, subjects in enumerate(subject_partitions)
         )
+        self._partition_subject_batches = {
+            partition.partition_key: self._prepared_worksets.subject_batch(
+                partition.payload
+            )
+            for partition in self._partitions
+        }
+        self._process_pool_lock = threading.Lock()
+        self._process_pools_closed = False
+        self._process_pools: tuple[WorkerAdmissionPool, ...] = ()
+        if raw_worker_backend == "process":
+            shared_objects = _sample_worker_shared_objects(
+                self._owners,
+                _sample_worker_subject_owners(
+                    plan,
+                    tuple(
+                        self._partition_subject_batches[partition.partition_key]
+                        for partition in self._partitions
+                    ),
+                ),
+            )
+            dll_dir = _plan_dll_dir(plan)
+            # Both acquisition lanes share the full process budget. A lane
+            # waiting on grouping/composition does not strand half the workers.
+            self._process_pools = (
+                WorkerAdmissionPool(
+                    max_workers=self._partition_raw_workers,
+                    backend="process",
+                    thread_name_prefix="cid-nl-sample",
+                    initializer=partial(_initialize_sample_process, dll_dir),
+                    shared_objects=shared_objects,
+                ),
+            )
         self._global_closure_work_unit_key = (
             f"global-closure:{self._owners.request.processing_request_id}"
         )
@@ -256,6 +338,29 @@ class CidNlPartitionPipelineAdapter:
     def partition_raw_workers(self) -> int:
         return self._partition_raw_workers
 
+    @property
+    def process_pool_transport_metrics(
+        self,
+    ) -> tuple[WorkerTransportMetrics | None, ...]:
+        return tuple(pool.transport_metrics for pool in self._process_pools)
+
+    def close_process_worker_pools(self) -> None:
+        """Close attempt-scoped process workers before terminal acknowledgement."""
+
+        with self._process_pool_lock:
+            if self._process_pools_closed:
+                return
+            self._process_pools_closed = True
+        first_error: Exception | None = None
+        for pool in self._process_pools:
+            try:
+                pool.__exit__(None, None, None)
+            except Exception as exc:
+                if first_error is None:
+                    first_error = exc
+        if first_error is not None:
+            raise first_error
+
     def get_shared_objects(self) -> tuple[object, ...]:
         return _shared_objects(self._plan)
 
@@ -271,20 +376,30 @@ class CidNlPartitionPipelineAdapter:
             UntargetedCidNlRuntimePartitionResult,
         ]
     ]:
-        subjects = partition.payload
-        subject_batch = self._prepared_worksets.subject_batch(subjects)
+        subject_batch = self._partition_subject_batches[partition.partition_key]
         batch = materialize_untargeted_cid_nl_partition(
             self._plan,
             subject_batch,
             prepared_worksets=self._prepared_worksets,
+            acquisition_cache_dir=self._acquisition_cache_dir,
+            sparse=True,
         )
-        with WorkerAdmissionPool(
-            max_workers=self._partition_raw_workers,
-            backend=self._raw_worker_backend,
-            thread_name_prefix="cid-nl-sample",
-        ) as pool:
+        if self._raw_worker_backend == "process":
+            if self._process_pools_closed:
+                raise RuntimeError("process worker pools are already closed")
+            pool = self._process_pools[0]
+            if pool.stopped:
+                raise RuntimeError("process worker pool failure stopped admission")
             leaf = execute_untargeted_cid_nl_runtime_partition(
                 batch.jobs,
+                prepare_grouping=partial(
+                    prepare_untargeted_cid_nl_grouping,
+                    batch,
+                    alignment_config=self._alignment_config,
+                    known_istd_reference=self._known_istd_reference,
+                    progress_callback=progress_callback,
+                ),
+                recovery_templates=batch.sample_job_templates,
                 partition_key=partition.partition_key,
                 alignment_config=self._alignment_config,
                 progress_callback=progress_callback,
@@ -293,6 +408,30 @@ class CidNlPartitionPipelineAdapter:
                 raw_worker_backend=self._raw_worker_backend,
                 pool=pool,
             )
+        else:
+            with WorkerAdmissionPool(
+                max_workers=self._partition_raw_workers,
+                backend=self._raw_worker_backend,
+                thread_name_prefix="cid-nl-sample",
+            ) as pool:
+                leaf = execute_untargeted_cid_nl_runtime_partition(
+                    batch.jobs,
+                    prepare_grouping=partial(
+                        prepare_untargeted_cid_nl_grouping,
+                        batch,
+                        alignment_config=self._alignment_config,
+                        known_istd_reference=self._known_istd_reference,
+                        progress_callback=progress_callback,
+                    ),
+                    recovery_templates=batch.sample_job_templates,
+                    partition_key=partition.partition_key,
+                    alignment_config=self._alignment_config,
+                    progress_callback=progress_callback,
+                    should_cancel=should_cancel,
+                    raw_workers=self._partition_raw_workers,
+                    raw_worker_backend=self._raw_worker_backend,
+                    pool=pool,
+                )
         failure_detail = None
         if not leaf.succeeded:
             failed = next(
@@ -302,7 +441,7 @@ class CidNlPartitionPipelineAdapter:
             )
             failure_detail = failed.failure_detail
         return PartitionAcquisitionOutput(
-            result=(batch, leaf),
+            result=(replace(batch, prepared_grouping=leaf.prepared_grouping), leaf),
             resources=leaf.worker_batch.resource_settlements,
             acquisitions=leaf.acquisitions,
             succeeded=leaf.succeeded,
@@ -403,14 +542,17 @@ class CidNlPartitionPipelineAdapter:
         ],
     ) -> FinalizedUntargetBatchApplicationResult:
         context = self._plan.context
-        bindings: list[CaptureCandidateBinding] = []
         exclusion_positions: list[tuple[str, int, int]] = []
-        for index, comp_out in enumerate(composition_outputs):
+        child_positions: list[tuple[str, int, int]] = []
+        for comp_out in composition_outputs:
             persisted = comp_out.result
-            bindings.extend(persisted.capture_bindings)
+            child_positions.extend(
+                (key, persisted.sealed.index, offset)
+                for offset, key in enumerate(persisted.child_order_keys)
+            )
             exclusion_positions.extend(
-                (exclusion.candidate_id, index, offset)
-                for offset, exclusion in enumerate(persisted.excluded_candidates)
+                (candidate_id, persisted.sealed.index, offset)
+                for offset, candidate_id in enumerate(persisted.excluded_candidate_ids)
             )
         scope = UntargetedSearchScope(
             schema_version=SEARCH_SCOPE_SCHEMA_VERSION,
@@ -429,10 +571,23 @@ class CidNlPartitionPipelineAdapter:
                 candidate_id
                 for candidate_id, _ in self._plan.subject_batch.candidate_memberships
             ),
-            capture_bindings=tuple(
-                sorted(bindings, key=lambda binding: binding.candidate_id)
-            ),
+            # Batch closure checks request membership and exact child owners.
+            # Capture authorization and physical evidence belong to each child.
+            capture_bindings=(),
         )
+        children = store.sequence("children")
+        if child_positions:
+            ordered_children = tuple(sorted(child_positions))
+            if len(ordered_children) != len(children):
+                raise ValueError("partition child order lost a scientific result")
+            children = ImmutableSequence(
+                (1,) * len(ordered_children),
+                lambda index: store.read_selected(
+                    ordered_children[index][1],
+                    "children",
+                    (ordered_children[index][2],),
+                ),
+            )
         return cast(
             FinalizedUntargetBatchApplicationResult,
             finalize_alignment_result(
@@ -440,7 +595,7 @@ class CidNlPartitionPipelineAdapter:
                     scope=scope,
                     processing_request=self._owners.request,
                     processing_attempt=self._owners.attempt,
-                    children=store.sequence("children"),
+                    children=children,
                     excluded_candidates=_ordered_exclusions(
                         store, exclusion_positions, self._plan.excluded_candidates
                     ),
@@ -499,8 +654,23 @@ class CidNlPartitionPipelineAdapter:
             initial_groups=store.sequence("initial_groups"),
             initial_edges=store.sequence("initial_edges"),
             capture_evidence=store.sequence("capture_evidence"),
-            cleanup_action=store.cleanup,
+            cleanup_action=self._release_store(store),
         )
+
+    def _release_store(self, store: StreamedResultStore) -> Callable[[], None]:
+        """Decide what closing the workflow result does to the spool.
+
+        Retaining publishes the record index and keeps the partition files, so
+        a later reader can restore one record instead of receiving a copy of
+        every record. The default still deletes the spool.
+        """
+        if not self._retain_partition_spool:
+            return store.cleanup
+
+        def retain() -> None:
+            store.preserve_results()
+
+        return retain
 
 
 def execute_bounded_untargeted_cid_nl(
@@ -517,6 +687,8 @@ def execute_bounded_untargeted_cid_nl(
     raw_worker_backend: str = "thread",
     should_cancel: Callable[[], bool] | None = None,
     retain_partition_memory: bool = False,
+    retain_partition_spool: bool = False,
+    retain_acquisition_cache: bool = False,
     pipeline_overlap: bool = False,
 ) -> CompletedUntargetBatchWorkflowResult:
     """Spill complete subject results, then close the exact global population.
@@ -535,6 +707,7 @@ def execute_bounded_untargeted_cid_nl(
         raise ValueError("raw_worker_backend must be 'process' or 'thread'")
 
     requested_acquisition_workers = 2 if pipeline_overlap and raw_workers >= 2 else 1
+    acquisition_cache_dir = Path(output_dir) / ".cid_nl_acquisition_cache"
     adapter = CidNlPartitionPipelineAdapter(
         plan,
         alignment_config=alignment_config,
@@ -543,20 +716,34 @@ def execute_bounded_untargeted_cid_nl(
         raw_workers=raw_workers,
         raw_worker_backend=raw_worker_backend,
         acquisition_workers=requested_acquisition_workers,
+        acquisition_cache_dir=acquisition_cache_dir,
+        retain_partition_spool=retain_partition_spool,
     )
-    return PartitionPipelineScheduler.execute(
-        adapter,
-        output_dir=output_dir,
-        telemetry_provider=telemetry_provider,
-        recovery_marker=recovery_marker,
-        progress_callback=progress_callback,
-        should_cancel=should_cancel,
-        retain_partition_memory=retain_partition_memory,
-        pipeline_overlap=pipeline_overlap,
-        acquisition_workers=adapter.acquisition_workers,
-        execute_runtime_attempt=execute_runtime_attempt,
-        store_factory=PartitionResultStore,
-    )
+    completed_once = False
+    try:
+        result = PartitionPipelineScheduler.execute(
+            adapter,
+            output_dir=output_dir,
+            telemetry_provider=telemetry_provider,
+            recovery_marker=recovery_marker,
+            progress_callback=progress_callback,
+            should_cancel=should_cancel,
+            retain_partition_memory=retain_partition_memory,
+            pipeline_overlap=pipeline_overlap,
+            acquisition_workers=adapter.acquisition_workers,
+            execute_runtime_attempt=execute_runtime_attempt,
+            store_factory=PartitionResultStore,
+            acquisition_cleanup=adapter.close_process_worker_pools,
+        )
+        completed_once = True
+        return result
+    finally:
+        adapter.close_process_worker_pools()
+        # The cache only accelerates acquisition, which is finished. A failed
+        # attempt keeps it because the recovery marker allows a retry that
+        # would otherwise reread every RAW file.
+        if completed_once and not retain_acquisition_cache:
+            shutil.rmtree(acquisition_cache_dir, ignore_errors=True)
 
 
 def _shared_objects(plan: UntargetedCidNlProductionPlan) -> tuple[object, ...]:
@@ -577,6 +764,37 @@ def _shared_objects(plan: UntargetedCidNlProductionPlan) -> tuple[object, ...]:
     for sample in context.samples:
         values.extend(getattr(sample, field.name) for field in fields(sample))
     return tuple({id(value): value for value in values if value is not None}.values())
+
+
+def _sample_worker_shared_objects(
+    owners: ProcessingOwners,
+    subject_batches: tuple[object, ...],
+) -> tuple[object, ...]:
+    """Select immutable global owners that process sample tasks reference."""
+
+    values = [
+        owners,
+        *tuple(getattr(owners, field.name) for field in fields(owners)),
+        *subject_batches,
+    ]
+    return tuple({id(value): value for value in values}.values())
+
+
+def _sample_worker_subject_owners(
+    plan: UntargetedCidNlProductionPlan,
+    partition_batches: tuple[object, ...],
+) -> tuple[object, ...]:
+    values = [plan.subject_batch, *partition_batches]
+    values.extend(template._request_subjects for template in plan.sample_job_templates)
+    return tuple({id(value): value for value in values}.values())
+
+
+def _plan_dll_dir(plan: UntargetedCidNlProductionPlan) -> Path:
+    if plan.dll_dir is not None:
+        return plan.dll_dir
+    if plan.sample_job_templates:
+        return plan.sample_job_templates[0].dll_dir
+    raise RuntimeError("process worker pool requires a planned DLL directory")
 
 
 def _ordered_exclusions(

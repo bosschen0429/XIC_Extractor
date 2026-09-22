@@ -15,8 +15,8 @@ from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.csv_io import (
     DiscoveryBatchInput,
     read_discovery_batch_index,
-    read_owner_bound_discovery_candidates_csv,
 )
+from xic_extractor.alignment.discovery_input_source import DiscoveryInputSource
 from xic_extractor.alignment.drift_evidence import (
     KnownIstdReference,
     mint_known_istd_reference_from_measurements,
@@ -27,6 +27,7 @@ from xic_extractor.alignment.ms1_index_source import (
     OwnerBuildXicBackend,
 )
 from xic_extractor.alignment.output_levels import (
+    EXPLANATION_ARTIFACT_NAME,
     AlignmentOutputLevel,
     artifact_names_for_output_level,
 )
@@ -44,20 +45,24 @@ from xic_extractor.alignment.pipeline_outputs import (
     AlignmentRunOutputs,
     alignment_metadata,
     output_paths,
+    supports_streamed_untargeted_outputs,
     write_outputs_atomic,
+    write_streamed_untargeted_outputs_atomic,
 )
 from xic_extractor.alignment.process_execution import AlignmentProcessExecutionError
 from xic_extractor.alignment.untargeted_finalized_matrix import (
+    completed_untarget_batch_sample_order,
+    iter_completed_untarget_batch_writer_inputs,
     project_completed_untarget_batch_writer_inputs,
 )
 from xic_extractor.config import ExtractionConfig
 from xic_extractor.configuration.models import Target
 from xic_extractor.diagnostics.alignment_explanation import EvidenceLocator
 from xic_extractor.diagnostics.alignment_explanation_projection import (
+    PreparedAlignmentExplanation,
     prepare_alignment_explanation,
 )
 from xic_extractor.diagnostics.timing import TimingRecorder
-from xic_extractor.discovery.batch_contract import DiscoveryCandidateUniverseReceipt
 from xic_extractor.discovery.models import DiscoveryCandidate, DiscoverySettings
 from xic_extractor.execution_settings import DEFAULT_ALIGNMENT_WORKERS
 from xic_extractor.extraction.untargeted_alignment import (
@@ -142,6 +147,8 @@ def run_alignment(
     output_level: AlignmentOutputLevel = "production",
     emit_alignment_cells: bool = False,
     emit_alignment_status_matrix: bool = False,
+    emit_cid_nl_explanation: bool = False,
+    retain_acquisition_cache: bool = False,
     emit_alignment_integration_audit: bool = False,
     emit_alignment_backfill_seed_audit: bool = False,
     emit_alignment_backfill_candidate_audit: bool = False,
@@ -226,14 +233,11 @@ def run_alignment(
             discovery_batch_index, require_owner_closure=True
         )
     with recorder.stage("alignment.read_candidates") as stage:
-        candidates_by_sample = {
-            sample_stem: read_owner_bound_discovery_candidates_csv(
-                batch.candidate_csvs[sample_stem],
-                receipt=_required_candidate_receipt(batch, sample_stem),
-            )
-            for sample_stem in batch.sample_order
-        }
-        stage.metrics["candidate_count"] = sum(map(len, candidates_by_sample.values()))
+        candidates_by_sample = DiscoveryInputSource(batch)
+        stage.metrics["candidate_count"] = len(candidates_by_sample.locations)
+        stage.metrics["feature_candidate_count"] = len(
+            candidates_by_sample.feature_candidate_ids()
+        )
     owner_build_route_receipt = _mint_retained_untargeted_cid_nl_route_receipt(
         configured_backend=owner_build_xic_backend,
     )
@@ -287,6 +291,8 @@ def run_alignment(
         alignment_config=alignment_config,
         outputs=outputs,
         output_level=output_level,
+        emit_cid_nl_explanation=emit_cid_nl_explanation,
+        retain_acquisition_cache=retain_acquisition_cache,
         owner_build_route_receipt=owner_build_route_receipt,
         timing_recorder=recorder,
         capture_artifact_fingerprints=capture_artifact_fingerprints,
@@ -376,6 +382,8 @@ def _run_untargeted_alignment(
     alignment_config: AlignmentConfig,
     outputs: AlignmentRunOutputs,
     output_level: AlignmentOutputLevel,
+    emit_cid_nl_explanation: bool = False,
+    retain_acquisition_cache: bool = False,
     owner_build_route_receipt: OwnerBuildRouteReceipt,
     timing_recorder: TimingRecorder,
     capture_artifact_fingerprints: bool,
@@ -437,7 +445,8 @@ def _run_untargeted_alignment(
                 raw_workers=raw_workers,
                 raw_worker_backend=raw_worker_backend,
                 should_cancel=should_cancel,
-                retain_partition_memory=True,
+                retain_partition_memory=False,
+                retain_acquisition_cache=retain_acquisition_cache,
                 max_partition_jobs=max_partition_jobs,
             )
         else:
@@ -457,7 +466,8 @@ def _run_untargeted_alignment(
                 raw_workers=raw_workers,
                 raw_worker_backend=raw_worker_backend,
                 should_cancel=should_cancel,
-                retain_partition_memory=True,
+                retain_partition_memory=False,
+                retain_acquisition_cache=retain_acquisition_cache,
                 max_partition_jobs=max_partition_jobs,
             )
     except RuntimeError as exc:
@@ -468,28 +478,40 @@ def _run_untargeted_alignment(
         if should_cancel is not None and should_cancel():
             raise InterruptedError("Alignment cancelled before output publication")
         matrix_path = outputs.matrix_tsv
-        if matrix_path is None:
+        write_explanation = emit_cid_nl_explanation or EXPLANATION_ARTIFACT_NAME in (
+            artifact_names_for_output_level(output_level)
+        )
+        if write_explanation and matrix_path is None:
             raise RuntimeError("CID-NL explanation requires the published Matrix")
         output_dir.mkdir(parents=True, exist_ok=True)
-        with timing_recorder.stage("alignment.prepare_explanation"):
-            explanation = output_stack.enter_context(
-                prepare_alignment_explanation(
-                    output_dir / "cid_nl_explanation.sqlite",
-                    completed=completed,
-                    candidates_by_sample=candidates_by_sample,
-                    alignment_config=alignment_config,
-                    known_istd_reference_provenance=(
-                        None
-                        if known_istd_reference is None
-                        else known_istd_reference.explanation_provenance
-                    ),
-                    progress_callback=timing_recorder.heartbeat_event,
+        explanation = None
+        if write_explanation:
+            with timing_recorder.stage("alignment.prepare_explanation"):
+                explanation = output_stack.enter_context(
+                    prepare_alignment_explanation(
+                        output_dir / EXPLANATION_ARTIFACT_NAME,
+                        completed=completed,
+                        candidates_by_sample=(
+                            candidates_by_sample.feature_view()
+                            if isinstance(candidates_by_sample, DiscoveryInputSource)
+                            else candidates_by_sample
+                        ),
+                        alignment_config=alignment_config,
+                        known_istd_reference_provenance=(
+                            None
+                            if known_istd_reference is None
+                            else known_istd_reference.explanation_provenance
+                        ),
+                        progress_callback=timing_recorder.heartbeat_event,
+                    )
                 )
-            )
-        with timing_recorder.stage("alignment.project_outputs"):
-            writer_inputs = project_completed_untarget_batch_writer_inputs(
-                completed, consume_child=explanation.consume_child
-            )
+        stream_outputs = supports_streamed_untargeted_outputs(outputs)
+        writer_inputs = None
+        if not stream_outputs:
+            with timing_recorder.stage("alignment.project_outputs"):
+                writer_inputs = project_completed_untarget_batch_writer_inputs(
+                    completed, consume_child=_explanation_sink(explanation)
+                )
         if should_cancel is not None and should_cancel():
             raise InterruptedError("Alignment cancelled before output publication")
         metadata = _metadata(
@@ -534,23 +556,42 @@ def _run_untargeted_alignment(
                 }
             )
         with timing_recorder.stage("alignment.write_outputs"):
-            artifact_fingerprint_batch = _write_outputs_atomic(
-                outputs,
-                writer_inputs.matrix,
-                metadata=metadata,
-                ownership=OwnershipBuildResult(
-                    owners=(), assignments=(), ambiguous_records=()
-                ),
-                alignment_config=alignment_config,
-                owner_backfill_peak_fact_provenance=EMPTY_OWNER_BACKFILL_PEAK_FACT_PROVENANCE_BATCH,
-                production_decisions=writer_inputs.production_decisions,
-                baseline_integration_method=getattr(
-                    peak_config, "baseline_integration_method", "asls"
-                ),
-                baseline_audit_method=getattr(peak_config, "baseline_audit_method", ""),
-                timing_recorder=timing_recorder,
-                capture_artifact_fingerprints=capture_artifact_fingerprints,
-            )
+            if stream_outputs:
+                writer_row_count, artifact_fingerprint_batch = (
+                    write_streamed_untargeted_outputs_atomic(
+                        outputs,
+                        iter_completed_untarget_batch_writer_inputs(
+                            completed, consume_child=_explanation_sink(explanation)
+                        ),
+                        sample_order=completed_untarget_batch_sample_order(completed),
+                        metadata=metadata,
+                        alignment_config=alignment_config,
+                        timing_recorder=timing_recorder,
+                        capture_artifact_fingerprints=capture_artifact_fingerprints,
+                    )
+                )
+            else:
+                assert writer_inputs is not None
+                writer_row_count = len(writer_inputs.matrix.clusters)
+                artifact_fingerprint_batch = _write_outputs_atomic(
+                    outputs,
+                    writer_inputs.matrix,
+                    metadata=metadata,
+                    ownership=OwnershipBuildResult(
+                        owners=(), assignments=(), ambiguous_records=()
+                    ),
+                    alignment_config=alignment_config,
+                    owner_backfill_peak_fact_provenance=EMPTY_OWNER_BACKFILL_PEAK_FACT_PROVENANCE_BATCH,
+                    production_decisions=writer_inputs.production_decisions,
+                    baseline_integration_method=getattr(
+                        peak_config, "baseline_integration_method", "asls"
+                    ),
+                    baseline_audit_method=getattr(
+                        peak_config, "baseline_audit_method", ""
+                    ),
+                    timing_recorder=timing_recorder,
+                    capture_artifact_fingerprints=capture_artifact_fingerprints,
+                )
         if capture_artifact_fingerprints:
             if not isinstance(
                 artifact_fingerprint_batch, AlignmentArtifactFingerprintBatch
@@ -561,10 +602,15 @@ def _run_untargeted_alignment(
             outputs = replace(
                 outputs, artifact_fingerprint_batch=artifact_fingerprint_batch
             )
-        with timing_recorder.stage("alignment.write_cid_nl_explanation"):
-            db_path = explanation.finalize(writer_inputs, matrix_path)
+        db_path: Path | None = None
+        if explanation is not None:
+            assert matrix_path is not None
+            with timing_recorder.stage("alignment.write_cid_nl_explanation"):
+                db_path = explanation.finalize(writer_row_count, matrix_path)
         evidence: EvidenceLocator | None = None
-        if outputs.matrix_tsv is not None and outputs.matrix_tsv.is_file():
+        if db_path is not None and outputs.matrix_tsv is not None and (
+            outputs.matrix_tsv.is_file()
+        ):
             with outputs.matrix_tsv.open("rb") as handle:
                 matrix_sha256 = hashlib.file_digest(handle, "sha256").hexdigest()
 
@@ -583,9 +629,19 @@ def _run_untargeted_alignment(
         return replace(
             outputs,
             owner_build_route_receipt=owner_build_route_receipt,
-            untargeted_cid_nl_result=completed,
             evidence=evidence,
         )
+
+
+def _explanation_sink(
+    explanation: PreparedAlignmentExplanation | None,
+) -> Callable[[Any], None] | None:
+    """Consume children only when a report will be written from them.
+
+    Without a report nothing needs the children after they compose, which is
+    what lets the run release them instead of retaining every one.
+    """
+    return None if explanation is None else explanation.consume_child
 
 
 def _run_untargeted_cid_nl_alignment(*args: Any, **kwargs: Any) -> AlignmentRunOutputs:
@@ -598,8 +654,19 @@ _output_paths = output_paths
 _write_outputs_atomic = write_outputs_atomic
 
 
+# No level writes these any more. They stay owned so that a copy left by an
+# earlier run is still reported as a stale artifact instead of being mistaken
+# for this run's output.
+_RETIRED_ALIGNMENT_ARTIFACT_NAMES = (
+    "alignment_results.xlsx",
+    "review_report.html",
+    "event_to_ms1_owner.tsv",
+    "ambiguous_ms1_owners.tsv",
+)
+
 _CONDITIONAL_ALIGNMENT_ARTIFACT_NAMES = (
     "cid_nl_explanation.sqlite",
+    "alignment_matrix_status.tsv",
     "alignment_cell_integration_audit.tsv",
     "alignment_owner_backfill_seed_audit.tsv",
     "alignment_owner_backfill_candidate_audit.tsv",
@@ -631,6 +698,7 @@ def _reject_alignment_output_collisions(
         for name in artifact_names_for_output_level(level)
     }
     owned_names.update(_CONDITIONAL_ALIGNMENT_ARTIFACT_NAMES)
+    owned_names.update(_RETIRED_ALIGNMENT_ARTIFACT_NAMES)
     owned_names.update(
         (
             path.name
@@ -659,15 +727,3 @@ def _owned_path_collisions(paths: Iterable[Path]) -> list[Path]:
             if candidate.exists():
                 collisions.append(candidate)
     return collisions
-
-
-def _required_candidate_receipt(
-    batch: DiscoveryBatchInput,
-    sample_stem: str,
-) -> DiscoveryCandidateUniverseReceipt:
-    receipt = batch.candidate_receipts[sample_stem]
-    if receipt is None:
-        raise ValueError(
-            f"{sample_stem}: owner-closed Alignment requires a candidate receipt"
-        )
-    return receipt

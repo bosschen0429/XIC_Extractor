@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import hashlib
 import io
 import json
+import os
 import pickle
 import threading
 import time
@@ -47,7 +49,10 @@ from xic_extractor.execution_runtime_finalization import (
     RuntimeResourceOpenOutcome,
     RuntimeResourceReservation,
 )
-from xic_extractor.execution_runtime_marker import OwnerPathRuntimeMarker
+from xic_extractor.execution_runtime_marker import (
+    OwnerPathRuntimeMarker,
+    RuntimeMarkerState,
+)
 from xic_extractor.execution_runtime_owner import (
     RuntimeArtifactRegistrationReceipt,
     RuntimeCancellationIngress,
@@ -88,6 +93,61 @@ class CustomPayload:
 class RefPayload:
     children: tuple
     ref: object = None
+
+
+@dataclass(frozen=True)
+class SharedProcessTask:
+    owner: object
+    value: int
+
+
+@dataclass(frozen=True)
+class SharedProcessResult:
+    owner: object
+    value: int
+    worker_pid: int
+    initialized: bool
+
+
+_SHARED_PROCESS_INITIALIZED = False
+_MOCK_PROCESS_ACTIVE = 0
+_MOCK_PROCESS_MAX_ACTIVE = 0
+_MOCK_PROCESS_LOCK = threading.Lock()
+
+
+def _initialize_shared_process_test() -> None:
+    global _SHARED_PROCESS_INITIALIZED
+    _SHARED_PROCESS_INITIALIZED = True
+
+
+def _execute_shared_process_task(task: SharedProcessTask) -> SharedProcessResult:
+    time.sleep(0.2)
+    return SharedProcessResult(
+        task.owner,
+        task.value * 10,
+        os.getpid(),
+        _SHARED_PROCESS_INITIALIZED,
+    )
+
+
+def _execute_shared_process_budget_task(task: SharedProcessTask) -> SharedProcessResult:
+    global _MOCK_PROCESS_ACTIVE, _MOCK_PROCESS_MAX_ACTIVE
+    with _MOCK_PROCESS_LOCK:
+        _MOCK_PROCESS_ACTIVE += 1
+        _MOCK_PROCESS_MAX_ACTIVE = max(
+            _MOCK_PROCESS_MAX_ACTIVE, _MOCK_PROCESS_ACTIVE
+        )
+    try:
+        time.sleep(0.02)
+        return SharedProcessResult(
+            task.owner,
+            task.value,
+            os.getpid(),
+            _SHARED_PROCESS_INITIALIZED,
+        )
+    finally:
+        with _MOCK_PROCESS_LOCK:
+            _MOCK_PROCESS_ACTIVE -= 1
 
 
 # ---------------------------------------------------------------------------
@@ -160,10 +220,16 @@ def test_streamed_result_store_retained_memory_bypass(
     assert len(opened) == 0
 
 
-def test_streamed_result_store_shared_objects_identity(tmp_path: Path) -> None:
+@pytest.mark.parametrize("duplicate_shared_root", [False, True])
+def test_streamed_result_store_shared_objects_identity(
+    tmp_path: Path, duplicate_shared_root: bool
+) -> None:
     shared_config = {"anchor": 42}
     shared_ref = ["shared_authority"]
-    store = StreamedResultStore(tmp_path / "spool", (shared_config, shared_ref))
+    shared = (shared_config, shared_ref)
+    if duplicate_shared_root:
+        shared += (shared_config,)
+    store = StreamedResultStore(tmp_path / "spool", shared)
 
     payload = RefPayload(
         children=((shared_config, shared_ref),), ref=shared_config
@@ -174,26 +240,29 @@ def test_streamed_result_store_shared_objects_identity(tmp_path: Path) -> None:
     assert restored.ref is shared_config
     assert restored.children[0][0] is shared_config
     assert restored.children[0][1] is shared_ref
+    checkpoint = store.preserve_failed_results()
+    assert checkpoint is not None
+    with checkpoint.open("rb") as stream:
+        retained = _OwnerUnpickler(stream, ()).load()
+    replay = retained.read(0)
+    assert replay.ref == shared_config
+    assert replay.children[0][1] == shared_ref
+    assert replay.ref is retained._shared_objects[0]
+    assert replay.children[0][0] is replay.ref
+    assert replay.children[0][1] is retained._shared_objects[1]
 
 
 def test_streamed_result_store_unknown_shared_identity_rejected() -> None:
     shared_objects = (object(),)
     bio = io.BytesIO()
-    # Write a pickle opcode using persistent load with an invalid identity
-    # Protocol 2+ persistent load opcode: BINPERSID
-    # Write int 99 which is out of range for shared_objects (length 1)
-    # Manually pickling with persistent id out of range
+    # A memo reference cannot bind an authority absent from this record.
     bio.write(pickle.PROTO + b"\x04")
-    bio.write(pickle.BININT1 + b"\x63")  # 99
-    bio.write(pickle.BINPERSID)
+    bio.write(pickle.BINGET + b"\x63")  # 99
     bio.write(pickle.STOP)
     bio.seek(0)
 
-    unpickler = _OwnerUnpickler(bio, shared_objects)
-    with pytest.raises(
-        pickle.UnpicklingError, match="unknown same-process owner reference"
-    ):
-        unpickler.load()
+    with pytest.raises(pickle.UnpicklingError):
+        _OwnerUnpickler(bio, shared_objects).load()
 
 
 def test_streamed_result_store_individually_addressable_fields(
@@ -517,6 +586,93 @@ def test_scheduler_execute_success(tmp_path: Path) -> None:
     ]
 
 
+@pytest.mark.parametrize("pipeline_overlap", [False, True])
+def test_scheduler_does_not_force_full_gc_after_partition(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    pipeline_overlap: bool,
+) -> None:
+    import gc
+
+    fixture = build_processing_identity_no_raw_fixture(
+        tmp_path, sample_stems=("sample-1", "sample-2")
+    )
+    adapter = MockAdapter(fixture.owners, num_partitions=2)
+    explicit_collects: list[int] = []
+    monkeypatch.setattr(
+        gc,
+        "collect",
+        lambda: explicit_collects.append(1),
+    )
+
+    result = PartitionPipelineScheduler.execute(
+        adapter,
+        output_dir=tmp_path / "gc-output",
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+        recovery_marker=OwnerPathRuntimeMarker(tmp_path / "gc-marker.json", "gc"),
+        pipeline_overlap=pipeline_overlap,
+    )
+
+    assert result["application_result"]["total_children"] == 2
+    assert explicit_collects == []
+
+
+def test_scheduler_closes_acquisition_resources_before_terminal_acknowledgement(
+    tmp_path: Path,
+) -> None:
+    fixture = build_processing_identity_no_raw_fixture(
+        tmp_path, sample_stems=("sample-1",)
+    )
+    adapter = MockAdapter(fixture.owners, num_partitions=2)
+    marker = OwnerPathRuntimeMarker(tmp_path / "cleanup-marker.json", "cleanup")
+    cleanup_states: list[RuntimeMarkerState] = []
+
+    def cleanup() -> None:
+        cleanup_states.append(marker.read().state)
+
+    result = PartitionPipelineScheduler.execute(
+        adapter,
+        output_dir=tmp_path / "cleanup-output",
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+        recovery_marker=marker,
+        acquisition_cleanup=cleanup,
+    )
+
+    assert result["application_result"]["total_children"] == 2
+    assert cleanup_states == [RuntimeMarkerState.LAUNCHED]
+    assert marker.read().state is RuntimeMarkerState.FINALIZED
+
+
+def test_scheduler_cleanup_failure_prevents_successful_terminal_acknowledgement(
+    tmp_path: Path,
+) -> None:
+    fixture = build_processing_identity_no_raw_fixture(
+        tmp_path, sample_stems=("sample-1",)
+    )
+    adapter = MockAdapter(fixture.owners, num_partitions=1)
+    marker = OwnerPathRuntimeMarker(
+        tmp_path / "cleanup-failure-marker.json", "cleanup-failure"
+    )
+    cleanup_calls = 0
+
+    def cleanup() -> None:
+        nonlocal cleanup_calls
+        cleanup_calls += 1
+        raise OSError("process pool shutdown failed")
+
+    with pytest.raises(RuntimeError, match="failed before batch publication"):
+        PartitionPipelineScheduler.execute(
+            adapter,
+            output_dir=tmp_path / "cleanup-failure-output",
+            telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+            recovery_marker=marker,
+            acquisition_cleanup=cleanup,
+        )
+
+    assert cleanup_calls == 1
+    assert marker.read().terminal_outcome is AttemptTerminalOutcome.FAILED
+
+
 def test_scheduler_execute_single_partition_retains_memory(tmp_path: Path) -> None:
     fixture = build_processing_identity_no_raw_fixture(
         tmp_path, sample_stems=("sample-1",)
@@ -546,12 +702,17 @@ def test_scheduler_execute_cancellation_cleans_up(tmp_path: Path) -> None:
     marker = OwnerPathRuntimeMarker(tmp_path / "marker.json", "test-cancel")
 
     call_count = 0
+    cleanup_calls = 0
 
     def should_cancel() -> bool:
         nonlocal call_count
         call_count += 1
         # Cancel during the second partition processing
         return call_count >= 5
+
+    def cleanup() -> None:
+        nonlocal cleanup_calls
+        cleanup_calls += 1
 
     with pytest.raises(
         RuntimeError,
@@ -563,11 +724,13 @@ def test_scheduler_execute_cancellation_cleans_up(tmp_path: Path) -> None:
             telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
             recovery_marker=marker,
             should_cancel=should_cancel,
+            acquisition_cleanup=cleanup,
         )
 
     # Verify spool directory was cleaned up
     spool_dirs = list(output_dir.glob(".partition_spool-*"))
     assert len(spool_dirs) == 0
+    assert cleanup_calls == 1
 
 
 def test_scheduler_execute_acquisition_failure_cleans_up(tmp_path: Path) -> None:
@@ -579,6 +742,11 @@ def test_scheduler_execute_acquisition_failure_cleans_up(tmp_path: Path) -> None
     )
     output_dir = tmp_path / "output"
     marker = OwnerPathRuntimeMarker(tmp_path / "marker.json", "test-acq-fail")
+    cleanup_calls = 0
+
+    def cleanup() -> None:
+        nonlocal cleanup_calls
+        cleanup_calls += 1
 
     with pytest.raises(
         RuntimeError,
@@ -589,14 +757,18 @@ def test_scheduler_execute_acquisition_failure_cleans_up(tmp_path: Path) -> None
             output_dir=output_dir,
             telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
             recovery_marker=marker,
+            acquisition_cleanup=cleanup,
         )
 
     # Verify spool directory was cleaned up
     spool_dirs = list(output_dir.glob(".partition_spool-*"))
     assert len(spool_dirs) == 0
+    assert cleanup_calls == 1
 
 
-def test_scheduler_execute_composition_failure_cleans_up(tmp_path: Path) -> None:
+def test_scheduler_composition_failure_retains_completed_results(
+    tmp_path: Path,
+) -> None:
     fixture = build_processing_identity_no_raw_fixture(
         tmp_path, sample_stems=("sample-1", "sample-2")
     )
@@ -617,12 +789,18 @@ def test_scheduler_execute_composition_failure_cleans_up(tmp_path: Path) -> None
             recovery_marker=marker,
         )
 
-    # Verify spool directory was cleaned up
     spool_dirs = list(output_dir.glob(".partition_spool-*"))
-    assert len(spool_dirs) == 0
+    assert len(spool_dirs) == 1
+    with (spool_dirs[0] / "failed-results.pickle").open("rb") as stream:
+        retained = _OwnerUnpickler(stream, ()).load()
+    assert tuple(retained.sequence("children")) == ("child-0",)
+    assert tuple(retained.sequence("method_assessments")) == ("assess-0",)
+    assert not list(spool_dirs[0].glob("*.tmp"))
+    with pytest.raises(ValueError, match="sealed"):
+        retained.append("new-partition", MockPayload(children=("invented",)))
 
 
-def test_scheduler_execute_finalize_failure_cleans_up(tmp_path: Path) -> None:
+def test_scheduler_finalize_failure_retains_completed_results(tmp_path: Path) -> None:
     fixture = build_processing_identity_no_raw_fixture(
         tmp_path, sample_stems=("sample-1", "sample-2")
     )
@@ -643,9 +821,13 @@ def test_scheduler_execute_finalize_failure_cleans_up(tmp_path: Path) -> None:
             recovery_marker=marker,
         )
 
-    # Verify spool directory was cleaned up
     spool_dirs = list(output_dir.glob(".partition_spool-*"))
-    assert len(spool_dirs) == 0
+    assert len(spool_dirs) == 1
+    with (spool_dirs[0] / "failed-results.pickle").open("rb") as stream:
+        retained = _OwnerUnpickler(stream, ()).load()
+    assert tuple(retained.sequence("children")) == ("child-0", "child-1")
+    assert tuple(retained.sequence("method_assessments")) == ("assess-0", "assess-1")
+    assert marker.read().state == RuntimeMarkerState.FINALIZED
 
 
 def test_pipeline_overlap_temporal_intersection(tmp_path: Path) -> None:
@@ -726,43 +908,92 @@ def test_pipeline_overlap_single_partition_serial(tmp_path: Path) -> None:
 def test_pipeline_overlap_backpressure(
     tmp_path: Path, acquisition_workers: int
 ) -> None:
-    """Slow consumer holds 2 credits, blocking producer before partition 2."""
+    """A composition slot leaves one extra acquisition credit available."""
     fixture = build_processing_identity_no_raw_fixture(
-        tmp_path, sample_stems=("sample-1", "sample-2", "sample-3")
+        tmp_path,
+        sample_stems=("sample-1", "sample-2", "sample-3", "sample-4"),
     )
+    p0_compose_started = threading.Event()
+    release_p0_compose = threading.Event()
     p0_compose_ended: list[float] = []
-    p2_acquire_started: list[float] = []
+    acquire_started = {index: threading.Event() for index in range(1, 4)}
+    acquire_times: dict[int, float] = {}
 
     def on_comp(idx: int) -> None:
         if idx == 0:
-            time.sleep(0.08)
+            p0_compose_started.set()
+            if acquisition_workers == 2:
+                assert release_p0_compose.wait(timeout=5)
+            else:
+                time.sleep(0.08)
             p0_compose_ended.append(time.perf_counter())
 
     def on_acq(idx: int) -> None:
-        if idx == 2:
-            p2_acquire_started.append(time.perf_counter())
+        if idx in acquire_started:
+            acquire_times[idx] = time.perf_counter()
+            acquire_started[idx].set()
 
     adapter = MockAdapter(
         fixture.owners,
-        num_partitions=3,
+        num_partitions=4,
         on_acquisition=on_acq,
         on_composition=on_comp,
     )
     output_dir = tmp_path / "output"
     marker = OwnerPathRuntimeMarker(tmp_path / "marker.json", "test-backpressure")
 
-    result = PartitionPipelineScheduler.execute(
-        adapter,
-        output_dir=output_dir,
-        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-        recovery_marker=marker,
-        pipeline_overlap=True,
-        acquisition_workers=acquisition_workers,
-    )
-    assert result["application_result"]["total_children"] == 3
+    if acquisition_workers == 1:
+        result = PartitionPipelineScheduler.execute(
+            adapter,
+            output_dir=output_dir,
+            telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+            recovery_marker=marker,
+            pipeline_overlap=True,
+            acquisition_workers=acquisition_workers,
+        )
+    else:
+        result_holder: list[dict[str, Any]] = []
+        error_holder: list[BaseException] = []
+
+        def run_scheduler() -> None:
+            try:
+                result_holder.append(
+                    PartitionPipelineScheduler.execute(
+                        adapter,
+                        output_dir=output_dir,
+                        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+                        recovery_marker=marker,
+                        pipeline_overlap=True,
+                        acquisition_workers=acquisition_workers,
+                    )
+                )
+            except BaseException as exc:  # pragma: no cover - surfaced below
+                error_holder.append(exc)
+
+        scheduler_thread = threading.Thread(target=run_scheduler)
+        scheduler_thread.start()
+        try:
+            assert p0_compose_started.wait(timeout=5)
+            assert acquire_started[1].wait(timeout=5)
+            p2_started_while_compose_open = acquire_started[2].wait(timeout=1)
+            p3_started_while_compose_open = acquire_started[3].is_set()
+        finally:
+            release_p0_compose.set()
+        scheduler_thread.join(timeout=5)
+        assert not scheduler_thread.is_alive()
+        if error_holder:
+            raise error_holder[0]
+        assert result_holder
+        result = result_holder[0]
+
+    assert result["application_result"]["total_children"] == 4
     assert len(p0_compose_ended) == 1
-    assert len(p2_acquire_started) == 1
-    assert p2_acquire_started[0] >= p0_compose_ended[0] - 0.02
+    assert set(acquire_times) == {1, 2, 3}
+    if acquisition_workers == 1:
+        assert acquire_times[2] >= p0_compose_ended[0] - 0.02
+    else:
+        assert p2_started_while_compose_open
+        assert not p3_started_while_compose_open
 
 
 @pytest.mark.parametrize("acquisition_workers", [1, 2])
@@ -1201,6 +1432,57 @@ def test_worker_admission_pool_thread_single_worker_inline() -> None:
 
     assert results == [(1, 4, 1, 10), (2, 4, 2, 20), (3, 4, 3, 30), (4, 4, 4, 40)]
     assert all(t == coordinator_thread for t in execution_threads)
+    assert pool.transport_metrics is None
+
+
+def test_worker_admission_pool_process_shares_owner_once_and_restores_identity(
+) -> None:
+    owner = {"global_request": "x" * 1_000_000}
+    first_results: list[SharedProcessResult] = []
+    second_results: list[SharedProcessResult] = []
+    pool = WorkerAdmissionPool(
+        max_workers=2,
+        backend="process",
+        shared_objects=(owner,),
+        initializer=_initialize_shared_process_test,
+    )
+
+    with pool:
+        pool.run_windowed(
+            tuple(range(1, 21)),
+            _execute_shared_process_task,
+            task_arg_fn=lambda value: SharedProcessTask(owner, value),
+            on_completed=lambda _c, _t, _item, result: first_results.append(result),
+        )
+        first_metrics = pool.transport_metrics
+        assert first_metrics is not None
+        pool.run_windowed(
+            tuple(range(21, 41)),
+            _execute_shared_process_task,
+            task_arg_fn=lambda value: SharedProcessTask(owner, value),
+            on_completed=lambda _c, _t, _item, result: second_results.append(result),
+        )
+
+    results = (*first_results, *second_results)
+    assert sorted(result.value for result in results) == [
+        value * 10 for value in range(1, 41)
+    ]
+    assert all(result.owner is owner for result in results)
+    assert all(result.initialized for result in results)
+    assert len({result.worker_pid for result in results}) == 2
+    assert all(result.worker_pid != os.getpid() for result in results)
+    metrics = pool.transport_metrics
+    assert metrics is not None
+    assert metrics.shared_bootstrap_bytes == first_metrics.shared_bootstrap_bytes
+    assert {result.worker_pid for result in second_results} == {
+        result.worker_pid for result in first_results
+    }
+    assert metrics.shared_bootstrap_bytes >= 2_000_000
+    assert metrics.task_request_bytes < 10_000
+    assert metrics.task_response_bytes < 10_000
+    assert metrics.worker_pids == tuple(
+        sorted({result.worker_pid for result in results})
+    )
 
 
 def test_worker_admission_pool_thread_multi_worker_bounded() -> None:
@@ -1239,6 +1521,135 @@ def test_worker_admission_pool_thread_multi_worker_bounded() -> None:
     assert len(results) == 10
     assert sorted(results) == [x * 2 for x in range(10)]
     assert max_concurrent <= 3
+
+
+def test_worker_admission_pool_concurrent_batches_share_one_executor_and_budget(
+    monkeypatch,
+) -> None:
+    import xic_extractor.execution_engine.worker_pool as owner
+
+    created = []
+    original_executor = owner.ThreadPoolExecutor
+
+    class RecordingExecutor:
+        def __init__(
+            self,
+            *,
+            max_workers: int,
+            mp_context: object,
+            initializer: object,
+            initargs: tuple[object, ...],
+        ) -> None:
+            self.max_workers = max_workers
+            self.mp_context = mp_context
+            with creation_gate_lock:
+                first_constructor = not creation_gate_used[0]
+                if first_constructor:
+                    creation_gate_used[0] = True
+            self._executor = original_executor(max_workers=max_workers)
+            created.append(self)
+            if first_constructor:
+                creation_started.set()
+                if not release_creation.wait(5):
+                    raise AssertionError("timed out releasing executor construction")
+            if initializer is not None:
+                initializer(*initargs)
+
+        def submit(self, *args: object, **kwargs: object):
+            return self._executor.submit(*args, **kwargs)
+
+        def shutdown(self, **kwargs: object) -> None:
+            self._executor.shutdown(**kwargs)
+
+    monkeypatch.setattr(owner, "ProcessPoolExecutor", RecordingExecutor)
+    creation_gate_lock = threading.Lock()
+    creation_gate_used = [False]
+    creation_started = threading.Event()
+    release_creation = threading.Event()
+    global _MOCK_PROCESS_ACTIVE, _MOCK_PROCESS_MAX_ACTIVE
+    with _MOCK_PROCESS_LOCK:
+        _MOCK_PROCESS_ACTIVE = 0
+        _MOCK_PROCESS_MAX_ACTIVE = 0
+    shared_owner = object()
+    cold_pool = WorkerAdmissionPool(
+        max_workers=4,
+        backend="process",
+        shared_objects=(shared_owner,),
+    )
+    cold_barrier = threading.Barrier(2)
+    cold_errors: list[BaseException] = []
+    cold_results: list[SharedProcessResult] = []
+
+    def run_cold_batch() -> None:
+        try:
+            cold_barrier.wait(timeout=5)
+            cold_pool.run_windowed(
+                (0, 1),
+                _execute_shared_process_budget_task,
+                task_arg_fn=lambda value: SharedProcessTask(shared_owner, value),
+                on_completed=lambda _c, _t, _item, result: cold_results.append(result),
+            )
+        except BaseException as exc:  # pragma: no cover - surfaced below
+            cold_errors.append(exc)
+
+    cold_threads = [threading.Thread(target=run_cold_batch) for _ in range(2)]
+    for thread in cold_threads:
+        thread.start()
+    assert creation_started.wait(5)
+    release_creation.set()
+    for thread in cold_threads:
+        thread.join(timeout=10)
+    cold_pool.shutdown()
+    assert not cold_errors
+    assert all(not thread.is_alive() for thread in cold_threads)
+    assert len(created) == 1
+    assert len(cold_results) == 4
+
+    created.clear()
+    with _MOCK_PROCESS_LOCK:
+        _MOCK_PROCESS_ACTIVE = 0
+        _MOCK_PROCESS_MAX_ACTIVE = 0
+    pool = WorkerAdmissionPool(
+        max_workers=4,
+        backend="process",
+        shared_objects=(shared_owner,),
+    )
+    barrier = threading.Barrier(2)
+    results: list[SharedProcessResult] = []
+    errors: list[BaseException] = []
+
+    def run_batch(_name: str) -> None:
+        try:
+            barrier.wait(timeout=5)
+            pool.run_windowed(
+                tuple(range(4)),
+                _execute_shared_process_budget_task,
+                task_arg_fn=lambda value: SharedProcessTask(shared_owner, value),
+                on_completed=lambda _c, _t, _item, result: results.append(result),
+            )
+        except BaseException as exc:  # pragma: no cover - surfaced below
+            errors.append(exc)
+
+    pool.run_windowed(
+        (0,),
+        _execute_shared_process_budget_task,
+        task_arg_fn=lambda value: SharedProcessTask(shared_owner, value),
+        on_completed=lambda _c, _t, _item, result: results.append(result),
+    )
+    threads = [threading.Thread(target=run_batch, args=(name,)) for name in ("a", "b")]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=10)
+    with pool:
+        pass
+
+    assert not errors
+    assert len(created) == 1
+    assert created[0].max_workers == 4
+    assert _MOCK_PROCESS_MAX_ACTIVE == 4
+    assert len(results) == 9
+    assert all(result.owner is shared_owner for result in results)
 
 
 def test_worker_admission_pool_skip_and_task_arg_fn() -> None:
@@ -1316,3 +1727,72 @@ def test_worker_admission_pool_stop_on_error() -> None:
     assert pool.stopped
     assert isinstance(pool.first_error, ValueError)
     assert len(errors) >= 1
+
+
+def test_reserved_partition_written_elsewhere_reads_back_identically(
+    tmp_path: Path,
+) -> None:
+    """A writer outside this process may produce the bytes; the store still
+    owns the index, the path and the sealed identity, and the same content
+    written elsewhere must land byte-identical."""
+
+    import json
+    import subprocess
+    import sys
+
+    store = StreamedResultStore(tmp_path / "spool", ())
+    reservation = store.reserve_partition("partition-remote")
+    assert reservation.path == tmp_path.resolve() / "spool" / "00000000.pickle"
+    module = "xic_extractor.execution_engine.streamed_result_store"
+    script = "; ".join(
+        (
+            "import json",
+            "from pathlib import Path",
+            "from tests.test_execution_engine import MockPayload",
+            "from %s import write_partition_payload" % module,
+            "payload = MockPayload(children=(), method_assessments=('a', 'b'),"
+            " label='remote')",
+            "kids = tuple({'child': index} for index in range(4))",
+            "digest, size, lengths, records, _ = write_partition_payload("
+            "Path(%r), payload, shared_objects=(), children=kids)"
+            % str(reservation.path),
+            "print(json.dumps({'lengths': lengths, 'digest': digest,"
+            " 'size': size, 'records': {name: [list(item) for item in rows]"
+            " for name, rows in records.items()}}))",
+        )
+    )
+    completed = subprocess.run(
+        [sys.executable, "-c", script],
+        capture_output=True,
+        text=True,
+        check=True,
+        cwd=str(Path(__file__).resolve().parents[1]),
+    )
+    written = json.loads(completed.stdout.strip())
+    sealed = store.adopt_partition(
+        reservation,
+        lengths=written["lengths"],
+        records={
+            name: tuple((offset, length) for offset, length in rows)
+            for name, rows in written["records"].items()
+        },
+    )
+    assert sealed.sha256 == written["digest"]
+    assert sealed.size_bytes == written["size"]
+    # Identity is derived here from the published bytes, not reported by the
+    # writer that produced them.
+    assert sealed.sha256 == hashlib.sha256(reservation.path.read_bytes()).hexdigest()
+    assert sealed.size_bytes == reservation.path.stat().st_size
+
+    restored = store.read(0)
+    assert restored.label == "remote"
+    assert restored.method_assessments == ("a", "b")
+    assert restored.children == tuple({"child": index} for index in range(4))
+
+    local = StreamedResultStore(tmp_path / "local", ())
+    local_sealed = local.append_children(
+        "partition-local",
+        MockPayload(children=(), method_assessments=("a", "b"), label="remote"),
+        tuple({"child": index} for index in range(4)),
+    )
+    assert local_sealed.sha256 == sealed.sha256

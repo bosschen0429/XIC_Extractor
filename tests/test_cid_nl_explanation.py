@@ -36,6 +36,7 @@ from xic_extractor.diagnostics.cid_nl_explanation import (
     ExplanationError,
     read_cid_nl_curves,
     read_cid_nl_explanation,
+    read_explanation_metadata,
     write_explanation_report,
 )
 from xic_extractor.diagnostics.cid_nl_explanation_projection import (
@@ -107,18 +108,19 @@ def _owner_run(tmp_path, monkeypatch, scenario):
         sample_identity_namespace="study:explanation",
     )
     _install_runtime_raws(monkeypatch, sources_by_path=sources, tmp_path=tmp_path)
+    config = AlignmentConfig(
+        anchor_min_seed_events=3 if scenario == "review_only" else 1,
+        # Moderate support must also lie outside the preferred RT band;
+        # aligned moderate owners are eligible through batch continuity.
+        preferred_rt_sec=2.0 if scenario == "review_only" else 60.0,
+    )
     runtime = execute_untargeted_cid_nl_production_batch(
         batch,
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
         recovery_marker=OwnerPathRuntimeMarker(
             tmp_path / "runtime.json", "explanation"
         ),
-    )
-    config = AlignmentConfig(
-        anchor_min_seed_events=3 if scenario == "review_only" else 1,
-        # Moderate support must also lie outside the preferred RT band;
-        # aligned moderate owners are eligible through batch continuity.
-        preferred_rt_sec=2.0 if scenario == "review_only" else 60.0,
+        alignment_config=config,
     )
     completed = compose_untargeted_cid_nl_production_result(
         batch, runtime, alignment_config=config
@@ -152,8 +154,8 @@ def test_owner_facts_survive_persisted_candidate_query(tmp_path, monkeypatch, sc
     assert summary["initial_edge_coverage"] == {
         "policy": "feature-group-membership-v1",
         "unlisted_pairs": "not_evaluated",
-        "rt_pruning": False,
-        "evaluated_pair_count": len(completed.initial_edges),
+        "rt_pruning": True,
+        "retained_pair_record_count": len(completed.initial_edges),
         "compressed_group_count": len(completed.initial_groups),
         "compressed_member_count": sum(
             len(group.member_subjects) for group in completed.initial_groups
@@ -503,6 +505,56 @@ def test_incremental_report_deduplicates_and_aborts_conflicts(tmp_path):
             writer.add_record("facts", "one", {"value": 2}, ())
     assert not failed.exists()
     assert not failed.with_name(failed.name + ".tmp").exists()
+
+
+def test_related_set_links_preserve_union_order_and_legacy_read(tmp_path):
+    from xic_extractor.diagnostics.cid_nl_explanation import ExplanationReportWriter
+
+    report = tmp_path / "normalized.sqlite"
+    with ExplanationReportWriter(report) as writer:
+        for candidate_id in ("C1", "C2", "C3"):
+            writer.add_candidate(
+                candidate_id,
+                "S1",
+                {"candidate_id": candidate_id, "sample_id": "S1"},
+            )
+        writer.add_record(
+            "facts",
+            "one",
+            {"value": 1},
+            (("C1", "S1"), ("C2", "S1")),
+        )
+        # Same record, reordered members and an overlapping extension must
+        # produce one exact logical union after view expansion.
+        writer.add_record(
+            "facts",
+            "one",
+            {"value": 1},
+            (("C2", "S1"), ("C1", "S1")),
+        )
+        writer.add_record(
+            "facts",
+            "one",
+            {"value": 1},
+            (("C2", "S1"), ("C3", "S1")),
+        )
+        writer.finalize({})
+
+    expected = {
+        (candidate_id, "S1", "facts", "one")
+        for candidate_id in ("C1", "C2", "C3")
+    }
+    assert set(read_explanation_metadata(report).links) == expected
+    for candidate_id in ("C1", "C2", "C3"):
+        detail = read_cid_nl_explanation(report, candidate_id=candidate_id)
+        assert detail["records"] == {"facts": [{"value": 1}]}
+
+    # Materialize the logical view only for this legacy-reader fixture.
+    with sqlite3.connect(report) as connection:
+        connection.execute("CREATE TABLE legacy_links AS SELECT * FROM links")
+        connection.execute("DROP VIEW links")
+        connection.execute("ALTER TABLE legacy_links RENAME TO links")
+    assert set(read_explanation_metadata(report).links) == expected
 
 
 def test_report_consumes_candidate_payloads_without_retaining_rows(tmp_path):

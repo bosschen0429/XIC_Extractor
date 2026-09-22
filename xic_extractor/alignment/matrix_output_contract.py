@@ -152,21 +152,15 @@ def bind_matrix_identity_rows(
         zip(matrix_rows, identity_rows, strict=True),
         start=1,
     ):
-        identity = {
-            column: format_value(source_identity.get(column, ""))
-            for column in identity_columns
-        }
-        identity["identity_schema_version"] = MATRIX_IDENTITY_SCHEMA_VERSION
-        identity["matrix_row_index"] = str(index)
-        identity["Mz"] = canonical_mz_text(identity.get("Mz", ""))
-        identity[MATRIX_ROW_BINDING_COLUMN] = ""
-        identity[MATRIX_ROW_BINDING_COLUMN] = matrix_row_binding_sha256(
-            matrix_header=matrix_header,
-            matrix_row=matrix_row,
-            identity_columns=identity_columns,
-            identity_row=identity,
+        bound_rows.append(
+            bind_matrix_identity_row(
+                matrix_header=matrix_header,
+                matrix_row=matrix_row,
+                identity_columns=identity_columns,
+                source_identity=source_identity,
+                index=index,
+            )
         )
-        bound_rows.append(identity)
     validate_matrix_identity_rows(
         matrix_header=matrix_header,
         matrix_rows=matrix_rows,
@@ -174,6 +168,37 @@ def bind_matrix_identity_rows(
         identity_rows=bound_rows,
     )
     return tuple(bound_rows)
+
+
+def bind_matrix_identity_row(
+    *,
+    matrix_header: Sequence[str],
+    matrix_row: Mapping[str, object],
+    identity_columns: Sequence[str],
+    source_identity: Mapping[str, object],
+    index: int,
+) -> dict[str, str]:
+    """Bind one row at its global position in a streamed public Matrix."""
+
+    identity = {
+        column: (
+            canonical_mz_text(source_identity.get(column, ""))
+            if column == "Mz"
+            else format_value(source_identity.get(column, ""))
+        )
+        for column in identity_columns
+    }
+    identity["identity_schema_version"] = MATRIX_IDENTITY_SCHEMA_VERSION
+    identity["matrix_row_index"] = str(index)
+    identity["Mz"] = canonical_mz_text(identity.get("Mz", ""))
+    identity[MATRIX_ROW_BINDING_COLUMN] = ""
+    identity[MATRIX_ROW_BINDING_COLUMN] = matrix_row_binding_sha256(
+        matrix_header=matrix_header,
+        matrix_row=matrix_row,
+        identity_columns=identity_columns,
+        identity_row=identity,
+    )
+    return identity
 
 
 def validate_matrix_identity_rows(
@@ -206,9 +231,7 @@ def validate_matrix_identity_rows(
             declared_schema = schema
         elif schema != declared_schema:
             raise ValueError("alignment matrix identity schema must be uniform")
-        peak_hypothesis_id = str(
-            identity_row.get("peak_hypothesis_id", "")
-        ).strip()
+        peak_hypothesis_id = str(identity_row.get("peak_hypothesis_id", "")).strip()
         if not peak_hypothesis_id or peak_hypothesis_id in peak_hypothesis_ids:
             raise ValueError(
                 "alignment matrix identity peak_hypothesis_id must be unique"
@@ -250,9 +273,7 @@ def validate_matrix_identity_row(
     schema = _declared_identity_schema(identity_row)
     if schema != header_schema:
         raise ValueError("alignment matrix identity schema does not match its columns")
-    if str(identity_row.get("matrix_row_index", "")).strip() != str(
-        expected_index
-    ):
+    if str(identity_row.get("matrix_row_index", "")).strip() != str(expected_index):
         raise ValueError(
             "alignment matrix identity rows must be an exact ordered census"
         )
@@ -293,8 +314,7 @@ def matrix_row_binding_sha256(
         "matrix_row": [str(matrix_row.get(column, "")) for column in matrix_header],
         "identity_columns": list(identity_binding_columns),
         "identity_row": [
-            str(identity_row.get(column, ""))
-            for column in identity_binding_columns
+            str(identity_row.get(column, "")) for column in identity_binding_columns
         ],
     }
     payload = json.dumps(

@@ -161,6 +161,17 @@ They feed the evidence spine; they do not directly become matrix write authority
 
 Related evidence and analysis terms:
 
+- `Discovery record`: a retained sample-local observation and its qualification
+  result. A record in the Discovery candidate CSV does not by itself qualify
+  as a feature for cross-sample grouping.
+- `Alignment feature candidate`: a Discovery observation with eligible MS1
+  feature support. Its physical peak may participate in cross-sample grouping;
+  an NL match alone does not grant that standing.
+- `review-only NL observation`: retained NL evidence without current eligible
+  MS1 feature standing. `review_only_orphan_nl` includes both observations
+  without an accepted MS1 peak and records demoted by blank qualification;
+  the state is not proof of random noise. A locally relevant MS2 observation
+  can support an existing feature without becoming a grouping candidate.
 - `sidecar`: accompanying TSV, JSON, or similar metadata that explains or
   audits a primary output without inheriting its writer authority.
 - `provenance`: the inputs, effective settings, runtime, and decision path

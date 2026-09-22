@@ -15,7 +15,9 @@ from xic_extractor.alignment.drift_evidence import KnownIstdOwnerLookup
 from xic_extractor.alignment.edge_scoring import (
     DriftLookupProtocol,
     OwnerEdgeEvidence,
+    RTEvidenceBasis,
     _compatible_composite_owners,
+    _drift_corrected_delta_sec,
     _seed_support_level,
     evaluate_owner_edge,
 )
@@ -83,6 +85,13 @@ class SparseFeatureDecision:
     reason: str
     cost: float | None = None
     witness_owner_ids: tuple[str, ...] = ()
+    # Which witness carried the decision and on which RT coordinate. The
+    # witness list alone cannot answer either, so an audit cannot tell whether
+    # a membership stood on raw or drift-corrected RT without these.
+    selected_witness_owner_id: str | None = None
+    rt_basis: RTEvidenceBasis | None = None
+    rt_raw_delta_sec: float | None = None
+    rt_drift_corrected_delta_sec: float | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -105,6 +114,13 @@ class FeatureInferenceOperationCounts:
     births: int
     ambiguous_assignments: int
     consensus_disagreements: int
+    rt_candidate_features_pruned: int = 0
+    index_axis_updates: int = 0
+    index_axis_updates_avoided: int = 0
+    trivial_assignment_components: int = 0
+    largest_component_owners: int = 0
+    largest_component_features: int = 0
+    largest_component_arcs: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -192,13 +208,25 @@ class _FeatureIndex:
         for key, value in self._entries(track):
             insort(self._axes[key], (value, track.key))
 
-    def remove(self, track: _FeatureTrack) -> None:
-        for key, value in self._entries(track):
+    def extend(
+        self, track: _FeatureTrack, owner: SampleLocalMS1Owner, counts: Counter[str]
+    ) -> None:
+        previous = dict(self._entries(track))
+        track.add(owner)
+        current = dict(self._entries(track))
+        for key in previous.keys() | current.keys():
+            if previous.get(key) == current.get(key):
+                counts["index_axis_updates_avoided"] += 1
+                continue
+            counts["index_axis_updates"] += 1
             items = self._axes[key]
-            item = (value, track.key)
-            index = bisect_left(items, item)
-            if index < len(items) and items[index] == item:
-                items.pop(index)
+            if key in previous:
+                item = (previous[key], track.key)
+                index = bisect_left(items, item)
+                if index < len(items) and items[index] == item:
+                    items.pop(index)
+            if key in current:
+                insort(items, (current[key], track.key))
 
     def candidates(
         self,
@@ -294,6 +322,10 @@ class _Candidate:
     state: Literal["supported", "evaluated_undecided", "proven_incompatible"]
     reason: str
     witness_owner_ids: tuple[str, ...]
+    selected_witness_owner_id: str | None = None
+    rt_basis: RTEvidenceBasis | None = None
+    rt_raw_delta_sec: float | None = None
+    rt_drift_corrected_delta_sec: float | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -534,6 +566,15 @@ def _directional_inference(
             supported_rows.append(owner)
             counts["index_queries"] += 1
             feature_keys = index.candidates(owner, config=config, counts=counts)
+            feasible_keys = {
+                key
+                for key in feature_keys
+                if _feature_rt_may_support(owner, tracks[key], config, drift_lookup)
+            }
+            counts["rt_candidate_features_pruned"] += len(feature_keys) - len(
+                feasible_keys
+            )
+            feature_keys = feasible_keys
             counts["candidate_features_considered"] += len(feature_keys)
             row_candidates = tuple(
                 _compare_owner_to_feature(
@@ -586,14 +627,20 @@ def _directional_inference(
                         reason=reason,
                         cost=candidate.cost,
                         witness_owner_ids=candidate.witness_owner_ids,
+                        selected_witness_owner_id=(
+                            candidate.selected_witness_owner_id
+                        ),
+                        rt_basis=candidate.rt_basis,
+                        rt_raw_delta_sec=candidate.rt_raw_delta_sec,
+                        rt_drift_corrected_delta_sec=(
+                            candidate.rt_drift_corrected_delta_sec
+                        ),
                     )
                 )
 
             if assigned_key is not None and owner.owner_id not in ambiguous:
                 track = tracks[assigned_key]
-                index.remove(track)
-                track.add(owner)
-                index.add(track)
+                index.extend(track, owner, counts)
                 owner_feature[owner.owner_id] = assigned_key
                 continue
 
@@ -628,6 +675,46 @@ def _directional_inference(
         grouped[feature_key].append(owner_id)
     groups = tuple(sorted(tuple(sorted(owner_ids)) for owner_ids in grouped.values()))
     return _DirectionalResult(groups, tuple(decisions), frozenset(uncertain))
+
+
+def _feature_rt_may_support(
+    owner: SampleLocalMS1Owner,
+    track: _FeatureTrack,
+    config: AlignmentConfig,
+    drift_lookup: DriftLookupProtocol | None,
+) -> bool:
+    """Exclude only tracks whose seed AND last cannot support either RT basis."""
+    for witness in track.witness_owners:
+        raw_delta = abs(owner.owner_apex_rt - witness.owner_apex_rt) * 60.0
+        if not math.isfinite(raw_delta) or raw_delta <= config.preferred_rt_sec:
+            return True
+        if drift_lookup is not None:
+            corrected = _drift_corrected_delta_sec(owner, witness, drift_lookup)
+            if (
+                corrected is None
+                or not math.isfinite(corrected)
+                or corrected <= config.preferred_rt_sec
+            ):
+                return True
+    return False
+
+
+def supports_existing_feature(
+    owner: SampleLocalMS1Owner,
+    members: tuple[SampleLocalMS1Owner, ...],
+    *,
+    config: AlignmentConfig,
+    drift_lookup: DriftLookupProtocol | None,
+) -> bool:
+    """Apply the same feature evidence rule without fitting or assigning again."""
+    ordered = sorted(members, key=lambda item: (item.sample_stem, item.owner_id))
+    track = _FeatureTrack.from_owner(ordered[0], direction="forward")
+    for member in ordered[1:]:
+        track.add(member)
+    candidate = _compare_owner_to_feature(
+        owner, track, config=config, drift_lookup=drift_lookup, counts=Counter()
+    )
+    return candidate.cost is not None and candidate.cost < _UNASSIGNED_COST
 
 
 def _compare_owner_to_feature(
@@ -685,12 +772,21 @@ def _compare_owner_to_feature(
         ),
     )
     cost = _edge_cost(best, mass_fraction, config)
+    selected_witness_owner_id = (
+        best.right_owner_id
+        if best.left_owner_id == owner.owner_id
+        else best.left_owner_id
+    )
     return _Candidate(
         track.key,
         cost,
         "supported",
         best.reason,
         witness_ids,
+        selected_witness_owner_id=selected_witness_owner_id,
+        rt_basis=best.rt_basis,
+        rt_raw_delta_sec=best.rt_raw_delta_sec,
+        rt_drift_corrected_delta_sec=best.rt_drift_corrected_delta_sec,
     )
 
 
@@ -809,10 +905,46 @@ def _solve_sample_assignment(
         pending.difference_update(row_ids)
         rows = sorted(row_ids)
         columns = sorted(feature_keys)
+        counts["largest_component_owners"] = max(
+            counts["largest_component_owners"], len(rows)
+        )
+        counts["largest_component_features"] = max(
+            counts["largest_component_features"], len(columns)
+        )
+        counts["largest_component_arcs"] = max(
+            counts["largest_component_arcs"], sum(len(arcs[key]) for key in rows)
+        )
         if len(rows) == len(columns) == 1:
             assignments[rows[0]] = columns[0]
             continue
         counts["competition_components"] += 1
+        if len(rows) == 1:
+            owner_id = rows[0]
+            feature_key = min(columns, key=lambda key: (arcs[owner_id][key], key))
+            assignments[owner_id] = feature_key
+            alternative = min(
+                _UNASSIGNED_COST,
+                min(arcs[owner_id][key] for key in columns if key != feature_key),
+            )
+            if alternative <= arcs[owner_id][feature_key] + _AMBIGUITY_EPSILON:
+                ambiguous.add(owner_id)
+            counts["trivial_assignment_components"] += 1
+            continue
+        if len(columns) == 1:
+            feature_key = columns[0]
+            owner_id = min(rows, key=lambda key: (arcs[key][feature_key], key))
+            best = arcs[owner_id][feature_key]
+            alternative = min(
+                _UNASSIGNED_COST,
+                min(arcs[key][feature_key] for key in rows if key != owner_id),
+            )
+            # The stable ID breaks only the diagnostic representation tie.
+            # Equal/near-equal optima remain ambiguous and cannot add membership.
+            assignments[owner_id] = feature_key
+            if alternative <= best + _AMBIGUITY_EPSILON:
+                ambiguous.add(owner_id)
+            counts["trivial_assignment_components"] += 1
+            continue
         matrix = _assignment_matrix(rows, columns, arcs)
         row_indexes, column_indexes = linear_sum_assignment(matrix)
         counts["assignment_solver_calls"] += 1
@@ -823,9 +955,11 @@ def _solve_sample_assignment(
             for row_index, column_index in zip(row_indexes, column_indexes, strict=True)
             if column_index < len(columns)
         }
+        row_index_by_id = {owner_id: index for index, owner_id in enumerate(rows)}
+        column_index_by_key = {key: index for index, key in enumerate(columns)}
         for owner_id, feature_key in selected.items():
-            row_index = rows.index(owner_id)
-            column_index = columns.index(feature_key)
+            row_index = row_index_by_id[owner_id]
+            column_index = column_index_by_key[feature_key]
             saved = matrix[row_index, column_index]
             matrix[row_index, column_index] = _INFEASIBLE_COST
             alternative_rows, alternative_columns = linear_sum_assignment(matrix)

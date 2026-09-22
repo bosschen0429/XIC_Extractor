@@ -351,6 +351,7 @@ class TimingRecorder:
     ) -> None:
         """Record partition timeline entries into the timing projection."""
         self._partition_timeline = [dict(entry) for entry in timeline]
+        self._write_live()
 
     def to_json_dict(self) -> dict[str, object]:
         from xic_extractor.diagnostics.timing_summary import summarize_timing_records
@@ -422,6 +423,10 @@ class TimingRecorder:
                 "dropped_observation_count": observation_start,
                 "span_semantics": self._span_semantics[start:],
             }
+            if self._partition_timeline:
+                payload["partition_timeline"] = [
+                    dict(entry) for entry in self._partition_timeline
+                ]
             serialized = json.dumps(payload, indent=2, sort_keys=True)
             temporary_path = self.live_output_path.with_name(
                 f"{self.live_output_path.name}.tmp"

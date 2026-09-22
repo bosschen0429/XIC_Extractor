@@ -12,8 +12,7 @@ from xic_extractor.peak_detection.capture_boundary_policy import (
 )
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     CidNlMethodSubject,
-    UntargetedCidNlMethodSubjectBatch,
-    cid_nl_method_subjects_from_request,
+    cid_nl_method_subject_from_request,
     validate_cid_nl_method_subject_binding,
 )
 from xic_extractor.peak_detection.facade import find_peak_and_area
@@ -44,6 +43,7 @@ from xic_extractor.peak_detection.observations import (
     validate_peak_observation_trace_binding,
 )
 from xic_extractor.peak_detection.physical_peak_evaluation import (
+    _physical_owner_context,
     evaluate_physical_peak,
     prepare_physical_signal,
 )
@@ -57,6 +57,7 @@ from xic_extractor.peak_detection.search_scope import (
     SearchScope,
     SearchScopeContractError,
     TargetSearchScope,
+    UntargetedSearchScope,
     request_binds_physical_capture_profile,
     require_capture_binding,
     validate_scope_owner_binding,
@@ -249,6 +250,30 @@ def capture_peak_hypotheses(
     )
 
 
+def rebind_untargeted_capture_scope(
+    capture: SampleLocalCapture, *, scope: UntargetedSearchScope
+) -> SampleLocalCapture:
+    """Reuse a completed capture in an equivalent sample or workset view."""
+    if (
+        not isinstance(capture, SampleLocalCapture)
+        or not isinstance(capture.scope, UntargetedSearchScope)
+        or not isinstance(scope, UntargetedSearchScope)
+    ):
+        raise SampleLocalCaptureError("scope rebinding requires Untargeted capture")
+    if (
+        scope.request != capture.scope.request
+        or scope.method_constraints != capture.scope.method_constraints
+        or require_capture_binding(scope, capture.candidate_id)
+        != require_capture_binding(capture.scope, capture.candidate_id)
+    ):
+        raise SampleLocalCaptureError("scope rebinding changed the capture question")
+    return replace(
+        capture,
+        scope=scope,
+        _owner_seal=replace(capture._owner_seal, scope=scope),
+    )
+
+
 def _capture_trace_group(
     *, scope: SearchScope, binding: CaptureCandidateBinding, trace: Trace
 ) -> TraceGroup:
@@ -310,26 +335,26 @@ def _capture_physical_peak(
         profile=profile,
         trace_content_id=expected.prepared.trace_content_id,
     )
-    # Physical context follows acquired scan RTs, independently of XIC bounds.
-    if prepared.trace_context_rt_start_min is not None and (
-        expected.question.context_rt_start_min != prepared.trace_context_rt_start_min
-        or expected.question.context_rt_end_min != prepared.trace_context_rt_end_min
+    context = _physical_owner_context(
+        prepared,
+        request_context_rt_start_min=binding.query_rt_min,
+        request_context_rt_end_min=binding.query_rt_max,
+    )
+    if context != (
+        expected.question.context_rt_start_min,
+        expected.question.context_rt_end_min,
     ):
         raise SampleLocalCaptureError(
             "physical capture changed the exact acquired trace context"
         )
-    evaluation = evaluate_physical_peak(
-        prepared,
-        selection_subject_id=expected.question.selection_subject_id,
-        query_rt_min=binding.preferred_rt,
-        request_context_rt_start_min=binding.query_rt_min,
-        request_context_rt_end_min=binding.query_rt_max,
-        selection_policy_version=expected.question.selection_policy_version,
-    )
-    if evaluation != expected:
+    if prepared.projection != expected.prepared:
         raise SampleLocalCaptureError(
             "physical capture changed the retained owner answer"
         )
+    # The binding owns this exact question and answer. Preparing its verified
+    # trace supplies observation values and fresh diagnostic curves; it does
+    # not require repeating segmentation, selection, and integration.
+    evaluation = replace(expected, retained_prepared_signal=prepared.prepared)
     return _project_physical_capture(
         scope=scope,
         binding=binding,
@@ -846,15 +871,9 @@ def _hypothesis_context(
             target.istd_pair,
             target.label,
         )
-    pinned = cid_nl_method_subjects_from_request(scope.request)
-    if isinstance(pinned, UntargetedCidNlMethodSubjectBatch):
-        method_subject = next(
-            subject
-            for subject in pinned.subjects
-            if subject.method_subject_id == method_subject_id
-        )
-    else:
-        method_subject = pinned
+    method_subject = cid_nl_method_subject_from_request(
+        scope.request, method_subject_id=method_subject_id
+    )
     label = f"untargeted:{query_mz:.8g}:{method_subject.label}"
     return label, "Analyte", "", label
 
@@ -866,4 +885,5 @@ __all__ = (
     "capture_peak_hypotheses",
     "capture_physical_recovery_observation",
     "mint_captured_peak_observation",
+    "rebind_untargeted_capture_scope",
 )

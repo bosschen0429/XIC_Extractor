@@ -208,7 +208,9 @@ class ExplanationReportWriter:
         self._candidates: dict[tuple[str, str], dict[str, Any]] = {}
         self._record_hashes: dict[tuple[str, str], bytes] = {}
         self._buffered_records: list[tuple[str, str, str]] = []
-        self._buffered_links: list[tuple[str, str, str, str]] = []
+        self._related_sets: dict[tuple[tuple[str, str], ...], int] = {}
+        self._buffered_link_members: list[tuple[int, str, str]] = []
+        self._buffered_record_links: list[tuple[int, str, str]] = []
         self._buffered_curve_payloads: list[tuple[str, str, str, str, str, bytes]] = []
         self._curve_hashes: dict[str, bytes] = {}
 
@@ -231,9 +233,16 @@ class ExplanationReportWriter:
                 "CREATE TABLE records (kind TEXT, record_id TEXT, "
                 "payload TEXT NOT NULL, "
                 "PRIMARY KEY(kind, record_id));"
-                "CREATE TABLE links (candidate_id TEXT, sample_id TEXT, kind TEXT, "
-                "record_id TEXT, "
-                "PRIMARY KEY(candidate_id, sample_id, kind, record_id));"
+                "CREATE TABLE link_members (set_id INTEGER, candidate_id TEXT, "
+                "sample_id TEXT, PRIMARY KEY(set_id, candidate_id, sample_id)) "
+                "WITHOUT ROWID;"
+                "CREATE INDEX idx_link_members_candidate "
+                "ON link_members(candidate_id, sample_id, set_id);"
+                "CREATE TABLE record_links (set_id INTEGER, kind TEXT, "
+                "record_id TEXT, PRIMARY KEY(set_id, kind, record_id)) WITHOUT ROWID;"
+                "CREATE VIEW links AS SELECT DISTINCT m.candidate_id, m.sample_id, "
+                "r.kind, r.record_id FROM link_members m "
+                "JOIN record_links r USING(set_id);"
                 "CREATE TABLE curve_payloads (payload_id TEXT PRIMARY KEY, "
                 "sample_id TEXT NOT NULL, kind TEXT NOT NULL, record_id TEXT NOT NULL, "
                 "codec TEXT NOT NULL, payload BLOB NOT NULL);"
@@ -293,29 +302,57 @@ class ExplanationReportWriter:
             self.record_counts[kind] = self.record_counts.get(kind, 0) + 1
             if len(self._buffered_records) >= 20000:
                 self._flush_records()
-        for cid, sid in related:
-            self._buffered_links.append((cid, sid, kind, identity))
-        if len(self._buffered_links) >= 50000:
-            self._flush_links()
+        self._link_record(kind, identity, related)
         return is_new
+
+    def _link_record(
+        self, kind: str, identity: str, related: Iterable[tuple[str, str]]
+    ) -> None:
+        # Sample cells share their group's candidate set. Store the set once;
+        # the logical links view expands it only for a reader's selected scope.
+        members = tuple(sorted(set(related)))
+        if not members:
+            return
+        set_id = self._related_sets.get(members)
+        if set_id is None:
+            set_id = len(self._related_sets)
+            self._related_sets[members] = set_id
+            self._buffered_link_members.extend(
+                (set_id, cid, sid) for cid, sid in members
+            )
+        self._buffered_record_links.append((set_id, kind, identity))
+        if (
+            len(self._buffered_record_links) + len(self._buffered_link_members)
+            >= 50000
+        ):
+            self._flush_links()
 
     def add_curve_payload(
         self,
-        payload_id: str,
+        payload_id: str | None,
         sample_id: str,
         kind: str,
         record_id: str,
         payload: Mapping[str, Any],
         codec: str = "zlib-json-utf8",
-    ) -> None:
+    ) -> str:
+        """Encode once for storage and, when absent, the content-derived ID."""
         _validate_curve_payload(
             payload, sample_id=sample_id, kind=kind, record_id=record_id
         )
         if codec != "zlib-json-utf8":
             raise ExplanationError(f"unsupported curve codec: {codec}")
         encoded_json = json.dumps(
-            payload, ensure_ascii=False, sort_keys=True, allow_nan=False
+            payload,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
         ).encode("utf-8")
+        if payload_id is None:
+            payload_id = (
+                "xic.inspector-curve:" + hashlib.sha256(encoded_json).hexdigest()
+            )
         binding = _json(
             {
                 "sample_id": sample_id,
@@ -331,14 +368,15 @@ class ExplanationReportWriter:
                 raise ExplanationError(
                     f"conflicting curve payload identity: {payload_id}"
                 )
-            return
+            return payload_id
         self._curve_hashes[payload_id] = digest
-        compressed = zlib.compress(encoded_json, level=6)
+        compressed = zlib.compress(encoded_json, level=1)
         self._buffered_curve_payloads.append(
             (payload_id, sample_id, kind, record_id, codec, compressed)
         )
         if len(self._buffered_curve_payloads) >= 5000:
             self._flush_curve_payloads()
+        return payload_id
 
     def _flush_curve_payloads(self) -> None:
         if self._buffered_curve_payloads:
@@ -360,11 +398,17 @@ class ExplanationReportWriter:
             self._connection().execute("BEGIN;")
 
     def _flush_links(self) -> None:
-        if self._buffered_links:
+        if self._buffered_record_links:
             self._connection().executemany(
-                "INSERT OR IGNORE INTO links VALUES (?, ?, ?, ?)", self._buffered_links
+                "INSERT INTO link_members VALUES (?, ?, ?)",
+                self._buffered_link_members,
             )
-            self._buffered_links.clear()
+            self._connection().executemany(
+                "INSERT OR IGNORE INTO record_links VALUES (?, ?, ?)",
+                self._buffered_record_links,
+            )
+            self._buffered_link_members.clear()
+            self._buffered_record_links.clear()
             self._connection().commit()
             self._connection().execute("BEGIN;")
 
@@ -422,7 +466,9 @@ class ExplanationReportWriter:
         self._candidates.clear()
         self._record_hashes.clear()
         self._buffered_records.clear()
-        self._buffered_links.clear()
+        self._related_sets.clear()
+        self._buffered_link_members.clear()
+        self._buffered_record_links.clear()
         self._buffered_curve_payloads.clear()
         self._curve_hashes.clear()
         self.temporary.unlink(missing_ok=True)
@@ -444,14 +490,19 @@ def write_explanation_report(
         for (kind, identity), payload in records.items():
             writer.add_record(kind, identity, payload, ())
             del payload
-        writer._connection().executemany(
-            "INSERT OR IGNORE INTO links VALUES (?, ?, ?, ?)", links
-        )
+        for cid, sid, kind, identity in links:
+            writer._link_record(kind, identity, ((cid, sid),))
         return writer.finalize(summary)
 
 
 def _json(value: Mapping[str, Any]) -> str:
-    return json.dumps(value, ensure_ascii=False, sort_keys=True, allow_nan=False)
+    return json.dumps(
+        value,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    )
 
 
 def _object(payload: str) -> dict[str, Any]:

@@ -16,6 +16,9 @@ from xic_extractor.alignment.drift_evidence import (
 from xic_extractor.alignment.edge_scoring import (
     DriftLookupProtocol,
 )
+from xic_extractor.alignment.feature_membership_inference import (
+    FeatureInferenceOperationCounts,
+)
 from xic_extractor.alignment.hypothesis_owner_adapter import (
     bind_retained_peak_hypotheses_to_assessment_universe,
     compose_peak_hypotheses_from_assessment_universe,
@@ -149,6 +152,7 @@ def bootstrap_cid_nl_initial_population(
     injection_order: Mapping[str, int] | None = None,
     drift_lookup: DriftLookupProtocol | None = None,
     known_istd_reference: KnownIstdReference | None = None,
+    operation_counts_sink: list[FeatureInferenceOperationCounts] | None = None,
     retain_observation_only_candidates: bool = False,
     retained_hypotheses_by_assessment: Mapping[
         tuple[str, str], tuple[PeakHypothesis, ...]
@@ -278,14 +282,15 @@ def bootstrap_cid_nl_initial_population(
             raise ValueError(
                 "known ISTD reference cannot be combined with generic drift"
             )
-        support_ids = {
-            hypothesis.hypothesis_id
-            for hypotheses in hypotheses_by_sample.values()
-            for hypothesis in hypotheses
-            if hypothesis.hypothesis_method == HYPOTHESIS_METHOD_DDA_CID_NL
-        }
+        # The reference is a measured RAW-level identity constraint.  It must
+        # be allowed to bind every physical MS1 owner in the retained
+        # assessment universe, including MS1-only observations.  Restricting
+        # this lookup to DDA SUPPORT owners made the known-ISTD constraint
+        # disappear exactly where Discovery had an MS1 peak but no qualifying
+        # MS2 relation, leaving those owners ambiguous or outside the known
+        # group.
         drift_lookup = known_istd_reference.bind(
-            tuple(owner for owner in owners if owner.owner_id in support_ids),
+            tuple(owners),
             sample_universe=sample_universe,
             injection_order=injection_order,
         )
@@ -295,6 +300,7 @@ def bootstrap_cid_nl_initial_population(
         sample_universe=sample_universe,
         injection_order=injection_order,
         drift_lookup=drift_lookup,
+        operation_counts_sink=operation_counts_sink,
     )
     if not provisional_groups and not searched_no_observation:
         raise ModeTrackProducerError(

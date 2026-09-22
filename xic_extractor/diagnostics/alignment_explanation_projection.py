@@ -181,16 +181,8 @@ def _emit_curve_payload(
         "provenance": actual,
     }
     # One envelope per actual content/binding; candidate associations are links.
-    encoded = json.dumps(
-        envelope,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-        allow_nan=False,
-    ).encode("utf-8")
-    payload_id = "xic.inspector-curve:" + hashlib.sha256(encoded).hexdigest()
-    sink.add_curve_payload(
-        payload_id=payload_id,
+    payload_id = sink.add_curve_payload(
+        payload_id=None,
         sample_id=sample_id,
         kind=kind,
         record_id=record_id,
@@ -216,7 +208,7 @@ class PreparedAlignmentExplanation:
     """Consume owner results now; publish only after the Matrix is available."""
 
     consume_child: Callable[[FinalizedUntargetApplicationResult], None]
-    finalize: Callable[[CompletedUntargetBatchWriterInputs, Path], Path]
+    finalize: Callable[[int, Path], Path]
 
 
 def write_cid_nl_explanation(
@@ -241,7 +233,7 @@ def write_cid_nl_explanation(
     ) as explanation:
         for child in completed.application_result.children:
             explanation.consume_child(child)
-        return explanation.finalize(writer_inputs, matrix_path)
+        return explanation.finalize(len(writer_inputs.matrix.clusters), matrix_path)
 
 
 @contextmanager
@@ -706,6 +698,18 @@ def prepare_alignment_explanation(
                             }
                             for ref in observation.predecessor_cells
                         ],
+                        "recovery_cell": (
+                            None
+                            if observation.recovery_cell is None
+                            else {
+                                "content": _cell_observation_content_payload(
+                                    observation.recovery_cell.content
+                                ),
+                                "artifact": _artifact(
+                                    observation.recovery_cell.artifact
+                                ),
+                            }
+                        ),
                     },
                     related,
                 )
@@ -746,9 +750,7 @@ def prepare_alignment_explanation(
             if child_count % 256 == 0:
                 report_progress("children", child_count, len(application.children))
 
-        def finalize(
-            writer_inputs: CompletedUntargetBatchWriterInputs, matrix_path: Path
-        ) -> Path:
+        def finalize(writer_row_count: int, matrix_path: Path) -> Path:
             if child_count != len(application.children):
                 raise ValueError("explanation did not consume every finalized child")
             if child_count % 256:
@@ -816,7 +818,7 @@ def prepare_alignment_explanation(
                 "candidate_count": sink.candidate_count,
                 "matrix_row_count": matrix_rows,
                 "candidate_examples": sink.candidate_examples(),
-                "writer_row_count": len(writer_inputs.matrix.clusters),
+                "writer_row_count": writer_row_count,
                 "matrix_path": str(matrix_path),
                 "matrix_sha256": matrix_hash,
                 "alignment_config": asdict(alignment_config),
@@ -825,8 +827,12 @@ def prepare_alignment_explanation(
                 "initial_edge_coverage": {
                     "policy": INITIAL_GROUPING_POLICY,
                     "unlisted_pairs": UNLISTED_PAIR_DISPOSITION,
-                    "rt_pruning": False,
-                    "evaluated_pair_count": len(completed.initial_edges),
+                    "rt_pruning": True,
+                    # Retained records, not comparisons performed. The sparse
+                    # path evaluates witness pairs without keeping a pair
+                    # graph, so calling this "evaluated" reported zero
+                    # comparisons for a run that made them.
+                    "retained_pair_record_count": len(completed.initial_edges),
                     "compressed_group_count": len(completed.initial_groups),
                     "compressed_member_count": initial_group_member_count,
                 },
@@ -834,7 +840,9 @@ def prepare_alignment_explanation(
                     name: (
                         "recorded"
                         if getattr(completed, name)
-                        else "not_evaluated"
+                        # Groups exist, so pairs were compared; what is absent
+                        # is the retained pair graph, not the evaluation.
+                        else "not_retained"
                         if name == "initial_edges" and completed.initial_groups
                         else "unavailable"
                     )

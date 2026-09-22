@@ -80,8 +80,8 @@ overrides; the printed plan owns the actual paths and effective settings.
 
 Both datasets use the same scientific preset, background library, ISTD input,
 and shared [execution profile](../product/execution-runtime.md#worker-settings).
-`--workers` overrides the parallel budget; Alignment retains its serial default
-unless `--alignment-workers` is explicitly supplied. The runner reads the ignored local environment file;
+`--workers` overrides the parallel budget; Alignment defaults to four workers,
+with `--alignment-workers` available to override it. The runner reads the ignored local environment file;
 explicit CLI arguments and process environment take precedence. It creates a
 fresh run directory and does not select historical Discovery indexes or
 workbooks implicitly. The older targeted validation harness remains a separate

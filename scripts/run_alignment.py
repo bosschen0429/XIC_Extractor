@@ -212,6 +212,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             "signal_processing_profile": signal_processing_profile,
             "output_level": args.output_level,
             "emit_alignment_cells": args.emit_alignment_cells,
+            "emit_cid_nl_explanation": args.emit_cid_nl_explanation,
+            "retain_acquisition_cache": args.retain_acquisition_cache,
             "emit_alignment_status_matrix": args.emit_alignment_status_matrix,
             "emit_alignment_integration_audit": args.emit_alignment_integration_audit,
             "emit_alignment_backfill_seed_audit": (
@@ -258,11 +260,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     finally:
         if timing_recorder is not None:
             timing_recorder.stop_process_memory(scope="foreground")
+            if args.timing_output is not None:
+                timing_path = args.timing_output.resolve()
+                timing_recorder.write_json(timing_path)
+                print(f"Timing JSON: {timing_path}")
 
-    if outputs.workbook is not None:
-        print(f"Alignment workbook: {outputs.workbook}")
-    if outputs.review_html is not None:
-        print(f"Alignment review HTML: {outputs.review_html}")
     if outputs.review_tsv is not None:
         print(f"Alignment review TSV: {outputs.review_tsv}")
     if outputs.matrix_tsv is not None:
@@ -280,10 +282,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
     if outputs.status_matrix_tsv is not None:
         print(f"Alignment status matrix TSV: {outputs.status_matrix_tsv}")
-    if outputs.event_to_owner_tsv is not None:
-        print(f"Event to MS1 owner TSV: {outputs.event_to_owner_tsv}")
-    if outputs.ambiguous_owners_tsv is not None:
-        print(f"Ambiguous MS1 owners TSV: {outputs.ambiguous_owners_tsv}")
     if outputs.edge_evidence_tsv is not None:
         print(f"Owner edge evidence TSV: {outputs.edge_evidence_tsv}")
     if outputs.skipped_evidence_ledger_tsv is not None:
@@ -298,10 +296,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     if timing_recorder is not None:
         if args.timing_live_output is not None:
             print(f"Timing live JSON: {args.timing_live_output.resolve()}")
-        if args.timing_output is not None:
-            timing_path = args.timing_output.resolve()
-            timing_recorder.write_json(timing_path)
-            print(f"Timing JSON: {timing_path}")
     return 0
 
 
@@ -428,8 +422,9 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         "--raw-workers",
         type=_positive_int,
         help=(
-            "Concurrent RAW sample phases within each bounded CID-NL partition "
-            "(default: shared execution profile alignment_workers, normally 1)."
+            "Worker budget for source fingerprinting, persisted-input indexing, "
+            "and RAW sample phases within each bounded CID-NL partition "
+            "(default: shared execution profile alignment_workers, normally 4)."
         ),
     )
     parser.add_argument(
@@ -437,8 +432,8 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         choices=("process", "thread"),
         default="thread",
         help=(
-            "Worker backend for concurrent RAW sample execution within each "
-            "partition ('process' or 'thread', default: 'thread')."
+            "Backend for persisted-input indexing and RAW sample execution "
+            "('process' or 'thread', default: 'thread'). Fingerprinting uses threads."
         ),
     )
     parser.add_argument(
@@ -529,6 +524,24 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         ),
     )
     parser.add_argument("--emit-alignment-cells", action="store_true")
+    parser.add_argument(
+        "--retain-acquisition-cache",
+        action="store_true",
+        help=(
+            "keep .cid_nl_acquisition_cache after a successful run so a repeat "
+            "run skips rereading the RAW files; a failed attempt keeps it "
+            "either way"
+        ),
+    )
+    parser.add_argument(
+        "--emit-cid-nl-explanation",
+        action="store_true",
+        help=(
+            "write cid_nl_explanation.sqlite, a per-cell projection of results "
+            "already written elsewhere; the debug and validation levels "
+            "include it already"
+        ),
+    )
     parser.add_argument("--emit-alignment-integration-audit", action="store_true")
     parser.add_argument(
         "--emit-baseline-audit-asls",
@@ -741,6 +754,9 @@ def _print_preflight_summary(
     print(f"DLL dir: {dll_dir}")
     print(f"Output dir: {output_dir}")
     print(f"Output level: {args.output_level}")
+    print(f"Alignment worker budget: {args.raw_workers}")
+    print(f"Input indexing / RAW backend: {args.raw_worker_backend}")
+    print("Source fingerprint backend: thread")
     _print_owner_build_route_preflight(owner_build_xic_backend)
     print(
         "Timing JSON: "

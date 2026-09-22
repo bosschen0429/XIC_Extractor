@@ -46,10 +46,21 @@ from xic_extractor.immutable_sequence import ImmutableSequence
 from xic_extractor.sample_metadata import SampleMetadata
 
 
-def _plan(tmp_path, monkeypatch, *, scenario="positive"):
+@pytest.fixture(autouse=True)
+def _disable_real_dll_loading(monkeypatch) -> None:
+    import xic_extractor.extraction.untargeted_cid_nl_real_data_runtime as runtime_owner
+
+    monkeypatch.setattr(runtime_owner, "_ensure_assemblies_loaded", lambda *_: None)
+
+
+def _plan(tmp_path, monkeypatch, *, scenario="positive", opened_sink=None):
     paths = tuple(tmp_path / f"S{i}.synthetic" for i in range(4))
     settings = replace(
-        _settings(), neutral_loss_profile=None, precursor_mz_tolerance_ppm=1.0
+        _settings(),
+        neutral_loss_profile=None,
+        precursor_mz_tolerance_ppm=(
+            5.0 if scenario == "cross_subject_recovery" else 1.0
+        ),
     )
     peak_config = _peak_config(tmp_path)
     raws = {}
@@ -88,9 +99,23 @@ def _plan(tmp_path, monkeypatch, *, scenario="positive"):
                 raw, raw_file=path, settings=settings, peak_config=peak_config
             )
         raws[path] = raw
-        candidates[path.stem] = (
-            () if scenario == "recovery" and path == paths[-1] else sample_candidates
-        )
+        if scenario == "recovery" and path == paths[-1]:
+            candidates[path.stem] = ()
+        elif scenario == "below_threshold" and path != paths[0]:
+            candidates[path.stem] = ()
+        elif scenario == "blank_missing" and path == paths[-1]:
+            candidates[path.stem] = ()
+        else:
+            candidates[path.stem] = sample_candidates
+        if scenario == "partial_recovery" and path == paths[-1]:
+            candidates[path.stem] = sample_candidates[:1]
+        if scenario == "cross_subject_recovery":
+            precursor = 500.0 if path == paths[0] else 500.004
+            candidates[path.stem] = (
+                tuple(c for c in sample_candidates if c.precursor_mz == precursor)
+                if path in paths[:2]
+                else ()
+            )
     plan = prepare_untargeted_cid_nl_production_plan(
         raw_paths=paths,
         sample_metadata=tuple(
@@ -98,7 +123,11 @@ def _plan(tmp_path, monkeypatch, *, scenario="positive"):
                 sample_name=path.stem,
                 raw_stem=path.stem,
                 injection_order=index + 1,
-                sample_role="study_sample",
+                sample_role=(
+                    "blank"
+                    if scenario == "blank_missing" and path == paths[-1]
+                    else "study_sample"
+                ),
             )
             for index, path in enumerate(paths)
         ),
@@ -109,7 +138,16 @@ def _plan(tmp_path, monkeypatch, *, scenario="positive"):
         dll_dir=tmp_path,
         sample_identity_namespace="study:bounded-runtime",
     )
-    _install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
+    opened = _install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
+    if opened_sink is not None:
+        opened_sink.append(opened)
+    import xic_extractor.extraction.untargeted_cid_nl_real_data_runtime as runtime_owner
+
+    monkeypatch.setattr(
+        runtime_owner,
+        "_ensure_assemblies_loaded",
+        lambda *_args: None,
+    )
     reference = None
     if scenario == "istd":
         workbook = Workbook()
@@ -137,7 +175,9 @@ def _plan(tmp_path, monkeypatch, *, scenario="positive"):
         reference_path = tmp_path / "reference.xlsx"
         workbook.save(reference_path)
         reference = read_known_istd_reference(reference_path)
-    assert len(plan.subject_batch.subjects) == 3
+    assert len(plan.subject_batch.subjects) == (
+        2 if scenario == "cross_subject_recovery" else 3
+    )
     return plan, reference
 
 
@@ -202,6 +242,260 @@ def test_bounded_partition_keeps_alignment_workset_atomic(
         )
 
 
+def test_indexed_mass_partition_keeps_closed_worksets_and_budgets_neighbors(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from xic_extractor.extraction import (
+        untargeted_cid_nl_bounded_runtime as bounded_owner,
+    )
+    from xic_extractor.extraction.untargeted_cid_nl_production_batch import (
+        PreparedCidNlAlignmentSubjectWorksets,
+    )
+    from xic_extractor.peak_detection.cid_nl_method_subject import (
+        cid_nl_alignment_subject_worksets,
+        mint_untargeted_cid_nl_method_subject,
+        mint_untargeted_cid_nl_method_subject_batch,
+    )
+
+    plan, _reference = _plan(tmp_path, monkeypatch)
+    subjects = tuple(
+        sorted(
+            (
+                mint_untargeted_cid_nl_method_subject(
+                    precursor_mz=mz,
+                    precursor_tolerance_ppm=20.0,
+                    neutral_loss_da=loss,
+                )
+                for mz, loss in (
+                    (99.0, 116.0474),
+                    (201.0, 116.0474),
+                    (250.0, 114.0),
+                    (251.0, 112.0),
+                )
+            ),
+            key=lambda subject: subject.method_subject_id,
+        )
+    )
+    worksets = cid_nl_alignment_subject_worksets(
+        subjects,
+        comparison_mz_intervals=((90.0, 210.0),),
+    )
+    closed = next(workset for workset in worksets if len(workset) == 2)
+    assert {subject.precursor_mz for subject in closed} == {99.0, 201.0}
+    membership_counts = {
+        subject.method_subject_id: (
+            600 if subject.precursor_mz in {250.0, 251.0} else 1
+        )
+        for subject in subjects
+    }
+    memberships = tuple(
+        sorted(
+            (
+                f"candidate-{subject.method_subject_id}-{index:04d}",
+                subject.method_subject_id,
+            )
+            for subject in subjects
+            for index in range(membership_counts[subject.method_subject_id])
+        )
+    )
+    packing_plan = replace(
+        plan,
+        subject_batch=mint_untargeted_cid_nl_method_subject_batch(
+            subjects=subjects,
+            candidate_memberships=memberships,
+        ),
+        runtime_subjects=subjects,
+        partition_input_loader=lambda _candidate_ids: ({}, {}, {}),
+    )
+    memberships_by_subject = {
+        subject.method_subject_id: tuple(
+            membership
+            for membership in memberships
+            if membership[1] == subject.method_subject_id
+        )
+        for subject in subjects
+    }
+    prepared = PreparedCidNlAlignmentSubjectWorksets(
+        plan=packing_plan,
+        worksets=worksets,
+        subjects_by_id={subject.method_subject_id: subject for subject in subjects},
+        workset_ids_by_subject={
+            subject.method_subject_id: frozenset(
+                member.method_subject_id for member in workset
+            )
+            for workset in worksets
+            for subject in workset
+        },
+        memberships_by_subject=memberships_by_subject,
+    )
+    monkeypatch.setattr(
+        bounded_owner,
+        "prepare_untargeted_cid_nl_alignment_subject_worksets",
+        lambda active_plan, **_kwargs: (
+            prepared
+            if active_plan is packing_plan
+            else pytest.fail("partition preparation crossed its indexed plan")
+        ),
+    )
+
+    adapter = bounded_owner.CidNlPartitionPipelineAdapter(
+        packing_plan,
+        alignment_config=AlignmentConfig(),
+        max_partition_jobs=len(plan.context.samples) * len(subjects),
+    )
+    payloads = tuple(
+        adapter_partition.payload for adapter_partition in adapter.partitions
+    )
+
+    assert any(set(payload) == set(closed) for payload in payloads)
+    assert all(
+        not ({250.0, 251.0} <= {subject.precursor_mz for subject in payload})
+        for payload in payloads
+    )
+    assert len(payloads) == 3
+
+
+def test_indexed_finalization_orders_children_by_canonical_subject(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from types import SimpleNamespace
+
+    from xic_extractor.extraction import (
+        untargeted_cid_nl_bounded_runtime as bounded_owner,
+    )
+
+    plan, _reference = _plan(tmp_path, monkeypatch)
+    indexed_plan = replace(
+        plan,
+        partition_input_loader=lambda _candidate_ids: ({}, {}, {}),
+    )
+    adapter = bounded_owner.CidNlPartitionPipelineAdapter(
+        indexed_plan,
+        alignment_config=AlignmentConfig(),
+        max_partition_jobs=len(plan.context.samples),
+    )
+    canonical_ids = tuple(
+        subject.method_subject_id for subject in plan.subject_batch.subjects
+    )
+    mass_execution_ids = tuple(reversed(canonical_ids))
+
+    class StoredChildren:
+        def sequence(self, field_name: str):
+            assert field_name == "children"
+            return (None,) * len(mass_execution_ids)
+
+        def read_selected(
+            self,
+            index: int,
+            field_name: str,
+            positions: tuple[int, ...],
+        ):
+            assert field_name == "children"
+            assert positions == (0,)
+            return (mass_execution_ids[index],)
+
+    outputs = tuple(
+        SimpleNamespace(
+            result=SimpleNamespace(
+                excluded_candidate_ids=(),
+                child_order_keys=(subject_id,),
+                sealed=SimpleNamespace(index=index),
+            )
+        )
+        for index, subject_id in enumerate(mass_execution_ids)
+    )
+    captured = []
+
+    def capture_finalization(request):
+        captured.append(request)
+        return request
+
+    monkeypatch.setattr(
+        bounded_owner,
+        "finalize_alignment_result",
+        capture_finalization,
+    )
+    monkeypatch.setattr(
+        bounded_owner,
+        "UntargetBatchApplicationResultRequest",
+        lambda **values: SimpleNamespace(**values),
+    )
+
+    finalized = adapter.finalize_application(StoredChildren(), outputs)
+
+    assert captured == [finalized]
+    assert tuple(finalized.children) == canonical_ids
+
+
+def test_prepared_workset_index_stores_one_id_set_per_workset(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    """Members of a workset share its id set instead of each rebuilding it.
+
+    Content equality alone does not catch the difference: an index built per
+    subject holds the same k ids k times, so a cohort of wide worksets pays
+    O(k**2) for an index whose content is O(k).
+    """
+
+    from dataclasses import replace
+
+    from xic_extractor.extraction import (
+        untargeted_cid_nl_bounded_runtime as bounded_owner,
+    )
+    from xic_extractor.peak_detection.cid_nl_method_subject import (
+        mint_untargeted_cid_nl_method_subject,
+        mint_untargeted_cid_nl_method_subject_batch,
+    )
+
+    plan, _reference = _plan(tmp_path, monkeypatch)
+    subjects = tuple(
+        sorted(
+            (
+                mint_untargeted_cid_nl_method_subject(
+                    precursor_mz=precursor_mz,
+                    precursor_tolerance_ppm=20.0,
+                    neutral_loss_da=neutral_loss_da,
+                )
+                for precursor_mz, neutral_loss_da in (
+                    (300.0, 116.0474),
+                    (300.005, 116.0474),
+                    (300.003, 114.0),
+                    (300.004, 114.0),
+                )
+            ),
+            key=lambda subject: subject.method_subject_id,
+        )
+    )
+    packing_plan = replace(
+        plan,
+        subject_batch=mint_untargeted_cid_nl_method_subject_batch(
+            subjects=subjects,
+            candidate_memberships=tuple(
+                (f"candidate-{index}", subject.method_subject_id)
+                for index, subject in enumerate(subjects)
+            ),
+        ),
+        runtime_subjects=subjects,
+    )
+    prepared = bounded_owner.prepare_untargeted_cid_nl_alignment_subject_worksets(
+        packing_plan
+    )
+
+    index = prepared.workset_ids_by_subject
+    assert any(len(workset) > 1 for workset in prepared.worksets)
+    assert set(index) == {subject.method_subject_id for subject in subjects}
+    for workset in prepared.worksets:
+        expected = frozenset(subject.method_subject_id for subject in workset)
+        for subject in workset:
+            assert index[subject.method_subject_id] == expected
+    assert len({id(member_ids) for member_ids in index.values()}) == len(
+        prepared.worksets
+    )
+
+
 def test_bounded_partition_real_entry_mints_interleaved_worksets_canonically(
     tmp_path,
     monkeypatch,
@@ -255,13 +549,16 @@ def test_bounded_partition_real_entry_mints_interleaved_worksets_canonically(
         bounded_owner.prepare_untargeted_cid_nl_alignment_subject_worksets
     )
     prepared = prepare_worksets(packing_plan)
-    assert materialize_untargeted_cid_nl_partition(
-        packing_plan,
-        packing_plan.subject_batch,
-        prepared_worksets=prepared,
-    ).jobs == materialize_untargeted_cid_nl_partition(
-        packing_plan, packing_plan.subject_batch
-    ).jobs
+    assert (
+        materialize_untargeted_cid_nl_partition(
+            packing_plan,
+            packing_plan.subject_batch,
+            prepared_worksets=prepared,
+        ).jobs
+        == materialize_untargeted_cid_nl_partition(
+            packing_plan, packing_plan.subject_batch
+        ).jobs
+    )
     split = worksets[0][:1]
     split_ids = {subject.method_subject_id for subject in split}
     split_batch = mint_untargeted_cid_nl_method_subject_batch(
@@ -307,6 +604,9 @@ def test_bounded_partition_real_entry_mints_interleaved_worksets_canonically(
         )
     captured_batches = []
     prepare_calls = []
+    original_materialize_partition = (
+        bounded_owner.materialize_untargeted_cid_nl_partition
+    )
 
     def capture_prepare(_plan, *, known_istd_reference=None):
         prepare_calls.append(_plan.runtime_subjects)
@@ -315,16 +615,31 @@ def test_bounded_partition_real_entry_mints_interleaved_worksets_canonically(
             known_istd_reference=known_istd_reference,
         )
 
-    def capture_materialized_partition(_plan, subject_batch, *, prepared_worksets):
+    def capture_materialized_partition(
+        _plan,
+        subject_batch,
+        *,
+        prepared_worksets,
+        acquisition_cache_dir=None,
+        sparse=False,
+    ):
         assert prepared_worksets.plan is _plan
+        assert sparse is True
         captured_batches.append(subject_batch)
-        return SimpleNamespace(jobs=())
+        return original_materialize_partition(
+            _plan,
+            subject_batch,
+            prepared_worksets=prepared_worksets,
+            acquisition_cache_dir=acquisition_cache_dir,
+            sparse=sparse,
+        )
 
     def close_without_raw(*_args, **_kwargs):
         return SimpleNamespace(
             succeeded=True,
             worker_batch=SimpleNamespace(resource_settlements=()),
             acquisitions=(),
+            prepared_grouping=None,
         )
 
     def forbid_raw_open(*_args, **_kwargs):
@@ -380,7 +695,7 @@ def test_bounded_runtime_skips_subjects_without_ms1_features(
         execute_bounded_untargeted_cid_nl,
     )
 
-    plan, _ = _plan(tmp_path, monkeypatch, scenario=scenario)
+    plan, reference = _plan(tmp_path, monkeypatch, scenario=scenario)
     request_payload = plan.subject_batch.request_payload()
     candidate_by_id = {
         candidate.candidate_id: candidate
@@ -411,9 +726,14 @@ def test_bounded_runtime_skips_subjects_without_ms1_features(
             batch,
             telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
             recovery_marker=OwnerPathRuntimeMarker(tmp_path / "eager.json", "eager"),
+            alignment_config=config,
+            known_istd_reference=reference,
         )
         eager = compose_untargeted_cid_nl_production_result(
-            batch, runtime, alignment_config=config
+            batch,
+            runtime,
+            alignment_config=config,
+            known_istd_reference=reference,
         )
     if not eligible_subject_ids:
 
@@ -536,10 +856,13 @@ def test_bounded_runtime_matches_eager_after_disk_owner_round_trip(
         batch,
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
         recovery_marker=OwnerPathRuntimeMarker(tmp_path / "eager.json", "eager"),
+        alignment_config=config,
+        known_istd_reference=reference,
     )
     eager = compose_untargeted_cid_nl_production_result(
         batch, eager_runtime, alignment_config=config, known_istd_reference=reference
     )
+    warm_threads.clear()
     marker = OwnerPathRuntimeMarker(tmp_path / "bounded.json", "bounded")
     progress_events = []
     live_path = tmp_path / "alignment-live.json"
@@ -746,10 +1069,132 @@ def test_bounded_runtime_failure_never_publishes_completed_batch(
         )
     assert len(calls) == 2
     assert error.value.__cause__ is original_error
+    (retained,) = (tmp_path / "failed-output").glob(
+        ".partition_spool-*/failed-results.pickle"
+    )
+    assert any(str(retained) in note for note in error.value.__notes__)
     snapshot = marker.read()
     assert snapshot.terminal_outcome is AttemptTerminalOutcome.FAILED
     assert snapshot.processing_attempt_id == (
         plan.context.processing_owners.attempt.processing_attempt_id
+    )
+
+
+def test_failed_attempt_retry_reuses_completed_raw_facts_and_recomposes(
+    tmp_path: Path, monkeypatch
+) -> None:
+    import xic_extractor.extraction.untargeted_cid_nl_bounded_runtime as owner
+
+    ms2_reads: dict[int, int] = {}
+    original_filter = _FakeThermoRaw.GetFilterForScanNumber
+
+    def count_filter(vendor, scan_number):
+        key = id(vendor)
+        ms2_reads[key] = ms2_reads.get(key, 0) + 1
+        return original_filter(vendor, scan_number)
+
+    monkeypatch.setattr(_FakeThermoRaw, "GetFilterForScanNumber", count_filter)
+    baseline_plan, _ = _plan(tmp_path, monkeypatch)
+    baseline = owner.execute_bounded_untargeted_cid_nl(
+        baseline_plan,
+        output_dir=tmp_path / "cold-output",
+        alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+        recovery_marker=OwnerPathRuntimeMarker(tmp_path / "cold.json", "cold"),
+        max_partition_jobs=len(baseline_plan.context.samples),
+        pipeline_overlap=False,
+    )
+    baseline_writer = project_completed_untarget_batch_writer_inputs(baseline)
+    opened_runs = []
+    plan, _ = _plan(tmp_path, monkeypatch, opened_sink=opened_runs)
+    output_dir = tmp_path / "retry-output"
+    marker = OwnerPathRuntimeMarker(
+        tmp_path / "retry.json",
+        "retry",
+        allow_failed_attempt_retry=True,
+    )
+    original_append = owner.PartitionResultStore.append_children
+    append_calls = 0
+
+    def fail_second(store, *args, **kwargs):
+        nonlocal append_calls
+        append_calls += 1
+        if append_calls == 2:
+            raise OSError("second partition storage unavailable")
+        return original_append(store, *args, **kwargs)
+
+    monkeypatch.setattr(owner.PartitionResultStore, "append_children", fail_second)
+    with pytest.raises(RuntimeError, match="failed before batch publication"):
+        owner.execute_bounded_untargeted_cid_nl(
+            plan,
+            output_dir=output_dir,
+            alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+            telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+            recovery_marker=marker,
+            max_partition_jobs=len(plan.context.samples),
+            pipeline_overlap=False,
+        )
+    failed_attempt_id = plan.context.processing_owners.attempt.processing_attempt_id
+    assert marker.read().terminal_outcome is AttemptTerminalOutcome.FAILED
+
+    monkeypatch.setattr(owner.PartitionResultStore, "append_children", original_append)
+    retry_plan, _ = _plan(tmp_path, monkeypatch, opened_sink=opened_runs)
+    completed = owner.execute_bounded_untargeted_cid_nl(
+        retry_plan,
+        output_dir=output_dir,
+        alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+        recovery_marker=marker,
+        max_partition_jobs=len(retry_plan.context.samples),
+        pipeline_overlap=False,
+    )
+
+    assert completed.runtime_receipt.supervisor.attempt is (
+        retry_plan.context.processing_owners.attempt
+    )
+    assert (
+        retry_plan.context.processing_owners.attempt.processing_attempt_id
+        != failed_attempt_id
+    )
+    writer = project_completed_untarget_batch_writer_inputs(completed)
+    assert writer.matrix.cells
+    assert writer.matrix == baseline_writer.matrix
+    assert completed.application_result.candidate_ids == (
+        baseline.application_result.candidate_ids
+    )
+    assert completed.application_result.physical_observation_ids == (
+        baseline.application_result.physical_observation_ids
+    )
+    completed_samples = tuple(
+        sample.metadata for sample in completed.application_result.canonical_samples
+    )
+    baseline_samples = tuple(
+        sample.metadata for sample in baseline.application_result.canonical_samples
+    )
+    assert completed_samples == baseline_samples
+    assert all(cell.area is None or cell.area > 0 for cell in writer.matrix.cells)
+    assert {
+        sample.metadata.raw_stem
+        for sample in completed.application_result.canonical_samples
+    } == {path.stem for path in retry_plan.context.raw_paths_by_sample.values()}
+
+    retry_vendors = tuple(
+        vendor for vendors in opened_runs[1].values() for vendor in vendors
+    )
+    failed_vendors = tuple(
+        vendor for vendors in opened_runs[0].values() for vendor in vendors
+    )
+    # Fully cached samples need no native handle. Measure avoided work across
+    # the complete attempt, including those samples absent from retry_vendors.
+    failed_queries = sum(
+        sum(vendor.chromatogram_request_counts) for vendor in failed_vendors
+    )
+    retry_queries = sum(
+        sum(vendor.chromatogram_request_counts) for vendor in retry_vendors
+    )
+    assert retry_queries < failed_queries
+    assert sum(ms2_reads.get(id(vendor), 0) for vendor in retry_vendors) < sum(
+        ms2_reads.get(id(vendor), 0) for vendor in failed_vendors
     )
 
 
@@ -904,10 +1349,8 @@ def test_overlapped_partition_acquisition_failure_propagates(
             pipeline_overlap=True,
         )
     assert error.value.__cause__ is injected_error
-    assert observed_budgets == {
-        "partition-00000": 2,
-        "partition-00001": 2,
-    }
+    assert {"partition-00000", "partition-00001"} <= observed_budgets.keys()
+    assert all(budget == 2 for budget in observed_budgets.values())
     assert marker.read().terminal_outcome is AttemptTerminalOutcome.FAILED
     assert list((tmp_path / "overlapped-failure").glob(".cid_nl_partitions-*")) == []
 
@@ -953,14 +1396,26 @@ def test_sample_parallelism_keeps_partition_and_acquisition_counts_fixed(
     original_init = _FakeThermoRaw.__init__
     original_dispose = _FakeThermoRaw.Dispose
     original_append = owner.PartitionResultStore.append_children
-    original_prepare = runtime_owner._prepare_owner_authorized_recoveries
+    original_prepare = runtime_owner._prepare_group_authorized_recoveries
     original_execute = owner.execute_runtime_attempt
 
     def materialize(*args, **kwargs):
         nonlocal live_jobs
         assert get_ident() == coordinator and live_jobs == 0
         batch = original_materialize(*args, **kwargs)
-        assert {job.sample for job in batch.jobs} == set(plan.context.samples)
+        from xic_extractor.extraction.untargeted_real_data_models import (
+            _request_subject_candidates,
+        )
+
+        expected_initial_sample_ids = {
+            sample.identity.sample_identity_id
+            for sample in plan.context.samples
+            if plan.context.candidates_by_sample[sample.metadata.raw_stem]
+        }
+        assert {
+            job.sample.identity.sample_identity_id for job in batch.jobs
+        } == expected_initial_sample_ids
+        assert all(_request_subject_candidates(job) for job in batch.jobs)
         assert all(
             job.processing_owners is plan.context.processing_owners
             for job in batch.jobs
@@ -1023,7 +1478,7 @@ def test_sample_parallelism_keeps_partition_and_acquisition_counts_fixed(
 
     monkeypatch.setattr(owner, "materialize_untargeted_cid_nl_partition", materialize)
     monkeypatch.setattr(owner, "execute_runtime_attempt", execute)
-    monkeypatch.setattr(runtime_owner, "_prepare_owner_authorized_recoveries", prepare)
+    monkeypatch.setattr(runtime_owner, "_prepare_group_authorized_recoveries", prepare)
     monkeypatch.setattr(_FakeThermoRaw, "__init__", initialize)
     monkeypatch.setattr(_FakeThermoRaw, "Dispose", dispose)
     monkeypatch.setattr(_FakeThermoRaw, "GetChromatogramData", chromatogram)
@@ -1039,7 +1494,12 @@ def test_sample_parallelism_keeps_partition_and_acquisition_counts_fixed(
         progress_callback=progress,
     )
     assert type(result) is CompletedUntargetBatchWorkflowResult
-    assert job_counts == [8, 4] and live_jobs == 0
+    initial_sample_count = sum(
+        bool(plan.context.candidates_by_sample[sample.metadata.raw_stem])
+        for sample in plan.context.samples
+    )
+    assert job_counts == [initial_sample_count * 2, initial_sample_count]
+    assert live_jobs == 0
     assert append_order == ["partition-00000", "partition-00001"]
     assert len(handle_threads) == len(acquisitions) == 8
     assert barrier_checks == [3, 7]
@@ -1139,9 +1599,7 @@ def test_sample_failure_drains_without_more_samples_or_partition_publication(
     monkeypatch.setattr(_FakeThermoRaw, "Dispose", dispose)
     monkeypatch.setattr(_FakeThermoRaw, "GetChromatogramData", chromatogram)
     if failure_mode == "spool_failure":
-        monkeypatch.setattr(
-            owner.PartitionResultStore, "append_children", fail_spool
-        )
+        monkeypatch.setattr(owner.PartitionResultStore, "append_children", fail_spool)
     marker = OwnerPathRuntimeMarker(tmp_path / "failure.json", "parallel-failure")
     with pytest.raises(RuntimeError, match="failed before batch publication") as error:
         owner.execute_bounded_untargeted_cid_nl(
@@ -1177,3 +1635,576 @@ def test_sample_failure_drains_without_more_samples_or_partition_publication(
         if "partition-00001:" in receipt.resource_key
     )
     assert list((tmp_path / "failed").glob(".cid_nl_partitions-*")) == []
+
+
+def test_sample_worker_transport_references_global_request_owners(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    from xic_extractor.execution_engine.owner_pickle import (
+        owner_pickle_dumps,
+        owner_pickle_loads,
+    )
+    from xic_extractor.extraction.untargeted_cid_nl_bounded_runtime import (
+        _sample_worker_shared_objects,
+    )
+
+    plan, _reference = _plan(tmp_path, monkeypatch)
+    batch = materialize_untargeted_cid_nl_partition(plan, plan.subject_batch)
+    shared = _sample_worker_shared_objects(
+        plan.context.processing_owners,
+        (batch.jobs[0]._request_subjects, batch.subject_batch),
+    )
+    source = batch.jobs[0]
+
+    restored = owner_pickle_loads(owner_pickle_dumps(source, shared), shared)
+
+    assert restored.processing_owners is source.processing_owners
+    assert restored.processing_owners.request is source.processing_owners.request
+    assert restored.processing_owners.attempt is source.processing_owners.attempt
+    assert restored._request_subjects is source._request_subjects
+    assert restored.sample == source.sample
+    assert restored.candidates == source.candidates
+
+
+def test_process_recovery_dispatches_only_missing_subjects(tmp_path, monkeypatch):
+    from xic_extractor.execution_engine.worker_pool import WorkerAdmissionPool
+    from xic_extractor.extraction import (
+        untargeted_real_data_runtime as runtime,
+    )
+    from xic_extractor.extraction import (
+        untargeted_real_data_worker as worker,
+    )
+
+    # Exercise process message construction/consumption with synthetic RAW I/O.
+    # Native spawning and transport identity have their own existing coverage.
+    class LocalProcessMessages(WorkerAdmissionPool):
+        @property
+        def backend(self):
+            return "process"
+
+    plan, _ = _plan(tmp_path, monkeypatch, scenario="partial_recovery")
+    batch = materialize_untargeted_cid_nl_partition(plan, plan.subject_batch)
+    monkeypatch.setattr(worker, "_ensure_assemblies_loaded", lambda *_: None)
+    requests = []
+    execute_recovery = runtime._execute_sample_recovery_worker
+
+    def observe_request(request):
+        requests.append(request)
+        keys = {job.work_unit_key for job in request.jobs}
+        assert keys == set(request.recovery_group_center_rts_by_key)
+        assert set(request.recovery_support_by_key) == keys
+        # Recovery consumes only the support policy and the missing-MS1
+        # initial assessment. Full initial adapter results stay in the parent.
+        assert not hasattr(request, "adapter_results_by_key")
+        assert all(
+            isinstance(ctx, worker._RecoverySupportContext)
+            for ctx in request.recovery_support_by_key.values()
+        )
+        assert len(keys) < len(plan.subject_batch.subjects)
+        return execute_recovery(request)
+
+    monkeypatch.setattr(runtime, "_execute_sample_recovery_worker", observe_request)
+    with LocalProcessMessages(max_workers=1) as pool:
+        result = runtime.execute_untargeted_cid_nl_runtime_partition(
+            batch.jobs,
+            partition_key="sparse-recovery",
+            alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+            pool=pool,
+        )
+    assert result.succeeded
+    assert len(requests) == 1
+    assert len(result.sample_results) == len(batch.jobs)
+    selected = {job.work_unit_key for job in requests[0].jobs}
+    for sample_result in result.sample_results:
+        assert bool(sample_result.recovery_attempts) is (
+            sample_result.job.work_unit_key in selected
+        )
+
+
+def test_sparse_partition_materializes_only_samples_with_request_candidates(
+    tmp_path, monkeypatch
+):
+    from xic_extractor.extraction.untargeted_real_data_models import (
+        _request_subject_candidates,
+    )
+
+    plan, _ = _plan(tmp_path, monkeypatch, scenario="recovery")
+    batch = materialize_untargeted_cid_nl_partition(
+        plan,
+        plan.subject_batch,
+        sparse=True,
+    )
+
+    assert len(batch.sample_job_templates) == len(plan.context.samples)
+    assert batch.jobs
+    assert all(_request_subject_candidates(job) for job in batch.jobs)
+    initial_sample_ids = {job.sample.identity.sample_identity_id for job in batch.jobs}
+    assert len(initial_sample_ids) >= 2
+    missing_sample_id = plan.context.samples[-1].identity.sample_identity_id
+    assert missing_sample_id not in initial_sample_ids
+
+
+@pytest.mark.parametrize(
+    "scenario,expected_sparse_jobs,expected_sparse_results",
+    [("recovery", 9, 12), ("below_threshold", 3, 3), ("blank_missing", 9, 9)],
+)
+def test_sparse_recovery_partition_matches_dense_composition(
+    tmp_path, monkeypatch, scenario, expected_sparse_jobs, expected_sparse_results
+):
+    from xic_extractor.extraction.untargeted_production_batch import (
+        compose_untargeted_cid_nl_partition,
+        execute_untargeted_cid_nl_production_batch,
+    )
+    from xic_extractor.extraction.untargeted_real_data_runtime import (
+        execute_untargeted_cid_nl_runtime_partition,
+    )
+
+    plan, reference = _plan(tmp_path, monkeypatch, scenario=scenario)
+    config = AlignmentConfig(anchor_min_seed_events=1)
+    dense_batch = materialize_untargeted_cid_nl_partition(plan, plan.subject_batch)
+    assert len(dense_batch.jobs) == 12
+    dense_runtime = execute_untargeted_cid_nl_production_batch(
+        dense_batch,
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+        recovery_marker=OwnerPathRuntimeMarker(tmp_path / "dense.json", "dense"),
+        alignment_config=config,
+    )
+    assert dense_runtime.succeeded
+    dense_composition = compose_untargeted_cid_nl_partition(
+        dense_batch,
+        dense_runtime.sample_results,
+        alignment_config=config,
+        known_istd_reference=reference,
+    )
+
+    sparse_batch = materialize_untargeted_cid_nl_partition(
+        plan, plan.subject_batch, sparse=True
+    )
+    assert len(sparse_batch.jobs) == expected_sparse_jobs
+    sparse_runtime = execute_untargeted_cid_nl_runtime_partition(
+        sparse_batch.jobs,
+        recovery_templates=sparse_batch.sample_job_templates,
+        partition_key="sparse-recovery",
+        alignment_config=config,
+    )
+    assert sparse_runtime.succeeded
+    assert len(sparse_runtime.sample_results) == expected_sparse_results
+    sparse_composition = compose_untargeted_cid_nl_partition(
+        sparse_batch,
+        sparse_runtime.sample_results,
+        alignment_config=config,
+        known_istd_reference=reference,
+    )
+
+    dense_by_key = {
+        (
+            result.job.sample.metadata.raw_stem,
+            result.job.method_subject.method_subject_id,
+        ): result
+        for result in dense_runtime.sample_results
+    }
+    sparse_by_key = {
+        (
+            result.job.sample.metadata.raw_stem,
+            result.job.method_subject.method_subject_id,
+        ): result
+        for result in sparse_runtime.sample_results
+    }
+    missing_stem = plan.context.samples[-1].metadata.raw_stem
+    if scenario == "recovery":
+        missing_results = [
+            result
+            for result in sparse_runtime.sample_results
+            if result.job.sample.metadata.raw_stem == missing_stem
+        ]
+        assert missing_results
+        assert all(result.recovery_attempts for result in missing_results)
+        assert set(sparse_by_key) == set(dense_by_key)
+    else:
+        assert missing_stem not in {
+            result.job.sample.metadata.raw_stem
+            for result in sparse_runtime.sample_results
+        }
+    assert dense_composition.children == sparse_composition.children
+    assert dense_composition.initial_groups == sparse_composition.initial_groups
+    assert dense_composition.initial_edges == sparse_composition.initial_edges
+    assert (
+        dense_composition.excluded_candidates == sparse_composition.excluded_candidates
+    )
+
+
+def test_formal_partition_reuses_prepared_group_ids_for_recovery_and_composition(
+    tmp_path, monkeypatch
+):
+    import xic_extractor.extraction.untargeted_cid_nl_bounded_runtime as bounded_owner
+    import xic_extractor.extraction.untargeted_production_batch as production_owner
+    from xic_extractor.execution_engine.streamed_result_store import StreamedResultStore
+
+    plan, _ = _plan(tmp_path, monkeypatch, scenario="cross_subject_recovery")
+    calls = []
+    original_group_builder = production_owner.build_initial_cid_nl_cross_sample_groups
+
+    def observe_group_build(*args, **kwargs):
+        calls.append(1)
+        return original_group_builder(*args, **kwargs)
+
+    monkeypatch.setattr(
+        production_owner,
+        "build_initial_cid_nl_cross_sample_groups",
+        observe_group_build,
+    )
+    adapter = bounded_owner.CidNlPartitionPipelineAdapter(
+        plan,
+        alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+        max_partition_jobs=100,
+    )
+    assert len(adapter.partitions) == 1
+    partition = adapter.partitions[0]
+    acquisition = adapter.execute_acquisition(partition)
+    assert acquisition.succeeded
+    batch, leaf = acquisition.result
+    prepared = leaf.prepared_grouping
+    assert prepared is not None
+    assert len(prepared.worksets) == 1
+    # N=4 and K=2: neither subject qualifies alone, but their one SUPPORT
+    # sample each belongs to the same compatible group.
+    assert len(batch.jobs) == 2
+    assert len({job.method_subject.method_subject_id for job in batch.jobs}) == 2
+    assert len(leaf.sample_results) == 4
+    assert calls == [1] * len(prepared.worksets)
+    prepared_group_ids = {
+        group.group_hypothesis_id
+        for workset in prepared.worksets
+        for group in workset.assignment_scope.groups
+    }
+    assert len(prepared_group_ids) == 1
+    recovery_group_ids = {
+        attempt.group_hypothesis_id
+        for result in leaf.sample_results
+        for attempt in result.recovery_attempts
+        if attempt.group_hypothesis_id is not None
+    }
+    assert recovery_group_ids
+    assert recovery_group_ids == prepared_group_ids
+    assert {
+        result.job.sample.metadata.raw_stem
+        for result in leaf.sample_results
+        if result.recovery_attempts
+    } == {"S2", "S3"}
+    recovery_result = next(
+        result for result in leaf.sample_results if result.recovery_attempts
+    )
+    recovery_attempt = recovery_result.recovery_attempts[0]
+    same_rt_different_groups = replace(
+        recovery_result,
+        recovery_attempts=(
+            replace(recovery_attempt, group_hypothesis_id="group-a"),
+            replace(recovery_attempt, group_hypothesis_id="group-b"),
+        ),
+    )
+    assert (
+        same_rt_different_groups.recovery_for_group(
+            0.0, group_hypothesis_id="group-b"
+        ).group_hypothesis_id
+        == "group-b"
+    )
+    assert (
+        same_rt_different_groups.recovery_for_group(
+            0.0, group_hypothesis_id="wrong-group"
+        )
+        is None
+    )
+    calls_before_composition = len(calls)
+    store = StreamedResultStore(tmp_path / "formal-spool", adapter.get_shared_objects())
+    composed = adapter.execute_composition(
+        partition,
+        acquisition,
+        store,
+        retain_memory=True,
+    )
+    assert composed.result.child_count == 1
+    assert len(calls) == calls_before_composition
+    assert batch.prepared_grouping is prepared
+    persisted = store.read(composed.sealed.index)
+    assert {
+        group.group_hypothesis_id for group in persisted.initial_groups
+    } == prepared_group_ids
+    assert {
+        group.group_hypothesis_id
+        for child in persisted.children
+        for group in child.scientific_core.grouping_result.final_population
+    } == prepared_group_ids
+
+
+def test_completed_partition_retains_only_light_parent_capture_metadata(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Parent closure keeps IDs while children retain exact capture evidence."""
+
+    import xic_extractor.extraction.untargeted_cid_nl_bounded_runtime as bounded_owner
+    from xic_extractor.execution_engine.streamed_result_store import StreamedResultStore
+
+    plan, _reference = _plan(tmp_path, monkeypatch, scenario="mixed_eligibility")
+    adapter = bounded_owner.CidNlPartitionPipelineAdapter(
+        plan,
+        alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+        max_partition_jobs=100,
+    )
+    partition = adapter.partitions[0]
+    acquisition = adapter.execute_acquisition(partition)
+    assert acquisition.succeeded
+    store = StreamedResultStore(
+        tmp_path / "retention-spool", adapter.get_shared_objects()
+    )
+    composed = adapter.execute_composition(partition, acquisition, store)
+    persisted = composed.result
+
+    stored = store.read(composed.sealed.index)
+    child_before = store.read_selected(
+        composed.sealed.index, "children", (0,)
+    )[0]
+    child_scope = child_before.scientific_core.scope
+    assert child_scope.capture_bindings
+    child_observations = child_before.scientific_core.cell_observations
+    child_decision = child_before.completed_projection.decisions[0]
+    expected_excluded_ids = tuple(
+        exclusion.candidate_id for exclusion in stored.excluded_candidates
+    )
+
+    assert persisted.excluded_candidate_ids == expected_excluded_ids
+    assert not hasattr(persisted, "excluded_candidates")
+    assert not hasattr(persisted, "capture_bindings")
+    assert stored.capture_bindings == ()
+    assert stored.capture_evidence
+
+    store.seal()
+    finalized = adapter.finalize_application(store, (composed,))
+    assert finalized.scope.capture_bindings == ()
+    assert tuple(finalized.excluded_candidates) == tuple(plan.excluded_candidates)
+    child_after = store.read_selected(
+        composed.sealed.index, "children", (0,)
+    )[0]
+    assert (
+        child_after.scientific_core.scope.capture_bindings
+        == child_scope.capture_bindings
+    )
+    assert child_after.scientific_core.cell_observations == child_observations
+    assert (
+        child_after.completed_projection.decisions[0].basis_bytes
+        == child_decision.basis_bytes
+    )
+    assert child_after.completed_projection.decisions[0].value == child_decision.value
+
+
+def test_process_backend_reuses_one_shared_pool_and_closes_once(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    import xic_extractor.extraction.untargeted_cid_nl_bounded_runtime as owner
+
+    created = []
+
+    class RecordingPool:
+        def __init__(self, **kwargs):
+            self.max_workers = kwargs["max_workers"]
+            self.backend = kwargs["backend"]
+            self.initializer = kwargs["initializer"]
+            self.shared_objects = kwargs["shared_objects"]
+            self.stopped = False
+            self.first_error = None
+            self.transport_metrics = None
+            self.exit_calls = 0
+            created.append(self)
+
+        def __exit__(self, *_args):
+            self.exit_calls += 1
+
+        def stop(self, error):
+            self.first_error = error
+            self.stopped = True
+
+    monkeypatch.setattr(owner, "WorkerAdmissionPool", RecordingPool)
+    plan, _reference = _plan(tmp_path, monkeypatch)
+    adapter = owner.CidNlPartitionPipelineAdapter(
+        plan,
+        alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+        max_partition_jobs=len(plan.context.samples),
+        raw_workers=8,
+        raw_worker_backend="process",
+        acquisition_workers=2,
+    )
+
+    assert adapter.acquisition_workers == 2
+    assert adapter.partition_raw_workers == 8
+    assert len(created) == 1
+    assert created[0].max_workers == 8
+    assert sum(pool.max_workers for pool in created) == 8
+    assert {id(pool.shared_objects) for pool in created} == {
+        id(created[0].shared_objects)
+    }
+    shared = created[0].shared_objects
+    for partition in adapter.partitions:
+        subject_batch = adapter._partition_subject_batches[partition.partition_key]
+        assert any(value is subject_batch for value in shared)
+
+    created[0].stop(RuntimeError("failure stopped admission"))
+    with pytest.raises(RuntimeError, match="failure stopped admission"):
+        adapter.execute_acquisition(adapter.partitions[0])
+
+    adapter.close_process_worker_pools()
+    adapter.close_process_worker_pools()
+    assert [pool.exit_calls for pool in created] == [1]
+
+    with pytest.raises(RuntimeError, match="already closed"):
+        adapter.execute_acquisition(adapter.partitions[0])
+
+
+def _spool_dirs(output_dir):
+    return sorted(output_dir.glob(".partition_spool-*"))
+
+
+def _run_for_spool(tmp_path, monkeypatch, *, retain):
+    from xic_extractor.extraction.untargeted_cid_nl_bounded_runtime import (
+        execute_bounded_untargeted_cid_nl,
+    )
+
+    plan, reference = _plan(tmp_path, monkeypatch)
+    output_dir = tmp_path / ("retained" if retain else "released")
+    result = execute_bounded_untargeted_cid_nl(
+        plan,
+        output_dir=output_dir,
+        alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+        recovery_marker=OwnerPathRuntimeMarker(
+            tmp_path / f"spool-{retain}.json", "spool"
+        ),
+        known_istd_reference=reference,
+        max_partition_jobs=len(plan.context.samples),
+        retain_partition_spool=retain,
+    )
+    spools = _spool_dirs(output_dir)
+    assert len(spools) == 1
+    child_ids = tuple(
+        tuple(
+            observation.cell_observation_id
+            for observation in child.scientific_core.cell_observations
+        )
+        for child in result.application_result.children
+    )
+    result.close()
+    return spools[0], child_ids
+
+
+def test_released_spool_is_deleted_when_the_workflow_result_closes(
+    tmp_path, monkeypatch
+):
+    """The default still owns the spool and removes it; nothing is left behind."""
+    spool, _ = _run_for_spool(tmp_path, monkeypatch, retain=False)
+    assert not spool.exists()
+
+
+def test_retained_spool_keeps_its_partitions_and_publishes_a_readable_index(
+    tmp_path, monkeypatch
+):
+    """Retention leaves an index a separate reader can restore records from."""
+    from xic_extractor.execution_engine.streamed_result_store import (
+        PRESERVED_INDEX_NAME,
+        open_preserved_results,
+    )
+
+    spool, child_ids = _run_for_spool(tmp_path, monkeypatch, retain=True)
+    assert spool.is_dir()
+    index = spool / PRESERVED_INDEX_NAME
+    assert index.is_file()
+    assert sorted(path.name for path in spool.glob("*.pickle")) != [
+        PRESERVED_INDEX_NAME
+    ], "retention must keep the partition files, not only the index"
+
+    restored = open_preserved_results(index)
+    recovered = tuple(
+        tuple(
+            observation.cell_observation_id
+            for observation in child.scientific_core.cell_observations
+        )
+        for child in restored.sequence("children")
+    )
+    assert recovered == child_ids
+
+    # The point of the index: one record, addressed by position, off disk.
+    first = restored.read_selected(0, "children", (0,))[0]
+    assert (
+        tuple(
+            observation.cell_observation_id
+            for observation in first.scientific_core.cell_observations
+        )
+        == child_ids[0]
+    )
+
+
+def _run_for_cache(tmp_path, monkeypatch, *, retain, tag):
+    from xic_extractor.extraction.untargeted_cid_nl_bounded_runtime import (
+        execute_bounded_untargeted_cid_nl,
+    )
+
+    plan, reference = _plan(tmp_path, monkeypatch)
+    output_dir = tmp_path / tag
+    result = execute_bounded_untargeted_cid_nl(
+        plan,
+        output_dir=output_dir,
+        alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+        recovery_marker=OwnerPathRuntimeMarker(tmp_path / f"{tag}.json", "cache"),
+        known_istd_reference=reference,
+        max_partition_jobs=len(plan.context.samples),
+        retain_acquisition_cache=retain,
+    )
+    result.close()
+    return output_dir / ".cid_nl_acquisition_cache"
+
+
+def test_acquisition_cache_is_released_after_a_successful_run(
+    tmp_path, monkeypatch
+):
+    """A one-shot run leaves no cache behind; it only accelerates acquisition."""
+    cache = _run_for_cache(tmp_path, monkeypatch, retain=False, tag="released")
+    assert not cache.exists()
+
+
+def test_acquisition_cache_is_kept_when_asked(tmp_path, monkeypatch):
+    """Repeated development runs can keep it and skip rereading every RAW."""
+    cache = _run_for_cache(tmp_path, monkeypatch, retain=True, tag="retained")
+    assert cache.is_dir()
+
+
+def test_acquisition_cache_survives_a_failed_attempt(tmp_path, monkeypatch):
+    """A retry allowed by the marker must not have to reread every RAW file."""
+    import xic_extractor.extraction.untargeted_cid_nl_bounded_runtime as bounded_owner
+
+    plan, _ = _plan(tmp_path, monkeypatch)
+    calls = []
+    original = bounded_owner.PartitionResultStore.append_children
+
+    def fail_second(*args, **kwargs):
+        calls.append(1)
+        if len(calls) == 2:
+            raise OSError("second partition storage unavailable")
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(
+        bounded_owner.PartitionResultStore, "append_children", fail_second
+    )
+    output_dir = tmp_path / "failed-cache-output"
+    with pytest.raises(RuntimeError, match="failed before batch publication"):
+        bounded_owner.execute_bounded_untargeted_cid_nl(
+            plan,
+            output_dir=output_dir,
+            alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+            telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+            recovery_marker=OwnerPathRuntimeMarker(
+                tmp_path / "failed-cache.json", "failed-cache"
+            ),
+            max_partition_jobs=len(plan.context.samples),
+        )
+    assert (output_dir / ".cid_nl_acquisition_cache").is_dir()

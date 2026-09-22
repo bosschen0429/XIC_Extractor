@@ -1,5 +1,7 @@
 import ast
+import hashlib
 import json
+from collections.abc import Iterator, Mapping
 from dataclasses import fields, replace
 from pathlib import Path
 from types import SimpleNamespace
@@ -50,6 +52,49 @@ def test_typed_identity_reuse_preserves_prefix_and_byte_content() -> None:
     assert digest("first:", b'{"value":2}') != first
     with pytest.raises(IdentityContractError, match="prefix"):
         digest("missing-colon", basis)
+
+
+def test_mint_typed_identity_has_independent_canonical_bytes_and_digest() -> None:
+    expected_bytes = b'{"a":"\xc3\xa9","z":[2,1]}'
+    expected_id = "minted:" + hashlib.sha256(expected_bytes).hexdigest()
+
+    identity_id, basis_bytes = processing_identity_module.mint_typed_identity(
+        "minted:",
+        {"z": [2, 1], "a": "é"},
+    )
+
+    assert basis_bytes == expected_bytes
+    assert identity_id == expected_id
+
+
+class _MappingSubclass(Mapping[str, object]):
+    def __init__(self, values: dict[str, object]) -> None:
+        self._values = values
+
+    def __getitem__(self, key: str) -> object:
+        return self._values[key]
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self._values)
+
+    def __len__(self) -> int:
+        return len(self._values)
+
+
+class _ListSubclass(list[object]):
+    pass
+
+
+def test_mint_typed_identity_preserves_mapping_and_list_subclass_contract() -> None:
+    expected_bytes = b'{"nested":[1,"x"]}'
+
+    identity_id, basis_bytes = processing_identity_module.mint_typed_identity(
+        "subclass:",
+        _MappingSubclass({"nested": _ListSubclass([1, "x"])}),
+    )
+
+    assert basis_bytes == expected_bytes
+    assert identity_id == "subclass:" + hashlib.sha256(expected_bytes).hexdigest()
 
 
 @pytest.mark.parametrize(
@@ -752,7 +797,18 @@ def test_request_rejects_duplicate_adapter_input_keys(tmp_path: Path) -> None:
         )
 
 
-def test_request_rejects_nested_non_string_json_keys(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "scientific_inputs",
+    [
+        {"nested": {1: "integer-key"}},  # type: ignore[dict-item]
+        {"nested": [{1: "integer-key"}]},  # type: ignore[dict-item]
+        {"nested": ({1: "integer-key"},)},  # type: ignore[dict-item]
+    ],
+)
+def test_request_rejects_nested_non_string_json_keys(
+    tmp_path: Path,
+    scientific_inputs: dict[str, object],
+) -> None:
     source = _source_identity(_raw(tmp_path / "source.raw", b"source"))
 
     with pytest.raises(IdentityContractError, match="JSON object keys must be strings"):
@@ -768,7 +824,7 @@ def test_request_rejects_nested_non_string_json_keys(tmp_path: Path) -> None:
             scientific_input_schema_version="fixture",
             processing_algorithm_version="fixture",
             processing_contract_version="fixture",
-            scientific_inputs={"nested": {1: "integer-key"}},  # type: ignore[dict-item]
+            scientific_inputs=scientific_inputs,
         )
 
 

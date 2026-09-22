@@ -21,7 +21,7 @@ from xic_extractor.peak_detection.cid_nl_method_subject import (
     UntargetedCidNlMethodSubjectBatch,
     cid_nl_method_subject_from_target,
     cid_nl_method_subjects_from_request,
-    validate_cid_nl_alignment_subject_workset,
+    validate_cid_nl_alignment_subject_compatibility,
 )
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     REQUEST_INPUT_KEY as CID_NL_REQUEST_INPUT_KEY,
@@ -287,18 +287,20 @@ def physical_capture_input_payload(
     evaluations: Mapping[str, PhysicalPeakEvaluation],
 ) -> dict[str, object]:
     """Pin the profile and owner-issued physical answers in request identity."""
+    candidates = {}
+    for candidate_id, evaluation in sorted(evaluations.items()):
+        validate_bounded_physical_peak_evaluation(evaluation)
+        candidates[candidate_id] = _physical_evaluation_identity(evaluation)
     return {
         "schema_version": "physical_capture_inputs",
         "profile": json.loads(canonical_signal_processing_profile_bytes(profile)),
-        "candidates": {
-            candidate_id: _physical_evaluation_identity(evaluation)
-            for candidate_id, evaluation in sorted(evaluations.items())
-        },
+        "candidates": candidates,
     }
 
 
 def _physical_evaluation_identity(evaluation: PhysicalPeakEvaluation) -> dict[str, str]:
-    validate_bounded_physical_peak_evaluation(evaluation)
+    # Raw payload inputs are validated above; scope bindings validated their
+    # physical owners at construction. This projection only joins identities.
     return {
         "prepared_signal_id": evaluation.prepared.prepared_signal_id,
         "physical_question_id": evaluation.question.physical_question_id,
@@ -726,9 +728,7 @@ def _untargeted_batch_view_memberships(
     batch: UntargetedCidNlMethodSubjectBatch,
 ) -> tuple[tuple[str, str], ...]:
     index = _request_batch_capture_index(request)
-    provider_subject_ids = tuple(
-        provider.method_subject_id for provider in providers
-    )
+    provider_subject_ids = tuple(provider.method_subject_id for provider in providers)
     parent_positions = index.subject_positions
     if (
         not providers
@@ -749,10 +749,12 @@ def _untargeted_batch_view_memberships(
     if provider_subject_ids == index.subject_ids:
         return batch.candidate_memberships
     try:
-        validate_cid_nl_alignment_subject_workset(
+        # Dispatch may have connected native resolver components through a known
+        # standard comparison envelope. SearchScope does not own that envelope,
+        # so it can recheck method compatibility but cannot reconstruct closure.
+        validate_cid_nl_alignment_subject_compatibility(
             tuple(
-                index.subjects_by_id[subject_id]
-                for subject_id in provider_subject_ids
+                index.subjects_by_id[subject_id] for subject_id in provider_subject_ids
             )
         )
     except CidNlMethodSubjectContractError as exc:
@@ -814,7 +816,25 @@ def _request_sample_candidate_ids(
         raise SearchScopeContractError(
             "Untargeted batch candidate universe omitted a scope sample"
         )
+    feature_ids = _request_alignment_feature_ids(request)
+    if feature_ids is not None:
+        candidate_ids.intersection_update(feature_ids)
     return frozenset(candidate_ids)
+
+
+@lru_cache(maxsize=1)
+def _request_alignment_feature_ids(
+    request: ProcessingRequestIdentity,
+) -> frozenset[str] | None:
+    """Index the immutable batch selection once, independently of sample views."""
+    feature_ids = _request_inputs(request).get("alignment_feature_candidate_ids")
+    if feature_ids is None:
+        return None
+    if not isinstance(feature_ids, list) or any(
+        not isinstance(cid, str) for cid in feature_ids
+    ):
+        raise SearchScopeContractError("Alignment feature selection is malformed")
+    return frozenset(feature_ids)
 
 
 def _request_inputs(request: ProcessingRequestIdentity) -> dict[str, object]:

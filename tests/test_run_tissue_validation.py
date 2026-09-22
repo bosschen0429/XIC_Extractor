@@ -107,8 +107,8 @@ def test_preflight_8_and_85_share_science_without_output_or_execution(
         assert all(p["inputs"]["blank_library"] is None for p in plans)
     assert plans[0]["execution"]["parallel_workers"] == default_parallel_workers()
     assert plans[1]["execution"]["parallel_workers"] == default_parallel_workers()
-    assert plans[0]["execution"]["alignment_workers"] == 1
-    assert plans[1]["execution"]["alignment_workers"] == 1
+    assert plans[0]["execution"]["alignment_workers"] == 4
+    assert plans[1]["execution"]["alignment_workers"] == 4
     assert plans[0]["inputs"]["raw_count"] == 8
     assert plans[1]["inputs"]["raw_count"] == 85
 

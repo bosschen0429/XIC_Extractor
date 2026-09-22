@@ -3,15 +3,16 @@
 from __future__ import annotations
 
 import importlib
-from dataclasses import dataclass
+from copy import copy
+from dataclasses import dataclass, replace
 
 from xic_extractor.acquisition_contract import TraceAcquisitionBatch
-from xic_extractor.alignment.cell_observations import (
-    compose_cid_nl_predecessor_cells,
+from xic_extractor.alignment.cell_group_context import (
+    select_cid_nl_group_recovery_subject,
 )
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.conservative_backfill import (
-    assess_conservative_backfill_group,
+    plan_conservative_recovery_targets,
 )
 from xic_extractor.alignment.cross_sample_peak_groups import (
     construct_cross_sample_peak_group_hypotheses,
@@ -28,6 +29,10 @@ from xic_extractor.evidence_artifacts import EvidenceArtifactRef
 from xic_extractor.execution_runtime_finalization import (
     RuntimeResourceCleanupOutcome,
 )
+from xic_extractor.extraction.untargeted_acquisition_cache import (
+    CachedUntargetedRaw,
+    bind_untargeted_acquisition_cache,
+)
 from xic_extractor.extraction.untargeted_cid_nl_real_data_adapter import (
     UntargetedCidNlRealDataAdapterResult,
     UntargetedCidNlRecoveryAttemptResult,
@@ -40,19 +45,25 @@ from xic_extractor.extraction.untargeted_cid_nl_real_data_adapter import (
     recover_untargeted_cid_nl_sample_subject,
 )
 from xic_extractor.extraction.untargeted_real_data_models import (
+    UntargetedCidNlPreparedGrouping,
     UntargetedCidNlRealDataRuntimeError,
     UntargetedCidNlRealDataRuntimeJob,
     _request_subject_candidates,
     _request_subject_physical_records,
 )
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
+    CidNlMethodAssessmentRef,
     is_cid_nl_missing_ms1_rejection,
     is_unsearched_cid_nl_discovery_assessment,
+)
+from xic_extractor.peak_detection.cid_nl_peak_support_models import (
+    DdaCidNlPeakSupportPolicy,
 )
 from xic_extractor.processing_identity import resolve_request_acquisition_source
 from xic_extractor.raw_reader import (
     RawFileHandle,
     RawReaderOpenError,
+    _bind_expected_path_identity,
     _ensure_assemblies_loaded,
     open_raw,
 )
@@ -66,13 +77,47 @@ class _RuntimeJobState:
     observer: _UntargetedRealDataWorkObserver
     error: Exception | None = None
     adapter_result: UntargetedCidNlRealDataAdapterResult | None = None
+    recovery_support: _RecoverySupportContext | None = None
     recovery_input: UntargetedCidNlRecoveryInput | None = None
     recovery_attempts: tuple[UntargetedCidNlRecoveryAttemptResult, ...] = ()
     recovery_group_center_rts: tuple[float, ...] = ()
+    recovery_group_ids: tuple[str, ...] = ()
     open_attempted: bool = False
     opened: bool = False
     cleanup_outcome: RuntimeResourceCleanupOutcome = (
         RuntimeResourceCleanupOutcome.SUCCEEDED
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class _RecoverySupportContext:
+    """Narrow recovery-only projection of initial assessment facts.
+
+    Recovery execution consumes only the support policy and, when the
+    initial attempt was a missing-MS1 rejection, that initial assessment.
+    The full ``UntargetedCidNlRealDataAdapterResult`` — including
+    acquisition, captures, lineage artifacts, and capture evidence — is
+    not needed by the recovery worker and must not be transported across
+    the process boundary.  ``initial_assessment`` stays ``None`` whenever
+    recovery would not consume it, so the assessment reference graph is
+    not transported either.
+    """
+
+    initial_assessment: CidNlMethodAssessmentRef | None
+    support_policy: DdaCidNlPeakSupportPolicy
+
+
+def _recovery_support_context(
+    result: UntargetedCidNlRealDataAdapterResult,
+) -> _RecoverySupportContext:
+    """Project the recovery-consumed facts out of one initial result."""
+
+    assessment = result.assessment_input.assessment
+    return _RecoverySupportContext(
+        initial_assessment=(
+            assessment if is_cid_nl_missing_ms1_rejection(assessment) else None
+        ),
+        support_policy=assessment.content.evaluation_receipt.support_policy,
     )
 
 
@@ -93,6 +138,13 @@ class _BatchSamplePhaseState:
     )
     initial_acquisition: TraceAcquisitionBatch | None = None
     recovery_acquisition: TraceAcquisitionBatch | None = None
+    sample_template: UntargetedCidNlRealDataRuntimeJob | None = None
+
+    @property
+    def job(self) -> UntargetedCidNlRealDataRuntimeJob:
+        if self.sample_template is not None:
+            return self.sample_template
+        return self.states[0].job
 
 
 def _runtime_delegate(name: str, fallback):
@@ -104,22 +156,43 @@ def _runtime_delegate(name: str, fallback):
     return fallback
 
 
-def _open_job_raw(job: UntargetedCidNlRealDataRuntimeJob) -> RawFileHandle:
+def _open_job_raw(
+    job: UntargetedCidNlRealDataRuntimeJob,
+) -> RawFileHandle | CachedUntargetedRaw:
     active_open = _runtime_delegate("open_raw", open_raw)
     expectation = job.acquisition_source_expectation
-    if expectation is not None:
-        return active_open(
-            job.raw_path,
-            job.dll_dir,
-            expected_acquisition_source=expectation.source,
-            _expected_path_identity=expectation.path_identity,
-        )
-    return active_open(
-        job.raw_path,
-        job.dll_dir,
-        expected_acquisition_source=resolve_request_acquisition_source(
+    source = (
+        expectation.source
+        if expectation is not None
+        else resolve_request_acquisition_source(
             processing_owners=job.processing_owners, sample=job.sample
-        ),
+        )
+    )
+
+    def open_native():
+        if expectation is not None:
+            return active_open(
+                job.raw_path,
+                job.dll_dir,
+                expected_acquisition_source=source,
+                _expected_path_identity=expectation.path_identity,
+            )
+        return active_open(
+            job.raw_path, job.dll_dir, expected_acquisition_source=source
+        )
+
+    if expectation is not None and job.acquisition_cache_dir is not None:
+        # The input owner already verified the content. Cache replay still checks
+        # that this path has that exact identity before returning any facts.
+        _bind_expected_path_identity(job.raw_path, source, expectation.path_identity)
+        return CachedUntargetedRaw(
+            open_native, source=source, cache_dir=job.acquisition_cache_dir
+        )
+    raw = open_native()
+    return bind_untargeted_acquisition_cache(
+        raw,
+        source=source,
+        cache_dir=job.acquisition_cache_dir,
     )
 
 
@@ -141,6 +214,7 @@ def _execute_initial_assessment(state: _RuntimeJobState) -> None:
                 sample=job.sample,
                 method_subject=job.method_subject,
                 candidates=_request_subject_candidates(job),
+                support_candidates=job.support_candidates,
                 settings=job.settings,
                 peak_config=job.peak_config,
                 raw=raw,
@@ -159,6 +233,9 @@ def _execute_initial_assessment(state: _RuntimeJobState) -> None:
         state.error = exc
     finally:
         if raw is not None:
+            if isinstance(raw, CachedUntargetedRaw):
+                state.open_attempted = raw.native_open_attempted
+                state.opened = raw.native_opened
             try:
                 raw.__exit__(None, None, None)
             except Exception as exc:
@@ -225,6 +302,7 @@ def _execute_initial_assessment_batch(
                 sample=state.job.sample,
                 method_subject=state.job.method_subject,
                 candidates=_request_subject_candidates(state.job),
+                support_candidates=state.job.support_candidates,
                 settings=state.job.settings,
                 peak_config=state.job.peak_config,
                 raw=raw,
@@ -248,6 +326,9 @@ def _execute_initial_assessment_batch(
                 state.error = exc
     finally:
         if raw is not None:
+            if isinstance(raw, CachedUntargetedRaw):
+                phase.initial_open_attempted = raw.native_open_attempted
+                phase.initial_opened = raw.native_opened
             try:
                 raw.__exit__(None, None, None)
             except Exception as exc:
@@ -257,10 +338,94 @@ def _execute_initial_assessment_batch(
                         state.error = exc
 
 
+def _prepare_group_authorized_recoveries(
+    states: list[_RuntimeJobState],
+    *,
+    prepared: UntargetedCidNlPreparedGrouping,
+    sample_templates: tuple[UntargetedCidNlRealDataRuntimeJob, ...] = (),
+) -> None:
+    """Schedule searches from frozen workset membership, without regrouping."""
+    templates = {
+        job.sample.identity.sample_identity_id: job
+        for job in sample_templates or tuple(state.job for state in states)
+    }
+    by_key = {
+        (
+            state.job.sample.identity.sample_identity_id,
+            state.job.method_subject.method_subject_id,
+        ): state
+        for state in states
+    }
+    population = tuple(job.sample for job in templates.values())
+    for workset in prepared.worksets:
+        direct = {
+            candidate.peak_hypothesis_id: candidate.direct_support_assessment
+            for candidate in workset.retained_candidates
+            if candidate.direct_support_assessment is not None
+        }
+        groups = tuple(
+            group
+            for group in workset.assignment_scope.groups
+            if all(owner_id in direct for owner_id in group.owner_ids)
+        )
+        for group, target_ids in plan_conservative_recovery_targets(
+            groups, sample_population=population
+        ):
+            subject = select_cid_nl_group_recovery_subject(
+                group,
+                tuple(
+                    {
+                        direct[owner_id].content.method_subject
+                        for owner_id in group.owner_ids
+                    }
+                ),
+            )
+            assert group.group_center_rt is not None
+            for sample_id in sorted(target_ids):
+                key = (sample_id, subject.method_subject_id)
+                if key not in by_key:
+                    job = copy(templates[sample_id])
+                    object.__setattr__(job, "method_subject", subject)
+                    object.__setattr__(
+                        job,
+                        "work_unit_key",
+                        f"untargeted-cid-nl:{job.sample.metadata.raw_stem}:"
+                        f"{subject.method_subject_id}",
+                    )
+                    state = _RuntimeJobState(
+                        job=job,
+                        resource_key=None,
+                        initial_requires_raw=False,
+                        observer=_UntargetedRealDataWorkObserver(job.processing_owners),
+                    )
+                    _execute_initial_assessment(state)
+                    states.append(state)
+                    by_key[key] = state
+                state = by_key[key]
+                if state.error is not None or state.adapter_result is None:
+                    continue
+                assessment = state.adapter_result.assessment_input.assessment
+                if not (
+                    assessment.content.method_result == "HOLD"
+                    or is_unsearched_cid_nl_discovery_assessment(assessment)
+                    or is_cid_nl_missing_ms1_rejection(assessment)
+                ):
+                    continue
+                if assessment.candidate_peaks:
+                    state.recovery_input = UntargetedCidNlRecoveryInput(
+                        sample=state.job.sample,
+                        candidate_assessment=assessment,
+                    )
+                else:
+                    state.recovery_group_center_rts += (group.group_center_rt,)
+                    state.recovery_group_ids += (group.group_hypothesis_id,)
+
+
 def _prepare_owner_authorized_recoveries(
     states: list[_RuntimeJobState],
     *,
     alignment_config: AlignmentConfig,
+    sample_templates: tuple[UntargetedCidNlRealDataRuntimeJob, ...] = (),
 ) -> None:
     by_subject: dict[str, list[_RuntimeJobState]] = {}
     for state in states:
@@ -269,8 +434,12 @@ def _prepare_owner_authorized_recoveries(
             [],
         ).append(state)
     for method_subject_id in sorted(by_subject):
-        _prepare_subject_authorized_recoveries(
-            tuple(by_subject[method_subject_id]), alignment_config=alignment_config
+        states.extend(
+            _prepare_subject_authorized_recoveries(
+                tuple(by_subject[method_subject_id]),
+                alignment_config=alignment_config,
+                sample_templates=sample_templates,
+            )
         )
 
 
@@ -278,9 +447,10 @@ def _prepare_subject_authorized_recoveries(
     states: tuple[_RuntimeJobState, ...],
     *,
     alignment_config: AlignmentConfig,
-) -> None:
+    sample_templates: tuple[UntargetedCidNlRealDataRuntimeJob, ...] = (),
+) -> tuple[_RuntimeJobState, ...]:
     if any(state.error is not None or state.adapter_result is None for state in states):
-        return
+        return ()
     adapter_results = tuple(
         state.adapter_result for state in states if state.adapter_result is not None
     )
@@ -288,9 +458,8 @@ def _prepare_subject_authorized_recoveries(
         result.assessment_input.assessment.content.method_result == "SUPPORT"
         for result in adapter_results
     ):
-        return
+        return ()
     support_owners: list[SampleLocalMS1Owner] = []
-    retained_hypotheses_by_assessment = {}
     for state in states:
         result = state.adapter_result
         if result is None:
@@ -303,12 +472,6 @@ def _prepare_subject_authorized_recoveries(
             sample=state.job.sample,
             assessment=assessment,
         )
-        retained_hypotheses_by_assessment[
-            (
-                state.job.sample.identity.sample_identity_id,
-                assessment.artifact.content_identity.artifact_content_id,
-            )
-        ] = hypotheses
         support_owners.extend(
             owner_from_cid_nl_assessment_support(
                 sample=state.job.sample, assessment=assessment, hypothesis=hypothesis
@@ -319,45 +482,56 @@ def _prepare_subject_authorized_recoveries(
         tuple(support_owners),
         config=alignment_config,
     )
-    first = states[0].job
-    cells = compose_cid_nl_predecessor_cells(
-        processing_owners=first.processing_owners,
-        groups=groups,
-        sample_assessments=tuple(
-            (state.job.sample, result.assessment_input.assessment)
-            for state, result in zip(states, adapter_results, strict=True)
-        ),
-        alignment_config=alignment_config,
-        retained_hypotheses_by_assessment=retained_hypotheses_by_assessment,
+    states_by_sample = {
+        state.job.sample.identity.sample_identity_id: state for state in states
+    }
+    templates_by_sample = {
+        job.sample.identity.sample_identity_id: job for job in sample_templates
+    }
+    population = (
+        tuple(job.sample for job in sample_templates)
+        if sample_templates
+        else tuple(state.job.sample for state in states)
     )
-    for group in groups:
-        facts = assess_conservative_backfill_group(
-            tuple(
-                cell
-                for cell in cells
-                if cell.content.group_hypothesis_id == group.group_hypothesis_id
-            ),
-            sample_population=tuple(state.job.sample for state in states),
-        )
-        if not facts.may_attempt_recovery:
-            continue
+    added_states: list[_RuntimeJobState] = []
+    for group, target_sample_ids in plan_conservative_recovery_targets(
+        groups, sample_population=population
+    ):
         center = group.group_center_rt
         if center is None:
             raise UntargetedCidNlRealDataRuntimeError(
                 "authorized recovery requires a frozen RT group"
             )
-        for state in states:
+        for sample_id in sorted(target_sample_ids):
+            if sample_id not in states_by_sample:
+                job = copy(templates_by_sample[sample_id])
+                subject = states[0].job.method_subject
+                object.__setattr__(job, "method_subject", subject)
+                object.__setattr__(
+                    job,
+                    "work_unit_key",
+                    f"untargeted-cid-nl:{job.sample.metadata.raw_stem}:"
+                    f"{subject.method_subject_id}",
+                )
+                state = _RuntimeJobState(
+                    job=job,
+                    resource_key=None,
+                    initial_requires_raw=False,
+                    observer=_UntargetedRealDataWorkObserver(job.processing_owners),
+                )
+                _execute_initial_assessment(state)
+                states_by_sample[sample_id] = state
+                added_states.append(state)
+            state = states_by_sample[sample_id]
+            if state.error is not None:
+                continue
             result = state.adapter_result
             assert result is not None
             assessment = result.assessment_input.assessment
-            if (
-                state.job.sample.identity.sample_identity_id
-                not in facts.activation_eligible_sample_ids
-                or not (
-                    assessment.content.method_result == "HOLD"
-                    or is_unsearched_cid_nl_discovery_assessment(assessment)
-                    or is_cid_nl_missing_ms1_rejection(assessment)
-                )
+            if not (
+                assessment.content.method_result == "HOLD"
+                or is_unsearched_cid_nl_discovery_assessment(assessment)
+                or is_cid_nl_missing_ms1_rejection(assessment)
             ):
                 continue
             if assessment.candidate_peaks:
@@ -369,14 +543,17 @@ def _prepare_subject_authorized_recoveries(
                 state.recovery_group_center_rts = tuple(
                     sorted((*state.recovery_group_center_rts, center))
                 )
+    return tuple(added_states)
 
 
 def _execute_recovery(
     state: _RuntimeJobState,
 ) -> None:
     job = state.job
-    result = state.adapter_result
-    if result is None:
+    ctx = state.recovery_support
+    if ctx is None and state.adapter_result is not None:
+        ctx = _recovery_support_context(state.adapter_result)
+    if ctx is None:
         state.error = UntargetedCidNlRealDataRuntimeError(
             "recovery requires a completed initial assessment"
         )
@@ -387,6 +564,8 @@ def _execute_recovery(
         )
         return
     raw = None
+    initial_open_attempted = state.open_attempted
+    initial_opened = state.opened
     try:
         state.open_attempted = True
         raw = _open_job_raw(job)
@@ -405,20 +584,14 @@ def _execute_recovery(
             peak_config=job.peak_config,
             raw=raw,
         )
-        for center in state.recovery_group_center_rts:
+        for index, center in enumerate(state.recovery_group_center_rts):
             recovery = recover_untargeted_cid_nl_sample_subject(
                 processing_owners=job.processing_owners,
                 sample=job.sample,
                 method_subject=job.method_subject,
                 group_center_rt=center,
-                initial_assessment=(
-                    result.assessment_input.assessment
-                    if is_cid_nl_missing_ms1_rejection(
-                        result.assessment_input.assessment
-                    )
-                    else None
-                ),
-                support_policy=result.assessment_input.assessment.content.evaluation_receipt.support_policy,
+                initial_assessment=ctx.initial_assessment,
+                support_policy=ctx.support_policy,
                 peak_config=job.peak_config,
                 raw=raw,
                 _observer=state.observer,
@@ -426,6 +599,10 @@ def _execute_recovery(
                 signal_processing_profile=job.signal_processing_profile,
                 _preacquired_traces=trace_batch,
             )
+            if state.recovery_group_ids:
+                recovery = replace(
+                    recovery, group_hypothesis_id=state.recovery_group_ids[index]
+                )
             state.recovery_attempts += (recovery,)
         if len(state.recovery_attempts) == 1:
             state.recovery_input = state.recovery_attempts[0].recovery_input
@@ -440,6 +617,11 @@ def _execute_recovery(
         state.error = exc
     finally:
         if raw is not None:
+            if isinstance(raw, CachedUntargetedRaw):
+                state.open_attempted = (
+                    initial_open_attempted or raw.native_open_attempted
+                )
+                state.opened = initial_opened or raw.native_opened
             try:
                 raw.__exit__(None, None, None)
             except Exception as exc:
@@ -495,24 +677,18 @@ def _execute_recovery_batch(phase: _BatchSamplePhaseState) -> None:
         )
         phase.recovery_acquisition = trace_batch.acquisition
         for state in pending:
-            result = state.adapter_result
-            assert result is not None
-            for center in state.recovery_group_center_rts:
+            ctx = state.recovery_support
+            if ctx is None and state.adapter_result is not None:
+                ctx = _recovery_support_context(state.adapter_result)
+            assert ctx is not None
+            for index, center in enumerate(state.recovery_group_center_rts):
                 recovery = recover_untargeted_cid_nl_sample_subject(
                     processing_owners=state.job.processing_owners,
                     sample=state.job.sample,
                     method_subject=state.job.method_subject,
                     group_center_rt=center,
-                    initial_assessment=(
-                        result.assessment_input.assessment
-                        if is_cid_nl_missing_ms1_rejection(
-                            result.assessment_input.assessment
-                        )
-                        else None
-                    ),
-                    support_policy=(
-                        result.assessment_input.assessment.content.evaluation_receipt.support_policy
-                    ),
+                    initial_assessment=ctx.initial_assessment,
+                    support_policy=ctx.support_policy,
                     peak_config=state.job.peak_config,
                     raw=raw if state.job.method_subject.composition else None,
                     settings=state.job.settings,
@@ -520,6 +696,10 @@ def _execute_recovery_batch(phase: _BatchSamplePhaseState) -> None:
                     _observer=state.observer,
                     _preacquired_traces=trace_batch,
                 )
+                if state.recovery_group_ids:
+                    recovery = replace(
+                        recovery, group_hypothesis_id=state.recovery_group_ids[index]
+                    )
                 state.recovery_attempts += (recovery,)
             if len(state.recovery_attempts) == 1:
                 state.recovery_input = state.recovery_attempts[0].recovery_input
@@ -536,6 +716,9 @@ def _execute_recovery_batch(phase: _BatchSamplePhaseState) -> None:
             state.error = exc
     finally:
         if raw is not None:
+            if isinstance(raw, CachedUntargetedRaw):
+                phase.recovery_open_attempted = raw.native_open_attempted
+                phase.recovery_opened = raw.native_opened
             try:
                 raw.__exit__(None, None, None)
             except Exception as exc:
@@ -605,13 +788,15 @@ def _execute_sample_initial_worker(
 class _SampleRecoveryWorkerRequest:
     jobs: tuple[UntargetedCidNlRealDataRuntimeJob, ...]
     recovery_group_center_rts_by_key: dict[str, tuple[float, ...]]
+    recovery_group_ids_by_key: dict[str, tuple[str, ...]]
     recovery_inputs_by_key: dict[str, UntargetedCidNlRecoveryInput | None]
-    adapter_results_by_key: dict[str, UntargetedCidNlRealDataAdapterResult | None]
+    recovery_support_by_key: dict[str, _RecoverySupportContext]
     recovery_resource_key: str | None
 
 
 @dataclass(slots=True)
 class _SampleRecoveryWorkerResponse:
+    work_unit_keys: tuple[str, ...]
     recovery_attempts_by_key: dict[
         str, tuple[UntargetedCidNlRecoveryAttemptResult, ...]
     ]
@@ -636,9 +821,12 @@ def _execute_sample_recovery_worker(
             resource_key=None,
             initial_requires_raw=False,
             observer=_UntargetedRealDataWorkObserver(job.processing_owners),
-            adapter_result=request.adapter_results_by_key.get(job.work_unit_key),
+            recovery_support=request.recovery_support_by_key.get(job.work_unit_key),
             recovery_input=request.recovery_inputs_by_key.get(job.work_unit_key),
             recovery_group_center_rts=request.recovery_group_center_rts_by_key.get(
+                job.work_unit_key, ()
+            ),
+            recovery_group_ids=request.recovery_group_ids_by_key.get(
                 job.work_unit_key, ()
             ),
         )
@@ -651,6 +839,7 @@ def _execute_sample_recovery_worker(
     )
     _execute_recovery_batch(phase)
     return _SampleRecoveryWorkerResponse(
+        work_unit_keys=tuple(state.job.work_unit_key for state in states),
         recovery_attempts_by_key={
             s.job.work_unit_key: s.recovery_attempts
             for s in states
@@ -689,4 +878,5 @@ __all__ = [
     "_open_job_raw",
     "_prepare_owner_authorized_recoveries",
     "_prepare_subject_authorized_recoveries",
+    "_recovery_support_context",
 ]

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import asdict, dataclass
+from dataclasses import InitVar, asdict, dataclass, field, fields
 from typing import Literal
 
 from xic_extractor.alignment.backfill.observation_repair import (
@@ -25,7 +25,6 @@ from xic_extractor.alignment.cell_group_context import (
     CidNlCellGroupContext,
     TerminalObservationVariant,
     _canonical_typed_ids,
-    _group_support_artifacts,
     _required_text,
     _validate_group_support_attempts,
     _validate_typed_digest_id,
@@ -73,6 +72,8 @@ from xic_extractor.processing_identity import (
 from xic_extractor.review_records import ResolvedReviewRecordRef
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 
+_CELL_OBSERVATION_MINT_TOKEN = object()
+
 
 @dataclass(frozen=True, slots=True)
 class OutsideGroupCellRelation:
@@ -117,6 +118,7 @@ class CellObservationContent:
     reason_codes: tuple[str, ...]
     human_disposition_ref_id: str | None
     outside_group: OutsideGroupCellRelation | None = None
+    unassigned_support: bool = False
 
     def __post_init__(self) -> None:
         _validate_typed_digest_id(
@@ -249,6 +251,15 @@ class CellObservationContent:
                 raise CellObservationContractError(
                     "outside-group SUPPORT cannot carry a group-local observation"
                 )
+        elif self.unassigned_support:
+            if (
+                self.method_result != "SUPPORT"
+                or self.peak_observation_content_id is not None
+                or self.peak_hypothesis_id is not None
+            ):
+                raise CellObservationContractError(
+                    "unassigned SUPPORT cannot supply a local value"
+                )
         elif self.method_result == "SUPPORT":
             if (
                 self.peak_observation_content_id is None
@@ -275,8 +286,13 @@ class CellObservationRef:
     human_disposition: ResolvedReviewRecordRef | None
     artifact: EvidenceArtifactRef
     outside_group_context: CidNlCellGroupContext | None = None
+    _mint_token: InitVar[object] = field(default=None, kw_only=True)
 
-    def __post_init__(self) -> None:
+    def __post_init__(self, _mint_token: object = None) -> None:
+        # The factory binds inputs and derives content/artifact together. Direct
+        # construction and dataclass replacement still verify supplied content.
+        if _mint_token is _CELL_OBSERVATION_MINT_TOKEN:
+            return
         if not isinstance(self.content, CellObservationContent):
             raise CellObservationContractError(
                 "content must be an owner-normalized CellObservation"
@@ -350,6 +366,18 @@ class CellObservationRef:
         if self.content.outside_group != expected_relation:
             raise CellObservationContractError(
                 "outside-group SUPPORT closure was substituted"
+            )
+        if self.content.unassigned_support and (
+            exact_context_support
+            or self.outside_group_context is not None
+            or any(
+                member.canonical_sample_identity_id
+                == self.content.canonical_sample_identity_id
+                for member in group.member_subjects
+            )
+        ):
+            raise CellObservationContractError(
+                "unassigned SUPPORT cannot replace a group member"
             )
         expected_evidence_ids = tuple(
             sorted(
@@ -430,6 +458,7 @@ class CellObservationRef:
             raise CellObservationContractError(
                 "cell observation mismatches its immutable artifact"
             ) from exc
+
 
 def _direct_member_integration(
     *,
@@ -625,6 +654,7 @@ def _terminal_trace_group_id(value: object) -> str:
         )
     return value
 
+
 def _outside_group_relation(
     *,
     group_context: CidNlCellGroupContext,
@@ -682,6 +712,7 @@ def mint_cell_observation_ref(
     peak_hypothesis: PeakHypothesis | None = None,
     human_disposition: ResolvedReviewRecordRef | None = None,
     outside_group_context: CidNlCellGroupContext | None = None,
+    unassigned_support: bool = False,
 ) -> CellObservationRef:
     """Attach a completed assessment to an existing group without creating it."""
 
@@ -702,10 +733,11 @@ def mint_cell_observation_ref(
         raise CellObservationContractError(
             "group SUPPORT closure is outside the current attempt or retry lineage"
         )
-    _validate_group_support_attempts(
-        group_context.supports,
-        producer_attempt=processing_owners.attempt,
-    )
+    if group_context.processing_attempt is not processing_owners.attempt:
+        _validate_group_support_attempts(
+            group_context.supports,
+            producer_attempt=processing_owners.attempt,
+        )
     group = group_context.group
     subject = method_assessment.content.method_subject
     exact_context_support = any(
@@ -742,7 +774,22 @@ def mint_cell_observation_ref(
         method_assessment=method_assessment,
         outside_group_context=outside_group_context,
     )
-    if outside_group is not None:
+    if unassigned_support and not (
+        method_result == "SUPPORT"
+        and outside_group is None
+        and peak_observation is None
+        and peak_hypothesis is None
+        and not any(
+            member.canonical_sample_identity_id == sample.identity.sample_identity_id
+            for member in group.member_subjects
+        )
+    ):
+        raise CellObservationContractError(
+            "unassigned SUPPORT cannot replace a group member"
+        )
+    if unassigned_support:
+        pass
+    elif outside_group is not None:
         if peak_observation is not None or peak_hypothesis is not None:
             raise CellObservationContractError(
                 "outside-group SUPPORT cannot carry a group-local observation"
@@ -847,7 +894,7 @@ def mint_cell_observation_ref(
     content = CellObservationContent(
         canonical_sample_identity_id=sample.identity.sample_identity_id,
         group_hypothesis_id=group.group_hypothesis_id,
-        group_owner_ids=tuple(sorted(group.owner_ids)),
+        group_owner_ids=group_context.sorted_owner_ids,
         group_method_subject_id=group_context.method_subject_id,
         group_target_key_id=group_context.target_key_id,
         group_target_definition_id=group_context.target_definition_id,
@@ -875,6 +922,7 @@ def mint_cell_observation_ref(
             else human_disposition.reference.review_record_id
         ),
         outside_group=outside_group,
+        unassigned_support=unassigned_support,
     )
     upstreams = _cell_upstream_artifacts(
         group_context=group_context,
@@ -899,6 +947,7 @@ def mint_cell_observation_ref(
         human_disposition=human_disposition,
         artifact=artifact,
         outside_group_context=outside_group_context,
+        _mint_token=_CELL_OBSERVATION_MINT_TOKEN,
     )
 
 
@@ -907,7 +956,11 @@ def canonical_cell_observation_bytes(content: CellObservationContent) -> bytes:
         raise CellObservationContractError(
             "canonical serialization requires CellObservation content"
         )
-    values = asdict(content)
+    # JSON reads immutable tuples directly; copying every group-support ID for
+    # every sample adds a second population traversal without changing bytes.
+    values = {item.name: getattr(content, item.name) for item in fields(content)}
+    if content.outside_group is not None:
+        values["outside_group"] = asdict(content.outside_group)
     payload = {
         "schema_version": SCHEMA_VERSION,
         "validation_status": VALIDATION_STATUS,
@@ -938,14 +991,8 @@ def _cell_upstream_artifacts(
 ) -> tuple[EvidenceArtifactRef, ...]:
     artifacts = [method_assessment.artifact]
     if outside_group_context is not None:
-        artifacts.extend(_group_support_artifacts(outside_group_context.supports))
-    for support in group_context.supports:
-        artifacts.append(support.assessment.artifact)
-        if support.hypothesis.artifact is None:
-            raise CellObservationContractError(
-                "group SUPPORT hypothesis is missing its immutable artifact"
-            )
-        artifacts.append(support.hypothesis.artifact)
+        artifacts.extend(outside_group_context.support_artifacts)
+    artifacts.extend(group_context.support_artifacts)
     if peak_observation is not None:
         artifacts.append(peak_observation.artifact)
     if peak_hypothesis is not None:

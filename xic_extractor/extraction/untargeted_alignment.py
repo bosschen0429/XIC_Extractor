@@ -2,15 +2,20 @@
 
 from __future__ import annotations
 
+import os
+import shutil
+from collections import Counter
 from collections.abc import Callable, Mapping
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, replace
 from pathlib import Path
 from tempfile import mkdtemp
+from threading import Lock
 from typing import Any
 
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.csv_io import DiscoveryBatchInput
+from xic_extractor.alignment.discovery_input_source import DiscoveryInputSource
 from xic_extractor.alignment.drift_evidence import KnownIstdReference
 from xic_extractor.alignment.raw_sources import existing_raw_paths
 from xic_extractor.alignment.workflow import CompletedUntargetBatchWorkflowResult
@@ -23,6 +28,8 @@ from xic_extractor.discovery.batch_contract import (
 from xic_extractor.discovery.csv_writer import format_discovery_csv_value
 from xic_extractor.discovery.models import DiscoveryCandidate, DiscoverySettings
 from xic_extractor.discovery.physical_fact_persistence import (
+    DetachedIndexedDiscoveryPhysicalFacts,
+    IndexedDiscoveryPhysicalFacts,
     read_discovery_physical_fact_records,
 )
 from xic_extractor.discovery.physical_fact_record import DiscoveryPhysicalFactRecord
@@ -30,6 +37,7 @@ from xic_extractor.discovery.processing_run_spec_adapter import (
     compile_discovery_processing_run_spec_with_expectations,
 )
 from xic_extractor.execution_engine.streamed_result_store import StreamedResultStore
+from xic_extractor.execution_engine.worker_pool import WorkerAdmissionPool
 from xic_extractor.execution_runtime_marker import OwnerPathRuntimeMarker
 from xic_extractor.execution_runtime_observability import RuntimeMetricAvailability
 from xic_extractor.execution_runtime_owner import (
@@ -42,14 +50,21 @@ from xic_extractor.execution_settings import DEFAULT_ALIGNMENT_WORKERS
 from xic_extractor.extraction.untargeted_cid_nl_bounded_runtime import (
     execute_bounded_untargeted_cid_nl,
 )
+from xic_extractor.extraction.untargeted_input_planning import (
+    prepare_indexed_untargeted_plan,
+)
 from xic_extractor.extraction.untargeted_production_batch import (
     prepare_untargeted_production_plan,
 )
+from xic_extractor.immutable_sequence import ImmutableSequence
 from xic_extractor.peak_detection.signal_processing_profile import (
     SignalProcessingProfile,
 )
 from xic_extractor.processing_identity import AcquisitionSourceExpectation
-from xic_extractor.processing_run_spec import ProcessingAcquisitionInput
+from xic_extractor.processing_run_spec import (
+    ProcessingAcquisitionInput,
+    ProcessingRunSpec,
+)
 from xic_extractor.sample_metadata import SampleMetadata
 
 _SAMPLE_IDENTITY_NAMESPACE = "alignment-untargeted-cid-nl"
@@ -61,6 +76,116 @@ prepare_untargeted_cid_nl_production_plan = prepare_untargeted_production_plan
 @dataclass(frozen=True, slots=True)
 class _DiscoveryEvidencePartition:
     discovery_physical_records: tuple[DiscoveryPhysicalFactRecord, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class _PhysicalIndexJob:
+    path: Path
+    expected_run_spec: ProcessingRunSpec
+    expected_acquisition_input: ProcessingAcquisitionInput
+    candidate_ids: frozenset[str]
+    spool_dir: Path
+
+
+@dataclass(frozen=True, slots=True)
+class _PhysicalIndexWorkerResult:
+    sample_stem: str
+    transfer: DetachedIndexedDiscoveryPhysicalFacts
+    worker_pid: int
+
+
+@dataclass(frozen=True, slots=True)
+class _PhysicalIndexBatchResult:
+    sources: dict[str, IndexedDiscoveryPhysicalFacts]
+    worker_pids: tuple[int, ...]
+
+
+def _index_discovery_physical_source(
+    job: _PhysicalIndexJob,
+) -> _PhysicalIndexWorkerResult:
+    indexed = IndexedDiscoveryPhysicalFacts(
+        job.path,
+        expected_run_spec=job.expected_run_spec,
+        expected_acquisition_input=job.expected_acquisition_input,
+        candidate_ids=job.candidate_ids,
+        spool_dir=job.spool_dir,
+    )
+    try:
+        return _PhysicalIndexWorkerResult(
+            sample_stem=job.expected_acquisition_input.sample_stem,
+            transfer=indexed.detach(),
+            worker_pid=os.getpid(),
+        )
+    finally:
+        indexed.close()
+
+
+def _index_discovery_physical_sources(
+    jobs: tuple[_PhysicalIndexJob, ...],
+    *,
+    raw_workers: int,
+    raw_worker_backend: str,
+    should_cancel: Callable[[], bool] | None = None,
+    progress_callback: Callable[[dict[str, object]], None] | None = None,
+) -> _PhysicalIndexBatchResult:
+    """Build bounded sidecar indexes and adopt their private spools in the caller."""
+
+    sources: dict[str, IndexedDiscoveryPhysicalFacts] = {}
+    worker_pids: list[int] = []
+
+    def adopt(
+        completed: int,
+        total: int,
+        job: _PhysicalIndexJob,
+        result: _PhysicalIndexWorkerResult,
+    ) -> None:
+        if result.sample_stem != job.expected_acquisition_input.sample_stem:
+            raise ValueError("physical index worker crossed sample identity")
+        if result.sample_stem in sources:
+            raise ValueError("physical index worker duplicated sample identity")
+        sources[result.sample_stem] = IndexedDiscoveryPhysicalFacts.from_detached(
+            result.transfer,
+            expected_run_spec=job.expected_run_spec,
+        )
+        worker_pids.append(result.worker_pid)
+        if progress_callback is not None:
+            progress_callback(
+                {
+                    "event": "alignment_input_index",
+                    "sample_stem": result.sample_stem,
+                    "completed": completed,
+                    "total": total,
+                }
+            )
+
+    try:
+        with WorkerAdmissionPool(
+            max_workers=raw_workers,
+            backend=raw_worker_backend,
+            thread_name_prefix="physical-fact-index",
+        ) as pool:
+            pool.run_windowed(
+                jobs,
+                _index_discovery_physical_source,
+                on_completed=adopt,
+                should_cancel=should_cancel,
+            )
+        if pool.first_error is not None:
+            raise pool.first_error
+        ordered_sources = {
+            job.expected_acquisition_input.sample_stem: sources[
+                job.expected_acquisition_input.sample_stem
+            ]
+            for job in jobs
+        }
+        return _PhysicalIndexBatchResult(
+            sources=ordered_sources,
+            worker_pids=tuple(worker_pids),
+        )
+    except BaseException:
+        for source in sources.values():
+            source.close()
+        raise
 
 
 def complete_untargeted_cid_nl_alignment(
@@ -81,6 +206,7 @@ def complete_untargeted_cid_nl_alignment(
     raw_worker_backend: str = "thread",
     should_cancel: Callable[[], bool] | None = None,
     retain_partition_memory: bool = False,
+    retain_acquisition_cache: bool = False,
     max_partition_jobs: int = 100_000,
 ) -> CompletedUntargetBatchWorkflowResult:
     """Execute and compose one owner-closed CID-NL batch exactly once."""
@@ -142,6 +268,7 @@ def complete_untargeted_cid_nl_alignment(
             individually_addressable_fields=frozenset({"discovery_physical_records"}),
         )
         if signal_processing_profile is not None
+        and not isinstance(candidates_by_sample, DiscoveryInputSource)
         else None
     )
 
@@ -151,12 +278,81 @@ def complete_untargeted_cid_nl_alignment(
         assert evidence_store is not None
         evidence_store.append(stem, _DiscoveryEvidencePartition(records))
 
+    physical_sources: dict[str, IndexedDiscoveryPhysicalFacts] = {}
+    physical_spool_dir: Path | None = None
     try:
         physical_records: dict[str, DiscoveryPhysicalFactRecord] = {}
         acquisition_source_expectations: (
             tuple[AcquisitionSourceExpectation, ...] | None
         ) = None
-        if signal_processing_profile is not None:
+        if isinstance(candidates_by_sample, DiscoveryInputSource):
+            if signal_processing_profile is None:
+                raise ValueError(
+                    "indexed Alignment requires a physical processing profile"
+                )
+            with recorder.stage("alignment.verify_acquisition_sources"):
+                spec, expectations = (
+                    compile_discovery_processing_run_spec_with_expectations(
+                        ordered_raw_paths,
+                        discovery_settings=settings,
+                        signal_processing_profile=signal_processing_profile,
+                        fingerprint_workers=raw_workers,
+                    )
+                )
+            physical_spool_dir = Path(
+                mkdtemp(prefix=".physical_fact_indexes_", dir=output_dir)
+            )
+            jobs = tuple(
+                _PhysicalIndexJob(
+                    path=(
+                        discovery_batch.candidate_csvs[
+                            acquisition_input.sample_stem
+                        ].parent
+                        / "discovery_physical_facts.json"
+                    ),
+                    expected_run_spec=spec,
+                    expected_acquisition_input=acquisition_input,
+                    candidate_ids=frozenset(feature_ids),
+                    spool_dir=physical_spool_dir,
+                )
+                for acquisition_input in spec.acquisition_inputs
+                for feature_ids in (
+                    candidates_by_sample.feature_candidate_ids(
+                        acquisition_input.sample_stem
+                    ),
+                )
+                if feature_ids
+            )
+            with recorder.stage("alignment.index_physical_facts") as stage:
+                indexed = _index_discovery_physical_sources(
+                    jobs,
+                    raw_workers=raw_workers,
+                    raw_worker_backend=raw_worker_backend,
+                    should_cancel=should_cancel,
+                    progress_callback=recorder.heartbeat_event,
+                )
+                physical_sources.update(indexed.sources)
+                stage.metrics["feature_candidate_count"] = len(
+                    candidates_by_sample.feature_candidate_ids()
+                )
+                stage.metrics["discovery_record_count"] = len(
+                    candidates_by_sample.locations
+                )
+            with recorder.stage("alignment.prepare_feature_inputs"):
+                plan = prepare_indexed_untargeted_plan(
+                    source=candidates_by_sample,
+                    physical_sources=physical_sources,
+                    raw_paths=ordered_raw_paths,
+                    sample_metadata=retained_sample_metadata,
+                    settings=settings,
+                    peak_config=peak_config,
+                    dll_dir=dll_dir,
+                    profile=signal_processing_profile,
+                    acquisition_source_expectations=expectations,
+                    sample_identity_namespace=_SAMPLE_IDENTITY_NAMESPACE,
+                    restore_candidate=_restore_physical_candidate,
+                )
+        elif signal_processing_profile is not None:
             with recorder.stage("alignment.load_physical_facts"):
                 (
                     candidates_by_sample,
@@ -177,23 +373,46 @@ def complete_untargeted_cid_nl_alignment(
             is not _real_prepare_untargeted_production_plan
         ):
             _prepare_plan = prepare_untargeted_cid_nl_production_plan
-        plan = _prepare_plan(
-            raw_paths=ordered_raw_paths,
-            sample_metadata=retained_sample_metadata,
-            settings=settings,
-            peak_config=peak_config,
-            candidates_by_sample=candidates_by_sample,
-            discovery_receipts_by_sample=receipts,
-            dll_dir=dll_dir,
-            sample_identity_namespace=_SAMPLE_IDENTITY_NAMESPACE,
-            signal_processing_profile=signal_processing_profile,
-            physical_records_by_candidate=physical_records,
-            acquisition_source_expectations=acquisition_source_expectations,
-        )
+        if not isinstance(candidates_by_sample, DiscoveryInputSource):
+            plan = _prepare_plan(
+                raw_paths=ordered_raw_paths,
+                sample_metadata=retained_sample_metadata,
+                settings=settings,
+                peak_config=peak_config,
+                candidates_by_sample=candidates_by_sample,
+                discovery_receipts_by_sample=receipts,
+                dll_dir=dll_dir,
+                sample_identity_namespace=_SAMPLE_IDENTITY_NAMESPACE,
+                signal_processing_profile=signal_processing_profile,
+                physical_records_by_candidate=physical_records,
+                acquisition_source_expectations=acquisition_source_expectations,
+            )
 
         output_dir.mkdir(parents=True, exist_ok=True)
+        inference_counts: Counter[str] = Counter()
+        inference_counts_lock = Lock()
+
+        def runtime_progress(event: Mapping[str, object]) -> None:
+            counts = event.get("operation_counts")
+            if event.get("event") == "feature_membership_inference" and isinstance(
+                counts, dict
+            ):
+                with inference_counts_lock:
+                    for key, value in counts.items():
+                        if key.startswith("largest_"):
+                            inference_counts[key] = max(inference_counts[key], value)
+                        else:
+                            inference_counts[key] += value
+                    runtime_stage.metrics.update(
+                        {
+                            f"feature_inference_{key}": value
+                            for key, value in inference_counts.items()
+                        }
+                    )
+            recorder.heartbeat_event(event)
+
         with (
-            recorder.stage("alignment.untargeted_cid_nl_runtime"),
+            recorder.stage("alignment.untargeted_cid_nl_runtime") as runtime_stage,
             recorder.process_memory_scope("retained_runtime") as runtime_peak,
         ):
             completed = execute_bounded_untargeted_cid_nl(
@@ -205,18 +424,55 @@ def complete_untargeted_cid_nl_alignment(
                 recovery_marker=OwnerPathRuntimeMarker(
                     output_dir / ".cid_nl_runtime.json",
                     _RUNTIME_ARTIFACT_NAMESPACE,
+                    allow_failed_attempt_retry=True,
                 ),
-                progress_callback=recorder.heartbeat_event,
+                progress_callback=runtime_progress,
                 alignment_config=alignment_config,
                 known_istd_reference=known_istd_reference,
                 raw_workers=raw_workers,
                 raw_worker_backend=raw_worker_backend,
                 should_cancel=should_cancel,
                 retain_partition_memory=retain_partition_memory,
+                retain_acquisition_cache=retain_acquisition_cache,
                 pipeline_overlap=True,
                 max_partition_jobs=max_partition_jobs,
             )
 
+        if physical_sources:
+            chunks = tuple(
+                (stem, indices[start : start + 64])
+                for stem, physical_source in physical_sources.items()
+                for indices in (
+                    tuple(sorted(physical_source.candidate_ordinals.values())),
+                )
+                for start in range(0, len(indices), 64)
+            )
+
+            def load_records(index: int) -> tuple[DiscoveryPhysicalFactRecord, ...]:
+                stem, indices = chunks[index]
+                return tuple(
+                    physical_sources[stem].read_record(item) for item in indices
+                )
+
+            def close_indexed_result() -> None:
+                try:
+                    completed.close()
+                finally:
+                    for physical_source in physical_sources.values():
+                        physical_source.close()
+                    if physical_spool_dir is not None:
+                        shutil.rmtree(physical_spool_dir, ignore_errors=True)
+
+            return replace(
+                completed,
+                discovery_physical_records=ImmutableSequence(
+                    tuple(len(ids) for _, ids in chunks), load_records
+                ),
+                cleanup_action=close_indexed_result,
+            )
+        if physical_spool_dir is not None:
+            shutil.rmtree(physical_spool_dir, ignore_errors=True)
+            physical_spool_dir = None
         if evidence_store is None:
             return completed
         evidence_store.seal()
@@ -235,6 +491,10 @@ def complete_untargeted_cid_nl_alignment(
             cleanup_action=cleanup,
         )
     except BaseException:
+        for physical_source in physical_sources.values():
+            physical_source.close()
+        if physical_spool_dir is not None:
+            shutil.rmtree(physical_spool_dir, ignore_errors=True)
         if evidence_store is not None:
             evidence_store.cleanup()
         raise

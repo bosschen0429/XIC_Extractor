@@ -2,6 +2,10 @@
 
 import gc
 import hashlib
+import shutil
+import subprocess
+import sys
+import textwrap
 import weakref
 from dataclasses import dataclass
 from pathlib import Path
@@ -9,6 +13,11 @@ from types import MappingProxyType
 
 import pytest
 
+from xic_extractor.execution_engine.owner_pickle import owner_pickle_dumps
+from xic_extractor.execution_engine.streamed_result_store import (
+    PRESERVED_INDEX_NAME,
+    open_preserved_results,
+)
 from xic_extractor.extraction.untargeted_cid_nl_result_store import PartitionResultStore
 from xic_extractor.immutable_sequence import ImmutableSequence
 
@@ -376,3 +385,93 @@ def test_partition_result_store_cleanup(tmp_path: Path) -> None:
     # Idempotent cleanup
     store.cleanup()
     assert not spool_dir.exists()
+
+
+def test_preserved_index_reads_one_record_in_a_separate_process(tmp_path):
+    """A preserved spool is readable by a reader that never held the graph."""
+    shared = MappingProxyType({"owner": "shared"})
+    store = PartitionResultStore(tmp_path / "spool", (shared,))
+    store.append("alpha", Payload(children=("a0", "a1", "a2")))
+    store.append("beta", Payload(children=("b0", "b1")))
+    store.seal()
+    index = store.preserve_results()
+    assert index.is_file()
+
+    reader = textwrap.dedent(
+        """
+        import sys
+        from pathlib import Path
+        from xic_extractor.execution_engine.streamed_result_store import (
+            open_preserved_results,
+        )
+
+        store = open_preserved_results(Path(sys.argv[1]))
+        print(store.read_selected(int(sys.argv[2]), "children", (int(sys.argv[3]),))[0])
+        """
+    )
+    script = tmp_path / "reader.py"
+    script.write_text(reader, encoding="utf-8")
+
+    for partition_index, position, expected in ((0, 2, "a2"), (1, 0, "b0")):
+        completed = subprocess.run(
+            [
+                sys.executable,
+                str(script),
+                str(index),
+                str(partition_index),
+                str(position),
+            ],
+            capture_output=True,
+            text=True,
+            cwd=str(Path(__file__).resolve().parents[1]),
+        )
+        assert completed.returncode == 0, completed.stderr
+        assert completed.stdout.strip() == expected
+
+
+def test_preserved_index_is_sealed_and_rebinds_to_its_own_directory(tmp_path):
+    """Moving a preserved spool keeps it readable and keeps it read-only."""
+    store = PartitionResultStore(tmp_path / "spool", ())
+    store.append("alpha", Payload(children=("a0", "a1")))
+    store.seal()
+    store.preserve_results()
+
+    moved = tmp_path / "moved"
+    shutil.move(str(tmp_path / "spool"), str(moved))
+    restored = open_preserved_results(moved / PRESERVED_INDEX_NAME)
+
+    assert restored.read_selected(0, "children", (1,)) == ("a1",)
+    with pytest.raises(ValueError, match="sealed"):
+        restored.append("gamma", Payload(children=("c0",)))
+
+
+def test_preserved_index_refuses_a_truncated_file(tmp_path):
+    """A damaged index fails loudly instead of yielding partial records."""
+    store = PartitionResultStore(tmp_path / "spool", ())
+    store.append("alpha", Payload(children=("a0",)))
+    store.seal()
+    index = store.preserve_results()
+
+    payload = index.read_bytes()
+    index.write_bytes(payload[: len(payload) // 2])
+    with pytest.raises(Exception):
+        open_preserved_results(index)
+
+
+def test_preserve_results_refuses_to_overwrite_an_existing_index(tmp_path):
+    store = PartitionResultStore(tmp_path / "spool", ())
+    store.append("alpha", Payload(children=("a0",)))
+    store.seal()
+    store.preserve_results()
+    with pytest.raises(FileExistsError):
+        store.preserve_results()
+
+
+def test_preserved_index_refuses_an_unsealed_store(tmp_path):
+    """Only a sealed store may be published; an open spool can still grow."""
+    store = PartitionResultStore(tmp_path / "spool", ())
+    store.append("alpha", Payload(children=("a0",)))
+    forged = tmp_path / "spool" / "forged.pickle"
+    forged.write_bytes(owner_pickle_dumps(store, ()))
+    with pytest.raises(ValueError, match="sealed"):
+        open_preserved_results(forged)

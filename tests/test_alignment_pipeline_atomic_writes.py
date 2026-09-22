@@ -166,9 +166,19 @@ def test_run_alignment_rejects_stale_owner_edge_outputs_before_raw(
     assert calls == []
 
 
+@pytest.mark.parametrize(
+    "retired",
+    [
+        "alignment_results.xlsx",
+        "review_report.html",
+        "event_to_ms1_owner.tsv",
+        "ambiguous_ms1_owners.tsv",
+    ],
+)
 def test_run_alignment_rejects_stale_product_artifacts_before_raw(
     tmp_path: Path,
     monkeypatch,
+    retired: str,
 ) -> None:
     batch_index = _write_batch(tmp_path, ("Sample_A",))
     raw_dir = tmp_path / "raw"
@@ -176,10 +186,10 @@ def test_run_alignment_rejects_stale_product_artifacts_before_raw(
     (raw_dir / "Sample_A.raw").write_text("raw", encoding="utf-8")
     output_dir = tmp_path / "out"
     output_dir.mkdir()
-    workbook = output_dir / "alignment_results.xlsx"
-    html = output_dir / "review_report.html"
-    workbook.write_text("old workbook", encoding="utf-8")
-    html.write_text("old html", encoding="utf-8")
+    # A run that no longer writes these must still refuse to publish beside a
+    # copy an earlier run left, rather than let it pass as current output.
+    stale = output_dir / retired
+    stale.write_text("old artifact", encoding="utf-8")
 
     calls = []
 
@@ -202,6 +212,5 @@ def test_run_alignment_rejects_stale_product_artifacts_before_raw(
             discovery_settings=_settings(),
         )
 
-    assert workbook.read_text(encoding="utf-8") == "old workbook"
-    assert html.read_text(encoding="utf-8") == "old html"
+    assert stale.read_text(encoding="utf-8") == "old artifact"
     assert calls == []

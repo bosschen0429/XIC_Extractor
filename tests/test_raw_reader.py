@@ -813,6 +813,59 @@ def test_iter_ms2_scans_yields_parse_error_events() -> None:
     assert events[0].scan_number == 1
 
 
+def test_iter_ms2_scan_subset_matches_full_window_for_selected_scans() -> None:
+    from xic_extractor.raw_reader import RawFileHandle
+
+    class _TrackingRaw(_FakeRaw):
+        def __init__(self, **kwargs):
+            super().__init__(**kwargs)
+            self.filter_calls = []
+            self.scan_calls = []
+
+        def GetFilterForScanNumber(self, scan_number):
+            self.filter_calls.append(scan_number)
+            return super().GetFilterForScanNumber(scan_number)
+
+        def GetSimplifiedScan(self, scan_number):
+            self.scan_calls.append(scan_number)
+            return super().GetSimplifiedScan(scan_number)
+
+    raw = _TrackingRaw(
+        filters={
+            1: _FakeFilter(is_ms2=True, precursor_mz=258.1),
+            2: _FakeFilter(is_ms2=True, precursor_mz=258.1),
+        },
+        scans={
+            1: _FakeScan([126.0, 127.0], [10.0, 50.0]),
+            2: _FakeScan([226.0, 227.0], [20.0, 60.0]),
+        },
+    )
+    handle = RawFileHandle(raw, _fake_thermo(raw))
+
+    full = tuple(handle.iter_ms2_scans(rt_min=8.0, rt_max=8.1))
+    raw.filter_calls.clear()
+    raw.scan_calls.clear()
+    selected = tuple(
+        handle.iter_ms2_scan_subset(
+            rt_min=8.0,
+            rt_max=8.1,
+            scan_numbers=frozenset({2, 99}),
+        )
+    )
+
+    assert [event.scan_number for event in full] == [1, 2]
+    assert [event.scan_number for event in selected] == [2]
+    assert raw.filter_calls == [2]
+    assert raw.scan_calls == [2]
+    assert selected[0].scan is not None and full[1].scan is not None
+    assert selected[0].scan.rt == full[1].scan.rt
+    np.testing.assert_array_equal(selected[0].scan.masses, full[1].scan.masses)
+    np.testing.assert_array_equal(
+        selected[0].scan.intensities,
+        full[1].scan.intensities,
+    )
+
+
 def _write_expected_dlls(path: Path) -> None:
     from xic_extractor.raw_reader import EXPECTED_THERMO_DLLS
 

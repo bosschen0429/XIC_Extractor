@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import gc
 import queue
 import threading
 import time
@@ -82,6 +81,7 @@ class PartitionPipelineScheduler:
         store_factory: Callable[[Path, tuple[object, ...]], StreamedResultStore] = (
             StreamedResultStore
         ),
+        acquisition_cleanup: Callable[[], None] | None = None,
     ) -> TFinalResult:
         """Execute finite partitions under one runtime attempt."""
         if type(acquisition_workers) is not int or acquisition_workers not in (1, 2):
@@ -293,10 +293,11 @@ class PartitionPipelineScheduler:
                         artifacts.extend(part_artifacts)
                         settlements.extend(part_settlements)
                         del acq_out, comp_out
-                        gc.collect()
                         progress("partition_released", index + 1)
                 else:
-                    admission_credits = threading.Semaphore(2)
+                    # Composition keeps one partition resident while each
+                    # acquisition lane can prepare its next partition.
+                    admission_credits = threading.Semaphore(acquisition_workers + 1)
                     handoff_queue: queue.Queue[
                         tuple[
                             WorkPartition[TPartitionPayload],
@@ -490,7 +491,6 @@ class PartitionPipelineScheduler:
                                         artifacts.extend(part_artifacts)
                                         settlements.extend(part_settlements)
                                     del acq_out, comp_out
-                                    gc.collect()
                                     progress("partition_released", partition.index + 1)
                                     next_index += 1
                                 finally:
@@ -715,16 +715,56 @@ class PartitionPipelineScheduler:
 
         try:
             recovery_marker.record_launch(runtime)
+            def provide_worker_batch_and_cleanup(
+                aggregate: object,
+            ) -> RuntimeWorkerBatchReceipt:
+                try:
+                    batch = provide_worker_batch(aggregate)
+                except Exception:
+                    if acquisition_cleanup is not None:
+                        try:
+                            acquisition_cleanup()
+                        except Exception:
+                            pass
+                    raise
+                if acquisition_cleanup is None:
+                    return batch
+                try:
+                    acquisition_cleanup()
+                except Exception as exc:
+                    nonlocal failure
+                    failure = exc
+                    cleanup_failure = WorkUnitFailureDetail(
+                        category=WorkUnitFailureCategory.EXECUTION_ERROR,
+                        stage="partition-acquisition-pool-shutdown",
+                        source_reference=owners.attempt.processing_attempt_id,
+                        message=(str(exc).strip() or type(exc).__name__)[:2000],
+                    )
+                    return RuntimeWorkerBatchReceipt(
+                        settlements=tuple(
+                            mint_work_unit_settlement(
+                                attempt=owners.attempt,
+                                work_unit_key=key,
+                                outcome=WorkUnitTerminalOutcome.FAILED,
+                                failure_detail=cleanup_failure,
+                            )
+                            for key in work_unit_keys
+                        ),
+                        resource_settlements=batch.resource_settlements,
+                        artifact_registrations=batch.artifact_registrations,
+                        acquisitions=batch.acquisitions,
+                    )
+                return batch
+
             finalization = execute_runtime_attempt(
                 runtime,
                 resource_reservations,
-                worker_batch_provider=provide_worker_batch,
+                worker_batch_provider=provide_worker_batch_and_cleanup,
                 telemetry_provider=telemetry_provider,
                 persister=recovery_marker,
                 cancellation_ingress=cancellation_ingress,
             )
             if failure is not None:
-                store.cleanup()
                 raise RuntimeError(
                     f"Partition pipeline execution failed before batch publication: "
                     f"{failure}"
@@ -733,7 +773,6 @@ class PartitionPipelineScheduler:
             if outcome is not AttemptTerminalOutcome.SUCCEEDED or (
                 application_result is None
             ):
-                store.cleanup()
                 raise RuntimeError(
                     "Partition pipeline runtime did not complete atomically"
                 )
@@ -741,6 +780,14 @@ class PartitionPipelineScheduler:
             return adapter.build_workflow_result(
                 finalization, application_result, store
             )
-        except Exception:
-            store.cleanup()
+        except Exception as exc:
+            try:
+                checkpoint = store.preserve_failed_results()
+            except Exception as preservation_error:
+                # Keep the original failure and every sealed file even if the
+                # diagnostic metadata cannot be written (for example, disk full).
+                exc.add_note(f"Could not retain replay metadata: {preservation_error}")
+                raise exc
+            if checkpoint is not None:
+                exc.add_note(f"Completed partition results retained at {checkpoint}")
             raise

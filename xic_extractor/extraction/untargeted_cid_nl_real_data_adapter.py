@@ -23,7 +23,6 @@ from xic_extractor.acquisition_contract import (
     BatchXICAdapter,
     TraceAcquisitionBatch,
     TraceCoordinateKind,
-    acquire_trace_batch,
     mint_trace_acquisition_capability,
 )
 from xic_extractor.alignment.untargeted_cid_nl_golden_path import (
@@ -47,6 +46,10 @@ from xic_extractor.discovery.strict_seed_receipts import (
     read_complete_discovery_scan_seeds,
 )
 from xic_extractor.evidence_artifacts import EvidenceArtifactRef
+from xic_extractor.extraction.untargeted_acquisition_cache import (
+    acquire_untargeted_trace_batch,
+    require_owner_bound_untargeted_raw,
+)
 from xic_extractor.mass_accuracy import within_ppm
 from xic_extractor.peak_detection import capture as capture_owner
 from xic_extractor.peak_detection.cid_nl_candidate_set_relation import (
@@ -109,7 +112,6 @@ from xic_extractor.processing_identity import (
 from xic_extractor.raw_reader import (
     Ms2ScanEvent,
     RawReaderError,
-    require_owner_bound_raw_handle,
 )
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 from xic_extractor.signal_processing import find_peak_and_area
@@ -157,6 +159,7 @@ class UntargetedCidNlRecoveryAttemptResult:
     acquisition: TraceAcquisitionBatch
     lineage_artifacts: tuple[EvidenceArtifactRef, ...]
     validation_status: str = VALIDATION_STATUS
+    group_hypothesis_id: str | None = None
     capture_evidence: tuple[RetainedCaptureEvidence, ...] = dataclass_field(
         default=(), compare=False
     )
@@ -472,7 +475,7 @@ def acquire_untargeted_cid_nl_sample_trace_batch(
         sample=sample,
     )
     try:
-        bound_raw = require_owner_bound_raw_handle(raw, source)
+        bound_raw = require_owner_bound_untargeted_raw(raw, source)
     except RawReaderError as exc:
         raise UntargetedCidNlRealDataAdapterError(
             "raw handle is not owner-bound to the resolved acquisition source"
@@ -489,7 +492,7 @@ def acquire_untargeted_cid_nl_sample_trace_batch(
         profile=signal_processing_profile,
     )
     acquisition = _freeze_acquisition(
-        acquire_trace_batch(capability, requests, bound_raw)
+        acquire_untargeted_trace_batch(capability, requests, bound_raw)
     )
     return UntargetedCidNlSampleTraceBatch(
         sample_identity_id=sample.identity.sample_identity_id,
@@ -537,14 +540,6 @@ def acquire_untargeted_cid_nl_recovery_trace_batch(
         raise UntargetedCidNlRealDataAdapterError(
             "recovery requests must be a non-empty typed tuple"
         )
-    method_subject_ids = tuple(item[0].method_subject_id for item in recovery_requests)
-    request_keys = tuple(
-        (subject.method_subject_id, center) for subject, center in recovery_requests
-    )
-    if request_keys != tuple(sorted(set(request_keys))):
-        raise UntargetedCidNlRealDataAdapterError(
-            "recovery requests must be canonical and unique"
-        )
     for method_subject, _group_center_rt in recovery_requests:
         try:
             validate_cid_nl_method_subject_binding(
@@ -553,13 +548,21 @@ def acquire_untargeted_cid_nl_recovery_trace_batch(
             )
         except CidNlMethodSubjectContractError as exc:
             raise UntargetedCidNlRealDataAdapterError(str(exc)) from exc
+    # Group identity owns each recovery attempt. Acquisition owns the physical
+    # query: different groups can reuse one subject/RT trace, in any input order.
+    unique_requests = {
+        (subject.method_subject_id, float(center)): (subject, float(center))
+        for subject, center in recovery_requests
+    }
+    recovery_requests = tuple(unique_requests[key] for key in sorted(unique_requests))
+    method_subject_ids = tuple(item[0].method_subject_id for item in recovery_requests)
     _validate_raw_adapter(raw)
     source = resolve_request_acquisition_source(
         processing_owners=processing_owners,
         sample=sample,
     )
     try:
-        bound_raw = require_owner_bound_raw_handle(raw, source)
+        bound_raw = require_owner_bound_untargeted_raw(raw, source)
     except RawReaderError as exc:
         raise UntargetedCidNlRealDataAdapterError(
             "raw handle is not owner-bound to the resolved acquisition source"
@@ -580,7 +583,7 @@ def acquire_untargeted_cid_nl_recovery_trace_batch(
         coordinate_kind=TraceCoordinateKind.NATIVE_SCAN,
     )
     acquisition = _freeze_acquisition(
-        acquire_trace_batch(capability, requests, bound_raw)
+        acquire_untargeted_trace_batch(capability, requests, bound_raw)
     )
     return UntargetedCidNlRecoveryTraceBatch(
         sample_identity_id=sample.identity.sample_identity_id,
@@ -598,6 +601,7 @@ def adapt_current_discovery_sample_subject(
     sample: ResolvedCanonicalSampleIdentity,
     method_subject: CidNlMethodSubject,
     candidates: tuple[DiscoveryCandidate, ...],
+    support_candidates: tuple[DiscoveryCandidate, ...] = (),
     settings: DiscoverySettings,
     peak_config: ExtractionConfig,
     raw: UntargetedCidNlRealDataRaw | None,
@@ -613,6 +617,7 @@ def adapt_current_discovery_sample_subject(
         sample=sample,
         method_subject=method_subject,
         candidates=candidates,
+        support_candidates=support_candidates,
         settings=settings,
         peak_config=peak_config,
     )
@@ -622,6 +627,18 @@ def adapt_current_discovery_sample_subject(
         method_subject=method_subject,
         settings=settings,
     )
+    support_bounded = _bounded_subject_candidates(
+        support_candidates,
+        sample=sample,
+        method_subject=method_subject,
+        settings=settings,
+    )
+    if {candidate.candidate_id for candidate in bounded} & {
+        candidate.candidate_id for candidate in support_bounded
+    }:
+        raise UntargetedCidNlRealDataAdapterError(
+            "support candidates must be distinct from feature candidates"
+        )
     support_policy = DdaCidNlPeakSupportPolicy(
         precursor_tolerance_da=max(
             method_subject.precursor_mz
@@ -645,6 +662,11 @@ def adapt_current_discovery_sample_subject(
         for candidate in bounded
         if candidate.ms1_peak_found
         and candidate.discovery_candidate_state in MS1_FEATURE_BACKED_STATES
+    )
+    support_seed_candidates = tuple(
+        candidate
+        for candidate in support_bounded
+        if candidate.precursor_mz_basis in {"scan_precursor", "mixed"}
     )
     if not seed_candidates and not peak_candidates:
         assessment = _mint_assessment(
@@ -683,7 +705,7 @@ def adapt_current_discovery_sample_subject(
         sample=sample,
     )
     try:
-        bound_raw = require_owner_bound_raw_handle(raw, source)
+        bound_raw = require_owner_bound_untargeted_raw(raw, source)
     except RawReaderError as exc:
         raise UntargetedCidNlRealDataAdapterError(
             "raw handle is not owner-bound to the resolved acquisition source"
@@ -691,7 +713,7 @@ def adapt_current_discovery_sample_subject(
     try:
         scan_seeds = read_complete_discovery_scan_seeds(
             bound_raw,
-            candidates=seed_candidates,
+            candidates=seed_candidates + support_seed_candidates,
             settings=settings,
             preserve_configured_losses=method_subject.composition is not None,
             include_inferred=True,
@@ -948,7 +970,7 @@ def recover_untargeted_cid_nl_sample_subject(
             )
         _validate_raw_adapter(raw)
         try:
-            bound_raw = require_owner_bound_raw_handle(raw, source)
+            bound_raw = require_owner_bound_untargeted_raw(raw, source)
         except RawReaderError as exc:
             raise UntargetedCidNlRealDataAdapterError(
                 "raw handle is not owner-bound to the resolved acquisition source"
@@ -959,7 +981,7 @@ def recover_untargeted_cid_nl_sample_subject(
             coordinate_kind=TraceCoordinateKind.NATIVE_SCAN,
         )
         acquisition = _freeze_acquisition(
-            acquire_trace_batch(capability, (request,), bound_raw)
+            acquire_untargeted_trace_batch(capability, (request,), bound_raw)
         )
         acquired = acquisition.traces[0]
     else:
@@ -1119,7 +1141,7 @@ def recover_untargeted_cid_nl_sample_subject(
             raise UntargetedCidNlRealDataAdapterError(
                 "recovery composition mismatches the method subject"
             )
-        bound_raw = require_owner_bound_raw_handle(raw, source)
+        bound_raw = require_owner_bound_untargeted_raw(raw, source)
         recovery_evidence, recovery_support, recovery_sets, scanned_count = (
             _composite_recovery_evidence(
                 processing_owners=processing_owners,
@@ -1325,7 +1347,7 @@ def _reacquire_peak_observations(
             coordinate_kind=TraceCoordinateKind.NATIVE_SCAN,
         )
         acquisition = _freeze_acquisition(
-            acquire_trace_batch(capability, requests, raw)
+            acquire_untargeted_trace_batch(capability, requests, raw)
         )
         acquired_traces = tuple(acquisition.traces[index] for index in indices)
     else:
@@ -1672,6 +1694,7 @@ def _validate_inputs(**values: object) -> None:
         "sample": ResolvedCanonicalSampleIdentity,
         "method_subject": CidNlMethodSubject,
         "candidates": tuple,
+        "support_candidates": tuple,
         "settings": DiscoverySettings,
         "peak_config": ExtractionConfig,
     }
@@ -1685,6 +1708,12 @@ def _validate_inputs(**values: object) -> None:
     if any(not isinstance(item, DiscoveryCandidate) for item in candidates):
         raise UntargetedCidNlRealDataAdapterError(
             "candidates must contain current DiscoveryCandidate values"
+        )
+    support_candidates = values["support_candidates"]
+    assert isinstance(support_candidates, tuple)
+    if any(not isinstance(item, DiscoveryCandidate) for item in support_candidates):
+        raise UntargetedCidNlRealDataAdapterError(
+            "support_candidates must contain current DiscoveryCandidate values"
         )
     method_subject = values["method_subject"]
     settings = values["settings"]

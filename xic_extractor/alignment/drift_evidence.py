@@ -197,11 +197,12 @@ class KnownIstdReference:
 
     def bind(
         self,
-        support_owners: tuple[SampleLocalMS1Owner, ...],
+        owners: tuple[SampleLocalMS1Owner, ...],
         *,
         sample_universe: frozenset[str] | None = None,
         injection_order: Mapping[str, int] | None = None,
     ) -> KnownIstdOwnerLookup:
+        """Bind measured ISTD coordinates to every eligible physical owner."""
         reference = (
             self if sample_universe is None else self.prepare_batch(
                 sample_universe=sample_universe, injection_order=injection_order
@@ -209,7 +210,7 @@ class KnownIstdReference:
         )
         targets = {target.label: target for target in self.anchor.targets}
         owners_by_sample: dict[str, list[SampleLocalMS1Owner]] = {}
-        for owner in support_owners:
+        for owner in owners:
             owners_by_sample.setdefault(owner.sample_stem, []).append(owner)
         candidates: list[tuple[str, str, float]] = []
         counts: dict[str, int] = {}

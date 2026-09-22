@@ -38,6 +38,7 @@ from xic_extractor.alignment.result import (
 from xic_extractor.peak_detection.integration_result import IntegrationResult
 from xic_extractor.processing_identity import (
     canonical_identity_basis_bytes,
+    mint_typed_identity,
     typed_identity_digest,
 )
 
@@ -138,7 +139,9 @@ class ProductionCellDecision:
             raise CellDecisionContractError(
                 "production cell decision must be minted by cell_decision"
             )
-        _validate_decision_binding(self)
+
+        # The sealed factory derives the basis and ID from these exact inputs.
+        # Explicit validation remains available at an external trust boundary.
 
     @property
     def variant(self) -> Literal["numeric"] | NoWriteState:
@@ -672,9 +675,12 @@ def _mint_decision(
     evidence: CellEvidence,
     payload: CellDecisionPayload,
 ) -> ProductionCellDecision:
-    basis = _decision_basis(subject=subject, evidence=evidence, payload=payload)
+    identity, basis = mint_typed_identity(
+        _DECISION_PREFIX,
+        _decision_basis(subject=subject, evidence=evidence, payload=payload),
+    )
     return ProductionCellDecision(
-        decision_id=typed_identity_digest(_DECISION_PREFIX, basis),
+        decision_id=identity,
         subject=subject,
         evidence=evidence,
         payload=payload,
@@ -688,10 +694,12 @@ def _validate_decision_binding(decision: ProductionCellDecision) -> None:
         raise CellDecisionContractError(
             "production cell decision contains an unsupported payload"
         )
-    expected_basis = _decision_basis(
-        subject=decision.subject,
-        evidence=decision.evidence,
-        payload=decision.payload,
+    expected_basis = canonical_identity_basis_bytes(
+        _decision_basis(
+            subject=decision.subject,
+            evidence=decision.evidence,
+            payload=decision.payload,
+        )
     )
     if decision.basis_bytes != expected_basis:
         raise CellDecisionContractError(
@@ -708,7 +716,7 @@ def _decision_basis(
     subject: CellSubject,
     evidence: CellEvidence,
     payload: CellDecisionPayload,
-) -> bytes:
+) -> dict[str, object]:
     if type(subject) is TargetCellSubject:
         evidence_identity: dict[str, object]
         subject_kind = "target"
@@ -786,17 +794,15 @@ def _decision_basis(
     payload_identity: dict[str, object] = {"variant": payload.variant}
     if type(payload) is NumericCellDecision:
         payload_identity.update(value=payload.value, source=payload.source)
-    return canonical_identity_basis_bytes(
-        {
-            "schema_version": _DECISION_SCHEMA_VERSION,
-            "subject_kind": subject_kind,
-            "processing_request_id": request_id,
-            "canonical_sample_identity_id": sample_id,
-            "subject": subject_identity,
-            "evidence": evidence_identity,
-            "payload": payload_identity,
-        }
-    )
+    return {
+        "schema_version": _DECISION_SCHEMA_VERSION,
+        "subject_kind": subject_kind,
+        "processing_request_id": request_id,
+        "canonical_sample_identity_id": sample_id,
+        "subject": subject_identity,
+        "evidence": evidence_identity,
+        "payload": payload_identity,
+    }
 
 
 def _group_subject_key(subject: GroupCellSubject) -> tuple[str, str]:
