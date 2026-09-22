@@ -66,6 +66,47 @@ dated productization control-plane path is compatibility lookup only.
 
 ## Known Diagnostic Conclusions
 
+### 2026-09-22 Composing A Partition In A Worker Costs More Than It Saves
+
+- Composition is a pure function of the partition batch, its sample results,
+  the alignment config and the known-ISTD reference: it opens no RAW and reads
+  no acquisition cache. A spawned process reproduces a partition byte-identical
+  to the parent's, and the result that has to come back is only 45,948 bytes
+  because the worker writes the 115,074,919-byte partition itself. Reuse
+  `offload-2-hashseed0/report.json` under
+  `output/issue423-evidence-duplication-20260922/`.
+- Offloading it still loses. With pipeline overlap on and the same source, the
+  four compositions take 22.46 seconds in a worker against about 18.0 in the
+  parent, plus 4.17 seconds decoding the inputs, and the parent ships
+  173,946,280 request bytes it did not ship before. The parent is fast because
+  it already holds that object graph; a worker rebuilds it from 42.0-49.4 MB
+  per partition. Reuse `offload-run-3-overlap/`.
+- There was also nothing to overlap with. In the retained overlap run every
+  acquisition task finished by 35.02 seconds while composition ran to about 49,
+  so composition never shared wall time with acquisition work. Check that a
+  phase actually overlaps something before moving it off the parent.
+- Raising the composition pool's `max_workers` does not create concurrency.
+  Each composition dispatches its own single-item `run_windowed`, which sizes
+  the executor to one; a pool set to three paid 151,150,806 bootstrap bytes and
+  still reported one worker pid. True parallel composition needs non-blocking
+  dispatch in the scheduler, not a wider pool. Reuse
+  `offload-run-4-parallel/receipt.json`.
+- Offloaded composition stops children flowing through the parent's
+  `append_children`, which is where the child-level acceptance oracles observe
+  them; that run's receipt reports `children: 0` while the batch still composed
+  150. Any future attempt must read children back from the store instead.
+- Sets reach the stream in hash order, so the same partition content serializes
+  to different bytes in different processes: one run's spool digest was
+  `15ced1b6...` and another's `570c8d06...` for identical input, matching only
+  under a pinned `PYTHONHASHSEED`. Three `frozenset[str]` fields reach a
+  composed child (`sample_universe`, `raw_sample_stems`,
+  `selected_family_ids`). This cannot be fixed in the owner pickler: CPython
+  bypasses both `dispatch_table` and `reducer_override` for exact `set` and
+  `frozenset` instances. No consumer compares those digests across runs, so
+  this constrains cross-process verification rather than product identity.
+- Evidence is `diagnostic_only`. The store-side boundary that lets a partition
+  be written elsewhere is kept at `df0f4f48`; the offload itself is reverted.
+
 ### 2026-09-22 Wall Noise Band And Three Falsified Evidence-Cost Claims
 
 - Eight four-partition cache-only runs at `005fd18f` produce byte-identical
