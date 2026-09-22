@@ -19,8 +19,11 @@ from xic_extractor.alignment.csv_io import (
     _require_columns,
 )
 from xic_extractor.discovery.batch_contract import validate_discovery_candidate_artifact
-from xic_extractor.discovery.csv_writer import DISCOVERY_CANDIDATE_COLUMNS
-from xic_extractor.discovery.models import MS1_FEATURE_BACKED_STATES, DiscoveryCandidate
+from xic_extractor.discovery.models import (
+    DISCOVERY_CANDIDATE_COLUMNS,
+    MS1_FEATURE_BACKED_STATES,
+    DiscoveryCandidate,
+)
 
 
 @dataclass(frozen=True, slots=True)

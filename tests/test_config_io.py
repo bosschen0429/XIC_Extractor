@@ -35,7 +35,7 @@ def test_saved_worker_budget_reaches_shared_execution_profile(tmp_config, monkey
     write_settings(settings)
     profile = resolve_execution_profile(read_settings())
     assert profile.parallel_workers == 3
-    assert profile.alignment_workers == 1
+    assert profile.alignment_workers == 4
 
 
 def test_write_settings_round_trips(tmp_config, monkeypatch):

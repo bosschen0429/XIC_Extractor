@@ -532,24 +532,14 @@ def _write_bound_library(path: Path, intensity: float) -> None:
     ).save_json(path)
 
 
-@pytest.mark.parametrize("selection", ["explicit", "colocated", "default"])
+@pytest.mark.parametrize("selection", ["explicit", "colocated"])
 def test_run_identity_binds_selected_blank_content(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
     selection: str,
 ) -> None:
     raw_paths = _raws(tmp_path)
     library_path = tmp_path / "blank_library.json"
     _write_bound_library(library_path, 1000.0)
-    if selection == "default":
-        library_path = tmp_path / "packaged.json"
-        (tmp_path / "blank_library.json").rename(library_path)
-        from xic_extractor.discovery import blank_qualification as blank
-
-        monkeypatch.setattr(
-            blank, "get_default_background_library_path", lambda: library_path
-        )
-        monkeypatch.setattr(blank, "_CACHED_DEFAULT_LIBRARY", None)
     settings = replace(
         _settings(),
         neutral_loss_profile=None,
@@ -558,11 +548,39 @@ def test_run_identity_binds_selected_blank_content(
     )
     first = _compile_paths(raw_paths, settings=settings)
     _write_bound_library(library_path, 1.0)
-    if selection == "default":
-        monkeypatch.setattr(blank, "_CACHED_DEFAULT_LIBRARY", None)
     second = _compile_paths(raw_paths, settings=settings)
     assert first.run_spec_id != second.run_spec_id
     assert first.discovery_method.method_id == second.discovery_method.method_id
+
+
+def test_run_identity_does_not_inherit_packaged_blank_library(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from xic_extractor.discovery import blank_qualification as blank
+
+    raw_paths = _raws(tmp_path)
+    packaged_path = tmp_path / "packaged" / "blank_library.json"
+    packaged_path.parent.mkdir()
+    _write_bound_library(packaged_path, 1000.0)
+    monkeypatch.setattr(
+        blank, "get_default_background_library_path", lambda: packaged_path
+    )
+    monkeypatch.setattr(blank, "_CACHED_DEFAULT_LIBRARY", None)
+    settings = replace(
+        _settings(),
+        neutral_loss_profile=None,
+        enable_blank_qualification=True,
+        blank_library_path=None,
+    )
+    first = _compile_paths(raw_paths, settings=settings)
+    _write_bound_library(packaged_path, 1.0)
+    monkeypatch.setattr(blank, "_CACHED_DEFAULT_LIBRARY", None)
+    second = _compile_paths(raw_paths, settings=settings)
+    assert all(
+        item.blank_library_sha256 is None for item in first.acquisition_inputs
+    )
+    assert first.run_spec_id == second.run_spec_id
 
 
 def test_bound_blank_snapshot_controls_each_sample_after_library_mutation(

@@ -241,10 +241,11 @@ def test_configured_composition_runs_discovery_to_owner_matrix(
         assert recovered_cell.integrations == (
             recovered.effective_assessment.candidate_peaks[0].content.integration,
         )
-        assert (
-            recovered_cell.predecessor_cells[0].group_context.group.group_hypothesis_id
-            == before.group_hypothesis_id
-        )
+        assert recovered_cell.predecessor_cells == ()
+        assert [
+            association.position.group_identity.group_hypothesis_id
+            for association in recovered_cell.position_associations
+        ] == [before.group_hypothesis_id]
         assert (
             next(
                 cell for cell in writer.matrix.cells if cell.sample_stem == "S4"
@@ -280,9 +281,7 @@ def _assert_unsupported_exclusion_closes_exact_coverage(completed):
             reason_code="discovery_candidate_not_search_eligible",
             composite_assessments=(),
         )
-    with pytest.raises(
-        ApplicationResultContractError, match="complete sample coverage"
-    ):
+    with pytest.raises(ApplicationResultContractError, match="input sample coverage"):
         UntargetBatchApplicationResultRequest(
             scope=result.scope,
             processing_request=result.processing_request,
