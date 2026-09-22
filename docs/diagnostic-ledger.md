@@ -66,6 +66,104 @@ dated productization control-plane path is compatibility lookup only.
 
 ## Known Diagnostic Conclusions
 
+### 2026-09-22 An Unread Output Sets The Shape Of Everything Upstream
+
+Supersedes the interpretation of the entry below it. Growing the object graph is
+the cost, not moving it, and the graph exists to feed one report nobody reads.
+
+- Pickle restore prices the wrong thing. Protocol 5 reduces a frozen/slots
+  dataclass to `object.__new__` plus state, so restoring a partition never runs
+  `__post_init__`: no contract validation, no digest recomputation. Re-running
+  each type's real constructor on its own field values costs **2.237 s** for one
+  partition against **1.325 s** to serialise it, covering 225,892 of its 281,250
+  dataclass instances (80.3%). The mint path is close to the validation path, so
+  that figure is not an underestimate: `_mint_evidence_artifact_ref` is
+  19.11 us/call against 16.41 us to reconstruct the same type,
+  `_build_artifact_content_identity` 9.98 us, `_typed_digest` 3.39 us, over a
+  1,371-byte median artifact payload. Reuse
+  `output/issue423-object-graph-census-20260922/scripts/construct_cost.py` and
+  `mint_cost.py`.
+- Cost scales with dataclass nodes, not with graph nodes. Of the partition's
+  3,767,316 nodes, 2,617,369 are floats that cost nothing to construct; only
+  281,250 are dataclasses, at roughly 8 us each. That is why dropping
+  `retained_prepared_signal`, which is 52.5% of the nodes, still recovered
+  almost nothing.
+- Construction is 58% evidence. Identity types take 0.699 s
+  (`EvidenceArtifactRef` 0.476, `ArtifactContentIdentity` 0.185,
+  `ArtifactSemanticContractRef` 0.038) and the `*Ref` wrappers another 0.606 s
+  (`PeakObservationRef` 0.214, `CidNlMethodAssessmentRef` 0.162,
+  `DdaCidNlPeakSupportRef` 0.161, `CidNlEvidenceRef` 0.053,
+  `CidNlChromatographicSupportRef` 0.016). Scientific validation is 0.239 s, in
+  `PeakObservationContent.__post_init__`, which walks every trace point.
+- Composition is 60% of the run and strictly serial. The `run-3-overlap` event
+  log gives four partitions composing at 10.053, 10.543, 4.939 and 4.013 s,
+  **29.548 s of a 49.208 s run**, each starting exactly when the previous one
+  released. No composition runs at all for the first 19.660 s. Perfect
+  parallelism would put 29.548 s on the wall as 10.543 s. Reuse
+  `output/issue423-evidence-duplication-20260922/run-3-overlap/events.json`.
+- The serial chain is not memory and not determinism. One partition's restored
+  graph holds **305,823,196 bytes** (2.7x its file); four resident would be
+  1.22 GB, and the recorded 10.73 GB process-tree figure belongs to the eight
+  workers, not to partitions. Determinism is already solved in the store:
+  `reserve_partition` claims the index and path before any bytes exist
+  (`xic_extractor/execution_engine/streamed_result_store.py:292`), so parallel
+  writers cannot reorder output. What actually forbids parallelism is the GIL:
+  composition is pure-Python construction of 281,250 objects, so threads cannot
+  help and `partition_pipeline_scheduler.py:420` runs one consumer thread that
+  also enforces index order.
+- The earlier offload verdict cannot be read as a verdict on parallelism. That
+  run sized its executor to one and reported a single worker pid, so its
+  22.46 s against 18.0 s was serial against serial. It bounds the transport and
+  rebuild cost, not the parallel case.
+- The report nobody reads is 920x the product. One 85-sample run writes
+  `cid_nl_explanation.sqlite` at **9,389,572,096 bytes** beside about 10.2 MB of
+  actual product: `alignment_matrix.tsv` 392,354, `alignment_matrix_identity.tsv`
+  923,163, `alignment_review.tsv` 8,904,641, and two files under 2 KB. Inside
+  it, `records` holds 1,755,668 rows for 3,748,162,033 bytes (39.9%), `links`
+  7,168,235 rows of four text columns for 1,654,902,908 bytes (17.6%),
+  `curve_payloads` 187,092 rows for 592,768,173 bytes (6.3%), `candidates`
+  30,859,685 bytes, and the remaining 35.8% is SQLite's own index and page
+  overhead. **Scientific signal is 6.3% of it.** Reuse
+  `output/issue422-bounded-worksets-20260921/alignment85-process12/`.
+- It is materialised eagerly for a reader that takes one row at a time.
+  `read_cid_nl_explanation(path, candidate_id=...)` documents itself as reading
+  "only records linked to one exact candidate ID"
+  (`xic_extractor/diagnostics/alignment_explanation.py:589`), and `xic_inspector`
+  is its only consumer. The run expands all 41,741 candidates in advance to
+  serve that.
+- The causal direction runs backwards, from the output to the pipeline.
+  `curve_payloads` needs `prepared.baseline`, `.smoothed` and
+  `.positive_signal`, which is the only alignment consumer of
+  `retained_prepared_signal`
+  (`xic_extractor/diagnostics/alignment_explanation_projection.py:175-178`); that
+  keeps 1,979,050 float objects alive through the whole pipeline. `links` needs
+  the full artifact chain; that is the 58% of construction above. Explanation
+  consumes children as they compose (`alignment/pipeline.py:498`), so nothing
+  can be released early. One unread report sets the resident shape of every
+  stage upstream of it.
+- Every mechanism a fix would need already exists and is unused for this.
+  `read_selected(index, field_name, positions)` already reads one record from a
+  partition file by position (`streamed_result_store.py:373`);
+  `reserve_partition`/`adopt_partition` already allow parallel, order-stable
+  writes; the partition files already contain the evidence the SQLite copies.
+  The gap is a decision not to materialise eagerly, not a missing capability.
+- Prior work on this file optimised the representation without questioning the
+  volume. `output/issue422-bounded-worksets-20260921/fusion-ab/explanation-cost/`
+  measured link factorization at 76.4% smaller with 1.44x slower queries, and a
+  `WITHOUT ROWID` variant at 50% smaller. Both answer "how do we shrink
+  9.39 GB", neither asks why it is produced.
+- Disposition. Treat the explanation materialisation strategy as the root, not
+  the evidence graph and not the scheduler. Cutting eager materialisation
+  removes the SQLite write, releases the retained signal and the artifact chain
+  from the resident graph, and shrinks the transport that makes parallel
+  composition expensive, in one change rather than four. Open questions before
+  any implementation: per-candidate latency when rebuilt on demand; partition
+  files are currently temporary (`mkdtemp(prefix=".partition_spool-")`) and
+  would need a retained lifetime; and how much of the 3.75 GB `records` table
+  has no counterpart in the partition files. Evidence is `diagnostic_only` and
+  grants no Matrix, writer, activation or scientific authority. No new 8RAW or
+  85RAW run was launched.
+
 ### 2026-09-22 The Partition Object Graph Is Real But Shrinking It Buys Almost No Time
 
 - Substrate: the retained partition
@@ -131,15 +229,21 @@ dated productization control-plane path is compatibility lookup only.
   tuples in `xic_extractor/extraction/untargeted_cid_nl_bounded_runtime.py:719`
   and `:739` carry the plan owners but not the artifact semantic contracts or
   the profile. That is the one clean boundary behind the 9.29% interning lever.
-- Disposition. Reducing the resident object graph is feasible and the boundaries
-  are exact, but on this evidence it is a memory and legibility change, not a
-  performance fix: it cannot explain the 49.5-70.5 second wall band already
-  recorded above. Do not open it as a wall-time lever. The remaining unexplained
-  cost is inside parent composition outside serialisation, which stays where the
-  2026-09-22 wall-noise entry left it: distributed across
-  `_build_production_composition_inputs` and the streamed store writes. Evidence
-  is `diagnostic_only` and grants no Matrix, writer, activation or scientific
-  authority. No new 8RAW or 85RAW run was launched.
+- Disposition. Reducing the resident object graph is feasible and the
+  boundaries are exact. The remaining cost is inside parent composition outside
+  serialisation, distributed across `_build_production_composition_inputs` and
+  the streamed store writes. Evidence is `diagnostic_only` and grants no Matrix,
+  writer, activation or scientific authority. No new 8RAW or 85RAW run was
+  launched.
+- **Corrected the same day** by the entry above it, which measured the
+  construction path this entry never touched. Two claims here were wrong and are
+  withdrawn. "It is a memory and legibility change, not a performance fix" was
+  too broad: cost does not scale with float nodes, but it does scale with
+  dataclass nodes, and constructing one partition's dataclasses costs 2.237 s
+  against 1.325 s to serialise it. "Do not open it as a wall-time lever" is
+  withdrawn outright. The measurements in this entry stand; only their
+  interpretation was wrong, because pickle restore bypasses `__post_init__`
+  entirely and therefore prices moving a graph rather than growing one.
 
 ### 2026-09-22 Composing A Partition In A Worker Costs More Than It Saves
 
