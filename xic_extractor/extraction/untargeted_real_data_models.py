@@ -166,6 +166,7 @@ class UntargetedCidNlRealDataRuntimeJob:
     _request_physical_records_by_subject: Mapping[
         str, tuple[DiscoveryPhysicalFactRecord, ...]
     ] = field(init=False, repr=False, compare=False)
+    _candidate_order: Mapping[str, int] = field(init=False, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         expected = (
@@ -192,6 +193,16 @@ class UntargetedCidNlRealDataRuntimeJob:
         _required_text(self.work_unit_key, field="work_unit_key")
         object.__setattr__(
             self, "_request_subjects", _validate_request_bound_inputs(self)
+        )
+        object.__setattr__(
+            self,
+            "_candidate_order",
+            MappingProxyType(
+                {
+                    candidate.candidate_id: index
+                    for index, candidate in enumerate(self.candidates)
+                }
+            ),
         )
         if self.acquisition_source_expectation is not None:
             if not isinstance(
@@ -535,9 +546,6 @@ def _project_completed_recovery(
     )
 
 
-
-
-
 @dataclass(frozen=True, slots=True)
 class UntargetedCidNlRuntimePartitionResult:
     sample_results: tuple[UntargetedCidNlRuntimeSampleResult, ...]
@@ -719,8 +727,6 @@ def _mint_sample_result_ref(
         ),
         artifact=artifact,
     )
-
-
 
 
 def _canonical_acquisition_bytes(acquisition: TraceAcquisitionBatch) -> bytes:

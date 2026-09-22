@@ -4,13 +4,11 @@ from __future__ import annotations
 
 from copy import copy
 from dataclasses import replace
-from itertools import combinations
 from pathlib import Path
 from typing import Any
 
 import pytest
 
-import xic_extractor.alignment.backfill.observation_repair as repair_owner
 import xic_extractor.alignment.cross_sample_peak_groups as cross_sample_owner
 import xic_extractor.peak_detection.integration as integration_runtime
 import xic_extractor.peak_detection.ms1_shape_identity as smoothing_runtime
@@ -26,11 +24,6 @@ from xic_extractor.alignment.backfill.evaluation_coverage import (
     build_owner_backfill_evaluation_coverage,
     build_owner_backfill_planning_epoch,
 )
-from xic_extractor.alignment.backfill.observation_repair import (
-    ObservationRepairReceipt,
-    mint_observation_repair_subject,
-)
-from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.cross_sample import (
     CrossSampleAssociationContractError,
     CrossSamplePredecessorAssociation,
@@ -40,32 +33,23 @@ from xic_extractor.alignment.cross_sample import (
 from xic_extractor.alignment.cross_sample_peak_groups import (
     CrossSampleGroupIdentity,
     CrossSampleGroupMemberSubject,
-    CrossSampleNeighborhoodBudget,
-    CrossSampleSuccessorApplication,
-    classify_cross_sample_initial_neighborhood_edge,
+    CrossSamplePartitionTransition,
     mint_cross_sample_group_identity,
 )
-from xic_extractor.alignment.cross_sample_reconciliation import (
-    CrossSampleFinalReceipt,
-    build_cross_sample_post_mt0_context,
-    reconcile_observation_repair,
+from xic_extractor.alignment.grouping_result import (
+    CrossSampleGroupingContractError,
+    CrossSampleGroupingResult,
 )
-from xic_extractor.alignment.mode_track.contracts import ModeTrackEvidenceProfile
 from xic_extractor.alignment.owner_backfill_request_plan import (
     OWNER_BACKFILL_TRACE_RESULT_SEMANTICS,
     OwnerBackfillRequestEquivalenceContext,
-    OwnerBackfillRequestItem,
     build_owner_backfill_request_plan,
-    mint_owner_backfill_logical_request_member,
-    mint_owner_backfill_request_identity,
 )
 from xic_extractor.alignment.pipeline_outputs import AlignmentRunOutputs
 from xic_extractor.processing_identity import (
     canonical_identity_basis_bytes,
     typed_identity_digest,
 )
-from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
-from xic_extractor.xic_models import XICRequest
 
 
 def test_unchanged_identity_closes_complete_cartesian_population(
@@ -94,8 +78,7 @@ def test_unchanged_identity_closes_complete_cartesian_population(
         item.position_id for item in coverage.epoch.positions
     }
     assert all(
-        item.final_successor is group
-        and item.resolution == "unchanged_identity"
+        item.final_successor is group and item.resolution == "unchanged_identity"
         for item in first.position_associations
     )
     assert first.membership_authority == "none"
@@ -182,17 +165,16 @@ def test_merge_retains_each_predecessor_and_position(
         final_receipt=receipt,
     )
 
-    assert tuple(
-        item.predecessor for item in handoff.predecessor_associations
-    ) == coverage.epoch.group_identities
+    assert (
+        tuple(item.predecessor for item in handoff.predecessor_associations)
+        == coverage.epoch.group_identities
+    )
     assert all(
-        item.successors == (merged,)
-        for item in handoff.predecessor_associations
+        item.successors == (merged,) for item in handoff.predecessor_associations
     )
     assert len(handoff.position_associations) == 4
     assert all(
-        item.final_successor == merged
-        and item.resolution == "unique_successor"
+        item.final_successor == merged and item.resolution == "unique_successor"
         for item in handoff.position_associations
     )
 
@@ -309,26 +291,18 @@ def test_crossed_request_and_zero_successor_reject(
         predecessors=(group,),
         successors=(group,),
     )
-    forged = copy(valid_receipt)
-    object.__setattr__(
-        forged,
-        "post_mt0_application",
-        CrossSampleSuccessorApplication(
-            status="unassessable",
-            predecessors=(group,),
-            successors=(),
-            lineage=(),
-            reason="eligible_neighborhood_exceeds_budget",
-        ),
+    unavailable = CrossSamplePartitionTransition(
+        status="unassessable",
+        predecessors=(group,),
+        successors=(),
+        lineage=(),
+        reason="eligible_neighborhood_exceeds_budget",
     )
     with pytest.raises(
-        CrossSampleAssociationContractError,
-        match="no exact successor population",
+        CrossSampleGroupingContractError,
+        match="partition crossed",
     ):
-        build_cross_sample_association_lineage_handoff(
-            coverage=coverage,
-            final_receipt=forged,
-        )
+        replace(valid_receipt, partition_transition=unavailable)
 
 
 @pytest.mark.parametrize("mutation", ["missing", "duplicate", "extra", "reordered"])
@@ -361,8 +335,7 @@ def test_handoff_validator_rejects_edited_population(
     with pytest.raises(
         CrossSampleAssociationContractError,
         match=(
-            "position associations are missing, duplicate, extra, partial, "
-            "or reordered"
+            "position associations are missing, duplicate, extra, partial, or reordered"
         ),
     ):
         validate_cross_sample_association_lineage_handoff(forged)
@@ -445,12 +418,14 @@ def test_owner_order_changes_identity_while_each_output_remains_canonical(
 
     assert forward_coverage.coverage_id != reverse_coverage.coverage_id
     assert forward.handoff_id != reverse.handoff_id
-    assert tuple(
-        item.predecessor for item in forward.predecessor_associations
-    ) == (left, right)
-    assert tuple(
-        item.predecessor for item in reverse.predecessor_associations
-    ) == (right, left)
+    assert tuple(item.predecessor for item in forward.predecessor_associations) == (
+        left,
+        right,
+    )
+    assert tuple(item.predecessor for item in reverse.predecessor_associations) == (
+        right,
+        left,
+    )
     validate_cross_sample_association_lineage_handoff(forward)
     validate_cross_sample_association_lineage_handoff(reverse)
 
@@ -459,9 +434,7 @@ class _Fixture:
     def __init__(self, base: Any) -> None:
         self.context = base.context
         self.acquisitions = base.acquisitions
-        self.samples = {
-            sample.lookup_token: sample for sample in self.context.samples
-        }
+        self.samples = {sample.lookup_token: sample for sample in self.context.samples}
         self.members: dict[str, CrossSampleGroupMemberSubject] = {}
 
 
@@ -486,9 +459,7 @@ def _fixture(tmp_path: Path, *, sample_stems: tuple[str, ...]) -> _Fixture:
             }
         )
         fixture.members[sample_stem] = CrossSampleGroupMemberSubject(
-            member_subject_id=typed_identity_digest(
-                "xic.group-member-subject:", basis
-            ),
+            member_subject_id=typed_identity_digest("xic.group-member-subject:", basis),
             processing_request_id=request_id,
             canonical_sample_identity_id=sample.identity.sample_identity_id,
             subject_kind=member.subject_kind,
@@ -575,17 +546,17 @@ def _final_receipt(
     *,
     predecessors: tuple[CrossSampleGroupIdentity, ...],
     successors: tuple[CrossSampleGroupIdentity, ...],
-) -> CrossSampleFinalReceipt:
+) -> CrossSampleGroupingResult:
     canonical_predecessors = tuple(
         sorted(predecessors, key=lambda group: group.group_hypothesis_id)
     )
     canonical_successors = tuple(
         sorted(successors, key=lambda group: group.group_hypothesis_id)
     )
-    unchanged = {
-        group.group_hypothesis_id for group in canonical_predecessors
-    } == {group.group_hypothesis_id for group in canonical_successors}
-    application = CrossSampleSuccessorApplication(
+    unchanged = {group.group_hypothesis_id for group in canonical_predecessors} == {
+        group.group_hypothesis_id for group in canonical_successors
+    }
+    application = CrossSamplePartitionTransition(
         status="assessable",
         predecessors=canonical_predecessors,
         successors=canonical_successors,
@@ -601,120 +572,7 @@ def _final_receipt(
             "unchanged_membership_no_lineage" if unchanged else "membership_changed"
         ),
     )
-    sample_by_identity = {
-        sample.identity.sample_identity_id: sample
-        for sample in fixture.context.samples
-    }
-    owners = tuple(
-        sorted(
-            (
-                replace(
-                    _owner(
-                        sample_by_identity[
-                            member.canonical_sample_identity_id
-                        ].lookup_token,
-                        member.member_subject_id[-8:],
-                    ),
-                    cross_sample_member_subject=member,
-                )
-                for group in canonical_successors
-                for member in group.member_subjects
-            ),
-            key=lambda owner: (
-                owner.cross_sample_member_subject.member_subject_id
-                if owner.cross_sample_member_subject is not None
-                else ""
-            ),
-        )
-    )
-    edges = tuple(
-        sorted(
-            (
-                classify_cross_sample_initial_neighborhood_edge(
-                    left_owner=left,
-                    right_owner=right,
-                    context="hard_gate",
-                    config=AlignmentConfig(),
-                )
-                for left, right in combinations(owners, 2)
-            ),
-            key=lambda edge: (
-                edge.left_member_subject_id,
-                edge.right_member_subject_id,
-            ),
-        )
-    )
-    context = build_cross_sample_post_mt0_context(
-        processing_request_id=canonical_successors[0].processing_request_id,
+    return CrossSampleGroupingResult(
         processing_owners=fixture.context.processing_owners,
-        population=canonical_successors,
-        application=application,
-        owners=owners,
-        classified_edges=edges,
-        anchors=(),
-        injection_order={
-            sample_stem: index
-            for index, sample_stem in enumerate(
-                sorted({owner.sample_stem for owner in owners}),
-                start=1,
-            )
-        },
-        evidence_profile=ModeTrackEvidenceProfile(
-            "anchor-trajectory",
-            "fixed-band",
-            0.1,
-            10,
-            10,
-        ),
-        budget=CrossSampleNeighborhoodBudget(86, 3655),
+        partition_transition=application,
     )
-    repair_group = canonical_successors[0]
-    repair_member = repair_group.member_subjects[0]
-    sample_identity: ResolvedCanonicalSampleIdentity = sample_by_identity[
-        repair_member.canonical_sample_identity_id
-    ]
-    request = XICRequest(mz=500.0, rt_min=8.0, rt_max=9.0, ppm_tol=10.0)
-    request_identity = mint_owner_backfill_request_identity(
-        sample_stem=sample_identity.lookup_token,
-        acquisition_source=fixture.acquisitions[sample_identity.lookup_token],
-        request=request,
-        backend="raw",
-        window_strategy="exact",
-        superwindow_span_factor=2,
-        validation_mode="primary",
-    )
-    logical_request = mint_owner_backfill_logical_request_member(
-        logical_index=0,
-        group_hypothesis_id=repair_group.group_hypothesis_id,
-        item=OwnerBackfillRequestItem(
-            _runtime_feature(repair_group),
-            sample_identity.lookup_token,
-            request,
-            8.5,
-        ),
-    )
-    subject = mint_observation_repair_subject(
-        request_identity=request_identity,
-        logical_request=logical_request,
-        predecessor_group=repair_group,
-        member_subject=repair_member,
-        sample_identity=sample_identity,
-        successor_application=application,
-    )
-    receipt = ObservationRepairReceipt(
-        receipt_id=repair_owner._receipt_id(
-            subject_id=subject.subject_id,
-            repair_epoch=1,
-            outcome="no_repair",
-            sample_stem=sample_identity.lookup_token,
-            evidence=None,
-        ),
-        subject=subject,
-        subject_id=subject.subject_id,
-        repair_epoch=1,
-        outcome="no_repair",
-        sample_stem=sample_identity.lookup_token,
-        evidence=None,
-        _mint_token=repair_owner._RECEIPT_MINT_TOKEN,
-    )
-    return reconcile_observation_repair(context=context, repair_receipt=receipt)

@@ -150,6 +150,7 @@ def test_bounded_partition_keeps_alignment_workset_atomic(
     )
     from xic_extractor.peak_detection.cid_nl_method_subject import (
         mint_untargeted_cid_nl_method_subject,
+        mint_untargeted_cid_nl_method_subject_batch,
     )
 
     plan, _reference = _plan(tmp_path, monkeypatch)
@@ -166,7 +167,18 @@ def test_bounded_partition_keeps_alignment_workset_atomic(
             key=lambda subject: subject.method_subject_id,
         )
     )
-    packing_plan = replace(plan, runtime_subjects=subjects)
+    memberships = tuple(
+        (f"candidate-{index}", subject.method_subject_id)
+        for index, subject in enumerate(subjects)
+    )
+    packing_plan = replace(
+        plan,
+        subject_batch=mint_untargeted_cid_nl_method_subject_batch(
+            subjects=subjects,
+            candidate_memberships=memberships,
+        ),
+        runtime_subjects=subjects,
+    )
     sample_count = len(plan.context.samples)
 
     adapter = CidNlPartitionPipelineAdapter(
@@ -239,9 +251,72 @@ def test_bounded_partition_real_entry_mints_interleaved_worksets_canonically(
         ),
         runtime_subjects=subjects,
     )
+    prepare_worksets = (
+        bounded_owner.prepare_untargeted_cid_nl_alignment_subject_worksets
+    )
+    prepared = prepare_worksets(packing_plan)
+    assert materialize_untargeted_cid_nl_partition(
+        packing_plan,
+        packing_plan.subject_batch,
+        prepared_worksets=prepared,
+    ).jobs == materialize_untargeted_cid_nl_partition(
+        packing_plan, packing_plan.subject_batch
+    ).jobs
+    split = worksets[0][:1]
+    split_ids = {subject.method_subject_id for subject in split}
+    split_batch = mint_untargeted_cid_nl_method_subject_batch(
+        subjects=split,
+        candidate_memberships=tuple(
+            membership for membership in memberships if membership[1] in split_ids
+        ),
+    )
+    with pytest.raises(ValueError, match="cannot split one alignment subject workset"):
+        materialize_untargeted_cid_nl_partition(
+            packing_plan,
+            split_batch,
+            prepared_worksets=prepared,
+        )
+    foreign = mint_untargeted_cid_nl_method_subject(
+        precursor_mz=900.0,
+        precursor_tolerance_ppm=20.0,
+        neutral_loss_da=116.0474,
+    )
+    foreign_batch = mint_untargeted_cid_nl_method_subject_batch(
+        subjects=(foreign,),
+        candidate_memberships=(("foreign-candidate", foreign.method_subject_id),),
+    )
+    with pytest.raises(ValueError, match="foreign alignment subject"):
+        materialize_untargeted_cid_nl_partition(
+            packing_plan,
+            foreign_batch,
+            prepared_worksets=prepared,
+        )
+    crossed_memberships = tuple(
+        (candidate_id, subjects[(index + 1) % len(subjects)].method_subject_id)
+        for index, (candidate_id, _subject_id) in enumerate(memberships)
+    )
+    crossed_batch = mint_untargeted_cid_nl_method_subject_batch(
+        subjects=subjects,
+        candidate_memberships=crossed_memberships,
+    )
+    with pytest.raises(ValueError, match="crossed prepared candidate memberships"):
+        materialize_untargeted_cid_nl_partition(
+            packing_plan,
+            crossed_batch,
+            prepared_worksets=prepared,
+        )
     captured_batches = []
+    prepare_calls = []
 
-    def capture_materialized_partition(_plan, subject_batch):
+    def capture_prepare(_plan, *, known_istd_reference=None):
+        prepare_calls.append(_plan.runtime_subjects)
+        return prepare_worksets(
+            _plan,
+            known_istd_reference=known_istd_reference,
+        )
+
+    def capture_materialized_partition(_plan, subject_batch, *, prepared_worksets):
+        assert prepared_worksets.plan is _plan
         captured_batches.append(subject_batch)
         return SimpleNamespace(jobs=())
 
@@ -262,6 +337,11 @@ def test_bounded_partition_real_entry_mints_interleaved_worksets_canonically(
     )
     monkeypatch.setattr(
         bounded_owner,
+        "prepare_untargeted_cid_nl_alignment_subject_worksets",
+        capture_prepare,
+    )
+    monkeypatch.setattr(
+        bounded_owner,
         "execute_untargeted_cid_nl_runtime_partition",
         close_without_raw,
     )
@@ -269,17 +349,24 @@ def test_bounded_partition_real_entry_mints_interleaved_worksets_canonically(
     adapter = bounded_owner.CidNlPartitionPipelineAdapter(
         packing_plan,
         alignment_config=AlignmentConfig(),
-        max_partition_jobs=len(plan.context.samples) * len(subjects),
+        max_partition_jobs=len(plan.context.samples) * 2,
     )
 
-    (partition,) = adapter.partitions
-    result = adapter.execute_acquisition(partition)
+    assert len(adapter.partitions) == 2
+    results = tuple(
+        adapter.execute_acquisition(partition) for partition in adapter.partitions
+    )
 
-    assert result.succeeded
-    assert tuple(
-        subject.method_subject_id for subject in partition.payload
-    ) == tuple(sorted(subject.method_subject_id for subject in subjects))
-    assert captured_batches[0].subjects == partition.payload
+    assert all(result.succeeded for result in results)
+    assert prepare_calls == [subjects]
+    assert tuple(batch.subjects for batch in captured_batches) == tuple(
+        partition.payload for partition in adapter.partitions
+    )
+    assert {
+        subject.method_subject_id
+        for batch in captured_batches
+        for subject in batch.subjects
+    } == {subject.method_subject_id for subject in subjects}
 
 
 @pytest.mark.parametrize("scenario", ["mixed_eligibility", "ineligible"])
@@ -423,9 +510,16 @@ def test_bounded_runtime_matches_eager_after_disk_owner_round_trip(
     from xic_extractor.diagnostics.timing import TimingRecorder
     from xic_extractor.extraction.untargeted_cid_nl_bounded_runtime import (
         execute_bounded_untargeted_cid_nl,
+        prepare_untargeted_cid_nl_alignment_subject_worksets,
     )
 
     plan, reference = _plan(tmp_path, monkeypatch, scenario=scenario)
+    prepared_worksets = prepare_untargeted_cid_nl_alignment_subject_worksets(
+        plan,
+        known_istd_reference=reference,
+    )
+    if scenario == "istd":
+        assert tuple(len(workset) for workset in prepared_worksets.worksets) == (3,)
     import xic_extractor.extraction.untargeted_cid_nl_real_data_runtime as runtime_owner
 
     coordinator_thread = get_ident()
@@ -466,6 +560,11 @@ def test_bounded_runtime_matches_eager_after_disk_owner_round_trip(
         progress_events.append(event)
 
     with recorder.stage("alignment.untargeted_cid_nl_runtime"):
+        partition_subject_capacity = (
+            len(prepared_worksets.worksets[0])
+            if scenario == "istd"
+            else subjects_per_partition
+        )
         bounded = execute_bounded_untargeted_cid_nl(
             plan,
             output_dir=tmp_path / "bounded-output",
@@ -474,16 +573,30 @@ def test_bounded_runtime_matches_eager_after_disk_owner_round_trip(
             recovery_marker=marker,
             known_istd_reference=reference,
             progress_callback=report_progress,
-            max_partition_jobs=subjects_per_partition * len(plan.context.samples),
+            max_partition_jobs=(partition_subject_capacity * len(plan.context.samples)),
             raw_workers=raw_workers,
         )
     assert type(bounded) is CompletedUntargetBatchWorkflowResult
     assert bool(warm_threads) is (raw_workers > 1)
     assert all(thread == coordinator_thread for thread in warm_threads)
     assert type(bounded.application_result.children) is ImmutableSequence
-    assert project_completed_untarget_batch_writer_inputs(bounded).matrix == (
-        project_completed_untarget_batch_writer_inputs(eager).matrix
-    )
+    bounded_writer = project_completed_untarget_batch_writer_inputs(bounded)
+    eager_writer = project_completed_untarget_batch_writer_inputs(eager)
+    assert bounded_writer.matrix == eager_writer.matrix
+    if scenario == "istd":
+        expected_areas = {
+            (cell.cluster_id, cell.sample_stem): cell.area
+            for cell in eager_writer.matrix.cells
+            if cell.area is not None
+        }
+        actual_areas = {
+            (cell.cluster_id, cell.sample_stem): cell.area
+            for cell in bounded_writer.matrix.cells
+            if cell.area is not None
+        }
+        assert expected_areas
+        assert actual_areas == pytest.approx(expected_areas)
+        assert all(area > 0 for area in actual_areas.values())
     actual = bounded.application_result
     expected = eager.application_result
     assert actual.candidate_ids == expected.candidate_ids
@@ -529,8 +642,10 @@ def test_bounded_runtime_matches_eager_after_disk_owner_round_trip(
         }
     ]
     partition_count = (
-        len(plan.subject_batch.subjects) + subjects_per_partition - 1
-    ) // subjects_per_partition
+        len(plan.subject_batch.subjects) + partition_subject_capacity - 1
+    ) // partition_subject_capacity
+    if scenario == "istd" and subjects_per_partition == 1:
+        assert partition_count < len(plan.subject_batch.subjects)
     assert partition_stages == [
         event
         for index in range(partition_count)
@@ -638,6 +753,165 @@ def test_bounded_runtime_failure_never_publishes_completed_batch(
     )
 
 
+def test_partition_acquisitions_overlap_with_shared_worker_budget_and_ordered_output(
+    tmp_path: Path, monkeypatch
+) -> None:
+    import xic_extractor.extraction.untargeted_cid_nl_bounded_runtime as owner
+    import xic_extractor.extraction.untargeted_cid_nl_real_data_runtime as runtime_owner
+
+    plan, _ = _plan(tmp_path, monkeypatch)
+    monkeypatch.setattr(runtime_owner, "_ensure_assemblies_loaded", lambda *_args: None)
+    config = AlignmentConfig(anchor_min_seed_events=1)
+    serial = owner.execute_bounded_untargeted_cid_nl(
+        plan,
+        output_dir=tmp_path / "serial-partitions",
+        alignment_config=config,
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+        recovery_marker=OwnerPathRuntimeMarker(
+            tmp_path / "serial-partitions.json", "serial-partitions"
+        ),
+        max_partition_jobs=len(plan.context.samples),
+        raw_workers=4,
+        pipeline_overlap=False,
+    )
+
+    original_leaf = owner.execute_untargeted_cid_nl_runtime_partition
+    original_append = owner.PartitionResultStore.append_children
+    first_two = {"partition-00000", "partition-00001"}
+    barrier = Barrier(2)
+    second_completed = Event()
+    lock = Lock()
+    active_budgets: dict[str, int] = {}
+    observed_budgets: dict[str, int] = {}
+    peak_budget = 0
+    completion_order = []
+    append_order = []
+    composition_active = 0
+
+    def leaf(*args, **kwargs):
+        nonlocal peak_budget
+        partition_key = kwargs["partition_key"]
+        budget = kwargs["raw_workers"]
+        assert kwargs["pool"].max_workers == budget
+        with lock:
+            active_budgets[partition_key] = budget
+            observed_budgets[partition_key] = budget
+            peak_budget = max(peak_budget, sum(active_budgets.values()))
+        try:
+            if partition_key in first_two:
+                barrier.wait(timeout=10)
+            result = original_leaf(*args, **kwargs)
+            if partition_key == "partition-00001":
+                second_completed.set()
+            elif partition_key == "partition-00000":
+                assert second_completed.wait(timeout=10)
+            with lock:
+                completion_order.append(partition_key)
+            return result
+        finally:
+            with lock:
+                active_budgets.pop(partition_key)
+
+    def append(store, partition_key, *args, **kwargs):
+        nonlocal composition_active
+        with lock:
+            assert composition_active == 0
+            composition_active = 1
+        try:
+            sleep(0.01)
+            result = original_append(store, partition_key, *args, **kwargs)
+            append_order.append(partition_key)
+            return result
+        finally:
+            with lock:
+                composition_active = 0
+
+    monkeypatch.setattr(owner, "execute_untargeted_cid_nl_runtime_partition", leaf)
+    monkeypatch.setattr(owner.PartitionResultStore, "append_children", append)
+    overlapped = owner.execute_bounded_untargeted_cid_nl(
+        plan,
+        output_dir=tmp_path / "overlapped-partitions",
+        alignment_config=config,
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+        recovery_marker=OwnerPathRuntimeMarker(
+            tmp_path / "overlapped-partitions.json", "overlapped-partitions"
+        ),
+        max_partition_jobs=len(plan.context.samples),
+        raw_workers=4,
+        pipeline_overlap=True,
+    )
+
+    assert completion_order[:2] == ["partition-00001", "partition-00000"]
+    assert append_order == [
+        f"partition-{index:05d}" for index in range(len(observed_budgets))
+    ]
+    assert set(observed_budgets.values()) == {2}
+    assert peak_budget == 4
+    assert composition_active == 0 and not active_budgets
+    assert project_completed_untarget_batch_writer_inputs(overlapped) == (
+        project_completed_untarget_batch_writer_inputs(serial)
+    )
+    assert overlapped.application_result.candidate_ids == (
+        serial.application_result.candidate_ids
+    )
+    assert overlapped.application_result.physical_observation_ids == (
+        serial.application_result.physical_observation_ids
+    )
+
+
+def test_overlapped_partition_acquisition_failure_propagates(
+    tmp_path: Path, monkeypatch
+) -> None:
+    import xic_extractor.extraction.untargeted_cid_nl_bounded_runtime as owner
+    import xic_extractor.extraction.untargeted_cid_nl_real_data_runtime as runtime_owner
+
+    plan, _ = _plan(tmp_path, monkeypatch)
+    monkeypatch.setattr(runtime_owner, "_ensure_assemblies_loaded", lambda *_args: None)
+    original_leaf = owner.execute_untargeted_cid_nl_runtime_partition
+    barrier = Barrier(2)
+    failure_released = Event()
+    injected_error = OSError("injected concurrent acquisition failure")
+    observed_budgets = {}
+
+    def leaf(*args, **kwargs):
+        partition_key = kwargs["partition_key"]
+        observed_budgets[partition_key] = kwargs["raw_workers"]
+        if partition_key in {"partition-00000", "partition-00001"}:
+            barrier.wait(timeout=10)
+        result = original_leaf(*args, **kwargs)
+        if partition_key == "partition-00001":
+            failure_released.set()
+            raise injected_error
+        if partition_key == "partition-00000":
+            assert failure_released.wait(timeout=10)
+        return result
+
+    monkeypatch.setattr(owner, "execute_untargeted_cid_nl_runtime_partition", leaf)
+    marker = OwnerPathRuntimeMarker(
+        tmp_path / "overlapped-failure.json", "overlapped-failure"
+    )
+    with pytest.raises(
+        RuntimeError, match="injected concurrent acquisition failure"
+    ) as error:
+        owner.execute_bounded_untargeted_cid_nl(
+            plan,
+            output_dir=tmp_path / "overlapped-failure",
+            alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+            telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+            recovery_marker=marker,
+            max_partition_jobs=len(plan.context.samples),
+            raw_workers=4,
+            pipeline_overlap=True,
+        )
+    assert error.value.__cause__ is injected_error
+    assert observed_budgets == {
+        "partition-00000": 2,
+        "partition-00001": 2,
+    }
+    assert marker.read().terminal_outcome is AttemptTerminalOutcome.FAILED
+    assert list((tmp_path / "overlapped-failure").glob(".cid_nl_partitions-*")) == []
+
+
 @pytest.mark.parametrize("raw_workers", [1, 2, 4])
 @pytest.mark.parametrize("managed_call", [False, True])
 def test_sample_parallelism_keeps_partition_and_acquisition_counts_fixed(
@@ -682,10 +956,10 @@ def test_sample_parallelism_keeps_partition_and_acquisition_counts_fixed(
     original_prepare = runtime_owner._prepare_owner_authorized_recoveries
     original_execute = owner.execute_runtime_attempt
 
-    def materialize(*args):
+    def materialize(*args, **kwargs):
         nonlocal live_jobs
         assert get_ident() == coordinator and live_jobs == 0
-        batch = original_materialize(*args)
+        batch = original_materialize(*args, **kwargs)
         assert {job.sample for job in batch.jobs} == set(plan.context.samples)
         assert all(
             job.processing_owners is plan.context.processing_owners

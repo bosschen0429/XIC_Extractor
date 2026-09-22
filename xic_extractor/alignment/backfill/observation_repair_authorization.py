@@ -72,7 +72,7 @@ class ObservationRepairCandidate:
 
     A candidate is minted only after Backfill has validated the complete
     existing-group by canonical-sample population.  It deliberately carries
-    neither a group member subject nor a CrossSample successor application.
+    neither a group member subject nor a CrossSample partition transition.
     """
 
     candidate_id: str
@@ -108,7 +108,7 @@ class ObservationRepairCandidate:
 
     @property
     def successor_application(self) -> None:
-        """Candidate does not mint a CrossSample successor application."""
+        """Candidate does not mint a CrossSample partition transition."""
 
         return None
 

@@ -292,7 +292,7 @@ def _untarget_projection_inputs(
     alignment = finalizer_owner.finalize_scientific_alignment(
         scope=scope,
         captures=captures,
-        final_cross_sample_receipt=receipt,
+        grouping_result=receipt,
         cell_observation_handoff=handoff,
         predecessor_cell_observations=predecessor_cells,
     )
@@ -369,7 +369,7 @@ def test_entry_is_deterministic_for_reversed_capture_order(
     reversed_alignment = finalizer_owner.finalize_scientific_alignment(
         scope=forward.scope,
         captures=tuple(reversed(_captures)),
-        final_cross_sample_receipt=forward.final_cross_sample_receipt,
+        grouping_result=forward.grouping_result,
         cell_observation_handoff=forward.cell_observation_handoff,
         predecessor_cell_observations=_predecessor_cells(forward),
     )
@@ -478,7 +478,7 @@ def test_entry_rejects_receipt_crossed_processing_request(
         scientific_inputs=crossed_inputs,
     )
     assert (
-        alignment.final_cross_sample_receipt.processing_request_id
+        alignment.grouping_result.processing_request_id
         != crossed_request.processing_request_id
     )
     object.__setattr__(alignment.scope, "request", crossed_request)
@@ -538,7 +538,7 @@ def test_lineage_owner_rejects_crossed_basis(
         monkeypatch,
         group_mode="merged",
     )
-    edge = alignment.final_cross_sample_receipt.post_mt0_application.lineage[0]
+    edge = alignment.grouping_result.partition_transition.lineage[0]
     with pytest.raises(ValueError):
         replace(edge, basis_bytes=b"forged-lineage-basis")
 

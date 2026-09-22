@@ -7,8 +7,8 @@ from types import SimpleNamespace
 import pytest
 
 import xic_extractor.alignment.workflow as workflow_owner
-from xic_extractor.alignment.cross_sample_reconciliation import (
-    CrossSampleFinalReceipt,
+from xic_extractor.alignment.grouping_result import (
+    CrossSampleGroupingResult,
 )
 from xic_extractor.alignment.projection.target.post_cell import (
     TargetPostCellProjection,
@@ -87,14 +87,14 @@ def test_workflow_forwards_exact_owner_objects_once(
         object.__setattr__(adapter, "closed_cell_coverage", closed_coverage)
     capture = object()
     run = SimpleNamespace(fit_once_source=object())
-    context = object()
+    context = _exact_uninitialized(CrossSampleGroupingResult)
     if variant != "target":
         object.__setattr__(
             adapter,
-            "completed_cross_sample",
+            "completed_grouping",
             None,
         )
-    final_receipt = _exact_uninitialized(CrossSampleFinalReceipt)
+    final_receipt = context
     scientific = _exact_uninitialized(FinalizedScientificAlignment)
     pre_cell = object()
     decisions = object()
@@ -146,11 +146,6 @@ def test_workflow_forwards_exact_owner_objects_once(
         lambda **kwargs: calls.append(("cross_mt0", kwargs)) or context,
     )
 
-    monkeypatch.setattr(
-        workflow_owner,
-        "close_cross_sample_without_observation_repair",
-        lambda supplied: calls.append(("cross_final", supplied)) or final_receipt,
-    )
     monkeypatch.setattr(
         workflow_owner,
         "build_cross_sample_association_lineage_handoff",
@@ -221,14 +216,12 @@ def test_workflow_forwards_exact_owner_objects_once(
         "capture",
     ]
     expected_calls.extend(("mt0", "cross_mt0"))
-    expected_calls.append("cross_final")
     if variant != "target":
         expected_calls.append("association")
     expected_calls.append("scientific")
     assert [item[0] for item in calls] == expected_calls
-    assert next(item[1] for item in calls if item[0] == "cross_final") is context
     scientific_kwargs = next(item[1] for item in calls if item[0] == "scientific")
-    assert scientific_kwargs["final_cross_sample_receipt"] is final_receipt
+    assert scientific_kwargs["grouping_result"] is final_receipt
     assert scientific_kwargs["predecessor_cell_observations"] == ()
     if variant == "target":
         assert scientific_kwargs["cell_observation_handoff"] is None

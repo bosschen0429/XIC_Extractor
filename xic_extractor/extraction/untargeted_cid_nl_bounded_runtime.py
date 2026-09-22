@@ -48,11 +48,13 @@ from xic_extractor.execution_runtime_owner import (
 )
 from xic_extractor.execution_settings import DEFAULT_ALIGNMENT_WORKERS
 from xic_extractor.extraction.untargeted_cid_nl_production_batch import (
+    PreparedCidNlAlignmentSubjectWorksets,
     UntargetedCidNlPersistedPartition,
     UntargetedCidNlProductionBatch,
     UntargetedCidNlProductionPlan,
     compose_and_persist_untargeted_cid_nl_partition,
     materialize_untargeted_cid_nl_partition,
+    prepare_untargeted_cid_nl_alignment_subject_worksets,
 )
 from xic_extractor.extraction.untargeted_cid_nl_real_data_runtime import (
     UntargetedCidNlRuntimePartitionResult,
@@ -62,8 +64,6 @@ from xic_extractor.immutable_sequence import ImmutableSequence
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     CID_NL_PROVIDER_ID,
     CidNlMethodSubject,
-    UntargetedCidNlMethodSubjectBatch,
-    cid_nl_alignment_subject_worksets,
 )
 from xic_extractor.peak_detection.search_scope import (
     SEARCH_SCOPE_SCHEMA_VERSION,
@@ -109,7 +109,10 @@ class CidNlPartitionPipelineAdapter:
         max_partition_jobs: int = 100_000,
         raw_workers: int = DEFAULT_ALIGNMENT_WORKERS,
         raw_worker_backend: str = "thread",
+        acquisition_workers: int = 1,
     ) -> None:
+        if type(acquisition_workers) is not int or acquisition_workers not in (1, 2):
+            raise ValueError("acquisition_workers must be 1 or 2")
         self._plan = plan
         self._alignment_config = alignment_config
         self._known_istd_reference = (
@@ -132,10 +135,16 @@ class CidNlPartitionPipelineAdapter:
 
         context = plan.context
         self._owners = context.processing_owners
+        self._prepared_worksets: PreparedCidNlAlignmentSubjectWorksets = (
+            prepare_untargeted_cid_nl_alignment_subject_worksets(
+                plan,
+                known_istd_reference=self._known_istd_reference,
+            )
+        )
         subjects_per_partition = max(1, max_partition_jobs // len(context.samples))
         subject_partitions_list: list[tuple[CidNlMethodSubject, ...]] = []
         current_subjects: list[CidNlMethodSubject] = []
-        for workset in cid_nl_alignment_subject_worksets(plan.runtime_subjects):
+        for workset in self._prepared_worksets.worksets:
             if len(workset) > subjects_per_partition:
                 raise ValueError(
                     "max_partition_jobs cannot contain one alignment subject workset"
@@ -163,6 +172,14 @@ class CidNlPartitionPipelineAdapter:
                 )
             )
         subject_partitions = tuple(subject_partitions_list)
+        self._acquisition_workers = (
+            2
+            if acquisition_workers == 2
+            and len(subject_partitions) > 1
+            and raw_workers >= 2
+            else 1
+        )
+        self._partition_raw_workers = raw_workers // self._acquisition_workers
         self._partitions = tuple(
             WorkPartition(
                 index=index,
@@ -208,11 +225,6 @@ class CidNlPartitionPipelineAdapter:
         self._owner_completeness_attestation = (
             f"{self._owners.request.processing_request_id}:cid-nl-partitioned"
         )
-        self._memberships_by_subject: dict[str, list[tuple[str, str]]] = {}
-        for membership in plan.subject_batch.candidate_memberships:
-            self._memberships_by_subject.setdefault(membership[1], []).append(
-                membership
-            )
 
     @property
     def partitions(
@@ -236,6 +248,14 @@ class CidNlPartitionPipelineAdapter:
     def owner_completeness_attestation(self) -> str:
         return self._owner_completeness_attestation
 
+    @property
+    def acquisition_workers(self) -> int:
+        return self._acquisition_workers
+
+    @property
+    def partition_raw_workers(self) -> int:
+        return self._partition_raw_workers
+
     def get_shared_objects(self) -> tuple[object, ...]:
         return _shared_objects(self._plan)
 
@@ -252,21 +272,14 @@ class CidNlPartitionPipelineAdapter:
         ]
     ]:
         subjects = partition.payload
-        subject_batch = UntargetedCidNlMethodSubjectBatch(
-            subjects=subjects,
-            candidate_memberships=tuple(
-                sorted(
-                    membership
-                    for subject in subjects
-                    for membership in self._memberships_by_subject[
-                        subject.method_subject_id
-                    ]
-                )
-            ),
+        subject_batch = self._prepared_worksets.subject_batch(subjects)
+        batch = materialize_untargeted_cid_nl_partition(
+            self._plan,
+            subject_batch,
+            prepared_worksets=self._prepared_worksets,
         )
-        batch = materialize_untargeted_cid_nl_partition(self._plan, subject_batch)
         with WorkerAdmissionPool(
-            max_workers=self._raw_workers,
+            max_workers=self._partition_raw_workers,
             backend=self._raw_worker_backend,
             thread_name_prefix="cid-nl-sample",
         ) as pool:
@@ -276,7 +289,7 @@ class CidNlPartitionPipelineAdapter:
                 alignment_config=self._alignment_config,
                 progress_callback=progress_callback,
                 should_cancel=should_cancel,
-                raw_workers=self._raw_workers,
+                raw_workers=self._partition_raw_workers,
                 raw_worker_backend=self._raw_worker_backend,
                 pool=pool,
             )
@@ -521,6 +534,7 @@ def execute_bounded_untargeted_cid_nl(
     if raw_worker_backend not in {"process", "thread"}:
         raise ValueError("raw_worker_backend must be 'process' or 'thread'")
 
+    requested_acquisition_workers = 2 if pipeline_overlap and raw_workers >= 2 else 1
     adapter = CidNlPartitionPipelineAdapter(
         plan,
         alignment_config=alignment_config,
@@ -528,6 +542,7 @@ def execute_bounded_untargeted_cid_nl(
         max_partition_jobs=max_partition_jobs,
         raw_workers=raw_workers,
         raw_worker_backend=raw_worker_backend,
+        acquisition_workers=requested_acquisition_workers,
     )
     return PartitionPipelineScheduler.execute(
         adapter,
@@ -538,6 +553,7 @@ def execute_bounded_untargeted_cid_nl(
         should_cancel=should_cancel,
         retain_partition_memory=retain_partition_memory,
         pipeline_overlap=pipeline_overlap,
+        acquisition_workers=adapter.acquisition_workers,
         execute_runtime_attempt=execute_runtime_attempt,
         store_factory=PartitionResultStore,
     )

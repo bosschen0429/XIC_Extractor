@@ -30,7 +30,7 @@ from xic_extractor.alignment.mode_track.assignment import (
     ModeTrackPredictionAssessment,
     ModeTrackTrajectoryPolicy,
     _global_no_write_state,
-    _peak_hypothesis_family_exclusions,
+    _peak_hypothesis_assignment_scope_exclusions,
     assign_mode_tracks,
     canonical_mode_track_assignment_batch_bytes,
     fit_mode_track_model_set,
@@ -38,8 +38,8 @@ from xic_extractor.alignment.mode_track.assignment import (
     mint_mode_track_support_anchor,
     reinforce_mode_track_model_set,
 )
-from xic_extractor.alignment.mode_track.family_context import (
-    mint_family_context_ref,
+from xic_extractor.alignment.mode_track.assignment_scope import (
+    ModeTrackAssignmentScope,
 )
 from xic_extractor.peak_detection.cid_nl_chromatographic_support import (
     compose_cid_nl_chromatographic_support_ref,
@@ -213,7 +213,7 @@ def test_sparse_anchors_and_unsupported_extrapolation_are_no_write(
     sparse = _scenario(tmp_path / "sparse")
     sparse_models = fit_mode_track_model_set(
         processing_owners=sparse.fixture.owners,
-        family_context=sparse.family_context,
+        assignment_scope=sparse.assignment_scope,
         direct_support_anchors=sparse.track_a_spine.anchors
         + sparse.track_b_spine.anchors[:1],
         policy=sparse.policy,
@@ -251,7 +251,7 @@ def test_zero_anchor_tracks_use_provisional_group_geometry(tmp_path: Path) -> No
     scenario = _scenario(tmp_path)
     empty_models = fit_mode_track_model_set(
         processing_owners=scenario.fixture.owners,
-        family_context=scenario.family_context,
+        assignment_scope=scenario.assignment_scope,
         direct_support_anchors=(),
         policy=scenario.policy,
     )
@@ -653,7 +653,7 @@ def test_single_nonlocal_landmark_keeps_direct_support_unassessable(
     )
 
 
-def test_candidate_physical_observation_must_stay_inside_family_universe(
+def test_candidate_physical_observation_must_stay_inside_assignment_scope(
     tmp_path: Path,
 ) -> None:
     scenario = _scenario(tmp_path)
@@ -662,21 +662,19 @@ def test_candidate_physical_observation_must_stay_inside_family_universe(
         peak_observation_refs=(SimpleNamespace(content=SimpleNamespace(mz=700.0)),),
         integration=candidate.peak_hypothesis.integration,
     )
-    assert _peak_hypothesis_family_exclusions(
+    assert _peak_hypothesis_assignment_scope_exclusions(
         outside_mz_hypothesis,
-        family_context=scenario.family_context,
-    ) == ("peak_hypothesis_outside_family_mz",)
+        assignment_scope=scenario.assignment_scope,
+    ) == ("peak_hypothesis_outside_assignment_scope_mz",)
 
-    tight_rt_context = mint_family_context_ref(
-        mz_interval=scenario.family_context.mz_interval,
+    tight_rt_scope = ModeTrackAssignmentScope(
+        mz_interval=scenario.assignment_scope.mz_interval,
         rt_interval=(7.0, 8.40),
-        context_policy_version="mode-track-family-context",
-        source_lineage_refs=("synthetic:tight-family-rt-universe",),
-        mode_tracks=(scenario.track_a, scenario.track_b),
+        groups=(scenario.track_a, scenario.track_b),
     )
     tight_models = fit_mode_track_model_set(
         processing_owners=scenario.fixture.owners,
-        family_context=tight_rt_context,
+        assignment_scope=tight_rt_scope,
         direct_support_anchors=(
             scenario.track_a_spine.anchors + scenario.track_b_spine.anchors
         ),
@@ -691,7 +689,9 @@ def test_candidate_physical_observation_must_stay_inside_family_universe(
     )
 
     assert result.assignments[0].state == "out_of_model"
-    assert result.assignments[0].reason_codes == ("peak_hypothesis_outside_family_rt",)
+    assert result.assignments[0].reason_codes == (
+        "peak_hypothesis_outside_assignment_scope_rt",
+    )
 
 
 def test_request_acquisition_and_injection_bindings_cannot_be_crossed(
@@ -711,7 +711,7 @@ def test_request_acquisition_and_injection_bindings_cannot_be_crossed(
     with pytest.raises(ModeTrackContractError, match="different processing request"):
         fit_mode_track_model_set(
             processing_owners=foreign.fixture.owners,
-            family_context=original.family_context,
+            assignment_scope=original.assignment_scope,
             direct_support_anchors=(
                 original.track_a_spine.anchors + original.track_b_spine.anchors
             ),
@@ -778,7 +778,7 @@ def test_fit_rejects_foreign_request_even_when_sources_and_order_match(
     with pytest.raises(ModeTrackContractError, match="different processing request"):
         fit_mode_track_model_set(
             processing_owners=foreign_owners,
-            family_context=scenario.family_context,
+            assignment_scope=scenario.assignment_scope,
             direct_support_anchors=(
                 scenario.track_a_spine.anchors + scenario.track_b_spine.anchors
             ),
@@ -805,16 +805,14 @@ def test_assignment_rejects_candidate_from_foreign_request_before_prediction(
         track_a_anchor_rts=(7.80, 7.84),
         track_b_anchor_rts=(8.30, 8.34),
     )
-    foreign_context = mint_family_context_ref(
+    foreign_scope = ModeTrackAssignmentScope(
         mz_interval=(499.0, 501.0),
         rt_interval=(7.0, 10.0),
-        context_policy_version="mode-track-family-context",
-        source_lineage_refs=("synthetic:foreign-request-candidate-ingress",),
-        mode_tracks=(foreign_track_a.group, foreign_track_b.group),
+        groups=(foreign_track_a.group, foreign_track_b.group),
     )
     foreign_models = fit_mode_track_model_set(
         processing_owners=foreign_owners,
-        family_context=foreign_context,
+        assignment_scope=foreign_scope,
         direct_support_anchors=(foreign_track_a.anchors + foreign_track_b.anchors),
         policy=scenario.policy,
     )
@@ -890,12 +888,10 @@ def test_fit_rejects_two_tracks_seeded_by_one_physical_observation(
             group_center_rt=8.0,
         ),
     )
-    context = mint_family_context_ref(
+    assignment_scope = ModeTrackAssignmentScope(
         mz_interval=(499.0, 501.0),
         rt_interval=(7.0, 9.0),
-        context_policy_version="mode-track-family-context",
-        source_lineage_refs=("synthetic:physical-cardinality",),
-        mode_tracks=tracks,
+        groups=tracks,
     )
     anchors = (
         mint_mode_track_support_anchor(
@@ -917,7 +913,7 @@ def test_fit_rejects_two_tracks_seeded_by_one_physical_observation(
     with pytest.raises(ModeTrackContractError, match="physical peak observation"):
         fit_mode_track_model_set(
             processing_owners=fixture.owners,
-            family_context=context,
+            assignment_scope=assignment_scope,
             direct_support_anchors=anchors,
             policy=ModeTrackTrajectoryPolicy(
                 trajectory_policy_version="piecewise-linear-injection-local",
@@ -1076,12 +1072,10 @@ def test_crossing_is_local_to_the_crossed_tracks(tmp_path: Path) -> None:
         fixture,
         track_anchor_rts=((7.90, 7.98), (8.30, 8.22), (8.40, 8.42)),
     )
-    family_context = mint_family_context_ref(
+    assignment_scope = ModeTrackAssignmentScope(
         mz_interval=(499.0, 501.0),
         rt_interval=(7.0, 10.0),
-        context_policy_version="mode-track-family-context",
-        source_lineage_refs=("synthetic:crossing-locality",),
-        mode_tracks=tuple(spine.group for spine in spines),
+        groups=tuple(spine.group for spine in spines),
     )
     policy = ModeTrackTrajectoryPolicy(
         trajectory_policy_version="piecewise-linear-injection-local",
@@ -1092,7 +1086,7 @@ def test_crossing_is_local_to_the_crossed_tracks(tmp_path: Path) -> None:
     )
     model_set = fit_mode_track_model_set(
         processing_owners=fixture.owners,
-        family_context=family_context,
+        assignment_scope=assignment_scope,
         direct_support_anchors=tuple(
             anchor for spine in spines for anchor in spine.anchors
         ),
@@ -1221,12 +1215,10 @@ def test_model_set_identity_binds_ordering_behavior_snapshot(
     tmp_path: Path,
 ) -> None:
     scenario = _scenario(tmp_path)
-    reordered_context = mint_family_context_ref(
-        mz_interval=scenario.family_context.mz_interval,
-        rt_interval=scenario.family_context.rt_interval,
-        context_policy_version=scenario.family_context.context_policy_version,
-        source_lineage_refs=scenario.family_context.source_lineage_refs,
-        mode_tracks=(
+    reordered_scope = ModeTrackAssignmentScope(
+        mz_interval=scenario.assignment_scope.mz_interval,
+        rt_interval=scenario.assignment_scope.rt_interval,
+        groups=(
             replace(
                 scenario.track_a,
                 group_center_rt=scenario.track_b.group_center_rt,
@@ -1239,16 +1231,13 @@ def test_model_set_identity_binds_ordering_behavior_snapshot(
     )
     reordered_models = fit_mode_track_model_set(
         processing_owners=scenario.fixture.owners,
-        family_context=reordered_context,
+        assignment_scope=reordered_scope,
         direct_support_anchors=(
             scenario.track_a_spine.anchors + scenario.track_b_spine.anchors
         ),
         policy=scenario.policy,
     )
 
-    assert (
-        reordered_context.family_context_id == scenario.family_context.family_context_id
-    )
     assert reordered_models.model_set_id != scenario.models.model_set_id
     assert tuple(
         (track.group_hypothesis_id, track.ordering_reference_rt_min)
@@ -1283,7 +1272,7 @@ def test_model_set_identity_binds_ordering_behavior_snapshot(
 
     changed_policy = fit_mode_track_model_set(
         processing_owners=scenario.fixture.owners,
-        family_context=scenario.family_context,
+        assignment_scope=scenario.assignment_scope,
         direct_support_anchors=(
             scenario.track_a_spine.anchors + scenario.track_b_spine.anchors
         ),
@@ -1291,7 +1280,7 @@ def test_model_set_identity_binds_ordering_behavior_snapshot(
     )
     changed_anchors = fit_mode_track_model_set(
         processing_owners=scenario.fixture.owners,
-        family_context=scenario.family_context,
+        assignment_scope=scenario.assignment_scope,
         direct_support_anchors=(
             scenario.track_a_spine.anchors[:1] + scenario.track_b_spine.anchors
         ),
@@ -1411,7 +1400,7 @@ def test_fit_rejects_reinforced_anchors(
     with pytest.raises(ModeTrackContractError, match="initial anchors only"):
         fit_mode_track_model_set(
             processing_owners=scenario.fixture.owners,
-            family_context=scenario.family_context,
+            assignment_scope=scenario.assignment_scope,
             direct_support_anchors=tuple(
                 anchor for track in reinforced.tracks for anchor in track.anchors
             ),
@@ -1532,7 +1521,6 @@ def test_owner_objects_cannot_be_forged() -> None:
     with pytest.raises(TypeError, match="_mint_token"):
         ModeTrackAssignment(
             assignment_id="mode-track-assignment:forged",
-            family_context_id="family-context:forged",
             processing_request_id="processing-request:forged",
             processing_attempt_id="processing-attempt:forged",
             canonical_sample_identity_id="sample:forged",
@@ -1562,7 +1550,7 @@ class _Scenario:
         fixture,
         track_a_spine,
         track_b_spine,
-        family_context,
+        assignment_scope,
         policy,
         models,
         target_injection_order: int,
@@ -1572,7 +1560,7 @@ class _Scenario:
         self.track_b_spine = track_b_spine
         self.track_a = track_a_spine.group
         self.track_b = track_b_spine.group
-        self.family_context = family_context
+        self.assignment_scope = assignment_scope
         self.policy = policy
         self.models = models
         target_source = resolve_request_acquisition_source(
@@ -1626,12 +1614,10 @@ def _scenario(
     )
     assert track_a_spine.group is not None
     assert track_b_spine.group is not None
-    context = mint_family_context_ref(
+    assignment_scope = ModeTrackAssignmentScope(
         mz_interval=(499.0, 501.0),
         rt_interval=(7.0, 10.0),
-        context_policy_version="mode-track-family-context",
-        source_lineage_refs=("synthetic:no-raw-mode-track-truth-table",),
-        mode_tracks=(track_a_spine.group, track_b_spine.group),
+        groups=(track_a_spine.group, track_b_spine.group),
     )
     policy = ModeTrackTrajectoryPolicy(
         trajectory_policy_version="piecewise-linear-injection-local",
@@ -1642,7 +1628,7 @@ def _scenario(
     )
     models = fit_mode_track_model_set(
         processing_owners=fixture.owners,
-        family_context=context,
+        assignment_scope=assignment_scope,
         direct_support_anchors=track_a_spine.anchors + track_b_spine.anchors,
         policy=policy,
     )
@@ -1650,7 +1636,7 @@ def _scenario(
         fixture=fixture,
         track_a_spine=track_a_spine,
         track_b_spine=track_b_spine,
-        family_context=context,
+        assignment_scope=assignment_scope,
         policy=policy,
         models=models,
         target_injection_order=target_injection_order,

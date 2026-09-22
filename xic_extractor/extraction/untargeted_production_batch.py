@@ -32,10 +32,10 @@ from xic_extractor.alignment.cross_sample_peak_groups import (
     CrossSampleNeighborhoodEdge,
     CrossSamplePeakGroupHypothesis,
 )
-from xic_extractor.alignment.cross_sample_reconciliation import (
-    build_initial_cid_nl_cross_sample_context,
-)
 from xic_extractor.alignment.drift_evidence import KnownIstdReference
+from xic_extractor.alignment.grouping_workflow import (
+    build_initial_cid_nl_cross_sample_groups,
+)
 from xic_extractor.alignment.hypothesis_owner_adapter import (
     compose_peak_hypotheses_from_assessment_universe,
 )
@@ -152,6 +152,119 @@ class UntargetedCidNlProductionPlan:
     sample_job_templates: tuple[UntargetedCidNlRealDataRuntimeJob, ...]
     runtime_subjects: tuple[CidNlMethodSubject, ...]
     excluded_candidates: tuple[UntargetedCandidateExclusion, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class PreparedCidNlAlignmentSubjectWorksets:
+    """One plan's complete Alignment worksets and partition lookup indexes."""
+
+    plan: UntargetedCidNlProductionPlan
+    worksets: tuple[tuple[CidNlMethodSubject, ...], ...]
+    subjects_by_id: dict[str, CidNlMethodSubject]
+    workset_ids_by_subject: dict[str, frozenset[str]]
+    memberships_by_subject: dict[str, tuple[tuple[str, str], ...]]
+
+    def subject_batch(
+        self,
+        subjects: tuple[CidNlMethodSubject, ...],
+    ) -> UntargetedCidNlMethodSubjectBatch:
+        """Bind whole prepared worksets to their exact candidate memberships."""
+
+        requested_ids: set[str] = set()
+        touched_worksets: set[frozenset[str]] = set()
+        for subject in subjects:
+            expected = self.subjects_by_id.get(subject.method_subject_id)
+            if expected is None or subject != expected:
+                raise ValueError(
+                    "CID-NL partition contains a foreign alignment subject"
+                )
+            requested_ids.add(subject.method_subject_id)
+            touched_worksets.add(self.workset_ids_by_subject[subject.method_subject_id])
+        if len(requested_ids) != len(subjects):
+            raise ValueError("CID-NL partition contains duplicate alignment subjects")
+        if any(not workset_ids <= requested_ids for workset_ids in touched_worksets):
+            raise ValueError(
+                "CID-NL partition cannot split one alignment subject workset"
+            )
+        return UntargetedCidNlMethodSubjectBatch(
+            subjects=subjects,
+            candidate_memberships=tuple(
+                sorted(
+                    membership
+                    for subject in subjects
+                    for membership in self.memberships_by_subject[
+                        subject.method_subject_id
+                    ]
+                )
+            ),
+        )
+
+
+def prepare_untargeted_cid_nl_alignment_subject_worksets(
+    plan: UntargetedCidNlProductionPlan,
+    *,
+    known_istd_reference: KnownIstdReference | None = None,
+) -> PreparedCidNlAlignmentSubjectWorksets:
+    """Prepare the complete workset closure once before partition materialization."""
+
+    if type(plan) is not UntargetedCidNlProductionPlan:
+        raise TypeError("Alignment subject worksets require a production plan")
+    worksets = cid_nl_alignment_subject_worksets(
+        plan.runtime_subjects,
+        comparison_mz_intervals=_known_istd_comparison_intervals(known_istd_reference),
+    )
+    subjects_by_id = {
+        subject.method_subject_id: subject
+        for workset in worksets
+        for subject in workset
+    }
+    workset_ids_by_subject = {
+        subject.method_subject_id: frozenset(
+            member.method_subject_id for member in workset
+        )
+        for workset in worksets
+        for subject in workset
+    }
+    memberships: dict[str, list[tuple[str, str]]] = {
+        subject_id: [] for subject_id in subjects_by_id
+    }
+    for membership in plan.subject_batch.candidate_memberships:
+        subject_memberships = memberships.get(membership[1])
+        if subject_memberships is not None:
+            subject_memberships.append(membership)
+    memberships_by_subject = {
+        subject_id: tuple(sorted(subject_memberships))
+        for subject_id, subject_memberships in memberships.items()
+    }
+    if any(
+        not subject_memberships
+        for subject_memberships in memberships_by_subject.values()
+    ):
+        raise ValueError("runtime alignment subject has no candidate membership")
+    return PreparedCidNlAlignmentSubjectWorksets(
+        plan=plan,
+        worksets=worksets,
+        subjects_by_id=subjects_by_id,
+        workset_ids_by_subject=workset_ids_by_subject,
+        memberships_by_subject=memberships_by_subject,
+    )
+
+
+def _known_istd_comparison_intervals(
+    reference: KnownIstdReference | None,
+) -> tuple[tuple[float, float], ...]:
+    """Co-locate possible known identities without assigning identity by mass."""
+    if reference is None:
+        return ()
+    return tuple(
+        (
+            target.mz * (1 - target.ppm_tol / 1_000_000),
+            target.mz * (1 + target.ppm_tol / 1_000_000),
+        )
+        for target in reference.anchor.targets
+        if target.neutral_loss_da is not None
+        and target.label in reference.anchor.observed_labels
+    )
 
 
 def is_pure_single_provider_cid_nl(settings: DiscoverySettings) -> bool:
@@ -527,6 +640,11 @@ def prepare_untargeted_cid_nl_production_plan(
             context.physical_records_by_candidate.items()
         )
     )
+    physical_records_by_sample: dict[str, list[DiscoveryPhysicalFactRecord]] = {}
+    for record in ordered_physical_records:
+        physical_records_by_sample.setdefault(record.work_item.sample_stem, []).append(
+            record
+        )
     templates = tuple(
         job
         for sample in context.samples
@@ -554,9 +672,7 @@ def prepare_untargeted_cid_nl_production_plan(
             dll_dir=dll_dir,
             signal_processing_profile=context.signal_processing_profile,
             physical_records=tuple(
-                record
-                for record in ordered_physical_records
-                if record.work_item.sample_stem == sample.metadata.raw_stem
+                physical_records_by_sample.get(sample.metadata.raw_stem, ())
             ),
         )
     )
@@ -572,30 +688,36 @@ def prepare_untargeted_cid_nl_production_plan(
 def materialize_untargeted_cid_nl_partition(
     plan: UntargetedCidNlProductionPlan,
     subject_batch: UntargetedCidNlMethodSubjectBatch,
+    *,
+    prepared_worksets: PreparedCidNlAlignmentSubjectWorksets | None = None,
 ) -> UntargetedCidNlProductionBatch:
     """Bind a finite subject partition to shared, already-validated inputs."""
 
-    requested_subject_ids = {
-        subject.method_subject_id for subject in subject_batch.subjects
-    }
-    for workset in cid_nl_alignment_subject_worksets(plan.runtime_subjects):
-        workset_ids = {subject.method_subject_id for subject in workset}
-        requested_members = requested_subject_ids.intersection(workset_ids)
-        if requested_members and requested_members != workset_ids:
-            raise ValueError(
-                "CID-NL partition cannot split one alignment subject workset"
-            )
+    prepared = (
+        prepare_untargeted_cid_nl_alignment_subject_worksets(plan)
+        if prepared_worksets is None
+        else prepared_worksets
+    )
+    if prepared.plan is not plan:
+        raise ValueError("prepared alignment worksets crossed the production plan")
+    expected_batch = (
+        plan.subject_batch
+        if subject_batch == plan.subject_batch
+        else prepared.subject_batch(subject_batch.subjects)
+    )
+    if subject_batch.candidate_memberships != expected_batch.candidate_memberships:
+        raise ValueError("CID-NL partition crossed prepared candidate memberships")
 
     jobs = []
     for template in plan.sample_job_templates:
         for subject in subject_batch.subjects:
             job = copy(template)
+            subject_id = subject.method_subject_id
             object.__setattr__(job, "method_subject", subject)
             object.__setattr__(
                 job,
                 "work_unit_key",
-                "untargeted-cid-nl:"
-                f"{template.sample.metadata.raw_stem}:{subject.method_subject_id}",
+                f"untargeted-cid-nl:{template.sample.metadata.raw_stem}:{subject_id}",
             )
             jobs.append(job)
     return UntargetedCidNlProductionBatch(
@@ -1048,7 +1170,10 @@ def _build_production_composition_inputs(
         for subject in batch.subject_batch.subjects
         if bindings_by_subject.get(subject.method_subject_id)
     )
-    for subject_workset in cid_nl_alignment_subject_worksets(active_subjects):
+    for subject_workset in cid_nl_alignment_subject_worksets(
+        active_subjects,
+        comparison_mz_intervals=_known_istd_comparison_intervals(known_istd_reference),
+    ):
         child_bindings = tuple(
             sorted(
                 (
@@ -1170,28 +1295,19 @@ def _build_production_composition_inputs(
         captures = tuple(captures_list)
         capture_inputs = tuple(capture_inputs_list)
         (
-            family_context,
-            cross_sample_context,
-            classified_edges,
+            assignment_scope,
+            grouping_result,
             retained_candidates,
-        ) = (
-            build_initial_cid_nl_cross_sample_context(
-                processing_owners=batch.context.processing_owners,
-                captures=captures,
-                sample_assessments=assessments,
-                alignment_config=alignment_config,
-                trajectory_policy=trajectory_policy,
-                known_istd_reference=known_istd_reference,
-                retained_hypotheses_by_assessment=(
-                    retained_hypotheses_by_assessment
-                ),
-            )
+        ) = build_initial_cid_nl_cross_sample_groups(
+            processing_owners=batch.context.processing_owners,
+            captures=captures,
+            sample_assessments=assessments,
+            alignment_config=alignment_config,
+            known_istd_reference=known_istd_reference,
+            retained_hypotheses_by_assessment=(retained_hypotheses_by_assessment),
         )
-        initial_groups.extend(family_context.mode_tracks)
-        initial_edges.extend(classified_edges)
-        retained_cell_hypotheses: dict[
-            tuple[str, str], list[PeakHypothesis]
-        ] = {}
+        initial_groups.extend(assignment_scope.groups)
+        retained_cell_hypotheses: dict[tuple[str, str], list[PeakHypothesis]] = {}
         for candidate in retained_candidates:
             assessment = candidate.direct_support_assessment
             if assessment is None:
@@ -1205,10 +1321,10 @@ def _build_production_composition_inputs(
             ).append(candidate.peak_hypothesis)
         predecessor_cells = compose_cid_nl_predecessor_cells(
             processing_owners=batch.context.processing_owners,
-            groups=family_context.mode_tracks,
+            groups=assignment_scope.groups,
             sample_assessments=assessments,
             alignment_config=alignment_config,
-            drift_lookup=cross_sample_context.drift_lookup,
+            drift_lookup=grouping_result.drift_lookup,
             sample_universe=sample_universe,
             injection_order=injection_order,
             recovery_assessments_by_group={
@@ -1217,7 +1333,7 @@ def _build_production_composition_inputs(
                     sample.identity.sample_identity_id,
                     subject.method_subject_id,
                 ): recovery.assessment
-                for group in family_context.mode_tracks
+                for group in assignment_scope.groups
                 for sample in batch.context.samples
                 for subject in subject_workset
                 if group.group_center_rt is not None
@@ -1239,7 +1355,7 @@ def _build_production_composition_inputs(
             group_id = cell.content.group_hypothesis_id
             cell_by_key[(group_id, cell.content.canonical_sample_identity_id)] = cell
             cells_by_group.setdefault(group_id, []).append(cell)
-        repair_groups = cross_sample_context.population
+        repair_groups = grouping_result.final_population
         no_request_proofs = {}
         for group in repair_groups:
             facts = assess_conservative_backfill_group(
@@ -1370,7 +1486,7 @@ def _build_production_composition_inputs(
                 ),
                 adapter=UntargetWorkflowAdapter(
                     capture_inputs=capture_inputs,
-                    completed_cross_sample=cross_sample_context,
+                    completed_grouping=grouping_result,
                     mode_track=ModeTrackWorkflowArguments(
                         sample_assessments=assessments,
                         alignment_config=alignment_config,
@@ -1444,6 +1560,7 @@ materialize_untargeted_partition = materialize_untargeted_cid_nl_partition
 __all__ = [
     "UntargetedCidNlPartitionComposition",
     "UntargetedCidNlPersistedPartition",
+    "PreparedCidNlAlignmentSubjectWorksets",
     "UntargetedCidNlProductionBatch",
     "UntargetedCidNlProductionPlan",
     "UntargetedProductionBatch",
@@ -1460,6 +1577,7 @@ __all__ = [
     "is_supported_alignment_discovery",
     "materialize_untargeted_cid_nl_partition",
     "materialize_untargeted_partition",
+    "prepare_untargeted_cid_nl_alignment_subject_worksets",
     "prepare_untargeted_cid_nl_production_plan",
     "prepare_untargeted_production_plan",
 ]

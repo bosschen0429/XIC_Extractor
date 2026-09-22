@@ -3,12 +3,9 @@ from __future__ import annotations
 from copy import copy
 from dataclasses import replace
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 
-import xic_extractor.alignment.backfill.observation_repair as repair_owner
-import xic_extractor.alignment.cross_sample_reconciliation as reconciliation_owner
 import xic_extractor.alignment.projection.target.pre_cell as target_projection_owner
 import xic_extractor.alignment.result.scientific_alignment as finalizer_owner
 from tests.cid_nl_peak_support_no_raw_fixture import cid_nl_peak
@@ -25,7 +22,6 @@ from tests.test_cross_sample_association_lineage import (
     _final_receipt as _lineage_final_receipt,
 )
 from tests.test_search_scope_capture import _capture_binding, _peak_config
-from xic_extractor.alignment.backfill import mint_observation_repair_subject
 from xic_extractor.alignment.cell_observations import (
     compose_final_group_cell_observation_population,
 )
@@ -37,18 +33,12 @@ from xic_extractor.alignment.cross_sample import (
 )
 from xic_extractor.alignment.cross_sample_peak_groups import (
     CrossSampleGroupIdentity,
-    CrossSampleSuccessorApplication,
+    CrossSamplePartitionTransition,
     mint_cross_sample_group_identity,
     validate_cross_sample_peak_group_identity,
 )
-from xic_extractor.alignment.cross_sample_reconciliation import (
-    CrossSampleFinalReceipt,
-    CrossSampleReconciledState,
-)
-from xic_extractor.alignment.owner_backfill_request_plan import (
-    OwnerBackfillRequestItem,
-    mint_owner_backfill_logical_request_member,
-    mint_owner_backfill_request_identity,
+from xic_extractor.alignment.grouping_result import (
+    CrossSampleGroupingResult,
 )
 from xic_extractor.alignment.projection.target import (
     TargetProjectionContractError,
@@ -73,7 +63,6 @@ from xic_extractor.peak_detection.search_scope import (
     TargetSearchScope,
 )
 from xic_extractor.processing_identity import resolve_request_acquisition_source
-from xic_extractor.xic_models import XICRequest
 
 
 def test_public_target_projection_entry_point_exists() -> None:
@@ -400,8 +389,8 @@ def test_duplicate_final_population_is_rejected(tmp_path: Path) -> None:
     )
     group = result.final_population[0]
     object.__setattr__(
-        result.final_cross_sample_receipt,
-        "final_population",
+        result.grouping_result.partition_transition,
+        "successors",
         (group, group),
     )
 
@@ -438,7 +427,6 @@ def test_forged_final_population_owner_basis_is_rejected(
         "canonical_sample",
         "observed_terminal",
         "negative_terminal",
-        "final_receipt",
         "group",
         "member",
         "member_constructor",
@@ -489,12 +477,6 @@ def test_projection_revalidates_each_consumed_owner_ingress(
         object.__setattr__(observed, "trace_group_id", "crossed-trace")
     elif ingress == "negative_terminal":
         object.__setattr__(negative, "detection_status", "unknown")
-    elif ingress == "final_receipt":
-        object.__setattr__(
-            result.final_cross_sample_receipt,
-            "processing_request_id",
-            "xic.processing-request:crossed",
-        )
     elif ingress == "group":
         object.__setattr__(group, "basis_bytes", b"crossed-group-basis")
     elif ingress == "member":
@@ -686,7 +668,7 @@ def _finalized_case(
         ),
         cell_observation_handoff=handoff,
         cell_observations=cell_observations,
-        final_cross_sample_receipt=receipt,
+        grouping_result=receipt,
         _mint_token=finalizer_owner._FINALIZER_MINT_TOKEN,
     )
     return fixture, scope, result, hypotheses
@@ -716,121 +698,15 @@ def _owner_hypothesis(
 def _final_receipt(
     fixture: ProcessingIdentityNoRawFixture,
     groups: tuple[CrossSampleGroupIdentity, ...],
-) -> CrossSampleFinalReceipt:
+) -> CrossSampleGroupingResult:
     population = tuple(sorted(groups, key=lambda group: group.group_hypothesis_id))
-    group = population[0]
-    member = group.member_subjects[0]
-    sample = next(
-        sample
-        for sample in fixture.samples
-        if sample.identity.sample_identity_id == member.canonical_sample_identity_id
-    )
-    target_value = fixture.target.definition.target
-    source = resolve_request_acquisition_source(
+    return CrossSampleGroupingResult(
         processing_owners=fixture.owners,
-        sample=sample,
-    )
-    request = XICRequest(
-        mz=target_value.mz,
-        rt_min=target_value.rt_min,
-        rt_max=target_value.rt_max,
-        ppm_tol=target_value.ppm_tol,
-    )
-    request_identity = mint_owner_backfill_request_identity(
-        sample_stem=sample.lookup_token,
-        acquisition_source=source,
-        request=request,
-        backend="raw",
-        window_strategy="exact",
-        superwindow_span_factor=1,
-        validation_mode="validation",
-    )
-    item = OwnerBackfillRequestItem(
-        feature=SimpleNamespace(group_hypothesis_id=group.group_hypothesis_id),
-        sample_stem=sample.lookup_token,
-        request=request,
-        preferred_rt=8.0,
-    )
-    logical_request = mint_owner_backfill_logical_request_member(
-        logical_index=0,
-        group_hypothesis_id=group.group_hypothesis_id,
-        item=item,
-    )
-    application = CrossSampleSuccessorApplication(
-        status="assessable",
-        predecessors=population,
-        successors=population,
-        lineage=(),
-        reason="unchanged_membership_no_lineage",
-    )
-    subject = mint_observation_repair_subject(
-        request_identity=request_identity,
-        logical_request=logical_request,
-        predecessor_group=group,
-        member_subject=member,
-        sample_identity=sample,
-        successor_application=application,
-    )
-    repair_receipt = repair_owner.ObservationRepairReceipt(
-        receipt_id=repair_owner._receipt_id(
-            subject_id=subject.subject_id,
-            repair_epoch=1,
-            outcome="no_repair",
-            sample_stem=sample.lookup_token,
-            evidence=None,
+        partition_transition=CrossSamplePartitionTransition(
+            status="assessable",
+            predecessors=population,
+            successors=population,
+            lineage=(),
+            reason="unchanged_membership_no_lineage",
         ),
-        subject=subject,
-        subject_id=subject.subject_id,
-        repair_epoch=1,
-        outcome="no_repair",
-        sample_stem=sample.lookup_token,
-        evidence=None,
-        _mint_token=repair_owner._RECEIPT_MINT_TOKEN,
-    )
-    trajectory_id = "xic.mode-track-trajectory-input:test"
-    state = CrossSampleReconciledState(
-        processing_request_id=fixture.request.processing_request_id,
-        population=population,
-        repair_receipt_id=repair_receipt.receipt_id,
-        repair_epoch=1,
-        repair_outcome="no_repair",
-        member_subject_ids=tuple(
-            sorted(
-                member.member_subject_id
-                for group in population
-                for member in group.member_subjects
-            )
-        ),
-        trajectory_input_id=trajectory_id,
-        trajectory_changed=False,
-    )
-    basis = reconciliation_owner._final_receipt_basis(
-        processing_request_id=fixture.request.processing_request_id,
-        post_mt0_application=application,
-        repair_receipt=repair_receipt,
-        repair_epoch=1,
-        cs2_state=state,
-        pre_trajectory_input_id=trajectory_id,
-        post_trajectory_input_id=trajectory_id,
-        mode_track_proposal=None,
-        final_application=application,
-        final_population=population,
-    )
-    return CrossSampleFinalReceipt(
-        receipt_id=reconciliation_owner.typed_identity_digest(
-            reconciliation_owner._FINAL_RECEIPT_PREFIX,
-            basis,
-        ),
-        processing_request_id=fixture.request.processing_request_id,
-        post_mt0_application=application,
-        repair_receipt=repair_receipt,
-        repair_epoch=1,
-        cs2_state=state,
-        pre_trajectory_input_id=trajectory_id,
-        post_trajectory_input_id=trajectory_id,
-        mode_track_proposal=None,
-        final_application=application,
-        final_population=population,
-        basis_bytes=basis,
-        _mint_token=reconciliation_owner._FINAL_RECEIPT_MINT_TOKEN,
     )

@@ -11,8 +11,8 @@ from xic_extractor.alignment.cross_sample_peak_groups import (
     group_member_subject_from_peak_hypothesis,
     validate_cross_sample_group_population,
 )
-from xic_extractor.alignment.cross_sample_reconciliation import (
-    CrossSampleFinalReceipt,
+from xic_extractor.alignment.grouping_result import (
+    CrossSampleGroupingResult,
 )
 from xic_extractor.alignment.result.scientific_alignment import (
     FinalizedScientificAlignment,
@@ -252,14 +252,14 @@ def _validate_finalized_input(
             "finalized terminal subjects must be an immutable tuple"
         )
     if (
-        type(finalized_alignment.final_cross_sample_receipt)
-        is not CrossSampleFinalReceipt
+        type(finalized_alignment.grouping_result)
+        is not CrossSampleGroupingResult
     ):
         raise TargetProjectionContractError(
             "finalized Target alignment requires an owner final receipt"
         )
     if (
-        finalized_alignment.final_cross_sample_receipt.processing_request_id
+        finalized_alignment.grouping_result.processing_request_id
         != finalized_alignment.processing_request_id
     ):
         raise TargetProjectionContractError(

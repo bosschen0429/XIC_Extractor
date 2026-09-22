@@ -124,6 +124,12 @@ are outside the first integration. If Targeted or Alignment cannot state its
 complete non-empty work universe up front, stop and redraw the seam rather than
 infer completion from only the units that happened to be submitted.
 
+A settled work unit may report both initial and recovery acquisitions. The
+runtime retains distinct acquisition capabilities and deduplicates an exact
+receipt replay; conflicting content for the same capability remains an error.
+Batch adapters publish the acquisitions held by each phase directly, so a
+later recovery cannot hide the initial acquisition from accounting.
+
 An acquisition session may be reused only within the same attempt, worker,
 `AcquisitionSource`, and owner-supplied compatibility token. Correctness must
 not depend on reuse. Before adapter construction or allocation, the runtime
@@ -796,6 +802,11 @@ while composing partition \(P_n\) without multiplying RAW acquisition resources:
   units (acquiring, in handoff queue, and composing).
 - **Handoff queue**: bounded queue with `maxsize=1` enforces backpressure so that
   acquisition does not outrun composition.
+- **Independent acquisition**: CID-NL can acquire two complete mass-connected
+  partitions concurrently when overlap is enabled and the configured worker
+  budget is at least two. The budget is divided between the two partitions;
+  the same two admission credits cover acquisition, queued results and composition.
+  Out-of-order acquisition results wait for ordered, single-writer composition.
 - **Bilateral abort**: producer acquisition failures immediately signal the
   consumer thread to drain and abort; consumer composition failures signal the
   producer to stop further acquisition, cancel pending tasks, and clean up spools.

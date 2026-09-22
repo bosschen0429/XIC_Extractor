@@ -61,8 +61,9 @@ def test_retained_trace_reaches_one_finalized_target_result(tmp_path: Path) -> N
     assert len(finalized[0].canonical_samples) == 1
     assert finalized[0].scientific_core.cell_observation_handoff is None
     assert finalized[0].scientific_core.cell_observations == ()
-    assert finalized[0].scientific_core.final_cross_sample_receipt.repair_epoch == 0
-    assert finalized[0].scientific_core.repair_receipt is None
+    assert (
+        finalized[0].scientific_core.grouping_result.partition_transition.lineage == ()
+    )
 
 
 def test_nl_event_outside_exact_target_precursor_is_not_target_evidence(

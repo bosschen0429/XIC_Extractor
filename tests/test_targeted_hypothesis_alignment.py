@@ -2,6 +2,7 @@ from pathlib import Path
 
 import pytest
 
+from tests import processing_identity_no_raw_fixture as no_raw_fixture_module
 from tests.processing_identity_no_raw_fixture import (
     build_processing_identity_no_raw_fixture,
     processing_identity_candidate_set,
@@ -13,6 +14,7 @@ from xic_extractor.alignment.targeted_hypothesis_alignment import (
     TargetedHypothesisAlignmentInput,
     align_selected_targeted_hypotheses,
 )
+from xic_extractor.configuration.models import Target
 from xic_extractor.peak_detection.selection_decision import (
     mint_diagnostic_peak_hypothesis_selection_ref,
 )
@@ -50,12 +52,70 @@ def test_multi_sample_alignment_preserves_selected_hypothesis_identity(
 
     assert groups == reversed_groups
     assert len(groups) == 1
-    assert groups[0].owner_ids == (first.hypothesis_id, second.hypothesis_id)
+    assert groups[0].owner_ids == tuple(
+        sorted((first.hypothesis_id, second.hypothesis_id))
+    )
     assert tuple(owner.owner_id for owner in groups[0].owners) == groups[0].owner_ids
-    assert tuple(owner.sample_stem for owner in groups[0].owners) == (
+    assert {owner.sample_stem for owner in groups[0].owners} == {
         "sample-a",
         "sample-b",
+    }
+
+
+def test_exact_istd_definition_keeps_all_selected_physical_observations(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fixture_target(**kwargs) -> Target:
+        if kwargs["label"] == "Analyte":
+            kwargs["is_istd"] = True
+        return Target(**kwargs)
+
+    monkeypatch.setattr(no_raw_fixture_module, "Target", fixture_target)
+    fixture = build_processing_identity_no_raw_fixture(
+        tmp_path,
+        sample_stems=("sample-a", "sample-b"),
     )
+    first = processing_identity_hypothesis(
+        fixture,
+        "sample-a",
+        apex_rt=8.0,
+        scan_number=42,
+        height=500.0,
+    )
+    second = processing_identity_hypothesis(
+        fixture,
+        "sample-b",
+        apex_rt=14.0,
+        scan_number=43,
+        height=900.0,
+    )
+
+    groups = align_selected_targeted_hypotheses(
+        (
+            _input(fixture, "sample-a", (first,)),
+            _input(fixture, "sample-b", (second,)),
+        ),
+        target=fixture.target,
+        config=AlignmentConfig(max_rt_sec=180.0),
+    )
+
+    assert len(groups) == 1
+    assert set(groups[0].owner_ids) == {first.hypothesis_id, second.hypothesis_id}
+    expected = {
+        hypothesis.hypothesis_id: (
+            hypothesis.peak_observation_refs[0].content.peak_observation_content_id,
+            hypothesis.peak_observation_refs[0].content.integration.area_raw_counts_seconds,
+        )
+        for hypothesis in (first, second)
+    }
+    assert {
+        owner.owner_id: (
+            owner.cross_sample_member_subject.physical_observation_ids[0],
+            owner.owner_area,
+        )
+        for owner in groups[0].owners
+    } == expected
 
 
 def test_ambiguity_missing_and_failure_cannot_enter_alignment(tmp_path: Path) -> None:

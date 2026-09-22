@@ -387,7 +387,7 @@ def _validate_conservative_no_request(
             cell.method_assessment,
             processing_owners=owners,
             sample=source_sample,
-            method_subject=facts.group_context.method_subject,
+            method_subject=cell.method_assessment.content.method_subject,
         )
         if cell.group_context.processing_attempt is not owners.attempt or (
             cell.artifact.producer_processing_attempt_id

@@ -3,73 +3,34 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from inspect import signature
 from pathlib import Path
 from types import SimpleNamespace
 
-import numpy as np
 import pytest
 
-import xic_extractor.alignment.cross_sample_reconciliation as reconciliation_owner
-from tests.test_backfill_observation_repair_authorization import (
-    _authorization_population,
-)
-from tests.test_search_scope_capture import _capture_binding, _peak_config
 from xic_extractor.alignment import AlignmentConfig
-from xic_extractor.alignment.backfill import execute_observation_repair
-from xic_extractor.alignment.cell_observations import (
-    compose_final_group_cell_observation_population,
+from xic_extractor.alignment.grouping_result import (
+    CrossSampleGroupingContractError,
 )
-from xic_extractor.alignment.cross_sample.association import (
-    build_cross_sample_association_lineage_handoff,
-)
-from xic_extractor.alignment.cross_sample_peak_groups import (
-    CrossSampleNeighborhoodBudget,
-    CrossSampleSuccessorApplication,
-    validate_cross_sample_peak_group_identity,
-)
-from xic_extractor.alignment.cross_sample_reconciliation import (
-    CrossSampleFinalReceipt,
-    CrossSampleReconciliationContractError,
+from xic_extractor.alignment.grouping_workflow import (
     apply_mode_track_refinement_run_for_workflow,
-    build_cross_sample_post_mt0_context,
-    consume_mode_track_final_attempt,
-    consume_observation_repair_terminal,
 )
 from xic_extractor.alignment.mode_track.assignment import ModeTrackTrajectoryPolicy
 from xic_extractor.alignment.mode_track.contracts import (
     AcceptedModeTrackRefinement,
-    ModeTrackEvidenceProfile,
     ModeTrackRefinementContractError,
 )
 from xic_extractor.alignment.mode_track.refinement import (
     _REFINEMENT_RUN_MINT_TOKEN,
 )
-from xic_extractor.alignment.projection.target import (
-    project_target_post_cell,
-    project_target_pre_cell,
-)
-from xic_extractor.alignment.result import (
-    TargetApplicationResultRequest,
-    finalize_alignment_result,
-    finalize_scientific_alignment,
-)
 from xic_extractor.peak_detection.capture import (
     SampleLocalCapture,
     _CaptureOwnerSeal,
-    capture_peak_hypotheses,
 )
-from xic_extractor.peak_detection.cid_nl_method_subject import CID_NL_PROVIDER_ID
 from xic_extractor.peak_detection.hypotheses import PeakHypothesis
 from xic_extractor.peak_detection.search_scope import (
-    SEARCH_SCOPE_SCHEMA_VERSION,
-    CaptureMethodConstraints,
-    EvidenceProviderBinding,
-    TargetSearchScope,
     UntargetedSearchScope,
 )
-from xic_extractor.peak_detection.traces import Trace
-from xic_extractor.processing_identity import resolve_request_acquisition_source
 
 
 def _captures_for_run(run, *, include_retained_candidates: bool = False):
@@ -150,218 +111,7 @@ def _captures_for_run(run, *, include_retained_candidates: bool = False):
     return tuple(captures)
 
 
-def _target_scope_and_captures(fixture, spine, tmp_path: Path):
-    method_subject = spine.cells[0].group_context.method_subject
-    rt = np.linspace(7.7, 8.3, 61)
-    candidate_ids = tuple(
-        f"workflow-final:{sample.lookup_token}" for sample in fixture.samples
-    )
-    bindings = []
-    traces = []
-    for candidate_id, sample in zip(candidate_ids, fixture.samples, strict=True):
-        source = resolve_request_acquisition_source(
-            processing_owners=fixture.owners,
-            sample=sample,
-        )
-        bindings.append(
-            _capture_binding(
-                candidate_id=candidate_id,
-                method_subject_id=method_subject.method_subject_id,
-                sample=sample,
-                acquisition_source_id=source.acquisition_source_id,
-                mz=method_subject.precursor_mz,
-                ppm_tol=method_subject.precursor_tolerance_ppm,
-                rt_min=float(rt[0]),
-                rt_max=float(rt[-1]),
-            )
-        )
-        intensity = np.zeros_like(rt)
-        traces.append(
-            Trace.from_arrays(
-                sample_name=sample.metadata.sample_name,
-                mz=method_subject.precursor_mz,
-                rt=rt,
-                intensity=intensity,
-                rt_min=float(rt[0]),
-                rt_max=float(rt[-1]),
-                ppm_tol=method_subject.precursor_tolerance_ppm,
-                source="alignment_workflow_contract_test",
-                acquisition_source_id=source.acquisition_source_id,
-            )
-        )
-    scope = TargetSearchScope(
-        schema_version=SEARCH_SCOPE_SCHEMA_VERSION,
-        request=fixture.request,
-        samples=fixture.samples,
-        method_constraints=CaptureMethodConstraints(
-            boundary_policy="resolver_interval",
-            peak_config=_peak_config(tmp_path),
-        ),
-        evidence_providers=(
-            EvidenceProviderBinding(
-                provider_id=CID_NL_PROVIDER_ID,
-                method_subject_id=method_subject.method_subject_id,
-            ),
-        ),
-        declared_candidate_ids=candidate_ids,
-        capture_bindings=tuple(bindings),
-        target_snapshot=fixture.target.snapshot,
-        target=fixture.target,
-    )
-    return scope, tuple(
-        capture_peak_hypotheses(
-            scope=scope,
-            candidate_id=candidate_id,
-            trace=trace,
-        )
-        for candidate_id, trace in zip(candidate_ids, traces, strict=True)
-    )
-
-
-def test_workflow_repair_bridges_accept_no_caller_route_or_proposal() -> None:
-    assert tuple(
-        signature(apply_mode_track_refinement_run_for_workflow).parameters
-    ) == ("processing_owners", "captures", "run")
-    assert tuple(signature(consume_observation_repair_terminal).parameters) == (
-        "context",
-        "terminal",
-        "repair_result",
-        "alignment_config",
-        "drift_lookup",
-    )
-    assert tuple(signature(consume_mode_track_final_attempt).parameters) == (
-        "context",
-        "post_repair",
-        "terminal",
-        "final_attempt",
-    )
-
-
-@pytest.mark.parametrize("hold_samples", [(), ("s2", "s4")])
-def test_no_receipt_terminal_closes_epoch_zero_without_repair_evidence(
-    tmp_path: Path,
-    hold_samples: tuple[str, ...],
-) -> None:
-    from xic_extractor.alignment.cell_decision.owner import (
-        decide_target_cell_population,
-    )
-
-    fixture, spine, coverage, cells = _authorization_population(
-        tmp_path,
-        hold_samples=hold_samples,
-    )
-    terminal = execute_observation_repair(
-        processing_owners=fixture.owners,
-        coverage=coverage,
-        cell_observations=cells,
-        execute=lambda _candidate: pytest.fail("blocked repair invoked callback"),
-    )
-    group = spine.group
-    assert group is not None
-    identity = validate_cross_sample_peak_group_identity(
-        group,
-        require_canonical=True,
-    )
-    population = (identity,)
-    application = CrossSampleSuccessorApplication(
-        status="assessable",
-        predecessors=population,
-        successors=population,
-        lineage=(),
-        reason="unchanged_membership_no_lineage",
-    )
-    context = build_cross_sample_post_mt0_context(
-        processing_request_id=fixture.request.processing_request_id,
-        processing_owners=fixture.owners,
-        population=population,
-        application=application,
-        owners=group.owners,
-        classified_edges=(),
-        anchors=(),
-        injection_order={
-            owner.sample_stem: index
-            for index, owner in enumerate(group.owners, start=1)
-        },
-        evidence_profile=ModeTrackEvidenceProfile(
-            "anchor-trajectory", "fixed-band", 0.1, 10, 10
-        ),
-        budget=CrossSampleNeighborhoodBudget(86, 3655),
-    )
-
-    result = consume_observation_repair_terminal(
-        context=context,
-        terminal=terminal,
-        repair_result=None,
-        alignment_config=coverage.epoch.alignment_config,
-    )
-
-    assert isinstance(result, CrossSampleFinalReceipt)
-    assert result.repair_terminal is terminal
-    assert result.repair_receipt is None
-    assert result.repair_epoch == 0
-    assert result.cs2_state.repair_authorization_id == (
-        terminal.authorization.authorization_id
-    )
-    assert result.cs2_state.repair_receipt_id is None
-    assert result.cs2_state.repair_outcome == terminal.state
-    assert result.mode_track_final_attempt is None
-    assert result.final_population == context.population
-    with pytest.raises(
-        CrossSampleReconciliationContractError,
-        match="subject-scoped final receipt requires",
-    ):
-        replace(
-            result,
-            repair_terminal=None,
-            _mint_token=reconciliation_owner._FINAL_RECEIPT_MINT_TOKEN,
-        )
-    with pytest.raises(
-        CrossSampleReconciliationContractError,
-        match="repair epoch must be an exact integer",
-    ):
-        replace(
-            result,
-            repair_epoch=False,
-            _mint_token=reconciliation_owner._FINAL_RECEIPT_MINT_TOKEN,
-        )
-    handoff = build_cross_sample_association_lineage_handoff(
-        coverage=coverage,
-        final_receipt=result,
-    )
-    final_cells = compose_final_group_cell_observation_population(
-        handoff=handoff,
-        predecessor_cells=cells,
-        repair_receipts=(),
-        repaired_observations=(),
-    )
-    assert final_cells
-    assert all(cell.repair_receipts == () for cell in final_cells)
-    scope, captures = _target_scope_and_captures(fixture, spine, tmp_path)
-    scientific = finalize_scientific_alignment(
-        scope=scope,
-        captures=captures,
-        final_cross_sample_receipt=result,
-        cell_observation_handoff=handoff,
-        predecessor_cell_observations=cells,
-    )
-    pre_cell = project_target_pre_cell(scientific)
-    projection = project_target_post_cell(
-        pre_cell,
-        decide_target_cell_population(pre_cell),
-    )
-    application_result = finalize_alignment_result(
-        TargetApplicationResultRequest(
-            scientific_core=scientific,
-            completed_projection=projection,
-        )
-    )
-    assert application_result.scientific_core is scientific
-    assert application_result.completed_projection is projection
-    assert scientific.final_cross_sample_receipt is result
-    assert scientific.repair_receipt is None
-
-
-def test_mt0_bridge_preserves_complete_components(tmp_path: Path) -> None:
+def test_initial_grouping_preserves_complete_components(tmp_path: Path) -> None:
     from tests.cid_nl_peak_support_no_raw_fixture import (
         cid_nl_evidence,
         cid_nl_peak,
@@ -439,73 +189,46 @@ def test_mt0_bridge_preserves_complete_components(tmp_path: Path) -> None:
         ),
         retain_observation_only_candidates=True,
     )
-    components = tuple(
-        tuple(
-            group.group_hypothesis_id
+    assert sorted(
+        sum(
+            len(group.member_subjects)
             for group in transaction.application_context.predecessors
         )
         for transaction in run.transactions
-    )
-    assert sorted(map(len, components)) == [1, 2]
+    ) == [1, 2, 2]
+    for transaction in run.transactions:
+        receipt = transaction.application_context.grouping_receipt
+        assert receipt is not None
+        assert receipt.group_member_sets == tuple(
+            sorted(
+                tuple(
+                    sorted(member.member_subject_id for member in group.member_subjects)
+                )
+                for group in transaction.application_context.predecessors
+            )
+        )
+        assert transaction.trajectory_input.initial_grouping_receipt_id == (
+            receipt.receipt_id
+        )
     captures = _captures_for_run(run, include_retained_candidates=True)
     context = apply_mode_track_refinement_run_for_workflow(
         processing_owners=fixture.owners,
         captures=captures,
         run=run,
     )
-    assert context.application.predecessors == run.predecessors
+    assert context.partition_transition.predecessors == run.predecessors
     assert {
         member.member_subject_id
-        for group in context.population
+        for group in context.final_population
         for member in group.member_subjects
     } == {
         member.member_subject_id
         for group in run.predecessors
         for member in group.member_subjects
     }
-    assert all(
-        owner.selected_integration
-        is next(
-            source.selected_integration
-            for source in run.owners
-            if source.owner_id == owner.owner_id
-        )
-        for owner in context.owners
-    )
-    first, second = run.transactions
-    for transactions in (
-        (first,),
-        (first, first, second),
-        (second, first),
-    ):
-        invalid = replace(
-            run, transactions=transactions, _mint_token=_REFINEMENT_RUN_MINT_TOKEN
-        )
-        with pytest.raises(
-            CrossSampleReconciliationContractError, match="canonical predecessor order"
-        ):
-            apply_mode_track_refinement_run_for_workflow(
-                processing_owners=fixture.owners,
-                captures=captures,
-                run=invalid,
-            )
-    crossed = replace(
-        run,
-        transactions=(
-            replace(second, application_context=first.application_context),
-            replace(first, application_context=second.application_context),
-        ),
-        _mint_token=_REFINEMENT_RUN_MINT_TOKEN,
-    )
-    with pytest.raises(
-        CrossSampleReconciliationContractError, match="exact component context"
-    ):
-        apply_mode_track_refinement_run_for_workflow(
-            processing_owners=fixture.owners, captures=captures, run=crossed
-        )
 
 
-def test_mt0_bridge_closes_mixed_population_and_rejects_crossed_inputs(
+def test_initial_grouping_closes_mixed_population_and_rejects_crossed_inputs(
     tmp_path: Path,
 ) -> None:
     from tests.processing_identity_no_raw_fixture import (
@@ -549,7 +272,7 @@ def test_mt0_bridge_closes_mixed_population_and_rejects_crossed_inputs(
         replace(run, _mint_token=object())
 
     with pytest.raises(
-        CrossSampleReconciliationContractError,
+        CrossSampleGroupingContractError,
         match="captures do not close",
     ):
         apply_mode_track_refinement_run_for_workflow(
@@ -574,8 +297,8 @@ def test_mt0_bridge_closes_mixed_population_and_rejects_crossed_inputs(
     assert tuple(type(transaction.proposal) for transaction in run.transactions) == (
         AcceptedModeTrackRefinement,
     )
-    assert context.application.predecessors == run.predecessors
-    assert context.population == context.application.successors
+    assert context.partition_transition.predecessors == run.predecessors
+    assert context.final_population == context.partition_transition.successors
 
     incomplete_scope = object.__new__(UntargetedSearchScope)
     object.__setattr__(
@@ -597,7 +320,7 @@ def test_mt0_bridge_closes_mixed_population_and_rejects_crossed_inputs(
         for capture in captures
     )
     with pytest.raises(
-        CrossSampleReconciliationContractError,
+        CrossSampleGroupingContractError,
         match="declared candidate order",
     ):
         apply_mode_track_refinement_run_for_workflow(
@@ -607,7 +330,7 @@ def test_mt0_bridge_closes_mixed_population_and_rejects_crossed_inputs(
         )
 
     with pytest.raises(
-        CrossSampleReconciliationContractError,
+        CrossSampleGroupingContractError,
         match="declared candidate order",
     ):
         apply_mode_track_refinement_run_for_workflow(
@@ -631,7 +354,7 @@ def test_mt0_bridge_closes_mixed_population_and_rejects_crossed_inputs(
         ),
     )
     with pytest.raises(
-        CrossSampleReconciliationContractError,
+        CrossSampleGroupingContractError,
         match="crossed their exact SearchScope",
     ):
         apply_mode_track_refinement_run_for_workflow(
@@ -648,7 +371,7 @@ def test_mt0_bridge_closes_mixed_population_and_rejects_crossed_inputs(
         _mint_token=_REFINEMENT_RUN_MINT_TOKEN,
     )
     with pytest.raises(
-        CrossSampleReconciliationContractError,
+        CrossSampleGroupingContractError,
         match="physical integration",
     ):
         apply_mode_track_refinement_run_for_workflow(
@@ -658,22 +381,3 @@ def test_mt0_bridge_closes_mixed_population_and_rejects_crossed_inputs(
         )
 
     assert len(run.transactions) == 1
-    incomplete_transaction_runs = (
-        (),
-        (*run.transactions, run.transactions[0]),
-    )
-    for incomplete_transactions in incomplete_transaction_runs:
-        incomplete_run = replace(
-            run,
-            transactions=incomplete_transactions,
-            _mint_token=_REFINEMENT_RUN_MINT_TOKEN,
-        )
-        with pytest.raises(
-            CrossSampleReconciliationContractError,
-            match="complete typed component transactions|canonical predecessor order",
-        ):
-            apply_mode_track_refinement_run_for_workflow(
-                processing_owners=fixture.owners,
-                captures=captures,
-                run=incomplete_run,
-            )

@@ -1,4 +1,4 @@
-"""Neighborhood graphs, edge evaluations, and successor applications for CrossSample."""
+"""Neighborhood graphs, edge evaluations, and partition transitions for CrossSample."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import json
 from collections.abc import Iterator, Sequence
 from dataclasses import InitVar, dataclass, field
 from itertools import combinations
-from typing import TypeAlias
+from typing import Literal, TypeAlias
 
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.cross_sample_identity_models import (
@@ -47,7 +47,18 @@ _CROSS_SAMPLE_REPAIR_APPLICATION_PREFIX = (
 )
 _CROSS_SAMPLE_REPAIR_APPLICATION_MINT_TOKEN = object()
 _INITIAL_EDGE_MINT_TOKEN = object()
+_INITIAL_GROUPING_RECEIPT_MINT_TOKEN = object()
+_INITIAL_GROUPING_RECEIPT_PREFIX = "xic.cross-sample-initial-grouping-receipt:"
 INITIAL_PAIR_POLICY = "hard-gate-candidates-v1"
+INITIAL_GROUPING_POLICY: Literal["feature-group-membership-v1"] = (
+    "feature-group-membership-v1"
+)
+UNLISTED_PAIR_DISPOSITION: Literal["not_evaluated"] = "not_evaluated"
+
+
+InitialPairDisposition: TypeAlias = (
+    CrossSampleEdgeDisposition | Literal["not_evaluated"]
+)
 
 
 def iter_cross_sample_initial_owner_pairs(
@@ -76,16 +87,19 @@ def iter_cross_sample_initial_owner_pairs(
             left_index, left = ordered[index]
             first, second = (left, right) if left_index < right_index else (right, left)
             failure = _hard_gate_failure(
-                first, second, config=config,
+                first,
+                second,
+                config=config,
                 edge_depends_on_backfill=False,
-                left_detected_owner=True, right_detected_owner=True,
-                left_ambiguous_owner=False, right_ambiguous_owner=False,
+                left_detected_owner=True,
+                right_detected_owner=True,
+                left_ambiguous_owner=False,
+                right_ambiguous_owner=False,
             )
             if failure is None or (
                 context == "targeted_istd_continuity"
-                and failure in {
-                    "product_mz_out_of_tolerance", "observed_loss_out_of_tolerance"
-                }
+                and failure
+                in {"product_mz_out_of_tolerance", "observed_loss_out_of_tolerance"}
             ):
                 yield first, second
 
@@ -160,6 +174,228 @@ class CrossSampleNeighborhoodEdge:
             )
 
 
+@dataclass(frozen=True, slots=True)
+class CrossSampleInitialGroupingReceipt:
+    """Canonical compressed membership facts for one initial grouping result."""
+
+    receipt_id: str = field(init=False)
+    processing_request_id: str
+    policy_version: Literal["feature-group-membership-v1"]
+    group_member_sets: tuple[tuple[str, ...], ...]
+    indivisible_member_sets: tuple[tuple[str, ...], ...]
+    evaluated_edges: tuple[CrossSampleClassifiedEdge, ...]
+    absent_pair_disposition: Literal["not_evaluated"]
+    basis_bytes: bytes = field(init=False)
+    _mint_token: InitVar[object] = field(kw_only=True, repr=False)
+
+    def __post_init__(self, _mint_token: object) -> None:
+        if _mint_token is not _INITIAL_GROUPING_RECEIPT_MINT_TOKEN:
+            raise CrossSampleContractError(
+                "initial grouping receipt must be minted by CrossSample"
+            )
+        request_id = validate_typed_identity_id(
+            self.processing_request_id,
+            prefix=PROCESSING_REQUEST_ID_PREFIX,
+            field="initial grouping processing_request_id",
+        )
+        if self.policy_version != INITIAL_GROUPING_POLICY:
+            raise CrossSampleContractError("initial grouping policy is not closed")
+        if self.absent_pair_disposition != UNLISTED_PAIR_DISPOSITION:
+            raise CrossSampleContractError(
+                "unlisted initial pairs must remain not_evaluated"
+            )
+        _validate_canonical_member_sets(
+            self.group_member_sets,
+            field="initial grouping member sets",
+            require_partition=True,
+        )
+        _validate_canonical_member_sets(
+            self.indivisible_member_sets,
+            field="initial grouping indivisible member sets",
+            require_partition=True,
+        )
+        group_sets = tuple(frozenset(group) for group in self.group_member_sets)
+        if any(
+            not any(frozenset(member_set) <= group for group in group_sets)
+            for member_set in self.indivisible_member_sets
+        ):
+            raise CrossSampleContractError(
+                "indivisible members must be contained by one initial group"
+            )
+        if any(len(member_set) < 2 for member_set in self.indivisible_member_sets):
+            raise CrossSampleContractError(
+                "indivisible membership requires at least two members"
+            )
+        if type(self.evaluated_edges) is not tuple or self.evaluated_edges != tuple(
+            sorted(self.evaluated_edges, key=_classified_edge_sort_key)
+        ):
+            raise CrossSampleContractError(
+                "initial grouping evaluated edges are not canonical-sorted"
+            )
+        members = {member_id for group in self.group_member_sets for member_id in group}
+        edge_pairs: set[tuple[str, str]] = set()
+        for edge in self.evaluated_edges:
+            if type(edge) not in {
+                CrossSampleNeighborhoodEdge,
+                CrossSampleRepairAdmissionEdge,
+            }:
+                raise CrossSampleContractError(
+                    "initial grouping evaluated edge must be an exact classification"
+                )
+            pair = _canonical_edge_pair(edge)
+            if pair[0] not in members or pair[1] not in members:
+                raise CrossSampleContractError(
+                    "initial grouping evaluated edge references an outsider"
+                )
+            if pair in edge_pairs:
+                raise CrossSampleContractError(
+                    "initial grouping repeats an evaluated member pair"
+                )
+            edge_pairs.add(pair)
+        basis = _initial_grouping_receipt_basis(
+            processing_request_id=request_id,
+            group_member_sets=self.group_member_sets,
+            indivisible_member_sets=self.indivisible_member_sets,
+            evaluated_edges=self.evaluated_edges,
+        )
+        object.__setattr__(self, "basis_bytes", basis)
+        object.__setattr__(
+            self,
+            "receipt_id",
+            typed_identity_digest(_INITIAL_GROUPING_RECEIPT_PREFIX, basis),
+        )
+
+    def pair_disposition(
+        self,
+        left_member_subject_id: str,
+        right_member_subject_id: str,
+    ) -> InitialPairDisposition:
+        pair = tuple(
+            sorted(
+                (
+                    _required_text(left_member_subject_id, field="left member"),
+                    _required_text(right_member_subject_id, field="right member"),
+                )
+            )
+        )
+        if pair[0] == pair[1]:
+            raise CrossSampleContractError("initial pair query cannot be a self-pair")
+        for edge in self.evaluated_edges:
+            if _canonical_edge_pair(edge) == pair:
+                return edge.disposition
+        return UNLISTED_PAIR_DISPOSITION
+
+
+def mint_cross_sample_initial_grouping_receipt(
+    *,
+    processing_request_id: str,
+    groups: Sequence[CrossSampleGroupIdentity],
+    evaluated_edges: Sequence[CrossSampleClassifiedEdge] = (),
+    indivisible_member_sets: Sequence[Sequence[str]] = (),
+) -> CrossSampleInitialGroupingReceipt:
+    """Seal sparse evaluated pairs and compressed group membership without expansion."""
+
+    request_id = validate_typed_identity_id(
+        processing_request_id,
+        prefix=PROCESSING_REQUEST_ID_PREFIX,
+        field="initial grouping processing_request_id",
+    )
+    group_population = validate_cross_sample_group_population(groups)
+    if any(group.processing_request_id != request_id for group in group_population):
+        raise CrossSampleContractError("initial grouping crossed processing request")
+    group_member_sets = tuple(
+        sorted(
+            tuple(sorted(member.member_subject_id for member in group.member_subjects))
+            for group in group_population
+        )
+    )
+    canonical_indivisible = tuple(
+        sorted(
+            tuple(sorted(member_set))
+            for member_set in indivisible_member_sets
+            if len(member_set) > 1
+        )
+    )
+    edges = tuple(sorted(evaluated_edges, key=_classified_edge_sort_key))
+    return CrossSampleInitialGroupingReceipt(
+        processing_request_id=request_id,
+        policy_version=INITIAL_GROUPING_POLICY,
+        group_member_sets=group_member_sets,
+        indivisible_member_sets=canonical_indivisible,
+        evaluated_edges=edges,
+        absent_pair_disposition=UNLISTED_PAIR_DISPOSITION,
+        _mint_token=_INITIAL_GROUPING_RECEIPT_MINT_TOKEN,
+    )
+
+
+def _initial_grouping_receipt_basis(
+    *,
+    processing_request_id: str,
+    group_member_sets: tuple[tuple[str, ...], ...],
+    indivisible_member_sets: tuple[tuple[str, ...], ...],
+    evaluated_edges: tuple[CrossSampleClassifiedEdge, ...],
+) -> bytes:
+    return canonical_identity_basis_bytes(
+        {
+            "schema_version": "cross_sample_initial_grouping_receipt_v1",
+            "processing_request_id": processing_request_id,
+            "policy_version": INITIAL_GROUPING_POLICY,
+            "absent_pair_disposition": UNLISTED_PAIR_DISPOSITION,
+            "group_member_sets": [list(group) for group in group_member_sets],
+            "indivisible_member_sets": [
+                list(group) for group in indivisible_member_sets
+            ],
+            "evaluated_pairs": [
+                {
+                    "member_subject_ids": list(_canonical_edge_pair(edge)),
+                    "disposition": edge.disposition,
+                }
+                for edge in evaluated_edges
+            ],
+        }
+    )
+
+
+def _validate_canonical_member_sets(
+    value: object,
+    *,
+    field: str,
+    require_partition: bool,
+) -> None:
+    if type(value) is not tuple:
+        raise CrossSampleContractError(f"{field} must be an immutable tuple")
+    if any(
+        type(member_set) is not tuple
+        or not member_set
+        or tuple(sorted(set(member_set))) != member_set
+        or any(
+            not isinstance(member_id, str) or not member_id for member_id in member_set
+        )
+        for member_set in value
+    ):
+        raise CrossSampleContractError(f"{field} must be canonical non-empty sets")
+    if tuple(sorted(set(value))) != value:
+        raise CrossSampleContractError(f"{field} must be canonical and unique")
+    flattened = [member_id for member_set in value for member_id in member_set]
+    if require_partition and len(flattened) != len(set(flattened)):
+        raise CrossSampleContractError(f"{field} overlap")
+
+
+def _canonical_edge_pair(
+    edge: CrossSampleClassifiedEdge,
+) -> tuple[str, str]:
+    return (
+        min(edge.left_member_subject_id, edge.right_member_subject_id),
+        max(edge.left_member_subject_id, edge.right_member_subject_id),
+    )
+
+
+def _classified_edge_sort_key(
+    edge: CrossSampleClassifiedEdge,
+) -> tuple[str, str]:
+    return _canonical_edge_pair(edge)
+
+
 def classify_cross_sample_initial_neighborhood_edge(
     *,
     left_owner: SampleLocalMS1Owner,
@@ -169,7 +405,6 @@ def classify_cross_sample_initial_neighborhood_edge(
     drift_lookup: DriftLookupProtocol | None = None,
 ) -> CrossSampleNeighborhoodEdge:
     """Mint a sealed edge by evaluating the exact owner pair inside CrossSample."""
-
     edge = evaluate_owner_edge(
         left_owner,
         right_owner,
@@ -433,10 +668,10 @@ def classify_cross_sample_initial_edge(
         return "eligible"
     if edge.decision == "strong_edge":
         return "eligible"
-    if context == "complete_link":
-        return "review_only"
     if _full_batch_weak_edge_is_eligible(edge, config=config):
         return "eligible"
+    if context == "complete_link":
+        return "review_only"
     if context == "targeted_istd_continuity":
         return _targeted_istd_rt_disposition(edge, config=config)
     return "review_only"
@@ -479,11 +714,17 @@ def _targeted_istd_rt_disposition(
 def _components(
     member_ids: tuple[str, ...],
     eligible_edges: tuple[CrossSampleClassifiedEdge, ...],
+    group_member_sets: tuple[tuple[str, ...], ...] = (),
 ) -> tuple[tuple[str, ...], ...]:
     adjacent: dict[str, set[str]] = {member_id: set() for member_id in member_ids}
     for edge in eligible_edges:
         adjacent[edge.left_member_subject_id].add(edge.right_member_subject_id)
         adjacent[edge.right_member_subject_id].add(edge.left_member_subject_id)
+    for member_set in group_member_sets:
+        first = member_set[0]
+        for member_id in member_set[1:]:
+            adjacent[first].add(member_id)
+            adjacent[member_id].add(first)
     remaining = set(member_ids)
     components: list[tuple[str, ...]] = []
     while remaining:
@@ -505,6 +746,7 @@ class CrossSampleConnectedNeighborhood:
     status: CrossSampleNeighborhoodStatus
     member_subject_ids: tuple[str, ...]
     eligible_edges: tuple[CrossSampleClassifiedEdge, ...]
+    group_member_sets: tuple[tuple[str, ...], ...]
     connected_components: tuple[tuple[str, ...], ...]
 
     def __post_init__(self) -> None:
@@ -521,9 +763,22 @@ class CrossSampleConnectedNeighborhood:
             for edge in self.eligible_edges
         ):
             raise CrossSampleContractError("neighborhood edge references an outsider")
+        _validate_canonical_member_sets(
+            self.group_member_sets,
+            field="neighborhood group member sets",
+            require_partition=True,
+        )
+        grouped_members = {
+            member_id for group in self.group_member_sets for member_id in group
+        }
+        if grouped_members - member_ids:
+            raise CrossSampleContractError(
+                "neighborhood group membership references an outsider"
+            )
         if self.connected_components != _components(
             self.member_subject_ids,
             self.eligible_edges,
+            self.group_member_sets,
         ):
             raise CrossSampleContractError("neighborhood components are not exact")
 
@@ -533,6 +788,7 @@ def build_bounded_connected_neighborhood(
     member_subjects: Sequence[CrossSampleGroupMemberSubject],
     edges: Sequence[CrossSampleClassifiedEdge],
     budget: CrossSampleNeighborhoodBudget,
+    grouping_receipt: CrossSampleInitialGroupingReceipt | None = None,
 ) -> CrossSampleConnectedNeighborhood:
     if not isinstance(budget, CrossSampleNeighborhoodBudget):
         raise CrossSampleContractError("neighborhood budget must be typed")
@@ -564,6 +820,25 @@ def build_bounded_connected_neighborhood(
     member_ids = tuple(sorted(member.member_subject_id for member in members))
     if len(set(member_ids)) != len(member_ids):
         raise CrossSampleContractError("neighborhood duplicates a member")
+    group_member_sets: tuple[tuple[str, ...], ...] = ()
+    if grouping_receipt is not None:
+        if type(grouping_receipt) is not CrossSampleInitialGroupingReceipt:
+            raise CrossSampleContractError("grouping receipt must be exact")
+        if any(
+            member.processing_request_id != grouping_receipt.processing_request_id
+            for member in members
+        ):
+            raise CrossSampleContractError(
+                "grouping receipt crossed neighborhood processing request"
+            )
+        group_member_sets = grouping_receipt.group_member_sets
+        receipt_members = tuple(
+            sorted(member_id for group in group_member_sets for member_id in group)
+        )
+        if receipt_members != member_ids:
+            raise CrossSampleContractError(
+                "grouping receipt does not close the neighborhood population"
+            )
     eligible = tuple(
         sorted(
             (edge for edge in edges if edge.disposition == "eligible"),
@@ -583,7 +858,8 @@ def build_bounded_connected_neighborhood(
         status=status,
         member_subject_ids=member_ids,
         eligible_edges=eligible,
-        connected_components=_components(member_ids, eligible),
+        group_member_sets=group_member_sets,
+        connected_components=_components(member_ids, eligible, group_member_sets),
     )
 
 
@@ -594,6 +870,7 @@ class CrossSampleCoupledProposalContext:
     predecessors: tuple[CrossSampleGroupIdentity, ...]
     classified_edges: tuple[CrossSampleNeighborhoodEdge, ...]
     budget: CrossSampleNeighborhoodBudget
+    grouping_receipt: CrossSampleInitialGroupingReceipt | None = None
 
     def __post_init__(self) -> None:
         if self.predecessors != tuple(
@@ -614,6 +891,7 @@ class CrossSampleCoupledProposalContext:
             ),
             edges=self.classified_edges,
             budget=self.budget,
+            grouping_receipt=self.grouping_receipt,
         )
 
 
@@ -728,7 +1006,7 @@ class CrossSampleLineageEdge:
 
 
 @dataclass(frozen=True, slots=True)
-class CrossSampleSuccessorApplication:
+class CrossSamplePartitionTransition:
     status: CrossSampleNeighborhoodStatus
     predecessors: tuple[CrossSampleGroupIdentity, ...]
     successors: tuple[CrossSampleGroupIdentity, ...]
@@ -742,21 +1020,21 @@ class CrossSampleSuccessorApplication:
             or type(self.lineage) is not tuple
         ):
             raise CrossSampleContractError(
-                "successor application closures must be immutable tuples"
+                "partition transition closures must be immutable tuples"
             )
         if any(
             not isinstance(group, CrossSampleGroupIdentity)
             for group in self.predecessors
         ):
             raise CrossSampleContractError(
-                "successor application requires typed predecessors"
+                "partition transition requires typed predecessors"
             )
         predecessor_ids = tuple(
             group.group_hypothesis_id for group in self.predecessors
         )
         if predecessor_ids != tuple(sorted(predecessor_ids)):
             raise CrossSampleContractError(
-                "successor application predecessors are not canonical-sorted"
+                "partition transition predecessors are not canonical-sorted"
             )
         validate_cross_sample_group_population(self.predecessors)
         if self.status == "unassessable":
@@ -767,17 +1045,17 @@ class CrossSampleSuccessorApplication:
                 or self.reason != ("eligible_neighborhood_exceeds_budget")
             ):
                 raise CrossSampleContractError(
-                    "unassessable successor application is not atomic"
+                    "unassessable partition transition is not atomic"
                 )
             return
         if self.status != "assessable" or bool(self.successors) != bool(
             self.predecessors
         ):
-            raise CrossSampleContractError("successor application status is invalid")
+            raise CrossSampleContractError("partition transition status is invalid")
         successor_ids = tuple(group.group_hypothesis_id for group in self.successors)
         if successor_ids != tuple(sorted(successor_ids)):
             raise CrossSampleContractError(
-                "successor application successors are not canonical-sorted"
+                "partition transition successors are not canonical-sorted"
             )
         predecessor_members = sorted(
             member.member_subject_id
@@ -791,7 +1069,7 @@ class CrossSampleSuccessorApplication:
         )
         if predecessor_members != successor_members:
             raise CrossSampleContractError(
-                "successor application is not a complete partition"
+                "partition transition is not a complete partition"
             )
         expected_lineage = _expected_cross_sample_lineage(
             predecessors=self.predecessors,
@@ -799,7 +1077,7 @@ class CrossSampleSuccessorApplication:
         )
         if self.lineage != expected_lineage:
             raise CrossSampleContractError(
-                "successor application lineage is not the complete atomic closure"
+                "partition transition lineage is not the complete atomic closure"
             )
         unchanged = set(predecessor_ids) == set(successor_ids)
         expected_reason = (
@@ -807,7 +1085,7 @@ class CrossSampleSuccessorApplication:
         )
         if self.reason != expected_reason:
             raise CrossSampleContractError(
-                "successor application reason contradicts its transition"
+                "partition transition reason contradicts its transition"
             )
 
 
@@ -1077,7 +1355,8 @@ def apply_coupled_successor_proposal(
     edges: Sequence[CrossSampleNeighborhoodEdge],
     budget: CrossSampleNeighborhoodBudget,
     population: Sequence[CrossSampleGroupIdentity],
-) -> CrossSampleSuccessorApplication:
+    grouping_receipt: CrossSampleInitialGroupingReceipt | None = None,
+) -> CrossSamplePartitionTransition:
     predecessor_groups = tuple(
         sorted(predecessors, key=lambda group: group.group_hypothesis_id)
     )
@@ -1103,9 +1382,10 @@ def apply_coupled_successor_proposal(
         member_subjects=predecessor_members,
         edges=edges,
         budget=budget,
+        grouping_receipt=grouping_receipt,
     )
     if neighborhood.status == "unassessable":
-        return CrossSampleSuccessorApplication(
+        return CrossSamplePartitionTransition(
             status="unassessable",
             predecessors=predecessor_groups,
             successors=(),
@@ -1134,20 +1414,35 @@ def apply_coupled_successor_proposal(
         raise CrossSampleContractError(
             "successor proposal spans disconnected eligible components"
         )
-    allowed_pairs = {
+    explicitly_excluded_pairs = {
         frozenset((edge.left_member_subject_id, edge.right_member_subject_id))
         for edge in edges
-        if edge.disposition != "excluded"
+        if edge.disposition == "excluded"
     }
     if any(
         frozenset((left.member_subject_id, right.member_subject_id))
-        not in allowed_pairs
+        in explicitly_excluded_pairs
         for member_set in proposed
         for left, right in combinations(member_set, 2)
     ):
         raise CrossSampleContractError(
             "successor proposal reopens an excluded member edge"
         )
+    if grouping_receipt is not None:
+        proposed_member_sets = tuple(
+            frozenset(member.member_subject_id for member in member_set)
+            for member_set in proposed
+        )
+        if any(
+            not any(
+                frozenset(indivisible) <= proposed_set
+                for proposed_set in proposed_member_sets
+            )
+            for indivisible in grouping_receipt.indivisible_member_sets
+        ):
+            raise CrossSampleContractError(
+                "successor proposal splits an indivisible initial identity"
+            )
     predecessor_by_members = {
         frozenset(
             member.member_subject_id for member in predecessor.member_subjects
@@ -1174,7 +1469,7 @@ def apply_coupled_successor_proposal(
     predecessor_ids_set = {group.group_hypothesis_id for group in predecessor_groups}
     successor_ids_set = {group.group_hypothesis_id for group in successors}
     if predecessor_ids_set == successor_ids_set:
-        return CrossSampleSuccessorApplication(
+        return CrossSamplePartitionTransition(
             status="assessable",
             predecessors=predecessor_groups,
             successors=successors,
@@ -1185,7 +1480,7 @@ def apply_coupled_successor_proposal(
         predecessors=predecessor_groups,
         successors=successors,
     )
-    return CrossSampleSuccessorApplication(
+    return CrossSamplePartitionTransition(
         status="assessable",
         predecessors=predecessor_groups,
         successors=successors,
@@ -1199,11 +1494,16 @@ __all__ = (
     "CrossSampleConnectedNeighborhood",
     "CrossSampleCoupledProposalContext",
     "CrossSampleEdgeOwner",
+    "CrossSampleInitialGroupingReceipt",
     "CrossSampleLineageEdge",
     "CrossSampleNeighborhoodEdge",
     "CrossSampleRepairAdmissionApplication",
     "CrossSampleRepairAdmissionEdge",
-    "CrossSampleSuccessorApplication",
+    "CrossSamplePartitionTransition",
+    "INITIAL_GROUPING_POLICY",
+    "INITIAL_PAIR_POLICY",
+    "InitialPairDisposition",
+    "UNLISTED_PAIR_DISPOSITION",
     "_CROSS_SAMPLE_LINEAGE_EDGE_PREFIX",
     "_CROSS_SAMPLE_REPAIR_APPLICATION_MINT_TOKEN",
     "_CROSS_SAMPLE_REPAIR_APPLICATION_PREFIX",
@@ -1220,4 +1520,5 @@ __all__ = (
     "classify_cross_sample_initial_edge",
     "classify_cross_sample_initial_neighborhood_edge",
     "classify_cross_sample_repair_admission_edge",
+    "mint_cross_sample_initial_grouping_receipt",
 )

@@ -6,8 +6,8 @@ import json
 from dataclasses import InitVar, dataclass, field
 from typing import TYPE_CHECKING, Literal, TypeAlias
 
-from xic_extractor.alignment.cross_sample_reconciliation import (
-    CrossSampleFinalReceipt,
+from xic_extractor.alignment.grouping_result import (
+    CrossSampleGroupingResult,
 )
 from xic_extractor.alignment.result.scientific_alignment import (
     FinalizedScientificAlignment,
@@ -33,7 +33,7 @@ from xic_extractor.peak_detection.cid_nl_method_subject import (
     CidNlMethodSubjectContractError,
     cid_nl_alignment_subject_worksets,
     cid_nl_method_subject_batch_from_request,
-    validate_cid_nl_alignment_subject_workset,
+    validate_cid_nl_alignment_subject_compatibility,
 )
 from xic_extractor.peak_detection.search_scope import (
     TargetSearchScope,
@@ -64,10 +64,10 @@ _APPLICATION_RESULT_MINT_TOKEN = object()
 
 
 def _is_evaluated_unsupported_assessment(ref: CidNlMethodAssessmentRef) -> bool:
-    return (
-        ref.content.technical_state == "evaluated"
-        and ref.content.method_result in {"HOLD", "REJECT"}
-    )
+    return ref.content.technical_state == "evaluated" and ref.content.method_result in {
+        "HOLD",
+        "REJECT",
+    }
 
 
 def _is_method_exclusion_coverage(ref: CidNlMethodAssessmentRef) -> bool:
@@ -275,9 +275,9 @@ class FinalizedTargetApplicationResult:
     @property
     def completion_receipts(
         self,
-    ) -> tuple[CrossSampleFinalReceipt, TargetPostCellProjection]:
+    ) -> tuple[CrossSampleGroupingResult, TargetPostCellProjection]:
         return (
-            self.scientific_core.final_cross_sample_receipt,
+            self.scientific_core.grouping_result,
             self.completed_projection,
         )
 
@@ -309,9 +309,9 @@ class FinalizedUntargetApplicationResult:
     @property
     def completion_receipts(
         self,
-    ) -> tuple[CrossSampleFinalReceipt, UntargetPostCellProjection]:
+    ) -> tuple[CrossSampleGroupingResult, UntargetPostCellProjection]:
         return (
-            self.scientific_core.final_cross_sample_receipt,
+            self.scientific_core.grouping_result,
             self.completed_projection,
         )
 
@@ -858,14 +858,9 @@ def _validate_untarget_batch_request(
             raise ApplicationResultContractError(
                 "Untarget batch result requires exact finalized Untarget children"
             )
-        try:
-            _validate_untarget_result(child)
-        except ApplicationResultContractError:
-            raise
-        except (TypeError, ValueError) as exc:
-            raise ApplicationResultContractError(
-                "Untarget batch child is not a complete finalized result"
-            ) from exc
+        # The application owner already closed each immutable child. Batch
+        # assembly checks parent bindings and cross-child coverage below; it
+        # does not reopen the child's scientific or post-cell computation.
         core = child.scientific_core
         if core.processing_request is not request.processing_request:
             raise ApplicationResultContractError(
@@ -921,20 +916,19 @@ def _validate_untarget_batch_request(
             for subject_id in parent_subject_ids
             if subject_id in child_subject_id_set
         )
-        if not child_subject_ids or len(child_subject_ids) != len(
-            child_subject_id_set
-        ):
+        if not child_subject_ids or len(child_subject_ids) != len(child_subject_id_set):
             raise ApplicationResultContractError(
                 "Untarget batch child subject workset crossed its parent"
             )
-        if tuple(
-            provider.method_subject_id for provider in scope.evidence_providers
-        ) != child_subject_ids:
+        if (
+            tuple(provider.method_subject_id for provider in scope.evidence_providers)
+            != child_subject_ids
+        ):
             raise ApplicationResultContractError(
                 "Untarget batch child providers do not match its subject workset"
             )
         try:
-            validate_cid_nl_alignment_subject_workset(
+            validate_cid_nl_alignment_subject_compatibility(
                 tuple(subject_by_id[subject_id] for subject_id in child_subject_ids)
             )
         except (CidNlMethodSubjectContractError, KeyError) as exc:
@@ -991,10 +985,24 @@ def _validate_untarget_batch_request(
         raise ApplicationResultContractError(
             "Untarget batch child/exclusion candidate union is not exactly once"
         )
-    if tuple(child_worksets) != expected_child_worksets:
+    child_by_subject = {
+        subject_id: index
+        for index, workset in enumerate(child_worksets)
+        for subject_id in workset
+    }
+    subject_order = {
+        subject.method_subject_id: index
+        for index, subject in enumerate(included_subjects)
+    }
+    if any(
+        len({child_by_subject[subject_id] for subject_id in workset}) != 1
+        for workset in expected_child_worksets
+    ) or child_worksets != sorted(
+        child_worksets, key=lambda workset: min(subject_order[item] for item in workset)
+    ):
         raise ApplicationResultContractError(
-            "Untarget batch child worksets are not in canonical order or an exact "
-            "partition"
+            "Untarget batch child worksets split a comparison component or "
+            "are not in canonical order"
         )
 
 

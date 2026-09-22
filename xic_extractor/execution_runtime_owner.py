@@ -183,10 +183,6 @@ class RuntimeAttemptAggregate:
         )
         manifest_keys = set(self.state.runtime.manifest.work_unit_keys)
         keys = tuple(item.work_unit_key for item in self.acquisitions)
-        if len(keys) != len(set(keys)):
-            raise RuntimeFinalizationContractError(
-                "aggregate accepts at most one acquisition receipt per work unit"
-            )
         if any(key not in manifest_keys for key in keys):
             raise RuntimeFinalizationContractError(
                 "acquisition receipts must bind declared manifest work"
@@ -392,9 +388,9 @@ def _apply_runtime_worker_batch(
             outcome=resource_receipt.cleanup_outcome,
         )
 
-    accepted_acquisitions = {
-        item.work_unit_key: item for item in aggregate.acquisitions
-    }
+    accepted_acquisitions: dict[str, list[RuntimeAcquisitionReceipt]] = {}
+    for existing in aggregate.acquisitions:
+        accepted_acquisitions.setdefault(existing.work_unit_key, []).append(existing)
     settlements_by_key = {
         item.work_unit_key: item for item in state.runtime.settlements
     }
@@ -411,22 +407,44 @@ def _apply_runtime_worker_batch(
             raise RuntimeFinalizationContractError(
                 "acquisition receipt requires a submitted terminal work result"
             )
-        existing = accepted_acquisitions.get(acquisition_receipt.work_unit_key)
-        if existing is not None and not _acquisition_receipts_match(
-            existing,
-            acquisition_receipt,
+        existing_for_work = accepted_acquisitions.setdefault(
+            acquisition_receipt.work_unit_key,
+            [],
+        )
+        replay_index = next(
+            (
+                index
+                for index, existing in enumerate(existing_for_work)
+                if _acquisition_receipts_match(existing, acquisition_receipt)
+            ),
+            None,
+        )
+        if replay_index is not None:
+            existing_for_work[replay_index] = acquisition_receipt
+            continue
+        acquisition = acquisition_receipt.acquisition
+        acquisition_identity = (
+            None
+            if isinstance(acquisition, RuntimeAcquisitionMetrics)
+            else acquisition.capability.capability_id
+        )
+        if any(
+            isinstance(existing.acquisition, RuntimeAcquisitionMetrics)
+            or acquisition_identity is None
+            or existing.acquisition.capability.capability_id == acquisition_identity
+            for existing in existing_for_work
         ):
             raise RuntimeFinalizationContractError(
                 "conflicting acquisition receipt for one work unit"
             )
-        accepted_acquisitions[acquisition_receipt.work_unit_key] = acquisition_receipt
+        existing_for_work.append(acquisition_receipt)
 
     return _mint_runtime_attempt_aggregate(
         state=state,
         acquisitions=tuple(
-            accepted_acquisitions[key]
+            acquisition
             for key in state.runtime.manifest.work_unit_keys
-            if key in accepted_acquisitions
+            for acquisition in accepted_acquisitions.get(key, ())
         ),
     )
 

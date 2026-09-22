@@ -188,16 +188,19 @@ def _execute_initial_assessment_batch(
             phase.initial_opened = True
             candidates = job.candidates
             if partition_candidates:
-                candidate_ids = {
-                    candidate.candidate_id
+                selected_candidates = {
+                    candidate.candidate_id: candidate
                     for state in states
                     if state.error is None
                     for candidate in _request_subject_candidates(state.job)
                 }
                 candidates = tuple(
-                    candidate
-                    for candidate in candidates
-                    if candidate.candidate_id in candidate_ids
+                    sorted(
+                        selected_candidates.values(),
+                        key=lambda candidate: job._candidate_order[
+                            candidate.candidate_id
+                        ],
+                    )
                 )
             active_acquire = _runtime_delegate(
                 "acquire_untargeted_cid_nl_sample_trace_batch",

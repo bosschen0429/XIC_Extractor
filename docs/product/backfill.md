@@ -38,10 +38,8 @@ or HOLD results alone.
   outcomes include member+value, member+null,
   nonmember+Target-local-value, and nonmember+null. Backfill itself decides
   neither axis.
-- Backfill runs at most one bounded repair epoch. If accepted repair changes the
-  immutable ModeTrack trajectory input, CrossSample may rebuild that snapshot
-  and request one final ModeTrack pass. Value-only area/boundary changes do not
-  rerun ModeTrack, and there is no repair/refit loop.
+- Backfill runs once after group membership is fixed. Repaired observations
+  enter the cell-decision path without reopening grouping or ModeTrack.
 - Alignment and ModeTrack supply cross-sample context and trajectory evidence;
   Backfill owns the local missing-cell revisit. A trend or RT prior alone cannot
   manufacture a local observation or fill another sample from singleton

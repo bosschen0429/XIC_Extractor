@@ -1064,7 +1064,7 @@ def test_adapter_preserves_supported_and_observation_only_physical_peaks(
         rebound_by_id is source_by_id
         for rebound_by_id, source_by_id in zip(rebound, hypotheses, strict=True)
     )
-    family_context, model_set, batches, _source = (
+    assignment_scope, model_set, batches, _source = (
         bootstrap_mode_tracks_from_cid_nl_support(
             processing_owners=fixture.owners,
             sample_assessments=((fixture.sample("S1"), assessment),),
@@ -1078,7 +1078,7 @@ def test_adapter_preserves_supported_and_observation_only_physical_peaks(
             ),
         )
     )
-    assert len(family_context.mode_tracks) == 2
+    assert len(assignment_scope.groups) == 2
     assert sum(len(track.anchors) for track in model_set.tracks) == 1
     assert {item.candidate_observation_class for item in batches[0].assignments} == {
         "direct_support",
@@ -1092,7 +1092,7 @@ def test_adapter_preserves_supported_and_observation_only_physical_peaks(
     )
     observation_track = next(
         track
-        for track in family_context.mode_tracks
+        for track in assignment_scope.groups
         if observation_only.hypothesis_id in track.owner_ids
     )
     with pytest.raises(ModeTrackContractError):

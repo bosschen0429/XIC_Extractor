@@ -276,7 +276,7 @@ def test_cid_nl_workflow_seam_applies_accepted_components_through_cross_sample(
     }
     component_owners = tuple(
         owner
-        for group in result.family_context.mode_tracks
+        for group in result.assignment_scope.groups
         if group.group_hypothesis_id in predecessor_ids
         for owner in group.owners
     )
@@ -298,7 +298,7 @@ def test_refinement_bootstrap_forwards_exact_drift_lookup(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import xic_extractor.alignment.mode_track.refinement as refinement_owner
+    import xic_extractor.alignment.feature_membership_inference as inference_owner
     from tests.processing_identity_no_raw_fixture import (
         build_processing_identity_no_raw_fixture,
     )
@@ -333,15 +333,15 @@ def test_refinement_bootstrap_forwards_exact_drift_lookup(
 
     drift_lookup = DriftLookup()
     seen = []
-    classify = refinement_owner.classify_cross_sample_initial_neighborhood_edge
+    evaluate = inference_owner.evaluate_owner_edge
 
-    def observe(**kwargs):
+    def observe(*args, **kwargs):
         seen.append(kwargs["drift_lookup"])
-        return classify(**kwargs)
+        return evaluate(*args, **kwargs)
 
     monkeypatch.setattr(
-        refinement_owner,
-        "classify_cross_sample_initial_neighborhood_edge",
+        inference_owner,
+        "evaluate_owner_edge",
         observe,
     )
     bootstrap_mode_track_refinement_from_cid_nl_support(
@@ -449,12 +449,15 @@ def test_refinement_bootstrap_uses_selective_rt_evidence_for_initial_groups(
         and owner.cross_sample_member_subject is not None
     }
     assert len(direct_member_ids) == 2
-    assert any(
-        direct_member_ids.issubset(
-            {member.member_subject_id for member in predecessor.member_subjects}
+    assert (
+        any(
+            direct_member_ids.issubset(
+                {member.member_subject_id for member in predecessor.member_subjects}
+            )
+            for predecessor in run.predecessors
         )
-        for predecessor in run.predecessors
-    ) is same_initial_group
+        is same_initial_group
+    )
 
 
 def test_public_workflow_returns_cross_sample_application_receipts(

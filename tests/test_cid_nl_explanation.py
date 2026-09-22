@@ -1,5 +1,6 @@
 """Persisted explanations retain owner facts and query without acquisition."""
 
+import csv
 import hashlib
 import json
 import sqlite3
@@ -149,12 +150,20 @@ def test_owner_facts_survive_persisted_candidate_query(tmp_path, monkeypatch, sc
     summary = read_cid_nl_explanation(report)
     assert summary["diagnostic_only"] is True
     assert summary["initial_edge_coverage"] == {
-        "policy": "hard-gate-candidates-v1",
-        "unlisted_pairs": "excluded",
+        "policy": "feature-group-membership-v1",
+        "unlisted_pairs": "not_evaluated",
         "rt_pruning": False,
+        "evaluated_pair_count": len(completed.initial_edges),
+        "compressed_group_count": len(completed.initial_groups),
+        "compressed_member_count": sum(
+            len(group.member_subjects) for group in completed.initial_groups
+        ),
     }
     assert summary["matrix_sha256"] == hashlib.sha256(matrix.read_bytes()).hexdigest()
-    assert summary["matrix_row_count"] == (1 if scenario == "positive" else 0)
+    with matrix.open(encoding="utf-8-sig", newline="") as matrix_handle:
+        assert summary["matrix_row_count"] == sum(
+            1 for _ in csv.DictReader(matrix_handle, delimiter="\t")
+        )
     assert summary["candidate_count"] == sum(map(len, candidates.values()))
     candidate_id = candidates["S1"][0].candidate_id
     detail = read_cid_nl_explanation(report, candidate_id=candidate_id)
@@ -192,25 +201,40 @@ def test_owner_facts_survive_persisted_candidate_query(tmp_path, monkeypatch, sc
         assert terminal["trace_group_id"] not in {
             g["group_hypothesis_id"] for g in records["initial_groups"]
         }
-        assert records["initial_edges"][0]["initial_evidence"] == json.loads(
-            json.dumps(asdict(completed.initial_edges[0].initial_evidence))
-        )
-        assert (
-            records["initial_edges"][0]["disposition"]
-            == completed.initial_edges[0].disposition
-        )
+        assert "initial_edges" not in records
+        source_groups = {
+            group.group_hypothesis_id: group for group in completed.initial_groups
+        }
+        for retained_group in records["initial_groups"]:
+            source_group = source_groups[retained_group["group_hypothesis_id"]]
+            assert retained_group["inference_basis"] == json.loads(
+                json.dumps(asdict(source_group.inference_basis))
+            )
+            assert retained_group["member_subjects"] == json.loads(
+                json.dumps(
+                    [
+                        {
+                            "member_subject_id": member.member_subject_id,
+                            "canonical_sample_identity_id": (
+                                member.canonical_sample_identity_id
+                            ),
+                            "subject_kind": member.subject_kind,
+                            "subject_id": member.subject_id,
+                            "physical_observation_ids": (
+                                member.physical_observation_ids
+                            ),
+                        }
+                        for member in source_group.member_subjects
+                    ]
+                )
+            )
+            assert all(
+                member["physical_observation_ids"]
+                for member in retained_group["member_subjects"]
+            )
         if scenario == "review_only":
             assert retained["method_result"] == "SUPPORT"
-            assert (
-                records["initial_edges"][0]["initial_evidence"]["seed_support_level"]
-                == "moderate"
-            )
-            assert records["initial_edges"][0]["disposition"] == "review_only"
             assert records["rows"][0]["route"]["destination"] == "archive"
-        else:
-            assert records["rows"][0]["route"]["destination"] == "matrix"
-            assert records["cell_decisions"][0]["value"] > 0
-            assert records["cell_observations"][0]["predecessor_cells"]
     # A fresh query process can neither acquire RAW nor import the scientific stack.
     script = (
         "import sys,runpy\n"
@@ -565,7 +589,8 @@ def test_indexed_query_preserves_many_groups_and_skips_unrelated_payloads(tmp_pa
 
 
 @pytest.mark.parametrize(
-    "corruption", ("bytes", "schema_identity", "schema", "payload"),
+    "corruption",
+    ("bytes", "schema_identity", "schema", "payload"),
 )
 @pytest.mark.parametrize("reader", (read_cid_nl_explanation, read_cid_nl_curves))
 def test_invalid_report_never_returns_empty_success(tmp_path, corruption, reader):

@@ -542,7 +542,7 @@ def build_untargeted_cid_nl_mode_track_projection(
             "ModeTrack projection requires Backfill activation facts"
         )
     model_set = mode_track_facts[0].model_set
-    expected_groups = model_set.family_context.mode_tracks
+    expected_groups = model_set.assignment_scope.groups
     if len(mode_track_facts) != len(expected_groups) or any(
         fact.model_set is not model_set or fact.group is not group
         for fact, group in zip(mode_track_facts, expected_groups, strict=True)
@@ -665,7 +665,6 @@ def build_untargeted_cid_nl_mode_track_projection(
                     "available_count": available_count,
                     "owner_ids": [
                         *owner_key,
-                        model_set.family_context_id,
                         model_set.model_set_id,
                     ],
                     "acquisition_ids": [

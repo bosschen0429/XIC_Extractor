@@ -94,7 +94,6 @@ from xic_extractor.sample_metadata import SampleMetadata
 
 
 def _forbid_retained_production_repair(monkeypatch: pytest.MonkeyPatch) -> None:
-    from xic_extractor.alignment import cross_sample_reconciliation
     from xic_extractor.alignment.backfill import observation_repair
 
     def unexpected_repair(*args, **kwargs):
@@ -103,15 +102,16 @@ def _forbid_retained_production_repair(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         observation_repair, "execute_observation_repair", unexpected_repair
     )
-    monkeypatch.setattr(
-        cross_sample_reconciliation,
-        "consume_observation_repair_terminal",
-        unexpected_repair,
-    )
 
 
 def _assert_partition_composition_parity(
-    batch, runtime_result, completed, *, alignment_config, known_istd_reference=None
+    batch,
+    runtime_result,
+    completed,
+    *,
+    alignment_config,
+    known_istd_reference=None,
+    subject_worksets=None,
 ):
     from xic_extractor.alignment.result.application_result import (
         UntargetBatchApplicationResultRequest,
@@ -122,28 +122,31 @@ def _assert_partition_composition_parity(
     )
 
     parts = []
-    for subject in batch.subject_batch.subjects:
-        subject_id = subject.method_subject_id
+    subject_worksets = subject_worksets or tuple(
+        (subject,) for subject in batch.subject_batch.subjects
+    )
+    for subjects in subject_worksets:
+        subject_ids = {subject.method_subject_id for subject in subjects}
         partition = replace(
             batch,
             subject_batch=mint_untargeted_cid_nl_method_subject_batch(
-                subjects=(subject,),
+                subjects=subjects,
                 candidate_memberships=tuple(
                     item
                     for item in batch.subject_batch.candidate_memberships
-                    if item[1] == subject_id
+                    if item[1] in subject_ids
                 ),
             ),
             jobs=tuple(
                 job
                 for job in batch.jobs
-                if job.method_subject.method_subject_id == subject_id
+                if job.method_subject.method_subject_id in subject_ids
             ),
         )
         results = tuple(
             result
             for result in runtime_result.sample_results
-            if result.job.method_subject.method_subject_id == subject_id
+            if result.job.method_subject.method_subject_id in subject_ids
         )
         with pytest.raises(RuntimeError, match="sample/subject results"):
             compose_untargeted_cid_nl_partition(
@@ -1244,7 +1247,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         bounded_owner, "materialize_untargeted_cid_nl_partition", retain_batch
     )
     from xic_extractor.alignment import cell_observations as cell_owner
-    from xic_extractor.alignment import cross_sample_reconciliation
+    from xic_extractor.alignment import grouping_workflow as grouping_workflow_owner
     from xic_extractor.alignment import workflow as workflow_owner
     from xic_extractor.alignment.mode_track import producer as producer_owner
     from xic_extractor.alignment.mode_track import refinement as refinement_owner
@@ -1384,7 +1387,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         )
 
     def unexpected_mt0(*args, **kwargs):
-        raise AssertionError("retained production must not execute MT0 refinement")
+        raise AssertionError("retained production must not execute initial refinement")
 
     _forbid_retained_production_repair(monkeypatch)
 
@@ -1433,7 +1436,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         refinement_owner, "_propose_mode_track_refinement", unexpected_mt0
     )
     monkeypatch.setattr(
-        cross_sample_reconciliation,
+        grouping_workflow_owner,
         "apply_accepted_mode_track_refinement",
         unexpected_mt0,
     )
@@ -1445,29 +1448,24 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     consumed_captures = []
     retained_candidate_batches = []
     retained_cell_batches = []
-    build_initial_context = production.build_initial_cid_nl_cross_sample_context
+    build_initial_context = production.build_initial_cid_nl_cross_sample_groups
     compose_predecessor_cells = production.compose_cid_nl_predecessor_cells
-    close_without_repair = workflow_owner.close_cross_sample_without_observation_repair
     finalize_scientific = workflow_owner.finalize_scientific_alignment
 
     def retain_initial_context(**kwargs):
-        family, context, edges, retained_candidates = build_initial_context(**kwargs)
+        assignment_scope, context, retained_candidates = build_initial_context(**kwargs)
         retained_contexts.append(context)
-        retained_initial_edges.extend(edges)
         retained_captures.extend(kwargs["captures"])
         retained_candidate_batches.append(retained_candidates)
-        return family, context, edges, retained_candidates
+        return assignment_scope, context, retained_candidates
 
     def retain_predecessor_cells(**kwargs):
         cells = compose_predecessor_cells(**kwargs)
         retained_cell_batches.append(cells)
         return cells
 
-    def retain_consumed_context(context):
-        consumed_contexts.append(context)
-        return close_without_repair(context)
-
     def retain_scientific_captures(**kwargs):
+        consumed_contexts.append(kwargs["grouping_result"])
         consumed_captures.extend(kwargs["captures"])
         return finalize_scientific(**kwargs)
 
@@ -1478,7 +1476,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     )
     monkeypatch.setattr(
         production,
-        "build_initial_cid_nl_cross_sample_context",
+        "build_initial_cid_nl_cross_sample_groups",
         retain_initial_context,
     )
     monkeypatch.setattr(
@@ -1488,11 +1486,6 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     )
     monkeypatch.setattr(
         workflow_owner, "apply_mode_track_refinement_run_for_workflow", unexpected_mt0
-    )
-    monkeypatch.setattr(
-        workflow_owner,
-        "close_cross_sample_without_observation_repair",
-        retain_consumed_context,
     )
     monkeypatch.setattr(
         workflow_owner, "finalize_scientific_alignment", retain_scientific_captures
@@ -1834,22 +1827,18 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     for context, child in zip(
         retained_contexts, completed.application_result.children, strict=True
     ):
-        assert context.fit_once_source_id is None
-        assert child.scientific_core.final_population == context.population
+        assert child.scientific_core.final_population == context.final_population
         assert child.scientific_core.lineage == ()
-        assert child.scientific_core.final_cross_sample_receipt.repair_terminal is None
+        assert child.scientific_core.grouping_result == context
     assert tuple(completed.initial_edges) == tuple(retained_initial_edges)
-    # Global closure checks the reloaded scientific completion once.
     children = completed.application_result.children
     # Completed owner answers flow through projection, spool and writer once.
     assert len(projection_builds) == len(children)
     assert not decision_rechecks
-    assert tuple(completion_checks["scientific"]) == tuple(
-        child.scientific_core for child in children
-    )
-    # Post-cell checks close two distinct graphs: pre-spool and global reload.
+    assert not completion_checks["scientific"]
+    # Post-cell checks close each owner result before spool publication.
     expected_projections = tuple(child.completed_projection for child in children)
-    assert tuple(completion_checks["post_cell"]) == expected_projections * 2
+    assert tuple(completion_checks["post_cell"]) == expected_projections
     assert len({id(value) for value in completion_checks["post_cell"]}) == len(
         completion_checks["post_cell"]
     )
@@ -1958,6 +1947,23 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
             _assert_composite_no_input_exclusion_coverage(
                 completed, runtime_results[0], batch
             )
+            close_and_verify_persisted_curves()
+            return
+        if method_mode == "union":
+            (child,) = completed.application_result.children
+            assert sorted(
+                len(group.member_subjects)
+                for group in child.scientific_core.final_population
+            ) == [2]
+            selected_cells = tuple(
+                cell for cell in writer.matrix.cells if cell.selected_integration
+            )
+            assert {cell.sample_stem for cell in selected_cells} == set(sample_stems)
+            for cell in selected_cells:
+                facts = physical_facts[cell.sample_stem]
+                assert cell.area == facts.area_counts_seconds
+                assert cell.selected_integration is not None
+                assert cell.selected_integration.rt_apex_min == facts.apex_rt_min
             close_and_verify_persisted_curves()
             return
     assert len(writer.matrix.cells) == len(group_sizes) * len(sample_stems)
@@ -2687,6 +2693,16 @@ def test_alignment_subject_worksets_preserve_only_compatible_overlap() -> None:
         (different_loss,),
         (composite,),
     )
+    # A confirmed identity's search envelope must be compared together before
+    # partition dispatch, even if two resolver windows do not directly overlap.
+    assert cid_nl_alignment_subject_worksets(
+        (first, overlapping, disconnected, different_loss, composite),
+        comparison_mz_intervals=((499.99, 500.06),),
+    ) == (
+        (first, overlapping, disconnected),
+        (different_loss,),
+        (composite,),
+    )
     with pytest.raises(
         CidNlMethodSubjectContractError,
         match="not overlap-connected",
@@ -2707,6 +2723,120 @@ def test_alignment_subject_worksets_preserve_only_compatible_overlap() -> None:
         match="unique method subject identities",
     ):
         validate_cid_nl_alignment_subject_workset((first, first))
+
+
+def test_completed_empty_recovery_preserves_each_compatible_source_subject(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    stems = ("SupportA1", "SupportA2", "SupportB1", "SupportB2", "Missing")
+    raw_paths = tuple(tmp_path / f"{stem}.synthetic" for stem in stems)
+    for raw_path in raw_paths:
+        raw_path.write_bytes(f"compatible-source-subject:{raw_path.stem}".encode())
+    settings = replace(
+        _settings(), neutral_loss_profile=None, precursor_mz_tolerance_ppm=20.0
+    )
+    peak_config = _peak_config(tmp_path)
+    source_raws = {}
+    selected_candidates = {}
+    for raw_path, precursor_mz in zip(
+        raw_paths[:4], (500.0, 500.0, 500.0105, 500.0105), strict=True
+    ):
+        source_raw = _FakeRaw(
+            (7.98,),
+            scan_precursor_mz=precursor_mz,
+            neutral_loss_das=(116.0474,),
+        )
+        candidates = _current_candidates(
+            source_raw,
+            raw_file=raw_path,
+            settings=settings,
+            peak_config=peak_config,
+        )
+        source_raws[raw_path] = source_raw
+        selected_candidates[raw_path.stem] = candidates[0]
+    missing_raw = _FakeRaw((7.98,))
+    missing_raw.intensity[:] = 0.0
+    source_raws[raw_paths[4]] = missing_raw
+    candidates_by_sample = {
+        stem: (selected_candidates[stem],) for stem in stems[:4]
+    }
+    candidates_by_sample["Missing"] = ()
+    batch = build_untargeted_cid_nl_production_batch(
+        raw_paths=raw_paths,
+        sample_metadata=tuple(
+            SampleMetadata(
+                sample_name=stem,
+                raw_stem=stem,
+                injection_order=index,
+                sample_role="study_sample",
+            )
+            for index, stem in enumerate(stems, start=1)
+        ),
+        settings=settings,
+        peak_config=peak_config,
+        candidates_by_sample=candidates_by_sample,
+        discovery_receipts_by_sample=_discovery_receipts(
+            tmp_path,
+            raw_paths,
+            candidates_by_sample,
+        ),
+        dll_dir=tmp_path,
+        sample_identity_namespace="study:compatible-source-subject",
+    )
+    assert len(batch.subject_batch.subjects) == 2
+    assert len(
+        {
+            subject.method_subject_id
+            for subject in batch.subject_batch.subjects
+        }
+    ) == 2
+    _install_runtime_raws(
+        monkeypatch,
+        sources_by_path=source_raws,
+        tmp_path=tmp_path,
+    )
+    runtime = execute_untargeted_cid_nl_production_batch(
+        batch,
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+        recovery_marker=OwnerPathRuntimeMarker(
+            tmp_path / "compatible-source-subject.runtime.json",
+            "compatible-source-subject",
+        ),
+    )
+    assert runtime.succeeded
+
+    alignment_config = AlignmentConfig(
+        anchor_min_seed_events=1,
+        product_mz_tolerance_ppm=30.0,
+    )
+    completed = compose_untargeted_cid_nl_production_result(
+        batch,
+        runtime,
+        alignment_config=alignment_config,
+    )
+
+    (child,) = completed.application_result.children
+    (group,) = child.scientific_core.final_population
+    source_subject_ids = {
+        source.method_assessment.content.method_subject.method_subject_id
+        for cell in child.scientific_core.cell_observations
+        for source in cell.predecessor_cells
+        if source.content.method_result == "SUPPORT"
+    }
+    assert source_subject_ids == {
+        subject.method_subject_id for subject in batch.subject_batch.subjects
+    }
+    position = next(
+        position
+        for position in (
+            child.scientific_core.cell_observation_handoff.coverage.epoch.positions
+        )
+        if position.sample.metadata.raw_stem == "Missing"
+        and position.group_identity.group_hypothesis_id == group.group_hypothesis_id
+    )
+    assert position.conservative_no_request_proof is not None
+    assert position.conservative_no_request_proof.variant == "completed_recovery_empty"
 
 
 @pytest.mark.parametrize(
@@ -3855,7 +3985,7 @@ def test_production_composition_closes_observation_only_hold_without_membership(
 
 
 @pytest.mark.parametrize("supported_samples", [2, 3])
-def test_production_initial_groups_use_complete_canonical_batch(
+def test_production_initial_groups_use_complete_feature_inference_batch(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     supported_samples: int,
@@ -3907,17 +4037,16 @@ def test_production_initial_groups_use_complete_canonical_batch(
     initial_contexts = []
     initial_edges = []
     cell_contexts = []
-    build_context = production.build_initial_cid_nl_cross_sample_context
+    build_context = production.build_initial_cid_nl_cross_sample_groups
     compose_cells = production.compose_cid_nl_predecessor_cells
 
     def retain_context(**kwargs):
         result = build_context(**kwargs)
         initial_contexts.append(result[0])
-        initial_edges.extend(result[2])
         return result
 
     monkeypatch.setattr(
-        production, "build_initial_cid_nl_cross_sample_context", retain_context
+        production, "build_initial_cid_nl_cross_sample_groups", retain_context
     )
 
     def retain_cells(**kwargs):
@@ -3930,24 +4059,18 @@ def test_production_initial_groups_use_complete_canonical_batch(
         batch, runtime, alignment_config=AlignmentConfig()
     )
     (context,) = initial_contexts
-    (group,) = context.mode_tracks
+    (group,) = context.groups
     assert {owner.sample_stem for owner in group.owners} == set(
         stems[:supported_samples]
     )
-    policy = (
-        "owner_full_batch_continuity"
-        if supported_samples == len(stems)
-        else "owner_injection_trajectory"
+    assert (
+        group.inference_basis is not None
+        and group.inference_basis.disposition == "assigned"
+        and group.inference_basis.basis == "bidirectional_membership_agreement"
+        and group.inference_basis.reason
+        == "both_finite_directional_passes_support_the_same_membership"
     )
-    assert group.evidence.startswith(f"{policy};")
-    assert initial_edges
-    assert all(edge.disposition == "eligible" for edge in initial_edges)
-    assert all(
-        edge.initial_evidence is not None
-        and edge.initial_evidence.seed_support_level == "moderate"
-        and edge.initial_evidence.score == 45
-        for edge in initial_edges
-    )
+    assert initial_edges == []
     assert cell_contexts
     for cell_context in cell_contexts:
         assert cell_context.sample_universe == frozenset(stems)
@@ -3972,14 +4095,32 @@ def test_known_istd_reference_closes_drifting_group_and_cell_proof(
     from xic_extractor.alignment.drift_evidence import read_known_istd_reference
 
     paths = tuple(tmp_path / f"S{i}.synthetic" for i in range(2))
-    settings = replace(_settings(), neutral_loss_profile=None, rt_max=10)
+    precursor_mzs = (500.0, 500.03)
+    configured_loss = 116.0474
+    observed_losses = (116.0474, 116.0474005)
+    settings = replace(
+        _settings(),
+        neutral_loss_profile=None,
+        precursor_mz_tolerance_ppm=20.0,
+        rt_max=10,
+    )
     peak_config = _peak_config(tmp_path)
-    raws = {path: _FakeRaw((7.98, 8.0, 8.02)) for path in paths}
+    raws = {
+        path: _FakeRaw(
+            (8.0,),
+            scan_precursor_mz=precursor_mz,
+            neutral_loss_das=(observed_loss,),
+        )
+        for path, precursor_mz, observed_loss in zip(
+            paths, precursor_mzs, observed_losses, strict=True
+        )
+    }
     for i, raw in enumerate(raws.values()):
         raw.rt += i * 1.067
+        raw.intensity *= 1.0 + i * 0.4
         raw.scans = tuple(replace(scan, rt=scan.rt + i * 1.067) for scan in raw.scans)
     candidates = {}
-    for path, raw in raws.items():
+    for path, raw in zip(paths, raws.values(), strict=True):
         path.write_bytes(path.stem.encode())
         candidates[path.stem] = _current_candidates(
             raw,
@@ -4029,7 +4170,9 @@ def test_known_istd_reference_closes_drifting_group_and_cell_proof(
             "ISTD Pair",
         ]
     )
-    targets.append(["known", "ISTD", 500, 7, 10, 20, 116.0474, 20, 50, ""])
+    targets.append(
+        ["known", "ISTD", 500.015, 7, 10, 40, 116.0474, 20, 50, ""]
+    )
     results = workbook.create_sheet("XIC Results")
     results.append(["SampleName", "Target", "Role", "RT", "Area"])
     for i, path in enumerate(paths):
@@ -4037,6 +4180,9 @@ def test_known_istd_reference_closes_drifting_group_and_cell_proof(
     reference_path = tmp_path / "reference.xlsx"
     workbook.save(reference_path)
     reference = read_known_istd_reference(reference_path)
+    assert tuple(
+        sorted(subject.neutral_loss_da for subject in batch.subject_batch.subjects)
+    ) == (configured_loss, configured_loss)
     plain = compose_untargeted_cid_nl_production_result(
         batch,
         runtime,
@@ -4054,6 +4200,7 @@ def test_known_istd_reference_closes_drifting_group_and_cell_proof(
         corrected,
         alignment_config=AlignmentConfig(),
         known_istd_reference=reference,
+        subject_worksets=(batch.subject_batch.subjects,),
     )
     plain_matrix = project_completed_untarget_batch_writer_inputs(plain).matrix
     corrected_matrix = project_completed_untarget_batch_writer_inputs(corrected).matrix
@@ -4069,7 +4216,20 @@ def test_known_istd_reference_closes_drifting_group_and_cell_proof(
     assert all(
         cell.area is not None and cell.area > 0 for cell in corrected_matrix.cells
     )
+    assert len({cell.area for cell in corrected_matrix.cells}) == len(paths)
     (child,) = corrected.application_result.children
+    expected_loss_by_sample = {path.stem: configured_loss for path in paths}
+    support_losses_by_sample = {
+        cell.canonical_sample.metadata.raw_stem: {
+            source.method_assessment.content.method_subject.neutral_loss_da
+            for source in cell.predecessor_cells
+            if source.content.method_result == "SUPPORT"
+        }
+        for cell in child.scientific_core.cell_observations
+    }
+    assert support_losses_by_sample == {
+        sample: {loss} for sample, loss in expected_loss_by_sample.items()
+    }
     contexts = tuple(
         source.group_context
         for cell in child.scientific_core.cell_observations

@@ -112,6 +112,18 @@ observation, Alignment, ObservationRepair, Backfill, and cell-decision
 lifecycle. Provider-specific evidence handling must not create a parallel
 downstream decision core.
 
+Alignment's grouping lifecycle is linear: candidate and exact-owner evidence
+enters constrained grouping; workflows that use ModeTrack may apply one
+initial complete-partition refinement; then `grouping_workflow` returns one
+immutable `CrossSampleGroupingResult(processing_owners,
+partition_transition, drift_lookup)`. The same object reaches bounded Backfill,
+ObservationRepair, cell decisions, and finalization. Repair does not reopen
+grouping, refit ModeTrack, replace the partition, or mint a second grouping
+owner. `CrossSamplePartitionTransition` owns only the mathematical before/after
+complete-partition transition; `ModeTrackAssignmentScope` is a plain immutable
+m/z/RT-bounds-plus-groups handoff with no separate domain identity or persisted
+contract.
+
 CID-NL acquisition/assessment subjects remain exact provenance while compatible
 subjects may share an alignment workset. The method-subject owner validates
 workset compatibility, execution keeps that workset atomic, and the existing

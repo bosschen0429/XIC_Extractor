@@ -21,7 +21,6 @@ from tests.test_cell_observations import (
     _not_evaluated_assessment,
     _owner_handoff,
     _receipt_fixture,
-    _repaired_handoff,
     _source_cell,
     _support_assessment,
 )
@@ -785,60 +784,8 @@ def test_no_write_payload_rejects_unknown_variant() -> None:
         NoWriteCellDecision("missing")  # type: ignore[arg-type]
 
 
-def test_repaired_observation_is_numeric_only_for_its_exact_member(
-    tmp_path: Path,
-) -> None:
-    _fixture, _spine, handoff, source_cell, repair, observation = _repaired_handoff(
-        tmp_path
-    )
-    cells = compose_final_group_cell_observation_population(
-        handoff=handoff,
-        predecessor_cells=(source_cell,),
-        repair_receipts=(repair,),
-        repaired_observations=(observation,),
-    )
-    cell = cells[0]
-    member = next(
-        item
-        for item in cell.group.member_subjects
-        if item.canonical_sample_identity_id == cell.canonical_sample_identity_id
-    )
-    row = untarget_owner._mint_untarget_row_key(cell.group)
-    exact_subject = GroupCellSubject(row, cell.canonical_sample, member)
-    nonmember_subject = GroupCellSubject(row, cell.canonical_sample, None)
-
-    decision = decide_production_cell(
-        exact_subject,
-        group_handoff=handoff,
-        group_observations=cells,
-    )
-
-    assert decision.variant == "numeric"
-    with pytest.raises(CellDecisionContractError, match="nonmember"):
-        decide_production_cell(
-            nonmember_subject,
-            group_handoff=handoff,
-            group_observations=cells,
-        )
 
 
-def test_direct_and_repaired_evidence_is_rejected_before_decision(
-    tmp_path: Path,
-) -> None:
-    _fixture, spine, handoff, _source_cell, repair, observation = _repaired_handoff(
-        tmp_path
-    )
-
-    with pytest.raises(
-        CellObservationContractError,
-        match="direct and repaired observation",
-    ):
-        compose_final_group_cell_observation_population(
-            handoff=handoff,
-            predecessor_cells=(spine.cells[0],),
-            repair_receipts=(repair,),
-            repaired_observations=(observation,),
-        )
 
 
 def test_decision_is_immutable_sealed_and_invalidates_payload_substitution(

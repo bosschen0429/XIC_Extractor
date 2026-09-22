@@ -24,7 +24,7 @@ from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.cross_sample_peak_groups import (
     CrossSampleGroupIdentity,
     CrossSampleGroupMemberSubject,
-    CrossSampleSuccessorApplication,
+    CrossSamplePartitionTransition,
     mint_cross_sample_group_identity,
 )
 from xic_extractor.alignment.owner_backfill import (
@@ -71,7 +71,7 @@ class _ZeroTraceOwnerBoundSource(_CanonicalOwnerBoundSource):
 @dataclass(frozen=True, slots=True)
 class _RepairFixture:
     group: CrossSampleGroupIdentity
-    application: CrossSampleSuccessorApplication
+    application: CrossSamplePartitionTransition
     member: CrossSampleGroupMemberSubject
     sample_identity: ResolvedCanonicalSampleIdentity
     observation: OwnerBackfillPeakFactObservation
@@ -249,7 +249,7 @@ def test_subject_rejects_group_from_another_successor_application(
         member_seed="crossed-application",
     )
 
-    with pytest.raises(ObservationRepairContractError, match="successor application"):
+    with pytest.raises(ObservationRepairContractError, match="partition transition"):
         mint_observation_repair_subject(
             request_identity=fixture.observation.request_identity,
             logical_request=fixture.observation.logical_request,
@@ -473,8 +473,8 @@ def _repair_fixture(
 
 def _successor_application(
     group: CrossSampleGroupIdentity,
-) -> CrossSampleSuccessorApplication:
-    return CrossSampleSuccessorApplication(
+) -> CrossSamplePartitionTransition:
+    return CrossSamplePartitionTransition(
         status="assessable",
         predecessors=(group,),
         successors=(group,),

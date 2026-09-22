@@ -127,6 +127,91 @@ def test_excluded_edge_cannot_connect_neighborhood(tmp_path) -> None:
     )
 
 
+def test_initial_grouping_receipt_connects_without_pair_expansion(tmp_path) -> None:
+    from xic_extractor.alignment.cross_sample_neighborhood_graph import (
+        UNLISTED_PAIR_DISPOSITION,
+        build_bounded_connected_neighborhood,
+        mint_cross_sample_initial_grouping_receipt,
+    )
+    from xic_extractor.alignment.cross_sample_peak_groups import (
+        CrossSampleNeighborhoodBudget,
+        mint_cross_sample_group_identity,
+    )
+
+    fixture, members = _subjects(
+        tmp_path,
+        *(f"sample-{index:02d}" for index in range(12)),
+    )
+    group = mint_cross_sample_group_identity(
+        processing_request_id=fixture.request.processing_request_id,
+        member_subjects=members,
+    )
+    receipt = mint_cross_sample_initial_grouping_receipt(
+        processing_request_id=fixture.request.processing_request_id,
+        groups=(group,),
+        indivisible_member_sets=((members[0].member_subject_id,),),
+    )
+    neighborhood = build_bounded_connected_neighborhood(
+        member_subjects=members,
+        edges=(),
+        budget=CrossSampleNeighborhoodBudget(max_members=12, max_eligible_edges=0),
+        grouping_receipt=receipt,
+    )
+
+    assert receipt.evaluated_edges == ()
+    assert receipt.indivisible_member_sets == ()
+    assert (
+        receipt.pair_disposition(
+            members[0].member_subject_id,
+            members[-1].member_subject_id,
+        )
+        == UNLISTED_PAIR_DISPOSITION
+    )
+    assert neighborhood.eligible_edges == ()
+    assert neighborhood.connected_components == (
+        tuple(sorted(member.member_subject_id for member in members)),
+    )
+
+
+def test_indivisible_initial_identity_survives_successor_application(tmp_path) -> None:
+    from xic_extractor.alignment.cross_sample_neighborhood_graph import (
+        apply_coupled_successor_proposal,
+        mint_cross_sample_initial_grouping_receipt,
+    )
+    from xic_extractor.alignment.cross_sample_peak_groups import (
+        CrossSampleContractError,
+        CrossSampleNeighborhoodBudget,
+        mint_cross_sample_group_identity,
+    )
+
+    fixture, members = _subjects(tmp_path, "sample-a", "sample-b", "sample-c")
+    predecessor = mint_cross_sample_group_identity(
+        processing_request_id=fixture.request.processing_request_id,
+        member_subjects=members,
+    )
+    indivisible = tuple(
+        sorted((members[0].member_subject_id, members[1].member_subject_id))
+    )
+    receipt = mint_cross_sample_initial_grouping_receipt(
+        processing_request_id=fixture.request.processing_request_id,
+        groups=(predecessor,),
+        indivisible_member_sets=(indivisible,),
+    )
+
+    with pytest.raises(CrossSampleContractError, match="splits an indivisible"):
+        apply_coupled_successor_proposal(
+            predecessors=(predecessor,),
+            successor_member_sets=((members[0],), (members[1], members[2])),
+            edges=(),
+            budget=CrossSampleNeighborhoodBudget(
+                max_members=3,
+                max_eligible_edges=0,
+            ),
+            population=(predecessor,),
+            grouping_receipt=receipt,
+        )
+
+
 def test_oversized_coupled_successor_applies_nothing(tmp_path) -> None:
     from xic_extractor.alignment.cross_sample_peak_groups import (
         CrossSampleNeighborhoodBudget,
@@ -433,7 +518,7 @@ def test_incomplete_coupled_successor_is_rejected_atomically(tmp_path) -> None:
 def test_successor_application_rejects_mutable_closure_containers(tmp_path) -> None:
     from xic_extractor.alignment.cross_sample_peak_groups import (
         CrossSampleContractError,
-        CrossSampleSuccessorApplication,
+        CrossSamplePartitionTransition,
         mint_cross_sample_group_identity,
     )
 
@@ -443,7 +528,7 @@ def test_successor_application_rejects_mutable_closure_containers(tmp_path) -> N
         member_subjects=(member,),
     )
     with pytest.raises(CrossSampleContractError, match="immutable tuples"):
-        CrossSampleSuccessorApplication(
+        CrossSamplePartitionTransition(
             status="unassessable",
             predecessors=[predecessor],  # type: ignore[arg-type]
             successors=[],  # type: ignore[arg-type]

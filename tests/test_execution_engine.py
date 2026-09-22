@@ -722,7 +722,10 @@ def test_pipeline_overlap_single_partition_serial(tmp_path: Path) -> None:
     assert "overlap_with_previous" not in timelines[0][0]
 
 
-def test_pipeline_overlap_backpressure(tmp_path: Path) -> None:
+@pytest.mark.parametrize("acquisition_workers", [1, 2])
+def test_pipeline_overlap_backpressure(
+    tmp_path: Path, acquisition_workers: int
+) -> None:
     """Slow consumer holds 2 credits, blocking producer before partition 2."""
     fixture = build_processing_identity_no_raw_fixture(
         tmp_path, sample_stems=("sample-1", "sample-2", "sample-3")
@@ -754,6 +757,7 @@ def test_pipeline_overlap_backpressure(tmp_path: Path) -> None:
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
         recovery_marker=marker,
         pipeline_overlap=True,
+        acquisition_workers=acquisition_workers,
     )
     assert result["application_result"]["total_children"] == 3
     assert len(p0_compose_ended) == 1
@@ -761,7 +765,10 @@ def test_pipeline_overlap_backpressure(tmp_path: Path) -> None:
     assert p2_acquire_started[0] >= p0_compose_ended[0] - 0.02
 
 
-def test_pipeline_bilateral_abort_consumer_failure(tmp_path: Path) -> None:
+@pytest.mark.parametrize("acquisition_workers", [1, 2])
+def test_pipeline_bilateral_abort_consumer_failure(
+    tmp_path: Path, acquisition_workers: int
+) -> None:
     """Consumer composition error triggers cancellation, stops producer,
     cleans spool.
     """
@@ -787,13 +794,47 @@ def test_pipeline_bilateral_abort_consumer_failure(tmp_path: Path) -> None:
             telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
             recovery_marker=marker,
             pipeline_overlap=True,
+            acquisition_workers=acquisition_workers,
         )
 
     spool_dirs = list(output_dir.glob(".partition_spool-*"))
     assert len(spool_dirs) == 0
 
 
-def test_pipeline_bilateral_abort_producer_failure(tmp_path: Path) -> None:
+def test_parallel_partition_acquisition_cancellation_closes_all_producers(
+    tmp_path: Path,
+) -> None:
+    fixture = build_processing_identity_no_raw_fixture(
+        tmp_path, sample_stems=("sample-1", "sample-2")
+    )
+    entered = threading.Barrier(2, timeout=5)
+    cancelled = threading.Event()
+
+    def cancel_acquisitions(index: int) -> None:
+        entered.wait()
+        cancelled.set()
+
+    adapter = MockAdapter(fixture.owners, on_acquisition=cancel_acquisitions)
+    output_dir = tmp_path / "output"
+    marker = OwnerPathRuntimeMarker(tmp_path / "marker.json", "parallel-cancel")
+    with pytest.raises(RuntimeError, match="before batch publication"):
+        PartitionPipelineScheduler.execute(
+            adapter,
+            output_dir=output_dir,
+            telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+            recovery_marker=marker,
+            should_cancel=cancelled.is_set,
+            pipeline_overlap=True,
+            acquisition_workers=2,
+        )
+    assert marker.read().terminal_outcome is AttemptTerminalOutcome.CANCELLED
+    assert not list(output_dir.glob(".partition_spool-*"))
+
+
+@pytest.mark.parametrize("acquisition_workers", [1, 2])
+def test_pipeline_bilateral_abort_producer_failure(
+    tmp_path: Path, acquisition_workers: int
+) -> None:
     """Producer acquisition error stops consumer, cleans spool."""
     fixture = build_processing_identity_no_raw_fixture(
         tmp_path, sample_stems=("sample-1", "sample-2")
@@ -816,6 +857,7 @@ def test_pipeline_bilateral_abort_producer_failure(tmp_path: Path) -> None:
             telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
             recovery_marker=marker,
             pipeline_overlap=True,
+            acquisition_workers=acquisition_workers,
         )
 
     spool_dirs = list(output_dir.glob(".partition_spool-*"))
@@ -1274,4 +1316,3 @@ def test_worker_admission_pool_stop_on_error() -> None:
     assert pool.stopped
     assert isinstance(pool.first_error, ValueError)
     assert len(errors) >= 1
-

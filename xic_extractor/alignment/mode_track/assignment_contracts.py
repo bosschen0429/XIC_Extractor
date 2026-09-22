@@ -15,9 +15,8 @@ from xic_extractor.alignment.drift_evidence import (
 from xic_extractor.alignment.hypothesis_owner_adapter import (
     validate_cid_nl_assessment_hypothesis_closure,
 )
-from xic_extractor.alignment.mode_track.family_context import (
-    FamilyContextRef,
-    validate_family_context_ref_for_consumption,
+from xic_extractor.alignment.mode_track.assignment_scope import (
+    ModeTrackAssignmentScope,
 )
 from xic_extractor.configuration.target_identity import ResolvedTargetDefinition
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
@@ -248,13 +247,12 @@ class ModeTrackModelSet(_RuntimeFinal):
     """One fit-once family snapshot used by all sample assignments."""
 
     model_set_id: str
-    family_context_id: str
     processing_request_id: str
     processing_attempt_id: str
     policy: ModeTrackTrajectoryPolicy
     tracks: tuple[ModeTrackModel, ...]
     lineage_refs: tuple[str, ...]
-    family_context: FamilyContextRef = field(compare=False, repr=False)
+    assignment_scope: ModeTrackAssignmentScope = field(compare=False, repr=False)
     validation_status: str = VALIDATION_STATUS
     product_authority: str = PRODUCT_AUTHORITY
     _mint_token: InitVar[object] = field(kw_only=True)
@@ -265,8 +263,6 @@ class ModeTrackModelSet(_RuntimeFinal):
                 "ModeTrackModelSet must be minted by the ModeTrack "
                 "model/assignment owner"
             )
-        if self.family_context_id != self.family_context.family_context_id:
-            raise ModeTrackContractError("model set Family context was substituted")
         _required_text(self.processing_request_id, field="processing_request_id")
         _required_text(self.processing_attempt_id, field="processing_attempt_id")
         canonical_tracks = tuple(
@@ -274,18 +270,18 @@ class ModeTrackModelSet(_RuntimeFinal):
         )
         if self.tracks != canonical_tracks:
             raise ModeTrackContractError("model tracks must be canonical-sorted")
-        if tuple(track.group_hypothesis_id for track in self.tracks) != (
-            self.family_context.group_hypothesis_ids
+        if tuple(track.group_hypothesis_id for track in self.tracks) != tuple(
+            group.group_hypothesis_id for group in self.assignment_scope.groups
         ):
             raise ModeTrackContractError(
-                "model tracks must close the exact Family membership"
+                "model tracks must close the exact assignment scope"
             )
         ordering_references = {
             track.group_hypothesis_id: _finite_float(
                 track.group_center_rt,
-                field="family_context.mode_tracks.group_center_rt",
+                field="assignment_scope.groups.group_center_rt",
             )
-            for track in self.family_context.mode_tracks
+            for track in self.assignment_scope.groups
         }
         if any(
             track.ordering_reference_rt_min
@@ -298,7 +294,7 @@ class ModeTrackModelSet(_RuntimeFinal):
         _require_canonical_texts(self.lineage_refs, field="lineage_refs")
         _validate_shadow_authority(self.validation_status, self.product_authority)
         expected = _model_set_identity_payload(
-            family_context_id=self.family_context_id,
+            assignment_scope=self.assignment_scope,
             processing_request_id=self.processing_request_id,
             processing_attempt_id=self.processing_attempt_id,
             policy=self.policy,
@@ -566,7 +562,6 @@ class ModeTrackAssignment(_RuntimeFinal):
     """One immutable, shadow-only candidate-to-track assignment fact."""
 
     assignment_id: str
-    family_context_id: str
     processing_request_id: str
     processing_attempt_id: str
     canonical_sample_identity_id: str
@@ -721,7 +716,6 @@ class ModeTrackAssignmentBatch(_RuntimeFinal):
     """Exactly one deterministic assignment pass for one sample and model set."""
 
     assignment_batch_id: str
-    family_context_id: str
     model_set_id: str
     processing_request_id: str
     processing_attempt_id: str
@@ -758,8 +752,7 @@ class ModeTrackAssignmentBatch(_RuntimeFinal):
         if self.assignments != canonical:
             raise ModeTrackContractError("assignments must be canonical-sorted")
         if any(
-            item.family_context_id != self.family_context_id
-            or item.processing_request_id != self.processing_request_id
+            item.processing_request_id != self.processing_request_id
             or item.processing_attempt_id != self.processing_attempt_id
             or item.canonical_sample_identity_id != self.canonical_sample_identity_id
             or item.acquisition_source_id != self.acquisition_source_id
@@ -885,7 +878,7 @@ def _mint_support_anchor(
 
 def _mint_model_set(
     *,
-    family_context: FamilyContextRef,
+    assignment_scope: ModeTrackAssignmentScope,
     processing_request_id: str,
     processing_attempt_id: str,
     policy: ModeTrackTrajectoryPolicy,
@@ -895,7 +888,7 @@ def _mint_model_set(
     canonical_tracks = tuple(sorted(tracks, key=lambda item: item.group_hypothesis_id))
     canonical_lineage = tuple(sorted(set(lineage_refs)))
     payload = _model_set_identity_payload(
-        family_context_id=family_context.family_context_id,
+        assignment_scope=assignment_scope,
         processing_request_id=processing_request_id,
         processing_attempt_id=processing_attempt_id,
         policy=policy,
@@ -904,20 +897,18 @@ def _mint_model_set(
     )
     return ModeTrackModelSet(
         model_set_id=_typed_digest("mode-track-model-set:", payload),
-        family_context_id=family_context.family_context_id,
         processing_request_id=processing_request_id,
         processing_attempt_id=processing_attempt_id,
         policy=policy,
         tracks=canonical_tracks,
         lineage_refs=canonical_lineage,
-        family_context=family_context,
+        assignment_scope=assignment_scope,
         _mint_token=_MODE_TRACK_MINT_TOKEN,
     )
 
 
 def _mint_assignment(
     *,
-    family_context_id: str,
     processing_request_id: str,
     processing_attempt_id: str,
     sample: ResolvedCanonicalSampleIdentity,
@@ -951,7 +942,6 @@ def _mint_assignment(
     )
     trajectory_refs = tuple(sorted(trajectory_assessment.landmark_evidence_refs))
     identity_payload = _assignment_payload(
-        family_context_id=family_context_id,
         processing_request_id=processing_request_id,
         processing_attempt_id=processing_attempt_id,
         canonical_sample_identity_id=sample_id,
@@ -974,7 +964,6 @@ def _mint_assignment(
             "mode-track-assignment:",
             identity_payload,
         ),
-        family_context_id=family_context_id,
         processing_request_id=processing_request_id,
         processing_attempt_id=processing_attempt_id,
         canonical_sample_identity_id=sample_id,
@@ -1010,7 +999,6 @@ def _mint_assignment_batch(
     sample_id = sample.identity.sample_identity_id
     source_id = acquisition_source.acquisition_source_id
     identity_payload = _batch_payload(
-        family_context_id=model_set.family_context_id,
         model_set_id=model_set.model_set_id,
         processing_request_id=model_set.processing_request_id,
         processing_attempt_id=model_set.processing_attempt_id,
@@ -1026,7 +1014,6 @@ def _mint_assignment_batch(
             "mode-track-assignment-batch:",
             identity_payload,
         ),
-        family_context_id=model_set.family_context_id,
         model_set_id=model_set.model_set_id,
         processing_request_id=model_set.processing_request_id,
         processing_attempt_id=model_set.processing_attempt_id,
@@ -1287,12 +1274,11 @@ def _validate_model_set_binding(
         if (
             type(model_set) is not ModeTrackModelSet
             or type(model_set.policy) is not ModeTrackTrajectoryPolicy
-            or type(model_set.family_context) is not FamilyContextRef
+            or type(model_set.assignment_scope) is not ModeTrackAssignmentScope
             or type(model_set.tracks) is not tuple
             or any(type(track) is not ModeTrackModel for track in model_set.tracks)
         ):
             raise TypeError("model set contains non-owner runtime types")
-        validate_family_context_ref_for_consumption(model_set.family_context)
         ModeTrackModelSet.__post_init__(model_set, _MODE_TRACK_MINT_TOKEN)
         ModeTrackTrajectoryPolicy.__post_init__(model_set.policy)
         for track in model_set.tracks:
@@ -1370,7 +1356,6 @@ def _canonical_assignments(
 
 def _assignment_identity_payload(assignment: ModeTrackAssignment) -> dict[str, object]:
     return _assignment_payload(
-        family_context_id=assignment.family_context_id,
         processing_request_id=assignment.processing_request_id,
         processing_attempt_id=assignment.processing_attempt_id,
         canonical_sample_identity_id=assignment.canonical_sample_identity_id,
@@ -1394,7 +1379,6 @@ def _assignment_identity_payload(assignment: ModeTrackAssignment) -> dict[str, o
 
 def _assignment_payload(
     *,
-    family_context_id: str,
     processing_request_id: str,
     processing_attempt_id: str,
     canonical_sample_identity_id: str,
@@ -1414,7 +1398,6 @@ def _assignment_payload(
 ) -> dict[str, object]:
     return {
         "schema": SCHEMA_VERSION,
-        "family_context_id": family_context_id,
         "processing_request_id": processing_request_id,
         "processing_attempt_id": processing_attempt_id,
         "canonical_sample_identity_id": canonical_sample_identity_id,
@@ -1440,7 +1423,6 @@ def _assignment_payload(
 
 def _batch_identity_payload(batch: ModeTrackAssignmentBatch) -> dict[str, object]:
     return _batch_payload(
-        family_context_id=batch.family_context_id,
         model_set_id=batch.model_set_id,
         processing_request_id=batch.processing_request_id,
         processing_attempt_id=batch.processing_attempt_id,
@@ -1455,7 +1437,6 @@ def _batch_identity_payload(batch: ModeTrackAssignmentBatch) -> dict[str, object
 
 def _batch_payload(
     *,
-    family_context_id: str,
     model_set_id: str,
     processing_request_id: str,
     processing_attempt_id: str,
@@ -1468,7 +1449,6 @@ def _batch_payload(
 ) -> dict[str, object]:
     return {
         "schema": BATCH_SCHEMA_VERSION,
-        "family_context_id": family_context_id,
         "model_set_id": model_set_id,
         "processing_request_id": processing_request_id,
         "processing_attempt_id": processing_attempt_id,
@@ -1523,7 +1503,7 @@ def _repair_assignment_observation_payload(
 
 def _model_set_identity_payload(
     *,
-    family_context_id: str,
+    assignment_scope: ModeTrackAssignmentScope,
     processing_request_id: str,
     processing_attempt_id: str,
     policy: ModeTrackTrajectoryPolicy,
@@ -1532,7 +1512,10 @@ def _model_set_identity_payload(
 ) -> dict[str, object]:
     return {
         "schema": MODEL_SET_SCHEMA_VERSION,
-        "family_context_id": family_context_id,
+        "assignment_scope": {
+            "mz_interval": list(assignment_scope.mz_interval),
+            "rt_interval": list(assignment_scope.rt_interval),
+        },
         "processing_request_id": processing_request_id,
         "processing_attempt_id": processing_attempt_id,
         "policy": {
@@ -1641,25 +1624,25 @@ def _validate_shadow_authority(validation_status: str, product_authority: str) -
             "ModeTrack evidence cannot grant product authority"
         )
 
-def _peak_hypothesis_family_exclusions(
+def _peak_hypothesis_assignment_scope_exclusions(
     peak_hypothesis: PeakHypothesis,
     *,
-    family_context: FamilyContextRef,
+    assignment_scope: ModeTrackAssignmentScope,
 ) -> tuple[str, ...]:
     if not peak_hypothesis.peak_observation_refs:
         return ("peak_hypothesis_missing_physical_observation",)
-    mz_lower, mz_upper = family_context.mz_interval
-    rt_lower, rt_upper = family_context.rt_interval
+    mz_lower, mz_upper = assignment_scope.mz_interval
+    rt_lower, rt_upper = assignment_scope.rt_interval
     reasons: set[str] = set()
     if any(
         not mz_lower <= observation.content.mz <= mz_upper
         for observation in peak_hypothesis.peak_observation_refs
     ):
-        reasons.add("peak_hypothesis_outside_family_mz")
+        reasons.add("peak_hypothesis_outside_assignment_scope_mz")
     apex_rt = _finite_float(
         peak_hypothesis.integration.rt_apex_min,
         field="peak_hypothesis.integration.rt_apex_min",
     )
     if not rt_lower <= apex_rt <= rt_upper:
-        reasons.add("peak_hypothesis_outside_family_rt")
+        reasons.add("peak_hypothesis_outside_assignment_scope_rt")
     return tuple(sorted(reasons))

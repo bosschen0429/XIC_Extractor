@@ -388,6 +388,11 @@ def test_mode_track_projection_enters_existing_checked_qmv_owner(
     assert source["schema_version"] == "mode_track_projection_source"
     assert len(source["rows"]) == len(expected_assignments)
     for row in source["rows"]:
+        assert row["owner_ids"] == [
+            fixture.owners.request.processing_request_id,
+            fixture.owners.attempt.processing_attempt_id,
+            model_set.model_set_id,
+        ]
         assignment = expected_assignments[
             (row["group_hypothesis_id"], row["sample_stem"])
         ]

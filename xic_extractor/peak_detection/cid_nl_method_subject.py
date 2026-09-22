@@ -356,8 +356,7 @@ def validate_cid_nl_alignment_subject_compatibility(
         raise CidNlMethodSubjectContractError(
             "multi-subject alignment requires scalar Untargeted CID-NL subjects"
         )
-    neutral_losses = {subject.neutral_loss_da for subject in subjects}
-    if len(neutral_losses) != 1:
+    if len({subject.neutral_loss_da for subject in subjects}) != 1:
         raise CidNlMethodSubjectContractError(
             "multi-subject alignment cannot cross configured neutral losses"
         )
@@ -386,11 +385,14 @@ def validate_cid_nl_alignment_subject_workset(
 
 def cid_nl_alignment_subject_worksets(
     subjects: tuple[CidNlMethodSubject, ...],
+    *,
+    comparison_mz_intervals: tuple[tuple[float, float], ...] = (),
 ) -> tuple[tuple[CidNlMethodSubject, ...], ...]:
     """Partition subjects into compatible overlap-connected worksets.
 
-    Connectivity only bounds which subjects Alignment compares. CrossSample
-    remains the owner of every feature-group membership decision.
+    Additional (lower m/z, upper m/z) intervals connect comparison scopes within
+    each configured method before dispatch. These search bounds never assert
+    feature identity. CrossSample binds identities from observed evidence.
     """
 
     if type(subjects) is not tuple or any(
@@ -425,8 +427,7 @@ def cid_nl_alignment_subject_worksets(
         ordered = sorted(
             compatible,
             key=lambda subject: (
-                cid_nl_method_subject_resolver_interval(subject)[0],
-                cid_nl_method_subject_resolver_interval(subject)[1],
+                cid_nl_method_subject_resolver_interval(subject),
                 subject.method_subject_id,
             ),
         )
@@ -457,6 +458,44 @@ def cid_nl_alignment_subject_worksets(
             )
         )
 
+    if comparison_mz_intervals:
+        parents = list(range(len(components)))
+
+        def root(index: int) -> int:
+            while parents[index] != index:
+                parents[index] = parents[parents[index]]
+                index = parents[index]
+            return index
+
+        # A bridge joins whole comparison components before dispatch. Each
+        # subject still retains its own assessment owner.
+        scalar_intervals = tuple(
+            (
+                index, subject.neutral_loss_da,
+                *cid_nl_method_subject_resolver_interval(subject),
+            )
+            for index, component in enumerate(components)
+            for subject in component
+            if subject.subject_kind == "untargeted_precursor"
+            and subject.composition is None
+            and subject.neutral_loss_da is not None
+        )
+        for mz_lower, mz_upper in comparison_mz_intervals:
+            connected_by_loss: dict[float, int] = {}
+            for index, loss, lower, upper in scalar_intervals:
+                if mz_lower <= upper and lower <= mz_upper:
+                    first = connected_by_loss.setdefault(loss, index)
+                    parents[root(index)] = root(first)
+        merged: dict[int, list[CidNlMethodSubject]] = {}
+        for index, original_component in enumerate(components):
+            merged.setdefault(root(index), []).extend(original_component)
+        components = [
+            tuple(sorted(
+                component, key=lambda item: original_index[item.method_subject_id]
+            ))
+            for component in merged.values()
+        ]
+
     ordered_components = tuple(
         sorted(
             components,
@@ -466,7 +505,7 @@ def cid_nl_alignment_subject_worksets(
         )
     )
     for workset in ordered_components:
-        validate_cid_nl_alignment_subject_workset(workset)
+        validate_cid_nl_alignment_subject_compatibility(workset)
     return ordered_components
 
 
