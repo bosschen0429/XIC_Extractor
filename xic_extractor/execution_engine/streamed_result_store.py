@@ -18,6 +18,8 @@ from xic_extractor.execution_engine.owner_pickle import (
 )
 from xic_extractor.immutable_sequence import ImmutableSequence
 
+PRESERVED_INDEX_NAME = "partition-index.pickle"
+
 
 class _HashingWriter:
     def __init__(self, stream: BinaryIO):
@@ -450,20 +452,19 @@ class StreamedResultStore:
             tuple(length for _, _, length in chunks), load_chunk, load_chunks
         )
 
-    def preserve_failed_results(self) -> Path | None:
-        """Retain sealed records and their shared references after a failure.
+    def preserve_results(self, *, name: str = PRESERVED_INDEX_NAME) -> Path:
+        """Publish the sealed record index beside the partitions it addresses.
 
-        Only the already-written partitions are retained. The private snapshot
-        uses the same pickle codec and is read-only; it is not an external input
-        format or a completed workflow result.
+        The index carries the per-field record offsets and the shared owner
+        references a reader needs, so another process can restore one record by
+        position instead of receiving a copy of every record. It is read-only
+        and private: it neither resumes a runtime attempt nor grants
+        publication authority.
         """
-        if not self._partitions:
-            self.cleanup()
-            return None
         snapshot = copy(self)
         snapshot._sealed = True
         snapshot._field_caches = []
-        destination = self._directory / "failed-results.pickle"
+        destination = self._directory / name
         temporary = destination.with_suffix(".tmp")
         if destination.exists():
             raise FileExistsError(destination)
@@ -477,11 +478,42 @@ class StreamedResultStore:
         self._field_caches.clear()
         return destination
 
+    def preserve_failed_results(self) -> Path | None:
+        """Retain sealed records and their shared references after a failure.
+
+        Only the already-written partitions are retained. The private snapshot
+        uses the same pickle codec and is read-only; it is not an external input
+        format or a completed workflow result.
+        """
+        if not self._partitions:
+            self.cleanup()
+            return None
+        return self.preserve_results(name="failed-results.pickle")
+
     def cleanup(self) -> None:
         """Remove private spool directory and release in-memory caches."""
         self._field_caches.clear()
         if self._directory.exists():
             shutil.rmtree(self._directory, ignore_errors=True)
+
+
+def open_preserved_results(path: Path) -> StreamedResultStore:
+    """Restore a preserved index for read-only record access in any process.
+
+    The directory is rebound to the index's own location, so a preserved spool
+    stays readable after it is moved. The restored store is sealed: it reads
+    records, and it never writes, adopts or cleans up.
+    """
+    resolved = Path(path).resolve()
+    with resolved.open("rb") as stream:
+        store = _OwnerUnpickler(stream, ()).load()
+    if type(store) is not StreamedResultStore:
+        raise TypeError("preserved index does not hold a partition store")
+    if not store._sealed:
+        raise ValueError("preserved index is not sealed")
+    store._directory = resolved.parent
+    store._field_caches = []
+    return store
 
 
 PartitionResultStore = StreamedResultStore
