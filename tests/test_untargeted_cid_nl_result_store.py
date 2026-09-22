@@ -13,6 +13,7 @@ from types import MappingProxyType
 
 import pytest
 
+from xic_extractor.execution_engine.owner_pickle import owner_pickle_dumps
 from xic_extractor.execution_engine.streamed_result_store import (
     PRESERVED_INDEX_NAME,
     open_preserved_results,
@@ -464,3 +465,13 @@ def test_preserve_results_refuses_to_overwrite_an_existing_index(tmp_path):
     store.preserve_results()
     with pytest.raises(FileExistsError):
         store.preserve_results()
+
+
+def test_preserved_index_refuses_an_unsealed_store(tmp_path):
+    """Only a sealed store may be published; an open spool can still grow."""
+    store = PartitionResultStore(tmp_path / "spool", ())
+    store.append("alpha", Payload(children=("a0",)))
+    forged = tmp_path / "spool" / "forged.pickle"
+    forged.write_bytes(owner_pickle_dumps(store, ()))
+    with pytest.raises(ValueError, match="sealed"):
+        open_preserved_results(forged)
