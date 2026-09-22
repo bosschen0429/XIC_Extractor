@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import io
 import json
 import os
@@ -1726,3 +1727,72 @@ def test_worker_admission_pool_stop_on_error() -> None:
     assert pool.stopped
     assert isinstance(pool.first_error, ValueError)
     assert len(errors) >= 1
+
+
+def test_reserved_partition_written_elsewhere_reads_back_identically(
+    tmp_path: Path,
+) -> None:
+    """A writer outside this process may produce the bytes; the store still
+    owns the index, the path and the sealed identity, and the same content
+    written elsewhere must land byte-identical."""
+
+    import json
+    import subprocess
+    import sys
+
+    store = StreamedResultStore(tmp_path / "spool", ())
+    reservation = store.reserve_partition("partition-remote")
+    assert reservation.path == tmp_path.resolve() / "spool" / "00000000.pickle"
+    module = "xic_extractor.execution_engine.streamed_result_store"
+    script = "; ".join(
+        (
+            "import json",
+            "from pathlib import Path",
+            "from tests.test_execution_engine import MockPayload",
+            "from %s import write_partition_payload" % module,
+            "payload = MockPayload(children=(), method_assessments=('a', 'b'),"
+            " label='remote')",
+            "kids = tuple({'child': index} for index in range(4))",
+            "digest, size, lengths, records, _ = write_partition_payload("
+            "Path(%r), payload, shared_objects=(), children=kids)"
+            % str(reservation.path),
+            "print(json.dumps({'lengths': lengths, 'digest': digest,"
+            " 'size': size, 'records': {name: [list(item) for item in rows]"
+            " for name, rows in records.items()}}))",
+        )
+    )
+    completed = subprocess.run(
+        [sys.executable, "-c", script],
+        capture_output=True,
+        text=True,
+        check=True,
+        cwd=str(Path(__file__).resolve().parents[1]),
+    )
+    written = json.loads(completed.stdout.strip())
+    sealed = store.adopt_partition(
+        reservation,
+        lengths=written["lengths"],
+        records={
+            name: tuple((offset, length) for offset, length in rows)
+            for name, rows in written["records"].items()
+        },
+    )
+    assert sealed.sha256 == written["digest"]
+    assert sealed.size_bytes == written["size"]
+    # Identity is derived here from the published bytes, not reported by the
+    # writer that produced them.
+    assert sealed.sha256 == hashlib.sha256(reservation.path.read_bytes()).hexdigest()
+    assert sealed.size_bytes == reservation.path.stat().st_size
+
+    restored = store.read(0)
+    assert restored.label == "remote"
+    assert restored.method_assessments == ("a", "b")
+    assert restored.children == tuple({"child": index} for index in range(4))
+
+    local = StreamedResultStore(tmp_path / "local", ())
+    local_sealed = local.append_children(
+        "partition-local",
+        MockPayload(children=(), method_assessments=("a", "b"), label="remote"),
+        tuple({"child": index} for index in range(4)),
+    )
+    assert local_sealed.sha256 == sealed.sha256
