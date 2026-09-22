@@ -35,6 +35,7 @@ in the entry status text, `docs/product/`, `docs/architecture-contract.md`,
 9. [Area / Region Audits](#area--region-audits)
 10. [Delta Mass / Pt Pattern Discovery](#delta-mass--pt-pattern-discovery)
 11. [Agent / Docs Workflow Guards](#agent--docs-workflow-guards)
+12. [Surface Population And Reachability](#surface-population-and-reachability)
 
 ---
 
@@ -1932,6 +1933,39 @@ frontmatter, summary, lifecycle, tier, and visibility tag.
 **Governing doc**: `docs/agent/obsidian-handoff-contract.md`
 **Status note**: Read-only single-page metadata check. It does not edit vault
 pages, promote staged notes, update manifests, or change repo files.
+
+---
+
+## Surface Population And Reachability
+
+Report-only census of product surfaces that exist but never carry anything: a
+subsystem that never runs is otherwise indistinguishable from one that ran and
+found nothing. Findings are triage evidence, not defects; classify each as
+expected-empty, optional, dead or broken before promoting any of them to a
+failing check.
+
+### `production_reachability_census.py`
+
+**Entry point:** `python -m tools.diagnostics.production_reachability_census [--output-tsv PATH]`.
+**Role:** maintained operator interface / diagnostic oracle.
+**Purpose**: List functions, classes and methods defined under `xic_extractor/`
+that no code in `xic_extractor/`, `gui/`, `scripts/` or `xic_inspector/` loads
+outside their own body, and that no `[project.scripts]` entry point names.
+Tests, `tools/`, imports and `__all__` strings do not count as referrers.
+**Status note**: Static and name-based. A same-named symbol elsewhere hides a
+dead one, and names reached only through `getattr` or string tables are
+reported. It reads source only and always exits 0.
+
+### `output_population_census.py`
+
+**Entry point:** `python -m tools.diagnostics.output_population_census OUTPUT_DIR [--output-tsv PATH]`.
+**Role:** maintained operator interface / diagnostic oracle.
+**Purpose**: For each `.tsv`/`.csv` file directly inside a run output
+directory, report a file with no data rows, a file with exactly one data row,
+and each column holding one value on every row of a multi-row file.
+**Status note**: Reads existing outputs only; no RAW access, no SQLite
+payloads, no writes to the run directory. It cannot see in-memory fields that
+are never published. Exits 0 on a readable directory.
 
 ---
 
