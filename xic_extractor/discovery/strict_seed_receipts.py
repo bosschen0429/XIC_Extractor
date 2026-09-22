@@ -8,6 +8,8 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Protocol
 
+import numpy as np
+
 from xic_extractor.discovery.models import (
     DiscoveryCandidate,
     DiscoverySeed,
@@ -44,6 +46,7 @@ def read_complete_discovery_scan_seeds(
     """Return declared seeds, retaining their direct or inferred precursor basis."""
 
     by_scan: dict[tuple[int, float, float, float], tuple[Ms2Scan, DiscoverySeed]] = {}
+    scan_seed_memo: _ScanSeedMemo = {}
     for candidate in candidates:
         for scan in _read_exact_scans(raw, candidate):
             seeds = _read_exact_seed(
@@ -53,6 +56,7 @@ def read_complete_discovery_scan_seeds(
                 settings=settings,
                 preserve_configured_losses=preserve_configured_losses,
                 include_inferred=include_inferred,
+                scan_seed_memo=scan_seed_memo,
             )
             for seed in seeds:
                 key = (
@@ -107,6 +111,47 @@ def _read_exact_scans(
     return tuple(matches_by_scan[scan_number][0] for scan_number in declared)
 
 
+_ScanSeedMemo = dict[tuple[Path, int], tuple[Ms2Scan, tuple[DiscoverySeed, ...]]]
+
+
+def _scan_seeds(
+    scan: Ms2Scan,
+    *,
+    raw_file: Path,
+    settings: DiscoverySettings,
+    memo: _ScanSeedMemo | None,
+) -> tuple[DiscoverySeed, ...]:
+    """Enumerate one scan's seeds once per exact scan, not once per candidate.
+
+    Seed enumeration depends only on the scan numerics, its RAW file, and the
+    settings, so candidates that declare the same scan reuse one enumeration.
+    A memo entry is reused only when the scan it was built from is numerically
+    identical; anything else recomputes. Candidate-specific receipt matching
+    stays in the caller.
+    """
+
+    if memo is None:
+        return discovery_seeds_from_scan(scan, raw_file=raw_file, settings=settings)
+    key = (raw_file, scan.scan_number)
+    cached = memo.get(key)
+    if cached is not None and _same_scan_numerics(cached[0], scan):
+        return cached[1]
+    seeds = discovery_seeds_from_scan(scan, raw_file=raw_file, settings=settings)
+    memo[key] = (scan, seeds)
+    return seeds
+
+
+def _same_scan_numerics(left: Ms2Scan, right: Ms2Scan) -> bool:
+    return (
+        left.scan_number == right.scan_number
+        and left.rt == right.rt
+        and left.precursor_mz == right.precursor_mz
+        and left.base_peak == right.base_peak
+        and np.array_equal(left.masses, right.masses)
+        and np.array_equal(left.intensities, right.intensities)
+    )
+
+
 def _read_exact_seed(
     scan: Ms2Scan,
     *,
@@ -115,16 +160,18 @@ def _read_exact_seed(
     settings: DiscoverySettings,
     preserve_configured_losses: bool = False,
     include_inferred: bool = False,
+    scan_seed_memo: _ScanSeedMemo | None = None,
 ) -> tuple[DiscoverySeed, ...]:
     representative = scan.scan_number == candidate.best_ms2_scan_id
     tag_product_receipts = _scan_tag_product_receipts(
         candidate,
         scan_number=scan.scan_number,
     )
-    scan_seeds = discovery_seeds_from_scan(
+    scan_seeds = _scan_seeds(
         scan,
         raw_file=raw_file,
         settings=settings,
+        memo=scan_seed_memo,
     )
     matches = tuple(
         seed

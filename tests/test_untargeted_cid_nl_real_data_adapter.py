@@ -706,6 +706,51 @@ def test_declared_strict_scan_subset_rejects_non_exact_events(variant: str) -> N
         _read_exact_scans(_SubsetRaw(), candidate)
 
 
+def test_scan_seed_enumeration_runs_once_per_declared_scan(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from xic_extractor.discovery import strict_seed_receipts
+
+    source_raw = _FakeRaw((7.98, 8.0, 8.02))
+    settings = _settings()
+    (candidate,) = _current_candidates(
+        source_raw,
+        raw_file=tmp_path / "S1.RAW",
+        settings=settings,
+        peak_config=_peak_config(tmp_path),
+    )
+    assert len(candidate.seed_scan_ids) > 1
+
+    enumerated: list[int] = []
+    enumerate_seeds = strict_seed_receipts.discovery_seeds_from_scan
+
+    def counted(scan, **kwargs):
+        enumerated.append(scan.scan_number)
+        return enumerate_seeds(scan, **kwargs)
+
+    monkeypatch.setattr(strict_seed_receipts, "discovery_seeds_from_scan", counted)
+
+    # Candidates declaring the same scan share one enumeration, and the
+    # candidate-specific receipts stay identical to the single-candidate read.
+    repeated = strict_seed_receipts.read_complete_discovery_scan_seeds(
+        source_raw,
+        candidates=(candidate, candidate),
+        settings=settings,
+    )
+    assert sorted(enumerated) == sorted(set(candidate.seed_scan_ids))
+
+    enumerated.clear()
+    single = strict_seed_receipts.read_complete_discovery_scan_seeds(
+        source_raw,
+        candidates=(candidate,),
+        settings=settings,
+    )
+    assert [scan.scan_number for scan, _ in repeated] == [
+        scan.scan_number for scan, _ in single
+    ]
+    assert [seed for _, seed in repeated] == [seed for _, seed in single]
+
+
 def test_sample_trace_batch_is_acquired_once_and_reused_by_subject_adapters(
     tmp_path: Path,
 ) -> None:
