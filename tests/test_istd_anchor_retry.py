@@ -1,6 +1,6 @@
-from xic_extractor.extraction.istd_recovery import (
-    _should_try_wider_istd_anchor_recovery,
-    _should_use_wider_istd_recovery,
+from xic_extractor.extraction.istd_anchor_retry import (
+    _should_try_wider_istd_anchor_retry,
+    _should_use_wider_istd_retry,
 )
 from xic_extractor.signal_processing import (
     PeakCandidate,
@@ -53,25 +53,25 @@ def _result(
     )
 
 
-def test_wider_istd_recovery_is_tried_for_borderline_local_sn_anchor() -> None:
+def test_wider_istd_retry_is_tried_for_borderline_local_sn_anchor() -> None:
     current = _result(
         _candidate(rt=26.26, intensity=35_000.0),
         severities=((1, "local_sn"),),
     )
 
-    assert _should_try_wider_istd_anchor_recovery(current)
+    assert _should_try_wider_istd_anchor_retry(current)
 
 
-def test_wider_istd_recovery_allows_equal_penalty_when_signal_is_much_stronger(
+def test_wider_istd_retry_allows_equal_penalty_when_signal_is_much_stronger(
 ) -> None:
     current = _result(_candidate(rt=26.26, intensity=35_000.0))
-    recovered = _result(_candidate(rt=24.18, intensity=30_000_000.0))
+    retried = _result(_candidate(rt=24.18, intensity=30_000_000.0))
 
-    assert _should_use_wider_istd_recovery(current, recovered)
+    assert _should_use_wider_istd_retry(current, retried)
 
 
-def test_wider_istd_recovery_rejects_equal_penalty_without_signal_gain() -> None:
+def test_wider_istd_retry_rejects_equal_penalty_without_signal_gain() -> None:
     current = _result(_candidate(rt=26.26, intensity=35_000.0))
-    recovered = _result(_candidate(rt=24.18, intensity=50_000.0))
+    retried = _result(_candidate(rt=24.18, intensity=50_000.0))
 
-    assert not _should_use_wider_istd_recovery(current, recovered)
+    assert not _should_use_wider_istd_retry(current, retried)

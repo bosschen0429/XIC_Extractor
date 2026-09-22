@@ -4,7 +4,7 @@ import pytest
 import xic_extractor.extraction.target_extraction as target_extraction
 import xic_extractor.peak_detection.capture_boundary_policy as capture_boundary_policy
 from xic_extractor.config import ExtractionConfig, Target
-from xic_extractor.extraction.istd_recovery import IstdAnchorRecoveryDecision
+from xic_extractor.extraction.istd_anchor_retry import IstdAnchorRetryDecision
 from xic_extractor.extraction.ms2_selection import selected_candidate_ms2_evidence
 from xic_extractor.extraction.rt_windows import get_rt_window
 from xic_extractor.extractor import ExtractionResult
@@ -175,8 +175,8 @@ def test_nl_window_preserves_configured_context_for_selected_edge_peak(
     )
     monkeypatch.setattr(
         target_extraction,
-        "recover_istd_anchor_peak_if_needed",
-        lambda peak_result, **_kwargs: IstdAnchorRecoveryDecision(peak_result),
+        "retry_istd_anchor_peak_if_needed",
+        lambda peak_result, **_kwargs: IstdAnchorRetryDecision(peak_result),
     )
     monkeypatch.setattr(
         target_extraction,
@@ -262,8 +262,8 @@ def test_extract_one_target_passes_selected_hypothesis_to_result_assembly(
     )
     monkeypatch.setattr(
         target_extraction,
-        "recover_istd_anchor_peak_if_needed",
-        lambda peak_result, **_kwargs: IstdAnchorRecoveryDecision(peak_result),
+        "retry_istd_anchor_peak_if_needed",
+        lambda peak_result, **_kwargs: IstdAnchorRetryDecision(peak_result),
     )
     monkeypatch.setattr(
         target_extraction,
@@ -378,8 +378,8 @@ def test_extract_one_target_promotes_selected_envelope_boundary_to_result_assemb
     )
     monkeypatch.setattr(
         target_extraction,
-        "recover_istd_anchor_peak_if_needed",
-        lambda peak_result, **_kwargs: IstdAnchorRecoveryDecision(peak_result),
+        "retry_istd_anchor_peak_if_needed",
+        lambda peak_result, **_kwargs: IstdAnchorRetryDecision(peak_result),
     )
     monkeypatch.setattr(
         target_extraction,
@@ -497,8 +497,8 @@ def test_extract_one_target_passes_configured_ms1_window_to_boundary_policies(
     )
     monkeypatch.setattr(
         target_extraction,
-        "recover_istd_anchor_peak_if_needed",
-        lambda peak_result, **_kwargs: IstdAnchorRecoveryDecision(peak_result),
+        "retry_istd_anchor_peak_if_needed",
+        lambda peak_result, **_kwargs: IstdAnchorRetryDecision(peak_result),
     )
     monkeypatch.setattr(
         target_extraction,
@@ -637,8 +637,8 @@ def test_extract_one_target_uses_chrom_segment_before_selected_envelope_cap(
     )
     monkeypatch.setattr(
         target_extraction,
-        "recover_istd_anchor_peak_if_needed",
-        lambda peak_result, **_kwargs: IstdAnchorRecoveryDecision(peak_result),
+        "retry_istd_anchor_peak_if_needed",
+        lambda peak_result, **_kwargs: IstdAnchorRetryDecision(peak_result),
     )
     monkeypatch.setattr(
         target_extraction,
@@ -794,8 +794,8 @@ def test_extract_one_target_distinguishes_boundary_review_from_non_counted(
     )
     monkeypatch.setattr(
         target_extraction,
-        "recover_istd_anchor_peak_if_needed",
-        lambda peak_result, **_kwargs: IstdAnchorRecoveryDecision(peak_result),
+        "retry_istd_anchor_peak_if_needed",
+        lambda peak_result, **_kwargs: IstdAnchorRetryDecision(peak_result),
     )
     monkeypatch.setattr(
         target_extraction,

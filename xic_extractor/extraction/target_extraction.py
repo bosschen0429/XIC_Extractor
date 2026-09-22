@@ -22,7 +22,7 @@ from xic_extractor.extraction.handoff_spine_runtime import (
     promote_targeted_boundary_hypothesis,
     selected_handoff_peak,
 )
-from xic_extractor.extraction.istd_recovery import recover_istd_anchor_peak_if_needed
+from xic_extractor.extraction.istd_anchor_retry import retry_istd_anchor_peak_if_needed
 from xic_extractor.extraction.peak_candidate_audit import append_peak_audit_rows
 from xic_extractor.extraction.result_assembly import build_extraction_result
 from xic_extractor.extraction.rt_windows import get_rt_window
@@ -333,7 +333,7 @@ def extract_one_target(
         rt_min = min(rt_min, target.rt_min)
         rt_max = max(rt_max, target.rt_max)
         rt, intensity = raw.extract_xic(target.mz, rt_min, rt_max, target.ppm_tol)
-    recovery_decision = recover_istd_anchor_peak_if_needed(
+    retry_decision = retry_istd_anchor_peak_if_needed(
         peak_result,
         raw=raw,
         config=config,
@@ -349,7 +349,7 @@ def extract_one_target(
         paired_istd_fwhm=paired_istd_fwhm,
         peak_finder=extractor.find_peak_and_area,
     )
-    peak_result = recovery_decision.peak_result
+    peak_result = retry_decision.peak_result
     paired_rejection = paired_anchor_mismatch_diagnostic(
         sample_name,
         target,
@@ -369,10 +369,10 @@ def extract_one_target(
             peak_result,
             paired_istd_anchor_rt=istd_rt_in_this_sample,
         )
-    audit_rt = recovery_decision.rt if recovery_decision.rt is not None else rt
+    audit_rt = retry_decision.rt if retry_decision.rt is not None else rt
     audit_intensity = (
-        recovery_decision.intensity
-        if recovery_decision.intensity is not None
+        retry_decision.intensity
+        if retry_decision.intensity is not None
         else intensity
     )
     shape_metrics = selected_shape_metrics(audit_intensity, peak_result)

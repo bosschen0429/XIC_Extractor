@@ -8,8 +8,8 @@ import numpy as np
 
 from xic_extractor.config import ExtractionConfig, Target
 from xic_extractor.extraction.rt_windows import (
-    RecoveredPeak,
-    recover_istd_peak_with_wider_anchor_window,
+    WiderWindowPeak,
+    retry_istd_peak_with_wider_anchor_window,
 )
 from xic_extractor.extraction.scoring_factory import selected_candidate
 from xic_extractor.neutral_loss import CandidateMS2Evidence, NLResult
@@ -19,17 +19,17 @@ from xic_extractor.peak_detection.scoring_quality import (
 )
 from xic_extractor.signal_processing import PeakCandidate, PeakDetectionResult
 
-_ISTD_WIDER_RECOVERY_MIN_INTENSITY_RATIO = 2.0
+_ISTD_WIDER_RETRY_MIN_INTENSITY_RATIO = 2.0
 
 
 @dataclass(frozen=True)
-class IstdAnchorRecoveryDecision:
+class IstdAnchorRetryDecision:
     peak_result: PeakDetectionResult
     rt: np.ndarray | None = None
     intensity: np.ndarray | None = None
 
 
-def recover_istd_anchor_peak_if_needed(
+def retry_istd_anchor_peak_if_needed(
     peak_result: PeakDetectionResult,
     *,
     raw: Any,
@@ -47,12 +47,12 @@ def recover_istd_anchor_peak_if_needed(
     istd_rt_in_this_sample: float | None,
     paired_istd_fwhm: float | None,
     peak_finder: Callable[..., PeakDetectionResult],
-) -> IstdAnchorRecoveryDecision:
+) -> IstdAnchorRetryDecision:
     if not target.is_istd or not anchor_used or anchor_rt is None:
-        return IstdAnchorRecoveryDecision(peak_result)
+        return IstdAnchorRetryDecision(peak_result)
 
     if peak_result.peak is None:
-        recovered = _recover(
+        retried = _retry(
             raw=raw,
             config=config,
             target=target,
@@ -66,17 +66,17 @@ def recover_istd_anchor_peak_if_needed(
             paired_istd_fwhm=paired_istd_fwhm,
             peak_finder=peak_finder,
         )
-        if recovered is None:
-            return IstdAnchorRecoveryDecision(peak_result)
-        return IstdAnchorRecoveryDecision(
-            recovered.peak_result,
-            rt=recovered.rt,
-            intensity=recovered.intensity,
+        if retried is None:
+            return IstdAnchorRetryDecision(peak_result)
+        return IstdAnchorRetryDecision(
+            retried.peak_result,
+            rt=retried.rt,
+            intensity=retried.intensity,
         )
 
-    if not _should_try_wider_istd_anchor_recovery(peak_result):
-        return IstdAnchorRecoveryDecision(peak_result)
-    recovered = _recover(
+    if not _should_try_wider_istd_anchor_retry(peak_result):
+        return IstdAnchorRetryDecision(peak_result)
+    retried = _retry(
         raw=raw,
         config=config,
         target=target,
@@ -90,18 +90,18 @@ def recover_istd_anchor_peak_if_needed(
         paired_istd_fwhm=paired_istd_fwhm,
         peak_finder=peak_finder,
     )
-    if recovered is not None and _should_use_wider_istd_recovery(
-        peak_result, recovered.peak_result
+    if retried is not None and _should_use_wider_istd_retry(
+        peak_result, retried.peak_result
     ):
-        return IstdAnchorRecoveryDecision(
-            recovered.peak_result,
-            rt=recovered.rt,
-            intensity=recovered.intensity,
+        return IstdAnchorRetryDecision(
+            retried.peak_result,
+            rt=retried.rt,
+            intensity=retried.intensity,
         )
-    return IstdAnchorRecoveryDecision(peak_result)
+    return IstdAnchorRetryDecision(peak_result)
 
 
-def _recover(
+def _retry(
     *,
     raw: Any,
     config: ExtractionConfig,
@@ -117,8 +117,8 @@ def _recover(
     istd_rt_in_this_sample: float | None,
     paired_istd_fwhm: float | None,
     peak_finder: Callable[..., PeakDetectionResult],
-) -> RecoveredPeak | None:
-    return recover_istd_peak_with_wider_anchor_window(
+) -> WiderWindowPeak | None:
+    return retry_istd_peak_with_wider_anchor_window(
         raw,
         config,
         target,
@@ -134,7 +134,7 @@ def _recover(
     )
 
 
-def _should_try_wider_istd_anchor_recovery(
+def _should_try_wider_istd_anchor_retry(
     peak_result: PeakDetectionResult,
 ) -> bool:
     if peak_result.peak is None:
@@ -152,28 +152,28 @@ def _should_try_wider_istd_anchor_recovery(
     )
 
 
-def _should_use_wider_istd_recovery(
+def _should_use_wider_istd_retry(
     current: PeakDetectionResult,
-    recovered: PeakDetectionResult,
+    retried: PeakDetectionResult,
 ) -> bool:
-    if recovered.peak is None:
+    if retried.peak is None:
         return False
     if current.peak is None:
         return True
 
     current_candidate = selected_candidate(current)
-    recovered_candidate = selected_candidate(recovered)
-    if current_candidate is None or recovered_candidate is None:
+    retried_candidate = selected_candidate(retried)
+    if current_candidate is None or retried_candidate is None:
         return False
 
     current_penalty = _selection_penalty(current_candidate)
-    recovered_penalty = _selection_penalty(recovered_candidate)
-    if recovered_penalty > current_penalty:
+    retried_penalty = _selection_penalty(retried_candidate)
+    if retried_penalty > current_penalty:
         return False
 
-    return recovered_candidate.selection_apex_intensity >= (
+    return retried_candidate.selection_apex_intensity >= (
         current_candidate.selection_apex_intensity
-        * _ISTD_WIDER_RECOVERY_MIN_INTENSITY_RATIO
+        * _ISTD_WIDER_RETRY_MIN_INTENSITY_RATIO
     )
 
 

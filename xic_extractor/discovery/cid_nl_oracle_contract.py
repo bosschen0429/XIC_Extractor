@@ -127,7 +127,7 @@ _FRAME_COMPLETENESS_STATES = {
     "incomplete_known_undercoverage",
     "unknown",
 }
-_RECOVERY_CLAIM_LABELS = {
+_RECALL_CLAIM_LABELS = {
     "full_bounded_reference_recovery",
     "known_reference_recovery",
     "expected_control_recovery_only",
@@ -980,7 +980,7 @@ def validate_reference_row(
     _validate_reference_row(
         row,
         artifact_bytes_by_id=artifact_bytes_by_id,
-        full_recovery_manifest_verified=False,
+        full_recall_manifest_verified=False,
     )
 
 
@@ -988,9 +988,9 @@ def _validate_reference_row(
     row: Mapping[str, Any],
     *,
     artifact_bytes_by_id: Mapping[str, bytes],
-    full_recovery_manifest_verified: bool,
+    full_recall_manifest_verified: bool,
 ) -> None:
-    """Validate a row; only the manifest validator may unlock full recovery."""
+    """Validate a row; only the manifest validator may unlock full recall."""
 
     _require_schema_version(
         row,
@@ -1012,7 +1012,7 @@ def _validate_reference_row(
         "shared_decision_logic_status": _SHARED_STAGE_STATUSES,
         "shared_logic_overlap_disposition": _SHARED_LOGIC_DISPOSITIONS,
         "frame_completeness": _FRAME_COMPLETENESS_STATES,
-        "recovery_claim_label": _RECOVERY_CLAIM_LABELS,
+        "recovery_claim_label": _RECALL_CLAIM_LABELS,
     }
     for field, allowed in enum_fields.items():
         if _required_text(row, field) not in allowed:
@@ -1112,7 +1112,7 @@ def _validate_reference_row(
         if overlap != "exclude_from_independent_recovery":
             raise OracleContractError(
                 "shared or unknown candidate/decision logic must be excluded "
-                "from independent recovery"
+                "from independent recall"
             )
     elif overlap != "independent_recovery_eligible":
         raise OracleContractError(
@@ -1190,23 +1190,23 @@ def _validate_reference_row(
         )
 
     completeness = _required_text(row, "frame_completeness")
-    recovery_claim = _required_text(row, "recovery_claim_label")
+    recall_claim = _required_text(row, "recovery_claim_label")
     frame_size = _positive_integer(row, "sampling_frame_size")
     stratum_size = _positive_integer(row, "stratum_frame_size")
     if stratum_size > frame_size:
         raise OracleContractError("stratum_frame_size cannot exceed frame size")
     if completeness == "complete":
         if (
-            recovery_claim == "full_bounded_reference_recovery"
-            and not full_recovery_manifest_verified
+            recall_claim == "full_bounded_reference_recovery"
+            and not full_recall_manifest_verified
         ):
             raise OracleContractError(
-                "full recovery requires verified complete reference manifest"
+                "full recall requires verified complete reference manifest"
             )
     elif completeness in {"incomplete_known_undercoverage", "unknown"}:
-        if recovery_claim == "full_bounded_reference_recovery":
+        if recall_claim == "full_bounded_reference_recovery":
             raise OracleContractError(
-                "incomplete or unknown frame forbids full recovery claim"
+                "incomplete or unknown frame forbids full recall claim"
             )
         _required_text(row, "undercoverage_disposition")
     else:
@@ -1241,7 +1241,7 @@ def validate_reference_manifest_rows(
     artifact_bytes_by_id: Mapping[str, bytes],
     seal_artifact_bytes_by_sha_field: Mapping[str, bytes],
 ) -> None:
-    """Verify completeness before permitting a full bounded recovery claim."""
+    """Verify completeness before permitting a full bounded recall claim."""
 
     if not rows:
         raise OracleContractError("reference manifest cannot be empty")
@@ -1354,7 +1354,7 @@ def validate_reference_manifest_rows(
         != "full_bounded_reference_recovery"
     ):
         raise OracleContractError(
-            "full manifest seal requires full recovery claim"
+            "full manifest seal requires full recall claim"
         )
     expected_strata_hash = sha256_canonical_json(stratum_sizes)
     if expected_strata_hash != _required_text(
@@ -1400,7 +1400,7 @@ def validate_reference_manifest_rows(
         _validate_reference_row(
             row,
             artifact_bytes_by_id=artifact_bytes_by_id,
-            full_recovery_manifest_verified=True,
+            full_recall_manifest_verified=True,
         )
 
 

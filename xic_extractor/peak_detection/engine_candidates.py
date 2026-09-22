@@ -97,7 +97,7 @@ def append_or_merge_chrom_peak_segment_candidate(
     return tuple(merged)
 
 
-def append_or_merge_recovery_candidate(
+def append_or_merge_relaxed_candidate(
     candidates: tuple[PeakCandidate, ...],
     candidate: PeakCandidate,
 ) -> tuple[tuple[PeakCandidate, ...], PeakCandidate]:
@@ -114,21 +114,21 @@ def append_or_merge_recovery_candidate(
     return (*candidates, candidate), candidate
 
 
-def mark_recovery_candidate(
-    recovery_candidate: PeakCandidate,
-    recovery_result: PeakCandidatesResult,
+def mark_relaxed_candidate(
+    relaxed_candidate: PeakCandidate,
+    relaxed_search_result: PeakCandidatesResult,
 ) -> tuple[PeakCandidate, PeakCandidatesResult]:
     marked_candidate = _with_added_proposal_source(
-        recovery_candidate,
+        relaxed_candidate,
         "preferred_rt_recovery",
     )
     marked_candidates = tuple(
         marked_candidate
-        if candidate is recovery_candidate or candidate == recovery_candidate
+        if candidate is relaxed_candidate or candidate == relaxed_candidate
         else candidate
-        for candidate in recovery_result.candidates
+        for candidate in relaxed_search_result.candidates
     )
-    return marked_candidate, with_candidates(recovery_result, marked_candidates)
+    return marked_candidate, with_candidates(relaxed_search_result, marked_candidates)
 
 
 def with_candidates(

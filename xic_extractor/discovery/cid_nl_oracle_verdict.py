@@ -31,7 +31,7 @@ class SyntheticMetricSummary:
     proposal_positive_count: int
     proposal_correct_count: int
     reference_positive_count: int
-    reference_recovered_count: int
+    reference_recalled_count: int
     hidden_duplicate_count: int
     supplemental_count: int
 
@@ -67,7 +67,7 @@ def aggregate_synthetic_metrics(
             for row in proposals
         ),
         reference_positive_count=len(references),
-        reference_recovered_count=sum(
+        reference_recalled_count=sum(
             row.get("projection_outcome") == "select_value"
             for row in references
         ),

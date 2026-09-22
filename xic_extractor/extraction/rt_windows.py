@@ -19,7 +19,7 @@ from xic_extractor.signal_processing import (
 
 
 @dataclass(frozen=True)
-class RecoveredPeak:
+class WiderWindowPeak:
     peak_result: PeakDetectionResult
     rt: np.ndarray
     intensity: np.ndarray
@@ -117,7 +117,7 @@ def _paired_target_anchor_is_too_far_from_reference(
     )
 
 
-def recover_istd_peak_with_wider_anchor_window(
+def retry_istd_peak_with_wider_anchor_window(
     raw: Any,
     config: ExtractionConfig,
     target: Target,
@@ -133,7 +133,7 @@ def recover_istd_peak_with_wider_anchor_window(
     istd_rt_in_this_sample: float | None,
     paired_istd_fwhm: float | None,
     peak_finder: Callable[..., PeakDetectionResult] = find_peak_and_area,
-) -> RecoveredPeak | None:
+) -> WiderWindowPeak | None:
     wider_half_window = max(
         config.nl_fallback_half_window_min,
         config.nl_rt_anchor_half_window_min,
@@ -176,4 +176,4 @@ def recover_istd_peak_with_wider_anchor_window(
         )
     if peak_result.peak is None:
         return None
-    return RecoveredPeak(peak_result=peak_result, rt=rt, intensity=intensity)
+    return WiderWindowPeak(peak_result=peak_result, rt=rt, intensity=intensity)

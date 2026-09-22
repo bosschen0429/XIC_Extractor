@@ -360,10 +360,24 @@ repository. When a word already carries several, the table records each sense
 and its owner until the extra senses are renamed; a new use picks the word that
 belongs to its sense instead of adding another.
 
-| Word | Current senses | Target |
+| Word | Meaning | Not this word |
 | --- | --- | --- |
-| `recovery` | runtime failure recovery (`recover_after_coordinator_loss`, `recovery_marker`); preferred-RT / local-minimum candidate search in `peak_detection/recovery.py`; wider-window ISTD anchor retry in `extraction/istd_recovery.py`; reference-compound recall in the CID-NL oracle; persisted Backfill keys listed in [backfill.md](backfill.md) | runtime failure recovery only |
-| `owner` | the sample-local MS1 peak candidates are attributed to (`SampleLocalMS1Owner`, `owner_apex_rt`); processing authority (`processing_owners`, `owner_seal`); module responsibility (`OWNER_REHYDRATED`); an adjective in `owner_backfill*` | one sense per word; `owner_backfill*` converges with #431, the rest with #426 |
+| `backfill` | the bounded missing-cell revisit stage | — |
+| `recovery` | resuming or closing a run after a runtime failure (`recover_after_coordinator_loss`, `recovery_marker`) | Backfill; candidate search; ISTD retry; oracle recall |
+| `relaxed search` | the peak-detection search near a preferred RT with relaxed thresholds (`peak_detection/relaxed_search.py`) | — |
+| `retry` | the Targeted ISTD anchor search repeated with a wider window (`extraction/istd_anchor_retry.py`) | — |
+| `recall` | the fraction of oracle reference compounds a run finds | — |
+
+Persisted values keep their earlier spelling until their public-surface change:
+the Backfill keys listed in [backfill.md](backfill.md), the
+`preferred_rt_recovery` proposal-source label, and the CID-NL oracle
+`recovery_claim_label` column and its values.
+
+`owner` still carries several senses: the sample-local MS1 peak candidates are
+attributed to (`SampleLocalMS1Owner`, `owner_apex_rt`), processing authority
+(`processing_owners`, `owner_seal`), module responsibility (`OWNER_REHYDRATED`),
+and an adjective in `owner_backfill*`. `owner_backfill*` converges with #431,
+the rest with #426.
 
 ## Maintenance
 

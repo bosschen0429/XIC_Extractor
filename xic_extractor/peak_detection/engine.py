@@ -24,7 +24,7 @@ from xic_extractor.peak_detection.models import (
     PeakCandidatesResult,
     PeakDetectionResult,
 )
-from xic_extractor.peak_detection.recovery import preferred_rt_recovery
+from xic_extractor.peak_detection.relaxed_search import preferred_rt_relaxed_search
 from xic_extractor.peak_detection.scoring_models import (
     ScoredCandidate,
     ScoringContext,
@@ -75,7 +75,7 @@ def find_peak_and_area(
             preferred_rt=preferred_rt,
             strict_preferred_rt=strict_preferred_rt,
         )
-        recovery_candidate, recovery_result = preferred_rt_recovery(
+        relaxed_candidate, relaxed_search_result = preferred_rt_relaxed_search(
             rt,
             intensity,
             config,
@@ -86,17 +86,17 @@ def find_peak_and_area(
         )
         all_candidates = candidates_result.candidates
         result_for_output = candidates_result
-        if recovery_candidate is not None and recovery_result is not None:
-            recovery_candidate, recovery_result = (
-                candidate_flow.mark_recovery_candidate(
-                    recovery_candidate,
-                    recovery_result,
+        if relaxed_candidate is not None and relaxed_search_result is not None:
+            relaxed_candidate, relaxed_search_result = (
+                candidate_flow.mark_relaxed_candidate(
+                    relaxed_candidate,
+                    relaxed_search_result,
                 )
             )
-            all_candidates, recovery_candidate = (
-                candidate_flow.append_or_merge_recovery_candidate(
+            all_candidates, relaxed_candidate = (
+                candidate_flow.append_or_merge_relaxed_candidate(
                     all_candidates,
-                    recovery_candidate,
+                    relaxed_candidate,
                 )
             )
             result_for_output = candidate_flow.with_candidates(
@@ -109,7 +109,7 @@ def find_peak_and_area(
             preferred_rt=preferred_rt,
             strict_preferred_rt=strict_preferred_rt,
         )
-        if recovery_candidate is not None and recovery_result is not None:
+        if relaxed_candidate is not None and relaxed_search_result is not None:
             selection_rt = preferred_rt
 
         if scoring_context_builder is not None:
@@ -140,8 +140,8 @@ def find_peak_and_area(
             chosen_severities = chosen.severities
             chosen_score_breakdown = score_breakdown_fields(chosen.evidence_score)
         else:
-            if recovery_candidate is not None and recovery_result is not None:
-                best_candidate = recovery_candidate
+            if relaxed_candidate is not None and relaxed_search_result is not None:
+                best_candidate = relaxed_candidate
             else:
                 best_candidate = select_candidate(
                     all_candidates,
@@ -171,7 +171,7 @@ def find_peak_and_area(
             paired_istd_anchor_rt=paired_istd_anchor_rt,
         )
 
-    recovery_candidate, recovery_result = preferred_rt_recovery(
+    relaxed_candidate, relaxed_search_result = preferred_rt_relaxed_search(
         rt,
         intensity,
         config,
@@ -180,15 +180,17 @@ def find_peak_and_area(
         current_candidate=None,
         candidate_finder=candidate_finder,
     )
-    if recovery_candidate is not None and recovery_result is not None:
-        recovery_candidate, recovery_result = candidate_flow.mark_recovery_candidate(
-            recovery_candidate,
-            recovery_result,
+    if relaxed_candidate is not None and relaxed_search_result is not None:
+        relaxed_candidate, relaxed_search_result = (
+            candidate_flow.mark_relaxed_candidate(
+                relaxed_candidate,
+                relaxed_search_result,
+            )
         )
         if scoring_context_builder is not None:
-            scored_recovery = scoring_flow.score_with_context(
-                recovery_candidate,
-                scoring_context_builder(recovery_candidate),
+            scored_relaxed_search = scoring_flow.score_with_context(
+                relaxed_candidate,
+                scoring_context_builder(relaxed_candidate),
                 istd_confidence_note=istd_confidence_note,
                 evidence_role=evidence_role,
                 istd_pair=istd_pair,
@@ -196,44 +198,44 @@ def find_peak_and_area(
                 score_candidate_func=score_candidate_func,
             )
             candidate_scores = (
-                scoring_flow.candidate_score_summary(scored_recovery),
+                scoring_flow.candidate_score_summary(scored_relaxed_search),
             )
-            recovery_result, recovery_candidate, candidate_scores = (
+            relaxed_search_result, relaxed_candidate, candidate_scores = (
                 output_flow.apply_region_first_safe_merge_if_enabled(
                     rt,
                     intensity,
                     config,
-                    recovery_result,
-                    recovery_candidate,
+                    relaxed_search_result,
+                    relaxed_candidate,
                     candidate_scores,
                     safe_merge_func=safe_merge_func,
                 )
             )
             return output_flow.detection_success(
-                recovery_result,
-                recovery_candidate,
-                confidence=scored_recovery.confidence.value,
-                reason=scored_recovery.reason,
-                severities=scored_recovery.severities,
-                score_breakdown=score_breakdown_fields(scored_recovery.evidence_score),
+                relaxed_search_result,
+                relaxed_candidate,
+                confidence=scored_relaxed_search.confidence.value,
+                reason=scored_relaxed_search.reason,
+                severities=scored_relaxed_search.severities,
+                score_breakdown=score_breakdown_fields(scored_relaxed_search.evidence_score),
                 candidate_scores=candidate_scores,
                 selection_reference_rt=preferred_rt,
                 paired_istd_anchor_rt=paired_istd_anchor_rt,
             )
-        recovery_result, recovery_candidate, candidate_scores = (
+        relaxed_search_result, relaxed_candidate, candidate_scores = (
             output_flow.apply_region_first_safe_merge_if_enabled(
                 rt,
                 intensity,
                 config,
-                recovery_result,
-                recovery_candidate,
+                relaxed_search_result,
+                relaxed_candidate,
                 candidate_scores,
                 safe_merge_func=safe_merge_func,
             )
         )
         return output_flow.detection_success(
-            recovery_result,
-            recovery_candidate,
+            relaxed_search_result,
+            relaxed_candidate,
             selection_reference_rt=preferred_rt,
             paired_istd_anchor_rt=paired_istd_anchor_rt,
         )
