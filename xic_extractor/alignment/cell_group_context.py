@@ -72,7 +72,7 @@ class CellObservationContractError(ValueError):
     """Raised when one assessment cannot enter an existing group cell exactly."""
 
 
-def select_cid_nl_group_recovery_subject(
+def select_cid_nl_group_backfill_subject(
     group: CrossSamplePeakGroupHypothesis,
     subjects: tuple[CidNlMethodSubject, ...],
 ) -> CidNlMethodSubject:
@@ -80,7 +80,7 @@ def select_cid_nl_group_recovery_subject(
     center = group.group_center_mz
     if center is None:
         raise CellObservationContractError(
-            "group recovery subject requires a finite group center m/z"
+            "group backfill subject requires a finite group center m/z"
         )
     return min(
         subjects,
@@ -264,7 +264,7 @@ class CidNlCellGroupContext:
         object.__setattr__(
             self,
             "_method_subject",
-            select_cid_nl_group_recovery_subject(self.group, subjects),
+            select_cid_nl_group_backfill_subject(self.group, subjects),
         )
         object.__setattr__(self, "_owner_ids", tuple(sorted(self.group.owner_ids)))
         object.__setattr__(

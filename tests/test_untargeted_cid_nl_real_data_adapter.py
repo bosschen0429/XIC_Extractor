@@ -35,7 +35,7 @@ from xic_extractor.extraction.untargeted_cid_nl_real_data_adapter import (
     acquire_untargeted_cid_nl_recovery_trace_batch,
     acquire_untargeted_cid_nl_sample_trace_batch,
     adapt_current_discovery_sample_subject,
-    recover_untargeted_cid_nl_sample_subject,
+    backfill_untargeted_cid_nl_sample_subject,
 )
 from xic_extractor.peak_detection.cid_nl_peak_support import (
     DdaCidNlPeakSupportPolicy,
@@ -832,7 +832,7 @@ def test_recovery_batch_canonicalizes_shared_group_queries_without_merging_cente
     batch = acquire_untargeted_cid_nl_recovery_trace_batch(
         processing_owners=fixture.owners,
         sample=fixture.sample("S1"),
-        recovery_requests=(
+        backfill_requests=(
             (fixture.method_subject, 8.2),
             (fixture.method_subject, 7.8),
             (fixture.method_subject, 8.2),
@@ -1382,7 +1382,7 @@ def test_recovery_revisits_one_hold_cell_without_minting_support(
         tmp_path=tmp_path,
     )
 
-    result = recover_untargeted_cid_nl_sample_subject(
+    result = backfill_untargeted_cid_nl_sample_subject(
         processing_owners=fixture.owners,
         sample=fixture.sample("S1"),
         method_subject=fixture.method_subject,
@@ -1401,7 +1401,7 @@ def test_recovery_revisits_one_hold_cell_without_minting_support(
     assert result.assessment.content.evaluation_receipt.scanned_event_count == 0
     assert len(result.assessment.candidate_peaks) == 1
     assert result.assessment.evidence_refs == ()
-    assert result.recovery_input is not None
+    assert result.backfill_input is not None
     assert result.acquisition.logical_xic_request_count == 1
     assert vendor_raw.chromatogram_request_counts == [1]
 

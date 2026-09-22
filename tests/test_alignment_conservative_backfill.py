@@ -27,15 +27,15 @@ from xic_extractor.alignment.cid_nl_evidence_spine import (
 from xic_extractor.alignment.conservative_backfill import (
     ConservativeBackfillCellDecision,
     ConservativeBackfillContractError,
-    ConservativeBackfillRecoveryEvidence,
+    ConservativeBackfillEvidence,
     assess_conservative_backfill_group,
     assess_targeted_conservative_backfill_group,
     assess_untargeted_conservative_backfill_group,
-    canonical_conservative_backfill_recovery_universe_bytes,
+    canonical_conservative_backfill_universe_bytes,
     map_conservative_backfill_candidates,
     minimum_direct_support_count,
-    mint_conservative_backfill_recovery_candidate_universe,
-    plan_conservative_recovery_targets,
+    mint_conservative_backfill_candidate_universe,
+    plan_conservative_backfill_targets,
 )
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlEvaluationReceipt,
@@ -124,7 +124,7 @@ def test_roles_votes_and_full_support_trace_set_are_owner_derived(
     assert not any("median" in field.name.lower() for field in fields(type(targeted)))
     assert targeted.product_authority == "none"
     assert targeted.validation_status == "shadow_ready"
-    assert plan_conservative_recovery_targets(
+    assert plan_conservative_backfill_targets(
         (spine.group,), sample_population=fixture.samples
     ) == (
         (
@@ -165,7 +165,7 @@ def test_group_exists_below_threshold_but_cannot_trigger_recovery(
     assert facts.direct_support_count_s == 1
     assert facts.minimum_support_k == 2
     assert facts.may_attempt_recovery is False
-    assert plan_conservative_recovery_targets(
+    assert plan_conservative_backfill_targets(
         (spine.group,), sample_population=fixture.samples
     ) == ()
     assert decision.disposition == "hold"
@@ -173,7 +173,7 @@ def test_group_exists_below_threshold_but_cannot_trigger_recovery(
     assert decision.reason_codes == ("direct_support_threshold_not_met",)
     assert _forbidden_product_fields(ConservativeBackfillCellDecision) == set()
 
-    forged_candidate = ConservativeBackfillRecoveryEvidence(
+    forged_candidate = ConservativeBackfillEvidence(
         candidate_universe=universe,
         peak_observation=universe.candidate_peaks[0],
     )
@@ -540,7 +540,7 @@ def test_mapping_retains_empty_receipt_and_rejects_duplicate_target_receipts(
     assert missing_receipt.reason_codes == ("recovery_evidence_missing",)
     with pytest.raises(
         ConservativeBackfillContractError,
-        match="at most one recovery universe receipt",
+        match="at most one backfill universe receipt",
     ):
         map_conservative_backfill_candidates(
             (facts,),
@@ -567,7 +567,7 @@ def test_recovery_evidence_cannot_create_first_group_or_become_support(
         "missing",
         (_peak(fixture, "missing", apex_rt=8.0),),
     )
-    candidate = ConservativeBackfillRecoveryEvidence(
+    candidate = ConservativeBackfillEvidence(
         candidate_universe=universe,
         peak_observation=universe.candidate_peaks[0],
     )
@@ -621,7 +621,7 @@ def test_recovery_receipt_prevents_independent_near_isobaric_target_pairing(
         ConservativeBackfillContractError,
         match="exact sample and target",
     ):
-        mint_conservative_backfill_recovery_candidate_universe(
+        mint_conservative_backfill_candidate_universe(
             processing_owners=fixture.owners,
             sample=fixture.sample("missing"),
             group_facts=(other_facts,),
@@ -682,7 +682,7 @@ def test_recovery_receipt_rejects_truncated_processing_request_population(
         replace(valid_universe, group_facts=(facts,))
 
     payload = json.loads(
-        canonical_conservative_backfill_recovery_universe_bytes(
+        canonical_conservative_backfill_universe_bytes(
             processing_owners=fixture.owners,
             sample=fixture.sample("s03"),
             group_facts=(full_facts,),
@@ -829,7 +829,7 @@ def test_recovery_receipt_rejects_same_request_sibling_assessment(
         ConservativeBackfillContractError,
         match="outside the exact processing attempt",
     ):
-        mint_conservative_backfill_recovery_candidate_universe(
+        mint_conservative_backfill_candidate_universe(
             processing_owners=retry.owners,
             sample=retry.sample("missing"),
             group_facts=(facts,),
@@ -1027,7 +1027,7 @@ def _recovery_universe(
         ),
         candidate_peaks=tuple(peaks),
     )
-    return mint_conservative_backfill_recovery_candidate_universe(
+    return mint_conservative_backfill_candidate_universe(
         processing_owners=fixture.owners,
         sample=fixture.sample(sample_stem),
         group_facts=tuple(group_facts),

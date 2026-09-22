@@ -26,8 +26,8 @@ from tests.untargeted_cid_nl_no_raw_fixture import (
 )
 from xic_extractor.alignment.untargeted_cid_nl_golden_path import (
     UntargetedCidNlAssessmentInput,
+    UntargetedCidNlBackfillInput,
     UntargetedCidNlGoldenPathError,
-    UntargetedCidNlRecoveryInput,
     build_untargeted_cid_nl_golden_path,
     build_untargeted_cid_nl_quant_matrix_version,
 )
@@ -76,20 +76,20 @@ def test_no_raw_golden_path_preserves_evidence_and_terminal_matrix_contract(
     fixture = build_untargeted_cid_nl_no_raw_fixture(
         tmp_path, sample_roles=SAMPLE_ROLES
     )
-    sample_inputs, recovery = _golden_inputs(fixture)
+    sample_inputs, backfill = _golden_inputs(fixture)
 
     projection = build_untargeted_cid_nl_golden_path(
         processing_owners=fixture.owners,
         method_subject=fixture.method_subject,
         sample_inputs=sample_inputs,
-        recovery_inputs=(recovery,),
+        backfill_inputs=(backfill,),
         source_artifact_relpath=SOURCE_RELPATH,
     )
     replay = build_untargeted_cid_nl_golden_path(
         processing_owners=fixture.owners,
         method_subject=fixture.method_subject,
         sample_inputs=tuple(reversed(sample_inputs)),
-        recovery_inputs=(recovery,),
+        backfill_inputs=(backfill,),
         source_artifact_relpath=SOURCE_RELPATH,
     )
 
@@ -178,7 +178,7 @@ def test_golden_path_source_is_invariant_to_per_sample_projection_order(
     fixture = build_untargeted_cid_nl_no_raw_fixture(
         tmp_path, sample_roles=SAMPLE_ROLES
     )
-    sample_inputs, recovery = _golden_inputs(fixture)
+    sample_inputs, backfill = _golden_inputs(fixture)
     multi_projection = _multi_projection_support_input(fixture, "StudySupport")
     reordered = replace(
         multi_projection,
@@ -197,14 +197,14 @@ def test_golden_path_source_is_invariant_to_per_sample_projection_order(
         processing_owners=fixture.owners,
         method_subject=fixture.method_subject,
         sample_inputs=canonical_inputs,
-        recovery_inputs=(recovery,),
+        backfill_inputs=(backfill,),
         source_artifact_relpath=SOURCE_RELPATH,
     )
     replay = build_untargeted_cid_nl_golden_path(
         processing_owners=fixture.owners,
         method_subject=fixture.method_subject,
         sample_inputs=reordered_inputs,
-        recovery_inputs=(recovery,),
+        backfill_inputs=(backfill,),
         source_artifact_relpath=SOURCE_RELPATH,
     )
 
@@ -219,7 +219,7 @@ def test_golden_path_rejects_missing_discovery_lineage_and_manifest_rewrite(
     fixture = build_untargeted_cid_nl_no_raw_fixture(
         tmp_path, sample_roles=SAMPLE_ROLES
     )
-    sample_inputs, recovery = _golden_inputs(fixture)
+    sample_inputs, backfill = _golden_inputs(fixture)
     support_input = next(
         item
         for item in sample_inputs
@@ -232,7 +232,7 @@ def test_golden_path_rejects_missing_discovery_lineage_and_manifest_rewrite(
         processing_owners=fixture.owners,
         method_subject=fixture.method_subject,
         sample_inputs=sample_inputs,
-        recovery_inputs=(recovery,),
+        backfill_inputs=(backfill,),
         source_artifact_relpath=SOURCE_RELPATH,
     )
     with pytest.raises(UntargetedCidNlGoldenPathError, match="must be minted"):
@@ -260,12 +260,12 @@ def test_terminal_rechecks_manifest_digest_and_source_artifact(
     fixture = build_untargeted_cid_nl_no_raw_fixture(
         tmp_path, sample_roles=SAMPLE_ROLES
     )
-    sample_inputs, recovery = _golden_inputs(fixture)
+    sample_inputs, backfill = _golden_inputs(fixture)
     projection = build_untargeted_cid_nl_golden_path(
         processing_owners=fixture.owners,
         method_subject=fixture.method_subject,
         sample_inputs=sample_inputs,
-        recovery_inputs=(recovery,),
+        backfill_inputs=(backfill,),
         source_artifact_relpath=SOURCE_RELPATH,
     )
     manifest_path, checked_rows = _check_acceptance_manifest(tmp_path, projection)
@@ -294,12 +294,12 @@ def test_projection_deep_freezes_every_matrix_authority_row(tmp_path: Path) -> N
     fixture = build_untargeted_cid_nl_no_raw_fixture(
         tmp_path, sample_roles=SAMPLE_ROLES
     )
-    sample_inputs, recovery = _golden_inputs(fixture)
+    sample_inputs, backfill = _golden_inputs(fixture)
     projection = build_untargeted_cid_nl_golden_path(
         processing_owners=fixture.owners,
         method_subject=fixture.method_subject,
         sample_inputs=sample_inputs,
-        recovery_inputs=(recovery,),
+        backfill_inputs=(backfill,),
         source_artifact_relpath=SOURCE_RELPATH,
     )
 
@@ -320,13 +320,13 @@ def test_terminal_applies_complete_canonical_manifest_authority_rules(
     fixture = build_untargeted_cid_nl_no_raw_fixture(
         tmp_path, sample_roles=SAMPLE_ROLES
     )
-    sample_inputs, recovery = _golden_inputs(fixture)
+    sample_inputs, backfill = _golden_inputs(fixture)
     forbidden_source = "validation/LOCKBOX_SHADOW_AUTOMATION/source.json"
     projection = build_untargeted_cid_nl_golden_path(
         processing_owners=fixture.owners,
         method_subject=fixture.method_subject,
         sample_inputs=sample_inputs,
-        recovery_inputs=(recovery,),
+        backfill_inputs=(backfill,),
         source_artifact_relpath=forbidden_source,
     )
     source_path = tmp_path / forbidden_source
@@ -563,7 +563,7 @@ def _golden_inputs(
     fixture: UntargetedCidNlNoRawFixture,
 ) -> tuple[
     tuple[UntargetedCidNlAssessmentInput, ...],
-    UntargetedCidNlRecoveryInput,
+    UntargetedCidNlBackfillInput,
 ]:
     study = _support_input(fixture, "StudySupport", scan_number=41, height=100.0)
     qc = _support_input(fixture, "QCSupport", scan_number=42, height=200.0)
@@ -636,7 +636,7 @@ def _golden_inputs(
     mix_std = _technical_input(fixture, "MixSTD")
 
     recovery_peak = cid_nl_peak(fixture, "Missing", height=300.0)
-    recovery_assessment = mint_cid_nl_method_assessment_ref(
+    backfill_assessment = mint_cid_nl_method_assessment_ref(
         processing_owners=fixture.owners,
         sample=fixture.sample("Missing"),
         method_subject=fixture.method_subject,
@@ -644,13 +644,13 @@ def _golden_inputs(
         evaluation_receipt=_completed_receipt(scanned_event_count=0),
         candidate_peaks=(recovery_peak,),
     )
-    recovery = UntargetedCidNlRecoveryInput(
+    backfill = UntargetedCidNlBackfillInput(
         sample=fixture.sample("Missing"),
-        candidate_assessment=recovery_assessment,
+        candidate_assessment=backfill_assessment,
     )
     return (
         (study, qc, missing, split, reject, technical, blank, mix_std),
-        recovery,
+        backfill,
     )
 
 

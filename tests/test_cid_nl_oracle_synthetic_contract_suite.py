@@ -80,7 +80,7 @@ def test_synthetic_metrics_exclude_duplicates_and_supplemental_rows() -> None:
     assert summary.proposal_positive_count == 4
     assert summary.proposal_correct_count == 4
     assert summary.reference_positive_count == 5
-    assert summary.reference_recovered_count == 4
+    assert summary.reference_recalled_count == 4
     assert summary.hidden_duplicate_count == 1
     assert summary.supplemental_count == 1
 

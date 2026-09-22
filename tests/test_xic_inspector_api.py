@@ -902,7 +902,7 @@ def test_sample_support_origin_uses_exact_method_capture_and_observation(
                 connection.execute("SELECT payload FROM curve_payloads").fetchone()[0]
             )
         )
-        recovery = {
+        backfill = {
             **original,
             "kind": capture_kind,
         }
@@ -914,7 +914,7 @@ def test_sample_support_origin_uses_exact_method_capture_and_observation(
                 capture_kind,
                 "obs-01",
                 "zlib-json-utf8",
-                zlib.compress(json.dumps(recovery).encode()),
+                zlib.compress(json.dumps(backfill).encode()),
             ),
         )
         connection.execute(

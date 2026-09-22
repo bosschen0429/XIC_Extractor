@@ -1727,7 +1727,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
             *sample_result.adapter_result.capture_evidence,
             *(
                 item
-                for attempt in sample_result.recovery_attempts
+                for attempt in sample_result.backfill_attempts
                 for item in attempt.capture_evidence
             ),
         )
@@ -2139,7 +2139,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     )
     from xic_extractor.extraction.untargeted_cid_nl_real_data_adapter import (
         UntargetedCidNlRealDataAdapterError,
-        recover_untargeted_cid_nl_sample_subject,
+        backfill_untargeted_cid_nl_sample_subject,
     )
     from xic_extractor.peak_detection.cid_nl_peak_support import (
         DdaCidNlPeakSupportPolicy,
@@ -2167,7 +2167,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         settings=settings,
         signal_processing_profile=profile,
     )
-    recovered = recover_untargeted_cid_nl_sample_subject(**recovery_args)
+    recovered = backfill_untargeted_cid_nl_sample_subject(**recovery_args)
     (observation,) = recovered.assessment.candidate_peaks
     acquired = recovered.acquisition.traces[0]
     recovery_prepared = prepare_physical_signal(
@@ -2191,7 +2191,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     with pytest.raises(
         capture_owner.SampleLocalCaptureError, match="question is not request-bound"
     ):
-        recover_untargeted_cid_nl_sample_subject(
+        backfill_untargeted_cid_nl_sample_subject(
             **(
                 recovery_args
                 | {
@@ -2204,7 +2204,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     with pytest.raises(
         UntargetedCidNlRealDataAdapterError, match="lost its request-bound profile"
     ):
-        recover_untargeted_cid_nl_sample_subject(
+        backfill_untargeted_cid_nl_sample_subject(
             **(recovery_args | {"signal_processing_profile": None})
         )
     original_intensity = source_raws[paths[0]].intensity
@@ -2230,10 +2230,10 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
             for offset in offsets:
                 isolated[len(isolated) // 2 + offset] = float(max(original_intensity))
             source_raws[paths[0]].intensity = isolated
-            unavailable = recover_untargeted_cid_nl_sample_subject(**recovery_args)
+            unavailable = backfill_untargeted_cid_nl_sample_subject(**recovery_args)
             assert unavailable.assessment.candidate_peaks == ()
             assert unavailable.assessment.content.method_result == "HOLD"
-            assert unavailable.recovery_input is None
+            assert unavailable.backfill_input is None
             assert recovery_evaluations[-1].reason == reason
             assert recovery_evaluations[-1].facts is None
             assert recovery_evaluations[-1].integration is None
@@ -2242,10 +2242,10 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
             )
 
         source_raws[paths[0]].intensity = original_intensity * 0.0
-        unavailable = recover_untargeted_cid_nl_sample_subject(**recovery_args)
+        unavailable = backfill_untargeted_cid_nl_sample_subject(**recovery_args)
         assert unavailable.assessment.candidate_peaks == ()
         assert unavailable.assessment.content.method_result == "HOLD"
-        assert unavailable.recovery_input is None
+        assert unavailable.backfill_input is None
         (retained_unavailable,) = unavailable.capture_evidence
         assert retained_unavailable.observation_ref is None
         assert retained_unavailable.physical_evaluation.state == "unavailable"
@@ -2269,10 +2269,10 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
             empty_vendor.setattr(
                 vendor, "GetChromatogramData", empty_vendor_chromatogram
             )
-            empty = recover_untargeted_cid_nl_sample_subject(**recovery_args)
+            empty = backfill_untargeted_cid_nl_sample_subject(**recovery_args)
         assert empty.assessment.candidate_peaks == ()
         assert empty.assessment.content.method_result == "HOLD"
-        assert empty.recovery_input is None
+        assert empty.backfill_input is None
         assert empty.acquisition.traces[0].coordinate.trace_point_count == 0
         (retained_empty,) = empty.capture_evidence
         assert retained_empty.observation_ref is None
@@ -3954,7 +3954,7 @@ def test_production_composition_closes_observation_only_hold_without_membership(
         assert position.conservative_no_request_proof is None
         assert position.primary_logical_requests == ()
         assert all(
-            not result.recovery_attempts for result in runtime_result.sample_results
+            not result.backfill_attempts for result in runtime_result.sample_results
         )
         assert sum(map(len, opened.values())) == opens_before_composition == 3
         cells = {cell.sample_stem: cell for cell in writer_inputs.matrix.cells}
@@ -3980,7 +3980,7 @@ def test_production_composition_closes_observation_only_hold_without_membership(
         from xic_extractor.alignment.tsv_writer import write_alignment_matrix_tsv
 
         assert all(
-            not result.recovery_attempts for result in runtime_result.sample_results
+            not result.backfill_attempts for result in runtime_result.sample_results
         )
         assert sum(map(len, opened.values())) == opens_before_composition == 2
         (child,) = completed.application_result.children
@@ -4453,7 +4453,7 @@ def _assert_conservative_proof_seals(
     )
     from xic_extractor.extraction.untargeted_cid_nl_real_data_runtime import (
         canonical_untargeted_cid_nl_sample_result_bytes,
-        project_untargeted_cid_nl_completed_recovery,
+        project_untargeted_cid_nl_completed_backfill,
     )
     from xic_extractor.processing_identity import issue_processing_attempt
 
@@ -4643,16 +4643,16 @@ def _assert_conservative_proof_seals(
     original_result_bytes = canonical_untargeted_cid_nl_sample_result_bytes(
         result.result_ref
     )
-    with pytest.raises(ValueError, match="not a recovery"):
-        project_untargeted_cid_nl_completed_recovery(
-            replace(result, recovery_attempts=()), group_context=context
+    with pytest.raises(ValueError, match="not a backfill"):
+        project_untargeted_cid_nl_completed_backfill(
+            replace(result, backfill_attempts=()), group_context=context
         )
     if proof.completion is not None:
         completion = proof.completion
         with pytest.raises(ValueError):
             replace(proof, completion=None)
         assert (
-            project_untargeted_cid_nl_completed_recovery(result, group_context=context)
+            project_untargeted_cid_nl_completed_backfill(result, group_context=context)
             == completion
         )
         other_coordinate = next(
@@ -4667,12 +4667,12 @@ def _assert_conservative_proof_seals(
         ):
             with pytest.raises(ValueError):
                 replace(completion, **substitution)
-        recovery = result.recovery_attempt
+        recovery = result.backfill_attempt
         with pytest.raises(ValueError):
-            project_untargeted_cid_nl_completed_recovery(
+            project_untargeted_cid_nl_completed_backfill(
                 replace(
                     result,
-                    recovery_attempts=(
+                    backfill_attempts=(
                         replace(
                             recovery,
                             assessment=result.adapter_result.assessment_input.assessment,
@@ -4688,12 +4688,12 @@ def _assert_conservative_proof_seals(
             # seal comparison is reached. That seal is covered directly in
             # test_cid_nl_multi_group_recovery.
             with pytest.raises(
-                ValueError, match="recovery crossed its exact request coordinates"
+                ValueError, match="backfill crossed its exact request coordinates"
             ):
-                project_untargeted_cid_nl_completed_recovery(
+                project_untargeted_cid_nl_completed_backfill(
                     replace(
                         result,
-                        recovery_attempts=(
+                        backfill_attempts=(
                             replace(recovery, acquisition=wrong_acquisition),
                         ),
                     ),
@@ -4786,7 +4786,7 @@ def test_production_composition_closes_recovered_observation_without_candidate(
         if result.job.sample.metadata.raw_stem == "Hold"
     )
     assert len(recovered) == 1
-    assert (recovered[0].recovery_attempt is not None) == (recovery_case != "threshold")
+    assert (recovered[0].backfill_attempt is not None) == (recovery_case != "threshold")
     assert len(recovered[0].effective_assessment.candidate_peaks) == (
         recovery_case == "positive"
     )
@@ -4822,7 +4822,7 @@ def test_production_composition_closes_recovered_observation_without_candidate(
         )
         return
     from xic_extractor.extraction.untargeted_cid_nl_real_data_runtime import (
-        project_untargeted_cid_nl_completed_recovery,
+        project_untargeted_cid_nl_completed_backfill,
     )
 
     (child,) = completed.application_result.children
@@ -4833,7 +4833,7 @@ def test_production_composition_closes_recovered_observation_without_candidate(
         if source.method_assessment is recovered[0].effective_assessment
     )
     with pytest.raises(ValueError, match="completed empty epoch"):
-        project_untargeted_cid_nl_completed_recovery(
+        project_untargeted_cid_nl_completed_backfill(
             recovered[0], group_context=recovered_source.group_context
         )
     assert writer_inputs.matrix.sample_order == sample_stems

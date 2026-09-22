@@ -1,15 +1,17 @@
 # Backfill
 
-Backfill is the bounded missing-cell recovery module for an owner-backed Target
-or existing cross-sample group. It makes one context-directed revisit and
-returns an independently traceable `ObservationRepair` decision containing a
+Backfill is the bounded missing-cell module for an owner-backed Target or
+existing cross-sample group. It makes one context-directed revisit and returns
+an independently traceable `ObservationRepair` decision containing a
 repaired/new observation or typed no-repair result. It does not select a
 product value, create membership, or write an output.
 
-The product-stage name is **Backfill（回填）**, following Discovery and Alignment.
-For this operation, `recovery` in implementation records describes Backfill;
-`ObservationRepair` names the typed decision it returns. Product descriptions
-and interface labels use Backfill.
+The product-stage name is **Backfill（回填）**, following Discovery and Alignment,
+and implementation identifiers use the same word. `ObservationRepair` names the
+typed decision it returns. Persisted keys and phase values written before this
+convergence still read `recovery` (for example `may_attempt_recovery`,
+`recovery_candidate_count`, the `"recovery"` acquisition phase); they change
+only with the public-surface vocabulary step in #431.
 
 Backfill does not need to fill every cell. Existing direct support makes a
 conservative Backfill decision `not_applicable`; insufficient group support or
@@ -21,9 +23,9 @@ or HOLD results alone.
 
 ## Contract
 
-- Backfill is evidence-based recovery for an owner-backed Target or existing
+- Backfill is an evidence-based revisit of an owner-backed Target or existing
   group cell after Discovery/capture has established the relevant context
-  elsewhere. It may recover the first usable observation for that cell, but it
+  elsewhere. It may backfill the first usable observation for that cell, but it
   cannot originate the Target/group or bootstrap a group without prior
   owner-backed evidence. It is not blind imputation, recursive candidate
   generation, or counted detection.
@@ -87,31 +89,31 @@ candidate identity, or cardinality.
 Retained CID-NL production also transfers two closed conservative outcomes into
 typed no-request coverage. A frozen group below the existing direct-SUPPORT
 threshold retains the policy owner's exact decision and yields `not_searched`.
-An already completed recovery with no retained observation requires a sealed
-runtime projection, the exact recovery assessment and acquisition/request
+An already completed backfill with no retained observation requires a sealed
+runtime projection, the exact backfill assessment and acquisition/request
 binding, and the conservative owner's empty-universe decision. It yields
 `unavailable`: the retained receipt does not establish a negative physical
 peak-detection result. Both preserve the original HOLD and blank quantity and
 prevent another repair epoch. Missing receipts, arbitrary HOLD, and incomplete
-or positive recovery evidence cannot use these exceptions.
+or positive backfill evidence cannot use these exceptions.
 
 The coverage owner revalidates the complete group/sample/cell closure and binds
 the proof into its planning epoch. ObservationRepair and the final cell owner
 consume that same proof. Proof-bearing epochs use the canonical payload;
 epochs without a proof retain their existing bytes and identity. Source cell
 artifacts and runtime result artifacts retain their existing formats. The
-runtime owner issues the completed-recovery projection; coverage never imports
+runtime owner issues the completed-backfill projection; coverage never imports
 the extraction runtime or treats nearby trace coordinates as exact requests.
 
 Retained CID-NL production passes its closed coverage directly to CrossSample
 and final cell composition. It does not request another ObservationRepair
-authorization after runtime recovery has closed. The coverage still supplies
+authorization after runtime backfill has closed. The coverage still supplies
 the exact group/sample associations and `not_searched`, `unavailable`, or
 `unresolved` evidence; removing the extra authorization does not discard those
 facts. Workflow paths that request an actual repair retain the authorization
 and execution operations below.
 
-The retained CID-NL runtime also permits one independent recovery for an initial
+The retained CID-NL runtime also permits one independent backfill for an initial
 evaluated `REJECT` whose exact reason is
 `qualifying_nl_evidence_without_any_ms1_candidate_peak`. This does not change the
 original assessment or reopen all rejected Discovery inputs. An existing frozen
@@ -121,7 +123,7 @@ lineage-validated qualifying MS2 inside that window and must earn method SUPPORT
 through the normal relation owner. Its receipt can produce a numeric final cell
 with no source Discovery candidate; explanation lineage retains the initial
 REJECT and exclusions. No group, insufficient support, blank samples, technical
-failure or a completed empty recovery grant another repair epoch.
+failure or a completed empty backfill grant another repair epoch.
 
 The result is a closed authorization union: no eligible cells produce
 `not_run`, one produces `repair(candidate)`, and more than one produces a
@@ -211,7 +213,7 @@ The frozen rules are:
   Backfill candidates, shared-set, inferred, deconvolved, shadow, and manual
   evidence cannot add votes.
 - A group and its cells remain representable when `S < K`; the group simply
-  cannot start a conservative recovery attempt.
+  cannot start a conservative backfill attempt.
 - The declared run population and the canonical cell set must close exactly
   before the group is treated as frozen. Backfill cannot create a first hit,
   group, target universe, identity, landmark, or recursive support vote.
@@ -221,7 +223,7 @@ The frozen rules are:
   same-request sibling attempts fail closed.
 - The complete direct SUPPORT `PeakObservationRef` trace set is retained as
   exact references. It is not collapsed into a median template.
-- Recovery candidates enter only through an immutable owner receipt that binds
+- Backfill candidates enter only through an immutable owner receipt that binds
   the exact request/attempt, sample, method subject and optional Targeted
   compatibility identity derived from the frozen group
   facts, source-cell artifacts, and one owner-minted CID-NL method assessment.
@@ -231,7 +233,7 @@ The frozen rules are:
   a missing receipt, and callers cannot independently pair a method subject
   with a physical peak, combine receipts for one sample × method subject, or
   omit individual members.
-- Receipt-backed recovery evidence is mapped jointly within the same exact
+- Receipt-backed backfill evidence is mapped jointly within the same exact
   method subject by equal cardinality, finite group RT, unique elution order, and the
   existing candidate query RT/ppm envelope. `1↔N`, `N↔1`, tied order, or
   out-of-envelope evidence stays HOLD and nonnumeric. Drift, split,
@@ -240,12 +242,12 @@ The frozen rules are:
   Backfill authority. The retained-runtime missing-MS1 exception described above
   authorizes a separate evidence acquisition and assessment; it never rewrites
   the rejection. Technical/no-evidence and HOLD cells may remain nonnumeric pending
-  an owner-bound recovery universe; neither state creates a vote by itself.
+  an owner-bound backfill universe; neither state creates a vote by itself.
 - Targeted and Untargeted adapters unwrap their CellObservationRef reference projections and
   call the same policy owner over the same exact `CellObservationRef` objects;
   neither adapter owns a second workflow-neutral cell model.
 
-This slice, including the request/candidate, attempt-lineage, and recovery
+This slice, including the request/candidate, attempt-lineage, and backfill
 receipt closure added while resolving #156 gaps 5/8/9, leaves every current
 productization maturity tier and active lane unchanged. It changes admission
 and replay identity only: no selected area, counted detection, output schema,
@@ -307,7 +309,7 @@ semantic evidence. Timing diagnostics may report observed logical-request and
 canonical-class counts when the exact owner partition exists; they do not claim
 elapsed-time, RAW-call, chromatogram-call, point-count, or monetary savings.
 This path grants no new Backfill eligibility, Matrix, ProductWriter,
-activation, streaming, artifact, or recovery authority.
+activation, streaming, artifact, or backfill authority.
 
 ## Surfaces
 
@@ -339,7 +341,7 @@ activation, streaming, artifact, or recovery authority.
 | Category | Meaning | Repo owner |
 | --- | --- | --- |
 | Current scoped writes | Already accepted cells that ProductionCellDecision and the registered ProductWriter path may publish | Authority manifest, status index, cell-decision owner |
-| Candidate or audit rows | Rows available for review, classification, or evidence recovery | Validation packets, adjudication index |
+| Candidate or audit rows | Rows available for review, classification, or evidence backfill | Validation packets, adjudication index |
 | Trace-matched unresolved rows | Rows with some trace-level evidence but insufficient authority | Evidence lifecycle, adjudication surfaces |
 | Missing-overlay rows | Rows blocked by absent or insufficient overlay evidence | Evidence availability packets, blocker reports |
 | Expansion packets | Proposed future writer changes | Status index, authority manifest, promotion contract, expected-diff packet, output tests |

@@ -23,10 +23,10 @@ from xic_extractor.alignment.cell_observations import (
 )
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.conservative_backfill import (
-    ConservativeBackfillRecoveryCandidateUniverse,
+    ConservativeBackfillCandidateUniverse,
     assess_conservative_backfill_group,
     map_conservative_backfill_candidates,
-    mint_conservative_backfill_recovery_candidate_universe,
+    mint_conservative_backfill_candidate_universe,
 )
 from xic_extractor.alignment.cross_sample_peak_groups import (
     CrossSampleNeighborhoodEdge,
@@ -37,7 +37,7 @@ from xic_extractor.alignment.feature_membership_inference import (
     FeatureInferenceOperationCounts,
 )
 from xic_extractor.alignment.grouping_workflow import (
-    admit_cid_nl_group_recoveries,
+    admit_cid_nl_group_backfills,
     build_initial_cid_nl_cross_sample_groups,
 )
 from xic_extractor.alignment.hypothesis_owner_adapter import (
@@ -145,7 +145,7 @@ from xic_extractor.sample_metadata import (
 
 @dataclass(frozen=True, slots=True)
 class UntargetedCidNlProductionBatch:
-    """Partition inputs, executable jobs, and optional sparse recovery templates."""
+    """Partition inputs, executable jobs, and optional sparse backfill templates."""
 
     subject_batch: UntargetedCidNlMethodSubjectBatch
     context: UntargetedCidNlRealDataContext
@@ -935,7 +935,7 @@ def execute_untargeted_cid_nl_production_batch(
         or call_cost["xic_batch_count"] > sample_count * 2
     ):
         raise RuntimeError(
-            "Untargeted CID-NL production exceeded initial/recovery sample phases"
+            "Untargeted CID-NL production exceeded initial/backfill sample phases"
         )
     return result
 
@@ -1135,7 +1135,7 @@ def prepare_untargeted_cid_nl_grouping(
     known_istd_reference: KnownIstdReference | None = None,
     progress_callback: Callable[[Mapping[str, object]], None] | None = None,
 ) -> UntargetedCidNlPreparedGrouping:
-    """Freeze compatible-workset membership once, before any recovery search."""
+    """Freeze compatible-workset membership once, before any backfill search."""
     requested_reference = known_istd_reference
     results_by_subject: dict[str, list[UntargetedCidNlInitialSampleResult]] = {}
     for result in sample_results:
@@ -1545,7 +1545,7 @@ def _build_production_composition_inputs(
         known_istd_reference is not None
         and prepared.known_istd_reference != known_istd_reference
     ):
-        raise RuntimeError("grouping context must be supplied before recovery")
+        raise RuntimeError("grouping context must be supplied before backfill")
     parent_request = prepared.request
     bundles = []
     completed_captures = []
@@ -1619,15 +1619,15 @@ def _build_production_composition_inputs(
                 ),
                 [],
             ).append(candidate.peak_hypothesis)
-        group_recoveries = {
+        group_backfills = {
             (
                 group.group_hypothesis_id,
                 sample_result.job.sample.identity.sample_identity_id,
                 sample_result.job.method_subject.method_subject_id,
-            ): (sample_result.job.sample, recovery.assessment)
+            ): (sample_result.job.sample, backfill.assessment)
             for subject in subject_workset
             for sample_result in results_by_subject.get(subject.method_subject_id, ())
-            if sample_result.recovery_attempts
+            if sample_result.backfill_attempts
             for group in assignment_scope.groups
             if group.group_center_rt is not None
             and not any(
@@ -1636,23 +1636,23 @@ def _build_production_composition_inputs(
                 for member in group.member_subjects
             )
             and (
-                recovery := sample_result.recovery_for_group(
+                backfill := sample_result.backfill_for_group(
                     group.group_center_rt, group_hypothesis_id=group.group_hypothesis_id
                 )
             )
             is not None
         }
-        grouping_result, recovered_groups, successor_ids, recovered_hypotheses = (
-            admit_cid_nl_group_recoveries(
+        grouping_result, backfilled_groups, successor_ids, backfilled_hypotheses = (
+            admit_cid_nl_group_backfills(
                 result=grouping_result,
                 groups=assignment_scope.groups,
-                recoveries=group_recoveries,
+                backfills=group_backfills,
                 alignment_config=alignment_config,
             )
         )
-        recovered_positions = frozenset(
+        backfilled_positions = frozenset(
             (group_id, sample_id)
-            for (group_id, sample_id, _), (_, assessment) in group_recoveries.items()
+            for (group_id, sample_id, _), (_, assessment) in group_backfills.items()
             if assessment.content.method_result == "SUPPORT"
         )
         predecessor_cells = compose_cid_nl_predecessor_cells(
@@ -1663,9 +1663,9 @@ def _build_production_composition_inputs(
             drift_lookup=grouping_result.drift_lookup,
             sample_universe=sample_universe,
             injection_order=injection_order,
-            recovery_assessments_by_group={
+            backfill_assessments_by_group={
                 key: pair
-                for key, pair in group_recoveries.items()
+                for key, pair in group_backfills.items()
                 if pair[1].content.method_result != "SUPPORT"
             },
             retained_hypotheses_by_assessment={
@@ -1673,22 +1673,22 @@ def _build_production_composition_inputs(
                 for key, hypotheses in retained_cell_hypotheses.items()
             },
         )
-        recovery_cells = (
+        backfill_cells = (
             compose_cid_nl_predecessor_cells(
                 processing_owners=batch.context.processing_owners,
-                groups=recovered_groups,
+                groups=backfilled_groups,
                 sample_assessments=initial_assessments,
                 alignment_config=alignment_config,
                 drift_lookup=grouping_result.drift_lookup,
                 sample_universe=sample_universe,
                 injection_order=injection_order,
-                recovery_assessments_by_group={
+                backfill_assessments_by_group={
                     (successor_ids[group_id], sample_id, subject_id): pair
                     for (
                         group_id,
                         sample_id,
                         subject_id,
-                    ), pair in group_recoveries.items()
+                    ), pair in group_backfills.items()
                     if pair[1].content.method_result == "SUPPORT"
                 },
                 retained_hypotheses_by_assessment={
@@ -1696,14 +1696,14 @@ def _build_production_composition_inputs(
                         key: tuple(hypotheses)
                         for key, hypotheses in retained_cell_hypotheses.items()
                     },
-                    **recovered_hypotheses,
+                    **backfilled_hypotheses,
                 },
                 selected_cells=frozenset(
                     (successor_ids[group_id], sample_id)
-                    for group_id, sample_id in recovered_positions
+                    for group_id, sample_id in backfilled_positions
                 ),
             )
-            if recovered_positions
+            if backfilled_positions
             else ()
         )
         cell_by_key = {}
@@ -1733,7 +1733,7 @@ def _build_production_composition_inputs(
             for sample in batch.context.samples:
                 key = (group.group_hypothesis_id, sample.identity.sample_identity_id)
                 cell = cell_by_key.get(key)
-                if cell is None or key in recovered_positions:
+                if cell is None or key in backfilled_positions:
                     continue
                 if (
                     cell.content.method_result != "HOLD"
@@ -1742,7 +1742,7 @@ def _build_production_composition_inputs(
                     continue
                 completion = None
                 universes: tuple[
-                    ConservativeBackfillRecoveryCandidateUniverse, ...
+                    ConservativeBackfillCandidateUniverse, ...
                 ] = ()
                 if facts.may_attempt_recovery:
                     if cell.method_assessment.candidate_peaks:
@@ -1756,22 +1756,22 @@ def _build_production_composition_inputs(
                     if (
                         sample_result is None
                         or facts.group_context.group.group_center_rt is None
-                        or sample_result.recovery_for_group(
+                        or sample_result.backfill_for_group(
                             facts.group_context.group.group_center_rt,
                             group_hypothesis_id=group.group_hypothesis_id,
                         )
                         is None
                     ):
                         continue
-                    completion = result_context.project_completed_recovery(
+                    completion = result_context.project_completed_backfill(
                         sample_result, group_context=facts.group_context
                     )
                     universes = (
-                        mint_conservative_backfill_recovery_candidate_universe(
+                        mint_conservative_backfill_candidate_universe(
                             processing_owners=batch.context.processing_owners,
                             sample=sample,
                             group_facts=(facts,),
-                            candidate_assessment=completion.recovery_assessment,
+                            candidate_assessment=completion.backfill_assessment,
                         ),
                     )
                 (decision,) = map_conservative_backfill_candidates(
@@ -1864,7 +1864,7 @@ def _build_production_composition_inputs(
                     ),
                     closed_cell_coverage=coverage,
                     predecessor_cell_observations=predecessor_cells,
-                    recovery_cell_observations=recovery_cells,
+                    backfill_cell_observations=backfill_cells,
                 ),
             )
         )
@@ -1883,7 +1883,7 @@ def _build_production_composition_inputs(
                 *result.adapter_result.capture_evidence,
                 *(
                     item
-                    for attempt in result.recovery_attempts
+                    for attempt in result.backfill_attempts
                     for item in attempt.capture_evidence
                 ),
             )

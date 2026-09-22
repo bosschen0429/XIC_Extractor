@@ -80,7 +80,7 @@ def test_workflow_forwards_exact_owner_objects_once(
             trajectory_policy=object(),
         ),
         predecessor_cell_observations=(),
-        recovery_cell_observations=(),
+        backfill_cell_observations=(),
         drift_lookup=object(),
     )
     closed_coverage = SimpleNamespace(epoch=SimpleNamespace(processing_owners=owners))

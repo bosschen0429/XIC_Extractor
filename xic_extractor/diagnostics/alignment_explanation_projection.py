@@ -475,7 +475,7 @@ def prepare_alignment_explanation(
                 content.detector_invocation_id == "untargeted-cid-nl-backfill-recovery"
                 and content.method_result == "SUPPORT"
             ):
-                # Recovery has no Discovery terminal. Retain its exact physical
+                # Backfill has no Discovery terminal. Retain its exact physical
                 # support links so the original candidate can explain the cell.
                 for relation in assessment.individual_support_refs:
                     physical_candidates[

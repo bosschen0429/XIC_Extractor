@@ -245,7 +245,7 @@ def test_strict_preferred_rt_chooses_anchor_peak_even_when_neighbor_is_higher() 
     assert result.n_prominent_peaks == 2
 
 
-def test_preferred_rt_recovers_weaker_anchor_peak_when_strong_peak_is_far() -> None:
+def test_relaxed_search_finds_weaker_anchor_peak_when_strong_peak_is_far() -> None:
     rt = np.linspace(8.0, 10.0, 401)
     intensity = _gaussian(rt, center=8.48, sigma=0.04, height=1000.0)
     intensity += _gaussian(rt, center=9.03, sigma=0.05, height=80.0)
@@ -262,7 +262,7 @@ def test_preferred_rt_recovers_weaker_anchor_peak_when_strong_peak_is_far() -> N
     assert result.peak.rt == pytest.approx(9.03, abs=0.02)
 
 
-def test_preferred_rt_recovers_peak_below_standard_prominence_threshold() -> None:
+def test_relaxed_search_finds_peak_below_standard_prominence_threshold() -> None:
     rt = np.linspace(8.0, 10.0, 401)
     intensity = np.full_like(rt, 100000.0)
     intensity += _gaussian(rt, center=9.05, sigma=0.05, height=5000.0)
@@ -750,7 +750,7 @@ def test_unknown_resolver_mode_is_rejected() -> None:
         )
 
 
-def test_preferred_rt_recovery_candidate_preserves_provenance(
+def test_preferred_rt_relaxed_search_candidate_preserves_provenance(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from xic_extractor.peak_detection import facade
@@ -793,7 +793,7 @@ def test_preferred_rt_recovery_candidate_preserves_provenance(
     )
 
 
-def test_preferred_rt_recovery_merges_existing_peak_candidate(
+def test_preferred_rt_relaxed_search_merges_existing_peak_candidate(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from xic_extractor.peak_detection import facade

@@ -8,11 +8,11 @@ from dataclasses import dataclass, replace
 
 from xic_extractor.acquisition_contract import TraceAcquisitionBatch
 from xic_extractor.alignment.cell_group_context import (
-    select_cid_nl_group_recovery_subject,
+    select_cid_nl_group_backfill_subject,
 )
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.conservative_backfill import (
-    plan_conservative_recovery_targets,
+    plan_conservative_backfill_targets,
 )
 from xic_extractor.alignment.cross_sample_peak_groups import (
     construct_cross_sample_peak_group_hypotheses,
@@ -23,7 +23,7 @@ from xic_extractor.alignment.hypothesis_owner_adapter import (
 )
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
 from xic_extractor.alignment.untargeted_cid_nl_golden_path import (
-    UntargetedCidNlRecoveryInput,
+    UntargetedCidNlBackfillInput,
 )
 from xic_extractor.evidence_artifacts import EvidenceArtifactRef
 from xic_extractor.execution_runtime_finalization import (
@@ -34,15 +34,15 @@ from xic_extractor.extraction.untargeted_acquisition_cache import (
     bind_untargeted_acquisition_cache,
 )
 from xic_extractor.extraction.untargeted_cid_nl_real_data_adapter import (
+    UntargetedCidNlBackfillAttemptResult,
+    UntargetedCidNlBackfillTraceBatch,
     UntargetedCidNlRealDataAdapterResult,
-    UntargetedCidNlRecoveryAttemptResult,
-    UntargetedCidNlRecoveryTraceBatch,
     UntargetedCidNlSampleTraceBatch,
     _UntargetedRealDataWorkObserver,
     acquire_untargeted_cid_nl_recovery_trace_batch,
     acquire_untargeted_cid_nl_sample_trace_batch,
     adapt_current_discovery_sample_subject,
-    recover_untargeted_cid_nl_sample_subject,
+    backfill_untargeted_cid_nl_sample_subject,
 )
 from xic_extractor.extraction.untargeted_real_data_models import (
     UntargetedCidNlPreparedGrouping,
@@ -77,11 +77,11 @@ class _RuntimeJobState:
     observer: _UntargetedRealDataWorkObserver
     error: Exception | None = None
     adapter_result: UntargetedCidNlRealDataAdapterResult | None = None
-    recovery_support: _RecoverySupportContext | None = None
-    recovery_input: UntargetedCidNlRecoveryInput | None = None
-    recovery_attempts: tuple[UntargetedCidNlRecoveryAttemptResult, ...] = ()
-    recovery_group_center_rts: tuple[float, ...] = ()
-    recovery_group_ids: tuple[str, ...] = ()
+    backfill_support: _BackfillSupportContext | None = None
+    backfill_input: UntargetedCidNlBackfillInput | None = None
+    backfill_attempts: tuple[UntargetedCidNlBackfillAttemptResult, ...] = ()
+    backfill_group_center_rts: tuple[float, ...] = ()
+    backfill_group_ids: tuple[str, ...] = ()
     open_attempted: bool = False
     opened: bool = False
     cleanup_outcome: RuntimeResourceCleanupOutcome = (
@@ -90,16 +90,16 @@ class _RuntimeJobState:
 
 
 @dataclass(frozen=True, slots=True)
-class _RecoverySupportContext:
-    """Narrow recovery-only projection of initial assessment facts.
+class _BackfillSupportContext:
+    """Narrow backfill-only projection of initial assessment facts.
 
-    Recovery execution consumes only the support policy and, when the
+    Backfill execution consumes only the support policy and, when the
     initial attempt was a missing-MS1 rejection, that initial assessment.
     The full ``UntargetedCidNlRealDataAdapterResult`` — including
     acquisition, captures, lineage artifacts, and capture evidence — is
-    not needed by the recovery worker and must not be transported across
+    not needed by the backfill worker and must not be transported across
     the process boundary.  ``initial_assessment`` stays ``None`` whenever
-    recovery would not consume it, so the assessment reference graph is
+    backfill would not consume it, so the assessment reference graph is
     not transported either.
     """
 
@@ -107,13 +107,13 @@ class _RecoverySupportContext:
     support_policy: DdaCidNlPeakSupportPolicy
 
 
-def _recovery_support_context(
+def _backfill_support_context(
     result: UntargetedCidNlRealDataAdapterResult,
-) -> _RecoverySupportContext:
-    """Project the recovery-consumed facts out of one initial result."""
+) -> _BackfillSupportContext:
+    """Project the backfill-consumed facts out of one initial result."""
 
     assessment = result.assessment_input.assessment
-    return _RecoverySupportContext(
+    return _BackfillSupportContext(
         initial_assessment=(
             assessment if is_cid_nl_missing_ms1_rejection(assessment) else None
         ),
@@ -125,19 +125,19 @@ def _recovery_support_context(
 class _BatchSamplePhaseState:
     states: tuple[_RuntimeJobState, ...]
     initial_resource_key: str | None
-    recovery_resource_key: str | None
+    backfill_resource_key: str | None
     initial_open_attempted: bool = False
     initial_opened: bool = False
     initial_cleanup_outcome: RuntimeResourceCleanupOutcome = (
         RuntimeResourceCleanupOutcome.SUCCEEDED
     )
-    recovery_open_attempted: bool = False
-    recovery_opened: bool = False
-    recovery_cleanup_outcome: RuntimeResourceCleanupOutcome = (
+    backfill_open_attempted: bool = False
+    backfill_opened: bool = False
+    backfill_cleanup_outcome: RuntimeResourceCleanupOutcome = (
         RuntimeResourceCleanupOutcome.SUCCEEDED
     )
     initial_acquisition: TraceAcquisitionBatch | None = None
-    recovery_acquisition: TraceAcquisitionBatch | None = None
+    backfill_acquisition: TraceAcquisitionBatch | None = None
     sample_template: UntargetedCidNlRealDataRuntimeJob | None = None
 
     @property
@@ -338,7 +338,7 @@ def _execute_initial_assessment_batch(
                         state.error = exc
 
 
-def _prepare_group_authorized_recoveries(
+def _prepare_group_authorized_backfills(
     states: list[_RuntimeJobState],
     *,
     prepared: UntargetedCidNlPreparedGrouping,
@@ -368,10 +368,10 @@ def _prepare_group_authorized_recoveries(
             for group in workset.assignment_scope.groups
             if all(owner_id in direct for owner_id in group.owner_ids)
         )
-        for group, target_ids in plan_conservative_recovery_targets(
+        for group, target_ids in plan_conservative_backfill_targets(
             groups, sample_population=population
         ):
-            subject = select_cid_nl_group_recovery_subject(
+            subject = select_cid_nl_group_backfill_subject(
                 group,
                 tuple(
                     {
@@ -412,16 +412,16 @@ def _prepare_group_authorized_recoveries(
                 ):
                     continue
                 if assessment.candidate_peaks:
-                    state.recovery_input = UntargetedCidNlRecoveryInput(
+                    state.backfill_input = UntargetedCidNlBackfillInput(
                         sample=state.job.sample,
                         candidate_assessment=assessment,
                     )
                 else:
-                    state.recovery_group_center_rts += (group.group_center_rt,)
-                    state.recovery_group_ids += (group.group_hypothesis_id,)
+                    state.backfill_group_center_rts += (group.group_center_rt,)
+                    state.backfill_group_ids += (group.group_hypothesis_id,)
 
 
-def _prepare_owner_authorized_recoveries(
+def _prepare_owner_authorized_backfills(
     states: list[_RuntimeJobState],
     *,
     alignment_config: AlignmentConfig,
@@ -435,7 +435,7 @@ def _prepare_owner_authorized_recoveries(
         ).append(state)
     for method_subject_id in sorted(by_subject):
         states.extend(
-            _prepare_subject_authorized_recoveries(
+            _prepare_subject_authorized_backfills(
                 tuple(by_subject[method_subject_id]),
                 alignment_config=alignment_config,
                 sample_templates=sample_templates,
@@ -443,7 +443,7 @@ def _prepare_owner_authorized_recoveries(
         )
 
 
-def _prepare_subject_authorized_recoveries(
+def _prepare_subject_authorized_backfills(
     states: tuple[_RuntimeJobState, ...],
     *,
     alignment_config: AlignmentConfig,
@@ -494,13 +494,13 @@ def _prepare_subject_authorized_recoveries(
         else tuple(state.job.sample for state in states)
     )
     added_states: list[_RuntimeJobState] = []
-    for group, target_sample_ids in plan_conservative_recovery_targets(
+    for group, target_sample_ids in plan_conservative_backfill_targets(
         groups, sample_population=population
     ):
         center = group.group_center_rt
         if center is None:
             raise UntargetedCidNlRealDataRuntimeError(
-                "authorized recovery requires a frozen RT group"
+                "authorized backfill requires a frozen RT group"
             )
         for sample_id in sorted(target_sample_ids):
             if sample_id not in states_by_sample:
@@ -535,32 +535,32 @@ def _prepare_subject_authorized_recoveries(
             ):
                 continue
             if assessment.candidate_peaks:
-                state.recovery_input = UntargetedCidNlRecoveryInput(
+                state.backfill_input = UntargetedCidNlBackfillInput(
                     sample=state.job.sample,
                     candidate_assessment=assessment,
                 )
             else:
-                state.recovery_group_center_rts = tuple(
-                    sorted((*state.recovery_group_center_rts, center))
+                state.backfill_group_center_rts = tuple(
+                    sorted((*state.backfill_group_center_rts, center))
                 )
     return tuple(added_states)
 
 
-def _execute_recovery(
+def _execute_backfill(
     state: _RuntimeJobState,
 ) -> None:
     job = state.job
-    ctx = state.recovery_support
+    ctx = state.backfill_support
     if ctx is None and state.adapter_result is not None:
-        ctx = _recovery_support_context(state.adapter_result)
+        ctx = _backfill_support_context(state.adapter_result)
     if ctx is None:
         state.error = UntargetedCidNlRealDataRuntimeError(
-            "recovery requires a completed initial assessment"
+            "backfill requires a completed initial assessment"
         )
         return
     if state.resource_key is None:
         state.error = UntargetedCidNlRealDataRuntimeError(
-            "eligible recovery is missing its acquisition reservation"
+            "eligible backfill is missing its acquisition reservation"
         )
         return
     raw = None
@@ -577,15 +577,15 @@ def _execute_recovery(
         trace_batch = active_acquire(
             processing_owners=job.processing_owners,
             sample=job.sample,
-            recovery_requests=tuple(
+            backfill_requests=tuple(
                 (job.method_subject, center)
-                for center in state.recovery_group_center_rts
+                for center in state.backfill_group_center_rts
             ),
             peak_config=job.peak_config,
             raw=raw,
         )
-        for index, center in enumerate(state.recovery_group_center_rts):
-            recovery = recover_untargeted_cid_nl_sample_subject(
+        for index, center in enumerate(state.backfill_group_center_rts):
+            backfill = backfill_untargeted_cid_nl_sample_subject(
                 processing_owners=job.processing_owners,
                 sample=job.sample,
                 method_subject=job.method_subject,
@@ -599,13 +599,13 @@ def _execute_recovery(
                 signal_processing_profile=job.signal_processing_profile,
                 _preacquired_traces=trace_batch,
             )
-            if state.recovery_group_ids:
-                recovery = replace(
-                    recovery, group_hypothesis_id=state.recovery_group_ids[index]
+            if state.backfill_group_ids:
+                backfill = replace(
+                    backfill, group_hypothesis_id=state.backfill_group_ids[index]
                 )
-            state.recovery_attempts += (recovery,)
-        if len(state.recovery_attempts) == 1:
-            state.recovery_input = state.recovery_attempts[0].recovery_input
+            state.backfill_attempts += (backfill,)
+        if len(state.backfill_attempts) == 1:
+            state.backfill_input = state.backfill_attempts[0].backfill_input
     except RawReaderOpenError as exc:
         state.cleanup_outcome = (
             RuntimeResourceCleanupOutcome.FAILED
@@ -630,33 +630,33 @@ def _execute_recovery(
                     state.error = exc
 
 
-def _execute_recovery_batch(phase: _BatchSamplePhaseState) -> None:
+def _execute_backfill_batch(phase: _BatchSamplePhaseState) -> None:
     pending = tuple(
         sorted(
             (
                 state
                 for state in phase.states
-                if state.error is None and state.recovery_group_center_rts
+                if state.error is None and state.backfill_group_center_rts
             ),
             key=lambda state: state.job.method_subject.method_subject_id,
         )
     )
     if not pending:
         return
-    if phase.recovery_resource_key is None:
+    if phase.backfill_resource_key is None:
         error = UntargetedCidNlRealDataRuntimeError(
-            "eligible recovery batch is missing its phase reservation"
+            "eligible backfill batch is missing its phase reservation"
         )
         for state in pending:
             state.error = error
         return
     first = pending[0].job
     raw = None
-    trace_batch: UntargetedCidNlRecoveryTraceBatch | None = None
+    trace_batch: UntargetedCidNlBackfillTraceBatch | None = None
     try:
-        phase.recovery_open_attempted = True
+        phase.backfill_open_attempted = True
         raw = _open_job_raw(first)
-        phase.recovery_opened = True
+        phase.backfill_opened = True
         active_acquire = _runtime_delegate(
             "acquire_untargeted_cid_nl_recovery_trace_batch",
             acquire_untargeted_cid_nl_recovery_trace_batch,
@@ -664,25 +664,25 @@ def _execute_recovery_batch(phase: _BatchSamplePhaseState) -> None:
         trace_batch = active_acquire(
             processing_owners=first.processing_owners,
             sample=first.sample,
-            recovery_requests=tuple(
+            backfill_requests=tuple(
                 (
                     state.job.method_subject,
                     center,
                 )
                 for state in pending
-                for center in state.recovery_group_center_rts
+                for center in state.backfill_group_center_rts
             ),
             peak_config=first.peak_config,
             raw=raw,
         )
-        phase.recovery_acquisition = trace_batch.acquisition
+        phase.backfill_acquisition = trace_batch.acquisition
         for state in pending:
-            ctx = state.recovery_support
+            ctx = state.backfill_support
             if ctx is None and state.adapter_result is not None:
-                ctx = _recovery_support_context(state.adapter_result)
+                ctx = _backfill_support_context(state.adapter_result)
             assert ctx is not None
-            for index, center in enumerate(state.recovery_group_center_rts):
-                recovery = recover_untargeted_cid_nl_sample_subject(
+            for index, center in enumerate(state.backfill_group_center_rts):
+                backfill = backfill_untargeted_cid_nl_sample_subject(
                     processing_owners=state.job.processing_owners,
                     sample=state.job.sample,
                     method_subject=state.job.method_subject,
@@ -696,15 +696,15 @@ def _execute_recovery_batch(phase: _BatchSamplePhaseState) -> None:
                     _observer=state.observer,
                     _preacquired_traces=trace_batch,
                 )
-                if state.recovery_group_ids:
-                    recovery = replace(
-                        recovery, group_hypothesis_id=state.recovery_group_ids[index]
+                if state.backfill_group_ids:
+                    backfill = replace(
+                        backfill, group_hypothesis_id=state.backfill_group_ids[index]
                     )
-                state.recovery_attempts += (recovery,)
-            if len(state.recovery_attempts) == 1:
-                state.recovery_input = state.recovery_attempts[0].recovery_input
+                state.backfill_attempts += (backfill,)
+            if len(state.backfill_attempts) == 1:
+                state.backfill_input = state.backfill_attempts[0].backfill_input
     except RawReaderOpenError as exc:
-        phase.recovery_cleanup_outcome = (
+        phase.backfill_cleanup_outcome = (
             RuntimeResourceCleanupOutcome.FAILED
             if exc.cleanup_failed
             else RuntimeResourceCleanupOutcome.SUCCEEDED
@@ -717,12 +717,12 @@ def _execute_recovery_batch(phase: _BatchSamplePhaseState) -> None:
     finally:
         if raw is not None:
             if isinstance(raw, CachedUntargetedRaw):
-                phase.recovery_open_attempted = raw.native_open_attempted
-                phase.recovery_opened = raw.native_opened
+                phase.backfill_open_attempted = raw.native_open_attempted
+                phase.backfill_opened = raw.native_opened
             try:
                 raw.__exit__(None, None, None)
             except Exception as exc:
-                phase.recovery_cleanup_outcome = RuntimeResourceCleanupOutcome.FAILED
+                phase.backfill_cleanup_outcome = RuntimeResourceCleanupOutcome.FAILED
                 for state in pending:
                     if state.error is None:
                         state.error = exc
@@ -764,7 +764,7 @@ def _execute_sample_initial_worker(
     phase = _BatchSamplePhaseState(
         states=states,
         initial_resource_key=request.initial_resource_key,
-        recovery_resource_key=None,
+        backfill_resource_key=None,
     )
     _execute_initial_assessment_batch(
         phase,
@@ -785,34 +785,34 @@ def _execute_sample_initial_worker(
 
 
 @dataclass(slots=True)
-class _SampleRecoveryWorkerRequest:
+class _SampleBackfillWorkerRequest:
     jobs: tuple[UntargetedCidNlRealDataRuntimeJob, ...]
-    recovery_group_center_rts_by_key: dict[str, tuple[float, ...]]
-    recovery_group_ids_by_key: dict[str, tuple[str, ...]]
-    recovery_inputs_by_key: dict[str, UntargetedCidNlRecoveryInput | None]
-    recovery_support_by_key: dict[str, _RecoverySupportContext]
-    recovery_resource_key: str | None
+    backfill_group_center_rts_by_key: dict[str, tuple[float, ...]]
+    backfill_group_ids_by_key: dict[str, tuple[str, ...]]
+    backfill_inputs_by_key: dict[str, UntargetedCidNlBackfillInput | None]
+    backfill_support_by_key: dict[str, _BackfillSupportContext]
+    backfill_resource_key: str | None
 
 
 @dataclass(slots=True)
-class _SampleRecoveryWorkerResponse:
+class _SampleBackfillWorkerResponse:
     work_unit_keys: tuple[str, ...]
-    recovery_attempts_by_key: dict[
-        str, tuple[UntargetedCidNlRecoveryAttemptResult, ...]
+    backfill_attempts_by_key: dict[
+        str, tuple[UntargetedCidNlBackfillAttemptResult, ...]
     ]
-    recovery_inputs_by_key: dict[str, UntargetedCidNlRecoveryInput | None]
+    backfill_inputs_by_key: dict[str, UntargetedCidNlBackfillInput | None]
     observer_artifacts: tuple[tuple[EvidenceArtifactRef, ...], ...]
     observer_has_acquisitions: tuple[bool, ...]
-    recovery_open_attempted: bool
-    recovery_opened: bool
-    recovery_cleanup_outcome: RuntimeResourceCleanupOutcome
-    recovery_acquisition: TraceAcquisitionBatch | None
+    backfill_open_attempted: bool
+    backfill_opened: bool
+    backfill_cleanup_outcome: RuntimeResourceCleanupOutcome
+    backfill_acquisition: TraceAcquisitionBatch | None
     errors: tuple[Exception | None, ...]
 
 
-def _execute_sample_recovery_worker(
-    request: _SampleRecoveryWorkerRequest,
-) -> _SampleRecoveryWorkerResponse:
+def _execute_sample_backfill_worker(
+    request: _SampleBackfillWorkerRequest,
+) -> _SampleBackfillWorkerResponse:
     first_job = request.jobs[0]
     _ensure_assemblies_loaded(first_job.dll_dir, importlib.import_module)
     states = tuple(
@@ -821,12 +821,12 @@ def _execute_sample_recovery_worker(
             resource_key=None,
             initial_requires_raw=False,
             observer=_UntargetedRealDataWorkObserver(job.processing_owners),
-            recovery_support=request.recovery_support_by_key.get(job.work_unit_key),
-            recovery_input=request.recovery_inputs_by_key.get(job.work_unit_key),
-            recovery_group_center_rts=request.recovery_group_center_rts_by_key.get(
+            backfill_support=request.backfill_support_by_key.get(job.work_unit_key),
+            backfill_input=request.backfill_inputs_by_key.get(job.work_unit_key),
+            backfill_group_center_rts=request.backfill_group_center_rts_by_key.get(
                 job.work_unit_key, ()
             ),
-            recovery_group_ids=request.recovery_group_ids_by_key.get(
+            backfill_group_ids=request.backfill_group_ids_by_key.get(
                 job.work_unit_key, ()
             ),
         )
@@ -835,29 +835,29 @@ def _execute_sample_recovery_worker(
     phase = _BatchSamplePhaseState(
         states=states,
         initial_resource_key=None,
-        recovery_resource_key=request.recovery_resource_key,
+        backfill_resource_key=request.backfill_resource_key,
     )
-    _execute_recovery_batch(phase)
-    return _SampleRecoveryWorkerResponse(
+    _execute_backfill_batch(phase)
+    return _SampleBackfillWorkerResponse(
         work_unit_keys=tuple(state.job.work_unit_key for state in states),
-        recovery_attempts_by_key={
-            s.job.work_unit_key: s.recovery_attempts
+        backfill_attempts_by_key={
+            s.job.work_unit_key: s.backfill_attempts
             for s in states
-            if s.recovery_attempts
+            if s.backfill_attempts
         },
-        recovery_inputs_by_key={
-            s.job.work_unit_key: s.recovery_input
+        backfill_inputs_by_key={
+            s.job.work_unit_key: s.backfill_input
             for s in states
-            if s.recovery_input is not None
+            if s.backfill_input is not None
         },
         observer_artifacts=tuple(s.observer.observed_artifacts() for s in states),
         observer_has_acquisitions=tuple(
             s.observer.acquisition is not None for s in states
         ),
-        recovery_open_attempted=phase.recovery_open_attempted,
-        recovery_opened=phase.recovery_opened,
-        recovery_cleanup_outcome=phase.recovery_cleanup_outcome,
-        recovery_acquisition=phase.recovery_acquisition,
+        backfill_open_attempted=phase.backfill_open_attempted,
+        backfill_opened=phase.backfill_opened,
+        backfill_cleanup_outcome=phase.backfill_cleanup_outcome,
+        backfill_acquisition=phase.backfill_acquisition,
         errors=tuple(s.error for s in states),
     )
 
@@ -867,16 +867,16 @@ __all__ = [
     "_RuntimeJobState",
     "_SampleInitialWorkerRequest",
     "_SampleInitialWorkerResponse",
-    "_SampleRecoveryWorkerRequest",
-    "_SampleRecoveryWorkerResponse",
+    "_SampleBackfillWorkerRequest",
+    "_SampleBackfillWorkerResponse",
     "_execute_initial_assessment",
     "_execute_initial_assessment_batch",
-    "_execute_recovery",
-    "_execute_recovery_batch",
+    "_execute_backfill",
+    "_execute_backfill_batch",
     "_execute_sample_initial_worker",
-    "_execute_sample_recovery_worker",
+    "_execute_sample_backfill_worker",
     "_open_job_raw",
-    "_prepare_owner_authorized_recoveries",
-    "_prepare_subject_authorized_recoveries",
-    "_recovery_support_context",
+    "_prepare_owner_authorized_backfills",
+    "_prepare_subject_authorized_backfills",
+    "_backfill_support_context",
 ]

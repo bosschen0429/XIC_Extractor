@@ -541,7 +541,7 @@ def _bind_retained_selection(
     return tuple(rebound), selected_hypothesis
 
 
-def capture_physical_recovery_observation(
+def capture_physical_backfill_observation(
     *,
     processing_owners: ProcessingOwnerReferences,
     sample: ResolvedCanonicalSampleIdentity,
@@ -552,7 +552,7 @@ def capture_physical_recovery_observation(
     resolver_mode: str,
     evaluation_sink: Callable[[PhysicalPeakEvaluation], None] | None = None,
 ) -> PeakObservationRef | None:
-    """Capture a recovery question using its request-bound method and profile."""
+    """Capture a backfill question using its request-bound method and profile."""
     validate_cid_nl_method_subject_binding(
         method_subject, processing_owners=processing_owners
     )
@@ -562,7 +562,7 @@ def capture_physical_recovery_observation(
         or trace.ppm_tol != method_subject.precursor_tolerance_ppm
         or not trace.rt_min <= group_center_rt <= trace.rt_max
     ):
-        raise SampleLocalCaptureError("physical recovery question is not request-bound")
+        raise SampleLocalCaptureError("physical backfill question is not request-bound")
     prepared = prepare_physical_signal(trace.rt, trace.intensity, profile=profile)
     evaluation = evaluate_physical_peak(
         prepared,
@@ -883,7 +883,7 @@ __all__ = (
     "SampleLocalCaptureError",
     "bind_owner_backed_capture_hypothesis",
     "capture_peak_hypotheses",
-    "capture_physical_recovery_observation",
+    "capture_physical_backfill_observation",
     "mint_captured_peak_observation",
     "rebind_untargeted_capture_scope",
 )

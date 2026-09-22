@@ -298,7 +298,7 @@ def test_chrom_segment_candidate_upgrades_same_apex_resolver_boundary() -> None:
     )
 
 
-def test_local_minimum_recovery_relaxes_region_filters_for_preferred_rt() -> None:
+def test_local_minimum_relaxed_search_relaxes_region_filters_for_preferred_rt() -> None:
     rt = np.linspace(8.0, 10.0, 401)
     y = 1000 * np.exp(-((rt - 8.48) / 0.04) ** 2)
     y += 80 * np.exp(-((rt - 9.03) / 0.05) ** 2)
@@ -330,7 +330,7 @@ def test_local_minimum_recovery_relaxes_region_filters_for_preferred_rt() -> Non
     assert result.peak.rt == pytest.approx(9.03, abs=0.03)
 
 
-def test_local_minimum_recovery_relaxes_duration_cap_for_broad_preferred_peak() -> None:
+def test_relaxed_search_relaxes_duration_cap_for_broad_preferred_peak() -> None:
     rt = np.linspace(8.0, 10.0, 401)
     y = 320000 * np.exp(-((rt - 9.0) / 0.30) ** 2)
     y += 500.0
@@ -363,7 +363,7 @@ def test_local_minimum_recovery_relaxes_duration_cap_for_broad_preferred_peak() 
     assert result.peak.rt == pytest.approx(9.0, abs=0.03)
 
 
-def test_local_minimum_detects_broad_peak_without_preferred_rt_recovery() -> None:
+def test_local_minimum_detects_broad_peak_without_preferred_rt_relaxed_search() -> None:
     rt = np.linspace(8.0, 10.0, 401)
     y = 320000 * np.exp(-((rt - 9.0) / 0.30) ** 2)
     y += 500.0
