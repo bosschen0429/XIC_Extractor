@@ -174,11 +174,7 @@ def test_activated_renderers_use_supplied_owner_values_statuses_and_counts(
 def test_a_withheld_owner_decision_leaves_the_matrix_cell_empty(
     tmp_path: Path,
 ) -> None:
-    """write_matrix_value=False must withhold the value, not just pick another.
-
-    The renderers used to be checked through the workbook's Audit sheet, which
-    only ever asserted the True case. Nothing covered the withheld case.
-    """
+    """write_matrix_value=False must withhold the value, not just pick another."""
     matrix = _matrix(("Sample_A", "Sample_B"))
     config = AlignmentConfig()
     supplied = _divergent_owner_decisions(matrix, config, write_matrix_value=False)
