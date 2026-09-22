@@ -66,6 +66,81 @@ dated productization control-plane path is compatibility lookup only.
 
 ## Known Diagnostic Conclusions
 
+### 2026-09-22 The Partition Object Graph Is Real But Shrinking It Buys Almost No Time
+
+- Substrate: the retained partition
+  `output/issue423-evidence-duplication-20260922/set-scan-1/store/00000000.pickle`,
+  115,074,919 bytes. It holds 52 records; each is pickled with its own memo plus
+  a 41,364-byte shared-owner prefix, so the prefixes alone are 2,150,928 bytes
+  (1.9%). Every number below is a deterministic offline census of that file, not
+  a new pipeline run. Reuse `output/issue423-object-graph-census-20260922/`;
+  `scripts/` there reproduces each table. Shared owners load as placeholders, so
+  the census measures what the file materialises, not the parent's transient
+  composition graph.
+- Census: 3,767,316 graph nodes counted with per-record identity. `float` is
+  2,617,369 (69.5%), `str` 543,714 (14.4%), `tuple` 236,584 (6.3%).
+  `EvidenceArtifactRef` and `ArtifactContentIdentity` are 28,998 each over
+  19,269 distinct values; `ArtifactSemanticContractRef` is 5,269 over 12 values;
+  `SignalProcessingProfile` is 2,199 over exactly 1 value;
+  `FinalGroupCellObservation` is 9,520.
+- One diagnostic-only field owns most of the graph. 2,162,260 floats sit inside
+  scalar tuples and 1,979,050 of them (91.5%) are the five parallel tuples of
+  `PreparedSignal`: that is 52.5% of every node in the partition. All 5,731
+  `PreparedSignal` reach the file through exactly one edge,
+  `PhysicalPeakEvaluation.retained_prepared_signal`
+  (`xic_extractor/peak_detection/physical_peak_models.py:174`, declared
+  `compare=False` and commented diagnostic-only), and all 2,199
+  `SignalProcessingProfile` reach it through `PreparedSignal.profile`. The field
+  is populated unconditionally at
+  `xic_extractor/peak_detection/physical_peak_evaluation.py:715` and
+  `xic_extractor/peak_detection/capture.py:357`; there is no retention gate.
+- Byte ceiling per lever, against a 110,697,625-byte re-pickled baseline, each
+  applied independently: dropping `retained_prepared_signal` saves 17.66%;
+  dropping every `*.artifact` `EvidenceArtifactRef` 10.09%; interning equal
+  strings inside a record 9.29%; `EvidenceArtifactRef.content_identity = None`
+  3.77%; `upstream_artifact_ids = ()` 1.96%; `PeakObservationContent.rt` and
+  `.intensity` 1.50%; storing the signal as `array('d')` instead of tuples of
+  boxed floats 1.29%. Reuse `ablate_full.txt`.
+- The levers do not buy time. Serialising the whole partition costs 1.325 s and
+  restoring it 1.305 s. Dropping `retained_prepared_signal`, which removes
+  1,979,050 float objects and 17.66% of the bytes, moves those to 1.248 s and
+  1.138 s: 0.077 s and 0.167 s. The store's `_OwnerPickler` with 5,170 shared
+  objects costs 3% more than a plain protocol-5 pickler, and SHA-256 over the
+  finished 115 MB file is 0.062 s. Serialisation, memoisation and hashing
+  therefore cost about 2.7 s per partition in total, and the largest available
+  object-graph reduction recovers about a quarter of a second of it. Reuse
+  `cost_model_full.txt` and `owner_pickler_cost.py`.
+- Two named B-prime targets are falsified as duplication problems.
+  `ArtifactContentIdentity` is 28,998 instances over 19,269 distinct content
+  digests, so interning recovers 33.5% of the instances at best and removing the
+  type entirely is worth 3.77% of bytes; it is genuinely unique content
+  identity, not repeated bookkeeping. `SignalProcessingProfile` does collapse to
+  one value, but it is 0.06% of nodes and is reached only through the retained
+  signal, so it is a side effect of that lever rather than a lever of its own.
+- The per-cell derived relations are small. `ProductionCellDecision`,
+  `FinalGroupCellObservation`, `CrossSampleCoveragePositionAssociation`,
+  `OwnerBackfillPlanningPosition` and `GroupCellSubject` are each exactly 9,520,
+  one per cell, and together they are 1.3% of the graph. Rebuilding them from
+  membership cannot pay for itself at this size.
+- Duplicate strings are diffuse, not one boundary. Ten records carry 1,354,650
+  redundant string bytes spread over more than thirty fields, led by
+  `ArtifactSemanticContractRef.semantic_contract_id` (1,091 equal-but-distinct
+  objects) and `PreparedSignalProjection.prepared_signal_id` (1,275). Producer
+  modules mint those contracts as module-level singletons, so the copies arrive
+  when the parent restores worker results: the worker pool's shared-object
+  tuples in `xic_extractor/extraction/untargeted_cid_nl_bounded_runtime.py:719`
+  and `:739` carry the plan owners but not the artifact semantic contracts or
+  the profile. That is the one clean boundary behind the 9.29% interning lever.
+- Disposition. Reducing the resident object graph is feasible and the boundaries
+  are exact, but on this evidence it is a memory and legibility change, not a
+  performance fix: it cannot explain the 49.5-70.5 second wall band already
+  recorded above. Do not open it as a wall-time lever. The remaining unexplained
+  cost is inside parent composition outside serialisation, which stays where the
+  2026-09-22 wall-noise entry left it: distributed across
+  `_build_production_composition_inputs` and the streamed store writes. Evidence
+  is `diagnostic_only` and grants no Matrix, writer, activation or scientific
+  authority. No new 8RAW or 85RAW run was launched.
+
 ### 2026-09-22 Composing A Partition In A Worker Costs More Than It Saves
 
 - Composition is a pure function of the partition batch, its sample results,
