@@ -66,6 +66,74 @@ dated productization control-plane path is compatibility lookup only.
 
 ## Known Diagnostic Conclusions
 
+### 2026-09-22 The Three Open Questions, Answered
+
+Closes the open questions the entry above it left before any implementation.
+
+- On-demand rebuild is not slower at the median; it is slower in the tail.
+  Reading one candidate from the 9.39 GB SQLite is a 12.8 ms median over 10
+  sampled candidates (7.0 min, 22.7 max), and the summary-only read is 0.126 s.
+  Opening a partition file cold, seeking and restoring one record is a **5.3 ms
+  median** over 51 records (2.3 min, 53.2 at p90, 257.4 max). The tail follows
+  record size, which runs 41,475 to 17,047,800 bytes at a 777,756-byte median.
+  Three things are not equal in that comparison and must be closed before the
+  numbers are used as an acceptance bound: one record is one feature across all
+  samples while one SQLite read is one candidate; projecting a restored record
+  into the explanation shape is not included; and the measured partition is the
+  150-feature cache-only one, not an 85-sample partition. Reuse
+  `output/issue423-object-graph-census-20260922/scripts/ondemand.py`.
+- A reader in another process needs the record offset table, not just the file.
+  Rebuilding it by scanning 115,074,919 bytes takes 4.489 s, and the first
+  restore costs 1.685 s importing owner modules. Both are one-off per process,
+  but the offset table has to be persisted beside the partition or every reader
+  pays 4.5 s.
+- The partition files are deleted the moment the explanation finishes, which is
+  why the report copies everything. The spool is
+  `mkdtemp(prefix=".partition_spool-", dir=output_dir)`
+  (`partition_pipeline_scheduler.py:104`) and the success path attaches
+  `cleanup_action` (`untargeted_alignment.py:478-489`), which calls
+  `StreamedResultStore.cleanup` and `shutil.rmtree`s the directory
+  (`streamed_result_store.py:480`). Explanation lives in the same output stack,
+  so its source disappears as soon as it is written. **The SQLite is 9.39 GB
+  because the data it points at does not survive.**
+- Retention is already implemented, on the failure path only.
+  `preserve_failed_results` (`streamed_result_store.py:453`) keeps the written
+  partitions and pickles the store itself, offset table included, as
+  `failed-results.pickle`, documented as read-only and private. Making the
+  success path do the same is a lifetime decision, not new machinery.
+- Most of the report is a projection of children that are already on disk. By
+  `kind`, `records` splits into `cell_observations` 678,470 rows /
+  2,415,594,687 bytes, `method_assessments` 141,130 / 486,055,268,
+  `cell_decisions` 678,470 / 418,556,569, `initial_groups` 7,982 / 99,057,061,
+  `capture_evidence` 187,092 / 81,428,878, `terminal_subjects` 41,739 /
+  33,721,921, `final_groups` 7,982 / 21,987,642, `rows` 7,982 / 2,218,996,
+  `method_subjects` 4,819 / 1,314,921, `exclusions` 2 / 1,040. Everything
+  emitted inside `consume_child`
+  (`alignment_explanation_projection.py:620-752`) comes from a partition child:
+  that is **about 2.97 GB, 79% of the table**, plus all 592,768,173 bytes of
+  `curve_payloads`. Only `method_assessments` and `initial_groups`, about
+  586 MB (16%), come from `completed` rather than from a child.
+- `links` stores nothing that is not derivable. Its 7,168,235 rows are
+  3,419,380 `cell_observations` and 3,419,380 `cell_decisions` edges, which is
+  exactly one per cell per kind for 678,470 cells over 85 samples and 7,982
+  features, plus small tails. It is a materialised join, 1,654,902,908 bytes of
+  it.
+- Scale of what eager materialisation buys. 678,470 cells produce about
+  4,200 bytes of diagnostic record each while `alignment_matrix.tsv` is 392,354
+  bytes for the same grid, and the `rows` kind, which is the Matrix itself, is
+  2,218,996 bytes of the 9.39 GB.
+- Projected floor, not a promise: drop the materialised join, project records
+  on demand, and what has to persist is the roughly 586 MB with no child
+  counterpart plus an offset index, against 9,389,572,096 bytes today. Two
+  unknowns remain before that number is used: whether
+  `completed.method_assessments` and `completed.initial_groups` are themselves
+  recoverable from the store, and the cost of the projection step that the
+  5.3 ms figure excludes.
+- Evidence is `diagnostic_only` and grants no Matrix, writer, activation or
+  scientific authority. No new 8RAW or 85RAW run was launched; the SQLite facts
+  come from the retained `alignment85-process12` output and the latency facts
+  from the retained `set-scan-1` partition.
+
 ### 2026-09-22 An Unread Output Sets The Shape Of Everything Upstream
 
 Supersedes the interpretation of the entry below it. Growing the object graph is
