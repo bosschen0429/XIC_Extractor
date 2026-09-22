@@ -365,7 +365,7 @@ class CidNlPartitionPipelineAdapter:
                 return None
             if self._composition_pool_instance is None:
                 self._composition_pool_instance = WorkerAdmissionPool(
-                    max_workers=1,
+                    max_workers=3,
                     backend="process",
                     thread_name_prefix="cid-nl-compose",
                     shared_objects=_shared_objects(self._plan),
