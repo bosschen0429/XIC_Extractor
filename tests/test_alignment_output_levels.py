@@ -15,8 +15,6 @@ def test_production_output_level_is_matrix_only():
 
 def test_machine_output_level_adds_review_and_matrix_tsv():
     assert artifact_names_for_output_level("machine") == (
-        "alignment_results.xlsx",
-        "review_report.html",
         "alignment_matrix.tsv",
         "alignment_matrix_identity.tsv",
         "alignment_owner_backfill_peak_fact_provenance.tsv",
@@ -26,8 +24,6 @@ def test_machine_output_level_adds_review_and_matrix_tsv():
 
 def test_debug_output_level_adds_cell_status_and_owner_debug_tsvs():
     assert artifact_names_for_output_level("debug") == (
-        "alignment_results.xlsx",
-        "review_report.html",
         "alignment_matrix.tsv",
         "alignment_matrix_identity.tsv",
         "alignment_owner_backfill_peak_fact_provenance.tsv",
@@ -43,8 +39,6 @@ def test_debug_output_level_adds_cell_status_and_owner_debug_tsvs():
 
 def test_validation_output_level_adds_owner_edge_evidence_tsv():
     assert artifact_names_for_output_level("validation") == (
-        "alignment_results.xlsx",
-        "review_report.html",
         "alignment_matrix.tsv",
         "alignment_matrix_identity.tsv",
         "alignment_owner_backfill_peak_fact_provenance.tsv",
@@ -97,3 +91,12 @@ def test_non_diagnostic_levels_do_not_produce_the_explanation_report(level):
 @pytest.mark.parametrize("level", ["debug", "validation"])
 def test_diagnostic_levels_produce_the_explanation_report(level):
     assert EXPLANATION_ARTIFACT_NAME in artifact_names_for_output_level(level)
+
+
+@pytest.mark.parametrize(
+    "level", ["production", "machine", "debug", "validation", "validation-minimal"]
+)
+@pytest.mark.parametrize("name", ["alignment_results.xlsx", "review_report.html"])
+def test_no_level_produces_the_retired_human_reports(level, name):
+    """Both were written for a reader who never used them; no level revives one."""
+    assert name not in artifact_names_for_output_level(level)

@@ -650,6 +650,14 @@ _output_paths = output_paths
 _write_outputs_atomic = write_outputs_atomic
 
 
+# No level writes these any more. They stay owned so that a copy left by an
+# earlier run is still reported as a stale artifact instead of being mistaken
+# for this run's output.
+_RETIRED_ALIGNMENT_ARTIFACT_NAMES = (
+    "alignment_results.xlsx",
+    "review_report.html",
+)
+
 _CONDITIONAL_ALIGNMENT_ARTIFACT_NAMES = (
     "cid_nl_explanation.sqlite",
     "alignment_cell_integration_audit.tsv",
@@ -683,6 +691,7 @@ def _reject_alignment_output_collisions(
         for name in artifact_names_for_output_level(level)
     }
     owned_names.update(_CONDITIONAL_ALIGNMENT_ARTIFACT_NAMES)
+    owned_names.update(_RETIRED_ALIGNMENT_ARTIFACT_NAMES)
     owned_names.update(
         (
             path.name

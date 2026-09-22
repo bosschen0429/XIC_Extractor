@@ -4,7 +4,6 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from openpyxl import load_workbook
 
 import xic_extractor.alignment.pipeline_outputs as pipeline_outputs_module
 from tests.alignment_pipeline_helpers import matrix as _matrix
@@ -186,40 +185,10 @@ def test_activated_renderers_use_supplied_owner_values_statuses_and_counts(
     assert review_row["absent_count"] == "2"
     assert review_row["representative_samples"] == ""
 
-    assert outputs.workbook is not None
-    workbook = load_workbook(outputs.workbook, read_only=True, data_only=True)
-    try:
-        matrix_rows = list(workbook["Matrix"].iter_rows(values_only=True))
-        review_rows = list(workbook["Review"].iter_rows(values_only=True))
-        audit_rows = list(workbook["Audit"].iter_rows(values_only=True))
-    finally:
-        workbook.close()
-    matrix_result = dict(zip(matrix_rows[0], matrix_rows[1], strict=True))
-    assert matrix_result["Sample_A"] == pytest.approx(987.654)
-    assert matrix_result["Sample_B"] == pytest.approx(987.654)
-    review = dict(zip(review_rows[0], review_rows[1], strict=True))
-    assert review["detected_count"] == 0
-    assert review["rescued_count"] == 0
-    assert review["absent_count"] == 2
-    audit = [dict(zip(audit_rows[0], row, strict=True)) for row in audit_rows[1:]]
-    assert {row["raw_status"] for row in audit} == {"absent"}
-    assert {row["production_status"] for row in audit} == {"detected"}
-    assert {row["write_matrix_value"] for row in audit} == {True}
-    assert all(row["primary_matrix_area"] == pytest.approx(987.654) for row in audit)
-    assert {row["primary_matrix_area_source"] for row in audit} == {None}
-    assert {row["primary_matrix_area_reason"] for row in audit} == {None}
-    assert {row["claim_state"] for row in audit} == {None}
-
-    assert outputs.review_html is not None
-    html = outputs.review_html.read_text(encoding="utf-8")
-    assert (
-        '<div class="row"><div>detected</div><div class="track">'
-        '<div class="bar" style="width:0.0%"></div></div><div>0</div></div>' in html
-    )
-    assert (
-        '<div class="row"><div>absent</div><div class="track">'
-        '<div class="bar" style="width:100.0%"></div></div><div>2</div></div>' in html
-    )
+    # alignment_results.xlsx and review_report.html are retired; no level
+    # writes them, so there is nothing left here to assert about them.
+    assert outputs.workbook is None
+    assert outputs.review_html is None
 
 
 def _divergent_owner_decisions(
