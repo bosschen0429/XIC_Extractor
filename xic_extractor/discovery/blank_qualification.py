@@ -421,7 +421,15 @@ def resolve_background_library(
 
     1. If library_path is explicitly provided, load it.
     2. If raw_dir contains a cached blank library, load it.
-    3. Fallback to the packaged default background library.
+    3. Otherwise return None, and blank qualification does nothing.
+
+    There is no fallback to the packaged default. That default was measured on a
+    15-minute gradient, and applying it to a run acquired on a different method
+    demotes candidates to ``review_only_orphan_nl`` with ``ms1_peak_found=False``
+    on the strength of a background population the run never saw. A blank
+    library measured for the method is an input the caller supplies, not
+    something a run inherits. ``get_default_background_library`` stays available
+    for a caller that explicitly wants it.
     """
     if library_path is not None:
         p = Path(library_path)
@@ -433,7 +441,7 @@ def resolve_background_library(
             cached = raw_dir / candidate_name
             if cached.is_file():
                 return BlankBackgroundLibrary.load_json(cached)
-    return get_default_background_library()
+    return None
 
 
 def apply_blank_qualification_to_candidates(
