@@ -286,7 +286,7 @@ def test_runtime_batch_request_bounds_initial_and_recovery_by_sample_phase(
             initial = item.adapter_result.acquisition
             assert initial is not None
             assert item.adapter_result.assessment_input.assessment.candidate_peaks == ()
-            recovery = item.recovery_attempt
+            recovery = item.backfill_attempt
             assert recovery is not None
             assert recovery.acquisition is not initial
             assert all(
@@ -326,11 +326,11 @@ def test_runtime_batch_request_bounds_initial_and_recovery_by_sample_phase(
         if item.job.sample.metadata.raw_stem == "Missing"
     )
     assert len(missing_results) == 2
-    assert all(item.recovery_attempt is not None for item in missing_results)
+    assert all(item.backfill_attempt is not None for item in missing_results)
     assert all(
-        item.effective_assessment is item.recovery_attempt.assessment
+        item.effective_assessment is item.backfill_attempt.assessment
         for item in missing_results
-        if item.recovery_attempt is not None
+        if item.backfill_attempt is not None
     )
     assert {
         path: [vendor.chromatogram_request_counts for vendor in vendors]

@@ -260,7 +260,7 @@ def compose_final_group_cell_observation_population(
     predecessor_cells: Sequence[CellObservationRef],
     repair_receipts: Sequence[ObservationRepairReceipt] = (),
     repaired_observations: Sequence[OwnerBackfillPeakFactObservation] = (),
-    recovery_cells: Sequence[CellObservationRef] = (),
+    backfill_cells: Sequence[CellObservationRef] = (),
 ) -> tuple[FinalGroupCellObservation, ...]:
     """Compose one exact final closure for every final Group × sample key.
 
@@ -288,7 +288,7 @@ def compose_final_group_cell_observation_population(
         predecessor_cells=sources,
         repair_receipts=receipts,
         repaired_observations=observations,
-        recovery_cells=tuple(recovery_cells),
+        backfill_cells=tuple(backfill_cells),
     )
 
 
@@ -298,19 +298,19 @@ def _compose_final_group_cell_observation_population(
     predecessor_cells: tuple[CellObservationRef, ...],
     repair_receipts: tuple[ObservationRepairReceipt, ...],
     repaired_observations: tuple[OwnerBackfillPeakFactObservation, ...],
-    recovery_cells: tuple[CellObservationRef, ...] = (),
+    backfill_cells: tuple[CellObservationRef, ...] = (),
 ) -> tuple[FinalGroupCellObservation, ...]:
     request_id = _validate_final_handoff(handoff)
-    recovered_by_key: dict[tuple[str, str], CellObservationRef] = {}
-    for recovery_ref in recovery_cells:
-        _validate_source_cell(recovery_ref, processing_request_id=request_id)
+    backfilled_by_key: dict[tuple[str, str], CellObservationRef] = {}
+    for backfill_ref in backfill_cells:
+        _validate_source_cell(backfill_ref, processing_request_id=request_id)
         key = (
-            recovery_ref.content.group_hypothesis_id,
-            recovery_ref.content.canonical_sample_identity_id,
+            backfill_ref.content.group_hypothesis_id,
+            backfill_ref.content.canonical_sample_identity_id,
         )
-        if key in recovered_by_key:
-            raise CellObservationContractError("duplicate completed recovery cell")
-        recovered_by_key[key] = recovery_ref
+        if key in backfilled_by_key:
+            raise CellObservationContractError("duplicate completed backfill cell")
+        backfilled_by_key[key] = backfill_ref
     positions = tuple(handoff.coverage.epoch.positions)
     source_by_position = _index_predecessor_cells(
         predecessor_cells,
@@ -408,7 +408,7 @@ def _compose_final_group_cell_observation_population(
                 )
             )
             states: tuple[FinalCellEvidenceState, ...]
-            recovered = recovered_by_key.pop(
+            recovered = backfilled_by_key.pop(
                 (group.group_hypothesis_id, sample.identity.sample_identity_id), None
             )
             if recovered is not None:
@@ -417,19 +417,19 @@ def _compose_final_group_cell_observation_population(
                     or recovered.group_context.group_identity != group
                 ):
                     raise CellObservationContractError(
-                        "recovery must extend one exact predecessor"
+                        "backfill must extend one exact predecessor"
                     )
                 predecessor = associations[0].position.group_identity
                 if not set(predecessor.member_subjects).issubset(group.member_subjects):
                     raise CellObservationContractError(
-                        "recovery changed original group membership"
+                        "backfill changed original group membership"
                     )
                 if (
                     _member_for_sample(predecessor, sample.identity.sample_identity_id)
                     is not None
                 ):
                     raise CellObservationContractError(
-                        "recovery cannot replace an existing sample member"
+                        "backfill cannot replace an existing sample member"
                     )
                 if (
                     recovered.content.unassigned_support
@@ -496,9 +496,9 @@ def _compose_final_group_cell_observation_population(
                     recovery_cell=recovered,
                 )
             )
-    if recovered_by_key:
+    if backfilled_by_key:
         raise CellObservationContractError(
-            "recovery cells are outside the final population"
+            "backfill cells are outside the final population"
         )
     return tuple(sorted(cells, key=_final_cell_sort_key))
 
@@ -560,7 +560,7 @@ def validate_final_group_cell_observation_population(
         predecessor_cells=source_cells,
         repair_receipts=receipts,
         repaired_observations=repaired,
-        recovery_cells=tuple(
+        backfill_cells=tuple(
             item.recovery_cell
             for item in observations
             if item.recovery_cell is not None
@@ -1319,7 +1319,7 @@ def _require_same_refs(
 ) -> None:
     if actual.recovery_cell is not expected.recovery_cell:
         raise CellObservationContractError(
-            "final cell substituted its completed recovery reference"
+            "final cell substituted its completed backfill reference"
         )
     if (
         actual.group is not expected.group
@@ -1413,7 +1413,7 @@ def compose_cid_nl_predecessor_cells(
     sample_universe: frozenset[str] | None = None,
     drift_lookup: DriftLookupProtocol | None = None,
     injection_order: Mapping[str, int] | None = None,
-    recovery_assessments_by_group: Mapping[
+    backfill_assessments_by_group: Mapping[
         tuple[str, str, str],
         tuple[ResolvedCanonicalSampleIdentity, CidNlMethodAssessmentRef],
     ]
@@ -1424,19 +1424,19 @@ def compose_cid_nl_predecessor_cells(
     ]
     | None = None,
 ) -> tuple[CellObservationRef, ...]:
-    """Attach initial evidence and only each group's own recovery assessment."""
+    """Attach initial evidence and only each group's own backfill assessment."""
     initial_assessment_objects = {
         id(assessment) for _, assessment in sample_assessments
     }
-    recoveries = recovery_assessments_by_group or {}
-    for (_, sample_id, subject_id), (sample, assessment) in recoveries.items():
+    backfills = backfill_assessments_by_group or {}
+    for (_, sample_id, subject_id), (sample, assessment) in backfills.items():
         if (
             sample.identity.sample_identity_id != sample_id
             or assessment.content.canonical_sample_identity_id != sample_id
             or assessment.content.method_subject.method_subject_id != subject_id
         ):
             raise CellObservationContractError(
-                "group recovery crossed its sample or method subject"
+                "group backfill crossed its sample or method subject"
             )
     # Assessment artifacts already own their identity. Hashing the frozen
     # assessment itself recursively visits its entire evidence/curve graph.
@@ -1444,7 +1444,7 @@ def compose_cid_nl_predecessor_cells(
         tuple[str, str],
         tuple[ResolvedCanonicalSampleIdentity, CidNlMethodAssessmentRef],
     ] = {}
-    for sample, assessment in (*sample_assessments, *recoveries.values()):
+    for sample, assessment in (*sample_assessments, *backfills.values()):
         key = (
             sample.identity.sample_identity_id,
             assessment.artifact.evidence_artifact_id,
@@ -1593,14 +1593,14 @@ def compose_cid_nl_predecessor_cells(
             canonical_refs = assessments_by_sample_subject.get(
                 (sample_id, method_subject_id), ()
             )
-            recovery = recoveries.get(
+            backfill = backfills.get(
                 (
                     context.group.group_hypothesis_id,
                     sample_id,
                     method_subject_id,
                 )
             )
-            recovered = recovery[1] if recovery is not None else None
+            recovered = backfill[1] if backfill is not None else None
             if local_refs:
                 assessment = local_refs[0]
             elif recovered is not None:

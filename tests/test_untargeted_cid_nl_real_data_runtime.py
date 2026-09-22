@@ -795,8 +795,8 @@ def test_runtime_delivers_one_real_subject_cohort_into_golden_path(
     assert warm_vendor_raw.disposed is False, (
         warm_open_calls,
         sorted(str(path) for path in (tmp_path / "runtime-cache").rglob("*.json")),
-        by_stem["S1"].recovery_attempt,
-        warm_by_stem["S1"].recovery_attempt,
+        by_stem["S1"].backfill_attempt,
+        warm_by_stem["S1"].backfill_attempt,
     )
     warm_resources = warm_result.finalization.coordinator.state.resources
     assert any(
@@ -927,7 +927,7 @@ def test_runtime_does_not_evaluate_ineligible_inferred_precursor(
     assert adapter.strict_scan_count == 0
     assert adapter.acquisition is None
     assert vendor_raw.disposed is True
-    assert result.sample_results[0].recovery_attempt is None
+    assert result.sample_results[0].backfill_attempt is None
 
 
 def test_runtime_recovers_from_single_scan_cid_nl_support_owners(
@@ -1076,14 +1076,14 @@ def test_runtime_recovers_from_single_scan_cid_nl_support_owners(
         assert initial.content.technical_state == "not_evaluated"
         assert initial.content.method_result is None
         assert not initial.content.evaluation_receipt.search_completed
-    assert by_stem["Missing"].recovery_attempt is not None
-    assert by_stem["Missing"].recovery_input is not None
+    assert by_stem["Missing"].backfill_attempt is not None
+    assert by_stem["Missing"].backfill_input is not None
     assert by_stem["Missing"].result_ref.recovery_candidate_count == 1
-    assert by_stem["NoPeak"].recovery_attempt is not None
-    assert by_stem["NoPeak"].recovery_input is None
+    assert by_stem["NoPeak"].backfill_attempt is not None
+    assert by_stem["NoPeak"].backfill_input is None
     assert by_stem["NoPeak"].result_ref.recovery_assessment_artifact_id is not None
     assert by_stem["NoPeak"].result_ref.recovery_candidate_count == 0
-    assert by_stem["Blank"].recovery_attempt is None
+    assert by_stem["Blank"].backfill_attempt is None
     assert raw_paths[4] not in opened
     assert {
         path: [vendor.chromatogram_request_counts for vendor in vendors]
@@ -1102,10 +1102,10 @@ def test_runtime_recovers_from_single_scan_cid_nl_support_owners(
         sample_inputs=tuple(
             item.adapter_result.assessment_input for item in result.sample_results
         ),
-        recovery_inputs=tuple(
-            item.recovery_input
+        backfill_inputs=tuple(
+            item.backfill_input
             for item in result.sample_results
-            if item.recovery_input is not None
+            if item.backfill_input is not None
         ),
         source_artifact_relpath="output/real_data_runtime/recovered_source.json",
     )

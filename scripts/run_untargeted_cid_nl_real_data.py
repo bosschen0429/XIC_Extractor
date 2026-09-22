@@ -244,10 +244,10 @@ def _run(
                 item.adapter_result.assessment_input
                 for item in runtime_result.sample_results
             ),
-            recovery_inputs=tuple(
-                item.recovery_input
+            backfill_inputs=tuple(
+                item.backfill_input
                 for item in runtime_result.sample_results
-                if item.recovery_input is not None
+                if item.backfill_input is not None
             ),
             source_artifact_relpath=source_relpath,
         )
@@ -282,8 +282,8 @@ def _run(
         adapter = item.adapter_result
         assessment = adapter.assessment_input.assessment
         acquisition = (
-            item.recovery_attempt.acquisition
-            if item.recovery_attempt is not None
+            item.backfill_attempt.acquisition
+            if item.backfill_attempt is not None
             else adapter.acquisition
         )
         backfill_decision = backfill_decision_by_sample_id.get(
@@ -299,7 +299,7 @@ def _run(
                 "source_candidate_count": len(adapter.source_candidate_ids),
                 "strict_scan_count": adapter.strict_scan_count,
                 "candidate_peak_count": len(assessment.candidate_peaks),
-                "recovery_attempted": item.recovery_attempt is not None,
+                "recovery_attempted": item.backfill_attempt is not None,
                 "recovery_candidate_count": item.result_ref.recovery_candidate_count,
                 "backfill_disposition": (
                     backfill_decision.disposition

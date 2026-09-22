@@ -399,7 +399,7 @@ class CidNlPartitionPipelineAdapter:
                     known_istd_reference=self._known_istd_reference,
                     progress_callback=progress_callback,
                 ),
-                recovery_templates=batch.sample_job_templates,
+                backfill_templates=batch.sample_job_templates,
                 partition_key=partition.partition_key,
                 alignment_config=self._alignment_config,
                 progress_callback=progress_callback,
@@ -423,7 +423,7 @@ class CidNlPartitionPipelineAdapter:
                         known_istd_reference=self._known_istd_reference,
                         progress_callback=progress_callback,
                     ),
-                    recovery_templates=batch.sample_job_templates,
+                    backfill_templates=batch.sample_job_templates,
                     partition_key=partition.partition_key,
                     alignment_config=self._alignment_config,
                     progress_callback=progress_callback,
@@ -694,7 +694,7 @@ def execute_bounded_untargeted_cid_nl(
     """Spill complete subject results, then close the exact global population.
 
     A partition contains every sample for its subjects, preserving grouping and
-    recovery decisions. Operational work units describe partition/sample phases;
+    backfill decisions. Operational work units describe partition/sample phases;
     scientific per-subject receipts live in the owner-controlled result store.
     """
     if type(plan) is not UntargetedCidNlProductionPlan:

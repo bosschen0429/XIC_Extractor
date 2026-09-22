@@ -17,11 +17,10 @@ peak choice, integration, review, and export decisions traceable through
 evidence rather than through dataset-specific shortcuts.
 
 The three core product stages are **Discovery → Alignment → Backfill（回填）**.
-Backfill is the canonical name for the bounded missing-cell revisit, including
-when implementation records call that operation `recovery`. `ObservationRepair`
-names its typed decision contract. These implementation terms do not replace
-Backfill in product flow descriptions or interface labels. Backfill is
-conditional: cells with sufficient existing observations need no revisit.
+Backfill is the canonical name for the bounded missing-cell revisit, in product
+text and in implementation identifiers. `ObservationRepair` names its typed
+decision contract. Backfill is conditional: cells with sufficient existing
+observations need no revisit.
 
 XIC has one shared scientific processing lifecycle. Untargeted extraction is
 its general application; Targeted extraction is a constrained application,
@@ -57,7 +56,7 @@ the result becomes stable. `ObservationRepair` repairs
 an existing but incomplete or inconsistent observation. Backfill uses an
 already owner-backed Target or group context to make one bounded revisit of a
 missing or insufficient cell and returns a repaired/new observation or typed
-no-repair result. It may recover the first usable observation for that cell,
+no-repair result. It may backfill the first usable observation for that cell,
 but it cannot originate the Target/group, mint membership, select a product
 value, or grant writer authority.
 The workflow-owned projection first creates typed Target/Group row bindings and
@@ -110,7 +109,7 @@ Use these terms consistently:
 - `CID-NL alignment workset`: compatible method subjects scheduled and composed
   together so their observations can reach the same CrossSample decision.
   Workset membership is computational scope, not chemical identity. Alignment
-  owns its compatibility and recovery-binding policy in [alignment.md](alignment.md).
+  owns its compatibility and backfill-binding policy in [alignment.md](alignment.md).
 - `identity-bearing member subject`: canonical sample identity plus a
   discriminated union of owner-backed `PeakHypothesis` identity or owner-backed
   physical-observation identity. The canonical variant tag is part of identity;
@@ -325,7 +324,7 @@ request, attempt, artifact bundle, or delivery revision.
 Targeted lane:
 
 - Target lists and method settings constrain the shared lifecycle; they do not
-  create a separate peak-identity or recovery system.
+  create a separate peak-identity or backfill system.
 - Limited rescue workflows may produce `detected_flagged` when explicitly
   contracted.
 - Treat the targeted result as its own delivery contract. Do not require an
@@ -353,6 +352,18 @@ Shared lane:
 - Public output surfaces include CLI flags, config keys, TSV/CSV schemas,
   workbook sheets, run metadata, matrix identity, selected peak, selected area,
   and counted detection.
+
+## One Word, One Meaning
+
+A word used in an identifier or artifact name carries one meaning across the
+repository. When a word already carries several, the table records each sense
+and its owner until the extra senses are renamed; a new use picks the word that
+belongs to its sense instead of adding another.
+
+| Word | Current senses | Target |
+| --- | --- | --- |
+| `recovery` | runtime failure recovery (`recover_after_coordinator_loss`, `recovery_marker`); preferred-RT / local-minimum candidate search in `peak_detection/recovery.py`; wider-window ISTD anchor retry in `extraction/istd_recovery.py`; reference-compound recall in the CID-NL oracle; persisted Backfill keys listed in [backfill.md](backfill.md) | runtime failure recovery only |
+| `owner` | the sample-local MS1 peak candidates are attributed to (`SampleLocalMS1Owner`, `owner_apex_rt`); processing authority (`processing_owners`, `owner_seal`); module responsibility (`OWNER_REHYDRATED`); an adjective in `owner_backfill*` | one sense per word; `owner_backfill*` converges with #431, the rest with #426 |
 
 ## Maintenance
 

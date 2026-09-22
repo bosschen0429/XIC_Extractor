@@ -73,7 +73,7 @@ from xic_extractor.extraction.untargeted_real_data_models import (
     _canonical_acquisition_bytes,  # noqa: F401
     _canonical_acquisition_content,
     _mint_sample_result_ref,
-    _project_completed_recovery,
+    _project_completed_backfill,
     _request_subject_candidates,
     _request_subject_physical_records,  # noqa: F401
     _request_uses_subject_batch,
@@ -82,25 +82,25 @@ from xic_extractor.extraction.untargeted_real_data_models import (
     canonical_untargeted_sample_result_bytes,
     mint_untargeted_cid_nl_sample_result_ref,
     mint_untargeted_sample_result_ref,
-    project_untargeted_cid_nl_completed_recovery,
-    project_untargeted_completed_recovery,
+    project_untargeted_cid_nl_completed_backfill,
+    project_untargeted_completed_backfill,
 )
 from xic_extractor.extraction.untargeted_real_data_worker import (
+    _backfill_support_context,
     _BatchSamplePhaseState,
+    _execute_backfill,
+    _execute_backfill_batch,
     _execute_initial_assessment,
     _execute_initial_assessment_batch,
-    _execute_recovery,
-    _execute_recovery_batch,
+    _execute_sample_backfill_worker,
     _execute_sample_initial_worker,
-    _execute_sample_recovery_worker,
-    _prepare_group_authorized_recoveries,
-    _prepare_owner_authorized_recoveries,  # noqa: F401
-    _recovery_support_context,
+    _prepare_group_authorized_backfills,
+    _prepare_owner_authorized_backfills,  # noqa: F401
     _RuntimeJobState,
+    _SampleBackfillWorkerRequest,
+    _SampleBackfillWorkerResponse,
     _SampleInitialWorkerRequest,
     _SampleInitialWorkerResponse,
-    _SampleRecoveryWorkerRequest,
-    _SampleRecoveryWorkerResponse,
 )
 from xic_extractor.processing_identity import (
     canonical_current_attempt_artifact_closure,
@@ -154,7 +154,7 @@ class _RuntimeResultContext:
             self._traces[id(acquisition)] = cached
         return cached[1].get((request, source_id), ())
 
-    def project_completed_recovery(
+    def project_completed_backfill(
         self,
         result: UntargetedCidNlRuntimeSampleResult,
         *,
@@ -162,13 +162,13 @@ class _RuntimeResultContext:
     ) -> OwnerBackfillCompletedRecoveryProjection:
         if type(result) is not UntargetedCidNlRuntimeSampleResult:
             raise UntargetedCidNlRealDataRuntimeError(
-                "recovery requires a runtime result"
+                "backfill requires a runtime result"
             )
         if self._jobs.get(id(result.job)) is not result.job:
             raise UntargetedCidNlRealDataRuntimeError(
-                "recovery result does not reuse an exact runtime batch job"
+                "backfill result does not reuse an exact runtime batch job"
             )
-        return _project_completed_recovery(
+        return _project_completed_backfill(
             result,
             group_context=group_context,
             exact_traces=self.exact_traces,
@@ -313,7 +313,7 @@ def execute_untargeted_cid_nl_runtime_partition(
     raw_workers: int = DEFAULT_ALIGNMENT_WORKERS,
     raw_worker_backend: str = "thread",
     pool: WorkerAdmissionPool | None = None,
-    recovery_templates: tuple[UntargetedCidNlRealDataRuntimeJob, ...] = (),
+    backfill_templates: tuple[UntargetedCidNlRealDataRuntimeJob, ...] = (),
     prepare_grouping: Callable[
         [tuple[UntargetedCidNlInitialSampleResult, ...]],
         UntargetedCidNlPreparedGrouping,
@@ -366,7 +366,7 @@ def execute_untargeted_cid_nl_runtime_partition(
         raw_workers=raw_workers,
         raw_worker_backend=raw_worker_backend,
         pool=pool,
-        recovery_templates=recovery_templates,
+        backfill_templates=backfill_templates,
         prepare_grouping=prepare_grouping,
     )
     batch = work.provide_worker_batch(None)
@@ -397,7 +397,7 @@ def _prepare_runtime_work(
     raw_workers: int = DEFAULT_ALIGNMENT_WORKERS,
     raw_worker_backend: str = "thread",
     pool: WorkerAdmissionPool | None = None,
-    recovery_templates: tuple[UntargetedCidNlRealDataRuntimeJob, ...] = (),
+    backfill_templates: tuple[UntargetedCidNlRealDataRuntimeJob, ...] = (),
     prepare_grouping: Callable[
         [tuple[UntargetedCidNlInitialSampleResult, ...]],
         UntargetedCidNlPreparedGrouping,
@@ -452,7 +452,7 @@ def _prepare_runtime_work(
                     job.method_subject.method_subject_id,
                     [],
                 ).append(job)
-    recovery_subject_ids = {
+    backfill_subject_ids = {
         method_subject_id
         for method_subject_id, subject_jobs in eligible_by_subject.items()
         if sum(direct_assessment_by_key[job.work_unit_key] for job in subject_jobs)
@@ -466,11 +466,11 @@ def _prepare_runtime_work(
         error: Exception | None = planning_errors.get(job.work_unit_key)
         initial_requires_raw = initial_raw_by_key[job.work_unit_key]
         try:
-            recovery_may_need_raw = (
+            backfill_may_need_raw = (
                 error is None
                 and (
                     prepare_grouping is not None
-                    or job.method_subject.method_subject_id in recovery_subject_ids
+                    or job.method_subject.method_subject_id in backfill_subject_ids
                 )
                 and not initial_requires_raw
                 and not job.sample.metadata.excluded
@@ -479,7 +479,7 @@ def _prepare_runtime_work(
             if (
                 partition_key is None
                 and not _request_uses_subject_batch(job)
-                and (initial_requires_raw or recovery_may_need_raw)
+                and (initial_requires_raw or backfill_may_need_raw)
             ):
                 resource_key = f"acquisition-session:{job.work_unit_key}"
                 source = resolve_request_acquisition_source(
@@ -520,7 +520,7 @@ def _prepare_runtime_work(
         group[0].job.sample.identity.sample_identity_id: group
         for group in sample_groups
     }
-    phase_templates = recovery_templates or tuple(
+    phase_templates = backfill_templates or tuple(
         group[0].job for group in sample_groups
     )
     batch_phases: list[_BatchSamplePhaseState] = []
@@ -540,23 +540,23 @@ def _prepare_runtime_work(
             if any(state.initial_requires_raw for state in sample_states)
             else None
         )
-        recovery_resource_key = (
+        backfill_resource_key = (
             f"acquisition-session:recovery:{sample_id}"
             if not first.sample.metadata.excluded
             and first.sample.metadata.sample_role in ACTIVATION_ELIGIBLE_SAMPLE_ROLES
-            and (prepare_grouping is not None or recovery_subject_ids)
+            and (prepare_grouping is not None or backfill_subject_ids)
             else None
         )
         if partition_key is not None:
             initial_resource_key = (
                 f"acquisition-session:{partition_key}:{sample_id}:initial"
             )
-            recovery_resource_key = (
+            backfill_resource_key = (
                 f"acquisition-session:{partition_key}:{sample_id}:recovery"
             )
         for resource_key, phase, owner_conditional in (
             (initial_resource_key, "initial", False),
-            (recovery_resource_key, "recovery", True),
+            (backfill_resource_key, "recovery", True),
         ):
             if resource_key is None:
                 continue
@@ -582,7 +582,7 @@ def _prepare_runtime_work(
             _BatchSamplePhaseState(
                 states=sample_states,
                 initial_resource_key=initial_resource_key,
-                recovery_resource_key=recovery_resource_key,
+                backfill_resource_key=backfill_resource_key,
                 sample_template=first,
             )
         )
@@ -644,19 +644,19 @@ def _prepare_runtime_work(
                 for state in sample_states:
                     _execute_initial_assessment(state)
 
-        def recovery(sample_states: tuple[_RuntimeJobState, ...]) -> None:
+        def backfill(sample_states: tuple[_RuntimeJobState, ...]) -> None:
             for state in sample_states:
                 if (
                     partition_key is None
                     and not _request_uses_subject_batch(state.job)
-                    and state.recovery_group_center_rts
+                    and state.backfill_group_center_rts
                 ):
-                    _execute_recovery(state)
+                    _execute_backfill(state)
             phase = phases_by_sample.get(
                 sample_states[0].job.sample.identity.sample_identity_id
             )
             if phase is not None:
-                _execute_recovery_batch(phase)
+                _execute_backfill_batch(phase)
 
         def on_sample_error(
             sample_states: tuple[_RuntimeJobState, ...], exc: Exception
@@ -734,58 +734,58 @@ def _prepare_runtime_work(
                     worker_pool.stop(err)
             report_phase("partition_initial", comp, tot)
 
-        def skip_recovery(sample_states: tuple[_RuntimeJobState, ...]) -> bool:
+        def skip_backfill(sample_states: tuple[_RuntimeJobState, ...]) -> bool:
             return not any(
-                state.error is None and state.recovery_group_center_rts
+                state.error is None and state.backfill_group_center_rts
                 for state in sample_states
             )
 
-        def make_process_recovery_req(
+        def make_process_backfill_req(
             sample_states: tuple[_RuntimeJobState, ...],
-        ) -> _SampleRecoveryWorkerRequest:
+        ) -> _SampleBackfillWorkerRequest:
             sample_id = sample_states[0].job.sample.identity.sample_identity_id
             phase = phases_by_sample[sample_id]
             pending = tuple(
                 state
                 for state in sample_states
-                if state.error is None and state.recovery_group_center_rts
+                if state.error is None and state.backfill_group_center_rts
             )
-            return _SampleRecoveryWorkerRequest(
+            return _SampleBackfillWorkerRequest(
                 jobs=tuple(s.job for s in pending),
-                recovery_group_center_rts_by_key={
-                    s.job.work_unit_key: s.recovery_group_center_rts
+                backfill_group_center_rts_by_key={
+                    s.job.work_unit_key: s.backfill_group_center_rts
                     for s in pending
-                    if s.recovery_group_center_rts
+                    if s.backfill_group_center_rts
                 },
-                recovery_group_ids_by_key={
-                    s.job.work_unit_key: s.recovery_group_ids for s in pending
+                backfill_group_ids_by_key={
+                    s.job.work_unit_key: s.backfill_group_ids for s in pending
                 },
-                recovery_inputs_by_key={
-                    s.job.work_unit_key: s.recovery_input
+                backfill_inputs_by_key={
+                    s.job.work_unit_key: s.backfill_input
                     for s in pending
-                    if s.recovery_input is not None
+                    if s.backfill_input is not None
                 },
-                recovery_support_by_key={
-                    s.job.work_unit_key: _recovery_support_context(s.adapter_result)
+                backfill_support_by_key={
+                    s.job.work_unit_key: _backfill_support_context(s.adapter_result)
                     for s in pending
                     if s.adapter_result is not None
                 },
-                recovery_resource_key=phase.recovery_resource_key,
+                backfill_resource_key=phase.backfill_resource_key,
             )
 
-        def handle_process_recovery_resp(
+        def handle_process_backfill_resp(
             comp: int,
             tot: int,
             sample_states: tuple[_RuntimeJobState, ...],
-            resp: _SampleRecoveryWorkerResponse | None,
+            resp: _SampleBackfillWorkerResponse | None,
         ) -> None:
             if resp is not None:
                 sample_id = sample_states[0].job.sample.identity.sample_identity_id
                 phase = phases_by_sample[sample_id]
-                phase.recovery_open_attempted = resp.recovery_open_attempted
-                phase.recovery_opened = resp.recovery_opened
-                phase.recovery_cleanup_outcome = resp.recovery_cleanup_outcome
-                phase.recovery_acquisition = resp.recovery_acquisition
+                phase.backfill_open_attempted = resp.backfill_open_attempted
+                phase.backfill_opened = resp.backfill_opened
+                phase.backfill_cleanup_outcome = resp.backfill_cleanup_outcome
+                phase.backfill_acquisition = resp.backfill_acquisition
                 states_by_key = {
                     state.job.work_unit_key: state for state in sample_states
                 }
@@ -797,19 +797,19 @@ def _prepare_runtime_work(
                     strict=True,
                 ):
                     key = state.job.work_unit_key
-                    if key in resp.recovery_attempts_by_key:
-                        state.recovery_attempts = resp.recovery_attempts_by_key[key]
-                    if key in resp.recovery_inputs_by_key:
-                        state.recovery_input = resp.recovery_inputs_by_key[key]
+                    if key in resp.backfill_attempts_by_key:
+                        state.backfill_attempts = resp.backfill_attempts_by_key[key]
+                    if key in resp.backfill_inputs_by_key:
+                        state.backfill_input = resp.backfill_inputs_by_key[key]
                     for art in obs_artifacts:
                         state.observer.record_artifact(art)
                     if (
                         has_acq
-                        and resp.recovery_acquisition is not None
-                        and state.observer.recovery_acquisition is None
+                        and resp.backfill_acquisition is not None
+                        and state.observer.backfill_acquisition is None
                     ):
                         state.observer.record_acquisition(
-                            resp.recovery_acquisition, recovery=True
+                            resp.backfill_acquisition, backfill=True
                         )
                     if err is not None and state.error is None:
                         state.error = err
@@ -860,19 +860,19 @@ def _prepare_runtime_work(
                                 if state.adapter_result is not None
                             )
                         )
-                        _prepare_group_authorized_recoveries(
+                        _prepare_group_authorized_backfills(
                             states,
                             prepared=work.prepared_grouping,
-                            sample_templates=recovery_templates,
+                            sample_templates=backfill_templates,
                         )
                 else:
-                    _prepare_owner_authorized_recoveries(
+                    _prepare_owner_authorized_backfills(
                         states,
                         alignment_config=alignment_config,
-                        sample_templates=recovery_templates,
+                        sample_templates=backfill_templates,
                     )
-                recovery_groups = _runtime_sample_groups(states)
-                for sample_states in recovery_groups:
+                backfill_groups = _runtime_sample_groups(states)
+                for sample_states in backfill_groups:
                     phase = phases_by_sample.get(
                         sample_states[0].job.sample.identity.sample_identity_id
                     )
@@ -880,19 +880,19 @@ def _prepare_runtime_work(
                         phase.states = sample_states
                 if raw_worker_backend == "process":
                     worker_pool.run_windowed(
-                        recovery_groups,
-                        _execute_sample_recovery_worker,
-                        task_arg_fn=make_process_recovery_req,
-                        skip_fn=skip_recovery,
-                        on_completed=handle_process_recovery_resp,
+                        backfill_groups,
+                        _execute_sample_backfill_worker,
+                        task_arg_fn=make_process_backfill_req,
+                        skip_fn=skip_backfill,
+                        on_completed=handle_process_backfill_resp,
                         on_error=on_sample_error,
                         should_cancel=should_cancel,
                         stop_on_error=partition_key is not None,
                     )
                 else:
                     worker_pool.run_windowed(
-                        recovery_groups,
-                        recovery,
+                        backfill_groups,
+                        backfill,
                         on_completed=lambda c, t, s, r: on_sample_thread_completed(
                             "partition_recovery", c, t, s, r
                         ),
@@ -936,7 +936,7 @@ def _prepare_runtime_work(
                         "sample_stem": state.job.sample.metadata.raw_stem,
                         "work_unit_key": state.job.work_unit_key,
                         "succeeded": sample_result is not None,
-                        "recovery_attempted": bool(state.recovery_attempts),
+                        "recovery_attempted": bool(state.backfill_attempts),
                     }
                 )
         for phase in batch_phases:
@@ -948,7 +948,7 @@ def _prepare_runtime_work(
                     acquisition
                     for acquisition in (
                         phase.initial_acquisition,
-                        phase.recovery_acquisition,
+                        phase.backfill_acquisition,
                     )
                     if acquisition is not None
                 )
@@ -956,7 +956,7 @@ def _prepare_runtime_work(
                 sample_id = phase.job.sample.identity.sample_identity_id
                 for name, acquisition in (
                     ("initial", phase.initial_acquisition),
-                    ("recovery", phase.recovery_acquisition),
+                    ("recovery", phase.backfill_acquisition),
                 ):
                     if acquisition is not None:
                         acquisitions.append(
@@ -991,10 +991,10 @@ def _batch_phase_resource_receipts(
             phase.initial_cleanup_outcome,
         ),
         (
-            phase.recovery_resource_key,
-            phase.recovery_open_attempted,
-            phase.recovery_opened,
-            phase.recovery_cleanup_outcome,
+            phase.backfill_resource_key,
+            phase.backfill_open_attempted,
+            phase.backfill_opened,
+            phase.backfill_cleanup_outcome,
         ),
     ):
         if resource_key is None:
@@ -1025,7 +1025,7 @@ def _batch_phase_acquisition_receipts(
         acquisition
         for acquisition in (
             phase.initial_acquisition,
-            phase.recovery_acquisition,
+            phase.backfill_acquisition,
         )
         if acquisition is not None
     )
@@ -1064,7 +1064,7 @@ def _finalize_job_state(
     registered_artifacts = observed_artifacts
     if adapter_result is not None:
         try:
-            # Recovery may reuse exact measured evidence from the initial result.
+            # Backfill may reuse exact measured evidence from the initial result.
             # Equal artifacts are one lineage node; conflicting identities still fail.
             expected_lineage = canonical_current_attempt_artifact_closure(
                 producer_attempt=job.processing_owners.attempt,
@@ -1074,8 +1074,8 @@ def _finalize_job_state(
                             *adapter_result.lineage_artifacts,
                             *(
                                 artifact
-                                for recovery in state.recovery_attempts
-                                for artifact in recovery.lineage_artifacts
+                                for backfill in state.backfill_attempts
+                                for artifact in backfill.lineage_artifacts
                             ),
                         )
                     )
@@ -1083,14 +1083,14 @@ def _finalize_job_state(
             )
             if observed_artifacts != expected_lineage:
                 raise UntargetedCidNlRealDataRuntimeError(
-                    "worker observer does not close the exact adapter/recovery result"
+                    "worker observer does not close the exact adapter/backfill result"
                 )
             result_ref = _mint_sample_result_ref(
                 job=job,
                 result=adapter_result,
-                recovery_input=state.recovery_input,
-                recovery_attempt=None,
-                recovery_attempts=state.recovery_attempts,
+                backfill_input=state.backfill_input,
+                backfill_attempt=None,
+                backfill_attempts=state.backfill_attempts,
                 acquisition=acquisition,
                 acquisition_content=(
                     result_context.acquisition_content
@@ -1172,8 +1172,8 @@ def _finalize_job_state(
             job=job,
             adapter_result=adapter_result,
             result_ref=result_ref,
-            recovery_input=state.recovery_input,
-            recovery_attempts=state.recovery_attempts,
+            backfill_input=state.backfill_input,
+            backfill_attempts=state.backfill_attempts,
         )
         if success and adapter_result is not None and result_ref is not None
         else None
@@ -1292,8 +1292,8 @@ __all__ = (
     "mint_untargeted_cid_nl_sample_result_ref",
     "mint_untargeted_sample_result_ref",
     "open_raw",
-    "project_untargeted_cid_nl_completed_recovery",
-    "project_untargeted_completed_recovery",
+    "project_untargeted_cid_nl_completed_backfill",
+    "project_untargeted_completed_backfill",
     "untargeted_cid_nl_runtime_call_cost",
     "untargeted_runtime_call_cost",
 )

@@ -145,7 +145,7 @@ def test_configured_composition_runs_discovery_to_owner_matrix(
             for result in runtime.sample_results
             if result.job.sample.metadata.raw_stem == "S4"
         )
-        assert recovered.recovery_attempt is not None
+        assert recovered.backfill_attempt is not None
         assert (
             recovered.effective_assessment.content.method_subject
             == batch.subject_batch.subjects[0]

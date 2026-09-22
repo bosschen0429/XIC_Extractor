@@ -992,7 +992,7 @@ def test_bounded_runtime_matches_eager_after_disk_owner_round_trip(
     )
     assert actual.children
     if scenario == "recovery":
-        assert any(result.recovery_attempts for result in eager_runtime.sample_results)
+        assert any(result.backfill_attempts for result in eager_runtime.sample_results)
 
 
 def _assert_explanation_parity(tmp_path, plan, config, eager, bounded):
@@ -1396,7 +1396,7 @@ def test_sample_parallelism_keeps_partition_and_acquisition_counts_fixed(
     original_init = _FakeThermoRaw.__init__
     original_dispose = _FakeThermoRaw.Dispose
     original_append = owner.PartitionResultStore.append_children
-    original_prepare = runtime_owner._prepare_group_authorized_recoveries
+    original_prepare = runtime_owner._prepare_group_authorized_backfills
     original_execute = owner.execute_runtime_attempt
 
     def materialize(*args, **kwargs):
@@ -1478,7 +1478,7 @@ def test_sample_parallelism_keeps_partition_and_acquisition_counts_fixed(
 
     monkeypatch.setattr(owner, "materialize_untargeted_cid_nl_partition", materialize)
     monkeypatch.setattr(owner, "execute_runtime_attempt", execute)
-    monkeypatch.setattr(runtime_owner, "_prepare_group_authorized_recoveries", prepare)
+    monkeypatch.setattr(runtime_owner, "_prepare_group_authorized_backfills", prepare)
     monkeypatch.setattr(_FakeThermoRaw, "__init__", initialize)
     monkeypatch.setattr(_FakeThermoRaw, "Dispose", dispose)
     monkeypatch.setattr(_FakeThermoRaw, "GetChromatogramData", chromatogram)
@@ -1687,24 +1687,24 @@ def test_process_recovery_dispatches_only_missing_subjects(tmp_path, monkeypatch
     batch = materialize_untargeted_cid_nl_partition(plan, plan.subject_batch)
     monkeypatch.setattr(worker, "_ensure_assemblies_loaded", lambda *_: None)
     requests = []
-    execute_recovery = runtime._execute_sample_recovery_worker
+    execute_recovery = runtime._execute_sample_backfill_worker
 
     def observe_request(request):
         requests.append(request)
         keys = {job.work_unit_key for job in request.jobs}
-        assert keys == set(request.recovery_group_center_rts_by_key)
-        assert set(request.recovery_support_by_key) == keys
+        assert keys == set(request.backfill_group_center_rts_by_key)
+        assert set(request.backfill_support_by_key) == keys
         # Recovery consumes only the support policy and the missing-MS1
         # initial assessment. Full initial adapter results stay in the parent.
         assert not hasattr(request, "adapter_results_by_key")
         assert all(
-            isinstance(ctx, worker._RecoverySupportContext)
-            for ctx in request.recovery_support_by_key.values()
+            isinstance(ctx, worker._BackfillSupportContext)
+            for ctx in request.backfill_support_by_key.values()
         )
         assert len(keys) < len(plan.subject_batch.subjects)
         return execute_recovery(request)
 
-    monkeypatch.setattr(runtime, "_execute_sample_recovery_worker", observe_request)
+    monkeypatch.setattr(runtime, "_execute_sample_backfill_worker", observe_request)
     with LocalProcessMessages(max_workers=1) as pool:
         result = runtime.execute_untargeted_cid_nl_runtime_partition(
             batch.jobs,
@@ -1717,7 +1717,7 @@ def test_process_recovery_dispatches_only_missing_subjects(tmp_path, monkeypatch
     assert len(result.sample_results) == len(batch.jobs)
     selected = {job.work_unit_key for job in requests[0].jobs}
     for sample_result in result.sample_results:
-        assert bool(sample_result.recovery_attempts) is (
+        assert bool(sample_result.backfill_attempts) is (
             sample_result.job.work_unit_key in selected
         )
 
@@ -1784,7 +1784,7 @@ def test_sparse_recovery_partition_matches_dense_composition(
     assert len(sparse_batch.jobs) == expected_sparse_jobs
     sparse_runtime = execute_untargeted_cid_nl_runtime_partition(
         sparse_batch.jobs,
-        recovery_templates=sparse_batch.sample_job_templates,
+        backfill_templates=sparse_batch.sample_job_templates,
         partition_key="sparse-recovery",
         alignment_config=config,
     )
@@ -1819,7 +1819,7 @@ def test_sparse_recovery_partition_matches_dense_composition(
             if result.job.sample.metadata.raw_stem == missing_stem
         ]
         assert missing_results
-        assert all(result.recovery_attempts for result in missing_results)
+        assert all(result.backfill_attempts for result in missing_results)
         assert set(sparse_by_key) == set(dense_by_key)
     else:
         assert missing_stem not in {
@@ -1879,38 +1879,38 @@ def test_formal_partition_reuses_prepared_group_ids_for_recovery_and_composition
         for group in workset.assignment_scope.groups
     }
     assert len(prepared_group_ids) == 1
-    recovery_group_ids = {
+    backfill_group_ids = {
         attempt.group_hypothesis_id
         for result in leaf.sample_results
-        for attempt in result.recovery_attempts
+        for attempt in result.backfill_attempts
         if attempt.group_hypothesis_id is not None
     }
-    assert recovery_group_ids
-    assert recovery_group_ids == prepared_group_ids
+    assert backfill_group_ids
+    assert backfill_group_ids == prepared_group_ids
     assert {
         result.job.sample.metadata.raw_stem
         for result in leaf.sample_results
-        if result.recovery_attempts
+        if result.backfill_attempts
     } == {"S2", "S3"}
     recovery_result = next(
-        result for result in leaf.sample_results if result.recovery_attempts
+        result for result in leaf.sample_results if result.backfill_attempts
     )
-    recovery_attempt = recovery_result.recovery_attempts[0]
+    backfill_attempt = recovery_result.backfill_attempts[0]
     same_rt_different_groups = replace(
         recovery_result,
-        recovery_attempts=(
-            replace(recovery_attempt, group_hypothesis_id="group-a"),
-            replace(recovery_attempt, group_hypothesis_id="group-b"),
+        backfill_attempts=(
+            replace(backfill_attempt, group_hypothesis_id="group-a"),
+            replace(backfill_attempt, group_hypothesis_id="group-b"),
         ),
     )
     assert (
-        same_rt_different_groups.recovery_for_group(
+        same_rt_different_groups.backfill_for_group(
             0.0, group_hypothesis_id="group-b"
         ).group_hypothesis_id
         == "group-b"
     )
     assert (
-        same_rt_different_groups.recovery_for_group(
+        same_rt_different_groups.backfill_for_group(
             0.0, group_hypothesis_id="wrong-group"
         )
         is None

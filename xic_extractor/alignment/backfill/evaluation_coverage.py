@@ -125,7 +125,7 @@ _TERMINAL_PREFIX = "xic.owner-backfill-coverage-terminal:"
 _EPOCH_PREFIX = "xic.owner-backfill-planning-epoch:"
 _BATCH_PREFIX = "xic.owner-backfill-evaluation-coverage:"
 
-_COMPLETED_RECOVERY_CONTRACT = _mint_artifact_semantic_contract_ref(
+_COMPLETED_BACKFILL_CONTRACT = _mint_artifact_semantic_contract_ref(
     owner_namespace="xic_extractor.untargeted_cid_nl_real_data_runtime",
     semantic_role="owner_backfill_completed_recovery_projection",
     schema_version="owner_backfill_completed_recovery_projection",
@@ -145,7 +145,7 @@ class OwnerBackfillCompletedRecoveryProjection:
     group_center_rt: float
     source_result_artifact: EvidenceArtifactRef
     initial_assessment_artifact: EvidenceArtifactRef
-    recovery_assessment: CidNlMethodAssessmentRef
+    backfill_assessment: CidNlMethodAssessmentRef
     trace_coordinate: TraceCoordinate
     acquisition_sha256: str
     artifact: EvidenceArtifactRef
@@ -155,14 +155,14 @@ class OwnerBackfillCompletedRecoveryProjection:
         if not isinstance(owners, ProcessingOwnerReferences) or not any(
             self.sample is sample for sample in owners.sample_resolutions
         ):
-            raise ValueError("completed recovery crossed its exact sample owners")
+            raise ValueError("completed backfill crossed its exact sample owners")
         replace(self.group_identity)
         replace(self.trace_coordinate)
         if self.group_identity.processing_request_id != (
             owners.request.processing_request_id
         ):
-            raise ValueError("completed recovery crossed its group request")
-        assessment = self.recovery_assessment
+            raise ValueError("completed backfill crossed its group request")
+        assessment = self.backfill_assessment
         validate_cid_nl_method_assessment_binding(
             assessment,
             processing_owners=owners,
@@ -188,11 +188,11 @@ class OwnerBackfillCompletedRecoveryProjection:
             or self.trace_coordinate.acquisition_source_id
             != assessment.content.acquisition_source_id
         ):
-            raise ValueError("completed recovery does not close an exact empty epoch")
+            raise ValueError("completed backfill does not close an exact empty epoch")
         if len(self.acquisition_sha256) != 64 or any(
             character not in "0123456789abcdef" for character in self.acquisition_sha256
         ):
-            raise ValueError("completed recovery requires its acquisition digest")
+            raise ValueError("completed backfill requires its acquisition digest")
         for artifact in (
             self.source_result_artifact,
             self.initial_assessment_artifact,
@@ -206,7 +206,7 @@ class OwnerBackfillCompletedRecoveryProjection:
                 or artifact.producer_processing_attempt_id
                 != owners.attempt.processing_attempt_id
             ):
-                raise ValueError("completed recovery crossed its producer attempt")
+                raise ValueError("completed backfill crossed its producer attempt")
         if (
             self.source_result_artifact.semantic_contract.owner_namespace
             != "xic_extractor.untargeted_cid_nl_real_data_runtime"
@@ -217,7 +217,7 @@ class OwnerBackfillCompletedRecoveryProjection:
             or assessment.artifact.evidence_artifact_id
             not in self.source_result_artifact.upstream_artifact_ids
             or self.initial_assessment_artifact == assessment.artifact
-            or self.artifact.semantic_contract != _COMPLETED_RECOVERY_CONTRACT
+            or self.artifact.semantic_contract != _COMPLETED_BACKFILL_CONTRACT
             or self.artifact.upstream_artifact_ids
             != tuple(
                 sorted(
@@ -228,7 +228,7 @@ class OwnerBackfillCompletedRecoveryProjection:
                 )
             )
         ):
-            raise ValueError("completed recovery lost its runtime artifact closure")
+            raise ValueError("completed backfill lost its runtime artifact closure")
         verify_evidence_artifact_payload(
             self.artifact,
             canonical_owner_backfill_completed_recovery_bytes(self),
@@ -238,20 +238,20 @@ class OwnerBackfillCompletedRecoveryProjection:
 def canonical_owner_backfill_completed_recovery_bytes(
     projection: OwnerBackfillCompletedRecoveryProjection,
 ) -> bytes:
-    return _completed_recovery_projection_bytes(
+    return _completed_backfill_projection_bytes(
         processing_owners=projection.processing_owners,
         sample=projection.sample,
         group_identity=projection.group_identity,
         group_center_rt=projection.group_center_rt,
         source_result_artifact=projection.source_result_artifact,
         initial_assessment_artifact=projection.initial_assessment_artifact,
-        recovery_assessment=projection.recovery_assessment,
+        backfill_assessment=projection.backfill_assessment,
         trace_coordinate=projection.trace_coordinate,
         acquisition_sha256=projection.acquisition_sha256,
     )
 
 
-def _completed_recovery_projection_bytes(
+def _completed_backfill_projection_bytes(
     *,
     processing_owners: ProcessingOwnerReferences,
     sample: ResolvedCanonicalSampleIdentity,
@@ -259,7 +259,7 @@ def _completed_recovery_projection_bytes(
     group_center_rt: float,
     source_result_artifact: EvidenceArtifactRef,
     initial_assessment_artifact: EvidenceArtifactRef,
-    recovery_assessment: CidNlMethodAssessmentRef,
+    backfill_assessment: CidNlMethodAssessmentRef,
     trace_coordinate: TraceCoordinate,
     acquisition_sha256: str,
 ) -> bytes:
@@ -279,7 +279,7 @@ def _completed_recovery_projection_bytes(
                 initial_assessment_artifact.evidence_artifact_id
             ),
             "recovery_assessment_artifact_id": (
-                recovery_assessment.artifact.evidence_artifact_id
+                backfill_assessment.artifact.evidence_artifact_id
             ),
             "trace_coordinate_id": trace_coordinate.trace_coordinate_id,
             "acquisition_sha256": acquisition_sha256,
@@ -495,7 +495,7 @@ def _validate_conservative_no_request(
     universe = decision.candidate_universe
     if proof.completion is None:
         if universe is not None or facts.may_attempt_recovery:
-            raise ValueError("threshold proof cannot hide an eligible recovery")
+            raise ValueError("threshold proof cannot hide an eligible backfill")
         expected_reason = "direct_support_threshold_not_met"
     else:
         completion = proof.completion
@@ -506,11 +506,11 @@ def _validate_conservative_no_request(
             or completion.sample is not proof.sample
             or completion.group_identity != proof.group_identity
             or completion.group_center_rt != facts.group_context.group.group_center_rt
-            or completion.recovery_assessment is not target.method_assessment
+            or completion.backfill_assessment is not target.method_assessment
             or universe.candidate_assessment is not target.method_assessment
             or universe.candidate_peaks
         ):
-            raise ValueError("empty recovery proof lost its exact completed epoch")
+            raise ValueError("empty backfill proof lost its exact completed epoch")
         expected_reason = "recovery_candidate_universe_empty"
     # The mapper already settled this immutable decision and its group facts.
     # This projection binds that result; it does not evaluate the method again.

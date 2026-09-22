@@ -27,7 +27,7 @@ from xic_extractor.acquisition_contract import (
 )
 from xic_extractor.alignment.untargeted_cid_nl_golden_path import (
     UntargetedCidNlAssessmentInput,
-    UntargetedCidNlRecoveryInput,
+    UntargetedCidNlBackfillInput,
 )
 from xic_extractor.config import ExtractionConfig
 from xic_extractor.discovery.cid_nl_evidence_projection import (
@@ -153,9 +153,9 @@ class UntargetedCidNlRealDataAdapterResult:
 
 
 @dataclass(frozen=True, slots=True)
-class UntargetedCidNlRecoveryAttemptResult:
+class UntargetedCidNlBackfillAttemptResult:
     assessment: CidNlMethodAssessmentRef
-    recovery_input: UntargetedCidNlRecoveryInput | None
+    backfill_input: UntargetedCidNlBackfillInput | None
     acquisition: TraceAcquisitionBatch
     lineage_artifacts: tuple[EvidenceArtifactRef, ...]
     validation_status: str = VALIDATION_STATUS
@@ -223,8 +223,8 @@ class UntargetedCidNlSampleTraceBatch:
 
 
 @dataclass(frozen=True, slots=True)
-class UntargetedCidNlRecoveryTraceBatch:
-    """One sample-local recovery phase keyed by exact method-subject identity."""
+class UntargetedCidNlBackfillTraceBatch:
+    """One sample-local backfill phase keyed by exact method-subject identity."""
 
     sample_identity_id: str
     acquisition_source_id: str
@@ -239,7 +239,7 @@ class UntargetedCidNlRecoveryTraceBatch:
             or not self.acquisition_source_id.strip()
         ):
             raise UntargetedCidNlRealDataAdapterError(
-                "recovery trace batch requires owner identities"
+                "backfill trace batch requires owner identities"
             )
         if (
             type(self.method_subject_ids) is not tuple
@@ -255,13 +255,13 @@ class UntargetedCidNlRecoveryTraceBatch:
             )
         ):
             raise UntargetedCidNlRealDataAdapterError(
-                "recovery trace batch entries must be canonical and complete"
+                "backfill trace batch entries must be canonical and complete"
             )
         if not isinstance(self.acquisition, TraceAcquisitionBatch) or len(
             self.acquisition.traces
         ) != len(self.requests):
             raise UntargetedCidNlRealDataAdapterError(
-                "recovery trace batch acquisition does not close its requests"
+                "backfill trace batch acquisition does not close its requests"
             )
 
     def acquired_trace(
@@ -277,14 +277,14 @@ class UntargetedCidNlRecoveryTraceBatch:
             )
         except ValueError as exc:
             raise UntargetedCidNlRealDataAdapterError(
-                "recovery trace batch has no matching method subject"
+                "backfill trace batch has no matching method subject"
             ) from exc
         if (
             self.group_center_rts[index] != group_center_rt
             or self.requests[index] != request
         ):
             raise UntargetedCidNlRealDataAdapterError(
-                "recovery trace batch request crossed its owner decision"
+                "backfill trace batch request crossed its owner decision"
             )
         return self.acquisition.traces[index]
 
@@ -296,29 +296,29 @@ class _UntargetedRealDataWorkObserver:
         "_artifacts",
         "_processing_owners",
         "initial_acquisition",
-        "recovery_acquisition",
+        "backfill_acquisition",
     )
 
     def __init__(self, processing_owners: ProcessingOwnerReferences) -> None:
         self._processing_owners = processing_owners
         self.initial_acquisition: TraceAcquisitionBatch | None = None
-        self.recovery_acquisition: TraceAcquisitionBatch | None = None
+        self.backfill_acquisition: TraceAcquisitionBatch | None = None
         self._artifacts: dict[str, EvidenceArtifactRef] = {}
 
     @property
     def acquisition(self) -> TraceAcquisitionBatch | None:
-        return self.recovery_acquisition or self.initial_acquisition
+        return self.backfill_acquisition or self.initial_acquisition
 
     def record_acquisition(
-        self, acquisition: TraceAcquisitionBatch, *, recovery: bool = False
+        self, acquisition: TraceAcquisitionBatch, *, backfill: bool = False
     ) -> None:
-        observed = self.recovery_acquisition if recovery else self.initial_acquisition
+        observed = self.backfill_acquisition if backfill else self.initial_acquisition
         if observed is not None and observed is not acquisition:
             raise UntargetedCidNlRealDataAdapterError(
                 "one acquisition phase cannot replace its observed acquisition"
             )
-        if recovery:
-            self.recovery_acquisition = acquisition
+        if backfill:
+            self.backfill_acquisition = acquisition
         else:
             self.initial_acquisition = acquisition
 
@@ -507,11 +507,11 @@ def acquire_untargeted_cid_nl_recovery_trace_batch(
     *,
     processing_owners: ProcessingOwnerReferences,
     sample: ResolvedCanonicalSampleIdentity,
-    recovery_requests: tuple[tuple[CidNlMethodSubject, float], ...],
+    backfill_requests: tuple[tuple[CidNlMethodSubject, float], ...],
     peak_config: ExtractionConfig,
     raw: UntargetedCidNlRealDataRaw,
-) -> UntargetedCidNlRecoveryTraceBatch:
-    """Acquire one sample's owner-authorized recovery requests in one phase."""
+) -> UntargetedCidNlBackfillTraceBatch:
+    """Acquire one sample's owner-authorized backfill requests in one phase."""
 
     if not isinstance(processing_owners, ProcessingOwnerReferences):
         raise UntargetedCidNlRealDataAdapterError(
@@ -524,8 +524,8 @@ def acquire_untargeted_cid_nl_recovery_trace_batch(
             "peak_config has the wrong owner type"
         )
     if (
-        type(recovery_requests) is not tuple
-        or not recovery_requests
+        type(backfill_requests) is not tuple
+        or not backfill_requests
         or any(
             type(item) is not tuple
             or len(item) != 2
@@ -534,13 +534,13 @@ def acquire_untargeted_cid_nl_recovery_trace_batch(
             or not isinstance(item[1], (int, float))
             or not math.isfinite(float(item[1]))
             or float(item[1]) < 0.0
-            for item in recovery_requests
+            for item in backfill_requests
         )
     ):
         raise UntargetedCidNlRealDataAdapterError(
-            "recovery requests must be a non-empty typed tuple"
+            "backfill requests must be a non-empty typed tuple"
         )
-    for method_subject, _group_center_rt in recovery_requests:
+    for method_subject, _group_center_rt in backfill_requests:
         try:
             validate_cid_nl_method_subject_binding(
                 method_subject,
@@ -548,14 +548,14 @@ def acquire_untargeted_cid_nl_recovery_trace_batch(
             )
         except CidNlMethodSubjectContractError as exc:
             raise UntargetedCidNlRealDataAdapterError(str(exc)) from exc
-    # Group identity owns each recovery attempt. Acquisition owns the physical
+    # Group identity owns each backfill attempt. Acquisition owns the physical
     # query: different groups can reuse one subject/RT trace, in any input order.
     unique_requests = {
         (subject.method_subject_id, float(center)): (subject, float(center))
-        for subject, center in recovery_requests
+        for subject, center in backfill_requests
     }
-    recovery_requests = tuple(unique_requests[key] for key in sorted(unique_requests))
-    method_subject_ids = tuple(item[0].method_subject_id for item in recovery_requests)
+    backfill_requests = tuple(unique_requests[key] for key in sorted(unique_requests))
+    method_subject_ids = tuple(item[0].method_subject_id for item in backfill_requests)
     _validate_raw_adapter(raw)
     source = resolve_request_acquisition_source(
         processing_owners=processing_owners,
@@ -575,7 +575,7 @@ def acquire_untargeted_cid_nl_recovery_trace_batch(
             rt_max=float(group_center_rt) + half_window,
             ppm_tol=method_subject.precursor_tolerance_ppm,
         )
-        for method_subject, group_center_rt in recovery_requests
+        for method_subject, group_center_rt in backfill_requests
     )
     capability = mint_trace_acquisition_capability(
         source,
@@ -585,11 +585,11 @@ def acquire_untargeted_cid_nl_recovery_trace_batch(
     acquisition = _freeze_acquisition(
         acquire_untargeted_trace_batch(capability, requests, bound_raw)
     )
-    return UntargetedCidNlRecoveryTraceBatch(
+    return UntargetedCidNlBackfillTraceBatch(
         sample_identity_id=sample.identity.sample_identity_id,
         acquisition_source_id=source.acquisition_source_id,
         method_subject_ids=method_subject_ids,
-        group_center_rts=tuple(float(item[1]) for item in recovery_requests),
+        group_center_rts=tuple(float(item[1]) for item in backfill_requests),
         requests=requests,
         acquisition=acquisition,
     )
@@ -874,7 +874,7 @@ def adapt_current_discovery_sample_subject(
     )
 
 
-def recover_untargeted_cid_nl_sample_subject(
+def backfill_untargeted_cid_nl_sample_subject(
     *,
     processing_owners: ProcessingOwnerReferences,
     sample: ResolvedCanonicalSampleIdentity,
@@ -887,11 +887,11 @@ def recover_untargeted_cid_nl_sample_subject(
     settings: DiscoverySettings | None = None,
     signal_processing_profile: SignalProcessingProfile | None = None,
     _observer: _UntargetedRealDataWorkObserver | None = None,
-    _preacquired_traces: UntargetedCidNlRecoveryTraceBatch | None = None,
-) -> UntargetedCidNlRecoveryAttemptResult:
+    _preacquired_traces: UntargetedCidNlBackfillTraceBatch | None = None,
+) -> UntargetedCidNlBackfillAttemptResult:
     """Evaluate one owner-authorized bounded physical candidate universe.
 
-    MS1-only recovery remains HOLD. A missing-MS1 rejection may contribute its
+    MS1-only backfill remains HOLD. A missing-MS1 rejection may contribute its
     immutable measured CID-NL evidence to new owner-resolved relations.
     """
 
@@ -926,7 +926,7 @@ def recover_untargeted_cid_nl_sample_subject(
             != support_policy
         ):
             raise UntargetedCidNlRealDataAdapterError(
-                "recovery requires the exact missing-MS1 rejection and support policy"
+                "backfill requires the exact missing-MS1 rejection and support policy"
             )
     if (
         isinstance(group_center_rt, bool)
@@ -948,7 +948,7 @@ def recover_untargeted_cid_nl_sample_subject(
         processing_owners.request.normalized_scientific_inputs_json
     ):
         raise UntargetedCidNlRealDataAdapterError(
-            "physical recovery lost its request-bound profile"
+            "physical backfill lost its request-bound profile"
         )
     source = resolve_request_acquisition_source(
         processing_owners=processing_owners,
@@ -966,7 +966,7 @@ def recover_untargeted_cid_nl_sample_subject(
     if _preacquired_traces is None:
         if raw is None:
             raise UntargetedCidNlRealDataAdapterError(
-                "recovery requires owner-opened RAW or preacquired traces"
+                "backfill requires owner-opened RAW or preacquired traces"
             )
         _validate_raw_adapter(raw)
         try:
@@ -990,7 +990,7 @@ def recover_untargeted_cid_nl_sample_subject(
             or _preacquired_traces.acquisition_source_id != source.acquisition_source_id
         ):
             raise UntargetedCidNlRealDataAdapterError(
-                "recovery trace batch crossed its sample or acquisition source"
+                "backfill trace batch crossed its sample or acquisition source"
             )
         acquisition = _preacquired_traces.acquisition
         acquired = _preacquired_traces.acquired_trace(
@@ -999,7 +999,7 @@ def recover_untargeted_cid_nl_sample_subject(
             request=request,
         )
     if _observer is not None:
-        _observer.record_acquisition(acquisition, recovery=True)
+        _observer.record_acquisition(acquisition, backfill=True)
     observations: tuple[PeakObservationRef, ...] = ()
     physical_evaluations: list[PhysicalPeakEvaluation] = []
     if signal_processing_profile is not None:
@@ -1010,7 +1010,7 @@ def recover_untargeted_cid_nl_sample_subject(
             source=f"{_ADAPTER_NAMESPACE}.recovery:{TraceCoordinateKind.NATIVE_SCAN.value}",
             acquisition_source_id=source.acquisition_source_id,
         )
-        observation = capture_owner.capture_physical_recovery_observation(
+        observation = capture_owner.capture_physical_backfill_observation(
             processing_owners=processing_owners,
             sample=sample,
             method_subject=method_subject,
@@ -1077,19 +1077,19 @@ def recover_untargeted_cid_nl_sample_subject(
     if _observer is not None:
         for observation in observations:
             _observer.record_artifact(observation.artifact)
-    recovery_evidence: tuple[CidNlEvidenceRef, ...] = ()
-    recovery_support: tuple[DdaCidNlPeakSupportRef, ...] = ()
-    recovery_sets: tuple[DdaCidNlCandidateSetRelationRef, ...] = ()
+    backfill_evidence: tuple[CidNlEvidenceRef, ...] = ()
+    backfill_support: tuple[DdaCidNlPeakSupportRef, ...] = ()
+    backfill_sets: tuple[DdaCidNlCandidateSetRelationRef, ...] = ()
     scanned_count = 0
     if initial_assessment is not None and observations:
-        recovery_evidence = tuple(
+        backfill_evidence = tuple(
             ref
             for ref in initial_assessment.evidence_refs
             if query_rt_min <= ref.observation.scan_rt_min <= query_rt_max
         )
         individual_refs = []
         set_refs = []
-        for evidence in recovery_evidence:
+        for evidence in backfill_evidence:
             kind = _relation_kind(
                 evidence=evidence, candidate_peaks=observations, policy=support_policy
             )
@@ -1113,22 +1113,22 @@ def recover_untargeted_cid_nl_sample_subject(
                         policy=support_policy,
                     )
                 )
-        recovery_support, recovery_sets = tuple(individual_refs), tuple(set_refs)
-        scanned_count = len({ref.observation.scan_number for ref in recovery_evidence})
+        backfill_support, backfill_sets = tuple(individual_refs), tuple(set_refs)
+        scanned_count = len({ref.observation.scan_number for ref in backfill_evidence})
         if _observer is not None:
-            recovery_relations: tuple[
+            backfill_relations: tuple[
                 DdaCidNlPeakSupportRef | DdaCidNlCandidateSetRelationRef, ...
-            ] = (*recovery_support, *recovery_sets)
-            for ref in recovery_relations:
+            ] = (*backfill_support, *backfill_sets)
+            for ref in backfill_relations:
                 _observer.record_artifact(ref.artifact)
     elif method_subject.composition is not None:
         if raw is None or settings is None:
             raise UntargetedCidNlRealDataAdapterError(
-                "composite recovery requires full settings and owner-opened MS2 source"
+                "composite backfill requires full settings and owner-opened MS2 source"
             )
         if settings.tag_combine_mode == "single":
             raise UntargetedCidNlRealDataAdapterError(
-                "Composite recovery requires union or intersection"
+                "Composite backfill requires union or intersection"
             )
         expected = CidNlComposition(
             tags=tuple(
@@ -1139,11 +1139,11 @@ def recover_untargeted_cid_nl_sample_subject(
         )
         if expected != method_subject.composition:
             raise UntargetedCidNlRealDataAdapterError(
-                "recovery composition mismatches the method subject"
+                "backfill composition mismatches the method subject"
             )
         bound_raw = require_owner_bound_untargeted_raw(raw, source)
-        recovery_evidence, recovery_support, recovery_sets, scanned_count = (
-            _composite_recovery_evidence(
+        backfill_evidence, backfill_support, backfill_sets, scanned_count = (
+            _composite_backfill_evidence(
                 processing_owners=processing_owners,
                 sample=sample,
                 method_subject=method_subject,
@@ -1157,9 +1157,9 @@ def recover_untargeted_cid_nl_sample_subject(
         )
         if _observer is not None:
             for artifact in (
-                *(ref.artifact for ref in recovery_evidence),
-                *(ref.artifact for ref in recovery_support),
-                *(ref.artifact for ref in recovery_sets),
+                *(ref.artifact for ref in backfill_evidence),
+                *(ref.artifact for ref in backfill_support),
+                *(ref.artifact for ref in backfill_sets),
             ):
                 _observer.record_artifact(artifact)
     try:
@@ -1178,9 +1178,9 @@ def recover_untargeted_cid_nl_sample_subject(
                 reason_code=None,
             ),
             candidate_peaks=observations,
-            evidence_refs=recovery_evidence,
-            individual_support_refs=recovery_support,
-            set_relation_refs=recovery_sets,
+            evidence_refs=backfill_evidence,
+            individual_support_refs=backfill_support,
+            set_relation_refs=backfill_sets,
         )
     except CidNlMethodAssessmentContractError as exc:
         raise UntargetedCidNlRealDataAdapterError(str(exc)) from exc
@@ -1190,23 +1190,23 @@ def recover_untargeted_cid_nl_sample_subject(
         producer_attempt=processing_owners.attempt,
         artifacts=(
             *(observation.artifact for observation in observations),
-            *(ref.artifact for ref in recovery_evidence),
-            *(ref.artifact for ref in recovery_support),
-            *(ref.artifact for ref in recovery_sets),
+            *(ref.artifact for ref in backfill_evidence),
+            *(ref.artifact for ref in backfill_support),
+            *(ref.artifact for ref in backfill_sets),
             assessment.artifact,
         ),
     )
-    recovery_input = (
-        UntargetedCidNlRecoveryInput(
+    backfill_input = (
+        UntargetedCidNlBackfillInput(
             sample=sample,
             candidate_assessment=assessment,
         )
         if observations and assessment.content.method_result == "HOLD"
         else None
     )
-    return UntargetedCidNlRecoveryAttemptResult(
+    return UntargetedCidNlBackfillAttemptResult(
         assessment=assessment,
-        recovery_input=recovery_input,
+        backfill_input=backfill_input,
         acquisition=acquisition,
         lineage_artifacts=lineage,
         capture_evidence=tuple(
@@ -1226,7 +1226,7 @@ def recover_untargeted_cid_nl_sample_subject(
     )
 
 
-def _composite_recovery_evidence(
+def _composite_backfill_evidence(
     *,
     processing_owners: ProcessingOwnerReferences,
     sample: ResolvedCanonicalSampleIdentity,
@@ -1243,7 +1243,7 @@ def _composite_recovery_evidence(
     tuple[DdaCidNlCandidateSetRelationRef, ...],
     int,
 ]:
-    """Evaluate the configured loss set on the recovered physical universe."""
+    """Evaluate the configured loss set on the backfilled physical universe."""
     evidence_refs: list[CidNlEvidenceRef] = []
     individual_refs: list[DdaCidNlPeakSupportRef] = []
     set_refs: list[DdaCidNlCandidateSetRelationRef] = []
@@ -1251,12 +1251,12 @@ def _composite_recovery_evidence(
     for event in raw.iter_ms2_scans(query_rt_min, query_rt_max):
         if event.parse_error is not None or event.scan is None:
             raise UntargetedCidNlRealDataAdapterError(
-                "composite recovery MS2 acquisition did not complete"
+                "composite backfill MS2 acquisition did not complete"
             )
         scan = event.scan
         if scan.scan_number in scan_numbers:
             raise UntargetedCidNlRealDataAdapterError(
-                "duplicate acquisition scan during composite recovery"
+                "duplicate acquisition scan during composite backfill"
             )
         scan_numbers.add(scan.scan_number)
         for seed in discovery_seeds_from_scan(
@@ -1866,7 +1866,7 @@ _within_ppm = within_ppm
 __all__ = [
     "UNTARGETED_CID_NL_CAPTURE_TRACE_SOURCE",
     "UntargetedCidNlSampleTraceBatch",
-    "UntargetedCidNlRecoveryTraceBatch",
+    "UntargetedCidNlBackfillTraceBatch",
     "UntargetedCidNlRealDataAdapterError",
     "UntargetedCidNlRealDataAdapterResult",
     "acquire_untargeted_cid_nl_sample_trace_batch",

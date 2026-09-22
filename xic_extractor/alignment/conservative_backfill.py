@@ -1,9 +1,9 @@
 """Conservative no-write Backfill eligibility and mapping facts.
 
-This module plans recovery from direct-SUPPORT group membership and consumes
+This module plans backfill from direct-SUPPORT group membership and consumes
 canonical CellObservationRef evidence for final decisions. It may decide
 whether an already-existing, frozen group is eligible for a bounded
-Backfill revisit and whether supplied recovery evidence has an unambiguous
+Backfill revisit and whether supplied backfill evidence has an unambiguous
 ordered one-to-one mapping.  It never creates a group, mints a cell, selects a
 numeric product value, or calls a writer.
 """
@@ -56,21 +56,21 @@ from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 POLICY_VERSION = "conservative-backfill"
 VALIDATION_STATUS = "shadow_ready"
 PRODUCT_AUTHORITY = "none"
-RECOVERY_UNIVERSE_SCHEMA_VERSION = "conservative_backfill_recovery_candidate_universe"
-RECOVERY_UNIVERSE_ARTIFACT_SEMANTIC_ROLE = (
+BACKFILL_UNIVERSE_SCHEMA_VERSION = "conservative_backfill_recovery_candidate_universe"
+BACKFILL_UNIVERSE_ARTIFACT_SEMANTIC_ROLE = (
     "conservative_backfill_recovery_candidate_universe"
 )
-_RECOVERY_UNIVERSE_ARTIFACT_SEMANTIC_CONTRACT = _mint_artifact_semantic_contract_ref(
+_BACKFILL_UNIVERSE_ARTIFACT_SEMANTIC_CONTRACT = _mint_artifact_semantic_contract_ref(
     owner_namespace="xic_extractor.alignment.conservative_backfill",
-    semantic_role=RECOVERY_UNIVERSE_ARTIFACT_SEMANTIC_ROLE,
-    schema_version=RECOVERY_UNIVERSE_SCHEMA_VERSION,
+    semantic_role=BACKFILL_UNIVERSE_ARTIFACT_SEMANTIC_ROLE,
+    schema_version=BACKFILL_UNIVERSE_SCHEMA_VERSION,
     validation_status=VALIDATION_STATUS,
     media_type="application/json",
     serialization_format="canonical-json-utf8-lf",
 )
 _CELL_DECISION_MINT_TOKEN = object()
 _MODE_TRACK_GROUP_FACTS_MINT_TOKEN = object()
-_RECOVERY_UNIVERSE_MINT_TOKEN = object()
+_BACKFILL_UNIVERSE_MINT_TOKEN = object()
 ACTIVATION_ELIGIBLE_SAMPLE_ROLES = frozenset({"study_sample", "qc", "pooled_qc"})
 
 ConservativeBackfillDisposition = Literal[
@@ -341,7 +341,7 @@ class ModeTrackConservativeBackfillGroupFacts:
 
 
 @dataclass(frozen=True, slots=True)
-class ConservativeBackfillRecoveryCandidateUniverse:
+class ConservativeBackfillCandidateUniverse:
     """Owner receipt binding one sample×method-subject revisit to its peak set."""
 
     processing_owners: ProcessingOwnerReferences
@@ -355,9 +355,9 @@ class ConservativeBackfillRecoveryCandidateUniverse:
     product_authority: str = PRODUCT_AUTHORITY
 
     def __post_init__(self, _mint_token: object) -> None:
-        if _mint_token is not _RECOVERY_UNIVERSE_MINT_TOKEN:
+        if _mint_token is not _BACKFILL_UNIVERSE_MINT_TOKEN:
             raise ConservativeBackfillContractError(
-                "recovery universe must be minted by the conservative Backfill owner"
+                "backfill universe must be minted by the conservative Backfill owner"
             )
 
     @property
@@ -379,10 +379,10 @@ class ConservativeBackfillRecoveryCandidateUniverse:
 
 
 @dataclass(frozen=True, slots=True)
-class ConservativeBackfillRecoveryEvidence:
-    """One peak selected only from an owner-bound recovery universe receipt."""
+class ConservativeBackfillEvidence:
+    """One peak selected only from an owner-bound backfill universe receipt."""
 
-    candidate_universe: ConservativeBackfillRecoveryCandidateUniverse
+    candidate_universe: ConservativeBackfillCandidateUniverse
     peak_observation: PeakObservationRef
     evidence_source: str = "owner_backfill_revisit"
     validation_status: str = VALIDATION_STATUS
@@ -391,25 +391,25 @@ class ConservativeBackfillRecoveryEvidence:
     def __post_init__(self) -> None:
         if not isinstance(
             self.candidate_universe,
-            ConservativeBackfillRecoveryCandidateUniverse,
+            ConservativeBackfillCandidateUniverse,
         ):
             raise ConservativeBackfillContractError(
-                "recovery evidence requires an owner-bound candidate universe"
+                "backfill evidence requires an owner-bound candidate universe"
             )
         if not isinstance(self.peak_observation, PeakObservationRef):
             raise ConservativeBackfillContractError(
-                "recovery evidence requires an owner-backed physical peak"
+                "backfill evidence requires an owner-backed physical peak"
             )
         if not any(
             self.peak_observation is peak
             for peak in self.candidate_universe.candidate_peaks
         ):
             raise ConservativeBackfillContractError(
-                "recovery evidence peak is outside its owner-bound candidate universe"
+                "backfill evidence peak is outside its owner-bound candidate universe"
             )
         if self.evidence_source != "owner_backfill_revisit":
             raise ConservativeBackfillContractError(
-                "recovery evidence cannot claim a direct-support source"
+                "backfill evidence cannot claim a direct-support source"
             )
         if self.validation_status != VALIDATION_STATUS:
             raise ConservativeBackfillContractError(
@@ -417,7 +417,7 @@ class ConservativeBackfillRecoveryEvidence:
             )
         if self.product_authority != PRODUCT_AUTHORITY:
             raise ConservativeBackfillContractError(
-                "recovery evidence cannot grant product authority"
+                "backfill evidence cannot grant product authority"
             )
 
     @property
@@ -438,9 +438,9 @@ class ConservativeBackfillCellDecision:
 
     group_facts: ConservativeBackfillGroupFacts
     target_cell: CellObservationRef
-    candidate_universe: ConservativeBackfillRecoveryCandidateUniverse | None
-    candidate_evidence: tuple[ConservativeBackfillRecoveryEvidence, ...]
-    matched_candidate: ConservativeBackfillRecoveryEvidence | None
+    candidate_universe: ConservativeBackfillCandidateUniverse | None
+    candidate_evidence: tuple[ConservativeBackfillEvidence, ...]
+    matched_candidate: ConservativeBackfillEvidence | None
     disposition: ConservativeBackfillDisposition
     reason_codes: tuple[str, ...]
     _mint_token: InitVar[object] = field(kw_only=True)
@@ -468,17 +468,17 @@ class ConservativeBackfillCellDecision:
             )
         if self.candidate_universe is not None and not isinstance(
             self.candidate_universe,
-            ConservativeBackfillRecoveryCandidateUniverse,
+            ConservativeBackfillCandidateUniverse,
         ):
             raise ConservativeBackfillContractError(
                 "cell decision candidate universe must be an owner receipt"
             )
         if not isinstance(self.candidate_evidence, tuple) or any(
-            not isinstance(item, ConservativeBackfillRecoveryEvidence)
+            not isinstance(item, ConservativeBackfillEvidence)
             for item in self.candidate_evidence
         ):
             raise ConservativeBackfillContractError(
-                "candidate_evidence must contain typed immutable recovery evidence"
+                "candidate_evidence must contain typed immutable backfill evidence"
             )
         if self.candidate_universe is None:
             if self.candidate_evidence:
@@ -511,14 +511,14 @@ class ConservativeBackfillCellDecision:
             )
         if self.disposition == "candidate_mapped" and self.matched_candidate is None:
             raise ConservativeBackfillContractError(
-                "candidate_mapped requires one exact recovery evidence reference"
+                "candidate_mapped requires one exact backfill evidence reference"
             )
         if (
             self.disposition != "candidate_mapped"
             and self.matched_candidate is not None
         ):
             raise ConservativeBackfillContractError(
-                "held or inapplicable cells cannot select recovery evidence"
+                "held or inapplicable cells cannot select backfill evidence"
             )
         if (
             not isinstance(self.reason_codes, tuple)
@@ -556,42 +556,42 @@ def minimum_direct_support_count(sample_count_n: int) -> int:
     return max(2, sample_count_n // 20)
 
 
-def mint_conservative_backfill_recovery_candidate_universe(
+def mint_conservative_backfill_candidate_universe(
     *,
     processing_owners: ProcessingOwnerReferences,
     sample: ResolvedCanonicalSampleIdentity,
     group_facts: tuple[ConservativeBackfillGroupFacts, ...],
     candidate_assessment: CidNlMethodAssessmentRef,
-) -> ConservativeBackfillRecoveryCandidateUniverse:
+) -> ConservativeBackfillCandidateUniverse:
     """Mint the sole target↔peak pairing authority for one Backfill revisit."""
 
     if not isinstance(processing_owners, ProcessingOwnerReferences):
         raise ConservativeBackfillContractError(
-            "recovery universe requires validated processing owners"
+            "backfill universe requires validated processing owners"
         )
     if not isinstance(sample, ResolvedCanonicalSampleIdentity) or not any(
         sample is owned for owned in processing_owners.sample_resolutions
     ):
         raise ConservativeBackfillContractError(
-            "recovery universe sample is outside the processing owner closure"
+            "backfill universe sample is outside the processing owner closure"
         )
-    facts = _canonical_recovery_group_facts(group_facts)
-    population = _validate_recovery_group_populations(
+    facts = _canonical_backfill_group_facts(group_facts)
+    population = _validate_backfill_group_populations(
         facts,
         processing_owners=processing_owners,
     )
-    _validate_recovery_sample_and_subject(facts, sample=sample)
-    _validate_recovery_candidate_assessment(
+    _validate_backfill_sample_and_subject(facts, sample=sample)
+    _validate_backfill_candidate_assessment(
         candidate_assessment,
         processing_attempt=processing_owners.attempt,
         sample=sample,
         group_facts=facts,
     )
-    _validate_recovery_cell_attempts(
+    _validate_backfill_cell_attempts(
         facts,
         processing_attempt=processing_owners.attempt,
     )
-    payload = _recovery_universe_bytes(
+    payload = _backfill_universe_bytes(
         processing_owners=processing_owners,
         sample=sample,
         group_facts=facts,
@@ -605,48 +605,48 @@ def mint_conservative_backfill_recovery_candidate_universe(
         producer_processing_attempt_id=(
             processing_owners.attempt.processing_attempt_id
         ),
-        semantic_contract=_RECOVERY_UNIVERSE_ARTIFACT_SEMANTIC_CONTRACT,
+        semantic_contract=_BACKFILL_UNIVERSE_ARTIFACT_SEMANTIC_CONTRACT,
         payload_bytes=payload,
-        upstream_artifacts=_recovery_universe_upstream_artifacts(
+        upstream_artifacts=_backfill_universe_upstream_artifacts(
             facts,
             candidate_assessment,
         ),
     )
-    return ConservativeBackfillRecoveryCandidateUniverse(
+    return ConservativeBackfillCandidateUniverse(
         processing_owners=processing_owners,
         processing_attempt=processing_owners.attempt,
         sample=sample,
         group_facts=facts,
         candidate_assessment=candidate_assessment,
         artifact=artifact,
-        _mint_token=_RECOVERY_UNIVERSE_MINT_TOKEN,
+        _mint_token=_BACKFILL_UNIVERSE_MINT_TOKEN,
     )
 
 
-def canonical_conservative_backfill_recovery_universe_bytes(
+def canonical_conservative_backfill_universe_bytes(
     *,
     processing_owners: ProcessingOwnerReferences,
     sample: ResolvedCanonicalSampleIdentity,
     group_facts: tuple[ConservativeBackfillGroupFacts, ...],
     candidate_assessment: CidNlMethodAssessmentRef,
 ) -> bytes:
-    """Serialize the exact no-write recovery universe for artifact replay."""
+    """Serialize the exact no-write backfill universe for artifact replay."""
 
     if not isinstance(processing_owners, ProcessingOwnerReferences):
         raise ConservativeBackfillContractError(
-            "recovery universe requires validated processing owners"
+            "backfill universe requires validated processing owners"
         )
-    facts = _canonical_recovery_group_facts(group_facts)
-    population = _validate_recovery_group_populations(
+    facts = _canonical_backfill_group_facts(group_facts)
+    population = _validate_backfill_group_populations(
         facts,
         processing_owners=processing_owners,
     )
-    _validate_recovery_sample_and_subject(facts, sample=sample)
+    _validate_backfill_sample_and_subject(facts, sample=sample)
     if not isinstance(candidate_assessment, CidNlMethodAssessmentRef):
         raise ConservativeBackfillContractError(
-            "recovery universe requires an owner-minted method assessment"
+            "backfill universe requires an owner-minted method assessment"
         )
-    return _recovery_universe_bytes(
+    return _backfill_universe_bytes(
         processing_owners=processing_owners,
         sample=sample,
         group_facts=facts,
@@ -655,7 +655,7 @@ def canonical_conservative_backfill_recovery_universe_bytes(
     )
 
 
-def _recovery_universe_bytes(
+def _backfill_universe_bytes(
     *,
     processing_owners: ProcessingOwnerReferences,
     sample: ResolvedCanonicalSampleIdentity,
@@ -666,7 +666,7 @@ def _recovery_universe_bytes(
     peaks = candidate_assessment.candidate_peaks
     processing_attempt = processing_owners.attempt
     payload = {
-        "schema_version": RECOVERY_UNIVERSE_SCHEMA_VERSION,
+        "schema_version": BACKFILL_UNIVERSE_SCHEMA_VERSION,
         "validation_status": VALIDATION_STATUS,
         "product_authority": PRODUCT_AUTHORITY,
         "processing_request_id": processing_attempt.processing_request_id,
@@ -710,7 +710,7 @@ def _recovery_universe_bytes(
     ).encode("utf-8")
 
 
-def plan_conservative_recovery_targets(
+def plan_conservative_backfill_targets(
     groups: tuple[CrossSamplePeakGroupHypothesis, ...],
     *,
     sample_population: tuple[ResolvedCanonicalSampleIdentity, ...],
@@ -1048,7 +1048,7 @@ def map_conservative_backfill_candidates(
     *,
     sample: ResolvedCanonicalSampleIdentity,
     candidate_universes: tuple[
-        ConservativeBackfillRecoveryCandidateUniverse,
+        ConservativeBackfillCandidateUniverse,
         ...,
     ],
 ) -> tuple[ConservativeBackfillCellDecision, ...]:
@@ -1080,11 +1080,11 @@ def map_conservative_backfill_candidates(
             "mapping sample is not the exact declared run sample"
         )
     if not isinstance(candidate_universes, tuple) or any(
-        not isinstance(item, ConservativeBackfillRecoveryCandidateUniverse)
+        not isinstance(item, ConservativeBackfillCandidateUniverse)
         for item in candidate_universes
     ):
         raise ConservativeBackfillContractError(
-            "mapping requires typed immutable recovery universe receipts"
+            "mapping requires typed immutable backfill universe receipts"
         )
     sample_id = sample.identity.sample_identity_id
     method_subject_ids = tuple(
@@ -1092,13 +1092,13 @@ def map_conservative_backfill_candidates(
     )
     if len(set(method_subject_ids)) != len(method_subject_ids):
         raise ConservativeBackfillContractError(
-            "one sample×method-subject mapping allows at most one recovery universe "
+            "one sample×method-subject mapping allows at most one backfill universe "
             "receipt"
         )
     for universe in candidate_universes:
         if universe.sample is not sample:
             raise ConservativeBackfillContractError(
-                "recovery universe does not bind the exact mapping sample"
+                "backfill universe does not bind the exact mapping sample"
             )
         matching_facts = tuple(
             fact
@@ -1106,7 +1106,7 @@ def map_conservative_backfill_candidates(
             if _group_method_subject_id(fact) == universe.method_subject_id
         )
         expected_facts = (
-            _canonical_recovery_group_facts(matching_facts) if matching_facts else ()
+            _canonical_backfill_group_facts(matching_facts) if matching_facts else ()
         )
         if len(expected_facts) != len(universe.group_facts) or any(
             expected is not bound
@@ -1117,7 +1117,7 @@ def map_conservative_backfill_candidates(
             )
         ):
             raise ConservativeBackfillContractError(
-                "recovery universe does not bind the exact mapped group set"
+                "backfill universe does not bind the exact mapped group set"
             )
     universes_by_subject = {
         universe.method_subject_id: universe for universe in candidate_universes
@@ -1126,7 +1126,7 @@ def map_conservative_backfill_candidates(
     unknown_subject_ids = set(universes_by_subject).difference(known_subject_ids)
     if unknown_subject_ids:
         raise ConservativeBackfillContractError(
-            "recovery evidence cannot create a first group or method subject"
+            "backfill evidence cannot create a first group or method subject"
         )
 
     target_cells = tuple(
@@ -1136,7 +1136,7 @@ def map_conservative_backfill_candidates(
     active_by_subject: dict[str, list[int]] = {}
     for index, (facts, cell) in enumerate(zip(group_facts, target_cells, strict=True)):
         candidate_universe = universes_by_subject.get(_group_method_subject_id(facts))
-        target_candidates = _recovery_evidence_from_universe(candidate_universe)
+        target_candidates = _backfill_evidence_from_universe(candidate_universe)
         if cell.content.method_result == "SUPPORT":
             decisions[index] = _decision(
                 facts,
@@ -1181,7 +1181,7 @@ def map_conservative_backfill_candidates(
 
     for method_subject_id, indexes in active_by_subject.items():
         candidate_universe = universes_by_subject.get(method_subject_id)
-        target_candidates = _recovery_evidence_from_universe(candidate_universe)
+        target_candidates = _backfill_evidence_from_universe(candidate_universe)
         if len(target_candidates) != len(indexes):
             reason = (
                 "recovery_evidence_missing"
@@ -1468,7 +1468,7 @@ def _exact_mode_track_owner_group_id(
     return cast(str, assignment.group_hypothesis_id)
 
 
-def _canonical_recovery_group_facts(
+def _canonical_backfill_group_facts(
     facts: object,
 ) -> tuple[ConservativeBackfillGroupFacts, ...]:
     if (
@@ -1477,7 +1477,7 @@ def _canonical_recovery_group_facts(
         or any(not isinstance(item, ConservativeBackfillGroupFacts) for item in facts)
     ):
         raise ConservativeBackfillContractError(
-            "recovery universe requires one or more conservative group facts"
+            "backfill universe requires one or more conservative group facts"
         )
     ordered = tuple(
         sorted(
@@ -1491,30 +1491,30 @@ def _canonical_recovery_group_facts(
     )
     if len({id(item.group_context) for item in ordered}) != len(ordered):
         raise ConservativeBackfillContractError(
-            "recovery universe group facts must be unique"
+            "backfill universe group facts must be unique"
         )
     return ordered
 
 
-def _validate_recovery_sample_and_subject(
+def _validate_backfill_sample_and_subject(
     facts: tuple[ConservativeBackfillGroupFacts, ...],
     *,
     sample: ResolvedCanonicalSampleIdentity,
 ) -> None:
     if not isinstance(sample, ResolvedCanonicalSampleIdentity):
         raise ConservativeBackfillContractError(
-            "recovery universe requires an owner-resolved sample"
+            "backfill universe requires an owner-resolved sample"
         )
     method_subject_ids = {_group_method_subject_id(fact) for fact in facts}
     if len(method_subject_ids) != 1:
         raise ConservativeBackfillContractError(
-            "one recovery universe must bind exactly one method subject"
+            "one backfill universe must bind exactly one method subject"
         )
     if any(
         not any(sample is member for member in fact.sample_population) for fact in facts
     ):
         raise ConservativeBackfillContractError(
-            "recovery universe sample is outside its declared group populations"
+            "backfill universe sample is outside its declared group populations"
         )
 
 
@@ -1523,7 +1523,7 @@ def _processing_owner_sample_population(
 ) -> tuple[ResolvedCanonicalSampleIdentity, ...]:
     if not isinstance(processing_owners, ProcessingOwnerReferences):
         raise ConservativeBackfillContractError(
-            "recovery universe requires validated processing owners"
+            "backfill universe requires validated processing owners"
         )
     return _canonical_samples(
         tuple(
@@ -1535,7 +1535,7 @@ def _processing_owner_sample_population(
     )
 
 
-def _validate_recovery_group_populations(
+def _validate_backfill_group_populations(
     facts: tuple[ConservativeBackfillGroupFacts, ...],
     *,
     processing_owners: ProcessingOwnerReferences,
@@ -1554,12 +1554,12 @@ def _validate_recovery_group_populations(
         for fact in facts
     ):
         raise ConservativeBackfillContractError(
-            "recovery group population must close the full processing request"
+            "backfill group population must close the full processing request"
         )
     return owner_population
 
 
-def _canonical_recovery_peaks(
+def _canonical_backfill_peaks(
     peaks: object,
     *,
     sample: ResolvedCanonicalSampleIdentity,
@@ -1568,12 +1568,12 @@ def _canonical_recovery_peaks(
         not isinstance(item, PeakObservationRef) for item in peaks
     ):
         raise ConservativeBackfillContractError(
-            "recovery universe peaks must be immutable PeakObservation references"
+            "backfill universe peaks must be immutable PeakObservation references"
         )
     sample_id = sample.identity.sample_identity_id
     if any(peak.content.canonical_sample_identity_id != sample_id for peak in peaks):
         raise ConservativeBackfillContractError(
-            "recovery universe peak belongs to a different sample"
+            "backfill universe peak belongs to a different sample"
         )
     ordered = tuple(
         sorted(
@@ -1584,12 +1584,12 @@ def _canonical_recovery_peaks(
     peak_ids = tuple(peak.content.peak_observation_content_id for peak in ordered)
     if len(peak_ids) != len(set(peak_ids)):
         raise ConservativeBackfillContractError(
-            "recovery universe cannot contain duplicate physical peaks"
+            "backfill universe cannot contain duplicate physical peaks"
         )
     return ordered
 
 
-def _recovery_universe_upstream_artifacts(
+def _backfill_universe_upstream_artifacts(
     facts: tuple[ConservativeBackfillGroupFacts, ...],
     candidate_assessment: CidNlMethodAssessmentRef,
 ) -> tuple[EvidenceArtifactRef, ...]:
@@ -1601,7 +1601,7 @@ def _recovery_universe_upstream_artifacts(
     return tuple(by_id[artifact_id] for artifact_id in sorted(by_id))
 
 
-def _validate_recovery_candidate_assessment(
+def _validate_backfill_candidate_assessment(
     assessment: object,
     *,
     processing_attempt: ProcessingAttemptIdentity,
@@ -1610,7 +1610,7 @@ def _validate_recovery_candidate_assessment(
 ) -> None:
     if not isinstance(assessment, CidNlMethodAssessmentRef):
         raise ConservativeBackfillContractError(
-            "recovery universe requires an owner-minted method assessment"
+            "backfill universe requires an owner-minted method assessment"
         )
     method_subject_id = _group_method_subject_id(group_facts[0])
     if (
@@ -1619,7 +1619,7 @@ def _validate_recovery_candidate_assessment(
         or assessment.content.method_subject.method_subject_id != method_subject_id
     ):
         raise ConservativeBackfillContractError(
-            "recovery assessment does not bind the exact sample and target-compatible "
+            "backfill assessment does not bind the exact sample and target-compatible "
             "method subject"
         )
     if (
@@ -1629,7 +1629,7 @@ def _validate_recovery_candidate_assessment(
         != processing_attempt.processing_attempt_id
     ):
         raise ConservativeBackfillContractError(
-            "recovery assessment is outside the exact processing attempt"
+            "backfill assessment is outside the exact processing attempt"
         )
     artifacts = (
         assessment.artifact,
@@ -1645,17 +1645,17 @@ def _validate_recovery_candidate_assessment(
         )
     except ValueError as exc:
         raise ConservativeBackfillContractError(
-            "recovery assessment artifact graph is outside the processing attempt"
+            "backfill assessment artifact graph is outside the processing attempt"
         ) from exc
 
 
-def _recovery_evidence_from_universe(
-    universe: ConservativeBackfillRecoveryCandidateUniverse | None,
-) -> tuple[ConservativeBackfillRecoveryEvidence, ...]:
+def _backfill_evidence_from_universe(
+    universe: ConservativeBackfillCandidateUniverse | None,
+) -> tuple[ConservativeBackfillEvidence, ...]:
     if universe is None:
         return ()
     return tuple(
-        ConservativeBackfillRecoveryEvidence(
+        ConservativeBackfillEvidence(
             candidate_universe=universe,
             peak_observation=peak,
         )
@@ -1663,7 +1663,7 @@ def _recovery_evidence_from_universe(
     )
 
 
-def _validate_recovery_cell_attempts(
+def _validate_backfill_cell_attempts(
     facts: tuple[ConservativeBackfillGroupFacts, ...],
     *,
     processing_attempt: ProcessingAttemptIdentity,
@@ -1680,7 +1680,7 @@ def _validate_recovery_cell_attempts(
         for cell in fact.source_cells
     ):
         raise ConservativeBackfillContractError(
-            "recovery group cells are outside the processing attempt lineage"
+            "backfill group cells are outside the processing attempt lineage"
         )
 
 
@@ -1785,7 +1785,7 @@ def _finite_group_center_rt(
 def _candidate_group_mismatch_reason(
     facts: ConservativeBackfillGroupFacts,
     target_cell: CellObservationRef,
-    candidate: ConservativeBackfillRecoveryEvidence,
+    candidate: ConservativeBackfillEvidence,
 ) -> str | None:
     if candidate.method_subject_id != _group_method_subject_id(facts):
         return "like_to_like_rt_mz_mismatch"
@@ -1819,9 +1819,9 @@ def _decision(
     *,
     disposition: ConservativeBackfillDisposition,
     reasons: tuple[str, ...],
-    candidate_universe: ConservativeBackfillRecoveryCandidateUniverse | None = None,
-    candidates: tuple[ConservativeBackfillRecoveryEvidence, ...] = (),
-    matched_candidate: ConservativeBackfillRecoveryEvidence | None = None,
+    candidate_universe: ConservativeBackfillCandidateUniverse | None = None,
+    candidates: tuple[ConservativeBackfillEvidence, ...] = (),
+    matched_candidate: ConservativeBackfillEvidence | None = None,
 ) -> ConservativeBackfillCellDecision:
     return ConservativeBackfillCellDecision(
         group_facts=facts,
@@ -1841,15 +1841,15 @@ __all__ = [
     "ConservativeBackfillContractError",
     "ConservativeBackfillGroupFacts",
     "ModeTrackConservativeBackfillGroupFacts",
-    "ConservativeBackfillRecoveryCandidateUniverse",
-    "ConservativeBackfillRecoveryEvidence",
+    "ConservativeBackfillCandidateUniverse",
+    "ConservativeBackfillEvidence",
     "POLICY_VERSION",
     "assess_conservative_backfill_group",
     "assess_mode_track_conservative_backfill_groups",
     "assess_targeted_conservative_backfill_group",
     "assess_untargeted_conservative_backfill_group",
-    "canonical_conservative_backfill_recovery_universe_bytes",
+    "canonical_conservative_backfill_universe_bytes",
     "map_conservative_backfill_candidates",
     "minimum_direct_support_count",
-    "mint_conservative_backfill_recovery_candidate_universe",
+    "mint_conservative_backfill_candidate_universe",
 ]

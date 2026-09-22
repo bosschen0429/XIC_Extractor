@@ -14,9 +14,9 @@ from typing import Literal, final
 
 from xic_extractor.alignment.cell_observations import CellObservationRef
 from xic_extractor.alignment.conservative_backfill import (
+    ConservativeBackfillCandidateUniverse,
     ConservativeBackfillCellDecision,
     ConservativeBackfillGroupFacts,
-    ConservativeBackfillRecoveryCandidateUniverse,
 )
 from xic_extractor.alignment.cross_sample_peak_groups import (
     CrossSamplePeakGroupHypothesis,
@@ -326,7 +326,7 @@ def mint_split_component_evidence(
     *,
     parent_group: ConservativeBackfillGroupFacts,
     candidate_universes: tuple[
-        ConservativeBackfillRecoveryCandidateUniverse,
+        ConservativeBackfillCandidateUniverse,
         ...,
     ],
     candidate_mapping_decisions: tuple[ConservativeBackfillCellDecision, ...],
@@ -384,7 +384,7 @@ class SplitComponentPartitionEvidence:
 
     parent_group: ConservativeBackfillGroupFacts
     components: tuple[SplitComponentEvidence, ...]
-    candidate_universes: tuple[ConservativeBackfillRecoveryCandidateUniverse, ...]
+    candidate_universes: tuple[ConservativeBackfillCandidateUniverse, ...]
     candidate_mapping_decisions: tuple[ConservativeBackfillCellDecision, ...]
     component_pattern: Literal["single_component", "repeated_multiple_components"]
     evidence_refs: tuple[str, ...]
@@ -409,7 +409,7 @@ def mint_split_component_partition_evidence(
     parent_group: ConservativeBackfillGroupFacts,
     components: tuple[SplitComponentEvidence, ...],
     candidate_universes: tuple[
-        ConservativeBackfillRecoveryCandidateUniverse,
+        ConservativeBackfillCandidateUniverse,
         ...,
     ],
     candidate_mapping_decisions: tuple[ConservativeBackfillCellDecision, ...],
@@ -539,7 +539,7 @@ class SplitLineageDecision:
     identity_settlement: IdentitySettlementDecision
     component_partition: SplitComponentPartitionEvidence
     components: tuple[SplitComponentEvidence, ...]
-    candidate_universes: tuple[ConservativeBackfillRecoveryCandidateUniverse, ...]
+    candidate_universes: tuple[ConservativeBackfillCandidateUniverse, ...]
     evidence_refs: tuple[str, ...]
     parent_superseded: bool
     blocks_parent_backfill: bool
@@ -718,7 +718,7 @@ def _validate_components(
     parent_group: ConservativeBackfillGroupFacts,
     components: tuple[SplitComponentEvidence, ...],
     candidate_universes: tuple[
-        ConservativeBackfillRecoveryCandidateUniverse,
+        ConservativeBackfillCandidateUniverse,
         ...,
     ],
     candidate_mapping_decisions: tuple[ConservativeBackfillCellDecision, ...],
@@ -790,18 +790,18 @@ def _validate_components(
 
 def _validate_candidate_universes(
     candidate_universes: tuple[
-        ConservativeBackfillRecoveryCandidateUniverse,
+        ConservativeBackfillCandidateUniverse,
         ...,
     ],
-) -> tuple[ConservativeBackfillRecoveryCandidateUniverse, ...]:
+) -> tuple[ConservativeBackfillCandidateUniverse, ...]:
     if not isinstance(candidate_universes, tuple) or any(
-        not isinstance(universe, ConservativeBackfillRecoveryCandidateUniverse)
+        not isinstance(universe, ConservativeBackfillCandidateUniverse)
         for universe in candidate_universes
     ):
         raise ValueError("candidate universes must be owner-bound Backfill receipts")
     if candidate_universes:
         raise ValueError(
-            "identity-settlement recovery candidate membership requires an "
+            "identity-settlement backfill candidate membership requires an "
             "owner-backed complete "
             "same-target group universe"
         )

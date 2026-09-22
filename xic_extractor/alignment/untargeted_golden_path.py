@@ -23,13 +23,13 @@ from xic_extractor.alignment.cid_nl_evidence_spine import (
 )
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.conservative_backfill import (
+    ConservativeBackfillCandidateUniverse,
     ConservativeBackfillCellDecision,
     ConservativeBackfillGroupFacts,
-    ConservativeBackfillRecoveryCandidateUniverse,
     ModeTrackConservativeBackfillGroupFacts,
     assess_untargeted_conservative_backfill_group,
     map_conservative_backfill_candidates,
-    mint_conservative_backfill_recovery_candidate_universe,
+    mint_conservative_backfill_candidate_universe,
 )
 from xic_extractor.alignment.matrix_output_contract import canonical_mz_text
 from xic_extractor.alignment.mode_track import (
@@ -136,7 +136,7 @@ class UntargetedCidNlAssessmentInput:
 
 
 @dataclass(frozen=True, slots=True)
-class UntargetedCidNlRecoveryInput:
+class UntargetedCidNlBackfillInput:
     """One eligible missing cell's complete owner-backed revisit assessment."""
 
     sample: ResolvedCanonicalSampleIdentity
@@ -145,25 +145,25 @@ class UntargetedCidNlRecoveryInput:
     def __post_init__(self) -> None:
         if not isinstance(self.sample, ResolvedCanonicalSampleIdentity):
             raise UntargetedCidNlGoldenPathError(
-                "recovery input requires an owner-resolved canonical sample"
+                "backfill input requires an owner-resolved canonical sample"
             )
         if not isinstance(self.candidate_assessment, CidNlMethodAssessmentRef):
             raise UntargetedCidNlGoldenPathError(
-                "recovery input requires an owner-backed assessment"
+                "backfill input requires an owner-backed assessment"
             )
         if self.candidate_assessment.content.canonical_sample_identity_id != (
             self.sample.identity.sample_identity_id
         ):
             raise UntargetedCidNlGoldenPathError(
-                "recovery assessment references a different sample"
+                "backfill assessment references a different sample"
             )
         if self.candidate_assessment.content.method_result != "HOLD":
             raise UntargetedCidNlGoldenPathError(
-                "recovery input must be a completed HOLD assessment"
+                "backfill input must be a completed HOLD assessment"
             )
         if not self.candidate_assessment.candidate_peaks:
             raise UntargetedCidNlGoldenPathError(
-                "recovery input must retain its complete non-empty candidate universe"
+                "backfill input must retain its complete non-empty candidate universe"
             )
 
 
@@ -177,8 +177,8 @@ class UntargetedCidNlGoldenPathProjection:
     spine: CidNlReferenceSpine
     backfill_facts: ConservativeBackfillGroupFacts
     backfill_decisions: tuple[ConservativeBackfillCellDecision, ...]
-    recovery_universes: tuple[
-        ConservativeBackfillRecoveryCandidateUniverse,
+    backfill_universes: tuple[
+        ConservativeBackfillCandidateUniverse,
         ...,
     ]
     matrix_header: tuple[str, ...]
@@ -253,7 +253,7 @@ def build_untargeted_cid_nl_golden_path(
     processing_owners: ProcessingOwnerReferences,
     method_subject: CidNlMethodSubject,
     sample_inputs: tuple[UntargetedCidNlAssessmentInput, ...],
-    recovery_inputs: tuple[UntargetedCidNlRecoveryInput, ...] = (),
+    backfill_inputs: tuple[UntargetedCidNlBackfillInput, ...] = (),
     source_artifact_relpath: str,
 ) -> UntargetedCidNlGoldenPathProjection:
     """Prepare one exact Untargeted group and its manifest-gated Matrix inputs."""
@@ -314,32 +314,32 @@ def build_untargeted_cid_nl_golden_path(
         raise UntargetedCidNlGoldenPathError(
             "golden path requires one canonical cell for every request sample"
         )
-    recoveries = _canonical_recovery_inputs(
-        recovery_inputs,
+    backfills = _canonical_backfill_inputs(
+        backfill_inputs,
         processing_owners=processing_owners,
         method_subject=method_subject,
     )
     cell_by_sample_id = {
         cell.content.canonical_sample_identity_id: cell for cell in spine.cells
     }
-    universes: list[ConservativeBackfillRecoveryCandidateUniverse] = []
-    universe_by_sample_id: dict[str, ConservativeBackfillRecoveryCandidateUniverse] = {}
-    for recovery in recoveries:
-        sample_id = recovery.sample.identity.sample_identity_id
+    universes: list[ConservativeBackfillCandidateUniverse] = []
+    universe_by_sample_id: dict[str, ConservativeBackfillCandidateUniverse] = {}
+    for backfill in backfills:
+        sample_id = backfill.sample.identity.sample_identity_id
         cell = cell_by_sample_id[sample_id]
         if not (
             cell.content.method_result == "HOLD"
             or is_unsearched_cid_nl_discovery_assessment(cell.method_assessment)
         ):
             raise UntargetedCidNlGoldenPathError(
-                "bounded recovery requires an existing HOLD "
+                "bounded backfill requires an existing HOLD "
                 "or unsearched Discovery cell"
             )
-        universe = mint_conservative_backfill_recovery_candidate_universe(
+        universe = mint_conservative_backfill_candidate_universe(
             processing_owners=processing_owners,
-            sample=recovery.sample,
+            sample=backfill.sample,
             group_facts=(facts,),
-            candidate_assessment=recovery.candidate_assessment,
+            candidate_assessment=backfill.candidate_assessment,
         )
         universes.append(universe)
         universe_by_sample_id[sample_id] = universe
@@ -487,7 +487,7 @@ def build_untargeted_cid_nl_golden_path(
         spine=spine,
         backfill_facts=facts,
         backfill_decisions=decisions,
-        recovery_universes=tuple(universes),
+        backfill_universes=tuple(universes),
         matrix_header=matrix_header,
         input_quant_matrix_rows=_freeze_rows((matrix_row,)),
         input_matrix_identity_rows=_freeze_rows((identity_row,)),
@@ -787,36 +787,36 @@ def _canonical_sample_inputs(
     return tuple(by_sample_id[sample_id] for sample_id in sorted(by_sample_id))
 
 
-def _canonical_recovery_inputs(
+def _canonical_backfill_inputs(
     value: object,
     *,
     processing_owners: ProcessingOwnerReferences,
     method_subject: CidNlMethodSubject,
-) -> tuple[UntargetedCidNlRecoveryInput, ...]:
+) -> tuple[UntargetedCidNlBackfillInput, ...]:
     if not isinstance(value, tuple) or any(
-        not isinstance(item, UntargetedCidNlRecoveryInput) for item in value
+        not isinstance(item, UntargetedCidNlBackfillInput) for item in value
     ):
         raise UntargetedCidNlGoldenPathError(
-            "recovery_inputs must be an immutable tuple"
+            "backfill_inputs must be an immutable tuple"
         )
     owner_sample_ids = {
         sample.identity.sample_identity_id
         for sample in processing_owners.sample_resolutions
     }
-    by_sample_id: dict[str, UntargetedCidNlRecoveryInput] = {}
+    by_sample_id: dict[str, UntargetedCidNlBackfillInput] = {}
     for item in value:
         sample_id = item.sample.identity.sample_identity_id
         if sample_id not in owner_sample_ids:
             raise UntargetedCidNlGoldenPathError(
-                "recovery input sample is outside the processing request"
+                "backfill input sample is outside the processing request"
             )
         if sample_id in by_sample_id:
             raise UntargetedCidNlGoldenPathError(
-                "one sample may provide at most one recovery candidate universe"
+                "one sample may provide at most one backfill candidate universe"
             )
         if item.candidate_assessment.content.method_subject != method_subject:
             raise UntargetedCidNlGoldenPathError(
-                "recovery assessment references a different method subject"
+                "backfill assessment references a different method subject"
             )
         by_sample_id[sample_id] = item
     return tuple(by_sample_id[sample_id] for sample_id in sorted(by_sample_id))
@@ -851,12 +851,12 @@ def _direct_support_area(cell) -> str:
 def _mapped_backfill_area(decision: ConservativeBackfillCellDecision) -> str:
     if decision.disposition != "candidate_mapped":
         raise UntargetedCidNlGoldenPathError(
-            "only candidate_mapped recovery may prepare a numeric Backfill value"
+            "only candidate_mapped backfill may prepare a numeric Backfill value"
         )
     candidate = decision.matched_candidate
     if candidate is None:
         raise UntargetedCidNlGoldenPathError(
-            "candidate_mapped recovery lost its exact physical observation"
+            "candidate_mapped backfill lost its exact physical observation"
         )
     return _format_number(
         candidate.peak_observation.content.integration.area_raw_counts_seconds
@@ -1174,7 +1174,7 @@ __all__ = [
     "UntargetedCidNlGoldenPathError",
     "UntargetedCidNlGoldenPathProjection",
     "UntargetedCidNlModeTrackProjection",
-    "UntargetedCidNlRecoveryInput",
+    "UntargetedCidNlBackfillInput",
     "VALIDATION_STATUS",
     "build_untargeted_cid_nl_golden_path",
     "build_untargeted_cid_nl_mode_track_projection",

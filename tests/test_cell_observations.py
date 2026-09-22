@@ -334,7 +334,7 @@ def test_recovery_evidence_stays_with_its_group_when_peer_has_no_input(
     assert len(groups) == 2
     recovered_group = min(groups, key=lambda group: group.family_center_rt)
     recovered_peak = cid_nl_peak(fixture, "Third", apex_rt=8.0)
-    recovery_assessment = mint_cid_nl_method_assessment_ref(
+    backfill_assessment = mint_cid_nl_method_assessment_ref(
         processing_owners=fixture.owners,
         sample=recovered_sample,
         method_subject=fixture.method_subject,
@@ -342,17 +342,17 @@ def test_recovery_evidence_stays_with_its_group_when_peer_has_no_input(
         evaluation_receipt=_completed_receipt(scanned_event_count=0),
         candidate_peaks=(recovered_peak,),
     )
-    assert recovery_assessment.content.method_result == "HOLD"
+    assert backfill_assessment.content.method_result == "HOLD"
     cells = cell_owner.compose_cid_nl_predecessor_cells(
         processing_owners=fixture.owners,
         groups=groups,
         sample_assessments=((initial_sample, initial_assessment),),
-        recovery_assessments_by_group={
+        backfill_assessments_by_group={
             (
                 recovered_group.group_hypothesis_id,
                 recovered_sample.identity.sample_identity_id,
                 fixture.method_subject.method_subject_id,
-            ): (recovered_sample, recovery_assessment)
+            ): (recovered_sample, backfill_assessment)
         },
         alignment_config=CID_NL_ALIGNMENT_CONFIG,
     )

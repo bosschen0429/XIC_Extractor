@@ -12,18 +12,18 @@ transport contract or let writers recompute science.
 
 The bounded production entry creates initial jobs only for sample/subject pairs
 with Discovery candidates. One shared template per sample retains the complete
-sample population and acquisition settings. Recovery creates a missing pair's
+sample population and acquisition settings. Backfill creates a missing pair's
 job only after a direct-SUPPORT group meets the population support threshold.
 Unsearched pairs receive their method assessment during final cell composition,
 without a worker dispatch or a runtime sample-result artifact. The direct batch
 interface retains its declared, complete job manifest.
 
-Acquisition recovery planning uses direct-SUPPORT group membership and the
+Acquisition backfill planning uses direct-SUPPORT group membership and the
 eligible sample population to apply the conservative support threshold. It
 does not construct a dense group-by-sample CellObservation population merely
 to decide which missing samples to search. Cell evidence and quantitation
 remain responsibilities of the later composition stage.
-Process recovery requests contain only subjects with scheduled searches;
+Process backfill requests contain only subjects with scheduled searches;
 responses use work-unit keys to update those subjects while retaining the
 other subjects' initial results.
 
@@ -97,37 +97,37 @@ groups directly into the same result without model fitting or assignment.
 Initial candidates retain their request, sample, acquisition, physical-
 hypothesis, integration, and evidence bindings.
 
-Initial members stay in their original groups through bounded recovery.
-A group-bound recovery with unique SUPPORT may add a missing sample member
+Initial members stay in their original groups through bounded backfill.
+A group-bound backfill with unique SUPPORT may add a missing sample member
 when it passes the existing feature evidence rule. The grouping owner records
 the admitted member and exact predecessor/successor lineage; it does not refit,
 move original members, split known ISTD bindings, or create new groups.
 Competing claims on the same physical content remain unresolved and supply no
 numeric value. Final cells retain the original cell for provenance and the
-completed recovery assessment/observation for the final decision and integral.
+completed backfill assessment/observation for the final decision and integral.
 Cell evidence uses `cell_observation_v2` and final-cell canonical bases use
-`final_group_cell_observation_v2` to bind unresolved SUPPORT and recovery
+`final_group_cell_observation_v2` to bind unresolved SUPPORT and backfill
 provenance explicitly. Old diagnostic evidence remains historical; acquisition
 cache facts do not depend on these cell schemas.
 
 The production CID-NL runtime prepares that result after initial assessments,
 once per compatible subject workset, using the complete sample population and
-the supplied known-ISTD context. Recovery eligibility counts distinct supporting
+the supplied known-ISTD context. Backfill eligibility counts distinct supporting
 samples across the frozen group, including compatible subjects. It does not
 regroup each method subject separately. Missing sample jobs are created only
 after this eligibility decision; dense cells are assembled during final
-composition. Recovery attempts bind the group ID to their sample and method
+composition. Backfill attempts bind the group ID to their sample and method
 subject in the runtime result. RT bounds describe the acquisition query rather
 than identify the destination group. The direct production API therefore takes
 its alignment configuration and known-ISTD reference at execution time;
 composition cannot replace that grouping context.
 The acquisition boundary canonicalizes repeated or unordered subject/RT
 queries. Different groups may reuse the same physical trace while retaining
-separate group-bound recovery attempts and decisions.
+separate group-bound backfill attempts and decisions.
 
 Initial grouping uses the sparse feature index described below. It scores only
 compatible feature candidates and retains the evaluated evidence. Missing pair
-records mean `not_evaluated`; they do not prove incompatibility. Recovery checks
+records mean `not_evaluated`; they do not prove incompatibility. Backfill checks
 its observation against the fixed destination group before admission.
 
 Before scoring, a feature candidate must have a seed or most-recent witness
@@ -293,9 +293,9 @@ unresolved and rejected groups remain AuditTrail facts.
   SearchScope preserves request-bound provider and candidate membership; it
   does not re-partition an upstream workset using resolver intervals alone.
 - A cross-subject group retains each SUPPORT cell's exact assessment and
-  hypothesis binding. Its canonical recovery subject is the supporting subject
+  hypothesis binding. Its canonical backfill subject is the supporting subject
   nearest the formal group center, with method-subject ID breaking ties.
-  Missing/non-support cells and recovery jobs use that exact recovery subject;
+  Missing/non-support cells and backfill jobs use that exact backfill subject;
   support from another subject is admissible only through the group's exact
   owner-backed support binding. Matrix rows consume these completed groups and
   cells; writers do not merge subjects or invent cross-subject values.
@@ -512,14 +512,14 @@ receipt. H1b settlement, split lineage, and same-identity aggregation must all
 reuse that exact receipt; a settlement cannot be replayed against a stale,
 partial, expanded, or repartitioned component set.
 
-The current Backfill recovery receipt does not prove that caller-supplied group facts
+The current Backfill backfill receipt does not prove that caller-supplied group facts
 are the complete same-target parent universe (tracked as #156 gap 10). The
 identity-settlement owner therefore accepts only exact direct SUPPORT observations from its parent group;
-any non-empty recovery candidate universe fails closed before component
+any non-empty backfill candidate universe fails closed before component
 membership. A receipt's declared parent count, explicit identity-settlement
 membership label, or Backfill mapping result cannot substitute for the missing
 complete-group owner. This
-is a deliberate shadow-capability narrowing: recovery candidate membership
+is a deliberate shadow-capability narrowing: backfill candidate membership
 remains scientifically uncertain until that upstream contract exists.
 
 Repeated components disfavor the one-component model but do not prove `H2`.

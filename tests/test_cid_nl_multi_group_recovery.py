@@ -24,7 +24,7 @@ from xic_extractor.alignment.cross_sample_neighborhood_graph import (
 )
 from xic_extractor.alignment.grouping_result import CrossSampleGroupingResult
 from xic_extractor.alignment.grouping_workflow import (
-    admit_cid_nl_group_recoveries,
+    admit_cid_nl_group_backfills,
 )
 from xic_extractor.alignment.untargeted_finalized_matrix import (
     project_completed_untarget_batch_writer_inputs,
@@ -44,7 +44,7 @@ from xic_extractor.extraction.untargeted_cid_nl_real_data_inputs import (
 from xic_extractor.extraction.untargeted_cid_nl_real_data_runtime import (
     UntargetedCidNlRealDataRuntimeJob,
     execute_untargeted_cid_nl_real_data_runtime,
-    project_untargeted_cid_nl_completed_recovery,
+    project_untargeted_cid_nl_completed_backfill,
 )
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     mint_untargeted_cid_nl_method_subject,
@@ -168,7 +168,7 @@ def test_rejected_initial_evidence_gets_one_independent_bounded_assessment(
     )
     if outcome == "support":
         assert decision.write_matrix_value and decision.matrix_value > 0
-        (recovery,) = rejected.recovery_attempts
+        (recovery,) = rejected.backfill_attempts
         assert recovery.assessment.content.method_result == "SUPPORT"
         assert recovery.assessment in completed.method_assessments
         assert recovery.assessment is not initial
@@ -228,13 +228,13 @@ def test_rejected_initial_evidence_gets_one_independent_bounded_assessment(
         )
 
         from xic_extractor.extraction.untargeted_cid_nl_real_data_adapter import (
-            recover_untargeted_cid_nl_sample_subject,
+            backfill_untargeted_cid_nl_sample_subject,
         )
 
         # An immutable assessment from another sample/source cannot authorize
         # the new relation, even when its method and coordinates look identical.
         with pytest.raises(ValueError, match="sample|acquisition"):
-            recover_untargeted_cid_nl_sample_subject(
+            backfill_untargeted_cid_nl_sample_subject(
                 processing_owners=batch.context.processing_owners,
                 sample=batch.context.sample("S1"),
                 method_subject=initial.content.method_subject,
@@ -245,7 +245,7 @@ def test_rejected_initial_evidence_gets_one_independent_bounded_assessment(
                 initial_assessment=initial,
             )
         with pytest.raises(ValueError, match="support policy"):
-            recover_untargeted_cid_nl_sample_subject(
+            backfill_untargeted_cid_nl_sample_subject(
                 processing_owners=batch.context.processing_owners,
                 sample=rejected.job.sample,
                 method_subject=initial.content.method_subject,
@@ -259,12 +259,12 @@ def test_rejected_initial_evidence_gets_one_independent_bounded_assessment(
                 initial_assessment=initial,
             )
     elif outcome == "empty":
-        (recovery,) = rejected.recovery_attempts
+        (recovery,) = rejected.backfill_attempts
         assert recovery.assessment.content.method_result == "HOLD"
         assert not recovery.assessment.candidate_peaks
         assert not decision.write_matrix_value and decision.matrix_value is None
     else:
-        assert rejected.recovery_attempts == ()
+        assert rejected.backfill_attempts == ()
         assert not decision.write_matrix_value and decision.matrix_value is None
     assert recovery_calls == (
         [] if outcome in {"blank", "below-quorum"} else ["Rejected"]
@@ -429,17 +429,17 @@ def test_runtime_recovers_every_authorized_rt_group(
     assert len(canonical_calls) == len(set(canonical_calls))
     for sample_result in result.sample_results:
         acquisition = (
-            sample_result.recovery_attempts[0].acquisition
-            if sample_result.recovery_attempts
+            sample_result.backfill_attempts[0].acquisition
+            if sample_result.backfill_attempts
             else sample_result.adapter_result.acquisition
         )
         assert sample_result.result_ref == (
             runtime_owner.mint_untargeted_cid_nl_sample_result_ref(
                 job=sample_result.job,
                 result=sample_result.adapter_result,
-                recovery_input=sample_result.recovery_input,
-                recovery_attempt=None,
-                recovery_attempts=sample_result.recovery_attempts,
+                backfill_input=sample_result.backfill_input,
+                backfill_attempt=None,
+                backfill_attempts=sample_result.backfill_attempts,
                 acquisition=acquisition,
             )
         )
@@ -451,29 +451,29 @@ def test_runtime_recovers_every_authorized_rt_group(
     assert sum(
         sum(raw.chromatogram_request_counts) for raw in opened.get(paths[-1], ())
     ) == len(authorized_centers)
-    assert len(missing.recovery_attempts) == len(authorized_centers)
+    assert len(missing.backfill_attempts) == len(authorized_centers)
     assert sorted(
-        len(attempt.assessment.candidate_peaks) for attempt in missing.recovery_attempts
+        len(attempt.assessment.candidate_peaks) for attempt in missing.backfill_attempts
     ) == sorted(int(center in recovery_peaks) for center in authorized_centers)
     assert missing.result_ref.recovery_candidate_count == sum(
         center in recovery_peaks for center in authorized_centers
     )
     assert missing.result_ref.recovery_assessment_artifact_ids == tuple(
         attempt.assessment.artifact.evidence_artifact_id
-        for attempt in missing.recovery_attempts
+        for attempt in missing.backfill_attempts
     )
     for center, attempt in zip(
-        authorized_centers, missing.recovery_attempts, strict=True
+        authorized_centers, missing.backfill_attempts, strict=True
     ):
-        assert missing.recovery_for_group(center) is attempt
+        assert missing.backfill_for_group(center) is attempt
         receipt = attempt.assessment.content.evaluation_receipt
         assert (receipt.query_rt_min, receipt.query_rt_max) == (
             center - peak_config.nl_rt_anchor_half_window_min,
             center + peak_config.nl_rt_anchor_half_window_min,
         )
     if len(authorized_centers) > 1:
-        with pytest.raises(ValueError, match="multiple recovery attempts"):
-            _ = missing.recovery_attempt
+        with pytest.raises(ValueError, match="multiple backfill attempts"):
+            _ = missing.backfill_attempt
     if batched:
         canonical_calls.clear()
         completed = compose_untargeted_cid_nl_production_result(
@@ -497,12 +497,12 @@ def test_runtime_recovers_every_authorized_rt_group(
             assert len(successors) == 1
         recovery_is_support = all(
             attempt.assessment.content.method_result == "SUPPORT"
-            for attempt in missing.recovery_attempts
+            for attempt in missing.backfill_attempts
         )
         if recovery_peaks == (8.0, 12.0) and shared_support == "separate":
             assert recovery_is_support, tuple(
                 attempt.assessment.content.method_result
-                for attempt in missing.recovery_attempts
+                for attempt in missing.backfill_attempts
             )
         if (
             recovery_peaks == (8.0, 12.0)
@@ -552,7 +552,7 @@ def test_runtime_recovers_every_authorized_rt_group(
                     missing.job.method_subject.method_subject_id,
                 ): (
                     missing.job.sample,
-                    missing.recovery_for_group(
+                    missing.backfill_for_group(
                         next(
                             source.group_context.group.group_center_rt
                             for cell in missing_cells
@@ -567,16 +567,16 @@ def test_runtime_recovers_every_authorized_rt_group(
                 )
                 for group in transition.predecessors
             }
-            forward = admit_cid_nl_group_recoveries(
+            forward = admit_cid_nl_group_backfills(
                 result=initial_result,
                 groups=initial_groups,
-                recoveries=bound_recoveries,
+                backfills=bound_recoveries,
                 alignment_config=AlignmentConfig(anchor_min_seed_events=1),
             )
-            reverse = admit_cid_nl_group_recoveries(
+            reverse = admit_cid_nl_group_backfills(
                 result=initial_result,
                 groups=tuple(reversed(initial_groups)),
-                recoveries=dict(reversed(tuple(bound_recoveries.items()))),
+                backfills=dict(reversed(tuple(bound_recoveries.items()))),
                 alignment_config=AlignmentConfig(anchor_min_seed_events=1),
             )
 
@@ -636,16 +636,16 @@ def test_runtime_recovers_every_authorized_rt_group(
                     missing.job.method_subject.method_subject_id,
                 ): shared_recovery,
             }
-            rejected = admit_cid_nl_group_recoveries(
+            rejected = admit_cid_nl_group_backfills(
                 result=initial_result,
                 groups=initial_groups,
-                recoveries=ambiguous,
+                backfills=ambiguous,
                 alignment_config=AlignmentConfig(anchor_min_seed_events=1),
             )
-            rejected_reverse = admit_cid_nl_group_recoveries(
+            rejected_reverse = admit_cid_nl_group_backfills(
                 result=initial_result,
                 groups=tuple(reversed(initial_groups)),
-                recoveries=dict(reversed(tuple(ambiguous.items()))),
+                backfills=dict(reversed(tuple(ambiguous.items()))),
                 alignment_config=AlignmentConfig(anchor_min_seed_events=1),
             )
             assert len(rejected[0].partition_transition.admitted_members) == 1
@@ -685,7 +685,7 @@ def test_runtime_recovers_every_authorized_rt_group(
                     else None
                 )
             recovery = (
-                missing.recovery_for_group(center) if center is not None else None
+                missing.backfill_for_group(center) if center is not None else None
             )
             if recovery is None:
                 assert cell.evidence_states == ("not_searched",)
@@ -713,17 +713,17 @@ def test_runtime_recovers_every_authorized_rt_group(
                         cell.recovery_cell.method_assessment is recovery.assessment
                     )
                     recovery_context = cell.recovery_cell.group_context
-                completion = project_untargeted_cid_nl_completed_recovery(
+                completion = project_untargeted_cid_nl_completed_backfill(
                     missing, group_context=recovery_context
                 )
                 assert (
-                    projection_context.project_completed_recovery(
+                    projection_context.project_completed_backfill(
                         missing, group_context=recovery_context
                     )
                     == completion
                 )
                 with pytest.raises(ValueError, match="exact runtime batch job"):
-                    projection_context.project_completed_recovery(
+                    projection_context.project_completed_backfill(
                         replace(missing, job=replace(missing.job)),
                         group_context=recovery_context,
                     )
@@ -733,18 +733,18 @@ def test_runtime_recovers_every_authorized_rt_group(
                 changed_trace.intensity[0] += 1.0
                 changed_recoveries = tuple(
                     replace(attempt, acquisition=changed_acquisition)
-                    for attempt in missing.recovery_attempts
+                    for attempt in missing.backfill_attempts
                 )
                 with pytest.raises(ValueError, match="sealed runtime result"):
-                    project_untargeted_cid_nl_completed_recovery(
-                        replace(missing, recovery_attempts=changed_recoveries),
+                    project_untargeted_cid_nl_completed_backfill(
+                        replace(missing, backfill_attempts=changed_recoveries),
                         group_context=recovery_context,
                     )
-                assert completion.recovery_assessment is recovery.assessment
-                if len(missing.recovery_attempts) > 1:
+                assert completion.backfill_assessment is recovery.assessment
+                if len(missing.backfill_attempts) > 1:
                     with pytest.raises(ValueError, match="sealed runtime result"):
-                        project_untargeted_cid_nl_completed_recovery(
-                            replace(missing, recovery_attempts=(recovery,)),
+                        project_untargeted_cid_nl_completed_backfill(
+                            replace(missing, backfill_attempts=(recovery,)),
                             group_context=recovery_context,
                         )
                     with pytest.raises(ValueError):
@@ -785,7 +785,7 @@ def test_runtime_recovers_every_authorized_rt_group(
         expected_assessments.update(
             attempt.assessment
             for item in result.sample_results
-            for attempt in item.recovery_attempts
+            for attempt in item.backfill_attempts
         )
         assert set(completed.method_assessments) == expected_assessments
 
@@ -938,18 +938,18 @@ def test_shared_physical_recovery_claim_is_not_assigned_to_two_groups(
     completed = compose_untargeted_cid_nl_production_result(
         batch, result, alignment_config=AlignmentConfig(anchor_min_seed_events=1)
     )
-    assert len(missing.recovery_attempts) == 2, (
+    assert len(missing.backfill_attempts) == 2, (
         missing.result_ref.recovery_candidate_count,
         len(completed.initial_groups),
         tuple(group.group_center_rt for group in completed.initial_groups),
     )
     assert all(
         attempt.assessment.content.method_result == "SUPPORT"
-        for attempt in missing.recovery_attempts
+        for attempt in missing.backfill_attempts
     )
     physical_ids = tuple(
         attempt.assessment.candidate_peaks[0].content.peak_observation_content_id
-        for attempt in missing.recovery_attempts
+        for attempt in missing.backfill_attempts
     )
     assert physical_ids[0] == physical_ids[1]
 
@@ -1009,7 +1009,7 @@ def _assert_alignment_uses_configured_recovery_groups(
             for item in result.sample_results
             if item.job.sample.metadata.raw_stem == "Missing"
         )
-        (recovery,) = missing.recovery_attempts
+        (recovery,) = missing.backfill_attempts
         receipt = recovery.assessment.content.evaluation_receipt
         half_window = peak_config.nl_rt_anchor_half_window_min
         assert (receipt.query_rt_min, receipt.query_rt_max) == (
@@ -1050,7 +1050,7 @@ def _assert_alignment_uses_configured_recovery_groups(
         for item in runtime_results[0].sample_results
         if item.job.sample.metadata.raw_stem == "Missing"
     )
-    (recovery,) = missing.recovery_attempts
+    (recovery,) = missing.backfill_attempts
     assert recovery.assessment.candidate_peaks == ()
     (child,) = completed.application_result.children
     missing_cells = tuple(

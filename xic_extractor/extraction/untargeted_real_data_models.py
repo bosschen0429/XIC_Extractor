@@ -13,9 +13,9 @@ from types import MappingProxyType
 
 from xic_extractor.acquisition_contract import AcquiredTrace, TraceAcquisitionBatch
 from xic_extractor.alignment.backfill.evaluation_coverage import (
-    _COMPLETED_RECOVERY_CONTRACT,
+    _COMPLETED_BACKFILL_CONTRACT,
     OwnerBackfillCompletedRecoveryProjection,
-    _completed_recovery_projection_bytes,
+    _completed_backfill_projection_bytes,
 )
 from xic_extractor.alignment.cell_observations import CidNlCellGroupContext
 from xic_extractor.alignment.config import AlignmentConfig
@@ -27,7 +27,7 @@ from xic_extractor.alignment.grouping_result import CrossSampleGroupingResult
 from xic_extractor.alignment.mode_track.assignment import ModeTrackCandidateObservation
 from xic_extractor.alignment.mode_track.assignment_scope import ModeTrackAssignmentScope
 from xic_extractor.alignment.untargeted_cid_nl_golden_path import (
-    UntargetedCidNlRecoveryInput,
+    UntargetedCidNlBackfillInput,
 )
 from xic_extractor.alignment.workflow import (
     CaptureWorkflowArguments,
@@ -54,8 +54,8 @@ from xic_extractor.extraction.targeted_inputs import (
     TARGETED_SCIENTIFIC_SETTING_FIELDS,
 )
 from xic_extractor.extraction.untargeted_cid_nl_real_data_adapter import (
+    UntargetedCidNlBackfillAttemptResult,
     UntargetedCidNlRealDataAdapterResult,
-    UntargetedCidNlRecoveryAttemptResult,
     _bounded_subject_candidates,
 )
 from xic_extractor.extraction.untargeted_cid_nl_real_data_inputs import (
@@ -423,7 +423,7 @@ class UntargetedCidNlSampleResultRef:
 
 @dataclass(frozen=True, slots=True)
 class UntargetedCidNlInitialSampleResult:
-    """Initial evidence available before recovery and runtime result sealing."""
+    """Initial evidence available before backfill and runtime result sealing."""
 
     job: UntargetedCidNlRealDataRuntimeJob
     adapter_result: UntargetedCidNlRealDataAdapterResult
@@ -459,40 +459,40 @@ class UntargetedCidNlRuntimeSampleResult:
     job: UntargetedCidNlRealDataRuntimeJob
     adapter_result: UntargetedCidNlRealDataAdapterResult
     result_ref: UntargetedCidNlSampleResultRef
-    recovery_input: UntargetedCidNlRecoveryInput | None = None
-    recovery_attempts: tuple[UntargetedCidNlRecoveryAttemptResult, ...] = ()
+    backfill_input: UntargetedCidNlBackfillInput | None = None
+    backfill_attempts: tuple[UntargetedCidNlBackfillAttemptResult, ...] = ()
 
     @property
-    def recovery_attempt(self) -> UntargetedCidNlRecoveryAttemptResult | None:
-        if len(self.recovery_attempts) > 1:
+    def backfill_attempt(self) -> UntargetedCidNlBackfillAttemptResult | None:
+        if len(self.backfill_attempts) > 1:
             raise UntargetedCidNlRealDataRuntimeError(
-                "multiple recovery attempts require group selection"
+                "multiple backfill attempts require group selection"
             )
-        return self.recovery_attempts[0] if self.recovery_attempts else None
+        return self.backfill_attempts[0] if self.backfill_attempts else None
 
     @property
     def effective_assessments(self) -> tuple[CidNlMethodAssessmentRef, ...]:
         return (self.adapter_result.assessment_input.assessment,) + tuple(
-            attempt.assessment for attempt in self.recovery_attempts
+            attempt.assessment for attempt in self.backfill_attempts
         )
 
     @property
     def effective_assessment(self) -> CidNlMethodAssessmentRef:
-        recovery = self.recovery_attempt
+        backfill = self.backfill_attempt
         return (
-            recovery.assessment
-            if recovery is not None
+            backfill.assessment
+            if backfill is not None
             else self.adapter_result.assessment_input.assessment
         )
 
-    def recovery_for_group(
+    def backfill_for_group(
         self, center: float, *, group_hypothesis_id: str | None = None
-    ) -> UntargetedCidNlRecoveryAttemptResult | None:
-        bound = any(a.group_hypothesis_id is not None for a in self.recovery_attempts)
+    ) -> UntargetedCidNlBackfillAttemptResult | None:
+        bound = any(a.group_hypothesis_id is not None for a in self.backfill_attempts)
         if bound:
             matches = tuple(
                 attempt
-                for attempt in self.recovery_attempts
+                for attempt in self.backfill_attempts
                 if group_hypothesis_id is not None
                 and attempt.group_hypothesis_id == group_hypothesis_id
             )
@@ -501,7 +501,7 @@ class UntargetedCidNlRuntimeSampleResult:
             half_window = self.job.peak_config.nl_rt_anchor_half_window_min
             matches = tuple(
                 attempt
-                for attempt in self.recovery_attempts
+                for attempt in self.backfill_attempts
                 if attempt.assessment.content.evaluation_receipt.query_rt_min
                 == max(0.0, center - half_window)
                 and attempt.assessment.content.evaluation_receipt.query_rt_max
@@ -509,49 +509,49 @@ class UntargetedCidNlRuntimeSampleResult:
             )
         if len(matches) > 1:
             raise UntargetedCidNlRealDataRuntimeError(
-                "group has duplicate recovery attempts"
+                "group has duplicate backfill attempts"
             )
         return matches[0] if matches else None
 
 
-def project_untargeted_cid_nl_completed_recovery(
+def project_untargeted_cid_nl_completed_backfill(
     result: UntargetedCidNlRuntimeSampleResult,
     *,
     group_context: CidNlCellGroupContext,
 ) -> OwnerBackfillCompletedRecoveryProjection:
-    """Project an existing completed empty recovery without executing it again."""
+    """Project an existing completed empty backfill without executing it again."""
     if type(result) is not UntargetedCidNlRuntimeSampleResult:
-        raise UntargetedCidNlRealDataRuntimeError("recovery requires a runtime result")
+        raise UntargetedCidNlRealDataRuntimeError("backfill requires a runtime result")
     replace(result.job)
     replace(group_context)
-    projection = _project_completed_recovery(
+    projection = _project_completed_backfill(
         result,
         group_context=group_context,
         exact_traces=_exact_acquisition_traces,
     )
-    recovery = result.recovery_for_group(
+    backfill = result.backfill_for_group(
         projection.group_center_rt,
         group_hypothesis_id=group_context.group.group_hypothesis_id,
     )
-    assert recovery is not None
+    assert backfill is not None
     replace(result.result_ref)
     expected_result = _mint_sample_result_ref(
         job=result.job,
         result=result.adapter_result,
-        recovery_input=result.recovery_input,
-        recovery_attempt=None,
-        recovery_attempts=result.recovery_attempts,
-        acquisition=recovery.acquisition,
+        backfill_input=result.backfill_input,
+        backfill_attempt=None,
+        backfill_attempts=result.backfill_attempts,
+        acquisition=backfill.acquisition,
         acquisition_content=_canonical_acquisition_content,
     )
     if result.result_ref != expected_result:
         raise UntargetedCidNlRealDataRuntimeError(
-            "completed recovery lost its sealed runtime result"
+            "completed backfill lost its sealed runtime result"
         )
     return projection
 
 
-def _project_completed_recovery(
+def _project_completed_backfill(
     result: UntargetedCidNlRuntimeSampleResult,
     *,
     group_context: CidNlCellGroupContext,
@@ -571,15 +571,15 @@ def _project_completed_recovery(
         or group_context.method_subject != job.method_subject
         or center is None
     ):
-        raise UntargetedCidNlRealDataRuntimeError("recovery crossed its owner group")
-    recovery = result.recovery_for_group(
+        raise UntargetedCidNlRealDataRuntimeError("backfill crossed its owner group")
+    backfill = result.backfill_for_group(
         center, group_hypothesis_id=group_context.group.group_hypothesis_id
     )
-    if recovery is None:
+    if backfill is None:
         raise UntargetedCidNlRealDataRuntimeError(
-            "initial assessment is not a recovery"
+            "initial assessment is not a backfill"
         )
-    assessment = recovery.assessment
+    assessment = backfill.assessment
     initial = result.adapter_result.assessment_input.assessment
     for reference in (initial, assessment):
         validate_cid_nl_method_assessment_binding(
@@ -597,10 +597,10 @@ def _project_completed_recovery(
         != "untargeted-cid-nl-backfill-recovery"
         or not receipt.search_completed
         or not receipt.acquisition_supported
-        or recovery.recovery_input is not None
+        or backfill.backfill_input is not None
     ):
         raise UntargetedCidNlRealDataRuntimeError(
-            "recovery is not a completed empty epoch"
+            "backfill is not a completed empty epoch"
         )
     expected_request = XICRequest(
         mz=job.method_subject.precursor_mz,
@@ -609,14 +609,14 @@ def _project_completed_recovery(
         ppm_tol=job.method_subject.precursor_tolerance_ppm,
     )
     exact = exact_traces(
-        recovery.acquisition, expected_request, assessment.content.acquisition_source_id
+        backfill.acquisition, expected_request, assessment.content.acquisition_source_id
     )
     if len(exact) != 1 or (
         receipt.query_rt_min != expected_request.rt_min
         or receipt.query_rt_max != expected_request.rt_max
     ):
         raise UntargetedCidNlRealDataRuntimeError(
-            "recovery crossed its exact request coordinates"
+            "backfill crossed its exact request coordinates"
         )
     (acquired,) = exact
     digest = result.result_ref.acquisition_sha256
@@ -624,15 +624,15 @@ def _project_completed_recovery(
     artifact = _mint_evidence_artifact_ref(
         producer_processing_request_id=job.processing_owners.request.processing_request_id,
         producer_processing_attempt_id=job.processing_owners.attempt.processing_attempt_id,
-        semantic_contract=_COMPLETED_RECOVERY_CONTRACT,
-        payload_bytes=_completed_recovery_projection_bytes(
+        semantic_contract=_COMPLETED_BACKFILL_CONTRACT,
+        payload_bytes=_completed_backfill_projection_bytes(
             processing_owners=job.processing_owners,
             sample=job.sample,
             group_identity=group,
             group_center_rt=center,
             source_result_artifact=result.result_ref.artifact,
             initial_assessment_artifact=initial.artifact,
-            recovery_assessment=assessment,
+            backfill_assessment=assessment,
             trace_coordinate=acquired.coordinate,
             acquisition_sha256=digest,
         ),
@@ -645,7 +645,7 @@ def _project_completed_recovery(
         group_center_rt=center,
         source_result_artifact=result.result_ref.artifact,
         initial_assessment_artifact=initial.artifact,
-        recovery_assessment=assessment,
+        backfill_assessment=assessment,
         trace_coordinate=acquired.coordinate,
         acquisition_sha256=digest,
         artifact=artifact,
@@ -671,18 +671,18 @@ def mint_untargeted_cid_nl_sample_result_ref(
     *,
     job: UntargetedCidNlRealDataRuntimeJob,
     result: UntargetedCidNlRealDataAdapterResult,
-    recovery_input: UntargetedCidNlRecoveryInput | None,
-    recovery_attempt: UntargetedCidNlRecoveryAttemptResult | None,
+    backfill_input: UntargetedCidNlBackfillInput | None,
+    backfill_attempt: UntargetedCidNlBackfillAttemptResult | None,
     acquisition: TraceAcquisitionBatch | None,
-    recovery_attempts: tuple[UntargetedCidNlRecoveryAttemptResult, ...] = (),
+    backfill_attempts: tuple[UntargetedCidNlBackfillAttemptResult, ...] = (),
 ) -> UntargetedCidNlSampleResultRef:
     return _mint_sample_result_ref(
         job=job,
         result=result,
-        recovery_input=recovery_input,
-        recovery_attempt=recovery_attempt,
+        backfill_input=backfill_input,
+        backfill_attempt=backfill_attempt,
         acquisition=acquisition,
-        recovery_attempts=recovery_attempts,
+        backfill_attempts=backfill_attempts,
         acquisition_content=_canonical_acquisition_content,
     )
 
@@ -691,33 +691,33 @@ def _mint_sample_result_ref(
     *,
     job: UntargetedCidNlRealDataRuntimeJob,
     result: UntargetedCidNlRealDataAdapterResult,
-    recovery_input: UntargetedCidNlRecoveryInput | None,
-    recovery_attempt: UntargetedCidNlRecoveryAttemptResult | None,
+    backfill_input: UntargetedCidNlBackfillInput | None,
+    backfill_attempt: UntargetedCidNlBackfillAttemptResult | None,
     acquisition: TraceAcquisitionBatch | None,
     acquisition_content: Callable[[TraceAcquisitionBatch], tuple[bytes, str]],
-    recovery_attempts: tuple[UntargetedCidNlRecoveryAttemptResult, ...] = (),
+    backfill_attempts: tuple[UntargetedCidNlBackfillAttemptResult, ...] = (),
 ) -> UntargetedCidNlSampleResultRef:
-    if recovery_attempt is not None:
-        if recovery_attempts:
+    if backfill_attempt is not None:
+        if backfill_attempts:
             raise UntargetedCidNlRealDataRuntimeError(
-                "duplicate recovery input carriers"
+                "duplicate backfill input carriers"
             )
-        recovery_attempts = (recovery_attempt,)
-    if len(recovery_attempts) == 1:
-        recovery_attempt = recovery_attempts[0]
-    recovery_assessments = tuple(attempt.assessment for attempt in recovery_attempts)
+        backfill_attempts = (backfill_attempt,)
+    if len(backfill_attempts) == 1:
+        backfill_attempt = backfill_attempts[0]
+    backfill_assessments = tuple(attempt.assessment for attempt in backfill_attempts)
     assessment = result.assessment_input.assessment
     projections = result.assessment_input.discovery_projections
     content = acquisition_content(acquisition) if acquisition is not None else None
     acquisition_sha256 = content[1] if content is not None else None
     if (
-        recovery_attempt is not None
-        and recovery_input != recovery_attempt.recovery_input
+        backfill_attempt is not None
+        and backfill_input != backfill_attempt.backfill_input
     ):
         raise UntargetedCidNlRealDataRuntimeError(
-            "recovery input does not match the observed recovery attempt"
+            "backfill input does not match the observed backfill attempt"
         )
-    for observed in recovery_attempts:
+    for observed in backfill_attempts:
         validate_cid_nl_method_assessment_binding(
             observed.assessment,
             processing_owners=job.processing_owners,
@@ -729,24 +729,24 @@ def _mint_sample_result_ref(
             and acquisition_content(observed.acquisition)[0] != content[0]
         ):
             raise UntargetedCidNlRealDataRuntimeError(
-                "recovery lost its sealed runtime result acquisition"
+                "backfill lost its sealed runtime result acquisition"
             )
-    if len(recovery_attempts) > 1 and recovery_input is not None:
+    if len(backfill_attempts) > 1 and backfill_input is not None:
         raise UntargetedCidNlRealDataRuntimeError(
-            "multiple recoveries cannot use a scalar recovery input"
+            "multiple backfills cannot use a scalar backfill input"
         )
-    recovery_assessment = (
-        recovery_attempt.assessment
-        if recovery_attempt is not None
+    backfill_assessment = (
+        backfill_attempt.assessment
+        if backfill_attempt is not None
         else (
-            recovery_input.candidate_assessment if recovery_input is not None else None
+            backfill_input.candidate_assessment if backfill_input is not None else None
         )
     )
     recovery_candidate_count = len(
         {
             peak.content.peak_observation_content_id
-            for ref in recovery_assessments
-            or ((recovery_assessment,) if recovery_assessment is not None else ())
+            for ref in backfill_assessments
+            or ((backfill_assessment,) if backfill_assessment is not None else ())
             for peak in ref.candidate_peaks
         }
     )
@@ -762,23 +762,23 @@ def _mint_sample_result_ref(
         "source_candidate_ids": result.source_candidate_ids,
         "strict_scan_count": result.strict_scan_count,
         "recovery_assessment_artifact_id": (
-            recovery_assessment.artifact.evidence_artifact_id
-            if recovery_assessment is not None
+            backfill_assessment.artifact.evidence_artifact_id
+            if backfill_assessment is not None
             else None
         ),
         "recovery_candidate_count": recovery_candidate_count,
         "recovery_group_hypothesis_ids": tuple(
-            attempt.group_hypothesis_id for attempt in recovery_attempts
+            attempt.group_hypothesis_id for attempt in backfill_attempts
         ),
         "recovery_assessment_artifact_ids": tuple(
-            ref.artifact.evidence_artifact_id for ref in recovery_assessments
+            ref.artifact.evidence_artifact_id for ref in backfill_assessments
         ),
         "recovery_query_bounds": tuple(
             (
                 ref.content.evaluation_receipt.query_rt_min,
                 ref.content.evaluation_receipt.query_rt_max,
             )
-            for ref in recovery_assessments
+            for ref in backfill_assessments
         ),
         "acquisition_sha256": acquisition_sha256,
     }
@@ -797,10 +797,10 @@ def _mint_sample_result_ref(
                 (
                     assessment.artifact,
                     *(projection.artifact for projection in projections),
-                    *(ref.artifact for ref in recovery_assessments),
+                    *(ref.artifact for ref in backfill_assessments),
                     *(
-                        (recovery_assessment.artifact,)
-                        if recovery_assessment is not None
+                        (backfill_assessment.artifact,)
+                        if backfill_assessment is not None
                         else ()
                     ),
                 )
@@ -819,24 +819,24 @@ def _mint_sample_result_ref(
         source_candidate_ids=result.source_candidate_ids,
         strict_scan_count=result.strict_scan_count,
         recovery_assessment_artifact_id=(
-            recovery_assessment.artifact.evidence_artifact_id
-            if recovery_assessment is not None
+            backfill_assessment.artifact.evidence_artifact_id
+            if backfill_assessment is not None
             else None
         ),
         recovery_candidate_count=recovery_candidate_count,
         recovery_group_hypothesis_ids=tuple(
-            attempt.group_hypothesis_id for attempt in recovery_attempts
+            attempt.group_hypothesis_id for attempt in backfill_attempts
         ),
         acquisition_sha256=acquisition_sha256,
         recovery_assessment_artifact_ids=tuple(
-            ref.artifact.evidence_artifact_id for ref in recovery_assessments
+            ref.artifact.evidence_artifact_id for ref in backfill_assessments
         ),
         recovery_query_bounds=tuple(
             (
                 ref.content.evaluation_receipt.query_rt_min,
                 ref.content.evaluation_receipt.query_rt_max,
             )
-            for ref in recovery_assessments
+            for ref in backfill_assessments
         ),
         artifact=artifact,
     )
@@ -1266,7 +1266,7 @@ UntargetedRuntimePartitionResult = UntargetedCidNlRuntimePartitionResult
 UntargetedRealDataRuntimeError = UntargetedCidNlRealDataRuntimeError
 
 build_untargeted_sample_runtime_jobs = build_untargeted_cid_nl_sample_runtime_jobs
-project_untargeted_completed_recovery = project_untargeted_cid_nl_completed_recovery
+project_untargeted_completed_backfill = project_untargeted_cid_nl_completed_backfill
 mint_untargeted_sample_result_ref = mint_untargeted_cid_nl_sample_result_ref
 canonical_untargeted_sample_result_bytes = (
     canonical_untargeted_cid_nl_sample_result_bytes
@@ -1293,6 +1293,6 @@ __all__ = [
     "canonical_untargeted_sample_result_bytes",
     "mint_untargeted_cid_nl_sample_result_ref",
     "mint_untargeted_sample_result_ref",
-    "project_untargeted_cid_nl_completed_recovery",
-    "project_untargeted_completed_recovery",
+    "project_untargeted_cid_nl_completed_backfill",
+    "project_untargeted_completed_backfill",
 ]

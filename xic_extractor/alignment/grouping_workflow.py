@@ -196,11 +196,11 @@ def build_initial_cid_nl_cross_sample_groups(
     return assignment_scope, result, retained_candidates
 
 
-def admit_cid_nl_group_recoveries(
+def admit_cid_nl_group_backfills(
     *,
     result: CrossSampleGroupingResult,
     groups: tuple[CrossSamplePeakGroupHypothesis, ...],
-    recoveries: Mapping[
+    backfills: Mapping[
         tuple[str, str, str],
         tuple[ResolvedCanonicalSampleIdentity, CidNlMethodAssessmentRef],
     ],
@@ -226,7 +226,7 @@ def admit_cid_nl_group_recoveries(
     }
     proposals = []
     retained: dict[tuple[str, str], tuple[PeakHypothesis, ...]] = {}
-    for key, (sample, assessment) in sorted(recoveries.items()):
+    for key, (sample, assessment) in sorted(backfills.items()):
         group_id, sample_id, subject_id = key
         group = by_id[group_id]
         if (
@@ -234,7 +234,7 @@ def admit_cid_nl_group_recoveries(
             or subject_id != assessment.content.method_subject.method_subject_id
         ):
             raise CrossSampleGroupingContractError(
-                "recovery crossed its sample or subject"
+                "backfill crossed its sample or subject"
             )
         if assessment.content.method_result != "SUPPORT":
             continue
@@ -311,11 +311,11 @@ def admit_cid_nl_group_recoveries(
                     review_only=group.review_only,
                 ),
                 # The original inference/ISTD binding remains about its original
-                # owners; recovery does not label new owners as known standards.
+                # owners; backfill does not label new owners as known standards.
                 inference_basis=group.inference_basis,
                 inference_decisions=group.inference_decisions,
                 # Keep the reference coordinates used to choose the canonical
-                # recovery subject. New members cannot redirect another sample's
+                # backfill subject. New members cannot redirect another sample's
                 # already completed group-bound query to a different subject.
                 group_center_mz=group.group_center_mz,
                 group_center_rt=group.group_center_rt,
