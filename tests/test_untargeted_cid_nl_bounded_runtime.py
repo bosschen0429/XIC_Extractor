@@ -2074,3 +2074,70 @@ def test_retained_spool_keeps_its_partitions_and_publishes_a_readable_index(
         )
         == child_ids[0]
     )
+
+
+def _run_for_cache(tmp_path, monkeypatch, *, retain, tag):
+    from xic_extractor.extraction.untargeted_cid_nl_bounded_runtime import (
+        execute_bounded_untargeted_cid_nl,
+    )
+
+    plan, reference = _plan(tmp_path, monkeypatch)
+    output_dir = tmp_path / tag
+    result = execute_bounded_untargeted_cid_nl(
+        plan,
+        output_dir=output_dir,
+        alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+        recovery_marker=OwnerPathRuntimeMarker(tmp_path / f"{tag}.json", "cache"),
+        known_istd_reference=reference,
+        max_partition_jobs=len(plan.context.samples),
+        retain_acquisition_cache=retain,
+    )
+    result.close()
+    return output_dir / ".cid_nl_acquisition_cache"
+
+
+def test_acquisition_cache_is_released_after_a_successful_run(
+    tmp_path, monkeypatch
+):
+    """A one-shot run leaves no cache behind; it only accelerates acquisition."""
+    cache = _run_for_cache(tmp_path, monkeypatch, retain=False, tag="released")
+    assert not cache.exists()
+
+
+def test_acquisition_cache_is_kept_when_asked(tmp_path, monkeypatch):
+    """Repeated development runs can keep it and skip rereading every RAW."""
+    cache = _run_for_cache(tmp_path, monkeypatch, retain=True, tag="retained")
+    assert cache.is_dir()
+
+
+def test_acquisition_cache_survives_a_failed_attempt(tmp_path, monkeypatch):
+    """A retry allowed by the marker must not have to reread every RAW file."""
+    import xic_extractor.extraction.untargeted_cid_nl_bounded_runtime as bounded_owner
+
+    plan, _ = _plan(tmp_path, monkeypatch)
+    calls = []
+    original = bounded_owner.PartitionResultStore.append_children
+
+    def fail_second(*args, **kwargs):
+        calls.append(1)
+        if len(calls) == 2:
+            raise OSError("second partition storage unavailable")
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(
+        bounded_owner.PartitionResultStore, "append_children", fail_second
+    )
+    output_dir = tmp_path / "failed-cache-output"
+    with pytest.raises(RuntimeError, match="failed before batch publication"):
+        bounded_owner.execute_bounded_untargeted_cid_nl(
+            plan,
+            output_dir=output_dir,
+            alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+            telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+            recovery_marker=OwnerPathRuntimeMarker(
+                tmp_path / "failed-cache.json", "failed-cache"
+            ),
+            max_partition_jobs=len(plan.context.samples),
+        )
+    assert (output_dir / ".cid_nl_acquisition_cache").is_dir()

@@ -213,6 +213,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             "output_level": args.output_level,
             "emit_alignment_cells": args.emit_alignment_cells,
             "emit_cid_nl_explanation": args.emit_cid_nl_explanation,
+            "retain_acquisition_cache": args.retain_acquisition_cache,
             "emit_alignment_status_matrix": args.emit_alignment_status_matrix,
             "emit_alignment_integration_audit": args.emit_alignment_integration_audit,
             "emit_alignment_backfill_seed_audit": (
@@ -531,6 +532,15 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         ),
     )
     parser.add_argument("--emit-alignment-cells", action="store_true")
+    parser.add_argument(
+        "--retain-acquisition-cache",
+        action="store_true",
+        help=(
+            "keep .cid_nl_acquisition_cache after a successful run so a repeat "
+            "run skips rereading the RAW files; a failed attempt keeps it "
+            "either way"
+        ),
+    )
     parser.add_argument(
         "--emit-cid-nl-explanation",
         action="store_true",
