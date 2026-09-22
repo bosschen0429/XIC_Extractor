@@ -153,6 +153,19 @@ Closes the open questions the entry above it left before any implementation.
   assessments and groups (about 586 MB) and SQLite's own 35.8% overhead are all
   reconstructible or unnecessary. Reuse
   `output/issue423-object-graph-census-20260922/scripts/projection_cost.py`.
+- **The saving is a second write, not disk space.** A retained spool is not
+  small: the measured partition holds 9,520 cells in 115,074,919 bytes, or
+  12,088 bytes per cell, against the report's 13,839 bytes per cell over its
+  678,470 cells. Projecting the same density onto that run puts its spool near
+  **8.2 GB** beside a 9.39 GB report. Both are written today and only the spool
+  is then deleted, so the run produces about 17.6 GB and keeps the larger,
+  slower copy. Replacing the report with an index removes the second full write
+  and its projection pass; it takes occupancy from 9.39 GB to roughly 8.2 GB,
+  which is close to nothing. The reason to do it is the write, the CPU, and the
+  release it allows upstream: once the report no longer consumes children as
+  they compose, nothing forces the retained signal and the artifact chain to
+  stay resident to the end of the run. That release, not the disk, is what makes
+  parallel composition reachable.
 - Evidence is `diagnostic_only` and grants no Matrix, writer, activation or
   scientific authority. No new 8RAW or 85RAW run was launched; the SQLite facts
   come from the retained `alignment85-process12` output and the latency facts
