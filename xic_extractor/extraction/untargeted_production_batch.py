@@ -241,13 +241,13 @@ def prepare_untargeted_cid_nl_alignment_subject_worksets(
         for workset in worksets
         for subject in workset
     }
-    workset_ids_by_subject = {
-        subject.method_subject_id: frozenset(
-            member.method_subject_id for member in workset
-        )
-        for workset in worksets
-        for subject in workset
-    }
+    workset_ids_by_subject: dict[str, frozenset[str]] = {}
+    for workset in worksets:
+        # One set per workset, shared by its members. Building it per subject
+        # instead stores the same k ids k times.
+        member_ids = frozenset(member.method_subject_id for member in workset)
+        for subject in workset:
+            workset_ids_by_subject[subject.method_subject_id] = member_ids
     memberships: dict[str, list[tuple[str, str]]] = {
         subject_id: [] for subject_id in subjects_by_id
     }

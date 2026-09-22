@@ -429,6 +429,73 @@ def test_indexed_finalization_orders_children_by_canonical_subject(
     assert tuple(finalized.children) == canonical_ids
 
 
+def test_prepared_workset_index_stores_one_id_set_per_workset(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    """Members of a workset share its id set instead of each rebuilding it.
+
+    Content equality alone does not catch the difference: an index built per
+    subject holds the same k ids k times, so a cohort of wide worksets pays
+    O(k**2) for an index whose content is O(k).
+    """
+
+    from dataclasses import replace
+
+    from xic_extractor.extraction import (
+        untargeted_cid_nl_bounded_runtime as bounded_owner,
+    )
+    from xic_extractor.peak_detection.cid_nl_method_subject import (
+        mint_untargeted_cid_nl_method_subject,
+        mint_untargeted_cid_nl_method_subject_batch,
+    )
+
+    plan, _reference = _plan(tmp_path, monkeypatch)
+    subjects = tuple(
+        sorted(
+            (
+                mint_untargeted_cid_nl_method_subject(
+                    precursor_mz=precursor_mz,
+                    precursor_tolerance_ppm=20.0,
+                    neutral_loss_da=neutral_loss_da,
+                )
+                for precursor_mz, neutral_loss_da in (
+                    (300.0, 116.0474),
+                    (300.005, 116.0474),
+                    (300.003, 114.0),
+                    (300.004, 114.0),
+                )
+            ),
+            key=lambda subject: subject.method_subject_id,
+        )
+    )
+    packing_plan = replace(
+        plan,
+        subject_batch=mint_untargeted_cid_nl_method_subject_batch(
+            subjects=subjects,
+            candidate_memberships=tuple(
+                (f"candidate-{index}", subject.method_subject_id)
+                for index, subject in enumerate(subjects)
+            ),
+        ),
+        runtime_subjects=subjects,
+    )
+    prepared = bounded_owner.prepare_untargeted_cid_nl_alignment_subject_worksets(
+        packing_plan
+    )
+
+    index = prepared.workset_ids_by_subject
+    assert any(len(workset) > 1 for workset in prepared.worksets)
+    assert set(index) == {subject.method_subject_id for subject in subjects}
+    for workset in prepared.worksets:
+        expected = frozenset(subject.method_subject_id for subject in workset)
+        for subject in workset:
+            assert index[subject.method_subject_id] == expected
+    assert len({id(member_ids) for member_ids in index.values()}) == len(
+        prepared.worksets
+    )
+
+
 def test_bounded_partition_real_entry_mints_interleaved_worksets_canonically(
     tmp_path,
     monkeypatch,
