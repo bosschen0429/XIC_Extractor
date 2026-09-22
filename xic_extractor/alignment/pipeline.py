@@ -629,7 +629,6 @@ def _run_untargeted_alignment(
         return replace(
             outputs,
             owner_build_route_receipt=owner_build_route_receipt,
-            untargeted_cid_nl_result=completed,
             evidence=evidence,
         )
 

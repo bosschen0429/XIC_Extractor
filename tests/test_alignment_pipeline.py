@@ -1,5 +1,5 @@
 from contextlib import contextmanager, nullcontext
-from dataclasses import replace
+from dataclasses import fields, replace
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -202,7 +202,6 @@ def test_pure_cid_nl_wrapper_reports_retained_route_and_typed_handoff(
     )
 
     assert report.read_text(encoding="utf-8") == "published"
-    assert result.untargeted_cid_nl_result is completed
     assert captured_retained["sample_metadata"] is retained_sample_metadata
     assert captured_retained["raw_workers"] == raw_workers
     assert captured_retained["known_istd_reference"] is (
@@ -877,7 +876,7 @@ def test_pure_cid_nl_targets_csv_integration(
     )
     (tmp_path / "out").mkdir(parents=True, exist_ok=True)
 
-    result = pipeline_module.run_alignment(
+    pipeline_module.run_alignment(
         discovery_batch_index=batch_index,
         raw_dir=raw_dir,
         dll_dir=tmp_path / "dll",
@@ -888,7 +887,6 @@ def test_pure_cid_nl_targets_csv_integration(
         targets_csv=targets_csv,
     )
 
-    assert result.untargeted_cid_nl_result is completed
     assert captured["known_istd_reference"] is fake_ref
 
 
@@ -931,3 +929,19 @@ def test_mixed_target_list_only_supplies_istds_to_untargeted_alignment(
     )
     assert captured["targets"] == tuple(t for t in all_targets if t.is_istd)
     assert len(captured["targets"]) < len(all_targets)
+
+
+def test_alignment_outputs_publish_no_live_workflow_result() -> None:
+    """A run that closes its partition store must not hand that store back.
+
+    The formal run sets retain_partition_memory False, so children and
+    assessments load through a spool that close() deletes on the way out of
+    run_alignment. A returned live result still answers lengths and identity
+    after that, and fails only when something reads actual content, so the
+    object looks complete while already being unreadable. Callers get the
+    durable locator in `evidence` instead.
+    """
+
+    field_names = {field.name for field in fields(pipeline_module.AlignmentRunOutputs)}
+    assert "untargeted_cid_nl_result" not in field_names
+    assert "evidence" in field_names

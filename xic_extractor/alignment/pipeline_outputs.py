@@ -8,9 +8,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from xic_extractor.alignment.workflow import (
-        CompletedUntargetBatchWorkflowResult,
-    )
     from xic_extractor.diagnostics.cid_nl_explanation import (
         EvidenceLocator,
     )
@@ -107,7 +104,10 @@ class AlignmentRunOutputs:
     owner_backfill_evaluation_coverage: OwnerBackfillEvaluationCoverageBatch | None = (
         None
     )
-    untargeted_cid_nl_result: CompletedUntargetBatchWorkflowResult | None = None
+    # No live workflow result is published. The run closes its partition
+    # store before returning, so a result handed back here would load its
+    # children and assessments from a deleted spool. ``evidence`` carries the
+    # durable locator instead.
     evidence: EvidenceLocator | None = None
 
 
