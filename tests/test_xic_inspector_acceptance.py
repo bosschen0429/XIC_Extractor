@@ -249,10 +249,12 @@ def test_acceptance_a9_pipeline_shared_callable_handoff(tmp_path, monkeypatch) -
     from tests.test_targeted_real_data_adapter import _settings
 
     batch_index = write_batch(tmp_path, ("S1", "S2"))
+    # The pipeline reads candidates through DiscoveryInputSource; the CSV
+    # reader it used to call by name lives elsewhere now.
     monkeypatch.setattr(
-        pipeline,
-        "read_owner_bound_discovery_candidates_csv",
-        lambda path, **kwargs: candidates[path.parent.name],
+        pipeline.DiscoveryInputSource,
+        "feature_view",
+        lambda _source: candidates,
     )
     # The runtime fixture supplies actual completed science; exercise the real
     # public publication interface, SQLite writer, locator mint and close path.
@@ -269,6 +271,7 @@ def test_acceptance_a9_pipeline_shared_callable_handoff(tmp_path, monkeypatch) -
         alignment_config=config,
         peak_config=peak_config(),
         discovery_settings=_settings(),
+        emit_cid_nl_explanation=True,
     )
     locator = outputs.evidence
     assert isinstance(locator, EvidenceLocator)
