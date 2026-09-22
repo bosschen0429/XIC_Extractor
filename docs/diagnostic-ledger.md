@@ -112,7 +112,8 @@ Closes the open questions the entry above it left before any implementation.
   (`alignment_explanation_projection.py:620-752`) comes from a partition child:
   that is **about 2.97 GB, 79% of the table**, plus all 592,768,173 bytes of
   `curve_payloads`. Only `method_assessments` and `initial_groups`, about
-  586 MB (16%), come from `completed` rather than from a child.
+  586 MB (16%), come from `completed` rather than from a child -- **corrected
+  below**: `completed` reads them straight out of the same store.
 - `links` stores nothing that is not derivable. Its 7,168,235 rows are
   3,419,380 `cell_observations` and 3,419,380 `cell_decisions` edges, which is
   exactly one per cell per kind for 678,470 cells over 85 samples and 7,982
@@ -122,13 +123,36 @@ Closes the open questions the entry above it left before any implementation.
   4,200 bytes of diagnostic record each while `alignment_matrix.tsv` is 392,354
   bytes for the same grid, and the `rows` kind, which is the Matrix itself, is
   2,218,996 bytes of the 9.39 GB.
-- Projected floor, not a promise: drop the materialised join, project records
-  on demand, and what has to persist is the roughly 586 MB with no child
-  counterpart plus an offset index, against 9,389,572,096 bytes today. Two
-  unknowns remain before that number is used: whether
-  `completed.method_assessments` and `completed.initial_groups` are themselves
-  recoverable from the store, and the cost of the projection step that the
-  5.3 ms figure excludes.
+- **Both remaining unknowns are now closed, and the first one corrects the
+  bullet above.** `method_assessments` and `initial_groups` are not outside the
+  store. The bounded runtime builds the workflow result with
+  `method_assessments=store.sequence("method_assessments")` and
+  `initial_groups=store.sequence("initial_groups")`
+  (`untargeted_cid_nl_bounded_runtime.py:640-654`), and a partition payload's
+  own field list is `children`, `excluded_candidates`, `capture_bindings`,
+  `method_assessments`, `initial_groups`, `initial_edges`, `capture_evidence` --
+  all seven streamed into the partition file
+  (`UntargetedCidNlPartitionComposition`). The same call site passes
+  `cleanup_action=store.cleanup`, so the deletion and the data have one owner.
+  **Nothing in the 9,389,572,096-byte report is absent from the partition
+  files.** The earlier "about 586 MB with no child counterpart" is withdrawn:
+  those rows come from a different store field, not from a different source.
+- Projection is microseconds per row, so it only matters in bulk. Running the
+  real helpers (`_fields`, `_cell_observation_content_payload`, `_artifact`)
+  over 400 restored `FinalGroupCellObservation` values costs 0.8 us each, and
+  JSON-encoding the result 3.4 us, for **4.2 us per cell** at a 540-byte mean
+  payload. The 85-sample report's mean `cell_observations` payload is 3,560
+  bytes; scaling by payload size puts a full eager pass at roughly 3 to 19 s of
+  CPU, a range rather than a measurement because the measured partition is the
+  150-feature cache-only one. On the on-demand path the same work is tens of
+  microseconds for one row and disappears next to the 5.3 ms restore.
+- Projected floor, with both unknowns closed: what must persist is the partition
+  files plus their offset table, and the report becomes an index over them. The
+  materialised join (1,654,902,908 bytes), the child projections (about
+  2.97 GB), every curve payload (592,768,173 bytes), the store-backed
+  assessments and groups (about 586 MB) and SQLite's own 35.8% overhead are all
+  reconstructible or unnecessary. Reuse
+  `output/issue423-object-graph-census-20260922/scripts/projection_cost.py`.
 - Evidence is `diagnostic_only` and grants no Matrix, writer, activation or
   scientific authority. No new 8RAW or 85RAW run was launched; the SQLite facts
   come from the retained `alignment85-process12` output and the latency facts
