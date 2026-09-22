@@ -282,14 +282,15 @@ def bootstrap_cid_nl_initial_population(
             raise ValueError(
                 "known ISTD reference cannot be combined with generic drift"
             )
-        support_ids = {
-            hypothesis.hypothesis_id
-            for hypotheses in hypotheses_by_sample.values()
-            for hypothesis in hypotheses
-            if hypothesis.hypothesis_method == HYPOTHESIS_METHOD_DDA_CID_NL
-        }
+        # The reference is a measured RAW-level identity constraint.  It must
+        # be allowed to bind every physical MS1 owner in the retained
+        # assessment universe, including MS1-only observations.  Restricting
+        # this lookup to DDA SUPPORT owners made the known-ISTD constraint
+        # disappear exactly where Discovery had an MS1 peak but no qualifying
+        # MS2 relation, leaving those owners ambiguous or outside the known
+        # group.
         drift_lookup = known_istd_reference.bind(
-            tuple(owner for owner in owners if owner.owner_id in support_ids),
+            tuple(owners),
             sample_universe=sample_universe,
             injection_order=injection_order,
         )
