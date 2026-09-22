@@ -15,6 +15,7 @@ from xic_extractor.alignment.drift_evidence import KnownIstdOwnerLookup
 from xic_extractor.alignment.edge_scoring import (
     DriftLookupProtocol,
     OwnerEdgeEvidence,
+    RTEvidenceBasis,
     _compatible_composite_owners,
     _drift_corrected_delta_sec,
     _seed_support_level,
@@ -84,6 +85,13 @@ class SparseFeatureDecision:
     reason: str
     cost: float | None = None
     witness_owner_ids: tuple[str, ...] = ()
+    # Which witness carried the decision and on which RT coordinate. The
+    # witness list alone cannot answer either, so an audit cannot tell whether
+    # a membership stood on raw or drift-corrected RT without these.
+    selected_witness_owner_id: str | None = None
+    rt_basis: RTEvidenceBasis | None = None
+    rt_raw_delta_sec: float | None = None
+    rt_drift_corrected_delta_sec: float | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -314,6 +322,10 @@ class _Candidate:
     state: Literal["supported", "evaluated_undecided", "proven_incompatible"]
     reason: str
     witness_owner_ids: tuple[str, ...]
+    selected_witness_owner_id: str | None = None
+    rt_basis: RTEvidenceBasis | None = None
+    rt_raw_delta_sec: float | None = None
+    rt_drift_corrected_delta_sec: float | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -615,6 +627,14 @@ def _directional_inference(
                         reason=reason,
                         cost=candidate.cost,
                         witness_owner_ids=candidate.witness_owner_ids,
+                        selected_witness_owner_id=(
+                            candidate.selected_witness_owner_id
+                        ),
+                        rt_basis=candidate.rt_basis,
+                        rt_raw_delta_sec=candidate.rt_raw_delta_sec,
+                        rt_drift_corrected_delta_sec=(
+                            candidate.rt_drift_corrected_delta_sec
+                        ),
                     )
                 )
 
@@ -752,12 +772,21 @@ def _compare_owner_to_feature(
         ),
     )
     cost = _edge_cost(best, mass_fraction, config)
+    selected_witness_owner_id = (
+        best.right_owner_id
+        if best.left_owner_id == owner.owner_id
+        else best.left_owner_id
+    )
     return _Candidate(
         track.key,
         cost,
         "supported",
         best.reason,
         witness_ids,
+        selected_witness_owner_id=selected_witness_owner_id,
+        rt_basis=best.rt_basis,
+        rt_raw_delta_sec=best.rt_raw_delta_sec,
+        rt_drift_corrected_delta_sec=best.rt_drift_corrected_delta_sec,
     )
 
 

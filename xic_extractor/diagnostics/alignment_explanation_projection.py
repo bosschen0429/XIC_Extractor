@@ -828,7 +828,11 @@ def prepare_alignment_explanation(
                     "policy": INITIAL_GROUPING_POLICY,
                     "unlisted_pairs": UNLISTED_PAIR_DISPOSITION,
                     "rt_pruning": True,
-                    "evaluated_pair_count": len(completed.initial_edges),
+                    # Retained records, not comparisons performed. The sparse
+                    # path evaluates witness pairs without keeping a pair
+                    # graph, so calling this "evaluated" reported zero
+                    # comparisons for a run that made them.
+                    "retained_pair_record_count": len(completed.initial_edges),
                     "compressed_group_count": len(completed.initial_groups),
                     "compressed_member_count": initial_group_member_count,
                 },
@@ -836,7 +840,9 @@ def prepare_alignment_explanation(
                     name: (
                         "recorded"
                         if getattr(completed, name)
-                        else "not_evaluated"
+                        # Groups exist, so pairs were compared; what is absent
+                        # is the retained pair graph, not the evaluation.
+                        else "not_retained"
                         if name == "initial_edges" and completed.initial_groups
                         else "unavailable"
                     )

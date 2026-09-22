@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections import Counter
-from dataclasses import dataclass, replace
+from dataclasses import asdict, dataclass, replace
 from typing import Any, cast
 
 import pytest
@@ -408,6 +408,82 @@ def test_sparse_same_mass_raw_fallback_remains_assignable() -> None:
     assert result.groups[0].disposition == "assigned"
     assert any(
         "drift=raw_fallback" in decision.reason for decision in result.sparse_decisions
+    )
+
+
+def test_assigned_sparse_decisions_record_the_witness_and_rt_basis_used() -> None:
+    """An audit must be able to tell which witness and which RT coordinate decided.
+
+    ``witness_owner_ids`` names every candidate witness, not the one whose edge
+    carried the cost, and without the basis an auditor cannot separate a
+    membership that stood on raw RT from one that only held after the ISTD
+    correction. The explanation serialises these decisions with ``asdict``, so
+    whatever is absent here is absent from the delivered audit.
+    """
+
+    owners = _long_rt_same_mass_owners()
+    corrected = infer_feature_memberships(
+        owners,
+        config=_long_rt_config(),
+        injection_order={
+            owner.sample_stem: index for index, owner in enumerate(owners)
+        },
+        drift_lookup=_DriftLookup(
+            deltas={"s0": 0.0, "s1": 0.5, "s2": 1.0},
+            orders={"s0": 1, "s1": 2, "s2": 3},
+        ),
+    )
+    owner_ids = {owner.owner_id for owner in owners}
+    assigned = [
+        decision for decision in corrected.sparse_decisions
+        if decision.state == "assigned"
+    ]
+    assert assigned
+    for decision in assigned:
+        assert decision.selected_witness_owner_id in owner_ids
+        assert decision.selected_witness_owner_id != decision.owner_id
+        assert decision.selected_witness_owner_id in decision.witness_owner_ids
+        assert decision.rt_basis in {"raw", "drift_corrected"}
+        assert decision.rt_raw_delta_sec is not None
+    assert any(decision.rt_basis == "drift_corrected" for decision in assigned)
+    assert all(
+        decision.rt_drift_corrected_delta_sec is not None
+        for decision in assigned
+        if decision.rt_basis == "drift_corrected"
+    )
+    assert {
+        "selected_witness_owner_id",
+        "rt_basis",
+        "rt_raw_delta_sec",
+        "rt_drift_corrected_delta_sec",
+    } <= asdict(assigned[0]).keys()
+
+    fallback = infer_feature_memberships(
+        (
+            _owner(
+                "s0", "raw-fallback", apex_rt=10.0, evidence_score=45,
+                seed_event_count=1,
+            ),
+            _owner(
+                "s1", "raw-fallback", apex_rt=10.1, evidence_score=45,
+                seed_event_count=1,
+            ),
+        ),
+        config=AlignmentConfig(preferred_rt_sec=60.0, max_rt_sec=120.0),
+        injection_order={"s0": 1, "s1": 2},
+        drift_lookup=_DriftLookup(
+            deltas={"s0": 0.0, "s1": -0.3}, orders={"s0": 1, "s1": 2}
+        ),
+    )
+    raw_assigned = [
+        decision for decision in fallback.sparse_decisions
+        if decision.state == "assigned"
+    ]
+    assert raw_assigned
+    assert all(decision.rt_basis == "raw" for decision in raw_assigned)
+    assert all(
+        decision.selected_witness_owner_id is not None
+        for decision in raw_assigned
     )
 
 

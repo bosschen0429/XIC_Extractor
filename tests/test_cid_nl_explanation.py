@@ -155,7 +155,7 @@ def test_owner_facts_survive_persisted_candidate_query(tmp_path, monkeypatch, sc
         "policy": "feature-group-membership-v1",
         "unlisted_pairs": "not_evaluated",
         "rt_pruning": True,
-        "evaluated_pair_count": len(completed.initial_edges),
+        "retained_pair_record_count": len(completed.initial_edges),
         "compressed_group_count": len(completed.initial_groups),
         "compressed_member_count": sum(
             len(group.member_subjects) for group in completed.initial_groups
