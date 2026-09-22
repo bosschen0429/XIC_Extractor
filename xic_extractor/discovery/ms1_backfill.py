@@ -886,6 +886,11 @@ def _can_merge_by_ms1_peak(
     *,
     settings: DiscoverySettings,
 ) -> bool:
+    if _same_ms1_apex_within_extraction_tolerance(first, second, settings=settings):
+        return (
+            first.neutral_loss_tag == second.neutral_loss_tag
+            or settings.tag_combine_mode in {"union", "intersection"}
+        )
     same_ms1_feature_row = _same_ms1_feature_row_identity(first, second)
     if not (
         first.raw_file == second.raw_file
@@ -1019,6 +1024,37 @@ def _merge_candidate_pair(
         ),
         tag_evidence_json=_merge_tag_evidence_json(first, second),
         is_provisional=(first.is_provisional and second.is_provisional),
+    )
+
+
+def _same_ms1_apex_within_extraction_tolerance(
+    first: DiscoveryCandidate,
+    second: DiscoveryCandidate,
+    *,
+    settings: DiscoverySettings,
+) -> bool:
+    """Whether two candidates resolved the same MS1 peak.
+
+    Each candidate's trace is extracted at its own precursor m/z with the MS1
+    tolerance. Within that tolerance both traces hold the same ions, so a shared
+    apex scan identifies one peak whatever the seeds, fragments or boundaries.
+    Only the precursor m/z decides: an observed loss inherits the absolute error
+    of precursor and product, so a ppm comparison on a ~116 Da loss would split
+    one peak on measurement scatter.
+    """
+
+    return (
+        first.raw_file == second.raw_file
+        and first.sample_stem == second.sample_stem
+        and first.ms1_peak_found
+        and second.ms1_peak_found
+        and first.ms1_apex_rt is not None
+        and first.ms1_apex_rt == second.ms1_apex_rt
+        and _within_ppm(
+            first.precursor_mz,
+            second.precursor_mz,
+            settings.precursor_mz_tolerance_ppm,
+        )
     )
 
 
