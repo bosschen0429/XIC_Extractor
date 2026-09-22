@@ -191,9 +191,45 @@ def test_activated_renderers_use_supplied_owner_values_statuses_and_counts(
     assert outputs.review_html is None
 
 
+def test_a_withheld_owner_decision_leaves_the_matrix_cell_empty(
+    tmp_path: Path,
+) -> None:
+    """write_matrix_value=False must withhold the value, not just pick another.
+
+    The renderers used to be checked through the workbook's Audit sheet, which
+    only ever asserted the True case. Nothing covered the withheld case.
+    """
+    matrix = _matrix(("Sample_A", "Sample_B"))
+    config = AlignmentConfig()
+    supplied = _divergent_owner_decisions(matrix, config, write_matrix_value=False)
+    outputs = output_paths(
+        tmp_path,
+        output_level="machine",
+        emit_alignment_cells=False,
+        emit_alignment_status_matrix=False,
+    )
+
+    pipeline_outputs_module.write_outputs_atomic(
+        outputs,
+        matrix,
+        metadata={},
+        ownership=SimpleNamespace(assignments=(), ambiguous_records=()),
+        alignment_config=config,
+        production_decisions=supplied,
+    )
+
+    assert outputs.matrix_tsv is not None
+    with outputs.matrix_tsv.open(encoding="utf-8", newline="") as handle:
+        matrix_row = next(csv.DictReader(handle, delimiter="	"))
+    assert matrix_row["Sample_A"] == ""
+    assert matrix_row["Sample_B"] == ""
+
+
 def _divergent_owner_decisions(
     matrix,
     config: AlignmentConfig,
+    *,
+    write_matrix_value: bool = True,
 ) -> ProductionDecisionSet:
     rebuilt = build_production_decisions(matrix, config)
     return ProductionDecisionSet(
@@ -203,7 +239,7 @@ def _divergent_owner_decisions(
                 raw_status="absent",
                 production_status="detected",
                 rescue_tier="",
-                write_matrix_value=True,
+                write_matrix_value=write_matrix_value,
                 matrix_value=987.654,
                 blank_reason="",
             )
