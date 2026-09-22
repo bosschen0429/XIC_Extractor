@@ -95,6 +95,7 @@ from xic_extractor.extraction.untargeted_real_data_worker import (
     _execute_sample_recovery_worker,
     _prepare_group_authorized_recoveries,
     _prepare_owner_authorized_recoveries,  # noqa: F401
+    _recovery_support_context,
     _RuntimeJobState,
     _SampleInitialWorkerRequest,
     _SampleInitialWorkerResponse,
@@ -764,8 +765,8 @@ def _prepare_runtime_work(
                     for s in pending
                     if s.recovery_input is not None
                 },
-                adapter_results_by_key={
-                    s.job.work_unit_key: s.adapter_result
+                recovery_support_by_key={
+                    s.job.work_unit_key: _recovery_support_context(s.adapter_result)
                     for s in pending
                     if s.adapter_result is not None
                 },

@@ -1626,7 +1626,14 @@ def test_process_recovery_dispatches_only_missing_subjects(tmp_path, monkeypatch
         requests.append(request)
         keys = {job.work_unit_key for job in request.jobs}
         assert keys == set(request.recovery_group_center_rts_by_key)
-        assert set(request.adapter_results_by_key) == keys
+        assert set(request.recovery_support_by_key) == keys
+        # Recovery consumes only the support policy and the missing-MS1
+        # initial assessment. Full initial adapter results stay in the parent.
+        assert not hasattr(request, "adapter_results_by_key")
+        assert all(
+            isinstance(ctx, worker._RecoverySupportContext)
+            for ctx in request.recovery_support_by_key.values()
+        )
         assert len(keys) < len(plan.subject_batch.subjects)
         return execute_recovery(request)
 

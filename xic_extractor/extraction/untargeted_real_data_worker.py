@@ -52,8 +52,12 @@ from xic_extractor.extraction.untargeted_real_data_models import (
     _request_subject_physical_records,
 )
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
+    CidNlMethodAssessmentRef,
     is_cid_nl_missing_ms1_rejection,
     is_unsearched_cid_nl_discovery_assessment,
+)
+from xic_extractor.peak_detection.cid_nl_peak_support_models import (
+    DdaCidNlPeakSupportPolicy,
 )
 from xic_extractor.processing_identity import resolve_request_acquisition_source
 from xic_extractor.raw_reader import (
@@ -73,6 +77,7 @@ class _RuntimeJobState:
     observer: _UntargetedRealDataWorkObserver
     error: Exception | None = None
     adapter_result: UntargetedCidNlRealDataAdapterResult | None = None
+    recovery_support: _RecoverySupportContext | None = None
     recovery_input: UntargetedCidNlRecoveryInput | None = None
     recovery_attempts: tuple[UntargetedCidNlRecoveryAttemptResult, ...] = ()
     recovery_group_center_rts: tuple[float, ...] = ()
@@ -81,6 +86,38 @@ class _RuntimeJobState:
     opened: bool = False
     cleanup_outcome: RuntimeResourceCleanupOutcome = (
         RuntimeResourceCleanupOutcome.SUCCEEDED
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class _RecoverySupportContext:
+    """Narrow recovery-only projection of initial assessment facts.
+
+    Recovery execution consumes only the support policy and, when the
+    initial attempt was a missing-MS1 rejection, that initial assessment.
+    The full ``UntargetedCidNlRealDataAdapterResult`` — including
+    acquisition, captures, lineage artifacts, and capture evidence — is
+    not needed by the recovery worker and must not be transported across
+    the process boundary.  ``initial_assessment`` stays ``None`` whenever
+    recovery would not consume it, so the assessment reference graph is
+    not transported either.
+    """
+
+    initial_assessment: CidNlMethodAssessmentRef | None
+    support_policy: DdaCidNlPeakSupportPolicy
+
+
+def _recovery_support_context(
+    result: UntargetedCidNlRealDataAdapterResult,
+) -> _RecoverySupportContext:
+    """Project the recovery-consumed facts out of one initial result."""
+
+    assessment = result.assessment_input.assessment
+    return _RecoverySupportContext(
+        initial_assessment=(
+            assessment if is_cid_nl_missing_ms1_rejection(assessment) else None
+        ),
+        support_policy=assessment.content.evaluation_receipt.support_policy,
     )
 
 
@@ -513,8 +550,10 @@ def _execute_recovery(
     state: _RuntimeJobState,
 ) -> None:
     job = state.job
-    result = state.adapter_result
-    if result is None:
+    ctx = state.recovery_support
+    if ctx is None and state.adapter_result is not None:
+        ctx = _recovery_support_context(state.adapter_result)
+    if ctx is None:
         state.error = UntargetedCidNlRealDataRuntimeError(
             "recovery requires a completed initial assessment"
         )
@@ -551,14 +590,8 @@ def _execute_recovery(
                 sample=job.sample,
                 method_subject=job.method_subject,
                 group_center_rt=center,
-                initial_assessment=(
-                    result.assessment_input.assessment
-                    if is_cid_nl_missing_ms1_rejection(
-                        result.assessment_input.assessment
-                    )
-                    else None
-                ),
-                support_policy=result.assessment_input.assessment.content.evaluation_receipt.support_policy,
+                initial_assessment=ctx.initial_assessment,
+                support_policy=ctx.support_policy,
                 peak_config=job.peak_config,
                 raw=raw,
                 _observer=state.observer,
@@ -644,24 +677,18 @@ def _execute_recovery_batch(phase: _BatchSamplePhaseState) -> None:
         )
         phase.recovery_acquisition = trace_batch.acquisition
         for state in pending:
-            result = state.adapter_result
-            assert result is not None
+            ctx = state.recovery_support
+            if ctx is None and state.adapter_result is not None:
+                ctx = _recovery_support_context(state.adapter_result)
+            assert ctx is not None
             for index, center in enumerate(state.recovery_group_center_rts):
                 recovery = recover_untargeted_cid_nl_sample_subject(
                     processing_owners=state.job.processing_owners,
                     sample=state.job.sample,
                     method_subject=state.job.method_subject,
                     group_center_rt=center,
-                    initial_assessment=(
-                        result.assessment_input.assessment
-                        if is_cid_nl_missing_ms1_rejection(
-                            result.assessment_input.assessment
-                        )
-                        else None
-                    ),
-                    support_policy=(
-                        result.assessment_input.assessment.content.evaluation_receipt.support_policy
-                    ),
+                    initial_assessment=ctx.initial_assessment,
+                    support_policy=ctx.support_policy,
                     peak_config=state.job.peak_config,
                     raw=raw if state.job.method_subject.composition else None,
                     settings=state.job.settings,
@@ -763,7 +790,7 @@ class _SampleRecoveryWorkerRequest:
     recovery_group_center_rts_by_key: dict[str, tuple[float, ...]]
     recovery_group_ids_by_key: dict[str, tuple[str, ...]]
     recovery_inputs_by_key: dict[str, UntargetedCidNlRecoveryInput | None]
-    adapter_results_by_key: dict[str, UntargetedCidNlRealDataAdapterResult | None]
+    recovery_support_by_key: dict[str, _RecoverySupportContext]
     recovery_resource_key: str | None
 
 
@@ -794,7 +821,7 @@ def _execute_sample_recovery_worker(
             resource_key=None,
             initial_requires_raw=False,
             observer=_UntargetedRealDataWorkObserver(job.processing_owners),
-            adapter_result=request.adapter_results_by_key.get(job.work_unit_key),
+            recovery_support=request.recovery_support_by_key.get(job.work_unit_key),
             recovery_input=request.recovery_inputs_by_key.get(job.work_unit_key),
             recovery_group_center_rts=request.recovery_group_center_rts_by_key.get(
                 job.work_unit_key, ()
@@ -851,4 +878,5 @@ __all__ = [
     "_open_job_raw",
     "_prepare_owner_authorized_recoveries",
     "_prepare_subject_authorized_recoveries",
+    "_recovery_support_context",
 ]
