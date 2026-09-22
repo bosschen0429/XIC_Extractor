@@ -6,7 +6,7 @@ import importlib
 import json
 import threading
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, fields, replace
+from dataclasses import fields, replace
 from functools import partial
 from pathlib import Path
 from typing import cast
@@ -32,10 +32,6 @@ from xic_extractor.execution_engine import (
     StreamedResultStore,
     WorkerAdmissionPool,
     WorkPartition,
-)
-from xic_extractor.execution_engine.streamed_result_store import (
-    PartitionReservation,
-    ReservedPartitionWriter,
 )
 from xic_extractor.execution_engine.worker_pool import WorkerTransportMetrics
 from xic_extractor.execution_runtime import (
@@ -68,9 +64,6 @@ from xic_extractor.extraction.untargeted_cid_nl_production_batch import (
 from xic_extractor.extraction.untargeted_cid_nl_real_data_runtime import (
     UntargetedCidNlRuntimePartitionResult,
     execute_untargeted_cid_nl_runtime_partition,
-)
-from xic_extractor.extraction.untargeted_real_data_models import (
-    UntargetedCidNlRuntimeSampleResult,
 )
 from xic_extractor.immutable_sequence import ImmutableSequence
 from xic_extractor.peak_detection.cid_nl_method_subject import (
@@ -251,7 +244,6 @@ class CidNlPartitionPipelineAdapter:
         self._process_pool_lock = threading.Lock()
         self._process_pools_closed = False
         self._process_pools: tuple[WorkerAdmissionPool, ...] = ()
-        self._composition_pool_instance: WorkerAdmissionPool | None = None
         if raw_worker_backend == "process":
             shared_objects = _sample_worker_shared_objects(
                 self._owners,
@@ -348,72 +340,6 @@ class CidNlPartitionPipelineAdapter:
         self,
     ) -> tuple[WorkerTransportMetrics | None, ...]:
         return tuple(pool.transport_metrics for pool in self._process_pools)
-
-    def _composition_pool(self) -> WorkerAdmissionPool | None:
-        """One worker that composes partitions with the store's own owners.
-
-        The sample pool bootstraps a different owner tuple, so a partition
-        written there could not be read back by this store. One worker is
-        enough: compositions are already a serial chain, and a second would
-        only double the resident child graphs.
-        """
-
-        if self._raw_worker_backend != "process":
-            return None
-        with self._process_pool_lock:
-            if self._process_pools_closed:
-                return None
-            if self._composition_pool_instance is None:
-                self._composition_pool_instance = WorkerAdmissionPool(
-                    max_workers=3,
-                    backend="process",
-                    thread_name_prefix="cid-nl-compose",
-                    shared_objects=_shared_objects(self._plan),
-                )
-                self._process_pools = (
-                    *self._process_pools,
-                    self._composition_pool_instance,
-                )
-            return self._composition_pool_instance
-
-    def _compose_offloaded(
-        self,
-        partition: WorkPartition[tuple[CidNlMethodSubject, ...]],
-        batch: UntargetedCidNlProductionBatch,
-        sample_results: tuple[UntargetedCidNlRuntimeSampleResult, ...],
-        store: StreamedResultStore,
-        should_cancel: Callable[[], object] | None,
-    ) -> UntargetedCidNlPersistedPartition | None:
-        pool = self._composition_pool()
-        if pool is None:
-            return None
-        reservation = store.reserve_partition(partition.partition_key)
-        responses: list[_PartitionCompositionResponse] = []
-        failures: list[Exception] = []
-        request = _PartitionCompositionRequest(
-            batch=batch,
-            sample_results=sample_results,
-            reservation=reservation,
-            alignment_config=self._alignment_config,
-            known_istd_reference=self._known_istd_reference,
-            raw_workers=self._raw_workers,
-            individually_addressable_fields=store.individually_addressable_fields,
-        )
-        pool.run_windowed(
-            (request,),
-            _execute_partition_composition_worker,
-            on_completed=lambda _c, _t, _i, result: responses.append(result),
-            on_error=lambda _i, exc: failures.append(exc),
-        )
-        if failures:
-            raise failures[0]
-        if not responses:
-            raise RuntimeError("partition composition returned no result")
-        response = responses[0]
-        sealed = store.adopt_partition(
-            reservation, lengths=response.lengths, records=response.records
-        )
-        return replace(response.persisted, sealed=sealed)
 
     def close_process_worker_pools(self) -> None:
         """Close attempt-scoped process workers before terminal acknowledgement."""
@@ -538,18 +464,6 @@ class CidNlPartitionPipelineAdapter:
         def cancel_check() -> None:
             if should_cancel is not None and should_cancel():
                 raise InterruptedError("CID-NL batch cancelled")
-
-        cancel_check()
-        # Retained children must stay addressable in this process, so that
-        # single-partition path composes here.
-        if not retain_memory:
-            offloaded = self._compose_offloaded(
-                partition, batch, leaf.sample_results, store, should_cancel
-            )
-            if offloaded is not None:
-                return PartitionCompositionOutput(
-                    result=offloaded, sealed=offloaded.sealed
-                )
 
         persisted = compose_and_persist_untargeted_cid_nl_partition(
             batch,
@@ -800,50 +714,6 @@ def execute_bounded_untargeted_cid_nl(
         )
     finally:
         adapter.close_process_worker_pools()
-
-
-@dataclass(frozen=True, slots=True)
-class _PartitionCompositionRequest:
-    """Everything one partition's composition consumes, and nothing else."""
-
-    batch: UntargetedCidNlProductionBatch
-    sample_results: tuple[UntargetedCidNlRuntimeSampleResult, ...]
-    reservation: PartitionReservation
-    alignment_config: AlignmentConfig
-    known_istd_reference: KnownIstdReference | None
-    raw_workers: int
-    individually_addressable_fields: frozenset[str]
-
-
-@dataclass(frozen=True, slots=True)
-class _PartitionCompositionResponse:
-    persisted: UntargetedCidNlPersistedPartition
-    lengths: dict[str, int]
-    records: dict[str, tuple[tuple[int, int], ...]]
-
-
-def _execute_partition_composition_worker(
-    request: _PartitionCompositionRequest,
-) -> _PartitionCompositionResponse:
-    """Compose one partition and publish it into its reserved slot."""
-
-    from xic_extractor.execution_engine import worker_pool
-
-    writer = ReservedPartitionWriter(
-        request.reservation,
-        worker_pool._PROCESS_SHARED_OBJECTS,
-        individually_addressable_fields=request.individually_addressable_fields,
-    )
-    persisted = compose_and_persist_untargeted_cid_nl_partition(
-        request.batch,
-        request.sample_results,
-        store=writer,
-        partition_key=request.reservation.key,
-        alignment_config=request.alignment_config,
-        known_istd_reference=request.known_istd_reference,
-        raw_workers=request.raw_workers,
-    )
-    return _PartitionCompositionResponse(persisted, writer.lengths, writer.records)
 
 
 def _shared_objects(plan: UntargetedCidNlProductionPlan) -> tuple[object, ...]:
