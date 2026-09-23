@@ -283,126 +283,6 @@ def _assert_jobs_match_direct_construction(batch) -> None:
         assert runtime_owner._request_subject_physical_records(direct_job) == records
 
 
-def _assert_outside_group_cells(scientific, batch, tmp_path: Path) -> None:
-    import json
-    from dataclasses import asdict
-
-    from tests.processing_identity_no_raw_fixture import (
-        build_processing_identity_no_raw_fixture,
-    )
-    from xic_extractor.alignment import cell_observations as cell_owner
-
-    source_cells = tuple(
-        source
-        for final_cell in scientific.cell_observations
-        for source in final_cell.predecessor_cells
-    )
-    outside_cells = tuple(
-        source for source in source_cells if source.content.outside_group is not None
-    )
-    local_cells = tuple(
-        source for source in source_cells if source.content.outside_group is None
-    )
-    assert {source.group_context.group.public_family_id for source in source_cells} == {
-        "FAM000001",
-        "FAM000002",
-    }
-    for source in local_cells:
-        current_content = asdict(source.content)
-        expected = (
-            json.dumps(
-                {
-                    "schema_version": "cell_observation_v2",
-                    "validation_status": cell_owner.VALIDATION_STATUS,
-                    "content": current_content,
-                },
-                ensure_ascii=False,
-                sort_keys=True,
-                separators=(",", ":"),
-                allow_nan=False,
-            )
-            + "\n"
-        )
-        assert (
-            cell_owner.canonical_cell_observation_bytes(source.content)
-            == expected.encode()
-        )
-        assert source.artifact.semantic_contract.schema_version == "cell_observation_v2"
-    outside = outside_cells[0]
-    relation = outside.content.outside_group
-    assert relation is not None
-    supporting = outside.outside_group_context
-    assert supporting is not None
-    support = next(
-        item
-        for item in supporting.supports
-        if item.assessment is outside.method_assessment
-    )
-    job = next(
-        job
-        for job in batch.jobs
-        if job.sample.identity.sample_identity_id
-        == outside.content.canonical_sample_identity_id
-    )
-    mint_args = dict(
-        processing_owners=job.processing_owners,
-        sample=job.sample,
-        group_context=outside.group_context,
-        method_assessment=outside.method_assessment,
-        outside_group_context=supporting,
-    )
-    assert cell_owner.mint_cell_observation_ref(**mint_args) == outside
-    for source in outside_cells:
-        payload = json.loads(
-            cell_owner.canonical_cell_observation_bytes(source.content)
-        )
-        assert payload["schema_version"] == "cell_observation_v2"
-        assert payload["content"]["outside_group"] == asdict(
-            source.content.outside_group
-        )
-        assert source.artifact.semantic_contract.schema_version == "cell_observation_v2"
-        assert source.peak_observation is None and source.peak_hypothesis is None
-        assert source.content.method_result == "SUPPORT"
-        assert (
-            source.content.reason_codes == source.method_assessment.content.reason_codes
-        )
-    (tmp_path / "other-request").mkdir()
-    other_request = build_processing_identity_no_raw_fixture(
-        tmp_path / "other-request", sample_stems=("different",)
-    )
-    other_job = next(item for item in batch.jobs if item.sample != job.sample)
-    for substitution in (
-        {"outside_group_context": outside.group_context},
-        {"peak_hypothesis": support.hypothesis},
-        {
-            "peak_observation": next(
-                source.peak_observation
-                for source in local_cells
-                if source.method_assessment is support.assessment
-            )
-        },
-        {"sample": other_job.sample},
-        {"processing_owners": other_request.owners},
-    ):
-        with pytest.raises(cell_owner.CellObservationContractError):
-            cell_owner.mint_cell_observation_ref(**(mint_args | substitution))
-    with pytest.raises(cell_owner.CellObservationContractError):
-        replace(
-            outside,
-            content=replace(
-                outside.content,
-                outside_group=replace(
-                    relation,
-                    supporting_peak_hypothesis_id=local_cells[
-                        0
-                    ].group_context.group.owner_ids[0],
-                ),
-            ),
-        )
-    with pytest.raises(cell_owner.CellObservationContractError):
-        replace(outside, outside_group_context=outside.group_context)
-
-
 def _assert_single_unsupported_exclusion(
     completed, runtime_result, batch, tmp_path: Path, *, populated: bool
 ) -> None:
@@ -2062,18 +1942,28 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         scientific = child.scientific_core
         assert len(scientific.final_population) == 2
         assert len(scientific.cell_observations) == 2 * len(sample_stems)
+        # Each sample's SUPPORT belongs to its own group. A group with K direct
+        # supports revisits the other samples' windows, which hold no peak;
+        # below K the other samples stay unsearched outside-group cells.
+        revisited = min(group_sizes) >= 2
         assert sum(
-            cell.evidence_states == ("not_searched",)
+            cell.evidence_states
+            == (("unavailable",) if revisited else ("not_searched",))
             for cell in scientific.cell_observations
         ) == len(sample_stems)
         assert all(
             sum(bool(row[stem]) for stem in sample_stems) == 2 for row in matrix_rows
         )
         assert all(
-            result.effective_assessment.content.method_result == "SUPPORT"
+            result.adapter_result.assessment_input.assessment.content.method_result
+            == "SUPPORT"
             for result in runtime_results[0].sample_results
         )
-        _assert_outside_group_cells(scientific, captured_batches[0], tmp_path)
+        assert any(
+            source.content.outside_group is not None
+            for cell in scientific.cell_observations
+            for source in cell.predecessor_cells
+        ) != revisited
         close_and_verify_persisted_curves()
         return
 

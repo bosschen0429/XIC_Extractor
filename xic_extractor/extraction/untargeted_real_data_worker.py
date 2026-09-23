@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib
 from copy import copy
 from dataclasses import dataclass, replace
+from typing import Literal
 
 from xic_extractor.acquisition_contract import TraceAcquisitionBatch
 from xic_extractor.alignment.cell_group_context import (
@@ -405,13 +406,10 @@ def _prepare_group_authorized_backfills(
                 if state.error is not None or state.adapter_result is None:
                     continue
                 assessment = state.adapter_result.assessment_input.assessment
-                if not (
-                    assessment.content.method_result == "HOLD"
-                    or is_unsearched_cid_nl_discovery_assessment(assessment)
-                    or is_cid_nl_missing_ms1_rejection(assessment)
-                ):
+                revisit = _group_revisit(assessment)
+                if revisit is None:
                     continue
-                if assessment.candidate_peaks:
+                if revisit == "reuse":
                     state.backfill_input = UntargetedCidNlBackfillInput(
                         sample=state.job.sample,
                         candidate_assessment=assessment,
@@ -419,6 +417,26 @@ def _prepare_group_authorized_backfills(
                 else:
                     state.backfill_group_center_rts += (group.group_center_rt,)
                     state.backfill_group_ids += (group.group_hypothesis_id,)
+
+
+def _group_revisit(
+    assessment: CidNlMethodAssessmentRef,
+) -> Literal["reuse", "search"] | None:
+    """How a sample outside one group revisits that group's window.
+
+    A HOLD with candidate peaks is reused; otherwise the window is searched.
+    A SUPPORT belongs to another peak of the sample and does not answer the
+    group's window.
+    """
+    if assessment.content.method_result == "SUPPORT":
+        return "search"
+    if not (
+        assessment.content.method_result == "HOLD"
+        or is_unsearched_cid_nl_discovery_assessment(assessment)
+        or is_cid_nl_missing_ms1_rejection(assessment)
+    ):
+        return None
+    return "reuse" if assessment.candidate_peaks else "search"
 
 
 def _prepare_owner_authorized_backfills(
@@ -528,13 +546,10 @@ def _prepare_subject_authorized_backfills(
             result = state.adapter_result
             assert result is not None
             assessment = result.assessment_input.assessment
-            if not (
-                assessment.content.method_result == "HOLD"
-                or is_unsearched_cid_nl_discovery_assessment(assessment)
-                or is_cid_nl_missing_ms1_rejection(assessment)
-            ):
+            revisit = _group_revisit(assessment)
+            if revisit is None:
                 continue
-            if assessment.candidate_peaks:
+            if revisit == "reuse":
                 state.backfill_input = UntargetedCidNlBackfillInput(
                     sample=state.job.sample,
                     candidate_assessment=assessment,

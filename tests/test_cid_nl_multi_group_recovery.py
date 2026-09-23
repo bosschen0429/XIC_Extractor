@@ -1115,6 +1115,101 @@ def test_ms1_only_backfill_fills_only_one_unique_group_window_peak(
     assert row.detected_count == 2
 
 
+def test_backfill_reaches_a_sample_whose_support_belongs_to_another_group(
+    tmp_path, monkeypatch
+):
+    # Missing has CID-NL support only for its own peak at 9.6 min; its peak in
+    # the S1/S2 group at 8.0 min carries no MS2. Support elsewhere must not
+    # stop the group-bounded revisit.
+    ms1_centers = {"S1": (8.0,), "S2": (8.0,), "Missing": (8.0, 9.6)}
+    nl_centers = {"S1": (8.0,), "S2": (8.0,), "Missing": (9.6,)}
+    paths = tuple(tmp_path / f"{stem}.synthetic" for stem in ms1_centers)
+    settings, peak_config = (
+        replace(_settings(), neutral_loss_profile=None, rt_max=10.1),
+        _peak_config(tmp_path),
+    )
+    raws, candidates = {}, {}
+    for path in paths:
+        path.write_bytes(path.stem.encode())
+        raw = _FakeRaw(nl_centers[path.stem])
+        raw.rt = np.linspace(7.4, 10.2, 1121)
+        raw.intensity = sum(
+            (
+                1000 * np.exp(-0.5 * ((raw.rt - center) / 0.035) ** 2)
+                for center in ms1_centers[path.stem]
+            ),
+            np.zeros_like(raw.rt),
+        )
+        raw.scans = tuple(
+            replace(scan, scan_number=int(np.argmin(np.abs(raw.rt - scan.rt))) + 1)
+            for scan in raw.scans
+        )
+        raws[path] = raw
+        candidates[path.stem] = _current_candidates(
+            raw, raw_file=path, settings=settings, peak_config=peak_config
+        )
+    batch = build_untargeted_cid_nl_production_batch(
+        raw_paths=paths,
+        sample_metadata=tuple(
+            SampleMetadata(
+                sample_name=stem,
+                raw_stem=stem,
+                injection_order=index + 1,
+                sample_role="study_sample",
+            )
+            for index, stem in enumerate(ms1_centers)
+        ),
+        settings=settings,
+        peak_config=peak_config,
+        candidates_by_sample=candidates,
+        discovery_receipts_by_sample=_discovery_receipts(tmp_path, paths, candidates),
+        sample_identity_namespace="study:support-elsewhere",
+        dll_dir=tmp_path,
+    )
+    _install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
+    runtime = start_runtime_attempt(
+        attempt=batch.context.processing_owners.attempt,
+        work_unit_keys=tuple(job.work_unit_key for job in batch.jobs),
+        owner_completeness_attestation="support-elsewhere",
+    )
+    result = execute_untargeted_cid_nl_real_data_runtime(
+        runtime,
+        batch.jobs,
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+        recovery_marker=OwnerPathRuntimeMarker(
+            tmp_path / "runtime.json", "support-elsewhere"
+        ),
+    )
+    assert result.succeeded
+    missing = next(
+        item
+        for item in result.sample_results
+        if item.job.sample.metadata.raw_stem == "Missing"
+    )
+    assert missing.adapter_result.assessment_input.assessment.content.method_result == (
+        "SUPPORT"
+    )
+    completed = compose_untargeted_cid_nl_production_result(
+        batch, result, alignment_config=AlignmentConfig(anchor_min_seed_events=1)
+    )
+    writer = project_completed_untarget_batch_writer_inputs(completed)
+    sample_stems = writer.matrix.sample_order
+    group_rows = {
+        round(cluster.family_center_rt, 1): cluster
+        for cluster in writer.matrix.clusters
+    }
+    group_8 = group_rows[8.0]
+    (missing_decision,) = tuple(
+        decision
+        for decision in writer.production_decisions.cells.values()
+        if decision.feature_family_id == group_8.feature_family_id
+        and decision.sample_stem == "Missing"
+    )
+    assert "Missing" in sample_stems
+    assert missing_decision.write_matrix_value
+    assert missing_decision.raw_status == "rescued"
+
+
 def test_alignment_uses_configured_recovery_groups(tmp_path, monkeypatch):
     test_runtime_recovers_every_authorized_rt_group(
         tmp_path, monkeypatch, True, (), "configured"
