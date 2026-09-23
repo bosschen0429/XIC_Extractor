@@ -17,7 +17,7 @@ else:
 
 CellStatus = Literal[
     "detected",
-    "rescued",
+    "backfilled",
     "absent",
     "unchecked",
     "ambiguous_ms1_owner",
@@ -128,7 +128,7 @@ class AlignedCell:
 
     @property
     def matrix_area_missing_reason(self) -> str:
-        if self.status not in {"detected", "rescued"}:
+        if self.status not in {"detected", "backfilled"}:
             return ""
         return primary_matrix_area_from_integration(self.selected_integration).reason
 

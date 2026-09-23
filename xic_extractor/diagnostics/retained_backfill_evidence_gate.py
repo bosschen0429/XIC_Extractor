@@ -62,8 +62,8 @@ RETAINED_BACKFILL_EVIDENCE_GATE_COLUMNS = (
     "diagnostic_authority",
     "detected_cell_count",
     "rescued_cell_count",
-    "accepted_rescue_count",
-    "review_rescue_count",
+    "accepted_backfill_count",
+    "review_backfill_count",
     "include_in_primary_matrix",
     "identity_decision",
     "identity_reason",
@@ -105,8 +105,8 @@ MISSING_OVERLAY_QUEUE_COLUMNS = (
     "evidence_gate_status",
     "recommended_action",
     "detected_count",
-    "accepted_rescue_count",
-    "review_rescue_count",
+    "accepted_backfill_count",
+    "review_backfill_count",
     "rescued_cell_count",
     "seed_source_samples",
     "row_flags",
@@ -123,9 +123,9 @@ REVIEW_REQUIRED_COLUMNS = (
     "identity_reason",
     "primary_evidence",
     "quantifiable_detected_count",
-    "quantifiable_rescue_count",
-    "accepted_rescue_count",
-    "review_rescue_count",
+    "quantifiable_backfill_count",
+    "accepted_backfill_count",
+    "review_backfill_count",
     "row_flags",
 )
 CELL_REQUIRED_COLUMNS = (
@@ -189,8 +189,8 @@ class RetainedBackfillGateRow:
     recommended_action: RecommendedAction
     detected_cell_count: int
     rescued_cell_count: int
-    accepted_rescue_count: int
-    review_rescue_count: int
+    accepted_backfill_count: int
+    review_backfill_count: int
     include_in_primary_matrix: bool
     identity_decision: str
     identity_reason: str
@@ -461,9 +461,9 @@ def _evaluate_group(
         evidence_gate_status=status,
         recommended_action=_recommended_action(status),
         detected_cell_count=_count_cells(family_cells, "detected"),
-        rescued_cell_count=_count_cells(family_cells, "rescued"),
-        accepted_rescue_count=_int_or_zero(review.get("accepted_rescue_count")),
-        review_rescue_count=_int_or_zero(review.get("review_rescue_count")),
+        rescued_cell_count=_count_cells(family_cells, "backfilled"),
+        accepted_backfill_count=_int_or_zero(review.get("accepted_backfill_count")),
+        review_backfill_count=_int_or_zero(review.get("review_backfill_count")),
         include_in_primary_matrix=bool_value(
             review.get("include_in_primary_matrix"),
         )
@@ -524,20 +524,20 @@ def _is_retained_product_backfill(
     if any(
         _int_or_zero(review.get(field)) > 0
         for field in (
-            "quantifiable_rescue_count",
-            "accepted_rescue_count",
-            "review_rescue_count",
+            "quantifiable_backfill_count",
+            "accepted_backfill_count",
+            "review_backfill_count",
         )
     ):
         return True
-    return any(text_value(cell.get("status")) == "rescued" for cell in family_cells)
+    return any(text_value(cell.get("status")) == "backfilled" for cell in family_cells)
 
 
 def _has_machine_support_without_overlay(
     review: Mapping[str, str],
     family_cells: Sequence[Mapping[str, str]],
 ) -> bool:
-    if _int_or_zero(review.get("review_rescue_count")) > 0:
+    if _int_or_zero(review.get("review_backfill_count")) > 0:
         return False
     if _overlay_required_by_review_flags(review):
         return False
@@ -545,10 +545,10 @@ def _has_machine_support_without_overlay(
         _detected_count(review),
         _count_cells(family_cells, "detected"),
     )
-    rescued_count = max(
-        _int_or_zero(review.get("quantifiable_rescue_count")),
-        _int_or_zero(review.get("accepted_rescue_count")),
-        _count_cells(family_cells, "rescued"),
+    backfilled_count = max(
+        _int_or_zero(review.get("quantifiable_backfill_count")),
+        _int_or_zero(review.get("accepted_backfill_count")),
+        _count_cells(family_cells, "backfilled"),
     )
     if detected_count < MACHINE_SUPPORT_DETECTED_MIN:
         return False
@@ -556,7 +556,7 @@ def _has_machine_support_without_overlay(
         5,
         int(round(detected_count * MACHINE_SUPPORT_RESCUE_FRACTION_MAX)),
     )
-    return rescued_count <= rescue_limit
+    return backfilled_count <= rescue_limit
 
 
 def _overlay_required_by_review_flags(review: Mapping[str, str]) -> bool:
@@ -582,19 +582,19 @@ def _is_detected_zero_backfill_context(
     if any(
         _int_or_zero(review.get(field)) > 0
         for field in (
-            "quantifiable_rescue_count",
-            "accepted_rescue_count",
-            "review_rescue_count",
+            "quantifiable_backfill_count",
+            "accepted_backfill_count",
+            "review_backfill_count",
         )
     ):
         return True
-    return any(text_value(cell.get("status")) == "rescued" for cell in family_cells)
+    return any(text_value(cell.get("status")) == "backfilled" for cell in family_cells)
 
 
 def _product_behavior_state(review: Mapping[str, str]) -> str:
-    if _int_or_zero(review.get("accepted_rescue_count")) > 0:
+    if _int_or_zero(review.get("accepted_backfill_count")) > 0:
         return "product_primary_backfill_accepted"
-    if _int_or_zero(review.get("review_rescue_count")) > 0:
+    if _int_or_zero(review.get("review_backfill_count")) > 0:
         return "product_primary_backfill_review_only"
     return "product_primary_backfilled"
 
@@ -630,7 +630,7 @@ def _has_product_cell_backfill_context(
         )
         if any("backfill" in text_value(value).lower() for value in values):
             return True
-        if text_value(cell.get("status")) == "rescued":
+        if text_value(cell.get("status")) == "backfilled":
             return True
     return False
 
@@ -786,8 +786,8 @@ def _row_as_mapping(row: RetainedBackfillGateRow) -> dict[str, object]:
         "diagnostic_authority": "diagnostic_only",
         "detected_cell_count": row.detected_cell_count,
         "rescued_cell_count": row.rescued_cell_count,
-        "accepted_rescue_count": row.accepted_rescue_count,
-        "review_rescue_count": row.review_rescue_count,
+        "accepted_backfill_count": row.accepted_backfill_count,
+        "review_backfill_count": row.review_backfill_count,
         "include_in_primary_matrix": row.include_in_primary_matrix,
         "identity_decision": row.identity_decision,
         "identity_reason": row.identity_reason,
@@ -890,8 +890,8 @@ def _missing_overlay_queue_row(
         "evidence_gate_status": row.evidence_gate_status,
         "recommended_action": row.recommended_action,
         "detected_count": row.detected_cell_count,
-        "accepted_rescue_count": row.accepted_rescue_count,
-        "review_rescue_count": row.review_rescue_count,
+        "accepted_backfill_count": row.accepted_backfill_count,
+        "review_backfill_count": row.review_backfill_count,
         "rescued_cell_count": row.rescued_cell_count,
         "seed_source_samples": ";".join(row.seed_source_samples),
         "row_flags": ";".join(row.row_flags),
@@ -904,7 +904,7 @@ def _overlay_queue_sort_key(row: RetainedBackfillGateRow) -> tuple[int, int, int
     review_only = 0 if row.product_behavior_state.endswith("_review_only") else 1
     return (
         review_only,
-        -row.review_rescue_count,
+        -row.review_backfill_count,
         -row.rescued_cell_count,
         row.feature_family_id,
     )

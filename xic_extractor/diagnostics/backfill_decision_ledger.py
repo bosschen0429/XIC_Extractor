@@ -99,8 +99,8 @@ class _ReviewGroup:
     event_member_count: int
     consolidation_state: str
     consolidation_winner_group_hypothesis_id: str
-    quantifiable_rescue_count: int
-    review_rescue_count: int
+    quantifiable_backfill_count: int
+    review_backfill_count: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -108,8 +108,8 @@ class _ReviewCensus:
     groups: Mapping[str, _ReviewGroup]
     consolidation_counts: Mapping[str, int]
     loser_row_with_rescue_count: int
-    loser_quantifiable_rescue_count: int
-    loser_review_rescue_count: int
+    loser_quantifiable_backfill_count: int
+    loser_review_backfill_count: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -544,8 +544,8 @@ def _read_review_groups(path: Path) -> _ReviewCensus:
     groups: dict[str, _ReviewGroup] = {}
     states: Counter[str] = Counter()
     loser_row_with_rescue_count = 0
-    loser_quantifiable_rescue_count = 0
-    loser_review_rescue_count = 0
+    loser_quantifiable_backfill_count = 0
+    loser_review_backfill_count = 0
     for row_number, row in _iter_delimited_rows(
         path,
         delimiter="\t",
@@ -559,17 +559,17 @@ def _read_review_groups(path: Path) -> _ReviewCensus:
             raise ValueError(
                 f"{path}: row {row_number}: unsupported consolidation_state {state!r}"
             )
-        quantifiable_rescue_count = _nonnegative_int(
+        quantifiable_backfill_count = _nonnegative_int(
             path,
             row_number,
             row,
-            "quantifiable_rescue_count",
+            "quantifiable_backfill_count",
         )
-        review_rescue_count = _nonnegative_int(
+        review_backfill_count = _nonnegative_int(
             path,
             row_number,
             row,
-            "review_rescue_count",
+            "review_backfill_count",
         )
         groups[group_id] = _ReviewGroup(
             feature_family_id=_required_text(
@@ -591,22 +591,22 @@ def _read_review_groups(path: Path) -> _ReviewCensus:
             consolidation_winner_group_hypothesis_id=row.get(
                 "consolidation_winner_group_hypothesis_id", ""
             ).strip(),
-            quantifiable_rescue_count=quantifiable_rescue_count,
-            review_rescue_count=review_rescue_count,
+            quantifiable_backfill_count=quantifiable_backfill_count,
+            review_backfill_count=review_backfill_count,
         )
         states[state] += 1
         if state == "primary_loser":
-            loser_quantifiable_rescue_count += quantifiable_rescue_count
-            loser_review_rescue_count += review_rescue_count
-            if quantifiable_rescue_count > 0 or review_rescue_count > 0:
+            loser_quantifiable_backfill_count += quantifiable_backfill_count
+            loser_review_backfill_count += review_backfill_count
+            if quantifiable_backfill_count > 0 or review_backfill_count > 0:
                 loser_row_with_rescue_count += 1
     _validate_consolidation_relationships(path, groups)
     return _ReviewCensus(
         groups=groups,
         consolidation_counts=dict(sorted(states.items())),
         loser_row_with_rescue_count=loser_row_with_rescue_count,
-        loser_quantifiable_rescue_count=loser_quantifiable_rescue_count,
-        loser_review_rescue_count=loser_review_rescue_count,
+        loser_quantifiable_backfill_count=loser_quantifiable_backfill_count,
+        loser_review_backfill_count=loser_review_backfill_count,
     )
 
 
@@ -1000,8 +1000,10 @@ def _summary(
             "consolidation_counts": review.consolidation_counts,
             "primary_loser_fraction": _safe_ratio(loser_count, group_count),
             "loser_row_with_rescue_count": review.loser_row_with_rescue_count,
-            "loser_quantifiable_rescue_count": (review.loser_quantifiable_rescue_count),
-            "loser_review_rescue_count": review.loser_review_rescue_count,
+            "loser_quantifiable_backfill_count": (
+                review.loser_quantifiable_backfill_count
+            ),
+            "loser_review_backfill_count": review.loser_review_backfill_count,
             "earliest_retained_settlement_stage": (
                 "alignment.primary_consolidation_post_backfill"
                 if not timing.pre_backfill_consolidation_observed

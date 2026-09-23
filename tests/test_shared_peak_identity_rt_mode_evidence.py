@@ -287,7 +287,7 @@ def _assignment(
     raw_rt: str,
     normalized_rt: str,
     *,
-    status: str = "rescued",
+    status: str = "backfilled",
     family_id: str = "",
 ) -> dict[str, str]:
     return {
@@ -348,7 +348,7 @@ def _overlay_trace(
     sample_stem: str,
     apex_rt: float,
     *,
-    status: str = "rescued",
+    status: str = "backfilled",
 ) -> dict[str, object]:
     return {
         "sample_stem": sample_stem,

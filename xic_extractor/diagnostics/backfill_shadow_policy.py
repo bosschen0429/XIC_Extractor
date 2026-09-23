@@ -293,7 +293,7 @@ def _shadow_decision(
 ) -> BackfillDecisionExplanation:
     if current_product_cell_state == "filled_now":
         return decision_explanation("fill_now", "product_already_writes_rescue")
-    if text_value(cell.get("status")) != "rescued":
+    if text_value(cell.get("status")) != "backfilled":
         return decision_explanation("blocked", "rescued_cell_missing_or_not_rescued")
     if optional_float(gate_row.get("detected_cell_count")) in (None, 0.0):
         return decision_explanation("blocked", "detected_seed_missing")
@@ -332,7 +332,7 @@ def _shadow_decision(
 
 
 def _current_product_cell_state(cell: Mapping[str, str]) -> str:
-    if text_value(cell.get("status")) != "rescued":
+    if text_value(cell.get("status")) != "backfilled":
         return "not_rescued"
     if text_value(cell.get("gap_fill_state")) == "gap_fill_rescued":
         return "filled_now"

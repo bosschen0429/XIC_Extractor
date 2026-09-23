@@ -652,7 +652,7 @@ def _machine_same_peak_evidence(
         blockers.append("full_cohort_peak_hypothesis_missing")
     else:
         reasons.append("slice_gate_hypothesis_anchor_match")
-    if request.full_cohort_cell_status not in {"detected", "rescued"}:
+    if request.full_cohort_cell_status not in {"detected", "backfilled"}:
         blockers.append("full_cohort_cell_not_detected_or_rescued")
     else:
         reasons.append(f"full_cohort_cell_status:{request.full_cohort_cell_status}")

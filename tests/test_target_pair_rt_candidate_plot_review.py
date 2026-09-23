@@ -71,7 +71,7 @@ def test_select_requests_keeps_accepted_reference_before_review_candidates() -> 
 def test_select_requests_can_plot_every_input_row() -> None:
     rows = [
         {
-            "sample_name": "rescued",
+            "sample_name": "backfilled",
             "target_label": "8-oxodG",
             "previous_candidate_id": "rescued|8-oxodG|r|s|16.4|16.2|16.7",
             "selected_candidate_id": "rescued|8-oxodG|r|s|16.4|16.2|16.7",
@@ -94,7 +94,7 @@ def test_select_requests_can_plot_every_input_row() -> None:
         plot_input_rows=True,
     )
 
-    assert [request.row["sample_name"] for request in requests] == ["rescued"]
+    assert [request.row["sample_name"] for request in requests] == ["backfilled"]
 
 
 def test_select_requests_excludes_sample_inapplicable_rows_by_default() -> None:

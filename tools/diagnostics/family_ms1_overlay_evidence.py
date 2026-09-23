@@ -86,8 +86,8 @@ def _build_family_ms1_evidence_summary(
     absolute_shape_similarity: Mapping[str, float | None],
 ) -> dict[str, int | float | str | bool | None]:
     detected = [row for row in rows if row.status == "detected"]
-    rescued = [row for row in rows if row.status == "rescued"]
-    status_rows = [row for row in rows if row.status in {"detected", "rescued"}]
+    rescued = [row for row in rows if row.status == "backfilled"]
+    status_rows = [row for row in rows if row.status in {"detected", "backfilled"}]
     evaluable = [
         row for row in status_rows if shape_similarity.get(row.sample_stem) is not None
     ]
@@ -272,8 +272,8 @@ def _build_family_ms1_evidence_summary(
         "family_verdict": family_verdict,
         "trace_count": len(rows),
         "detected_count": len(detected),
-        "rescued_count": len(rescued),
-        "detected_rescued_count": len(status_rows),
+        "backfilled_count": len(rescued),
+        "detected_backfilled_count": len(status_rows),
         "evaluable_trace_count": len(evaluable),
         "global_apex_assessable_trace_count": len(global_apex_assessable),
         "global_apex_assessable_fraction": global_apex_assessable_fraction,

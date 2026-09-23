@@ -38,7 +38,7 @@ from tools.diagnostics.family_ms1_overlay_rendering_styles import (
     _stable_jitter,
 )
 
-_SELECTED_PEAK_STATUSES = frozenset({"detected", "rescued"})
+_SELECTED_PEAK_STATUSES = frozenset({"detected", "backfilled"})
 
 
 def render_family_ms1_overlay(
@@ -98,7 +98,7 @@ def _render_family_ms1_overlay_from_context(
     # stays two-panel. Drift/iRT belongs to the typed hypothesis/mode evidence
     # slice, not this peak-group context image.
     _ = drift_lookup
-    rescued = [row for row in rows if row.status == "rescued"]
+    rescued = [row for row in rows if row.status == "backfilled"]
     focus_rows = _selected_peak_focus_rows(rows)
 
     plt.rcParams.update(
@@ -319,7 +319,7 @@ def _plot_normalized_overlay(
     _plot_group_median_trace(
         ax,
         rows,
-        group="rescued",
+        group="backfilled",
         color=RESCUED_MEDIAN_COLOR,
         label="rescued median",
         rt_min=rt_min,
@@ -497,7 +497,7 @@ def _plot_apex_aligned_overlay(
     _plot_group_median_trace(
         ax,
         rows,
-        group="rescued",
+        group="backfilled",
         color=RESCUED_MEDIAN_COLOR,
         label="rescued median",
         rt_min=-APEX_ALIGN_HALF_WINDOW_MIN,
@@ -641,8 +641,8 @@ def _plot_group_median_trace(
     grid = np.linspace(rt_min, rt_max, 250)
     normalized_traces: list[np.ndarray] = []
     for row in rows:
-        if group == "rescued":
-            include = row.status == "rescued"
+        if group == "backfilled":
+            include = row.status == "backfilled"
         else:
             include = row.group == group
         if not include:
@@ -693,7 +693,7 @@ def _plot_area_distribution(ax: Any, rows: Sequence[TraceOverlayRow]) -> None:
         if row.status not in _SELECTED_PEAK_STATUSES or row.cell_area is None:
             continue
         if (
-            row.status == "rescued"
+            row.status == "backfilled"
             and min_detected_area is not None
             and row.cell_area >= min_detected_area
         ):

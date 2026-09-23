@@ -214,7 +214,7 @@ def _divergent_owner_decisions(
                 decision,
                 raw_status="absent",
                 production_status="detected",
-                rescue_tier="",
+                backfill_tier="",
                 write_matrix_value=write_matrix_value,
                 matrix_value=987.654,
                 blank_reason="",

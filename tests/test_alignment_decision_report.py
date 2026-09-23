@@ -397,7 +397,7 @@ def _review_row(
         "family_center_mz": "300.0",
         "family_center_rt": "8.0",
         "detected_count": detected,
-        "accepted_rescue_count": rescue,
+        "accepted_backfill_count": rescue,
         "present_rate": present_rate,
         "identity_decision": identity,
         "include_in_primary_matrix": "TRUE" if primary else "FALSE",

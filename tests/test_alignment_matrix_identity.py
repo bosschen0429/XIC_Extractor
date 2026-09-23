@@ -28,8 +28,8 @@ def test_owner_complete_link_requires_two_detected_identity_cells() -> None:
         _feature("FAM001", evidence="owner_complete_link;owner_count=2"),
         (
             _cell("s1", "FAM001", "detected", 100.0),
-            _cell("s2", "FAM001", "rescued", 90.0, backfill_evidence=False),
-            _cell("s3", "FAM001", "rescued", 80.0, backfill_evidence=False),
+            _cell("s2", "FAM001", "backfilled", 90.0, backfill_evidence=False),
+            _cell("s3", "FAM001", "backfilled", 80.0, backfill_evidence=False),
         ),
     )
 
@@ -39,7 +39,7 @@ def test_owner_complete_link_requires_two_detected_identity_cells() -> None:
     assert decision.identity_decision == "provisional_discovery"
     assert decision.identity_reason == "insufficient_detected_identity_support"
     assert decision.quantifiable_detected_count == 1
-    assert decision.quantifiable_rescue_count == 2
+    assert decision.quantifiable_backfill_count == 2
     assert "single_detected_seed" in decision.row_flags
     assert "rescue_heavy" in decision.row_flags
     assert "provisional_retention_candidate" not in decision.row_flags
@@ -52,7 +52,7 @@ def test_owner_complete_link_with_two_detected_cells_is_production_family() -> N
         (
             _cell("s1", "FAM001", "detected", 100.0),
             _cell("s2", "FAM001", "detected", 90.0),
-            _cell("s3", "FAM001", "rescued", 80.0),
+            _cell("s3", "FAM001", "backfilled", 80.0),
         ),
     )
 
@@ -73,8 +73,8 @@ def test_targeted_istd_trajectory_does_not_promote_one_detected_owner() -> None:
         ),
         (
             _cell("s1", "FAM001", "detected", 100.0),
-            _cell("s2", "FAM001", "rescued", 90.0, backfill_evidence=False),
-            _cell("s3", "FAM001", "rescued", 80.0, backfill_evidence=False),
+            _cell("s2", "FAM001", "backfilled", 90.0, backfill_evidence=False),
+            _cell("s3", "FAM001", "backfilled", 80.0, backfill_evidence=False),
         ),
     )
 
@@ -96,7 +96,7 @@ def test_targeted_istd_trajectory_with_two_detected_uses_existing_multi_sample_p
         (
             _cell("s1", "FAM001", "detected", 100.0),
             _cell("s2", "FAM001", "detected", 90.0),
-            _cell("s3", "FAM001", "rescued", 80.0),
+            _cell("s3", "FAM001", "backfilled", 80.0),
         ),
     )
 
@@ -164,7 +164,7 @@ def test_matrix_identity_decision_record_explains_row_projection_policy() -> Non
         (
             _cell("s1", "FAM001", "detected", 100.0),
             _cell("s2", "FAM001", "detected", 90.0),
-            _cell("s3", "FAM001", "rescued", 80.0),
+            _cell("s3", "FAM001", "backfilled", 80.0),
         ),
     )
 
@@ -213,7 +213,7 @@ def test_extreme_dr_backfill_dependency_with_cell_evidence_promotes() -> None:
             _cell("seed1", "FAM001", "detected", 100.0),
             _cell("seed2", "FAM001", "detected", 95.0),
             *tuple(
-                _cell(f"rescue{i:02d}", "FAM001", "rescued", 80.0 + i)
+                _cell(f"rescue{i:02d}", "FAM001", "backfilled", 80.0 + i)
                 for i in range(1, 84)
             ),
         ),
@@ -226,7 +226,7 @@ def test_extreme_dr_backfill_dependency_with_cell_evidence_promotes() -> None:
     assert decision.identity_confidence == "medium"
     assert decision.identity_reason == CELL_EVIDENCE_SUPPORTED_REASON
     assert decision.quantifiable_detected_count == 2
-    assert decision.quantifiable_rescue_count == 83
+    assert decision.quantifiable_backfill_count == 83
     assert "high_backfill_dependency" in decision.row_flags
     assert HIGH_BACKFILL_CAPPED_FLAG in decision.row_flags
 
@@ -241,7 +241,7 @@ def test_scan_support_only_high_backfill_retains_seed_identity() -> None:
                 _cell(
                     f"rescue{i:02d}",
                     "FAM001",
-                    "rescued",
+                    "backfilled",
                     80.0 + i,
                     backfill_evidence=False,
                 )
@@ -270,7 +270,7 @@ def test_single_detected_seed_does_not_enter_policy_promotion() -> None:
                 _cell(
                     f"rescue{i:02d}",
                     "FAM001",
-                    "rescued",
+                    "backfilled",
                     80.0 + i,
                     backfill_evidence=False,
                 )
@@ -296,8 +296,8 @@ def test_single_detected_seed_with_same_peak_evidence_promotes() -> None:
         _feature("FAM001", evidence="owner_complete_link;owner_count=1"),
         (
             _cell("seed1", "FAM001", "detected", 100.0),
-            _cell("rescue1", "FAM001", "rescued", 90.0),
-            _cell("rescue2", "FAM001", "rescued", 80.0),
+            _cell("rescue1", "FAM001", "backfilled", 90.0),
+            _cell("rescue2", "FAM001", "backfilled", 80.0),
         ),
     )
 
@@ -308,7 +308,7 @@ def test_single_detected_seed_with_same_peak_evidence_promotes() -> None:
     assert decision.identity_confidence == "medium"
     assert decision.identity_reason == CELL_EVIDENCE_SUPPORTED_REASON
     assert decision.quantifiable_detected_count == 1
-    assert decision.quantifiable_rescue_count == 2
+    assert decision.quantifiable_backfill_count == 2
     assert "single_detected_seed" in decision.row_flags
     assert HIGH_BACKFILL_CAPPED_FLAG in decision.row_flags
 
@@ -318,8 +318,8 @@ def test_single_detected_same_peak_support_keeps_ambiguous_owner_review() -> Non
         _feature("FAM001", evidence="owner_complete_link;owner_count=1"),
         (
             _cell("seed1", "FAM001", "detected", 100.0),
-            _cell("rescue1", "FAM001", "rescued", 90.0),
-            _cell("rescue2", "FAM001", "rescued", 80.0),
+            _cell("rescue1", "FAM001", "backfilled", 90.0),
+            _cell("rescue2", "FAM001", "backfilled", 80.0),
             _cell("ambiguous1", "FAM001", "ambiguous_ms1_owner", 70.0),
         ),
     )
@@ -338,8 +338,8 @@ def test_same_peak_product_authority_downgrades_duplicate_pressure_to_warning() 
         _feature("FAM001", evidence="owner_complete_link;owner_count=1"),
         (
             _cell("seed1", "FAM001", "detected", 100.0),
-            _cell("rescue1", "FAM001", "rescued", 90.0),
-            _cell("rescue2", "FAM001", "rescued", 80.0),
+            _cell("rescue1", "FAM001", "backfilled", 90.0),
+            _cell("rescue2", "FAM001", "backfilled", 80.0),
             _cell("dup1", "FAM001", "duplicate_assigned", 70.0),
             _cell("dup2", "FAM001", "duplicate_assigned", 60.0),
         ),
@@ -351,7 +351,7 @@ def test_same_peak_product_authority_downgrades_duplicate_pressure_to_warning() 
     assert decision.identity_decision == "production_family"
     assert decision.identity_reason == CELL_EVIDENCE_SUPPORTED_REASON
     assert decision.quantifiable_detected_count == 1
-    assert decision.quantifiable_rescue_count == 2
+    assert decision.quantifiable_backfill_count == 2
     assert decision.duplicate_assigned_count == 2
     assert "duplicate_claim_pressure" not in decision.row_flags
     assert "same_peak_multi_claim" in decision.row_flags
@@ -366,7 +366,7 @@ def test_one_detected_area_only_rescue_is_not_provisional_retention_candidate() 
             _cell(
                 "rescue1",
                 "FAM001",
-                "rescued",
+                "backfilled",
                 90.0,
                 trace_quality="owner_backfill",
                 scan_support_score=None,
@@ -375,7 +375,7 @@ def test_one_detected_area_only_rescue_is_not_provisional_retention_candidate() 
             _cell(
                 "rescue2",
                 "FAM001",
-                "rescued",
+                "backfilled",
                 80.0,
                 trace_quality="owner_backfill",
                 scan_support_score=None,
@@ -402,8 +402,8 @@ def test_review_only_one_detected_rescue_is_not_provisional_candidate() -> None:
         ),
         (
             _cell("seed1", "FAM001", "detected", 100.0),
-            _cell("rescue1", "FAM001", "rescued", 90.0),
-            _cell("rescue2", "FAM001", "rescued", 80.0),
+            _cell("rescue1", "FAM001", "backfilled", 90.0),
+            _cell("rescue2", "FAM001", "backfilled", 80.0),
         ),
     )
 
@@ -426,7 +426,7 @@ def test_high_detected_dr_family_can_still_use_backfill() -> None:
                 for i in range(1, 21)
             ),
             *tuple(
-                _cell(f"rescue{i:02d}", "FAM001", "rescued", 80.0 + i)
+                _cell(f"rescue{i:02d}", "FAM001", "backfilled", 80.0 + i)
                 for i in range(1, 66)
             ),
         ),
@@ -475,7 +475,8 @@ def test_weak_seed_dr_backfill_dependency_with_cell_evidence_is_supported() -> N
                 source_candidate_id="seed3#candidate",
             ),
             *tuple(
-                _cell(f"rescue{i}", "FAM001", "rescued", 70.0 + i) for i in range(1, 7)
+                _cell(f"rescue{i}", "FAM001", "backfilled", 70.0 + i)
+                for i in range(1, 7)
             ),
             _cell("absent", "FAM001", "absent", None),
         ),
@@ -488,7 +489,7 @@ def test_weak_seed_dr_backfill_dependency_with_cell_evidence_is_supported() -> N
     assert decision.identity_confidence == "medium"
     assert decision.identity_reason == DDA_LIMITED_MS2_SHAPE_REASON
     assert decision.quantifiable_detected_count == 3
-    assert decision.quantifiable_rescue_count == 6
+    assert decision.quantifiable_backfill_count == 6
     assert "weak_seed_backfill_dependency" in decision.row_flags
     assert "rescue_heavy" in decision.row_flags
     assert HIGH_BACKFILL_CAPPED_FLAG in decision.row_flags
@@ -530,7 +531,7 @@ def test_known_drift_beyond_local_apex_window_does_not_demote_family() -> None:
             _cell(
                 "drifted",
                 "FAM001",
-                "rescued",
+                "backfilled",
                 80.0,
                 trace_quality="owner_backfill",
                 scan_support_score=0.8,
@@ -541,7 +542,7 @@ def test_known_drift_beyond_local_apex_window_does_not_demote_family() -> None:
                 _cell(
                     f"rescue{i}",
                     "FAM001",
-                    "rescued",
+                    "backfilled",
                     70.0 + i,
                     trace_quality="owner_backfill",
                     scan_support_score=0.8,
@@ -595,7 +596,7 @@ def test_unexplained_rt_delta_beyond_preferred_blocks_backfill_promotion() -> No
                 _cell(
                     f"rescue{i}",
                     "FAM001",
-                    "rescued",
+                    "backfilled",
                     70.0 + i,
                     rt_delta_sec=120.0,
                     backfill_evidence=False,
@@ -609,8 +610,8 @@ def test_unexplained_rt_delta_beyond_preferred_blocks_backfill_promotion() -> No
 
     assert decision.include_in_primary_matrix is True
     assert decision.identity_confidence == "review"
-    assert decision.quantifiable_rescue_count == 0
-    assert decision.review_rescue_count == 6
+    assert decision.quantifiable_backfill_count == 0
+    assert decision.review_backfill_count == 6
     assert decision.identity_reason == PRIMARY_IDENTITY_RETAINED_BACKFILL_REVIEW_REASON
     assert "backfill_cell_evidence_required" in decision.row_flags
     assert "missing_independent_backfill_identity_evidence" in decision.row_flags
@@ -650,7 +651,8 @@ def test_adequate_seed_dr_backfill_dependency_remains_production() -> None:
                 source_candidate_id="seed3#candidate",
             ),
             *tuple(
-                _cell(f"rescue{i}", "FAM001", "rescued", 70.0 + i) for i in range(1, 7)
+                _cell(f"rescue{i}", "FAM001", "backfilled", 70.0 + i)
+                for i in range(1, 7)
             ),
             _cell("absent", "FAM001", "absent", None),
         ),
@@ -699,7 +701,8 @@ def test_owner_events_tolerate_single_weak_seed_with_two_trusted() -> None:
                 source_candidate_id="seed3#candidate",
             ),
             *tuple(
-                _cell(f"rescue{i}", "FAM001", "rescued", 70.0 + i) for i in range(1, 7)
+                _cell(f"rescue{i}", "FAM001", "backfilled", 70.0 + i)
+                for i in range(1, 7)
             ),
             _cell("absent", "FAM001", "absent", None),
         ),
@@ -753,7 +756,7 @@ def test_high_score_low_event_seeds_do_not_bypass_weak_seed_gate() -> None:
                 _cell(
                     f"rescue{i}",
                     "FAM001",
-                    "rescued",
+                    "backfilled",
                     70.0 + i,
                     trace_quality="review",
                     scan_support_score=None,
@@ -797,7 +800,7 @@ def test_matrix_identity_ignores_targeted_only_priority_metadata() -> None:
             _feature("FAM001", evidence="single_sample_local_owner"),
             (
                 _cell("s1", "FAM001", "detected", 100.0),
-                _cell("s2", "FAM001", "rescued", 90.0),
+                _cell("s2", "FAM001", "backfilled", 90.0),
             ),
         ),
         AlignmentConfig(),
@@ -814,7 +817,7 @@ def test_matrix_identity_ignores_targeted_only_priority_metadata() -> None:
             ),
             (
                 _cell("s1", "FAM001", "detected", 100.0),
-                _cell("s2", "FAM001", "rescued", 90.0),
+                _cell("s2", "FAM001", "backfilled", 90.0),
             ),
         ),
         AlignmentConfig(),
@@ -859,7 +862,8 @@ def test_weak_seed_gate_reads_owner_events_when_trusted_support_is_thin() -> Non
                 source_candidate_id="seed3#candidate",
             ),
             *tuple(
-                _cell(f"rescue{i}", "FAM001", "rescued", 70.0 + i) for i in range(1, 7)
+                _cell(f"rescue{i}", "FAM001", "backfilled", 70.0 + i)
+                for i in range(1, 7)
             ),
             _cell("absent", "FAM001", "absent", None),
         ),
@@ -884,7 +888,7 @@ def test_rt_local_apex_low_interference_alone_does_not_promote() -> None:
                 _cell(
                     f"rescue{i:02d}",
                     "FAM001",
-                    "rescued",
+                    "backfilled",
                     80.0 + i,
                     trace_quality="review",
                     scan_support_score=None,
@@ -917,7 +921,7 @@ def test_owner_backfill_label_without_independent_support_does_not_promote() -> 
                 _cell(
                     f"rescue{i:02d}",
                     "FAM001",
-                    "rescued",
+                    "backfilled",
                     80.0 + i,
                     trace_quality="owner_backfill",
                     scan_support_score=None,
@@ -947,7 +951,7 @@ def test_neighboring_ms1_interference_blocks_backfill_promotion() -> None:
                 _cell(
                     f"rescue{i:02d}",
                     "FAM001",
-                    "rescued",
+                    "backfilled",
                     80.0 + i,
                     region_review_reason="neighboring_ms1_interference",
                 )
@@ -970,7 +974,7 @@ def test_single_sample_local_owner_is_audit_even_with_rescue() -> None:
         _feature("FAM001", evidence="single_sample_local_owner"),
         (
             _cell("s1", "FAM001", "detected", 100.0),
-            _cell("s2", "FAM001", "rescued", 90.0),
+            _cell("s2", "FAM001", "backfilled", 90.0),
         ),
     )
 
@@ -1013,8 +1017,8 @@ def test_rescue_only_backfill_only_family_is_audit() -> None:
     matrix = _matrix(
         _feature("FAM001", evidence="owner_complete_link;owner_count=2"),
         (
-            _cell("s1", "FAM001", "rescued", 100.0),
-            _cell("s2", "FAM001", "rescued", 90.0),
+            _cell("s1", "FAM001", "backfilled", 100.0),
+            _cell("s2", "FAM001", "backfilled", 90.0),
         ),
     )
 
@@ -1030,8 +1034,8 @@ def test_matrix_identity_decision_record_marks_rescue_only_as_not_counted() -> N
     matrix = _matrix(
         _feature("FAM001", evidence="owner_complete_link;owner_count=2"),
         (
-            _cell("s1", "FAM001", "rescued", 100.0),
-            _cell("s2", "FAM001", "rescued", 90.0),
+            _cell("s1", "FAM001", "backfilled", 100.0),
+            _cell("s2", "FAM001", "backfilled", 90.0),
         ),
     )
 
@@ -1191,7 +1195,7 @@ def _cell(
     has_area = area is not None
     if (
         selected_integration is None
-        and status in {"detected", "rescued"}
+        and status in {"detected", "backfilled"}
         and _positive_area(area)
     ):
         selected_integration = _integration(raw_area=area, asls_area=area)
@@ -1305,7 +1309,7 @@ def _weak_seed_backfill_decision(
                 _cell(
                     f"rescue{i}",
                     "FAM001",
-                    "rescued",
+                    "backfilled",
                     70.0 + i,
                     trace_quality="review",
                     scan_support_score=None,
@@ -1325,7 +1329,7 @@ def _backfill_evidence_fields(
     enabled: bool,
     drift_supported: bool,
 ) -> dict[str, object]:
-    if status != "rescued" or not enabled:
+    if status != "backfilled" or not enabled:
         return {}
     fields: dict[str, object] = {
         "backfill_ms1_pattern_status": "supportive",

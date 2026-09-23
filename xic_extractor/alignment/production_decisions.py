@@ -34,12 +34,12 @@ from xic_extractor.evidence_semantics import DecisionClass
 
 ProductionStatus = Literal[
     "detected",
-    "accepted_rescue",
-    "review_rescue",
-    "rejected_rescue",
+    "accepted_backfill",
+    "review_backfill",
+    "rejected_backfill",
     "blank",
 ]
-RescueTier = Literal["", "accepted_rescue", "review_rescue", "rejected_rescue"]
+BackfillTier = Literal["", "accepted_backfill", "review_backfill", "rejected_backfill"]
 
 ALIGNMENT_DECISION_CONFIG_SCHEMA_VERSION = "alignment_decision_config_projection"
 PRODUCTION_CELL_DECISION_SCHEMA_VERSION = "production_cell_decision_projection"
@@ -130,7 +130,7 @@ class ProductionCellDecisionProjection:
     sample_stem: str
     raw_status: str
     production_status: ProductionStatus
-    rescue_tier: RescueTier
+    backfill_tier: BackfillTier
     write_matrix_value: bool
     matrix_value: float | None
     blank_reason: str
@@ -152,7 +152,7 @@ class ProductionCellDecisionProjection:
                     ("sample_stem", self.sample_stem),
                     ("raw_status", self.raw_status),
                     ("production_status", self.production_status),
-                    ("rescue_tier", self.rescue_tier),
+                    ("backfill_tier", self.backfill_tier),
                     ("write_matrix_value", self.write_matrix_value),
                     ("matrix_value", self.matrix_value),
                     ("blank_reason", self.blank_reason),
@@ -168,7 +168,7 @@ class ProductionCellDecision:
     sample_stem: str
     raw_status: str
     production_status: ProductionStatus
-    rescue_tier: RescueTier
+    backfill_tier: BackfillTier
     write_matrix_value: bool
     matrix_value: float | None
     blank_reason: str
@@ -187,11 +187,11 @@ class ProductionRowDecision:
     primary_evidence: str
     identity_reason: str
     quantifiable_detected_count: int
-    quantifiable_rescue_count: int
+    quantifiable_backfill_count: int
     accepted_cell_count: int
     detected_count: int
-    accepted_rescue_count: int
-    review_rescue_count: int
+    accepted_backfill_count: int
+    review_backfill_count: int
     duplicate_assigned_count: int
     ambiguous_ms1_owner_count: int
     row_flags: tuple[str, ...]
@@ -270,7 +270,7 @@ def production_cell_decision_projection(
         sample_stem=decision.sample_stem,
         raw_status=decision.raw_status,
         production_status=decision.production_status,
-        rescue_tier=decision.rescue_tier,
+        backfill_tier=decision.backfill_tier,
         write_matrix_value=decision.write_matrix_value,
         matrix_value=decision.matrix_value,
         blank_reason=decision.blank_reason,
@@ -296,7 +296,7 @@ def production_cell_decision_record(
             "production_status_rank",
             float(_PRODUCTION_STATUS_RANK[decision.production_status]),
         ),
-        ("rescue_tier_rank", float(_RESCUE_TIER_RANK[decision.rescue_tier])),
+        ("backfill_tier_rank", float(_RESCUE_TIER_RANK[decision.backfill_tier])),
         (
             "matrix_value_present_rank",
             0.0 if decision.matrix_value is not None else 1.0,
@@ -359,16 +359,16 @@ def build_production_decisions(
 
 _PRODUCTION_STATUS_RANK: dict[ProductionStatus, int] = {
     "detected": 0,
-    "accepted_rescue": 1,
-    "review_rescue": 2,
-    "rejected_rescue": 3,
+    "accepted_backfill": 1,
+    "review_backfill": 2,
+    "rejected_backfill": 3,
     "blank": 4,
 }
-_RESCUE_TIER_RANK: dict[RescueTier, int] = {
+_RESCUE_TIER_RANK: dict[BackfillTier, int] = {
     "": 0,
-    "accepted_rescue": 1,
-    "review_rescue": 2,
-    "rejected_rescue": 3,
+    "accepted_backfill": 1,
+    "review_backfill": 2,
+    "rejected_backfill": 3,
 }
 
 
@@ -377,11 +377,11 @@ def _production_cell_decision_class(
 ) -> DecisionClass:
     if decision.write_matrix_value:
         return "accepted"
-    if decision.production_status == "review_rescue":
+    if decision.production_status == "review_backfill":
         return "review"
     if decision.blank_reason == "ambiguous_ms1_owner":
         return "ambiguous"
-    if decision.production_status == "rejected_rescue":
+    if decision.production_status == "rejected_backfill":
         return "excluded"
     return "not_counted"
 
@@ -410,8 +410,8 @@ def _production_cell_support(
         f"raw_status:{decision.raw_status}",
         f"production_status:{decision.production_status}",
     ]
-    if decision.rescue_tier:
-        support.append(f"rescue_tier:{decision.rescue_tier}")
+    if decision.backfill_tier:
+        support.append(f"backfill_tier:{decision.backfill_tier}")
     if decision.write_matrix_value:
         support.append("write_matrix_value")
     if decision.matrix_value is not None:
@@ -433,7 +433,7 @@ def _cell_decision(
             sample_stem=cell.sample_stem,
             raw_status=cell.status,
             production_status="detected",
-            rescue_tier="",
+            backfill_tier="",
             write_matrix_value=True,
             matrix_value=quality.matrix_area,
             blank_reason="",
@@ -442,8 +442,8 @@ def _cell_decision(
         if not identity_row.include_in_primary_matrix:
             return _blank(
                 cell,
-                "review_rescue",
-                "review_rescue",
+                "review_backfill",
+                "review_backfill",
                 "missing_row_identity_support",
             )
         if BACKFILL_CELL_EVIDENCE_REQUIRED_FLAG in identity_row.row_flags:
@@ -451,25 +451,25 @@ def _cell_decision(
             if not backfill_evidence.supported_for_backfill:
                 return _blank(
                     cell,
-                    "review_rescue",
-                    "review_rescue",
+                    "review_backfill",
+                    "review_backfill",
                     _backfill_cell_blank_reason(backfill_evidence),
                 )
         return ProductionCellDecision(
             feature_family_id=cell.cluster_id,
             sample_stem=cell.sample_stem,
             raw_status=cell.status,
-            production_status="accepted_rescue",
-            rescue_tier="accepted_rescue",
+            production_status="accepted_backfill",
+            backfill_tier="accepted_backfill",
             write_matrix_value=True,
             matrix_value=quality.matrix_area,
             blank_reason="",
         )
-    if quality.quality_status == "review_rescue":
+    if quality.quality_status == "review_backfill":
         return _blank(
             cell,
-            "review_rescue",
-            "review_rescue",
+            "review_backfill",
+            "review_backfill",
             quality.quality_reason,
         )
     if quality.quality_status == "duplicate_loser":
@@ -480,11 +480,11 @@ def _cell_decision(
         return _blank(cell, "blank", "", "absent")
     if quality.quality_status == "blank" and cell.status == "unchecked":
         return _blank(cell, "blank", "", "unchecked")
-    if quality.quality_status == "invalid" and cell.status == "rescued":
+    if quality.quality_status == "invalid" and cell.status == "backfilled":
         return _blank(
             cell,
-            "rejected_rescue",
-            "rejected_rescue",
+            "rejected_backfill",
+            "rejected_backfill",
             quality.quality_reason,
         )
     return _blank(cell, "blank", "", quality.quality_reason)
@@ -507,11 +507,11 @@ def _row_decision(
     identity_row: MatrixIdentityRowDecision,
 ) -> ProductionRowDecision:
     detected_count = sum(1 for cell in cells if cell.status == "detected")
-    accepted_rescue_count = sum(
-        1 for decision in decisions if decision.production_status == "accepted_rescue"
+    accepted_backfill_count = sum(
+        1 for decision in decisions if decision.production_status == "accepted_backfill"
     )
-    review_rescue_count = sum(
-        1 for decision in decisions if decision.production_status == "review_rescue"
+    review_backfill_count = sum(
+        1 for decision in decisions if decision.production_status == "review_backfill"
     )
     duplicate_count = identity_row.duplicate_assigned_count
     ambiguous_count = identity_row.ambiguous_ms1_owner_count
@@ -520,7 +520,7 @@ def _row_decision(
     )
 
     flags: list[str] = list(identity_row.row_flags)
-    if accepted_cell_count == 0 and review_rescue_count > 0:
+    if accepted_cell_count == 0 and review_backfill_count > 0:
         flags.append("rescue_only_review")
 
     return ProductionRowDecision(
@@ -533,11 +533,11 @@ def _row_decision(
         primary_evidence=identity_row.primary_evidence,
         identity_reason=identity_row.identity_reason,
         quantifiable_detected_count=identity_row.quantifiable_detected_count,
-        quantifiable_rescue_count=identity_row.quantifiable_rescue_count,
+        quantifiable_backfill_count=identity_row.quantifiable_backfill_count,
         accepted_cell_count=accepted_cell_count,
         detected_count=detected_count,
-        accepted_rescue_count=accepted_rescue_count,
-        review_rescue_count=review_rescue_count,
+        accepted_backfill_count=accepted_backfill_count,
+        review_backfill_count=review_backfill_count,
         duplicate_assigned_count=duplicate_count,
         ambiguous_ms1_owner_count=ambiguous_count,
         row_flags=tuple(dict.fromkeys(flags)),
@@ -547,7 +547,7 @@ def _row_decision(
 def _blank(
     cell: AlignedCell,
     production_status: ProductionStatus,
-    rescue_tier: RescueTier,
+    backfill_tier: BackfillTier,
     blank_reason: str,
 ) -> ProductionCellDecision:
     return ProductionCellDecision(
@@ -555,7 +555,7 @@ def _blank(
         sample_stem=cell.sample_stem,
         raw_status=cell.status,
         production_status=production_status,
-        rescue_tier=rescue_tier,
+        backfill_tier=backfill_tier,
         write_matrix_value=False,
         matrix_value=None,
         blank_reason=blank_reason,

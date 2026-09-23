@@ -179,8 +179,8 @@ def test_high_backfill_dependency_fallback_only_when_warning_column_absent(
     _write_tsv(
         alignment_dir / "alignment_cells.tsv",
         [
-            _cell_row("FAM001", "rescued"),
-            _cell_row("FAM001", "rescued"),
+            _cell_row("FAM001", "backfilled"),
+            _cell_row("FAM001", "backfilled"),
         ],
     )
 
@@ -212,7 +212,7 @@ def test_high_backfill_dependency_uses_row_flags_before_legacy_warning(
         alignment_dir / "alignment_cells.tsv",
         [
             _cell_row("FAM001", "detected"),
-            _cell_row("FAM001", "rescued"),
+            _cell_row("FAM001", "backfilled"),
         ],
     )
 
@@ -232,8 +232,8 @@ def test_guardrails_report_rescue_identity_and_duplicate_metrics(tmp_path: Path)
                 "family_center_mz": 500.0,
                 "family_center_rt": 5.0,
                 "accepted_cell_count": 2,
-                "accepted_rescue_count": 1,
-                "review_rescue_count": 0,
+                "accepted_backfill_count": 1,
+                "review_backfill_count": 0,
                 "include_in_primary_matrix": "TRUE",
                 "row_flags": "rescue_heavy",
             },
@@ -242,8 +242,8 @@ def test_guardrails_report_rescue_identity_and_duplicate_metrics(tmp_path: Path)
                 "family_center_mz": 501.0,
                 "family_center_rt": 5.1,
                 "accepted_cell_count": 0,
-                "accepted_rescue_count": 0,
-                "review_rescue_count": 1,
+                "accepted_backfill_count": 0,
+                "review_backfill_count": 1,
                 "include_in_primary_matrix": "FALSE",
                 "row_flags": "rescue_only_review;identity_anchor_lost",
             },
@@ -252,8 +252,8 @@ def test_guardrails_report_rescue_identity_and_duplicate_metrics(tmp_path: Path)
                 "family_center_mz": 502.0,
                 "family_center_rt": 5.2,
                 "accepted_cell_count": 0,
-                "accepted_rescue_count": 0,
-                "review_rescue_count": 0,
+                "accepted_backfill_count": 0,
+                "review_backfill_count": 0,
                 "include_in_primary_matrix": "FALSE",
                 "row_flags": "duplicate_claim_pressure",
             },
@@ -263,18 +263,18 @@ def test_guardrails_report_rescue_identity_and_duplicate_metrics(tmp_path: Path)
         alignment_dir / "alignment_cells.tsv",
         [
             _cell_row("FAM001", "detected"),
-            _cell_row("FAM001", "rescued"),
-            _cell_row("FAM002", "rescued"),
+            _cell_row("FAM001", "backfilled"),
+            _cell_row("FAM002", "backfilled"),
             _cell_row("FAM003", "duplicate_assigned"),
         ],
     )
 
     metrics = guardrails.compute_guardrails(alignment_dir)
 
-    assert metrics.accepted_rescue_cells == 1
+    assert metrics.accepted_backfill_cells == 1
     assert metrics.accepted_quantitative_cells == 2
-    assert metrics.accepted_rescue_rate == 0.5
-    assert metrics.review_rescue_count == 1
+    assert metrics.accepted_backfill_rate == 0.5
+    assert metrics.review_backfill_count == 1
     assert metrics.rescue_only_review_families == 1
     assert metrics.identity_anchor_lost_families == 1
     assert metrics.duplicate_claim_pressure_families == 1
@@ -327,8 +327,8 @@ def test_case_assertion_uses_new_schema_production_decision_before_raw_status(
     _write_tsv(
         alignment_dir / "alignment_cells.tsv",
         [
-            _cell_row("FAM001", "rescued"),
-            _cell_row("FAM001", "rescued"),
+            _cell_row("FAM001", "backfilled"),
+            _cell_row("FAM001", "backfilled"),
         ],
     )
 
@@ -359,7 +359,7 @@ def test_negative_checkpoint_uses_new_schema_production_decision_before_raw_stat
         alignment_dir / "alignment_cells.tsv",
         [
             _cell_row("FAM001", "detected"),
-            _cell_row("FAM001", "rescued"),
+            _cell_row("FAM001", "backfilled"),
         ],
     )
 
@@ -461,8 +461,8 @@ def test_zero_present_and_duplicate_only_use_new_schema_production_decision(
     _write_tsv(
         alignment_dir / "alignment_cells.tsv",
         [
-            _cell_row("FAM001", "rescued"),
-            _cell_row("FAM002", "rescued"),
+            _cell_row("FAM001", "backfilled"),
+            _cell_row("FAM002", "backfilled"),
             _cell_row("FAM002", "duplicate_assigned"),
             _cell_row("FAM003", "detected"),
         ],
@@ -523,7 +523,7 @@ def test_compare_guardrails_fails_when_candidate_metric_increases() -> None:
         {
             "duplicate_only_families": 1,
             "zero_present_families": 2,
-            "review_rescue_count": 3,
+            "review_backfill_count": 3,
             "rescue_only_review_families": 4,
             "identity_anchor_lost_families": 5,
             "duplicate_claim_pressure_families": 6,
@@ -532,7 +532,7 @@ def test_compare_guardrails_fails_when_candidate_metric_increases() -> None:
         {
             "duplicate_only_families": 2,
             "zero_present_families": 2,
-            "review_rescue_count": 4,
+            "review_backfill_count": 4,
             "rescue_only_review_families": 5,
             "identity_anchor_lost_families": 5,
             "duplicate_claim_pressure_families": 5,
@@ -543,7 +543,7 @@ def test_compare_guardrails_fails_when_candidate_metric_increases() -> None:
     assert [row["metric"] for row in rows] == [
         "duplicate_only_families",
         "zero_present_families",
-        "review_rescue_count",
+        "review_backfill_count",
         "rescue_only_review_families",
         "identity_anchor_lost_families",
         "duplicate_claim_pressure_families",
@@ -1021,15 +1021,15 @@ def _write_alignment_fixture(path: Path) -> None:
         [
             _cell_row("FAM001", "detected"),
             _cell_row("FAM002", "detected"),
-            _cell_row("FAM003", "rescued"),
+            _cell_row("FAM003", "backfilled"),
             _cell_row("FAM003", "ambiguous_ms1_owner"),
             _cell_row("FAM004", "duplicate_assigned"),
             _cell_row("FAM005", "detected"),
-            _cell_row("FAM006", "rescued"),
-            _cell_row("FAM006", "rescued"),
+            _cell_row("FAM006", "backfilled"),
+            _cell_row("FAM006", "backfilled"),
             _cell_row("FAM007", "ambiguous_ms1_owner"),
-            _cell_row("FAM008", "rescued"),
-            _cell_row("FAM008", "rescued"),
+            _cell_row("FAM008", "backfilled"),
+            _cell_row("FAM008", "backfilled"),
         ],
         fieldnames=ALIGNMENT_CELLS_COLUMNS,
     )

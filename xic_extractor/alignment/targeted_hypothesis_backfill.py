@@ -219,7 +219,7 @@ def _backfill_no_candidate(
             backfill_cell=backfill_cell,
             reason=backfill_cell.reason,
         )
-    if backfill_cell.status != "rescued":
+    if backfill_cell.status != "backfilled":
         raise TargetedHypothesisBackfillError(
             "existing Backfill owner returned an unsupported terminal status: "
             f"{backfill_cell.status}"

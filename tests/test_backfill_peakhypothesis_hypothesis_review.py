@@ -167,7 +167,7 @@ def _slice_row(
         "full_cohort_match_rt_delta_min": "0",
         "full_cohort_candidate_count": "1",
         "full_cohort_exact_cell_found": "TRUE",
-        "full_cohort_cell_status": "rescued",
+        "full_cohort_cell_status": "backfilled",
         "full_cohort_primary_matrix_area": primary_area,
         "full_cohort_primary_matrix_area_source": "gaussian15_positive_asls_residual",
         "full_cohort_primary_matrix_area_reason": "unit",

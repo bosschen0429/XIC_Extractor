@@ -833,9 +833,9 @@ def test_runtime_recovers_every_authorized_rt_group(
             assert len(written) == len(ms1_only_cells)
             assert all(
                 decision.matrix_value is not None
-                and decision.raw_status == "rescued"
-                and decision.production_status == "accepted_rescue"
-                and decision.rescue_tier == "accepted_rescue"
+                and decision.raw_status == "backfilled"
+                and decision.production_status == "accepted_backfill"
+                and decision.backfill_tier == "accepted_backfill"
                 and decision.blank_reason == ""
                 for decision in written
             )
@@ -1109,10 +1109,16 @@ def test_ms1_only_backfill_fills_only_one_unique_group_window_peak(
         assert decision.raw_status == "ambiguous_ms1_owner"
     else:
         assert decision.write_matrix_value
-        assert decision.raw_status == "rescued"
-        assert decision.production_status == "accepted_rescue"
+        assert decision.raw_status == "backfilled"
+        assert decision.production_status == "accepted_backfill"
     (row,) = writer.production_decisions.rows.values()
     assert row.detected_count == 2
+    # The finalized row carries the group's own tag, fragment and anchor.
+    (cluster,) = writer.matrix.clusters
+    assert cluster.has_anchor
+    assert cluster.neutral_loss_tag == "cid_nl:116.0474"
+    assert cluster.family_product_mz == pytest.approx(383.9526, abs=1e-3)
+    assert cluster.family_observed_neutral_loss_da == pytest.approx(116.0474, abs=1e-3)
 
 
 def test_backfill_reaches_a_sample_whose_support_belongs_to_another_group(
@@ -1207,7 +1213,7 @@ def test_backfill_reaches_a_sample_whose_support_belongs_to_another_group(
     )
     assert "Missing" in sample_stems
     assert missing_decision.write_matrix_value
-    assert missing_decision.raw_status == "rescued"
+    assert missing_decision.raw_status == "backfilled"
 
 
 def test_alignment_uses_configured_recovery_groups(tmp_path, monkeypatch):

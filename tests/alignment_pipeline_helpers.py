@@ -208,7 +208,7 @@ def cell(sample_stem: str, *, cluster_id: str) -> AlignedCell:
     return AlignedCell(
         sample_stem=sample_stem,
         cluster_id=cluster_id,
-        status="rescued",
+        status="backfilled",
         area=100.0,
         apex_rt=8.5,
         height=50.0,

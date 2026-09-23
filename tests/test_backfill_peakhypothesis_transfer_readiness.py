@@ -564,7 +564,7 @@ def _full_cohort_winner_remap_summary(
         "remap_candidate_review_count": candidate_count,
         "blocked_count": blocked_count,
         "winner_detected_count": 7,
-        "winner_rescued_count": 3,
+        "winner_backfilled_count": 3,
         "missing_winner_count": blocked_count,
     }
 

@@ -21,7 +21,7 @@ def test_blast_radius_reports_complete_identity_changes_and_benchmark_join(
         ],
         cell_rows=[
             _cell_row("FAM001", "sample-a", "detected", 100.0),
-            _cell_row("FAM001", "sample-b", "rescued", 90.0),
+            _cell_row("FAM001", "sample-b", "backfilled", 90.0),
             _cell_row("FAM002", "sample-a", "detected", 100.0),
             _cell_row("FAM002", "sample-b", "detected", 90.0),
         ],
@@ -70,7 +70,7 @@ def test_blast_radius_projects_single_detected_product_authority_action(
             _cell_row(
                 "FAM_ONE",
                 "sample-b",
-                "rescued",
+                "backfilled",
                 90.0,
                 trace_quality="clean",
                 scan_support_score=0.8,
@@ -79,7 +79,7 @@ def test_blast_radius_projects_single_detected_product_authority_action(
             _cell_row(
                 "FAM_ONE",
                 "sample-c",
-                "rescued",
+                "backfilled",
                 80.0,
                 trace_quality="clean",
                 scan_support_score=0.8,
@@ -127,7 +127,7 @@ def test_blast_radius_preserves_review_only_projection(
             _cell_row(
                 "FAM_REVIEW",
                 "sample-b",
-                "rescued",
+                "backfilled",
                 90.0,
                 trace_quality="clean",
                 scan_support_score=0.8,
@@ -135,7 +135,7 @@ def test_blast_radius_preserves_review_only_projection(
             _cell_row(
                 "FAM_REVIEW",
                 "sample-c",
-                "rescued",
+                "backfilled",
                 80.0,
                 trace_quality="clean",
                 scan_support_score=0.8,
@@ -341,7 +341,7 @@ def test_blast_radius_input_bundle_preserves_existing_order_contracts() -> None:
     ]
     cell_rows = [
         _cell_row("FAM_B", "sample-b", "detected", 100.0),
-        _cell_row("FAM_A", "sample-c", "rescued", 90.0),
+        _cell_row("FAM_A", "sample-c", "backfilled", 90.0),
         _cell_row("FAM_B", "sample-a", "detected", 80.0),
     ]
 
@@ -419,7 +419,7 @@ def _review_row(
         "family_center_mz": 500.0,
         "family_center_rt": 8.5,
         "has_anchor": "TRUE",
-        "review_rescue_count": 0,
+        "review_backfill_count": 0,
     }
 
 

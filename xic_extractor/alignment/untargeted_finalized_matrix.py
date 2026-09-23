@@ -16,11 +16,11 @@ from xic_extractor.alignment.matrix import (
 )
 from xic_extractor.alignment.models import AlignmentCluster
 from xic_extractor.alignment.production_decisions import (
+    BackfillTier,
     ProductionCellDecision,
     ProductionDecisionSet,
     ProductionRowDecision,
     ProductionStatus,
-    RescueTier,
 )
 from xic_extractor.alignment.result.scientific_alignment import (
     FinalizedScientificAlignment,
@@ -228,6 +228,12 @@ def iter_completed_untarget_batch_writer_inputs(
             if not math.isfinite(center_mz) or not math.isfinite(center_rt):
                 raise ValueError("writer projection produced non-finite coordinates")
 
+            (
+                neutral_loss_tag,
+                family_product_mz,
+                family_observed_neutral_loss_da,
+                has_anchor,
+            ) = _group_facts(typed_observations)
             row = FinalizedUntargetMatrixRow(
                 feature_family_id=row_id,
                 group_hypothesis_id=group_id,
@@ -236,6 +242,10 @@ def iter_completed_untarget_batch_writer_inputs(
                 family_center_mz=center_mz,
                 family_center_rt=center_rt,
                 physical_observation_ids=physical_ids,
+                family_product_mz=family_product_mz,
+                family_observed_neutral_loss_da=family_observed_neutral_loss_da,
+                neutral_loss_tag=neutral_loss_tag,
+                has_anchor=has_anchor,
                 lineage_edge_ids=tuple(
                     sorted(
                         edge.lineage_edge_id
@@ -287,6 +297,35 @@ def iter_completed_untarget_batch_writer_inputs(
             )
         if consume_child is not None:
             consume_child(child)
+
+
+def _group_facts(
+    observations: tuple[FinalGroupCellObservation, ...],
+) -> tuple[str, float | None, float | None, bool]:
+    """Carry the predecessor groups' tag, fragment, loss and anchor to the row."""
+
+    groups = {
+        id(cell.group_context.group): cell.group_context.group
+        for observation in observations
+        for cell in observation.effective_cells
+    }.values()
+    tags = sorted(
+        {group.neutral_loss_tag for group in groups if group.neutral_loss_tag}
+    )
+    products = [
+        group.group_product_mz for group in groups if group.group_product_mz is not None
+    ]
+    losses = [
+        group.group_observed_neutral_loss_da
+        for group in groups
+        if group.group_observed_neutral_loss_da is not None
+    ]
+    return (
+        ";".join(tags),
+        sum(products) / len(products) if products else None,
+        sum(losses) / len(losses) if losses else None,
+        any(group.has_anchor for group in groups),
+    )
 
 
 def _presentation_facts(
@@ -427,10 +466,10 @@ def _aligned_cell(
         group_construction_role=row.group_construction_role,
         group_delivery_role=row.group_delivery_role,
         group_membership_source=row.group_membership_source,
-        gap_fill_state=("accepted" if status == "rescued" else "not_applicable"),
+        gap_fill_state=("accepted" if status == "backfilled" else "not_applicable"),
         gap_fill_reason=(
             ""
-            if status != "rescued"
+            if status != "backfilled"
             else "ms1_only_backfill_observation"
             if evidence.ms1_only_backfill_observations
             else owner_decision.source
@@ -542,8 +581,8 @@ def _cell_status(
 ) -> CellStatus:
     if decision.value is not None:
         if evidence.ms1_only_backfill_observations:
-            return "rescued"
-        return "detected" if evidence.direct_observations else "rescued"
+            return "backfilled"
+        return "detected" if evidence.direct_observations else "backfilled"
     if decision.variant == "not_searched":
         return "unchecked"
     if decision.variant == "unresolved":
@@ -551,7 +590,7 @@ def _cell_status(
     if evidence.direct_observations:
         return "detected"
     if any(item.selected_for_output for item in evidence.repaired_observations):
-        return "rescued"
+        return "backfilled"
     return "absent"
 
 
@@ -564,19 +603,19 @@ def _writer_cell_decision(
     write = owner_decision.value is not None
     if write and cell.status == "detected":
         production_status: ProductionStatus = "detected"
-        rescue_tier: RescueTier = ""
+        backfill_tier: BackfillTier = ""
     elif write:
-        production_status = "accepted_rescue"
-        rescue_tier = "accepted_rescue"
+        production_status = "accepted_backfill"
+        backfill_tier = "accepted_backfill"
     else:
         production_status = "blank"
-        rescue_tier = ""
+        backfill_tier = ""
     return ProductionCellDecision(
         feature_family_id=row_id,
         sample_stem=cell.sample_stem,
         raw_status=cell.status,
         production_status=production_status,
-        rescue_tier=rescue_tier,
+        backfill_tier=backfill_tier,
         write_matrix_value=write,
         matrix_value=owner_decision.value,
         blank_reason="" if write else owner_decision.variant,
@@ -595,8 +634,8 @@ def _writer_row_decision(
     if getattr(owner_counts, "numeric_cells", None) != numeric_count:
         raise ValueError("writer row count crossed finalized owner decisions")
     detected_count = sum(cell.status == "detected" for cell in cells)
-    accepted_rescue_count = sum(
-        item.production_status == "accepted_rescue" for item in decisions
+    accepted_backfill_count = sum(
+        item.production_status == "accepted_backfill" for item in decisions
     )
     return ProductionRowDecision(
         feature_family_id=row.feature_family_id,
@@ -611,11 +650,11 @@ def _writer_row_decision(
             item.write_matrix_value and cell.status == "detected"
             for cell, item in zip(cells, decisions, strict=True)
         ),
-        quantifiable_rescue_count=accepted_rescue_count,
+        quantifiable_backfill_count=accepted_backfill_count,
         accepted_cell_count=numeric_count,
         detected_count=detected_count,
-        accepted_rescue_count=accepted_rescue_count,
-        review_rescue_count=0,
+        accepted_backfill_count=accepted_backfill_count,
+        review_backfill_count=0,
         duplicate_assigned_count=sum(
             cell.status == "duplicate_assigned" for cell in cells
         ),

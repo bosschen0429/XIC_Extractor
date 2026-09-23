@@ -568,7 +568,7 @@ current authority. The final SP-001–SP-055 map is
 **Purpose**: Evaluate deterministic standard-peak held-out oracle manifest rows against observed boundary/area results and write `heldout_oracle_results.tsv`.
 **Topic group**: `standard_peak_shadow_activation_inputs.py` + `xic_extractor/diagnostics/standard_peak_shadow_activation_inputs.py`
 **Originating owner/goal/plan**: `docs/product/backfill.md`; `docs/product/quant-matrix.md`; retired backfill integration policy spec provenance.
-**Status note**: Thin CLI wrapper around the package-level held-out oracle evaluator. It reads `heldout_oracle_manifest.tsv`, observed result rows with `oracle_case_id`, observed boundary/area fields, and observed-result provenance fields, records the source artifact SHA, and writes the existing `standard_peak_seed_guard_heldout_oracle_results` schema. Manifest rows must declare `heldout_original_cell_status` proving the masked source cell was originally detected; `rescued`, blank, or unknown statuses fail before result evaluation. Observed rows must identify an independent product-writer, masked-rerun, or boundary-reintegration source; oracle/manual-review/review-queue source copies fail closed after punctuation/whitespace canonicalization, and neutral observed source labels also fail when they canonicalize to the same value as the matching manifest `oracle_source`. The result source artifact must exist so its SHA can be recorded. It does not run RAW, generate oracle rows, mutate matrices, authorize non-standard peaks, or upgrade the standard-path seed guard beyond `production_candidate`; real/reviewed held-out oracle rows plus FULL COHORT expected-diff evidence are still required for `production_ready`.
+**Status note**: Thin CLI wrapper around the package-level held-out oracle evaluator. It reads `heldout_oracle_manifest.tsv`, observed result rows with `oracle_case_id`, observed boundary/area fields, and observed-result provenance fields, records the source artifact SHA, and writes the existing `standard_peak_seed_guard_heldout_oracle_results` schema. Manifest rows must declare `heldout_original_cell_status` proving the masked source cell was originally detected; `backfilled`, blank, or unknown statuses fail before result evaluation. Observed rows must identify an independent product-writer, masked-rerun, or boundary-reintegration source; oracle/manual-review/review-queue source copies fail closed after punctuation/whitespace canonicalization, and neutral observed source labels also fail when they canonicalize to the same value as the matching manifest `oracle_source`. The result source artifact must exist so its SHA can be recorded. It does not run RAW, generate oracle rows, mutate matrices, authorize non-standard peaks, or upgrade the standard-path seed guard beyond `production_candidate`; real/reviewed held-out oracle rows plus FULL COHORT expected-diff evidence are still required for `production_ready`.
 
 ---
 
@@ -785,17 +785,17 @@ treated as stable identity; when the promotion row carries a seed m/z/RT anchor,
 the FULL COHORT candidate is selected by hypothesis-anchor m/z/RT plus sample. A
 direct-transfer candidate requires that anchored PeakHypothesis/sample cell to
 exist, remain a primary matrix row, avoid unresolved family consolidation, have
-`detected` or `rescued` status, and carry a positive
+`detected` or `backfilled` status, and carry a positive
 `gaussian15_positive_asls_residual` primary matrix area. Anchored detected or
 rescued cells blocked only by family consolidation/non-primary-row ownership are
 reported as `hypothesis_candidate_review`, not as absent. Hard missing cells,
 absent cells, duplicate-assigned cells, and missing Gaussian15 area still fail
 closed. This diagnostic does not read RAW, remap winners, apply activation,
 mutate alignment artifacts, change workbook schemas, or claim production
-readiness. This diagnostic's `rescued` eligibility is not a heldout-oracle
+readiness. This diagnostic's `backfilled` eligibility is not a heldout-oracle
 contract: standard-path heldout oracle manifests separately require
 `heldout_original_cell_status` proving the masked source cell was originally
-detected, and `rescued` rows fail closed for product-readiness oracle evidence.
+detected, and `backfilled` rows fail closed for product-readiness oracle evidence.
 
 ---
 

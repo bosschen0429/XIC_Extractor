@@ -197,7 +197,7 @@ def _normal_decision(
         "matrix_quantitative_use": "standard_quantitative_use",
         "promotion_decision": "promote_matrix_write",
         "full_cohort_matched_peak_hypothesis_id": full_cohort_peak_hypothesis_id,
-        "full_cohort_cell_status": "rescued",
+        "full_cohort_cell_status": "backfilled",
         "full_cohort_primary_matrix_area": area,
         "full_cohort_primary_matrix_area_source": "gaussian15_positive_asls_residual",
         "normal_peak_quantitation_area": quantitation_area,

@@ -219,7 +219,7 @@ def _cell_evidence_blockers(
     rescued = tuple(
         cell
         for cell in evidence.cells
-        if cell.status == "rescued" and cell.is_rescued_quantifiable
+        if cell.status == "backfilled" and cell.is_rescued_quantifiable
     )
     if len(rescued) < evidence.q_rescue:
         return (LOW_MS1_COVERAGE_BLOCKED_REASON,)
@@ -312,7 +312,7 @@ def _all_rescue_cells_supported(evidence: BackfillPromotionEvidence) -> bool:
     rescued = tuple(
         cell
         for cell in evidence.cells
-        if cell.status == "rescued" and cell.is_rescued_quantifiable
+        if cell.status == "backfilled" and cell.is_rescued_quantifiable
     )
     return (
         len(rescued) >= evidence.q_rescue

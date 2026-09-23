@@ -235,7 +235,7 @@ def _cleanliness_section(cleanliness: Mapping[str, Any]) -> str:
             row["identity_decision"],
             row["present_rate"],
             row["detected_count"],
-            row["accepted_rescue_count"],
+            row["accepted_backfill_count"],
             row["row_flags"],
             row["warning"],
         )

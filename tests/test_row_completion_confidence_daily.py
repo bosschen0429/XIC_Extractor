@@ -444,7 +444,7 @@ def _write_alignment_artifacts(
     (path / "alignment_review.tsv").write_text(
         "feature_family_id\tdetected_count\tambiguous_ms1_owner_count\t"
         "duplicate_assigned_count\tunchecked_count\taccepted_cell_count\t"
-        "accepted_rescue_count\treview_rescue_count\tidentity_decision\t"
+        "accepted_backfill_count\treview_backfill_count\tidentity_decision\t"
         "identity_confidence\tprimary_evidence\trow_flags\treason\n"
         "FAM_BAD\t0\t0\t2\t0\t0\t0\t1\taudit_family\treview\towner\t"
         "duplicate_only;duplicate_claim_pressure\tduplicate only\n",
@@ -477,8 +477,8 @@ def _write_health_packet(path: Path) -> Path:
                 "zero_present": 0,
                 "high_backfill_dependency": 0,
             },
-            "accepted_rescue_count_total": 0,
-            "review_rescue_count_total": 1,
+            "accepted_backfill_count_total": 0,
+            "review_backfill_count_total": 1,
             "sentinel_count": 1,
         },
         "sentinel_rows": [

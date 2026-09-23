@@ -15,7 +15,7 @@ from xic_extractor.alignment.promotion_policy import (
 CellQualityStatus = Literal[
     "detected_quantifiable",
     "rescue_quantifiable",
-    "review_rescue",
+    "review_backfill",
     "duplicate_loser",
     "ambiguous_owner",
     "blank",
@@ -69,7 +69,7 @@ def decide_cell_quality(
             )
         return _decision(cell, "detected_quantifiable", area, "")
 
-    if cell.status == "rescued":
+    if cell.status == "backfilled":
         area = _valid_area(cell.matrix_area)
         if area is None:
             return _decision(
@@ -79,12 +79,12 @@ def decide_cell_quality(
                 _invalid_matrix_area_reason(cell),
             )
         if not _has_complete_peak(cell):
-            return _decision(cell, "review_rescue", None, "incomplete_peak")
+            return _decision(cell, "review_backfill", None, "incomplete_peak")
         owner_block_reason = cell_owner_backfill_write_block_reason(cell)
         if owner_block_reason:
-            return _decision(cell, "review_rescue", None, owner_block_reason)
+            return _decision(cell, "review_backfill", None, owner_block_reason)
         if cell.rt_delta_sec is None:
-            return _decision(cell, "review_rescue", None, "rt_outside_max")
+            return _decision(cell, "review_backfill", None, "rt_outside_max")
         rt_delta_sec = abs(cell.rt_delta_sec)
         if rt_delta_sec <= config.preferred_rt_sec:
             return _decision(cell, "rescue_quantifiable", area, "")
@@ -94,8 +94,8 @@ def decide_cell_quality(
         ):
             return _decision(cell, "rescue_quantifiable", area, "")
         if rt_delta_sec > config.max_rt_sec:
-            return _decision(cell, "review_rescue", None, "rt_outside_max")
-        return _decision(cell, "review_rescue", None, "rt_outside_preferred")
+            return _decision(cell, "review_backfill", None, "rt_outside_max")
+        return _decision(cell, "review_backfill", None, "rt_outside_preferred")
 
     if cell.status == "duplicate_assigned":
         return _decision(cell, "duplicate_loser", None, "duplicate_loser")

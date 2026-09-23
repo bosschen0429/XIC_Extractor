@@ -88,7 +88,7 @@ def test_build_class_profiles_keeps_machine_and_manual_prerequisites_separate() 
             sample="S2",
             manual_label="fail",
             evidence_gap_class="machine_too_permissive_rt_pattern_conflict",
-            machine_current_label="rescued",
+            machine_current_label="backfilled",
             machine_match_status="ambiguous_multiple_matches",
             manual_reason_tags="rt_too_far;pattern_mismatch;shape_normal",
         )
@@ -99,7 +99,7 @@ def test_build_class_profiles_keeps_machine_and_manual_prerequisites_separate() 
             family="FAM003",
             sample="S2",
             source_role="rescued_cell",
-            machine_current_label="rescued",
+            machine_current_label="backfilled",
             rt_context_status="conflicting",
             pattern_conflict_status="rt_pattern_conflict",
         )

@@ -81,28 +81,28 @@ def test_rescue_requires_complete_peak_and_rt_inside_alignment_window() -> None:
     config = AlignmentConfig(preferred_rt_sec=10.0, max_rt_sec=30.0)
 
     assert (
-        decide_cell_quality(_cell("s1", "FAM001", "rescued", 100.0), config)
+        decide_cell_quality(_cell("s1", "FAM001", "backfilled", 100.0), config)
         .quality_status
         == "rescue_quantifiable"
     )
     assert (
         decide_cell_quality(
-            _cell("s1", "FAM001", "rescued", 100.0, apex_rt=None),
+            _cell("s1", "FAM001", "backfilled", 100.0, apex_rt=None),
             config,
         ).quality_status
-        == "review_rescue"
+        == "review_backfill"
     )
     outside_preferred = decide_cell_quality(
-        _cell("s1", "FAM001", "rescued", 100.0, rt_delta_sec=20.0),
+        _cell("s1", "FAM001", "backfilled", 100.0, rt_delta_sec=20.0),
         config,
     )
-    assert outside_preferred.quality_status == "review_rescue"
+    assert outside_preferred.quality_status == "review_backfill"
     assert outside_preferred.quality_reason == "rt_outside_preferred"
     outside = decide_cell_quality(
-        _cell("s1", "FAM001", "rescued", 100.0, rt_delta_sec=31.0),
+        _cell("s1", "FAM001", "backfilled", 100.0, rt_delta_sec=31.0),
         config,
     )
-    assert outside.quality_status == "review_rescue"
+    assert outside.quality_status == "review_backfill"
     assert outside.quality_reason == "rt_outside_max"
 
 
@@ -113,7 +113,7 @@ def test_rescue_requires_complete_peak_and_rt_inside_alignment_window() -> None:
             lambda: _cell(
                 "hard_negative",
                 "FAM001",
-                "rescued",
+                "backfilled",
                 100.0,
                 group_hypothesis_id="HYP001",
                 group_claim_state="duplicate_loser",
@@ -125,7 +125,7 @@ def test_rescue_requires_complete_peak_and_rt_inside_alignment_window() -> None:
             lambda: _cell(
                 "hard_negative",
                 "FAM001",
-                "rescued",
+                "backfilled",
                 100.0,
                 region_local_mixture_diagnostic="ambiguous_adjacent_split",
             ),
@@ -135,7 +135,7 @@ def test_rescue_requires_complete_peak_and_rt_inside_alignment_window() -> None:
             lambda: _cell(
                 "hard_negative",
                 "FAM001",
-                "rescued",
+                "backfilled",
                 100.0,
                 region_local_mixture_diagnostic="insufficient_evidence",
             ),
@@ -145,7 +145,7 @@ def test_rescue_requires_complete_peak_and_rt_inside_alignment_window() -> None:
             lambda: _cell(
                 "hard_negative",
                 "FAM001",
-                "rescued",
+                "backfilled",
                 100.0,
                 region_local_mixture_diagnostic="two_peak_supported",
             ),
@@ -155,7 +155,7 @@ def test_rescue_requires_complete_peak_and_rt_inside_alignment_window() -> None:
             lambda: _cell(
                 "hard_negative",
                 "FAM001",
-                "rescued",
+                "backfilled",
                 100.0,
                 region_local_mixture_diagnostic="competing_boundary_model",
             ),
@@ -165,7 +165,7 @@ def test_rescue_requires_complete_peak_and_rt_inside_alignment_window() -> None:
             lambda: _cell(
                 "hard_negative",
                 "FAM001",
-                "rescued",
+                "backfilled",
                 100.0,
                 scan_support_score=0.2,
             ),
@@ -188,7 +188,7 @@ def test_owner_hard_negative_backfill_facts_hold_rescue_out_of_matrix(
     config = AlignmentConfig(preferred_rt_sec=10.0, max_rt_sec=30.0)
     decision = decide_cell_quality(cell_factory(), config)
 
-    assert decision.quality_status == "review_rescue"
+    assert decision.quality_status == "review_backfill"
     assert decision.quality_reason == expected_reason
     assert decision.matrix_area is None
 
@@ -199,14 +199,14 @@ def test_owner_hard_negative_backfill_facts_hold_rescue_out_of_matrix(
         lambda: _cell(
             "nonblocking",
             "FAM001",
-            "rescued",
+            "backfilled",
             100.0,
             scan_support_score=0.3,
         ),
         lambda: _cell(
             "nonblocking",
             "FAM001",
-            "rescued",
+            "backfilled",
             100.0,
             region_local_mixture_diagnostic=(
                 "neighbor_interference_not_assessed;raw_trace_reread_1"
@@ -215,14 +215,14 @@ def test_owner_hard_negative_backfill_facts_hold_rescue_out_of_matrix(
         lambda: _cell(
             "nonblocking",
             "FAM001",
-            "rescued",
+            "backfilled",
             100.0,
             region_local_mixture_diagnostic="current_single_envelope",
         ),
         lambda: _cell(
             "nonblocking",
             "FAM001",
-            "rescued",
+            "backfilled",
             100.0,
             region_local_mixture_diagnostic="one_envelope_supported",
         ),
@@ -251,7 +251,7 @@ def test_current_claim_winner_resolves_historical_duplicate_loser() -> None:
         _cell(
             "resolved_claim",
             "FAM001",
-            "rescued",
+            "backfilled",
             100.0,
             group_hypothesis_id="HYP001",
             group_claim_state="duplicate_loser",
@@ -272,7 +272,7 @@ def test_only_owner_authorized_drift_correction_can_override_preferred_rt() -> N
         _cell(
             "s1",
             "FAM001",
-            "rescued",
+            "backfilled",
             100.0,
             rt_delta_sec=120.0,
             backfill_evidence=True,
@@ -283,7 +283,7 @@ def test_only_owner_authorized_drift_correction_can_override_preferred_rt() -> N
         _cell(
             "s1_drift",
             "FAM001",
-            "rescued",
+            "backfilled",
             100.0,
             rt_delta_sec=20.0,
             backfill_evidence=True,
@@ -295,7 +295,7 @@ def test_only_owner_authorized_drift_correction_can_override_preferred_rt() -> N
         _cell(
             "s1_ms1_only",
             "FAM001",
-            "rescued",
+            "backfilled",
             100.0,
             rt_delta_sec=120.0,
             backfill_evidence=True,
@@ -307,7 +307,7 @@ def test_only_owner_authorized_drift_correction_can_override_preferred_rt() -> N
         _cell(
             "s2",
             "FAM001",
-            "rescued",
+            "backfilled",
             100.0,
             rt_delta_sec=120.0,
             backfill_evidence=False,
@@ -318,7 +318,7 @@ def test_only_owner_authorized_drift_correction_can_override_preferred_rt() -> N
         _cell(
             "s3",
             "FAM001",
-            "rescued",
+            "backfilled",
             100.0,
             apex_rt=None,
             rt_delta_sec=120.0,
@@ -330,7 +330,7 @@ def test_only_owner_authorized_drift_correction_can_override_preferred_rt() -> N
         _cell(
             "s4",
             "FAM001",
-            "rescued",
+            "backfilled",
             100.0,
             rt_delta_sec=240.0,
             backfill_evidence=True,
@@ -342,7 +342,7 @@ def test_only_owner_authorized_drift_correction_can_override_preferred_rt() -> N
         _cell(
             "s5",
             "FAM001",
-            "rescued",
+            "backfilled",
             100.0,
             rt_delta_sec=None,
             backfill_evidence=True,
@@ -351,19 +351,19 @@ def test_only_owner_authorized_drift_correction_can_override_preferred_rt() -> N
         config,
     )
 
-    assert same_peak_without_drift.quality_status == "review_rescue"
+    assert same_peak_without_drift.quality_status == "review_backfill"
     assert same_peak_without_drift.quality_reason == "rt_outside_max"
-    assert ms1_only.quality_status == "review_rescue"
+    assert ms1_only.quality_status == "review_backfill"
     assert ms1_only.quality_reason == "rt_outside_max"
     assert drift_supported_inside_max.quality_status == "rescue_quantifiable"
     assert drift_supported_inside_max.matrix_area == 100.0
     assert drift_supported.quality_status == "rescue_quantifiable"
     assert drift_supported.matrix_area == 100.0
-    assert unsupported.quality_status == "review_rescue"
+    assert unsupported.quality_status == "review_backfill"
     assert unsupported.quality_reason == "rt_outside_max"
-    assert incomplete.quality_status == "review_rescue"
+    assert incomplete.quality_status == "review_backfill"
     assert incomplete.quality_reason == "incomplete_peak"
-    assert missing_rt.quality_status == "review_rescue"
+    assert missing_rt.quality_status == "review_backfill"
     assert missing_rt.quality_reason == "rt_outside_max"
 
 
@@ -374,7 +374,7 @@ def test_drift_correction_uses_the_live_alignment_preferred_rt() -> None:
         _cell(
             "s1",
             "FAM001",
-            "rescued",
+            "backfilled",
             100.0,
             rt_delta_sec=240.0,
             backfill_evidence=True,
@@ -429,7 +429,7 @@ def _cell(
 ) -> AlignedCell:
     if (
         selected_integration is None
-        and status in {"detected", "rescued"}
+        and status in {"detected", "backfilled"}
         and _positive_area(area)
     ):
         selected_integration = _integration(
@@ -504,7 +504,7 @@ def _backfill_evidence_fields(
     drift_corrected_delta_sec: float,
     candidate_ms2_evidence: bool,
 ) -> dict[str, object]:
-    if status != "rescued" or not enabled:
+    if status != "backfilled" or not enabled:
         return {}
     fields: dict[str, object] = {
         "backfill_ms1_pattern_status": "supportive",

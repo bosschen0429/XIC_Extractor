@@ -240,7 +240,7 @@ def test_authorized_candidate_ms2_projects_into_promotion_ms2_context() -> None:
             "neutral_loss_tag": "DNA_dR",
             "primary_evidence": "owner_complete_link",
             "detected_count": "2",
-            "accepted_rescue_count": "1",
+            "accepted_backfill_count": "1",
         },
         rows,
         seed_quality=None,
@@ -375,7 +375,7 @@ def _cell_row() -> dict[str, str]:
     return {
         "feature_family_id": "FAM_MS2",
         "sample_stem": "S2",
-        "status": "rescued",
+        "status": "backfilled",
         "primary_matrix_area": "123",
         "apex_rt": "10.0",
         "height": "40000",

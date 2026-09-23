@@ -160,7 +160,7 @@ def project_backfill_evidence_to_cells(
         row = dict(cell)
         _ensure_projection_columns(row)
         _clear_projection_fields(row, BACKFILL_PROJECTION_COLUMNS)
-        if text_value(row.get("status")) != "rescued":
+        if text_value(row.get("status")) != "backfilled":
             projected_rows.append(row)
             continue
 

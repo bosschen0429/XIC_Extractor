@@ -142,7 +142,7 @@ def _summary_int(summary: Mapping[str, str], key: str) -> int:
 
 def _markdown_queue_row(index: int, row: Mapping[str, Any]) -> str:
     window = f"{row.get('suggested_rt_min', '')}-{row.get('suggested_rt_max', '')}"
-    seeds = f"{row.get('detected_count', '')}/{row.get('accepted_rescue_count', '')}"
+    seeds = f"{row.get('detected_count', '')}/{row.get('accepted_backfill_count', '')}"
     return (
         f"| {index} | `{row.get('feature_family_id', '')}` "
         f"| {row.get('family_center_mz', '')} "
@@ -172,7 +172,7 @@ def _candidate_fields() -> tuple[str, ...]:
         "suggested_output_prefix",
         "suggested_overlay_command_args",
         "detected_count",
-        "accepted_rescue_count",
+        "accepted_backfill_count",
         "accepted_cell_count",
         "rescue_fraction",
         "rescue_per_detected_seed",
@@ -185,7 +185,7 @@ def _candidate_fields() -> tuple[str, ...]:
         "overlay_status",
         "overlay_family_verdict",
         "dda_trigger_limited_ms2_support",
-        "detected_rescued_count",
+        "detected_backfilled_count",
         "global_apex_assessable_trace_count",
         "global_apex_assessable_fraction",
         "selected_apex_in_trace_window_count",

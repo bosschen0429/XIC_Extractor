@@ -37,9 +37,9 @@ def test_load_family_cells_and_assign_highlight_groups(tmp_path: Path) -> None:
         cells_path,
         [
             _cell_row("FAM001", "detected-a", "detected", "1000"),
-            _cell_row("FAM001", "rescued-high", "rescued", "900"),
-            _cell_row("FAM001", "rescued-low", "rescued", "100"),
-            _cell_row("FAM001", "pooled_QC1", "rescued", "50"),
+            _cell_row("FAM001", "rescued-high", "backfilled", "900"),
+            _cell_row("FAM001", "rescued-low", "backfilled", "100"),
+            _cell_row("FAM001", "pooled_QC1", "backfilled", "50"),
             _cell_row("FAM002", "other", "detected", "999"),
         ],
     )
@@ -62,7 +62,7 @@ def test_assign_highlight_groups_respects_rescued_highlight_limit() -> None:
     cells = [
         report.FamilyCell(
             sample_stem=f"sample-{index}",
-            status="rescued",
+            status="backfilled",
             area=float(100 - index),
             height=10,
             apex_rt=1.1,
@@ -104,7 +104,7 @@ def test_write_family_ms1_overlay_outputs_from_synthetic_traces(
         report.trace_row_from_arrays(
             report.FamilyCell(
                 sample_stem="rescued-a",
-                status="rescued",
+                status="backfilled",
                 area=800,
                 height=80,
                 apex_rt=1.11,
@@ -241,7 +241,7 @@ def _synthetic_rows() -> list[TraceOverlayRow]:
         report.trace_row_from_arrays(
             report.FamilyCell(
                 sample_stem="rescued-a",
-                status="rescued",
+                status="backfilled",
                 area=800,
                 height=80,
                 apex_rt=1.11,
@@ -763,7 +763,7 @@ def _family_cell(
     sample_stem: str,
     *,
     apex_rt: float,
-    status: str = "rescued",
+    status: str = "backfilled",
     height: float = 10.0,
 ) -> report.FamilyCell:
     return report.FamilyCell(

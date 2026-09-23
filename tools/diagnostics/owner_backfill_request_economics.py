@@ -158,7 +158,7 @@ def _feature_economics(
         "confirmation_target_count": len(
             [sample for sample in requested_samples if sample in detected_samples]
         ),
-        "rescued_target_count": status_counts.get("rescued", 0),
+        "rescued_target_count": status_counts.get("backfilled", 0),
         "absent_target_count": status_counts.get("absent", 0),
         "duplicate_assigned_target_count": status_counts.get(
             "duplicate_assigned",
@@ -168,10 +168,12 @@ def _feature_economics(
         "detected_confirmation_target_count": status_counts.get("detected", 0),
         "unchecked_target_count": status_counts.get("unchecked", 0),
         "missing_cell_target_count": status_counts.get("missing_cell", 0),
-        "accepted_rescue_count": _int_value(
-            review_row.get("accepted_rescue_count", "")
+        "accepted_backfill_count": _int_value(
+            review_row.get("accepted_backfill_count", "")
         ),
-        "review_rescue_count": _int_value(review_row.get("review_rescue_count", "")),
+        "review_backfill_count": _int_value(
+            review_row.get("review_backfill_count", "")
+        ),
         "row_flags": review_row.get("row_flags", ""),
         "warning": review_row.get("warning", ""),
         "family_evidence": review_row.get("family_evidence", ""),
@@ -288,8 +290,8 @@ def _aggregate(features: list[dict[str, Any]]) -> dict[str, int]:
         "detected_confirmation_target_count",
         "unchecked_target_count",
         "missing_cell_target_count",
-        "accepted_rescue_count",
-        "review_rescue_count",
+        "accepted_backfill_count",
+        "review_backfill_count",
     )
     result = {"eligible_group_family_count": len(features)}
     for field in fields:

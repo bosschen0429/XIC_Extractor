@@ -144,8 +144,8 @@ def test_writer_round_trips_exact_61_column_three_kind_projection(
             feature_family_id=cell.cluster_id,
             sample_stem=cell.sample_stem,
             raw_status=cell.status,
-            production_status="accepted_rescue",
-            rescue_tier="accepted_rescue",
+            production_status="accepted_backfill",
+            backfill_tier="accepted_backfill",
             write_matrix_value=True,
             matrix_value=cell.matrix_area,
             blank_reason="",
@@ -385,8 +385,8 @@ def test_primary_winner_requires_complete_winner_and_source_lineage(
             feature_family_id=primary.cluster_id,
             sample_stem=primary.sample_stem,
             raw_status=primary.status,
-            production_status="accepted_rescue",
-            rescue_tier="accepted_rescue",
+            production_status="accepted_backfill",
+            backfill_tier="accepted_backfill",
             write_matrix_value=True,
             matrix_value=primary.matrix_area,
             blank_reason="",
@@ -704,7 +704,7 @@ def test_numeric_cell_claim_lifts_only_after_all_three_owners_replay(
     config = AlignmentConfig()
     decisions = build_production_decisions(matrix, config)
     selected_decision = decisions.cell(cell.cluster_id, cell.sample_stem)
-    assert selected_decision.production_status == "accepted_rescue"
+    assert selected_decision.production_status == "accepted_backfill"
     authority = owner_backfill_authority_cell_projection(
         stage=stage,
         cell=cell,
@@ -936,8 +936,8 @@ def _write_three_kind_provenance(tmp_path: Path) -> tuple[Path, _LiveInputs]:
             feature_family_id=cell.cluster_id,
             sample_stem=cell.sample_stem,
             raw_status=cell.status,
-            production_status="accepted_rescue",
-            rescue_tier="accepted_rescue",
+            production_status="accepted_backfill",
+            backfill_tier="accepted_backfill",
             write_matrix_value=True,
             matrix_value=cell.matrix_area,
             blank_reason="",
@@ -984,7 +984,7 @@ def _live_final_owner_inputs(
         decisions.cell(
             live.stage.public_family_id, live.stage.sample_stem
         ).production_status
-        == "accepted_rescue"
+        == "accepted_backfill"
     )
     return matrix, config, decisions
 

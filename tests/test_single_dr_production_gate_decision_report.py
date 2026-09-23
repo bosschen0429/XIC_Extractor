@@ -249,7 +249,7 @@ def test_gate_candidates_preserve_classification_bucket_order(monkeypatch) -> No
     assert captured["dr_duplicate_rescue_pressure"] == ["FAM_DUP"]
 
 
-def test_tsv_adapter_excludes_review_rescue_outside_alignment_window(
+def test_tsv_adapter_excludes_review_backfill_outside_alignment_window(
     tmp_path: Path,
 ) -> None:
     alignment_dir = tmp_path / "alignment"
@@ -264,7 +264,7 @@ def test_tsv_adapter_excludes_review_rescue_outside_alignment_window(
             "sample_stem": "S999",
             "rt_delta_sec": "-240.0",
             "area": "500",
-            "reason": "review_rescue_outside_rt_window",
+            "reason": "review_backfill_outside_rt_window",
         },
     )
     _write_tsv(alignment_dir / "alignment_cells.tsv", tuple(cells))
@@ -277,13 +277,13 @@ def test_tsv_adapter_excludes_review_rescue_outside_alignment_window(
     assert family["assessed_rescue_count"] == 8
 
 
-def test_tsv_adapter_reduces_generic_review_rescue_to_unavailable(
+def test_tsv_adapter_reduces_generic_review_backfill_to_unavailable(
     tmp_path: Path,
 ) -> None:
     alignment_dir = tmp_path / "alignment"
     output_dir = tmp_path / "diagnostics"
     review_row = _review_row("FAM_REVIEW", q_detected=2, q_rescue=0)
-    review_row["review_rescue_count"] = "1"
+    review_row["review_backfill_count"] = "1"
     _write_tsv(alignment_dir / "alignment_review.tsv", (review_row,))
     _write_tsv(
         alignment_dir / "alignment_cells.tsv",
@@ -311,7 +311,7 @@ def test_tsv_adapter_requires_height_for_rescue_quantifiable_parity(
     )
     cells = _cells("FAM_NO_HEIGHT", detected=2, rescued=8)
     for row in cells:
-        if row["status"] == "rescued":
+        if row["status"] == "backfilled":
             row["height"] = ""
     _write_tsv(alignment_dir / "alignment_cells.tsv", tuple(cells))
 
@@ -333,7 +333,7 @@ def test_tsv_adapter_uses_primary_matrix_area_for_rescue_evidence(
     )
     cells = _cells("FAM_PRIMARY_AREA", detected=2, rescued=8)
     for row in cells:
-        if row["status"] == "rescued":
+        if row["status"] == "backfilled":
             row["area"] = ""
             row["primary_matrix_area"] = "500"
     _write_tsv(alignment_dir / "alignment_cells.tsv", tuple(cells))
@@ -361,10 +361,10 @@ def test_tsv_adapter_requires_backfill_evidence_schema(tmp_path: Path) -> None:
         report.build_decision_report(alignment_dir=alignment_dir)
 
 
-def test_tsv_adapter_requires_review_rescue_count(tmp_path: Path) -> None:
+def test_tsv_adapter_requires_review_backfill_count(tmp_path: Path) -> None:
     alignment_dir = tmp_path / "alignment"
     review_row = _review_row("FAM_STALE_REVIEW", q_detected=2, q_rescue=8)
-    review_row.pop("review_rescue_count")
+    review_row.pop("review_backfill_count")
     _write_tsv(alignment_dir / "alignment_review.tsv", (review_row,))
     _write_tsv(
         alignment_dir / "alignment_cells.tsv",
@@ -410,7 +410,7 @@ def test_tsv_diagnostic_reports_neighbor_interference_block(
     )
     cells = _cells("FAM_NEIGHBOR", detected=2, rescued=8)
     for row in cells:
-        if row["status"] == "rescued":
+        if row["status"] == "backfilled":
             row["region_review_reason"] = "neighboring_ms1_interference"
     _write_tsv(alignment_dir / "alignment_cells.tsv", tuple(cells))
 
@@ -678,9 +678,11 @@ def test_diagnostic_tsv_adapter_matches_production_policy(tmp_path: Path) -> Non
         cells=(
             _aligned_cell("seed1", "FAM_PARITY", "detected", 100.0),
             _aligned_cell("seed2", "FAM_PARITY", "detected", 90.0),
-            _aligned_cell("rescue00", "FAM_PARITY", "rescued", 80.0, rt_delta_sec=-0.5),
+            _aligned_cell(
+                "rescue00", "FAM_PARITY", "backfilled", 80.0, rt_delta_sec=-0.5
+            ),
             *tuple(
-                _aligned_cell(f"rescue{i:02d}", "FAM_PARITY", "rescued", 80.0 + i)
+                _aligned_cell(f"rescue{i:02d}", "FAM_PARITY", "backfilled", 80.0 + i)
                 for i in range(1, 84)
             ),
         ),
@@ -724,7 +726,7 @@ def test_rt_held_owner_decision_is_unavailable_after_tsv_roundtrip(
                 _aligned_cell(
                     f"rescue{i:02d}",
                     "FAM_RT_HELD",
-                    "rescued",
+                    "backfilled",
                     80.0 + i,
                     rt_delta_sec=120.0,
                 )
@@ -747,8 +749,8 @@ def test_rt_held_owner_decision_is_unavailable_after_tsv_roundtrip(
 
     family = result["families"][0]
     assert production.include_in_primary_matrix
-    assert production.review_rescue_count == 8
-    assert production.quantifiable_rescue_count == 0
+    assert production.review_backfill_count == 8
+    assert production.quantifiable_backfill_count == 0
     assert family["risk_classification"] == "unavailable_backfill_owner_evidence"
     assert family["promotion_state"] == "unavailable"
 
@@ -771,10 +773,10 @@ def _review_row(
         "family_product_mz": "184.0739",
         "family_observed_neutral_loss_da": "116.0474",
         "detected_count": str(q_detected),
-        "accepted_rescue_count": str(q_rescue),
+        "accepted_backfill_count": str(q_rescue),
         "quantifiable_detected_count": str(q_detected),
-        "quantifiable_rescue_count": str(q_rescue),
-        "review_rescue_count": "0",
+        "quantifiable_backfill_count": str(q_rescue),
+        "review_backfill_count": "0",
         "duplicate_assigned_count": str(duplicate_assigned),
         "include_in_primary_matrix": "TRUE" if primary else "FALSE",
         "identity_decision": "production_family" if primary else "audit_family",
@@ -827,7 +829,7 @@ def _cells(
             {
                 "feature_family_id": feature_id,
                 "sample_stem": f"S{index:03d}",
-                "status": "rescued",
+                "status": "backfilled",
                 "area": "500",
                 "primary_matrix_area": "500",
                 "primary_matrix_area_source": "gaussian15_positive_asls_residual",
@@ -1067,7 +1069,7 @@ def _backfill_evidence_row(*, supported: bool) -> dict[str, str]:
 
 
 def _backfill_evidence_fields(*, status: str) -> dict[str, object]:
-    if status != "rescued":
+    if status != "backfilled":
         return {}
     return {
         "backfill_ms1_pattern_status": "supportive",

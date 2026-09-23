@@ -13,8 +13,8 @@ from xic_extractor.alignment.evidence_claims import (
 )
 from xic_extractor.alignment.matrix import CellStatus
 from xic_extractor.alignment.production_decisions import (
+    BackfillTier,
     ProductionStatus,
-    RescueTier,
 )
 
 ALIGNMENT_BACKFILL_CELL_EVIDENCE_SCHEMA_VERSION = (
@@ -28,7 +28,7 @@ ALIGNMENT_BACKFILL_CELL_EVIDENCE_COLUMNS = (
     "sample_stem",
     "status",
     "production_cell_status",
-    "rescue_tier",
+    "backfill_tier",
     "write_matrix_value",
     "include_in_primary_matrix",
     "identity_decision",
@@ -80,7 +80,7 @@ PREDICATE_VERSION = "alignment-parity-scoped-backfill-scope"
 _CELL_STATUSES = frozenset(
     {
         "detected",
-        "rescued",
+        "backfilled",
         "absent",
         "unchecked",
         "ambiguous_ms1_owner",
@@ -88,10 +88,10 @@ _CELL_STATUSES = frozenset(
     }
 )
 _PRODUCTION_STATUSES = frozenset(
-    {"detected", "accepted_rescue", "review_rescue", "rejected_rescue", "blank"}
+    {"detected", "accepted_backfill", "review_backfill", "rejected_backfill", "blank"}
 )
 _RESCUE_TIERS = frozenset(
-    {"", "accepted_rescue", "review_rescue", "rejected_rescue"}
+    {"", "accepted_backfill", "review_backfill", "rejected_backfill"}
 )
 _SKIPPED_SCOPE_REASON = {
     "production-equivalent": (
@@ -134,7 +134,7 @@ class BackfillEvidenceRecord:
     sample_stem: str
     status: CellStatus
     production_cell_status: ProductionStatus
-    rescue_tier: RescueTier
+    backfill_tier: BackfillTier
     write_matrix_value: bool
     include_in_primary_matrix: bool
     identity_decision: str
@@ -181,23 +181,26 @@ class BackfillEvidenceRecord:
                 "unsupported production_cell_status "
                 f"{self.production_cell_status!r}"
             )
-        if self.rescue_tier not in _RESCUE_TIERS:
-            raise ValueError(f"unsupported rescue_tier {self.rescue_tier!r}")
+        if self.backfill_tier not in _RESCUE_TIERS:
+            raise ValueError(f"unsupported backfill_tier {self.backfill_tier!r}")
         expected_tier = (
             self.production_cell_status
             if self.production_cell_status
-            in {"accepted_rescue", "review_rescue", "rejected_rescue"}
+            in {"accepted_backfill", "review_backfill", "rejected_backfill"}
             else ""
         )
-        if self.rescue_tier != expected_tier:
+        if self.backfill_tier != expected_tier:
             raise ValueError(
-                "rescue_tier must match the production_cell_status rescue tier"
+                "backfill_tier must match the production_cell_status rescue tier"
             )
-        expected_write = self.production_cell_status in {"detected", "accepted_rescue"}
+        expected_write = self.production_cell_status in {
+            "detected",
+            "accepted_backfill",
+        }
         if self.write_matrix_value is not expected_write:
             raise ValueError(
                 "write_matrix_value must be true only for detected or "
-                "accepted_rescue production status"
+                "accepted_backfill production status"
             )
         _require_finite_fields(
             self,

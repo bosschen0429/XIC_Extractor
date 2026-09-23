@@ -42,24 +42,24 @@ def compute_guardrails(alignment_dir: Path) -> GuardrailMetrics:
     negative_8oxodg = 0
     negative_checkpoint = 0
     accepted_quantitative_cells = 0
-    accepted_rescue_cells = 0
-    review_rescue_count = 0
+    accepted_backfill_cells = 0
+    review_backfill_count = 0
     rescue_only_review = 0
     identity_anchor_lost = 0
     duplicate_claim_pressure = 0
     for family_id in family_ids:
         counts = status_counts[family_id]
         detected_count = counts["detected"]
-        rescued_count = counts["rescued"]
+        backfilled_count = counts["backfilled"]
         duplicate_assigned_count = counts["duplicate_assigned"]
         review_row = review_by_family.get(family_id, {})
         accepted_cells = _int_value(review_row.get("accepted_cell_count"))
-        accepted_rescues = _int_value(review_row.get("accepted_rescue_count"))
-        review_rescues = _int_value(review_row.get("review_rescue_count"))
+        accepted_backfills = _int_value(review_row.get("accepted_backfill_count"))
+        review_backfills = _int_value(review_row.get("review_backfill_count"))
         row_flags = _row_flags(review_row)
         accepted_quantitative_cells += accepted_cells
-        accepted_rescue_cells += accepted_rescues
-        review_rescue_count += review_rescues
+        accepted_backfill_cells += accepted_backfills
+        review_backfill_count += review_backfills
         if "rescue_only_review" in row_flags:
             rescue_only_review += 1
         if "identity_anchor_lost" in row_flags:
@@ -75,7 +75,7 @@ def compute_guardrails(alignment_dir: Path) -> GuardrailMetrics:
         if _is_high_backfill_dependency(
             review_row,
             detected_count,
-            rescued_count,
+            backfilled_count,
             review_has_warning_column,
         ):
             high_backfill += 1
@@ -101,13 +101,13 @@ def compute_guardrails(alignment_dir: Path) -> GuardrailMetrics:
         negative_8oxodg_production_families=negative_8oxodg,
         negative_checkpoint_production_families=negative_checkpoint,
         accepted_quantitative_cells=accepted_quantitative_cells,
-        accepted_rescue_cells=accepted_rescue_cells,
-        accepted_rescue_rate=(
-            accepted_rescue_cells / accepted_quantitative_cells
+        accepted_backfill_cells=accepted_backfill_cells,
+        accepted_backfill_rate=(
+            accepted_backfill_cells / accepted_quantitative_cells
             if accepted_quantitative_cells
             else 0.0
         ),
-        review_rescue_count=review_rescue_count,
+        review_backfill_count=review_backfill_count,
         rescue_only_review_families=rescue_only_review,
         identity_anchor_lost_families=identity_anchor_lost,
         duplicate_claim_pressure_families=duplicate_claim_pressure,
@@ -212,14 +212,14 @@ def _status_counts_by_family(
 def _is_high_backfill_dependency(
     review_row: Mapping[str, str],
     detected_count: int,
-    rescued_count: int,
+    backfilled_count: int,
     review_has_warning_column: bool,
 ) -> bool:
     if "high_backfill_dependency" in _row_flags(review_row):
         return True
     if review_has_warning_column:
         return review_row.get("warning") == "high_backfill_dependency"
-    return rescued_count > detected_count and rescued_count >= 2
+    return backfilled_count > detected_count and backfilled_count >= 2
 
 
 def _production_present_count(counts: Counter[str]) -> int:

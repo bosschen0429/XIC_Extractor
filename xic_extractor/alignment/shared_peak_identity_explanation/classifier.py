@@ -226,7 +226,7 @@ def _evidence_gap_class(
 
 def _has_positive_machine_cell(sample_evidence: Sequence[Mapping[str, str]]) -> bool:
     return any(
-        row.get("machine_current_label") in {"detected", "rescued"}
+        row.get("machine_current_label") in {"detected", "backfilled"}
         for row in sample_evidence
     )
 

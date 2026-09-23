@@ -115,7 +115,7 @@ def _trace_row(
     *,
     selected_peak_height: float,
     global_peak_height: float,
-    status: str = "rescued",
+    status: str = "backfilled",
     group: str = "top_rescued_ms1_area",
     start: float = 9.9,
     apex: float = 10.0,

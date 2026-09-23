@@ -251,7 +251,7 @@ def test_outputs_all_review_and_blast_files(tmp_path: Path) -> None:
             "family_center_mz",
             "family_center_rt",
             "detected_count",
-            "accepted_rescue_count",
+            "accepted_backfill_count",
             "accepted_cell_count",
             "input_review_classification",
             "all_overlay_row_count",
@@ -294,7 +294,7 @@ def test_outputs_all_review_and_blast_files(tmp_path: Path) -> None:
             "family_center_rt",
             "review_classification",
             "detected_count",
-            "accepted_rescue_count",
+            "accepted_backfill_count",
             "accepted_cell_count",
             "would_withhold_family",
             "would_withhold_rescued_cells",
@@ -457,7 +457,7 @@ def _review_row(
         "family_center_mz": "300.0",
         "family_center_rt": "14.5",
         "detected_count": "5",
-        "accepted_rescue_count": rescued,
+        "accepted_backfill_count": rescued,
         "accepted_cell_count": str(int(rescued) + 5),
         "review_classification": "low_ms1_assessable_coverage_review",
         "row_flags": "rescue_heavy",
@@ -497,7 +497,7 @@ def _low_row(family_id: str, sample: str) -> dict[str, str]:
     return {
         "feature_family_id": family_id,
         "sample_stem": sample,
-        "status": "rescued",
+        "status": "backfilled",
     }
 
 

@@ -141,7 +141,7 @@ TIER2_CANDIDATE_SUBSET_FIELDS = (
     "feature_family_id",
     "identity_decision",
     "quantifiable_detected_count",
-    "quantifiable_rescue_count",
+    "quantifiable_backfill_count",
     "duplicate_assigned_count",
     "ambiguous_ms1_owner_count",
     "row_flags",
@@ -307,7 +307,7 @@ def evaluate_production_candidate_gate(
             source_context=source_context,
         )
 
-    rescued = tuple(row for row in cells if row.get("status") == "rescued")
+    rescued = tuple(row for row in cells if row.get("status") == "backfilled")
     support = _tier2_positive_support(
         tier2_evidence,
         review_feature_family_id=review.get("feature_family_id", ""),
@@ -333,7 +333,7 @@ def evaluate_production_candidate_gate(
             ),
         )
     )
-    if _int_value(review.get("quantifiable_rescue_count")) and not rescued:
+    if _int_value(review.get("quantifiable_backfill_count")) and not rescued:
         blockers = _ordered_unique((*blockers, "missing_rescued_cell_evidence"))
     if not tier2_available and tier2_evidence is None:
         blockers = _ordered_unique((*blockers, "missing_positive_tier2_support"))
@@ -468,7 +468,7 @@ def _is_retention_candidate(review: Mapping[str, str], flags: frozenset[str]) ->
     if not _REQUIRED_FLAGS.issubset(flags):
         return False
     detected_count = _int_value(review.get("quantifiable_detected_count"))
-    rescue_count = _int_value(review.get("quantifiable_rescue_count"))
+    rescue_count = _int_value(review.get("quantifiable_backfill_count"))
     duplicate_count = _int_value(review.get("duplicate_assigned_count"))
     ambiguous_count = _int_value(review.get("ambiguous_ms1_owner_count"))
     if None in {detected_count, rescue_count, duplicate_count, ambiguous_count}:

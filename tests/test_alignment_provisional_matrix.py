@@ -116,7 +116,7 @@ def test_projection_retains_compact_state_instead_of_dense_row_grid() -> None:
             sample_order[-1],
             f"GRP-{group_count - 1:03d}",
             f"FAM{group_count - 1:06d}",
-            status="rescued",
+            status="backfilled",
             area=5.0,
         ),
     )
@@ -173,8 +173,8 @@ def test_streamed_provisional_artifacts_match_frozen_materializing_hashes(
             918,
         ),
         "provenance.tsv": (
-            "58548b5b3837b934639263c906e23d14fb4ce45eadc8a40829739da9d0f4a83d",
-            1185,
+            "b1d1b7234d76937b7f3080be10d4d7db97bd26b41f0f25d828777311a66ae3bf",
+            1191,
         ),
         "summary.json": (
             "f254a7f32b0b11904ce5fb8a1d76b944c4589aef73105194d7bd3f959b7c3cab",
@@ -292,7 +292,7 @@ def test_streamed_pipeline_matches_frozen_formula_and_unquantified_bytes(
                 "sample-b",
                 "GRP-UNQUANT",
                 "FAM000002",
-                status="rescued",
+                status="backfilled",
                 area=0.0,
             ),
         ),
@@ -324,8 +324,8 @@ def test_streamed_pipeline_matches_frozen_formula_and_unquantified_bytes(
             903,
         ),
         "provisional_cell_provenance.tsv": (
-            "2fbda60aa7182d9a63af9b7779e30dcba5615af86115244acd773c0bd4752741",
-            1139,
+            "211cbf94e4c30476383888a9f44960d4b2ba4a6ed3fc21493703004893815a92",
+            1145,
         ),
         "provisional_matrix_summary.json": (
             "2c8d27d8c99a92610a1b03cb7af50bcf23bb9cb42adf959804d6464c28c50851",
@@ -366,7 +366,7 @@ def test_projection_retains_unquantified_groups_and_counts_observations() -> Non
                 "sample-b",
                 "GRP-A",
                 "FAM000001",
-                status="rescued",
+                status="backfilled",
                 area=0.0,
             ),
         ),
@@ -595,7 +595,7 @@ def _representative_matrix() -> AlignmentMatrix:
                 "sample-a",
                 "GRP-A",
                 "FAM000001",
-                status="rescued",
+                status="backfilled",
                 area=80.0,
             ),
             _cell(
@@ -698,8 +698,8 @@ def _cell(
         public_family_id=family_id,
         group_construction_role="successor_constructor",
         group_membership_source="cross_sample_peak_group_hypothesis",
-        backfill_seed_mz=100.0 if status == "rescued" else None,
-        backfill_seed_rt=1.0 if status == "rescued" else None,
+        backfill_seed_mz=100.0 if status == "backfilled" else None,
+        backfill_seed_rt=1.0 if status == "backfilled" else None,
     )
 
 

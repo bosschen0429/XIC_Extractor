@@ -16,8 +16,8 @@ from xic_extractor.alignment.backfill_evidence_contract import (
 from xic_extractor.alignment.matrix import CellStatus
 from xic_extractor.alignment.output_rows import escape_excel_formula
 from xic_extractor.alignment.production_decisions import (
+    BackfillTier,
     ProductionStatus,
-    RescueTier,
 )
 
 _NONNEGATIVE_INTEGER = re.compile(r"0|[1-9][0-9]*")
@@ -53,7 +53,7 @@ def backfill_evidence_record_from_projection(
             ProductionStatus,
             _required_text(row, "production_cell_status"),
         ),
-        rescue_tier=cast(RescueTier, row["rescue_tier"]),
+        backfill_tier=cast(BackfillTier, row["backfill_tier"]),
         write_matrix_value=_parse_bool(row, "write_matrix_value", style="upper"),
         include_in_primary_matrix=_parse_bool(
             row,
@@ -131,7 +131,7 @@ def backfill_evidence_record_to_projection(
         "sample_stem": record.sample_stem,
         "status": record.status,
         "production_cell_status": record.production_cell_status,
-        "rescue_tier": record.rescue_tier,
+        "backfill_tier": record.backfill_tier,
         "write_matrix_value": _bool_text(record.write_matrix_value, style="upper"),
         "include_in_primary_matrix": _bool_text(
             record.include_in_primary_matrix,

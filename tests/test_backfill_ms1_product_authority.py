@@ -390,7 +390,7 @@ def test_authorized_ms1_sidecar_projects_into_rescued_cells(tmp_path: Path) -> N
             {
                 "feature_family_id": "FAM_AUTH",
                 "sample_stem": "S2",
-                "status": "rescued",
+                "status": "backfilled",
             }
         ],
         ms1_pattern_coherence_rows=authorized,
@@ -517,7 +517,7 @@ def _write_overlay_trace_data_json(
     path.parent.mkdir(parents=True, exist_ok=True)
     trace: dict[str, object] = {
         "sample_stem": sample_stem,
-        "status": "rescued",
+        "status": "backfilled",
         "cell_apex_rt": 10.0,
         "cell_start_rt": 9.9,
         "cell_end_rt": 10.1,

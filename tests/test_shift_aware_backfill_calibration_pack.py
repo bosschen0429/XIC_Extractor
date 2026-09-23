@@ -342,7 +342,7 @@ def test_overlay_supported_reference_row_enters_pack_when_nonref_min_is_low(
                 "status": "success",
                 "family_verdict": "ms1_shape_supports_family_backfill",
                 "detected_count": "83",
-                "rescued_count": "2",
+                "backfilled_count": "2",
                 "global_apex_interference_count": "0",
                 "shape_supported_fraction": "1",
                 "absolute_own_max_shape_supported_fraction": "0.541176",

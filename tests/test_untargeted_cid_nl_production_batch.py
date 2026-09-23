@@ -4851,10 +4851,10 @@ def test_production_composition_closes_recovered_observation_without_candidate(
                         if decision.sample_stem == no_write_sample
                         else decision.production_status
                     ),
-                    rescue_tier=(
+                    backfill_tier=(
                         ""
                         if decision.sample_stem == no_write_sample
-                        else decision.rescue_tier
+                        else decision.backfill_tier
                     ),
                     write_matrix_value=decision.sample_stem != no_write_sample,
                     matrix_value=(

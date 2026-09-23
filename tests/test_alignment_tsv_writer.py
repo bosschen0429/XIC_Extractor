@@ -41,10 +41,10 @@ REVIEW_COLUMNS = [
     "primary_evidence",
     "identity_reason",
     "quantifiable_detected_count",
-    "quantifiable_rescue_count",
+    "quantifiable_backfill_count",
     "accepted_cell_count",
-    "accepted_rescue_count",
-    "review_rescue_count",
+    "accepted_backfill_count",
+    "review_backfill_count",
     "include_in_primary_matrix",
     "row_flags",
     "artificial_adduct_role",
@@ -66,7 +66,7 @@ def test_write_alignment_review_tsv_columns_counts_rates_and_reason(tmp_path: Pa
         clusters=(_cluster(has_anchor=True, member_count=1),),
         cells=(
             _cell("sample-a", "detected", area=10.0, candidate_id="sample-a#1"),
-            _cell("sample-b", "rescued", area=20.0),
+            _cell("sample-b", "backfilled", area=20.0),
             _cell("sample-c", "absent"),
             _cell("sample-d", "detected", area=30.0, candidate_id="sample-d#1"),
         ),
@@ -111,10 +111,10 @@ def test_write_alignment_review_tsv_columns_counts_rates_and_reason(tmp_path: Pa
         "primary_evidence": "multi_sample_detected",
         "identity_reason": "multi_sample_detected",
         "quantifiable_detected_count": "2",
-        "quantifiable_rescue_count": "1",
+        "quantifiable_backfill_count": "1",
         "accepted_cell_count": "3",
-        "accepted_rescue_count": "1",
-        "review_rescue_count": "0",
+        "accepted_backfill_count": "1",
+        "review_backfill_count": "0",
         "include_in_primary_matrix": "TRUE",
         "row_flags": "",
         "artificial_adduct_role": "",
@@ -154,13 +154,13 @@ def test_write_alignment_review_tsv_warning_precedence(tmp_path: Path):
             _cell("sample-b", "unchecked", cluster_id="ALN000001"),
             _cell("sample-a", "unchecked", cluster_id="ALN000002"),
             _cell("sample-b", "unchecked", cluster_id="ALN000002"),
-            _cell("sample-a", "rescued", cluster_id="ALN000003", area=1.0),
+            _cell("sample-a", "backfilled", cluster_id="ALN000003", area=1.0),
             _cell("sample-b", "absent", cluster_id="ALN000003"),
             _cell("sample-a", "detected", cluster_id="ALN000004", area=1.0),
             _cell("sample-b", "absent", cluster_id="ALN000004"),
             _cell("sample-a", "detected", cluster_id="ALN000005", area=1.0),
-            _cell("sample-b", "rescued", cluster_id="ALN000005", area=1.0),
-            _cell("sample-a", "rescued", cluster_id="ALN000006", area=1.0),
+            _cell("sample-b", "backfilled", cluster_id="ALN000005", area=1.0),
+            _cell("sample-a", "backfilled", cluster_id="ALN000006", area=1.0),
             _cell("sample-b", "absent", cluster_id="ALN000006"),
         ),
         sample_order=("sample-a", "sample-b"),
@@ -219,7 +219,7 @@ def test_write_alignment_review_tsv_counts_duplicate_assigned_separately(
         clusters=(_cluster(has_anchor=True),),
         cells=(
             _cell("sample-a", "detected", area=100.0),
-            _cell("sample-b", "rescued", area=90.0),
+            _cell("sample-b", "backfilled", area=90.0),
             _cell("sample-c", "duplicate_assigned"),
             _cell("sample-d", "absent"),
         ),
@@ -288,7 +288,7 @@ def test_write_alignment_review_tsv_reports_folded_clusters(tmp_path: Path):
         ),
         cells=(
             _cell("sample-a", "detected", area=10.0, candidate_id="sample-a#1"),
-            _cell("sample-b", "rescued", area=20.0),
+            _cell("sample-b", "backfilled", area=20.0),
         ),
         sample_order=("sample-a", "sample-b"),
     )
@@ -318,7 +318,7 @@ def test_write_alignment_matrix_tsv_blanks_missing_and_invalid_areas(tmp_path: P
         cells=(
             _cell("detected-positive", "detected", area=1234.567),
             _cell("detected-positive-2", "detected", area=2345.0),
-            _cell("rescued-positive", "rescued", area=25.0),
+            _cell("rescued-positive", "backfilled", area=25.0),
             _cell("absent-positive", "absent", area=30.0),
             _cell("unchecked-positive", "unchecked", area=40.0),
             _cell("none", "detected", area=None),
@@ -871,7 +871,7 @@ def test_alignment_cells_tsv_renders_canonical_physical_owner_area_source(
         cells=(
             _cell(
                 "sample-a",
-                "rescued",
+                "backfilled",
                 area=66.6,
                 selected_integration=integration,
             ),
@@ -973,7 +973,7 @@ def test_write_alignment_matrix_tsv_excludes_rows_without_accepted_cells(
         cells=(
             _cell("sample-a", "detected", cluster_id="ALN000001", area=100.0),
             _cell("sample-b", "detected", cluster_id="ALN000001", area=110.0),
-            _cell("sample-a", "rescued", cluster_id="ALN000002", area=200.0),
+            _cell("sample-a", "backfilled", cluster_id="ALN000002", area=200.0),
             _cell(
                 "sample-a",
                 "duplicate_assigned",
@@ -1494,7 +1494,7 @@ def test_write_alignment_review_tsv_includes_production_decision_columns(
 
     matrix = AlignmentMatrix(
         clusters=(_cluster(has_anchor=False, fold_evidence=""),),
-        cells=(_cell("sample-a", "rescued", area=200.0),),
+        cells=(_cell("sample-a", "backfilled", area=200.0),),
         sample_order=("sample-a",),
     )
 
@@ -1511,10 +1511,10 @@ def test_write_alignment_review_tsv_includes_production_decision_columns(
     assert rows[0]["primary_evidence"] == "none"
     assert rows[0]["identity_reason"] == "rescue_only_blocked"
     assert rows[0]["quantifiable_detected_count"] == "0"
-    assert rows[0]["quantifiable_rescue_count"] == "1"
+    assert rows[0]["quantifiable_backfill_count"] == "1"
     assert rows[0]["accepted_cell_count"] == "0"
-    assert rows[0]["accepted_rescue_count"] == "0"
-    assert rows[0]["review_rescue_count"] == "1"
+    assert rows[0]["accepted_backfill_count"] == "0"
+    assert rows[0]["review_backfill_count"] == "1"
     assert rows[0]["include_in_primary_matrix"] == "FALSE"
     assert rows[0]["row_flags"] == "rescue_only;rescue_only_review"
 
@@ -1535,8 +1535,8 @@ def test_one_detected_provisional_retention_stays_out_of_primary_matrix(
         ),
         cells=(
             _cell("sample-a", "detected", area=100.0, candidate_id="sample-a#1"),
-            _cell("sample-b", "rescued", area=90.0),
-            _cell("sample-c", "rescued", area=80.0),
+            _cell("sample-b", "backfilled", area=90.0),
+            _cell("sample-c", "backfilled", area=80.0),
         ),
         sample_order=("sample-a", "sample-b", "sample-c"),
     )
@@ -1560,7 +1560,7 @@ def test_one_detected_provisional_retention_stays_out_of_primary_matrix(
     assert review_rows[0]["identity_decision"] == "provisional_discovery"
     assert review_rows[0]["include_in_primary_matrix"] == "FALSE"
     assert review_rows[0]["quantifiable_detected_count"] == "1"
-    assert review_rows[0]["quantifiable_rescue_count"] == "2"
+    assert review_rows[0]["quantifiable_backfill_count"] == "2"
     assert set(review_rows[0]["row_flags"].split(";")) == {
         "single_detected_seed",
         "rescue_heavy",
@@ -1590,8 +1590,8 @@ def test_direct_tier2_review_token_does_not_change_matrix_writer(
         ),
         cells=(
             _cell("sample-a", "detected", area=100.0, candidate_id="sample-a#1"),
-            _cell("sample-b", "rescued", area=90.0),
-            _cell("sample-c", "rescued", area=80.0),
+            _cell("sample-b", "backfilled", area=90.0),
+            _cell("sample-c", "backfilled", area=80.0),
         ),
         sample_order=("sample-a", "sample-b", "sample-c"),
     )
@@ -1731,7 +1731,7 @@ def test_backfill_cell_evidence_tsv_is_compact_and_backfill_scoped(
                 candidate_id="sample-a#1",
                 region=True,
             ),
-            _cell("sample-b", "rescued", cluster_id="ALN000001", area=8.0),
+            _cell("sample-b", "backfilled", cluster_id="ALN000001", area=8.0),
             _cell("sample-c", "unchecked", cluster_id="ALN000001"),
             _cell(
                 "sample-a",
@@ -1755,10 +1755,10 @@ def test_backfill_cell_evidence_tsv_is_compact_and_backfill_scoped(
     assert list(rows[0]) == list(ALIGNMENT_BACKFILL_CELL_EVIDENCE_COLUMNS)
     assert {row["feature_family_id"] for row in rows} == {"ALN000001"}
     assert {row["sample_stem"] for row in rows} == {"sample-a", "sample-b"}
-    rescued = next(row for row in rows if row["status"] == "rescued")
+    rescued = next(row for row in rows if row["status"] == "backfilled")
     assert rescued["production_cell_status"] in {
-        "accepted_rescue",
-        "review_rescue",
+        "accepted_backfill",
+        "review_backfill",
     }
     assert rescued["primary_matrix_area"] == "8"
     assert "region_candidate_count" not in rows[0]
@@ -1943,11 +1943,11 @@ def test_write_alignment_owner_backfill_seed_audit_tsv_is_sidecar(
         cells=(
             _cell(
                 "sample-a",
-                "rescued",
+                "backfilled",
                 area=10.0,
                 backfill_seed=True,
             ),
-            _cell("sample-b", "rescued", area=8.0),
+            _cell("sample-b", "backfilled", area=8.0),
             _cell("sample-c", "detected", area=9.0, backfill_seed=True),
         ),
         sample_order=("sample-a", "sample-b", "sample-c"),
@@ -1966,7 +1966,7 @@ def test_write_alignment_owner_backfill_seed_audit_tsv_is_sidecar(
     assert len(audit) == 1
     assert audit[0]["feature_family_id"] == "ALN000001"
     assert audit[0]["sample_stem"] == "sample-a"
-    assert audit[0]["status"] == "rescued"
+    assert audit[0]["status"] == "backfilled"
     assert audit[0]["neutral_loss_tag"] == "DNA_dR"
     assert audit[0]["backfill_seed_mz"] == "500.222"
     assert audit[0]["backfill_seed_rt"] == "8.55"
@@ -2251,7 +2251,7 @@ def _cell(
 ) -> AlignedCell:
     if (
         selected_integration is None
-        and status in {"detected", "rescued"}
+        and status in {"detected", "backfilled"}
         and _positive_area(area)
     ):
         selected_integration = _integration(

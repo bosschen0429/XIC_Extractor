@@ -178,7 +178,7 @@ def _cells(tmp_path: Path, rows: list[dict[str, str]]) -> Path:
     normalized = [
         {
             **{
-                "status": "rescued",
+                "status": "backfilled",
                 "apex_rt": "1.0",
                 "peak_start_rt": "0.9",
                 "peak_end_rt": "1.1",

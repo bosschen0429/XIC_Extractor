@@ -101,7 +101,7 @@ def test_alignment_cell_projects_backfill_provenance_without_identity_policy() -
     cell = AlignedCell(
         sample_stem="sample",
         cluster_id="FAM001",
-        status="rescued",
+        status="backfilled",
         area=900.0,
         apex_rt=8.52,
         height=350.0,
@@ -127,7 +127,7 @@ def test_alignment_cell_projects_backfill_provenance_without_identity_policy() -
     assert evidence.ms1_area == 900.0
     assert evidence.rt_delta_min == 0.02
     assert evidence.neutral_loss_tag == "dR"
-    assert evidence.provenance == "rescued"
+    assert evidence.provenance == "backfilled"
     assert "backfill_provenance" in canonical_concern_labels(evidence)
 
 

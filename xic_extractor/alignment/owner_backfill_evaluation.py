@@ -251,7 +251,7 @@ def _backfill_feature_sample_trace_legacy_audit(
     cell = AlignedCell(
         sample_stem=sample_stem,
         cluster_id=feature.feature_family_id,
-        status="rescued",
+        status="backfilled",
         area=peak.area,
         apex_rt=peak.rt,
         height=peak.intensity,
@@ -408,7 +408,7 @@ def _backfill_feature_sample_trace_canonical(
     cell = AlignedCell(
         sample_stem=sample_stem,
         cluster_id=feature.feature_family_id,
-        status="rescued",
+        status="backfilled",
         area=facts.area_counts_seconds,
         apex_rt=facts.apex_rt_min,
         height=facts.height,
@@ -565,12 +565,12 @@ def _keep_best_backfill_outcome_cell(
     if current is None:
         cells[key] = candidate
         return
-    if current.status == "rescued" and candidate.status != "rescued":
+    if current.status == "backfilled" and candidate.status != "backfilled":
         return
-    if current.status != "rescued" and candidate.status == "rescued":
+    if current.status != "backfilled" and candidate.status == "backfilled":
         cells[key] = candidate
         return
-    if candidate.status != "rescued":
+    if candidate.status != "backfilled":
         return
     if _rescued_cell_sort_key(candidate) < _rescued_cell_sort_key(current):
         cells[key] = candidate

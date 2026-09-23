@@ -372,7 +372,7 @@ def _overlay_reference_supported(
         return False
     if _positive_int(row.get("detected_count")) <= 0:
         return False
-    if _positive_int(row.get("rescued_count")) <= 0:
+    if _positive_int(row.get("backfilled_count")) <= 0:
         return False
     if _positive_int(row.get("global_apex_interference_count")) != 0:
         return False

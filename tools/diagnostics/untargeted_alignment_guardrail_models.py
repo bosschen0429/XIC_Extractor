@@ -4,11 +4,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-PRODUCTION_STATUSES = {"detected", "rescued"}
+PRODUCTION_STATUSES = {"detected", "backfilled"}
 COMPARISON_METRICS = [
     "duplicate_only_families",
     "zero_present_families",
-    "review_rescue_count",
+    "review_backfill_count",
     "rescue_only_review_families",
     "identity_anchor_lost_families",
     "duplicate_claim_pressure_families",
@@ -63,9 +63,9 @@ class GuardrailMetrics:
     negative_8oxodg_production_families: int
     negative_checkpoint_production_families: int
     accepted_quantitative_cells: int
-    accepted_rescue_cells: int
-    accepted_rescue_rate: float
-    review_rescue_count: int
+    accepted_backfill_cells: int
+    accepted_backfill_rate: float
+    review_backfill_count: int
     rescue_only_review_families: int
     identity_anchor_lost_families: int
     duplicate_claim_pressure_families: int

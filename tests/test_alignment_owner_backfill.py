@@ -51,7 +51,7 @@ def test_owner_backfill_rescues_missing_sample_from_feature_center() -> None:
     cell = cells[0]
     assert cell.sample_stem == "sample-b"
     assert cell.cluster_id == feature.feature_family_id
-    assert cell.status == "rescued"
+    assert cell.status == "backfilled"
     assert cell.area is not None and cell.area > 0
     assert cell.selected_integration is not None
     assert cell.selected_integration.area_raw_counts_seconds == cell.area
@@ -112,7 +112,7 @@ def test_owner_backfill_shared_peak_facts_preserve_projection_and_work_telemetry
     assert observation.request_identity.acquisition_source == acquisition
     assert observation.facts is not None
     assert observation.facts.integration == candidate.cells[0].selected_integration
-    assert observation.cell.status == "rescued"
+    assert observation.cell.status == "backfilled"
     assert observation.cell.reason == "owner-centered MS1 backfill"
     assert observation.evidence_authority == "evidence_only_no_write_authority"
     assert observation.trace_evaluated is True
@@ -211,7 +211,7 @@ def test_owner_backfill_canonical_path_does_not_call_retired_local_helpers(
     )
 
     assert len(result.cells) == 1
-    assert result.cells[0].status == "rescued"
+    assert result.cells[0].status == "backfilled"
     assert result.cells[0].area is not None
     assert result.cells[0].selected_integration is not None
     assert result.cells[0].trace_quality == "owner_backfill"
@@ -244,7 +244,7 @@ def test_owner_backfill_canonical_rescues_one_offset_physical_segment(
 
     assert len(result.cells) == 1
     cell = result.cells[0]
-    assert cell.status == "rescued"
+    assert cell.status == "backfilled"
     assert cell.apex_rt == pytest.approx(7.65)
     observation = result.peak_fact_observations[0]
     assert observation.logical_request.item.preferred_rt == 8.5
@@ -788,13 +788,13 @@ def test_owner_backfill_result_records_all_candidate_audit_rows() -> None:
 
     assert [
         (cell.cluster_id, cell.sample_stem, cell.status) for cell in result.cells
-    ] == [("FAM000001", "sample-b", "rescued")]
+    ] == [("FAM000001", "sample-b", "backfilled")]
     assert [
         (row.sample_stem, row.backfill_seed_mz, row.candidate_status)
         for row in result.candidate_audit_rows
     ] == [
         ("sample-b", 500.0, "unchecked"),
-        ("sample-b", 501.0, "rescued"),
+        ("sample-b", 501.0, "backfilled"),
     ]
     assert [row.selected_for_output for row in result.candidate_audit_rows] == [
         False,
@@ -1032,7 +1032,7 @@ def test_owner_backfill_validates_prefilter_hits_with_secondary_source() -> None
     )
 
     assert [(cell.cluster_id, cell.sample_stem, cell.status) for cell in cells] == [
-        ("FAM000001", "sample-b", "rescued"),
+        ("FAM000001", "sample-b", "backfilled"),
         ("FAM000002", "sample-b", "unchecked"),
     ]
     assert cells[0].height == 240.0
@@ -1111,7 +1111,7 @@ def test_owner_backfill_validation_pending_deduplicates_fallback_lookup() -> Non
         (cell.cluster_id, cell.sample_stem, cell.status) for cell in result.cells
     ]
     assert observed_cells == [
-        ("FAM000001", "sample-b", "rescued"),
+        ("FAM000001", "sample-b", "backfilled"),
     ]
     assert result.cells[0].height == 260.0
 

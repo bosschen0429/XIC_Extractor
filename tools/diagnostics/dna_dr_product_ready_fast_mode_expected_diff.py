@@ -31,7 +31,7 @@ CELL_NUMERIC_COLUMNS = (
 CELL_STATUS_COLUMNS = (
     "status",
     "production_cell_status",
-    "rescue_tier",
+    "backfill_tier",
     "write_matrix_value",
     "include_in_primary_matrix",
     "identity_decision",
@@ -43,10 +43,10 @@ REVIEW_COUNT_COLUMNS = (
     "duplicate_assigned_count",
     "ambiguous_ms1_owner_count",
     "quantifiable_detected_count",
-    "quantifiable_rescue_count",
+    "quantifiable_backfill_count",
     "accepted_cell_count",
-    "accepted_rescue_count",
-    "review_rescue_count",
+    "accepted_backfill_count",
+    "review_backfill_count",
 )
 REVIEW_STATUS_COLUMNS = (
     "identity_decision",

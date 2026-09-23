@@ -45,7 +45,7 @@ or HOLD results alone.
   missing eligible sample's group-bounded revisit that finds exactly one MS1
   peak and no CID-NL evidence gets the final cell state
   `ms1_only_backfill_observation`. `ProductionCellDecision` writes that peak's
-  area to the Matrix as `rescued` / `accepted_rescue`; it never counts as a
+  area to the Matrix as `backfilled` / `accepted_backfill`; it never counts as a
   detection or joins the group. No peak, several peaks, CID-NL evidence without
   a unique relation, a competing lane, support below `K`, or an ineligible
   (blank or excluded) sample leaves the cell without a value.

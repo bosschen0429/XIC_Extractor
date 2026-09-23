@@ -139,7 +139,9 @@ def _audit_family(
     rt_min = _required_float(candidate.get("suggested_rt_min"), "suggested_rt_min")
     rt_max = _required_float(candidate.get("suggested_rt_max"), "suggested_rt_max")
     family_id = candidate["feature_family_id"]
-    cells = [row for row in trace_rows if row.get("status") in {"detected", "rescued"}]
+    cells = [
+        row for row in trace_rows if row.get("status") in {"detected", "backfilled"}
+    ]
     seed_by_sample = {row["sample_stem"]: row for row in seed_rows}
     details = [
         _detail_row(
@@ -217,8 +219,8 @@ def _audit_family(
             "primary_evidence": alignment_row.get("primary_evidence", ""),
             "row_flags": alignment_row.get("row_flags", ""),
             "detected_count": candidate.get("detected_count", ""),
-            "accepted_rescue_count": candidate.get("accepted_rescue_count", ""),
-            "detected_rescued_count": candidate.get("detected_rescued_count", ""),
+            "accepted_backfill_count": candidate.get("accepted_backfill_count", ""),
+            "detected_backfilled_count": candidate.get("detected_backfilled_count", ""),
             "trace_cell_count": total,
             "selected_apex_rt_min": min(apex_values) if apex_values else None,
             "selected_apex_rt_max": max(apex_values) if apex_values else None,

@@ -35,7 +35,7 @@ _MATRIX_METADATA_COLUMNS = (
 _CELL_STATUS_VALUES = frozenset(
     {
         "detected",
-        "rescued",
+        "backfilled",
         "absent",
         "unchecked",
         "ambiguous_ms1_owner",
@@ -245,7 +245,7 @@ def build_provisional_matrix_projection(
         if cell.status == "detected":
             counts.detected += 1
             detected_cell_count += 1
-        elif cell.status == "rescued":
+        elif cell.status == "backfilled":
             counts.backfill += 1
             backfill_candidate_cell_count += 1
         if _matrix_value(cell):
@@ -454,7 +454,7 @@ def _cell_state(cell: AlignedCell | None, matrix_value: str) -> str:
         return "missing"
     if cell.status == "detected":
         return "observed" if matrix_value else "observed_unquantified"
-    if cell.status == "rescued":
+    if cell.status == "backfilled":
         return "backfill_candidate" if matrix_value else "backfill_unquantified"
     if cell.status == "ambiguous_ms1_owner":
         return "ambiguous"
@@ -464,7 +464,7 @@ def _cell_state(cell: AlignedCell | None, matrix_value: str) -> str:
 
 
 def _matrix_value(cell: AlignedCell | None) -> str:
-    if cell is None or cell.status not in {"detected", "rescued"}:
+    if cell is None or cell.status not in {"detected", "backfilled"}:
         return ""
     value = cell.matrix_area
     if value is None or not math.isfinite(value) or value <= 0.0:

@@ -276,13 +276,13 @@ def _detected_or_confirmed_cell(
 ) -> AlignedCell:
     rescued_exclusion_reason = (
         _rescued_quantification_exclusion_reason(rescued)
-        if rescued is not None and rescued.status == "rescued"
+        if rescued is not None and rescued.status == "backfilled"
         else None
     )
     if (
         rescued is not None
         and detected.status == "unchecked"
-        and rescued.status == "rescued"
+        and rescued.status == "backfilled"
         and rescued_exclusion_reason is None
     ):
         return replace(
@@ -327,7 +327,7 @@ def _rescued_cell(
     *,
     group_projection: GroupProjection,
 ) -> AlignedCell:
-    if rescued.status != "rescued":
+    if rescued.status != "backfilled":
         return replace(
             rescued,
             **delivery_cell_projection_from_group(

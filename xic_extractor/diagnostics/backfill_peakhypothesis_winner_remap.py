@@ -55,7 +55,7 @@ WINNER_REMAP_COLUMNS = (
     "recommended_action",
 )
 
-_ACCEPTABLE_WINNER_CELL_STATUSES = {"detected", "rescued"}
+_ACCEPTABLE_WINNER_CELL_STATUSES = {"detected", "backfilled"}
 _GAUSSIAN15_AREA_SOURCE = "gaussian15_positive_asls_residual"
 
 
@@ -257,8 +257,8 @@ def _summary(
         "winner_detected_count": sum(
             1 for row in rows if _value(row, "winner_cell_status") == "detected"
         ),
-        "winner_rescued_count": sum(
-            1 for row in rows if _value(row, "winner_cell_status") == "rescued"
+        "winner_backfilled_count": sum(
+            1 for row in rows if _value(row, "winner_cell_status") == "backfilled"
         ),
         "missing_winner_count": blocker_counts.get(
             "missing_winner_peak_hypothesis_id",

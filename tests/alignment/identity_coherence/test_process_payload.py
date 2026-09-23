@@ -88,7 +88,7 @@ def test_trace_result_rejects_unknown_status() -> None:
         IdentityCoherenceTraceResult(
             request=_trace_request(),
             trace=None,
-            status="rescued",
+            status="backfilled",
             raw_xic_request_count=0,
             raw_chromatogram_call_count=0,
             xic_point_count=0,

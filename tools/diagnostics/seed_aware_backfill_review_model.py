@@ -118,7 +118,7 @@ def _family_review_row(
 ) -> dict[str, Any]:
     family_id = review_row["feature_family_id"]
     detected_count = int(_float(review_row.get("detected_count")) or 0)
-    rescue_count = int(_float(review_row.get("accepted_rescue_count")) or 0)
+    rescue_count = int(_float(review_row.get("accepted_backfill_count")) or 0)
     accepted_count = int(_float(review_row.get("accepted_cell_count")) or 0)
     seed_overlay_rows = _seed_specific_overlay_rows(overlay_rows)
     decision_overlay_rows = seed_overlay_rows or tuple(overlay_rows)
@@ -145,7 +145,7 @@ def _family_review_row(
         "family_center_mz": review_row.get("family_center_mz", ""),
         "family_center_rt": review_row.get("family_center_rt", ""),
         "detected_count": detected_count,
-        "accepted_rescue_count": rescue_count,
+        "accepted_backfill_count": rescue_count,
         "accepted_cell_count": accepted_count,
         "input_review_classification": review_row.get("review_classification", ""),
         "all_overlay_row_count": all_overlay_summary["overlay_row_count"],
@@ -270,7 +270,7 @@ def _blast_radius_row(row: Mapping[str, Any]) -> dict[str, Any]:
         "family_center_rt": row["family_center_rt"],
         "review_classification": row["review_classification"],
         "detected_count": row["detected_count"],
-        "accepted_rescue_count": row["accepted_rescue_count"],
+        "accepted_backfill_count": row["accepted_backfill_count"],
         "accepted_cell_count": row["accepted_cell_count"],
         "would_withhold_family": bool(would_withhold),
         "would_withhold_rescued_cells": would_withhold,

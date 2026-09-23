@@ -231,7 +231,7 @@ def test_targeted_gt_audit_classifies_split_for_multiple_production_families(
         ],
         cell_rows=[
             _cell_row("FAM000001", "Sample_A", "detected", rt=12.0),
-            _cell_row("FAM000002", "Sample_A", "rescued", rt=12.01),
+            _cell_row("FAM000002", "Sample_A", "backfilled", rt=12.01),
         ],
     )
 
@@ -255,7 +255,7 @@ def test_targeted_gt_audit_uses_new_schema_decision_before_raw_rescued_status(
         tmp_path,
         review_rows=[review_row],
         cell_rows=[
-            _cell_row("FAM000001", "Sample_A", "rescued", rt=12.0),
+            _cell_row("FAM000001", "Sample_A", "backfilled", rt=12.0),
         ],
     )
 

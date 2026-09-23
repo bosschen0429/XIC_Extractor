@@ -524,8 +524,8 @@ def test_decision_ledger_accepts_loser_chain_to_terminal_winner(
             "consolidation_winner_group_hypothesis_id": "group-3",
             "event_cluster_ids": "owner-projection-3",
             "event_member_count": "1",
-            "quantifiable_rescue_count": "0",
-            "review_rescue_count": "0",
+            "quantifiable_backfill_count": "0",
+            "review_backfill_count": "0",
         }
     )
     _write_tsv(review, _REVIEW_COLUMNS, rows)
@@ -845,8 +845,8 @@ def _artifact(root: Path) -> Path:
                 "consolidation_winner_group_hypothesis_id": "group-2",
                 "event_cluster_ids": "owner-projection-1",
                 "event_member_count": "1",
-                "quantifiable_rescue_count": "2",
-                "review_rescue_count": "3",
+                "quantifiable_backfill_count": "2",
+                "review_backfill_count": "3",
             },
             {
                 "feature_family_id": "group-2",
@@ -856,8 +856,8 @@ def _artifact(root: Path) -> Path:
                 "consolidation_winner_group_hypothesis_id": "group-2",
                 "event_cluster_ids": "owner-projection-2",
                 "event_member_count": "1",
-                "quantifiable_rescue_count": "0",
-                "review_rescue_count": "0",
+                "quantifiable_backfill_count": "0",
+                "review_backfill_count": "0",
             },
         ],
     )
@@ -1027,7 +1027,7 @@ def _owner_valid_backfill_row() -> dict[str, str]:
         "sample_stem": "Sample_A",
         "status": "detected",
         "production_cell_status": "detected",
-        "rescue_tier": "",
+        "backfill_tier": "",
         "write_matrix_value": "TRUE",
         "include_in_primary_matrix": "TRUE",
         "identity_decision": "primary",
