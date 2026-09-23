@@ -526,7 +526,7 @@ def infer_feature_memberships(
             counts=counts,
         )
         algorithm = "whole_window_feature_rt_trend_v1"
-        objective = "global_local_rt_edge_cost_then_one_owner_per_sample_band"
+        objective = "global_local_rt_mass_edge_cost_then_one_owner_per_sample_band"
         termination = "completed_one_finite_window_pass"
     groups = tuple(sorted((*known_groups, *inferred_groups), key=_group_sort_key))
     operation_counts = FeatureInferenceOperationCounts(
@@ -832,7 +832,7 @@ def _window_inference(
 ) -> tuple[tuple[FeatureMembershipGroup, ...], tuple[SparseFeatureDecision, ...]]:
     """Find all RT bands in each mass neighbourhood in one finite pass.
 
-    Edges are compared globally in increasing cost order. The union step keeps
+    RT and measured mass edge costs are compared globally. The union step keeps
     one physical owner per sample in every band, regardless of input order.
     A feature's six nearest injections provide its RT trend once it has enough
     members; sparse bands rely on the batch warp with a wider RT allowance.
@@ -913,8 +913,8 @@ def _window_inference(
             for left_index, left in enumerate(by_order):
                 for right in by_order[left_index + 1 :]:
                     gap = orders[right.sample_stem] - orders[left.sample_stem]
-                    sparse_fallback = gap > 8 and len(window) <= 10
-                    if gap > 8 and not sparse_fallback:
+                    sparse_fallback = gap > 16 and len(window) <= 10
+                    if gap > 16 and not sparse_fallback:
                         break
                     if left.sample_stem == right.sample_stem:
                         continue
@@ -938,15 +938,38 @@ def _window_inference(
                     rt_limit_sec = (
                         max(120.0, config.preferred_rt_sec)
                         if sparse_fallback
-                        else min(90.0, 45.0 + 4.0 * gap)
+                        else min(120.0, 45.0 + 4.0 * gap)
                     )
                     if rt_delta_sec > rt_limit_sec:
                         continue
                     counts["owner_edge_evaluations"] += 1
-                    cost = (0.20 if sparse_fallback else 0.0) + rt_delta_sec / (
-                        rt_limit_sec
-                        if sparse_fallback
-                        else config.preferred_rt_sec + 3.0 * gap
+                    precursor_median = (left.precursor_mz + right.precursor_mz) / 2.0
+                    precursor_fraction = abs(left.precursor_mz - right.precursor_mz) / (
+                        precursor_median * config.max_ppm / 1_000_000.0
+                    )
+                    product_fraction = 0.0
+                    if left_event is not None and right_event is not None:
+                        product_median = (
+                            left_event.product_mz + right_event.product_mz
+                        ) / 2.0
+                        product_fraction = abs(
+                            left_event.product_mz - right_event.product_mz
+                        ) / (
+                            product_median
+                            * config.product_mz_tolerance_ppm
+                            / 1_000_000.0
+                        )
+                    cost = (
+                        (0.20 if sparse_fallback else 0.0)
+                        + 0.70
+                        * rt_delta_sec
+                        / (
+                            rt_limit_sec
+                            if sparse_fallback
+                            else config.preferred_rt_sec + 3.0 * gap
+                        )
+                        + 0.15 * min(precursor_fraction, 2.0)
+                        + 0.15 * min(product_fraction, 2.0)
                     )
                     arcs.append((cost, left.owner_id, right.owner_id))
             counts["supported_candidate_arcs"] += len(arcs)
@@ -1084,18 +1107,22 @@ def _trend_supports_union(
     orders: Mapping[str, int],
     corrected_rt: Mapping[str, float],
 ) -> bool:
-    for source, target in ((left, right), (right, left)):
-        if len(source) < 10:
-            continue
-        for owner in target:
-            expected = _nearest_injection_median(
-                owner, source, orders, corrected_rt=corrected_rt
-            )
-            if (
-                expected is not None
-                and abs(corrected_rt[owner.owner_id] - expected) * 60.0 > 75.0
-            ):
-                return False
+    combined = tuple((*left, *right))
+    if len(combined) < 10:
+        return True
+    for owner in combined:
+        expected = _nearest_injection_median(
+            owner,
+            combined,
+            orders,
+            exclude_owner_id=owner.owner_id,
+            corrected_rt=corrected_rt,
+        )
+        if (
+            expected is not None
+            and abs(corrected_rt[owner.owner_id] - expected) * 60.0 > 75.0
+        ):
+            return False
     return True
 
 
