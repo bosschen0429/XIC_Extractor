@@ -433,6 +433,8 @@ remains unavailable.
 
 ### `seed_aware_backfill_review.py`
 
+**#441 disposition**: Retirement candidate; removal in #446 (#441 C4a). It requires the legacy family overlay batch summary.
+
 **Purpose**: Build a seed-aware shadow review for rescued-heavy backfill families.
 **Topic group**: `seed_aware_backfill_review.py` + `_constants`, `_io`, `_model`, `_writers` (5 files)
 **Originating spec**: (none found; pre-dates the lifecycle spec)
@@ -440,6 +442,8 @@ remains unavailable.
 ---
 
 ### `family_ms1_backfill_review_report.py`
+
+**#441 disposition**: Retirement candidate; removal in #446 (#441 C4a).
 
 **Purpose**: Build a review queue for low-seed/high-backfill MS1-supported families.
 **Topic group**: `family_ms1_backfill_review_report.py` + `_io`, `_model`, `_writers` (4 files)
@@ -512,6 +516,8 @@ sample order, and output TSV/JSON/Markdown schemas.
 
 ### `shift_aware_backfill_calibration_pack.py`
 
+**#441 disposition**: Retirement candidate; removal in #446 (#441 C4a). It requires legacy family overlay outputs.
+
 **Purpose**: Build a standard-peak calibration/review pack from shift-aware family overlay summaries, reconciliation groups, and overlay batch summaries.
 **Topic group**: `shift_aware_backfill_calibration_pack.py`
 **Originating spec/goal/plan**: `goals/standard-peak-backfill-productization`
@@ -520,6 +526,8 @@ sample order, and output TSV/JSON/Markdown schemas.
 ---
 
 ### `shift_aware_standard_peak_gate_calibration.py`
+
+**#441 disposition**: Retirement candidate; removal in #446 (#441 C4a). It reads only the calibration pack.
 
 **Purpose**: Convert shift-aware calibration rows into a machine standard-peak gate that separates supported standard-peak same-pattern cases from blocked/review-only cases.
 **Topic group**: `shift_aware_standard_peak_gate_calibration.py`
@@ -845,6 +853,8 @@ matrices, remap family winners, or claim production readiness.
 
 ### `backfill_peakhypothesis_overlay.py`
 
+**#441 disposition**: Retirement candidate; removal in #446 (#441 C4a).
+
 **Purpose**: Render RAW XIC overlay plots for corrected FULL COHORT hypothesis review
 candidates so reviewers do not need to inspect each row manually in Xcalibur.
 **Topic group**: `backfill_peakhypothesis_overlay.py` +
@@ -992,6 +1002,8 @@ until an explicit product-transfer decision and consolidation policy exist.
 
 ### `authorize_backfill_ms1_pattern_evidence.py`
 
+**#441 disposition**: Retirement candidate; removal in #447 (#441 C4b).
+
 **Purpose**: Convert reviewed, allowlisted RAW-overlay MS1 pattern sidecar rows into a product-authorized MS1 sidecar candidate for Backfill evidence review.
 **Topic group**: `authorize_backfill_ms1_pattern_evidence.py` + `xic_extractor/alignment/backfill_ms1_product_authority.py`
 **Originating spec/goal/plan**: `retired-provenance:69bd6d102e9c`
@@ -1000,6 +1012,8 @@ until an explicit product-transfer decision and consolidation policy exist.
 ---
 
 ### `authorize_backfill_candidate_ms2_pattern_evidence.py`
+
+**#441 disposition**: Retirement candidate; removal in #447 (#441 C4b).
 
 **Purpose**: Convert reviewed, allowlisted Candidate MS2/NL pattern sidecar rows into a product-authorized Candidate MS2 sidecar candidate for Backfill evidence review.
 **Topic group**: `authorize_backfill_candidate_ms2_pattern_evidence.py` + `xic_extractor/alignment/backfill_candidate_ms2_product_authority.py`
@@ -1027,6 +1041,8 @@ until an explicit product-transfer decision and consolidation policy exist.
 ---
 
 #### `cid_nl_differential_overlay_review.py`
+
+**#441 disposition**: Migration target: #445 (#441 C3) adds a curve bundle for XIC Inspector review and replaces the PNG overlays; the summary TSV/JSON, trace JSON, and `png_path` consumers stay satisfied.
 
 **Purpose**: Generate paired source vs successor RAW-backed MS1 overlay review artifacts for CID-NL feature-inclusion and identity-relationship review.
 **Topic group**: `cid_nl_default_activation_gallery_review.py`, `cid_nl_feature_inclusion_gate.py`, and the RAW `open_raw(...).extract_xic_many(...)` batch extraction path.
@@ -1082,6 +1098,8 @@ until an explicit product-transfer decision and consolidation policy exist.
 
 ### `selected_envelope_plot_review.py`
 
+**#441 disposition**: Retirement candidate; removal in #446 (#441 C4a).
+
 **Purpose**: Render `diagnostic_only` selected-envelope boundary review plots from selected-envelope diagnostic rows, showing RAW XIC, AsLS baseline, Gaussian15 morphology overlay, resolver interval, selected envelope, optional manual/expert oracle overlay, and quantitation context in one figure.
 **Topic group**: `selected_envelope_plot_review.py` + `xic_extractor/diagnostics/selected_envelope_gallery.py` + `xic_extractor/peak_detection/selected_envelope_*`
 **Originating owner/plan**: `docs/product/quantitation-context.md`; retired selected full-envelope boundary spec provenance `retired-provenance:13e9499ab37d`
@@ -1120,6 +1138,8 @@ not formal boundary+area oracle rows.
 ---
 
 ### `subthreshold_sensitivity_report.py`
+
+**#441 disposition**: Retirement candidate; removal in #446 (#441 C4a). Its only input is legacy family overlay trace JSON.
 
 **Purpose**: Aggregate Gaussian15 sub-threshold (missed-peak) candidates across a batch of overlay trace-data JSONs as evidence for whether/how far to relax `ms1_peak_modes.gaussian15_peak_observations` multi-peak thresholds.
 **Topic group**: reuses `subthreshold_candidate_report` (mirrors the detector's local-maximum scan).
@@ -1210,6 +1230,8 @@ schemas.
 ---
 
 ### `target_pair_rt_candidate_plot_review.py`
+
+**#441 disposition**: Retirement candidate; removal in #446 (#441 C4a).
 
 **Purpose**: Render target-pair RT candidate review plots from RAW XIC traces for human adjudication of paired analyte/ISTD RT candidate selection.
 **Topic group**: target-pair RT review; reuses `gaussian15_morphology_trace`.
@@ -1351,6 +1373,9 @@ are not daily).
 
 ## Peak-Group / Overlay Visualization
 
+New human-facing chromatogram review goes through XIC Inspector (see
+[script lifecycle](../../docs/agent/script-tool-lifecycle.md#diagnostic-boundaries)); the Matplotlib tools in this section are retirement candidates under #441.
+
 Matplotlib-rendered MS1 overlay visuals for human review of backfill candidates.
 Legacy `family_ms1_*` filenames and `feature_family_id` fields mean public
 row-label compatibility, not product identity authority. Peak-group overlays are
@@ -1360,6 +1385,8 @@ multiple MS1 peak modes.
 
 ### `family_ms1_overlay_plot.py`
 
+**#441 disposition**: Retirement candidate; removal in #446 (#441 C4a). Retarget the smoothing import in `cid_nl_differential_overlay_review.py` to `xic_extractor/peak_detection/ms1_shape_identity.py` first.
+
 **Purpose**: Render MS1 overlay evidence for one legacy family-id peak group.
 **Topic group**: `family_ms1_overlay_plot.py` + `_evidence`, `_models`, `_rendering`, `_rendering_styles`, `_trace`, `_writers` (7 files)
 **Originating spec**: (none found; landed alongside backfill review work)
@@ -1368,6 +1395,8 @@ multiple MS1 peak modes.
 ---
 
 ### `family_ms1_overlay_batch.py`
+
+**#441 disposition**: Retirement candidate; removal in #446 (#441 C4a).
 
 **Purpose**: Render queued peak-group MS1 overlays from a backfill review report.
 **Topic group**: shares helpers with `family_ms1_overlay_plot`
@@ -1390,6 +1419,8 @@ publication checker before any matrix output is accepted.
 
 ### `family_ms1_overlay_evidence_cache_seed.py`
 
+**#441 disposition**: Retirement candidate; removal in #446 (#441 C4a).
+
 **Purpose**: Seed a `family_ms1_overlay_batch.py` evidence cache from an
 already-reviewed overlay summary and its trace TSV/JSON artifacts.
 **Topic group**: `family_ms1_overlay_batch.py`
@@ -1405,6 +1436,8 @@ modify source summaries, or prove product readiness.
 
 ### `family_ms1_alignment_experiment.py`
 
+**#441 disposition**: Retirement candidate; removal in #446 (#441 C4a).
+
 **Purpose**: Render honest RT-interpretation comparison panels for one legacy family-id peak group.
 **Topic group**: underlying single-peak-group experiment for `family_ms1_alignment_experiment_batch.py`; reuses `family_ms1_overlay_*` helpers.
 **Status note**: Diagnostic-only RT-interpretation comparison; does not change backfill decisions or matrix areas. The batch wrapper reads existing overlay trace JSONs and runs this per successful overlay row.
@@ -1413,6 +1446,8 @@ modify source summaries, or prove product readiness.
 
 ### `family_ms1_alignment_experiment_batch.py`
 
+**#441 disposition**: Retirement candidate; removal in #446 (#441 C4a).
+
 **Purpose**: Convert `family_ms1_overlay_batch_summary.tsv` trace JSON outputs into shift-aware source-family alignment experiment outputs in batch.
 **Topic group**: `family_ms1_alignment_experiment.py`
 **Status note**: This no-RAW batch wrapper reads existing overlay trace JSONs, runs the single-peak-group shift-aware alignment experiment for successful overlay rows, and writes `family_ms1_alignment_experiment_batch_summary.tsv/json`. It preloads source-family provenance for selected peak groups once per batch and the underlying best-shift search reuses normalized trace curves across candidate shifts, so matrix-only summary generation does not rescan the full cell-evidence TSV or resmooth traces per shift. It uses deterministic `<rank>_<family>_shift_aware` output prefixes so downstream `shift_aware_backfill_calibration_pack.py --shift-aware-summary-dir` can collect `*_source_family_best_shift_summary.tsv` files without hand-built command lists. `--no-images` keeps the summary TSV outputs, including `*_source_family_best_shift_summary.tsv`, while leaving `source_best_shift_png` blank and skipping PNG review rendering; this is the matrix-only publication path. `--start-rank`, `--limit`, and `--reuse-existing` make full FULL COHORT review queues resumable after overlay rendering; in no-images mode, reuse requires completed summary TSVs rather than completed PNGs. Failed or missing overlay rows are reported as skipped/failed and do not imply standard-peak support.
@@ -1420,6 +1455,8 @@ modify source summaries, or prove product readiness.
 ---
 
 ### `changed_row_mode_overlay_review.py`
+
+**#441 disposition**: Retirement candidate; removal in #446 (#441 C4a).
 
 **Purpose**: Convert changed-row peak-group MS1 overlay trace JSONs into a
 mode-aware review surface: RAW selected-apex RT-mode evidence TSV,
@@ -1445,6 +1482,8 @@ or global trace apex conflicts.
 ---
 
 ### `qc_ms1_pattern_reference.py`
+
+**#441 disposition**: Retirement candidate; removal in #446 (#441 C4a). It reads legacy family overlay trace JSON.
 
 **Purpose**: Build a `diagnostic_only` nearest-injection-QC MS1 pattern reference sidecar from `family_ms1_overlay_plot` RAW trace JSON plus SampleInfo injection order; reports whether the closest QC supports, conflicts with, or cannot adjudicate a reviewed sample's selected MS1 peak.
 **Topic group**: `qc_ms1_pattern_reference.py` + `xic_extractor/alignment/shared_peak_identity_explanation/qc_ms1_pattern_reference.py`
