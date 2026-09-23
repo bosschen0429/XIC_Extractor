@@ -532,8 +532,8 @@ def infer_feature_memberships(
             rt_warp=rt_warp,
             counts=counts,
         )
-        algorithm = "whole_window_feature_rt_trend_v1"
-        objective = "global_local_rt_mass_edge_cost_then_one_owner_per_sample_band"
+        algorithm = "whole_window_feature_rt_trend_v2"
+        objective = "local_rt_mass_edges_then_reciprocal_whole_band_bridge"
         termination = "completed_one_finite_window_pass"
     groups = tuple(sorted((*known_groups, *inferred_groups), key=_group_sort_key))
     operation_counts = FeatureInferenceOperationCounts(
@@ -843,6 +843,8 @@ def _window_inference(
     one physical owner per sample in every band, regardless of input order.
     A feature's six nearest injections provide its RT trend once it has enough
     members; sparse bands rely on the batch warp with a wider RT allowance.
+    After local bands settle, separated dense bands can bridge on whole-band
+    evidence without treating missing injections as contrary identity evidence.
     """
     if not owners:
         return (), ()
@@ -942,6 +944,7 @@ def _window_inference(
                         )
                         <= 10
                     )
+                    # Dense distant pairs are compared as settled bands below.
                     if gap > 16 and not sparse_fallback:
                         break
                     if left.sample_stem == right.sample_stem:
@@ -1063,6 +1066,14 @@ def _window_inference(
                 config=config,
                 counts=counts,
             )
+            _bridge_separated_window_bands(
+                members,
+                weak=weak,
+                orders=orders,
+                corrected_rt=corrected_rt,
+                config=config,
+                counts=counts,
+            )
             final_components.extend(
                 tuple(sorted(owner.owner_id for owner in group))
                 for group in members.values()
@@ -1173,6 +1184,109 @@ def _trend_supports_union(
         ) * 60.0 > min(_WINDOW_TREND_TOLERANCE_SEC, max_rt_sec):
             return False
     return True
+
+
+def _bridge_separated_window_bands(
+    members: dict[str, list[SampleLocalMS1Owner]],
+    *,
+    weak: Mapping[str, str],
+    orders: Mapping[str, int],
+    corrected_rt: Mapping[str, float],
+    config: AlignmentConfig,
+    counts: Counter[str],
+) -> None:
+    """Compare established bands across unobserved injections as whole bands."""
+    while True:
+        bands = {
+            key: tuple(group)
+            for key, group in members.items()
+            if len(group) >= 2 and not any(owner.owner_id in weak for owner in group)
+        }
+        if len(bands) < 2:
+            return
+        samples = {
+            key: {owner.sample_stem for owner in group} for key, group in bands.items()
+        }
+        spans = {
+            key: (
+                min(orders[owner.sample_stem] for owner in group),
+                max(orders[owner.sample_stem] for owner in group),
+            )
+            for key, group in bands.items()
+        }
+        rt_centers = {
+            key: statistics.median(corrected_rt[owner.owner_id] for owner in group)
+            for key, group in bands.items()
+        }
+        mz_centers = {
+            key: statistics.median(owner.precursor_mz for owner in group)
+            for key, group in bands.items()
+        }
+        product_centers = {
+            key: statistics.median(
+                owner.primary_identity_event.product_mz
+                for owner in group
+                if owner.primary_identity_event is not None
+            )
+            for key, group in bands.items()
+            if any(owner.primary_identity_event is not None for owner in group)
+        }
+        offers: dict[str, list[tuple[float, str]]] = defaultdict(list)
+        keys = sorted(bands)
+        for index, left in enumerate(keys):
+            for right in keys[index + 1 :]:
+                left_start, left_end = spans[left]
+                right_start, right_end = spans[right]
+                gap = max(right_start - left_end, left_start - right_end)
+                if gap <= 16 or samples[left] & samples[right]:
+                    continue
+                counts["feature_summary_comparisons"] += 1
+                left_mz, right_mz = mz_centers[left], mz_centers[right]
+                if not within_ppm(
+                    max(left_mz, right_mz), min(left_mz, right_mz), config.max_ppm
+                ):
+                    continue
+                rt_delta_sec = abs(rt_centers[left] - rt_centers[right]) * 60.0
+                if rt_delta_sec > config.preferred_rt_sec or not _trend_supports_union(
+                    bands[left],
+                    bands[right],
+                    orders=orders,
+                    corrected_rt=corrected_rt,
+                    max_rt_sec=config.max_rt_sec,
+                ):
+                    continue
+                precursor_fraction = (
+                    absolute_ppm_error(left_mz, right_mz) / config.max_ppm
+                )
+                product_fraction = (
+                    absolute_ppm_error(product_centers[left], product_centers[right])
+                    / config.product_mz_tolerance_ppm
+                    if left in product_centers and right in product_centers
+                    else 0.0
+                )
+                cost = (
+                    0.70 * rt_delta_sec / config.preferred_rt_sec
+                    + 0.15 * min(precursor_fraction, 2.0)
+                    + 0.15 * min(product_fraction, 2.0)
+                )
+                offers[left].append((cost, right))
+                offers[right].append((cost, left))
+                counts["supported_candidate_arcs"] += 1
+
+        best: dict[str, tuple[float, str]] = {}
+        for key, options in offers.items():
+            ranked = sorted(options)
+            if len(ranked) == 1 or ranked[1][0] > ranked[0][0] + 0.05:
+                best[key] = ranked[0]
+        mutual = sorted(
+            (cost, left, right)
+            for left, (cost, right) in best.items()
+            if left < right and best.get(right, (None, None))[1] == left
+        )
+        if not mutual:
+            return
+        _, left, right = mutual[0]
+        members[left].extend(members.pop(right))
 
 
 def _assign_window_singletons(

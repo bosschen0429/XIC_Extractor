@@ -412,6 +412,63 @@ def test_sparse_band_remains_warp_only_beside_an_unrelated_dense_band() -> None:
     )
 
 
+@pytest.mark.parametrize("late_shift_min", (0.0, 0.8))
+def test_dense_band_survives_a_long_absence_in_injection_order(
+    late_shift_min: float,
+) -> None:
+    orders = (*range(1, 8), *range(35, 42))
+    owners = tuple(
+        _synthetic_owner(
+            f"s{order:02d}",
+            f"same-{order}",
+            10.0 + order / 6000.0 + (late_shift_min if order >= 35 else 0.0),
+        )
+        for order in orders
+    )
+    warp = BatchRtWarp(
+        tuple(
+            (f"s{order:02d}", ((7.0, late_shift_min), (11.0, late_shift_min)))
+            for order in range(35, 42)
+        ),
+        0,
+    )
+    result = infer_feature_memberships(
+        tuple(reversed(owners)),
+        config=AlignmentConfig(),
+        injection_order={f"s{order:02d}": order for order in range(1, 42)},
+        drift_lookup=None,
+        rt_warp=warp,
+    )
+
+    assert len(result.groups) == 1
+    assert result.groups[0].disposition == "assigned"
+    assert set(result.groups[0].owner_ids) == {owner.owner_id for owner in owners}
+
+
+def test_long_gap_does_not_bridge_distinct_dense_rt_bands() -> None:
+    early = tuple(
+        _synthetic_owner(f"s{order:02d}", f"early-{order}", 10.0)
+        for order in range(1, 8)
+    )
+    late = tuple(
+        _synthetic_owner(f"s{order:02d}", f"late-{order}", 11.25)
+        for order in range(35, 42)
+    )
+    result = infer_feature_memberships(
+        (*early, *late),
+        config=AlignmentConfig(),
+        injection_order={f"s{order:02d}": order for order in range(1, 42)},
+        drift_lookup=None,
+        rt_warp=BatchRtWarp((), 0),
+    )
+
+    assert {frozenset(group.owner_ids) for group in result.groups} == {
+        frozenset(owner.owner_id for owner in early),
+        frozenset(owner.owner_id for owner in late),
+    }
+    assert all(group.disposition == "assigned" for group in result.groups)
+
+
 def test_product_scatter_is_scored_within_the_precursor_search_window() -> None:
     owners = (
         _synthetic_owner("first", "first", 10.0),

@@ -129,6 +129,10 @@ Initial grouping uses the sparse feature index described below. It scores only
 compatible feature candidates and retains the evaluated evidence. Missing pair
 records mean `not_evaluated`; they do not prove incompatibility. Backfill checks
 its observation against the fixed destination group before admission.
+After local ordinary bands settle, bands separated by unobserved injections may
+join when their corrected RT trends and mass centres support one band, each is
+the other's unique best bridge, and their samples do not overlap. An injection
+gap alone is not evidence of different group identity.
 
 Before scoring, a feature candidate must have a seed or most-recent witness
 that can support the preferred RT window in raw or corrected coordinates.
