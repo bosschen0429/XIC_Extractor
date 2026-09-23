@@ -4,7 +4,12 @@ For each ``.tsv`` and ``.csv`` file directly inside an output directory, the
 census reports a file with no data rows, a file with exactly one data row, and,
 when a file has at least two data rows, every column whose value is the same on
 all rows. A finding is evidence for triage: an expected-empty or legitimately
-constant field is not a defect. The report never fails.
+constant field is not a defect.
+
+``--require-populated`` promotes a triaged artifact or column to a check: the
+census fails when a required artifact is missing or has no data rows, or when a
+required column holds only its default value (empty, ``FALSE`` or ``0``) on every
+row. A column that is constant at a real value still passes.
 """
 
 from __future__ import annotations
@@ -20,6 +25,7 @@ from tools.diagnostics.diagnostic_io import write_tsv
 
 REPORT_COLUMNS = ("artifact", "finding", "column", "value", "data_row_count")
 _DELIMITERS = {".tsv": "\t", ".csv": ","}
+_DEFAULT_VALUES = frozenset({"", "FALSE", "False", "false", "0"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,6 +79,45 @@ def _census_table(path: Path, delimiter: str) -> Iterator[PopulationFinding]:
             )
 
 
+def unmet_requirements(
+    directory: Path,
+    findings: Sequence[PopulationFinding],
+    required: Sequence[str],
+) -> tuple[str, ...]:
+    """Return each ``ARTIFACT`` or ``ARTIFACT:COLUMN`` requirement the run fails."""
+
+    unmet: list[str] = []
+    for requirement in required:
+        artifact, _, column = requirement.partition(":")
+        path = directory / artifact
+        if not path.is_file():
+            unmet.append(f"{requirement}: artifact missing")
+            continue
+        if column and not _has_column(path, column):
+            unmet.append(f"{requirement}: column missing")
+            continue
+        for finding in findings:
+            if finding.artifact != artifact:
+                continue
+            if finding.finding in {"no_header", "no_data_rows"}:
+                unmet.append(f"{requirement}: {finding.finding}")
+            elif (
+                column
+                and finding.finding == "constant_column"
+                and finding.column == column
+                and finding.value in _DEFAULT_VALUES
+            ):
+                unmet.append(f"{requirement}: every row holds {finding.value!r}")
+    return tuple(unmet)
+
+
+def _has_column(path: Path, column: str) -> bool:
+    delimiter = _DELIMITERS.get(path.suffix.lower(), "\t")
+    with path.open(newline="", encoding="utf-8-sig") as handle:
+        header = next(csv.reader(handle, delimiter=delimiter), None)
+    return header is not None and column in header
+
+
 def _cell(row: Sequence[str], index: int) -> str:
     return row[index] if index < len(row) else ""
 
@@ -81,8 +126,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
             "Report tabular outputs in a run directory that are empty, single-row, "
-            "or hold one value in a column. Report-only: always exits 0 on a "
-            "readable directory."
+            "or hold one value in a column. Exits 0 unless a --require-populated "
+            "requirement is unmet."
         ),
     )
     parser.add_argument("output_dir", type=Path, help="Run output directory.")
@@ -90,6 +135,16 @@ def build_parser() -> argparse.ArgumentParser:
         "--output-tsv",
         type=Path,
         help="Write the report here instead of standard output.",
+    )
+    parser.add_argument(
+        "--require-populated",
+        action="append",
+        default=[],
+        metavar="ARTIFACT[:COLUMN]",
+        help=(
+            "Fail unless the artifact has data rows, or unless the column holds a "
+            "non-default value on at least one row. Repeatable."
+        ),
     )
     return parser
 
@@ -118,7 +173,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         args.output_tsv.parent.mkdir(parents=True, exist_ok=True)
         write_tsv(args.output_tsv, rows, REPORT_COLUMNS)
     print(f"population findings: {len(findings)}", file=sys.stderr)
-    return 0
+    unmet = unmet_requirements(args.output_dir, findings, args.require_populated)
+    for requirement in unmet:
+        print(f"unmet population requirement: {requirement}", file=sys.stderr)
+    return 1 if unmet else 0
 
 
 if __name__ == "__main__":
