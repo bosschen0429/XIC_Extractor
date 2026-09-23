@@ -610,7 +610,7 @@ def _fact_row(fact: ModeTrackConservativeBackfillGroupFacts) -> dict[str, object
         "minimum_support_k": fact.minimum_support_k,
         "direct_support_count_s": fact.direct_support_count_s,
         "candidate_count": len(fact.exact_owner_candidate_assignments),
-        "may_attempt_recovery": fact.may_attempt_recovery,
+        "may_attempt_backfill": fact.may_attempt_backfill,
         "reason_codes": list(fact.reason_codes),
     }
 
@@ -651,7 +651,7 @@ def _mode_track_scientific_projection_rows(
             "minimum_support_k": fact.minimum_support_k,
             "direct_support_count_s": fact.direct_support_count_s,
             "group_frozen": fact.group_frozen,
-            "may_attempt_recovery": fact.may_attempt_recovery,
+            "may_attempt_backfill": fact.may_attempt_backfill,
             "reason_codes": list(fact.reason_codes),
         }
         for fact in facts
@@ -684,10 +684,10 @@ def _validate_fresh_proposed_keys(
 ) -> None:
     expected: dict[tuple[object, object, object, object], tuple[str, str]] = {}
     for fact in fresh_facts:
-        decision = "proposed" if fact.may_attempt_recovery else "rejected"
+        decision = "proposed" if fact.may_attempt_backfill else "rejected"
         reason = (
             "backfill_activation_passed"
-            if fact.may_attempt_recovery
+            if fact.may_attempt_backfill
             else "backfill_support_below_threshold"
         )
         for candidate in fact.exact_owner_candidate_assignments:
@@ -736,11 +736,11 @@ def _candidate_decision_rows(
                         assignment.peak_observation_content_id
                     ),
                     "decision": (
-                        "proposed" if fact.may_attempt_recovery else "rejected"
+                        "proposed" if fact.may_attempt_backfill else "rejected"
                     ),
                     "reason_code": (
                         "backfill_activation_passed"
-                        if fact.may_attempt_recovery
+                        if fact.may_attempt_backfill
                         else "backfill_support_below_threshold"
                     ),
                 }

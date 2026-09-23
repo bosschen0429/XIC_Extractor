@@ -104,7 +104,7 @@ def test_rejected_initial_evidence_gets_one_independent_bounded_assessment(
     )
     opened = _install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
     recovery_calls = []
-    acquire = runtime_owner.acquire_untargeted_cid_nl_recovery_trace_batch
+    acquire = runtime_owner.acquire_untargeted_cid_nl_backfill_trace_batch
 
     def acquire_recovery(**kwargs):
         recovery_calls.append(kwargs["sample"].metadata.raw_stem)
@@ -114,7 +114,7 @@ def test_rejected_initial_evidence_gets_one_independent_bounded_assessment(
 
     monkeypatch.setattr(
         runtime_owner,
-        "acquire_untargeted_cid_nl_recovery_trace_batch",
+        "acquire_untargeted_cid_nl_backfill_trace_batch",
         acquire_recovery,
     )
     runtime = start_runtime_attempt(
@@ -455,10 +455,10 @@ def test_runtime_recovers_every_authorized_rt_group(
     assert sorted(
         len(attempt.assessment.candidate_peaks) for attempt in missing.backfill_attempts
     ) == sorted(int(center in recovery_peaks) for center in authorized_centers)
-    assert missing.result_ref.recovery_candidate_count == sum(
+    assert missing.result_ref.backfill_candidate_count == sum(
         center in recovery_peaks for center in authorized_centers
     )
-    assert missing.result_ref.recovery_assessment_artifact_ids == tuple(
+    assert missing.result_ref.backfill_assessment_artifact_ids == tuple(
         attempt.assessment.artifact.evidence_artifact_id
         for attempt in missing.backfill_attempts
     )
@@ -522,9 +522,9 @@ def test_runtime_recovers_every_authorized_rt_group(
         )
         assert len(missing_cells) == 2
         if recovery_peaks == (8.0, 12.0) and recovery_is_support:
-            assert all(cell.recovery_cell is not None for cell in missing_cells)
+            assert all(cell.backfill_cell is not None for cell in missing_cells)
             assert all(
-                cell.recovery_cell.content.method_result == "SUPPORT"
+                cell.backfill_cell.content.method_result == "SUPPORT"
                 for cell in missing_cells
             )
         if (
@@ -689,7 +689,7 @@ def test_runtime_recovers_every_authorized_rt_group(
             )
             if recovery is None:
                 assert cell.evidence_states == ("not_searched",)
-                assert cell.recovery_cell is None
+                assert cell.backfill_cell is None
                 if not has_initial_evidence:
                     assert cell.predecessor_cells == ()
                 if source is not None:
@@ -708,11 +708,11 @@ def test_runtime_recovers_every_authorized_rt_group(
                     assert source.peak_hypothesis is None
                     recovery_context = source.group_context
                 else:
-                    assert cell.recovery_cell is not None
+                    assert cell.backfill_cell is not None
                     assert (
-                        cell.recovery_cell.method_assessment is recovery.assessment
+                        cell.backfill_cell.method_assessment is recovery.assessment
                     )
-                    recovery_context = cell.recovery_cell.group_context
+                    recovery_context = cell.backfill_cell.group_context
                 completion = project_untargeted_cid_nl_completed_backfill(
                     missing, group_context=recovery_context
                 )
@@ -750,7 +750,7 @@ def test_runtime_recovers_every_authorized_rt_group(
                     with pytest.raises(ValueError):
                         replace(
                             missing.result_ref,
-                            recovery_assessment_artifact_ids=(
+                            backfill_assessment_artifact_ids=(
                                 recovery.assessment.artifact.evidence_artifact_id,
                             ),
                         )
@@ -760,10 +760,10 @@ def test_runtime_recovers_every_authorized_rt_group(
                         assert source.method_assessment is (
                             missing.adapter_result.assessment_input.assessment
                         )
-                    assert cell.recovery_cell is not None
-                    assert cell.recovery_cell.method_assessment is recovery.assessment
+                    assert cell.backfill_cell is not None
+                    assert cell.backfill_cell.method_assessment is recovery.assessment
                     allocated.append(
-                        cell.recovery_cell.peak_observation.content.peak_observation_content_id
+                        cell.backfill_cell.peak_observation.content.peak_observation_content_id
                     )
                 elif source is not None:
                     assert source.method_assessment is recovery.assessment
@@ -771,10 +771,10 @@ def test_runtime_recovers_every_authorized_rt_group(
                         source.peak_observation.content.peak_observation_content_id
                     )
                 else:
-                    assert cell.recovery_cell is not None
-                    assert cell.recovery_cell.method_assessment is recovery.assessment
+                    assert cell.backfill_cell is not None
+                    assert cell.backfill_cell.method_assessment is recovery.assessment
                     allocated.append(
-                        cell.recovery_cell.peak_observation.content.peak_observation_content_id
+                        cell.backfill_cell.peak_observation.content.peak_observation_content_id
                     )
         assert len(set(allocated)) == len(allocated)
         expected_assessments = {
@@ -966,7 +966,7 @@ def test_shared_physical_recovery_claim_is_not_assigned_to_two_groups(
         batch, result, alignment_config=AlignmentConfig(anchor_min_seed_events=1)
     )
     assert len(missing.backfill_attempts) == 2, (
-        missing.result_ref.recovery_candidate_count,
+        missing.result_ref.backfill_candidate_count,
         len(completed.initial_groups),
         tuple(group.group_center_rt for group in completed.initial_groups),
     )
@@ -990,7 +990,7 @@ def test_shared_physical_recovery_claim_is_not_assigned_to_two_groups(
         if cell.canonical_sample.metadata.raw_stem == "Missing"
     )
     assert len(missing_cells) == 2
-    assert all(cell.recovery_cell is not None for cell in missing_cells)
+    assert all(cell.backfill_cell is not None for cell in missing_cells)
     assert all(cell.evidence_states == ("unresolved",) for cell in missing_cells)
     writer = project_completed_untarget_batch_writer_inputs(completed)
     missing_decisions = tuple(
@@ -1319,8 +1319,8 @@ def _assert_alignment_uses_configured_recovery_groups(
         cell.peak_observation is None and cell.peak_hypothesis is None
         for cell in recovered.predecessor_cells
     )
-    if recovered.recovery_cell is not None:
-        assert recovered.recovery_cell.method_assessment is recovery.assessment
+    if recovered.backfill_cell is not None:
+        assert recovered.backfill_cell.method_assessment is recovery.assessment
     else:
         assert len(recovered.predecessor_cells) == 1
         assert recovered.predecessor_cells[0].method_assessment == recovery.assessment
@@ -1328,7 +1328,7 @@ def _assert_alignment_uses_configured_recovery_groups(
         assert recovered.predecessor_cells[0].peak_hypothesis is None
     assert recovered.evidence_states == ("unavailable",)
     assert no_input.predecessor_cells == ()
-    assert no_input.recovery_cell is None
+    assert no_input.backfill_cell is None
     assert no_input.evidence_states == ("not_searched",)
     assert no_input.integrations == ()
     writer = project_completed_untarget_batch_writer_inputs(completed)

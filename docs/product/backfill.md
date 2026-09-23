@@ -8,10 +8,10 @@ product value, create membership, or write an output.
 
 The product-stage name is **Backfill（回填）**, following Discovery and Alignment,
 and implementation identifiers use the same word. `ObservationRepair` names the
-typed decision it returns. Persisted keys and phase values written before this
-convergence still read `recovery` (for example `may_attempt_recovery`,
-`recovery_candidate_count`, the `"recovery"` acquisition phase); they change
-only with the public-surface vocabulary step in #431.
+typed decision it returns. Persisted keys, phase values and published columns
+use the same word (for example `may_attempt_backfill`,
+`backfill_candidate_count`, the `"backfill"` acquisition phase, the
+`backfilled` cell status and `accepted_backfill_count`).
 
 Backfill does not need to fill every cell. Existing direct support makes a
 conservative Backfill decision `not_applicable`; insufficient group support or

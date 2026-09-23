@@ -146,7 +146,7 @@ class FinalGroupCellObservation:
     repaired_observations: tuple[OwnerBackfillPeakFactObservation, ...]
     evidence_states: tuple[FinalCellEvidenceState, ...]
     basis_bytes: bytes
-    recovery_cell: CellObservationRef | None = None
+    backfill_cell: CellObservationRef | None = None
     _mint_token: InitVar[object] = field(kw_only=True, repr=False)
 
     def __post_init__(self, _mint_token: object) -> None:
@@ -182,8 +182,8 @@ class FinalGroupCellObservation:
     @property
     def effective_cells(self) -> tuple[CellObservationRef, ...]:
         return (
-            (self.recovery_cell,)
-            if self.recovery_cell is not None
+            (self.backfill_cell,)
+            if self.backfill_cell is not None
             else self.predecessor_cells
         )
 
@@ -254,7 +254,7 @@ class FinalGroupCellObservation:
             cell.artifact.evidence_artifact_id
             for cell in (
                 *self.predecessor_cells,
-                *((self.recovery_cell,) if self.recovery_cell is not None else ()),
+                *((self.backfill_cell,) if self.backfill_cell is not None else ()),
             )
         )
 
@@ -507,7 +507,7 @@ def _compose_final_group_cell_observation_population(
                     repair_receipts=receipts,
                     repaired_observations=repaired,
                     evidence_states=states,
-                    recovery_cell=recovered,
+                    backfill_cell=recovered,
                 )
             )
     if backfilled_by_key:
@@ -575,9 +575,9 @@ def validate_final_group_cell_observation_population(
         repair_receipts=receipts,
         repaired_observations=repaired,
         backfill_cells=tuple(
-            item.recovery_cell
+            item.backfill_cell
             for item in observations
-            if item.recovery_cell is not None
+            if item.backfill_cell is not None
         ),
     )
     expected_by_key = {
@@ -1163,7 +1163,7 @@ def _mint_final_group_cell_observation(
     repair_receipts: tuple[ObservationRepairReceipt, ...],
     repaired_observations: tuple[OwnerBackfillPeakFactObservation, ...],
     evidence_states: tuple[FinalCellEvidenceState, ...],
-    recovery_cell: CellObservationRef | None = None,
+    backfill_cell: CellObservationRef | None = None,
 ) -> FinalGroupCellObservation:
     payload = _final_closure_basis(
         processing_request_id=processing_request_id,
@@ -1176,7 +1176,7 @@ def _mint_final_group_cell_observation(
         repair_receipts=repair_receipts,
         repaired_observations=repaired_observations,
         evidence_states=evidence_states,
-        recovery_cell=recovery_cell,
+        backfill_cell=backfill_cell,
     )
     identity, basis = mint_typed_identity(_FINAL_CELL_OBSERVATION_ID_PREFIX, payload)
     return FinalGroupCellObservation(
@@ -1191,7 +1191,7 @@ def _mint_final_group_cell_observation(
         repaired_observations=repaired_observations,
         evidence_states=evidence_states,
         basis_bytes=basis,
-        recovery_cell=recovery_cell,
+        backfill_cell=backfill_cell,
         _mint_token=_FINAL_CELL_MINT_TOKEN,
     )
 
@@ -1209,7 +1209,7 @@ def _final_closure_basis(
     repair_receipts: tuple[ObservationRepairReceipt, ...],
     repaired_observations: tuple[OwnerBackfillPeakFactObservation, ...],
     evidence_states: tuple[FinalCellEvidenceState, ...],
-    recovery_cell: CellObservationRef | None = None,
+    backfill_cell: CellObservationRef | None = None,
 ) -> dict[str, object]:
     resolved_handoff_id = handoff_id or (
         handoff.handoff_id if handoff is not None else None
@@ -1285,9 +1285,9 @@ def _final_closure_basis(
         ],
         "evidence_states": list(evidence_states),
     }
-    if recovery_cell is not None:
-        payload["recovery_cell_artifact_id"] = (
-            recovery_cell.artifact.evidence_artifact_id
+    if backfill_cell is not None:
+        payload["backfill_cell_artifact_id"] = (
+            backfill_cell.artifact.evidence_artifact_id
         )
     return payload
 
@@ -1336,7 +1336,7 @@ def _require_same_refs(
     actual: FinalGroupCellObservation,
     expected: FinalGroupCellObservation,
 ) -> None:
-    if actual.recovery_cell is not expected.recovery_cell:
+    if actual.backfill_cell is not expected.backfill_cell:
         raise CellObservationContractError(
             "final cell substituted its completed backfill reference"
         )

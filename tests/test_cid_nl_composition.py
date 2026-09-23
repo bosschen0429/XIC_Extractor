@@ -233,9 +233,9 @@ def test_configured_composition_runs_discovery_to_owner_matrix(
             for cell in core.cell_observations
             if cell.canonical_sample.metadata.raw_stem == "S4"
         )
-        assert recovered_cell.recovery_cell is not None
+        assert recovered_cell.backfill_cell is not None
         assert (
-            recovered_cell.recovery_cell.method_assessment
+            recovered_cell.backfill_cell.method_assessment
             is recovered.effective_assessment
         )
         assert recovered_cell.integrations == (

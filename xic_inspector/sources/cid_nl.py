@@ -532,10 +532,10 @@ class CidNlSource:
         capture_kinds = {fact.get("kind") for _, fact in captures}
         invocations = {fact.get("detector_invocation_id") for _, fact in methods}
         if (
-            "recovery_observation" in capture_kinds
-            and "untargeted-cid-nl-backfill-recovery" in invocations
+            "backfill_observation" in capture_kinds
+            and "untargeted-cid-nl-backfill" in invocations
         ):
-            kind = "recovery_support"
+            kind = "backfill_support"
         elif "reacquired_capture" in capture_kinds and methods:
             kind = "reacquired_support"
         elif "initial_capture" in capture_kinds and any(

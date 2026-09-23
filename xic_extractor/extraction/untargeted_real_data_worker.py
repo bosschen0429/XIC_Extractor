@@ -40,7 +40,7 @@ from xic_extractor.extraction.untargeted_cid_nl_real_data_adapter import (
     UntargetedCidNlRealDataAdapterResult,
     UntargetedCidNlSampleTraceBatch,
     _UntargetedRealDataWorkObserver,
-    acquire_untargeted_cid_nl_recovery_trace_batch,
+    acquire_untargeted_cid_nl_backfill_trace_batch,
     acquire_untargeted_cid_nl_sample_trace_batch,
     adapt_current_discovery_sample_subject,
     backfill_untargeted_cid_nl_sample_subject,
@@ -586,8 +586,8 @@ def _execute_backfill(
         raw = _open_job_raw(job)
         state.opened = True
         active_acquire = _runtime_delegate(
-            "acquire_untargeted_cid_nl_recovery_trace_batch",
-            acquire_untargeted_cid_nl_recovery_trace_batch,
+            "acquire_untargeted_cid_nl_backfill_trace_batch",
+            acquire_untargeted_cid_nl_backfill_trace_batch,
         )
         trace_batch = active_acquire(
             processing_owners=job.processing_owners,
@@ -673,8 +673,8 @@ def _execute_backfill_batch(phase: _BatchSamplePhaseState) -> None:
         raw = _open_job_raw(first)
         phase.backfill_opened = True
         active_acquire = _runtime_delegate(
-            "acquire_untargeted_cid_nl_recovery_trace_batch",
-            acquire_untargeted_cid_nl_recovery_trace_batch,
+            "acquire_untargeted_cid_nl_backfill_trace_batch",
+            acquire_untargeted_cid_nl_backfill_trace_batch,
         )
         trace_batch = active_acquire(
             processing_owners=first.processing_owners,

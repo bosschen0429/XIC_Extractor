@@ -56,9 +56,9 @@ from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 POLICY_VERSION = "conservative-backfill"
 VALIDATION_STATUS = "shadow_ready"
 PRODUCT_AUTHORITY = "none"
-BACKFILL_UNIVERSE_SCHEMA_VERSION = "conservative_backfill_recovery_candidate_universe"
+BACKFILL_UNIVERSE_SCHEMA_VERSION = "conservative_backfill_candidate_universe"
 BACKFILL_UNIVERSE_ARTIFACT_SEMANTIC_ROLE = (
-    "conservative_backfill_recovery_candidate_universe"
+    "conservative_backfill_candidate_universe"
 )
 _BACKFILL_UNIVERSE_ARTIFACT_SEMANTIC_CONTRACT = _mint_artifact_semantic_contract_ref(
     owner_namespace="xic_extractor.alignment.conservative_backfill",
@@ -99,7 +99,7 @@ class ConservativeBackfillGroupFacts:
     minimum_support_k: int
     direct_support_count_s: int
     group_frozen: bool
-    may_attempt_recovery: bool
+    may_attempt_backfill: bool
     reason_codes: tuple[str, ...]
     policy_version: str = POLICY_VERSION
     validation_status: str = VALIDATION_STATUS
@@ -181,7 +181,7 @@ class ConservativeBackfillGroupFacts:
             "minimum_support_k": minimum_support,
             "direct_support_count_s": support_count,
             "group_frozen": frozen,
-            "may_attempt_recovery": may_attempt,
+            "may_attempt_backfill": may_attempt,
             "reason_codes": reasons,
         }
         for field_name, expected_value in expected.items():
@@ -222,7 +222,7 @@ class ModeTrackConservativeBackfillGroupFacts:
     minimum_support_k: int
     direct_support_count_s: int
     group_frozen: bool
-    may_attempt_recovery: bool
+    may_attempt_backfill: bool
     reason_codes: tuple[str, ...]
     _mint_token: InitVar[object] = field(kw_only=True)
     policy_version: str = POLICY_VERSION
@@ -314,7 +314,7 @@ class ModeTrackConservativeBackfillGroupFacts:
             "minimum_support_k": minimum_support,
             "direct_support_count_s": support_count,
             "group_frozen": True,
-            "may_attempt_recovery": support_count >= minimum_support,
+            "may_attempt_backfill": support_count >= minimum_support,
             "reason_codes": _group_reason_codes(
                 group_frozen=True,
                 direct_support_count=support_count,
@@ -798,7 +798,7 @@ def assess_conservative_backfill_group(
         minimum_support_k=minimum_support,
         direct_support_count_s=support_count,
         group_frozen=frozen,
-        may_attempt_recovery=frozen and support_count >= minimum_support,
+        may_attempt_backfill=frozen and support_count >= minimum_support,
         reason_codes=_group_reason_codes(
             group_frozen=frozen,
             direct_support_count=support_count,
@@ -989,7 +989,7 @@ def assess_mode_track_conservative_backfill_groups(
                 minimum_support_k=minimum_support,
                 direct_support_count_s=support_count,
                 group_frozen=True,
-                may_attempt_recovery=support_count >= minimum_support,
+                may_attempt_backfill=support_count >= minimum_support,
                 reason_codes=_group_reason_codes(
                     group_frozen=True,
                     direct_support_count=support_count,
@@ -1164,7 +1164,7 @@ def map_conservative_backfill_candidates(
                 candidate_universe=candidate_universe,
                 candidates=target_candidates,
             )
-        elif not facts.may_attempt_recovery:
+        elif not facts.may_attempt_backfill:
             decisions[index] = _decision(
                 facts,
                 cell,
@@ -1186,7 +1186,7 @@ def map_conservative_backfill_candidates(
             reason = (
                 "recovery_evidence_missing"
                 if candidate_universe is None
-                else "recovery_candidate_universe_empty"
+                else "backfill_candidate_universe_empty"
                 if not target_candidates
                 else "uncertain_candidate_cardinality"
             )

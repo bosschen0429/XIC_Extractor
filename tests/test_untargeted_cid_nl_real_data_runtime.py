@@ -1078,11 +1078,11 @@ def test_runtime_recovers_from_single_scan_cid_nl_support_owners(
         assert not initial.content.evaluation_receipt.search_completed
     assert by_stem["Missing"].backfill_attempt is not None
     assert by_stem["Missing"].backfill_input is not None
-    assert by_stem["Missing"].result_ref.recovery_candidate_count == 1
+    assert by_stem["Missing"].result_ref.backfill_candidate_count == 1
     assert by_stem["NoPeak"].backfill_attempt is not None
     assert by_stem["NoPeak"].backfill_input is None
-    assert by_stem["NoPeak"].result_ref.recovery_assessment_artifact_id is not None
-    assert by_stem["NoPeak"].result_ref.recovery_candidate_count == 0
+    assert by_stem["NoPeak"].result_ref.backfill_assessment_artifact_id is not None
+    assert by_stem["NoPeak"].result_ref.backfill_candidate_count == 0
     assert by_stem["Blank"].backfill_attempt is None
     assert raw_paths[4] not in opened
     assert {
@@ -1591,7 +1591,7 @@ def test_direct_subject_batch_seals_initial_and_recovery_acquisitions_once(
     observed_phase_acquisitions = []
     for name in (
         "acquire_untargeted_cid_nl_sample_trace_batch",
-        "acquire_untargeted_cid_nl_recovery_trace_batch",
+        "acquire_untargeted_cid_nl_backfill_trace_batch",
     ):
         original = getattr(runtime_module, name)
 
@@ -1959,7 +1959,7 @@ def _assert_partition_matches_runtime(jobs, full_result, monkeypatch):
     observed_batches = []
     for name in (
         "acquire_untargeted_cid_nl_sample_trace_batch",
-        "acquire_untargeted_cid_nl_recovery_trace_batch",
+        "acquire_untargeted_cid_nl_backfill_trace_batch",
     ):
         original = getattr(runtime_module, name)
 
@@ -1994,13 +1994,13 @@ def _assert_partition_matches_runtime(jobs, full_result, monkeypatch):
             == expected.result_ref.source_candidate_ids
         )
         assert (
-            actual.result_ref.recovery_query_bounds
-            == expected.result_ref.recovery_query_bounds
+            actual.result_ref.backfill_query_bounds
+            == expected.result_ref.backfill_query_bounds
         )
     expected_keys = {
         f"part-1:{job.sample.identity.sample_identity_id}:{phase}"
         for job in jobs
-        for phase in ("initial", "recovery")
+        for phase in ("initial", "backfill")
     }
     resources = result.worker_batch.resource_settlements
     assert {item.resource_key for item in resources} == {
@@ -2022,7 +2022,7 @@ def _assert_partition_matches_runtime(jobs, full_result, monkeypatch):
         any(item.acquisition is batch for item in result.acquisitions)
         for batch in observed_batches
     )
-    for stage in ("partition_initial", "partition_recovery", "partition_seal"):
+    for stage in ("partition_initial", "partition_backfill", "partition_seal"):
         progress = [event for event in events if event.get("stage") == stage]
         assert progress[-1]["completed"] == progress[-1]["total"]
     # An acquisition failure must settle its jobs and return all resource cleanup facts.

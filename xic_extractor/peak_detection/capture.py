@@ -587,7 +587,7 @@ def capture_physical_backfill_observation(
         proposal_sources=("canonical_physical_segment",),
         physical_evaluation=evaluation,
         signal_processing_profile=profile,
-        capture_stage="method_recovery",
+        capture_stage="method_backfill",
     )
 
 

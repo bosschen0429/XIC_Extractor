@@ -530,7 +530,7 @@ def _selected_cell_source(
             if len(assessments) == 1 and (
                 assessments[0].content.method_subject.composition is not None
                 or assessments[0].content.detector_invocation_id
-                == "untargeted-cid-nl-backfill-recovery"
+                == "untargeted-cid-nl-backfill"
             ):
                 from xic_extractor.alignment.hypothesis_owner_adapter import (
                     validate_cid_nl_assessment_hypothesis_closure,

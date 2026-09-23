@@ -92,7 +92,7 @@ def test_split_supported_creates_exact_children_and_recomputes_s(
 
     assert parent.direct_support_count_s == 2
     assert parent.minimum_support_k == 2
-    assert parent.may_attempt_recovery is True
+    assert parent.may_attempt_backfill is True
     assert decision.parent_superseded is True
     assert decision.blocks_parent_backfill is True
     assert decision.blocks_parent_numeric_projection is True

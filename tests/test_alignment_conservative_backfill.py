@@ -110,7 +110,7 @@ def test_roles_votes_and_full_support_trace_set_are_owner_derived(
     assert targeted.sample_count_n == 3
     assert targeted.minimum_support_k == 2
     assert targeted.direct_support_count_s == 2
-    assert targeted.may_attempt_recovery is True
+    assert targeted.may_attempt_backfill is True
     assert len(targeted.direct_support_sample_ids) == 4
     assert len(targeted.support_trace_refs) == 4
     assert all(
@@ -164,7 +164,7 @@ def test_group_exists_below_threshold_but_cannot_trigger_recovery(
     assert facts.group_frozen is True
     assert facts.direct_support_count_s == 1
     assert facts.minimum_support_k == 2
-    assert facts.may_attempt_recovery is False
+    assert facts.may_attempt_backfill is False
     assert plan_conservative_backfill_targets(
         (spine.group,), sample_population=fixture.samples
     ) == ()
@@ -234,7 +234,7 @@ def test_incomplete_group_snapshot_is_held_even_when_support_threshold_passes(
 
     assert facts.direct_support_count_s == 2
     assert facts.group_frozen is False
-    assert facts.may_attempt_recovery is False
+    assert facts.may_attempt_backfill is False
     assert decision.disposition == "hold"
     assert decision.reason_codes == ("group_not_frozen",)
 
@@ -271,7 +271,7 @@ def test_terminal_method_results_precede_group_recovery_eligibility(
     )[0]
 
     assert below_threshold.group_frozen is True
-    assert below_threshold.may_attempt_recovery is False
+    assert below_threshold.may_attempt_backfill is False
     assert support_decision.disposition == "not_applicable"
     assert support_decision.reason_codes == ("cell_already_has_direct_support",)
     assert reject_decision.disposition == "not_applicable"
@@ -535,7 +535,7 @@ def test_mapping_retains_empty_receipt_and_rejects_duplicate_target_receipts(
     assert decision.candidate_universe is empty_universe
     assert decision.candidate_evidence == ()
     assert decision.disposition == "hold"
-    assert decision.reason_codes == ("recovery_candidate_universe_empty",)
+    assert decision.reason_codes == ("backfill_candidate_universe_empty",)
     assert missing_receipt.candidate_universe is None
     assert missing_receipt.reason_codes == ("recovery_evidence_missing",)
     with pytest.raises(
@@ -656,7 +656,7 @@ def test_recovery_receipt_rejects_truncated_processing_request_population(
     assert facts.group_frozen is True
     assert facts.sample_count_n == 3
     assert facts.minimum_support_k == 2
-    assert facts.may_attempt_recovery is True
+    assert facts.may_attempt_backfill is True
     with pytest.raises(
         ConservativeBackfillContractError,
         match="full processing request",

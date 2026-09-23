@@ -32,7 +32,7 @@ from xic_extractor.alignment.mode_track.producer import (
 from xic_extractor.discovery.models import DiscoveryCandidate
 from xic_extractor.extraction.untargeted_cid_nl_real_data_adapter import (
     UntargetedCidNlRealDataAdapterError,
-    acquire_untargeted_cid_nl_recovery_trace_batch,
+    acquire_untargeted_cid_nl_backfill_trace_batch,
     acquire_untargeted_cid_nl_sample_trace_batch,
     adapt_current_discovery_sample_subject,
     backfill_untargeted_cid_nl_sample_subject,
@@ -887,7 +887,7 @@ def test_recovery_batch_canonicalizes_shared_group_queries_without_merging_cente
         tmp_path=tmp_path,
     )
 
-    batch = acquire_untargeted_cid_nl_recovery_trace_batch(
+    batch = acquire_untargeted_cid_nl_backfill_trace_batch(
         processing_owners=fixture.owners,
         sample=fixture.sample("S1"),
         backfill_requests=(

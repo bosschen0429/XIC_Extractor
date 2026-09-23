@@ -1744,7 +1744,7 @@ def _build_production_composition_inputs(
                 universes: tuple[
                     ConservativeBackfillCandidateUniverse, ...
                 ] = ()
-                if facts.may_attempt_recovery:
+                if facts.may_attempt_backfill:
                     if cell.method_assessment.candidate_peaks:
                         continue
                     method_subject_id = (

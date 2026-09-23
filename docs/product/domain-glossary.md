@@ -369,8 +369,7 @@ belongs to its sense instead of adding another.
 | `recall` | the fraction of oracle reference compounds a run finds | — |
 
 Persisted values keep their earlier spelling until their public-surface change:
-the Backfill keys listed in [backfill.md](backfill.md), the
-`preferred_rt_recovery` proposal-source label, and the CID-NL oracle
+the `preferred_rt_recovery` proposal-source label and the CID-NL oracle
 `recovery_claim_label` column and its values.
 
 `owner` still carries several senses: the sample-local MS1 peak candidates are

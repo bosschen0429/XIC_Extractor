@@ -14,7 +14,7 @@ from types import MappingProxyType
 from xic_extractor.acquisition_contract import AcquiredTrace, TraceAcquisitionBatch
 from xic_extractor.alignment.backfill.evaluation_coverage import (
     _COMPLETED_BACKFILL_CONTRACT,
-    OwnerBackfillCompletedRecoveryProjection,
+    OwnerBackfillCompletedBackfillProjection,
     _completed_backfill_projection_bytes,
 )
 from xic_extractor.alignment.cell_observations import CidNlCellGroupContext
@@ -361,12 +361,12 @@ def canonical_untargeted_cid_nl_sample_result_bytes(
         discovery_projection_artifact_ids=(reference.discovery_projection_artifact_ids),
         source_candidate_ids=reference.source_candidate_ids,
         strict_scan_count=reference.strict_scan_count,
-        recovery_assessment_artifact_id=(reference.recovery_assessment_artifact_id),
-        recovery_candidate_count=reference.recovery_candidate_count,
+        backfill_assessment_artifact_id=(reference.backfill_assessment_artifact_id),
+        backfill_candidate_count=reference.backfill_candidate_count,
         acquisition_sha256=reference.acquisition_sha256,
-        recovery_assessment_artifact_ids=reference.recovery_assessment_artifact_ids,
-        recovery_query_bounds=reference.recovery_query_bounds,
-        recovery_group_hypothesis_ids=reference.recovery_group_hypothesis_ids,
+        backfill_assessment_artifact_ids=reference.backfill_assessment_artifact_ids,
+        backfill_query_bounds=reference.backfill_query_bounds,
+        backfill_group_hypothesis_ids=reference.backfill_group_hypothesis_ids,
     )
 
 
@@ -397,12 +397,12 @@ class UntargetedCidNlSampleResultRef:
     discovery_projection_artifact_ids: tuple[str, ...]
     source_candidate_ids: tuple[str, ...]
     strict_scan_count: int
-    recovery_assessment_artifact_id: str | None
-    recovery_candidate_count: int
+    backfill_assessment_artifact_id: str | None
+    backfill_candidate_count: int
     acquisition_sha256: str | None
-    recovery_assessment_artifact_ids: tuple[str, ...]
-    recovery_query_bounds: tuple[tuple[float, float], ...]
-    recovery_group_hypothesis_ids: tuple[str | None, ...]
+    backfill_assessment_artifact_ids: tuple[str, ...]
+    backfill_query_bounds: tuple[tuple[float, float], ...]
+    backfill_group_hypothesis_ids: tuple[str | None, ...]
     artifact: EvidenceArtifactRef
 
     def __post_init__(self) -> None:
@@ -518,7 +518,7 @@ def project_untargeted_cid_nl_completed_backfill(
     result: UntargetedCidNlRuntimeSampleResult,
     *,
     group_context: CidNlCellGroupContext,
-) -> OwnerBackfillCompletedRecoveryProjection:
+) -> OwnerBackfillCompletedBackfillProjection:
     """Project an existing completed empty backfill without executing it again."""
     if type(result) is not UntargetedCidNlRuntimeSampleResult:
         raise UntargetedCidNlRealDataRuntimeError("backfill requires a runtime result")
@@ -558,7 +558,7 @@ def _project_completed_backfill(
     exact_traces: Callable[
         [TraceAcquisitionBatch, XICRequest, str], tuple[AcquiredTrace, ...]
     ],
-) -> OwnerBackfillCompletedRecoveryProjection:
+) -> OwnerBackfillCompletedBackfillProjection:
     """Bind an admitted batch result; standalone replay validates at its entry."""
     job = result.job
     group = validate_cross_sample_peak_group_identity(
@@ -594,7 +594,7 @@ def _project_completed_backfill(
         or assessment.content.method_result != "HOLD"
         or assessment.candidate_peaks
         or assessment.content.detector_invocation_id
-        != "untargeted-cid-nl-backfill-recovery"
+        != "untargeted-cid-nl-backfill"
         or not receipt.search_completed
         or not receipt.acquisition_supported
         or backfill.backfill_input is not None
@@ -638,7 +638,7 @@ def _project_completed_backfill(
         ),
         upstream_artifacts=(result.result_ref.artifact, assessment.artifact),
     )
-    return OwnerBackfillCompletedRecoveryProjection(
+    return OwnerBackfillCompletedBackfillProjection(
         processing_owners=job.processing_owners,
         sample=job.sample,
         group_identity=group,
@@ -742,7 +742,7 @@ def _mint_sample_result_ref(
             backfill_input.candidate_assessment if backfill_input is not None else None
         )
     )
-    recovery_candidate_count = len(
+    backfill_candidate_count = len(
         {
             peak.content.peak_observation_content_id
             for ref in backfill_assessments
@@ -761,19 +761,19 @@ def _mint_sample_result_ref(
         ),
         "source_candidate_ids": result.source_candidate_ids,
         "strict_scan_count": result.strict_scan_count,
-        "recovery_assessment_artifact_id": (
+        "backfill_assessment_artifact_id": (
             backfill_assessment.artifact.evidence_artifact_id
             if backfill_assessment is not None
             else None
         ),
-        "recovery_candidate_count": recovery_candidate_count,
-        "recovery_group_hypothesis_ids": tuple(
+        "backfill_candidate_count": backfill_candidate_count,
+        "backfill_group_hypothesis_ids": tuple(
             attempt.group_hypothesis_id for attempt in backfill_attempts
         ),
-        "recovery_assessment_artifact_ids": tuple(
+        "backfill_assessment_artifact_ids": tuple(
             ref.artifact.evidence_artifact_id for ref in backfill_assessments
         ),
-        "recovery_query_bounds": tuple(
+        "backfill_query_bounds": tuple(
             (
                 ref.content.evaluation_receipt.query_rt_min,
                 ref.content.evaluation_receipt.query_rt_max,
@@ -818,20 +818,20 @@ def _mint_sample_result_ref(
         ),
         source_candidate_ids=result.source_candidate_ids,
         strict_scan_count=result.strict_scan_count,
-        recovery_assessment_artifact_id=(
+        backfill_assessment_artifact_id=(
             backfill_assessment.artifact.evidence_artifact_id
             if backfill_assessment is not None
             else None
         ),
-        recovery_candidate_count=recovery_candidate_count,
-        recovery_group_hypothesis_ids=tuple(
+        backfill_candidate_count=backfill_candidate_count,
+        backfill_group_hypothesis_ids=tuple(
             attempt.group_hypothesis_id for attempt in backfill_attempts
         ),
         acquisition_sha256=acquisition_sha256,
-        recovery_assessment_artifact_ids=tuple(
+        backfill_assessment_artifact_ids=tuple(
             ref.artifact.evidence_artifact_id for ref in backfill_assessments
         ),
-        recovery_query_bounds=tuple(
+        backfill_query_bounds=tuple(
             (
                 ref.content.evaluation_receipt.query_rt_min,
                 ref.content.evaluation_receipt.query_rt_max,

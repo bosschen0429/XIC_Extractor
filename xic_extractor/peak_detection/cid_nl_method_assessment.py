@@ -975,7 +975,7 @@ def is_ms1_only_cid_nl_backfill_assessment(
     """
     return (
         assessment.content.detector_invocation_id
-        == "untargeted-cid-nl-backfill-recovery"
+        == "untargeted-cid-nl-backfill"
         and assessment.content.technical_state == "evaluated"
         and assessment.content.method_result == "HOLD"
         and assessment.content.reason_codes == ("no_unique_qualifying_relation",)

@@ -504,7 +504,7 @@ def acquire_untargeted_cid_nl_sample_trace_batch(
     )
 
 
-def acquire_untargeted_cid_nl_recovery_trace_batch(
+def acquire_untargeted_cid_nl_backfill_trace_batch(
     *,
     processing_owners: ProcessingOwnerReferences,
     sample: ResolvedCanonicalSampleIdentity,
@@ -580,7 +580,7 @@ def acquire_untargeted_cid_nl_recovery_trace_batch(
     )
     capability = mint_trace_acquisition_capability(
         source,
-        adapter_namespace=f"{_ADAPTER_NAMESPACE}.recovery_batch",
+        adapter_namespace=f"{_ADAPTER_NAMESPACE}.backfill_batch",
         coordinate_kind=TraceCoordinateKind.NATIVE_SCAN,
     )
     acquisition = _freeze_acquisition(
@@ -978,7 +978,7 @@ def backfill_untargeted_cid_nl_sample_subject(
             ) from exc
         capability = mint_trace_acquisition_capability(
             source,
-            adapter_namespace=f"{_ADAPTER_NAMESPACE}.recovery",
+            adapter_namespace=f"{_ADAPTER_NAMESPACE}.backfill",
             coordinate_kind=TraceCoordinateKind.NATIVE_SCAN,
         )
         acquisition = _freeze_acquisition(
@@ -1008,7 +1008,7 @@ def backfill_untargeted_cid_nl_sample_subject(
             sample_name=sample.metadata.sample_name,
             request=request,
             xic_trace=acquired.trace,
-            source=f"{_ADAPTER_NAMESPACE}.recovery:{TraceCoordinateKind.NATIVE_SCAN.value}",
+            source=f"{_ADAPTER_NAMESPACE}.backfill:{TraceCoordinateKind.NATIVE_SCAN.value}",
             acquisition_source_id=source.acquisition_source_id,
         )
         observation = capture_owner.capture_physical_backfill_observation(
@@ -1037,7 +1037,7 @@ def backfill_untargeted_cid_nl_sample_subject(
                 sample_name=sample.metadata.sample_name,
                 target_label=(
                     f"untargeted:{method_subject.precursor_mz:.8g}:"
-                    f"{method_subject.label}:recovery"
+                    f"{method_subject.label}:backfill"
                 ),
                 role="Analyte",
                 istd_pair="",
@@ -1055,7 +1055,7 @@ def backfill_untargeted_cid_nl_sample_subject(
                 request=request,
                 xic_trace=acquired.trace,
                 source=(
-                    f"{_ADAPTER_NAMESPACE}.recovery:{TraceCoordinateKind.NATIVE_SCAN.value}"
+                    f"{_ADAPTER_NAMESPACE}.backfill:{TraceCoordinateKind.NATIVE_SCAN.value}"
                 ),
                 acquisition_source_id=source.acquisition_source_id,
             )
@@ -1168,7 +1168,7 @@ def backfill_untargeted_cid_nl_sample_subject(
             processing_owners=processing_owners,
             sample=sample,
             method_subject=method_subject,
-            detector_invocation_id="untargeted-cid-nl-backfill-recovery",
+            detector_invocation_id="untargeted-cid-nl-backfill",
             evaluation_receipt=CidNlEvaluationReceipt(
                 query_rt_min=query_rt_min,
                 query_rt_max=query_rt_max,
@@ -1217,7 +1217,7 @@ def backfill_untargeted_cid_nl_sample_subject(
                 processing_attempt_id=processing_owners.attempt.processing_attempt_id,
                 method_subject_id=method_subject.method_subject_id,
                 candidate_id=None,
-                capture_stage="method_recovery",
+                capture_stage="method_backfill",
                 trace=trace,
                 physical_evaluation=evaluation,
                 observation_ref=observation,
@@ -1909,5 +1909,5 @@ __all__ = [
     "UntargetedCidNlRealDataAdapterError",
     "UntargetedCidNlRealDataAdapterResult",
     "acquire_untargeted_cid_nl_sample_trace_batch",
-    "acquire_untargeted_cid_nl_recovery_trace_batch",
+    "acquire_untargeted_cid_nl_backfill_trace_batch",
 ]

@@ -565,7 +565,7 @@ def test_closed_vocabularies_cover_every_emitted_disposition_and_phase(
         "retained_unresolved_candidates",
         "local_owner_not_supersedable",
         "direct_support_threshold_not_met",
-        "recovery_search_completed_empty",
+        "backfill_search_completed_empty",
         "no_discovery_input",
     }
     assert set(OWNER_BACKFILL_CANDIDATE_PHASES) == {

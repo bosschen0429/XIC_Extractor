@@ -8,7 +8,7 @@ from dataclasses import dataclass
 
 from xic_extractor.acquisition_contract import AcquiredTrace, TraceAcquisitionBatch
 from xic_extractor.alignment.backfill.evaluation_coverage import (
-    OwnerBackfillCompletedRecoveryProjection,
+    OwnerBackfillCompletedBackfillProjection,
 )
 from xic_extractor.alignment.cell_observations import (
     CidNlCellGroupContext,
@@ -56,7 +56,7 @@ from xic_extractor.execution_settings import DEFAULT_ALIGNMENT_WORKERS
 from xic_extractor.extraction.untargeted_cid_nl_real_data_adapter import (
     _supports_direct_precursor_assessment,
     _UntargetedRealDataWorkObserver,
-    acquire_untargeted_cid_nl_recovery_trace_batch,
+    acquire_untargeted_cid_nl_backfill_trace_batch,
     acquire_untargeted_cid_nl_sample_trace_batch,
 )
 from xic_extractor.extraction.untargeted_real_data_models import (
@@ -159,7 +159,7 @@ class _RuntimeResultContext:
         result: UntargetedCidNlRuntimeSampleResult,
         *,
         group_context: CidNlCellGroupContext,
-    ) -> OwnerBackfillCompletedRecoveryProjection:
+    ) -> OwnerBackfillCompletedBackfillProjection:
         if type(result) is not UntargetedCidNlRuntimeSampleResult:
             raise UntargetedCidNlRealDataRuntimeError(
                 "backfill requires a runtime result"
@@ -541,7 +541,7 @@ def _prepare_runtime_work(
             else None
         )
         backfill_resource_key = (
-            f"acquisition-session:recovery:{sample_id}"
+            f"acquisition-session:backfill:{sample_id}"
             if not first.sample.metadata.excluded
             and first.sample.metadata.sample_role in ACTIVATION_ELIGIBLE_SAMPLE_ROLES
             and (prepare_grouping is not None or backfill_subject_ids)
@@ -552,11 +552,11 @@ def _prepare_runtime_work(
                 f"acquisition-session:{partition_key}:{sample_id}:initial"
             )
             backfill_resource_key = (
-                f"acquisition-session:{partition_key}:{sample_id}:recovery"
+                f"acquisition-session:{partition_key}:{sample_id}:backfill"
             )
         for resource_key, phase, owner_conditional in (
             (initial_resource_key, "initial", False),
-            (backfill_resource_key, "recovery", True),
+            (backfill_resource_key, "backfill", True),
         ):
             if resource_key is None:
                 continue
@@ -820,7 +820,7 @@ def _prepare_runtime_work(
                     )
                     if err is not None:
                         worker_pool.stop(err)
-            report_phase("partition_recovery", comp, tot)
+            report_phase("partition_backfill", comp, tot)
 
         try:
             if not observe_cancellation():
@@ -894,7 +894,7 @@ def _prepare_runtime_work(
                         backfill_groups,
                         backfill,
                         on_completed=lambda c, t, s, r: on_sample_thread_completed(
-                            "partition_recovery", c, t, s, r
+                            "partition_backfill", c, t, s, r
                         ),
                         on_error=on_sample_error,
                         should_cancel=should_cancel,
@@ -936,7 +936,7 @@ def _prepare_runtime_work(
                         "sample_stem": state.job.sample.metadata.raw_stem,
                         "work_unit_key": state.job.work_unit_key,
                         "succeeded": sample_result is not None,
-                        "recovery_attempted": bool(state.backfill_attempts),
+                        "backfill_attempted": bool(state.backfill_attempts),
                     }
                 )
         for phase in batch_phases:
@@ -956,7 +956,7 @@ def _prepare_runtime_work(
                 sample_id = phase.job.sample.identity.sample_identity_id
                 for name, acquisition in (
                     ("initial", phase.initial_acquisition),
-                    ("recovery", phase.backfill_acquisition),
+                    ("backfill", phase.backfill_acquisition),
                 ):
                     if acquisition is not None:
                         acquisitions.append(
@@ -1279,7 +1279,7 @@ __all__ = (
     "UntargetedRuntimePartitionResult",
     "UntargetedRuntimeSampleResult",
     "UntargetedSampleResultRef",
-    "acquire_untargeted_cid_nl_recovery_trace_batch",
+    "acquire_untargeted_cid_nl_backfill_trace_batch",
     "acquire_untargeted_cid_nl_sample_trace_batch",
     "build_untargeted_cid_nl_sample_runtime_jobs",
     "build_untargeted_sample_runtime_jobs",

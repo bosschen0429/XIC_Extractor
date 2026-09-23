@@ -734,8 +734,8 @@ def _expected_retained_curve(
 
 def _expected_capture_curve(evidence):
     return _expected_retained_curve(
-        kind="recovery_observation"
-        if evidence.capture_stage == "method_recovery"
+        kind="backfill_observation"
+        if evidence.capture_stage == "method_backfill"
         else evidence.capture_stage,
         sample_id=evidence.canonical_sample_identity_id,
         candidate_id=evidence.candidate_id,
@@ -2072,7 +2072,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     recovery_prepared = prepare_physical_signal(
         acquired.trace.rt, acquired.trace.intensity, profile=profile
     )
-    assert observation.capture_stage == "method_recovery"
+    assert observation.capture_stage == "method_backfill"
     assert observation.physical_evaluation is not None
     assert (
         observation.physical_evaluation.retained_prepared_signal
@@ -2201,7 +2201,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
                 sink,
                 evidence.observation_ref,
                 evidence.canonical_sample_identity_id,
-                kind="recovery_observation",
+                kind="backfill_observation",
                 trace=evidence.trace,
                 evaluation=evidence.physical_evaluation,
                 provenance={
@@ -2786,7 +2786,7 @@ def test_completed_empty_recovery_preserves_each_compatible_source_subject(
         and position.group_identity.group_hypothesis_id == group.group_hypothesis_id
     )
     assert position.conservative_no_request_proof is not None
-    assert position.conservative_no_request_proof.variant == "completed_recovery_empty"
+    assert position.conservative_no_request_proof.variant == "completed_backfill_empty"
 
 
 @pytest.mark.parametrize(
@@ -3896,7 +3896,7 @@ def test_production_composition_closes_observation_only_hold_without_membership(
         assert proof.completion is None
         assert proof.decision.group_facts.direct_support_count_s == 1
         assert proof.decision.group_facts.minimum_support_k == 2
-        assert not proof.decision.group_facts.may_attempt_recovery
+        assert not proof.decision.group_facts.may_attempt_backfill
         assert proof.decision.reason_codes == ("direct_support_threshold_not_met",)
         assert position.primary_logical_requests == coverage.terminals == ()
         hold_cell = next(
@@ -4263,7 +4263,7 @@ def _assert_conservative_coverage_handoff(
         assert position.planning_reason == "no_discovery_input"
     else:
         assert proof is not None
-        assert proof.variant == "completed_recovery_empty"
+        assert proof.variant == "completed_backfill_empty"
         assert proof.decision.group_facts.direct_support_count_s == 3
         assert proof.decision.group_facts.minimum_support_k == 2
     assert position.planning_state == "not_planned"
