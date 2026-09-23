@@ -1442,8 +1442,12 @@ def compose_cid_nl_predecessor_cells(
         tuple[str, str], tuple[PeakHypothesis, ...]
     ]
     | None = None,
+    contested_backfill_peaks: frozenset[tuple[str, str]] = frozenset(),
 ) -> tuple[CellObservationRef, ...]:
-    """Attach initial evidence and only each group's own backfill assessment."""
+    """Attach initial evidence and only each group's own backfill assessment.
+
+    An MS1-only Backfill peak in ``contested_backfill_peaks`` stays unresolved.
+    """
     initial_assessment_objects = {
         id(assessment) for _, assessment in sample_assessments
     }
@@ -1660,6 +1664,16 @@ def compose_cid_nl_predecessor_cells(
             elif (
                 assessment.content.method_result == "HOLD"
                 and len(assessment.candidate_peaks) == 1
+                and not (
+                    is_ms1_only_cid_nl_backfill_assessment(assessment)
+                    and (
+                        sample_id,
+                        assessment.candidate_peaks[
+                            0
+                        ].content.peak_observation_content_id,
+                    )
+                    in contested_backfill_peaks
+                )
             ):
                 observation = assessment.candidate_peaks[0]
             cells.append(

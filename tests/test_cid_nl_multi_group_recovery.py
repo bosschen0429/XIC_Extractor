@@ -46,6 +46,9 @@ from xic_extractor.extraction.untargeted_cid_nl_real_data_runtime import (
     execute_untargeted_cid_nl_real_data_runtime,
     project_untargeted_cid_nl_completed_backfill,
 )
+from xic_extractor.peak_detection.cid_nl_method_assessment import (
+    is_ms1_only_cid_nl_backfill_assessment,
+)
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     mint_untargeted_cid_nl_method_subject,
 )
@@ -998,6 +1001,117 @@ def test_shared_physical_recovery_claim_is_not_assigned_to_two_groups(
         for decision in writer.production_decisions.cells.values()
         if decision.sample_stem == "Missing"
     )
+    assert all(
+        not decision.write_matrix_value and decision.matrix_value is None
+        for decision in missing_decisions
+    )
+
+
+def test_shared_ms1_only_backfill_peak_is_not_written_to_two_rows(
+    tmp_path, monkeypatch
+):
+    """One MS1-only peak two group windows both found stays unresolved."""
+
+    ms1_centers = {"S1": (8.0, 8.12), "S2": (8.0, 8.12), "Missing": (8.06,)}
+    nl_centers = {"S1": (8.0, 8.12), "S2": (8.0, 8.12), "Missing": ()}
+    paths = tuple(tmp_path / f"{stem}.synthetic" for stem in ms1_centers)
+    settings, peak_config = (
+        replace(
+            _settings(), neutral_loss_profile=None, rt_max=8.6, seed_rt_gap_min=0.1
+        ),
+        _peak_config(tmp_path),
+    )
+    raws, candidates = {}, {}
+    for path in paths:
+        path.write_bytes(path.stem.encode())
+        raw = _FakeRaw(nl_centers[path.stem])
+        raw.rt = np.linspace(7.4, 8.7, 521)
+        raw.intensity = sum(
+            (
+                1000 * np.exp(-0.5 * ((raw.rt - center) / 0.018) ** 2)
+                for center in ms1_centers[path.stem]
+            ),
+            np.zeros_like(raw.rt),
+        )
+        raw.scans = tuple(
+            replace(scan, scan_number=int(np.argmin(np.abs(raw.rt - scan.rt))) + 1)
+            for scan in raw.scans
+        )
+        raws[path] = raw
+        candidates[path.stem] = (
+            _current_candidates(
+                raw, raw_file=path, settings=settings, peak_config=peak_config
+            )
+            if path.stem != "Missing"
+            else ()
+        )
+    batch = build_untargeted_cid_nl_production_batch(
+        raw_paths=paths,
+        sample_metadata=tuple(
+            SampleMetadata(
+                sample_name=stem,
+                raw_stem=stem,
+                injection_order=index + 1,
+                sample_role="study_sample",
+            )
+            for index, stem in enumerate(ms1_centers)
+        ),
+        settings=settings,
+        peak_config=peak_config,
+        candidates_by_sample=candidates,
+        discovery_receipts_by_sample=_discovery_receipts(tmp_path, paths, candidates),
+        sample_identity_namespace="study:shared-ms1-only-backfill",
+        dll_dir=tmp_path,
+    )
+    _install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
+    runtime = start_runtime_attempt(
+        attempt=batch.context.processing_owners.attempt,
+        work_unit_keys=tuple(job.work_unit_key for job in batch.jobs),
+        owner_completeness_attestation="shared-ms1-only-backfill",
+    )
+    result = execute_untargeted_cid_nl_real_data_runtime(
+        runtime,
+        batch.jobs,
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+        recovery_marker=OwnerPathRuntimeMarker(
+            tmp_path / "runtime.json", "shared-ms1-only-backfill"
+        ),
+    )
+    assert result.succeeded
+    missing = next(
+        item
+        for item in result.sample_results
+        if item.job.sample.metadata.raw_stem == "Missing"
+    )
+    assert len(missing.backfill_attempts) == 2
+    assert all(
+        is_ms1_only_cid_nl_backfill_assessment(attempt.assessment)
+        for attempt in missing.backfill_attempts
+    )
+    physical_ids = {
+        attempt.assessment.candidate_peaks[0].content.peak_observation_content_id
+        for attempt in missing.backfill_attempts
+    }
+    assert len(physical_ids) == 1
+
+    completed = compose_untargeted_cid_nl_production_result(
+        batch, result, alignment_config=AlignmentConfig(anchor_min_seed_events=1)
+    )
+    (child,) = completed.application_result.children
+    missing_cells = tuple(
+        cell
+        for cell in child.scientific_core.cell_observations
+        if cell.canonical_sample.metadata.raw_stem == "Missing"
+    )
+    assert len(missing_cells) == 2
+    assert all(cell.evidence_states == ("unresolved",) for cell in missing_cells)
+    writer = project_completed_untarget_batch_writer_inputs(completed)
+    missing_decisions = tuple(
+        decision
+        for decision in writer.production_decisions.cells.values()
+        if decision.sample_stem == "Missing"
+    )
+    assert len(missing_decisions) == 2
     assert all(
         not decision.write_matrix_value and decision.matrix_value is None
         for decision in missing_decisions

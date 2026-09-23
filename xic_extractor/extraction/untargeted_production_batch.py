@@ -39,6 +39,7 @@ from xic_extractor.alignment.feature_membership_inference import (
 from xic_extractor.alignment.grouping_workflow import (
     admit_cid_nl_group_backfills,
     build_initial_cid_nl_cross_sample_groups,
+    contested_backfill_peaks,
 )
 from xic_extractor.alignment.hypothesis_owner_adapter import (
     compose_peak_hypotheses_from_assessment_universe,
@@ -1672,6 +1673,9 @@ def _build_production_composition_inputs(
                 key: tuple(hypotheses)
                 for key, hypotheses in retained_cell_hypotheses.items()
             },
+            contested_backfill_peaks=contested_backfill_peaks(
+                groups=backfilled_groups, backfills=group_backfills
+            ),
         )
         backfill_cells = (
             compose_cid_nl_predecessor_cells(
