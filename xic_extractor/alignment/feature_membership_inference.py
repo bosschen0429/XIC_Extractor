@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import statistics
 from bisect import bisect_left, bisect_right, insort
 from collections import Counter, defaultdict
 from collections.abc import Mapping, Sequence
@@ -22,6 +23,12 @@ from xic_extractor.alignment.edge_scoring import (
     evaluate_owner_edge,
 )
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
+from xic_extractor.mass_accuracy import (
+    absolute_ppm_error,
+    mz_tolerance_da,
+    mz_window,
+    within_ppm,
+)
 
 FeatureMembershipDisposition = Literal[
     "assigned",
@@ -30,6 +37,7 @@ FeatureMembershipDisposition = Literal[
     "unresolved_conflict",
 ]
 FeatureMembershipBasis = Literal[
+    "window_level_rt_band",
     "bidirectional_membership_agreement",
     "directional_membership_disagreement",
     "insufficient_cross_sample_evidence",
@@ -37,7 +45,7 @@ FeatureMembershipBasis = Literal[
     "known_identity_input_conflict",
 ]
 KnownIdentityConstraintStatus = Literal["satisfied", "unresolved_conflict"]
-DecisionDirection = Literal["forward", "reverse"]
+DecisionDirection = Literal["forward", "reverse", "window"]
 SparseDecisionState = Literal[
     "assigned",
     "birth",
@@ -56,6 +64,10 @@ _TERMINATION = "completed_two_finite_directional_passes"
 _UNASSIGNED_COST = 1.0
 _INFEASIBLE_COST = 1_000_000.0
 _AMBIGUITY_EPSILON = 1e-9
+_FEATURE_TREND_NEIGHBORS = 6
+_WARP_ANCHOR_MIN_MEMBERS = 20
+_WARP_GRID_RT_MIN = (7.0, 11.0, 15.0, 20.0, 27.0, 38.0)
+_WINDOW_TREND_TOLERANCE_SEC = 90.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -133,6 +145,120 @@ class FeatureMembershipInferenceResult:
     objective: str = _OBJECTIVE
     termination: str = _TERMINATION
     pair_coverage: str = "not_materialized;absence_means_not_evaluated"
+
+
+@dataclass(frozen=True, slots=True)
+class BatchRtWarp:
+    """Measured per-injection RT offset from agreed batch features."""
+
+    knots_by_sample: tuple[tuple[str, tuple[tuple[float, float], ...]], ...]
+    anchor_group_count: int
+
+    def offset_min(self, sample_stem: str, rt_min: float) -> float:
+        knots = dict(self.knots_by_sample).get(sample_stem, ())
+        if not knots:
+            return 0.0
+        if rt_min <= knots[0][0]:
+            return knots[0][1]
+        if rt_min >= knots[-1][0]:
+            return knots[-1][1]
+        right = bisect_right(knots, rt_min, key=lambda knot: knot[0])
+        left_rt, left_offset = knots[right - 1]
+        right_rt, right_offset = knots[right]
+        fraction = (rt_min - left_rt) / (right_rt - left_rt)
+        return left_offset + fraction * (right_offset - left_offset)
+
+    def corrected_rt_min(self, owner: SampleLocalMS1Owner) -> float:
+        return owner.owner_apex_rt - self.offset_min(
+            owner.sample_stem, owner.owner_apex_rt
+        )
+
+
+def estimate_batch_rt_warp(
+    groups: Sequence[FeatureMembershipGroup | Sequence[SampleLocalMS1Owner]],
+    *,
+    owners_by_id: Mapping[str, SampleLocalMS1Owner],
+    injection_order: Mapping[str, int],
+) -> BatchRtWarp:
+    """Fit one smooth RT-dependent offset per injection from bootstrap anchors.
+
+    The caller supplies only agreed ordinary and exact known-identity groups.
+    Their membership is used to estimate an offset, never retained as final
+    ordinary membership authority.
+    """
+    observations: dict[str, list[tuple[float, float]]] = defaultdict(list)
+    accepted = 0
+    for group in groups:
+        members = (
+            tuple(owners_by_id[owner_id] for owner_id in group.owner_ids)
+            if isinstance(group, FeatureMembershipGroup)
+            else tuple(group)
+        )
+        if len(members) < _WARP_ANCHOR_MIN_MEMBERS:
+            continue
+        ordered = tuple(
+            sorted(
+                (owner for owner in members if owner.sample_stem in injection_order),
+                key=lambda owner: (injection_order[owner.sample_stem], owner.owner_id),
+            )
+        )
+        if len(ordered) < _WARP_ANCHOR_MIN_MEMBERS:
+            continue
+        accepted += 1
+        for owner in ordered:
+            trend = _nearest_injection_median(
+                owner, ordered, injection_order, exclude_owner_id=owner.owner_id
+            )
+            if trend is not None:
+                observations[owner.sample_stem].append(
+                    (trend, owner.owner_apex_rt - trend)
+                )
+    sample_knots = []
+    for sample, sample_points in sorted(observations.items()):
+        if len(sample_points) < 12:
+            continue
+        knots = []
+        for rt in _WARP_GRID_RT_MIN:
+            nearest = sorted(sample_points, key=lambda point: abs(point[0] - rt))[:25]
+            if len(nearest) >= 5:
+                knots.append((rt, statistics.median(point[1] for point in nearest)))
+        if len(knots) >= 2:
+            sample_knots.append((sample, tuple(knots)))
+    return BatchRtWarp(tuple(sample_knots), accepted)
+
+
+def _nearest_injection_median(
+    target: SampleLocalMS1Owner,
+    members: Sequence[SampleLocalMS1Owner],
+    injection_order: Mapping[str, int],
+    *,
+    exclude_owner_id: str | None = None,
+    corrected_rt: Mapping[str, float] | None = None,
+) -> float | None:
+    target_order = injection_order.get(target.sample_stem)
+    if target_order is None:
+        return None
+    nearest = sorted(
+        (
+            owner
+            for owner in members
+            if owner.owner_id != exclude_owner_id
+            and owner.sample_stem in injection_order
+        ),
+        key=lambda owner: (
+            abs(injection_order[owner.sample_stem] - target_order),
+            injection_order[owner.sample_stem],
+            owner.owner_id,
+        ),
+    )[:_FEATURE_TREND_NEIGHBORS]
+    if not nearest:
+        return None
+    return statistics.median(
+        corrected_rt[owner.owner_id]
+        if corrected_rt is not None
+        else owner.owner_apex_rt
+        for owner in nearest
+    )
 
 
 @dataclass(slots=True)
@@ -283,9 +409,9 @@ class _FeatureIndex:
         counts: Counter[str],
     ) -> set[str]:
         items = self._axes.get(key, ())
-        fraction = tolerance / 1_000_000.0
-        first = bisect_left(items, (value / (1.0 + fraction), ""))
-        last = bisect_right(items, (value * (1.0 + fraction), chr(0x10FFFF)))
+        lower, upper = mz_window(value, tolerance)
+        first = bisect_left(items, (lower, ""))
+        last = bisect_right(items, (upper, chr(0x10FFFF)))
         counts["index_entries_scanned"] += last - first
         return {feature_key for _, feature_key in items[first:last]}
 
@@ -342,14 +468,13 @@ def infer_feature_memberships(
     injection_order: Mapping[str, int] | None,
     drift_lookup: DriftLookupProtocol | None,
     known_identity_bindings: Sequence[tuple[str, str]] = (),
+    bootstrap: bool = False,
+    rt_warp: BatchRtWarp | None = None,
 ) -> FeatureMembershipInferenceResult:
-    """Infer cross-sample memberships without materializing an owner-pair graph.
+    """Infer ordinary whole-window bands, preserving exact known identities.
 
-    Exact known-ISTD bindings are indivisible input constraints. Unknown owners
-    cannot enter those groups. Remaining owners are inferred twice, in opposite
-    sample directions. Each sample uses one joint assignment with a private
-    unassigned option per owner. Only memberships present in both finite passes
-    are returned as assigned; disagreement remains explicitly undecided.
+    Directional inference supplies bootstrap anchors for the batch warp and
+    handles composition groups. Its groups do not constrain ordinary bands.
     """
     unique_owners, duplicate_rows = _unique_owners(owners)
     owner_by_id = {owner.owner_id: owner for owner in unique_owners}
@@ -372,23 +497,44 @@ def infer_feature_memberships(
         owner for owner in unique_owners if owner.owner_id not in constrained_owner_ids
     )
 
-    forward = _directional_inference(
-        ordinary,
-        direction="forward",
-        config=config,
-        injection_order=injection_order,
-        drift_lookup=drift_lookup,
-        counts=counts,
+    # Composition can bridge scalar neutral-loss tags and retains its separate
+    # membership contract.
+    use_directional = bootstrap or any(
+        owner.cid_nl_composite_assessment is not None for owner in ordinary
     )
-    reverse = _directional_inference(
-        ordinary,
-        direction="reverse",
-        config=config,
-        injection_order=injection_order,
-        drift_lookup=drift_lookup,
-        counts=counts,
-    )
-    inferred_groups = _consensus_groups(ordinary, forward, reverse, counts)
+    if use_directional:
+        forward = _directional_inference(
+            ordinary,
+            direction="forward",
+            config=config,
+            injection_order=injection_order,
+            drift_lookup=drift_lookup,
+            counts=counts,
+        )
+        reverse = _directional_inference(
+            ordinary,
+            direction="reverse",
+            config=config,
+            injection_order=injection_order,
+            drift_lookup=drift_lookup,
+            counts=counts,
+        )
+        inferred_groups = _consensus_groups(ordinary, forward, reverse, counts)
+        decisions = (*forward.decisions, *reverse.decisions)
+        algorithm = _ALGORITHM
+        objective = _OBJECTIVE
+        termination = _TERMINATION
+    else:
+        inferred_groups, decisions = _window_inference(
+            ordinary,
+            config=config,
+            injection_order=injection_order or {},
+            rt_warp=rt_warp,
+            counts=counts,
+        )
+        algorithm = "whole_window_feature_rt_trend_v2"
+        objective = "local_rt_mass_edges_then_reciprocal_whole_band_bridge"
+        termination = "completed_one_finite_window_pass"
     groups = tuple(sorted((*known_groups, *inferred_groups), key=_group_sort_key))
     operation_counts = FeatureInferenceOperationCounts(
         **{
@@ -399,8 +545,16 @@ def infer_feature_memberships(
     return FeatureMembershipInferenceResult(
         groups=groups,
         known_identity_constraints=constraints,
-        sparse_decisions=tuple((*forward.decisions, *reverse.decisions)),
+        sparse_decisions=tuple(decisions),
         operation_counts=operation_counts,
+        algorithm=algorithm,
+        objective=objective,
+        termination=termination,
+        pair_coverage=(
+            "not_materialized;absence_means_not_evaluated"
+            if use_directional
+            else "bounded_window_edges;absence_means_not_evaluated"
+        ),
     )
 
 
@@ -627,9 +781,7 @@ def _directional_inference(
                         reason=reason,
                         cost=candidate.cost,
                         witness_owner_ids=candidate.witness_owner_ids,
-                        selected_witness_owner_id=(
-                            candidate.selected_witness_owner_id
-                        ),
+                        selected_witness_owner_id=(candidate.selected_witness_owner_id),
                         rt_basis=candidate.rt_basis,
                         rt_raw_delta_sec=candidate.rt_raw_delta_sec,
                         rt_drift_corrected_delta_sec=(
@@ -675,6 +827,587 @@ def _directional_inference(
         grouped[feature_key].append(owner_id)
     groups = tuple(sorted(tuple(sorted(owner_ids)) for owner_ids in grouped.values()))
     return _DirectionalResult(groups, tuple(decisions), frozenset(uncertain))
+
+
+def _window_inference(
+    owners: tuple[SampleLocalMS1Owner, ...],
+    *,
+    config: AlignmentConfig,
+    injection_order: Mapping[str, int],
+    rt_warp: BatchRtWarp | None,
+    counts: Counter[str],
+) -> tuple[tuple[FeatureMembershipGroup, ...], tuple[SparseFeatureDecision, ...]]:
+    """Find all RT bands in each mass neighbourhood in one finite pass.
+
+    RT and measured mass edge costs are compared globally. The union step keeps
+    one physical owner per sample in every band, regardless of input order.
+    A feature's six nearest injections provide its RT trend once it has enough
+    members; sparse bands rely on the batch warp with a wider RT allowance.
+    After local bands settle, separated dense bands can bridge on whole-band
+    evidence without treating missing injections as contrary identity evidence.
+    """
+    if not owners:
+        return (), ()
+    samples = {owner.sample_stem for owner in owners}
+    known_orders = {
+        sample: order for sample, order in injection_order.items() if sample in samples
+    }
+    next_order = max(known_orders.values(), default=0) + 1
+    orders = dict(known_orders)
+    for sample in sorted(samples - known_orders.keys()):
+        orders[sample] = next_order
+        next_order += 1
+    corrected_rt = {
+        owner.owner_id: (
+            rt_warp.corrected_rt_min(owner)
+            if rt_warp is not None
+            else owner.owner_apex_rt
+        )
+        for owner in owners
+    }
+    ordinary_by_id = {owner.owner_id: owner for owner in owners}
+    weak = {
+        owner.owner_id: reason
+        for owner in owners
+        if (reason := _owner_uncertainty_reason(owner, config))
+    }
+    eligible = tuple(owner for owner in owners if owner.owner_id not in weak)
+    by_chemistry: dict[tuple[str, str], list[SampleLocalMS1Owner]] = defaultdict(list)
+    for owner in eligible:
+        assessment = owner.cid_nl_composite_assessment
+        if assessment is not None and _compatible_composite_owners(owner, owner):
+            chemistry = (
+                "composition",
+                assessment.content.method_subject.method_subject_id,
+            )
+        else:
+            chemistry = (
+                owner.neutral_loss_tag,
+                "cid" if owner.primary_identity_event is not None else "ms1",
+            )
+        by_chemistry[chemistry].append(owner)
+
+    final_components: list[tuple[str, ...]] = [(owner_id,) for owner_id in sorted(weak)]
+    for chemistry in sorted(by_chemistry):
+        sorted_owners = sorted(
+            by_chemistry[chemistry],
+            key=lambda owner: (owner.precursor_mz, owner.owner_id),
+        )
+        windows: list[list[SampleLocalMS1Owner]] = []
+        for owner in sorted_owners:
+            # A fixed window start can cut a coherent band when an unrelated
+            # lower-mass owner happens to arrive first. Keep local mass
+            # neighbourhoods connected, then enforce tolerance per edge.
+            if not windows or owner.precursor_mz - windows[-1][
+                -1
+            ].precursor_mz > mz_tolerance_da(
+                windows[-1][-1].precursor_mz, config.max_ppm
+            ):
+                windows.append([])
+            windows[-1].append(owner)
+        for window in windows:
+            counts["index_queries"] += len(window)
+            counts["candidate_features_considered"] += len(window)
+            window_rts = sorted(corrected_rt[owner.owner_id] for owner in window)
+            sparse_radius_min = min(120.0, config.max_rt_sec) / 60.0
+            local_detection_count = {
+                owner.owner_id: bisect_right(
+                    window_rts, corrected_rt[owner.owner_id] + sparse_radius_min
+                )
+                - bisect_left(
+                    window_rts, corrected_rt[owner.owner_id] - sparse_radius_min
+                )
+                for owner in window
+            }
+            parents = {owner.owner_id: owner.owner_id for owner in window}
+            members = {owner.owner_id: [owner] for owner in window}
+            sample_sets = {owner.owner_id: {owner.sample_stem} for owner in window}
+
+            def root(owner_id: str) -> str:
+                while parents[owner_id] != owner_id:
+                    parents[owner_id] = parents[parents[owner_id]]
+                    owner_id = parents[owner_id]
+                return owner_id
+
+            arcs: list[tuple[float, str, str]] = []
+            by_order = sorted(
+                window, key=lambda owner: (orders[owner.sample_stem], owner.owner_id)
+            )
+            for left_index, left in enumerate(by_order):
+                for right in by_order[left_index + 1 :]:
+                    gap = orders[right.sample_stem] - orders[left.sample_stem]
+                    sparse_fallback = (
+                        gap > 16
+                        and max(
+                            local_detection_count[left.owner_id],
+                            local_detection_count[right.owner_id],
+                        )
+                        <= 10
+                    )
+                    # Dense distant pairs are compared as settled bands below.
+                    if gap > 16 and not sparse_fallback:
+                        break
+                    if left.sample_stem == right.sample_stem:
+                        continue
+                    if not within_ppm(
+                        max(left.precursor_mz, right.precursor_mz),
+                        min(left.precursor_mz, right.precursor_mz),
+                        config.max_ppm,
+                    ):
+                        continue
+                    left_event = left.primary_identity_event
+                    right_event = right.primary_identity_event
+                    rt_delta_sec = (
+                        abs(corrected_rt[left.owner_id] - corrected_rt[right.owner_id])
+                        * 60.0
+                    )
+                    rt_limit_sec = (
+                        max(120.0, config.preferred_rt_sec)
+                        if sparse_fallback
+                        else min(120.0, 45.0 + 4.0 * gap)
+                    )
+                    rt_limit_sec = min(rt_limit_sec, config.max_rt_sec)
+                    if rt_delta_sec > rt_limit_sec:
+                        continue
+                    counts["owner_edge_evaluations"] += 1
+                    precursor_median = (left.precursor_mz + right.precursor_mz) / 2.0
+                    precursor_fraction = (
+                        absolute_ppm_error(left.precursor_mz, precursor_median)
+                        / config.max_ppm
+                    )
+                    product_fraction = 0.0
+                    if left_event is not None and right_event is not None:
+                        product_median = (
+                            left_event.product_mz + right_event.product_mz
+                        ) / 2.0
+                        product_fraction = (
+                            absolute_ppm_error(left_event.product_mz, product_median)
+                            / config.product_mz_tolerance_ppm
+                        )
+                    cost = (
+                        (0.20 if sparse_fallback else 0.0)
+                        + 0.70
+                        * rt_delta_sec
+                        / (
+                            rt_limit_sec
+                            if sparse_fallback
+                            else config.preferred_rt_sec + 3.0 * gap
+                        )
+                        + 0.15 * min(precursor_fraction, 2.0)
+                        + 0.15 * min(product_fraction, 2.0)
+                    )
+                    arcs.append((cost, left.owner_id, right.owner_id))
+            counts["supported_candidate_arcs"] += len(arcs)
+            competing: dict[tuple[str, str], list[tuple[float, str]]] = defaultdict(
+                list
+            )
+            neighbors: dict[str, set[str]] = defaultdict(set)
+            for cost, left_id, right_id in arcs:
+                competing[(left_id, ordinary_by_id[right_id].sample_stem)].append(
+                    (cost, right_id)
+                )
+                competing[(right_id, ordinary_by_id[left_id].sample_stem)].append(
+                    (cost, left_id)
+                )
+                neighbors[left_id].add(right_id)
+                neighbors[right_id].add(left_id)
+            ambiguous_window: set[str] = set()
+            for (owner_id, _sample), options in competing.items():
+                ranked = sorted(options)
+                if len(ranked) < 2 or ranked[1][0] > ranked[0][0] + 0.05:
+                    continue
+                alternatives = tuple(
+                    candidate_id
+                    for cost, candidate_id in ranked
+                    if cost <= ranked[0][0] + 0.05
+                )
+                shared_neighbors = set.intersection(
+                    *(neighbors[candidate_id] for candidate_id in alternatives)
+                ) - {owner_id}
+                if (
+                    len({ordinary_by_id[item].sample_stem for item in shared_neighbors})
+                    >= 2
+                ):
+                    # A doublet in one sample competes for many other owners;
+                    # isolate its alternatives without discarding their band.
+                    ambiguous_window.update(alternatives)
+                else:
+                    ambiguous_window.add(owner_id)
+            for owner_id in ambiguous_window:
+                weak[owner_id] = "alternative_bands_have_near_equal_cost"
+            counts["ambiguous_assignments"] += len(ambiguous_window)
+            for _, left_id, right_id in sorted(arcs):
+                if left_id in ambiguous_window or right_id in ambiguous_window:
+                    continue
+                left_root, right_root = root(left_id), root(right_id)
+                if left_root == right_root:
+                    continue
+                if sample_sets[left_root] & sample_sets[right_root]:
+                    continue
+                left_members, right_members = members[left_root], members[right_root]
+                if not _trend_supports_union(
+                    left_members,
+                    right_members,
+                    orders=orders,
+                    corrected_rt=corrected_rt,
+                    max_rt_sec=config.max_rt_sec,
+                ):
+                    continue
+                if (len(left_members), left_root) < (len(right_members), right_root):
+                    left_root, right_root = right_root, left_root
+                parents[right_root] = left_root
+                members[left_root].extend(members.pop(right_root))
+                sample_sets[left_root].update(sample_sets.pop(right_root))
+            _assign_window_singletons(
+                members,
+                weak=weak,
+                orders=orders,
+                corrected_rt=corrected_rt,
+                config=config,
+                counts=counts,
+            )
+            if rt_warp is not None and len(known_orders) == len(samples):
+                _bridge_separated_window_bands(
+                    members,
+                    weak=weak,
+                    orders=orders,
+                    corrected_rt=corrected_rt,
+                    config=config,
+                    counts=counts,
+                )
+            final_components.extend(
+                tuple(sorted(owner.owner_id for owner in group))
+                for group in members.values()
+            )
+
+    groups = []
+    decisions = []
+    for owner_ids in sorted(final_components):
+        group_owners = tuple(ordinary_by_id[owner_id] for owner_id in owner_ids)
+        assigned = len(owner_ids) >= 2 and not any(
+            owner_id in weak for owner_id in owner_ids
+        )
+        groups.append(
+            FeatureMembershipGroup(
+                owner_ids=owner_ids,
+                disposition="assigned" if assigned else "undecided",
+                basis="window_level_rt_band"
+                if assigned
+                else "insufficient_cross_sample_evidence",
+                reason=(
+                    "whole_window_rt_trend_supports_one_band"
+                    if assigned
+                    else weak.get(owner_ids[0], "no_supported_cross_sample_membership")
+                ),
+            )
+        )
+        feature_key = f"window:{owner_ids[0]}"
+        for owner in group_owners:
+            witness = min(
+                (item for item in group_owners if item.owner_id != owner.owner_id),
+                key=lambda item: (
+                    abs(orders[item.sample_stem] - orders[owner.sample_stem]),
+                    item.owner_id,
+                ),
+                default=None,
+            )
+            trend = (
+                _nearest_injection_median(
+                    owner,
+                    group_owners,
+                    orders,
+                    exclude_owner_id=owner.owner_id,
+                    corrected_rt=corrected_rt,
+                )
+                if witness is not None
+                else None
+            )
+            corrected_delta = (
+                abs(corrected_rt[owner.owner_id] - trend) * 60.0
+                if trend is not None
+                else None
+            )
+            decisions.append(
+                SparseFeatureDecision(
+                    direction="window",
+                    sample_stem=owner.sample_stem,
+                    owner_id=owner.owner_id,
+                    feature_key=feature_key,
+                    state="assigned" if assigned else "evaluated_undecided",
+                    reason=(
+                        "window_level_rt_trend"
+                        if assigned
+                        else weak.get(
+                            owner.owner_id, "no_supported_cross_sample_membership"
+                        )
+                    ),
+                    witness_owner_ids=(witness.owner_id,)
+                    if witness is not None
+                    else (),
+                    selected_witness_owner_id=witness.owner_id
+                    if witness is not None
+                    else None,
+                    rt_basis="drift_corrected" if rt_warp is not None else "raw",
+                    rt_raw_delta_sec=(
+                        abs(owner.owner_apex_rt - witness.owner_apex_rt) * 60.0
+                        if witness is not None
+                        else None
+                    ),
+                    rt_drift_corrected_delta_sec=corrected_delta,
+                )
+            )
+    counts["samples_processed"] = len(samples)
+    counts["births"] = len(groups)
+    return tuple(groups), tuple(decisions)
+
+
+def _trend_supports_union(
+    left: Sequence[SampleLocalMS1Owner],
+    right: Sequence[SampleLocalMS1Owner],
+    *,
+    orders: Mapping[str, int],
+    corrected_rt: Mapping[str, float],
+    max_rt_sec: float,
+) -> bool:
+    combined = tuple((*left, *right))
+    if len(combined) < 10:
+        return True
+    for owner in combined:
+        expected = _nearest_injection_median(
+            owner,
+            combined,
+            orders,
+            exclude_owner_id=owner.owner_id,
+            corrected_rt=corrected_rt,
+        )
+        if expected is not None and abs(
+            corrected_rt[owner.owner_id] - expected
+        ) * 60.0 > min(_WINDOW_TREND_TOLERANCE_SEC, max_rt_sec):
+            return False
+    return True
+
+
+def _bridge_separated_window_bands(
+    members: dict[str, list[SampleLocalMS1Owner]],
+    *,
+    weak: Mapping[str, str],
+    orders: Mapping[str, int],
+    corrected_rt: Mapping[str, float],
+    config: AlignmentConfig,
+    counts: Counter[str],
+) -> None:
+    """Compare established bands across unobserved injections as whole bands."""
+    while True:
+        bands = {
+            key: tuple(group)
+            for key, group in members.items()
+            if len(group) >= 2 and not any(owner.owner_id in weak for owner in group)
+        }
+        if len(bands) < 2:
+            return
+        samples = {
+            key: {owner.sample_stem for owner in group} for key, group in bands.items()
+        }
+        spans = {
+            key: (
+                min(orders[owner.sample_stem] for owner in group),
+                max(orders[owner.sample_stem] for owner in group),
+            )
+            for key, group in bands.items()
+        }
+        rt_centers = {
+            key: statistics.median(corrected_rt[owner.owner_id] for owner in group)
+            for key, group in bands.items()
+        }
+        mz_centers = {
+            key: statistics.median(owner.precursor_mz for owner in group)
+            for key, group in bands.items()
+        }
+        product_centers = {
+            key: statistics.median(
+                owner.primary_identity_event.product_mz
+                for owner in group
+                if owner.primary_identity_event is not None
+            )
+            for key, group in bands.items()
+            if any(owner.primary_identity_event is not None for owner in group)
+        }
+        offers: dict[str, list[tuple[float, str]]] = defaultdict(list)
+        keys = sorted(bands)
+        for index, left in enumerate(keys):
+            for right in keys[index + 1 :]:
+                left_start, left_end = spans[left]
+                right_start, right_end = spans[right]
+                gap = max(right_start - left_end, left_start - right_end)
+                if gap <= 16 or samples[left] & samples[right]:
+                    continue
+                counts["feature_summary_comparisons"] += 1
+                left_mz, right_mz = mz_centers[left], mz_centers[right]
+                if not within_ppm(
+                    max(left_mz, right_mz), min(left_mz, right_mz), config.max_ppm
+                ):
+                    continue
+                rt_delta_sec = abs(rt_centers[left] - rt_centers[right]) * 60.0
+                if rt_delta_sec > config.preferred_rt_sec or not _trend_supports_union(
+                    bands[left],
+                    bands[right],
+                    orders=orders,
+                    corrected_rt=corrected_rt,
+                    max_rt_sec=config.max_rt_sec,
+                ):
+                    continue
+                precursor_fraction = (
+                    absolute_ppm_error(left_mz, right_mz) / config.max_ppm
+                )
+                product_fraction = (
+                    absolute_ppm_error(product_centers[left], product_centers[right])
+                    / config.product_mz_tolerance_ppm
+                    if left in product_centers and right in product_centers
+                    else 0.0
+                )
+                cost = (
+                    0.70 * rt_delta_sec / config.preferred_rt_sec
+                    + 0.15 * min(precursor_fraction, 2.0)
+                    + 0.15 * min(product_fraction, 2.0)
+                )
+                offers[left].append((cost, right))
+                offers[right].append((cost, left))
+                counts["supported_candidate_arcs"] += 1
+
+        best: dict[str, tuple[float, str]] = {}
+        for key, options in offers.items():
+            ranked = sorted(options)
+            if len(ranked) == 1 or ranked[1][0] > ranked[0][0] + 0.05:
+                best[key] = ranked[0]
+        mutual = sorted(
+            (cost, left, right)
+            for left, (cost, right) in best.items()
+            if left < right and best.get(right, (None, None))[1] == left
+        )
+        if not mutual:
+            return
+        _, left, right = mutual[0]
+        members[left].extend(members.pop(right))
+
+
+def _assign_window_singletons(
+    members: dict[str, list[SampleLocalMS1Owner]],
+    *,
+    weak: dict[str, str],
+    orders: Mapping[str, int],
+    corrected_rt: Mapping[str, float],
+    config: AlignmentConfig,
+    counts: Counter[str],
+) -> None:
+    """Resolve remaining owner-to-band competition against fixed band medians."""
+    bands = {key: tuple(group) for key, group in members.items() if len(group) >= 2}
+    if not bands:
+        return
+    by_sample: dict[str, list[SampleLocalMS1Owner]] = defaultdict(list)
+    candidates_by_owner: dict[str, tuple[_Candidate, ...]] = {}
+    for group in members.values():
+        if len(group) != 1 or group[0].owner_id in weak:
+            continue
+        owner = group[0]
+        row_candidates = []
+        for key, band in bands.items():
+            if owner.sample_stem in {item.sample_stem for item in band}:
+                continue
+            if not any(
+                within_ppm(
+                    max(owner.precursor_mz, item.precursor_mz),
+                    min(owner.precursor_mz, item.precursor_mz),
+                    config.max_ppm,
+                )
+                for item in band
+            ):
+                continue
+            event = owner.primary_identity_event
+            products = tuple(
+                item.primary_identity_event.product_mz
+                for item in band
+                if item.primary_identity_event is not None
+            )
+            if len(band) >= 10:
+                expected = _nearest_injection_median(
+                    owner, band, orders, corrected_rt=corrected_rt
+                )
+                tolerance_sec = min(
+                    config.max_rt_sec,
+                    max(_WINDOW_TREND_TOLERANCE_SEC, config.preferred_rt_sec),
+                )
+            else:
+                expected = statistics.median(
+                    corrected_rt[item.owner_id] for item in band
+                )
+                nearest_gap = min(
+                    abs(orders[owner.sample_stem] - orders[item.sample_stem])
+                    for item in band
+                )
+                tolerance_sec = min(
+                    config.max_rt_sec,
+                    120.0,
+                    max(config.preferred_rt_sec, 45.0 + 4.0 * nearest_gap),
+                )
+            if expected is None:
+                continue
+            rt_delta_sec = abs(corrected_rt[owner.owner_id] - expected) * 60.0
+            if rt_delta_sec > tolerance_sec:
+                continue
+            precursor_median = statistics.median(item.precursor_mz for item in band)
+            precursor_fraction = (
+                absolute_ppm_error(owner.precursor_mz, precursor_median)
+                / config.max_ppm
+            )
+            product_fraction = (
+                absolute_ppm_error(event.product_mz, statistics.median(products))
+                / config.product_mz_tolerance_ppm
+                if event is not None and products
+                else 0.0
+            )
+            cost = min(
+                0.999999,
+                0.70 * rt_delta_sec / tolerance_sec
+                + 0.15 * min(precursor_fraction, 2.0)
+                + 0.15 * min(product_fraction, 2.0),
+            )
+            row_candidates.append(
+                _Candidate(
+                    feature_key=key,
+                    cost=cost,
+                    state="supported",
+                    reason="window_band_median_and_feature_trend",
+                    witness_owner_ids=tuple(item.owner_id for item in band),
+                    rt_basis="drift_corrected",
+                    rt_raw_delta_sec=None,
+                    rt_drift_corrected_delta_sec=rt_delta_sec,
+                )
+            )
+        row_candidates.sort(
+            key=lambda candidate: (cast(float, candidate.cost), candidate.feature_key)
+        )
+        if (
+            len(row_candidates) >= 2
+            and cast(float, row_candidates[1].cost)
+            <= cast(float, row_candidates[0].cost) + 0.05
+        ):
+            weak[owner.owner_id] = "alternative_bands_have_near_equal_cost"
+            continue
+        if row_candidates:
+            by_sample[owner.sample_stem].append(owner)
+            candidates_by_owner[owner.owner_id] = tuple(row_candidates)
+    for sample in sorted(by_sample, key=lambda stem: (orders[stem], stem)):
+        assignments, ambiguous = _solve_sample_assignment(
+            by_sample[sample], candidates_by_owner, counts
+        )
+        for owner in by_sample[sample]:
+            selected = assignments.get(owner.owner_id)
+            if selected is None or owner.owner_id in ambiguous:
+                if owner.owner_id in ambiguous:
+                    weak[owner.owner_id] = "alternative_bands_have_equal_cost"
+                continue
+            members[selected].append(owner)
+            members.pop(owner.owner_id)
 
 
 def _feature_rt_may_support(
@@ -846,7 +1579,7 @@ def _envelope_fraction(
     upper = max(current_max, value)
     if lower <= 0.0:
         return math.inf
-    return (upper - lower) / lower * 1_000_000.0 / tolerance_ppm
+    return absolute_ppm_error(upper, lower) / tolerance_ppm
 
 
 def _edge_cost(
@@ -1082,10 +1815,12 @@ def _group_sort_key(group: FeatureMembershipGroup) -> tuple[object, ...]:
 
 
 __all__ = [
+    "BatchRtWarp",
     "FeatureInferenceOperationCounts",
     "FeatureMembershipGroup",
     "FeatureMembershipInferenceResult",
     "KnownIdentityMembershipConstraint",
     "SparseFeatureDecision",
+    "estimate_batch_rt_warp",
     "infer_feature_memberships",
 ]

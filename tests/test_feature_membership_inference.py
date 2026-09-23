@@ -12,13 +12,22 @@ from xic_extractor.alignment.feature_membership_inference import (
     FeatureMembershipInferenceResult,
     _Candidate,
     _solve_sample_assignment,
-    infer_feature_memberships,
+)
+from xic_extractor.alignment.feature_membership_inference import (
+    infer_feature_memberships as _infer_feature_memberships,
 )
 from xic_extractor.alignment.ownership_models import (
     IdentityEvent,
     SampleLocalMS1Owner,
 )
 from xic_extractor.peak_detection.hypotheses import IntegrationResult
+
+
+def infer_feature_memberships(
+    *args: Any, **kwargs: Any
+) -> FeatureMembershipInferenceResult:
+    """Exercise the retained directional bootstrap used only for warp anchors."""
+    return _infer_feature_memberships(*args, bootstrap=True, **kwargs)
 
 
 @dataclass(frozen=True, slots=True)
@@ -435,7 +444,8 @@ def test_assigned_sparse_decisions_record_the_witness_and_rt_basis_used() -> Non
     )
     owner_ids = {owner.owner_id for owner in owners}
     assigned = [
-        decision for decision in corrected.sparse_decisions
+        decision
+        for decision in corrected.sparse_decisions
         if decision.state == "assigned"
     ]
     assert assigned
@@ -461,11 +471,17 @@ def test_assigned_sparse_decisions_record_the_witness_and_rt_basis_used() -> Non
     fallback = infer_feature_memberships(
         (
             _owner(
-                "s0", "raw-fallback", apex_rt=10.0, evidence_score=45,
+                "s0",
+                "raw-fallback",
+                apex_rt=10.0,
+                evidence_score=45,
                 seed_event_count=1,
             ),
             _owner(
-                "s1", "raw-fallback", apex_rt=10.1, evidence_score=45,
+                "s1",
+                "raw-fallback",
+                apex_rt=10.1,
+                evidence_score=45,
                 seed_event_count=1,
             ),
         ),
@@ -476,14 +492,14 @@ def test_assigned_sparse_decisions_record_the_witness_and_rt_basis_used() -> Non
         ),
     )
     raw_assigned = [
-        decision for decision in fallback.sparse_decisions
+        decision
+        for decision in fallback.sparse_decisions
         if decision.state == "assigned"
     ]
     assert raw_assigned
     assert all(decision.rt_basis == "raw" for decision in raw_assigned)
     assert all(
-        decision.selected_witness_owner_id is not None
-        for decision in raw_assigned
+        decision.selected_witness_owner_id is not None for decision in raw_assigned
     )
 
 

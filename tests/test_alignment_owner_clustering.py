@@ -70,9 +70,7 @@ def _owner(
     )
     physical_id = typed_identity_digest(
         "xic.peak-observation-content:",
-        canonical_identity_basis_bytes(
-            {"sample_stem": sample_stem, "suffix": suffix}
-        ),
+        canonical_identity_basis_bytes({"sample_stem": sample_stem, "suffix": suffix}),
     )
     member_basis = canonical_identity_basis_bytes(
         {
@@ -147,6 +145,7 @@ def test_public_inference_groups_confirmed_true_drift() -> None:
         injection_order={
             owner.sample_stem: index for index, owner in enumerate(owners)
         },
+        bootstrap=True,
     )
 
     assert len(groups) == 1
@@ -191,9 +190,7 @@ def test_equal_bridge_competition_is_undecided_instead_of_false_merge() -> None:
         injection_order={"sample-a": 1, "sample-b": 2},
     )
 
-    assert _member_sets(groups) == {
-        frozenset((owner.owner_id,)) for owner in owners
-    }
+    assert _member_sets(groups) == {frozenset((owner.owner_id,)) for owner in owners}
     assert all(group.review_only for group in groups)
     assert all(
         group.inference_basis is not None
@@ -202,7 +199,7 @@ def test_equal_bridge_competition_is_undecided_instead_of_false_merge() -> None:
     )
 
 
-def test_hard_chemistry_bridge_does_not_merge_incompatible_endpoints() -> None:
+def test_mass_noise_bridge_is_scored_inside_candidate_neighborhood() -> None:
     first = _owner("sample-a", "first", precursor_mz=500.000)
     bridge = _owner("sample-b", "bridge", precursor_mz=500.004)
     last = _owner("sample-c", "last", precursor_mz=500.008)
@@ -212,9 +209,12 @@ def test_hard_chemistry_bridge_does_not_merge_incompatible_endpoints() -> None:
         injection_order={"sample-a": 1, "sample-b": 2, "sample-c": 3},
     )
 
-    endpoint_ids = {first.owner_id, last.owner_id}
-    assert not any(endpoint_ids.issubset(group.owner_ids) for group in groups)
-    assert {owner_id for group in groups for owner_id in group.owner_ids} == {
+    # #437 D1 removes the accumulated mass envelope as a rejection: each
+    # neighbouring pair is within the lookup window even though the full
+    # band's precursor span is 16 ppm against a 10 ppm candidate radius.
+    assert len(groups) == 1
+    assert not groups[0].review_only
+    assert set(groups[0].owner_ids) == {
         first.owner_id,
         bridge.owner_id,
         last.owner_id,
@@ -258,6 +258,7 @@ def test_drift_prior_can_support_a_pair_outside_raw_rt_preference() -> None:
             deltas={"sample-a": 0.0, "sample-b": 1.5},
             orders={"sample-a": 1, "sample-b": 2},
         ),
+        bootstrap=True,
     )
 
     assert len(groups) == 1
@@ -376,6 +377,7 @@ def test_legacy_pair_sink_stays_empty_and_absence_is_not_exclusion() -> None:
         ),
         config=AlignmentConfig(),
         edge_evidence_sink=edge_evidence,
+        bootstrap=True,
     )
 
     assert edge_evidence == []

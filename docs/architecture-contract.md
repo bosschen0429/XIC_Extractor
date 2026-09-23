@@ -113,10 +113,12 @@ lifecycle. Provider-specific evidence handling must not create a parallel
 downstream decision core.
 
 Alignment's grouping lifecycle is linear: candidate and exact-owner evidence
-enters constrained grouping; workflows that use ModeTrack may apply one
-initial complete-partition refinement; then `grouping_workflow` returns one
+enters constrained grouping. Untarget uses the directional bootstrap only to
+estimate a batch RT warp, then `grouping_workflow` closes its ordinary window
+bands; bootstrap membership has no downstream authority. Target workflows that
+use ModeTrack may apply one initial complete-partition refinement. The final
 immutable `CrossSampleGroupingResult(processing_owners,
-partition_transition, drift_lookup)`. The same object reaches bounded Backfill,
+partition_transition, drift_lookup)` reaches bounded Backfill,
 ObservationRepair, cell decisions, and finalization. Repair does not reopen
 grouping, refit ModeTrack, replace the partition, or mint a second grouping
 owner. `CrossSamplePartitionTransition` owns only the mathematical before/after

@@ -1180,6 +1180,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         bounded_owner, "materialize_untargeted_cid_nl_partition", retain_batch
     )
     from xic_extractor.alignment import cell_observations as cell_owner
+    from xic_extractor.alignment import grouping_bootstrap as bootstrap_owner
     from xic_extractor.alignment import grouping_workflow as grouping_workflow_owner
     from xic_extractor.alignment import workflow as workflow_owner
     from xic_extractor.alignment.mode_track import producer as producer_owner
@@ -1326,7 +1327,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
 
     hypothesis_universe_compositions = []
     compose_hypothesis_universe = (
-        producer_owner.compose_peak_hypotheses_from_assessment_universe
+        bootstrap_owner.compose_peak_hypotheses_from_assessment_universe
     )
 
     def count_hypothesis_universe(owner_name):
@@ -1345,7 +1346,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
 
     for owner_name, owner in (
         ("production", production),
-        ("bootstrap", producer_owner),
+        ("bootstrap", bootstrap_owner),
         ("cell", cell_owner),
     ):
         monkeypatch.setattr(
@@ -1375,6 +1376,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     )
 
     retained_contexts = []
+    bootstrap_contexts = []
     retained_initial_edges = []
     consumed_contexts = []
     retained_captures = []
@@ -1382,15 +1384,21 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     retained_candidate_batches = []
     retained_cell_batches = []
     build_initial_context = production.build_initial_cid_nl_cross_sample_groups
+    regroup_initial_context = production.regroup_cid_nl_cross_sample_groups
     compose_predecessor_cells = production.compose_cid_nl_predecessor_cells
     finalize_scientific = workflow_owner.finalize_scientific_alignment
 
     def retain_initial_context(**kwargs):
         assignment_scope, context, retained_candidates = build_initial_context(**kwargs)
-        retained_contexts.append(context)
+        bootstrap_contexts.append(context)
         retained_captures.extend(kwargs["captures"])
         retained_candidate_batches.append(retained_candidates)
         return assignment_scope, context, retained_candidates
+
+    def retain_regrouped_context(**kwargs):
+        assignment_scope, context = regroup_initial_context(**kwargs)
+        retained_contexts.append(context)
+        return assignment_scope, context
 
     def retain_predecessor_cells(**kwargs):
         cells = compose_predecessor_cells(**kwargs)
@@ -1411,6 +1419,11 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         production,
         "build_initial_cid_nl_cross_sample_groups",
         retain_initial_context,
+    )
+    monkeypatch.setattr(
+        production,
+        "regroup_cid_nl_cross_sample_groups",
+        retain_regrouped_context,
     )
     monkeypatch.setattr(
         production,
@@ -1959,11 +1972,14 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
             == "SUPPORT"
             for result in runtime_results[0].sample_results
         )
-        assert any(
-            source.content.outside_group is not None
-            for cell in scientific.cell_observations
-            for source in cell.predecessor_cells
-        ) != revisited
+        assert (
+            any(
+                source.content.outside_group is not None
+                for cell in scientific.cell_observations
+                for source in cell.predecessor_cells
+            )
+            != revisited
+        )
         close_and_verify_persisted_curves()
         return
 
@@ -4934,7 +4950,6 @@ def test_production_composition_closes_recovered_observation_without_candidate(
         assert float(identity_row["RT"]) == pytest.approx(row.family_center_rt)
         assert identity_row["center_rt_basis"] == row.center_rt_basis
         assert identity_row["center_weight_basis"] == row.center_weight_basis
-
 
 
 @pytest.mark.parametrize("exclude_all", (False, True))
