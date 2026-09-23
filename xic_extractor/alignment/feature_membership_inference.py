@@ -1066,14 +1066,15 @@ def _window_inference(
                 config=config,
                 counts=counts,
             )
-            _bridge_separated_window_bands(
-                members,
-                weak=weak,
-                orders=orders,
-                corrected_rt=corrected_rt,
-                config=config,
-                counts=counts,
-            )
+            if rt_warp is not None and len(known_orders) == len(samples):
+                _bridge_separated_window_bands(
+                    members,
+                    weak=weak,
+                    orders=orders,
+                    corrected_rt=corrected_rt,
+                    config=config,
+                    counts=counts,
+                )
             final_components.extend(
                 tuple(sorted(owner.owner_id for owner in group))
                 for group in members.values()
