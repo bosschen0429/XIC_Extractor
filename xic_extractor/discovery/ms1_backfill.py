@@ -1230,14 +1230,40 @@ def _merge_tag_evidence_json(
                 if not isinstance(evidence, dict):
                     payload.setdefault(tag_key, evidence)
                     continue
+                evidence = _with_scan_receipts(
+                    cast(dict[str, Any], evidence), candidate
+                )
                 if isinstance(payload.get(tag_key), dict):
                     payload[tag_key] = _merge_tag_evidence_entry(
                         cast(dict[str, Any], payload[tag_key]),
-                        cast(dict[str, Any], evidence),
+                        evidence,
                     )
                 else:
-                    payload[tag_key] = dict(evidence)
+                    payload[tag_key] = evidence
     return json.dumps(payload, sort_keys=True, separators=(",", ":"))
+
+
+def _with_scan_receipts(
+    evidence: dict[str, Any],
+    candidate: DiscoveryCandidate,
+) -> dict[str, Any]:
+    """Keep the precursor and product each scan was strictly read against.
+
+    A merged peak can absorb scans whose product lies beyond the product
+    tolerance of the representative; strict replay checks each scan against
+    the receipt of the candidate that originally claimed it.
+    """
+
+    result = dict(evidence)
+    if "scan_receipts" not in result and "product_mz" in result:
+        result["scan_receipts"] = {
+            str(scan_id): {
+                "precursor_mz": candidate.precursor_mz,
+                "product_mz": result["product_mz"],
+            }
+            for scan_id in _int_values(result.get("scan_ids"))
+        }
+    return result
 
 
 def _merge_tag_evidence_entry(
@@ -1247,6 +1273,12 @@ def _merge_tag_evidence_entry(
     merged = dict(first)
     for key, value in second.items():
         merged.setdefault(key, value)
+    scan_receipts = {
+        **cast(dict[str, Any], second.get("scan_receipts") or {}),
+        **cast(dict[str, Any], first.get("scan_receipts") or {}),
+    }
+    if scan_receipts:
+        merged["scan_receipts"] = scan_receipts
 
     scan_ids = sorted(
         set(_int_values(first.get("scan_ids")))

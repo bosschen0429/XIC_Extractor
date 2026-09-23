@@ -664,6 +664,60 @@ def test_merged_inferred_member_outside_final_mass_window_is_not_support(
     }
 
 
+@pytest.mark.parametrize(
+    ("scan_rts", "shifts", "supported_scan_count"),
+    [
+        ((7.98, 8.0, 8.02, 8.04), (0.0, 0.0, 0.008, 0.008), 4),
+        ((7.98, 8.0, 8.05, 8.07), (0.0, 0.0, 0.0085, 0.0112), 3),
+    ],
+    ids=["product-beyond-tolerance", "precursor-beyond-final-window"],
+)
+def test_shared_apex_merge_keeps_each_absorbed_scan_receipt(
+    tmp_path: Path,
+    scan_rts: tuple[float, ...],
+    shifts: tuple[float, ...],
+    supported_scan_count: int,
+) -> None:
+    from xic_extractor.discovery.strict_seed_receipts import (
+        read_complete_discovery_scan_seeds,
+    )
+
+    source_raw = _FakeRaw(scan_rts)
+    source_raw.intensity = 1000.0 * np.exp(
+        -0.5 * ((source_raw.rt - sum(scan_rts) / len(scan_rts)) / 0.06) ** 2
+    )
+    # The later scans read the same MS1 peak with a precursor and product
+    # shifted by scatter; their product lies beyond 20 ppm of the earlier one.
+    source_raw.scans = tuple(
+        replace(
+            scan,
+            precursor_mz=scan.precursor_mz + shift,
+            masses=scan.masses + shift,
+        )
+        for scan, shift in zip(source_raw.scans, shifts, strict=True)
+    )
+    settings = replace(_settings(), neutral_loss_profile=None, seed_rt_gap_min=0.03)
+    (candidate,) = _current_candidates(
+        source_raw,
+        raw_file=tmp_path / "S1.RAW",
+        settings=settings,
+        peak_config=_peak_config(tmp_path),
+    )
+    assert len(candidate.seed_scan_ids) == 4
+
+    seeds = read_complete_discovery_scan_seeds(
+        source_raw,
+        candidates=(candidate,),
+        settings=settings,
+    )
+
+    # An absorbed scan outside the final precursor window still reconstructs
+    # against its own receipt but cannot support this candidate's mass.
+    assert [scan.scan_number for scan, _ in seeds] == list(
+        candidate.seed_scan_ids[:supported_scan_count]
+    )
+
+
 @pytest.mark.parametrize("variant", ["missing", "duplicate", "parse_error"])
 def test_declared_strict_scan_subset_rejects_non_exact_events(variant: str) -> None:
     from types import SimpleNamespace

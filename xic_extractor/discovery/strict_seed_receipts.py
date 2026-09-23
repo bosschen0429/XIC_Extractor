@@ -163,7 +163,7 @@ def _read_exact_seed(
     scan_seed_memo: _ScanSeedMemo | None = None,
 ) -> tuple[DiscoverySeed, ...]:
     representative = scan.scan_number == candidate.best_ms2_scan_id
-    tag_product_receipts = _scan_tag_product_receipts(
+    tag_product_receipts, precursor_receipt = _scan_receipts(
         candidate,
         scan_number=scan.scan_number,
     )
@@ -225,6 +225,27 @@ def _read_exact_seed(
             # member can fall outside the final precursor window. Its declared
             # scan still reconstructs, but it cannot support this mass question.
             return ()
+        if (
+            not representative
+            and precursor_receipt is not None
+            and any(
+                seed.neutral_loss_tag in tag_product_receipts
+                and _within_ppm(
+                    seed.product_mz,
+                    tag_product_receipts[seed.neutral_loss_tag],
+                    settings.product_mz_tolerance_ppm,
+                )
+                and _within_ppm(
+                    seed.precursor_mz,
+                    precursor_receipt,
+                    settings.precursor_mz_tolerance_ppm,
+                )
+                for seed in scan_seeds
+            )
+        ):
+            # A shared-apex merge absorbed this scan with its own receipt; it
+            # reconstructs there but lies outside the final precursor window.
+            return ()
         if representative:
             raise StrictSeedReceiptError(
                 f"{candidate.candidate_id}: exact canonical Discovery seed "
@@ -281,11 +302,16 @@ def _read_exact_seed(
     )
 
 
-def _scan_tag_product_receipts(
+def _scan_receipts(
     candidate: DiscoveryCandidate,
     *,
     scan_number: int,
-) -> dict[str, float]:
+) -> tuple[dict[str, float], float | None]:
+    """Return one scan's per-tag product receipts and absorbed precursor receipt.
+
+    A scan absorbed by a shared-apex merge keeps the receipt of the candidate
+    that first claimed it; any other scan uses the candidate's own product.
+    """
     try:
         payload = json.loads(candidate.tag_evidence_json)
     except (json.JSONDecodeError, TypeError) as exc:
@@ -298,6 +324,7 @@ def _scan_tag_product_receipts(
         )
 
     receipts: dict[str, float] = {}
+    precursor_receipt: float | None = None
     matched_tags = set(candidate.matched_tag_names)
     for raw_tag_name, raw_evidence in payload.items():
         tag_name = str(raw_tag_name)
@@ -311,6 +338,21 @@ def _scan_tag_product_receipts(
         }:
             continue
         raw_product_mz = raw_evidence.get("product_mz")
+        scan_receipt = (raw_evidence.get("scan_receipts") or {}).get(str(scan_number))
+        if isinstance(scan_receipt, dict):
+            raw_product_mz = scan_receipt.get("product_mz")
+            raw_precursor_mz = scan_receipt.get("precursor_mz")
+            if (
+                not isinstance(raw_precursor_mz, (int, float))
+                or isinstance(raw_precursor_mz, bool)
+                or not math.isfinite(float(raw_precursor_mz))
+                or float(raw_precursor_mz) <= 0.0
+            ):
+                raise StrictSeedReceiptError(
+                    f"{candidate.candidate_id}: tag {tag_name!r} lacks a valid "
+                    f"precursor receipt for strict scan {scan_number}"
+                )
+            precursor_receipt = float(raw_precursor_mz)
         if (
             not isinstance(raw_product_mz, (int, float))
             or isinstance(raw_product_mz, bool)
@@ -327,7 +369,7 @@ def _scan_tag_product_receipts(
             f"{candidate.candidate_id}: strict scan {scan_number} lacks owning "
             "per-tag provenance"
         )
-    return receipts
+    return receipts, precursor_receipt
 
 
 _within_ppm = within_ppm
