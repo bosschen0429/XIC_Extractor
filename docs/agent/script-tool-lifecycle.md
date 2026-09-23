@@ -72,6 +72,13 @@ RAW-reading diagnostics require an explicit acquisition owner, call-cost model,
 cache/locality boundary, provenance contract, and method-appropriate oracle.
 Similar CLI flags are not evidence that two RAW paths are interchangeable.
 
+XIC Inspector is the human-facing chromatogram viewer. A new review need adds
+Inspector rendering over existing evidence, or a producer that writes curves,
+peak bounds, and quality flags for Inspector to read offline; it does not add a
+Matplotlib or other static-image review script under `tools/diagnostics/`.
+Inspector does not read RAW; RAW acquisition stays with the producing
+diagnostic.
+
 ## Retention And Retirement
 
 A missing import or `rg` hit is not sufficient retirement evidence because an
