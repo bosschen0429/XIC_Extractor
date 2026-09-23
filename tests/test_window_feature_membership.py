@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -13,6 +14,9 @@ from xic_extractor.alignment.feature_membership_inference import (
     infer_feature_memberships,
 )
 from xic_extractor.alignment.ownership_models import IdentityEvent, SampleLocalMS1Owner
+from xic_extractor.alignment.untargeted_cid_nl_golden_path import (
+    CID_NL_ALIGNMENT_CONFIG,
+)
 
 _FIXTURES = Path(__file__).parent / "fixtures"
 _DATA = json.loads((_FIXTURES / "window_feature_regression_cases.json").read_text())
@@ -135,6 +139,69 @@ def test_measured_warp_has_the_short_method_profile() -> None:
         assert abs(warp.offset_min(sample, 27.0) * 60.0) < 8.0
     for sample in ("Breast_Cancer_Tissue_pooled_QC1", "BenignfatBC0979_DNA"):
         assert warp.offset_min(sample, 7.0) * 60.0 > -20.0
+
+
+def test_nearby_mass_outlier_cannot_cut_a_clean_band() -> None:
+    owners, orders = _owners("tier1_06")
+    assert owners[0].primary_identity_event is not None
+    outlier_event = replace(
+        owners[0].primary_identity_event,
+        candidate_id="mass-window-outlier",
+        sample_stem="mass-window-outlier",
+        raw_file="mass-window-outlier.raw",
+        precursor_mz=266.097693,
+        product_mz=150.050293,
+    )
+    outlier = replace(
+        owners[0],
+        owner_id="mass-window-outlier",
+        sample_stem="mass-window-outlier",
+        raw_file="mass-window-outlier.raw",
+        precursor_mz=266.097693,
+        owner_apex_rt=30.0,
+        primary_identity_event=outlier_event,
+    )
+    result = infer_feature_memberships(
+        (*owners, outlier),
+        config=CID_NL_ALIGNMENT_CONFIG,
+        injection_order={**orders, "mass-window-outlier": 0},
+        drift_lookup=None,
+        rt_warp=_warp(),
+    )
+    assert any(
+        group.disposition == "assigned"
+        and set(group.owner_ids) == {owner.owner_id for owner in owners}
+        for group in result.groups
+    )
+
+
+def test_local_trend_recovers_full85_326_mz_owner_under_warp_uncertainty() -> None:
+    owners, orders = _owners("tier1_03")
+    shifted_sample = "BenignfatBC1025_DNA"
+    warp = _warp()
+    shifted = BatchRtWarp(
+        tuple(
+            (
+                sample,
+                tuple(
+                    (rt, offset + (0.1 if sample == shifted_sample else 0.0))
+                    for rt, offset in knots
+                ),
+            )
+            for sample, knots in warp.knots_by_sample
+        ),
+        warp.anchor_group_count,
+    )
+    result = infer_feature_memberships(
+        owners,
+        config=CID_NL_ALIGNMENT_CONFIG,
+        injection_order=orders,
+        drift_lookup=None,
+        rt_warp=shifted,
+    )
+    assert len(result.groups) == 1
+    assert result.groups[0].disposition == "assigned"
+    assert len(result.groups[0].owner_ids) == 63
 
 
 def test_equal_band_competition_marks_only_the_bridge_undecided() -> None:

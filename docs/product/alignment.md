@@ -327,14 +327,16 @@ unresolved and rejected groups remain AuditTrail facts.
   from the median of six nearby injections are summarized at RT knots. This
   warp covers elution times outside the ISTD span; ISTD groups are local anchors
   rather than a flat extrapolation rule.
-- Every ordinary owner is then reconsidered in its compatible mass window.
+- Every ordinary owner is then reconsidered in its connected mass
+  neighbourhood. Candidate edges still require pairwise precursor tolerance;
+  an unrelated lower-mass owner cannot place a boundary through a valid band.
   Local RT and measured mass edges are ordered by cost across the whole
   window, and a band never contains two owners from one sample. Dense bands
   compare against their own six-neighbour injection trend after the batch warp;
   sparse bands use a wider warp-only RT comparison. Precursor and measured
   product deviations contribute
   to cost against band medians during owner-to-band assignment. Observed loss
-  contributes neither a veto nor an independent score. Mass windows bound
+  contributes neither a veto nor an independent score. Mass neighbourhoods bound
   candidate lookup; accumulated min-max envelopes do not reject membership.
   Remaining competitors use a joint per-sample assignment with a private
   unmatched choice. Near-equal alternatives leave the affected owner undecided

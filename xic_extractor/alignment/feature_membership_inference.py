@@ -61,6 +61,7 @@ _AMBIGUITY_EPSILON = 1e-9
 _FEATURE_TREND_NEIGHBORS = 6
 _WARP_ANCHOR_MIN_MEMBERS = 20
 _WARP_GRID_RT_MIN = (7.0, 11.0, 15.0, 20.0, 27.0, 38.0)
+_WINDOW_TREND_TOLERANCE_SEC = 90.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -886,10 +887,13 @@ def _window_inference(
         )
         windows: list[list[SampleLocalMS1Owner]] = []
         for owner in sorted_owners:
+            # A fixed window start can cut a coherent band when an unrelated
+            # lower-mass owner happens to arrive first. Keep local mass
+            # neighbourhoods connected, then enforce tolerance per edge.
             if (
                 not windows
-                or owner.precursor_mz - windows[-1][0].precursor_mz
-                > windows[-1][0].precursor_mz * config.max_ppm / 1_000_000.0
+                or owner.precursor_mz - windows[-1][-1].precursor_mz
+                > windows[-1][-1].precursor_mz * config.max_ppm / 1_000_000.0
             ):
                 windows.append([])
             windows[-1].append(owner)
@@ -917,6 +921,13 @@ def _window_inference(
                     if gap > 16 and not sparse_fallback:
                         break
                     if left.sample_stem == right.sample_stem:
+                        continue
+                    if (
+                        right.precursor_mz - left.precursor_mz
+                        > min(left.precursor_mz, right.precursor_mz)
+                        * config.max_ppm
+                        / 1_000_000.0
+                    ):
                         continue
                     left_event = left.primary_identity_event
                     right_event = right.primary_identity_event
@@ -1120,7 +1131,8 @@ def _trend_supports_union(
         )
         if (
             expected is not None
-            and abs(corrected_rt[owner.owner_id] - expected) * 60.0 > 75.0
+            and abs(corrected_rt[owner.owner_id] - expected) * 60.0
+            > _WINDOW_TREND_TOLERANCE_SEC
         ):
             return False
     return True
@@ -1149,6 +1161,14 @@ def _assign_window_singletons(
         for key, band in bands.items():
             if owner.sample_stem in {item.sample_stem for item in band}:
                 continue
+            if not any(
+                abs(owner.precursor_mz - item.precursor_mz)
+                <= min(owner.precursor_mz, item.precursor_mz)
+                * config.max_ppm
+                / 1_000_000.0
+                for item in band
+            ):
+                continue
             event = owner.primary_identity_event
             products = tuple(
                 item.primary_identity_event.product_mz
@@ -1171,7 +1191,9 @@ def _assign_window_singletons(
                 expected = _nearest_injection_median(
                     owner, band, orders, corrected_rt=corrected_rt
                 )
-                tolerance_sec = max(75.0, config.preferred_rt_sec)
+                tolerance_sec = max(
+                    _WINDOW_TREND_TOLERANCE_SEC, config.preferred_rt_sec
+                )
             else:
                 expected = statistics.median(
                     corrected_rt[item.owner_id] for item in band
