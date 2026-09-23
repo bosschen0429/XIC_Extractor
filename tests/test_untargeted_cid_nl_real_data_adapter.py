@@ -227,9 +227,9 @@ def test_changed_physical_query_evaluates_once_and_preserves_support(
             "SUPPORT" if fresh_available else "REJECT"
         )
         assert len(assessment.individual_support_refs) == (2 if fresh_available else 0)
-    assert len(assessment.candidate_peaks) == (
-        (2 if shifted_mass else 1) if fresh_available else 0
-    )
+    # Both candidates select the same MS1 peak, shifted traces included, so the
+    # universe holds that peak once.
+    assert len(assessment.candidate_peaks) == (1 if fresh_available else 0)
     assert result.acquisition is not None
     assert len(result.acquisition.traces) == (2 if shifted_mass else 1)
     states = []
@@ -324,12 +324,13 @@ def test_changed_physical_query_evaluates_once_and_preserves_support(
         if expected.state == "unavailable":
             assert capture.selected_hypothesis is None
             continue
-        observed = next(
+        integration = physical_peak_observation_integration(expected)
+        # A candidate that selected an already retained peak supports it.
+        (observed,) = (
             item
             for item in assessment.candidate_peaks
-            if item.content.mz == candidate.precursor_mz
+            if item.content.integration.rt_apex_min == integration.rt_apex_min
         )
-        integration = physical_peak_observation_integration(expected)
         assert capture.selected_hypothesis.integration == integration
         assert (
             observed.content.integration.area_baseline_corrected

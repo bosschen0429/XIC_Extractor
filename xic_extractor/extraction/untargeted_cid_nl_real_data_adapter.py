@@ -89,6 +89,7 @@ from xic_extractor.peak_detection.observations import (
     PeakObservationRef,
     RetainedCaptureEvidence,
     mint_peak_observation_ref,
+    same_selected_peak,
 )
 from xic_extractor.peak_detection.physical_peak_models import PhysicalPeakEvaluation
 from xic_extractor.peak_detection.search_scope import (
@@ -1456,7 +1457,14 @@ def _reacquire_peak_observations(
             evidence_sink.append(replace(retained, observation_ref=observation))
     if search_scope.method_constraints.signal_processing_profile is not None:
         observations = list(dict.fromkeys(observations))
-    return acquisition, tuple(observations), tuple(captures)
+    # Several candidates can select the same physical peak; all their MS2
+    # events then support that one peak instead of competing with a copy.
+    unique: list[PeakObservationRef] = []
+    for observation in observations:
+        if not any(same_selected_peak(observation, kept) for kept in unique):
+            unique.append(observation)
+    return acquisition, tuple(unique), tuple(captures)
+
 
 
 def method_label(candidate: DiscoveryCandidate) -> str:
