@@ -1969,7 +1969,16 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
             assert matrix_row["S1"] == ""
             assert matrix_row["S2"]
             assert matrix_row["S3"]
-            assert matrix_row["S4"] == ""
+            # The fixture XIC ignores m/z, so S4's group-window trace holds a
+            # complete peak without CID-NL: an MS1-only Backfill value.
+            (s4_cell,) = (
+                cell
+                for cell in child.scientific_core.cell_observations
+                if cell.group_hypothesis_id == joint_group.group_hypothesis_id
+                and cell.canonical_sample_identity_id == sample_id_by_stem["S4"]
+            )
+            assert s4_cell.evidence_states == ("ms1_only_backfill_observation",)
+            assert matrix_row["S4"]
         else:
             assert len(writer.matrix.cells) == len(sample_stems)
         close_and_verify_persisted_curves()
@@ -2238,7 +2247,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
             assert recovery_evaluations[-1].facts is None
             assert recovery_evaluations[-1].integration is None
             assert recovery_evaluations[-1].question.selection_policy_version == (
-                "unique_baseline_peak_in_context"
+                "group_rt_resolved_peak_in_context"
             )
 
         source_raws[paths[0]].intensity = original_intensity * 0.0

@@ -29,6 +29,7 @@ from xic_extractor.peak_detection.physical_peak_evaluation import (
 )
 from xic_extractor.peak_detection.physical_peak_models import (
     DISCOVERY_PHYSICAL_PEAK_POINT_POLICY,
+    PHYSICAL_PEAK_GROUP_WINDOW_POLICY,
     PHYSICAL_PEAK_POINT_POLICY,
     PHYSICAL_PEAK_WINDOW_POLICY,
 )
@@ -537,6 +538,9 @@ def test_visible_peak_tail_selects_complete_baseline_bounded_peak(
 
 
 @pytest.mark.parametrize(
+    "policy", [PHYSICAL_PEAK_WINDOW_POLICY, PHYSICAL_PEAK_GROUP_WINDOW_POLICY]
+)
+@pytest.mark.parametrize(
     "centers,query_rt,expected",
     [
         ((2.0,), 1.0, "available"),
@@ -546,7 +550,7 @@ def test_visible_peak_tail_selects_complete_baseline_bounded_peak(
     ],
 )
 def test_group_window_selects_only_one_complete_peak(
-    centers, query_rt, expected
+    centers, query_rt, expected, policy
 ) -> None:
     rt = np.linspace(0.0, 4.0, 161)
     raw = np.full_like(rt, 100.0)
@@ -558,7 +562,7 @@ def test_group_window_selects_only_one_complete_peak(
         query_rt_min=query_rt,
         request_context_rt_start_min=0.0,
         request_context_rt_end_min=4.0,
-        selection_policy_version=PHYSICAL_PEAK_WINDOW_POLICY,
+        selection_policy_version=policy,
     )
     assert result.state == ("unavailable" if expected == "ambiguous" else expected)
     if expected == "ambiguous":
@@ -570,6 +574,91 @@ def test_group_window_selects_only_one_complete_peak(
     else:
         assert result.facts is None
         assert result.integration is None
+
+
+def _hmdc_tail_noise_trace() -> tuple[np.ndarray, np.ndarray]:
+    # Observed d3-5-hmdC MS1 XIC (TumorBC2264, intensity / 100) in a group
+    # window. Sparse tail noise keeps the smoothed signal above zero after the
+    # peak, so an exact zero return never closes the right boundary.
+    rt = np.asarray(
+        [
+            7.98338, 8.02491, 8.06641, 8.10795, 8.14947, 8.19102, 8.23267,
+            8.27419, 8.31562, 8.35692, 8.39808, 8.43923, 8.4806, 8.52364,
+            8.56349, 8.60512, 8.64677, 8.6881, 8.7269, 8.76833, 8.80978,
+            8.8511, 8.89234, 8.93348, 8.97471, 9.01593, 9.0571, 9.09821,
+            9.13928, 9.17004, 9.20908, 9.23472, 9.26752, 9.29309, 9.32694,
+            9.35754, 9.38397, 9.4186, 9.44303, 9.48092, 9.50344, 9.53729,
+            9.56287, 9.59561, 9.62834, 9.65282, 9.67837, 9.70378, 9.72409,
+            9.74741, 9.76464, 9.79315, 9.81452, 9.84204, 9.86449, 9.89827,
+            9.92376, 9.9503, 9.96861,
+        ]
+    )
+    raw = np.asarray(
+        [
+            301.7, 0.0, 189.3, 174.5, 0.0, 105.4, 0.0, 0.0, 0.0, 0.0, 0.0,
+            0.0, 0.0, 0.0, 0.0, 1547.0, 0.0, 0.0, 0.0, 0.0, 0.0, 164.1, 713.0,
+            2952.1, 6608.3, 10918.3, 11403.2, 7619.3, 3442.4, 1510.6, 417.8,
+            159.1, 0.0, 98.9, 0.0, 0.0, 0.0, 0.0, 0.0, 153.1, 115.9, 0.0, 0.0,
+            0.0, 131.6, 0.0, 0.0, 221.3, 0.0, 0.0, 0.0, 98.8, 0.0, 0.0, 159.5,
+            176.4, 0.0, 113.7, 0.0,
+        ]
+    )
+    return rt, raw
+
+
+@pytest.mark.parametrize(
+    "policy,expected_reason",
+    [
+        (PHYSICAL_PEAK_WINDOW_POLICY, "incomplete_peak_context"),
+        (PHYSICAL_PEAK_GROUP_WINDOW_POLICY, ""),
+    ],
+)
+def test_group_window_closes_a_peak_whose_tail_noise_never_reaches_zero(
+    policy: str, expected_reason: str
+) -> None:
+    rt, raw = _hmdc_tail_noise_trace()
+    result = evaluate_physical_peak(
+        prepare_physical_signal(rt, raw),
+        selection_subject_id="hmdc-tail-noise",
+        query_rt_min=8.96988,
+        request_context_rt_start_min=7.96988,
+        request_context_rt_end_min=9.96988,
+        selection_policy_version=policy,
+    )
+    assert result.reason == expected_reason
+    if not expected_reason:
+        assert result.state == "available" and result.facts is not None
+        assert result.facts.apex_rt_min == pytest.approx(9.04, abs=0.05)
+        assert rt[0] < result.facts.left_rt_min < 8.96988
+        assert result.facts.right_rt_min < rt[-1]
+
+
+@pytest.mark.parametrize(
+    "policy,expected_reason",
+    [
+        (PHYSICAL_PEAK_WINDOW_POLICY, "ambiguous_segment_candidates"),
+        (PHYSICAL_PEAK_GROUP_WINDOW_POLICY, ""),
+    ],
+)
+def test_group_window_prefers_the_one_peak_containing_the_group_rt(
+    policy: str, expected_reason: str
+) -> None:
+    rt = np.linspace(0.0, 4.0, 161)
+    raw = 10000.0 * np.exp(-0.5 * ((rt - 2.0) / 0.12) ** 2) + 700.0 * np.exp(
+        -0.5 * ((rt - 1.0) / 0.12) ** 2
+    )
+    result = evaluate_physical_peak(
+        prepare_physical_signal(rt, raw),
+        selection_subject_id="minor-neighbour",
+        query_rt_min=2.0,
+        request_context_rt_start_min=0.0,
+        request_context_rt_end_min=4.0,
+        selection_policy_version=policy,
+    )
+    assert result.reason == expected_reason
+    if not expected_reason:
+        assert result.facts is not None
+        assert result.facts.apex_rt_min == pytest.approx(2.0)
 
 
 @pytest.mark.parametrize("terminal", ["available", "unavailable", "failed"])

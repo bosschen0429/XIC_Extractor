@@ -14,15 +14,20 @@ PhysicalPeakState = Literal["available", "unavailable", "failed"]
 PHYSICAL_SEGMENT_UNIVERSE_SCHEMA = "physical_segment_universe"
 PHYSICAL_PEAK_POINT_POLICY = "baseline_peak_contains_query"
 PHYSICAL_PEAK_WINDOW_POLICY = "unique_baseline_peak_in_context"
+# The group RT resolves several peaks in the context, and a tail that settles
+# near the baseline closes the peak before the acquired edge.
+PHYSICAL_PEAK_GROUP_WINDOW_POLICY = "group_rt_resolved_peak_in_context"
 DISCOVERY_PHYSICAL_PEAK_POINT_POLICY = "background_qualified_peak_contains_query"
 _PHYSICAL_PEAK_SELECTION_POLICIES = frozenset(
     {
         PHYSICAL_PEAK_POINT_POLICY,
         PHYSICAL_PEAK_WINDOW_POLICY,
+        PHYSICAL_PEAK_GROUP_WINDOW_POLICY,
         DISCOVERY_PHYSICAL_PEAK_POINT_POLICY,
     }
 )
 _PHYSICAL_EDGE_RETURN_FRACTION = 0.001
+_PHYSICAL_GROUP_WINDOW_EDGE_RETURN_FRACTION = 0.02
 _PHYSICAL_LOCAL_CONTRAST_MIN_MAD = 2.0
 PhysicalPeakOperation = Literal[
     "trace_evaluation",

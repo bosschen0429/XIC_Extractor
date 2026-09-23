@@ -48,7 +48,7 @@ from xic_extractor.peak_detection.physical_peak_evaluation import (
     prepare_physical_signal,
 )
 from xic_extractor.peak_detection.physical_peak_models import (
-    PHYSICAL_PEAK_WINDOW_POLICY,
+    PHYSICAL_PEAK_GROUP_WINDOW_POLICY,
     PhysicalPeakEvaluation,
     PreparedSignalResult,
 )
@@ -570,7 +570,7 @@ def capture_physical_backfill_observation(
         query_rt_min=group_center_rt,
         request_context_rt_start_min=trace.rt_min,
         request_context_rt_end_min=trace.rt_max,
-        selection_policy_version=PHYSICAL_PEAK_WINDOW_POLICY,
+        selection_policy_version=PHYSICAL_PEAK_GROUP_WINDOW_POLICY,
     )
     if evaluation_sink is not None:
         evaluation_sink(evaluation)
