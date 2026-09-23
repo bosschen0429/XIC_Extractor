@@ -1451,10 +1451,8 @@ def prepare_untargeted_cid_nl_grouping(
         operation_counts = []
         assignment_scope, grouping_result = regroup_cid_nl_cross_sample_groups(
             processing_owners=batch.context.processing_owners,
-            captures=workset.captures,
             assignment_scope=workset.assignment_scope,
             grouping_result=workset.grouping_result,
-            retained_candidates=workset.retained_candidates,
             alignment_config=alignment_config,
             injection_order=injection_order,
             rt_warp=rt_warp,

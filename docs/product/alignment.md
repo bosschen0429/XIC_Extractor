@@ -344,8 +344,8 @@ unresolved and rejected groups remain AuditTrail facts.
 - The final ordinary decision is independent of input sample order. A singleton
   or unresolved competition remains review-only; an assigned band is not a
   chemical proof against an unresolved isomer. Repeated wrappers do not add
-  support. The older directional decision remains only for bootstrap and
-  composition cases whose cross-tag contract is outside this grouping change.
+  support. Directional grouping supplies bootstrap anchors and handles
+  composition cases under their separate cross-tag contract.
 - Initial membership is carried as compressed group member sets. Missing pair
   records mean `not_evaluated`, never `excluded`; an initial group does not
   manufacture positive pair evidence. Backfill and repair consume the closed

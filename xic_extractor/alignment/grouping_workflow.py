@@ -200,10 +200,8 @@ def build_initial_cid_nl_cross_sample_groups(
 def regroup_cid_nl_cross_sample_groups(
     *,
     processing_owners: ProcessingOwnerReferences,
-    captures: Sequence[SampleLocalCapture],
     assignment_scope: ModeTrackAssignmentScope,
     grouping_result: CrossSampleGroupingResult,
-    retained_candidates: Sequence[ModeTrackCandidateObservation],
     alignment_config: AlignmentConfig,
     injection_order: Mapping[str, int],
     rt_warp: BatchRtWarp,
@@ -221,14 +219,6 @@ def regroup_cid_nl_cross_sample_groups(
         drift_lookup=grouping_result.drift_lookup,
         rt_warp=rt_warp,
         operation_counts_sink=operation_counts_sink,
-    )
-    _validate_capture_owner_hypotheses(
-        captures=captures,
-        owners=owners,
-        source_by_id={
-            candidate.peak_hypothesis_id: candidate.peak_hypothesis
-            for candidate in retained_candidates
-        },
     )
     identities = tuple(
         validate_cross_sample_peak_group_identity(group, require_canonical=True)

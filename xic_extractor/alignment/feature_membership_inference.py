@@ -23,6 +23,12 @@ from xic_extractor.alignment.edge_scoring import (
     evaluate_owner_edge,
 )
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
+from xic_extractor.mass_accuracy import (
+    absolute_ppm_error,
+    mz_tolerance_da,
+    mz_window,
+    within_ppm,
+)
 
 FeatureMembershipDisposition = Literal[
     "assigned",
@@ -403,9 +409,9 @@ class _FeatureIndex:
         counts: Counter[str],
     ) -> set[str]:
         items = self._axes.get(key, ())
-        fraction = tolerance / 1_000_000.0
-        first = bisect_left(items, (value / (1.0 + fraction), ""))
-        last = bisect_right(items, (value * (1.0 + fraction), chr(0x10FFFF)))
+        lower, upper = mz_window(value, tolerance)
+        first = bisect_left(items, (lower, ""))
+        last = bisect_right(items, (upper, chr(0x10FFFF)))
         counts["index_entries_scanned"] += last - first
         return {feature_key for _, feature_key in items[first:last]}
 
@@ -467,8 +473,8 @@ def infer_feature_memberships(
 ) -> FeatureMembershipInferenceResult:
     """Infer ordinary whole-window bands, preserving exact known identities.
 
-    The old directional decision is available only as a bootstrap source for
-    batch warp anchors. Its groups never constrain the final ordinary bands.
+    Directional inference supplies bootstrap anchors for the batch warp and
+    handles composition groups. Its groups do not constrain ordinary bands.
     """
     unique_owners, duplicate_rows = _unique_owners(owners)
     owner_by_id = {owner.owner_id: owner for owner in unique_owners}
@@ -491,12 +497,12 @@ def infer_feature_memberships(
         owner for owner in unique_owners if owner.owner_id not in constrained_owner_ids
     )
 
-    # Composition can intentionally bridge scalar neutral-loss tags. Its
-    # membership contract is separate from this ticket's ordinary scalar band.
-    legacy = bootstrap or any(
+    # Composition can bridge scalar neutral-loss tags and retains its separate
+    # membership contract.
+    use_directional = bootstrap or any(
         owner.cid_nl_composite_assessment is not None for owner in ordinary
     )
-    if legacy:
+    if use_directional:
         forward = _directional_inference(
             ordinary,
             direction="forward",
@@ -546,7 +552,7 @@ def infer_feature_memberships(
         termination=termination,
         pair_coverage=(
             "not_materialized;absence_means_not_evaluated"
-            if legacy
+            if use_directional
             else "bounded_window_edges;absence_means_not_evaluated"
         ),
     )
@@ -890,16 +896,27 @@ def _window_inference(
             # A fixed window start can cut a coherent band when an unrelated
             # lower-mass owner happens to arrive first. Keep local mass
             # neighbourhoods connected, then enforce tolerance per edge.
-            if (
-                not windows
-                or owner.precursor_mz - windows[-1][-1].precursor_mz
-                > windows[-1][-1].precursor_mz * config.max_ppm / 1_000_000.0
+            if not windows or owner.precursor_mz - windows[-1][
+                -1
+            ].precursor_mz > mz_tolerance_da(
+                windows[-1][-1].precursor_mz, config.max_ppm
             ):
                 windows.append([])
             windows[-1].append(owner)
         for window in windows:
             counts["index_queries"] += len(window)
             counts["candidate_features_considered"] += len(window)
+            window_rts = sorted(corrected_rt[owner.owner_id] for owner in window)
+            sparse_radius_min = min(120.0, config.max_rt_sec) / 60.0
+            local_detection_count = {
+                owner.owner_id: bisect_right(
+                    window_rts, corrected_rt[owner.owner_id] + sparse_radius_min
+                )
+                - bisect_left(
+                    window_rts, corrected_rt[owner.owner_id] - sparse_radius_min
+                )
+                for owner in window
+            }
             parents = {owner.owner_id: owner.owner_id for owner in window}
             members = {owner.owner_id: [owner] for owner in window}
             sample_sets = {owner.owner_id: {owner.sample_stem} for owner in window}
@@ -917,31 +934,26 @@ def _window_inference(
             for left_index, left in enumerate(by_order):
                 for right in by_order[left_index + 1 :]:
                     gap = orders[right.sample_stem] - orders[left.sample_stem]
-                    sparse_fallback = gap > 16 and len(window) <= 10
+                    sparse_fallback = (
+                        gap > 16
+                        and max(
+                            local_detection_count[left.owner_id],
+                            local_detection_count[right.owner_id],
+                        )
+                        <= 10
+                    )
                     if gap > 16 and not sparse_fallback:
                         break
                     if left.sample_stem == right.sample_stem:
                         continue
-                    if (
-                        right.precursor_mz - left.precursor_mz
-                        > min(left.precursor_mz, right.precursor_mz)
-                        * config.max_ppm
-                        / 1_000_000.0
+                    if not within_ppm(
+                        max(left.precursor_mz, right.precursor_mz),
+                        min(left.precursor_mz, right.precursor_mz),
+                        config.max_ppm,
                     ):
                         continue
                     left_event = left.primary_identity_event
                     right_event = right.primary_identity_event
-                    if (
-                        left_event is not None
-                        and right_event is not None
-                        and abs(left_event.product_mz - right_event.product_mz)
-                        > min(left_event.product_mz, right_event.product_mz)
-                        * (2.0 * config.product_mz_tolerance_ppm)
-                        / 1_000_000.0
-                    ):
-                        # Candidate lookup is the outer search bound. Once a
-                        # band is reachable, product scatter affects cost only.
-                        continue
                     rt_delta_sec = (
                         abs(corrected_rt[left.owner_id] - corrected_rt[right.owner_id])
                         * 60.0
@@ -956,20 +968,18 @@ def _window_inference(
                         continue
                     counts["owner_edge_evaluations"] += 1
                     precursor_median = (left.precursor_mz + right.precursor_mz) / 2.0
-                    precursor_fraction = abs(left.precursor_mz - right.precursor_mz) / (
-                        precursor_median * config.max_ppm / 1_000_000.0
+                    precursor_fraction = (
+                        absolute_ppm_error(left.precursor_mz, precursor_median)
+                        / config.max_ppm
                     )
                     product_fraction = 0.0
                     if left_event is not None and right_event is not None:
                         product_median = (
                             left_event.product_mz + right_event.product_mz
                         ) / 2.0
-                        product_fraction = abs(
-                            left_event.product_mz - right_event.product_mz
-                        ) / (
-                            product_median
-                            * config.product_mz_tolerance_ppm
-                            / 1_000_000.0
+                        product_fraction = (
+                            absolute_ppm_error(left_event.product_mz, product_median)
+                            / config.product_mz_tolerance_ppm
                         )
                     cost = (
                         (0.20 if sparse_fallback else 0.0)
@@ -985,15 +995,41 @@ def _window_inference(
                     )
                     arcs.append((cost, left.owner_id, right.owner_id))
             counts["supported_candidate_arcs"] += len(arcs)
-            competing: dict[tuple[str, str], list[float]] = defaultdict(list)
+            competing: dict[tuple[str, str], list[tuple[float, str]]] = defaultdict(
+                list
+            )
+            neighbors: dict[str, set[str]] = defaultdict(set)
             for cost, left_id, right_id in arcs:
-                competing[(left_id, ordinary_by_id[right_id].sample_stem)].append(cost)
-                competing[(right_id, ordinary_by_id[left_id].sample_stem)].append(cost)
-            ambiguous_window = {
-                owner_id
-                for (owner_id, _sample), costs in competing.items()
-                if len(costs) >= 2 and sorted(costs)[1] <= min(costs) + 0.05
-            }
+                competing[(left_id, ordinary_by_id[right_id].sample_stem)].append(
+                    (cost, right_id)
+                )
+                competing[(right_id, ordinary_by_id[left_id].sample_stem)].append(
+                    (cost, left_id)
+                )
+                neighbors[left_id].add(right_id)
+                neighbors[right_id].add(left_id)
+            ambiguous_window: set[str] = set()
+            for (owner_id, _sample), options in competing.items():
+                ranked = sorted(options)
+                if len(ranked) < 2 or ranked[1][0] > ranked[0][0] + 0.05:
+                    continue
+                alternatives = tuple(
+                    candidate_id
+                    for cost, candidate_id in ranked
+                    if cost <= ranked[0][0] + 0.05
+                )
+                shared_neighbors = set.intersection(
+                    *(neighbors[candidate_id] for candidate_id in alternatives)
+                ) - {owner_id}
+                if (
+                    len({ordinary_by_id[item].sample_stem for item in shared_neighbors})
+                    >= 2
+                ):
+                    # A doublet in one sample competes for many other owners;
+                    # isolate its alternatives without discarding their band.
+                    ambiguous_window.update(alternatives)
+                else:
+                    ambiguous_window.add(owner_id)
             for owner_id in ambiguous_window:
                 weak[owner_id] = "alternative_bands_have_near_equal_cost"
             counts["ambiguous_assignments"] += len(ambiguous_window)
@@ -1132,11 +1168,9 @@ def _trend_supports_union(
             exclude_owner_id=owner.owner_id,
             corrected_rt=corrected_rt,
         )
-        if (
-            expected is not None
-            and abs(corrected_rt[owner.owner_id] - expected) * 60.0
-            > min(_WINDOW_TREND_TOLERANCE_SEC, max_rt_sec)
-        ):
+        if expected is not None and abs(
+            corrected_rt[owner.owner_id] - expected
+        ) * 60.0 > min(_WINDOW_TREND_TOLERANCE_SEC, max_rt_sec):
             return False
     return True
 
@@ -1165,10 +1199,11 @@ def _assign_window_singletons(
             if owner.sample_stem in {item.sample_stem for item in band}:
                 continue
             if not any(
-                abs(owner.precursor_mz - item.precursor_mz)
-                <= min(owner.precursor_mz, item.precursor_mz)
-                * config.max_ppm
-                / 1_000_000.0
+                within_ppm(
+                    max(owner.precursor_mz, item.precursor_mz),
+                    min(owner.precursor_mz, item.precursor_mz),
+                    config.max_ppm,
+                )
                 for item in band
             ):
                 continue
@@ -1178,18 +1213,6 @@ def _assign_window_singletons(
                 for item in band
                 if item.primary_identity_event is not None
             )
-            if (
-                event is not None
-                and products
-                and not any(
-                    abs(event.product_mz - product)
-                    <= min(event.product_mz, product)
-                    * (2.0 * config.product_mz_tolerance_ppm)
-                    / 1_000_000.0
-                    for product in products
-                )
-            ):
-                continue
             if len(band) >= 10:
                 expected = _nearest_injection_median(
                     owner, band, orders, corrected_rt=corrected_rt
@@ -1217,16 +1240,13 @@ def _assign_window_singletons(
             if rt_delta_sec > tolerance_sec:
                 continue
             precursor_median = statistics.median(item.precursor_mz for item in band)
-            precursor_fraction = abs(owner.precursor_mz - precursor_median) / (
-                precursor_median * config.max_ppm / 1_000_000.0
+            precursor_fraction = (
+                absolute_ppm_error(owner.precursor_mz, precursor_median)
+                / config.max_ppm
             )
             product_fraction = (
-                abs(event.product_mz - statistics.median(products))
-                / (
-                    statistics.median(products)
-                    * config.product_mz_tolerance_ppm
-                    / 1_000_000.0
-                )
+                absolute_ppm_error(event.product_mz, statistics.median(products))
+                / config.product_mz_tolerance_ppm
                 if event is not None and products
                 else 0.0
             )
@@ -1444,7 +1464,7 @@ def _envelope_fraction(
     upper = max(current_max, value)
     if lower <= 0.0:
         return math.inf
-    return (upper - lower) / lower * 1_000_000.0 / tolerance_ppm
+    return absolute_ppm_error(upper, lower) / tolerance_ppm
 
 
 def _edge_cost(
