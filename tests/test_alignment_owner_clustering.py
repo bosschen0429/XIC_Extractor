@@ -199,7 +199,7 @@ def test_equal_bridge_competition_is_undecided_instead_of_false_merge() -> None:
     )
 
 
-def test_hard_chemistry_bridge_does_not_merge_incompatible_endpoints() -> None:
+def test_mass_noise_bridge_is_scored_inside_candidate_neighborhood() -> None:
     first = _owner("sample-a", "first", precursor_mz=500.000)
     bridge = _owner("sample-b", "bridge", precursor_mz=500.004)
     last = _owner("sample-c", "last", precursor_mz=500.008)
@@ -209,9 +209,12 @@ def test_hard_chemistry_bridge_does_not_merge_incompatible_endpoints() -> None:
         injection_order={"sample-a": 1, "sample-b": 2, "sample-c": 3},
     )
 
-    endpoint_ids = {first.owner_id, last.owner_id}
-    assert not any(endpoint_ids.issubset(group.owner_ids) for group in groups)
-    assert {owner_id for group in groups for owner_id in group.owner_ids} == {
+    # #437 D1 removes the accumulated mass envelope as a rejection: each
+    # neighbouring pair is within the lookup window even though the full
+    # band's precursor span is 16 ppm against a 10 ppm candidate radius.
+    assert len(groups) == 1
+    assert not groups[0].review_only
+    assert set(groups[0].owner_ids) == {
         first.owner_id,
         bridge.owner_id,
         last.owner_id,

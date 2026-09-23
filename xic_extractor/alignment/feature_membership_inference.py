@@ -951,6 +951,7 @@ def _window_inference(
                         if sparse_fallback
                         else min(120.0, 45.0 + 4.0 * gap)
                     )
+                    rt_limit_sec = min(rt_limit_sec, config.max_rt_sec)
                     if rt_delta_sec > rt_limit_sec:
                         continue
                     counts["owner_edge_evaluations"] += 1
@@ -1010,6 +1011,7 @@ def _window_inference(
                     right_members,
                     orders=orders,
                     corrected_rt=corrected_rt,
+                    max_rt_sec=config.max_rt_sec,
                 ):
                     continue
                 if (len(left_members), left_root) < (len(right_members), right_root):
@@ -1117,6 +1119,7 @@ def _trend_supports_union(
     *,
     orders: Mapping[str, int],
     corrected_rt: Mapping[str, float],
+    max_rt_sec: float,
 ) -> bool:
     combined = tuple((*left, *right))
     if len(combined) < 10:
@@ -1132,7 +1135,7 @@ def _trend_supports_union(
         if (
             expected is not None
             and abs(corrected_rt[owner.owner_id] - expected) * 60.0
-            > _WINDOW_TREND_TOLERANCE_SEC
+            > min(_WINDOW_TREND_TOLERANCE_SEC, max_rt_sec)
         ):
             return False
     return True
@@ -1191,14 +1194,23 @@ def _assign_window_singletons(
                 expected = _nearest_injection_median(
                     owner, band, orders, corrected_rt=corrected_rt
                 )
-                tolerance_sec = max(
-                    _WINDOW_TREND_TOLERANCE_SEC, config.preferred_rt_sec
+                tolerance_sec = min(
+                    config.max_rt_sec,
+                    max(_WINDOW_TREND_TOLERANCE_SEC, config.preferred_rt_sec),
                 )
             else:
                 expected = statistics.median(
                     corrected_rt[item.owner_id] for item in band
                 )
-                tolerance_sec = max(120.0, config.preferred_rt_sec)
+                nearest_gap = min(
+                    abs(orders[owner.sample_stem] - orders[item.sample_stem])
+                    for item in band
+                )
+                tolerance_sec = min(
+                    config.max_rt_sec,
+                    120.0,
+                    max(config.preferred_rt_sec, 45.0 + 4.0 * nearest_gap),
+                )
             if expected is None:
                 continue
             rt_delta_sec = abs(corrected_rt[owner.owner_id] - expected) * 60.0

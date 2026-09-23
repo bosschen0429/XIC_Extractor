@@ -194,6 +194,7 @@ def bootstrap_mode_tracks_from_ms1_hypotheses(
         tuple(owners),
         config=alignment_config,
         drift_lookup=drift_lookup,
+        bootstrap=True,
     )
     assignment_scope = ModeTrackAssignmentScope(
         mz_interval=scope_mz_interval,

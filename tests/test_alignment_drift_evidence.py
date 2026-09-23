@@ -282,7 +282,7 @@ def _batch_reference(tmp_path: Path, observations):
      ((10, 24, 46), (8, 20, 40)),
      ((8, 20, 40), (8, 20, 40))],
 )
-def test_batch_reference_corrects_unknowns_without_merging_distinct_peaks(
+def test_batch_reference_corrects_bootstrap_unknowns_without_merging_distinct_peaks(
     tmp_path: Path, early_knots, late_knots,
 ) -> None:
     from tests.test_alignment_owner_clustering import _owner
@@ -310,7 +310,7 @@ def test_batch_reference_corrects_unknowns_without_merging_distinct_peaks(
     assert lookup.corrected_pair_delta_sec(competitor, late) > 60
     groups = construct_cross_sample_peak_group_hypotheses(
         owners, config=AlignmentConfig(), sample_universe=universe,
-        injection_order=order, drift_lookup=lookup,
+        injection_order=order, drift_lookup=lookup, bootstrap=True,
     )
     assert {frozenset(group.owner_ids) for group in groups} == {
         frozenset((early.owner_id, late.owner_id)),
