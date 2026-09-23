@@ -236,8 +236,11 @@ def test_changed_physical_query_evaluates_once_and_preserves_support(
     changed_questions = 0
     captures = {capture.candidate_id: capture for capture in result.captures}
     assert len(captures) == 2
-    assert evaluate.call_count == 2
-    assert prepare.call_count == 2
+    # A candidate that selected an already selected peak on its own shifted
+    # trace reads that peak once more on the first trace.
+    shared_reads = 1 if shifted_mass and fresh_available else 0
+    assert evaluate.call_count == 2 + shared_reads
+    assert prepare.call_count == 2 + shared_reads
     for record in legacy_records:
         candidate = next(
             item

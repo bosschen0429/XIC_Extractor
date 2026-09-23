@@ -104,7 +104,7 @@ from xic_extractor.peak_detection.search_scope import (
 from xic_extractor.peak_detection.signal_processing_profile import (
     SignalProcessingProfile,
 )
-from xic_extractor.peak_detection.traces import trace_from_xic_request
+from xic_extractor.peak_detection.traces import Trace, trace_from_xic_request
 from xic_extractor.processing_identity import (
     ProcessingOwnerReferences,
     canonical_current_attempt_artifact_closure,
@@ -1375,6 +1375,7 @@ def _reacquire_peak_observations(
         _observer.record_acquisition(acquisition)
     observations: list[PeakObservationRef] = []
     captures: list[capture_owner.SampleLocalCapture] = []
+    selected_traces: list[tuple[PeakObservationRef, Trace]] = []
     for candidate, acquired in zip(candidates, acquired_traces, strict=True):
         trace = trace_from_xic_request(
             sample_name=sample.metadata.sample_name,
@@ -1452,18 +1453,48 @@ def _reacquire_peak_observations(
             processing_owners=processing_owners,
             sample=sample,
         )
+        # Candidates a few ppm apart read their own traces, so one physical
+        # peak would enter the universe twice and its MS2 events would compete
+        # with a copy. Reading the peak on the trace that first selected it
+        # yields the identical observation, which counts once.
+        first_trace = next(
+            (
+                kept_trace
+                for kept, kept_trace in selected_traces
+                if (kept_trace.mz, kept_trace.rt_min, kept_trace.rt_max)
+                != (trace.mz, trace.rt_min, trace.rt_max)
+                and same_selected_peak(observation, kept)
+            ),
+            None,
+        )
+        if first_trace is not None and binding.physical_evaluation is not None:
+            shared = capture_owner.capture_reacquired_physical_peak(
+                scope=search_scope,
+                candidate_id=candidate.candidate_id,
+                trace=first_trace,
+            )
+            if shared.selected_hypothesis is not None:
+                shared_observation = capture_owner.mint_captured_peak_observation(
+                    shared,
+                    processing_owners=processing_owners,
+                    sample=sample,
+                )
+                if same_selected_peak(shared_observation, observation):
+                    captures[-1] = capture = shared
+                    observation = shared_observation
+                    trace = first_trace
+                    retained = replace(
+                        retained,
+                        trace=trace,
+                        physical_evaluation=capture.physical_evaluation,
+                    )
+        selected_traces.append((observation, trace))
         observations.append(observation)
         if evidence_sink is not None:
             evidence_sink.append(replace(retained, observation_ref=observation))
     if search_scope.method_constraints.signal_processing_profile is not None:
         observations = list(dict.fromkeys(observations))
-    # Several candidates can select the same physical peak; all their MS2
-    # events then support that one peak instead of competing with a copy.
-    unique: list[PeakObservationRef] = []
-    for observation in observations:
-        if not any(same_selected_peak(observation, kept) for kept in unique):
-            unique.append(observation)
-    return acquisition, tuple(unique), tuple(captures)
+    return acquisition, tuple(observations), tuple(captures)
 
 
 

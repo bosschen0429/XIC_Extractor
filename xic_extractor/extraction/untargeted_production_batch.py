@@ -124,10 +124,7 @@ from xic_extractor.peak_detection.cid_nl_method_subject import (
     mint_untargeted_cid_nl_method_subject_batch,
 )
 from xic_extractor.peak_detection.hypotheses import PeakHypothesis
-from xic_extractor.peak_detection.observations import (
-    RetainedCaptureEvidence,
-    same_selected_peak,
-)
+from xic_extractor.peak_detection.observations import RetainedCaptureEvidence
 from xic_extractor.peak_detection.search_scope import (
     SEARCH_SCOPE_SCHEMA_VERSION,
     CaptureCandidateBinding,
@@ -1385,21 +1382,6 @@ def prepare_untargeted_cid_nl_grouping(
                 for hypothesis in hypotheses
                 if observation in hypothesis.peak_observation_refs
             )
-            if not matches and any(
-                same_selected_peak(observation, kept)
-                for hypothesis in hypotheses
-                for kept in hypothesis.peak_observation_refs
-            ):
-                # Another candidate selected the same peak; its MS2 events
-                # support that one retained observation.
-                captures_list.append(captured)
-                capture_inputs_list.append(
-                    CaptureWorkflowArguments(
-                        candidate_id=binding.candidate_id,
-                        trace=trace,
-                    )
-                )
-                continue
             if len(matches) != 1:
                 raise RuntimeError(
                     "CID-NL runtime assessment lost its exact captured observation"
