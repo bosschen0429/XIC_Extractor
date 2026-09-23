@@ -278,7 +278,7 @@ class CidNlPartitionPipelineAdapter:
                 f"{partition.partition_key}:{sample.identity.sample_identity_id}:{phase}"
                 for partition in self._partitions
                 for sample in context.samples
-                for phase in ("initial", "recovery")
+                for phase in ("initial", "backfill")
             ),
             self._global_closure_work_unit_key,
         )
@@ -302,7 +302,7 @@ class CidNlPartitionPipelineAdapter:
             )
             for partition in self._partitions
             for sample in context.samples
-            for phase in ("initial", "recovery")
+            for phase in ("initial", "backfill")
         )
         self._owner_completeness_attestation = (
             f"{self._owners.request.processing_request_id}:cid-nl-partitioned"
@@ -496,7 +496,7 @@ class CidNlPartitionPipelineAdapter:
         artifacts: list[RuntimeArtifactRegistrationReceipt] = []
         settlements: list[WorkUnitSettlement] = []
         for sample in context.samples:
-            for phase in ("initial", "recovery"):
+            for phase in ("initial", "backfill"):
                 key = (
                     f"{partition.partition_key}:"
                     f"{sample.identity.sample_identity_id}:{phase}"

@@ -675,7 +675,7 @@ def _split_detected_and_rescued_cells(
         status = row.get("status")
         if status == "detected":
             seed_cells.append(row)
-        elif status == "rescued":
+        elif status == "backfilled":
             rescued_cells.append(row)
     return tuple(seed_cells), tuple(rescued_cells)
 

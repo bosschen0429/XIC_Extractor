@@ -943,7 +943,7 @@ def _trace(
     *,
     cell_apex_rt: float,
     trace_apex_rt: float,
-    status: str = "rescued",
+    status: str = "backfilled",
 ) -> dict[str, object]:
     return {
         "sample_stem": sample,
@@ -966,7 +966,7 @@ def _trace_with_profile(
     cell_apex_rt: float,
     intensities: list[float],
     trace_apex_rt: float,
-    status: str = "rescued",
+    status: str = "backfilled",
 ) -> dict[str, object]:
     center_index = len(intensities) // 2
     rt = [

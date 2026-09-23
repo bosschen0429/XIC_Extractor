@@ -62,7 +62,7 @@ RESERVED_SAMPLE_IDS = frozenset({"__scope_rule__", "__family_context__"})
 POSITIVE_MACHINE_LABELS = frozenset(
     {
         "detected",
-        "rescued",
+        "backfilled",
         "selected",
         "present",
         "provisional_discovery",

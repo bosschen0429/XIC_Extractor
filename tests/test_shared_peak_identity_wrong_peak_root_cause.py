@@ -130,7 +130,7 @@ def test_wrong_peak_uses_sample_id_alias_for_alignment_cell_context() -> None:
     )
 
     row = rows[0]
-    assert row["selected_cell_status"] == "rescued"
+    assert row["selected_cell_status"] == "backfilled"
     assert row["selected_apex_rt"] == "6.56"
     assert row["selected_peak_start_rt"] == "6.25"
 
@@ -245,7 +245,7 @@ def _support_row(
     return {
         "feature_family_id": family_id,
         "sample_id": sample_id,
-        "machine_current_label": "rescued",
+        "machine_current_label": "backfilled",
         "observed_machine_metrics": metrics,
         "missing_machine_evidence": "",
     }
@@ -263,7 +263,7 @@ def _cell_row(
     return {
         "feature_family_id": family_id,
         "sample_stem": sample_id,
-        "status": "rescued",
+        "status": "backfilled",
         "area": "100",
         "apex_rt": apex_rt,
         "height": "100",

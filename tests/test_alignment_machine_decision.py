@@ -51,7 +51,7 @@ def test_primary_review_row_projects_to_use() -> None:
     }
 
 
-def test_generic_review_rescue_is_unavailable_not_primary_use() -> None:
+def test_generic_review_backfill_is_unavailable_not_primary_use() -> None:
     review_row = _review_row(
         include="TRUE",
         decision="production_family",
@@ -61,7 +61,7 @@ def test_generic_review_rescue_is_unavailable_not_primary_use() -> None:
         detected=2,
         rescued=0,
     )
-    review_row["review_rescue_count"] = "1"
+    review_row["review_backfill_count"] = "1"
 
     vector = project_machine_decision(
         review_row,
@@ -379,9 +379,9 @@ def _review_row(
         "primary_evidence": primary_evidence,
         "neutral_loss_tag": "DNA_dR",
         "quantifiable_detected_count": str(detected),
-        "quantifiable_rescue_count": str(rescued),
-        "review_rescue_count": "0",
-        "accepted_rescue_count": str(rescued),
+        "quantifiable_backfill_count": str(rescued),
+        "review_backfill_count": "0",
+        "accepted_backfill_count": str(rescued),
         "duplicate_assigned_count": str(duplicate),
         "ambiguous_ms1_owner_count": str(ambiguous),
         "row_flags": flags,
@@ -396,7 +396,7 @@ def _cell_rows(
     ambiguous: int = 0,
     rescue_trace_quality: str = "clean",
     rescue_scan_support_score: str = "0.8",
-    rescue_reason: str = "rescued",
+    rescue_reason: str = "backfilled",
     rescue_region_review_reason: str = "",
     rescue_typed_backfill_support: bool = False,
     rescue_rt_delta_sec: str = "0.0",
@@ -410,7 +410,7 @@ def _cell_rows(
         rows.append(
             _cell_row(
                 index,
-                "rescued",
+                "backfilled",
                 "500",
                 trace_quality=rescue_trace_quality,
                 scan_support_score=rescue_scan_support_score,

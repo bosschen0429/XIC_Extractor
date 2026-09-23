@@ -49,7 +49,7 @@ def test_candidate_ms2_pattern_producer_joins_source_candidate_id_fail_closed(
             {
                 "feature_family_id": "FAM002",
                 "sample_stem": "S1",
-                "status": "rescued",
+                "status": "backfilled",
                 "apex_rt": "11.0",
                 "peak_start_rt": "10.9",
                 "peak_end_rt": "11.1",
@@ -639,7 +639,7 @@ def _write_source_missing_fixture(
             {
                 "feature_family_id": "FAM001",
                 "sample_stem": "S1",
-                "status": "rescued",
+                "status": "backfilled",
                 "apex_rt": "10.0",
                 "peak_start_rt": "9.9",
                 "peak_end_rt": "10.1",

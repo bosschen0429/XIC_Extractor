@@ -48,7 +48,7 @@ def test_default_sample_keeps_cross_sample_cases_among_many_singletons() -> None
     groups = []
     for name, observed, origin, count in (
         ("broad_direct", 8, "discovery_support", 60),
-        ("broad_recovery", 7, "recovery_support", 2),
+        ("broad_recovery", 7, "backfill_support", 2),
         ("partial_direct", 4, "discovery_support", 60),
         ("partial_reacquired", 3, "reacquired_support", 15),
         ("limited", 1, "discovery_support", 200),

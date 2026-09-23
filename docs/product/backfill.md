@@ -8,10 +8,10 @@ product value, create membership, or write an output.
 
 The product-stage name is **Backfill（回填）**, following Discovery and Alignment,
 and implementation identifiers use the same word. `ObservationRepair` names the
-typed decision it returns. Persisted keys and phase values written before this
-convergence still read `recovery` (for example `may_attempt_recovery`,
-`recovery_candidate_count`, the `"recovery"` acquisition phase); they change
-only with the public-surface vocabulary step in #431.
+typed decision it returns. Persisted keys, phase values and published columns
+use the same word (for example `may_attempt_backfill`,
+`backfill_candidate_count`, the `"backfill"` acquisition phase, the
+`backfilled` cell status and `accepted_backfill_count`).
 
 Backfill does not need to fill every cell. Existing direct support makes a
 conservative Backfill decision `not_applicable`; insufficient group support or
@@ -38,8 +38,17 @@ or HOLD results alone.
   becoming an Untargeted group member.
 - Across the independent membership and cell-decision owners, the legal final
   outcomes include member+value, member+null,
-  nonmember+Target-local-value, and nonmember+null. Backfill itself decides
-  neither axis.
+  nonmember+Target-local-value, nonmember+MS1-only-Backfill-value, and
+  nonmember+null. Backfill itself decides neither axis.
+- MS1-only Backfill value: when an Untargeted group has at least
+  `K = max(2, N//20)` direct supports among activation-eligible samples, a
+  missing eligible sample's group-bounded revisit that finds exactly one MS1
+  peak and no CID-NL evidence gets the final cell state
+  `ms1_only_backfill_observation`. `ProductionCellDecision` writes that peak's
+  area to the Matrix as `backfilled` / `accepted_backfill`; it never counts as a
+  detection or joins the group. No peak, several peaks, CID-NL evidence without
+  a unique relation, a competing lane, support below `K`, or an ineligible
+  (blank or excluded) sample leaves the cell without a value.
 - Backfill runs once after group membership is fixed. Repaired observations
   enter the cell-decision path without reopening grouping or ModeTrack.
 - Alignment and ModeTrack supply cross-sample context and trajectory evidence;

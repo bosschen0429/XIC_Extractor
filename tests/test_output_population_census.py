@@ -36,3 +36,33 @@ def test_reports_empty_single_row_and_constant_columns(tmp_path: Path) -> None:
         PopulationFinding("review.tsv", "constant_column", "tag", "", 3),
         PopulationFinding("review.tsv", "constant_column", "schema", "v1", 3),
     }
+
+
+def test_required_population_fails_only_on_default_or_missing_output(
+    tmp_path: Path,
+) -> None:
+    from tools.diagnostics.output_population_census import main
+
+    (tmp_path / "evidence.tsv").write_text("sample\tarea\n", encoding="utf-8")
+    (tmp_path / "review.tsv").write_text(
+        "family\thas_anchor\ttag\tanchored\n"
+        "F1\tFALSE\tcid_nl:116\tTRUE\n"
+        "F2\tFALSE\tcid_nl:116\tFALSE\n",
+        encoding="utf-8",
+    )
+    report = tmp_path / "report" / "census.tsv"
+
+    def run(*required: str) -> int:
+        arguments = [str(tmp_path), "--output-tsv", str(report)]
+        for item in required:
+            arguments += ["--require-populated", item]
+        return main(arguments)
+
+    # A constant real value and a varying column are populated.
+    assert run("review.tsv", "review.tsv:tag", "review.tsv:anchored") == 0
+    # A column that only ever holds its default, an empty artifact, a missing
+    # column or artifact each fail the promoted check.
+    assert run("review.tsv:has_anchor") == 1
+    assert run("evidence.tsv") == 1
+    assert run("review.tsv:product_mz") == 1
+    assert run("provenance.tsv") == 1

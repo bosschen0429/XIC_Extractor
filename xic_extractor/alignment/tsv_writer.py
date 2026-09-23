@@ -75,10 +75,10 @@ ALIGNMENT_REVIEW_COLUMNS = (
     "primary_evidence",
     "identity_reason",
     "quantifiable_detected_count",
-    "quantifiable_rescue_count",
+    "quantifiable_backfill_count",
     "accepted_cell_count",
-    "accepted_rescue_count",
-    "review_rescue_count",
+    "accepted_backfill_count",
+    "review_backfill_count",
     "include_in_primary_matrix",
     "row_flags",
     "artificial_adduct_role",
@@ -597,7 +597,7 @@ def _backfill_cell_evidence_rows(
                 cell.sample_stem,
                 cell.status,
                 cell_decision.production_status,
-                cell_decision.rescue_tier,
+                cell_decision.backfill_tier,
                 cell_decision.write_matrix_value,
                 row_decision.include_in_primary_matrix,
                 row_decision.identity_decision,
@@ -698,7 +698,7 @@ def write_alignment_owner_backfill_seed_audit_tsv(
     clusters_by_id = {row_id(cluster): cluster for cluster in matrix.clusters}
     rows: list[dict[str, object]] = []
     for cell in matrix.cells:
-        if cell.status != "rescued" or cell.backfill_seed_mz is None:
+        if cell.status != "backfilled" or cell.backfill_seed_mz is None:
             continue
         cluster = clusters_by_id[cell.cluster_id]
         rows.append(
@@ -830,12 +830,12 @@ def _review_rows(
             decisions.cell(cluster_id, cell.sample_stem).raw_status for cell in cells
         )
         detected_count = raw_status_counts["detected"]
-        rescued_count = raw_status_counts["rescued"]
+        backfilled_count = raw_status_counts["backfilled"]
         absent_count = raw_status_counts["absent"]
         unchecked_count = raw_status_counts["unchecked"]
         duplicate_assigned_count = raw_status_counts["duplicate_assigned"]
         ambiguous_owner_count = raw_status_counts["ambiguous_ms1_owner"]
-        present_count = detected_count + rescued_count
+        present_count = detected_count + backfilled_count
         rows.append(
             {
                 "feature_family_id": cluster_id,
@@ -864,10 +864,12 @@ def _review_rows(
                 "quantifiable_detected_count": (
                     row_decision.quantifiable_detected_count
                 ),
-                "quantifiable_rescue_count": (row_decision.quantifiable_rescue_count),
+                "quantifiable_backfill_count": (
+                    row_decision.quantifiable_backfill_count
+                ),
                 "accepted_cell_count": row_decision.accepted_cell_count,
-                "accepted_rescue_count": row_decision.accepted_rescue_count,
-                "review_rescue_count": row_decision.review_rescue_count,
+                "accepted_backfill_count": row_decision.accepted_backfill_count,
+                "review_backfill_count": row_decision.review_backfill_count,
                 "include_in_primary_matrix": row_decision.include_in_primary_matrix,
                 "row_flags": ";".join(row_decision.row_flags),
                 "artificial_adduct_role": _optional_attr(
@@ -891,14 +893,14 @@ def _review_rows(
                     cluster,
                     sample_count=sample_count,
                     detected_count=detected_count,
-                    rescued_count=rescued_count,
+                    backfilled_count=backfilled_count,
                     unchecked_count=unchecked_count,
                 ),
                 "reason": _reason(
                     cluster,
                     present_count,
                     sample_count,
-                    rescued_count,
+                    backfilled_count,
                     duplicate_assigned_count,
                     ambiguous_owner_count,
                 ),
@@ -917,15 +919,15 @@ def _backfill_evidence_family_ids(
         cluster_id = row_id(cluster)
         cells = grouped_cells.get(cluster_id, ())
         row_decision = decisions.row(cluster_id)
-        if any(cell.status == "rescued" for cell in cells):
+        if any(cell.status == "backfilled" for cell in cells):
             family_ids.add(cluster_id)
             continue
         if any(
             count > 0
             for count in (
-                row_decision.quantifiable_rescue_count,
-                row_decision.accepted_rescue_count,
-                row_decision.review_rescue_count,
+                row_decision.quantifiable_backfill_count,
+                row_decision.accepted_backfill_count,
+                row_decision.review_backfill_count,
             )
         ):
             family_ids.add(cluster_id)
@@ -952,16 +954,16 @@ def _cell_mentions_backfill(cell: AlignedCell) -> bool:
 
 
 def _include_backfill_evidence_cell(cell: AlignedCell, decision: Any) -> bool:
-    if cell.status in {"detected", "rescued"}:
+    if cell.status in {"detected", "backfilled"}:
         return True
     if getattr(decision, "write_matrix_value", False):
         return True
     production_status = str(getattr(decision, "production_status", ""))
     return production_status in {
         "detected",
-        "accepted_rescue",
-        "review_rescue",
-        "rejected_rescue",
+        "accepted_backfill",
+        "review_backfill",
+        "rejected_backfill",
     }
 
 
@@ -1014,7 +1016,7 @@ def _representative_samples(
         cell.sample_stem
         for cell in cells
         if decisions.cell(cell.cluster_id, cell.sample_stem).raw_status
-        in {"detected", "rescued"}
+        in {"detected", "backfilled"}
     ]
     return _cap_semicolon(samples)
 
@@ -1031,14 +1033,14 @@ def _warning(
     *,
     sample_count: int,
     detected_count: int,
-    rescued_count: int,
+    backfilled_count: int,
     unchecked_count: int,
 ) -> str:
     if not cluster.has_anchor:
         return "no_anchor"
     if sample_count > 0 and unchecked_count / sample_count > 0.5:
         return "high_unchecked"
-    if rescued_count > detected_count and (
+    if backfilled_count > detected_count and (
         detected_count == 0 or not _has_detected_owner_evidence(cluster)
     ):
         return "high_backfill_dependency"
@@ -1049,7 +1051,7 @@ def _reason(
     cluster: Any,
     present_count: int,
     sample_count: int,
-    rescued_count: int,
+    backfilled_count: int,
     duplicate_assigned_count: int,
     ambiguous_owner_count: int,
 ) -> str:
@@ -1057,7 +1059,7 @@ def _reason(
     parts = [
         prefix,
         f"{present_count}/{sample_count} present",
-        f"{rescued_count} MS1 backfilled",
+        f"{backfilled_count} MS1 backfilled",
     ]
     event_cluster_count = len(_event_cluster_ids(cluster))
     if event_cluster_count > 1:

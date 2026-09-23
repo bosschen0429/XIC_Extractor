@@ -72,7 +72,7 @@ def test_mode_track_facts_split_mixed_assessments_without_cell_observation_refs(
             item.minimum_support_k,
             item.direct_support_count_s,
             item.group_frozen,
-            item.may_attempt_recovery,
+            item.may_attempt_backfill,
         )
         for item in facts
     } == {(3, 2, 2, True, True)}
@@ -188,7 +188,7 @@ def test_mode_track_candidates_exclude_activation_ineligible_samples(
     )
     early, late = sorted(facts, key=lambda item: item.group.group_center_rt)
 
-    assert early.may_attempt_recovery is True
+    assert early.may_attempt_backfill is True
     assert early.exact_owner_candidate_assignments == ()
     assert {
         fixture.sample("s1").identity.sample_identity_id,
@@ -222,10 +222,10 @@ def test_mode_track_groups_activate_independently_of_exact_owner_candidates(
     early, late = sorted(facts, key=lambda item: item.group.group_center_rt)
 
     assert (early.direct_support_count_s, early.minimum_support_k) == (3, 2)
-    assert early.may_attempt_recovery is True
+    assert early.may_attempt_backfill is True
     assert early.exact_owner_candidate_assignments == ()
     assert (late.direct_support_count_s, late.minimum_support_k) == (1, 2)
-    assert late.may_attempt_recovery is False
+    assert late.may_attempt_backfill is False
     assert len(late.exact_owner_candidate_assignments) == 2
     assert late.reason_codes == ("direct_support_threshold_not_met",)
 
@@ -381,7 +381,7 @@ def test_mode_track_projection_enters_existing_checked_qmv_owner(
             assignment
         )
         for fact in facts
-        if fact.may_attempt_recovery
+        if fact.may_attempt_backfill
         for assignment in fact.exact_owner_candidate_assignments
     }
 
@@ -852,9 +852,9 @@ def test_closed_writer_fresh_owner_rejects_resealed_rejected_to_proposed_claim(
     rows = closed_writer_fixture._mode_track_scientific_projection_rows(facts)
     forged = [dict(row) for row in rows]
     below_threshold = next(
-        row for row in forged if row["may_attempt_recovery"] is False
+        row for row in forged if row["may_attempt_backfill"] is False
     )
-    below_threshold["may_attempt_recovery"] = True
+    below_threshold["may_attempt_backfill"] = True
     below_threshold["reason_codes"] = ["direct_support_threshold_met"]
 
     with pytest.raises(
@@ -930,9 +930,9 @@ def test_closed_writer_finalizer_rejects_resealed_backfill_eligibility_projectio
     row = next(
         item
         for item in proposal["mode_track_scientific_projection_rows"]
-        if item["may_attempt_recovery"] is False
+        if item["may_attempt_backfill"] is False
     )
-    row["may_attempt_recovery"] = True
+    row["may_attempt_backfill"] = True
     row["reason_codes"] = ["direct_support_threshold_met"]
     proposal_path.write_text(
         json.dumps(proposal, indent=2, sort_keys=True) + "\n",

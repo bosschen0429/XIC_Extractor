@@ -89,6 +89,7 @@ from xic_extractor.peak_detection.observations import (
     PeakObservationRef,
     RetainedCaptureEvidence,
     mint_peak_observation_ref,
+    same_selected_peak,
 )
 from xic_extractor.peak_detection.physical_peak_models import PhysicalPeakEvaluation
 from xic_extractor.peak_detection.search_scope import (
@@ -103,7 +104,7 @@ from xic_extractor.peak_detection.search_scope import (
 from xic_extractor.peak_detection.signal_processing_profile import (
     SignalProcessingProfile,
 )
-from xic_extractor.peak_detection.traces import trace_from_xic_request
+from xic_extractor.peak_detection.traces import Trace, trace_from_xic_request
 from xic_extractor.processing_identity import (
     ProcessingOwnerReferences,
     canonical_current_attempt_artifact_closure,
@@ -503,7 +504,7 @@ def acquire_untargeted_cid_nl_sample_trace_batch(
     )
 
 
-def acquire_untargeted_cid_nl_recovery_trace_batch(
+def acquire_untargeted_cid_nl_backfill_trace_batch(
     *,
     processing_owners: ProcessingOwnerReferences,
     sample: ResolvedCanonicalSampleIdentity,
@@ -579,7 +580,7 @@ def acquire_untargeted_cid_nl_recovery_trace_batch(
     )
     capability = mint_trace_acquisition_capability(
         source,
-        adapter_namespace=f"{_ADAPTER_NAMESPACE}.recovery_batch",
+        adapter_namespace=f"{_ADAPTER_NAMESPACE}.backfill_batch",
         coordinate_kind=TraceCoordinateKind.NATIVE_SCAN,
     )
     acquisition = _freeze_acquisition(
@@ -977,7 +978,7 @@ def backfill_untargeted_cid_nl_sample_subject(
             ) from exc
         capability = mint_trace_acquisition_capability(
             source,
-            adapter_namespace=f"{_ADAPTER_NAMESPACE}.recovery",
+            adapter_namespace=f"{_ADAPTER_NAMESPACE}.backfill",
             coordinate_kind=TraceCoordinateKind.NATIVE_SCAN,
         )
         acquisition = _freeze_acquisition(
@@ -1007,7 +1008,7 @@ def backfill_untargeted_cid_nl_sample_subject(
             sample_name=sample.metadata.sample_name,
             request=request,
             xic_trace=acquired.trace,
-            source=f"{_ADAPTER_NAMESPACE}.recovery:{TraceCoordinateKind.NATIVE_SCAN.value}",
+            source=f"{_ADAPTER_NAMESPACE}.backfill:{TraceCoordinateKind.NATIVE_SCAN.value}",
             acquisition_source_id=source.acquisition_source_id,
         )
         observation = capture_owner.capture_physical_backfill_observation(
@@ -1036,7 +1037,7 @@ def backfill_untargeted_cid_nl_sample_subject(
                 sample_name=sample.metadata.sample_name,
                 target_label=(
                     f"untargeted:{method_subject.precursor_mz:.8g}:"
-                    f"{method_subject.label}:recovery"
+                    f"{method_subject.label}:backfill"
                 ),
                 role="Analyte",
                 istd_pair="",
@@ -1054,7 +1055,7 @@ def backfill_untargeted_cid_nl_sample_subject(
                 request=request,
                 xic_trace=acquired.trace,
                 source=(
-                    f"{_ADAPTER_NAMESPACE}.recovery:{TraceCoordinateKind.NATIVE_SCAN.value}"
+                    f"{_ADAPTER_NAMESPACE}.backfill:{TraceCoordinateKind.NATIVE_SCAN.value}"
                 ),
                 acquisition_source_id=source.acquisition_source_id,
             )
@@ -1167,7 +1168,7 @@ def backfill_untargeted_cid_nl_sample_subject(
             processing_owners=processing_owners,
             sample=sample,
             method_subject=method_subject,
-            detector_invocation_id="untargeted-cid-nl-backfill-recovery",
+            detector_invocation_id="untargeted-cid-nl-backfill",
             evaluation_receipt=CidNlEvaluationReceipt(
                 query_rt_min=query_rt_min,
                 query_rt_max=query_rt_max,
@@ -1216,7 +1217,7 @@ def backfill_untargeted_cid_nl_sample_subject(
                 processing_attempt_id=processing_owners.attempt.processing_attempt_id,
                 method_subject_id=method_subject.method_subject_id,
                 candidate_id=None,
-                capture_stage="method_recovery",
+                capture_stage="method_backfill",
                 trace=trace,
                 physical_evaluation=evaluation,
                 observation_ref=observation,
@@ -1374,6 +1375,7 @@ def _reacquire_peak_observations(
         _observer.record_acquisition(acquisition)
     observations: list[PeakObservationRef] = []
     captures: list[capture_owner.SampleLocalCapture] = []
+    selected_traces: list[tuple[PeakObservationRef, Trace]] = []
     for candidate, acquired in zip(candidates, acquired_traces, strict=True):
         trace = trace_from_xic_request(
             sample_name=sample.metadata.sample_name,
@@ -1451,12 +1453,49 @@ def _reacquire_peak_observations(
             processing_owners=processing_owners,
             sample=sample,
         )
+        # Candidates a few ppm apart read their own traces, so one physical
+        # peak would enter the universe twice and its MS2 events would compete
+        # with a copy. Reading the peak on the trace that first selected it
+        # yields the identical observation, which counts once.
+        first_trace = next(
+            (
+                kept_trace
+                for kept, kept_trace in selected_traces
+                if (kept_trace.mz, kept_trace.rt_min, kept_trace.rt_max)
+                != (trace.mz, trace.rt_min, trace.rt_max)
+                and same_selected_peak(observation, kept)
+            ),
+            None,
+        )
+        if first_trace is not None and binding.physical_evaluation is not None:
+            shared = capture_owner.capture_reacquired_physical_peak(
+                scope=search_scope,
+                candidate_id=candidate.candidate_id,
+                trace=first_trace,
+            )
+            if shared.selected_hypothesis is not None:
+                shared_observation = capture_owner.mint_captured_peak_observation(
+                    shared,
+                    processing_owners=processing_owners,
+                    sample=sample,
+                )
+                if same_selected_peak(shared_observation, observation):
+                    captures[-1] = capture = shared
+                    observation = shared_observation
+                    trace = first_trace
+                    retained = replace(
+                        retained,
+                        trace=trace,
+                        physical_evaluation=capture.physical_evaluation,
+                    )
+        selected_traces.append((observation, trace))
         observations.append(observation)
         if evidence_sink is not None:
             evidence_sink.append(replace(retained, observation_ref=observation))
     if search_scope.method_constraints.signal_processing_profile is not None:
         observations = list(dict.fromkeys(observations))
     return acquisition, tuple(observations), tuple(captures)
+
 
 
 def method_label(candidate: DiscoveryCandidate) -> str:
@@ -1870,5 +1909,5 @@ __all__ = [
     "UntargetedCidNlRealDataAdapterError",
     "UntargetedCidNlRealDataAdapterResult",
     "acquire_untargeted_cid_nl_sample_trace_batch",
-    "acquire_untargeted_cid_nl_recovery_trace_batch",
+    "acquire_untargeted_cid_nl_backfill_trace_batch",
 ]

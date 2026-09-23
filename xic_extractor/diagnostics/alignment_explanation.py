@@ -27,7 +27,7 @@ VALID_CURVE_KINDS = frozenset(
         "discovery_physical",
         "initial_capture",
         "reacquired_capture",
-        "recovery_observation",
+        "backfill_observation",
     }
 )
 ALLOWED_CURVE_PAYLOAD_KEYS = frozenset(

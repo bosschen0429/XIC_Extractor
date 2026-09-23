@@ -109,7 +109,7 @@ def assign_highlight_groups(
             (
                 cell
                 for cell in cells
-                if cell.status == "rescued" and "QC" not in cell.sample_stem
+                if cell.status == "backfilled" and "QC" not in cell.sample_stem
             ),
             key=lambda item: item.area or 0.0,
             reverse=True,

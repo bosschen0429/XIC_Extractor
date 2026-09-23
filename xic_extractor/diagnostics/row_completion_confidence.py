@@ -232,29 +232,29 @@ def _daily_packet(
         ),
         _summary_row(
             run_id=run_id,
-            metric_name="accepted_rescue_count",
-            current_value=summary_metrics.get("accepted_rescue_count_total", 0),
+            metric_name="accepted_backfill_count",
+            current_value=summary_metrics.get("accepted_backfill_count_total", 0),
             baseline_value="",
             delta="",
             direction="stable",
             evidence_source="alignment_health_summary.json",
             artifact_path=health_summary_path,
             root=manifest_root,
-            reason="health packet accepted_rescue_count_total",
+            reason="health packet accepted_backfill_count_total",
             manifest_dict=manifest_dict,
             authority_statement=authority_statement,
         ),
         _summary_row(
             run_id=run_id,
-            metric_name="review_rescue_count",
-            current_value=summary_metrics.get("review_rescue_count_total", 0),
+            metric_name="review_backfill_count",
+            current_value=summary_metrics.get("review_backfill_count_total", 0),
             baseline_value="",
             delta="",
             direction="stable",
             evidence_source="alignment_health_summary.json",
             artifact_path=health_summary_path,
             root=manifest_root,
-            reason="health packet review_rescue_count_total",
+            reason="health packet review_backfill_count_total",
             manifest_dict=manifest_dict,
             authority_statement=authority_statement,
         ),
@@ -348,12 +348,12 @@ def _daily_packet(
                 "high_backfill_dependency",
                 0,
             ),
-            "accepted_rescue_count": summary_metrics.get(
-                "accepted_rescue_count_total",
+            "accepted_backfill_count": summary_metrics.get(
+                "accepted_backfill_count_total",
                 0,
             ),
-            "review_rescue_count": summary_metrics.get(
-                "review_rescue_count_total",
+            "review_backfill_count": summary_metrics.get(
+                "review_backfill_count_total",
                 0,
             ),
             "selected_value_drift": drift_count,
@@ -801,8 +801,8 @@ def _report_text(payload: dict[str, object]) -> str:
         f"- zero_present_family_count: {metrics.get('zero_present_family_count', '')}\n"
         "- high_backfill_dependency_count: "
         f"{metrics.get('high_backfill_dependency_count', '')}\n"
-        f"- accepted_rescue_count: {metrics.get('accepted_rescue_count', '')}\n"
-        f"- review_rescue_count: {metrics.get('review_rescue_count', '')}\n"
+        f"- accepted_backfill_count: {metrics.get('accepted_backfill_count', '')}\n"
+        f"- review_backfill_count: {metrics.get('review_backfill_count', '')}\n"
         f"- selected_value_drift: {metrics.get('selected_value_drift', '')}"
         f" ({drift_note})\n\n"
         "## Authority Statement\n\n"

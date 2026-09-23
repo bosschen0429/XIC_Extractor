@@ -51,7 +51,7 @@ OUTPUT_COLUMNS = (
     "primary_evidence",
     "identity_reason",
     "quantifiable_detected_count",
-    "quantifiable_rescue_count",
+    "quantifiable_backfill_count",
     "duplicate_assigned_count",
     "ambiguous_ms1_owner_count",
     "row_flags",
@@ -151,9 +151,9 @@ def run_blast_radius(
             "quantifiable_detected_count": (
                 row_decision.quantifiable_detected_count
             ),
-            "quantifiable_rescue_count": row_decision.quantifiable_rescue_count,
-            "accepted_rescue_count": row_decision.quantifiable_rescue_count,
-            "review_rescue_count": row_decision.review_rescue_count,
+            "quantifiable_backfill_count": row_decision.quantifiable_backfill_count,
+            "accepted_backfill_count": row_decision.quantifiable_backfill_count,
+            "review_backfill_count": row_decision.review_backfill_count,
             "duplicate_assigned_count": row_decision.duplicate_assigned_count,
             "ambiguous_ms1_owner_count": row_decision.ambiguous_ms1_owner_count,
             "row_flags": ";".join(row_decision.row_flags),
@@ -173,8 +173,8 @@ def run_blast_radius(
                 "quantifiable_detected_count": (
                     row_decision.quantifiable_detected_count
                 ),
-                "quantifiable_rescue_count": (
-                    row_decision.quantifiable_rescue_count
+                "quantifiable_backfill_count": (
+                    row_decision.quantifiable_backfill_count
                 ),
                 "duplicate_assigned_count": row_decision.duplicate_assigned_count,
                 "ambiguous_ms1_owner_count": (
@@ -459,7 +459,7 @@ def _incomplete_rows(
                 "primary_evidence": "",
                 "identity_reason": "",
                 "quantifiable_detected_count": "",
-                "quantifiable_rescue_count": "",
+                "quantifiable_backfill_count": "",
                 "duplicate_assigned_count": "",
                 "ambiguous_ms1_owner_count": "",
                 "row_flags": "",

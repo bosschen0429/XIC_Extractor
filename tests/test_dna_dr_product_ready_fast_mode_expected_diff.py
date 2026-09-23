@@ -14,7 +14,7 @@ def test_expected_diff_marks_public_output_delta_diagnostic_only(
     _write_alignment_output(
         candidate,
         matrix_area="15",
-        cell_status="rescued",
+        cell_status="backfilled",
         cell_area="150",
         review_identity="fast_review",
     )
@@ -104,15 +104,15 @@ def _write_alignment_output(
         "primary_evidence\tidentity_reason\tinclude_in_primary_matrix\trow_flags\t"
         "reason\tdetected_count\tabsent_count\tunchecked_count\t"
         "duplicate_assigned_count\tambiguous_ms1_owner_count\t"
-        "quantifiable_detected_count\tquantifiable_rescue_count\t"
-        "accepted_cell_count\taccepted_rescue_count\treview_rescue_count\n"
+        "quantifiable_detected_count\tquantifiable_backfill_count\t"
+        "accepted_cell_count\taccepted_backfill_count\treview_backfill_count\n"
         f"F1\t{review_identity}\treview\tanchor\treason\tTRUE\tflags\treason\t"
         "1\t0\t0\t0\t0\t1\t0\t1\t0\t0\n",
         encoding="utf-8",
     )
     (directory / "alignment_backfill_cell_evidence.tsv").write_text(
         "schema_version\tfeature_family_id\tsample_stem\tstatus\t"
-        "production_cell_status\trescue_tier\twrite_matrix_value\t"
+        "production_cell_status\tbackfill_tier\twrite_matrix_value\t"
         "include_in_primary_matrix\tidentity_decision\tarea\tprimary_matrix_area\t"
         "apex_rt\theight\tpeak_start_rt\tpeak_end_rt\n"
         f"v1\tF1\tSampleA\t{cell_status}\t{cell_status}\ttier\tTRUE\tTRUE\t"

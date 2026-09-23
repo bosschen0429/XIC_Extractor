@@ -283,126 +283,6 @@ def _assert_jobs_match_direct_construction(batch) -> None:
         assert runtime_owner._request_subject_physical_records(direct_job) == records
 
 
-def _assert_outside_group_cells(scientific, batch, tmp_path: Path) -> None:
-    import json
-    from dataclasses import asdict
-
-    from tests.processing_identity_no_raw_fixture import (
-        build_processing_identity_no_raw_fixture,
-    )
-    from xic_extractor.alignment import cell_observations as cell_owner
-
-    source_cells = tuple(
-        source
-        for final_cell in scientific.cell_observations
-        for source in final_cell.predecessor_cells
-    )
-    outside_cells = tuple(
-        source for source in source_cells if source.content.outside_group is not None
-    )
-    local_cells = tuple(
-        source for source in source_cells if source.content.outside_group is None
-    )
-    assert {source.group_context.group.public_family_id for source in source_cells} == {
-        "FAM000001",
-        "FAM000002",
-    }
-    for source in local_cells:
-        current_content = asdict(source.content)
-        expected = (
-            json.dumps(
-                {
-                    "schema_version": "cell_observation_v2",
-                    "validation_status": cell_owner.VALIDATION_STATUS,
-                    "content": current_content,
-                },
-                ensure_ascii=False,
-                sort_keys=True,
-                separators=(",", ":"),
-                allow_nan=False,
-            )
-            + "\n"
-        )
-        assert (
-            cell_owner.canonical_cell_observation_bytes(source.content)
-            == expected.encode()
-        )
-        assert source.artifact.semantic_contract.schema_version == "cell_observation_v2"
-    outside = outside_cells[0]
-    relation = outside.content.outside_group
-    assert relation is not None
-    supporting = outside.outside_group_context
-    assert supporting is not None
-    support = next(
-        item
-        for item in supporting.supports
-        if item.assessment is outside.method_assessment
-    )
-    job = next(
-        job
-        for job in batch.jobs
-        if job.sample.identity.sample_identity_id
-        == outside.content.canonical_sample_identity_id
-    )
-    mint_args = dict(
-        processing_owners=job.processing_owners,
-        sample=job.sample,
-        group_context=outside.group_context,
-        method_assessment=outside.method_assessment,
-        outside_group_context=supporting,
-    )
-    assert cell_owner.mint_cell_observation_ref(**mint_args) == outside
-    for source in outside_cells:
-        payload = json.loads(
-            cell_owner.canonical_cell_observation_bytes(source.content)
-        )
-        assert payload["schema_version"] == "cell_observation_v2"
-        assert payload["content"]["outside_group"] == asdict(
-            source.content.outside_group
-        )
-        assert source.artifact.semantic_contract.schema_version == "cell_observation_v2"
-        assert source.peak_observation is None and source.peak_hypothesis is None
-        assert source.content.method_result == "SUPPORT"
-        assert (
-            source.content.reason_codes == source.method_assessment.content.reason_codes
-        )
-    (tmp_path / "other-request").mkdir()
-    other_request = build_processing_identity_no_raw_fixture(
-        tmp_path / "other-request", sample_stems=("different",)
-    )
-    other_job = next(item for item in batch.jobs if item.sample != job.sample)
-    for substitution in (
-        {"outside_group_context": outside.group_context},
-        {"peak_hypothesis": support.hypothesis},
-        {
-            "peak_observation": next(
-                source.peak_observation
-                for source in local_cells
-                if source.method_assessment is support.assessment
-            )
-        },
-        {"sample": other_job.sample},
-        {"processing_owners": other_request.owners},
-    ):
-        with pytest.raises(cell_owner.CellObservationContractError):
-            cell_owner.mint_cell_observation_ref(**(mint_args | substitution))
-    with pytest.raises(cell_owner.CellObservationContractError):
-        replace(
-            outside,
-            content=replace(
-                outside.content,
-                outside_group=replace(
-                    relation,
-                    supporting_peak_hypothesis_id=local_cells[
-                        0
-                    ].group_context.group.owner_ids[0],
-                ),
-            ),
-        )
-    with pytest.raises(cell_owner.CellObservationContractError):
-        replace(outside, outside_group_context=outside.group_context)
-
-
 def _assert_single_unsupported_exclusion(
     completed, runtime_result, batch, tmp_path: Path, *, populated: bool
 ) -> None:
@@ -854,8 +734,8 @@ def _expected_retained_curve(
 
 def _expected_capture_curve(evidence):
     return _expected_retained_curve(
-        kind="recovery_observation"
-        if evidence.capture_stage == "method_recovery"
+        kind="backfill_observation"
+        if evidence.capture_stage == "method_backfill"
         else evidence.capture_stage,
         sample_id=evidence.canonical_sample_identity_id,
         candidate_id=evidence.candidate_id,
@@ -1969,7 +1849,16 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
             assert matrix_row["S1"] == ""
             assert matrix_row["S2"]
             assert matrix_row["S3"]
-            assert matrix_row["S4"] == ""
+            # The fixture XIC ignores m/z, so S4's group-window trace holds a
+            # complete peak without CID-NL: an MS1-only Backfill value.
+            (s4_cell,) = (
+                cell
+                for cell in child.scientific_core.cell_observations
+                if cell.group_hypothesis_id == joint_group.group_hypothesis_id
+                and cell.canonical_sample_identity_id == sample_id_by_stem["S4"]
+            )
+            assert s4_cell.evidence_states == ("ms1_only_backfill_observation",)
+            assert matrix_row["S4"]
         else:
             assert len(writer.matrix.cells) == len(sample_stems)
         close_and_verify_persisted_curves()
@@ -2053,18 +1942,28 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         scientific = child.scientific_core
         assert len(scientific.final_population) == 2
         assert len(scientific.cell_observations) == 2 * len(sample_stems)
+        # Each sample's SUPPORT belongs to its own group. A group with K direct
+        # supports revisits the other samples' windows, which hold no peak;
+        # below K the other samples stay unsearched outside-group cells.
+        revisited = min(group_sizes) >= 2
         assert sum(
-            cell.evidence_states == ("not_searched",)
+            cell.evidence_states
+            == (("unavailable",) if revisited else ("not_searched",))
             for cell in scientific.cell_observations
         ) == len(sample_stems)
         assert all(
             sum(bool(row[stem]) for stem in sample_stems) == 2 for row in matrix_rows
         )
         assert all(
-            result.effective_assessment.content.method_result == "SUPPORT"
+            result.adapter_result.assessment_input.assessment.content.method_result
+            == "SUPPORT"
             for result in runtime_results[0].sample_results
         )
-        _assert_outside_group_cells(scientific, captured_batches[0], tmp_path)
+        assert any(
+            source.content.outside_group is not None
+            for cell in scientific.cell_observations
+            for source in cell.predecessor_cells
+        ) != revisited
         close_and_verify_persisted_curves()
         return
 
@@ -2173,7 +2072,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     recovery_prepared = prepare_physical_signal(
         acquired.trace.rt, acquired.trace.intensity, profile=profile
     )
-    assert observation.capture_stage == "method_recovery"
+    assert observation.capture_stage == "method_backfill"
     assert observation.physical_evaluation is not None
     assert (
         observation.physical_evaluation.retained_prepared_signal
@@ -2238,7 +2137,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
             assert recovery_evaluations[-1].facts is None
             assert recovery_evaluations[-1].integration is None
             assert recovery_evaluations[-1].question.selection_policy_version == (
-                "unique_baseline_peak_in_context"
+                "group_rt_resolved_peak_in_context"
             )
 
         source_raws[paths[0]].intensity = original_intensity * 0.0
@@ -2302,7 +2201,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
                 sink,
                 evidence.observation_ref,
                 evidence.canonical_sample_identity_id,
-                kind="recovery_observation",
+                kind="backfill_observation",
                 trace=evidence.trace,
                 evaluation=evidence.physical_evaluation,
                 provenance={
@@ -2887,7 +2786,7 @@ def test_completed_empty_recovery_preserves_each_compatible_source_subject(
         and position.group_identity.group_hypothesis_id == group.group_hypothesis_id
     )
     assert position.conservative_no_request_proof is not None
-    assert position.conservative_no_request_proof.variant == "completed_recovery_empty"
+    assert position.conservative_no_request_proof.variant == "completed_backfill_empty"
 
 
 @pytest.mark.parametrize(
@@ -3997,7 +3896,7 @@ def test_production_composition_closes_observation_only_hold_without_membership(
         assert proof.completion is None
         assert proof.decision.group_facts.direct_support_count_s == 1
         assert proof.decision.group_facts.minimum_support_k == 2
-        assert not proof.decision.group_facts.may_attempt_recovery
+        assert not proof.decision.group_facts.may_attempt_backfill
         assert proof.decision.reason_codes == ("direct_support_threshold_not_met",)
         assert position.primary_logical_requests == coverage.terminals == ()
         hold_cell = next(
@@ -4364,7 +4263,7 @@ def _assert_conservative_coverage_handoff(
         assert position.planning_reason == "no_discovery_input"
     else:
         assert proof is not None
-        assert proof.variant == "completed_recovery_empty"
+        assert proof.variant == "completed_backfill_empty"
         assert proof.decision.group_facts.direct_support_count_s == 3
         assert proof.decision.group_facts.minimum_support_k == 2
     assert position.planning_state == "not_planned"
@@ -4888,7 +4787,13 @@ def test_production_composition_closes_recovered_observation_without_candidate(
                         assert decision.subject.canonical_sample.metadata.raw_stem == (
                             "Hold"
                         )
-                        assert decision.value is None
+                        # The group-bounded MS1 peak fills the Matrix without
+                        # joining the group or its presentation facts.
+                        assert decision.evidence.evidence_states == (
+                            "ms1_only_backfill_observation",
+                        )
+                        assert decision.subject.member_subject is None
+                        assert decision.value is not None
                         diagnostic_observation_ids.add(physical_id)
                         continue
                     expected_presentation_facts[physical_id] = (
@@ -4946,10 +4851,10 @@ def test_production_composition_closes_recovered_observation_without_candidate(
                         if decision.sample_stem == no_write_sample
                         else decision.production_status
                     ),
-                    rescue_tier=(
+                    backfill_tier=(
                         ""
                         if decision.sample_stem == no_write_sample
-                        else decision.rescue_tier
+                        else decision.backfill_tier
                     ),
                     write_matrix_value=decision.sample_stem != no_write_sample,
                     matrix_value=(

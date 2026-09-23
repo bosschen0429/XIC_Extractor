@@ -32,7 +32,7 @@ from xic_extractor.alignment.mode_track.producer import (
 from xic_extractor.discovery.models import DiscoveryCandidate
 from xic_extractor.extraction.untargeted_cid_nl_real_data_adapter import (
     UntargetedCidNlRealDataAdapterError,
-    acquire_untargeted_cid_nl_recovery_trace_batch,
+    acquire_untargeted_cid_nl_backfill_trace_batch,
     acquire_untargeted_cid_nl_sample_trace_batch,
     adapt_current_discovery_sample_subject,
     backfill_untargeted_cid_nl_sample_subject,
@@ -227,17 +227,20 @@ def test_changed_physical_query_evaluates_once_and_preserves_support(
             "SUPPORT" if fresh_available else "REJECT"
         )
         assert len(assessment.individual_support_refs) == (2 if fresh_available else 0)
-    assert len(assessment.candidate_peaks) == (
-        (2 if shifted_mass else 1) if fresh_available else 0
-    )
+    # Both candidates select the same MS1 peak, shifted traces included, so the
+    # universe holds that peak once.
+    assert len(assessment.candidate_peaks) == (1 if fresh_available else 0)
     assert result.acquisition is not None
     assert len(result.acquisition.traces) == (2 if shifted_mass else 1)
     states = []
     changed_questions = 0
     captures = {capture.candidate_id: capture for capture in result.captures}
     assert len(captures) == 2
-    assert evaluate.call_count == 2
-    assert prepare.call_count == 2
+    # A candidate that selected an already selected peak on its own shifted
+    # trace reads that peak once more on the first trace.
+    shared_reads = 1 if shifted_mass and fresh_available else 0
+    assert evaluate.call_count == 2 + shared_reads
+    assert prepare.call_count == 2 + shared_reads
     for record in legacy_records:
         candidate = next(
             item
@@ -324,12 +327,13 @@ def test_changed_physical_query_evaluates_once_and_preserves_support(
         if expected.state == "unavailable":
             assert capture.selected_hypothesis is None
             continue
-        observed = next(
+        integration = physical_peak_observation_integration(expected)
+        # A candidate that selected an already retained peak supports it.
+        (observed,) = (
             item
             for item in assessment.candidate_peaks
-            if item.content.mz == candidate.precursor_mz
+            if item.content.integration.rt_apex_min == integration.rt_apex_min
         )
-        integration = physical_peak_observation_integration(expected)
         assert capture.selected_hypothesis.integration == integration
         assert (
             observed.content.integration.area_baseline_corrected
@@ -664,6 +668,60 @@ def test_merged_inferred_member_outside_final_mass_window_is_not_support(
     }
 
 
+@pytest.mark.parametrize(
+    ("scan_rts", "shifts", "supported_scan_count"),
+    [
+        ((7.98, 8.0, 8.02, 8.04), (0.0, 0.0, 0.008, 0.008), 4),
+        ((7.98, 8.0, 8.05, 8.07), (0.0, 0.0, 0.0085, 0.0112), 3),
+    ],
+    ids=["product-beyond-tolerance", "precursor-beyond-final-window"],
+)
+def test_shared_apex_merge_keeps_each_absorbed_scan_receipt(
+    tmp_path: Path,
+    scan_rts: tuple[float, ...],
+    shifts: tuple[float, ...],
+    supported_scan_count: int,
+) -> None:
+    from xic_extractor.discovery.strict_seed_receipts import (
+        read_complete_discovery_scan_seeds,
+    )
+
+    source_raw = _FakeRaw(scan_rts)
+    source_raw.intensity = 1000.0 * np.exp(
+        -0.5 * ((source_raw.rt - sum(scan_rts) / len(scan_rts)) / 0.06) ** 2
+    )
+    # The later scans read the same MS1 peak with a precursor and product
+    # shifted by scatter; their product lies beyond 20 ppm of the earlier one.
+    source_raw.scans = tuple(
+        replace(
+            scan,
+            precursor_mz=scan.precursor_mz + shift,
+            masses=scan.masses + shift,
+        )
+        for scan, shift in zip(source_raw.scans, shifts, strict=True)
+    )
+    settings = replace(_settings(), neutral_loss_profile=None, seed_rt_gap_min=0.03)
+    (candidate,) = _current_candidates(
+        source_raw,
+        raw_file=tmp_path / "S1.RAW",
+        settings=settings,
+        peak_config=_peak_config(tmp_path),
+    )
+    assert len(candidate.seed_scan_ids) == 4
+
+    seeds = read_complete_discovery_scan_seeds(
+        source_raw,
+        candidates=(candidate,),
+        settings=settings,
+    )
+
+    # An absorbed scan outside the final precursor window still reconstructs
+    # against its own receipt but cannot support this candidate's mass.
+    assert [scan.scan_number for scan, _ in seeds] == list(
+        candidate.seed_scan_ids[:supported_scan_count]
+    )
+
+
 @pytest.mark.parametrize("variant", ["missing", "duplicate", "parse_error"])
 def test_declared_strict_scan_subset_rejects_non_exact_events(variant: str) -> None:
     from types import SimpleNamespace
@@ -829,7 +887,7 @@ def test_recovery_batch_canonicalizes_shared_group_queries_without_merging_cente
         tmp_path=tmp_path,
     )
 
-    batch = acquire_untargeted_cid_nl_recovery_trace_batch(
+    batch = acquire_untargeted_cid_nl_backfill_trace_batch(
         processing_owners=fixture.owners,
         sample=fixture.sample("S1"),
         backfill_requests=(

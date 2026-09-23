@@ -109,7 +109,7 @@ def test_classifier_detects_scope_rule_manual_machine_disagreement() -> None:
             "oracle_row_id": oracle.oracle_row_id,
             "source_role": "rescued_cell",
             "source_row_id": "alignment_cells.tsv:1",
-            "machine_current_label": "rescued",
+            "machine_current_label": "backfilled",
             "machine_reason": "primary family consolidation",
             "machine_blockers": "",
             "source_artifact": "alignment_cells.tsv",
@@ -119,7 +119,7 @@ def test_classifier_detects_scope_rule_manual_machine_disagreement() -> None:
     explanation = classify_explanations([oracle], evidence)[0]
 
     assert explanation["machine_match_status"] == "single_match"
-    assert explanation["machine_current_label"] == "rescued"
+    assert explanation["machine_current_label"] == "backfilled"
     assert (
         explanation["evidence_gap_class"]
         == "machine_too_permissive_scope_rule_conflict"
@@ -140,7 +140,7 @@ def test_classifier_preserves_first_seen_unique_diagnostic_tokens() -> None:
             "oracle_row_id": oracle.oracle_row_id,
             "source_role": "rescued_cell",
             "source_row_id": "alignment_cells.tsv:1",
-            "machine_current_label": "rescued",
+            "machine_current_label": "backfilled",
             "machine_reason": "synthetic classifier coverage fixture",
             "machine_blockers": "rt_conflict;pattern_conflict;rt_conflict",
             "source_artifact": "alignment_cells.tsv",
@@ -173,7 +173,7 @@ def _real_evidence(oracle_rows):
             "oracle_row_id": row.oracle_row_id,
             "source_role": "rescued_cell",
             "source_row_id": f"alignment_cells.tsv:{index}",
-            "machine_current_label": "rescued",
+            "machine_current_label": "backfilled",
             "machine_reason": "synthetic classifier coverage fixture",
             "machine_blockers": "",
             "source_artifact": "synthetic_alignment_cells.tsv",

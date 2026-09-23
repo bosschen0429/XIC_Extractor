@@ -811,7 +811,7 @@ def write_source_family_summary(
         "source_family",
         "trace_count",
         "detected_count",
-        "rescued_count",
+        "backfilled_count",
         "median_cell_apex_rt",
         "min_cell_apex_rt",
         "max_cell_apex_rt",
@@ -833,8 +833,8 @@ def write_source_family_summary(
                 "detected_count": sum(
                     1 for row in group_rows if row.status == "detected"
                 ),
-                "rescued_count": sum(
-                    1 for row in group_rows if row.status == "rescued"
+                "backfilled_count": sum(
+                    1 for row in group_rows if row.status == "backfilled"
                 ),
                 "median_cell_apex_rt": _format_optional_float(_median(apexes)),
                 "min_cell_apex_rt": _format_optional_float(
@@ -1051,7 +1051,7 @@ def _plot_relative_alignment(
         ax,
         rows,
         apex_source=apex_source,
-        group="rescued",
+        group="backfilled",
         color=RESCUED_MEDIAN_COLOR,
         label="rescued median",
     )
@@ -1617,7 +1617,9 @@ def _plot_relative_group_median_trace(
     )
     normalized_traces: list[np.ndarray] = []
     for row in rows:
-        include = row.status == "rescued" if group == "rescued" else row.group == group
+        include = (
+            row.status == "backfilled" if group == "backfilled" else row.group == group
+        )
         if not include:
             continue
         rt, normalized = _relative_aligned_normalized_trace(

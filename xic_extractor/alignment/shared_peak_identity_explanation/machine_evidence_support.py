@@ -57,7 +57,7 @@ __all__ = [
 ]
 
 _POSITIVE_MACHINE_LABELS = frozenset(
-    {"detected", "rescued", "selected", "present", "provisional_discovery"}
+    {"detected", "backfilled", "selected", "present", "provisional_discovery"}
 )
 _ABSENT_MACHINE_LABELS = frozenset(
     {"absent", "missing", "no_match", "not_available", "not_detected", "unchecked"}

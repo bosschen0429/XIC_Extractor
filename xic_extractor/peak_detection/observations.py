@@ -1410,6 +1410,19 @@ def _validate_typed_digest_id(value: object, *, prefix: str, field: str) -> str:
     return value
 
 
+def same_selected_peak(left: PeakObservationRef, right: PeakObservationRef) -> bool:
+    """Whether two observations selected the same integrated MS1 peak."""
+
+    a = left.content.integration
+    b = right.content.integration
+    return (
+        a.rt_apex_min == b.rt_apex_min
+        and a.rt_left_min == b.rt_left_min
+        and a.rt_right_min == b.rt_right_min
+        and a.height_raw == b.height_raw
+    )
+
+
 __all__ = [
     "ARTIFACT_SEMANTIC_ROLE",
     "PeakObservationContent",
@@ -1419,6 +1432,7 @@ __all__ = [
     "SCHEMA_VERSION",
     "canonical_peak_observation_ref_bytes",
     "mint_peak_observation_ref",
+    "same_selected_peak",
     "validate_peak_observation_binding",
     "validate_peak_observation_trace_binding",
     "verify_persisted_peak_observation_claims",

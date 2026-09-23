@@ -58,8 +58,8 @@ class MatrixIdentityRowDecision:
     primary_evidence: str
     identity_reason: str
     quantifiable_detected_count: int
-    quantifiable_rescue_count: int
-    review_rescue_count: int
+    quantifiable_backfill_count: int
+    review_backfill_count: int
     duplicate_assigned_count: int
     ambiguous_ms1_owner_count: int
     row_flags: tuple[str, ...]
@@ -126,7 +126,7 @@ def matrix_identity_row_decision_record(
         ),
         (
             "negative_quantifiable_rescue_cells",
-            -float(decision.quantifiable_rescue_count),
+            -float(decision.quantifiable_backfill_count),
         ),
         ("duplicate_pressure_count", float(decision.duplicate_assigned_count)),
         ("ambiguous_owner_count", float(decision.ambiguous_ms1_owner_count)),
@@ -165,13 +165,13 @@ def decide_matrix_identity_row(
         for decision in cell_quality
         if decision.quality_status == "rescue_quantifiable"
     )
-    review_rescue = sum(
-        1 for decision in cell_quality if decision.quality_status == "review_rescue"
+    review_backfill = sum(
+        1 for decision in cell_quality if decision.quality_status == "review_backfill"
     )
     held_rescue = sum(
         1
         for decision in cell_quality
-        if decision.quality_status == "review_rescue"
+        if decision.quality_status == "review_backfill"
         and (
             decision.quality_reason == "rt_outside_preferred"
             or is_backfill_cell_only_block_reason(decision.quality_reason)
@@ -263,8 +263,8 @@ def decide_matrix_identity_row(
         primary_evidence=primary_evidence,
         identity_reason=reason,
         quantifiable_detected_count=q_detected,
-        quantifiable_rescue_count=q_rescue,
-        review_rescue_count=review_rescue,
+        quantifiable_backfill_count=q_rescue,
+        review_backfill_count=review_backfill,
         duplicate_assigned_count=duplicate_count,
         ambiguous_ms1_owner_count=ambiguous_count,
         row_flags=tuple(flags),
@@ -329,9 +329,9 @@ def _matrix_identity_support(
         support.append(
             f"detected_identity_cells:{decision.quantifiable_detected_count}"
         )
-    if decision.quantifiable_rescue_count:
+    if decision.quantifiable_backfill_count:
         support.append(
-            f"quantifiable_rescue_cells:{decision.quantifiable_rescue_count}"
+            f"quantifiable_rescue_cells:{decision.quantifiable_backfill_count}"
         )
     return tuple(dict.fromkeys(support))
 
@@ -503,7 +503,7 @@ def _is_provisional_retention_candidate(
         1
         for cell in policy_evidence.cells
         if (
-            cell.status == "rescued"
+            cell.status == "backfilled"
             and cell.is_rescued_quantifiable
             and cell.supported_for_backfill
         )

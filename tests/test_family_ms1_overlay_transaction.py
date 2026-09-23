@@ -147,7 +147,7 @@ def test_serialized_trace_fields_share_one_gaussian15_basis(tmp_path: Path) -> N
         late_intensity,
     )
     inconclusive = report.trace_row_from_arrays(
-        _cell("short", status="rescued", height=10.0, apex=2.0),
+        _cell("short", status="backfilled", height=10.0, apex=2.0),
         "top_rescued_ms1_area",
         (1.9, 2.0),
         (1.0, 10.0),
@@ -293,7 +293,7 @@ def _rows() -> tuple[report.TraceOverlayRow, ...]:
             [0.0, 20.0, 100.0, 20.0, 0.0],
         ),
         report.trace_row_from_arrays(
-            _cell("rescued", status="rescued", height=80.0),
+            _cell("backfilled", status="backfilled", height=80.0),
             "top_rescued_ms1_area",
             rt,
             [0.0, 10.0, 80.0, 10.0, 0.0],
@@ -340,7 +340,7 @@ def _assert_evidence_outputs(output_dir: Path, output_prefix: str) -> None:
     json_path = output_dir / f"{output_prefix}_trace_data.json"
     with summary_path.open(encoding="utf-8", newline="") as handle:
         summary_rows = list(csv.DictReader(handle, delimiter="\t"))
-    assert [row["sample_stem"] for row in summary_rows] == ["detected", "rescued"]
+    assert [row["sample_stem"] for row in summary_rows] == ["detected", "backfilled"]
     assert all(row["local_window_max_intensity"] for row in summary_rows)
     assert all(row["local_window_to_global_max_ratio"] for row in summary_rows)
 
@@ -348,9 +348,9 @@ def _assert_evidence_outputs(output_dir: Path, output_prefix: str) -> None:
     assert payload["trace_count"] == 2
     assert payload["evidence_summary"]["trace_count"] == 2
     assert payload["evidence_summary"]["detected_count"] == 1
-    assert payload["evidence_summary"]["rescued_count"] == 1
+    assert payload["evidence_summary"]["backfilled_count"] == 1
     assert [trace["sample_stem"] for trace in payload["traces"]] == [
         "detected",
-        "rescued",
+        "backfilled",
     ]
     assert all(trace["local_window_max_intensity"] for trace in payload["traces"])

@@ -47,7 +47,7 @@ def test_owner_matrix_writes_detected_rescued_ambiguous_and_absent_cells() -> No
     rescued = AlignedCell(
         sample_stem="sample-b",
         cluster_id=feature.feature_family_id,
-        status="rescued",
+        status="backfilled",
         area=90.0,
         apex_rt=8.51,
         height=40.0,
@@ -97,7 +97,7 @@ def test_owner_matrix_writes_detected_rescued_ambiguous_and_absent_cells() -> No
     assert by_sample["sample-a"].selected_integration.area_raw_counts_seconds == 1000.0
     assert by_sample["sample-a"].matrix_area == 900.0
     assert by_sample["sample-a"].source_candidate_id == "sample-a#a"
-    assert by_sample["sample-b"].status == "rescued"
+    assert by_sample["sample-b"].status == "backfilled"
     assert by_sample["sample-b"].group_hypothesis_id == "FAM000001"
     assert by_sample["sample-b"].gap_fill_state == "gap_fill_rescued"
     assert by_sample["sample-c"].status == "ambiguous_ms1_owner"
@@ -176,7 +176,7 @@ def test_owner_matrix_allows_valid_rescue_to_replace_censored_owner() -> None:
     rescued = AlignedCell(
         sample_stem="sample-a",
         cluster_id=feature.feature_family_id,
-        status="rescued",
+        status="backfilled",
         area=900.0,
         apex_rt=8.55,
         height=90.0,
@@ -198,7 +198,7 @@ def test_owner_matrix_allows_valid_rescue_to_replace_censored_owner() -> None:
         rescued_cells=(rescued,),
     )
 
-    assert matrix.cells[0].status == "rescued"
+    assert matrix.cells[0].status == "backfilled"
     assert matrix.cells[0].area == 900.0
     assert matrix.cells[0].matrix_area == 900.0
 
@@ -212,7 +212,7 @@ def test_owner_matrix_censors_endpoint_rescue_before_matrix_write() -> None:
     rescued = AlignedCell(
         sample_stem="sample-a",
         cluster_id=feature.feature_family_id,
-        status="rescued",
+        status="backfilled",
         area=900.0,
         apex_rt=8.50,
         height=90.0,
@@ -448,7 +448,7 @@ def test_owner_matrix_uses_backfill_confirmation_for_severe_low_local_owner() ->
     rescued = AlignedCell(
         sample_stem="sample-a",
         cluster_id=feature.feature_family_id,
-        status="rescued",
+        status="backfilled",
         area=900.0,
         apex_rt=8.55,
         height=90.0,
@@ -470,7 +470,7 @@ def test_owner_matrix_uses_backfill_confirmation_for_severe_low_local_owner() ->
         rescued_cells=(rescued,),
     )
 
-    assert matrix.cells[0].status == "rescued"
+    assert matrix.cells[0].status == "backfilled"
     assert matrix.cells[0].area == 900.0
     assert matrix.cells[0].gap_fill_state == "gap_fill_rescued"
     assert matrix.cells[0].missing_observation_state == "queried_and_detected"
@@ -483,7 +483,7 @@ def test_owner_matrix_keeps_detected_cell_when_local_owner_is_not_low_outlier() 
     rescued = AlignedCell(
         sample_stem="sample-a",
         cluster_id=feature.feature_family_id,
-        status="rescued",
+        status="backfilled",
         area=4000.0,
         apex_rt=8.55,
         height=400.0,

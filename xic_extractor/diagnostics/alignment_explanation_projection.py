@@ -404,8 +404,8 @@ def prepare_alignment_explanation(
                 else method_candidates[evidence.method_subject_id, sid]
             )
             stage = (
-                "recovery_observation"
-                if evidence.capture_stage == "method_recovery"
+                "backfill_observation"
+                if evidence.capture_stage == "method_backfill"
                 else evidence.capture_stage
             )
             _emit_curve_payload(
@@ -472,7 +472,7 @@ def prepare_alignment_explanation(
                 content.canonical_sample_identity_id,
             ]
             if (
-                content.detector_invocation_id == "untargeted-cid-nl-backfill-recovery"
+                content.detector_invocation_id == "untargeted-cid-nl-backfill"
                 and content.method_result == "SUPPORT"
             ):
                 # Backfill has no Discovery terminal. Retain its exact physical
@@ -488,7 +488,7 @@ def prepare_alignment_explanation(
                             sink,
                             peak,
                             content.canonical_sample_identity_id,
-                            kind="recovery_observation",
+                            kind="backfill_observation",
                             related=related,
                         )
             add(
@@ -698,15 +698,15 @@ def prepare_alignment_explanation(
                             }
                             for ref in observation.predecessor_cells
                         ],
-                        "recovery_cell": (
+                        "backfill_cell": (
                             None
-                            if observation.recovery_cell is None
+                            if observation.backfill_cell is None
                             else {
                                 "content": _cell_observation_content_payload(
-                                    observation.recovery_cell.content
+                                    observation.backfill_cell.content
                                 ),
                                 "artifact": _artifact(
-                                    observation.recovery_cell.artifact
+                                    observation.backfill_cell.artifact
                                 ),
                             }
                         ),

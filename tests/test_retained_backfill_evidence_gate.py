@@ -180,8 +180,8 @@ def test_high_detected_low_rescue_missing_overlay_is_not_queued(
         for index in range(1, 84)
     ]
     rescued_cells = [
-        _cell_row(family_id, "R01", "rescued"),
-        _cell_row(family_id, "R02", "rescued"),
+        _cell_row(family_id, "R01", "backfilled"),
+        _cell_row(family_id, "R02", "backfilled"),
     ]
     _write_tsv(
         alignment_dir / "alignment_review.tsv",
@@ -319,7 +319,7 @@ def test_seed_specific_overlay_rows_do_not_leak_across_seed_groups(
         alignment_dir / "alignment_cells.tsv",
         [
             _cell_row(family_id, "S1", "detected"),
-            _cell_row(family_id, "S2", "rescued"),
+            _cell_row(family_id, "S2", "backfilled"),
         ],
     )
     _write_tsv(
@@ -494,14 +494,14 @@ def _write_alignment_run(path: Path, *, seed_audit: bool = True) -> Path:
         path / "alignment_cells.tsv",
         [
             _cell_row("FAM_SUPPORT", "S1", "detected"),
-            _cell_row("FAM_SUPPORT", "S2", "rescued"),
+            _cell_row("FAM_SUPPORT", "S2", "backfilled"),
             _cell_row("FAM_CONFLICT", "S1", "detected"),
-            _cell_row("FAM_CONFLICT", "S2", "rescued"),
+            _cell_row("FAM_CONFLICT", "S2", "backfilled"),
             _cell_row("FAM_MISSING", "S1", "detected"),
-            _cell_row("FAM_MISSING", "S2", "rescued"),
-            _cell_row("FAM_CELL_GAP", "S2", "rescued"),
-            _cell_row("FAM_ZERO", "S2", "rescued"),
-            _cell_row("FAM_PROVISIONAL", "S2", "rescued"),
+            _cell_row("FAM_MISSING", "S2", "backfilled"),
+            _cell_row("FAM_CELL_GAP", "S2", "backfilled"),
+            _cell_row("FAM_ZERO", "S2", "backfilled"),
+            _cell_row("FAM_PROVISIONAL", "S2", "backfilled"),
         ],
     )
     _write_tsv(
@@ -543,9 +543,9 @@ def _review_row(
         "identity_reason": reason,
         "primary_evidence": "owner_complete_link",
         "quantifiable_detected_count": str(detected),
-        "quantifiable_rescue_count": str(rescued),
-        "accepted_rescue_count": str(accepted),
-        "review_rescue_count": str(review),
+        "quantifiable_backfill_count": str(rescued),
+        "accepted_backfill_count": str(accepted),
+        "review_backfill_count": str(review),
         "row_flags": flags,
     }
 
@@ -558,14 +558,14 @@ def _cell_row(family_id: str, sample: str, status: str) -> dict[str, str]:
         "primary_matrix_area": "100",
         "primary_matrix_area_source": "gaussian15_positive_asls_residual",
         "primary_matrix_area_reason": "",
-        "gap_fill_state": "gap_fill_rescued" if status == "rescued" else "",
+        "gap_fill_state": "gap_fill_rescued" if status == "backfilled" else "",
         "gap_fill_reason": (
-            "group_centered_query_detected" if status == "rescued" else ""
+            "group_centered_query_detected" if status == "backfilled" else ""
         ),
-        "trace_quality": "owner_backfill" if status == "rescued" else "clean",
+        "trace_quality": "owner_backfill" if status == "backfilled" else "clean",
         "backfill_evidence_reason": "",
         "reason": (
-            "owner-centered MS1 backfill" if status == "rescued" else "detected"
+            "owner-centered MS1 backfill" if status == "backfilled" else "detected"
         ),
     }
 
@@ -581,7 +581,7 @@ def _seed_row(
     return {
         "feature_family_id": family_id,
         "sample_stem": sample,
-        "status": "rescued",
+        "status": "backfilled",
         "backfill_seed_mz": "269.145",
         "backfill_seed_rt": seed_rt,
         "backfill_request_rt_min": rt_min,

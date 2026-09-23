@@ -169,7 +169,7 @@ def test_tier2_trace_producer_rejects_multiple_detected_seed_cells(
     cell_rows = (
         _cell("Seed_A", "detected", "8.000", "7.960", "8.040", "1.0"),
         _cell("Seed_B", "detected", "8.010", "7.970", "8.050", "1.0"),
-        _cell("Rescue_A", "rescued", "8.020", "7.980", "8.060", "0.9"),
+        _cell("Rescue_A", "backfilled", "8.020", "7.980", "8.060", "0.9"),
     )
 
     rows = build_tier2_trace_evidence_rows(
@@ -251,8 +251,8 @@ def test_tier2_trace_producer_uses_contract_status_for_rescued_coherence_failure
 ) -> None:
     cell_rows = (
         _cell("Seed_A", "detected", "8.000", "7.960", "8.040", "1.0"),
-        _cell("Rescue_A", "rescued", "9.000", "8.960", "9.040", "0.9"),
-        _cell("Rescue_B", "rescued", "9.020", "8.980", "9.060", "0.9"),
+        _cell("Rescue_A", "backfilled", "9.000", "8.960", "9.040", "0.9"),
+        _cell("Rescue_B", "backfilled", "9.020", "8.980", "9.060", "0.9"),
     )
 
     rows = build_tier2_trace_evidence_rows(
@@ -288,7 +288,7 @@ def _candidate_review_row() -> dict[str, str]:
         "identity_reason": "candidate",
         "primary_evidence": "owner_complete_link",
         "quantifiable_detected_count": "1",
-        "quantifiable_rescue_count": "2",
+        "quantifiable_backfill_count": "2",
         "duplicate_assigned_count": "0",
         "ambiguous_ms1_owner_count": "0",
         "row_flags": "single_detected_seed;provisional_retention_candidate",
@@ -299,8 +299,8 @@ def _candidate_review_row() -> dict[str, str]:
 def _candidate_cell_rows() -> tuple[dict[str, str], ...]:
     return (
         _cell("Seed_A", "detected", "8.000", "7.960", "8.040", "1.0"),
-        _cell("Rescue_A", "rescued", "8.020", "7.980", "8.060", "0.9"),
-        _cell("Rescue_B", "rescued", "8.030", "7.990", "8.070", "0.9"),
+        _cell("Rescue_A", "backfilled", "8.020", "7.980", "8.060", "0.9"),
+        _cell("Rescue_B", "backfilled", "8.030", "7.990", "8.070", "0.9"),
     )
 
 

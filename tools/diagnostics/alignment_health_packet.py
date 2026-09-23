@@ -28,8 +28,8 @@ REVIEW_REQUIRED = (
     "duplicate_assigned_count",
     "unchecked_count",
     "accepted_cell_count",
-    "accepted_rescue_count",
-    "review_rescue_count",
+    "accepted_backfill_count",
+    "review_backfill_count",
     "identity_decision",
     "identity_confidence",
     "primary_evidence",
@@ -54,8 +54,8 @@ SENTINEL_COLUMNS = (
     "severity_score",
     "detected_count",
     "accepted_cell_count",
-    "accepted_rescue_count",
-    "review_rescue_count",
+    "accepted_backfill_count",
+    "review_backfill_count",
     "ambiguous_ms1_owner_count",
     "duplicate_assigned_count",
     "unchecked_count",
@@ -232,11 +232,11 @@ def _summary_metrics(
         "seed_audit_row_count": len(seed_rows),
         "detected_count_total": _sum_int(review_rows, "detected_count"),
         "accepted_cell_count_total": _sum_int(review_rows, "accepted_cell_count"),
-        "accepted_rescue_count_total": _sum_int(
+        "accepted_backfill_count_total": _sum_int(
             review_rows,
-            "accepted_rescue_count",
+            "accepted_backfill_count",
         ),
-        "review_rescue_count_total": _sum_int(review_rows, "review_rescue_count"),
+        "review_backfill_count_total": _sum_int(review_rows, "review_backfill_count"),
         "ambiguous_ms1_owner_count_total": _sum_int(
             review_rows,
             "ambiguous_ms1_owner_count",
@@ -277,8 +277,10 @@ def _sentinel_rows(
                 "severity_score": score,
                 "detected_count": _int_value(row.get("detected_count")),
                 "accepted_cell_count": _int_value(row.get("accepted_cell_count")),
-                "accepted_rescue_count": _int_value(row.get("accepted_rescue_count")),
-                "review_rescue_count": _int_value(row.get("review_rescue_count")),
+                "accepted_backfill_count": _int_value(
+                    row.get("accepted_backfill_count")
+                ),
+                "review_backfill_count": _int_value(row.get("review_backfill_count")),
                 "ambiguous_ms1_owner_count": _int_value(
                     row.get("ambiguous_ms1_owner_count"),
                 ),
@@ -316,9 +318,9 @@ def _issue_classes(row: Mapping[str, str]) -> tuple[str, ...]:
         issues.append("owner_ambiguity")
     if _int_value(row.get("duplicate_assigned_count")) > 0:
         issues.append("duplicate_claim")
-    if _int_value(row.get("review_rescue_count")) > 0:
+    if _int_value(row.get("review_backfill_count")) > 0:
         issues.append("backfill_review_dependency")
-    if _int_value(row.get("accepted_rescue_count")) > 0:
+    if _int_value(row.get("accepted_backfill_count")) > 0:
         issues.append("accepted_backfill_dependency")
     if _int_value(row.get("unchecked_count")) > 0:
         issues.append("unchecked_pressure")
@@ -334,8 +336,8 @@ def _severity_score(row: Mapping[str, str], issues: Sequence[str]) -> int:
     score = 0
     score += _int_value(row.get("ambiguous_ms1_owner_count")) * 4
     score += _int_value(row.get("duplicate_assigned_count")) * 5
-    score += _int_value(row.get("review_rescue_count")) * 2
-    score += _int_value(row.get("accepted_rescue_count")) * 3
+    score += _int_value(row.get("review_backfill_count")) * 2
+    score += _int_value(row.get("accepted_backfill_count")) * 3
     score += _int_value(row.get("unchecked_count"))
     if "consolidation_loser" in issues:
         score += 8

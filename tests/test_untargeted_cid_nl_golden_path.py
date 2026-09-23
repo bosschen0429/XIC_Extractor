@@ -141,7 +141,7 @@ def test_no_raw_golden_path_preserves_evidence_and_terminal_matrix_contract(
         "accepted_backfill_input"
     )
     assert source_by_stem["Missing"]["recovery_universe_artifact_id"]
-    assert source_by_stem["Missing"]["recovery_assessment_artifact_id"]
+    assert source_by_stem["Missing"]["backfill_assessment_artifact_id"]
     assert source_by_stem["Split"]["numeric_value_kind"] == "blank"
     assert source_by_stem["Reject"]["numeric_value_kind"] == "blank"
 

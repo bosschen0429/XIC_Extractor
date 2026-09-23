@@ -242,7 +242,7 @@ def test_machine_evidence_support_marks_manual_derived_metric_gaps() -> None:
                     source_role="rescued_cell",
                     sample_level=True,
                     row={
-                        "status": "rescued",
+                        "status": "backfilled",
                         "apex_rt": "1.0",
                         "peak_start_rt": "0.9",
                         "peak_end_rt": "1.1",
@@ -310,7 +310,7 @@ def test_machine_evidence_support_uses_cwt_and_tier2_as_observed_metrics() -> No
                     source_role="rescued_cell",
                     sample_level=True,
                     row={
-                        "status": "rescued",
+                        "status": "backfilled",
                         "apex_rt": "1.0",
                         "peak_start_rt": "0.9",
                         "peak_end_rt": "1.1",
@@ -385,7 +385,7 @@ def test_dda_missing_nl_policy_can_be_non_dispositive_with_ms1_support() -> None
                     source_role="rescued_cell",
                     sample_level=True,
                     row={
-                        "status": "rescued",
+                        "status": "backfilled",
                         "apex_rt": "1.0",
                         "peak_start_rt": "0.9",
                         "peak_end_rt": "1.1",
@@ -494,7 +494,7 @@ def test_ms1_overlay_height_closes_intensity_opportunity_without_tier2() -> None
                     source_role="rescued_cell",
                     sample_level=True,
                     row={
-                        "status": "rescued",
+                        "status": "backfilled",
                         "apex_rt": "1.0",
                         "peak_start_rt": "0.9",
                         "peak_end_rt": "1.1",
@@ -565,7 +565,7 @@ def test_dda_missing_nl_policy_requires_family_level_required_tag() -> None:
                     source_role="rescued_cell",
                     sample_level=True,
                     row={
-                        "status": "rescued",
+                        "status": "backfilled",
                         "apex_rt": "1.0",
                         "peak_start_rt": "0.9",
                         "peak_end_rt": "1.1",
@@ -653,7 +653,7 @@ def test_dda_missing_nl_policy_is_not_required_when_sample_tag_observed() -> Non
                     source_role="rescued_cell",
                     sample_level=True,
                     row={
-                        "status": "rescued",
+                        "status": "backfilled",
                         "apex_rt": "1.0",
                         "peak_start_rt": "0.9",
                         "peak_end_rt": "1.1",
@@ -714,7 +714,7 @@ def test_dda_missing_nl_policy_accepts_existing_family_tag_context() -> None:
                     source_role="rescued_cell",
                     sample_level=True,
                     row={
-                        "status": "rescued",
+                        "status": "backfilled",
                         "apex_rt": "1.0",
                         "peak_start_rt": "0.9",
                         "peak_end_rt": "1.1",
@@ -804,7 +804,7 @@ def test_dda_missing_nl_policy_accepts_product_outside_diagnostic_window() -> No
                     source_role="rescued_cell",
                     sample_level=True,
                     row={
-                        "status": "rescued",
+                        "status": "backfilled",
                         "apex_rt": "1.0",
                         "peak_start_rt": "0.9",
                         "peak_end_rt": "1.1",
@@ -894,7 +894,7 @@ def test_wrong_peak_conflict_closes_pattern_without_marking_shape_bad() -> None:
                     source_role="rescued_cell",
                     sample_level=True,
                     row={
-                        "status": "rescued",
+                        "status": "backfilled",
                         "apex_rt": "6.56",
                         "peak_start_rt": "6.2",
                         "peak_end_rt": "7.7",
@@ -1013,7 +1013,7 @@ def test_machine_evidence_support_marks_no_missing_machine_basis_sufficient() ->
                     source_role="rescued_cell",
                     sample_level=True,
                     row={
-                        "status": "rescued",
+                        "status": "backfilled",
                         "apex_rt": "1.0",
                         "peak_start_rt": "0.9",
                         "peak_end_rt": "1.1",
@@ -1082,7 +1082,7 @@ def test_ms1_pattern_coherence_can_close_formal_pattern_metric() -> None:
                     source_role="rescued_cell",
                     sample_level=True,
                     row={
-                        "status": "rescued",
+                        "status": "backfilled",
                         "apex_rt": "6.04",
                         "peak_start_rt": "5.90",
                         "peak_end_rt": "6.20",
@@ -1140,7 +1140,7 @@ def test_qc_ms1_reference_can_close_formal_pattern_metric() -> None:
                 _machine_match(
                     source_role="rescued_cell",
                     sample_level=True,
-                    row={"status": "rescued"},
+                    row={"status": "backfilled"},
                 ),
             )
         },
@@ -1192,7 +1192,7 @@ def test_qc_ms1_reference_conflict_cannot_override_sample_ms1_support() -> None:
                 _machine_match(
                     source_role="rescued_cell",
                     sample_level=True,
-                    row={"status": "rescued"},
+                    row={"status": "backfilled"},
                 ),
             )
         },
@@ -1261,7 +1261,7 @@ def test_legacy_nearest_only_qc_reference_stays_context_only() -> None:
                 _machine_match(
                     source_role="rescued_cell",
                     sample_level=True,
-                    row={"status": "rescued"},
+                    row={"status": "backfilled"},
                 ),
             )
         },
@@ -1309,7 +1309,7 @@ def test_ms1_overlay_shape_metric_can_close_formal_shape_metric() -> None:
                     source_role="rescued_cell",
                     sample_level=True,
                     row={
-                        "status": "rescued",
+                        "status": "backfilled",
                         "apex_rt": "6.04",
                         "peak_start_rt": "5.90",
                         "peak_end_rt": "6.20",
@@ -1396,7 +1396,7 @@ def test_direct_ms1_pattern_shape_score_does_not_close_formal_shape_metric() -> 
                     source_role="rescued_cell",
                     sample_level=True,
                     row={
-                        "status": "rescued",
+                        "status": "backfilled",
                         "apex_rt": "6.04",
                         "peak_start_rt": "5.90",
                         "peak_end_rt": "6.20",
@@ -1454,7 +1454,7 @@ def test_ms1_overlay_without_peak_quality_vector_does_not_close_shape() -> None:
                     source_role="rescued_cell",
                     sample_level=True,
                     row={
-                        "status": "rescued",
+                        "status": "backfilled",
                         "apex_rt": "6.04",
                         "peak_start_rt": "5.90",
                         "peak_end_rt": "6.20",
@@ -1518,7 +1518,7 @@ def test_raw_ms1_overlay_low_shape_local_peak_is_inconclusive() -> None:
                     source_role="rescued_cell",
                     sample_level=True,
                     row={
-                        "status": "rescued",
+                        "status": "backfilled",
                         "apex_rt": "6.04",
                         "peak_start_rt": "5.90",
                         "peak_end_rt": "6.20",
@@ -1604,7 +1604,7 @@ def test_ms1_pattern_coherence_conflict_fails_closed() -> None:
                     source_role="rescued_cell",
                     sample_level=True,
                     row={
-                        "status": "rescued",
+                        "status": "backfilled",
                         "apex_rt": "6.04",
                         "peak_start_rt": "5.90",
                         "peak_end_rt": "6.20",
@@ -1662,7 +1662,7 @@ def test_machine_evidence_support_preserves_unique_missing_evidence_order() -> N
                     source_role="rescued_cell",
                     sample_level=True,
                     row={
-                        "status": "rescued",
+                        "status": "backfilled",
                         "apex_rt": "6.04",
                         "peak_start_rt": "5.90",
                         "peak_end_rt": "6.20",
@@ -1725,7 +1725,7 @@ def test_matrix_rt_drift_policy_can_close_drift_possible_blocker() -> None:
                     source_role="rescued_cell",
                     sample_level=True,
                     row={
-                        "status": "rescued",
+                        "status": "backfilled",
                         "apex_rt": "6.04",
                         "peak_start_rt": "5.90",
                         "peak_end_rt": "6.20",
@@ -1798,7 +1798,7 @@ def test_rt_mode_conflict_fails_closed_against_manual_pass() -> None:
                     source_role="rescued_cell",
                     sample_level=True,
                     row={
-                        "status": "rescued",
+                        "status": "backfilled",
                         "apex_rt": "6.02",
                         "peak_start_rt": "5.90",
                         "peak_end_rt": "6.20",
@@ -1864,7 +1864,7 @@ def test_peak_hypothesis_selection_fails_closed_against_manual_pass() -> None:
                     source_role="rescued_cell",
                     sample_level=True,
                     row={
-                        "status": "rescued",
+                        "status": "backfilled",
                         "apex_rt": "6.02",
                         "peak_start_rt": "5.90",
                         "peak_end_rt": "6.20",
@@ -1930,7 +1930,7 @@ def test_rt_close_policy_can_close_drift_possible_blocker() -> None:
                     source_role="rescued_cell",
                     sample_level=True,
                     row={
-                        "status": "rescued",
+                        "status": "backfilled",
                         "apex_rt": "7.96",
                         "peak_start_rt": "7.20",
                         "peak_end_rt": "8.80",
@@ -2002,7 +2002,7 @@ def test_machine_evidence_support_keeps_cid_nl_below_sample_ms2_pattern() -> Non
                     source_role="rescued_cell",
                     sample_level=True,
                     row={
-                        "status": "rescued",
+                        "status": "backfilled",
                         "apex_rt": "18.4783",
                         "rt_delta_sec": "'-82.5403",
                         "trace_quality": "owner_backfill",
@@ -2081,7 +2081,7 @@ def test_candidate_ms2_pattern_sidecar_can_close_pattern_mismatch() -> None:
                     source_role="rescued_cell",
                     sample_level=True,
                     row={
-                        "status": "rescued",
+                        "status": "backfilled",
                         "apex_rt": "18.4783",
                         "rt_delta_sec": "'-82.5403",
                         "trace_quality": "owner_backfill",
@@ -2156,7 +2156,7 @@ def test_qc_ms1_reference_can_close_pattern_mismatch() -> None:
                 _machine_match(
                     source_role="rescued_cell",
                     sample_level=True,
-                    row={"status": "rescued", "rt_delta_sec": "'-82.5403"},
+                    row={"status": "backfilled", "rt_delta_sec": "'-82.5403"},
                 ),
             )
         },
@@ -2209,7 +2209,7 @@ def test_candidate_ms2_pattern_sidecar_conflict_stays_fail_closed() -> None:
                 _machine_match(
                     source_role="rescued_cell",
                     sample_level=True,
-                    row={"status": "rescued"},
+                    row={"status": "backfilled"},
                 ),
             )
         },
@@ -2294,7 +2294,7 @@ def _explanation(
         "sample_id": "sample",
         "manual_label": manual_label,
         "manual_confidence": "high",
-        "machine_current_label": "rescued",
+        "machine_current_label": "backfilled",
         "machine_match_status": "single_match",
         "evidence_gap_class": evidence_gap_class,
         "manual_reason_tags": "",

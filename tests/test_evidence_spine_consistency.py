@@ -340,7 +340,7 @@ def test_evidence_spine_consistency_prefers_primary_match_over_audit_loser_dista
             {
                 "sample_stem": "sample-a",
                 "feature_family_id": "FAM000002",
-                "status": "rescued",
+                "status": "backfilled",
                 "area": "1100",
                 "apex_rt": "25.0",
                 "peak_start_rt": "24.9",

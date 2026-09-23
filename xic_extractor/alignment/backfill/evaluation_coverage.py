@@ -75,7 +75,7 @@ OwnerBackfillPlanningReason = Literal[
     "retained_unresolved_candidates",
     "local_owner_not_supersedable",
     "direct_support_threshold_not_met",
-    "recovery_search_completed_empty",
+    "backfill_search_completed_empty",
     "no_discovery_input",
 ]
 OWNER_BACKFILL_PLANNING_REASONS: tuple[OwnerBackfillPlanningReason, ...] = (
@@ -89,7 +89,7 @@ OWNER_BACKFILL_PLANNING_REASONS: tuple[OwnerBackfillPlanningReason, ...] = (
     "retained_unresolved_candidates",
     "local_owner_not_supersedable",
     "direct_support_threshold_not_met",
-    "recovery_search_completed_empty",
+    "backfill_search_completed_empty",
     "no_discovery_input",
 )
 
@@ -127,8 +127,8 @@ _BATCH_PREFIX = "xic.owner-backfill-evaluation-coverage:"
 
 _COMPLETED_BACKFILL_CONTRACT = _mint_artifact_semantic_contract_ref(
     owner_namespace="xic_extractor.untargeted_cid_nl_real_data_runtime",
-    semantic_role="owner_backfill_completed_recovery_projection",
-    schema_version="owner_backfill_completed_recovery_projection",
+    semantic_role="owner_backfill_completed_backfill_projection",
+    schema_version="owner_backfill_completed_backfill_projection",
     validation_status="diagnostic_only",
     media_type="application/json",
     serialization_format="canonical-json-utf8-lf",
@@ -136,7 +136,7 @@ _COMPLETED_BACKFILL_CONTRACT = _mint_artifact_semantic_contract_ref(
 
 
 @dataclass(frozen=True, slots=True)
-class OwnerBackfillCompletedRecoveryProjection:
+class OwnerBackfillCompletedBackfillProjection:
     """Runtime-issued completion evidence; it makes no physical absence claim."""
 
     processing_owners: ProcessingOwnerReferences
@@ -174,7 +174,7 @@ class OwnerBackfillCompletedRecoveryProjection:
         subject = assessment.content.method_subject
         if (
             assessment.content.detector_invocation_id
-            != "untargeted-cid-nl-backfill-recovery"
+            != "untargeted-cid-nl-backfill"
             or assessment.content.technical_state != "evaluated"
             or assessment.content.method_result != "HOLD"
             or assessment.candidate_peaks
@@ -231,12 +231,12 @@ class OwnerBackfillCompletedRecoveryProjection:
             raise ValueError("completed backfill lost its runtime artifact closure")
         verify_evidence_artifact_payload(
             self.artifact,
-            canonical_owner_backfill_completed_recovery_bytes(self),
+            canonical_owner_backfill_completed_backfill_bytes(self),
         )
 
 
-def canonical_owner_backfill_completed_recovery_bytes(
-    projection: OwnerBackfillCompletedRecoveryProjection,
+def canonical_owner_backfill_completed_backfill_bytes(
+    projection: OwnerBackfillCompletedBackfillProjection,
 ) -> bytes:
     return _completed_backfill_projection_bytes(
         processing_owners=projection.processing_owners,
@@ -265,7 +265,7 @@ def _completed_backfill_projection_bytes(
 ) -> bytes:
     return _canonical_proof_bytes(
         {
-            "schema": "owner_backfill_completed_recovery_projection",
+            "schema": "owner_backfill_completed_backfill_projection",
             "processing_request_id": processing_owners.request.processing_request_id,
             "processing_attempt_id": processing_owners.attempt.processing_attempt_id,
             "sample_identity_id": sample.identity.sample_identity_id,
@@ -278,7 +278,7 @@ def _completed_backfill_projection_bytes(
             "initial_assessment_artifact_id": (
                 initial_assessment_artifact.evidence_artifact_id
             ),
-            "recovery_assessment_artifact_id": (
+            "backfill_assessment_artifact_id": (
                 backfill_assessment.artifact.evidence_artifact_id
             ),
             "trace_coordinate_id": trace_coordinate.trace_coordinate_id,
@@ -305,7 +305,7 @@ class ConservativeNoRequestProofBuilder:
         *,
         sample: ResolvedCanonicalSampleIdentity,
         decision: ConservativeBackfillCellDecision,
-        completion: OwnerBackfillCompletedRecoveryProjection | None = None,
+        completion: OwnerBackfillCompletedBackfillProjection | None = None,
     ) -> OwnerBackfillConservativeNoRequestProof:
         return mint_owner_backfill_conservative_no_request_proof(
             processing_owners=self.processing_owners,
@@ -326,18 +326,18 @@ class OwnerBackfillConservativeNoRequestProof:
     group_identity: CrossSampleGroupIdentity
     sample: ResolvedCanonicalSampleIdentity
     decision: ConservativeBackfillCellDecision
-    completion: OwnerBackfillCompletedRecoveryProjection | None = None
+    completion: OwnerBackfillCompletedBackfillProjection | None = None
     # Construction-only: persisted proof fields and IDs remain unchanged.
     # Direct construction/replacement still validates the complete binding.
     _group_binding: InitVar[ConservativeNoRequestProofBuilder | None] = None
     _mint_token: InitVar[object] = field(default=None, kw_only=True)
 
     @property
-    def variant(self) -> Literal["threshold_not_met", "completed_recovery_empty"]:
+    def variant(self) -> Literal["threshold_not_met", "completed_backfill_empty"]:
         return (
             "threshold_not_met"
             if self.completion is None
-            else "completed_recovery_empty"
+            else "completed_backfill_empty"
         )
 
     @property
@@ -345,7 +345,7 @@ class OwnerBackfillConservativeNoRequestProof:
         return (
             "direct_support_threshold_not_met"
             if self.completion is None
-            else "recovery_search_completed_empty"
+            else "backfill_search_completed_empty"
         )
 
     def __post_init__(
@@ -377,7 +377,7 @@ def mint_owner_backfill_conservative_no_request_proof(
     group_identity: CrossSampleGroupIdentity,
     sample: ResolvedCanonicalSampleIdentity,
     decision: ConservativeBackfillCellDecision,
-    completion: OwnerBackfillCompletedRecoveryProjection | None = None,
+    completion: OwnerBackfillCompletedBackfillProjection | None = None,
     _group_binding: ConservativeNoRequestProofBuilder | None = None,
 ) -> OwnerBackfillConservativeNoRequestProof:
     return OwnerBackfillConservativeNoRequestProof(
@@ -494,13 +494,13 @@ def _validate_conservative_no_request(
         raise ValueError("no-request proof cannot replace an arbitrary cell result")
     universe = decision.candidate_universe
     if proof.completion is None:
-        if universe is not None or facts.may_attempt_recovery:
+        if universe is not None or facts.may_attempt_backfill:
             raise ValueError("threshold proof cannot hide an eligible backfill")
         expected_reason = "direct_support_threshold_not_met"
     else:
         completion = proof.completion
         if (
-            not facts.may_attempt_recovery
+            not facts.may_attempt_backfill
             or universe is None
             or completion.processing_owners is not owners
             or completion.sample is not proof.sample
@@ -511,7 +511,7 @@ def _validate_conservative_no_request(
             or universe.candidate_peaks
         ):
             raise ValueError("empty backfill proof lost its exact completed epoch")
-        expected_reason = "recovery_candidate_universe_empty"
+        expected_reason = "backfill_candidate_universe_empty"
     # The mapper already settled this immutable decision and its group facts.
     # This projection binds that result; it does not evaluate the method again.
     if decision.reason_codes != (expected_reason,):
@@ -524,14 +524,14 @@ def _conservative_no_request_basis(
     group_identity: CrossSampleGroupIdentity,
     sample: ResolvedCanonicalSampleIdentity,
     decision: ConservativeBackfillCellDecision,
-    completion: OwnerBackfillCompletedRecoveryProjection | None,
+    completion: OwnerBackfillCompletedBackfillProjection | None,
 ) -> Mapping[str, object]:
     facts = decision.group_facts
     basis: dict[str, object] = {
         "schema": "owner_backfill_conservative_no_request",
         "variant": "threshold_not_met"
         if completion is None
-        else "completed_recovery_empty",
+        else "completed_backfill_empty",
         "policy_version": decision.policy_version,
         "processing_request_id": processing_owners.request.processing_request_id,
         "processing_attempt_id": processing_owners.attempt.processing_attempt_id,
@@ -722,7 +722,7 @@ class OwnerBackfillPlanningPosition:
                 raise ValueError("position crossed its conservative no-request proof")
         elif self.planning_reason in {
             "direct_support_threshold_not_met",
-            "recovery_search_completed_empty",
+            "backfill_search_completed_empty",
         }:
             raise ValueError("conservative no-request reason requires its owner proof")
         logical_ids: set[str] = set()
@@ -771,7 +771,7 @@ def validate_owner_backfill_conservative_no_request_position(
     if proof is None:
         if position.planning_reason in {
             "direct_support_threshold_not_met",
-            "recovery_search_completed_empty",
+            "backfill_search_completed_empty",
         }:
             raise ValueError("conservative no-request reason requires its owner proof")
         return None

@@ -44,7 +44,7 @@ _PRODUCTION_CELL_DECISION_FIELDS = (
     "sample_stem",
     "raw_status",
     "production_status",
-    "rescue_tier",
+    "backfill_tier",
     "write_matrix_value",
     "matrix_value",
     "blank_reason",
@@ -212,8 +212,8 @@ def test_detected_and_supported_rescue_write_numeric_values():
         cells=(
             _cell("s1", "FAM001", "detected", 100.0),
             _cell("s4", "FAM001", "detected", 95.0),
-            _cell("s2", "FAM001", "rescued", 90.0),
-            _cell("s3", "FAM001", "rescued", 80.0),
+            _cell("s2", "FAM001", "backfilled", 90.0),
+            _cell("s3", "FAM001", "backfilled", 80.0),
         ),
         sample_order=("s1", "s4", "s2", "s3"),
     )
@@ -226,10 +226,10 @@ def test_detected_and_supported_rescue_write_numeric_values():
     assert decisions.cell("FAM001", "s4").write_matrix_value is True
     assert decisions.cell("FAM001", "s4").production_status == "detected"
     assert decisions.cell("FAM001", "s2").write_matrix_value is True
-    assert decisions.cell("FAM001", "s2").production_status == "accepted_rescue"
-    assert decisions.cell("FAM001", "s2").rescue_tier == "accepted_rescue"
+    assert decisions.cell("FAM001", "s2").production_status == "accepted_backfill"
+    assert decisions.cell("FAM001", "s2").backfill_tier == "accepted_backfill"
     assert decisions.cell("FAM001", "s3").write_matrix_value is True
-    assert decisions.cell("FAM001", "s3").production_status == "accepted_rescue"
+    assert decisions.cell("FAM001", "s3").production_status == "accepted_backfill"
     assert decisions.row("FAM001").include_in_primary_matrix is True
     assert decisions.row("FAM001").identity_decision == "production_family"
     assert decisions.row("FAM001").primary_evidence == "owner_complete_link"
@@ -276,7 +276,7 @@ def test_production_cell_decision_record_explains_matrix_value_projection() -> N
     )
     assert record.tie_break == (
         ("production_status_rank", 0.0),
-        ("rescue_tier_rank", 0.0),
+        ("backfill_tier_rank", 0.0),
         ("matrix_value_present_rank", 0.0),
     )
     assert record.projection_authority == "build_production_decisions"
@@ -311,7 +311,7 @@ def test_single_sample_local_owner_does_not_create_primary_identity():
         clusters=(_feature("FAM001", evidence="single_sample_local_owner"),),
         cells=(
             _cell("s1", "FAM001", "detected", 100.0),
-            _cell("s2", "FAM001", "rescued", 90.0),
+            _cell("s2", "FAM001", "backfilled", 90.0),
         ),
         sample_order=("s1", "s2"),
     )
@@ -321,7 +321,7 @@ def test_single_sample_local_owner_does_not_create_primary_identity():
     assert decisions.cell("FAM001", "s1").write_matrix_value is False
     assert decisions.cell("FAM001", "s1").blank_reason == "missing_row_identity_support"
     assert decisions.cell("FAM001", "s2").write_matrix_value is False
-    assert decisions.cell("FAM001", "s2").production_status == "review_rescue"
+    assert decisions.cell("FAM001", "s2").production_status == "review_backfill"
     assert decisions.row("FAM001").include_in_primary_matrix is False
     assert decisions.row("FAM001").identity_decision == "provisional_discovery"
     assert decisions.row("FAM001").identity_reason == "single_sample_local_owner"
@@ -331,7 +331,7 @@ def test_single_sample_local_owner_does_not_create_primary_identity():
 def test_targeted_metadata_does_not_authorize_untargeted_matrix_write() -> None:
     cells = (
         _cell("s1", "FAM001", "detected", 100.0),
-        _cell("s2", "FAM001", "rescued", 90.0),
+        _cell("s2", "FAM001", "backfilled", 90.0),
     )
     base = build_production_decisions(
         _matrix(
@@ -372,7 +372,7 @@ def test_production_cell_decision_record_explains_missing_row_identity_blank() -
         clusters=(_feature("FAM001", evidence="single_sample_local_owner"),),
         cells=(
             _cell("s1", "FAM001", "detected", 100.0),
-            _cell("s2", "FAM001", "rescued", 90.0),
+            _cell("s2", "FAM001", "backfilled", 90.0),
         ),
         sample_order=("s1", "s2"),
     )
@@ -391,9 +391,9 @@ def test_production_cell_decision_record_explains_missing_row_identity_blank() -
     assert rescue_record.decision_class == "review"
     assert rescue_record.blockers == ("missing_row_identity_support",)
     assert rescue_record.support == (
-        "raw_status:rescued",
-        "production_status:review_rescue",
-        "rescue_tier:review_rescue",
+        "raw_status:backfilled",
+        "production_status:review_backfill",
+        "backfill_tier:review_backfill",
     )
 
 
@@ -402,8 +402,8 @@ def test_rescue_heavy_row_needs_multiple_detected_owners_for_primary_promotion()
         clusters=(_feature("FAM001", evidence="owner_complete_link;owner_count=2"),),
         cells=(
             _cell("s1", "FAM001", "detected", 100.0),
-            _cell("s2", "FAM001", "rescued", 90.0, backfill_evidence=False),
-            _cell("s3", "FAM001", "rescued", 80.0, backfill_evidence=False),
+            _cell("s2", "FAM001", "backfilled", 90.0, backfill_evidence=False),
+            _cell("s3", "FAM001", "backfilled", 80.0, backfill_evidence=False),
         ),
         sample_order=("s1", "s2", "s3"),
     )
@@ -417,7 +417,7 @@ def test_rescue_heavy_row_needs_multiple_detected_owners_for_primary_promotion()
     }
     assert decisions.row("FAM001").accepted_cell_count == 0
     assert decisions.row("FAM001").quantifiable_detected_count == 1
-    assert decisions.row("FAM001").quantifiable_rescue_count == 2
+    assert decisions.row("FAM001").quantifiable_backfill_count == 2
     assert decisions.row("FAM001").include_in_primary_matrix is False
 
 
@@ -426,8 +426,8 @@ def test_single_detected_product_authorized_same_peak_rescues_write_matrix_value
         clusters=(_feature("FAM001", evidence="owner_complete_link;owner_count=1"),),
         cells=(
             _cell("seed1", "FAM001", "detected", 100.0),
-            _cell("rescue1", "FAM001", "rescued", 90.0),
-            _cell("rescue2", "FAM001", "rescued", 80.0),
+            _cell("rescue1", "FAM001", "backfilled", 90.0),
+            _cell("rescue2", "FAM001", "backfilled", 80.0),
         ),
         sample_order=("seed1", "rescue1", "rescue2"),
     )
@@ -438,9 +438,9 @@ def test_single_detected_product_authorized_same_peak_rescues_write_matrix_value
     assert decisions.row("FAM001").identity_decision == "production_family"
     assert decisions.row("FAM001").identity_reason == CELL_EVIDENCE_SUPPORTED_REASON
     assert decisions.row("FAM001").accepted_cell_count == 3
-    assert decisions.row("FAM001").accepted_rescue_count == 2
+    assert decisions.row("FAM001").accepted_backfill_count == 2
     assert decisions.cell("FAM001", "seed1").write_matrix_value is True
-    assert decisions.cell("FAM001", "rescue1").production_status == "accepted_rescue"
+    assert decisions.cell("FAM001", "rescue1").production_status == "accepted_backfill"
     assert decisions.cell("FAM001", "rescue1").write_matrix_value is True
     assert decisions.cell("FAM001", "rescue1").matrix_value == 90.0
 
@@ -453,7 +453,7 @@ def test_single_detected_ms1_same_peak_without_candidate_ms2_writes_rescue():
             _cell(
                 "rescue_ms1_only",
                 "FAM001",
-                "rescued",
+                "backfilled",
                 90.0,
                 candidate_ms2_evidence=False,
             ),
@@ -466,7 +466,7 @@ def test_single_detected_ms1_same_peak_without_candidate_ms2_writes_rescue():
 
     assert decisions.row("FAM001").include_in_primary_matrix is True
     assert decisions.row("FAM001").identity_reason == CELL_EVIDENCE_SUPPORTED_REASON
-    assert rescue.production_status == "accepted_rescue"
+    assert rescue.production_status == "accepted_backfill"
     assert rescue.write_matrix_value is True
     assert rescue.matrix_value == 90.0
 
@@ -479,7 +479,7 @@ def test_standard_peak_gate_ms1_authority_writes_rescue():
             _cell(
                 "standard_rescue",
                 "FAM001",
-                "rescued",
+                "backfilled",
                 90.0,
                 candidate_ms2_evidence=False,
                 backfill_ms1_reason=STANDARD_PEAK_GATE_MS1_SUPPORT_REASON,
@@ -493,7 +493,7 @@ def test_standard_peak_gate_ms1_authority_writes_rescue():
 
     assert decisions.row("FAM001").include_in_primary_matrix is True
     assert decisions.row("FAM001").identity_reason == CELL_EVIDENCE_SUPPORTED_REASON
-    assert rescue.production_status == "accepted_rescue"
+    assert rescue.production_status == "accepted_backfill"
     assert rescue.write_matrix_value is True
     assert rescue.matrix_value == 90.0
 
@@ -505,7 +505,7 @@ def test_extreme_backfill_dependency_row_is_supported_with_capped_warning():
             _cell("seed1", "FAM001", "detected", 100.0),
             _cell("seed2", "FAM001", "detected", 95.0),
             *tuple(
-                _cell(f"rescue{i:02d}", "FAM001", "rescued", 80.0 + i)
+                _cell(f"rescue{i:02d}", "FAM001", "backfilled", 80.0 + i)
                 for i in range(1, 84)
             ),
         ),
@@ -524,7 +524,7 @@ def test_extreme_backfill_dependency_row_is_supported_with_capped_warning():
     assert "high_backfill_dependency" in decisions.row("FAM001").row_flags
     assert HIGH_BACKFILL_CAPPED_FLAG in decisions.row("FAM001").row_flags
     assert decisions.cell("FAM001", "seed1").write_matrix_value is True
-    assert decisions.cell("FAM001", "rescue01").production_status == "accepted_rescue"
+    assert decisions.cell("FAM001", "rescue01").production_status == "accepted_backfill"
     assert decisions.cell("FAM001", "rescue01").write_matrix_value is True
 
 
@@ -538,7 +538,7 @@ def test_scan_support_only_backfill_keeps_seeds_and_reviews_rescues():
                 _cell(
                     f"rescue{i:02d}",
                     "FAM001",
-                    "rescued",
+                    "backfilled",
                     80.0 + i,
                     backfill_evidence=False,
                 )
@@ -560,19 +560,19 @@ def test_scan_support_only_backfill_keeps_seeds_and_reviews_rescues():
     )
     assert decisions.row("FAM001").identity_confidence == "review"
     assert decisions.row("FAM001").accepted_cell_count == 2
-    assert decisions.row("FAM001").accepted_rescue_count == 0
-    assert decisions.row("FAM001").review_rescue_count == 83
+    assert decisions.row("FAM001").accepted_backfill_count == 0
+    assert decisions.row("FAM001").review_backfill_count == 83
     assert "backfill_cell_evidence_required" in decisions.row("FAM001").row_flags
     assert "backfill_rescue_review_only" in decisions.row("FAM001").row_flags
     assert decisions.cell("FAM001", "seed1").write_matrix_value is True
-    assert decisions.cell("FAM001", "rescue01").production_status == "review_rescue"
+    assert decisions.cell("FAM001", "rescue01").production_status == "review_backfill"
     assert decisions.cell("FAM001", "rescue01").write_matrix_value is False
     assert decisions.cell("FAM001", "rescue01").blank_reason == (
         BACKFILL_MS1_PATTERN_BLOCKED_REASON
     )
 
 
-def test_production_cell_decision_record_keeps_review_rescue_out_of_matrix() -> None:
+def test_production_cell_decision_record_keeps_review_backfill_out_of_matrix() -> None:
     matrix = _matrix(
         clusters=(_feature("FAM001", evidence="owner_complete_link;owner_count=2"),),
         cells=(
@@ -582,7 +582,7 @@ def test_production_cell_decision_record_keeps_review_rescue_out_of_matrix() -> 
                 _cell(
                     f"rescue{i:02d}",
                     "FAM001",
-                    "rescued",
+                    "backfilled",
                     80.0 + i,
                     backfill_evidence=False,
                 )
@@ -614,7 +614,7 @@ def test_production_cell_decision_record_keeps_review_rescue_out_of_matrix() -> 
     )
     assert record.tie_break == (
         ("production_status_rank", 2.0),
-        ("rescue_tier_rank", 2.0),
+        ("backfill_tier_rank", 2.0),
         ("matrix_value_present_rank", 1.0),
     )
 
@@ -655,7 +655,8 @@ def test_weak_seed_backfill_dependency_row_is_supported_by_cell_evidence():
                 source_candidate_id="seed3#candidate",
             ),
             *tuple(
-                _cell(f"rescue{i}", "FAM001", "rescued", 70.0 + i) for i in range(1, 7)
+                _cell(f"rescue{i}", "FAM001", "backfilled", 70.0 + i)
+                for i in range(1, 7)
             ),
             _cell("absent", "FAM001", "absent", None),
         ),
@@ -676,7 +677,7 @@ def test_weak_seed_backfill_dependency_row_is_supported_by_cell_evidence():
     assert "weak_seed_backfill_dependency" in decisions.row("FAM001").row_flags
     assert HIGH_BACKFILL_CAPPED_FLAG in decisions.row("FAM001").row_flags
     assert decisions.cell("FAM001", "seed1").write_matrix_value is True
-    assert decisions.cell("FAM001", "rescue1").production_status == "accepted_rescue"
+    assert decisions.cell("FAM001", "rescue1").production_status == "accepted_backfill"
     assert decisions.cell("FAM001", "rescue1").write_matrix_value is True
 
 
@@ -705,8 +706,8 @@ def test_same_peak_product_authority_writes_rescues_under_duplicate_pressure():
         clusters=(_feature("FAM001", evidence="owner_complete_link;owner_count=1"),),
         cells=(
             _cell("seed1", "FAM001", "detected", 100.0),
-            _cell("rescue1", "FAM001", "rescued", 90.0),
-            _cell("rescue2", "FAM001", "rescued", 80.0),
+            _cell("rescue1", "FAM001", "backfilled", 90.0),
+            _cell("rescue2", "FAM001", "backfilled", 80.0),
             _cell("dup1", "FAM001", "duplicate_assigned", 70.0),
             _cell("dup2", "FAM001", "duplicate_assigned", 60.0),
         ),
@@ -722,7 +723,7 @@ def test_same_peak_product_authority_writes_rescues_under_duplicate_pressure():
     assert "same_peak_multi_claim" in decisions.row("FAM001").row_flags
     assert decisions.cell("FAM001", "seed1").write_matrix_value is True
     assert decisions.cell("FAM001", "rescue1").write_matrix_value is True
-    assert decisions.cell("FAM001", "rescue1").production_status == "accepted_rescue"
+    assert decisions.cell("FAM001", "rescue1").production_status == "accepted_backfill"
     assert decisions.cell("FAM001", "rescue2").write_matrix_value is True
     assert decisions.cell("FAM001", "dup1").write_matrix_value is False
     assert decisions.cell("FAM001", "dup1").blank_reason == "duplicate_loser"
@@ -734,7 +735,7 @@ def test_rescue_without_identity_support_is_review_only_and_row_is_excluded():
     matrix = _matrix(
         clusters=(_feature("FAM001", evidence="", has_anchor=False),),
         cells=(
-            _cell("s1", "FAM001", "rescued", 90.0),
+            _cell("s1", "FAM001", "backfilled", 90.0),
             _cell("s2", "FAM001", "absent", None),
         ),
         sample_order=("s1", "s2"),
@@ -743,7 +744,7 @@ def test_rescue_without_identity_support_is_review_only_and_row_is_excluded():
     decisions = build_production_decisions(matrix, AlignmentConfig())
 
     assert decisions.cell("FAM001", "s1").write_matrix_value is False
-    assert decisions.cell("FAM001", "s1").production_status == "review_rescue"
+    assert decisions.cell("FAM001", "s1").production_status == "review_backfill"
     assert decisions.cell("FAM001", "s1").blank_reason == "missing_row_identity_support"
     assert decisions.row("FAM001").include_in_primary_matrix is False
     assert set(decisions.row("FAM001").row_flags) == {
@@ -782,14 +783,14 @@ def test_identity_anchor_lost_row_is_excluded_until_review_passes():
         clusters=(_feature("FAM001", evidence="single_sample_local_owner"),),
         cells=(
             _cell("s1", "FAM001", "duplicate_assigned", 100.0),
-            _cell("s2", "FAM001", "rescued", 90.0),
+            _cell("s2", "FAM001", "backfilled", 90.0),
         ),
         sample_order=("s1", "s2"),
     )
 
     decisions = build_production_decisions(matrix, AlignmentConfig())
 
-    assert decisions.cell("FAM001", "s2").production_status == "review_rescue"
+    assert decisions.cell("FAM001", "s2").production_status == "review_backfill"
     assert decisions.row("FAM001").include_in_primary_matrix is False
     assert set(decisions.row("FAM001").row_flags) == {
         "single_sample_local_owner",
@@ -806,7 +807,7 @@ def test_rescued_with_incomplete_peak_fields_is_review_only():
             _cell(
                 "s1",
                 "FAM001",
-                "rescued",
+                "backfilled",
                 90.0,
                 apex_rt=None,
             ),
@@ -820,8 +821,8 @@ def test_rescued_with_incomplete_peak_fields_is_review_only():
     ).cell("FAM001", "s1")
 
     assert decision.write_matrix_value is False
-    assert decision.production_status == "review_rescue"
-    assert decision.rescue_tier == "review_rescue"
+    assert decision.production_status == "review_backfill"
+    assert decision.backfill_tier == "review_backfill"
     assert decision.blank_reason == "incomplete_peak"
 
 
@@ -833,7 +834,7 @@ def test_rescued_outside_max_rt_is_review_only():
             _cell(
                 "s1",
                 "FAM001",
-                "rescued",
+                "backfilled",
                 90.0,
                 rt_delta_sec=config.max_rt_sec + 0.1,
                 backfill_evidence=False,
@@ -845,8 +846,8 @@ def test_rescued_outside_max_rt_is_review_only():
     decision = build_production_decisions(matrix, config).cell("FAM001", "s1")
 
     assert decision.write_matrix_value is False
-    assert decision.production_status == "review_rescue"
-    assert decision.rescue_tier == "review_rescue"
+    assert decision.production_status == "review_backfill"
+    assert decision.backfill_tier == "review_backfill"
     assert decision.blank_reason == "rt_outside_max"
 
 
@@ -861,7 +862,7 @@ def test_rescued_outside_preferred_without_drift_is_review_only():
             _cell(
                 "rescued_same_peak",
                 "FAM001",
-                "rescued",
+                "backfilled",
                 80.0,
                 rt_delta_sec=20.0,
                 backfill_evidence=False,
@@ -874,11 +875,11 @@ def test_rescued_outside_preferred_without_drift_is_review_only():
     decision = decisions.cell("FAM001", "rescued_same_peak")
 
     assert decision.write_matrix_value is False
-    assert decision.production_status == "review_rescue"
-    assert decision.rescue_tier == "review_rescue"
+    assert decision.production_status == "review_backfill"
+    assert decision.backfill_tier == "review_backfill"
     assert decision.matrix_value is None
     assert decision.blank_reason == "rt_outside_preferred"
-    assert decisions.row("FAM001").accepted_rescue_count == 0
+    assert decisions.row("FAM001").accepted_backfill_count == 0
 
 
 def test_product_authorized_same_peak_with_drift_evidence_writes_large_rt_delta():
@@ -892,7 +893,7 @@ def test_product_authorized_same_peak_with_drift_evidence_writes_large_rt_delta(
             _cell(
                 "rescued_drift",
                 "FAM001",
-                "rescued",
+                "backfilled",
                 80.0,
                 rt_delta_sec=240.0,
                 backfill_evidence=True,
@@ -908,11 +909,11 @@ def test_product_authorized_same_peak_with_drift_evidence_writes_large_rt_delta(
     )
 
     assert decision.write_matrix_value is True
-    assert decision.production_status == "accepted_rescue"
+    assert decision.production_status == "accepted_backfill"
     assert decision.matrix_value == 80.0
 
 
-def test_product_authorized_same_peak_wrong_hypothesis_stays_review_rescue():
+def test_product_authorized_same_peak_wrong_hypothesis_stays_review_backfill():
     matrix = _matrix(
         clusters=(_feature("FAM001", evidence="owner_complete_link;owner_count=3"),),
         cells=(
@@ -921,7 +922,7 @@ def test_product_authorized_same_peak_wrong_hypothesis_stays_review_rescue():
             _cell(
                 "rescued_wrong_claim",
                 "FAM001",
-                "rescued",
+                "backfilled",
                 80.0,
                 group_claim_state="duplicate_loser",
                 claim_winner_group_hypothesis_id="FAM_WINNER",
@@ -937,7 +938,7 @@ def test_product_authorized_same_peak_wrong_hypothesis_stays_review_rescue():
     assert decisions.row("FAM001").include_in_primary_matrix is True
     assert BACKFILL_CELL_EVIDENCE_REQUIRED_FLAG in decisions.row("FAM001").row_flags
     assert rescue.write_matrix_value is False
-    assert rescue.production_status == "review_rescue"
+    assert rescue.production_status == "review_backfill"
     assert rescue.blank_reason == BACKFILL_HYPOTHESIS_BLOCKED_REASON
 
 
@@ -950,7 +951,7 @@ def test_product_authorized_claim_resolved_by_current_winner_writes_rescue():
             _cell(
                 "rescued_moved_to_winner",
                 "FAM001",
-                "rescued",
+                "backfilled",
                 80.0,
                 group_hypothesis_id="FAM001",
                 group_claim_state="duplicate_loser",
@@ -968,11 +969,11 @@ def test_product_authorized_claim_resolved_by_current_winner_writes_rescue():
     )
 
     assert rescue.write_matrix_value is True
-    assert rescue.production_status == "accepted_rescue"
+    assert rescue.production_status == "accepted_backfill"
     assert rescue.matrix_value == 80.0
 
 
-def test_product_authorized_same_peak_mode_split_blocker_stays_review_rescue():
+def test_product_authorized_same_peak_mode_split_blocker_stays_review_backfill():
     matrix = _matrix(
         clusters=(_feature("FAM001", evidence="owner_complete_link;owner_count=3"),),
         cells=(
@@ -981,7 +982,7 @@ def test_product_authorized_same_peak_mode_split_blocker_stays_review_rescue():
             _cell(
                 "rescued_mode_split",
                 "FAM001",
-                "rescued",
+                "backfilled",
                 80.0,
                 peak_hypothesis_status="mode_split_required",
                 product_selection_blocker="mode_split_required",
@@ -997,7 +998,7 @@ def test_product_authorized_same_peak_mode_split_blocker_stays_review_rescue():
     )
 
     assert decision.write_matrix_value is False
-    assert decision.production_status == "review_rescue"
+    assert decision.production_status == "review_backfill"
     assert decision.blank_reason == BACKFILL_HYPOTHESIS_BLOCKED_REASON
 
 
@@ -1006,7 +1007,7 @@ def test_bool_area_is_not_a_valid_production_matrix_area():
         clusters=(_feature("FAM001", evidence="single_sample_local_owner"),),
         cells=(
             _cell("detected_bool", "FAM001", "detected", True),
-            _cell("rescued_bool", "FAM001", "rescued", True),
+            _cell("rescued_bool", "FAM001", "backfilled", True),
         ),
         sample_order=("detected_bool", "rescued_bool"),
     )
@@ -1019,8 +1020,8 @@ def test_bool_area_is_not_a_valid_production_matrix_area():
     assert detected.production_status == "blank"
     assert detected.blank_reason == "invalid_area"
     assert rescued.write_matrix_value is False
-    assert rescued.production_status == "rejected_rescue"
-    assert rescued.rescue_tier == "rejected_rescue"
+    assert rescued.production_status == "rejected_backfill"
+    assert rescued.backfill_tier == "rejected_backfill"
     assert rescued.blank_reason == "invalid_area"
 
 
@@ -1099,7 +1100,7 @@ def _cell(
     positive_area = _positive_area_value(area)
     if (
         selected_integration is None
-        and status in {"detected", "rescued"}
+        and status in {"detected", "backfilled"}
         and positive_area is not None
     ):
         selected_integration = _integration(
@@ -1203,7 +1204,7 @@ def _backfill_evidence_fields(
     drift_supported: bool,
     candidate_ms2_evidence: bool,
 ) -> dict[str, object]:
-    if status != "rescued" or not enabled:
+    if status != "backfilled" or not enabled:
         return {}
     fields: dict[str, object] = {
         "backfill_ms1_pattern_status": "supportive",

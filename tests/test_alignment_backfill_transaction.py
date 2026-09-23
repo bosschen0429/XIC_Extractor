@@ -37,7 +37,7 @@ def _audit_row(cell, *, candidate_index: int = 1):
         candidate_phase="primary_query",
         selected_for_output=True,
         candidate_status=cell.status,
-        candidate_outcome="rescued",
+        candidate_outcome="backfilled",
         trace_quality=cell.trace_quality,
         area=cell.area,
         apex_rt=cell.apex_rt,
@@ -163,7 +163,7 @@ def test_sample_transaction_preserves_every_backfill_attachment(
         live.stage.work_unit_key
     )
     by_sample = {item.sample_stem: item for item in output.matrix.cells}
-    assert by_sample["sample-b"].status == "rescued"
+    assert by_sample["sample-b"].status == "backfilled"
     assert by_sample["sample-b"].area == cell.area
 
 
@@ -207,7 +207,7 @@ def test_sample_transaction_releases_delivered_result_graph(tmp_path: Path) -> N
     assert all(ref() is None for ref in result_refs)
     assert all(ref() is None for ref in cell_refs)
     assert all(
-        cell.status == "rescued" for cell in transaction.finish().matrix.cells[1:]
+        cell.status == "backfilled" for cell in transaction.finish().matrix.cells[1:]
     )
 
 

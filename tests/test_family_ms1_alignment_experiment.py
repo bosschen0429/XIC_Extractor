@@ -85,7 +85,7 @@ def test_load_trace_data_bundle_reads_existing_overlay_json_shape(
                 "traces": [
                     {
                         "sample_stem": "sample-a",
-                        "status": "rescued",
+                        "status": "backfilled",
                         "group": "top_rescued_ms1_area",
                         "cell_area": 10.0,
                         "cell_height": 20.0,
@@ -310,7 +310,7 @@ def test_cli_renders_alignment_experiment_without_raw_or_drift(tmp_path: Path) -
                 },
                 "traces": [
                     _trace_json("detected-a", status="detected", group="detected_seed"),
-                    _trace_json("rescued-a", status="rescued"),
+                    _trace_json("rescued-a", status="backfilled"),
                 ],
             },
         ),
@@ -386,7 +386,7 @@ def test_cli_renders_alignment_experiment_without_raw_or_drift(tmp_path: Path) -
             "source_family",
             "trace_count",
             "detected_count",
-            "rescued_count",
+            "backfilled_count",
             "median_cell_apex_rt",
             "min_cell_apex_rt",
             "max_cell_apex_rt",
@@ -457,7 +457,7 @@ def test_cli_no_images_writes_shift_summaries_without_pngs(tmp_path: Path) -> No
                 },
                 "traces": [
                     _trace_json("detected-a", status="detected", group="detected_seed"),
-                    _trace_json("rescued-a", status="rescued"),
+                    _trace_json("rescued-a", status="backfilled"),
                 ],
             },
         ),
@@ -529,7 +529,7 @@ class _FakeDriftLookup:
 def _trace_row(
     sample: str = "sample-a",
     *,
-    status: str = "rescued",
+    status: str = "backfilled",
     group: str = "top_rescued_ms1_area",
     cell_apex: float = 8.0,
     trace_apex: float = 8.0,
@@ -583,7 +583,7 @@ def _scalar_best_source_family_shape_shift(
 def _trace_json(
     sample: str,
     *,
-    status: str = "rescued",
+    status: str = "backfilled",
     group: str = "top_rescued_ms1_area",
 ) -> dict[str, object]:
     return {

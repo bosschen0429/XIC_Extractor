@@ -16,7 +16,7 @@ _REVIEW_REQUIRED_COLUMNS = (
     "include_in_primary_matrix",
     "present_rate",
     "detected_count",
-    "accepted_rescue_count",
+    "accepted_backfill_count",
     "row_flags",
 )
 _MATRIX_REQUIRED_COLUMNS = (
@@ -136,7 +136,9 @@ def _matrix_cleanliness(
                         "identity_decision": row.get("identity_decision", ""),
                         "present_rate": row.get("present_rate", ""),
                         "detected_count": row.get("detected_count", ""),
-                        "accepted_rescue_count": row.get("accepted_rescue_count", ""),
+                        "accepted_backfill_count": row.get(
+                            "accepted_backfill_count", ""
+                        ),
                         "row_flags": row.get("row_flags", ""),
                         "warning": row.get("warning", ""),
                     },
@@ -366,7 +368,7 @@ def _is_zero_present(row: Mapping[str, str]) -> bool:
     return (
         _float_value(row.get("present_rate", ""), default=0.0) == 0.0
         and _int_value(row.get("detected_count", "")) == 0
-        and _int_value(row.get("accepted_rescue_count", "")) == 0
+        and _int_value(row.get("accepted_backfill_count", "")) == 0
     )
 
 

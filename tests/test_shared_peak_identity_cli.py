@@ -1780,7 +1780,7 @@ def _mode_assignment(
     raw_rt: str,
     normalized_rt: str,
     *,
-    status: str = "rescued",
+    status: str = "backfilled",
 ) -> dict[str, str]:
     return {
         "sample_stem": sample_stem,
@@ -1820,7 +1820,7 @@ def _write_overlay_trace_data(path: Path) -> None:
                 "traces": [
                     {
                         "sample_stem": "S1",
-                        "status": "rescued",
+                        "status": "backfilled",
                         "cell_apex_rt": 1.0,
                         "cell_start_rt": 0.9,
                         "cell_end_rt": 1.1,

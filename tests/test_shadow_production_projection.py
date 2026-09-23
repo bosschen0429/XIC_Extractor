@@ -33,7 +33,7 @@ def test_projection_uses_production_decisions_for_current_matrix_state() -> None
             _cell_decision(
                 "FAM001",
                 "S_REVIEW",
-                "review_rescue",
+                "review_backfill",
                 False,
                 None,
                 blank_reason="backfill_ms1_pattern_blocked",
@@ -48,7 +48,7 @@ def test_projection_uses_production_decisions_for_current_matrix_state() -> None
             _cell_row(
                 "FAM001",
                 "S_REVIEW",
-                "rescued",
+                "backfilled",
                 area="250.0",
                 product_evidence=True,
             ),
@@ -66,7 +66,7 @@ def test_projection_uses_production_decisions_for_current_matrix_state() -> None
         "production_decision_snapshot"
     )
     assert by_sample["S_REVIEW"]["current_matrix_written"] == "FALSE"
-    assert by_sample["S_REVIEW"]["current_production_status"] == "review_rescue"
+    assert by_sample["S_REVIEW"]["current_production_status"] == "review_backfill"
     assert by_sample["S_REVIEW"]["shadow_decision"] == "accept"
     assert by_sample["S_REVIEW"]["projected_matrix_written"] == "TRUE"
     assert by_sample["S_REVIEW"]["projected_matrix_value"] == "250"
@@ -75,7 +75,7 @@ def test_projection_uses_production_decisions_for_current_matrix_state() -> None
 def test_projection_carries_group_hypothesis_as_peak_identity() -> None:
     decisions = _production_decisions(
         cells=(
-            _cell_decision("FAM_ID", "S_REVIEW", "review_rescue", False, None),
+            _cell_decision("FAM_ID", "S_REVIEW", "review_backfill", False, None),
         ),
     )
 
@@ -85,7 +85,7 @@ def test_projection_carries_group_hypothesis_as_peak_identity() -> None:
             _cell_row(
                 "FAM_ID",
                 "S_REVIEW",
-                "rescued",
+                "backfilled",
                 group_hypothesis_id="PH_FAM_ID",
                 product_evidence=True,
             ),
@@ -101,7 +101,7 @@ def test_projection_carries_group_hypothesis_as_peak_identity() -> None:
 def test_projection_leaves_identity_blank_without_peak_or_group_hypothesis() -> None:
     decisions = _production_decisions(
         cells=(
-            _cell_decision("FAM_NO_ID", "S_REVIEW", "review_rescue", False, None),
+            _cell_decision("FAM_NO_ID", "S_REVIEW", "review_backfill", False, None),
         ),
     )
 
@@ -111,7 +111,7 @@ def test_projection_leaves_identity_blank_without_peak_or_group_hypothesis() -> 
             _cell_row(
                 "FAM_NO_ID",
                 "S_REVIEW",
-                "rescued",
+                "backfilled",
                 product_evidence=True,
             ),
         ),
@@ -126,7 +126,7 @@ def test_projection_leaves_identity_blank_without_peak_or_group_hypothesis() -> 
 def test_projection_row_hash_is_present_and_stable_across_identical_builds() -> None:
     decisions = _production_decisions(
         cells=(
-            _cell_decision("FAM_HASH", "S_REVIEW", "review_rescue", False, None),
+            _cell_decision("FAM_HASH", "S_REVIEW", "review_backfill", False, None),
         ),
     )
 
@@ -137,7 +137,7 @@ def test_projection_row_hash_is_present_and_stable_across_identical_builds() -> 
                 _cell_row(
                     "FAM_HASH",
                     "S_REVIEW",
-                    "rescued",
+                    "backfilled",
                     group_hypothesis_id="PH_HASH",
                     product_evidence=True,
                 ),
@@ -157,7 +157,7 @@ def test_projection_row_hash_is_present_and_stable_across_identical_builds() -> 
 def test_projection_product_hash_excludes_review_overlay_path() -> None:
     decisions = _production_decisions(
         cells=(
-            _cell_decision("FAM_HASH", "S_REVIEW", "review_rescue", False, None),
+            _cell_decision("FAM_HASH", "S_REVIEW", "review_backfill", False, None),
         ),
     )
 
@@ -170,7 +170,7 @@ def test_projection_product_hash_excludes_review_overlay_path() -> None:
                 _cell_row(
                     "FAM_HASH",
                     "S_REVIEW",
-                    "rescued",
+                    "backfilled",
                     group_hypothesis_id="PH_HASH",
                     product_evidence=True,
                 ),
@@ -200,7 +200,7 @@ def test_projection_keeps_dup_without_product_authority_as_review_context() -> N
             _cell_decision(
                 "FAM_DUP",
                 "S_DUP",
-                "review_rescue",
+                "review_backfill",
                 False,
                 None,
                 blank_reason="backfill_ms1_pattern_blocked",
@@ -215,7 +215,7 @@ def test_projection_keeps_dup_without_product_authority_as_review_context() -> N
             _cell_row(
                 "FAM_DUP",
                 "S_DUP",
-                "rescued",
+                "backfilled",
                 gap_fill_state="not_filled",
                 gap_fill_reason="not_requested_duplicate_loser",
             ),
@@ -239,7 +239,7 @@ def test_projection_keeps_visual_same_peak_support_as_identity_review_context() 
             _cell_decision(
                 "FAM_VISUAL",
                 "S_REVIEW",
-                "review_rescue",
+                "review_backfill",
                 False,
                 None,
                 blank_reason="backfill_ms1_pattern_blocked",
@@ -258,7 +258,7 @@ def test_projection_keeps_visual_same_peak_support_as_identity_review_context() 
             _cell_row(
                 "FAM_VISUAL",
                 "S_REVIEW",
-                "rescued",
+                "backfilled",
                 area="321.5",
                 group_hypothesis_id="PH_VISUAL",
             ),
@@ -283,7 +283,7 @@ def test_projection_accepts_same_peak_dup_with_product_authority() -> None:
             _cell_decision(
                 "FAM_DUP",
                 "S_DUP",
-                "review_rescue",
+                "review_backfill",
                 False,
                 None,
                 blank_reason="backfill_ms1_pattern_blocked",
@@ -298,7 +298,7 @@ def test_projection_accepts_same_peak_dup_with_product_authority() -> None:
             _cell_row(
                 "FAM_DUP",
                 "S_DUP",
-                "rescued",
+                "backfilled",
                 gap_fill_state="not_filled",
                 gap_fill_reason="not_requested_duplicate_loser",
                 product_evidence=True,
@@ -332,7 +332,7 @@ def test_projection_warns_family_duplicate_loser_with_authority() -> None:
             _cell_decision(
                 "FAM_DUP_AUTH",
                 "S_DUP",
-                "accepted_rescue",
+                "accepted_backfill",
                 False,
                 None,
                 blank_reason="backfill_ms1_pattern_blocked",
@@ -347,7 +347,7 @@ def test_projection_warns_family_duplicate_loser_with_authority() -> None:
             _cell_row(
                 "FAM_DUP_AUTH",
                 "S_DUP",
-                "rescued",
+                "backfilled",
                 group_claim_state="same_peak_multi_claim;duplicate_loser",
                 product_evidence=True,
                 candidate_ms2_evidence=False,
@@ -365,7 +365,7 @@ def test_projection_warns_family_duplicate_loser_with_authority() -> None:
     )
 
     dup = next(row for row in index.rows if row["sample_stem"] == "S_DUP")
-    assert dup["current_production_status"] == "accepted_rescue"
+    assert dup["current_production_status"] == "accepted_backfill"
     assert dup["shadow_decision"] == "accept"
     assert dup["shadow_reasons"] == "product_authorized_same_peak_backfill"
     assert dup["shadow_warnings"] == "same_peak_multi_claim"
@@ -380,7 +380,7 @@ def test_projection_blocks_current_hypothesis_blocker_with_authority() -> None:
             _cell_decision(
                 "FAM_BLOCK",
                 "S_REVIEW",
-                "review_rescue",
+                "review_backfill",
                 False,
                 None,
                 blank_reason="backfill_wrong_peak_or_hypothesis_blocked",
@@ -395,7 +395,7 @@ def test_projection_blocks_current_hypothesis_blocker_with_authority() -> None:
             _cell_row(
                 "FAM_BLOCK",
                 "S_REVIEW",
-                "rescued",
+                "backfilled",
                 product_evidence=True,
             ),
         ),
@@ -417,7 +417,7 @@ def test_projection_blocks_cell_hypothesis_loser_even_without_current_reason() -
             _cell_decision(
                 "FAM_CELL_BLOCK",
                 "S_REVIEW",
-                "review_rescue",
+                "review_backfill",
                 False,
                 None,
                 blank_reason="backfill_ms1_pattern_blocked",
@@ -432,7 +432,7 @@ def test_projection_blocks_cell_hypothesis_loser_even_without_current_reason() -
             _cell_row(
                 "FAM_CELL_BLOCK",
                 "S_REVIEW",
-                "rescued",
+                "backfilled",
                 product_evidence=True,
                 consolidation_state="primary_loser",
             ),
@@ -456,7 +456,7 @@ def test_projection_blocks_activation_wrong_peak_even_with_product_authority() -
             _cell_decision(
                 "FAM_ACT_BLOCK",
                 "S_REVIEW",
-                "review_rescue",
+                "review_backfill",
                 False,
                 None,
                 blank_reason="backfill_ms1_pattern_blocked",
@@ -471,7 +471,7 @@ def test_projection_blocks_activation_wrong_peak_even_with_product_authority() -
             _cell_row(
                 "FAM_ACT_BLOCK",
                 "S_REVIEW",
-                "rescued",
+                "backfilled",
                 product_evidence=True,
                 activation_contract_rule_id="wrong_peak_conflict",
                 activation_product_effect="block_rescue_cell",
@@ -496,7 +496,7 @@ def test_projection_accepts_ms1_same_peak_authority_without_candidate_ms2() -> N
             _cell_decision(
                 "FAM_MS1_ONLY",
                 "S_REVIEW",
-                "review_rescue",
+                "review_backfill",
                 False,
                 None,
                 blank_reason="backfill_ms1_pattern_blocked",
@@ -511,7 +511,7 @@ def test_projection_accepts_ms1_same_peak_authority_without_candidate_ms2() -> N
             _cell_row(
                 "FAM_MS1_ONLY",
                 "S_REVIEW",
-                "rescued",
+                "backfilled",
                 product_evidence=True,
                 candidate_ms2_evidence=False,
             ),
@@ -540,7 +540,7 @@ def test_projection_accept_requires_positive_projected_matrix_value() -> None:
             _cell_decision(
                 "FAM_NO_VALUE",
                 "S_REVIEW",
-                "review_rescue",
+                "review_backfill",
                 False,
                 None,
                 blank_reason="backfill_ms1_pattern_blocked",
@@ -555,7 +555,7 @@ def test_projection_accept_requires_positive_projected_matrix_value() -> None:
             _cell_row(
                 "FAM_NO_VALUE",
                 "S_REVIEW",
-                "rescued",
+                "backfilled",
                 area="0",
                 product_evidence=True,
             ),
@@ -582,7 +582,7 @@ def test_projection_keeps_evidence_conflicts_as_review_context() -> None:
             _cell_decision(
                 "FAM_CONFLICT",
                 "S_REVIEW",
-                "review_rescue",
+                "review_backfill",
                 False,
                 None,
             ),
@@ -596,7 +596,7 @@ def test_projection_keeps_evidence_conflicts_as_review_context() -> None:
         production_decisions=decisions,
         cell_rows=(
             _cell_row("FAM_CONFLICT", "S_DET", "detected"),
-            _cell_row("FAM_CONFLICT", "S_REVIEW", "rescued"),
+            _cell_row("FAM_CONFLICT", "S_REVIEW", "backfilled"),
         ),
         retained_gate_rows=(gate,),
     )
@@ -615,7 +615,7 @@ def test_projection_accepts_standard_peak_authority_when_gate_lacks_overlay() ->
             _cell_decision(
                 "FAM_STD",
                 "S_REVIEW",
-                "review_rescue",
+                "review_backfill",
                 False,
                 None,
             ),
@@ -632,7 +632,7 @@ def test_projection_accepts_standard_peak_authority_when_gate_lacks_overlay() ->
             _cell_row(
                 "FAM_STD",
                 "S_REVIEW",
-                "rescued",
+                "backfilled",
                 product_evidence=True,
                 candidate_ms2_evidence=False,
                 backfill_evidence_reason=(
@@ -663,7 +663,7 @@ def test_projection_keeps_review_required_blockers_closed_with_authority() -> No
             _cell_decision(
                 "FAM_REVIEW",
                 "S_REVIEW",
-                "review_rescue",
+                "review_backfill",
                 False,
                 None,
             ),
@@ -680,7 +680,7 @@ def test_projection_keeps_review_required_blockers_closed_with_authority() -> No
             _cell_row(
                 "FAM_REVIEW",
                 "S_REVIEW",
-                "rescued",
+                "backfilled",
                 product_evidence=True,
             ),
         ),
@@ -695,30 +695,30 @@ def test_projection_keeps_review_required_blockers_closed_with_authority() -> No
     assert "product_authorized" in review["product_authority_chain"]
 
 
-def test_projection_blocks_only_hard_failures_for_review_rescues() -> None:
+def test_projection_blocks_only_hard_failures_for_review_backfills() -> None:
     decisions = _production_decisions(
         cells=(
             _cell_decision(
                 "FAM_NO_ANCHOR",
                 "S_REVIEW",
-                "review_rescue",
+                "review_backfill",
                 False,
                 None,
             ),
             _cell_decision("FAM_OUT", "S_DET", "detected", True, 100.0),
-            _cell_decision("FAM_OUT", "S_REVIEW", "review_rescue", False, None),
+            _cell_decision("FAM_OUT", "S_REVIEW", "review_backfill", False, None),
         ),
     )
 
     index = build_shadow_production_projection_index(
         production_decisions=decisions,
         cell_rows=(
-            _cell_row("FAM_NO_ANCHOR", "S_REVIEW", "rescued"),
+            _cell_row("FAM_NO_ANCHOR", "S_REVIEW", "backfilled"),
             _cell_row("FAM_OUT", "S_DET", "detected"),
             _cell_row(
                 "FAM_OUT",
                 "S_REVIEW",
-                "rescued",
+                "backfilled",
                 apex_rt="12.00",
                 start="11.90",
                 end="12.10",
@@ -752,7 +752,7 @@ def test_projection_blocks_only_hard_failures_for_review_rescues() -> None:
 def test_projection_rejects_gate_rows_missing_blocker_columns() -> None:
     decisions = _production_decisions(
         cells=(
-            _cell_decision("FAM_BAD_GATE", "S_REVIEW", "review_rescue", False, None),
+            _cell_decision("FAM_BAD_GATE", "S_REVIEW", "review_backfill", False, None),
         ),
     )
     gate = _gate_row("FAM_BAD_GATE", "S_REVIEW", detected="1")
@@ -761,7 +761,7 @@ def test_projection_rejects_gate_rows_missing_blocker_columns() -> None:
     with pytest.raises(ValueError, match="challenge_blockers"):
         build_shadow_production_projection_index(
             production_decisions=decisions,
-            cell_rows=(_cell_row("FAM_BAD_GATE", "S_REVIEW", "rescued"),),
+            cell_rows=(_cell_row("FAM_BAD_GATE", "S_REVIEW", "backfilled"),),
             retained_gate_rows=(gate,),
         )
 
@@ -772,7 +772,7 @@ def test_projection_overlay_requires_exact_seed_group_match() -> None:
     second_seed = "seed::FAM_OVERLAY::mz=269.145::rt=9.8::window=9.3-10.3::ppm=10"
     decisions = _production_decisions(
         cells=(
-            _cell_decision(family, "S_REVIEW", "review_rescue", False, None),
+            _cell_decision(family, "S_REVIEW", "review_backfill", False, None),
         ),
     )
     gate = _gate_row(family, "S_REVIEW", detected="1")
@@ -780,7 +780,7 @@ def test_projection_overlay_requires_exact_seed_group_match() -> None:
     gate["overlay_png_path"] = "gate-specific.png"
     index = build_shadow_production_projection_index(
         production_decisions=decisions,
-        cell_rows=(_cell_row(family, "S_REVIEW", "rescued"),),
+        cell_rows=(_cell_row(family, "S_REVIEW", "backfilled"),),
         retained_gate_rows=(gate,),
         overlay_rows=(
             {
@@ -802,7 +802,7 @@ def test_projection_prefers_conflicting_duplicate_overlay_verdict() -> None:
     seed_group = f"seed::{family}::mz=269.145::rt=9.5::window=9-10::ppm=10"
     decisions = _production_decisions(
         cells=(
-            _cell_decision(family, "S_REVIEW", "review_rescue", False, None),
+            _cell_decision(family, "S_REVIEW", "review_backfill", False, None),
         ),
     )
     gate = _gate_row(family, "S_REVIEW", detected="1")
@@ -811,7 +811,7 @@ def test_projection_prefers_conflicting_duplicate_overlay_verdict() -> None:
 
     index = build_shadow_production_projection_index(
         production_decisions=decisions,
-        cell_rows=(_cell_row(family, "S_REVIEW", "rescued"),),
+        cell_rows=(_cell_row(family, "S_REVIEW", "backfilled"),),
         retained_gate_rows=(gate,),
         overlay_rows=(
             {
@@ -840,14 +840,14 @@ def test_projection_writer_serializes_stable_schema_and_summary(tmp_path: Path) 
     decisions = _production_decisions(
         cells=(
             _cell_decision("FAM001", "S_DET", "detected", True, 100.0),
-            _cell_decision("FAM001", "S_REVIEW", "review_rescue", False, None),
+            _cell_decision("FAM001", "S_REVIEW", "review_backfill", False, None),
         ),
     )
     index = build_shadow_production_projection_index(
         production_decisions=decisions,
         cell_rows=(
             _cell_row("FAM001", "S_DET", "detected"),
-            _cell_row("FAM001", "S_REVIEW", "rescued", product_evidence=True),
+            _cell_row("FAM001", "S_REVIEW", "backfilled", product_evidence=True),
         ),
         retained_gate_rows=(
             _gate_row("FAM001", "S_DET;S_REVIEW", detected="1"),
@@ -917,7 +917,7 @@ def test_package_runner_writes_projection_from_alignment_artifacts(
             _cell_row(
                 "FAM_RUNNER",
                 "S_REVIEW",
-                "rescued",
+                "backfilled",
                 area="250.0",
             ),
         ],
@@ -1048,7 +1048,7 @@ def test_cli_writes_projection_from_alignment_artifacts(tmp_path: Path) -> None:
         alignment_dir / "alignment_cells.tsv",
         [
             _cell_row("FAM_CLI", "S_DET", "detected", area="100.0"),
-            _cell_row("FAM_CLI", "S_REVIEW", "rescued", area="250.0"),
+            _cell_row("FAM_CLI", "S_REVIEW", "backfilled", area="250.0"),
         ],
         (
             "feature_family_id",
@@ -1177,7 +1177,7 @@ def test_cli_current_written_uses_actual_matrix_cell_when_identity_supplied(
             _cell_row(
                 "FAM_STALE",
                 "S_REVIEW",
-                "rescued",
+                "backfilled",
                 area="250.0",
                 product_evidence=True,
                 candidate_ms2_evidence=False,
@@ -1309,7 +1309,7 @@ def test_cli_projects_ms1_product_authority_sidecar(tmp_path: Path) -> None:
         alignment_dir / "alignment_cells.tsv",
         [
             _cell_row("FAM_MS1", "S_DET", "detected", area="100.0"),
-            _cell_row("FAM_MS1", "S_REVIEW", "rescued", area="250.0"),
+            _cell_row("FAM_MS1", "S_REVIEW", "backfilled", area="250.0"),
         ],
         (
             "feature_family_id",
@@ -1450,7 +1450,7 @@ def test_cli_fails_when_gate_schema_omits_challenge_blockers(tmp_path: Path) -> 
     )
     _write_tsv(
         alignment_dir / "alignment_cells.tsv",
-        [_cell_row("FAM_FAIL", "S_REVIEW", "rescued")],
+        [_cell_row("FAM_FAIL", "S_REVIEW", "backfilled")],
         (
             "feature_family_id",
             "sample_stem",
@@ -1516,8 +1516,8 @@ def _production_decisions(
             quantifiable_detected_count=sum(
                 1 for cell in family_cells if cell.production_status == "detected"
             ),
-            quantifiable_rescue_count=sum(
-                1 for cell in family_cells if cell.raw_status == "rescued"
+            quantifiable_backfill_count=sum(
+                1 for cell in family_cells if cell.raw_status == "backfilled"
             ),
             accepted_cell_count=sum(
                 1 for cell in family_cells if cell.write_matrix_value
@@ -1525,15 +1525,15 @@ def _production_decisions(
             detected_count=sum(
                 1 for cell in family_cells if cell.raw_status == "detected"
             ),
-            accepted_rescue_count=sum(
+            accepted_backfill_count=sum(
                 1
                 for cell in family_cells
-                if cell.production_status == "accepted_rescue"
+                if cell.production_status == "accepted_backfill"
             ),
-            review_rescue_count=sum(
+            review_backfill_count=sum(
                 1
                 for cell in family_cells
-                if cell.production_status == "review_rescue"
+                if cell.production_status == "review_backfill"
             ),
             duplicate_assigned_count=0,
             ambiguous_ms1_owner_count=0,
@@ -1555,10 +1555,12 @@ def _cell_decision(
         feature_family_id=family,
         sample_stem=sample,
         raw_status=(
-            "rescued" if status in {"review_rescue", "accepted_rescue"} else status
+            "backfilled"
+            if status in {"review_backfill", "accepted_backfill"}
+            else status
         ),
         production_status=status,  # type: ignore[arg-type]
-        rescue_tier="review_rescue" if status == "review_rescue" else "",
+        backfill_tier="review_backfill" if status == "review_backfill" else "",
         write_matrix_value=write,
         matrix_value=value,
         blank_reason=blank_reason,

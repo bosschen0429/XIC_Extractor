@@ -216,7 +216,7 @@ def _transfer_blockers(
         blockers.append("same_peak_conflict")
     if not _value(normal_row, "full_cohort_matched_peak_hypothesis_id"):
         blockers.append("missing_full_cohort_peak_hypothesis_id")
-    if _value(normal_row, "full_cohort_cell_status") not in {"detected", "rescued"}:
+    if _value(normal_row, "full_cohort_cell_status") not in {"detected", "backfilled"}:
         blockers.append("full_cohort_cell_status_not_detected_or_rescued")
     area_source = _projected_matrix_value_source(normal_row)
     if area_source != _GAUSSIAN15_AREA_SOURCE:

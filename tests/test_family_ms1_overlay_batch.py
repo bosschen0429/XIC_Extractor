@@ -165,8 +165,8 @@ def test_batch_uses_structured_queue_columns_and_limit(
             "family_verdict": "ms1_shape_supports_family_backfill",
             "dda_trigger_limited_ms2_support": True,
             "detected_count": 2,
-            "rescued_count": 80,
-            "detected_rescued_count": 82,
+            "backfilled_count": 80,
+            "detected_backfilled_count": 82,
             "evaluable_trace_count": 82,
             "global_apex_assessable_trace_count": 80,
             "global_apex_assessable_fraction": 0.975,
@@ -1225,9 +1225,9 @@ def test_batch_fast_path_opens_each_raw_sample_once(tmp_path: Path) -> None:
         alignment_cells,
         [
             _cell_row("FAM_A", "Sample_A", "detected", "1000"),
-            _cell_row("FAM_A", "Sample_B", "rescued", "500"),
+            _cell_row("FAM_A", "Sample_B", "backfilled", "500"),
             _cell_row("FAM_B", "Sample_A", "detected", "900"),
-            _cell_row("FAM_B", "Sample_B", "rescued", "400"),
+            _cell_row("FAM_B", "Sample_B", "backfilled", "400"),
         ],
     )
     requests = (
@@ -1439,7 +1439,7 @@ def test_batch_reuses_duplicate_sample_xic_requests_without_dropping_rows(
         alignment_cells,
         [
             _cell_row("FAM_A", "Sample_A", "detected", "1000"),
-            _cell_row("FAM_B", "Sample_A", "rescued", "900"),
+            _cell_row("FAM_B", "Sample_A", "backfilled", "900"),
         ],
     )
     requests = (
@@ -1558,8 +1558,8 @@ def test_batch_reuses_existing_outputs_without_raw_when_requested(
                 "evidence_summary": {
                     "family_verdict": "ms1_shape_supports_family_backfill",
                     "detected_count": 2,
-                    "rescued_count": 3,
-                    "detected_rescued_count": 5,
+                    "backfilled_count": 3,
+                    "detected_backfilled_count": 5,
                     "evaluable_trace_count": 5,
                     "absolute_own_max_shape_supported_fraction": 0.8,
                     "local_apex_supported_fraction": 1.0,
@@ -2108,8 +2108,8 @@ def _batch_row(
         "family_verdict": family_verdict,
         "dda_trigger_limited_ms2_support": True,
         "detected_count": 2,
-        "rescued_count": 80,
-        "detected_rescued_count": 82,
+        "backfilled_count": 80,
+        "detected_backfilled_count": 82,
         "evaluable_trace_count": 82,
         "global_apex_assessable_trace_count": 80,
         "global_apex_assessable_fraction": 0.975,

@@ -41,9 +41,9 @@ WORKBENCH_JS = r"""(() => {
     return notices;
   }
   function originLabel(origin){
-    return origin?.label||({discovery_support:'初始探索支持',reacquired_support:'重新擷取支持',recovery_support:'Backfill（回填）支持',unavailable:'來源未提供'}[origin?.kind]||'來源未提供');
+    return origin?.label||({discovery_support:'初始探索支持',reacquired_support:'重新擷取支持',backfill_support:'Backfill（回填）支持',unavailable:'來源未提供'}[origin?.kind]||'來源未提供');
   }
-  function originClass(origin){return ['discovery_support','reacquired_support','recovery_support'].includes(origin?.kind)?origin.kind:'unavailable';}
+  function originClass(origin){return ['discovery_support','reacquired_support','backfill_support'].includes(origin?.kind)?origin.kind:'unavailable';}
   function originRefs(origin){return [...new Set(['method_refs','capture_refs','observation_refs'].flatMap(key=>Array.isArray(origin?.[key])?origin[key]:[]).filter(Boolean))];}
   function sampleAlignment(item,row){
     const curves=(item.curves||[]).filter(c=>c.sample_id===row.sample_id&&c.raw_rts?.length), aligned=curves.filter(c=>c.aligned_rts?.length).length;

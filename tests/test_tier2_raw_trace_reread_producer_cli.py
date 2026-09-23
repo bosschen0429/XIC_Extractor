@@ -114,8 +114,8 @@ def _write_alignment_artifacts(alignment_dir: Path) -> None:
         "identity_reason",
         "primary_evidence",
         "quantifiable_detected_count",
-        "quantifiable_rescue_count",
-        "review_rescue_count",
+        "quantifiable_backfill_count",
+        "review_backfill_count",
         "duplicate_assigned_count",
         "ambiguous_ms1_owner_count",
         "row_flags",
@@ -131,8 +131,8 @@ def _write_alignment_artifacts(alignment_dir: Path) -> None:
         "identity_reason": "candidate",
         "primary_evidence": "owner_complete_link",
         "quantifiable_detected_count": "1",
-        "quantifiable_rescue_count": "2",
-        "review_rescue_count": "0",
+        "quantifiable_backfill_count": "2",
+        "review_backfill_count": "0",
         "duplicate_assigned_count": "0",
         "ambiguous_ms1_owner_count": "0",
         "row_flags": "single_detected_seed;provisional_retention_candidate",
@@ -155,8 +155,8 @@ def _write_alignment_artifacts(alignment_dir: Path) -> None:
     )
     cell_rows = (
         _cell("Seed_A", "detected", "8.000", "7.960", "8.040"),
-        _cell("Rescue_A", "rescued", "8.020", "7.980", "8.060"),
-        _cell("Rescue_B", "rescued", "8.030", "7.990", "8.070"),
+        _cell("Rescue_A", "backfilled", "8.020", "7.980", "8.060"),
+        _cell("Rescue_B", "backfilled", "8.030", "7.990", "8.070"),
     )
     _write_tsv(alignment_dir / "alignment_cells.tsv", cell_rows, cell_columns)
     _write_tsv(

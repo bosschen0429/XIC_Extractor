@@ -367,6 +367,36 @@ def admit_cid_nl_group_backfills(
     )
 
 
+def contested_backfill_peaks(
+    *,
+    groups: tuple[CrossSamplePeakGroupHypothesis, ...],
+    backfills: Mapping[
+        tuple[str, str, str],
+        tuple[ResolvedCanonicalSampleIdentity, CidNlMethodAssessmentRef],
+    ],
+) -> frozenset[tuple[str, str]]:
+    """Physical peaks a Backfill value cannot claim for one group alone.
+
+    A peak several groups' Backfills found, or one a group member already
+    holds, belongs to no single row. ``groups`` are the admitted successors.
+    """
+    claims: dict[tuple[str, str], set[str]] = defaultdict(set)
+    for (group_id, sample_id, _), (_, assessment) in backfills.items():
+        for peak in assessment.candidate_peaks:
+            claims[(sample_id, peak.content.peak_observation_content_id)].add(group_id)
+    occupied = {
+        (member.canonical_sample_identity_id, observation_id)
+        for group in groups
+        for member in group.member_subjects
+        for observation_id in member.physical_observation_ids
+    }
+    return frozenset(
+        key
+        for key, group_ids in claims.items()
+        if len(group_ids) > 1 or key in occupied
+    )
+
+
 def _partition_transition(
     *,
     predecessors: tuple[CrossSampleGroupIdentity, ...],

@@ -490,6 +490,55 @@ def test_merge_candidates_by_shared_ms1_feature_row_id_when_seed_is_on_tail() ->
     assert merged[0].seed_event_count == 2
 
 
+@pytest.mark.parametrize(
+    ("second_precursor_mz", "expected_count"),
+    [(400.0011, 1), (400.0100, 2)],
+)
+def test_candidates_sharing_an_ms1_apex_within_extraction_tolerance_are_one_peak(
+    second_precursor_mz: float,
+    expected_count: int,
+) -> None:
+    settings = _multi_tag_settings()
+    first = replace(
+        _candidate("dR", peak_start=40.1631, peak_end=41.1616),
+        candidate_id="NormalBC2259_DNA#35352@mz400_p283.952656",
+        best_ms2_scan_id=35352,
+        seed_scan_ids=(35352,),
+        rt_seed_min=40.4549,
+        rt_seed_max=41.1204,
+        best_seed_rt=40.6,
+        ms1_apex_rt=40.579393,
+        seed_event_count=6,
+        ms1_feature_row_id="NormalBC2259_DNA|dR|400.000000|40.579393",
+    )
+    second = replace(
+        _candidate(
+            "dR",
+            observed_loss=116.049344,
+            peak_start=40.2048,
+            peak_end=41.4945,
+        ),
+        candidate_id="NormalBC2259_DNA#36012@mz400_p283.952656",
+        precursor_mz=second_precursor_mz,
+        best_ms2_scan_id=36012,
+        seed_scan_ids=(36012,),
+        rt_seed_min=41.3285,
+        rt_seed_max=41.3285,
+        best_seed_rt=41.3285,
+        ms1_apex_rt=40.579393,
+        ms1_feature_row_id=(
+            f"NormalBC2259_DNA|dR|{second_precursor_mz:.6f}|40.579393"
+        ),
+    )
+
+    merged = merge_candidates_by_ms1_peak([first, second], settings=settings)
+
+    assert len(merged) == expected_count
+    if expected_count == 1:
+        assert merged[0].seed_scan_ids == (35352, 36012)
+        assert merged[0].seed_event_count == 7
+
+
 def test_merge_shared_ms1_feature_row_id_with_configured_loss_edge_evidence() -> None:
     settings = _multi_tag_settings()
     row_id = "TumorBC2312_DNA|dR|400|8.6355"
@@ -529,7 +578,15 @@ def test_merge_shared_ms1_feature_row_id_with_configured_loss_edge_evidence() ->
     assert merged[0].seed_scan_ids == (5577, 5876)
 
 
-def test_shared_ms1_feature_row_id_does_not_merge_product_distinct_rows() -> None:
+@pytest.mark.parametrize(
+    ("product_mz", "observed_loss"),
+    [(283.90, None), (283.952656, 116.0520)],
+    ids=["distinct-product", "loss-scatter"],
+)
+def test_shared_ms1_apex_merges_whatever_the_fragment_or_loss(
+    product_mz: float,
+    observed_loss: float | None,
+) -> None:
     settings = _multi_tag_settings()
     row_id = "TumorBC2312_DNA|dR|400|5.0786"
     first = replace(
@@ -537,39 +594,14 @@ def test_shared_ms1_feature_row_id_does_not_merge_product_distinct_rows() -> Non
         ms1_feature_row_id=row_id,
     )
     second = replace(
-        _candidate("dR", product_mz=283.90),
+        _candidate("dR", product_mz=product_mz, observed_loss=observed_loss),
         ms1_feature_row_id=row_id,
     )
 
     merged = merge_candidates_by_ms1_peak([first, second], settings=settings)
 
-    assert len(merged) == 2
-    assert {candidate.product_mz for candidate in merged} == {283.952656, 283.90}
-
-
-def test_shared_ms1_feature_row_id_does_not_merge_loss_incompatible_rows() -> None:
-    settings = _multi_tag_settings()
-    row_id = "TumorBC2312_DNA|dR|400|5.0786"
-    first = replace(
-        _candidate("dR", product_mz=283.952656),
-        ms1_feature_row_id=row_id,
-    )
-    second = replace(
-        _candidate(
-            "dR",
-            product_mz=283.952656,
-            observed_loss=116.0520,
-        ),
-        ms1_feature_row_id=row_id,
-    )
-
-    merged = merge_candidates_by_ms1_peak([first, second], settings=settings)
-
-    assert len(merged) == 2
-    assert {candidate.observed_neutral_loss_da for candidate in merged} == {
-        116.047344,
-        116.0520,
-    }
+    assert len(merged) == 1
+    assert merged[0].seed_event_count == 2
 
 
 def test_cross_tag_candidates_do_not_merge_without_ms1_overlap() -> None:

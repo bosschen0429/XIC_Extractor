@@ -26,7 +26,7 @@ REVIEW_REQUIRED_COLUMNS = (
     "family_center_mz",
     "family_center_rt",
     "detected_count",
-    "accepted_rescue_count",
+    "accepted_backfill_count",
     "accepted_cell_count",
     "review_classification",
 )

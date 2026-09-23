@@ -47,7 +47,7 @@ READINESS_COLUMNS = (
     "full_cohort_winner_remap_candidate_count",
     "full_cohort_winner_remap_blocked_count",
     "full_cohort_winner_remap_winner_detected_count",
-    "full_cohort_winner_remap_winner_rescued_count",
+    "full_cohort_winner_remap_winner_backfilled_count",
     "full_cohort_winner_remap_missing_winner_count",
     "manual_review_scope",
     "full_cohort_peak_shape_review_status",
@@ -243,9 +243,9 @@ def build_transfer_readiness(
                 full_cohort_winner_remap_summary, "winner_detected_count"
             ),
         ),
-        "full_cohort_winner_remap_winner_rescued_count": str(
+        "full_cohort_winner_remap_winner_backfilled_count": str(
             _winner_remap_count(
-                full_cohort_winner_remap_summary, "winner_rescued_count"
+                full_cohort_winner_remap_summary, "winner_backfilled_count"
             ),
         ),
         "full_cohort_winner_remap_missing_winner_count": str(

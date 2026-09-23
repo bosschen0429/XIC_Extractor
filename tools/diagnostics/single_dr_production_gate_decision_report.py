@@ -45,7 +45,7 @@ _REVIEW_REQUIRED_COLUMNS = (
     "feature_family_id",
     "neutral_loss_tag",
     "detected_count",
-    "review_rescue_count",
+    "review_backfill_count",
     "include_in_primary_matrix",
 )
 _BACKFILL_EVIDENCE_COLUMNS = (
@@ -227,8 +227,8 @@ def _classify_family(
         or review_row.get("detected_count", ""),
     )
     q_rescue = _int_value(
-        review_row.get("quantifiable_rescue_count", "")
-        or review_row.get("accepted_rescue_count", ""),
+        review_row.get("quantifiable_backfill_count", "")
+        or review_row.get("accepted_backfill_count", ""),
     )
     denominator = sample_count or len(cells) or 1
     rescue_fraction = q_rescue / denominator

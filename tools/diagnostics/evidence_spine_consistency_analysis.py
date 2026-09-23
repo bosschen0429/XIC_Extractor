@@ -61,7 +61,7 @@ def _sample_rt_cell_index(
 ) -> SampleRtCellIndex:
     grouped: dict[str, list[AlignmentCell]] = {}
     for cell in alignment_cells:
-        if cell.status not in {"detected", "rescued"}:
+        if cell.status not in {"detected", "backfilled"}:
             continue
         if cell.mz is None or cell.rt is None:
             continue

@@ -27,7 +27,7 @@ ALIGNMENT_CELLS_REQUIRED_COLUMNS = {
     "family_center_mz",
     "family_center_rt",
 }
-_MEASURED_CELL_STATUSES = frozenset({"detected", "rescued"})
+_MEASURED_CELL_STATUSES = frozenset({"detected", "backfilled"})
 
 
 def build_rt_preview_rows(

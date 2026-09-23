@@ -42,7 +42,7 @@ def test_report_builds_overlay_limited_review_queue(tmp_path: Path) -> None:
         {
             "family_verdict": "ms1_shape_supports_family_backfill",
             "dda_trigger_limited_ms2_support": True,
-            "detected_rescued_count": 84,
+            "detected_backfilled_count": 84,
             "global_apex_assessable_trace_count": 82,
             "global_apex_assessable_fraction": 0.976,
             "selected_apex_in_trace_window_count": 81,
@@ -230,7 +230,7 @@ def _review_row(
         "family_center_mz": "251.165",
         "family_center_rt": "47.3966",
         "detected_count": str(detected),
-        "accepted_rescue_count": str(rescued),
+        "accepted_backfill_count": str(rescued),
         "accepted_cell_count": str(accepted),
         "include_in_primary_matrix": "TRUE",
         "row_flags": "rescue_heavy",
@@ -261,7 +261,7 @@ def _cells(
             {
                 "feature_family_id": family_id,
                 "sample_stem": f"R{index}",
-                "status": "rescued",
+                "status": "backfilled",
                 "area": str(height * 10),
                 "height": str(height),
             }

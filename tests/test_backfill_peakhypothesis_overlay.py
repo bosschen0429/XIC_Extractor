@@ -239,7 +239,7 @@ def _review_queue_row(
         "full_cohort_consolidation_winner_group_hypothesis_id": winner_family,
         "full_cohort_peak_start_rt": peak_start_rt,
         "full_cohort_peak_end_rt": peak_end_rt,
-        "full_cohort_cell_status": "rescued",
+        "full_cohort_cell_status": "backfilled",
         "full_cohort_primary_matrix_area": "48462.2",
         "full_cohort_include_in_primary_matrix": "FALSE",
         "full_cohort_consolidation_state": "primary_loser",

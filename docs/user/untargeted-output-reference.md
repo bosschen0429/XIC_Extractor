@@ -247,10 +247,10 @@ where that internal or sidecar identity is available.
 | Column | Type | Description |
 | --- | --- | --- |
 | quantifiable_detected_count | int | Detected and quantifiable |
-| quantifiable_rescue_count | int | Rescued and quantifiable |
+| quantifiable_backfill_count | int | Rescued and quantifiable |
 | accepted_cell_count | int | Accepted cells |
-| accepted_rescue_count | int | Accepted rescues |
-| review_rescue_count | int | Review-tier rescues |
+| accepted_backfill_count | int | Accepted rescues |
+| review_backfill_count | int | Review-tier rescues |
 | include_in_primary_matrix | bool | Included in output matrix |
 
 #### Adduct Annotation

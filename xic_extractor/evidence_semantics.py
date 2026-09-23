@@ -197,7 +197,7 @@ def common_evidence_from_aligned_cell(
         source="alignment_cell",
         source_id=source_id,
         provenance=provenance,
-        ms1_peak_found=status in {"detected", "rescued"},
+        ms1_peak_found=status in {"detected", "backfilled"},
         ms1_apex_rt_min=_optional_float(_field(cell, "apex_rt")),
         ms1_area=_optional_float(_field(cell, "area")),
         ms1_height=_optional_float(_field(cell, "height")),
@@ -238,7 +238,7 @@ def canonical_concern_labels(evidence: CommonEvidence) -> tuple[str, ...]:
         labels.append("nl_fail")
     if evidence.trace_quality and evidence.trace_quality != "clean":
         labels.append("trace_quality_review")
-    if evidence.provenance in {"rescued", "owner_backfill"}:
+    if evidence.provenance in {"backfilled", "owner_backfill"}:
         labels.append("backfill_provenance")
     return tuple(labels)
 

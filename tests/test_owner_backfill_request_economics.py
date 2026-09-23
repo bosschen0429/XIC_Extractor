@@ -22,7 +22,7 @@ def test_owner_backfill_economics_groups_requests_by_identity_and_tag(
                 primary=True,
                 detected=2,
                 evidence="owner_complete_link",
-                accepted_rescue=1,
+                accepted_backfill=1,
             ),
             _review_row(
                 "FAM002",
@@ -31,7 +31,7 @@ def test_owner_backfill_economics_groups_requests_by_identity_and_tag(
                 primary=False,
                 detected=1,
                 evidence="single_sample_local_owner",
-                accepted_rescue=0,
+                accepted_backfill=0,
             ),
             _review_row(
                 "FAM003",
@@ -40,7 +40,7 @@ def test_owner_backfill_economics_groups_requests_by_identity_and_tag(
                 primary=False,
                 detected=2,
                 evidence="identity_conflict_review_only",
-                accepted_rescue=0,
+                accepted_backfill=0,
             ),
         ),
     )
@@ -49,7 +49,7 @@ def test_owner_backfill_economics_groups_requests_by_identity_and_tag(
         (
             _cell_row("FAM001", "S1", "detected"),
             _cell_row("FAM001", "S2", "detected"),
-            _cell_row("FAM001", "S3", "rescued"),
+            _cell_row("FAM001", "S3", "backfilled"),
             _cell_row("FAM002", "S1", "detected"),
             _cell_row("FAM002", "S2", "absent"),
             _cell_row("FAM002", "S3", "absent"),
@@ -112,7 +112,7 @@ def test_owner_backfill_economics_accounts_for_preconsolidated_confirm_requests(
                 primary=True,
                 detected=2,
                 evidence="pre_backfill_identity_consolidated;family_count=2",
-                accepted_rescue=1,
+                accepted_backfill=1,
             ),
         ),
     )
@@ -142,7 +142,7 @@ def test_owner_backfill_cell_index_preserves_order_contracts() -> None:
     rows = (
         _cell_row("FAM002", "S2", "detected"),
         _cell_row("FAM001", "S1", "absent"),
-        _cell_row("FAM002", "S1", "rescued"),
+        _cell_row("FAM002", "S1", "backfilled"),
         _cell_row("FAM001", "S2", "detected"),
     )
 
@@ -176,7 +176,7 @@ def _review_row(
     primary: bool,
     detected: int,
     evidence: str,
-    accepted_rescue: int,
+    accepted_backfill: int,
 ) -> dict[str, str]:
     return {
         "feature_family_id": feature_id,
@@ -185,8 +185,8 @@ def _review_row(
         "family_center_rt": "8.0",
         "detected_count": str(detected),
         "identity_decision": identity,
-        "accepted_rescue_count": str(accepted_rescue),
-        "review_rescue_count": "0",
+        "accepted_backfill_count": str(accepted_backfill),
+        "review_backfill_count": "0",
         "include_in_primary_matrix": "TRUE" if primary else "FALSE",
         "family_evidence": evidence,
         "primary_evidence": evidence,
@@ -207,8 +207,8 @@ def _cell_row(
         "feature_family_id": feature_id,
         "sample_stem": sample,
         "status": status,
-        "area": area if status in {"detected", "rescued"} else "",
-        "apex_rt": "8.0" if status in {"detected", "rescued"} else "",
+        "area": area if status in {"detected", "backfilled"} else "",
+        "apex_rt": "8.0" if status in {"detected", "backfilled"} else "",
         "neutral_loss_tag": "dR",
         "family_center_mz": "300.0",
         "family_center_rt": "8.0",

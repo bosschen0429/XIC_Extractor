@@ -299,8 +299,8 @@ def _run(
                 "source_candidate_count": len(adapter.source_candidate_ids),
                 "strict_scan_count": adapter.strict_scan_count,
                 "candidate_peak_count": len(assessment.candidate_peaks),
-                "recovery_attempted": item.backfill_attempt is not None,
-                "recovery_candidate_count": item.result_ref.recovery_candidate_count,
+                "backfill_attempted": item.backfill_attempt is not None,
+                "backfill_candidate_count": item.result_ref.backfill_candidate_count,
                 "backfill_disposition": (
                     backfill_decision.disposition
                     if backfill_decision is not None

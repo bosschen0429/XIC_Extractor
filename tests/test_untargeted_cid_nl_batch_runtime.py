@@ -345,7 +345,7 @@ def test_runtime_batch_request_bounds_initial_and_recovery_by_sample_phase(
         for resource in result.finalization.coordinator.state.resources
     )
     assert sum(":initial:" in key for key in resource_keys) == 2
-    assert sum(":recovery:" in key for key in resource_keys) == 3
+    assert sum(":backfill:" in key for key in resource_keys) == 3
     _assert_partition_matches_runtime(jobs, result, monkeypatch)
 
 

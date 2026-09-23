@@ -216,7 +216,7 @@ class BackfillCellEvidence:
         if self.quality_status:
             return self.quality_status == "rescue_quantifiable"
         return (
-            self.status == "rescued"
+            self.status == "backfilled"
             and _positive(self.area)
             and (
                 self.local_apex_supported
@@ -527,7 +527,7 @@ class BackfillPromotionEvidence:
     backfill_dependency: str | None
     seed_quality: SeedQualitySummary | None
     held_rescue_count: int = 0
-    unrehydrated_review_rescue_count: int | None = 0
+    unrehydrated_review_backfill_count: int | None = 0
     cells: tuple[BackfillCellEvidence, ...] = ()
 
 
@@ -631,8 +631,8 @@ def evidence_from_tsv_rows(
         or review_row.get("detected_count", ""),
     )
     q_rescue = _int_value(
-        review_row.get("quantifiable_rescue_count", "")
-        or review_row.get("accepted_rescue_count", ""),
+        review_row.get("quantifiable_backfill_count", "")
+        or review_row.get("accepted_backfill_count", ""),
     )
     duplicate_count = _int_value(review_row.get("duplicate_assigned_count", ""))
     ambiguous_count = _int_value(review_row.get("ambiguous_ms1_owner_count", ""))
@@ -654,8 +654,8 @@ def evidence_from_tsv_rows(
         ambiguous_count=ambiguous_count,
         backfill_dependency=backfill_dependency,
         seed_quality=seed_quality,
-        unrehydrated_review_rescue_count=_nonnegative_int_value(
-            review_row.get("review_rescue_count", ""),
+        unrehydrated_review_backfill_count=_nonnegative_int_value(
+            review_row.get("review_backfill_count", ""),
         ),
         cells=tuple(_cell_from_tsv(row) for row in cell_rows),
     )
@@ -668,7 +668,7 @@ def classify_backfill_promotion(
     owner_blocked = tuple(
         cell
         for cell in evidence.cells
-        if cell.quality_status == "review_rescue"
+        if cell.quality_status == "review_backfill"
         and cell.quality_reason
         in {
             BACKFILL_HYPOTHESIS_BLOCKED_REASON,
@@ -678,9 +678,9 @@ def classify_backfill_promotion(
     )
     assessed_rescues = rescued + owner_blocked
     candidate_rescue_count = evidence.q_rescue + evidence.held_rescue_count
-    review_rescue_count = evidence.unrehydrated_review_rescue_count
+    review_backfill_count = evidence.unrehydrated_review_backfill_count
     if (
-        (review_rescue_count is None or review_rescue_count > 0)
+        (review_backfill_count is None or review_backfill_count > 0)
         and is_dr_neutral_loss_tag(evidence.neutral_loss_tag)
     ):
         return BackfillPromotionDecision(

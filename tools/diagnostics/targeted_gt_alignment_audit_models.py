@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-PRODUCTION_STATUSES = {"detected", "rescued"}
+PRODUCTION_STATUSES = {"detected", "backfilled"}
 
 
 PASS_MODE = "PASS"

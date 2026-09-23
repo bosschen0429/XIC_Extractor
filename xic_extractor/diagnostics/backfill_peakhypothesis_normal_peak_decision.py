@@ -363,7 +363,7 @@ def _normal_peak_blockers(
         blockers.append("missing_full_cohort_acceptance_gate_row")
     if _value(full_cohort_row, "full_cohort_cell_status") not in {
         "detected",
-        "rescued",
+        "backfilled",
     }:
         blockers.append("full_cohort_cell_not_detected_or_rescued")
     if (

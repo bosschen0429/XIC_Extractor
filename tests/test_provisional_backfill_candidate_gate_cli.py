@@ -117,20 +117,20 @@ def test_cli_accepts_valid_tier2_sidecar(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize(
-    "review_rescue_count",
+    "review_backfill_count",
     ("", "garbage", "NaN", "0.5", "-1"),
     ids=("empty", "nonnumeric", "nonfinite", "fractional", "negative"),
 )
-def test_cli_keeps_invalid_review_rescue_count_out_of_production_candidates(
+def test_cli_keeps_invalid_review_backfill_count_out_of_production_candidates(
     tmp_path: Path,
-    review_rescue_count: str,
+    review_backfill_count: str,
 ) -> None:
     alignment_dir = _write_alignment_run(tmp_path / "alignment")
     review_path = alignment_dir / "alignment_review.tsv"
     review_rows = _read_tsv(review_path)
     for row in review_rows:
         if row["feature_family_id"] == "FAM_CAND":
-            row["review_rescue_count"] = review_rescue_count
+            row["review_backfill_count"] = review_backfill_count
     _write_tsv(review_path, review_rows)
 
     matrix_path = alignment_dir / "alignment_matrix.tsv"
@@ -347,7 +347,7 @@ def test_cli_reports_missing_required_columns(
     assert "identity_decision" in stderr
 
 
-def test_cli_rejects_review_without_review_rescue_count(
+def test_cli_rejects_review_without_review_backfill_count(
     tmp_path: Path,
     capsys,
 ) -> None:
@@ -355,13 +355,13 @@ def test_cli_rejects_review_without_review_rescue_count(
     review_path = alignment_dir / "alignment_review.tsv"
     rows = _read_tsv(review_path)
     for row in rows:
-        row.pop("review_rescue_count")
+        row.pop("review_backfill_count")
     _write_tsv(review_path, rows)
 
     code = gate_cli.main(["--alignment-dir", str(alignment_dir)])
 
     assert code == 2
-    assert "review_rescue_count" in capsys.readouterr().err
+    assert "review_backfill_count" in capsys.readouterr().err
 
 
 def _write_raw_manifest(tmp_path: Path) -> Path:
@@ -488,10 +488,10 @@ def _write_alignment_run(path: Path) -> Path:
         path / "alignment_cells.tsv",
         [
             _cell_row("FAM_KEEP", "S1", "detected"),
-            _cell_row("FAM_KEEP", "S2", "rescued"),
+            _cell_row("FAM_KEEP", "S2", "backfilled"),
             _cell_row("FAM_CAND", "S1", "detected"),
-            _cell_row("FAM_CAND", "S2", "rescued"),
-            _cell_row("FAM_CAND", "S3", "rescued"),
+            _cell_row("FAM_CAND", "S2", "backfilled"),
+            _cell_row("FAM_CAND", "S3", "backfilled"),
             _cell_row("FAM_PRIMARY", "S1", "detected"),
             _cell_row("FAM_PRIMARY", "S2", "detected"),
         ],
@@ -522,9 +522,9 @@ def _review_row(
         "identity_reason": reason,
         "primary_evidence": "owner_complete_link",
         "quantifiable_detected_count": str(detected),
-        "quantifiable_rescue_count": str(rescued),
-        "review_rescue_count": "0",
-        "accepted_rescue_count": str(rescued),
+        "quantifiable_backfill_count": str(rescued),
+        "review_backfill_count": "0",
+        "accepted_backfill_count": str(rescued),
         "duplicate_assigned_count": "0",
         "ambiguous_ms1_owner_count": "0",
         "row_flags": flags,
@@ -543,7 +543,7 @@ def _cell_row(family_id: str, sample: str, status: str) -> dict[str, str]:
         "peak_start_rt": "7.95",
         "peak_end_rt": "8.05",
         "rt_delta_sec": "0.0",
-        "trace_quality": "owner_backfill" if status == "rescued" else "clean",
+        "trace_quality": "owner_backfill" if status == "backfilled" else "clean",
         "scan_support_score": "0.8",
         "reason": status,
     }

@@ -56,7 +56,7 @@ def test_full_cohort_acceptance_gate_uses_hypothesis_anchor_not_cross_run_fam_id
             _cell_row(
                 "FAM005540",
                 "Breast_Cancer_Tissue_pooled_QC5",
-                status="rescued",
+                status="backfilled",
                 primary_area="48462.2",
                 apex_rt="13.0739",
                 peak_start_rt="13.0739",
@@ -69,7 +69,7 @@ def test_full_cohort_acceptance_gate_uses_hypothesis_anchor_not_cross_run_fam_id
     assert row["full_cohort_match_strategy"] == "hypothesis_anchor_mz_rt_sample"
     assert row["full_cohort_matched_feature_family_id"] == "FAM005540"
     assert row["full_cohort_matched_peak_hypothesis_id"] == "FAM005540"
-    assert row["full_cohort_cell_status"] == "rescued"
+    assert row["full_cohort_cell_status"] == "backfilled"
     assert row["full_cohort_primary_matrix_area"] == "48462.2"
     assert row["full_cohort_acceptance_gate_status"] == "hypothesis_candidate_review"
     assert row["full_cohort_slice_blockers"].split(";") == [
@@ -98,7 +98,7 @@ def test_full_cohort_acceptance_gate_passes_direct_primary_rescue(
             _cell_row(
                 "FAM001",
                 "Sample_A",
-                status="rescued",
+                status="backfilled",
                 primary_area="1234.5",
                 area_source="gaussian15_positive_asls_residual",
             ),

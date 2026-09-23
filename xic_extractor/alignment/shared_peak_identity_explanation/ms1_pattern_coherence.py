@@ -68,13 +68,13 @@ _ALIGNMENT_CELL_COLUMNS = (
 _PRESENT_STATUSES = frozenset(
     {
         "detected",
-        "rescued",
+        "backfilled",
         "selected",
         "present",
         "duplicate_assigned",
     }
 )
-_SUPPORTIVE_STATUSES = frozenset({"detected", "rescued", "selected", "present"})
+_SUPPORTIVE_STATUSES = frozenset({"detected", "backfilled", "selected", "present"})
 _MIN_REFERENCE_PEAKS = 3
 _MIN_BOUNDARY_WIDTH_SIMILARITY = 0.35
 _SUPPORTIVE_BOUNDARY_WIDTH_SIMILARITY = 0.55
@@ -1017,7 +1017,7 @@ def _overlay_anchor_peak_shape_below_threshold(metric: _OverlayMetric) -> bool:
 
 def _requires_anchor_peak_evidence(cell: _PeakCell) -> bool:
     return (
-        cell.status == "rescued"
+        cell.status == "backfilled"
         or "backfill" in cell.gap_fill_state
         or "backfill" in cell.gap_fill_reason
     )

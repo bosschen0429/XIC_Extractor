@@ -314,7 +314,7 @@ def test_ms1_pattern_coherence_uses_detected_anchor_local_own_max_shape(
             _cell(
                 "FAM088",
                 "MID_RESCUE",
-                status="rescued",
+                status="backfilled",
                 apex_rt="14.35",
                 peak_start_rt="14.22",
                 peak_end_rt="14.45",
@@ -322,7 +322,7 @@ def test_ms1_pattern_coherence_uses_detected_anchor_local_own_max_shape(
             _cell(
                 "FAM088",
                 "EARLY_RESCUE",
-                status="rescued",
+                status="backfilled",
                 apex_rt="12.12",
                 peak_start_rt="11.95",
                 peak_end_rt="12.28",
@@ -330,7 +330,7 @@ def test_ms1_pattern_coherence_uses_detected_anchor_local_own_max_shape(
             _cell(
                 "FAM088",
                 "BAD_SHAPE",
-                status="rescued",
+                status="backfilled",
                 apex_rt="14.35",
                 peak_start_rt="14.22",
                 peak_end_rt="14.45",
@@ -338,7 +338,7 @@ def test_ms1_pattern_coherence_uses_detected_anchor_local_own_max_shape(
             _cell(
                 "FAM088",
                 "DUP_RESCUE",
-                status="rescued",
+                status="backfilled",
                 apex_rt="14.35",
                 peak_start_rt="14.22",
                 peak_end_rt="14.45",
@@ -373,28 +373,28 @@ def test_ms1_pattern_coherence_uses_detected_anchor_local_own_max_shape(
                     ),
                     _overlay_trace(
                         "MID_RESCUE",
-                        status="rescued",
+                        status="backfilled",
                         cell_apex_rt=14.35,
                         rt=[12.0, 14.10, 14.25, 14.35, 14.45, 14.60, 16.0],
                         intensity=[1800.0, 18.0, 320.0, 940.0, 340.0, 22.0, 2100.0],
                     ),
                     _overlay_trace(
                         "EARLY_RESCUE",
-                        status="rescued",
+                        status="backfilled",
                         cell_apex_rt=12.12,
                         rt=[11.95, 12.12, 12.30, 14.25, 14.35, 14.45, 16.0],
                         intensity=[900.0, 2200.0, 850.0, 120.0, 180.0, 110.0, 90.0],
                     ),
                     _overlay_trace(
                         "BAD_SHAPE",
-                        status="rescued",
+                        status="backfilled",
                         cell_apex_rt=14.35,
                         rt=[12.0, 14.10, 14.25, 14.35, 14.45, 14.60, 16.0],
                         intensity=[100.0, 930.0, 580.0, 60.0, 560.0, 940.0, 120.0],
                     ),
                     _overlay_trace(
                         "DUP_RESCUE",
-                        status="rescued",
+                        status="backfilled",
                         cell_apex_rt=14.35,
                         rt=[12.0, 14.10, 14.25, 14.35, 14.45, 14.60, 16.0],
                         intensity=[2000.0, 18.0, 320.0, 940.0, 340.0, 22.0, 2100.0],
@@ -472,7 +472,7 @@ def test_ms1_pattern_coherence_uses_nearest_detected_anchor_cluster(
             _cell(
                 "FAM_SPLIT",
                 "LATE_RESCUE",
-                status="rescued",
+                status="backfilled",
                 apex_rt="12.03",
                 peak_start_rt="11.93",
                 peak_end_rt="12.13",
@@ -505,7 +505,7 @@ def test_ms1_pattern_coherence_uses_nearest_detected_anchor_cluster(
                     ),
                     _overlay_trace(
                         "LATE_RESCUE",
-                        status="rescued",
+                        status="backfilled",
                         cell_apex_rt=12.03,
                         rt=[11.73, 11.93, 12.03, 12.13, 12.33],
                         intensity=[45.0, 255.0, 910.0, 245.0, 45.0],
@@ -541,7 +541,7 @@ def test_ms1_pattern_coherence_requires_anchor_for_rescued_shape_support(
             _cell(
                 "FAM001",
                 "S1",
-                status="rescued",
+                status="backfilled",
                 rt_delta_sec="0.0",
                 gap_fill_state="owner_backfill",
                 gap_fill_reason="owner_backfill",
@@ -582,7 +582,7 @@ def test_ms1_pattern_coherence_keeps_conflict_when_anchor_evidence_missing(
             _cell(
                 "FAM001",
                 "S1",
-                status="rescued",
+                status="backfilled",
                 rt_delta_sec="0.0",
                 gap_fill_state="owner_backfill",
                 gap_fill_reason="owner_backfill",
@@ -625,7 +625,7 @@ def test_ms1_pattern_coherence_trace_window_gap_does_not_preserve_support(
             _cell(
                 "FAM001",
                 "S1",
-                status="rescued",
+                status="backfilled",
                 rt_delta_sec="0.0",
                 gap_fill_state="owner_backfill",
                 gap_fill_reason="owner_backfill",

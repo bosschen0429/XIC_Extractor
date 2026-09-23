@@ -56,7 +56,7 @@ def _backfill_row(**overrides: str) -> dict[str, str]:
         "sample_stem": "sample-a",
         "status": "detected",
         "production_cell_status": "detected",
-        "rescue_tier": "",
+        "backfill_tier": "",
         "write_matrix_value": "TRUE",
         "include_in_primary_matrix": "TRUE",
         "identity_decision": "primary",

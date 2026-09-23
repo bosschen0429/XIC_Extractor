@@ -144,7 +144,7 @@ def _markdown_family_row(row: Mapping[str, Any]) -> str:
         f"| {_format_value(row.get('family_center_mz'))} "
         f"| {_format_value(row.get('family_center_rt'))} "
         f"| `{row['review_classification']}` "
-        f"| {row['accepted_rescue_count']} "
+        f"| {row['accepted_backfill_count']} "
         f"| {_format_value(row.get('max_global_apex_interference_fraction'))} "
         f"| {_first_path(row.get('png_paths'))} "
         f"| {str(row['review_reason']).replace('|', '/')} |"
@@ -170,7 +170,7 @@ def _family_fields() -> tuple[str, ...]:
         "family_center_mz",
         "family_center_rt",
         "detected_count",
-        "accepted_rescue_count",
+        "accepted_backfill_count",
         "accepted_cell_count",
         "input_review_classification",
         "all_overlay_row_count",
@@ -208,7 +208,7 @@ def _blast_fields() -> tuple[str, ...]:
         "family_center_rt",
         "review_classification",
         "detected_count",
-        "accepted_rescue_count",
+        "accepted_backfill_count",
         "accepted_cell_count",
         "would_withhold_family",
         "would_withhold_rescued_cells",

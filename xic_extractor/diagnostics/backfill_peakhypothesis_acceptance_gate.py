@@ -59,7 +59,7 @@ FULL_COHORT_ACCEPTANCE_GATE_COLUMNS = (
     "recommended_action",
 )
 
-_ACCEPTABLE_DIRECT_CELL_STATUSES = {"detected", "rescued"}
+_ACCEPTABLE_DIRECT_CELL_STATUSES = {"detected", "backfilled"}
 _GAUSSIAN15_AREA_SOURCE = "gaussian15_positive_asls_residual"
 _DEFAULT_ANCHOR_MZ_TOLERANCE_PPM = 20.0
 _DEFAULT_ANCHOR_RT_TOLERANCE_MIN = 0.75

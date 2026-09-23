@@ -75,7 +75,7 @@ class _CurrentProjectionState:
     matrix_value: float | None
     blank_reason: str
     matrix_source: str
-    review_rescued: bool
+    review_backfilled: bool
 
 
 _PRODUCT_PROVENANCE_HASH_EXCLUDED_COLUMNS = frozenset(
@@ -94,12 +94,12 @@ SHADOW_PRODUCTION_PROJECTION_COLUMNS = (
     "sample_stem",
     "current_raw_status",
     "current_production_status",
-    "current_rescue_tier",
+    "current_backfill_tier",
     "current_matrix_written",
     "current_matrix_value",
     "current_blank_reason",
     "current_matrix_source",
-    "review_rescued_cell",
+    "review_backfilled_cell",
     "shadow_decision",
     "shadow_reasons",
     "shadow_warnings",
@@ -642,10 +642,10 @@ def _current_projection_state(
         )
         matrix_source = "production_decision_snapshot"
     raw_status = decision.raw_status if decision else text_value(cell.get("status"))
-    review_rescued = (
+    review_backfilled = (
         decision is not None
-        and decision.production_status in {"review_rescue", "accepted_rescue"}
-        and raw_status == "rescued"
+        and decision.production_status in {"review_backfill", "accepted_backfill"}
+        and raw_status == "backfilled"
         and not matrix_written
     )
     return _CurrentProjectionState(
@@ -655,7 +655,7 @@ def _current_projection_state(
         matrix_value=matrix_value,
         blank_reason=blank_reason,
         matrix_source=matrix_source,
-        review_rescued=review_rescued,
+        review_backfilled=review_backfilled,
     )
 
 
@@ -679,7 +679,7 @@ def _projection_row(
         gate_row=gate_row,
         cell=cell,
         decision=decision,
-        review_rescued=current_state.review_rescued,
+        review_backfilled=current_state.review_backfilled,
         current_written=current_state.matrix_written,
     )
     value_gate = _apply_projection_value_gate(
@@ -710,12 +710,12 @@ def _projection_row(
         "sample_stem": sample_stem,
         "current_raw_status": current_state.raw_status,
         "current_production_status": current_state.production_status,
-        "current_rescue_tier": decision.rescue_tier if decision else "",
+        "current_backfill_tier": decision.backfill_tier if decision else "",
         "current_matrix_written": _bool_text(current_state.matrix_written),
         "current_matrix_value": _number_text(current_state.matrix_value),
         "current_blank_reason": current_state.blank_reason,
         "current_matrix_source": current_state.matrix_source,
-        "review_rescued_cell": _bool_text(current_state.review_rescued),
+        "review_backfilled_cell": _bool_text(current_state.review_backfilled),
         "shadow_decision": explanation.decision,
         "shadow_reasons": explanation.reason_text,
         "shadow_warnings": explanation.warning_text,
@@ -831,17 +831,17 @@ def _shadow_projection_decision(
     gate_row: Mapping[str, str],
     cell: Mapping[str, str],
     decision: ProductionCellDecision | None,
-    review_rescued: bool,
+    review_backfilled: bool,
     current_written: bool,
 ) -> BackfillDecisionExplanation:
     warnings = _warnings(cell, gate_row)
     if current_written:
         return decision_explanation("context", "already_written_current_matrix")
-    if not review_rescued:
+    if not review_backfilled:
         reason = (
             "missing_production_decision"
             if decision is None
-            else "not_review_rescued_cell"
+            else "not_review_backfilled_cell"
         )
         return decision_explanation("context", reason, warnings=warnings)
 
@@ -1234,8 +1234,8 @@ def _summary(
         "current_matrix_written_count": current_written,
         "projected_matrix_written_count": projected_written,
         "projected_new_write_count": projected_new,
-        "review_rescued_target_count": sum(
-            row["review_rescued_cell"] == "TRUE" for row in rows
+        "review_backfilled_target_count": sum(
+            row["review_backfilled_cell"] == "TRUE" for row in rows
         ),
         "source_review_sha256": source_review_sha256,
         "source_cell_sha256": source_cell_sha256,

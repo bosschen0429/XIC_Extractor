@@ -886,6 +886,11 @@ def _can_merge_by_ms1_peak(
     *,
     settings: DiscoverySettings,
 ) -> bool:
+    if _same_ms1_apex_within_extraction_tolerance(first, second, settings=settings):
+        return (
+            first.neutral_loss_tag == second.neutral_loss_tag
+            or settings.tag_combine_mode in {"union", "intersection"}
+        )
     same_ms1_feature_row = _same_ms1_feature_row_identity(first, second)
     if not (
         first.raw_file == second.raw_file
@@ -1019,6 +1024,37 @@ def _merge_candidate_pair(
         ),
         tag_evidence_json=_merge_tag_evidence_json(first, second),
         is_provisional=(first.is_provisional and second.is_provisional),
+    )
+
+
+def _same_ms1_apex_within_extraction_tolerance(
+    first: DiscoveryCandidate,
+    second: DiscoveryCandidate,
+    *,
+    settings: DiscoverySettings,
+) -> bool:
+    """Whether two candidates resolved the same MS1 peak.
+
+    Each candidate's trace is extracted at its own precursor m/z with the MS1
+    tolerance. Within that tolerance both traces hold the same ions, so a shared
+    apex scan identifies one peak whatever the seeds, fragments or boundaries.
+    Only the precursor m/z decides: an observed loss inherits the absolute error
+    of precursor and product, so a ppm comparison on a ~116 Da loss would split
+    one peak on measurement scatter.
+    """
+
+    return (
+        first.raw_file == second.raw_file
+        and first.sample_stem == second.sample_stem
+        and first.ms1_peak_found
+        and second.ms1_peak_found
+        and first.ms1_apex_rt is not None
+        and first.ms1_apex_rt == second.ms1_apex_rt
+        and _within_ppm(
+            first.precursor_mz,
+            second.precursor_mz,
+            settings.precursor_mz_tolerance_ppm,
+        )
     )
 
 
@@ -1194,14 +1230,40 @@ def _merge_tag_evidence_json(
                 if not isinstance(evidence, dict):
                     payload.setdefault(tag_key, evidence)
                     continue
+                evidence = _with_scan_receipts(
+                    cast(dict[str, Any], evidence), candidate
+                )
                 if isinstance(payload.get(tag_key), dict):
                     payload[tag_key] = _merge_tag_evidence_entry(
                         cast(dict[str, Any], payload[tag_key]),
-                        cast(dict[str, Any], evidence),
+                        evidence,
                     )
                 else:
-                    payload[tag_key] = dict(evidence)
+                    payload[tag_key] = evidence
     return json.dumps(payload, sort_keys=True, separators=(",", ":"))
+
+
+def _with_scan_receipts(
+    evidence: dict[str, Any],
+    candidate: DiscoveryCandidate,
+) -> dict[str, Any]:
+    """Keep the precursor and product each scan was strictly read against.
+
+    A merged peak can absorb scans whose product lies beyond the product
+    tolerance of the representative; strict replay checks each scan against
+    the receipt of the candidate that originally claimed it.
+    """
+
+    result = dict(evidence)
+    if "scan_receipts" not in result and "product_mz" in result:
+        result["scan_receipts"] = {
+            str(scan_id): {
+                "precursor_mz": candidate.precursor_mz,
+                "product_mz": result["product_mz"],
+            }
+            for scan_id in _int_values(result.get("scan_ids"))
+        }
+    return result
 
 
 def _merge_tag_evidence_entry(
@@ -1211,6 +1273,12 @@ def _merge_tag_evidence_entry(
     merged = dict(first)
     for key, value in second.items():
         merged.setdefault(key, value)
+    scan_receipts = {
+        **cast(dict[str, Any], second.get("scan_receipts") or {}),
+        **cast(dict[str, Any], first.get("scan_receipts") or {}),
+    }
+    if scan_receipts:
+        merged["scan_receipts"] = scan_receipts
 
     scan_ids = sorted(
         set(_int_values(first.get("scan_ids")))

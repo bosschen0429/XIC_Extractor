@@ -28,7 +28,7 @@ def safe_rate(numerator: int, denominator: int) -> float:
 
 
 def matrix_area(cell: AlignedCell | None) -> str:
-    if cell is None or cell.status not in {"detected", "rescued"}:
+    if cell is None or cell.status not in {"detected", "backfilled"}:
         return ""
     area = cell.matrix_area
     if area is None or not math.isfinite(area) or area <= 0:

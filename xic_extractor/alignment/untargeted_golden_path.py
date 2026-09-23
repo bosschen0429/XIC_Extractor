@@ -477,7 +477,7 @@ def build_untargeted_cid_nl_golden_path(
             "baseline_value": "",
             "activated_value": value,
             "expected_matrix_effect": "write_accepted_backfill",
-            "expected_reason": "untargeted_cid_nl_owner_mapped_recovery",
+            "expected_reason": "untargeted_cid_nl_owner_mapped_backfill",
         }
         for sample_stem, value in sorted(accepted_sample_values.items())
     )
@@ -626,7 +626,7 @@ def build_untargeted_cid_nl_mode_track_projection(
                 "source_feature_family_ids": group_id,
             }
         )
-        accepted = candidates if fact.may_attempt_recovery else {}
+        accepted = candidates if fact.may_attempt_backfill else {}
         detected_count, backfilled_count = len(direct), len(accepted)
         available_count = detected_count + backfilled_count
         for sample_id, assignment in accepted.items():
@@ -904,7 +904,7 @@ def _source_artifact_bytes(
             "recovery_universe_artifact_id": ""
             if decision.candidate_universe is None
             else decision.candidate_universe.artifact.evidence_artifact_id,
-            "recovery_assessment_artifact_id": ""
+            "backfill_assessment_artifact_id": ""
             if decision.candidate_universe is None
             else (
                 decision.candidate_universe.candidate_assessment.artifact.evidence_artifact_id

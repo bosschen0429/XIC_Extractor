@@ -16,10 +16,10 @@ from xic_extractor.peak_detection.hypotheses import IntegrationResult
 
 FORBIDDEN_PRIMARY_STATUSES = {
     "detected",
-    "rescued",
-    "accepted_rescue",
-    "review_rescue",
-    "rejected_rescue",
+    "backfilled",
+    "accepted_backfill",
+    "review_backfill",
+    "rejected_backfill",
     "duplicate_assigned",
     "ambiguous_ms1_owner",
     "absent",
@@ -40,7 +40,7 @@ def test_primary_outputs_hide_status_strings_and_keep_audit_reasons(
         sample_order=("s1", "s2", "s3"),
         cells=(
             _cell("s1", "FAM001", "detected", 100.0),
-            _cell("s2", "FAM001", "rescued", 90.0),
+            _cell("s2", "FAM001", "backfilled", 90.0),
             _cell(
                 "s3",
                 "FAM001",
@@ -53,8 +53,8 @@ def test_primary_outputs_hide_status_strings_and_keep_audit_reasons(
                 ),
             ),
             _cell("s1", "FAM_PROVISIONAL", "detected", 85.0),
-            _cell("s2", "FAM_PROVISIONAL", "rescued", 75.0),
-            _cell("s1", "FAM002", "rescued", 80.0),
+            _cell("s2", "FAM_PROVISIONAL", "backfilled", 75.0),
+            _cell("s1", "FAM002", "backfilled", 80.0),
             _cell("s2", "FAM002", "absent", None),
             _cell("s1", "FAM003", "duplicate_assigned", 70.0),
             _cell("s2", "FAM003", "ambiguous_ms1_owner", None),
@@ -213,7 +213,7 @@ def _cell(
 ) -> AlignedCell:
     if (
         selected_integration is None
-        and status in {"detected", "rescued"}
+        and status in {"detected", "backfilled"}
         and area is not None
         and area > 0
     ):

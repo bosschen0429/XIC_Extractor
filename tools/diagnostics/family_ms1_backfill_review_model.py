@@ -15,13 +15,13 @@ def _candidate_row(
     overlay: Mapping[str, Any] | None,
 ) -> dict[str, Any]:
     detected = [row for row in cells if row.get("status") == "detected"]
-    rescued = [row for row in cells if row.get("status") == "rescued"]
+    rescued = [row for row in cells if row.get("status") == "backfilled"]
     detected_height_median = _median(_float(row.get("height")) for row in detected)
     rescued_height_median = _median(_float(row.get("height")) for row in rescued)
     detected_area_median = _median(_float(row.get("area")) for row in detected)
     rescued_area_median = _median(_float(row.get("area")) for row in rescued)
     detected_count = int(_float(review_row.get("detected_count")) or 0)
-    rescue_count = int(_float(review_row.get("accepted_rescue_count")) or 0)
+    rescue_count = int(_float(review_row.get("accepted_backfill_count")) or 0)
     accepted_count = int(_float(review_row.get("accepted_cell_count")) or 0)
     rescue_fraction = _safe_fraction(rescue_count, accepted_count) or 0.0
     rescue_per_detected_seed = _safe_ratio(rescue_count, detected_count) or 0.0
@@ -50,7 +50,7 @@ def _candidate_row(
         "family_center_rt": center_rt,
         **overlay_hint,
         "detected_count": detected_count,
-        "accepted_rescue_count": rescue_count,
+        "accepted_backfill_count": rescue_count,
         "accepted_cell_count": accepted_count,
         "rescue_fraction": rescue_fraction,
         "rescue_per_detected_seed": rescue_per_detected_seed,
@@ -66,7 +66,9 @@ def _candidate_row(
             "dda_trigger_limited_ms2_support",
             "",
         ),
-        "detected_rescued_count": overlay_summary.get("detected_rescued_count", ""),
+        "detected_backfilled_count": overlay_summary.get(
+            "detected_backfilled_count", ""
+        ),
         "global_apex_assessable_trace_count": overlay_summary.get(
             "global_apex_assessable_trace_count",
             "",
@@ -198,7 +200,7 @@ def _is_candidate_review_row(
     if row.get("neutral_loss_tag") != neutral_loss_tag:
         return False
     detected_count = int(_float(row.get("detected_count")) or 0)
-    rescue_count = int(_float(row.get("accepted_rescue_count")) or 0)
+    rescue_count = int(_float(row.get("accepted_backfill_count")) or 0)
     accepted_count = int(_float(row.get("accepted_cell_count")) or 0)
     return (
         2 <= detected_count <= max_detected_count

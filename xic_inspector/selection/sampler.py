@@ -13,7 +13,7 @@ from xic_inspector.selection.strata import STRATA_ORDER
 SAMPLING_ALGORITHM = "cross_sample_sha256"
 _COVERAGE_ORDER = ("broad", "partial", "limited", "candidate")
 _ORIGIN_ORDER = (
-    "recovery_support", "reacquired_support", "discovery_support", "unavailable"
+    "backfill_support", "reacquired_support", "discovery_support", "unavailable"
 )
 
 

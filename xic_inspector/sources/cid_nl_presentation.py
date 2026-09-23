@@ -75,11 +75,11 @@ _STAGE_LABELS = {
     "discovery_physical": "探索階段曲線",
     "initial_capture": "首次擷取曲線",
     "reacquired_capture": "再次擷取曲線",
-    "recovery_observation": "Backfill（回填）曲線",
+    "backfill_observation": "Backfill（回填）曲線",
 }
 
 _SUPPORT_ORIGIN_LABELS = {
-    "recovery_support": "Backfill（回填）支持",
+    "backfill_support": "Backfill（回填）支持",
     "reacquired_support": "重新擷取支持",
     "discovery_support": "初始探索支持",
     "unavailable": "來源未提供",

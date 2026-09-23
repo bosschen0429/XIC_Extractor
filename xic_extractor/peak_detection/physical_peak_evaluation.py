@@ -47,10 +47,12 @@ from xic_extractor.peak_detection.physical_peak_identity import (
 )
 from xic_extractor.peak_detection.physical_peak_models import (
     _PHYSICAL_EDGE_RETURN_FRACTION,
+    _PHYSICAL_GROUP_WINDOW_EDGE_RETURN_FRACTION,
     _PHYSICAL_LOCAL_CONTRAST_MIN_MAD,
     _PHYSICAL_PEAK_OPERATION_ORDER,
     _PHYSICAL_PEAK_SELECTION_POLICIES,
     DISCOVERY_PHYSICAL_PEAK_POINT_POLICY,
+    PHYSICAL_PEAK_GROUP_WINDOW_POLICY,
     PHYSICAL_PEAK_POINT_POLICY,
     PHYSICAL_PEAK_WINDOW_POLICY,
     PHYSICAL_SEGMENT_UNIVERSE_SCHEMA,
@@ -287,7 +289,12 @@ def enumerate_physical_segment_universe(
                     quantitation_context_rt_end=context_end,
                     policy=replace(
                         segment_policy,
-                        baseline_return_fraction=_PHYSICAL_EDGE_RETURN_FRACTION,
+                        baseline_return_fraction=(
+                            _PHYSICAL_GROUP_WINDOW_EDGE_RETURN_FRACTION
+                            if selection_policy_version
+                            == PHYSICAL_PEAK_GROUP_WINDOW_POLICY
+                            else _PHYSICAL_EDGE_RETURN_FRACTION
+                        ),
                     ),
                 )
                 alternatives = {s.apex_index: s for s in near_baseline.segments}
@@ -411,11 +418,23 @@ def _admissible_physical_segments(
         raise ValueError("unsupported physical peak selection policy")
     if universe.schema_version != PHYSICAL_SEGMENT_UNIVERSE_SCHEMA:
         raise ValueError("physical question crosses boundary policy")
-    if selection_policy_version == PHYSICAL_PEAK_WINDOW_POLICY:
+    if selection_policy_version in {
+        PHYSICAL_PEAK_WINDOW_POLICY,
+        PHYSICAL_PEAK_GROUP_WINDOW_POLICY,
+    }:
         if not universe.context_rt_start_min <= query_rt <= universe.context_rt_end_min:
             return ()
         # A group center is a prior for this already acquired bounded context.
-        # Every local candidate participates; ambiguity never selects a winner.
+        # Every local candidate participates; ambiguity never selects a winner
+        # unless exactly one candidate contains the group RT.
+        if selection_policy_version == PHYSICAL_PEAK_GROUP_WINDOW_POLICY:
+            containing = tuple(
+                segment.physical_segment_id
+                for segment in universe.segments
+                if segment.left_rt_min <= query_rt <= segment.right_rt_min
+            )
+            if len(containing) == 1:
+                return containing
         return universe.segment_ids
     return tuple(
         segment.physical_segment_id

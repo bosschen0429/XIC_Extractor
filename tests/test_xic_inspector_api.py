@@ -871,9 +871,9 @@ def test_selected_capture_stages_preserve_each_payload_and_reject_partial_loss(
     ("capture_kind", "invocation", "expected_kind", "expected_label"),
     (
         (
-            "recovery_observation",
-            "untargeted-cid-nl-backfill-recovery",
-            "recovery_support",
+            "backfill_observation",
+            "untargeted-cid-nl-backfill",
+            "backfill_support",
             "Backfill（回填）支持",
         ),
         (
@@ -1045,11 +1045,11 @@ def test_recovery_origin_survives_zero_terminal_final_cell_binding(tmp_path):
             (
                 "recovery-curve",
                 "S1",
-                "recovery_observation",
+                "backfill_observation",
                 "obs-01",
                 "zlib-json-utf8",
                 zlib.compress(
-                    json.dumps({**original, "kind": "recovery_observation"}).encode()
+                    json.dumps({**original, "kind": "backfill_observation"}).encode()
                 ),
             ),
         )
@@ -1063,7 +1063,7 @@ def test_recovery_origin_survives_zero_terminal_final_cell_binding(tmp_path):
                     "candidate_id": "C1",
                     "peak_observation_content_id": "obs-01",
                     "record_id": "obs-01",
-                    "kind": "recovery_observation",
+                    "kind": "backfill_observation",
                 },
             ),
             (
@@ -1072,7 +1072,7 @@ def test_recovery_origin_survives_zero_terminal_final_cell_binding(tmp_path):
                 {
                     "canonical_sample_identity_id": "S1",
                     "candidate_peak_content_ids": ["obs-01"],
-                    "detector_invocation_id": "untargeted-cid-nl-backfill-recovery",
+                    "detector_invocation_id": "untargeted-cid-nl-backfill",
                     "method_result": "SUPPORT",
                 },
             ),
@@ -1090,9 +1090,9 @@ def test_recovery_origin_survives_zero_terminal_final_cell_binding(tmp_path):
 
     assert item["witnesses"][0]["observation_id"] is None
     assert item["review_summary"]["observed_sample_count"] == 1
-    assert item["review_summary"]["origin_kinds"] == ["recovery_support"]
+    assert item["review_summary"]["origin_kinds"] == ["backfill_support"]
     assert item["samples"][0]["support_origin"] == {
-        "kind": "recovery_support",
+        "kind": "backfill_support",
         "label": "Backfill（回填）支持",
         "method_refs": ["recovery-method"],
         "capture_refs": ["recovery-curve"],

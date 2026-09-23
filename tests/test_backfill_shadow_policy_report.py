@@ -230,17 +230,17 @@ def _write_alignment_dir(path: Path) -> Path:
             _cell_row(
                 "FAM_FILL",
                 "S2",
-                "rescued",
+                "backfilled",
                 gap_fill_state="gap_fill_rescued",
             ),
             _cell_row("FAM_WOULD", "S1", "detected"),
-            _cell_row("FAM_WOULD", "S2", "rescued"),
+            _cell_row("FAM_WOULD", "S2", "backfilled"),
             _cell_row("FAM_EDGE", "S1", "detected"),
-            _cell_row("FAM_EDGE", "S2", "rescued"),
+            _cell_row("FAM_EDGE", "S2", "backfilled"),
             _cell_row("FAM_BLOCK", "S1", "detected"),
-            _cell_row("FAM_BLOCK", "S2", "rescued"),
+            _cell_row("FAM_BLOCK", "S2", "backfilled"),
             _cell_row("FAM_NO_SEED", "S1", "detected"),
-            _cell_row("FAM_NO_SEED", "S2", "rescued"),
+            _cell_row("FAM_NO_SEED", "S2", "backfilled"),
         ],
     )
     _write_tsv(
@@ -258,7 +258,7 @@ def _cell_row(
     gap_fill_state: str = "",
 ) -> dict[str, str]:
     primary_matrix_area_source = (
-        "gaussian15_positive_asls_residual" if status == "rescued" else ""
+        "gaussian15_positive_asls_residual" if status == "backfilled" else ""
     )
     return {
         "feature_family_id": family_id,
@@ -269,7 +269,7 @@ def _cell_row(
         "apex_rt": "10.0500",
         "rt_delta_sec": "3",
         "gap_fill_state": gap_fill_state,
-        "gap_fill_reason": "owner_backfill" if status == "rescued" else "",
+        "gap_fill_reason": "owner_backfill" if status == "backfilled" else "",
         "backfill_candidate_ms2_product_authority_status": "",
         "backfill_candidate_ms2_product_authority_scope": "",
         "backfill_candidate_ms2_product_authority_source": "",

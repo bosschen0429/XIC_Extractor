@@ -406,7 +406,7 @@ def build_owner_backfill_result(
                     terminal_reason=None,
                     physical_evaluation=evaluation.physical_evaluation,
                 )
-                if validation_raw_sources is None or cell.status != "rescued":
+                if validation_raw_sources is None or cell.status != "backfilled":
                     _keep_best_backfill_outcome_cell(
                         backfill_by_feature_sample,
                         cell,
@@ -1067,7 +1067,7 @@ def _candidate_audit_row(
 
 
 def _candidate_outcome(cell: AlignedCell) -> str:
-    if cell.status == "rescued":
+    if cell.status == "backfilled":
         return "detected"
     if cell.trace_quality == "owner_backfill_not_detected":
         return "not_detected"

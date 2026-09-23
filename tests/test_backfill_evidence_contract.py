@@ -47,7 +47,7 @@ def _backfill_row(**overrides: str) -> dict[str, str]:
         "sample_stem": "sample-a",
         "status": "detected",
         "production_cell_status": "detected",
-        "rescue_tier": "",
+        "backfill_tier": "",
         "write_matrix_value": "TRUE",
         "include_in_primary_matrix": "TRUE",
         "identity_decision": "primary",
@@ -442,7 +442,7 @@ def test_backfill_reader_rejects_duplicate_header(tmp_path: Path) -> None:
         ),
         ("write_matrix_value", "true", "write_matrix_value"),
         ("area", "nan", "area"),
-        ("production_cell_status", "accepted_rescue", "rescue_tier"),
+        ("production_cell_status", "accepted_backfill", "backfill_tier"),
     ],
 )
 def test_backfill_reader_rejects_malformed_or_inconsistent_owner_fields(

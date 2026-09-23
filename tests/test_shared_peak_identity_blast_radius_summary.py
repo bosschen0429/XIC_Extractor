@@ -126,7 +126,7 @@ def test_summary_counts_missing_columns_and_ambiguous_machine_matches(
                 "Seed",
                 "fail",
                 "machine_too_permissive_rt_pattern_conflict",
-                "rescued",
+                "backfilled",
             )
         ],
         [
@@ -134,7 +134,7 @@ def test_summary_counts_missing_columns_and_ambiguous_machine_matches(
                 "FAM010|Seed",
                 "FAM010",
                 "Seed",
-                "rescued",
+                "backfilled",
                 rt_context_status="conflicting",
                 pattern_conflict_status="rt_pattern_conflict",
             )
@@ -145,13 +145,13 @@ def test_summary_counts_missing_columns_and_ambiguous_machine_matches(
     _write_cells(
         fixture_cohort,
         [
-            _cell("FAM010", "A", "rescued", reason="ambiguous_ms1_owner"),
-            _cell("FAM010", "A", "rescued", reason="duplicate MS1 peak claim"),
+            _cell("FAM010", "A", "backfilled", reason="ambiguous_ms1_owner"),
+            _cell("FAM010", "A", "backfilled", reason="duplicate MS1 peak claim"),
         ],
     )
     _write_cells(
         full_cohort,
-        [_cell("FAM010", "B", "rescued", reason="rt pattern conflict")],
+        [_cell("FAM010", "B", "backfilled", reason="rt pattern conflict")],
         fieldnames=("feature_family_id", "sample_stem", "status"),
     )
 
@@ -195,7 +195,7 @@ def test_summary_risk_table_high_medium_and_low(tmp_path: Path) -> None:
                 "Seed",
                 "pass",
                 "machine_too_conservative_shape_or_pattern_unmodeled",
-                "rescued",
+                "backfilled",
             ),
             _explanation(
                 "FAM200|Seed",
@@ -211,11 +211,11 @@ def test_summary_risk_table_high_medium_and_low(tmp_path: Path) -> None:
                 "Seed",
                 "fail",
                 "machine_too_permissive_rt_pattern_conflict",
-                "rescued",
+                "backfilled",
             ),
         ],
         [
-            _evidence("FAM100|Seed", "FAM100", "Seed", "rescued"),
+            _evidence("FAM100|Seed", "FAM100", "Seed", "backfilled"),
             _evidence(
                 "FAM200|Seed",
                 "FAM200",
@@ -228,7 +228,7 @@ def test_summary_risk_table_high_medium_and_low(tmp_path: Path) -> None:
                 "FAM300|Seed",
                 "FAM300",
                 "Seed",
-                "rescued",
+                "backfilled",
                 rt_context_status="conflicting",
                 pattern_conflict_status="rt_pattern_conflict",
             ),
@@ -240,21 +240,21 @@ def test_summary_risk_table_high_medium_and_low(tmp_path: Path) -> None:
         fixture_cohort,
         [
             *[
-                _cell("FAM999", f"low8_{index}", "rescued", reason="supported")
+                _cell("FAM999", f"low8_{index}", "backfilled", reason="supported")
                 for index in range(25)
             ],
             *[
                 _cell("FAM888", f"high8_{index}", "absent", reason="no peak")
                 for index in range(25)
             ],
-            _cell("FAM777", "medium8", "rescued", reason="rt pattern conflict"),
+            _cell("FAM777", "medium8", "backfilled", reason="rt pattern conflict"),
         ],
     )
     _write_cells(
         full_cohort,
         [
             *[
-                _cell("FAM999", f"low85_{index}", "rescued", reason="supported")
+                _cell("FAM999", f"low85_{index}", "backfilled", reason="supported")
                 for index in range(25)
             ],
             *[
@@ -303,18 +303,18 @@ def test_summary_marks_unpinned_required_surfaces_unassessed(tmp_path: Path) -> 
                 "Seed",
                 "pass",
                 "machine_too_conservative_shape_or_pattern_unmodeled",
-                "rescued",
+                "backfilled",
             )
         ],
-        [_evidence("FAM001|Seed", "FAM001", "Seed", "rescued")],
+        [_evidence("FAM001|Seed", "FAM001", "Seed", "backfilled")],
     )
     fixture_cohort = tmp_path / "fixture_cohort"
     full_cohort = tmp_path / "full_cohort"
     _write_cells(
         fixture_cohort,
-        [_cell("FAM001", f"S{index}", "rescued") for index in range(50)],
+        [_cell("FAM001", f"S{index}", "backfilled") for index in range(50)],
     )
-    _write_cells(full_cohort, [_cell("FAM001", "S85", "rescued")])
+    _write_cells(full_cohort, [_cell("FAM001", "S85", "backfilled")])
 
     rows = build_blast_radius_summary(
         class_profiles=profiles,
@@ -345,20 +345,20 @@ def test_summary_requires_current_review_and_cell_surfaces(tmp_path: Path) -> No
                 "Seed",
                 "pass",
                 "machine_too_conservative_shape_or_pattern_unmodeled",
-                "rescued",
+                "backfilled",
             )
         ],
-        [_evidence("FAM001|Seed", "FAM001", "Seed", "rescued")],
+        [_evidence("FAM001|Seed", "FAM001", "Seed", "backfilled")],
     )
     fixture_cohort = tmp_path / "fixture_cohort"
     full_cohort = tmp_path / "full_cohort"
     _write_cells(
         fixture_cohort,
-        [_cell("FAM001", f"S{index}", "rescued") for index in range(25)],
+        [_cell("FAM001", f"S{index}", "backfilled") for index in range(25)],
     )
     _write_cells(
         full_cohort,
-        [_cell("FAM001", f"S85_{index}", "rescued") for index in range(25)],
+        [_cell("FAM001", f"S85_{index}", "backfilled") for index in range(25)],
     )
 
     manifest_rows = _manifest_rows(
@@ -398,7 +398,7 @@ def test_summary_scans_each_alignment_cells_file_once(
                 "Seed",
                 "fail",
                 "machine_too_permissive_rt_pattern_conflict",
-                "rescued",
+                "backfilled",
             )
         ],
         [
@@ -406,7 +406,7 @@ def test_summary_scans_each_alignment_cells_file_once(
                 "FAM001|Seed",
                 "FAM001",
                 "Seed",
-                "rescued",
+                "backfilled",
                 rt_context_status="conflicting",
                 pattern_conflict_status="rt_pattern_conflict",
             )
@@ -414,12 +414,12 @@ def test_summary_scans_each_alignment_cells_file_once(
     )
     fixture_cohort = tmp_path / "fixture_cohort"
     full_cohort = tmp_path / "full_cohort"
-    _write_cells(fixture_cohort, [_cell("FAM001", "A", "rescued")])
+    _write_cells(fixture_cohort, [_cell("FAM001", "A", "backfilled")])
     _write_cells(
         full_cohort,
         [
-            _cell("FAM001", "B", "rescued", reason="rt pattern conflict"),
-            _cell("FAM001", "B", "rescued", reason="rt pattern conflict"),
+            _cell("FAM001", "B", "backfilled", reason="rt pattern conflict"),
+            _cell("FAM001", "B", "backfilled", reason="rt pattern conflict"),
         ],
     )
     target = full_cohort / "alignment_cells.tsv"
@@ -468,20 +468,20 @@ def test_summary_marks_review_surface_missing_fields_unassessed(
                 "Seed",
                 "pass",
                 "machine_too_conservative_shape_or_pattern_unmodeled",
-                "rescued",
+                "backfilled",
             )
         ],
-        [_evidence("FAM001|Seed", "FAM001", "Seed", "rescued")],
+        [_evidence("FAM001|Seed", "FAM001", "Seed", "backfilled")],
     )
     fixture_cohort = tmp_path / "fixture_cohort"
     full_cohort = tmp_path / "full_cohort"
     _write_cells(
         fixture_cohort,
-        [_cell("FAM001", f"S{index}", "rescued") for index in range(25)],
+        [_cell("FAM001", f"S{index}", "backfilled") for index in range(25)],
     )
     _write_cells(
         full_cohort,
-        [_cell("FAM001", f"S85_{index}", "rescued") for index in range(25)],
+        [_cell("FAM001", f"S85_{index}", "backfilled") for index in range(25)],
     )
     manifest_rows = _manifest_rows(
         current=True,
@@ -519,16 +519,16 @@ def test_summary_rejects_manifest_path_that_does_not_match_input_run(
                 "Seed",
                 "pass",
                 "machine_too_conservative_shape_or_pattern_unmodeled",
-                "rescued",
+                "backfilled",
             )
         ],
-        [_evidence("FAM001|Seed", "FAM001", "Seed", "rescued")],
+        [_evidence("FAM001|Seed", "FAM001", "Seed", "backfilled")],
     )
     fixture_cohort = tmp_path / "fixture_cohort"
     full_cohort = tmp_path / "full_cohort"
     stale_run = tmp_path / "stale_full_cohort"
-    _write_cells(fixture_cohort, [_cell("FAM001", "S1", "rescued")])
-    _write_cells(full_cohort, [_cell("FAM001", "S2", "rescued")])
+    _write_cells(fixture_cohort, [_cell("FAM001", "S1", "backfilled")])
+    _write_cells(full_cohort, [_cell("FAM001", "S2", "backfilled")])
     stale_run.mkdir()
     manifest_rows = _manifest_rows(
         current=True,
@@ -551,7 +551,7 @@ def test_summary_rejects_manifest_path_that_does_not_match_input_run(
 
 
 def test_cell_facts_drop_extra_payload_before_pending_state() -> None:
-    row = _cell("FAM001", "PayloadSample", "rescued", reason="rt pattern conflict")
+    row = _cell("FAM001", "PayloadSample", "backfilled", reason="rt pattern conflict")
     row["large_payload"] = "x" * 100_000
     row["unused_extra_status"] = "ambiguous_ms1_owner"
 
@@ -559,7 +559,7 @@ def test_cell_facts_drop_extra_payload_before_pending_state() -> None:
 
     assert facts.feature_family_id == "FAM001"
     assert facts.sample_key == "FAM001|PayloadSample"
-    assert facts.status == "rescued"
+    assert facts.status == "backfilled"
     assert "rt_pattern_conflict" in facts.tokens
     assert "large_payload" not in facts.tokens
     assert "unused_extra_status" not in facts.tokens

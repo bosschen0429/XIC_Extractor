@@ -422,10 +422,10 @@ def _shadow_blockers(row: Mapping[str, Any]) -> list[str]:
         if _value(row, "shadow_decision") != "accept":
             blockers.append("shadow_decision_not_accept")
         blockers.append("missing_product_authorized_same_peak_reason")
-    if _value(row, "current_raw_status") != "rescued":
+    if _value(row, "current_raw_status") != "backfilled":
         blockers.append("current_raw_status_not_rescued")
-    if _value(row, "current_production_status") != "review_rescue":
-        blockers.append("current_status_not_review_rescue")
+    if _value(row, "current_production_status") != "review_backfill":
+        blockers.append("current_status_not_review_backfill")
     if _value(row, "current_matrix_written") != "FALSE":
         blockers.append("current_matrix_already_written")
     if (

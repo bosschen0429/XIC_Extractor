@@ -966,6 +966,24 @@ def is_cid_nl_missing_ms1_rejection(assessment: CidNlMethodAssessmentRef) -> boo
     )
 
 
+def is_ms1_only_cid_nl_backfill_assessment(
+    assessment: CidNlMethodAssessmentRef,
+) -> bool:
+    """Recognize a group-bounded Backfill that found one MS1 peak and no CID-NL.
+
+    The group owner authorized the revisit; the result grants no detection.
+    """
+    return (
+        assessment.content.detector_invocation_id
+        == "untargeted-cid-nl-backfill"
+        and assessment.content.technical_state == "evaluated"
+        and assessment.content.method_result == "HOLD"
+        and assessment.content.reason_codes == ("no_unique_qualifying_relation",)
+        and len(assessment.candidate_peaks) == 1
+        and not assessment.evidence_refs
+    )
+
+
 def is_unsearched_cid_nl_discovery_assessment(
     assessment: CidNlMethodAssessmentRef,
 ) -> bool:

@@ -28,7 +28,7 @@ def test_backfill_projection_maps_sidecar_evidence_into_supported_rescue_cell() 
             _cell_row(
                 "FAM_DROPOUT",
                 "S2",
-                status="rescued",
+                status="backfilled",
                 rt_delta_sec="120",
             ),
         ],
@@ -106,7 +106,7 @@ def test_backfill_projection_maps_sidecar_evidence_into_supported_rescue_cell() 
             "neutral_loss_tag": "DNA_dR",
             "primary_evidence": "owner_complete_link",
             "detected_count": "2",
-            "accepted_rescue_count": "1",
+            "accepted_backfill_count": "1",
         },
         [rescued],
         seed_quality=None,
@@ -122,7 +122,7 @@ def test_legacy_ms1_pattern_constellation_is_context_not_product_support() -> No
     rows = project_backfill_evidence_to_cells(
         cell_rows=[
             _cell_row("FAM_LEGACY", "S1", status="detected"),
-            _cell_row("FAM_LEGACY", "S2", status="rescued"),
+            _cell_row("FAM_LEGACY", "S2", status="backfilled"),
         ],
         candidate_ms2_pattern_rows=[
             {
@@ -158,7 +158,7 @@ def test_legacy_ms1_pattern_constellation_is_context_not_product_support() -> No
             "neutral_loss_tag": "DNA_dR",
             "primary_evidence": "owner_complete_link",
             "detected_count": "2",
-            "accepted_rescue_count": "1",
+            "accepted_backfill_count": "1",
         },
         [rescued],
         seed_quality=None,
@@ -175,7 +175,7 @@ def test_anchor_reason_requires_trace_constellation_level() -> None:
     rows = project_backfill_evidence_to_cells(
         cell_rows=[
             _cell_row("FAM_WRONG_LEVEL", "S1", status="detected"),
-            _cell_row("FAM_WRONG_LEVEL", "S2", status="rescued"),
+            _cell_row("FAM_WRONG_LEVEL", "S2", status="backfilled"),
         ],
         candidate_ms2_pattern_rows=[
             {
@@ -208,7 +208,7 @@ def test_anchor_reason_requires_trace_constellation_level() -> None:
             "neutral_loss_tag": "DNA_dR",
             "primary_evidence": "owner_complete_link",
             "detected_count": "2",
-            "accepted_rescue_count": "1",
+            "accepted_backfill_count": "1",
         },
         [_row(rows, "FAM_WRONG_LEVEL", "S2")],
         seed_quality=None,
@@ -225,7 +225,7 @@ def test_diagnostic_only_ms1_pattern_is_not_product_support() -> None:
     rows = project_backfill_evidence_to_cells(
         cell_rows=[
             _cell_row("FAM_DIAGNOSTIC_MS1", "S1", status="detected"),
-            _cell_row("FAM_DIAGNOSTIC_MS1", "S2", status="rescued"),
+            _cell_row("FAM_DIAGNOSTIC_MS1", "S2", status="backfilled"),
         ],
         candidate_ms2_pattern_rows=[
             {
@@ -263,7 +263,7 @@ def test_diagnostic_only_ms1_pattern_is_not_product_support() -> None:
             "neutral_loss_tag": "DNA_dR",
             "primary_evidence": "owner_complete_link",
             "detected_count": "2",
-            "accepted_rescue_count": "1",
+            "accepted_backfill_count": "1",
         },
         [rescued],
         seed_quality=None,
@@ -280,7 +280,7 @@ def test_diagnostic_only_qc_reference_is_not_product_ms1_support() -> None:
     rows = project_backfill_evidence_to_cells(
         cell_rows=[
             _cell_row("FAM_DIAGNOSTIC_QC", "S1", status="detected"),
-            _cell_row("FAM_DIAGNOSTIC_QC", "S2", status="rescued"),
+            _cell_row("FAM_DIAGNOSTIC_QC", "S2", status="backfilled"),
         ],
         candidate_ms2_pattern_rows=[
             {
@@ -315,7 +315,7 @@ def test_diagnostic_only_qc_reference_is_not_product_ms1_support() -> None:
             "neutral_loss_tag": "DNA_dR",
             "primary_evidence": "owner_complete_link",
             "detected_count": "2",
-            "accepted_rescue_count": "1",
+            "accepted_backfill_count": "1",
         },
         [rescued],
         seed_quality=None,
@@ -332,7 +332,7 @@ def test_product_authorized_qc_reference_does_not_replace_anchor_ms1() -> None:
     rows = project_backfill_evidence_to_cells(
         cell_rows=[
             _cell_row("FAM_QC_ONLY", "S1", status="detected"),
-            _cell_row("FAM_QC_ONLY", "S2", status="rescued"),
+            _cell_row("FAM_QC_ONLY", "S2", status="backfilled"),
         ],
         candidate_ms2_pattern_rows=[
             {
@@ -368,7 +368,7 @@ def test_product_authorized_qc_reference_does_not_replace_anchor_ms1() -> None:
             "neutral_loss_tag": "DNA_dR",
             "primary_evidence": "owner_complete_link",
             "detected_count": "2",
-            "accepted_rescue_count": "1",
+            "accepted_backfill_count": "1",
         },
         [rescued],
         seed_quality=None,
@@ -386,7 +386,7 @@ def test_ms1_projection_drops_stale_anchor_reason_before_current_sidecar() -> No
         cell_rows=[
             _cell_row("FAM_STALE", "S1", status="detected"),
             {
-                **_cell_row("FAM_STALE", "S2", status="rescued"),
+                **_cell_row("FAM_STALE", "S2", status="backfilled"),
                 "backfill_ms1_pattern_status": "supportive",
                 "backfill_ms1_pattern_evidence_level": "trace_constellation",
                 "backfill_evidence_reason": ANCHOR_OWN_MAX_MS1_SUPPORT_REASON,
@@ -429,7 +429,7 @@ def test_ms1_projection_drops_stale_anchor_reason_before_current_sidecar() -> No
             "neutral_loss_tag": "DNA_dR",
             "primary_evidence": "owner_complete_link",
             "detected_count": "2",
-            "accepted_rescue_count": "1",
+            "accepted_backfill_count": "1",
         },
         [rescued],
         seed_quality=None,
@@ -447,7 +447,7 @@ def test_diagnostic_only_candidate_ms2_does_not_block_ms1_product_support() -> N
         cell_rows=[
             _cell_row("FAM_DIAGNOSTIC_MS2", "S1", status="detected"),
             {
-                **_cell_row("FAM_DIAGNOSTIC_MS2", "S2", status="rescued"),
+                **_cell_row("FAM_DIAGNOSTIC_MS2", "S2", status="backfilled"),
                 "backfill_candidate_ms2_pattern_status": "supportive",
                 "backfill_candidate_ms2_evidence_level": "sample_candidate_aligned",
                 "backfill_dda_missing_nl_policy_status": "not_dispositive",
@@ -499,7 +499,7 @@ def test_diagnostic_only_candidate_ms2_does_not_block_ms1_product_support() -> N
             "neutral_loss_tag": "DNA_dR",
             "primary_evidence": "owner_complete_link",
             "detected_count": "2",
-            "accepted_rescue_count": "1",
+            "accepted_backfill_count": "1",
         },
         [rescued],
         seed_quality=None,
@@ -515,7 +515,7 @@ def test_backfill_projection_is_fail_closed_when_sidecars_are_missing() -> None:
     rows = project_backfill_evidence_to_cells(
         cell_rows=[
             {
-                **_cell_row("FAM_MISSING", "S2", status="rescued"),
+                **_cell_row("FAM_MISSING", "S2", status="backfilled"),
                 "backfill_ms1_pattern_status": "supportive",
                 "backfill_ms1_pattern_evidence_level": "trace_constellation",
                 "backfill_candidate_ms2_pattern_status": "supportive",
@@ -534,7 +534,7 @@ def test_backfill_projection_is_fail_closed_when_sidecars_are_missing() -> None:
             "neutral_loss_tag": "DNA_dR",
             "primary_evidence": "owner_complete_link",
             "detected_count": "2",
-            "accepted_rescue_count": "1",
+            "accepted_backfill_count": "1",
         },
         rows,
         seed_quality=None,
@@ -544,16 +544,16 @@ def test_backfill_projection_is_fail_closed_when_sidecars_are_missing() -> None:
     assert evidence.cells[0].backfill_identity_block_reason != ""
 
 
-def test_generic_review_rescue_count_requires_owner_rehydration() -> None:
+def test_generic_review_backfill_count_requires_owner_rehydration() -> None:
     evidence = evidence_from_tsv_rows(
         {
             "neutral_loss_tag": "DNA_dR",
             "primary_evidence": "legacy_unrehydrated_primary_evidence",
             "quantifiable_detected_count": "2",
-            "quantifiable_rescue_count": "0",
-            "review_rescue_count": "1",
+            "quantifiable_backfill_count": "0",
+            "review_backfill_count": "1",
         },
-        [_cell_row("FAM_REVIEW", "S2", status="rescued")],
+        [_cell_row("FAM_REVIEW", "S2", status="backfilled")],
         seed_quality=None,
         sample_count=3,
     )
@@ -561,42 +561,42 @@ def test_generic_review_rescue_count_requires_owner_rehydration() -> None:
     decision = classify_backfill_promotion(evidence)
 
     assert evidence.held_rescue_count == 0
-    assert evidence.unrehydrated_review_rescue_count == 1
+    assert evidence.unrehydrated_review_backfill_count == 1
     assert decision.state == "unavailable"
     assert decision.reason == "backfill_owner_rehydration_unavailable"
 
 
 @pytest.mark.parametrize(
-    "review_rescue_count",
+    "review_backfill_count",
     ("", "garbage", "NaN", "0.5", "-1"),
     ids=("empty", "nonnumeric", "nonfinite", "fractional", "negative"),
 )
-def test_invalid_review_rescue_count_keeps_promotion_unavailable(
-    review_rescue_count: str,
+def test_invalid_review_backfill_count_keeps_promotion_unavailable(
+    review_backfill_count: str,
 ) -> None:
     evidence = evidence_from_tsv_rows(
         {
             "neutral_loss_tag": "DNA_dR",
             "primary_evidence": "owner_complete_link",
             "quantifiable_detected_count": "2",
-            "quantifiable_rescue_count": "0",
-            "review_rescue_count": review_rescue_count,
+            "quantifiable_backfill_count": "0",
+            "review_backfill_count": review_backfill_count,
         },
-        [_cell_row("FAM_REVIEW", "S2", status="rescued")],
+        [_cell_row("FAM_REVIEW", "S2", status="backfilled")],
         seed_quality=None,
         sample_count=3,
     )
 
     decision = classify_backfill_promotion(evidence)
 
-    assert evidence.unrehydrated_review_rescue_count is None
+    assert evidence.unrehydrated_review_backfill_count is None
     assert decision.state == "unavailable"
     assert decision.reason == "backfill_owner_rehydration_unavailable"
 
 
 def test_naked_backfill_support_fields_without_authority_do_not_promote() -> None:
     row = {
-        **_cell_row("FAM_NAKED", "S2", status="rescued"),
+        **_cell_row("FAM_NAKED", "S2", status="backfilled"),
         "backfill_ms1_pattern_status": "supportive",
         "backfill_ms1_pattern_evidence_level": "trace_constellation",
         "backfill_candidate_ms2_pattern_status": "supportive",
@@ -609,7 +609,7 @@ def test_naked_backfill_support_fields_without_authority_do_not_promote() -> Non
             "neutral_loss_tag": "DNA_dR",
             "primary_evidence": "owner_complete_link",
             "detected_count": "2",
-            "accepted_rescue_count": "1",
+            "accepted_backfill_count": "1",
         },
         [row],
         seed_quality=None,
@@ -626,7 +626,7 @@ def test_naked_backfill_support_fields_without_authority_do_not_promote() -> Non
 
 def test_same_peak_support_does_not_override_duplicate_loser_claim() -> None:
     row = {
-        **_cell_row("FAM_DUP_LOSER", "S2", status="rescued"),
+        **_cell_row("FAM_DUP_LOSER", "S2", status="backfilled"),
         "group_claim_state": "duplicate_loser",
         "claim_winner_group_hypothesis_id": "FAM_WINNER",
         "claim_source_group_hypothesis_id": "FAM_DUP_LOSER",
@@ -643,7 +643,7 @@ def test_same_peak_support_does_not_override_duplicate_loser_claim() -> None:
             "neutral_loss_tag": "DNA_dR",
             "primary_evidence": "owner_complete_link",
             "detected_count": "2",
-            "accepted_rescue_count": "1",
+            "accepted_backfill_count": "1",
         },
         [row],
         seed_quality=None,
@@ -687,7 +687,7 @@ def test_diagnostic_false_without_product_authority_is_not_product_support() -> 
     rows = project_backfill_evidence_to_cells(
         cell_rows=[
             _cell_row("FAM_NO_AUTHORITY", "S1", status="detected"),
-            _cell_row("FAM_NO_AUTHORITY", "S2", status="rescued"),
+            _cell_row("FAM_NO_AUTHORITY", "S2", status="backfilled"),
         ],
         candidate_ms2_pattern_rows=[
             {
@@ -735,7 +735,7 @@ def test_duplicate_product_sidecar_key_is_rejected() -> None:
         match="duplicate ms1_pattern_coherence backfill evidence sidecar key",
     ):
         project_backfill_evidence_to_cells(
-            cell_rows=[_cell_row("FAM_DUP_AUTH", "S2", status="rescued")],
+            cell_rows=[_cell_row("FAM_DUP_AUTH", "S2", status="backfilled")],
             ms1_pattern_coherence_rows=[sidecar_row, sidecar_row],
         )
 

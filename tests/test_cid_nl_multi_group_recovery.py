@@ -46,6 +46,9 @@ from xic_extractor.extraction.untargeted_cid_nl_real_data_runtime import (
     execute_untargeted_cid_nl_real_data_runtime,
     project_untargeted_cid_nl_completed_backfill,
 )
+from xic_extractor.peak_detection.cid_nl_method_assessment import (
+    is_ms1_only_cid_nl_backfill_assessment,
+)
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     mint_untargeted_cid_nl_method_subject,
 )
@@ -104,7 +107,7 @@ def test_rejected_initial_evidence_gets_one_independent_bounded_assessment(
     )
     opened = _install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
     recovery_calls = []
-    acquire = runtime_owner.acquire_untargeted_cid_nl_recovery_trace_batch
+    acquire = runtime_owner.acquire_untargeted_cid_nl_backfill_trace_batch
 
     def acquire_recovery(**kwargs):
         recovery_calls.append(kwargs["sample"].metadata.raw_stem)
@@ -114,7 +117,7 @@ def test_rejected_initial_evidence_gets_one_independent_bounded_assessment(
 
     monkeypatch.setattr(
         runtime_owner,
-        "acquire_untargeted_cid_nl_recovery_trace_batch",
+        "acquire_untargeted_cid_nl_backfill_trace_batch",
         acquire_recovery,
     )
     runtime = start_runtime_attempt(
@@ -455,10 +458,10 @@ def test_runtime_recovers_every_authorized_rt_group(
     assert sorted(
         len(attempt.assessment.candidate_peaks) for attempt in missing.backfill_attempts
     ) == sorted(int(center in recovery_peaks) for center in authorized_centers)
-    assert missing.result_ref.recovery_candidate_count == sum(
+    assert missing.result_ref.backfill_candidate_count == sum(
         center in recovery_peaks for center in authorized_centers
     )
-    assert missing.result_ref.recovery_assessment_artifact_ids == tuple(
+    assert missing.result_ref.backfill_assessment_artifact_ids == tuple(
         attempt.assessment.artifact.evidence_artifact_id
         for attempt in missing.backfill_attempts
     )
@@ -522,9 +525,9 @@ def test_runtime_recovers_every_authorized_rt_group(
         )
         assert len(missing_cells) == 2
         if recovery_peaks == (8.0, 12.0) and recovery_is_support:
-            assert all(cell.recovery_cell is not None for cell in missing_cells)
+            assert all(cell.backfill_cell is not None for cell in missing_cells)
             assert all(
-                cell.recovery_cell.content.method_result == "SUPPORT"
+                cell.backfill_cell.content.method_result == "SUPPORT"
                 for cell in missing_cells
             )
         if (
@@ -689,7 +692,7 @@ def test_runtime_recovers_every_authorized_rt_group(
             )
             if recovery is None:
                 assert cell.evidence_states == ("not_searched",)
-                assert cell.recovery_cell is None
+                assert cell.backfill_cell is None
                 if not has_initial_evidence:
                     assert cell.predecessor_cells == ()
                 if source is not None:
@@ -708,11 +711,11 @@ def test_runtime_recovers_every_authorized_rt_group(
                     assert source.peak_hypothesis is None
                     recovery_context = source.group_context
                 else:
-                    assert cell.recovery_cell is not None
+                    assert cell.backfill_cell is not None
                     assert (
-                        cell.recovery_cell.method_assessment is recovery.assessment
+                        cell.backfill_cell.method_assessment is recovery.assessment
                     )
-                    recovery_context = cell.recovery_cell.group_context
+                    recovery_context = cell.backfill_cell.group_context
                 completion = project_untargeted_cid_nl_completed_backfill(
                     missing, group_context=recovery_context
                 )
@@ -750,7 +753,7 @@ def test_runtime_recovers_every_authorized_rt_group(
                     with pytest.raises(ValueError):
                         replace(
                             missing.result_ref,
-                            recovery_assessment_artifact_ids=(
+                            backfill_assessment_artifact_ids=(
                                 recovery.assessment.artifact.evidence_artifact_id,
                             ),
                         )
@@ -760,10 +763,10 @@ def test_runtime_recovers_every_authorized_rt_group(
                         assert source.method_assessment is (
                             missing.adapter_result.assessment_input.assessment
                         )
-                    assert cell.recovery_cell is not None
-                    assert cell.recovery_cell.method_assessment is recovery.assessment
+                    assert cell.backfill_cell is not None
+                    assert cell.backfill_cell.method_assessment is recovery.assessment
                     allocated.append(
-                        cell.recovery_cell.peak_observation.content.peak_observation_content_id
+                        cell.backfill_cell.peak_observation.content.peak_observation_content_id
                     )
                 elif source is not None:
                     assert source.method_assessment is recovery.assessment
@@ -771,10 +774,10 @@ def test_runtime_recovers_every_authorized_rt_group(
                         source.peak_observation.content.peak_observation_content_id
                     )
                 else:
-                    assert cell.recovery_cell is not None
-                    assert cell.recovery_cell.method_assessment is recovery.assessment
+                    assert cell.backfill_cell is not None
+                    assert cell.backfill_cell.method_assessment is recovery.assessment
                     allocated.append(
-                        cell.recovery_cell.peak_observation.content.peak_observation_content_id
+                        cell.backfill_cell.peak_observation.content.peak_observation_content_id
                     )
         assert len(set(allocated)) == len(allocated)
         expected_assessments = {
@@ -804,24 +807,51 @@ def test_runtime_recovers_every_authorized_rt_group(
                 decision.write_matrix_value and decision.matrix_value is not None
                 for decision in decisions
             )
-        else:
-            assert all(
-                not decision.write_matrix_value and decision.matrix_value is None
-                for decision in decisions
-            )
-        if recovery_is_support:
             assert all(decision.blank_reason == "" for decision in decisions)
         else:
-            assert sorted(decision.blank_reason for decision in decisions) == sorted(
-                cell.evidence_state for cell in missing_cells
+            # One group-bounded MS1 peak without CID-NL evidence fills the
+            # Matrix as MS1-only Backfill; it never counts as a detection.
+            ms1_only_cells = tuple(
+                cell
+                for cell in missing_cells
+                if cell.evidence_states == ("ms1_only_backfill_observation",)
             )
-        # Single CID-NL recovery retains MS1 candidates without direct SUPPORT.
-        assert all(
-            cell.evidence_states == ("unresolved",)
-            for cell in missing_cells
-            if cell.predecessor_cells
-            and cell.predecessor_cells[0].peak_observation is not None
-        )
+            assert len(ms1_only_cells) == sum(
+                center in recovery_peaks for center in authorized_centers
+            )
+            for cell in ms1_only_cells:
+                (source,) = cell.predecessor_cells
+                assessment = source.method_assessment
+                assert assessment.content.reason_codes == (
+                    "no_unique_qualifying_relation",
+                )
+                assert len(assessment.candidate_peaks) == 1
+                assert assessment.evidence_refs == ()
+                assert cell.integrations == (
+                    assessment.candidate_peaks[0].content.integration,
+                )
+            written = tuple(
+                decision for decision in decisions if decision.write_matrix_value
+            )
+            assert len(written) == len(ms1_only_cells)
+            assert all(
+                decision.matrix_value is not None
+                and decision.raw_status == "backfilled"
+                and decision.production_status == "accepted_backfill"
+                and decision.backfill_tier == "accepted_backfill"
+                and decision.blank_reason == ""
+                for decision in written
+            )
+            assert sorted(
+                decision.blank_reason
+                for decision in decisions
+                if not decision.write_matrix_value
+            ) == sorted(
+                cell.evidence_state
+                for cell in missing_cells
+                if cell not in ms1_only_cells
+            )
+            assert not any(decision.raw_status == "detected" for decision in decisions)
         if shared_support == "shared" and recovery_peaks == (8.0, 12.0):
             from xic_extractor.alignment.mode_track import (
                 ModeTrackTrajectoryPolicy,
@@ -939,7 +969,7 @@ def test_shared_physical_recovery_claim_is_not_assigned_to_two_groups(
         batch, result, alignment_config=AlignmentConfig(anchor_min_seed_events=1)
     )
     assert len(missing.backfill_attempts) == 2, (
-        missing.result_ref.recovery_candidate_count,
+        missing.result_ref.backfill_candidate_count,
         len(completed.initial_groups),
         tuple(group.group_center_rt for group in completed.initial_groups),
     )
@@ -963,7 +993,7 @@ def test_shared_physical_recovery_claim_is_not_assigned_to_two_groups(
         if cell.canonical_sample.metadata.raw_stem == "Missing"
     )
     assert len(missing_cells) == 2
-    assert all(cell.recovery_cell is not None for cell in missing_cells)
+    assert all(cell.backfill_cell is not None for cell in missing_cells)
     assert all(cell.evidence_states == ("unresolved",) for cell in missing_cells)
     writer = project_completed_untarget_batch_writer_inputs(completed)
     missing_decisions = tuple(
@@ -975,6 +1005,329 @@ def test_shared_physical_recovery_claim_is_not_assigned_to_two_groups(
         not decision.write_matrix_value and decision.matrix_value is None
         for decision in missing_decisions
     )
+
+
+def test_shared_ms1_only_backfill_peak_is_not_written_to_two_rows(
+    tmp_path, monkeypatch
+):
+    """One MS1-only peak two group windows both found stays unresolved."""
+
+    ms1_centers = {"S1": (8.0, 8.12), "S2": (8.0, 8.12), "Missing": (8.06,)}
+    nl_centers = {"S1": (8.0, 8.12), "S2": (8.0, 8.12), "Missing": ()}
+    paths = tuple(tmp_path / f"{stem}.synthetic" for stem in ms1_centers)
+    settings, peak_config = (
+        replace(
+            _settings(), neutral_loss_profile=None, rt_max=8.6, seed_rt_gap_min=0.1
+        ),
+        _peak_config(tmp_path),
+    )
+    raws, candidates = {}, {}
+    for path in paths:
+        path.write_bytes(path.stem.encode())
+        raw = _FakeRaw(nl_centers[path.stem])
+        raw.rt = np.linspace(7.4, 8.7, 521)
+        raw.intensity = sum(
+            (
+                1000 * np.exp(-0.5 * ((raw.rt - center) / 0.018) ** 2)
+                for center in ms1_centers[path.stem]
+            ),
+            np.zeros_like(raw.rt),
+        )
+        raw.scans = tuple(
+            replace(scan, scan_number=int(np.argmin(np.abs(raw.rt - scan.rt))) + 1)
+            for scan in raw.scans
+        )
+        raws[path] = raw
+        candidates[path.stem] = (
+            _current_candidates(
+                raw, raw_file=path, settings=settings, peak_config=peak_config
+            )
+            if path.stem != "Missing"
+            else ()
+        )
+    batch = build_untargeted_cid_nl_production_batch(
+        raw_paths=paths,
+        sample_metadata=tuple(
+            SampleMetadata(
+                sample_name=stem,
+                raw_stem=stem,
+                injection_order=index + 1,
+                sample_role="study_sample",
+            )
+            for index, stem in enumerate(ms1_centers)
+        ),
+        settings=settings,
+        peak_config=peak_config,
+        candidates_by_sample=candidates,
+        discovery_receipts_by_sample=_discovery_receipts(tmp_path, paths, candidates),
+        sample_identity_namespace="study:shared-ms1-only-backfill",
+        dll_dir=tmp_path,
+    )
+    _install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
+    runtime = start_runtime_attempt(
+        attempt=batch.context.processing_owners.attempt,
+        work_unit_keys=tuple(job.work_unit_key for job in batch.jobs),
+        owner_completeness_attestation="shared-ms1-only-backfill",
+    )
+    result = execute_untargeted_cid_nl_real_data_runtime(
+        runtime,
+        batch.jobs,
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+        recovery_marker=OwnerPathRuntimeMarker(
+            tmp_path / "runtime.json", "shared-ms1-only-backfill"
+        ),
+    )
+    assert result.succeeded
+    missing = next(
+        item
+        for item in result.sample_results
+        if item.job.sample.metadata.raw_stem == "Missing"
+    )
+    assert len(missing.backfill_attempts) == 2
+    assert all(
+        is_ms1_only_cid_nl_backfill_assessment(attempt.assessment)
+        for attempt in missing.backfill_attempts
+    )
+    physical_ids = {
+        attempt.assessment.candidate_peaks[0].content.peak_observation_content_id
+        for attempt in missing.backfill_attempts
+    }
+    assert len(physical_ids) == 1
+
+    completed = compose_untargeted_cid_nl_production_result(
+        batch, result, alignment_config=AlignmentConfig(anchor_min_seed_events=1)
+    )
+    (child,) = completed.application_result.children
+    missing_cells = tuple(
+        cell
+        for cell in child.scientific_core.cell_observations
+        if cell.canonical_sample.metadata.raw_stem == "Missing"
+    )
+    assert len(missing_cells) == 2
+    assert all(cell.evidence_states == ("unresolved",) for cell in missing_cells)
+    writer = project_completed_untarget_batch_writer_inputs(completed)
+    missing_decisions = tuple(
+        decision
+        for decision in writer.production_decisions.cells.values()
+        if decision.sample_stem == "Missing"
+    )
+    assert len(missing_decisions) == 2
+    assert all(
+        not decision.write_matrix_value and decision.matrix_value is None
+        for decision in missing_decisions
+    )
+
+
+@pytest.mark.parametrize(
+    ("missing_peaks", "expected_state"),
+    [
+        ((8.0,), "ms1_only_backfill_observation"),
+        ((7.8, 8.2), "unresolved"),
+    ],
+    ids=["one-ms1-peak", "two-ms1-peaks"],
+)
+def test_ms1_only_backfill_fills_only_one_unique_group_window_peak(
+    tmp_path, monkeypatch, missing_peaks, expected_state
+):
+    centers = {"S1": (8.0,), "S2": (8.0,), "Missing": missing_peaks}
+    paths = tuple(tmp_path / f"{stem}.synthetic" for stem in centers)
+    settings, peak_config = (
+        replace(_settings(), neutral_loss_profile=None, rt_max=8.6),
+        _peak_config(tmp_path),
+    )
+    raws, candidates = {}, {}
+    for path in paths:
+        path.write_bytes(path.stem.encode())
+        raw = _FakeRaw(centers[path.stem])
+        raw.rt = np.linspace(7.4, 8.7, 521)
+        raw.intensity = sum(
+            (
+                1000 * np.exp(-0.5 * ((raw.rt - center) / 0.035) ** 2)
+                for center in centers[path.stem]
+            ),
+            np.zeros_like(raw.rt),
+        )
+        raw.scans = tuple(
+            replace(scan, scan_number=int(np.argmin(np.abs(raw.rt - scan.rt))) + 1)
+            for scan in raw.scans
+        )
+        raws[path] = raw
+        candidates[path.stem] = (
+            _current_candidates(
+                raw, raw_file=path, settings=settings, peak_config=peak_config
+            )
+            if path.stem != "Missing"
+            else ()
+        )
+    batch = build_untargeted_cid_nl_production_batch(
+        raw_paths=paths,
+        sample_metadata=tuple(
+            SampleMetadata(
+                sample_name=stem,
+                raw_stem=stem,
+                injection_order=index + 1,
+                sample_role="study_sample",
+            )
+            for index, stem in enumerate(centers)
+        ),
+        settings=settings,
+        peak_config=peak_config,
+        candidates_by_sample=candidates,
+        discovery_receipts_by_sample=_discovery_receipts(tmp_path, paths, candidates),
+        sample_identity_namespace="study:ms1-only-backfill",
+        dll_dir=tmp_path,
+    )
+    _install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
+    runtime = start_runtime_attempt(
+        attempt=batch.context.processing_owners.attempt,
+        work_unit_keys=tuple(job.work_unit_key for job in batch.jobs),
+        owner_completeness_attestation="ms1-only-backfill",
+    )
+    result = execute_untargeted_cid_nl_real_data_runtime(
+        runtime,
+        batch.jobs,
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+        recovery_marker=OwnerPathRuntimeMarker(
+            tmp_path / "runtime.json", "ms1-only-backfill"
+        ),
+    )
+    assert result.succeeded
+    missing = next(
+        item
+        for item in result.sample_results
+        if item.job.sample.metadata.raw_stem == "Missing"
+    )
+    (attempt,) = missing.backfill_attempts
+    assert attempt.assessment.content.reason_codes == (
+        "no_unique_qualifying_relation",
+    )
+    assert len(attempt.assessment.candidate_peaks) == len(missing_peaks)
+    completed = compose_untargeted_cid_nl_production_result(
+        batch, result, alignment_config=AlignmentConfig(anchor_min_seed_events=1)
+    )
+    (child,) = completed.application_result.children
+    (missing_cell,) = tuple(
+        cell
+        for cell in child.scientific_core.cell_observations
+        if cell.canonical_sample.metadata.raw_stem == "Missing"
+    )
+    assert missing_cell.evidence_states == (expected_state,)
+    writer = project_completed_untarget_batch_writer_inputs(completed)
+    (decision,) = tuple(
+        decision
+        for decision in writer.production_decisions.cells.values()
+        if decision.sample_stem == "Missing"
+    )
+    if expected_state == "unresolved":
+        assert not decision.write_matrix_value
+        assert decision.raw_status == "ambiguous_ms1_owner"
+    else:
+        assert decision.write_matrix_value
+        assert decision.raw_status == "backfilled"
+        assert decision.production_status == "accepted_backfill"
+    (row,) = writer.production_decisions.rows.values()
+    assert row.detected_count == 2
+    # The finalized row carries the group's own tag, fragment and anchor.
+    (cluster,) = writer.matrix.clusters
+    assert cluster.has_anchor
+    assert cluster.neutral_loss_tag == "cid_nl:116.0474"
+    assert cluster.family_product_mz == pytest.approx(383.9526, abs=1e-3)
+    assert cluster.family_observed_neutral_loss_da == pytest.approx(116.0474, abs=1e-3)
+
+
+def test_backfill_reaches_a_sample_whose_support_belongs_to_another_group(
+    tmp_path, monkeypatch
+):
+    # Missing has CID-NL support only for its own peak at 9.6 min; its peak in
+    # the S1/S2 group at 8.0 min carries no MS2. Support elsewhere must not
+    # stop the group-bounded revisit.
+    ms1_centers = {"S1": (8.0,), "S2": (8.0,), "Missing": (8.0, 9.6)}
+    nl_centers = {"S1": (8.0,), "S2": (8.0,), "Missing": (9.6,)}
+    paths = tuple(tmp_path / f"{stem}.synthetic" for stem in ms1_centers)
+    settings, peak_config = (
+        replace(_settings(), neutral_loss_profile=None, rt_max=10.1),
+        _peak_config(tmp_path),
+    )
+    raws, candidates = {}, {}
+    for path in paths:
+        path.write_bytes(path.stem.encode())
+        raw = _FakeRaw(nl_centers[path.stem])
+        raw.rt = np.linspace(7.4, 10.2, 1121)
+        raw.intensity = sum(
+            (
+                1000 * np.exp(-0.5 * ((raw.rt - center) / 0.035) ** 2)
+                for center in ms1_centers[path.stem]
+            ),
+            np.zeros_like(raw.rt),
+        )
+        raw.scans = tuple(
+            replace(scan, scan_number=int(np.argmin(np.abs(raw.rt - scan.rt))) + 1)
+            for scan in raw.scans
+        )
+        raws[path] = raw
+        candidates[path.stem] = _current_candidates(
+            raw, raw_file=path, settings=settings, peak_config=peak_config
+        )
+    batch = build_untargeted_cid_nl_production_batch(
+        raw_paths=paths,
+        sample_metadata=tuple(
+            SampleMetadata(
+                sample_name=stem,
+                raw_stem=stem,
+                injection_order=index + 1,
+                sample_role="study_sample",
+            )
+            for index, stem in enumerate(ms1_centers)
+        ),
+        settings=settings,
+        peak_config=peak_config,
+        candidates_by_sample=candidates,
+        discovery_receipts_by_sample=_discovery_receipts(tmp_path, paths, candidates),
+        sample_identity_namespace="study:support-elsewhere",
+        dll_dir=tmp_path,
+    )
+    _install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
+    runtime = start_runtime_attempt(
+        attempt=batch.context.processing_owners.attempt,
+        work_unit_keys=tuple(job.work_unit_key for job in batch.jobs),
+        owner_completeness_attestation="support-elsewhere",
+    )
+    result = execute_untargeted_cid_nl_real_data_runtime(
+        runtime,
+        batch.jobs,
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+        recovery_marker=OwnerPathRuntimeMarker(
+            tmp_path / "runtime.json", "support-elsewhere"
+        ),
+    )
+    assert result.succeeded
+    missing = next(
+        item
+        for item in result.sample_results
+        if item.job.sample.metadata.raw_stem == "Missing"
+    )
+    assert missing.adapter_result.assessment_input.assessment.content.method_result == (
+        "SUPPORT"
+    )
+    completed = compose_untargeted_cid_nl_production_result(
+        batch, result, alignment_config=AlignmentConfig(anchor_min_seed_events=1)
+    )
+    writer = project_completed_untarget_batch_writer_inputs(completed)
+    sample_stems = writer.matrix.sample_order
+    group_rows = {
+        round(cluster.family_center_rt, 1): cluster
+        for cluster in writer.matrix.clusters
+    }
+    group_8 = group_rows[8.0]
+    (missing_decision,) = tuple(
+        decision
+        for decision in writer.production_decisions.cells.values()
+        if decision.feature_family_id == group_8.feature_family_id
+        and decision.sample_stem == "Missing"
+    )
+    assert "Missing" in sample_stems
+    assert missing_decision.write_matrix_value
+    assert missing_decision.raw_status == "backfilled"
 
 
 def test_alignment_uses_configured_recovery_groups(tmp_path, monkeypatch):
@@ -1080,8 +1433,8 @@ def _assert_alignment_uses_configured_recovery_groups(
         cell.peak_observation is None and cell.peak_hypothesis is None
         for cell in recovered.predecessor_cells
     )
-    if recovered.recovery_cell is not None:
-        assert recovered.recovery_cell.method_assessment is recovery.assessment
+    if recovered.backfill_cell is not None:
+        assert recovered.backfill_cell.method_assessment is recovery.assessment
     else:
         assert len(recovered.predecessor_cells) == 1
         assert recovered.predecessor_cells[0].method_assessment == recovery.assessment
@@ -1089,7 +1442,7 @@ def _assert_alignment_uses_configured_recovery_groups(
         assert recovered.predecessor_cells[0].peak_hypothesis is None
     assert recovered.evidence_states == ("unavailable",)
     assert no_input.predecessor_cells == ()
-    assert no_input.recovery_cell is None
+    assert no_input.backfill_cell is None
     assert no_input.evidence_states == ("not_searched",)
     assert no_input.integrations == ()
     writer = project_completed_untarget_batch_writer_inputs(completed)
