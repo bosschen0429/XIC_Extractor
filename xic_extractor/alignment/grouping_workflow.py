@@ -16,13 +16,18 @@ from xic_extractor.alignment.cross_sample_peak_groups import (
     _expected_cross_sample_lineage,
     _hypothesis_from_owner_group,
     _identity_from_owners,
+    construct_cross_sample_peak_group_hypotheses,
     validate_cross_sample_peak_group_identity,
 )
 from xic_extractor.alignment.drift_evidence import KnownIstdReference
 from xic_extractor.alignment.edge_scoring import DriftLookupProtocol
 from xic_extractor.alignment.feature_membership_inference import (
+    BatchRtWarp,
     FeatureInferenceOperationCounts,
     supports_existing_feature,
+)
+from xic_extractor.alignment.grouping_bootstrap import (
+    bootstrap_cid_nl_initial_population,
 )
 from xic_extractor.alignment.grouping_result import (
     CrossSampleGroupingContractError,
@@ -127,10 +132,6 @@ def build_initial_cid_nl_cross_sample_groups(
     tuple[ModeTrackCandidateObservation, ...],
 ]:
     """Infer stable CID-NL groups without producing unused RT trajectories."""
-    from xic_extractor.alignment.mode_track.producer import (
-        bootstrap_cid_nl_initial_population,
-    )
-
     batch_samples = processing_owners.sample_resolutions
     assignment_scope, _anchors, sample_candidates, drift_lookup = (
         bootstrap_cid_nl_initial_population(
@@ -194,6 +195,64 @@ def build_initial_cid_nl_cross_sample_groups(
         )
     )
     return assignment_scope, result, retained_candidates
+
+
+def regroup_cid_nl_cross_sample_groups(
+    *,
+    processing_owners: ProcessingOwnerReferences,
+    captures: Sequence[SampleLocalCapture],
+    assignment_scope: ModeTrackAssignmentScope,
+    grouping_result: CrossSampleGroupingResult,
+    retained_candidates: Sequence[ModeTrackCandidateObservation],
+    alignment_config: AlignmentConfig,
+    injection_order: Mapping[str, int],
+    rt_warp: BatchRtWarp,
+    operation_counts_sink: list[FeatureInferenceOperationCounts] | None = None,
+) -> tuple[ModeTrackAssignmentScope, CrossSampleGroupingResult]:
+    """Reconsider every ordinary owner after the batch anchor warp is known."""
+    owners = tuple(owner for group in assignment_scope.groups for owner in group.owners)
+    groups = construct_cross_sample_peak_group_hypotheses(
+        owners,
+        config=alignment_config,
+        sample_universe=frozenset(
+            sample.metadata.raw_stem for sample in processing_owners.sample_resolutions
+        ),
+        injection_order=injection_order,
+        drift_lookup=grouping_result.drift_lookup,
+        rt_warp=rt_warp,
+        operation_counts_sink=operation_counts_sink,
+    )
+    _validate_capture_owner_hypotheses(
+        captures=captures,
+        owners=owners,
+        source_by_id={
+            candidate.peak_hypothesis_id: candidate.peak_hypothesis
+            for candidate in retained_candidates
+        },
+    )
+    identities = tuple(
+        validate_cross_sample_peak_group_identity(group, require_canonical=True)
+        for group in groups
+    )
+    if any(identity is None for identity in identities):
+        raise CrossSampleGroupingContractError(
+            "window group lost its canonical identity"
+        )
+    population = tuple(
+        sorted(
+            (identity for identity in identities if identity is not None),
+            key=lambda group: group.group_hypothesis_id,
+        )
+    )
+    scope = replace(assignment_scope, groups=groups)
+    result = CrossSampleGroupingResult(
+        processing_owners=processing_owners,
+        partition_transition=_partition_transition(
+            predecessors=population, successors=population
+        ),
+        drift_lookup=grouping_result.drift_lookup,
+    )
+    return scope, result
 
 
 def admit_cid_nl_group_backfills(

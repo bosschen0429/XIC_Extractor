@@ -320,35 +320,44 @@ unresolved and rejected groups remain AuditTrail facts.
   envelopes connect scalar comparison worksets before dispatch. Proximity determines
   comparison scope only, never the exact known-identity binding. Each subject
   retains its own assessment; sharing a workset does not combine MS2 evidence.
-- Ordinary owners use two finite passes in opposite canonical sample order.
-  A mass/product/loss range index prunes impossible feature candidates. A
-  candidate uses feature extrema and at most two representative observations
-  (seed and most recent); it does not compare every member pair. Per-sample
-  assignment solves only local competing candidates with an explicit unmatched
-  choice. Adjacent observations can support drift without demanding that the
-  first and last observations have a direct RT edge.
-- Final ordinary membership is the equivalence intersection of the two pass
-  results. Direction disagreement, equal-cost competition, and insufficient
-  evidence remain `undecided`/`unresolved`, visible as review rows. This is a
-  finite deterministic inference rule, not a claim of global optimality or
-  chemical proof that separated review rows represent different compounds.
-  Empty samples in the batch universe do not change the rule. Repeated wrappers
-  do not add independent support. Mass/product/loss checks are compatibility
-  filters, not three independent chemical votes.
+- Untarget ordinary grouping has two finite stages. The retained directional
+  inference supplies only agreed groups with at least 20 members, together
+  with exact known-identity groups, as RT warp anchors. Their ordinary
+  membership is discarded. Across the batch, each injection's anchor offsets
+  from the median of six nearby injections are summarized at RT knots. This
+  warp covers elution times outside the ISTD span; ISTD groups are local anchors
+  rather than a flat extrapolation rule.
+- Every ordinary owner is then reconsidered in its compatible mass window.
+  Local RT edges are ordered by cost across the whole window, and a band never
+  contains two owners from one sample. Dense bands compare against their own
+  six-neighbour injection trend after the batch warp; sparse bands use a wider
+  warp-only RT comparison. Precursor and measured product deviations contribute
+  to cost against band medians during owner-to-band assignment. Observed loss
+  contributes neither a veto nor an independent score. Mass windows bound
+  candidate lookup; accumulated min-max envelopes do not reject membership.
+  Remaining competitors use a joint per-sample assignment with a private
+  unmatched choice. Near-equal alternatives leave the affected owner undecided
+  without archiving an otherwise supported band.
+- The final ordinary decision is independent of input sample order. A singleton
+  or unresolved competition remains review-only; an assigned band is not a
+  chemical proof against an unresolved isomer. Repeated wrappers do not add
+  support. The older directional decision remains only for bootstrap and
+  composition cases whose cross-tag contract is outside this grouping change.
 - Initial membership is carried as compressed group member sets. Missing pair
   records mean `not_evaluated`, never `excluded`; an initial group does not
-  manufacture positive pair evidence. ModeTrack and repair consume the same
-  result and preserve indivisible confirmed identities. Explicit repair pair
-  evidence remains bounded to the actual repaired candidate and current group.
+  manufacture positive pair evidence. Backfill and repair consume the closed
+  final result and preserve indivisible confirmed identities. Explicit repair
+  pair evidence remains bounded to the actual repaired candidate and current group.
   Physical integrations, observed coordinates, sample attribution, and the
   quantification owner are unchanged by membership inference.
 - MS1-only Target owners use the precursor index and the existing physical
   signal-quality and RT evidence. Absence of an MS2 event does not itself
   exclude them. Missing or weak physical quality remains undecided; MS1-only
   owners do not enter a CID evidence group.
-- `CrossSampleGroupingResult` is constructed once from the processing owners,
-  complete partition transition, and prepared drift lookup. Internal consumers
-  use that same immutable object before bounded Backfill and through
+- The final `CrossSampleGroupingResult` is constructed after the bootstrap
+  anchors have served the warp estimate, from the processing owners, complete
+  partition transition, and prepared drift lookup. Internal consumers use that
+  same immutable object before bounded Backfill and through
   finalization. Consumers still check the actual repair/source binding, and a
   caller cannot inject a replacement partition or trajectory after repair.
 - Batch finalization consumes completed immutable children and checks their

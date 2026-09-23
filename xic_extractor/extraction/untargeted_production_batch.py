@@ -35,17 +35,16 @@ from xic_extractor.alignment.cross_sample_peak_groups import (
 from xic_extractor.alignment.drift_evidence import KnownIstdReference
 from xic_extractor.alignment.feature_membership_inference import (
     FeatureInferenceOperationCounts,
+    estimate_batch_rt_warp,
 )
 from xic_extractor.alignment.grouping_workflow import (
     admit_cid_nl_group_backfills,
     build_initial_cid_nl_cross_sample_groups,
     contested_backfill_peaks,
+    regroup_cid_nl_cross_sample_groups,
 )
 from xic_extractor.alignment.hypothesis_owner_adapter import (
     compose_peak_hypotheses_from_assessment_universe,
-)
-from xic_extractor.alignment.mode_track import (
-    ModeTrackTrajectoryPolicy,
 )
 from xic_extractor.alignment.owner_backfill_request_plan import (
     OWNER_BACKFILL_TRACE_RESULT_SEMANTICS,
@@ -1417,12 +1416,63 @@ def prepare_untargeted_cid_nl_grouping(
             retained_hypotheses_by_assessment=(retained_hypotheses_by_assessment),
             operation_counts_sink=operation_counts,
         )
+        prepared_worksets.append(
+            UntargetedCidNlWorksetGrouping(
+                subjects=subject_workset,
+                scope=child_scope,
+                captures=captures,
+                capture_inputs=capture_inputs,
+                assignment_scope=assignment_scope,
+                grouping_result=grouping_result,
+                retained_candidates=retained_candidates,
+            )
+        )
+    bootstrap_groups = tuple(
+        group
+        for workset in prepared_worksets
+        for group in workset.assignment_scope.groups
+        if group.inference_basis is not None
+        and group.inference_basis.basis
+        in {"bidirectional_membership_agreement", "known_identity_constraint"}
+    )
+    bootstrap_owners = {
+        owner.owner_id: owner
+        for workset in prepared_worksets
+        for group in workset.assignment_scope.groups
+        for owner in group.owners
+    }
+    rt_warp = estimate_batch_rt_warp(
+        tuple(group.owners for group in bootstrap_groups),
+        owners_by_id=bootstrap_owners,
+        injection_order=injection_order,
+    )
+    final_worksets = []
+    for workset in prepared_worksets:
+        operation_counts = []
+        assignment_scope, grouping_result = regroup_cid_nl_cross_sample_groups(
+            processing_owners=batch.context.processing_owners,
+            captures=workset.captures,
+            assignment_scope=workset.assignment_scope,
+            grouping_result=workset.grouping_result,
+            retained_candidates=workset.retained_candidates,
+            alignment_config=alignment_config,
+            injection_order=injection_order,
+            rt_warp=rt_warp,
+            operation_counts_sink=operation_counts,
+        )
+        final_worksets.append(
+            replace(
+                workset,
+                assignment_scope=assignment_scope,
+                grouping_result=grouping_result,
+            )
+        )
         if progress_callback is not None:
             progress_callback(
                 {
                     "event": "feature_membership_inference",
                     "stage": "feature_membership_inference",
-                    "subject_count": len(subject_workset),
+                    "subject_count": len(workset.subjects),
                     "group_count": len(assignment_scope.groups),
                     "operation_counts": {
                         key: (
@@ -1437,20 +1487,9 @@ def prepare_untargeted_cid_nl_grouping(
                     },
                 }
             )
-        prepared_worksets.append(
-            UntargetedCidNlWorksetGrouping(
-                subjects=subject_workset,
-                scope=child_scope,
-                captures=captures,
-                capture_inputs=capture_inputs,
-                assignment_scope=assignment_scope,
-                grouping_result=grouping_result,
-                retained_candidates=retained_candidates,
-            )
-        )
     return UntargetedCidNlPreparedGrouping(
         request=parent_request,
-        worksets=tuple(prepared_worksets),
+        worksets=tuple(final_worksets),
         alignment_config=alignment_config,
         known_istd_reference=requested_reference,
     )
@@ -1565,13 +1604,6 @@ def _build_production_composition_inputs(
     }
     raw_sample_stems = frozenset(batch.context.raw_paths_by_sample)
     empty_family_ids: frozenset[str] = frozenset()
-    trajectory_policy = ModeTrackTrajectoryPolicy(
-        trajectory_policy_version="anchor-trajectory",
-        band_policy_version="fixed-band",
-        prediction_half_width_min=2 / 60,
-        max_interpolation_gap=10,
-        max_extrapolation_gap=10,
-    )
     for workset in prepared.worksets:
         subject_workset = workset.subjects
         child_scope = workset.scope
@@ -1745,9 +1777,7 @@ def _build_production_composition_inputs(
                 ):
                     continue
                 completion = None
-                universes: tuple[
-                    ConservativeBackfillCandidateUniverse, ...
-                ] = ()
+                universes: tuple[ConservativeBackfillCandidateUniverse, ...] = ()
                 if facts.may_attempt_backfill:
                     if cell.method_assessment.candidate_peaks:
                         continue
@@ -1863,7 +1893,7 @@ def _build_production_composition_inputs(
                     mode_track=ModeTrackWorkflowArguments(
                         sample_assessments=assessments,
                         alignment_config=alignment_config,
-                        trajectory_policy=trajectory_policy,
+                        trajectory_policy=None,
                         retain_observation_only_candidates=True,
                     ),
                     closed_cell_coverage=coverage,

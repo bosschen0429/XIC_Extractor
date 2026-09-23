@@ -177,6 +177,7 @@ SHARD_PATTERNS: ShardPatterns = OrderedDict(
         ),
         "alignment-core": (
             "tests/test_feature_membership_inference.py",
+            "tests/test_window_feature_membership.py",
             "tests/alignment/**/*.py",
             "tests/test_alignment_*.py",
             "tests/test_analyze_xic_request_locality.py",

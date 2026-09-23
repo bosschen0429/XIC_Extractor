@@ -194,7 +194,7 @@ class ModeTrackWorkflowArguments:
         tuple[ResolvedCanonicalSampleIdentity, CidNlMethodAssessmentRef], ...
     ]
     alignment_config: AlignmentConfig
-    trajectory_policy: ModeTrackTrajectoryPolicy
+    trajectory_policy: ModeTrackTrajectoryPolicy | None
     retain_observation_only_candidates: bool = False
 
     def __post_init__(self) -> None:
@@ -214,7 +214,10 @@ class ModeTrackWorkflowArguments:
             )
         if type(self.alignment_config) is not AlignmentConfig:
             raise AlignmentWorkflowContractError("alignment_config must be exact")
-        if type(self.trajectory_policy) is not ModeTrackTrajectoryPolicy:
+        if (
+            self.trajectory_policy is not None
+            and type(self.trajectory_policy) is not ModeTrackTrajectoryPolicy
+        ):
             raise AlignmentWorkflowContractError("trajectory_policy must be exact")
         if not isinstance(self.retain_observation_only_candidates, bool):
             raise AlignmentWorkflowContractError(
@@ -330,6 +333,8 @@ class TargetWorkflowAdapter(_WorkflowAdapterFields):
         completed_capture_handoff: tuple[SampleLocalCapture, ...] | None = None,
     ) -> None:
         super(TargetWorkflowAdapter, self).__post_init__()
+        if self.mode_track.trajectory_policy is None:
+            raise AlignmentWorkflowContractError("Target requires ModeTrack policy")
         completed_captures = getattr(
             self,
             "_completed_captures",
@@ -354,6 +359,13 @@ class UntargetWorkflowAdapter(_WorkflowAdapterFields):
 
     def __post_init__(self) -> None:
         super(UntargetWorkflowAdapter, self).__post_init__()
+        if (
+            self.completed_grouping is None
+            and self.mode_track.trajectory_policy is None
+        ):
+            raise AlignmentWorkflowContractError(
+                "unclosed Untarget requires ModeTrack policy"
+            )
         if self.closed_cell_coverage is None:
             raise AlignmentWorkflowContractError(
                 "Untarget adapter requires closed cell coverage"
@@ -839,6 +851,7 @@ def _compose_application_result(
         if completed_grouping is not None:
             context = completed_grouping
         elif not ms1_only_target:
+            assert adapter.mode_track.trajectory_policy is not None
             run = bootstrap_mode_track_refinement_from_cid_nl_support(
                 processing_owners=owners,
                 sample_assessments=adapter.mode_track.sample_assessments,
@@ -855,6 +868,7 @@ def _compose_application_result(
             )
         else:
             assert type(request) is TargetWorkflowRequest
+            assert adapter.mode_track.trajectory_policy is not None
             target = request.scope.target.definition.target
             mz_delta = target.mz * target.ppm_tol / 1_000_000.0
             sample_by_id = {
