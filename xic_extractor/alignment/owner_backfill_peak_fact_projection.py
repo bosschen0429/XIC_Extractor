@@ -38,7 +38,7 @@ SELECTED_INTEGRATION_AUTHORITY_SCHEMA_VERSION = (
     "selected_integration_authority_projection"
 )
 OWNER_BACKFILL_AUTHORITY_CELL_SCHEMA_VERSION = (
-    "owner_backfill_authority_cell_projection_v2"
+    "owner_backfill_authority_cell_projection"
 )
 OWNER_BACKFILL_CELL_PROJECTION_SCHEMA_VERSION = "owner_backfill_cell_projection"
 OWNER_BACKFILL_PROVENANCE_WRITER_SCHEMA_VERSION = (

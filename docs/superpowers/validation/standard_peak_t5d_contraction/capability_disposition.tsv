@@ -4,25 +4,25 @@ SP-002	delete	deleted_by_t5d	preset artifact resolver retired with bridge
 SP-003	owner_input	xic_extractor/alignment/promotion_policy.py	retained cheap Backfill evidence interpreted only by Owner
 SP-004	owner_input	xic_extractor/alignment/promotion_policy.py	retained cheap Backfill evidence interpreted only by Owner
 SP-005	owner_input	xic_extractor/alignment/promotion_policy.py	authority meaning absorbed by Owner; diagnostic gate grants none
-SP-006	delete	deleted_by_441	explicit review rendering only
+SP-006	delete	deleted_with_legacy_overlay_diagnostics	explicit review rendering only
 SP-007	delete	deleted_by_t5d	preset reconciliation orchestration retired
-SP-008	delete	deleted_by_441	explicit overlay acquisition/replay only
-SP-009	delete	deleted_by_441	retained overlay artifact context only; origin not independently authenticated
-SP-010	delete	deleted_by_441	retained overlay artifact context only; origin not independently authenticated
+SP-008	delete	deleted_with_legacy_overlay_diagnostics	explicit overlay acquisition/replay only
+SP-009	delete	deleted_with_legacy_overlay_diagnostics	retained overlay artifact context only; origin not independently authenticated
+SP-010	delete	deleted_with_legacy_overlay_diagnostics	retained overlay artifact context only; origin not independently authenticated
 SP-011	owner_input	xic_extractor/peak_detection/evidence_facts.py	shared trace fact retained under physical fact owner
 SP-012	owner_input	xic_extractor/peak_detection/ms1_morphology.py	shared morphology fact retained under physical fact owner
 SP-013	owner_input	xic_extractor/peak_detection/ms1_shape_identity.py	shared shape fact retained under physical fact owner
 SP-014	owner_input	xic_extractor/alignment/promotion_policy.py	available shape evidence consumed by Backfill Owner
 SP-015	owner_input	xic_extractor/alignment/promotion_policy.py	available family evidence consumed by Backfill Owner
-SP-016	delete	deleted_by_441	manual overlay renderer only
+SP-016	delete	deleted_with_legacy_overlay_diagnostics	manual overlay renderer only
 SP-017	delete	deleted_by_t5d	preset-owned reconciliation group assembly retired
-SP-018	delete	deleted_by_441	explicit shift-aware batch evidence only
-SP-019	delete	deleted_by_441	retained shift-aware falsifier; origin not independently authenticated
-SP-020	delete	deleted_by_441	shift-aware review rendering only
-SP-021	delete	deleted_by_441	offline calibration corpus only
-SP-022	delete	deleted_by_441	historical threshold experiment; never Owner predicate
-SP-023	delete	deleted_by_441	offline pattern observation only; no downstream authority consumer
-SP-024	delete	deleted_by_441	offline falsification only
+SP-018	delete	deleted_with_legacy_overlay_diagnostics	explicit shift-aware batch evidence only
+SP-019	delete	deleted_with_legacy_overlay_diagnostics	retained shift-aware falsifier; origin not independently authenticated
+SP-020	delete	deleted_with_legacy_overlay_diagnostics	shift-aware review rendering only
+SP-021	delete	deleted_with_legacy_overlay_diagnostics	offline calibration corpus only
+SP-022	delete	deleted_with_legacy_overlay_diagnostics	historical threshold experiment; never Owner predicate
+SP-023	delete	deleted_with_legacy_overlay_diagnostics	offline pattern observation only; no downstream authority consumer
+SP-024	delete	deleted_with_legacy_overlay_diagnostics	offline falsification only
 SP-025	delete	deleted_by_t5d	Standard Peak authority bundle retired
 SP-026	delete	deleted_by_t5d	Standard Peak authority bundle retired
 SP-027	delete	deleted_by_t5d	Standard Peak authority bundle retired
