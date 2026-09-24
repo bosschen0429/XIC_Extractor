@@ -14,10 +14,11 @@ module entry point:
 ```console
 xic-inspector --report cid_nl_explanation.sqlite --output review.html --strategy sample
 python -m xic_inspector --report cid_nl_explanation.sqlite --output review.html --strategy attention
+python -m xic_inspector --report diagnostic_curves.json --output review.html --strategy sample
 ```
 
-Both entries accept a completed feature-evidence SQLite report, an output path,
-and one selection strategy:
+Both entries accept a completed feature-evidence SQLite report or a versioned
+curve-bundle JSON file, an output path, and one selection strategy:
 
 | Strategy | Purpose |
 | --- | --- |
@@ -59,6 +60,32 @@ schema interpretation, and relationship projection stay in
 Untargeted CID-NL evidence through the scientific owner's read-only metadata and
 selected-curve interfaces.
 
+The second source is `xic_curve_bundle_v1`. A diagnostic can construct
+`CurveBundle`, `TransitionCurves`, `CurveBundleTrace`, `ChromatogramCurve`, and
+`PeakBounds` from `xic_inspector.sources.curve_bundle`, then call
+`write_curve_bundle(bundle, path)`. The writer validates and atomically writes
+UTF-8 JSON. Inspector accepts the resulting `.json` through the same CLI and
+`generate_report` API. The bundle is bound by its file SHA-256, with no Matrix
+dependency. A transition is one selectable review item; its key is the group
+query ID, and each trace ID is a candidate query ID.
+
+Each transition carries a fixed `review_rt_window` and `quality_flags` JSON
+object. The latter preserves transition-level gate labels, identity decisions,
+counts, Δm/z, ΔRT, ratios, and other diagnostic text or numeric facts. Each
+trace carries sample ID and label, role, RAW identity, extraction m/z, ppm and
+RT window, producer and version, and its own quality flags. Available traces
+carry paired `ChromatogramCurve(rt, intensity)` raw and **precomputed Gaussian15**
+series; an optional baseline uses the same RT coordinates. Optional
+`PeakBounds(start, apex, end)` records the reviewed peak. A missing-RAW trace
+has both series absent and an explicit `unavailable_reason`. Inspector displays
+the saved series and does not smooth, acquire RAW, or infer a decision.
+
+The SQLite source's retained `smoothed` series also uses a 15-point Gaussian
+profile by default. Its zero-padding edge policy differs from the older
+diagnostic overlay helper's edge-padding policy, so a bundle producer must
+persist the series it actually reviewed rather than substituting the SQLite
+series on the assumption of identical boundary values.
+
 Scientific owners retain acquisition, signal preparation, scoring, identity,
 group/cell decisions, Matrix publication, and evidence serialization. The
 Inspector validates the report's bound Matrix identity before rendering and
@@ -71,6 +98,10 @@ The generated HTML contains its CSS, JavaScript, data, and SVG charts inline.
 It has no report-time database, server, CDN, or network dependency. Item,
 sample, and candidate navigation; filters; evidence details; lightbox views;
 and keyboard interaction operate on the embedded selected subset.
+
+The bundle reader rejects malformed files, missing provenance, and inputs over
+50 MiB. The generated HTML uses the existing atomic replacement and 50 MiB
+output limit for both sources.
 
 Source adapters supply readable titles and explanations of recorded outcomes.
 The item list keeps a concise outcome title, status, and readable reason so that
