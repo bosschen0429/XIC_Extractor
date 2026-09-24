@@ -78,7 +78,7 @@ DIFFERENTIAL_REQUIRED_COLUMNS = (
 OVERLAY_REQUIRED_COLUMNS = (
     "transition_key",
     "status",
-    "png_path",
+    "review_path",
     "trace_data_json",
     "source_trace_max_median",
     "successor_trace_max_median",
@@ -104,6 +104,8 @@ AI_REQUIRED_COLUMNS = (
     "successor_support_fraction",
     "source_support_fraction",
     "status",
+    # Legacy adjudication input retains this field; review queues use the
+    # bundle locator from OVERLAY_REQUIRED_COLUMNS instead.
     "png_path",
     "trace_data_json",
 )
@@ -160,7 +162,7 @@ GATE_TRANSITION_COLUMNS = (
     "identity_authority_gate",
     "differential_overlay_readiness",
     "review_reason",
-    "png_path",
+    "review_path",
     "trace_data_json",
 )
 EXPECTED_DIFF_COLUMNS = (
@@ -215,7 +217,7 @@ REVIEW_RESOLUTION_COLUMNS = (
     "successor_peak_review_state",
     "identity_authority_note",
     "product_authority_effect",
-    "png_path",
+    "review_path",
     "trace_data_json",
 )
 SUMMARY_COLUMNS = (
@@ -559,7 +561,7 @@ def _gate_row(
             "differential_overlay_readiness"
         ],
         "review_reason": reason,
-        "png_path": text_value(ai_row.get("png_path") or overlay_row.get("png_path")),
+        "review_path": text_value(overlay_row.get("review_path")),
         "trace_data_json": text_value(
             ai_row.get("trace_data_json") or overlay_row.get("trace_data_json")
         ),
@@ -817,7 +819,7 @@ def _review_resolution_row(
             manual_row.get("identity_authority_note")
         ),
         "product_authority_effect": "diagnostic_only_no_authority_change",
-        "png_path": row["png_path"],
+        "review_path": row["review_path"],
         "trace_data_json": row["trace_data_json"],
         "feature_inclusion_review_status": row["feature_inclusion_review_status"],
         "identity_authority_status": row["identity_authority_status"],

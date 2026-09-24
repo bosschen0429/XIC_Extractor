@@ -445,6 +445,7 @@ class CurveBundleSource:
                         "raw_rts": trace.raw.rt,
                         "raw_intensities": trace.raw.intensity,
                         "processed_curves": processed,
+                        "quality_flags": trace.quality_flags,
                         "bound_left_rt": trace.peak_bounds.start
                         if trace.peak_bounds
                         else None,
@@ -546,6 +547,12 @@ class CurveBundleSource:
                     "precursor_mz": item.witnesses[0].precursor_mz,
                     "rt_apex_min": item.witnesses[0].rt_apex_min,
                     "review_rt_window": transition.review_rt_window,
+                    "transition_review": (
+                        transition.quality_flags
+                        if transition.quality_flags.get("review_kind")
+                        == "cid_nl_differential"
+                        else None
+                    ),
                     "samples": samples,
                     "witnesses": [asdict(w) for w in item.witnesses],
                     "details": {"readable_records": records},

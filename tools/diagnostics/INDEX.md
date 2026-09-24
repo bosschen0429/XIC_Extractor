@@ -978,12 +978,12 @@ until an explicit product-transfer decision and consolidation policy exist.
 
 #### `cid_nl_differential_overlay_review.py`
 
-**#441 disposition**: Migration target: #445 (#441 C3) adds a curve bundle for XIC Inspector review and replaces the PNG overlays; the summary TSV/JSON, trace JSON, and `png_path` consumers stay satisfied.
+**#441 disposition**: Migrated by #445 (#441 C3) to a curve bundle for offline XIC Inspector review. The summary's non-empty `review_path` points to that bundle; downstream gate and classification consumers use the locator.
 
 **Purpose**: Generate paired source vs successor RAW-backed MS1 overlay review artifacts for CID-NL feature-inclusion and identity-relationship review.
 **Topic group**: `cid_nl_default_activation_gallery_review.py`, `cid_nl_feature_inclusion_gate.py`, and the RAW `open_raw(...).extract_xic_many(...)` batch extraction path.
 **Originating spec/goal/plan**: `docs/superpowers/validation/cid_nl_default_activation_gallery_review/README.md`.
-**Status note**: `write_differential_evidence(...)` consumes the transition and successor-decision TSVs, filters ready source/successor transitions, and extracts both XICs in one RAW open per sample. It writes the paired queue, Gaussian15-smoothed PNG overlays, lossless trace JSON, and `cid_nl_differential_overlay_review_summary.tsv/json` beneath the requested output directory. It emits no Gallery HTML. The artifacts remain `diagnostic_only`: they can support feature-inclusion review, while replacement, merge, deduplication, Matrix writes, and product adoption retain their separate owners and gates.
+**Status note**: `write_differential_evidence(...)` consumes the transition and successor-decision TSVs, filters ready source/successor transitions, and extracts both XICs in one RAW open per sample. It writes the paired queue, per-transition `xic_curve_bundle_v1` JSON with the exact precomputed Gaussian15 series and transition review metadata, lossless trace JSON, and `cid_nl_differential_overlay_review_summary.tsv/json` beneath the requested output directory. XIC Inspector reads the bundle offline for paired source/successor curves, shared absolute scale, centre-RT markers, decision colours, max scatter, and gate/identity notes. The artifacts remain `diagnostic_only`: they can support feature-inclusion review, while replacement, merge, deduplication, Matrix writes, and product adoption retain their separate owners and gates.
 
 ---
 

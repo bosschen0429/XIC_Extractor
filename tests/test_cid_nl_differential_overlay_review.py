@@ -5,8 +5,11 @@ from pathlib import Path
 from typing import Any
 
 from tools.diagnostics import cid_nl_differential_overlay_review as review
+from xic_extractor.peak_detection.ms1_shape_identity import gaussian_smooth_values
 from xic_extractor.tabular_io import read_tsv_required, write_tsv
 from xic_extractor.xic_models import XICTrace
+from xic_inspector.api import SelectionRequest, generate_report
+from xic_inspector.sources.curve_bundle import read_curve_bundle
 
 
 def test_build_transition_reviews_filters_and_prioritizes_ready_rows(
@@ -25,9 +28,7 @@ def test_build_transition_reviews_filters_and_prioritizes_ready_rows(
     assert transitions[0].rank == 1
     assert transitions[0].write_authorized_count == 3
     assert transitions[0].sample_decisions[0].sample_stem == "SampleC"
-    assert transitions[1].sample_decisions[0].successor_decision == (
-        "write_authorized"
-    )
+    assert transitions[1].sample_decisions[0].successor_decision == ("write_authorized")
     assert transitions[1].sample_decisions[1].successor_decision == (
         "no_write_detected_baseline_preserved"
     )
@@ -139,8 +140,9 @@ def test_write_differential_evidence_remains_human_review_only(
     assert payload["default_quant_matrix_changed"] is False
     assert payload["candidate_rows_are_matrix_rows"] is False
     summary = json.loads(
-        (tmp_path / "review" / "cid_nl_differential_overlay_review_summary.json")
-        .read_text(encoding="utf-8")
+        (
+            tmp_path / "review" / "cid_nl_differential_overlay_review_summary.json"
+        ).read_text(encoding="utf-8")
     )
     assert summary["schema_version"] == review.SCHEMA_VERSION
     assert summary["validation_label"] == "diagnostic_only"
@@ -152,9 +154,7 @@ def test_write_differential_evidence_remains_human_review_only(
         Path(payload["queue_tsv"]),
         review.QUEUE_COLUMNS,
     )
-    assert [row["transition_key"] for row in queue_rows] == [
-        "FAM000003->FAM000004"
-    ]
+    assert [row["transition_key"] for row in queue_rows] == ["FAM000003->FAM000004"]
     summary_rows = read_tsv_required(
         Path(payload["summary_tsv"]),
         review.SUMMARY_COLUMNS,
@@ -164,62 +164,45 @@ def test_write_differential_evidence_remains_human_review_only(
     assert summary_rows[0]["visual_successor_ms1_state"] == (
         "successor_ms1_trace_present"
     )
-    png_path = Path(summary_rows[0]["png_path"])
+    review_path = Path(summary_rows[0]["review_path"])
     trace_json = Path(summary_rows[0]["trace_data_json"])
-    assert png_path.is_file()
+    assert review_path.is_file()
+    assert not list((tmp_path / "review").glob("*.png"))
+    bundle = read_curve_bundle(review_path)
+    transition = bundle.transitions[0]
+    assert transition.key == "FAM000003->FAM000004"
+    assert transition.quality_flags["feature_inclusion_gate"] == (
+        "candidate_ms1_feature_inclusion_supported"
+    )
+    assert transition.quality_flags["write_authorized_count"] == 3
+    assert transition.quality_flags["median_gaussian15_successor_source_max_ratio"]
+    source = next(trace for trace in transition.traces if trace.role == "source")
+    assert source.quality_flags["successor_decision"] == "write_authorized"
+    assert source.raw is not None and source.gaussian15 is not None
+    assert source.gaussian15.rt == source.raw.rt
+    assert source.gaussian15.intensity == gaussian_smooth_values(
+        source.raw.intensity, points=15
+    )
+    inspector_html = tmp_path / "inspector.html"
+    generate_report(review_path, SelectionRequest(), inspector_html)
+    html = inspector_html.read_text(encoding="utf-8")
+    assert "differentialPlot" in html
+    assert "differentialScatter" in html
+    embedded = html.split('<script id="inspector-data" type="application/json">', 1)[1]
+    inspector_data = json.loads(embedded.split("</script>", 1)[0])
+    item = inspector_data["items"][0]
+    assert item["transition_review"]["review_kind"] == "cid_nl_differential"
+    assert item["transition_review"]["source_center_rt"] == 23.1
+    assert item["transition_review"]["successor_center_rt"] == 23.8
+    projected_source = next(
+        curve for curve in item["curves"] if curve["kind"] == "source"
+    )
+    assert projected_source["processed_curves"][0]["intensities"] == list(
+        source.gaussian15.intensity
+    )
     trace_payload = json.loads(trace_json.read_text(encoding="utf-8"))
     assert trace_payload["transition_key"] == "FAM000003->FAM000004"
     assert trace_payload["traces"][0]["sample_stem"] == "SampleC"
-
-
-def test_differential_plot_wording_compares_identity_support_not_same_mz() -> None:
-    transition = review.TransitionReview(
-        rank=1,
-        source_id="FAM000001",
-        successor_id="FAM000002",
-        transition_key="FAM000001->FAM000002",
-        sample_count=1,
-        write_authorized_count=1,
-        preserve_count=0,
-        source_mz=243.099,
-        source_rt=23.66,
-        source_product_mz="127.052",
-        source_identity_decision="audit_family",
-        source_accepted_cell_count="0",
-        successor_mz=300.1605,
-        successor_rt=23.35,
-        successor_product_mz="184.113",
-        successor_identity_decision="production_family",
-        successor_accepted_cell_count="85",
-        mz_delta=57.0615,
-        rt_delta=-0.31,
-        feature_inclusion_gate="candidate_ms1_feature_inclusion_supported",
-        identity_authority_gate="replacement_merge_dedupe_requires_expected_diff",
-        source_successor_relationship="source_and_successor_not_mutually_exclusive",
-        sample_decisions=(),
-    )
-    pair = review.TracePair(
-        sample_stem="SampleA",
-        successor_decision="write_authorized",
-        source_trace=XICTrace.from_arrays([22.0, 23.0], [10.0, 20.0]),
-        successor_trace=XICTrace.from_arrays([22.0, 23.0], [20.0, 50.0]),
-    )
-    scatter_ax = _FakeAxis()
-    note_ax = _FakeAxis()
-
-    review._plot_intensity_scatter(scatter_ax, [pair])
-    review._plot_note_panel(note_ax, transition, [pair])
-
-    assert scatter_ax.title == "same-sample feature/identity relationship context"
-    assert scatter_ax.xlabel == "source-hypothesis Gaussian15 max + 1"
-    assert scatter_ax.ylabel == "successor-hypothesis\nGaussian15 max + 1"
-    note_text = "\n".join(note_ax.texts)
-    assert (
-        "Gate A: successor MS1 support can justify feature inclusion."
-        in note_text
-    )
-    assert "A source peak does not invalidate successor feature inclusion." in note_text
-    assert "Different source/successor m/z values may be expected." in note_text
 
 
 def test_trace_max_uses_gaussian15_smoothing() -> None:
@@ -232,43 +215,28 @@ def test_trace_max_uses_gaussian15_smoothing() -> None:
     assert 0 < review._trace_max(trace) < 100.0
 
 
-class _FakeAxis:
-    def __init__(self) -> None:
-        self.title = ""
-        self.xlabel = ""
-        self.ylabel = ""
-        self.texts: list[str] = []
-
-    def scatter(self, *_args: object, **_kwargs: object) -> None:
-        return None
-
-    def plot(self, *_args: object, **_kwargs: object) -> None:
-        return None
-
-    def set_xscale(self, *_args: object, **_kwargs: object) -> None:
-        return None
-
-    def set_yscale(self, *_args: object, **_kwargs: object) -> None:
-        return None
-
-    def set_xlabel(self, value: str) -> None:
-        self.xlabel = value
-
-    def set_ylabel(self, value: str) -> None:
-        self.ylabel = value
-
-    def set_title(self, value: str) -> None:
-        self.title = value
-
-    def grid(self, *_args: object, **_kwargs: object) -> None:
-        return None
-
-    def axis(self, *_args: object, **_kwargs: object) -> None:
-        return None
-
-    def text(self, *_args: object, **_kwargs: object) -> None:
-        if len(_args) >= 3:
-            self.texts.append(str(_args[2]))
+def test_missing_raw_is_explicit_in_bundle(tmp_path: Path) -> None:
+    differential_tsv, decisions_tsv = _write_inputs(tmp_path)
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    payload = review.write_differential_evidence(
+        differential_review_tsv=differential_tsv,
+        decisions_tsv=decisions_tsv,
+        output_dir=tmp_path / "review",
+        raw_dir=raw_dir,
+        dll_dir=tmp_path / "dll",
+        limit=1,
+    )
+    assert payload["overall_status"] == "failed"
+    row = read_tsv_required(Path(payload["summary_tsv"]), review.SUMMARY_COLUMNS)[0]
+    bundle = read_curve_bundle(Path(row["review_path"]))
+    assert all(
+        trace.raw is None and trace.gaussian15 is None
+        for trace in bundle.transitions[0].traces
+    )
+    assert {trace.unavailable_reason for trace in bundle.transitions[0].traces} == {
+        "missing_raw"
+    }
 
 
 def _write_inputs(tmp_path: Path) -> tuple[Path, Path]:

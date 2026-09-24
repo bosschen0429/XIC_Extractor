@@ -1001,7 +1001,7 @@ def _hold_block_problem_count(
             "review_resolution_status",
             "review_resolution_reason",
             "product_authority_effect",
-            "png_path",
+            "review_path",
             "trace_data_json",
         ):
             if not text_value(row.get(field)):
@@ -1018,7 +1018,7 @@ def _hold_block_problem_count(
             "product_gate_action",
             "product_authority_effect",
             "review_reason",
-            "png_path",
+            "review_path",
             "trace_data_json",
         ):
             if not text_value(row.get(field)):

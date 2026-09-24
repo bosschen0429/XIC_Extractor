@@ -12,12 +12,17 @@ from typing import Any
 
 from xic_extractor.peak_detection.ms1_shape_identity import (
     DEFAULT_OWN_MAX_SMOOTH_POINTS,
-)
-from xic_extractor.peak_detection.ms1_shape_identity import (
-    gaussian_smooth_values as _gaussian_smooth_values,
+    gaussian_smooth_values,
 )
 from xic_extractor.tabular_io import read_tsv_required, text_value, write_tsv
 from xic_extractor.xic_models import XICTrace
+from xic_inspector.sources.curve_bundle import (
+    ChromatogramCurve,
+    CurveBundle,
+    CurveBundleTrace,
+    TransitionCurves,
+    write_curve_bundle,
+)
 
 DEFAULT_DIFFERENTIAL_REVIEW_TSV = Path(
     "output/validation/cid_nl_default_activation_gallery_review/"
@@ -28,8 +33,7 @@ DEFAULT_DECISIONS_TSV = Path(
     "successor_authority_decisions.tsv",
 )
 DEFAULT_OUTPUT_DIR = Path(
-    "output/validation/cid_nl_default_activation_gallery_review/"
-    "differential_overlays",
+    "output/validation/cid_nl_default_activation_gallery_review/differential_overlays",
 )
 RAW_ROOT = Path("C:/Xcalibur/data/20260106_CSMU_NAA_Tissue_R")
 DLL_DIR = Path("C:/Xcalibur/system/programs")
@@ -107,7 +111,7 @@ SUMMARY_COLUMNS = (
     "status",
     "visual_successor_ms1_state",
     "visual_source_successor_relationship_state",
-    "png_path",
+    "review_path",
     "trace_data_json",
     "source_trace_max_median",
     "successor_trace_max_median",
@@ -200,13 +204,15 @@ def write_differential_evidence(
             f"{transition.rank:03d}_{transition.source_id.lower()}"
             f"_to_{transition.successor_id.lower()}"
         )
-        png_path = output_dir / f"{prefix}.png"
+        bundle_path = output_dir / f"{prefix}_curves.json"
         trace_json = output_dir / f"{prefix}_trace_data.json"
-        render_transition_overlay(
+        write_transition_curve_bundle(
             transition,
             pairs,
-            png_path=png_path,
+            bundle_path,
+            raw_dir=raw_dir,
             rt_half_window_min=rt_half_window_min,
+            ppm=ppm,
         )
         write_transition_trace_json(
             transition,
@@ -218,14 +224,14 @@ def write_differential_evidence(
         summary_row = _summary_row(
             transition,
             pairs,
-            png_path=png_path,
+            review_path=bundle_path,
             trace_json=trace_json,
             rt_half_window_min=rt_half_window_min,
         )
         summary_rows.append(summary_row)
         if transition.rank % 10 == 0:
             print(
-                "paired differential overlays rendered: "
+                "paired differential curve bundles written: "
                 f"{transition.rank}/{len(transitions)}",
             )
 
@@ -443,72 +449,6 @@ def extract_transition_trace_pairs(
     return {key: tuple(value) for key, value in pairs_by_transition.items()}
 
 
-def render_transition_overlay(
-    transition: TransitionReview,
-    pairs: Sequence[TracePair],
-    *,
-    png_path: Path,
-    rt_half_window_min: float,
-) -> None:
-    import matplotlib
-
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-
-    png_path.parent.mkdir(parents=True, exist_ok=True)
-    fig = plt.figure(figsize=(13.5, 7.6), constrained_layout=True)
-    grid = fig.add_gridspec(2, 2, height_ratios=[3.0, 1.25])
-    source_ax = fig.add_subplot(grid[0, 0])
-    successor_ax = fig.add_subplot(grid[0, 1])
-    scatter_ax = fig.add_subplot(grid[1, 0])
-    note_ax = fig.add_subplot(grid[1, 1])
-    y_max = max(
-        1.0,
-        *(_trace_max(pair.source_trace) for pair in pairs),
-        *(_trace_max(pair.successor_trace) for pair in pairs),
-    )
-    source_window = _rt_window(transition.source_rt, rt_half_window_min)
-    successor_window = _rt_window(transition.successor_rt, rt_half_window_min)
-    _plot_trace_panel(
-        source_ax,
-        pairs,
-        side="source",
-        title=(
-            f"Source hypothesis {transition.source_id} "
-            f"m/z {transition.source_mz:.6g} RT {transition.source_rt:.4g}"
-        ),
-        center_rt=transition.source_rt,
-        rt_window=source_window,
-        y_max=y_max,
-    )
-    _plot_trace_panel(
-        successor_ax,
-        pairs,
-        side="successor",
-        title=(
-            f"Successor hypothesis {transition.successor_id} "
-            f"m/z {transition.successor_mz:.6g} RT {transition.successor_rt:.4g}"
-        ),
-        center_rt=transition.successor_rt,
-        rt_window=successor_window,
-        y_max=y_max,
-    )
-    _plot_intensity_scatter(scatter_ax, pairs)
-    _plot_note_panel(note_ax, transition, pairs)
-    fig.suptitle(
-        (
-            f"CID-NL feature inclusion / identity relationship review "
-            f"{transition.transition_key} | "
-            f"Candidate {transition.write_authorized_count} / "
-            f"Existing {transition.preserve_count}"
-        ),
-        fontsize=13,
-        fontweight="bold",
-    )
-    fig.savefig(png_path, dpi=150, bbox_inches="tight", pad_inches=0.12)
-    plt.close(fig)
-
-
 def write_transition_trace_json(
     transition: TransitionReview,
     pairs: Sequence[TracePair],
@@ -582,104 +522,103 @@ def write_transition_trace_json(
     path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
 
 
-def _plot_trace_panel(
-    ax: Any,
-    pairs: Sequence[TracePair],
-    *,
-    side: str,
-    title: str,
-    center_rt: float,
-    rt_window: tuple[float, float],
-    y_max: float,
-) -> None:
-    for pair in pairs:
-        trace = pair.source_trace if side == "source" else pair.successor_trace
-        if trace.rt.size == 0:
-            continue
-        color, alpha, width = _decision_style(pair.successor_decision)
-        ax.plot(
-            trace.rt,
-            _gaussian15_intensity(trace),
-            color=color,
-            alpha=alpha,
-            lw=width,
-        )
-    ax.axvline(center_rt, color="black", lw=1.1, ls="--", alpha=0.65)
-    ax.set_xlim(rt_window[0], rt_window[1])
-    ax.set_ylim(0, y_max * 1.05)
-    ax.set_title(title)
-    ax.set_xlabel("RT (min)")
-    ax.set_ylabel("Gaussian15-smoothed intensity")
-    ax.grid(alpha=0.16)
-
-
-def _plot_intensity_scatter(ax: Any, pairs: Sequence[TracePair]) -> None:
-    values = []
-    for pair in pairs:
-        source_max = _trace_max(pair.source_trace)
-        successor_max = _trace_max(pair.successor_trace)
-        values.append((source_max, successor_max))
-        color, alpha, _width = _decision_style(pair.successor_decision)
-        ax.scatter(
-            source_max + 1.0,
-            successor_max + 1.0,
-            color=color,
-            alpha=alpha,
-            s=28,
-        )
-    max_value = max((max(left, right) for left, right in values), default=1.0) + 1.0
-    ax.plot([1.0, max_value], [1.0, max_value], color="0.45", lw=1, ls="--")
-    ax.set_xscale("log")
-    ax.set_yscale("log")
-    ax.set_xlabel("source-hypothesis Gaussian15 max + 1")
-    ax.set_ylabel("successor-hypothesis\nGaussian15 max + 1")
-    ax.set_title("same-sample feature/identity relationship context")
-    ax.grid(alpha=0.16)
-
-
-def _plot_note_panel(
-    ax: Any,
+def write_transition_curve_bundle(
     transition: TransitionReview,
     pairs: Sequence[TracePair],
+    path: Path,
+    *,
+    raw_dir: Path,
+    rt_half_window_min: float,
+    ppm: float,
 ) -> None:
-    ax.axis("off")
-    ratio = _successor_to_source_median_ratio(pairs)
-    lines = [
-        "Diagnostic-only feature-inclusion / identity review.",
-        "This figure does not write matrix values.",
-        "Gate A: successor MS1 support can justify feature inclusion.",
-        "Gate B: replacement/merge/dedupe needs a separate expected diff.",
-        "A source peak does not invalidate successor feature inclusion.",
-        "Different source/successor m/z values may be expected.",
-        "",
-        f"Feature inclusion gate: {transition.feature_inclusion_gate}",
-        f"Identity authority gate: {transition.identity_authority_gate}",
-        f"Relationship: {transition.source_successor_relationship}",
-        f"Source identity: {transition.source_identity_decision}",
-        f"Source accepted cells: {transition.source_accepted_cell_count}",
-        f"Successor identity: {transition.successor_identity_decision}",
-        f"Successor accepted cells: {transition.successor_accepted_cell_count}",
-        f"m/z delta: {transition.mz_delta:.6g}",
-        f"RT delta: {transition.rt_delta:.6g} min",
-        f"median Gaussian15 successor/source max ratio: {_format_float(ratio)}",
-    ]
-    ax.text(
-        0.02,
-        0.98,
-        "\n".join(lines),
-        va="top",
-        ha="left",
-        fontsize=9.2,
-        family="monospace",
+    """Preserve the exact producer-reviewed Gaussian15 series for offline review."""
+    source_window = _rt_window(transition.source_rt, rt_half_window_min)
+    successor_window = _rt_window(transition.successor_rt, rt_half_window_min)
+    flags = {
+        "review_kind": "cid_nl_differential",
+        "source_peak_hypothesis_id": transition.source_id,
+        "successor_peak_hypothesis_id": transition.successor_id,
+        "source_mz": transition.source_mz,
+        "successor_mz": transition.successor_mz,
+        "source_center_rt": transition.source_rt,
+        "successor_center_rt": transition.successor_rt,
+        "source_rt_window": source_window,
+        "successor_rt_window": successor_window,
+        "sample_count": transition.sample_count,
+        "write_authorized_count": transition.write_authorized_count,
+        "no_write_detected_baseline_preserved_count": transition.preserve_count,
+        "feature_inclusion_gate": transition.feature_inclusion_gate,
+        "identity_authority_gate": transition.identity_authority_gate,
+        "source_successor_relationship": transition.source_successor_relationship,
+        "source_identity_decision": transition.source_identity_decision,
+        "successor_identity_decision": transition.successor_identity_decision,
+        "source_accepted_cell_count": transition.source_accepted_cell_count,
+        "successor_accepted_cell_count": transition.successor_accepted_cell_count,
+        "mz_delta": transition.mz_delta,
+        "rt_delta": transition.rt_delta,
+        "median_gaussian15_successor_source_max_ratio": _format_float(
+            _successor_to_source_median_ratio(pairs)
+        ),
+    }
+    traces = []
+    for pair in pairs:
+        for role, trace, mz, window in (
+            ("source", pair.source_trace, transition.source_mz, source_window),
+            (
+                "successor",
+                pair.successor_trace,
+                transition.successor_mz,
+                successor_window,
+            ),
+        ):
+            available = not pair.missing_raw and trace.rt.size > 0
+            curve_rt = tuple(float(value) for value in trace.rt)
+            traces.append(
+                CurveBundleTrace(
+                    trace_id=f"{pair.sample_stem}:{role}",
+                    sample_id=pair.sample_stem,
+                    sample_label=pair.sample_stem,
+                    role=role,
+                    raw_identity=str(raw_dir / f"{pair.sample_stem}.raw"),
+                    mz=mz,
+                    ppm=ppm,
+                    extraction_rt_window=window,
+                    producer=SCHEMA_VERSION,
+                    producer_version="1",
+                    raw=ChromatogramCurve(
+                        curve_rt, tuple(float(value) for value in trace.intensity)
+                    )
+                    if available
+                    else None,
+                    gaussian15=ChromatogramCurve(
+                        curve_rt,
+                        tuple(float(value) for value in _gaussian15_intensity(trace)),
+                    )
+                    if available
+                    else None,
+                    unavailable_reason=None
+                    if available
+                    else (pair.failure_reason or "empty_trace"),
+                    quality_flags={
+                        "successor_decision": pair.successor_decision,
+                        "missing_raw": pair.missing_raw,
+                    },
+                )
+            )
+    bundle = CurveBundle(
+        (
+            TransitionCurves(
+                key=transition.transition_key,
+                review_rt_window=(
+                    min(source_window[0], successor_window[0]),
+                    max(source_window[1], successor_window[1]),
+                ),
+                quality_flags=flags,
+                traces=tuple(traces),
+            ),
+        )
     )
-
-
-def _decision_style(decision: str) -> tuple[str, float, float]:
-    if decision == "write_authorized":
-        return "#0072B2", 0.70, 1.0
-    if decision == "no_write_detected_baseline_preserved":
-        return "#D55E00", 0.62, 1.0
-    return "0.55", 0.35, 0.8
+    write_curve_bundle(bundle, path)
 
 
 def _queue_row(
@@ -719,7 +658,7 @@ def _summary_row(
     transition: TransitionReview,
     pairs: Sequence[TracePair],
     *,
-    png_path: Path,
+    review_path: Path,
     trace_json: Path,
     rt_half_window_min: float,
 ) -> dict[str, object]:
@@ -731,7 +670,7 @@ def _summary_row(
         "visual_source_successor_relationship_state": (
             _visual_source_successor_relationship_state(pairs)
         ),
-        "png_path": str(png_path),
+        "review_path": str(review_path),
         "trace_data_json": str(trace_json),
         "source_trace_max_median": _format_float(
             _median(_trace_max(pair.source_trace) for pair in pairs),
@@ -812,8 +751,8 @@ def _gaussian15_intensity(trace: XICTrace) -> Any:
     if trace.intensity.size == 0:
         return trace.intensity
     return np.asarray(
-        _gaussian_smooth_values(
-            trace.intensity,
+        gaussian_smooth_values(
+            tuple(float(value) for value in trace.intensity),
             points=DEFAULT_OWN_MAX_SMOOTH_POINTS,
         ),
         dtype=float,
