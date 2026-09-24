@@ -4,25 +4,25 @@ SP-002	delete	deleted_by_t5d	preset artifact resolver retired with bridge
 SP-003	owner_input	xic_extractor/alignment/promotion_policy.py	retained cheap Backfill evidence interpreted only by Owner
 SP-004	owner_input	xic_extractor/alignment/promotion_policy.py	retained cheap Backfill evidence interpreted only by Owner
 SP-005	owner_input	xic_extractor/alignment/promotion_policy.py	authority meaning absorbed by Owner; diagnostic gate grants none
-SP-006	diagnostic_renderer	tools/diagnostics/family_ms1_backfill_review_report.py	explicit review rendering only
+SP-006	delete	deleted_by_441	explicit review rendering only
 SP-007	delete	deleted_by_t5d	preset reconciliation orchestration retired
-SP-008	diagnostic_oracle	tools/diagnostics/family_ms1_overlay_batch.py	explicit overlay acquisition/replay only
-SP-009	diagnostic_oracle	tools/diagnostics/family_ms1_overlay_batch.py	retained overlay artifact context only; origin not independently authenticated
-SP-010	diagnostic_oracle	tools/diagnostics/family_ms1_overlay_batch.py	retained overlay artifact context only; origin not independently authenticated
+SP-008	delete	deleted_by_441	explicit overlay acquisition/replay only
+SP-009	delete	deleted_by_441	retained overlay artifact context only; origin not independently authenticated
+SP-010	delete	deleted_by_441	retained overlay artifact context only; origin not independently authenticated
 SP-011	owner_input	xic_extractor/peak_detection/evidence_facts.py	shared trace fact retained under physical fact owner
 SP-012	owner_input	xic_extractor/peak_detection/ms1_morphology.py	shared morphology fact retained under physical fact owner
 SP-013	owner_input	xic_extractor/peak_detection/ms1_shape_identity.py	shared shape fact retained under physical fact owner
 SP-014	owner_input	xic_extractor/alignment/promotion_policy.py	available shape evidence consumed by Backfill Owner
 SP-015	owner_input	xic_extractor/alignment/promotion_policy.py	available family evidence consumed by Backfill Owner
-SP-016	diagnostic_renderer	tools/diagnostics/family_ms1_overlay_rendering.py	manual overlay renderer only
+SP-016	delete	deleted_by_441	manual overlay renderer only
 SP-017	delete	deleted_by_t5d	preset-owned reconciliation group assembly retired
-SP-018	diagnostic_oracle	tools/diagnostics/family_ms1_alignment_experiment_batch.py	explicit shift-aware batch evidence only
-SP-019	diagnostic_oracle	tools/diagnostics/family_ms1_alignment_experiment.py	retained shift-aware falsifier; origin not independently authenticated
-SP-020	diagnostic_renderer	tools/diagnostics/family_ms1_alignment_experiment.py	shift-aware review rendering only
-SP-021	diagnostic_oracle	tools/diagnostics/shift_aware_backfill_calibration_pack.py	offline calibration corpus only
-SP-022	diagnostic_oracle	tools/diagnostics/shift_aware_backfill_calibration_pack.py	historical threshold experiment; never Owner predicate
-SP-023	diagnostic_oracle	tools/diagnostics/shift_aware_standard_peak_gate_calibration.py	offline pattern observation only; no downstream authority consumer
-SP-024	diagnostic_oracle	tools/diagnostics/shift_aware_standard_peak_gate_calibration.py	offline falsification only
+SP-018	delete	deleted_by_441	explicit shift-aware batch evidence only
+SP-019	delete	deleted_by_441	retained shift-aware falsifier; origin not independently authenticated
+SP-020	delete	deleted_by_441	shift-aware review rendering only
+SP-021	delete	deleted_by_441	offline calibration corpus only
+SP-022	delete	deleted_by_441	historical threshold experiment; never Owner predicate
+SP-023	delete	deleted_by_441	offline pattern observation only; no downstream authority consumer
+SP-024	delete	deleted_by_441	offline falsification only
 SP-025	delete	deleted_by_t5d	Standard Peak authority bundle retired
 SP-026	delete	deleted_by_t5d	Standard Peak authority bundle retired
 SP-027	delete	deleted_by_t5d	Standard Peak authority bundle retired

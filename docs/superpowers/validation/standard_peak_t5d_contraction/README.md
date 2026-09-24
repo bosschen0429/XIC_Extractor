@@ -8,6 +8,8 @@ the only normal Matrix writer. Standard Peak is now represented only by:
 
 - retained low-level overlay, shift-aware, calibration, gallery, and Targeted
   oracle/rendering tools named in `capability_disposition.tsv`;
+  Rows marked `deleted_by_441` were retired later with the legacy family
+  overlay and shift-aware diagnostics (#441); none carried owner authority.
 - retained historical validation artifacts that can help explain old results
   but cannot authenticate their own origin or mint current product authority.
 
