@@ -129,6 +129,21 @@ differs, and one full85 run cannot show output parity for a new default.
   Partitions acquired before and after it stopped have medians of 168.2 and
   179.1 s, so no Alignment slowdown is visible. Treat the times as reference
   only; they are not comparable with the process12 warm-cache 1,613 s above.
+- Per-partition fixed cost. A probe that keeps only full85 partition 0 (85
+  samples, 4 threads, acquire wall 96.8 s, composition 5.9 s) times, summed
+  over threads: 340 `open_raw` (4 per sample) 22.3 s, 340 handle closes
+  29.9 s, 968 `extract_xic_many` 266.8 s, scan-window/RT/MS2 lookups about
+  12.7 s. Open plus close is 13.5% of thread capacity. At 49 partitions that
+  is about 640 s of the 4,460 s runtime (inference). The phases open each RAW
+  in both the initial and Backfill passes of every partition
+  (`untargeted_real_data_runtime.py:815-900`).
+- `extract_xic_many` merges only requests with identical RT windows
+  (`raw_reader.py:165-195`). On `NormalBC2259_DNA`, candidate m/z with ±1 min
+  windows take 0.29 s for 200 requests called one by one, against 0.08 s in
+  one whole-run call (1,000: 1.83 vs 0.51 s). The merged call grows about
+  0.5 ms per m/z. At 3,000 requests it matches one call over local windows,
+  because the cycled candidate list repeats windows. Requests per production
+  call were not recorded, so the full85 extraction saving is unknown.
 - Next evidence, if full85 wall time still matters: one full85 Alignment at
   budget 2048 or 4096 against this run's retained Discovery, reading peak RSS
   (three resident partitions at up to 4x the current size) and full85
@@ -152,7 +167,9 @@ differs, and one full85 run cannot show output parity for a new default.
 - Evidence is `diagnostic_only`. Artifacts: `output/i463-partition-sizing/`,
   moved off the checkout to `D:\XIC_output\i463-partition-sizing\` (`grid8/`, `full85-head-9ba3a5b1/`, `*-worksets.json`, `full85-*.txt`),
   probes `partition_sizing_driver.py`, `grid.py`, `summarize.py`,
-  `partition_plan.py`, `istd_check.py` and `cells_468_469.py`.
+  `partition_plan.py`, `istd_check.py` and `cells_468_469.py`; the
+  fixed-cost probe and benchmark are `output/i463-fixed-cost/`
+  (`fixed_cost_probe.py`, `xic_batch_bench.py`, `stats.json`).
 
 ### 2026-09-22 The Three Open Questions, Answered
 
