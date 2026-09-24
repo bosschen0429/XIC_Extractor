@@ -337,7 +337,7 @@ def _initial_grouping_receipt_basis(
 ) -> bytes:
     return canonical_identity_basis_bytes(
         {
-            "schema_version": "cross_sample_initial_grouping_receipt_v1",
+            "schema_version": "cross_sample_initial_grouping_receipt",
             "processing_request_id": processing_request_id,
             "policy_version": INITIAL_GROUPING_POLICY,
             "absent_pair_disposition": UNLISTED_PAIR_DISPOSITION,

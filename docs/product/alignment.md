@@ -105,8 +105,8 @@ move original members, split known ISTD bindings, or create new groups.
 Competing claims on the same physical content remain unresolved and supply no
 numeric value. Final cells retain the original cell for provenance and the
 completed backfill assessment/observation for the final decision and integral.
-Cell evidence uses `cell_observation_v2` and final-cell canonical bases use
-`final_group_cell_observation_v2` to bind unresolved SUPPORT and backfill
+Cell evidence uses `cell_observation` and final-cell canonical bases use
+`final_group_cell_observation` to bind unresolved SUPPORT and backfill
 provenance explicitly. Old diagnostic evidence remains historical; acquisition
 cache facts do not depend on these cell schemas.
 

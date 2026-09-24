@@ -230,12 +230,12 @@ the responsibility they own. A reader should understand their purpose without
 knowing the development history: for example, use `quant_matrix_export` for
 matrix export rather than `phase7` or `issue367_bundle`.
 
-Issue numbers, rollout phases, and dataset labels may explain provenance, but
-must not substitute for a capability description. Domain terms such as a real
-runtime phase, schema version, or scientific name remain appropriate when they
-describe the current behavior. Judge meaning in context rather than matching
-forbidden words. Preserve compatibility when considering existing names; this
-guidance does not require unrelated renames.
+Identifiers, schema names, algorithm labels, and artifact names carry no version
+suffix. When a contract's content changes, update the content and keep its name;
+when its meaning changes, give it a new semantic name. Issue, PR, and ticket
+numbers are never identifier values. A real runtime phase or scientific name
+remains appropriate when it describes current behavior. Preserve compatibility
+when considering existing names; this guidance does not require unrelated renames.
 
 Method specificity (e.g. CID-NL matching rules, neutral loss thresholds, scan-level
 assertions) is strictly absorbed internally within `discovery/` and method models.

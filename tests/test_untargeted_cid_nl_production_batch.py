@@ -4448,7 +4448,7 @@ def _assert_conservative_proof_seals(
         json.loads(
             canonical_cell_observation_bytes(proof.decision.target_cell.content)
         )["schema_version"]
-        == "cell_observation_v2"
+        == "cell_observation"
     )
 
     def canonical(value):

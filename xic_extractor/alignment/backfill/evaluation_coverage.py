@@ -578,7 +578,9 @@ def _conservative_no_request_basis(
         ),
     }
     if facts.unsearched_sample_ids:
-        basis["schema"] = "owner_backfill_conservative_no_request_v2"
+        basis["schema"] = (
+            "owner_backfill_conservative_no_request_with_unsearched_samples"
+        )
         basis["unsearched_sample_ids"] = facts.unsearched_sample_ids
     return basis
 

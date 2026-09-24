@@ -34,7 +34,7 @@ from xic_extractor.raw_reader import (
 )
 from xic_extractor.xic_models import XICRequest
 
-_CACHE_SCHEMA = "untargeted_raw_fact_cache_v1"
+_CACHE_SCHEMA = "untargeted_raw_fact_cache"
 _LOGGER = logging.getLogger(__name__)
 
 

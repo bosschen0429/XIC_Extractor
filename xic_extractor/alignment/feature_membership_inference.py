@@ -55,7 +55,7 @@ SparseDecisionState = Literal[
     "supported_not_selected",
 ]
 
-_ALGORITHM = "finite_bidirectional_sparse_feature_assignment_v1"
+_ALGORITHM = "finite_bidirectional_sparse_feature_assignment"
 _OBJECTIVE = (
     "per_direction_per_sample_minimum_supported_assignment_cost_with_private_"
     "unassigned_options;final_membership_requires_directional_agreement"
@@ -532,7 +532,7 @@ def infer_feature_memberships(
             rt_warp=rt_warp,
             counts=counts,
         )
-        algorithm = "whole_window_feature_rt_trend_v2"
+        algorithm = "whole_window_feature_rt_trend"
         objective = "local_rt_mass_edges_then_reciprocal_whole_band_bridge"
         termination = "completed_one_finite_window_pass"
     groups = tuple(sorted((*known_groups, *inferred_groups), key=_group_sort_key))

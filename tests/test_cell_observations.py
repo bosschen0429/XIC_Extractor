@@ -161,7 +161,7 @@ def test_predecessor_cells_keep_all_supports_with_deterministic_outside_witness(
             for cell in cells
         ]
         assert {payload["schema_version"] for payload in payloads} == {
-            "cell_observation_v2"
+            "cell_observation"
         }
         assert all("outside_group" in payload["content"] for payload in payloads)
         assert len({frozenset(payload["content"]) for payload in payloads}) == 1
