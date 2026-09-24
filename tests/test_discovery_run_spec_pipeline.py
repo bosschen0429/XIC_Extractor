@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import concurrent.futures
+import json
 import multiprocessing
 import pickle
 from concurrent.futures import Future
@@ -19,6 +20,7 @@ from tests.test_discovery_pipeline import (
 )
 from xic_extractor.acquisition_contract import (
     mint_raw_acquisition_session_capability,
+    serialize_acquired_trace,
 )
 from xic_extractor.alignment.csv_io import (
     read_discovery_batch_index,
@@ -36,6 +38,144 @@ from xic_extractor.discovery.pipeline import (
 from xic_extractor.discovery.processing_run_spec_adapter import (
     compile_discovery_processing_run_spec,
 )
+from xic_extractor.xic_models import XICTrace
+
+
+@pytest.mark.parametrize("workers", (1, 2))
+@pytest.mark.parametrize("surface", ("rows", "facts"))
+def test_discovery_persists_feature_facts_and_measured_review_support(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, workers: int, surface: str,
+) -> None:
+    from xic_extractor.discovery import pipeline
+    from xic_extractor.discovery.csv_writer import write_discovery_candidates_csv
+    from xic_extractor.discovery.models import MS1_FEATURE_BACKED_STATES
+    from xic_extractor.discovery.physical_fact_persistence import (
+        read_discovery_physical_fact_records,
+    )
+
+    paths = (tmp_path / "sample-a.raw", tmp_path / "sample-b.raw")
+    for path in paths:
+        path.write_bytes(path.stem.encode("utf-8"))
+    settings = _settings(ms2_precursor_tol_da=1.6)
+    spec = compile_discovery_processing_run_spec(paths, discovery_settings=settings)
+    rt = np.linspace(7.2, 8.4, 25)
+
+    class SelectiveTraceRaw(_OwnerBoundFakeRawHandle):
+        def extract_xic_many(self, requests):
+            self.raw_chromatogram_call_count += len(requests)
+            return tuple(
+                XICTrace.from_arrays(
+                    self._rt,
+                    self._intensity if request.mz > 600 else np.zeros_like(rt),
+                )
+                for request in requests
+            )
+
+    handles = {
+        path: SelectiveTraceRaw(
+            spec.acquisition_inputs[index].acquisition_source,
+            [
+                _scan_event(
+                    scan_number=scan, rt=7.8, precursor_mz=mz + 1.0,
+                    masses=[mz - 116.0474, mz + 1.0 - 116.0474],
+                    intensities=[10000.0, 12000.0],
+                )
+                for scan, mz in ((101, 500.0), (202, 700.0))
+            ],
+            rt=rt,
+            intensity=100.0 + (index + 1) * 500.0
+            * np.exp(-0.5 * ((rt - 7.8) / 0.08) ** 2),
+        )
+        for index, path in enumerate(paths)
+    }
+    captured = {}
+    write_outputs = pipeline._write_dual_csvs
+
+    def capture_outputs(output_dir, candidates, **kwargs):
+        captured[kwargs["sample_stem"]] = (candidates, kwargs)
+        return write_outputs(output_dir, candidates, **kwargs)
+
+    monkeypatch.setattr(pipeline, "_write_dual_csvs", capture_outputs)
+    monkeypatch.setattr(
+        pipeline, "_owner_bound_raw_opener",
+        lambda *_args: lambda path, _dll: handles[path],
+    )
+
+    class ImmediateExecutor:
+        def __init__(self, **kwargs):
+            pass
+
+        def submit(self, worker, job):
+            future = Future()
+            future.set_result(worker(job))
+            return future
+
+        def shutdown(self, **kwargs):
+            pass
+
+    outputs = run_discovery_batch(
+        paths, output_dir=tmp_path / "discovery", settings=settings,
+        peak_config=_peak_config(tmp_path), run_spec=spec, max_workers=workers,
+        raw_opener=(lambda path, _dll: handles[path]) if workers == 1 else None,
+        executor_factory=ImmediateExecutor if workers > 1 else None,
+    )
+    batch = read_discovery_batch_index(
+        outputs.batch_index_csv, require_owner_closure=True,
+    )
+    for acquisition, output in zip(
+        spec.acquisition_inputs, outputs.per_sample, strict=True,
+    ):
+        candidates, physical = captured[acquisition.sample_stem]
+        features = tuple(
+            item for item in candidates
+            if item.ms1_peak_found
+            and item.discovery_candidate_state in MS1_FEATURE_BACKED_STATES
+        )
+        assert {item.precursor_mz_basis for item in features} == {
+            "scan_precursor", "product_plus_neutral_loss",
+        }
+        support = tuple(
+            item for item in candidates if not item.ms1_peak_found
+            and item.precursor_mz_basis == "scan_precursor"
+        )
+        dropped = tuple(
+            item for item in candidates if not item.ms1_peak_found
+            and item.precursor_mz_basis == "product_plus_neutral_loss"
+        )
+        assert len(features) == 2 and len(support) == len(dropped) == 1
+        expected = (*features, *support)
+        expected_path = tmp_path / f"{acquisition.sample_stem}.csv"
+        write_discovery_candidates_csv(expected_path, expected)
+        assert output.physical_facts_json is not None
+        payload = json.loads(output.physical_facts_json.read_text(encoding="utf-8"))
+        if surface == "facts":
+            assert len(payload["records"]) == len(payload["work_manifest"]) == 2
+        assert output.candidates_csv.read_bytes() == expected_path.read_bytes()
+        assert {row["candidate_id"] for row in _read_csv(output.review_csv)} == {
+            item.candidate_id for item in expected
+        }
+        receipt = batch.candidate_receipts[acquisition.sample_stem]
+        assert receipt is not None and receipt.candidate_count == 3
+        assert len(read_owner_bound_discovery_candidates_csv(
+            output.candidates_csv, receipt=receipt,
+        )) == 3
+        assert len(payload["records"]) == len(payload["work_manifest"]) == 2
+        records = read_discovery_physical_fact_records(
+            output.physical_facts_json, expected_run_spec=spec,
+            expected_acquisition_input=acquisition,
+        )
+        assert {record.candidate_id for record in records} == {
+            item.candidate_id for item in features
+        }
+        original_records = {
+            record.candidate_id: record for record in physical["physical_evaluations"]
+        }
+        for record in records:
+            original = original_records[record.candidate_id]
+            assert record.evaluation == original.evaluation
+            assert serialize_acquired_trace(record.acquired_trace) == (
+                serialize_acquired_trace(original.acquired_trace)
+            )
 
 
 def test_physical_binding_validation_joins_canonical_candidates_by_id(

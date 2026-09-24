@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -14,6 +15,37 @@ from xic_extractor.discovery.pipeline import _write_dual_csvs
 from xic_extractor.discovery.processing_run_spec_adapter import (
     compile_discovery_processing_run_spec,
 )
+
+
+@pytest.mark.parametrize(
+    "basis", ("scan_precursor", "mixed", "product_plus_neutral_loss"),
+)
+@pytest.mark.parametrize("state", (
+    "ms1_feature_nl_supported", "ms1_feature_nl_rescued",
+    "review_only_orphan_nl", "review_only_ambiguous_coisolation",
+    "rejected_noise_or_outside_rt",
+))
+def test_discovery_publication_retains_only_used_candidate_states(
+    tmp_path: Path, basis: str, state: str,
+) -> None:
+    from tests.test_discovery_csv import _candidate
+    from tests.test_discovery_pipeline import _read_csv
+    from xic_extractor.discovery.models import MS1_FEATURE_BACKED_STATES
+
+    feature_backed = state in MS1_FEATURE_BACKED_STATES
+    candidate = replace(
+        _candidate(), precursor_mz_basis=basis,
+        discovery_candidate_state=state, ms1_peak_found=feature_backed,
+    )
+    outputs = _write_dual_csvs(
+        tmp_path, (candidate,), sample_stem=candidate.sample_stem,
+        timing_recorder=TimingRecorder.disabled("discovery"),
+    )
+    expected_ids = [candidate.candidate_id] if feature_backed or basis in {
+        "scan_precursor", "mixed",
+    } else []
+    for path in (outputs.candidates_csv, outputs.review_csv):
+        assert [row["candidate_id"] for row in _read_csv(path)] == expected_ids
 
 
 @pytest.mark.parametrize(

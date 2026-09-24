@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -46,6 +47,59 @@ from xic_extractor.extraction.provisional_run_manifest import (
 from xic_extractor.processing_identity import build_acquisition_source_identity
 
 _REVISION = "a" * 40
+
+
+def test_decision_ledger_counts_only_persisted_discovery_candidates(
+    tmp_path: Path,
+) -> None:
+    from xic_extractor.diagnostics.timing import TimingRecorder
+    from xic_extractor.discovery.pipeline import _write_dual_csvs
+
+    artifact = _artifact(tmp_path / "artifact")
+    discovery = artifact / "workflow" / "discovery"
+    sample_dir = discovery / "Sample_A"
+    batch = read_discovery_batch_index(discovery / "discovery_batch_index.csv")
+    receipt = batch.candidate_receipts["Sample_A"]
+    assert receipt is not None
+    (feature,) = read_discovery_candidates_csv(sample_dir / "discovery_candidates.csv")
+    support = replace(
+        feature, candidate_id="Sample_A#3@mz500_p384", best_ms2_scan_id=3,
+        seed_scan_ids=(3,), seed_event_count=1, ms1_peak_found=False,
+        ms1_feature_row_id="", discovery_candidate_state="review_only_orphan_nl",
+        precursor_mz_basis="scan_precursor",
+    )
+    inferred = replace(
+        support, candidate_id="Sample_A#4@mz500_p384", best_ms2_scan_id=4,
+        seed_scan_ids=(4, 5), seed_event_count=2,
+        precursor_mz_basis="product_plus_neutral_loss",
+    )
+    output = _write_dual_csvs(
+        sample_dir, (feature, support, inferred),
+        timing_recorder=TimingRecorder.disabled("discovery"), sample_stem="Sample_A",
+    )
+    persisted = read_discovery_candidates_csv(output.candidates_csv)
+    receipt = mint_discovery_candidate_universe_receipt(
+        sample_stem="Sample_A", acquisition_source=receipt.acquisition_source,
+        candidate_csv=output.candidates_csv, candidates=persisted,
+    )
+    _write_batch_index(discovery / "discovery_batch_index.csv", receipt)
+    _write_current_manifest(artifact)
+    result = build_backfill_decision_ledger(
+        artifact_root=artifact, output_dir=tmp_path / "ledger",
+        expected_code_revision=_REVISION,
+    )
+    with result.ledger_tsv.open(encoding="utf-8", newline="") as handle:
+        rows = tuple(csv.DictReader(handle, delimiter="\t"))
+    candidate_ids = {
+        row["candidate_id"] for row in rows if row["record_type"] == "candidate"
+    }
+    assert candidate_ids == {
+        feature.candidate_id, support.candidate_id,
+    }
+    layer = result.summary["candidate_layer"]
+    assert layer["candidate_count"] == 2
+    assert layer["multi_seed_candidate_count"] == 1
+    assert layer["display_family_excess_candidate_count"] == 1
 
 
 def test_decision_ledger_is_deterministic_and_preserves_authority_ceiling(
@@ -993,8 +1047,8 @@ def _write_batch_index(
         "raw_file": "inputs/Sample_A.synthetic",
         "candidate_csv": "Sample_A/discovery_candidates.csv",
         "review_csv": "",
-        "candidate_count": "1",
-        "high_count": "1",
+        "candidate_count": str(receipt.candidate_count),
+        "high_count": str(receipt.candidate_count),
         "medium_count": "0",
         "low_count": "0",
         **discovery_receipt_index_fields(receipt),

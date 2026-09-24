@@ -30,15 +30,21 @@ the error relative to the configured loss mass; it is not the acceptance gate.
   universe without forking capture mechanics.
 - Discovery candidate state is an execution boundary as well as a review
   label. Only `ms1_feature_nl_supported` and `ms1_feature_nl_rescued` are
-  MS1-feature-backed inputs to Alignment RAW owner build. Review-only states
-  remain in the complete candidate/review universe and do not independently
-  authorize another RAW XIC search, cross-sample grouping, Matrix identity, or
-  Backfill. Pure CID-NL production planning preserves the complete canonical
+  MS1-feature-backed inputs to Alignment RAW owner build. Candidate and review
+  CSVs retain all feature-backed rows and only non-feature rows with a
+  `scan_precursor` or `mixed` precursor basis. These review-only rows do not
+  independently authorize another RAW XIC search, cross-sample grouping,
+  Matrix identity, or Backfill. Pure CID-NL production planning preserves the complete canonical
   subject membership and query centers, but excludes subjects with no
   MS1-feature-backed candidate before sample-by-subject scheduling. Their
   candidates close with Discovery eligibility exclusions without method
   assessments. Each eligible subject still assesses the complete sample
   universe, including samples without a local candidate, for recovery.
+- Persistence filtering does not change classification or product-plus-neutral-loss
+  precursor inference. `discovery_physical_facts.json` retains physical records
+  only for feature-backed candidates, including their merge-member evidence;
+  non-feature rows have no persisted physical facts. Receipts, batch-index
+  counts and hashes describe the persisted candidate rows.
 - Seed evidence can include MS2 neutral loss, precursor inference, MS1 trace
   support, and future evidence providers.
 - Discovery's Gaussian15 physical point policy rejects an irregular background
@@ -86,10 +92,10 @@ the error relative to the configured loss mass; it is not the acceptance gate.
   A matched feature remains feature-backed when its MS1 height is at least 3×
   the matched blank's maximum intensity. Below 3×, it becomes
   `review_only_orphan_nl`, loses its feature-row binding, and is excluded from
-  MS1-feature-backed owner build while remaining in the complete candidate and
-  review universe. Qualification classifies downstream eligibility; it does not
-  undo the physical trace-shape result or change the selected peak's boundaries,
-  apex, or integrated area.
+  MS1-feature-backed owner build. Its candidate and review rows persist only
+  with a `scan_precursor` or `mixed` basis. Qualification classifies downstream
+  eligibility; it does not undo the physical trace-shape result or change the
+  selected peak's boundaries, apex, or integrated area.
 - CID-NL precursor inference supports both direct scan-precursor seeds and the
   bounded `product_mz + neutral_loss` basis when the inferred precursor remains
   within `DiscoverySettings.ms2_precursor_tol_da` of the measured filter/
@@ -114,9 +120,9 @@ the error relative to the configured loss mass; it is not the acceptance gate.
 - After physical MS1 evaluation and evidence scoring, one sample/tag/best-scan
   context may advance at most one pure `product_mz + neutral_loss` candidate as
   feature-backed. The highest-evidence candidate remains eligible; competing
-  pure inferred candidates stay in review output as
-  `review_only_ambiguous_coisolation`. Direct or mixed-basis candidates do not
-  enter this inferred-only competition.
+  pure inferred candidates are classified as
+  `review_only_ambiguous_coisolation` and are not persisted. Direct or mixed-basis
+  candidates do not enter this inferred-only competition.
 - Untargeted CID-NL carries eligible inferred evidence into the shared method
   assessment alongside direct evidence. Canonical evidence retains the precursor
   basis, actual scan precursor, and configured inference bound; an inferred
