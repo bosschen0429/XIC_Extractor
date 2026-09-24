@@ -16,6 +16,7 @@ from xic_extractor.acquisition_contract import (
     RawAcquisitionSessionReceipt,
     _mint_raw_acquisition_session_receipt,
 )
+from xic_extractor.ms2_scan_models import Ms2Scan, Ms2ScanEvent
 from xic_extractor.processing_identity import (
     AcquisitionSourceIdentity,
     IdentityContractError,
@@ -46,23 +47,6 @@ class RawReaderOpenError(RawReaderError):
         if not isinstance(cleanup_failed, bool):
             raise TypeError("cleanup_failed must be a bool")
         self.cleanup_failed = cleanup_failed
-
-
-@dataclass(frozen=True)
-class Ms2Scan:
-    scan_number: int
-    rt: float
-    precursor_mz: float
-    masses: np.ndarray
-    intensities: np.ndarray
-    base_peak: float
-
-
-@dataclass(frozen=True)
-class Ms2ScanEvent:
-    scan: Ms2Scan | None
-    parse_error: str | None
-    scan_number: int
 
 
 @dataclass(frozen=True)

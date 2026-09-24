@@ -15,7 +15,7 @@ from xic_extractor.instrument_qc.models import (
     HCDProductIon,
     SDOLEKTrendRow,
 )
-from xic_extractor.raw_reader import Ms2Scan, Ms2ScanEvent
+from xic_extractor.ms2_scan_models import Ms2Scan, Ms2ScanEvent
 
 DEFAULT_HCD_RT_WINDOW_MIN = 0.20
 DEFAULT_HCD_PRODUCT_PPM_MAX = 20.0

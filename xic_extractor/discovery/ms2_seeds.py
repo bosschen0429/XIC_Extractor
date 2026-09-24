@@ -13,7 +13,7 @@ from xic_extractor.discovery.models import (
     NeutralLossProfile,
     PrecursorMzBasis,
 )
-from xic_extractor.raw_reader import Ms2Scan, Ms2ScanEvent
+from xic_extractor.ms2_scan_models import Ms2Scan, Ms2ScanEvent
 
 
 class MS2ScanSource(Protocol):
