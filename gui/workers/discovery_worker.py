@@ -17,7 +17,10 @@ from xic_extractor.discovery.pipeline import run_discovery, run_discovery_batch
 from xic_extractor.discovery.processing_run_spec_adapter import (
     compile_discovery_processing_run_spec_from_config as _compile_processing_run_spec,
 )
-from xic_extractor.execution_settings import ExecutionProfile
+from xic_extractor.execution_settings import (
+    DEFAULT_ALIGNMENT_WORKER_BACKEND,
+    ExecutionProfile,
+)
 from xic_extractor.presets import (
     BoundCidNlRecipe,
     Preset,
@@ -260,6 +263,7 @@ class DiscoveryWorker(QThread):
             sample_metadata=request.sample_metadata,
             targets_csv=request.targets_csv,
             raw_workers=request.execution_profile.alignment_workers,
+            raw_worker_backend=DEFAULT_ALIGNMENT_WORKER_BACKEND,
             should_cancel=self.isInterruptionRequested,
             **_GUI_ALIGNMENT_KWARGS,
         )

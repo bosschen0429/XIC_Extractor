@@ -1026,6 +1026,8 @@ def test_reduced_discovery_persistence_keeps_alignment_families(
         output_level="machine",
         emit_alignment_cells=True,
         raw_workers=1,
+        # The fake RAWs above are patched into this process only.
+        raw_worker_backend="thread",
     )
 
     assert alignment.matrix_tsv is not None

@@ -342,6 +342,7 @@ def test_gui_alignment_modes_apply_product_ready_preset_alignment_runtime(
     assert peak_config.resolver_mode == "legacy_savgol"
     assert captured_alignment["alignment_config"] == AlignmentConfig()
     assert captured_alignment["raw_workers"] == DEFAULT_ALIGNMENT_WORKERS
+    assert captured_alignment["raw_worker_backend"] == "process"
     assert captured_alignment["owner_build_xic_backend"] == "raw_superwindow"
     assert captured_alignment["output_level"] == "production"
     assert captured_alignment["emit_alignment_cells"] is False

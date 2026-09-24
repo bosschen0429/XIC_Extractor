@@ -66,6 +66,45 @@ dated productization control-plane path is compatibility lookup only.
 
 ## Known Diagnostic Conclusions
 
+### 2026-09-25 Process RAW Workers Halve Full85 Runtime With Identical Outputs
+
+Issue #470. Alignment's RAW worker default changes from `thread` to `process`
+(`execution_settings.DEFAULT_ALIGNMENT_WORKER_BACKEND`).
+
+- Cause: within one process, Thermo reads do not scale across threads. On one
+  RAW, 200 requests take 0.818 s on one thread. Four threads each running the
+  same 200 take 1.72-1.77 s apiece (2.39 s wall), about 1.8x throughput.
+  Converting .NET arrays is not the cost: `np.asarray` takes 0.015 s of that.
+  pythonnet 3.0.5 is in use. Its maintainers state that Python-to-.NET calls
+  run without the GIL held, so the ceiling sits in the DLL or runtime and is
+  not identified. `RawFileReaderAdapter.ThreadedFileFactory` (4.0.19) exists
+  for sharing one file across threads, but each worker already opens its own.
+- 8RAW inventory (thread, 4 workers, one run): 1,304 `extract_xic_many` calls
+  carry 8,068 requests, a mean of 6.2 per call, and almost every call uses one
+  RT window. They take 248.9 thread-s in a 198.2 s runtime, so effective
+  concurrency is about 1.3.
+- 8RAW, 4 workers: process runtimes 135.2, 114.0, 97.6 and 94.3 s against
+  thread 146.9 s in the same session, and 191.5-222.5 s earlier. Matrix,
+  identity, review and cells are byte-identical across all runs. Peak RSS is
+  2.4-2.7 GB against 1.5-1.6 GB.
+- Worker count on 8RAW (process): 6, 8 and 11 workers give 120.3, 97.1 and
+  108.0 s, and RSS 3.1, 4.2 and 5.0 GB. There is no gain, because 8 samples
+  bound the per-partition parallelism. Full85 partition 0 alone (process)
+  acquires in 50.7 and 68.3 s with 4 workers, 41.4 s with 8 and 44.9 s with 11
+  (96.8 s with 4 threads). Its peak RSS is 5.5-5.7, 7.1 and 8.9 GB. A gain at
+  8 workers is suggested by one run and not established.
+- Full85 at `5f841191` (process, 4 workers, the #463 Discovery, cold
+  acquisition cache): 49/49 partitions complete. Runtime stage 2,264.1 s
+  against 4,460.1 s with threads (#463), summed acquisition 4,124.3 s against
+  8,414.5 s, and composition 625.3 s against 718.5 s. Peak tree RSS is
+  6.33 GB (private 10.06 GB) against 3.22 GB. Matrix, identity, review and
+  cells are byte-identical to the #463 thread run.
+- Unmeasured: 8 workers on full85, and machines with less than 32 GB. The
+  thread backend stays selectable for low-memory use.
+- Evidence is local and untracked, moved to `D:\XIC_output\i470-inventory\`
+  (probes `inventory_probe.py`, `conversion_bench.py`, `p0/p0_only.py`) and
+  `D:\XIC_output\i470-full85\`.
+
 ### 2026-09-24 Partition Sizing: An 8RAW Win That Full85 Does Not Inherit
 
 Issue #463. At `9ba3a5b1` the bounded CID-NL constants (100 Da mass bin,
