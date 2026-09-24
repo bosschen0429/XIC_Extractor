@@ -149,8 +149,8 @@ differs, and one full85 run cannot show output parity for a new default.
     `SampleLocalCaptureError: retained selected hypothesis is absent from the
     captured trace` (`peak_detection/capture.py:530`), with or without targeted
     MS1 shape identity. That failure is owned by #435; this A/B is unanswered.
-- Evidence is `diagnostic_only`. Artifacts: `output/i463-partition-sizing/`
-  (`grid8/`, `full85-head-9ba3a5b1/`, `*-worksets.json`, `full85-*.txt`),
+- Evidence is `diagnostic_only`. Artifacts: `output/i463-partition-sizing/`,
+  moved off the checkout to `D:\XIC_output\i463-partition-sizing\` (`grid8/`, `full85-head-9ba3a5b1/`, `*-worksets.json`, `full85-*.txt`),
   probes `partition_sizing_driver.py`, `grid.py`, `summarize.py`,
   `partition_plan.py`, `istd_check.py` and `cells_468_469.py`.
 
