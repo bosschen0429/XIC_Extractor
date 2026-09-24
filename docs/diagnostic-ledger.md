@@ -110,11 +110,38 @@ Issue #470. Alignment's RAW worker default changes from `thread` to `process`
     That takes 8.4 s to open and 37.2 s to close (219 ms per close), serially.
   - `__exit__` is only Thermo `Dispose()` (`raw_reader.py:110`). A standalone
     close takes a median of 288 ms, and a standalone open 25 ms.
+- Remaining #470 items were measured and not pursued:
+  - **RAW content hashing** runs once per run in `verify_acquisition_sources`,
+    10.6 s on full85 (0.4%). Workers compare path identity only
+    (`raw_reader.py:432`).
+  - **Parallel parent setup.** Reading 85 headers takes 27.2/26.1 s serially
+    and 19.4/19.3 s with 4 threads (1.37x). Threading both setup passes
+    would save about 15 s (0.6%).
+  - **Worker-held RAW handles.** An open handle holds about 59 MB private:
+    40 open handles take 2,370 MB, still 2,332 MB after closing. A worker
+    would need to hold all 85 RAWs (about 20 GB for 4 workers) for cache hits,
+    because samples are not pinned to workers. Pinning them would cost about
+    5 GB for the ~8% open/close share, and would change the handle-lifetime
+    contract.
+  - **Writing during the runtime.** On 8RAW, 13.1 of the 15.3 s writing
+    outputs goes to `iter_completed_untarget_batch_writer_inputs` re-reading
+    the spool, and 2.5 s to formatting. Full85 `write_outputs` is 106 s
+    (about 4%). Rows cannot be written as partitions finish, because
+    `public_family_id` is numbered in global candidate order at finalization
+    (`untargeted_finalized_matrix.py`). Writing rows early would change row
+    order and IDs.
+  - **On-demand explanation** saves about 276 s and 6.3 GB, but only on runs
+    that request the explanation. Production and `validation-minimal` do not
+    write it.
+  - The live-timing `mkdir` takes 75 µs standalone. Its 1 s per call in the
+    profile is GIL waiting.
 - Unmeasured: 8 workers on full85, and machines with less than 32 GB. The
   thread backend stays selectable for low-memory use.
 - Evidence is local and untracked, moved to `D:\XIC_output\i470-inventory\`
-  (probes `inventory_probe.py`, `conversion_bench.py`, `p0/p0_only.py`) and
-  `D:\XIC_output\i470-full85\`.
+  (probes `inventory_probe.py`, `conversion_bench.py`, `p0/p0_only.py`),
+  `D:\XIC_output\i470-full85\` and `D:\XIC_output\i470-remaining\`
+  (`probe_site/sitecustomize.py` open/close hook, `prof8/` cProfile,
+  `p0-opens/` and `p0-stack/` events).
 
 ### 2026-09-24 Partition Sizing: An 8RAW Win That Full85 Does Not Inherit
 
