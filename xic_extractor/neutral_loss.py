@@ -4,13 +4,13 @@ from typing import Literal, Protocol
 
 import numpy as np
 
+from xic_extractor.ms2_scan_models import Ms2Scan, Ms2ScanEvent
 from xic_extractor.ms2_trace_evidence import (
     MS2TraceEvidence,
     MS2TracePoint,
     empty_ms2_trace_evidence,
     summarize_ms2_trace,
 )
-from xic_extractor.raw_reader import Ms2Scan, Ms2ScanEvent
 
 NL_DIAGNOSTIC_PPM_FLOOR = 500.0
 CandidateMS2AlignmentSource = Literal[

@@ -17,7 +17,7 @@ from xic_extractor.discovery.models import (
 )
 from xic_extractor.discovery.ms2_seeds import discovery_seeds_from_scan
 from xic_extractor.mass_accuracy import within_ppm
-from xic_extractor.raw_reader import Ms2Scan, Ms2ScanEvent
+from xic_extractor.ms2_scan_models import Ms2Scan, Ms2ScanEvent
 
 _WRITER_ROUNDING_ABS_TOL = 5e-6
 _WRITER_ROUNDING_REL_TOL = 5e-6
