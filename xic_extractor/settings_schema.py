@@ -44,7 +44,7 @@ CANONICAL_SETTINGS_DEFAULTS: dict[str, str] = {
     "resolver_peak_duration_min": "0.0",
     "resolver_peak_duration_max": "2.0",
     "resolver_min_scans": "5",
-    "ms2_precursor_tol_da": "1.6",
+    "ms2_precursor_tol_da": "1.1",
     "nl_min_intensity_ratio": "0.01",
     "count_no_ms2_as_detected": "false",
     "injection_order_source": "",
@@ -107,8 +107,8 @@ CANONICAL_SETTINGS_DESCRIPTIONS: dict[str, str] = {
     "resolver_peak_duration_max": "Local minimum 峰最長持續時間（分鐘）",
     "resolver_min_scans": "Local minimum 區段最少 scans 數",
     "ms2_precursor_tol_da": (
-        "MS2 precursor m/z 匹配視窗（Da，建議設為 quadrupole 隔離視窗 + 0.4 Da 緩衝，"
-        "Fusion Lumos CID 典型隔離視窗 1.2 Da → 預設 1.6 Da）"
+        "MS2 precursor m/z 半徑（Da，|scan precursor − 推算 precursor| 上限；"
+        "儀器隔離寬度 1.6 Da（±0.8）加實測邊緣透過量 → 1.1 Da，見 #466）"
     ),
     "nl_min_intensity_ratio": (
         "NL product 強度至少為該 scan base peak 的比例（1% 排除 noise）"

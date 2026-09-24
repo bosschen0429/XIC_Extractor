@@ -279,6 +279,38 @@ def test_inferred_precursor_seed_respects_ms2_precursor_window() -> None:
     assert seeds == ()
 
 
+@pytest.mark.parametrize(
+    ("scan_offset_da", "expected_seed_count"),
+    [
+        # d4-N6-2HE-dA triggered 1.006 Da low (D/H) still transmits at the edge.
+        (-1.006, 1),
+        (0.816, 1),
+        (1.15, 0),
+        (-1.15, 0),
+    ],
+)
+def test_default_inferred_precursor_radius_covers_isolation_edge_only(
+    scan_offset_da: float,
+    expected_seed_count: int,
+) -> None:
+    # 1.6 Da isolation width (+/-0.8) plus observed edge transmission (#466).
+    product_mz = 184.11322021484375
+    inferred_precursor_mz = product_mz + NEUTRAL_LOSS_DA
+    raw = _FakeRaw(
+        [
+            _scan_event(
+                precursor_mz=inferred_precursor_mz + scan_offset_da,
+                masses=[product_mz],
+                intensities=[39671.9],
+            )
+        ]
+    )
+
+    seeds = collect_strict_nl_seeds(raw, raw_file=RAW_FILE, settings=_settings())
+
+    assert len(seeds) == expected_seed_count
+
+
 def test_observed_loss_error_equal_to_tolerance_is_accepted() -> None:
     precursor_mz = 258.1085
     product_mz = _product_for_loss_ppm(precursor_mz=precursor_mz, ppm=10.0)
