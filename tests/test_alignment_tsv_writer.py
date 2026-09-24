@@ -1762,7 +1762,6 @@ def test_backfill_cell_evidence_tsv_is_compact_and_backfill_scoped(
     }
     assert rescued["primary_matrix_area"] == "8"
     assert "region_candidate_count" not in rows[0]
-    assert "backfill_candidate_ms2_product_authority_status" not in rows[0]
 
     result = lookup_backfill_evidence_tsv(
         evidence_path,

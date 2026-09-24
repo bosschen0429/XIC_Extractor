@@ -75,7 +75,10 @@ def test_sp001_through_sp055_have_one_final_t5d_disposition() -> None:
     }
     for row in rows:
         if row["final_disposition"] == "delete":
-            assert row["retained_locator"] in {"deleted_by_t5d", "deleted_by_441"}
+            assert row["retained_locator"] in {
+                "deleted_by_t5d",
+                "deleted_with_legacy_overlay_diagnostics",
+            }
         else:
             assert (root / row["retained_locator"]).exists(), row["rule_id"]
 

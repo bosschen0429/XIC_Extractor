@@ -270,9 +270,6 @@ def _cell_row(
         "rt_delta_sec": "3",
         "gap_fill_state": gap_fill_state,
         "gap_fill_reason": "owner_backfill" if status == "backfilled" else "",
-        "backfill_candidate_ms2_product_authority_status": "",
-        "backfill_candidate_ms2_product_authority_scope": "",
-        "backfill_candidate_ms2_product_authority_source": "",
         "backfill_evidence_reason": "",
     }
 

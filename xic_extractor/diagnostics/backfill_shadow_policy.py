@@ -66,7 +66,6 @@ BACKFILL_SHADOW_POLICY_COLUMNS = (
     "blockers",
     "missing_evidence",
     "backfill_evidence_reason",
-    "candidate_ms2_product_authority_status",
     "overlay_png_path",
 )
 
@@ -274,9 +273,6 @@ def _shadow_row(
         "blockers": text_value(gate_row.get("challenge_blockers")),
         "missing_evidence": text_value(gate_row.get("missing_evidence")),
         "backfill_evidence_reason": text_value(cell.get("backfill_evidence_reason")),
-        "candidate_ms2_product_authority_status": text_value(
-            cell.get("backfill_candidate_ms2_product_authority_status"),
-        ),
         "overlay_png_path": (
             text_value(overlay_row.get("png_path"))
             or text_value(gate_row.get("overlay_png_path"))

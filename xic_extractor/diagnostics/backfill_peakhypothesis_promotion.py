@@ -142,11 +142,7 @@ _AREA_UNCERTAINTY_FRACTION_STATUSES = {
     "reviewed",
 }
 _PROMOTION_REASON = "allowlisted_peakhypothesis_same_peak_backfill"
-_PRODUCT_REASON = "product_authorized_same_peak_backfill"
 _IDENTITY_REVIEW_REASON = "identity_supported_review"
-_SAME_PEAK_SUPPORT_REASON = (
-    "same_peak_reason:family_ms1_overlay_anchor_peak_own_max_shape_supported"
-)
 
 
 @dataclass(frozen=True)
@@ -410,29 +406,19 @@ def _allowlist_review_blockers(row: Mapping[str, Any]) -> list[str]:
 def _shadow_blockers(row: Mapping[str, Any]) -> list[str]:
     blockers: list[str] = []
     shadow_reasons = set(_semicolon_values(row.get("shadow_reasons")))
-    product_authorized = _PRODUCT_REASON in shadow_reasons
     identity_supported = _IDENTITY_REVIEW_REASON in shadow_reasons
     if _value(row, "activation_unit_scope") != "peak_hypothesis":
         blockers.append("shadow_activation_scope_not_peakhypothesis")
-    if product_authorized and _value(row, "shadow_decision") != "accept":
-        blockers.append("shadow_decision_not_accept")
     if identity_supported and _value(row, "shadow_decision") != "context":
         blockers.append("identity_review_decision_not_context")
-    if not product_authorized and not identity_supported:
-        if _value(row, "shadow_decision") != "accept":
-            blockers.append("shadow_decision_not_accept")
-        blockers.append("missing_product_authorized_same_peak_reason")
+    if not identity_supported:
+        blockers.append("missing_identity_supported_review_reason")
     if _value(row, "current_raw_status") != "backfilled":
         blockers.append("current_raw_status_not_rescued")
     if _value(row, "current_production_status") != "review_backfill":
         blockers.append("current_status_not_review_backfill")
     if _value(row, "current_matrix_written") != "FALSE":
         blockers.append("current_matrix_already_written")
-    if (
-        product_authorized
-        and _value(row, "projected_matrix_written") != "TRUE"
-    ):
-        blockers.append("projected_matrix_not_written")
     if not _positive_number(_value(row, "projected_matrix_value")):
         blockers.append("projected_matrix_value_not_positive")
     if _value(row, "hard_blockers"):
@@ -450,13 +436,6 @@ def _product_authority_blockers(
     expected_chain = _value(allowlist_row, "expected_product_authority_chain")
     if chain != expected_chain:
         return ["product_authority_chain_drift"]
-    shadow_reasons = set(_semicolon_values(shadow_row.get("shadow_reasons")))
-    if _IDENTITY_REVIEW_REASON in shadow_reasons and _PRODUCT_REASON not in (
-        shadow_reasons
-    ):
-        return []
-    if not _valid_same_peak_ms1_chain(chain):
-        return ["malformed_product_authority_chain"]
     return []
 
 
@@ -497,17 +476,6 @@ def _area_uncertainty_state(row: Mapping[str, Any]) -> str:
     if policy == "unassessable_area":
         return "unassessable"
     return ""
-
-
-def _valid_same_peak_ms1_chain(chain: str) -> bool:
-    return (
-        "MS1:product_authorized:" in chain
-        and (
-            ":supportive:trace_constellation:" in chain
-            or ":partial_support:trace_constellation:" in chain
-        )
-        and _SAME_PEAK_SUPPORT_REASON in chain
-    )
 
 
 def _positive_number(value: str) -> bool:

@@ -22,7 +22,7 @@ from xic_inspector.selection.canonical import (
     build_canonical_ref,
 )
 
-BUNDLE_SCHEMA_VERSION = "xic_curve_bundle_v1"
+BUNDLE_SCHEMA_VERSION = "xic_curve_bundle"
 MAX_BUNDLE_SIZE_BYTES = 50 * 1024 * 1024
 
 

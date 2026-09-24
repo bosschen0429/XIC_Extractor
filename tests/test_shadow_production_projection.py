@@ -50,7 +50,6 @@ def test_projection_uses_production_decisions_for_current_matrix_state() -> None
                 "S_REVIEW",
                 "backfilled",
                 area="250.0",
-                product_evidence=True,
             ),
         ),
         retained_gate_rows=(
@@ -67,8 +66,8 @@ def test_projection_uses_production_decisions_for_current_matrix_state() -> None
     )
     assert by_sample["S_REVIEW"]["current_matrix_written"] == "FALSE"
     assert by_sample["S_REVIEW"]["current_production_status"] == "review_backfill"
-    assert by_sample["S_REVIEW"]["shadow_decision"] == "accept"
-    assert by_sample["S_REVIEW"]["projected_matrix_written"] == "TRUE"
+    assert by_sample["S_REVIEW"]["shadow_decision"] == "context"
+    assert by_sample["S_REVIEW"]["projected_matrix_written"] == "FALSE"
     assert by_sample["S_REVIEW"]["projected_matrix_value"] == "250"
 
 
@@ -87,7 +86,6 @@ def test_projection_carries_group_hypothesis_as_peak_identity() -> None:
                 "S_REVIEW",
                 "backfilled",
                 group_hypothesis_id="PH_FAM_ID",
-                product_evidence=True,
             ),
         ),
         retained_gate_rows=(_gate_row("FAM_ID", "S_REVIEW", detected="1"),),
@@ -112,7 +110,6 @@ def test_projection_leaves_identity_blank_without_peak_or_group_hypothesis() -> 
                 "FAM_NO_ID",
                 "S_REVIEW",
                 "backfilled",
-                product_evidence=True,
             ),
         ),
         retained_gate_rows=(_gate_row("FAM_NO_ID", "S_REVIEW", detected="1"),),
@@ -139,7 +136,6 @@ def test_projection_row_hash_is_present_and_stable_across_identical_builds() -> 
                     "S_REVIEW",
                     "backfilled",
                     group_hypothesis_id="PH_HASH",
-                    product_evidence=True,
                 ),
             ),
             retained_gate_rows=(_gate_row("FAM_HASH", "S_REVIEW", detected="1"),),
@@ -172,7 +168,6 @@ def test_projection_product_hash_excludes_review_overlay_path() -> None:
                     "S_REVIEW",
                     "backfilled",
                     group_hypothesis_id="PH_HASH",
-                    product_evidence=True,
                 ),
             ),
             retained_gate_rows=(gate,),
@@ -227,7 +222,7 @@ def test_projection_keeps_dup_without_product_authority_as_review_context() -> N
 
     dup = next(row for row in index.rows if row["sample_stem"] == "S_DUP")
     assert dup["shadow_decision"] == "context"
-    assert dup["shadow_reasons"] == "missing_product_authorized_evidence_chain"
+    assert dup["shadow_reasons"] == "identity_supported_review"
     assert dup["shadow_warnings"] == "same_peak_multi_claim"
     assert dup["projected_matrix_written"] == "FALSE"
 
@@ -276,104 +271,7 @@ def test_projection_keeps_visual_same_peak_support_as_identity_review_context() 
     assert index.summary["projected_new_write_count"] == 0
 
 
-def test_projection_accepts_same_peak_dup_with_product_authority() -> None:
-    decisions = _production_decisions(
-        cells=(
-            _cell_decision("FAM_DUP", "S_DET", "detected", True, 100.0),
-            _cell_decision(
-                "FAM_DUP",
-                "S_DUP",
-                "review_backfill",
-                False,
-                None,
-                blank_reason="backfill_ms1_pattern_blocked",
-            ),
-        ),
-    )
-
-    index = build_shadow_production_projection_index(
-        production_decisions=decisions,
-        cell_rows=(
-            _cell_row("FAM_DUP", "S_DET", "detected"),
-            _cell_row(
-                "FAM_DUP",
-                "S_DUP",
-                "backfilled",
-                gap_fill_state="not_filled",
-                gap_fill_reason="not_requested_duplicate_loser",
-                product_evidence=True,
-            ),
-        ),
-        retained_gate_rows=(
-            _gate_row("FAM_DUP", "S_DET;S_DUP", detected="1"),
-        ),
-    )
-
-    dup = next(row for row in index.rows if row["sample_stem"] == "S_DUP")
-    assert dup["shadow_decision"] == "accept"
-    assert dup["shadow_reasons"] == "product_authorized_same_peak_backfill"
-    assert dup["shadow_warnings"] == "same_peak_multi_claim"
-    assert dup["projected_matrix_written"] == "TRUE"
-    assert dup["projected_matrix_value"] == "200"
-    assert "MS1:product_authorized:supportive:trace_constellation" in (
-        dup["product_authority_chain"]
-    )
-    assert (
-        "candidateMS2(optional):product_authorized:partial_support:"
-        "sample_candidate_aligned"
-    ) in dup["product_authority_chain"]
-    assert "same_peak_reason:" in dup["product_authority_chain"]
-
-
-def test_projection_warns_family_duplicate_loser_with_authority() -> None:
-    decisions = _production_decisions(
-        cells=(
-            _cell_decision("FAM_DUP_AUTH", "S_DET", "detected", True, 100.0),
-            _cell_decision(
-                "FAM_DUP_AUTH",
-                "S_DUP",
-                "accepted_backfill",
-                False,
-                None,
-                blank_reason="backfill_ms1_pattern_blocked",
-            ),
-        ),
-    )
-
-    index = build_shadow_production_projection_index(
-        production_decisions=decisions,
-        cell_rows=(
-            _cell_row("FAM_DUP_AUTH", "S_DET", "detected"),
-            _cell_row(
-                "FAM_DUP_AUTH",
-                "S_DUP",
-                "backfilled",
-                group_claim_state="same_peak_multi_claim;duplicate_loser",
-                product_evidence=True,
-                candidate_ms2_evidence=False,
-                backfill_evidence_reason=(
-                    "shift_aware_standard_peak_gate_supported"
-                ),
-                backfill_ms1_product_authority_source=(
-                    "unit_test_standard_peak_gate"
-                ),
-            ),
-        ),
-        retained_gate_rows=(
-            _gate_row("FAM_DUP_AUTH", "S_DET;S_DUP", detected="1"),
-        ),
-    )
-
-    dup = next(row for row in index.rows if row["sample_stem"] == "S_DUP")
-    assert dup["current_production_status"] == "accepted_backfill"
-    assert dup["shadow_decision"] == "accept"
-    assert dup["shadow_reasons"] == "product_authorized_same_peak_backfill"
-    assert dup["shadow_warnings"] == "same_peak_multi_claim"
-    assert dup["projected_matrix_written"] == "TRUE"
-    assert dup["projected_matrix_value"] == "200"
-
-
-def test_projection_blocks_current_hypothesis_blocker_with_authority() -> None:
+def test_projection_blocks_current_hypothesis_blocker() -> None:
     decisions = _production_decisions(
         cells=(
             _cell_decision("FAM_BLOCK", "S_DET", "detected", True, 100.0),
@@ -396,7 +294,6 @@ def test_projection_blocks_current_hypothesis_blocker_with_authority() -> None:
                 "FAM_BLOCK",
                 "S_REVIEW",
                 "backfilled",
-                product_evidence=True,
             ),
         ),
         retained_gate_rows=(
@@ -433,7 +330,6 @@ def test_projection_blocks_cell_hypothesis_loser_even_without_current_reason() -
                 "FAM_CELL_BLOCK",
                 "S_REVIEW",
                 "backfilled",
-                product_evidence=True,
                 consolidation_state="primary_loser",
             ),
         ),
@@ -449,7 +345,7 @@ def test_projection_blocks_cell_hypothesis_loser_even_without_current_reason() -
     assert review["projected_matrix_written"] == "FALSE"
 
 
-def test_projection_blocks_activation_wrong_peak_even_with_product_authority() -> None:
+def test_projection_blocks_activation_wrong_peak() -> None:
     decisions = _production_decisions(
         cells=(
             _cell_decision("FAM_ACT_BLOCK", "S_DET", "detected", True, 100.0),
@@ -472,7 +368,6 @@ def test_projection_blocks_activation_wrong_peak_even_with_product_authority() -
                 "FAM_ACT_BLOCK",
                 "S_REVIEW",
                 "backfilled",
-                product_evidence=True,
                 activation_contract_rule_id="wrong_peak_conflict",
                 activation_product_effect="block_rescue_cell",
                 activation_reason="wrong peak",
@@ -487,92 +382,6 @@ def test_projection_blocks_activation_wrong_peak_even_with_product_authority() -
     assert review["shadow_decision"] == "block"
     assert review["shadow_reasons"] == "backfill_wrong_peak_or_hypothesis_blocked"
     assert review["projected_matrix_written"] == "FALSE"
-
-
-def test_projection_accepts_ms1_same_peak_authority_without_candidate_ms2() -> None:
-    decisions = _production_decisions(
-        cells=(
-            _cell_decision("FAM_MS1_ONLY", "S_DET", "detected", True, 100.0),
-            _cell_decision(
-                "FAM_MS1_ONLY",
-                "S_REVIEW",
-                "review_backfill",
-                False,
-                None,
-                blank_reason="backfill_ms1_pattern_blocked",
-            ),
-        ),
-    )
-
-    index = build_shadow_production_projection_index(
-        production_decisions=decisions,
-        cell_rows=(
-            _cell_row("FAM_MS1_ONLY", "S_DET", "detected"),
-            _cell_row(
-                "FAM_MS1_ONLY",
-                "S_REVIEW",
-                "backfilled",
-                product_evidence=True,
-                candidate_ms2_evidence=False,
-            ),
-        ),
-        retained_gate_rows=(
-            _gate_row("FAM_MS1_ONLY", "S_DET;S_REVIEW", detected="1"),
-        ),
-    )
-
-    review = next(row for row in index.rows if row["sample_stem"] == "S_REVIEW")
-    assert review["shadow_decision"] == "accept"
-    assert review["shadow_reasons"] == "product_authorized_same_peak_backfill"
-    assert review["projected_matrix_written"] == "TRUE"
-    assert "MS1:product_authorized:supportive:trace_constellation" in (
-        review["product_authority_chain"]
-    )
-    assert "candidateMS2(optional):product_authorized" not in (
-        review["product_authority_chain"]
-    )
-
-
-def test_projection_accept_requires_positive_projected_matrix_value() -> None:
-    decisions = _production_decisions(
-        cells=(
-            _cell_decision("FAM_NO_VALUE", "S_DET", "detected", True, 100.0),
-            _cell_decision(
-                "FAM_NO_VALUE",
-                "S_REVIEW",
-                "review_backfill",
-                False,
-                None,
-                blank_reason="backfill_ms1_pattern_blocked",
-            ),
-        ),
-    )
-
-    index = build_shadow_production_projection_index(
-        production_decisions=decisions,
-        cell_rows=(
-            _cell_row("FAM_NO_VALUE", "S_DET", "detected"),
-            _cell_row(
-                "FAM_NO_VALUE",
-                "S_REVIEW",
-                "backfilled",
-                area="0",
-                product_evidence=True,
-            ),
-        ),
-        retained_gate_rows=(
-            _gate_row("FAM_NO_VALUE", "S_DET;S_REVIEW", detected="1"),
-        ),
-    )
-
-    review = next(row for row in index.rows if row["sample_stem"] == "S_REVIEW")
-    assert review["shadow_decision"] == "context"
-    assert "product_authorized_same_peak_backfill" in review["shadow_reasons"]
-    assert "missing_projected_matrix_value" in review["shadow_reasons"]
-    assert "projection_accept_without_positive_area" in review["shadow_warnings"]
-    assert review["projected_matrix_written"] == "FALSE"
-    assert review["projected_matrix_value"] == ""
-    assert index.summary["projected_new_write_count"] == 0
 
 
 def test_projection_keeps_evidence_conflicts_as_review_context() -> None:
@@ -608,55 +417,7 @@ def test_projection_keeps_evidence_conflicts_as_review_context() -> None:
     assert review["projected_matrix_written"] == "FALSE"
 
 
-def test_projection_accepts_standard_peak_authority_when_gate_lacks_overlay() -> None:
-    decisions = _production_decisions(
-        cells=(
-            _cell_decision("FAM_STD", "S_DET", "detected", True, 100.0),
-            _cell_decision(
-                "FAM_STD",
-                "S_REVIEW",
-                "review_backfill",
-                False,
-                None,
-            ),
-        ),
-    )
-    gate = _gate_row("FAM_STD", "S_DET;S_REVIEW", detected="1")
-    gate["evidence_gate_status"] = "evidence_missing"
-    gate["missing_evidence"] = "missing_overlay_evidence"
-
-    index = build_shadow_production_projection_index(
-        production_decisions=decisions,
-        cell_rows=(
-            _cell_row("FAM_STD", "S_DET", "detected"),
-            _cell_row(
-                "FAM_STD",
-                "S_REVIEW",
-                "backfilled",
-                product_evidence=True,
-                candidate_ms2_evidence=False,
-                backfill_evidence_reason=(
-                    "shift_aware_standard_peak_gate_supported"
-                ),
-                backfill_ms1_product_authority_source=(
-                    "unit_test_standard_peak_gate"
-                ),
-            ),
-        ),
-        retained_gate_rows=(gate,),
-    )
-
-    review = next(row for row in index.rows if row["sample_stem"] == "S_REVIEW")
-    assert review["shadow_decision"] == "accept"
-    assert review["shadow_reasons"] == "product_authorized_same_peak_backfill"
-    assert review["projected_matrix_written"] == "TRUE"
-    assert (
-        "same_peak_reason:shift_aware_standard_peak_gate_supported"
-        in review["product_authority_chain"]
-    )
-
-
-def test_projection_keeps_review_required_blockers_closed_with_authority() -> None:
+def test_projection_keeps_review_required_blockers_closed() -> None:
     decisions = _production_decisions(
         cells=(
             _cell_decision("FAM_REVIEW", "S_DET", "detected", True, 100.0),
@@ -681,7 +442,6 @@ def test_projection_keeps_review_required_blockers_closed_with_authority() -> No
                 "FAM_REVIEW",
                 "S_REVIEW",
                 "backfilled",
-                product_evidence=True,
             ),
         ),
         retained_gate_rows=(gate,),
@@ -692,7 +452,7 @@ def test_projection_keeps_review_required_blockers_closed_with_authority() -> No
     assert review["shadow_reasons"] == "challenge_blockers_require_review"
     assert review["shadow_warnings"] == "review_required_neighboring_ms1_interference"
     assert review["projected_matrix_written"] == "FALSE"
-    assert "product_authorized" in review["product_authority_chain"]
+    assert review["product_authority_chain"] == ""
 
 
 def test_projection_blocks_only_hard_failures_for_review_backfills() -> None:
@@ -863,12 +623,12 @@ def test_projection_writer_serializes_stable_schema_and_summary(tmp_path: Path) 
     payload = json.loads(outputs.json.read_text(encoding="utf-8"))
     assert payload["schema_version"] == "shadow_production_projection"
     assert payload["source_run_id"] == "unit-run"
-    assert payload["decision_counts"] == {"accept": 1, "context": 1}
+    assert payload["decision_counts"] == {"context": 2}
     assert payload["gate_row_count"] == 1
     assert payload["projectable_gate_row_count"] == 1
     assert payload["unprojectable_gate_row_count"] == 0
     assert payload["unprojectable_gate_reasons"] == {}
-    assert payload["projected_new_write_count"] == 1
+    assert payload["projected_new_write_count"] == 0
     assert payload["source_overlay_sha256s"] == []
     assert payload["current_matrix_source"] == "production_decision_snapshot"
     assert payload["alignment_matrix_cross_checked"] is False
@@ -1179,17 +939,12 @@ def test_cli_current_written_uses_actual_matrix_cell_when_identity_supplied(
                 "S_REVIEW",
                 "backfilled",
                 area="250.0",
-                product_evidence=True,
-                candidate_ms2_evidence=False,
                 primary_matrix_area="250.0",
                 primary_matrix_area_source="gaussian15_positive_asls_residual",
                 height="1000.0",
                 rt_delta_sec="0.0",
                 backfill_evidence_reason=(
                     "shift_aware_standard_peak_gate_supported"
-                ),
-                backfill_ms1_product_authority_source=(
-                    "unit_test_standard_peak_gate"
                 ),
             ),
         ],
@@ -1215,11 +970,6 @@ def test_cli_current_written_uses_actual_matrix_cell_when_identity_supplied(
             "backfill_evidence_level",
             "backfill_evidence_status",
             "backfill_evidence_reason",
-            "backfill_ms1_pattern_status",
-            "backfill_ms1_pattern_evidence_level",
-            "backfill_ms1_product_authority_status",
-            "backfill_ms1_product_authority_scope",
-            "backfill_ms1_product_authority_source",
         ),
     )
     _write_tsv(
@@ -1285,153 +1035,9 @@ def test_cli_current_written_uses_actual_matrix_cell_when_identity_supplied(
     rows = _read_tsv(output_dir / "shadow_production_projection_cells.tsv")
     review = next(row for row in rows if row["sample_stem"] == "S_REVIEW")
     assert review["current_matrix_written"] == "FALSE"
-    assert review["shadow_decision"] == "accept"
-    assert review["projected_matrix_written"] == "TRUE"
+    assert review["shadow_decision"] == "context"
+    assert review["projected_matrix_written"] == "FALSE"
     assert review["projected_matrix_value"] == "250"
-
-
-def test_cli_projects_ms1_product_authority_sidecar(tmp_path: Path) -> None:
-    alignment_dir = tmp_path / "alignment"
-    alignment_dir.mkdir()
-    _write_tsv(
-        alignment_dir / "alignment_review.tsv",
-        [
-            {
-                "feature_family_id": "FAM_MS1",
-                "neutral_loss_tag": "DNA_dR",
-                "detected_count": "1",
-                "family_evidence": "owner_complete_link;owner_count=1",
-            },
-        ],
-        ("feature_family_id", "neutral_loss_tag", "detected_count", "family_evidence"),
-    )
-    _write_tsv(
-        alignment_dir / "alignment_cells.tsv",
-        [
-            _cell_row("FAM_MS1", "S_DET", "detected", area="100.0"),
-            _cell_row("FAM_MS1", "S_REVIEW", "backfilled", area="250.0"),
-        ],
-        (
-            "feature_family_id",
-            "sample_stem",
-            "status",
-            "area",
-            "apex_rt",
-            "height",
-            "peak_start_rt",
-            "peak_end_rt",
-            "rt_delta_sec",
-            "primary_matrix_area",
-            "gap_fill_state",
-            "gap_fill_reason",
-            "group_claim_state",
-            "consolidation_state",
-            "peak_hypothesis_status",
-            "product_selection_blocker",
-            "rt_mode_status",
-        ),
-    )
-    gate = _gate_row("FAM_MS1", "S_DET;S_REVIEW", detected="1")
-    _write_tsv(
-        alignment_dir / "retained_gate.tsv",
-        [gate],
-        (
-            "feature_family_id",
-            "seed_group_id",
-            "seed_group_basis",
-            "seed_mz",
-            "seed_rt",
-            "suggested_rt_min",
-            "suggested_rt_max",
-            "detected_cell_count",
-            "rescued_cell_count",
-            "seed_source_samples",
-            "support_components",
-            "challenge_blockers",
-            "missing_evidence",
-            "evidence_gate_status",
-            "overlay_family_verdict",
-            "overlay_png_path",
-        ),
-    )
-    ms1_sidecar = alignment_dir / "ms1_product_authorized.tsv"
-    _write_tsv(
-        ms1_sidecar,
-        [
-            {
-                "feature_family_id": "FAM_MS1",
-                "sample_stem": "S_REVIEW",
-                "ms1_pattern_status": "supportive",
-                "ms1_pattern_evidence_level": "trace_constellation",
-                "apex_coherence_sec": "0.5",
-                "boundary_overlap_score": "1",
-                "shape_correlation_score": "0.95",
-                "relative_pattern_stability_score": "0.95",
-                "local_interference_score": "0",
-                "constellation_peak_count": "2",
-                "reference_peak_count": "1",
-                "drift_compatible_status": "compatible",
-                "reason": "shift_aware_standard_peak_gate_supported",
-                "diagnostic_only": "FALSE",
-                "product_authority_status": "product_authorized",
-                "product_authority_scope": "feature_family_sample",
-                "product_authority_source": "unit_test_standard_peak_gate",
-            },
-        ],
-        (
-            "feature_family_id",
-            "sample_stem",
-            "ms1_pattern_status",
-            "ms1_pattern_evidence_level",
-            "apex_coherence_sec",
-            "boundary_overlap_score",
-            "shape_correlation_score",
-            "relative_pattern_stability_score",
-            "local_interference_score",
-            "constellation_peak_count",
-            "reference_peak_count",
-            "drift_compatible_status",
-            "reason",
-            "diagnostic_only",
-            "product_authority_status",
-            "product_authority_scope",
-            "product_authority_source",
-        ),
-    )
-    output_dir = tmp_path / "projection"
-
-    code = projection_cli.main(
-        [
-            "--alignment-review-tsv",
-            str(alignment_dir / "alignment_review.tsv"),
-            "--alignment-cells-tsv",
-            str(alignment_dir / "alignment_cells.tsv"),
-            "--retained-gate-tsv",
-            str(alignment_dir / "retained_gate.tsv"),
-            "--ms1-pattern-coherence-tsv",
-            str(ms1_sidecar),
-            "--output-dir",
-            str(output_dir),
-        ],
-    )
-
-    assert code == 0
-    rows = _read_tsv(output_dir / "shadow_production_projection_cells.tsv")
-    review = next(row for row in rows if row["sample_stem"] == "S_REVIEW")
-    assert review["current_matrix_written"] == "FALSE"
-    assert review["shadow_decision"] == "accept"
-    assert review["projected_matrix_written"] == "TRUE"
-    assert (
-        "same_peak_reason:shift_aware_standard_peak_gate_supported"
-        in review["product_authority_chain"]
-    )
-    payload = json.loads(
-        (output_dir / "shadow_production_projection_summary.json").read_text(
-            encoding="utf-8",
-        ),
-    )
-    assert payload["projected_new_write_count"] == 1
-    assert payload["source_ms1_pattern_coherence_sha256s"]
 
 
 def test_cli_fails_when_gate_schema_omits_challenge_blockers(tmp_path: Path) -> None:
@@ -1578,8 +1184,6 @@ def _cell_row(
     end: str = "9.60",
     gap_fill_state: str = "owner_backfill",
     gap_fill_reason: str = "owner_backfill",
-    product_evidence: bool = False,
-    candidate_ms2_evidence: bool = True,
     group_claim_state: str = "",
     consolidation_state: str = "",
     peak_hypothesis_status: str = "",
@@ -1619,37 +1223,6 @@ def _cell_row(
         row["group_hypothesis_id"] = group_hypothesis_id
     if peak_hypothesis_id:
         row["peak_hypothesis_id"] = peak_hypothesis_id
-    if product_evidence:
-        row.update(
-            {
-                "backfill_ms1_pattern_status": "supportive",
-                "backfill_ms1_pattern_evidence_level": "trace_constellation",
-                "backfill_ms1_product_authority_status": "product_authorized",
-                "backfill_ms1_product_authority_scope": "feature_family_sample",
-                "backfill_ms1_product_authority_source": (
-                    "unit_test_reviewed_allowlist"
-                ),
-                "backfill_evidence_reason": (
-                    "family_ms1_overlay_anchor_peak_own_max_shape_supported"
-                ),
-            },
-        )
-    if product_evidence and candidate_ms2_evidence:
-        row.update(
-            {
-                "backfill_candidate_ms2_pattern_status": "partial_support",
-                "backfill_candidate_ms2_evidence_level": "sample_candidate_aligned",
-                "backfill_candidate_ms2_product_authority_status": (
-                    "product_authorized"
-                ),
-                "backfill_candidate_ms2_product_authority_scope": (
-                    "feature_family_sample"
-                ),
-                "backfill_candidate_ms2_product_authority_source": (
-                    "unit_test_reviewed_allowlist"
-                ),
-            },
-        )
     row.update(extra_fields)
     return row
 
@@ -1673,7 +1246,9 @@ def _gate_row(
         "detected_cell_count": detected,
         "rescued_cell_count": "1",
         "seed_source_samples": samples,
-        "support_components": "seed_request_provenance",
+        "support_components": (
+            "seed_request_provenance;ms1_shape_supports_family_backfill"
+        ),
         "challenge_blockers": "",
         "missing_evidence": "",
         "evidence_gate_status": "visual_support",

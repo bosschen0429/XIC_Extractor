@@ -5,9 +5,6 @@ import json
 from pathlib import Path
 
 from tools.diagnostics import analyze_matrix_identity_blast_radius as blast
-from xic_extractor.alignment.promotion_policy import (
-    ANCHOR_OWN_MAX_MS1_SUPPORT_REASON,
-)
 
 
 def test_blast_radius_reports_complete_identity_changes_and_benchmark_join(
@@ -55,58 +52,6 @@ def test_blast_radius_reports_complete_identity_changes_and_benchmark_join(
     )
     assert payload["evidence_status"] == "complete"
     assert payload["would_change_to_audit_count"] == 1
-
-
-def test_blast_radius_projects_single_detected_product_authority_action(
-    tmp_path: Path,
-) -> None:
-    alignment_dir = _write_alignment_run(
-        tmp_path / "alignment",
-        review_rows=[
-            _review_row("FAM_ONE", "FALSE", "owner_complete_link;owner_count=1"),
-        ],
-        cell_rows=[
-            _cell_row("FAM_ONE", "sample-a", "detected", 100.0),
-            _cell_row(
-                "FAM_ONE",
-                "sample-b",
-                "backfilled",
-                90.0,
-                trace_quality="clean",
-                scan_support_score=0.8,
-                typed_backfill_support=True,
-            ),
-            _cell_row(
-                "FAM_ONE",
-                "sample-c",
-                "backfilled",
-                80.0,
-                trace_quality="clean",
-                scan_support_score=0.8,
-                typed_backfill_support=True,
-            ),
-        ],
-    )
-
-    code = blast.main(
-        [
-            "--alignment-run",
-            str(alignment_dir),
-            "--output-dir",
-            str(tmp_path / "blast"),
-        ],
-    )
-
-    assert code == 0
-    rows = _read_tsv(tmp_path / "blast" / "matrix_identity_blast_radius.tsv")
-    by_id = {row["feature_family_id"]: row for row in rows}
-
-    assert by_id["FAM_ONE"]["identity_decision"] == "production_family"
-    assert by_id["FAM_ONE"]["matrix_role"] == "primary"
-    assert by_id["FAM_ONE"]["recommended_action"] == "use"
-    assert by_id["FAM_ONE"]["evidence_tier"] == "1"
-    assert by_id["FAM_ONE"]["blockers"] == ""
-    assert "ms1_backfill_supported" in by_id["FAM_ONE"]["support_reasons"]
 
 
 def test_blast_radius_preserves_review_only_projection(
@@ -432,7 +377,6 @@ def _cell_row(
     trace_quality: str = "",
     scan_support_score: float | None = None,
     reason: str | None = None,
-    typed_backfill_support: bool = False,
 ) -> dict[str, object]:
     row: dict[str, object] = {
         "feature_family_id": family_id,
@@ -451,40 +395,7 @@ def _cell_row(
         "scan_support_score": scan_support_score,
         "reason": reason if reason is not None else status,
     }
-    if typed_backfill_support:
-        row.update(
-            {
-                "backfill_ms1_pattern_status": "supportive",
-                "backfill_ms1_pattern_evidence_level": "trace_constellation",
-                "backfill_matrix_rt_drift_status": "rt_close",
-                "backfill_drift_evidence_level": "sample_istd_aligned",
-                "backfill_drift_compatible_status": "compatible",
-                "backfill_candidate_ms2_pattern_status": "supportive",
-                "backfill_candidate_ms2_evidence_level": "sample_candidate_aligned",
-                "backfill_evidence_reason": ANCHOR_OWN_MAX_MS1_SUPPORT_REASON,
-                **_product_authority_fields(),
-            },
-        )
     return row
-
-
-def _product_authority_fields() -> dict[str, object]:
-    return {
-        "backfill_ms1_product_authority_status": "product_authorized",
-        "backfill_ms1_product_authority_scope": "feature_family_sample",
-        "backfill_ms1_product_authority_source": "unit_test_reviewed_allowlist",
-        "backfill_ms1_product_authority_reason": "unit_test_authorized",
-        "backfill_ms1_product_authority_evidence_sha256": "unit-test-ms1-sha256",
-        "backfill_candidate_ms2_product_authority_status": "product_authorized",
-        "backfill_candidate_ms2_product_authority_scope": "feature_family_sample",
-        "backfill_candidate_ms2_product_authority_source": (
-            "unit_test_reviewed_allowlist"
-        ),
-        "backfill_candidate_ms2_product_authority_reason": "unit_test_authorized",
-        "backfill_candidate_ms2_product_authority_evidence_sha256": (
-            "unit-test-ms2-sha256"
-        ),
-    }
 
 
 def _write_benchmark_dir(path: Path, family_id: str) -> Path:

@@ -19,10 +19,6 @@ from xic_extractor.diagnostics.backfill_peakhypothesis_promotion import (
 
 SHADOW_SHA = "shadow-file-sha"
 ROW_SHA = "shadow-row-sha"
-PRODUCT_CHAIN = (
-    "MS1:product_authorized:supportive:trace_constellation:anchor;"
-    "same_peak_reason:family_ms1_overlay_anchor_peak_own_max_shape_supported"
-)
 
 
 def test_standard_promotes_and_nonstandard_stays_review_only() -> None:
@@ -144,18 +140,6 @@ def test_identity_supported_nonstandard_row_stays_review_only() -> None:
     assert row.promotion_blockers == ("nonstandard_area_review_only",)
 
 
-def test_product_authority_chain_drift_blocks_otherwise_good_row() -> None:
-    index = build_promotion_index(
-        (_shadow_row("PH001"),),
-        (_allowlist_row("PH001", expected_product_authority_chain="different-chain"),),
-        SHADOW_SHA,
-    )
-
-    row = index.rows[0]
-    assert row.promotion_decision == "blocked"
-    assert row.promotion_blockers == ("product_authority_chain_drift",)
-
-
 def test_missing_shadow_row_blocks_without_shadow_detail_noise() -> None:
     index = build_promotion_index((), (_allowlist_row("PH001"),), SHADOW_SHA)
 
@@ -224,12 +208,7 @@ def test_writer_emits_cells_uncertainty_and_diagnostic_only_summary(
 @pytest.mark.parametrize(
     ("shadow_overrides", "expected_blocker"),
     (
-        ({"shadow_reasons": ""}, "missing_product_authorized_same_peak_reason"),
         ({"current_raw_status": "missing"}, "current_raw_status_not_rescued"),
-        (
-            {"product_authority_chain": "MS1:product_authorized:supportive:other"},
-            "malformed_product_authority_chain",
-        ),
         ({"current_matrix_written": "TRUE"}, "current_matrix_already_written"),
         ({"current_matrix_written": ""}, "current_matrix_already_written"),
     ),
@@ -499,11 +478,11 @@ def _shadow_row(
         "current_raw_status": "backfilled",
         "current_production_status": "review_backfill",
         "current_matrix_written": "FALSE",
-        "shadow_decision": "accept",
-        "shadow_reasons": "product_authorized_same_peak_backfill",
-        "projected_matrix_written": "TRUE",
+        "shadow_decision": "context",
+        "shadow_reasons": "identity_supported_review",
+        "projected_matrix_written": "FALSE",
         "projected_matrix_value": "125.5",
-        "product_authority_chain": PRODUCT_CHAIN,
+        "product_authority_chain": "",
         "hard_blockers": "",
         "missing_evidence": "",
         "shadow_projection_row_sha256": ROW_SHA,
@@ -531,7 +510,7 @@ def _allowlist_row(
         "authority_reason": "same_peak_identity_and_area_policy_reviewed",
         "expected_shadow_projection_sha256": SHADOW_SHA,
         "expected_shadow_projection_row_sha256": ROW_SHA,
-        "expected_product_authority_chain": PRODUCT_CHAIN,
+        "expected_product_authority_chain": "",
         "area_policy": "standard_assessable_area",
         "area_uncertainty_reason": "",
         "area_uncertainty_fraction": "",

@@ -7,7 +7,6 @@ from typing import Literal
 from xic_extractor.alignment.promotion_policy import (
     BACKFILL_HYPOTHESIS_BLOCKED_REASON,
     BACKFILL_MS1_PATTERN_BLOCKED_REASON,
-    BACKFILL_MS1_PATTERN_CONFLICT_REASON,
     BACKFILL_OWNER_REHYDRATION_UNAVAILABLE_REASON,
     BACKFILL_RT_EXPLANATION_BLOCKED_REASON,
     LOW_MS1_COVERAGE_BLOCKED_REASON,
@@ -35,7 +34,6 @@ _AUDIT_BLOCKERS = {
     "ambiguous_only",
     BACKFILL_HYPOTHESIS_BLOCKED_REASON,
     BACKFILL_MS1_PATTERN_BLOCKED_REASON,
-    BACKFILL_MS1_PATTERN_CONFLICT_REASON,
     BACKFILL_OWNER_REHYDRATION_UNAVAILABLE_REASON,
     BACKFILL_RT_EXPLANATION_BLOCKED_REASON,
     "duplicate_claim_pressure",
@@ -232,15 +230,11 @@ def _cell_evidence_blockers(
         return (BACKFILL_HYPOTHESIS_BLOCKED_REASON,)
     if any(
         cell.low_assessable_coverage
-        or (
-            not cell.additional_ms1_support
-            and not cell.same_peak_ms1_pattern_supported
-        )
+        or not cell.additional_ms1_support
         for cell in rescued
     ):
         return (LOW_MS1_COVERAGE_BLOCKED_REASON,)
     for reason in (
-        BACKFILL_MS1_PATTERN_CONFLICT_REASON,
         BACKFILL_RT_EXPLANATION_BLOCKED_REASON,
         BACKFILL_MS1_PATTERN_BLOCKED_REASON,
     ):
@@ -248,10 +242,7 @@ def _cell_evidence_blockers(
             return (reason,)
     if any(
         cell.low_assessable_coverage
-        or not (
-            cell.local_apex_supported
-            or cell.product_authorized_same_peak_supported
-        )
+        or not cell.local_apex_supported
         or not cell.supported_for_backfill
         for cell in rescued
     ):

@@ -60,7 +60,7 @@ schema interpretation, and relationship projection stay in
 Untargeted CID-NL evidence through the scientific owner's read-only metadata and
 selected-curve interfaces.
 
-The second source is `xic_curve_bundle_v1`. A diagnostic can construct
+The second source is `xic_curve_bundle`. A diagnostic can construct
 `CurveBundle`, `TransitionCurves`, `CurveBundleTrace`, `ChromatogramCurve`, and
 `PeakBounds` from `xic_inspector.sources.curve_bundle`, then call
 `write_curve_bundle(bundle, path)`. The writer validates and atomically writes
