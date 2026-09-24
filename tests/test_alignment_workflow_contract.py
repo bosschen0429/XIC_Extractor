@@ -246,14 +246,10 @@ def test_workflow_rejects_incomplete_or_crossed_owner_population(
     tmp_path: Path,
     mismatch: str,
 ) -> None:
-    from tests.test_backfill_observation_repair_authorization import (
-        _authorization_population,
-    )
+    from tests.test_cell_observations import _owner_handoff
 
-    fixture, spine, coverage, _cells = _authorization_population(
-        tmp_path,
-        hold_samples=(),
-    )
+    fixture, spine, handoff = _owner_handoff(tmp_path)
+    coverage = handoff.coverage
     scope, captures = _target_scope_and_captures(fixture, spine, tmp_path)
     if mismatch == "capture-subset":
         scope = replace(

@@ -1,4 +1,4 @@
-"""Owner-authorized repair population eligibility and candidate selection."""
+"""Typed repair candidate and authorization receipt validation."""
 
 from __future__ import annotations
 
@@ -11,9 +11,6 @@ from xic_extractor.alignment.backfill.evaluation_coverage import (
     OwnerBackfillAttemptTerminal,
     OwnerBackfillEvaluationCoverageBatch,
     OwnerBackfillPlanningPosition,
-    validate_owner_backfill_conservative_no_request_position,
-    validate_owner_backfill_evaluation_coverage,
-    validate_owner_backfill_retained_candidate_position,
 )
 from xic_extractor.alignment.cross_sample_peak_groups import (
     CrossSampleGroupIdentity,
@@ -239,212 +236,6 @@ ObservationRepairAuthorization: TypeAlias = (
     | ObservationRepairRepairAuthorization
     | ObservationRepairMultipleEligibleAuthorization
 )
-
-
-def authorize_observation_repair(
-    *,
-    processing_owners: ProcessingOwnerReferences,
-    coverage: OwnerBackfillEvaluationCoverageBatch,
-    cell_observations: tuple[CellObservationRef, ...],
-) -> ObservationRepairAuthorization:
-    """Derive a closed repair authorization from one complete owner population.
-
-    The operation is intentionally the only place that reduces the active
-    CID-NL population to ``not_run``, ``repair(candidate)``, or
-    ``multiple_eligible``.  It does not consult producer selection flags and it
-    never constructs CrossSample membership or successor authority.
-    """
-
-    if type(processing_owners) is not ProcessingOwnerReferences:
-        raise TypeError("processing_owners must be owner-backed")
-    if type(coverage) is not OwnerBackfillEvaluationCoverageBatch:
-        raise TypeError("coverage must be owner-minted evaluation coverage")
-    try:
-        validate_owner_backfill_evaluation_coverage(coverage)
-    except (TypeError, ValueError) as exc:
-        raise ObservationRepairContractError(
-            "evaluation coverage is not canonical"
-        ) from exc
-    if coverage.epoch.processing_owners is not processing_owners:
-        raise ObservationRepairContractError(
-            "evaluation coverage crosses processing owners"
-        )
-    if type(cell_observations) is not tuple:
-        raise ObservationRepairContractError(
-            "cell observations must be an immutable owner population tuple"
-        )
-    if not cell_observations:
-        raise ObservationRepairContractError(
-            "cell observation population cannot be empty"
-        )
-
-    positions = coverage.epoch.positions
-    positions_by_key = {
-        (
-            position.group_identity.group_hypothesis_id,
-            position.sample.identity.sample_identity_id,
-        ): position
-        for position in positions
-    }
-    if len(positions_by_key) != len(positions):
-        raise ObservationRepairContractError(
-            "evaluation coverage duplicates a group/sample position"
-        )
-    samples_by_id = {
-        sample.identity.sample_identity_id: sample for sample in coverage.epoch.samples
-    }
-    seen_keys: set[tuple[str, str]] = set()
-    rows: list[
-        tuple[tuple[str, str], str, CellObservationRef, OwnerBackfillPlanningPosition]
-    ] = []
-    eligible: list[
-        tuple[
-            str,
-            CellObservationRef,
-            OwnerBackfillPlanningPosition,
-            OwnerBackfillLogicalRequestMember,
-            OwnerBackfillRequestIdentity,
-        ]
-    ] = []
-    for cell in cell_observations:
-        sample_id, group_id, position = _validate_population_cell(
-            cell,
-            processing_owners=processing_owners,
-            positions_by_key=positions_by_key,
-            samples_by_id=samples_by_id,
-        )
-        key = (group_id, sample_id)
-        if key in seen_keys:
-            raise ObservationRepairContractError(
-                "cell observation population contains a duplicate position"
-            )
-        seen_keys.add(key)
-        cell_id = _cell_identity_id(cell)
-        rows.append((key, cell_id, cell, position))
-        no_request_proof = validate_owner_backfill_conservative_no_request_position(
-            position,
-            source_cell=cell,
-            source_population=cell_observations,
-        )
-        retained_candidates = validate_owner_backfill_retained_candidate_position(
-            position, source_cell=cell
-        )
-        if (
-            no_request_proof is None
-            and not retained_candidates
-            and cell.content.technical_state == "evaluated"
-            and cell.content.method_result == "HOLD"
-            # A completed composite requirement cannot become SUPPORT through
-            # an MS1-only repair. Its acquisition owner evaluates every loss.
-            and cell.method_assessment.content.method_subject.composition is None
-            and not (
-                cell.peak_observation is not None
-                and position.planning_reason == "retained_local_owner"
-            )
-        ):
-            logical_request, request_identity = _logical_binding_for_cell(
-                cell,
-                position=position,
-            )
-            eligible.append(
-                (cell_id, cell, position, logical_request, request_identity)
-            )
-
-    expected_keys = {
-        key
-        for key, position in positions_by_key.items()
-        if position.planning_reason != "no_discovery_input"
-    }
-    if seen_keys != expected_keys:
-        missing = sorted(expected_keys - seen_keys)
-        extra = sorted(seen_keys - expected_keys)
-        raise ObservationRepairContractError(
-            "cell observation population is incomplete or contains extra positions"
-            f" (missing={missing!r}, extra={extra!r})"
-        )
-    rows.sort(key=lambda item: item[0])
-    eligible.sort(
-        key=lambda item: (
-            item[2].group_identity.group_hypothesis_id,
-            item[2].sample.identity.sample_identity_id,
-        )
-    )
-    population_cell_ids = tuple(item[1] for item in rows)
-    eligible_cell_ids = tuple(item[0] for item in eligible)
-    coverage_identity = _coverage_semantics_id(coverage)
-    if len(eligible) == 0:
-        authorization_id = _authorization_id(
-            processing_owners=processing_owners,
-            coverage=coverage,
-            population_cell_ids=population_cell_ids,
-            eligible_cell_ids=(),
-            state="not_run",
-        )
-        return ObservationRepairNotRunAuthorization(
-            authorization_id=authorization_id,
-            processing_owners=processing_owners,
-            coverage_id=coverage_identity,
-            population_cell_ids=population_cell_ids,
-            _mint_token=_AUTHORIZATION_MINT_TOKEN,
-        )
-    if len(eligible) > 1:
-        authorization_id = _authorization_id(
-            processing_owners=processing_owners,
-            coverage=coverage,
-            population_cell_ids=population_cell_ids,
-            eligible_cell_ids=eligible_cell_ids,
-            state="multiple_eligible",
-        )
-        return ObservationRepairMultipleEligibleAuthorization(
-            authorization_id=authorization_id,
-            processing_owners=processing_owners,
-            coverage_id=coverage_identity,
-            population_cell_ids=population_cell_ids,
-            eligible_cell_ids=eligible_cell_ids,
-            _mint_token=_AUTHORIZATION_MINT_TOKEN,
-        )
-
-    cell_id, cell, position, logical_request, request_identity = eligible[0]
-    authorization_id = _authorization_id(
-        processing_owners=processing_owners,
-        coverage=coverage,
-        population_cell_ids=population_cell_ids,
-        eligible_cell_ids=(cell_id,),
-        state="repair",
-    )
-    candidate = ObservationRepairCandidate(
-        candidate_id=_candidate_id(
-            authorization_id=authorization_id,
-            processing_request_id=processing_owners.request.processing_request_id,
-            processing_attempt_id=processing_owners.attempt.processing_attempt_id,
-            request_identity=request_identity,
-            logical_request=logical_request,
-            predecessor_group=position.group_identity,
-            sample_identity=position.sample,
-            cell=cell,
-            coverage_position=position,
-            repair_epoch=1,
-        ),
-        authorization_id=authorization_id,
-        processing_owners=processing_owners,
-        request_identity=request_identity,
-        logical_request=logical_request,
-        predecessor_group=position.group_identity,
-        sample_identity=position.sample,
-        cell=cell,
-        coverage_position=position,
-        repair_epoch=1,
-        _mint_token=_CANDIDATE_MINT_TOKEN,
-    )
-    return ObservationRepairRepairAuthorization(
-        authorization_id=authorization_id,
-        processing_owners=processing_owners,
-        coverage_id=coverage_identity,
-        population_cell_ids=population_cell_ids,
-        eligible_cell_ids=(cell_id,),
-        candidate=candidate,
-        _mint_token=_AUTHORIZATION_MINT_TOKEN,
-    )
 
 
 def _validate_population_cell(
@@ -813,36 +604,6 @@ def _validate_authorization_common(
         )
 
 
-def _require_current_repair_authorization(
-    authorization: ObservationRepairRepairAuthorization | None,
-    *,
-    candidate: ObservationRepairCandidate,
-    coverage: OwnerBackfillEvaluationCoverageBatch | None,
-    cell_observations: tuple[CellObservationRef, ...] | None,
-) -> None:
-    if type(authorization) is not ObservationRepairRepairAuthorization:
-        raise ObservationRepairContractError(
-            "repair candidate requires its exact current authorization"
-        )
-    if coverage is None or cell_observations is None:
-        raise ObservationRepairContractError(
-            "repair candidate close requires the complete current population"
-        )
-    current = authorize_observation_repair(
-        processing_owners=authorization.processing_owners,
-        coverage=coverage,
-        cell_observations=cell_observations,
-    )
-    if type(current) is not ObservationRepairRepairAuthorization:
-        raise ObservationRepairContractError(
-            "repair authorization is no longer a current single candidate"
-        )
-    if current != authorization or current.candidate != candidate:
-        raise ObservationRepairContractError(
-            "repair authorization or candidate is not current"
-        )
-
-
 def _cell_observation_ref_type() -> type[object]:
     from xic_extractor.alignment.cell_observations import CellObservationRef
 
@@ -1016,12 +777,10 @@ __all__ = [
     "_cell_observation_ref_type",
     "_coverage_semantics_id",
     "_logical_binding_for_cell",
-    "_require_current_repair_authorization",
     "_resolve_target_for_assessment",
     "_terminal_nonselection_basis",
     "_validate_authorization_common",
     "_validate_candidate",
     "_validate_population_cell",
     "_validate_typed_id",
-    "authorize_observation_repair",
 ]

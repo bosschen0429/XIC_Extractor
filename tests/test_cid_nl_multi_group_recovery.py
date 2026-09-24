@@ -1225,6 +1225,45 @@ def test_ms1_only_backfill_fills_only_one_unique_group_window_peak(
         assert decision.write_matrix_value
         assert decision.raw_status == "backfilled"
         assert decision.production_status == "accepted_backfill"
+        from tools.diagnostics.output_population_census import main as population_main
+        from xic_extractor.alignment.ownership import OwnershipBuildResult
+        from xic_extractor.alignment.pipeline_outputs import (
+            output_paths,
+            write_outputs_atomic,
+        )
+
+        writer_dir = tmp_path / "writer"
+        writer_dir.mkdir()
+        write_outputs_atomic(
+            output_paths(
+                writer_dir,
+                output_level="validation-minimal",
+                emit_alignment_cells=True,
+                emit_alignment_status_matrix=False,
+            ),
+            writer.matrix,
+            metadata={},
+            ownership=OwnershipBuildResult(
+                owners=(), assignments=(), ambiguous_records=()
+            ),
+            alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+            production_decisions=writer.production_decisions,
+        )
+        required = (
+            "alignment_backfill_cell_evidence.tsv",
+            "alignment_review.tsv:has_anchor",
+            "alignment_review.tsv:neutral_loss_tag",
+            "alignment_review.tsv:family_product_mz",
+        )
+        requirements = [
+            part for item in required for part in ("--require-populated", item)
+        ]
+        backfill_tsv = writer_dir / "alignment_backfill_cell_evidence.tsv"
+        populated = backfill_tsv.read_text(encoding="utf-8")
+        backfill_tsv.write_text(populated.splitlines()[0] + "\n", encoding="utf-8")
+        assert population_main([str(writer_dir), *requirements]) == 1
+        backfill_tsv.write_text(populated, encoding="utf-8")
+        assert population_main([str(writer_dir), *requirements]) == 0
     (row,) = writer.production_decisions.rows.values()
     assert row.detected_count == 2
     # The finalized row carries the group's own tag, fragment and anchor.

@@ -1782,14 +1782,19 @@ reported. It reads source only and always exits 0.
 
 ### `output_population_census.py`
 
-**Entry point:** `python -m tools.diagnostics.output_population_census OUTPUT_DIR [--output-tsv PATH]`.
+**Entry point:** `python -m tools.diagnostics.output_population_census OUTPUT_DIR [--output-tsv PATH] [--require-populated ARTIFACT[:COLUMN]]` (repeatable).
 **Role:** maintained operator interface / diagnostic oracle.
 **Purpose**: For each `.tsv`/`.csv` file directly inside a run output
 directory, report a file with no data rows, a file with exactly one data row,
 and each column holding one value on every row of a multi-row file.
 **Status note**: Reads existing outputs only; no RAW access, no SQLite
 payloads, no writes to the run directory. It cannot see in-memory fields that
-are never published. Exits 0 on a readable directory.
+are never published. Report-only exits 0 on a readable directory. A declared
+requirement exits 1 when its artifact is absent or header-only, its column is
+absent, or every row carries a default value. The ordinary test suite runs a
+live synthetic Backfill fixture with this check, including a header-only
+failure probe; use a fixture known to exercise Backfill when requiring its
+evidence sidecar.
 
 ---
 

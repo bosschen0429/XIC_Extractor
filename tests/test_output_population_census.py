@@ -50,6 +50,13 @@ def test_required_population_fails_only_on_default_or_missing_output(
         "F2\tFALSE\tcid_nl:116\tFALSE\n",
         encoding="utf-8",
     )
+    (tmp_path / "single.tsv").write_text(
+        "family\thas_anchor\ttag\nF1\tFALSE\tcid_nl:116\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "short.tsv").write_text(
+        "family\thas_anchor\nF1\n", encoding="utf-8"
+    )
     report = tmp_path / "report" / "census.tsv"
 
     def run(*required: str) -> int:
@@ -63,6 +70,9 @@ def test_required_population_fails_only_on_default_or_missing_output(
     # A column that only ever holds its default, an empty artifact, a missing
     # column or artifact each fail the promoted check.
     assert run("review.tsv:has_anchor") == 1
+    assert run("single.tsv:has_anchor") == 1
+    assert run("single.tsv:tag") == 0
+    assert run("short.tsv:has_anchor") == 1
     assert run("evidence.tsv") == 1
     assert run("review.tsv:product_mz") == 1
     assert run("provenance.tsv") == 1

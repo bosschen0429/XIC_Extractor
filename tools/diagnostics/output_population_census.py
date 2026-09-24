@@ -103,12 +103,26 @@ def unmet_requirements(
                 unmet.append(f"{requirement}: {finding.finding}")
             elif (
                 column
+                and finding.finding == "single_data_row"
+                and _single_row_default(path, column)
+            ):
+                unmet.append(f"{requirement}: every row holds a default value")
+            elif (
+                column
                 and finding.finding == "constant_column"
                 and finding.column == column
                 and finding.value in _DEFAULT_VALUES
             ):
                 unmet.append(f"{requirement}: every row holds {finding.value!r}")
     return tuple(unmet)
+
+
+def _single_row_default(path: Path, column: str) -> bool:
+    delimiter = _DELIMITERS.get(path.suffix.lower(), "\t")
+    with path.open(newline="", encoding="utf-8-sig") as handle:
+        reader = csv.DictReader(handle, delimiter=delimiter)
+        row = next(reader)
+    return (row[column] or "") in _DEFAULT_VALUES
 
 
 def _has_column(path: Path, column: str) -> bool:

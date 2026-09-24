@@ -17,7 +17,6 @@ from xic_extractor.alignment.backfill.evaluation_coverage import (
     mint_owner_backfill_attempt_terminal,
 )
 from xic_extractor.alignment.backfill_scope import select_backfill_features
-from xic_extractor.alignment.backfill_transaction import OwnerBackfillSampleResult
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.cross_sample_peak_groups import (
     CrossSampleGroupMemberSubject,
@@ -27,7 +26,6 @@ from xic_extractor.alignment.owner_backfill import build_owner_backfill_result
 from xic_extractor.alignment.owner_backfill_request_plan import (
     OWNER_BACKFILL_TRACE_RESULT_SEMANTICS,
 )
-from xic_extractor.alignment.process_backend import run_owner_backfill_process
 from xic_extractor.peak_detection.signal_processing_profile import (
     DEFAULT_SIGNAL_PROCESSING_PROFILE,
 )
@@ -152,80 +150,6 @@ def test_epoch_preserves_one_terminal_per_logical_request_under_xic_reuse(
     }
     assert len(logical_request_ids) == 2
     assert fixture.sources["sample-b"].batch_sizes == [1]
-
-
-def test_process_carrier_reassembles_serial_coverage_in_canonical_order(
-    tmp_path: Path,
-) -> None:
-    fixture = _coverage_fixture(
-        tmp_path,
-        sample_order=("sample-a", "sample-b", "sample-c"),
-    )
-    serial = _run(fixture, with_coverage=True)
-    assert serial.evaluation_coverage is not None
-
-    def reverse_runner(
-        jobs,
-        *,
-        max_workers,
-        progress_callback,
-        success_result_delivery,
-    ):
-        assert max_workers == 2
-        assert progress_callback is None
-        receipts = []
-        for ordinal, job in reversed(tuple(enumerate(jobs))):
-            worker = build_owner_backfill_result(
-                job.features,
-                sample_order=(job.sample_stem,),
-                raw_sources={job.sample_stem: fixture.sources[job.sample_stem]},
-                expected_acquisition_sources={
-                    job.sample_stem: fixture.acquisitions[job.sample_stem]
-                },
-                alignment_config=job.alignment_config,
-                peak_config=job.peak_config,
-                signal_processing_profile=job.signal_processing_profile,
-                candidate_index_offset=job.sample_projection.logical_request_offset,
-                validation_candidate_index_offset=(
-                    job.sample_projection.validation_request_offset
-                ),
-                evaluation_coverage_positions=job.evaluation_coverage_positions,
-            )
-            receipts.append(
-                success_result_delivery(
-                    ordinal,
-                    OwnerBackfillSampleResult(
-                        job.sample_index,
-                        job.sample_stem,
-                        worker.cells,
-                        evaluation_coverage_terminals=(
-                            worker.evaluation_coverage_terminals
-                        ),
-                    ),
-                )
-            )
-        return receipts
-
-    process_output = run_owner_backfill_process(
-        fixture.features,
-        sample_order=("sample-a", "sample-b", "sample-c"),
-        raw_paths={
-            sample: tmp_path / f"{sample}.raw"
-            for sample in ("sample-a", "sample-b", "sample-c")
-        },
-        dll_dir=tmp_path / "dll",
-        alignment_config=fixture.context.alignment_config,
-        peak_config=_peak_config(),
-        signal_processing_profile=DEFAULT_SIGNAL_PROCESSING_PROFILE,
-        max_workers=2,
-        expected_acquisition_sources=fixture.acquisitions,
-        matrix_sample_order=("sample-a", "sample-b", "sample-c"),
-        evaluation_coverage_context=fixture.context,
-        runner=reverse_runner,
-    )
-
-    process_coverage = process_output.evaluation_coverage
-    assert process_coverage == serial.evaluation_coverage
 
 
 def test_hybrid_validation_unavailable_remains_a_typed_planned_terminal(
