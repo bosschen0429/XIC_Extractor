@@ -8,7 +8,7 @@ from typing import Literal
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.matrix import AlignedCell
 from xic_extractor.alignment.promotion_policy import (
-    cell_owner_backfill_write_block_reason,
+    cell_backfill_write_block_reason,
 )
 
 CellQualityStatus = Literal[
@@ -79,7 +79,7 @@ def decide_cell_quality(
             )
         if not _has_complete_peak(cell):
             return _decision(cell, "review_backfill", None, "incomplete_peak")
-        owner_block_reason = cell_owner_backfill_write_block_reason(cell)
+        owner_block_reason = cell_backfill_write_block_reason(cell)
         if owner_block_reason:
             return _decision(cell, "review_backfill", None, owner_block_reason)
         if cell.rt_delta_sec is None:

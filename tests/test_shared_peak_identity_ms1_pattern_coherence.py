@@ -530,7 +530,7 @@ def test_ms1_pattern_coherence_uses_nearest_detected_anchor_cluster(
     assert abs(float(rows[0]["anchor_peak_delta_sec"])) <= 21.0
 
 
-def test_ms1_pattern_coherence_requires_anchor_for_rescued_shape_support(
+def test_ms1_pattern_coherence_requires_anchor_for_backfilled_shape_support(
     tmp_path: Path,
 ) -> None:
     cells = tmp_path / "alignment_cells.tsv"

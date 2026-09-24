@@ -129,7 +129,7 @@ FORBIDDEN_OUTPUT_ABSOLUTE_IMPORT_PREFIXES = (
     "xic_extractor.alignment.identity_coherence_trace_retrieval",
     "xic_extractor.alignment.identity_coherence_record_builder",
     "xic_extractor.alignment.process_backend",
-    "xic_extractor.alignment.owner_backfill",
+    "xic_extractor.alignment.backfill_peak_fact",
     "xic_extractor.alignment.backfill",
 )
 FORBIDDEN_CONTROL_RELATIVE_SURFACES = (
@@ -223,10 +223,10 @@ def test_inline_adapter_does_not_modify_raw_or_backfill_modules() -> None:
     forbidden = (
         "from xic_extractor.raw_reader import",
         "import xic_extractor.raw_reader",
-        "from xic_extractor.alignment.owner_backfill import",
+        "from xic_extractor.alignment.backfill_peak_fact import",
         "from xic_extractor.alignment.backfill import",
-        "source_for_owner_backfill_backend",
-        "timed_owner_backfill_sources",
+        "source_for_backfill_backend",
+        "timed_backfill_sources",
     )
     assert not any(token in adapter_text for token in forbidden)
 
@@ -456,7 +456,7 @@ def test_identity_coherence_process_payload_stays_no_raw_boundary() -> None:
         "owner_backfill",
         "alignment.pipeline",
         "scripts.run_alignment",
-        "source_for_owner_backfill_backend",
+        "source_for_backfill_backend",
         "xic_extractor.output",
         "workbook",
         "report",
@@ -649,7 +649,7 @@ def test_forbidden_import_scan_detects_controls_and_output_surfaces(source):
     "source",
     (
         "from xic_extractor import raw_reader\n",
-        "from xic_extractor.alignment import owner_backfill\n",
+        "from xic_extractor.alignment import backfill_peak_fact\n",
         "from xic_extractor.alignment import backfill\n",
         "from xic_extractor.alignment import process_backend\n",
         "from xic_extractor.alignment import identity_coherence_adapter\n",

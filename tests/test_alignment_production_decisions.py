@@ -4,15 +4,15 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
 
+from xic_extractor.alignment.backfill_peak_fact_provenance import (
+    BACKFILL_PROVENANCE_WRITER_SCHEMA_VERSION,
+    BackfillCellProjection,
+)
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.matrix import (
     AlignedCell,
     AlignmentMatrix,
     AlignmentRowLike,
-)
-from xic_extractor.alignment.owner_backfill_peak_fact_provenance import (
-    OWNER_BACKFILL_PROVENANCE_WRITER_SCHEMA_VERSION,
-    OwnerBackfillCellProjection,
 )
 from xic_extractor.alignment.production_decisions import (
     ALIGNMENT_DECISION_CONFIG_FIELDS,
@@ -166,7 +166,7 @@ def test_production_cell_projection_binds_live_cell_config_value_and_source() ->
 
 
 def test_final_cell_projection_identity_covers_every_field_and_writer_version() -> None:
-    projection = OwnerBackfillCellProjection(
+    projection = BackfillCellProjection(
         group_hypothesis_id="group-hypothesis:1",
         public_family_id="public-family:1",
         sample_stem="sample-1",
@@ -184,7 +184,7 @@ def test_final_cell_projection_identity_covers_every_field_and_writer_version() 
     )
 
     assert projection.writer_schema_version == (
-        OWNER_BACKFILL_PROVENANCE_WRITER_SCHEMA_VERSION
+        BACKFILL_PROVENANCE_WRITER_SCHEMA_VERSION
     )
     assert tuple(field.name for field in fields(projection)) == (
         _FINAL_CELL_PROJECTION_FIELDS
@@ -199,7 +199,7 @@ def test_final_cell_projection_identity_covers_every_field_and_writer_version() 
         assert mutated.cell_projection_id != projection.cell_projection_id, field_name
 
 
-def test_detected_and_supported_rescue_write_numeric_values():
+def test_detected_and_supported_backfill_write_numeric_values():
     matrix = _matrix(
         clusters=(_feature("FAM001", evidence="owner_complete_link;owner_count=2"),),
         cells=(
@@ -372,7 +372,7 @@ def test_production_cell_decision_record_explains_missing_row_identity_blank() -
 
     decisions = build_production_decisions(matrix, AlignmentConfig())
     detected_record = decisions.cell("FAM001", "s1").decision_record
-    rescue_record = decisions.cell("FAM001", "s2").decision_record
+    backfill_record = decisions.cell("FAM001", "s2").decision_record
 
     assert detected_record.decision_class == "not_counted"
     assert detected_record.blockers == ("missing_row_identity_support",)
@@ -381,16 +381,16 @@ def test_production_cell_decision_record_explains_missing_row_identity_blank() -
         ("matrix_value_projection_rank", 1.0),
         ("blocker_count", 1.0),
     )
-    assert rescue_record.decision_class == "review"
-    assert rescue_record.blockers == ("missing_row_identity_support",)
-    assert rescue_record.support == (
+    assert backfill_record.decision_class == "review"
+    assert backfill_record.blockers == ("missing_row_identity_support",)
+    assert backfill_record.support == (
         "raw_status:backfilled",
         "production_status:review_backfill",
         "backfill_tier:review_backfill",
     )
 
 
-def test_rescue_heavy_row_needs_multiple_detected_owners_for_primary_promotion():
+def test_backfill_heavy_row_needs_multiple_detected_owners_for_primary_promotion():
     matrix = _matrix(
         clusters=(_feature("FAM001", evidence="owner_complete_link;owner_count=2"),),
         cells=(
@@ -414,7 +414,7 @@ def test_rescue_heavy_row_needs_multiple_detected_owners_for_primary_promotion()
     assert decisions.row("FAM001").include_in_primary_matrix is False
 
 
-def test_scan_support_only_backfill_keeps_seeds_and_reviews_rescues():
+def test_scan_support_only_backfill_keeps_seeds_and_reviews_backfills():
     matrix = _matrix(
         clusters=(_feature("FAM001", evidence="owner_complete_link;owner_count=2"),),
         cells=(
@@ -525,7 +525,7 @@ def test_duplicate_claim_pressure_blocks_unconsolidated_primary_promotion():
     assert decisions.row("FAM001").include_in_primary_matrix is False
 
 
-def test_rescue_without_identity_support_is_review_only_and_row_is_excluded():
+def test_backfill_without_identity_support_is_review_only_and_row_is_excluded():
     matrix = _matrix(
         clusters=(_feature("FAM001", evidence="", has_anchor=False),),
         cells=(
@@ -594,7 +594,7 @@ def test_identity_anchor_lost_row_is_excluded_until_review_passes():
     }
 
 
-def test_rescued_with_incomplete_peak_fields_is_review_only():
+def test_backfilled_with_incomplete_peak_fields_is_review_only():
     matrix = _matrix(
         clusters=(_feature("FAM001", evidence="owner_complete_link;owner_count=2"),),
         cells=(
@@ -620,7 +620,7 @@ def test_rescued_with_incomplete_peak_fields_is_review_only():
     assert decision.blank_reason == "incomplete_peak"
 
 
-def test_rescued_outside_max_rt_is_review_only():
+def test_backfilled_outside_max_rt_is_review_only():
     config = AlignmentConfig()
     matrix = _matrix(
         clusters=(_feature("FAM001", evidence="owner_complete_link;owner_count=2"),),
@@ -645,7 +645,7 @@ def test_rescued_outside_max_rt_is_review_only():
     assert decision.blank_reason == "rt_outside_max"
 
 
-def test_rescued_outside_preferred_without_drift_is_review_only():
+def test_backfilled_outside_preferred_without_drift_is_review_only():
     config = AlignmentConfig(preferred_rt_sec=10.0, max_rt_sec=30.0)
     matrix = _matrix(
         clusters=(_feature("FAM001", evidence="owner_complete_link;owner_count=3"),),
@@ -689,14 +689,14 @@ def test_bool_area_is_not_a_valid_production_matrix_area():
     decisions = build_production_decisions(matrix, AlignmentConfig())
 
     detected = decisions.cell("FAM001", "detected_bool")
-    rescued = decisions.cell("FAM001", "rescued_bool")
+    backfilled = decisions.cell("FAM001", "rescued_bool")
     assert detected.write_matrix_value is False
     assert detected.production_status == "blank"
     assert detected.blank_reason == "invalid_area"
-    assert rescued.write_matrix_value is False
-    assert rescued.production_status == "rejected_backfill"
-    assert rescued.backfill_tier == "rejected_backfill"
-    assert rescued.blank_reason == "invalid_area"
+    assert backfilled.write_matrix_value is False
+    assert backfilled.production_status == "rejected_backfill"
+    assert backfilled.backfill_tier == "rejected_backfill"
+    assert backfilled.blank_reason == "invalid_area"
 
 
 def _different_projection_value(value: object) -> object:

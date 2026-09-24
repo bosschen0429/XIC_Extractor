@@ -195,7 +195,7 @@ def test_original_continuity_accepts_a_pair_despite_another_isolated_point(
         (PHYSICAL_PEAK_WINDOW_POLICY, 0.5),
     ],
 )
-def test_fragmented_original_peak_is_not_rescued_by_smoothed_envelope(
+def test_fragmented_original_peak_is_not_backfilled_by_smoothed_envelope(
     policy: str, query_rt: float,
 ) -> None:
     rt = np.linspace(0.0, 10.0, 101)
@@ -494,7 +494,7 @@ def test_has_unresolved_valley_floors() -> None:
         (PHYSICAL_PEAK_WINDOW_POLICY, "ambiguous_segment_candidates"),
     ],
 )
-def test_other_peak_support_cannot_rescue_a_singleton_or_resolve_ambiguity(
+def test_other_peak_support_cannot_backfill_a_singleton_or_resolve_ambiguity(
     policy: str, reason: str
 ) -> None:
     rt = np.linspace(0.0, 8.0, 81)

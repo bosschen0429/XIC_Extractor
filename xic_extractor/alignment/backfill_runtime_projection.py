@@ -1,4 +1,4 @@
-"""Compact, owner-minted runtime inputs for Alignment Backfill workers."""
+"""Compact, owner-minted runtime inputs for Backfill workers."""
 
 from __future__ import annotations
 
@@ -76,7 +76,7 @@ class BackfillRuntimeFeature(Protocol):
 
 
 @dataclass(frozen=True, slots=True)
-class OwnerBackfillOwnerEligibility:
+class BackfillOwnerEligibility:
     """Only the local owner facts needed to re-evaluate Backfill eligibility."""
 
     sample_stem: str
@@ -98,7 +98,7 @@ class OwnerBackfillOwnerEligibility:
 
 
 @dataclass(frozen=True, slots=True)
-class OwnerBackfillRuntimeFeatureProjection:
+class BackfillRuntimeFeatureProjection:
     """Sealed feature projection; never recreates owner or event domain objects."""
 
     runtime_feature_id: str
@@ -111,7 +111,7 @@ class OwnerBackfillRuntimeFeatureProjection:
     review_only: bool
     confirm_local_owners_with_backfill: bool
     backfill_seed_centers: tuple[tuple[float, float], ...]
-    owner_eligibility: tuple[OwnerBackfillOwnerEligibility, ...]
+    owner_eligibility: tuple[BackfillOwnerEligibility, ...]
     group_hypothesis_id: str
     public_family_id: str
     group_construction_role: str
@@ -126,21 +126,21 @@ class OwnerBackfillRuntimeFeatureProjection:
         _validate_runtime_feature_projection(self)
 
 
-OwnerBackfillRuntimeFeatures: TypeAlias = tuple[
-    OwnerBackfillRuntimeFeatureProjection,
+BackfillRuntimeFeatures: TypeAlias = tuple[
+    BackfillRuntimeFeatureProjection,
     ...,
 ]
 
 
-def mint_owner_backfill_runtime_feature(
+def mint_backfill_runtime_feature(
     feature: BackfillRuntimeFeature,
-) -> OwnerBackfillRuntimeFeatureProjection:
+) -> BackfillRuntimeFeatureProjection:
     """Mint the only worker-safe form of an Alignment Backfill feature."""
 
     owner_eligibility = tuple(
-        OwnerBackfillOwnerEligibility(
+        BackfillOwnerEligibility(
             sample_stem=cast(str, getattr(owner, "sample_stem", None)),
-            owner_area=_owner_backfill_area(owner),
+            owner_area=_backfill_area(owner),
             quantification_eligible=owner_quantification_eligible(owner),
         )
         for owner in _full_feature_owners(feature)
@@ -151,7 +151,7 @@ def mint_owner_backfill_runtime_feature(
         owner_eligibility=owner_eligibility,
         input_group_identity=input_group_identity,
     )
-    return OwnerBackfillRuntimeFeatureProjection(
+    return BackfillRuntimeFeatureProjection(
         runtime_feature_id=_typed_id(_RUNTIME_FEATURE_ID_PREFIX, basis),
         feature_family_id=_required_text(
             feature.feature_family_id,
@@ -211,26 +211,26 @@ def mint_owner_backfill_runtime_feature(
     )
 
 
-def validate_owner_backfill_runtime_feature(
-    feature: OwnerBackfillRuntimeFeatureProjection,
+def validate_backfill_runtime_feature(
+    feature: BackfillRuntimeFeatureProjection,
 ) -> None:
-    if not isinstance(feature, OwnerBackfillRuntimeFeatureProjection):
+    if not isinstance(feature, BackfillRuntimeFeatureProjection):
         raise TypeError("Backfill runtime feature must be owner-minted projection")
     _validate_runtime_feature_projection(feature)
 
 
 def backfill_runtime_owner_eligibility(
     feature: BackfillRuntimeFeature,
-) -> tuple[OwnerBackfillOwnerEligibility, ...]:
+) -> tuple[BackfillOwnerEligibility, ...]:
     """Expose eligibility without synthesizing domain owners in a worker."""
 
-    if isinstance(feature, OwnerBackfillRuntimeFeatureProjection):
-        validate_owner_backfill_runtime_feature(feature)
+    if isinstance(feature, BackfillRuntimeFeatureProjection):
+        validate_backfill_runtime_feature(feature)
         return feature.owner_eligibility
     return tuple(
-        OwnerBackfillOwnerEligibility(
+        BackfillOwnerEligibility(
             sample_stem=cast(str, getattr(owner, "sample_stem", None)),
-            owner_area=_owner_backfill_area(owner),
+            owner_area=_backfill_area(owner),
             quantification_eligible=owner_quantification_eligible(owner),
         )
         for owner in _full_feature_owners(feature)
@@ -247,7 +247,7 @@ def median_backfill_runtime_owner_area(feature: BackfillRuntimeFeature) -> float
 
 
 def _validate_runtime_feature_projection(
-    feature: OwnerBackfillRuntimeFeatureProjection,
+    feature: BackfillRuntimeFeatureProjection,
 ) -> None:
     feature_family_id = _required_text(feature.feature_family_id, "feature_family_id")
     _required_text(feature.neutral_loss_tag, "neutral_loss_tag")
@@ -267,7 +267,7 @@ def _validate_runtime_feature_projection(
     ):
         raise ValueError("owner eligibility must be a non-empty tuple")
     if any(
-        not isinstance(item, OwnerBackfillOwnerEligibility)
+        not isinstance(item, BackfillOwnerEligibility)
         for item in feature.owner_eligibility
     ):
         raise TypeError("owner eligibility must contain compact owner facts")
@@ -317,7 +317,7 @@ def _validate_runtime_feature_projection(
 def _runtime_feature_basis(
     *,
     feature: BackfillRuntimeFeature,
-    owner_eligibility: Iterable[OwnerBackfillOwnerEligibility],
+    owner_eligibility: Iterable[BackfillOwnerEligibility],
     input_group_identity: CrossSampleGroupIdentity | None,
 ) -> Mapping[str, object]:
     return {
@@ -499,7 +499,7 @@ def _validated_owner_area(value: object, field: str) -> float | None:
     return normalized
 
 
-def _owner_backfill_area(owner: object) -> float | None:
+def _backfill_area(owner: object) -> float | None:
     if not owner_quantification_eligible(owner):
         return None
     return _normalized_owner_area(getattr(owner, "owner_area", None))

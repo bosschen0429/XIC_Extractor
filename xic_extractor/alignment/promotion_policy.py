@@ -33,10 +33,10 @@ BACKFILL_MS1_PATTERN_BLOCKED_REASON = "backfill_ms1_pattern_not_supportive"
 BACKFILL_MS2_CONTEXT_BLOCKED_REASON = "backfill_ms2_context_not_supportive"
 BACKFILL_MS2_CONFLICT_REASON = "backfill_ms2_pattern_conflict"
 BACKFILL_HYPOTHESIS_BLOCKED_REASON = "backfill_wrong_peak_or_hypothesis_blocked"
-RESCUE_ONLY_BLOCKED_REASON = "rescue_only_blocked"
+BACKFILL_ONLY_BLOCKED_REASON = "rescue_only_blocked"
 HIGH_BACKFILL_CAPPED_FLAG = "high_backfill_dependency_capped"
 BACKFILL_CELL_EVIDENCE_REQUIRED_FLAG = "backfill_cell_evidence_required"
-BACKFILL_RESCUE_REVIEW_ONLY_FLAG = "backfill_rescue_review_only"
+BACKFILL_REVIEW_ONLY_FLAG = "backfill_rescue_review_only"
 PRIMARY_IDENTITY_RETAINED_BACKFILL_REVIEW_REASON = (
     "primary_identity_retained_backfill_review_only"
 )
@@ -159,7 +159,7 @@ class BackfillCellEvidence:
     backfill_evidence_reason: str = ""
 
     @property
-    def is_rescued_quantifiable(self) -> bool:
+    def is_backfilled_quantifiable(self) -> bool:
         if self.quality_status:
             return self.quality_status == "rescue_quantifiable"
         return (
@@ -355,13 +355,13 @@ class BackfillPromotionEvidence:
     neutral_loss_tag: str
     primary_evidence: str
     q_detected: int
-    q_rescue: int
+    q_backfill: int
     cell_count: int
     duplicate_count: int
     ambiguous_count: int
     backfill_dependency: str | None
     seed_quality: SeedQualitySummary | None
-    held_rescue_count: int = 0
+    held_backfill_count: int = 0
     unrehydrated_review_backfill_count: int | None = 0
     cells: tuple[BackfillCellEvidence, ...] = ()
 
@@ -372,8 +372,8 @@ class BackfillPromotionDecision:
     reason: str = ""
     confidence: str = ""
     flags: tuple[str, ...] = ()
-    supported_rescue_count: int = 0
-    assessed_rescue_count: int = 0
+    supported_backfill_count: int = 0
+    assessed_backfill_count: int = 0
 
     @property
     def supported(self) -> bool:
@@ -393,10 +393,10 @@ def evidence_from_alignment(
     neutral_loss_tag: str,
     primary_evidence: str,
     q_detected: int,
-    q_rescue: int,
+    q_backfill: int,
     duplicate_count: int,
     ambiguous_count: int,
-    held_rescue_count: int,
+    held_backfill_count: int,
     backfill_dependency: str | None,
     seed_quality: SeedQualitySummary | None,
     cells: Sequence[AlignedCell],
@@ -407,13 +407,13 @@ def evidence_from_alignment(
         neutral_loss_tag=neutral_loss_tag,
         primary_evidence=primary_evidence,
         q_detected=q_detected,
-        q_rescue=q_rescue,
+        q_backfill=q_backfill,
         cell_count=len(cell_quality),
         duplicate_count=duplicate_count,
         ambiguous_count=ambiguous_count,
         backfill_dependency=backfill_dependency,
         seed_quality=seed_quality,
-        held_rescue_count=held_rescue_count,
+        held_backfill_count=held_backfill_count,
         cells=tuple(
             _cell_from_aligned(cell, quality_by_sample.get(cell.sample_stem))
             for cell in cells
@@ -428,7 +428,7 @@ def cell_evidence_from_aligned(
     return _cell_from_aligned(cell, quality)
 
 
-def cell_owner_backfill_write_block_reason(cell: AlignedCell) -> str:
+def cell_backfill_write_block_reason(cell: AlignedCell) -> str:
     evidence = cell_evidence_from_aligned(cell, None)
     if evidence.hypothesis_or_claim_blocked:
         return BACKFILL_HYPOTHESIS_BLOCKED_REASON
@@ -450,7 +450,7 @@ def evidence_from_tsv_rows(
         review_row.get("quantifiable_detected_count", "")
         or review_row.get("detected_count", ""),
     )
-    q_rescue = _int_value(
+    q_backfill = _int_value(
         review_row.get("quantifiable_backfill_count", "")
         or review_row.get("accepted_backfill_count", ""),
     )
@@ -460,7 +460,7 @@ def evidence_from_tsv_rows(
     backfill_dependency = classify_single_dr_backfill_dependency(
         neutral_loss_tag=review_row.get("neutral_loss_tag", ""),
         q_detected=q_detected,
-        q_rescue=q_rescue,
+        q_backfill=q_backfill,
         cell_count=cell_count,
         seed_quality=seed_quality,
     )
@@ -468,7 +468,7 @@ def evidence_from_tsv_rows(
         neutral_loss_tag=review_row.get("neutral_loss_tag", ""),
         primary_evidence=review_row.get("primary_evidence", ""),
         q_detected=q_detected,
-        q_rescue=q_rescue,
+        q_backfill=q_backfill,
         cell_count=cell_count,
         duplicate_count=duplicate_count,
         ambiguous_count=ambiguous_count,
@@ -484,7 +484,9 @@ def evidence_from_tsv_rows(
 def classify_backfill_promotion(
     evidence: BackfillPromotionEvidence,
 ) -> BackfillPromotionDecision:
-    rescued = tuple(cell for cell in evidence.cells if cell.is_rescued_quantifiable)
+    backfilled = tuple(
+        cell for cell in evidence.cells if cell.is_backfilled_quantifiable
+    )
     owner_blocked = tuple(
         cell
         for cell in evidence.cells
@@ -496,8 +498,8 @@ def classify_backfill_promotion(
             NEIGHBOR_INTERFERENCE_BLOCKED_REASON,
         }
     )
-    assessed_rescues = rescued + owner_blocked
-    candidate_rescue_count = evidence.q_rescue + evidence.held_rescue_count
+    assessed_backfills = backfilled + owner_blocked
+    candidate_backfill_count = evidence.q_backfill + evidence.held_backfill_count
     review_backfill_count = evidence.unrehydrated_review_backfill_count
     if (
         (review_backfill_count is None or review_backfill_count > 0)
@@ -508,28 +510,28 @@ def classify_backfill_promotion(
             reason=BACKFILL_OWNER_REHYDRATION_UNAVAILABLE_REASON,
             confidence="review",
             flags=("owner_rehydration_required",),
-            assessed_rescue_count=len(rescued),
+            assessed_backfill_count=len(backfilled),
         )
-    if candidate_rescue_count > 0 and any(
-        cell.hypothesis_or_claim_blocked for cell in assessed_rescues
+    if candidate_backfill_count > 0 and any(
+        cell.hypothesis_or_claim_blocked for cell in assessed_backfills
     ):
         return BackfillPromotionDecision(
             state="blocked",
             reason=BACKFILL_HYPOTHESIS_BLOCKED_REASON,
             confidence="review",
             flags=("missing_independent_backfill_identity_evidence",),
-            assessed_rescue_count=len(assessed_rescues),
+            assessed_backfill_count=len(assessed_backfills),
         )
     same_peak_override = _same_peak_policy_override(evidence)
     if not _in_policy_scope(evidence) and not same_peak_override:
         return BackfillPromotionDecision(state="not_applicable")
-    if evidence.q_detected <= 0 and candidate_rescue_count > 0:
+    if evidence.q_detected <= 0 and candidate_backfill_count > 0:
         return BackfillPromotionDecision(
             state="blocked",
-            reason=RESCUE_ONLY_BLOCKED_REASON,
+            reason=BACKFILL_ONLY_BLOCKED_REASON,
             confidence="review",
             flags=("rescue_only",),
-            assessed_rescue_count=candidate_rescue_count,
+            assessed_backfill_count=candidate_backfill_count,
         )
     if evidence.q_detected < 2 and not same_peak_override:
         return BackfillPromotionDecision(state="not_applicable")
@@ -541,47 +543,47 @@ def classify_backfill_promotion(
             flags=("duplicate_claim_pressure",),
         )
 
-    if any(cell.high_neighbor_interference for cell in assessed_rescues):
+    if any(cell.high_neighbor_interference for cell in assessed_backfills):
         return BackfillPromotionDecision(
             state="blocked",
             reason=NEIGHBOR_INTERFERENCE_BLOCKED_REASON,
             confidence="review",
             flags=("neighboring_ms1_interference",),
-            assessed_rescue_count=len(assessed_rescues),
+            assessed_backfill_count=len(assessed_backfills),
         )
 
-    if any(cell.low_assessable_coverage for cell in assessed_rescues):
+    if any(cell.low_assessable_coverage for cell in assessed_backfills):
         return BackfillPromotionDecision(
             state="blocked",
             reason=LOW_MS1_COVERAGE_BLOCKED_REASON,
             confidence="review",
             flags=("low_ms1_assessable_coverage",),
-            assessed_rescue_count=len(assessed_rescues),
+            assessed_backfill_count=len(assessed_backfills),
         )
 
-    if evidence.held_rescue_count > 0:
+    if evidence.held_backfill_count > 0:
         supported = tuple(
-            cell for cell in assessed_rescues if cell.supported_for_backfill
+            cell for cell in assessed_backfills if cell.supported_for_backfill
         )
         return BackfillPromotionDecision(
             state="blocked",
             reason=BACKFILL_RT_EXPLANATION_BLOCKED_REASON,
             confidence="review",
             flags=("missing_independent_backfill_identity_evidence",),
-            supported_rescue_count=len(supported),
-            assessed_rescue_count=candidate_rescue_count,
+            supported_backfill_count=len(supported),
+            assessed_backfill_count=candidate_backfill_count,
         )
 
-    if evidence.q_rescue > 0 and len(rescued) < evidence.q_rescue:
+    if evidence.q_backfill > 0 and len(backfilled) < evidence.q_backfill:
         return BackfillPromotionDecision(
             state="blocked",
             reason=LOW_MS1_COVERAGE_BLOCKED_REASON,
             confidence="review",
             flags=("low_ms1_assessable_coverage",),
-            assessed_rescue_count=len(rescued),
+            assessed_backfill_count=len(backfilled),
         )
 
-    if evidence.q_rescue > 0 and not rescued:
+    if evidence.q_backfill > 0 and not backfilled:
         return BackfillPromotionDecision(
             state="blocked",
             reason=LOW_MS1_COVERAGE_BLOCKED_REASON,
@@ -589,16 +591,18 @@ def classify_backfill_promotion(
             flags=("low_ms1_assessable_coverage",),
         )
 
-    supported = tuple(cell for cell in rescued if cell.supported_for_backfill)
-    if len(supported) < evidence.q_rescue:
-        unsupported = tuple(cell for cell in rescued if not cell.supported_for_backfill)
+    supported = tuple(cell for cell in backfilled if cell.supported_for_backfill)
+    if len(supported) < evidence.q_backfill:
+        unsupported = tuple(
+            cell for cell in backfilled if not cell.supported_for_backfill
+        )
         return BackfillPromotionDecision(
             state="blocked",
             reason=_backfill_identity_block_reason(unsupported),
             confidence="review",
             flags=("missing_independent_backfill_identity_evidence",),
-            supported_rescue_count=len(supported),
-            assessed_rescue_count=len(rescued),
+            supported_backfill_count=len(supported),
+            assessed_backfill_count=len(backfilled),
         )
 
     flags = (HIGH_BACKFILL_CAPPED_FLAG,)
@@ -612,8 +616,8 @@ def classify_backfill_promotion(
         reason=reason,
         confidence="medium",
         flags=flags,
-        supported_rescue_count=len(supported),
-        assessed_rescue_count=len(rescued),
+        supported_backfill_count=len(supported),
+        assessed_backfill_count=len(backfilled),
     )
 
 
@@ -626,7 +630,7 @@ def _in_policy_scope(evidence: BackfillPromotionEvidence) -> bool:
         return False
     if evidence.primary_evidence not in _SUPPORTED_PRIMARY_EVIDENCE:
         return False
-    if evidence.q_rescue + evidence.held_rescue_count <= 0:
+    if evidence.q_backfill + evidence.held_backfill_count <= 0:
         return False
     return evidence.backfill_dependency in _POLICY_BACKFILL_REASONS
 
@@ -645,14 +649,16 @@ def _same_peak_backfill_support(evidence: BackfillPromotionEvidence) -> bool:
         return False
     if evidence.primary_evidence not in _SUPPORTED_PRIMARY_EVIDENCE:
         return False
-    if evidence.q_detected <= 0 or evidence.q_rescue <= 0:
+    if evidence.q_detected <= 0 or evidence.q_backfill <= 0:
         return False
     if evidence.ambiguous_count > 0:
         return False
-    rescued = tuple(cell for cell in evidence.cells if cell.is_rescued_quantifiable)
-    if len(rescued) != evidence.q_rescue:
+    backfilled = tuple(
+        cell for cell in evidence.cells if cell.is_backfilled_quantifiable
+    )
+    if len(backfilled) != evidence.q_backfill:
         return False
-    return all(cell.supported_for_backfill for cell in rescued)
+    return all(cell.supported_for_backfill for cell in backfilled)
 
 
 def _dda_limited_support(evidence: BackfillPromotionEvidence) -> bool:

@@ -8,7 +8,7 @@ from dataclasses import dataclass
 
 from xic_extractor.acquisition_contract import AcquiredTrace, TraceAcquisitionBatch
 from xic_extractor.alignment.backfill.evaluation_coverage import (
-    OwnerBackfillCompletedBackfillProjection,
+    BackfillCompletionProjection,
 )
 from xic_extractor.alignment.cell_observations import (
     CidNlCellGroupContext,
@@ -159,7 +159,7 @@ class _RuntimeResultContext:
         result: UntargetedCidNlRuntimeSampleResult,
         *,
         group_context: CidNlCellGroupContext,
-    ) -> OwnerBackfillCompletedBackfillProjection:
+    ) -> BackfillCompletionProjection:
         if type(result) is not UntargetedCidNlRuntimeSampleResult:
             raise UntargetedCidNlRealDataRuntimeError(
                 "backfill requires a runtime result"

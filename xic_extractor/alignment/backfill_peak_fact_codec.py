@@ -1,4 +1,4 @@
-"""Strict durable codecs, TSV I/O, and persisted row contracts for Owner Backfill facts.
+"""Strict durable codecs, TSV I/O, and persisted row contracts for Backfill facts.
 
 This module houses persisted row models, batch invariants, strict TSV reading,
 and streaming chunked writes for durable peak fact provenance artifacts.
@@ -18,10 +18,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, cast
 
-from xic_extractor.alignment.owner_backfill_peak_fact_projection import (
-    OWNER_BACKFILL_CELL_PROJECTION_ID_PREFIX,
-    OWNER_BACKFILL_PROVENANCE_WRITER_SCHEMA_VERSION,
-    OwnerBackfillCellProjection,
+from xic_extractor.alignment.backfill_peak_fact_projection import (
+    BACKFILL_CELL_PROJECTION_ID_PREFIX,
+    BACKFILL_PROVENANCE_WRITER_SCHEMA_VERSION,
+    BackfillCellProjection,
     _compact_json_bytes,
     _float_text,
     _nonnegative_int,
@@ -35,7 +35,7 @@ from xic_extractor.alignment.owner_backfill_peak_fact_projection import (
     _validate_optional_range,
 )
 from xic_extractor.alignment.production_decisions import (
-    OWNER_BACKFILL_AUTHORITY_CELL_ID_PREFIX,
+    BACKFILL_AUTHORITY_CELL_ID_PREFIX,
     PRODUCTION_CELL_DECISION_ID_PREFIX,
 )
 from xic_extractor.peak_detection.physical_peak_models import (
@@ -46,10 +46,10 @@ from xic_extractor.peak_detection.signal_processing_profile import (
     SignalProcessingProfile,
 )
 
-OWNER_BACKFILL_PEAK_FACT_PROVENANCE_SCHEMA_VERSION = (
+BACKFILL_PEAK_FACT_PROVENANCE_SCHEMA_VERSION = (
     "alignment_owner_backfill_peak_fact_provenance"
 )
-OWNER_BACKFILL_PROVENANCE_ROW_ID_PREFIX = "owner-backfill-provenance-row:"
+BACKFILL_PROVENANCE_ROW_ID_PREFIX = "owner-backfill-provenance-row:"
 
 RowKind = Literal["run_profile", "physical_question", "cell_projection"]
 ClaimState = Literal["verified", "unavailable_without_live_owner"]
@@ -59,7 +59,7 @@ _PROVENANCE_VERIFY_BLOCK_BYTES = 1 << 20
 
 _NONNEGATIVE_INTEGER = re.compile(r"0|[1-9][0-9]*")
 
-OWNER_BACKFILL_PEAK_FACT_PROVENANCE_COLUMNS = (
+BACKFILL_PEAK_FACT_PROVENANCE_COLUMNS = (
     "row_kind",
     "schema_version",
     "work_unit_key",
@@ -201,9 +201,9 @@ _ALWAYS_FIELDS = frozenset({"row_kind", "schema_version", "projection_content_id
 
 
 @dataclass(frozen=True, slots=True)
-class OwnerBackfillPeakFactProvenanceRow:
+class BackfillPeakFactProvenanceRow:
     row_kind: RowKind
-    schema_version: str = OWNER_BACKFILL_PEAK_FACT_PROVENANCE_SCHEMA_VERSION
+    schema_version: str = BACKFILL_PEAK_FACT_PROVENANCE_SCHEMA_VERSION
     work_unit_key: str = ""
     group_hypothesis_id: str = ""
     public_family_id: str = ""
@@ -281,26 +281,26 @@ class OwnerBackfillPeakFactProvenanceRow:
     def projection_content_id(self) -> str:
         payload = [
             _semantic_field_text(self, name)
-            for name in OWNER_BACKFILL_PEAK_FACT_PROVENANCE_COLUMNS[:-1]
+            for name in BACKFILL_PEAK_FACT_PROVENANCE_COLUMNS[:-1]
         ]
         digest = hashlib.sha256(_compact_json_bytes(payload)).hexdigest()
-        return f"{OWNER_BACKFILL_PROVENANCE_ROW_ID_PREFIX}{digest}"
+        return f"{BACKFILL_PROVENANCE_ROW_ID_PREFIX}{digest}"
 
     def __post_init__(self) -> None:
         _validate_row(self)
 
 
 @dataclass(frozen=True, slots=True)
-class OwnerBackfillPeakFactProvenanceBatch:
-    rows: tuple[OwnerBackfillPeakFactProvenanceRow, ...]
+class BackfillPeakFactProvenanceBatch:
+    rows: tuple[BackfillPeakFactProvenanceRow, ...]
 
     def __post_init__(self) -> None:
         _validate_batch(self.rows)
 
 
 @dataclass(frozen=True, slots=True)
-class OwnerBackfillPeakFactProvenanceReadResult:
-    rows: tuple[OwnerBackfillPeakFactProvenanceRow, ...]
+class BackfillPeakFactProvenanceReadResult:
+    rows: tuple[BackfillPeakFactProvenanceRow, ...]
     projection_integrity: Literal["verified"] = "verified"
     stage_claim: Literal["unavailable_without_live_owner"] = (
         "unavailable_without_live_owner"
@@ -315,8 +315,8 @@ class OwnerBackfillPeakFactProvenanceReadResult:
 
 def _run_profile_row(
     profile: SignalProcessingProfile,
-) -> OwnerBackfillPeakFactProvenanceRow:
-    return OwnerBackfillPeakFactProvenanceRow(
+) -> BackfillPeakFactProvenanceRow:
+    return BackfillPeakFactProvenanceRow(
         row_kind="run_profile",
         profile_schema_version=profile.schema_version,
         profile_id=profile.profile_id,
@@ -328,12 +328,12 @@ def _run_profile_row(
 
 
 def _cell_projection_row(
-    projection: OwnerBackfillCellProjection,
+    projection: BackfillCellProjection,
     profile: SignalProcessingProfile,
-) -> OwnerBackfillPeakFactProvenanceRow:
+) -> BackfillPeakFactProvenanceRow:
     if projection.profile_id != profile.profile_id:
         raise ValueError("cell projection crosses signal-processing profile")
-    return OwnerBackfillPeakFactProvenanceRow(
+    return BackfillPeakFactProvenanceRow(
         row_kind="cell_projection",
         group_hypothesis_id=projection.group_hypothesis_id,
         public_family_id=projection.public_family_id,
@@ -363,17 +363,17 @@ def _cell_projection_row(
     )
 
 
-def build_owner_backfill_peak_fact_provenance_batch_from_rows(
-    physical_rows: Sequence[OwnerBackfillPeakFactProvenanceRow],
+def build_backfill_peak_fact_provenance_batch_from_rows(
+    physical_rows: Sequence[BackfillPeakFactProvenanceRow],
     *,
     profile: SignalProcessingProfile,
-    cell_projections: Sequence[OwnerBackfillCellProjection] = (),
-) -> OwnerBackfillPeakFactProvenanceBatch:
+    cell_projections: Sequence[BackfillCellProjection] = (),
+) -> BackfillPeakFactProvenanceBatch:
     """Freeze already owner-projected physical rows with final cell authority."""
 
     if any(row.row_kind != "physical_question" for row in physical_rows):
         raise ValueError("prepared Backfill rows must be physical-question rows")
-    return OwnerBackfillPeakFactProvenanceBatch(
+    return BackfillPeakFactProvenanceBatch(
         rows=(
             _run_profile_row(profile),
             *physical_rows,
@@ -382,11 +382,11 @@ def build_owner_backfill_peak_fact_provenance_batch_from_rows(
     )
 
 
-def write_owner_backfill_peak_fact_provenance_tsv(
+def write_backfill_peak_fact_provenance_tsv(
     path: Path,
-    batch: OwnerBackfillPeakFactProvenanceBatch,
+    batch: BackfillPeakFactProvenanceBatch,
 ) -> Path:
-    if not isinstance(batch, OwnerBackfillPeakFactProvenanceBatch):
+    if not isinstance(batch, BackfillPeakFactProvenanceBatch):
         raise TypeError("batch must be a typed provenance batch")
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(f".{path.name}.tmp")
@@ -394,7 +394,7 @@ def write_owner_backfill_peak_fact_provenance_tsv(
         expected = hashlib.sha256()
         expected_size = 0
         with temporary.open("wb") as handle:
-            for chunk in _iter_owner_backfill_peak_fact_provenance_chunks(batch):
+            for chunk in _iter_backfill_peak_fact_provenance_chunks(batch):
                 handle.write(chunk)
                 expected.update(chunk)
                 expected_size += len(chunk)
@@ -413,15 +413,15 @@ def write_owner_backfill_peak_fact_provenance_tsv(
             temporary.unlink(missing_ok=True)
 
 
-def _iter_owner_backfill_peak_fact_provenance_chunks(
-    batch: OwnerBackfillPeakFactProvenanceBatch,
+def _iter_backfill_peak_fact_provenance_chunks(
+    batch: BackfillPeakFactProvenanceBatch,
 ) -> Iterator[bytes]:
     """Yield exactly the bytes render_...() returns, in row-aligned chunks."""
 
     buffer = io.StringIO(newline="")
     writer = csv.DictWriter(
         buffer,
-        fieldnames=OWNER_BACKFILL_PEAK_FACT_PROVENANCE_COLUMNS,
+        fieldnames=BACKFILL_PEAK_FACT_PROVENANCE_COLUMNS,
         delimiter="\t",
         lineterminator="\n",
     )
@@ -440,15 +440,15 @@ def _iter_owner_backfill_peak_fact_provenance_chunks(
         yield tail.encode("utf-8")
 
 
-def render_owner_backfill_peak_fact_provenance_tsv(
-    batch: OwnerBackfillPeakFactProvenanceBatch,
+def render_backfill_peak_fact_provenance_tsv(
+    batch: BackfillPeakFactProvenanceBatch,
 ) -> bytes:
-    if not isinstance(batch, OwnerBackfillPeakFactProvenanceBatch):
+    if not isinstance(batch, BackfillPeakFactProvenanceBatch):
         raise TypeError("batch must be a typed provenance batch")
     buffer = io.StringIO(newline="")
     writer = csv.DictWriter(
         buffer,
-        fieldnames=OWNER_BACKFILL_PEAK_FACT_PROVENANCE_COLUMNS,
+        fieldnames=BACKFILL_PEAK_FACT_PROVENANCE_COLUMNS,
         delimiter="\t",
         lineterminator="\n",
     )
@@ -458,9 +458,9 @@ def render_owner_backfill_peak_fact_provenance_tsv(
     return buffer.getvalue().encode("utf-8")
 
 
-def read_owner_backfill_peak_fact_provenance_tsv(
+def read_backfill_peak_fact_provenance_tsv(
     path: Path,
-) -> OwnerBackfillPeakFactProvenanceReadResult:
+) -> BackfillPeakFactProvenanceReadResult:
     payload = path.read_bytes()
     if payload.startswith(b"\xef\xbb\xbf"):
         raise ValueError(f"{path}: UTF-8 BOM is forbidden")
@@ -474,7 +474,7 @@ def read_owner_backfill_peak_fact_provenance_tsv(
         raise ValueError(f"{path}: provenance must use LF line endings")
     reader = csv.DictReader(io.StringIO(text, newline=""), delimiter="\t")
     _validate_exact_header(path, reader.fieldnames)
-    rows: list[OwnerBackfillPeakFactProvenanceRow] = []
+    rows: list[BackfillPeakFactProvenanceRow] = []
     for row_number, raw in enumerate(reader, start=2):
         try:
             projection = _strict_projection(raw)
@@ -485,16 +485,16 @@ def read_owner_backfill_peak_fact_provenance_tsv(
             rows.append(row)
         except (TypeError, ValueError) as exc:
             raise ValueError(f"{path}: row {row_number}: {exc}") from exc
-    batch = OwnerBackfillPeakFactProvenanceBatch(tuple(rows))
-    if render_owner_backfill_peak_fact_provenance_tsv(batch) != payload:
+    batch = BackfillPeakFactProvenanceBatch(tuple(rows))
+    if render_backfill_peak_fact_provenance_tsv(batch) != payload:
         raise ValueError(f"{path}: provenance bytes are not canonical writer output")
-    return OwnerBackfillPeakFactProvenanceReadResult(rows=batch.rows)
+    return BackfillPeakFactProvenanceReadResult(rows=batch.rows)
 
 
-def _validate_row(row: OwnerBackfillPeakFactProvenanceRow) -> None:
+def _validate_row(row: BackfillPeakFactProvenanceRow) -> None:
     if row.row_kind not in {"run_profile", "physical_question", "cell_projection"}:
         raise ValueError("unknown provenance row_kind")
-    if row.schema_version != OWNER_BACKFILL_PEAK_FACT_PROVENANCE_SCHEMA_VERSION:
+    if row.schema_version != BACKFILL_PEAK_FACT_PROVENANCE_SCHEMA_VERSION:
         raise ValueError("unsupported provenance schema_version")
     populated = _populated_fields(row)
     if row.row_kind == "run_profile":
@@ -526,7 +526,7 @@ def _validate_row(row: OwnerBackfillPeakFactProvenanceRow) -> None:
         _validate_cell_row(row)
 
 
-def _validate_profile_fields(row: OwnerBackfillPeakFactProvenanceRow) -> None:
+def _validate_profile_fields(row: BackfillPeakFactProvenanceRow) -> None:
     for name in (
         "profile_schema_version",
         "profile_id",
@@ -547,7 +547,7 @@ def _validate_profile_fields(row: OwnerBackfillPeakFactProvenanceRow) -> None:
         raise ValueError("profile_id does not match canonical profile content")
 
 
-def _validate_physical_row(row: OwnerBackfillPeakFactProvenanceRow) -> None:
+def _validate_physical_row(row: BackfillPeakFactProvenanceRow) -> None:
     for name in (
         "work_unit_key",
         "group_hypothesis_id",
@@ -655,7 +655,7 @@ def _validate_physical_row(row: OwnerBackfillPeakFactProvenanceRow) -> None:
         raise ValueError("unsupported physical state")
 
 
-def _validate_cell_row(row: OwnerBackfillPeakFactProvenanceRow) -> None:
+def _validate_cell_row(row: BackfillPeakFactProvenanceRow) -> None:
     for name in (
         "group_hypothesis_id",
         "public_family_id",
@@ -681,7 +681,7 @@ def _validate_cell_row(row: OwnerBackfillPeakFactProvenanceRow) -> None:
         value = getattr(row, name)
         if value:
             _required_text(value, field=name)
-    if row.writer_schema_version != OWNER_BACKFILL_PROVENANCE_WRITER_SCHEMA_VERSION:
+    if row.writer_schema_version != BACKFILL_PROVENANCE_WRITER_SCHEMA_VERSION:
         raise ValueError("unsupported provenance writer_schema_version")
     _require_typed_id(
         row.selected_fact_content_id,
@@ -690,7 +690,7 @@ def _validate_cell_row(row: OwnerBackfillPeakFactProvenanceRow) -> None:
     )
     _require_typed_id(
         row.owner_backfill_cell_content_id,
-        prefix=OWNER_BACKFILL_AUTHORITY_CELL_ID_PREFIX,
+        prefix=BACKFILL_AUTHORITY_CELL_ID_PREFIX,
         field="owner_backfill_cell_content_id",
     )
     _require_typed_id(
@@ -700,10 +700,10 @@ def _validate_cell_row(row: OwnerBackfillPeakFactProvenanceRow) -> None:
     )
     _require_typed_id(
         row.cell_projection_id,
-        prefix=OWNER_BACKFILL_CELL_PROJECTION_ID_PREFIX,
+        prefix=BACKFILL_CELL_PROJECTION_ID_PREFIX,
         field="cell_projection_id",
     )
-    expected = OwnerBackfillCellProjection(
+    expected = BackfillCellProjection(
         group_hypothesis_id=row.group_hypothesis_id,
         public_family_id=row.public_family_id,
         sample_stem=row.sample_stem,
@@ -728,7 +728,7 @@ def _validate_cell_row(row: OwnerBackfillPeakFactProvenanceRow) -> None:
         raise ValueError("cell_projection_id does not match row content")
 
 
-def _validate_batch(rows: Sequence[OwnerBackfillPeakFactProvenanceRow]) -> None:
+def _validate_batch(rows: Sequence[BackfillPeakFactProvenanceRow]) -> None:
     if not rows or rows[0].row_kind != "run_profile":
         raise ValueError("provenance requires one first run_profile row")
     if sum(row.row_kind == "run_profile" for row in rows) != 1:
@@ -742,7 +742,7 @@ def _validate_batch(rows: Sequence[OwnerBackfillPeakFactProvenanceRow]) -> None:
     if kinds != tuple(sorted(kinds, key=row_kind_order.__getitem__)):
         raise ValueError("provenance row kinds are out of order")
     envelope = rows[0]
-    work_rows: dict[str, OwnerBackfillPeakFactProvenanceRow] = {}
+    work_rows: dict[str, BackfillPeakFactProvenanceRow] = {}
     cell_keys: set[tuple[str, str]] = set()
     for row in rows[1:]:
         if _profile_binding(row) != _profile_binding(envelope):
@@ -800,16 +800,16 @@ def _validate_batch(rows: Sequence[OwnerBackfillPeakFactProvenanceRow]) -> None:
                     raise ValueError("unsupported cell consolidation state")
 
 
-def _row_projection(row: OwnerBackfillPeakFactProvenanceRow) -> dict[str, str]:
+def _row_projection(row: BackfillPeakFactProvenanceRow) -> dict[str, str]:
     return {
         name: row.projection_content_id
         if name == "projection_content_id"
         else _semantic_field_text(row, name)
-        for name in OWNER_BACKFILL_PEAK_FACT_PROVENANCE_COLUMNS
+        for name in BACKFILL_PEAK_FACT_PROVENANCE_COLUMNS
     }
 
 
-def _semantic_field_text(row: OwnerBackfillPeakFactProvenanceRow, name: str) -> str:
+def _semantic_field_text(row: BackfillPeakFactProvenanceRow, name: str) -> str:
     if name == "segment_candidate_count":
         value: object = row.segment_candidate_count
     elif name == "admissible_segment_count":
@@ -835,11 +835,11 @@ def _semantic_field_text(row: OwnerBackfillPeakFactProvenanceRow, name: str) -> 
     raise TypeError(f"{name} has no TSV scalar codec")
 
 
-def _row_from_projection(raw: Mapping[str, str]) -> OwnerBackfillPeakFactProvenanceRow:
+def _row_from_projection(raw: Mapping[str, str]) -> BackfillPeakFactProvenanceRow:
     kind = raw["row_kind"]
     if kind not in {"run_profile", "physical_question", "cell_projection"}:
         raise ValueError("unknown provenance row_kind")
-    return OwnerBackfillPeakFactProvenanceRow(
+    return BackfillPeakFactProvenanceRow(
         row_kind=cast(RowKind, kind),
         schema_version=_required_projection_text(raw, "schema_version"),
         work_unit_key=raw["work_unit_key"],
@@ -914,10 +914,10 @@ def _row_from_projection(raw: Mapping[str, str]) -> OwnerBackfillPeakFactProvena
 def _strict_projection(
     raw: Mapping[str | None, str | list[str] | None],
 ) -> dict[str, str]:
-    if tuple(raw) != OWNER_BACKFILL_PEAK_FACT_PROVENANCE_COLUMNS:
+    if tuple(raw) != BACKFILL_PEAK_FACT_PROVENANCE_COLUMNS:
         raise ValueError("row does not match the exact provenance schema")
     projection: dict[str, str] = {}
-    for name in OWNER_BACKFILL_PEAK_FACT_PROVENANCE_COLUMNS:
+    for name in BACKFILL_PEAK_FACT_PROVENANCE_COLUMNS:
         value = raw[name]
         if not isinstance(value, str):
             raise ValueError("row has missing or excess fields")
@@ -925,7 +925,7 @@ def _strict_projection(
         projection[name] = value
     _require_typed_id(
         projection["projection_content_id"],
-        prefix=OWNER_BACKFILL_PROVENANCE_ROW_ID_PREFIX,
+        prefix=BACKFILL_PROVENANCE_ROW_ID_PREFIX,
         field="projection_content_id",
     )
     for count_name, list_name in (
@@ -949,7 +949,7 @@ def _validate_exact_header(path: Path, header: Sequence[str] | None) -> None:
         raise ValueError(
             f"{path}: incomplete provenance is not readable; rerun alignment"
         )
-    if tuple(header or ()) != OWNER_BACKFILL_PEAK_FACT_PROVENANCE_COLUMNS:
+    if tuple(header or ()) != BACKFILL_PEAK_FACT_PROVENANCE_COLUMNS:
         raise ValueError(f"{path}: expected exact provenance schema")
 
 
@@ -1000,35 +1000,35 @@ def _required_projection_text(row: Mapping[str, str], field: str) -> str:
     return _required_text(row[field], field=field)
 
 
-def _populated_fields(row: OwnerBackfillPeakFactProvenanceRow) -> set[str]:
+def _populated_fields(row: BackfillPeakFactProvenanceRow) -> set[str]:
     projection = _row_projection(row)
     return {name for name, value in projection.items() if value != ""}
 
 
-def _profile_binding(row: OwnerBackfillPeakFactProvenanceRow) -> tuple[object, ...]:
+def _profile_binding(row: BackfillPeakFactProvenanceRow) -> tuple[object, ...]:
     return tuple(getattr(row, name) for name in _PROFILE_FIELDS)
 
 
-EMPTY_OWNER_BACKFILL_PEAK_FACT_PROVENANCE_BATCH = OwnerBackfillPeakFactProvenanceBatch(
+EMPTY_BACKFILL_PEAK_FACT_PROVENANCE_BATCH = BackfillPeakFactProvenanceBatch(
     (_run_profile_row(DEFAULT_SIGNAL_PROCESSING_PROFILE),)
 )
 
 
 __all__ = [
-    "EMPTY_OWNER_BACKFILL_PEAK_FACT_PROVENANCE_BATCH",
-    "OWNER_BACKFILL_PEAK_FACT_PROVENANCE_COLUMNS",
-    "OWNER_BACKFILL_PEAK_FACT_PROVENANCE_SCHEMA_VERSION",
-    "OWNER_BACKFILL_PROVENANCE_ROW_ID_PREFIX",
-    "OWNER_BACKFILL_PROVENANCE_WRITER_SCHEMA_VERSION",
+    "EMPTY_BACKFILL_PEAK_FACT_PROVENANCE_BATCH",
+    "BACKFILL_PEAK_FACT_PROVENANCE_COLUMNS",
+    "BACKFILL_PEAK_FACT_PROVENANCE_SCHEMA_VERSION",
+    "BACKFILL_PROVENANCE_ROW_ID_PREFIX",
+    "BACKFILL_PROVENANCE_WRITER_SCHEMA_VERSION",
     "ClaimState",
-    "OwnerBackfillPeakFactProvenanceBatch",
-    "OwnerBackfillPeakFactProvenanceReadResult",
-    "OwnerBackfillPeakFactProvenanceRow",
+    "BackfillPeakFactProvenanceBatch",
+    "BackfillPeakFactProvenanceReadResult",
+    "BackfillPeakFactProvenanceRow",
     "RowKind",
     "_PROVENANCE_ROWS_PER_CHUNK",
     "_PROVENANCE_VERIFY_BLOCK_BYTES",
     "_cell_projection_row",
-    "_iter_owner_backfill_peak_fact_provenance_chunks",
+    "_iter_backfill_peak_fact_provenance_chunks",
     "_parse_json_string_tuple",
     "_parse_nonnegative_int_text",
     "_parse_optional_float",
@@ -1047,8 +1047,8 @@ __all__ = [
     "_validate_physical_row",
     "_validate_profile_fields",
     "_validate_row",
-    "build_owner_backfill_peak_fact_provenance_batch_from_rows",
-    "read_owner_backfill_peak_fact_provenance_tsv",
-    "render_owner_backfill_peak_fact_provenance_tsv",
-    "write_owner_backfill_peak_fact_provenance_tsv",
+    "build_backfill_peak_fact_provenance_batch_from_rows",
+    "read_backfill_peak_fact_provenance_tsv",
+    "render_backfill_peak_fact_provenance_tsv",
+    "write_backfill_peak_fact_provenance_tsv",
 ]

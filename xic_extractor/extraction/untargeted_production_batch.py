@@ -11,11 +11,14 @@ from pathlib import Path
 from typing import Any, cast
 
 from xic_extractor.alignment.backfill.evaluation_coverage import (
+    BackfillPlanningPosition,
     ConservativeNoRequestProofBuilder,
-    OwnerBackfillPlanningPosition,
-    build_owner_backfill_evaluation_coverage,
-    mint_owner_backfill_planning_epoch,
-    mint_owner_backfill_position_id,
+    build_backfill_evaluation_coverage,
+    mint_backfill_planning_epoch,
+    mint_backfill_position_id,
+)
+from xic_extractor.alignment.backfill_request_plan import (
+    BACKFILL_TRACE_RESULT_SEMANTICS,
 )
 from xic_extractor.alignment.cell_observations import (
     CellObservationRef,
@@ -45,9 +48,6 @@ from xic_extractor.alignment.grouping_workflow import (
 )
 from xic_extractor.alignment.hypothesis_owner_adapter import (
     compose_peak_hypotheses_from_assessment_universe,
-)
-from xic_extractor.alignment.owner_backfill_request_plan import (
-    OWNER_BACKFILL_TRACE_RESULT_SEMANTICS,
 )
 from xic_extractor.alignment.result.application_result import (
     FinalizedUntargetApplicationResult,
@@ -1821,8 +1821,8 @@ def _build_production_composition_inputs(
                     completion=completion,
                 )
         positions = tuple(
-            OwnerBackfillPlanningPosition(
-                position_id=mint_owner_backfill_position_id(
+            BackfillPlanningPosition(
+                position_id=mint_backfill_position_id(
                     processing_request_id=group.processing_request_id,
                     group_hypothesis_id=group.group_hypothesis_id,
                     sample_identity_id=sample.identity.sample_identity_id,
@@ -1862,7 +1862,7 @@ def _build_production_composition_inputs(
                 ),
             )
         )
-        epoch = mint_owner_backfill_planning_epoch(
+        epoch = mint_backfill_planning_epoch(
             processing_owners=batch.context.processing_owners,
             group_identities=repair_groups,
             samples=batch.context.samples,
@@ -1872,12 +1872,12 @@ def _build_production_composition_inputs(
             window_strategy="exact",
             superwindow_span_factor=2,
             validation_mode="primary",
-            result_semantics=OWNER_BACKFILL_TRACE_RESULT_SEMANTICS,
+            result_semantics=BACKFILL_TRACE_RESULT_SEMANTICS,
             scope="full-audit",
             selected_family_ids=empty_family_ids,
             positions=positions,
         )
-        coverage = build_owner_backfill_evaluation_coverage(epoch, ())
+        coverage = build_backfill_evaluation_coverage(epoch, ())
         bundles.append(
             UntargetWorkflowBundle(
                 request=UntargetWorkflowCompositionRequest(

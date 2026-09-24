@@ -168,7 +168,7 @@ def test_overlay_support_without_seed_provenance_fails_closed(
     assert payload["source_seed_audit_sha256"] == ""
 
 
-def test_high_detected_low_rescue_missing_overlay_is_not_queued(
+def test_high_detected_low_backfill_missing_overlay_is_not_queued(
     tmp_path: Path,
 ) -> None:
     alignment_dir = tmp_path / "alignment"
@@ -179,17 +179,17 @@ def test_high_detected_low_rescue_missing_overlay_is_not_queued(
         _cell_row(family_id, f"D{index:02d}", "detected")
         for index in range(1, 84)
     ]
-    rescued_cells = [
+    backfilled_cells = [
         _cell_row(family_id, "R01", "backfilled"),
         _cell_row(family_id, "R02", "backfilled"),
     ]
     _write_tsv(
         alignment_dir / "alignment_review.tsv",
-        [_review_row(family_id, detected=83, rescued=2, accepted=2)],
+        [_review_row(family_id, detected=83, backfilled=2, accepted=2)],
     )
     _write_tsv(
         alignment_dir / "alignment_cells.tsv",
-        [*detected_cells, *rescued_cells],
+        [*detected_cells, *backfilled_cells],
     )
     _write_tsv(
         alignment_dir / "alignment_matrix.tsv",
@@ -313,7 +313,7 @@ def test_seed_specific_overlay_rows_do_not_leak_across_seed_groups(
     )
     _write_tsv(
         alignment_dir / "alignment_review.tsv",
-        [_review_row(family_id, detected=2, rescued=2, accepted=2)],
+        [_review_row(family_id, detected=2, backfilled=2, accepted=2)],
     )
     _write_tsv(
         alignment_dir / "alignment_cells.tsv",
@@ -455,11 +455,11 @@ def _write_alignment_run(path: Path, *, seed_audit: bool = True) -> Path:
     _write_tsv(
         path / "alignment_review.tsv",
         [
-            _review_row("FAM_SUPPORT", detected=2, rescued=1, accepted=1),
+            _review_row("FAM_SUPPORT", detected=2, backfilled=1, accepted=1),
             _review_row(
                 "FAM_CONFLICT",
                 detected=2,
-                rescued=5,
+                backfilled=5,
                 accepted=0,
                 review=5,
                 reason="primary_identity_retained_backfill_review_only",
@@ -469,14 +469,14 @@ def _write_alignment_run(path: Path, *, seed_audit: bool = True) -> Path:
                     "missing_independent_backfill_identity_evidence"
                 ),
             ),
-            _review_row("FAM_MISSING", detected=3, rescued=1, accepted=1),
-            _review_row("FAM_CELL_GAP", detected=1, rescued=1, accepted=1),
+            _review_row("FAM_MISSING", detected=3, backfilled=1, accepted=1),
+            _review_row("FAM_CELL_GAP", detected=1, backfilled=1, accepted=1),
             _review_row(
                 "FAM_ZERO",
                 include="FALSE",
                 decision="audit_family",
                 detected=0,
-                rescued=2,
+                backfilled=2,
                 accepted=0,
             ),
             _review_row(
@@ -484,7 +484,7 @@ def _write_alignment_run(path: Path, *, seed_audit: bool = True) -> Path:
                 include="FALSE",
                 decision="provisional_discovery",
                 detected=1,
-                rescued=1,
+                backfilled=1,
                 accepted=0,
                 flags="single_detected_seed;provisional_retention_candidate",
             ),
@@ -526,7 +526,7 @@ def _review_row(
     family_id: str,
     *,
     detected: int,
-    rescued: int,
+    backfilled: int,
     accepted: int,
     review: int = 0,
     include: str = "TRUE",
@@ -543,7 +543,7 @@ def _review_row(
         "identity_reason": reason,
         "primary_evidence": "owner_complete_link",
         "quantifiable_detected_count": str(detected),
-        "quantifiable_backfill_count": str(rescued),
+        "quantifiable_backfill_count": str(backfilled),
         "accepted_backfill_count": str(accepted),
         "review_backfill_count": str(review),
         "row_flags": flags,

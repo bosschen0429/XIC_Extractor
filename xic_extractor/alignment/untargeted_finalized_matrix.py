@@ -33,11 +33,11 @@ from xic_extractor.peak_detection.physical_peak_evaluation import (
 )
 
 if TYPE_CHECKING:
+    from xic_extractor.alignment.backfill_peak_fact import (
+        BackfillPeakFactObservation,
+    )
     from xic_extractor.alignment.cell_decision.owner import (
         ProductionCellDecision as OwnerProductionCellDecision,
-    )
-    from xic_extractor.alignment.owner_backfill import (
-        OwnerBackfillPeakFactObservation,
     )
     from xic_extractor.alignment.result.application_result import (
         FinalizedUntargetApplicationResult,
@@ -499,7 +499,7 @@ def _selected_cell_source(
     evidence: FinalGroupCellObservation,
     *,
     direct_candidate_ids: Mapping[tuple[str, str], str],
-) -> tuple[str | None, OwnerBackfillPeakFactObservation | None]:
+) -> tuple[str | None, BackfillPeakFactObservation | None]:
     if decision.value is None or evidence.ms1_only_backfill_observations:
         return None, None
     direct = tuple(evidence.direct_observations)

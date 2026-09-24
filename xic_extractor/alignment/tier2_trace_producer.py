@@ -28,9 +28,9 @@ class Tier2TraceProducerConfig:
     min_scan_support_score: float = 0.50
     max_apex_delta_sec: float = 30.0
     max_boundary_width_sec: float = 180.0
-    max_rescued_apex_span_sec: float = 21.0
-    min_rescued_boundary_overlap: float = 0.50
-    max_rescued_cells_per_family: int = 8
+    max_backfilled_apex_span_sec: float = 21.0
+    min_backfilled_boundary_overlap: float = 0.50
+    max_backfilled_cells_per_family: int = 8
 
 
 @dataclass(frozen=True)
@@ -128,7 +128,7 @@ def _family_evidence_row(
     if family_mz is None:
         return _blocked_row(base, "blocked", "fail", "missing_family_center_mz")
 
-    seed_cells, rescued_cells = _split_detected_and_rescued_cells(cell_rows)
+    seed_cells, backfilled_cells = _split_detected_and_backfilled_cells(cell_rows)
     if len(seed_cells) != 1:
         blocker = (
             "missing_detected_seed_cell"
@@ -136,9 +136,9 @@ def _family_evidence_row(
             else "multiple_detected_seed_cells"
         )
         return _blocked_row(base, "blocked", "fail", blocker)
-    rescued_cells = tuple(
-        sorted(rescued_cells, key=lambda row: _sort_area(row), reverse=True)[
-            : max(0, config.max_rescued_cells_per_family)
+    backfilled_cells = tuple(
+        sorted(backfilled_cells, key=lambda row: _sort_area(row), reverse=True)[
+            : max(0, config.max_backfilled_cells_per_family)
         ]
     )
 
@@ -177,82 +177,86 @@ def _family_evidence_row(
             coherence_status=coherence_status,
         )
 
-    rescue_metrics: list[_TraceMetrics] = []
-    rescue_blockers: list[str] = []
-    for rescued_cell in rescued_cells:
+    backfill_metrics: list[_TraceMetrics] = []
+    backfill_blockers: list[str] = []
+    for backfilled_cell in backfilled_cells:
         metric, blocker = _trace_metrics_for_cell(
-            rescued_cell,
+            backfilled_cell,
             family_mz=family_mz,
             trace_loader=trace_loader,
             config=config,
             error_blocker="raw_unavailable",
         )
         if metric is None:
-            rescue_blockers.append(blocker)
+            backfill_blockers.append(blocker)
             continue
         metric_blockers = _trace_metric_blockers(metric, config)
         if metric_blockers:
-            rescue_blockers.extend(metric_blockers)
+            backfill_blockers.extend(metric_blockers)
             continue
-        rescue_metrics.append(metric)
+        backfill_metrics.append(metric)
 
-    rescued_checked = len(rescued_cells)
-    rescued_supported = len(rescue_metrics)
-    apex_span_sec = _rescued_apex_span_sec(seed_metrics, rescue_metrics)
-    boundary_overlap_min = _rescued_boundary_overlap_min(seed_metrics, rescue_metrics)
-    seed_rescued_apex_span_sec = _seed_rescued_apex_span_sec(
-        seed_metrics,
-        rescue_metrics,
+    backfilled_checked = len(backfilled_cells)
+    backfilled_supported = len(backfill_metrics)
+    apex_span_sec = _backfilled_apex_span_sec(seed_metrics, backfill_metrics)
+    boundary_overlap_min = _backfilled_boundary_overlap_min(
+        seed_metrics, backfill_metrics
     )
-    rescued_only_apex_span_sec = _rescued_only_apex_span_sec(rescue_metrics)
-    rescued_pairwise_boundary_overlap_min = _rescued_pairwise_boundary_overlap_min(
-        rescue_metrics
+    seed_backfilled_apex_span_sec = _seed_backfilled_apex_span_sec(
+        seed_metrics,
+        backfill_metrics,
+    )
+    backfilled_only_apex_span_sec = _backfilled_only_apex_span_sec(backfill_metrics)
+    backfilled_pairwise_boundary_overlap_min = (
+        _backfilled_pairwise_boundary_overlap_min(
+            backfill_metrics
+        )
     )
     family_consensus_boundary_overlap_min = _family_consensus_boundary_overlap_min(
         seed_metrics,
-        rescue_metrics,
+        backfill_metrics,
     )
     coherence_blockers = _coherence_blockers(
-        rescued_checked=rescued_checked,
-        rescued_supported=rescued_supported,
+        backfilled_checked=backfilled_checked,
+        backfilled_supported=backfilled_supported,
         apex_span_sec=apex_span_sec,
         boundary_overlap_min=boundary_overlap_min,
         config=config,
     )
-    rescue_unavailable_blockers = tuple(
+    backfill_unavailable_blockers = tuple(
         blocker
-        for blocker in rescue_blockers
+        for blocker in backfill_blockers
         if blocker in _UNAVAILABLE_BLOCKERS
     )
     base.update(
         {
-            "rescued_cell_count_checked": str(rescued_checked),
-            "rescued_cell_count_supported": str(rescued_supported),
+            "rescued_cell_count_checked": str(backfilled_checked),
+            "rescued_cell_count_supported": str(backfilled_supported),
             "rescued_apex_rt_span_sec": _format_float(apex_span_sec),
             "rescued_boundary_overlap_min": _format_float(boundary_overlap_min),
             "seed_rescued_boundary_overlap_min": _format_float(
                 boundary_overlap_min
             ),
             "rescued_pairwise_boundary_overlap_min": _format_float(
-                rescued_pairwise_boundary_overlap_min
+                backfilled_pairwise_boundary_overlap_min
             ),
             "family_consensus_boundary_overlap_min": _format_float(
                 family_consensus_boundary_overlap_min
             ),
             "seed_rescued_apex_span_sec": _format_float(
-                seed_rescued_apex_span_sec
+                seed_backfilled_apex_span_sec
             ),
             "rescued_only_apex_span_sec": _format_float(
-                rescued_only_apex_span_sec
+                backfilled_only_apex_span_sec
             ),
         }
     )
-    if rescue_unavailable_blockers:
+    if backfill_unavailable_blockers:
         return _blocked_row(
             base,
             "inconclusive",
             "pass",
-            *rescue_unavailable_blockers,
+            *backfill_unavailable_blockers,
             coherence_status="inconclusive",
         )
 
@@ -267,7 +271,7 @@ def _family_evidence_row(
                     (
                         "tier2_diagnostic_only",
                         *coherence_blockers,
-                        *tuple(sorted(set(rescue_blockers))),
+                        *tuple(sorted(set(backfill_blockers))),
                     )
                 )
             ),
@@ -535,87 +539,87 @@ def _status_for_unavailable_blocker(blocker: str) -> tuple[str, str, str]:
 
 def _coherence_blockers(
     *,
-    rescued_checked: int,
-    rescued_supported: int,
+    backfilled_checked: int,
+    backfilled_supported: int,
     apex_span_sec: float,
     boundary_overlap_min: float,
     config: Tier2TraceProducerConfig,
 ) -> tuple[str, ...]:
     blockers: list[str] = []
-    if rescued_checked < 1 or rescued_supported < 1:
+    if backfilled_checked < 1 or backfilled_supported < 1:
         blockers.append("rescued_cell_support_low")
-    elif rescued_supported / rescued_checked < 0.50:
+    elif backfilled_supported / backfilled_checked < 0.50:
         blockers.append("rescued_cell_support_low")
-    if apex_span_sec > config.max_rescued_apex_span_sec:
+    if apex_span_sec > config.max_backfilled_apex_span_sec:
         blockers.append("rescued_apex_span_wide")
-    if boundary_overlap_min < config.min_rescued_boundary_overlap:
+    if boundary_overlap_min < config.min_backfilled_boundary_overlap:
         blockers.append("rescued_boundary_overlap_low")
     return tuple(blockers)
 
 
-def _rescued_apex_span_sec(
+def _backfilled_apex_span_sec(
     seed_metrics: _TraceMetrics,
-    rescue_metrics: Sequence[_TraceMetrics],
+    backfill_metrics: Sequence[_TraceMetrics],
 ) -> float:
     apex_values = [
         seed_metrics.tier2_apex_rt,
-        *(item.tier2_apex_rt for item in rescue_metrics),
+        *(item.tier2_apex_rt for item in backfill_metrics),
     ]
     if len(apex_values) < 2:
         return 0.0
     return (max(apex_values) - min(apex_values)) * 60.0
 
 
-def _seed_rescued_apex_span_sec(
+def _seed_backfilled_apex_span_sec(
     seed_metrics: _TraceMetrics,
-    rescue_metrics: Sequence[_TraceMetrics],
+    backfill_metrics: Sequence[_TraceMetrics],
 ) -> float | None:
-    if not rescue_metrics:
+    if not backfill_metrics:
         return None
     return max(
         abs(seed_metrics.tier2_apex_rt - item.tier2_apex_rt) * 60.0
-        for item in rescue_metrics
+        for item in backfill_metrics
     )
 
 
-def _rescued_only_apex_span_sec(
-    rescue_metrics: Sequence[_TraceMetrics],
+def _backfilled_only_apex_span_sec(
+    backfill_metrics: Sequence[_TraceMetrics],
 ) -> float | None:
-    if len(rescue_metrics) < 2:
+    if len(backfill_metrics) < 2:
         return None
-    apex_values = [item.tier2_apex_rt for item in rescue_metrics]
+    apex_values = [item.tier2_apex_rt for item in backfill_metrics]
     return (max(apex_values) - min(apex_values)) * 60.0
 
 
-def _rescued_boundary_overlap_min(
+def _backfilled_boundary_overlap_min(
     seed_metrics: _TraceMetrics,
-    rescue_metrics: Sequence[_TraceMetrics],
+    backfill_metrics: Sequence[_TraceMetrics],
 ) -> float:
-    if not rescue_metrics:
+    if not backfill_metrics:
         return 0.0
     return min(
-        _boundary_overlap_fraction(seed_metrics, item) for item in rescue_metrics
+        _boundary_overlap_fraction(seed_metrics, item) for item in backfill_metrics
     )
 
 
-def _rescued_pairwise_boundary_overlap_min(
-    rescue_metrics: Sequence[_TraceMetrics],
+def _backfilled_pairwise_boundary_overlap_min(
+    backfill_metrics: Sequence[_TraceMetrics],
 ) -> float | None:
-    if len(rescue_metrics) < 2:
+    if len(backfill_metrics) < 2:
         return None
     values = [
         _boundary_overlap_fraction(first, second)
-        for index, first in enumerate(rescue_metrics)
-        for second in rescue_metrics[index + 1 :]
+        for index, first in enumerate(backfill_metrics)
+        for second in backfill_metrics[index + 1 :]
     ]
     return min(values) if values else None
 
 
 def _family_consensus_boundary_overlap_min(
     seed_metrics: _TraceMetrics,
-    rescue_metrics: Sequence[_TraceMetrics],
+    backfill_metrics: Sequence[_TraceMetrics],
 ) -> float | None:
-    metrics = (seed_metrics, *tuple(rescue_metrics))
+    metrics = (seed_metrics, *tuple(backfill_metrics))
     if len(metrics) < 2:
         return None
     consensus_start = _median(tuple(item.boundary_start_rt for item in metrics))
@@ -666,18 +670,18 @@ def _sort_area(row: Mapping[str, str]) -> float:
     return _finite_float(row.get("area")) or 0.0
 
 
-def _split_detected_and_rescued_cells(
+def _split_detected_and_backfilled_cells(
     cell_rows: Sequence[Mapping[str, str]],
 ) -> tuple[tuple[Mapping[str, str], ...], tuple[Mapping[str, str], ...]]:
     seed_cells: list[Mapping[str, str]] = []
-    rescued_cells: list[Mapping[str, str]] = []
+    backfilled_cells: list[Mapping[str, str]] = []
     for row in cell_rows:
         status = row.get("status")
         if status == "detected":
             seed_cells.append(row)
         elif status == "backfilled":
-            rescued_cells.append(row)
-    return tuple(seed_cells), tuple(rescued_cells)
+            backfilled_cells.append(row)
+    return tuple(seed_cells), tuple(backfilled_cells)
 
 
 def _string_row(row: Mapping[str, object]) -> dict[str, str]:

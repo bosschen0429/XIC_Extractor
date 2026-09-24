@@ -1,3 +1,5 @@
+"""Backfill peak fact search and result composition."""
+
 from __future__ import annotations
 
 from collections import defaultdict
@@ -6,19 +8,16 @@ from dataclasses import replace
 from typing import TypeAlias
 
 from xic_extractor.alignment.backfill.evaluation_coverage import (
-    OwnerBackfillCandidatePhase,
-    OwnerBackfillEvaluationCoverageContext,
-    OwnerBackfillPlanningPosition,
-    OwnerBackfillTerminalReason,
-    build_owner_backfill_evaluation_coverage,
-    build_owner_backfill_planning_epoch,
-    mint_owner_backfill_attempt_terminal,
-    mint_owner_backfill_selection_subject_id,
+    BackfillCandidatePhase,
+    BackfillEvaluationCoverageContext,
+    BackfillPlanningPosition,
+    BackfillTerminalReason,
+    build_backfill_evaluation_coverage,
+    build_backfill_planning_epoch,
+    mint_backfill_attempt_terminal,
+    mint_backfill_selection_subject_id,
 )
-from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.alignment.matrix import AlignedCell
-from xic_extractor.alignment.ms1_index_source import OwnerBackfillXicBackend
-from xic_extractor.alignment.owner_backfill_acquisition import (
+from xic_extractor.alignment.backfill_acquisition import (
     _available_acquisition_sources,
     _iter_extracted_request_traces,
     _logical_binding_for_result,
@@ -26,42 +25,45 @@ from xic_extractor.alignment.owner_backfill_acquisition import (
     _trace_for_logical_request_result,
     _validate_owner_bound_sources,
 )
-from xic_extractor.alignment.owner_backfill_evaluation import (
+from xic_extractor.alignment.backfill_evaluation import (
     _backfill_feature_sample_trace,
     _backfill_unchecked_cell,
     _chunk_prepared_signal_cache,
     _emit_region_audit_for_family,
     _keep_best_backfill_outcome_cell,
 )
-from xic_extractor.alignment.owner_backfill_request_plan import (
-    OWNER_BACKFILL_TRACE_RESULT_SEMANTICS,
-    OWNER_BACKFILL_WINDOW_STRATEGIES,
-    OWNER_BACKFILL_XIC_BACKENDS,
-    OwnerBackfillLogicalRequestMember,
-    OwnerBackfillRequestIdentity,
-    OwnerBackfillRequestItem,
-    OwnerBackfillValidationMode,
-    OwnerBackfillWindowStrategy,
-    build_owner_backfill_request_equivalence_classes,
-    build_owner_backfill_request_plan,
+from xic_extractor.alignment.backfill_request_plan import (
+    BACKFILL_TRACE_RESULT_SEMANTICS,
+    BACKFILL_WINDOW_STRATEGIES,
+    BACKFILL_XIC_BACKENDS,
+    BackfillLogicalRequestMember,
+    BackfillRequestIdentity,
+    BackfillRequestItem,
+    BackfillValidationMode,
+    BackfillWindowStrategy,
+    build_backfill_request_equivalence_classes,
+    build_backfill_request_plan,
 )
-from xic_extractor.alignment.owner_backfill_result import (
-    _OWNER_BACKFILL_PEAK_FACT_OBSERVATION_MINT_TOKEN,
-    OwnerBackfillCandidateAuditRow,
-    OwnerBackfillExtractionResult,  # noqa: F401
-    OwnerBackfillLogicalExtractionResult,  # noqa: F401
-    OwnerBackfillPeakFactObservation,
-    OwnerBackfillPeakFactReceipt,
-    OwnerBackfillRequestReuseObservation,
-    OwnerBackfillResult,
-    OwnerBackfillSource,
-    _OwnerBackfillCandidateRecord,
-    _OwnerBackfillCoverageAttempt,
-    validate_owner_backfill_peak_fact_observation,  # noqa: F401
+from xic_extractor.alignment.backfill_result import (
+    _BACKFILL_PEAK_FACT_OBSERVATION_MINT_TOKEN,
+    BackfillCandidateAuditRow,
+    BackfillExtractionResult,  # noqa: F401
+    BackfillLogicalExtractionResult,  # noqa: F401
+    BackfillPeakFactObservation,
+    BackfillPeakFactReceipt,
+    BackfillRequestReuseObservation,
+    BackfillResult,
+    BackfillSource,
+    _BackfillCandidateRecord,
+    _BackfillCoverageAttempt,
+    validate_backfill_peak_fact_observation,  # noqa: F401
 )
-from xic_extractor.alignment.owner_backfill_runtime_projection import (
+from xic_extractor.alignment.backfill_runtime_projection import (
     BackfillRuntimeFeature,
 )
+from xic_extractor.alignment.config import AlignmentConfig
+from xic_extractor.alignment.matrix import AlignedCell
+from xic_extractor.alignment.ms1_index_source import BackfillXicBackend
 from xic_extractor.config import ExtractionConfig
 from xic_extractor.peak_detection.evidence_facts import (
     PeakTraceEvidenceFacts,
@@ -79,7 +81,7 @@ from xic_extractor.processing_identity import (
 )
 from xic_extractor.xic_models import XICTrace
 
-_RequestItem = OwnerBackfillRequestItem
+_RequestItem = BackfillRequestItem
 # One extraction chunk's prepared signals, keyed by the identity of the trace
 # object request equivalence fanned out.  The cache holds the trace itself so a
 # recycled id() can never alias a different trace.
@@ -87,19 +89,19 @@ _ChunkPreparedSignalCache: TypeAlias = dict[int, tuple[XICTrace, PreparedSignalR
 _RequestGroupKey = tuple[str, int | float, int | float]
 
 
-def build_owner_backfill_result(
+def build_backfill_result(
     features: tuple[BackfillRuntimeFeature, ...],
     *,
     sample_order: tuple[str, ...],
-    raw_sources: Mapping[str, OwnerBackfillSource],
-    validation_raw_sources: Mapping[str, OwnerBackfillSource] | None = None,
+    raw_sources: Mapping[str, BackfillSource],
+    validation_raw_sources: Mapping[str, BackfillSource] | None = None,
     expected_acquisition_sources: Mapping[str, AcquisitionSourceIdentity] | None = None,
     alignment_config: AlignmentConfig,
     peak_config: ExtractionConfig,
     signal_processing_profile: SignalProcessingProfile | None = None,
     raw_xic_batch_size: int = 1,
-    owner_backfill_xic_backend: OwnerBackfillXicBackend = "raw",
-    owner_backfill_window_strategy: OwnerBackfillWindowStrategy = "exact",
+    owner_backfill_xic_backend: BackfillXicBackend = "raw",
+    owner_backfill_window_strategy: BackfillWindowStrategy = "exact",
     owner_backfill_superwindow_span_factor: int = 2,
     candidate_index_offset: int = 0,
     validation_candidate_index_offset: int | None = None,
@@ -107,9 +109,9 @@ def build_owner_backfill_result(
     region_audit_family_ids: frozenset[str] | None = None,
     audit_evidence_mode: str = "full",
     emit_candidate_audit_rows: bool = True,
-    evaluation_coverage_context: OwnerBackfillEvaluationCoverageContext | None = None,
-    evaluation_coverage_positions: tuple[OwnerBackfillPlanningPosition, ...] = (),
-) -> OwnerBackfillResult:
+    evaluation_coverage_context: BackfillEvaluationCoverageContext | None = None,
+    evaluation_coverage_positions: tuple[BackfillPlanningPosition, ...] = (),
+) -> BackfillResult:
     if evaluation_coverage_context is not None and evaluation_coverage_positions:
         raise ValueError("coverage context and worker positions are mutually exclusive")
     if evaluation_coverage_context is not None:
@@ -148,11 +150,11 @@ def build_owner_backfill_result(
         or candidate_index_offset < 0
     ):
         raise ValueError("candidate_index_offset must be a non-negative integer")
-    if owner_backfill_window_strategy not in OWNER_BACKFILL_WINDOW_STRATEGIES:
+    if owner_backfill_window_strategy not in BACKFILL_WINDOW_STRATEGIES:
         raise ValueError(
             "owner_backfill_window_strategy must be exact or super-window",
         )
-    if owner_backfill_xic_backend not in OWNER_BACKFILL_XIC_BACKENDS:
+    if owner_backfill_xic_backend not in BACKFILL_XIC_BACKENDS:
         raise ValueError("unsupported owner Backfill XIC backend")
     _validate_owner_bound_sources(
         raw_sources,
@@ -167,9 +169,9 @@ def build_owner_backfill_result(
         )
     effective_emit_region_audit = emit_region_audit and audit_evidence_mode != "none"
     cells: list[AlignedCell] = []
-    candidate_records: list[_OwnerBackfillCandidateRecord] = []
-    request_reuse_observations: list[OwnerBackfillRequestReuseObservation] = []
-    primary_validation_mode: OwnerBackfillValidationMode = (
+    candidate_records: list[_BackfillCandidateRecord] = []
+    request_reuse_observations: list[BackfillRequestReuseObservation] = []
+    primary_validation_mode: BackfillValidationMode = (
         "prefilter" if validation_raw_sources is not None else "primary"
     )
     if evaluation_coverage_context is not None and (
@@ -179,7 +181,7 @@ def build_owner_backfill_result(
         != owner_backfill_superwindow_span_factor
         or evaluation_coverage_context.validation_mode != primary_validation_mode
         or evaluation_coverage_context.result_semantics
-        != OWNER_BACKFILL_TRACE_RESULT_SEMANTICS
+        != BACKFILL_TRACE_RESULT_SEMANTICS
     ):
         raise ValueError("serial Backfill crossed its evaluation request semantics")
     effective_acquisition_sources = expected_acquisition_sources or (
@@ -192,7 +194,7 @@ def build_owner_backfill_result(
         superwindow_span_factor=owner_backfill_superwindow_span_factor,
         validation_mode=primary_validation_mode,
     )
-    request_plan = build_owner_backfill_request_plan(
+    request_plan = build_backfill_request_plan(
         features,
         sample_order=sample_order,
         raw_sample_stems=frozenset(raw_sources),
@@ -200,7 +202,7 @@ def build_owner_backfill_result(
         equivalence_context=primary_equivalence_context,
     )
     evaluation_epoch = (
-        build_owner_backfill_planning_epoch(
+        build_backfill_planning_epoch(
             evaluation_coverage_context,
             selected_features=features,
             request_plan=request_plan,
@@ -221,7 +223,7 @@ def build_owner_backfill_result(
         for position in active_coverage_positions
         if position.planning_state == "planned"
     }
-    coverage_attempts: list[_OwnerBackfillCoverageAttempt] = []
+    coverage_attempts: list[_BackfillCoverageAttempt] = []
     candidate_index_offset_by_sample: dict[str, int] = {}
     validation_candidate_index_offset_by_sample: dict[str, int] = {}
     # Direct owner calls keep the historical append-order identity.  Process
@@ -272,7 +274,7 @@ def build_owner_backfill_result(
         )
         if equivalence_classes is not None:
             request_reuse_observations.append(
-                OwnerBackfillRequestReuseObservation(
+                BackfillRequestReuseObservation(
                     sample_stem=sample_stem,
                     validation_mode=primary_validation_mode,
                     logical_request_count=len(sample_requests),
@@ -293,7 +295,7 @@ def build_owner_backfill_result(
                 feature, requested_sample, request, preferred_rt = request_item
                 logical_request, request_identity = _logical_binding_for_result(result)
                 trace = _trace_for_logical_request_result(
-                    OwnerBackfillRequestItem(
+                    BackfillRequestItem(
                         feature,
                         requested_sample,
                         request,
@@ -301,7 +303,7 @@ def build_owner_backfill_result(
                     ),
                     result,
                 )
-                candidate_phase: OwnerBackfillCandidatePhase = (
+                candidate_phase: BackfillCandidatePhase = (
                     "prefilter_query"
                     if validation_raw_sources is not None
                     else "primary_query"
@@ -321,7 +323,7 @@ def build_owner_backfill_result(
                     maximum_query_delta_min=(alignment_config.preferred_rt_sec / 60.0),
                     signal_processing_profile=signal_processing_profile,
                     prepared_signal_cache=prepared_signal_cache,
-                    selection_subject_id=mint_owner_backfill_selection_subject_id(
+                    selection_subject_id=mint_backfill_selection_subject_id(
                         group_hypothesis_id=feature.group_hypothesis_id,
                         sample_stem=requested_sample,
                         request=request,
@@ -447,8 +449,8 @@ def build_owner_backfill_result(
                 continue
             coverage_validation_bindings: tuple[
                 tuple[
-                    OwnerBackfillLogicalRequestMember,
-                    OwnerBackfillRequestIdentity,
+                    BackfillLogicalRequestMember,
+                    BackfillRequestIdentity,
                 ],
                 ...,
             ] = ()
@@ -465,7 +467,7 @@ def build_owner_backfill_result(
                         "evaluation coverage requires validation acquisition identity"
                     )
                 coverage_validation_classes = (
-                    build_owner_backfill_request_equivalence_classes(
+                    build_backfill_request_equivalence_classes(
                         tuple(validation_requests),
                         context=coverage_validation_context,
                     )
@@ -551,7 +553,7 @@ def build_owner_backfill_result(
                 validation_mode="validation",
             )
             validation_classes = (
-                build_owner_backfill_request_equivalence_classes(
+                build_backfill_request_equivalence_classes(
                     validation_items,
                     context=validation_context,
                 )
@@ -560,7 +562,7 @@ def build_owner_backfill_result(
             )
             if validation_classes is not None:
                 request_reuse_observations.append(
-                    OwnerBackfillRequestReuseObservation(
+                    BackfillRequestReuseObservation(
                         sample_stem=sample_stem,
                         validation_mode="validation",
                         logical_request_count=len(validation_items),
@@ -582,7 +584,7 @@ def build_owner_backfill_result(
                         result
                     )
                     trace = _trace_for_logical_request_result(
-                        OwnerBackfillRequestItem(
+                        BackfillRequestItem(
                             feature,
                             requested_sample,
                             _request,
@@ -608,7 +610,7 @@ def build_owner_backfill_result(
                         ),
                         signal_processing_profile=signal_processing_profile,
                         prepared_signal_cache=prepared_signal_cache,
-                        selection_subject_id=mint_owner_backfill_selection_subject_id(
+                        selection_subject_id=mint_backfill_selection_subject_id(
                             group_hypothesis_id=feature.group_hypothesis_id,
                             sample_stem=requested_sample,
                             request=_request,
@@ -757,7 +759,7 @@ def build_owner_backfill_result(
         if equivalent_matches:
             selected_coverage_attempt_ids.add(equivalent_matches[0])
     evaluation_coverage_terminals = tuple(
-        mint_owner_backfill_attempt_terminal(
+        mint_backfill_attempt_terminal(
             position_id=attempt.position_id,
             logical_request=attempt.logical_request,
             request_identity=attempt.request_identity,
@@ -771,7 +773,7 @@ def build_owner_backfill_result(
         for index, attempt in enumerate(coverage_attempts)
     )
     evaluation_coverage = (
-        build_owner_backfill_evaluation_coverage(
+        build_backfill_evaluation_coverage(
             evaluation_epoch,
             evaluation_coverage_terminals,
         )
@@ -782,7 +784,7 @@ def build_owner_backfill_result(
         candidate_records,
         selected_cell_ids=selected_cell_ids,
     )
-    return OwnerBackfillResult(
+    return BackfillResult(
         cells=tuple(cells),
         # These rows only ever reach alignment_owner_backfill_candidate_audit.tsv,
         # which no output level emits by default.  Building and shipping one row
@@ -813,20 +815,20 @@ def build_owner_backfill_result(
 
 
 def _append_candidate_record(
-    records: list[_OwnerBackfillCandidateRecord],
+    records: list[_BackfillCandidateRecord],
     cell: AlignedCell,
     *,
     phase: str,
     candidate_index: int | None = None,
     candidate_index_offset: int = 0,
     trace_evaluated: bool = False,
-    peak_facts: PeakTraceEvidenceFacts | OwnerBackfillPeakFactReceipt | None = None,
+    peak_facts: PeakTraceEvidenceFacts | BackfillPeakFactReceipt | None = None,
     peak_fact_elapsed_seconds: float | None = None,
     physical_evaluation: PhysicalPeakEvaluation | None = None,
     trace_rt_start_min: float | None = None,
     trace_rt_end_min: float | None = None,
-    logical_request: OwnerBackfillLogicalRequestMember | None = None,
-    request_identity: OwnerBackfillRequestIdentity | None = None,
+    logical_request: BackfillLogicalRequestMember | None = None,
+    request_identity: BackfillRequestIdentity | None = None,
 ) -> None:
     if (logical_request is None) != (request_identity is None):
         raise ValueError("logical request and request identity must stay paired")
@@ -843,7 +845,7 @@ def _append_candidate_record(
         physical_evaluation,
     )
     records.append(
-        _OwnerBackfillCandidateRecord(
+        _BackfillCandidateRecord(
             cell=cell,
             candidate_index=candidate_index,
             candidate_phase=phase,
@@ -860,19 +862,19 @@ def _append_candidate_record(
 
 
 def _append_coverage_attempt(
-    attempts: list[_OwnerBackfillCoverageAttempt],
+    attempts: list[_BackfillCoverageAttempt],
     *,
     coverage_position_by_key: Mapping[
         tuple[str, str],
-        OwnerBackfillPlanningPosition,
+        BackfillPlanningPosition,
     ],
     cell: AlignedCell,
-    logical_request: OwnerBackfillLogicalRequestMember | None,
-    request_identity: OwnerBackfillRequestIdentity | None,
-    candidate_phase: OwnerBackfillCandidatePhase,
+    logical_request: BackfillLogicalRequestMember | None,
+    request_identity: BackfillRequestIdentity | None,
+    candidate_phase: BackfillCandidatePhase,
     candidate_index: int,
     trace_evaluated: bool,
-    terminal_reason: OwnerBackfillTerminalReason | None,
+    terminal_reason: BackfillTerminalReason | None,
     physical_evaluation: PhysicalPeakEvaluation | None,
 ) -> None:
     if not coverage_position_by_key:
@@ -888,7 +890,7 @@ def _append_coverage_attempt(
     if position is None:
         raise ValueError("evaluation attempt is outside the planning epoch")
     attempts.append(
-        _OwnerBackfillCoverageAttempt(
+        _BackfillCoverageAttempt(
             position_id=position.position_id,
             logical_request=logical_request,
             request_identity=request_identity,
@@ -903,17 +905,17 @@ def _append_coverage_attempt(
 
 
 def _bounded_peak_fact_receipt(
-    facts: PeakTraceEvidenceFacts | OwnerBackfillPeakFactReceipt | None,
+    facts: PeakTraceEvidenceFacts | BackfillPeakFactReceipt | None,
     physical_evaluation: PhysicalPeakEvaluation | None,
-) -> OwnerBackfillPeakFactReceipt | None:
-    if isinstance(facts, OwnerBackfillPeakFactReceipt):
+) -> BackfillPeakFactReceipt | None:
+    if isinstance(facts, BackfillPeakFactReceipt):
         if facts.physical_evaluation != physical_evaluation:
             raise ValueError("peak fact receipt crosses physical evaluation")
         return facts
     if facts is None:
         return None
     shape = facts.normalized_shape_trace
-    return OwnerBackfillPeakFactReceipt(
+    return BackfillPeakFactReceipt(
         integration=replace(facts.integration, raw_scan_indices=()),
         physical_evaluation=physical_evaluation,
         normalized_shape_status=shape.status,
@@ -927,12 +929,12 @@ def _bounded_peak_fact_receipt(
 
 
 def _peak_fact_observations(
-    records: Sequence[_OwnerBackfillCandidateRecord],
+    records: Sequence[_BackfillCandidateRecord],
     *,
     selected_cell_ids: set[int],
-) -> tuple[OwnerBackfillPeakFactObservation, ...]:
+) -> tuple[BackfillPeakFactObservation, ...]:
     return tuple(
-        OwnerBackfillPeakFactObservation(
+        BackfillPeakFactObservation(
             logical_request=record.logical_request,
             request_identity=record.request_identity,
             candidate_index=record.candidate_index,
@@ -945,7 +947,7 @@ def _peak_fact_observations(
             trace_rt_end_min=record.trace_rt_end_min,
             fact_elapsed_seconds=record.peak_fact_elapsed_seconds,
             trace_evaluated=record.trace_evaluated,
-            _mint_token=_OWNER_BACKFILL_PEAK_FACT_OBSERVATION_MINT_TOKEN,
+            _mint_token=_BACKFILL_PEAK_FACT_OBSERVATION_MINT_TOKEN,
         )
         for record in records
         if record.logical_request is not None and record.request_identity is not None
@@ -953,7 +955,7 @@ def _peak_fact_observations(
 
 
 def _peak_fact_unsealed_evaluation_keys(
-    records: Sequence[_OwnerBackfillCandidateRecord],
+    records: Sequence[_BackfillCandidateRecord],
 ) -> tuple[str, ...]:
     return tuple(
         (
@@ -968,12 +970,12 @@ def _peak_fact_unsealed_evaluation_keys(
 
 
 def _candidate_audit_rows(
-    records: Sequence[_OwnerBackfillCandidateRecord],
+    records: Sequence[_BackfillCandidateRecord],
     *,
     selected_cell_ids: set[int],
     feature_order: tuple[str, ...],
     sample_order: tuple[str, ...],
-) -> tuple[OwnerBackfillCandidateAuditRow, ...]:
+) -> tuple[BackfillCandidateAuditRow, ...]:
     feature_rank = {feature_id: index for index, feature_id in enumerate(feature_order)}
     sample_rank = {sample: index for index, sample in enumerate(sample_order)}
     rows = [
@@ -993,11 +995,11 @@ def _candidate_audit_rows(
 
 
 def _candidate_audit_row(
-    record: _OwnerBackfillCandidateRecord,
+    record: _BackfillCandidateRecord,
     selected_for_output: bool,
-) -> OwnerBackfillCandidateAuditRow:
+) -> BackfillCandidateAuditRow:
     cell = record.cell
-    return OwnerBackfillCandidateAuditRow(
+    return BackfillCandidateAuditRow(
         feature_family_id=cell.cluster_id,
         group_hypothesis_id=cell.group_hypothesis_id,
         public_family_id=cell.public_family_id,

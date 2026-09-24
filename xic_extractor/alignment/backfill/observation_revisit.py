@@ -5,15 +5,15 @@ from __future__ import annotations
 from dataclasses import InitVar, dataclass, field
 from typing import Literal, TypeAlias
 
+from xic_extractor.alignment.backfill_request_plan import (
+    BackfillLogicalRequestMember,
+    BackfillRequestIdentity,
+)
 from xic_extractor.alignment.cross_sample_peak_groups import (
     CrossSampleGroupIdentity,
     CrossSampleGroupMemberSubject,
     CrossSamplePartitionTransition,
     mint_cross_sample_group_identity,
-)
-from xic_extractor.alignment.owner_backfill_request_plan import (
-    OwnerBackfillLogicalRequestMember,
-    OwnerBackfillRequestIdentity,
 )
 from xic_extractor.processing_identity import (
     canonical_identity_basis_bytes,
@@ -24,21 +24,21 @@ from xic_extractor.sample_metadata import (
     resolve_canonical_sample_identity,
 )
 
-from .observation_repair_authorization import (
+from .observation_revisit_authorization import (
     _AUTHORIZATION_PREFIX,
     _CANDIDATE_PREFIX,
-    ObservationRepairAuthorization,
-    ObservationRepairAuthorizationState,
-    ObservationRepairCandidate,
-    ObservationRepairContractError,
-    ObservationRepairMultipleEligibleAuthorization,
-    ObservationRepairNotRunAuthorization,
-    ObservationRepairRepairAuthorization,
+    ObservationRevisitAuthorization,
+    ObservationRevisitAuthorizationState,
+    ObservationRevisitCandidate,
+    ObservationRevisitContractError,
+    ObservationRevisitEligibleAuthorization,
+    ObservationRevisitMultipleEligibleAuthorization,
+    ObservationRevisitNotRunAuthorization,
     _validate_candidate,
     _validate_typed_id,
 )
 
-ObservationRepairOutcome: TypeAlias = Literal["no_repair", "repaired"]
+ObservationRevisitOutcome: TypeAlias = Literal["no_repair", "repaired"]
 
 _SUBJECT_PREFIX = "xic.observation-repair-subject:"
 _RECEIPT_PREFIX = "xic.observation-repair-receipt:"
@@ -50,12 +50,12 @@ _NO_REPAIR_TERMINAL_MINT_TOKEN = object()
 
 
 @dataclass(frozen=True, slots=True)
-class ObservationRepairSubject:
+class ObservationRevisitSubject:
     """Owner-minted subject for exactly one repair epoch."""
 
     subject_id: str
-    request_identity: OwnerBackfillRequestIdentity
-    logical_request: OwnerBackfillLogicalRequestMember
+    request_identity: BackfillRequestIdentity
+    logical_request: BackfillLogicalRequestMember
     predecessor_group: CrossSampleGroupIdentity
     member_subject: CrossSampleGroupMemberSubject
     sample_identity: ResolvedCanonicalSampleIdentity
@@ -65,14 +65,14 @@ class ObservationRepairSubject:
 
     def __post_init__(self, _mint_token: object) -> None:
         if _mint_token is not _SUBJECT_MINT_TOKEN:
-            raise ObservationRepairContractError(
+            raise ObservationRevisitContractError(
                 "repair subject must be minted by Backfill"
             )
         _validate_subject(self)
 
 
 @dataclass(frozen=True, slots=True)
-class ObservationRepairEvidence:
+class ObservationRevisitEvidence:
     """Process-safe evidence facts; this record carries no selection authority."""
 
     logical_request_id: str
@@ -100,7 +100,7 @@ class ObservationRepairEvidence:
 
 
 @dataclass(frozen=True, slots=True)
-class ObservationRepairNoRepairTerminal:
+class ObservationRevisitNoResultTerminal:
     """Exact physical terminal fact for a membership-neutral no-repair result."""
 
     terminal_id: str
@@ -114,77 +114,79 @@ class ObservationRepairNoRepairTerminal:
 
     def __post_init__(self, _mint_token: object) -> None:
         if _mint_token is not _NO_REPAIR_TERMINAL_MINT_TOKEN:
-            raise ObservationRepairContractError(
+            raise ObservationRevisitContractError(
                 "no-repair terminal must be minted by Backfill"
             )
         _validate_no_repair_terminal(self)
 
 
 @dataclass(frozen=True, slots=True)
-class ObservationRepairReceipt:
+class ObservationRevisitReceipt:
     """Terminal content-bound handoff from Backfill to its next owner."""
 
     receipt_id: str
-    subject: ObservationRepairSubject | ObservationRepairCandidate
+    subject: ObservationRevisitSubject | ObservationRevisitCandidate
     subject_id: str
     repair_epoch: int
-    outcome: ObservationRepairOutcome
+    outcome: ObservationRevisitOutcome
     sample_stem: str
-    evidence: ObservationRepairEvidence | None
-    no_repair_terminal: ObservationRepairNoRepairTerminal | None = None
+    evidence: ObservationRevisitEvidence | None
+    no_repair_terminal: ObservationRevisitNoResultTerminal | None = None
     _mint_token: InitVar[object] = field(kw_only=True)
 
     def __post_init__(self, _mint_token: object) -> None:
         if _mint_token is not _RECEIPT_MINT_TOKEN:
-            raise ObservationRepairContractError(
+            raise ObservationRevisitContractError(
                 "repair receipt must be minted by Backfill"
             )
         if type(self.subject) not in {
-            ObservationRepairSubject,
-            ObservationRepairCandidate,
+            ObservationRevisitSubject,
+            ObservationRevisitCandidate,
         }:
             raise TypeError("repair receipt subject must be owner-minted")
         _validate_subject(self.subject)
         if self.subject_id != self.subject.subject_id:
-            raise ObservationRepairContractError(
+            raise ObservationRevisitContractError(
                 "repair receipt crosses its exact subject"
             )
         if self.repair_epoch != 1:
-            raise ObservationRepairContractError("repair receipt exceeds one epoch")
+            raise ObservationRevisitContractError("repair receipt exceeds one epoch")
         if self.repair_epoch != self.subject.repair_epoch:
-            raise ObservationRepairContractError("repair receipt crosses subject epoch")
+            raise ObservationRevisitContractError(
+                "repair receipt crosses subject epoch"
+            )
         if self.sample_stem != self.subject.request_identity.sample_stem:
-            raise ObservationRepairContractError(
+            raise ObservationRevisitContractError(
                 "repair receipt crosses subject sample"
             )
         expected_outcome = "repaired" if self.evidence is not None else "no_repair"
         if self.outcome != expected_outcome:
-            raise ObservationRepairContractError(
+            raise ObservationRevisitContractError(
                 "repair receipt outcome crosses its terminal evidence"
             )
         if self.evidence is not None and self.no_repair_terminal is not None:
-            raise ObservationRepairContractError(
+            raise ObservationRevisitContractError(
                 "repaired receipt cannot carry a no-repair terminal"
             )
         if (
-            type(self.subject) is ObservationRepairSubject
+            type(self.subject) is ObservationRevisitSubject
             and self.no_repair_terminal is not None
         ):
-            raise ObservationRepairContractError(
+            raise ObservationRevisitContractError(
                 "no-repair terminal is candidate-scoped"
             )
         if self.evidence is None:
             if (
-                type(self.subject) is ObservationRepairCandidate
+                type(self.subject) is ObservationRevisitCandidate
                 and self.no_repair_terminal is None
             ):
-                raise ObservationRepairContractError(
+                raise ObservationRevisitContractError(
                     "candidate no-repair receipt requires an exact terminal"
                 )
             if self.no_repair_terminal is not None:
                 if (
                     type(self.no_repair_terminal)
-                    is not ObservationRepairNoRepairTerminal
+                    is not ObservationRevisitNoResultTerminal
                 ):
                     raise TypeError("no-repair terminal must be owner-minted")
                 self.no_repair_terminal.__post_init__(_NO_REPAIR_TERMINAL_MINT_TOKEN)
@@ -194,7 +196,7 @@ class ObservationRepairReceipt:
                     or self.no_repair_terminal.authorization_id != self.authorization_id
                     or self.no_repair_terminal.candidate_id != self.candidate_id
                 ):
-                    raise ObservationRepairContractError(
+                    raise ObservationRevisitContractError(
                         "no-repair terminal crosses exact subject or epoch"
                     )
         expected = _receipt_id(
@@ -208,7 +210,7 @@ class ObservationRepairReceipt:
             candidate_id=self.candidate_id,
         )
         if self.receipt_id != expected:
-            raise ObservationRepairContractError(
+            raise ObservationRevisitContractError(
                 "repair receipt id is not bound to its complete content"
             )
 
@@ -240,7 +242,7 @@ class ObservationRepairReceipt:
     def authorization_id(self) -> str | None:
         """Expose the candidate authorization without granting new authority."""
 
-        if type(self.subject) is ObservationRepairCandidate:
+        if type(self.subject) is ObservationRevisitCandidate:
             return self.subject.authorization_id
         return None
 
@@ -248,22 +250,22 @@ class ObservationRepairReceipt:
     def candidate_id(self) -> str | None:
         """Expose the membership-neutral candidate identity when present."""
 
-        if type(self.subject) is ObservationRepairCandidate:
+        if type(self.subject) is ObservationRevisitCandidate:
             return self.subject.candidate_id
         return None
 
 
 def _validate_subject(
-    subject: ObservationRepairSubject | ObservationRepairCandidate,
+    subject: ObservationRevisitSubject | ObservationRevisitCandidate,
 ) -> None:
-    if type(subject) is ObservationRepairCandidate:
+    if type(subject) is ObservationRevisitCandidate:
         _validate_candidate(subject)
         return
-    if type(subject) is not ObservationRepairSubject:
+    if type(subject) is not ObservationRevisitSubject:
         raise TypeError("subject must be owner-minted")
-    if type(subject.request_identity) is not OwnerBackfillRequestIdentity:
+    if type(subject.request_identity) is not BackfillRequestIdentity:
         raise TypeError("request identity must be owner-minted")
-    if type(subject.logical_request) is not OwnerBackfillLogicalRequestMember:
+    if type(subject.logical_request) is not BackfillLogicalRequestMember:
         raise TypeError("logical request must be owner-minted")
     if type(subject.predecessor_group) is not CrossSampleGroupIdentity:
         raise TypeError("predecessor group must be owner-minted")
@@ -281,7 +283,7 @@ def _validate_subject(
         reason=subject.successor_application.reason,
     )
     if replayed_application != subject.successor_application:
-        raise ObservationRepairContractError(
+        raise ObservationRevisitContractError(
             "repair subject partition transition is not canonical"
         )
     resolved_sample = resolve_canonical_sample_identity(
@@ -290,7 +292,7 @@ def _validate_subject(
         expected_identity=subject.sample_identity.identity,
     )
     if resolved_sample != subject.sample_identity:
-        raise ObservationRepairContractError(
+        raise ObservationRevisitContractError(
             "repair subject sample resolution is not canonical"
         )
     replayed_group = mint_cross_sample_group_identity(
@@ -299,11 +301,11 @@ def _validate_subject(
         disposition=subject.predecessor_group.disposition,
     )
     if replayed_group != subject.predecessor_group:
-        raise ObservationRepairContractError(
+        raise ObservationRevisitContractError(
             "repair subject predecessor group is not canonical"
         )
     if type(subject.repair_epoch) is not int or subject.repair_epoch != 1:
-        raise ObservationRepairContractError("repair epoch must be exactly 1")
+        raise ObservationRevisitContractError("repair epoch must be exactly 1")
     request_binding = (
         subject.logical_request.item.sample_stem,
         subject.logical_request.item.request,
@@ -312,43 +314,43 @@ def _validate_subject(
         subject.request_identity.sample_stem,
         subject.request_identity.request,
     ):
-        raise ObservationRepairContractError(
+        raise ObservationRevisitContractError(
             "repair subject crosses exact request identity"
         )
     if (
         subject.logical_request.group_hypothesis_id
         != subject.predecessor_group.group_hypothesis_id
     ):
-        raise ObservationRepairContractError(
+        raise ObservationRevisitContractError(
             "repair subject crosses predecessor group identity"
         )
     if subject.member_subject not in subject.predecessor_group.member_subjects:
-        raise ObservationRepairContractError(
+        raise ObservationRevisitContractError(
             "repair subject member is absent from predecessor group"
         )
     if subject.predecessor_group not in subject.successor_application.successors:
-        raise ObservationRepairContractError(
+        raise ObservationRevisitContractError(
             "repair subject group is absent from partition transition"
         )
     if (
         subject.sample_identity.identity.sample_identity_id
         != subject.member_subject.canonical_sample_identity_id
     ):
-        raise ObservationRepairContractError(
+        raise ObservationRevisitContractError(
             "repair subject member crosses canonical sample identity"
         )
     if (
         subject.sample_identity.metadata.raw_stem
         != subject.request_identity.sample_stem
     ):
-        raise ObservationRepairContractError(
+        raise ObservationRevisitContractError(
             "repair subject sample metadata crosses exact Backfill sample"
         )
     if (
         subject.member_subject.processing_request_id
         != subject.predecessor_group.processing_request_id
     ):
-        raise ObservationRepairContractError(
+        raise ObservationRevisitContractError(
             "repair subject member crosses processing request"
         )
     expected = _subject_id(
@@ -361,15 +363,15 @@ def _validate_subject(
         repair_epoch=subject.repair_epoch,
     )
     if subject.subject_id != expected:
-        raise ObservationRepairContractError(
+        raise ObservationRevisitContractError(
             "repair subject id is not bound to its complete content"
         )
 
 
 def _subject_id(
     *,
-    request_identity: OwnerBackfillRequestIdentity,
-    logical_request: OwnerBackfillLogicalRequestMember,
+    request_identity: BackfillRequestIdentity,
+    logical_request: BackfillLogicalRequestMember,
     predecessor_group: CrossSampleGroupIdentity,
     member_subject: CrossSampleGroupMemberSubject,
     sample_identity: ResolvedCanonicalSampleIdentity,
@@ -473,10 +475,10 @@ def _no_repair_terminal_id(
 
 
 def _validate_no_repair_terminal(
-    terminal: ObservationRepairNoRepairTerminal,
+    terminal: ObservationRevisitNoResultTerminal,
 ) -> None:
     if terminal.authorization_id is None or terminal.candidate_id is None:
-        raise ObservationRepairContractError("no-repair terminal is candidate-scoped")
+        raise ObservationRevisitContractError("no-repair terminal is candidate-scoped")
     _validate_typed_id(
         terminal.terminal_id,
         _NO_REPAIR_TERMINAL_PREFIX,
@@ -493,15 +495,15 @@ def _validate_no_repair_terminal(
         "no-repair candidate_id",
     )
     if terminal.subject_id != terminal.candidate_id:
-        raise ObservationRepairContractError(
+        raise ObservationRevisitContractError(
             "candidate no-repair terminal crosses its subject"
         )
     if terminal.repair_epoch != 1:
-        raise ObservationRepairContractError(
+        raise ObservationRevisitContractError(
             "no-repair terminal repair epoch must be exactly 1"
         )
     if type(terminal.work_unit_key) is not str or not terminal.work_unit_key:
-        raise ObservationRepairContractError(
+        raise ObservationRevisitContractError(
             "no-repair terminal work_unit_key is required"
         )
     _validate_typed_id(
@@ -518,7 +520,7 @@ def _validate_no_repair_terminal(
         physical_answer_id=terminal.physical_answer_id,
     )
     if terminal.terminal_id != expected:
-        raise ObservationRepairContractError(
+        raise ObservationRevisitContractError(
             "no-repair terminal id is not bound to its complete content"
         )
 
@@ -527,25 +529,25 @@ def _receipt_id(
     *,
     subject_id: str,
     repair_epoch: int,
-    outcome: ObservationRepairOutcome,
+    outcome: ObservationRevisitOutcome,
     sample_stem: str,
-    evidence: ObservationRepairEvidence | None,
-    no_repair_terminal: ObservationRepairNoRepairTerminal | None = None,
+    evidence: ObservationRevisitEvidence | None,
+    no_repair_terminal: ObservationRevisitNoResultTerminal | None = None,
     authorization_id: str | None = None,
     candidate_id: str | None = None,
 ) -> str:
     if (authorization_id is None) != (candidate_id is None):
-        raise ObservationRepairContractError(
+        raise ObservationRevisitContractError(
             "candidate receipt identity requires authorization and candidate ids"
         )
     candidate_receipt = candidate_id is not None
     if not candidate_receipt and no_repair_terminal is not None:
-        raise ObservationRepairContractError("no-repair terminal is candidate-scoped")
+        raise ObservationRevisitContractError("no-repair terminal is candidate-scoped")
     evidence_basis: object = None
     if evidence is not None:
         evidence_basis = {
             name: getattr(evidence, name)
-            for name in ObservationRepairEvidence.__dataclass_fields__
+            for name in ObservationRevisitEvidence.__dataclass_fields__
         }
     payload: dict[str, object] = {
         "schema_version": "observation_repair_receipt",
@@ -576,16 +578,16 @@ def _receipt_id(
 
 
 __all__ = (
-    "ObservationRepairAuthorization",
-    "ObservationRepairAuthorizationState",
-    "ObservationRepairContractError",
-    "ObservationRepairCandidate",
-    "ObservationRepairEvidence",
-    "ObservationRepairMultipleEligibleAuthorization",
-    "ObservationRepairNoRepairTerminal",
-    "ObservationRepairNotRunAuthorization",
-    "ObservationRepairOutcome",
-    "ObservationRepairRepairAuthorization",
-    "ObservationRepairReceipt",
-    "ObservationRepairSubject",
+    "ObservationRevisitAuthorization",
+    "ObservationRevisitAuthorizationState",
+    "ObservationRevisitContractError",
+    "ObservationRevisitCandidate",
+    "ObservationRevisitEvidence",
+    "ObservationRevisitMultipleEligibleAuthorization",
+    "ObservationRevisitNoResultTerminal",
+    "ObservationRevisitNotRunAuthorization",
+    "ObservationRevisitOutcome",
+    "ObservationRevisitEligibleAuthorization",
+    "ObservationRevisitReceipt",
+    "ObservationRevisitSubject",
 )

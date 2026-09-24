@@ -10,21 +10,21 @@ from tests.test_alignment_owner_backfill import _feature, _peak_config
 from tests.test_alignment_owner_clustering import _owner
 from tests.test_owner_backfill_request_equivalence import _OwnerBoundBatchSource
 from xic_extractor.alignment.backfill.evaluation_coverage import (
-    OWNER_BACKFILL_CANDIDATE_PHASES,
-    OWNER_BACKFILL_PLANNING_REASONS,
-    OwnerBackfillEvaluationCoverageContext,
-    build_owner_backfill_evaluation_coverage,
-    mint_owner_backfill_attempt_terminal,
+    BACKFILL_CANDIDATE_PHASES,
+    BACKFILL_PLANNING_REASONS,
+    BackfillEvaluationCoverageContext,
+    build_backfill_evaluation_coverage,
+    mint_backfill_attempt_terminal,
+)
+from xic_extractor.alignment.backfill_peak_fact import build_backfill_result
+from xic_extractor.alignment.backfill_request_plan import (
+    BACKFILL_TRACE_RESULT_SEMANTICS,
 )
 from xic_extractor.alignment.backfill_scope import select_backfill_features
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.cross_sample_peak_groups import (
     CrossSampleGroupMemberSubject,
     mint_cross_sample_group_identity,
-)
-from xic_extractor.alignment.owner_backfill import build_owner_backfill_result
-from xic_extractor.alignment.owner_backfill_request_plan import (
-    OWNER_BACKFILL_TRACE_RESULT_SEMANTICS,
 )
 from xic_extractor.peak_detection.signal_processing_profile import (
     DEFAULT_SIGNAL_PROCESSING_PROFILE,
@@ -90,7 +90,7 @@ class _ZeroOwnerBoundBatchSource(_OwnerBoundBatchSource):
 @dataclass(frozen=True, slots=True)
 class _CoverageFixture:
     features: tuple[object, ...]
-    context: OwnerBackfillEvaluationCoverageContext
+    context: BackfillEvaluationCoverageContext
     sources: dict[str, _OwnerBoundBatchSource]
     acquisitions: dict[str, AcquisitionSourceIdentity]
 
@@ -164,7 +164,7 @@ def test_hybrid_validation_unavailable_remains_a_typed_planned_terminal(
         fixture.acquisitions["sample-b"],
     )
 
-    result = build_owner_backfill_result(
+    result = build_backfill_result(
         fixture.features,
         sample_order=fixture.context.sample_order,
         raw_sources=fixture.sources,
@@ -189,7 +189,7 @@ def test_hybrid_validation_unavailable_remains_a_typed_planned_terminal(
     planned = coverage.epoch.positions[1]
     assert planned.planning_state == "planned"
     with pytest.raises(ValueError, match="missing or adds a validation"):
-        build_owner_backfill_evaluation_coverage(
+        build_backfill_evaluation_coverage(
             coverage.epoch,
             coverage.terminals[:-1],
         )
@@ -222,7 +222,7 @@ def test_hybrid_validation_retains_query_and_fallback_terminals(
         else _FailingOwnerBoundBatchSource(fixture.acquisitions["sample-b"])
     )
 
-    result = build_owner_backfill_result(
+    result = build_backfill_result(
         fixture.features,
         sample_order=fixture.context.sample_order,
         raw_sources=fixture.sources,
@@ -265,7 +265,7 @@ def test_hybrid_superwindow_validation_retains_raw_exact_attempt_semantics(
     )
     secondary = _DenseOwnerBoundBatchSource(fixture.acquisitions["sample-b"])
 
-    result = build_owner_backfill_result(
+    result = build_backfill_result(
         fixture.features,
         sample_order=fixture.context.sample_order,
         raw_sources=fixture.sources,
@@ -311,7 +311,7 @@ def test_validation_attempts_reject_rebound_equivalent_logical_member(
         fixture.acquisitions["sample-b"]
     )
     secondary = _DenseOwnerBoundBatchSource(fixture.acquisitions["sample-b"])
-    result = build_owner_backfill_result(
+    result = build_backfill_result(
         fixture.features,
         sample_order=fixture.context.sample_order,
         raw_sources=fixture.sources,
@@ -331,7 +331,7 @@ def test_validation_attempts_reject_rebound_equivalent_logical_member(
     )
     assert len(validations) == 2
     first, second = validations
-    rebound = mint_owner_backfill_attempt_terminal(
+    rebound = mint_backfill_attempt_terminal(
         position_id=second.position_id,
         logical_request=first.logical_request,
         request_identity=second.request_identity,
@@ -348,7 +348,7 @@ def test_validation_attempts_reject_rebound_equivalent_logical_member(
     )
 
     with pytest.raises(ValueError, match="missing or adds a validation"):
-        build_owner_backfill_evaluation_coverage(coverage.epoch, candidate)
+        build_backfill_evaluation_coverage(coverage.epoch, candidate)
 
 
 def test_primary_fallback_and_evaluated_no_signal_remain_distinct(
@@ -415,7 +415,7 @@ def test_coverage_rejects_missing_duplicate_and_crossed_terminals(
     else:
         first, second = terminals
         candidate = (
-            mint_owner_backfill_attempt_terminal(
+            mint_backfill_attempt_terminal(
                 position_id=second.position_id,
                 logical_request=first.logical_request,
                 request_identity=first.request_identity,
@@ -430,7 +430,7 @@ def test_coverage_rejects_missing_duplicate_and_crossed_terminals(
         )
 
     with pytest.raises(ValueError, match=message):
-        build_owner_backfill_evaluation_coverage(coverage.epoch, candidate)
+        build_backfill_evaluation_coverage(coverage.epoch, candidate)
 
 
 def test_terminal_rejects_crossed_phase_index_and_physical_evaluation(
@@ -446,7 +446,7 @@ def test_terminal_rejects_crossed_phase_index_and_physical_evaluation(
     assert second.physical_evaluation is not None
 
     with pytest.raises(ValueError, match="crossed its physical evaluation"):
-        mint_owner_backfill_attempt_terminal(
+        mint_backfill_attempt_terminal(
             position_id=first.position_id,
             logical_request=first.logical_request,
             request_identity=first.request_identity,
@@ -458,7 +458,7 @@ def test_terminal_rejects_crossed_phase_index_and_physical_evaluation(
             physical_evaluation=second.physical_evaluation,
         )
     with pytest.raises(ValueError, match="crossed its physical evaluation"):
-        mint_owner_backfill_attempt_terminal(
+        mint_backfill_attempt_terminal(
             position_id=first.position_id,
             logical_request=first.logical_request,
             request_identity=first.request_identity,
@@ -478,7 +478,7 @@ def test_closed_vocabularies_cover_every_emitted_disposition_and_phase(
     coverage = _run(fixture, with_coverage=True).evaluation_coverage
     assert coverage is not None
 
-    assert set(OWNER_BACKFILL_PLANNING_REASONS) == {
+    assert set(BACKFILL_PLANNING_REASONS) == {
         "planned",
         "production_equivalent_excluded",
         "selected_family_excluded",
@@ -492,7 +492,7 @@ def test_closed_vocabularies_cover_every_emitted_disposition_and_phase(
         "backfill_search_completed_empty",
         "no_discovery_input",
     }
-    assert set(OWNER_BACKFILL_CANDIDATE_PHASES) == {
+    assert set(BACKFILL_CANDIDATE_PHASES) == {
         "primary_query",
         "prefilter_query",
         "primary_fallback",
@@ -501,10 +501,10 @@ def test_closed_vocabularies_cover_every_emitted_disposition_and_phase(
         "validation_fallback",
     }
     assert {item.planning_reason for item in coverage.epoch.positions} <= set(
-        OWNER_BACKFILL_PLANNING_REASONS
+        BACKFILL_PLANNING_REASONS
     )
     assert {item.candidate_phase for item in coverage.terminals} <= set(
-        OWNER_BACKFILL_CANDIDATE_PHASES
+        BACKFILL_CANDIDATE_PHASES
     )
 
 
@@ -621,7 +621,7 @@ def _run(fixture: _CoverageFixture, *, with_coverage: bool):
         scope=fixture.context.scope,
         selected_family_ids=fixture.context.selected_family_ids,
     ).features
-    return build_owner_backfill_result(
+    return build_backfill_result(
         selected_features,
         sample_order=fixture.context.sample_order,
         raw_sources=fixture.sources,
@@ -736,7 +736,7 @@ def _coverage_fixture(
         disposition=group.disposition,
     )
     config = AlignmentConfig(owner_backfill_min_detected_samples=1)
-    context = OwnerBackfillEvaluationCoverageContext(
+    context = BackfillEvaluationCoverageContext(
         processing_owners=processing_owners,
         input_features=(feature,),
         samples=resolved,
@@ -747,7 +747,7 @@ def _coverage_fixture(
         window_strategy="exact",
         superwindow_span_factor=2,
         validation_mode="primary",
-        result_semantics=OWNER_BACKFILL_TRACE_RESULT_SEMANTICS,
+        result_semantics=BACKFILL_TRACE_RESULT_SEMANTICS,
         scope="full-audit",
         selected_family_ids=frozenset(),
     )

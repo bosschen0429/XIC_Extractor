@@ -240,7 +240,7 @@ def test_targeted_gt_audit_classifies_split_for_multiple_production_families(
     assert result["production_family_ids_in_gt_window"] == "FAM000001;FAM000002"
 
 
-def test_targeted_gt_audit_uses_new_schema_decision_before_raw_rescued_status(
+def test_targeted_gt_audit_uses_new_schema_decision_before_raw_backfilled_status(
     tmp_path: Path,
 ) -> None:
     review_row = _review_row("FAM000001", mz=242.1136, rt=12.0)

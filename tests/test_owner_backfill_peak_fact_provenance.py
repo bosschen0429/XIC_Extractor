@@ -13,44 +13,44 @@ import numpy as np
 import pytest
 
 from tests.test_alignment_owner_backfill import _feature, _peak_config
+from xic_extractor.alignment.backfill_peak_fact import (
+    BackfillExtractionResult,
+    build_backfill_result,
+)
+from xic_extractor.alignment.backfill_peak_fact import (
+    BackfillPeakFactObservation as LiveBackfillPeakFactObservation,
+)
+from xic_extractor.alignment.backfill_peak_fact_provenance import (
+    _PROVENANCE_ROWS_PER_CHUNK,
+    BACKFILL_AUTHORITY_CELL_FIELDS,
+    BACKFILL_PEAK_FACT_PROVENANCE_COLUMNS,
+    BACKFILL_PEAK_FACT_PROVENANCE_SCHEMA_VERSION,
+    BACKFILL_PROVENANCE_WRITER_SCHEMA_VERSION,
+    SELECTED_INTEGRATION_AUTHORITY_FIELDS,
+    BackfillCellProjection,
+    BackfillPeakFactObservation,
+    BackfillPeakFactProvenanceBatch,
+    BackfillPeakFactStageProjection,
+    _iter_backfill_peak_fact_provenance_chunks,
+    backfill_authority_cell_projection,
+    backfill_cell_lineage_matches,
+    backfill_cell_projection,
+    backfill_peak_fact_stage_projection_from_observation,
+    build_backfill_peak_fact_provenance_batch,
+    compose_backfill_peak_fact_provenance,
+    read_backfill_peak_fact_provenance_tsv,
+    render_backfill_peak_fact_provenance_tsv,
+    selected_integration_authority_projection,
+    write_backfill_peak_fact_provenance_tsv,
+)
+from xic_extractor.alignment.backfill_request_plan import (
+    mint_backfill_request_identity,
+)
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.matrix import (
     AlignedCell,
     AlignmentMatrix,
     AlignmentRowLike,
-)
-from xic_extractor.alignment.owner_backfill import (
-    OwnerBackfillExtractionResult,
-    build_owner_backfill_result,
-)
-from xic_extractor.alignment.owner_backfill import (
-    OwnerBackfillPeakFactObservation as LiveOwnerBackfillPeakFactObservation,
-)
-from xic_extractor.alignment.owner_backfill_peak_fact_provenance import (
-    _PROVENANCE_ROWS_PER_CHUNK,
-    OWNER_BACKFILL_AUTHORITY_CELL_FIELDS,
-    OWNER_BACKFILL_PEAK_FACT_PROVENANCE_COLUMNS,
-    OWNER_BACKFILL_PEAK_FACT_PROVENANCE_SCHEMA_VERSION,
-    OWNER_BACKFILL_PROVENANCE_WRITER_SCHEMA_VERSION,
-    SELECTED_INTEGRATION_AUTHORITY_FIELDS,
-    OwnerBackfillCellProjection,
-    OwnerBackfillPeakFactObservation,
-    OwnerBackfillPeakFactProvenanceBatch,
-    OwnerBackfillPeakFactStageProjection,
-    _iter_owner_backfill_peak_fact_provenance_chunks,
-    build_owner_backfill_peak_fact_provenance_batch,
-    compose_owner_backfill_peak_fact_provenance,
-    owner_backfill_authority_cell_projection,
-    owner_backfill_cell_lineage_matches,
-    owner_backfill_cell_projection,
-    owner_backfill_peak_fact_stage_projection_from_observation,
-    read_owner_backfill_peak_fact_provenance_tsv,
-    render_owner_backfill_peak_fact_provenance_tsv,
-    selected_integration_authority_projection,
-    write_owner_backfill_peak_fact_provenance_tsv,
-)
-from xic_extractor.alignment.owner_backfill_request_plan import (
-    mint_owner_backfill_request_identity,
 )
 from xic_extractor.alignment.production_decisions import (
     ProductionCellDecision,
@@ -131,7 +131,7 @@ def test_writer_round_trips_exact_61_column_three_kind_projection(
     facts = evaluation.facts
     assert facts is not None
     cell = live.observation.cell
-    authority = owner_backfill_authority_cell_projection(
+    authority = backfill_authority_cell_projection(
         stage=stage,
         cell=cell,
         profile_id=DEFAULT_SIGNAL_PROCESSING_PROFILE.profile_id,
@@ -154,43 +154,43 @@ def test_writer_round_trips_exact_61_column_three_kind_projection(
         config=AlignmentConfig(),
         owner_backfill_cell_content_id=authority.owner_backfill_cell_content_id,
     )
-    batch = build_owner_backfill_peak_fact_provenance_batch(
-        (OwnerBackfillPeakFactObservation(stage, evaluation),),
+    batch = build_backfill_peak_fact_provenance_batch(
+        (BackfillPeakFactObservation(stage, evaluation),),
         profile=DEFAULT_SIGNAL_PROCESSING_PROFILE,
         cell_projections=(
-            owner_backfill_cell_projection(
+            backfill_cell_projection(
                 authority_cell=authority,
                 production_decision=production,
             ),
         ),
     )
-    path = write_owner_backfill_peak_fact_provenance_tsv(
+    path = write_backfill_peak_fact_provenance_tsv(
         tmp_path / "provenance.tsv",
         batch,
     )
 
-    assert len(OWNER_BACKFILL_PEAK_FACT_PROVENANCE_COLUMNS) == 61
+    assert len(BACKFILL_PEAK_FACT_PROVENANCE_COLUMNS) == 61
     assert not path.read_bytes().startswith(b"\xef\xbb\xbf")
     assert b"\r" not in path.read_bytes()
     with path.open(encoding="utf-8", newline="") as handle:
         raw_rows = list(csv.DictReader(handle, delimiter="\t"))
-    assert tuple(raw_rows[0]) == OWNER_BACKFILL_PEAK_FACT_PROVENANCE_COLUMNS
+    assert tuple(raw_rows[0]) == BACKFILL_PEAK_FACT_PROVENANCE_COLUMNS
     assert [row["row_kind"] for row in raw_rows] == [
         "run_profile",
         "physical_question",
         "cell_projection",
     ]
     assert raw_rows[0]["schema_version"] == (
-        OWNER_BACKFILL_PEAK_FACT_PROVENANCE_SCHEMA_VERSION
+        BACKFILL_PEAK_FACT_PROVENANCE_SCHEMA_VERSION
     )
     assert raw_rows[0]["work_unit_key"] == ""
     assert raw_rows[1]["segment_candidate_ids"].startswith("[")
     assert raw_rows[1]["selected_work_unit_key"] == ""
     assert raw_rows[2]["trace_content_id"] == ""
     assert raw_rows[2]["writer_schema_version"] == (
-        OWNER_BACKFILL_PROVENANCE_WRITER_SCHEMA_VERSION
+        BACKFILL_PROVENANCE_WRITER_SCHEMA_VERSION
     )
-    assert read_owner_backfill_peak_fact_provenance_tsv(path).rows == batch.rows
+    assert read_backfill_peak_fact_provenance_tsv(path).rows == batch.rows
     assert not (tmp_path / ".provenance.tsv.tmp").exists()
     assert extraction.request_identity.request_identity_id == stage.request_identity_id
 
@@ -201,44 +201,44 @@ def test_strict_reader_rejects_bom_decimal_float_and_noncanonical_json(
     live = _live_available_inputs(tmp_path)
     stage = live.stage
     evaluation = live.evaluation
-    batch = build_owner_backfill_peak_fact_provenance_batch(
-        (OwnerBackfillPeakFactObservation(stage, evaluation),),
+    batch = build_backfill_peak_fact_provenance_batch(
+        (BackfillPeakFactObservation(stage, evaluation),),
         profile=DEFAULT_SIGNAL_PROCESSING_PROFILE,
     )
-    path = write_owner_backfill_peak_fact_provenance_tsv(tmp_path / "strict.tsv", batch)
+    path = write_backfill_peak_fact_provenance_tsv(tmp_path / "strict.tsv", batch)
     original = path.read_bytes()
     path.write_bytes(b"\xef\xbb\xbf" + original)
     with pytest.raises(ValueError, match="BOM"):
-        read_owner_backfill_peak_fact_provenance_tsv(path)
+        read_backfill_peak_fact_provenance_tsv(path)
 
     path.write_bytes(original)
     lines = path.read_text(encoding="utf-8").splitlines()
     values = lines[2].split("\t")
-    values[OWNER_BACKFILL_PEAK_FACT_PROVENANCE_COLUMNS.index("query_rt_min")] = "1.5"
+    values[BACKFILL_PEAK_FACT_PROVENANCE_COLUMNS.index("query_rt_min")] = "1.5"
     path.write_bytes(
         (lines[0] + "\n" + lines[1] + "\n" + "\t".join(values) + "\n").encode("utf-8")
     )
     with pytest.raises(ValueError, match="hexadecimal float"):
-        read_owner_backfill_peak_fact_provenance_tsv(path)
+        read_backfill_peak_fact_provenance_tsv(path)
 
     path.write_bytes(original)
     lines = path.read_text(encoding="utf-8").splitlines()
     values = lines[2].split("\t")
-    field = OWNER_BACKFILL_PEAK_FACT_PROVENANCE_COLUMNS.index("segment_candidate_ids")
+    field = BACKFILL_PEAK_FACT_PROVENANCE_COLUMNS.index("segment_candidate_ids")
     values[field] = values[field].replace("[", "[ ", 1)
     path.write_bytes(
         (lines[0] + "\n" + lines[1] + "\n" + "\t".join(values) + "\n").encode("utf-8")
     )
     with pytest.raises(ValueError, match="canonical compact JSON"):
-        read_owner_backfill_peak_fact_provenance_tsv(path)
+        read_backfill_peak_fact_provenance_tsv(path)
 
 
 def test_strict_reader_rejects_non_writer_bytes(tmp_path: Path) -> None:
-    batch = build_owner_backfill_peak_fact_provenance_batch(
+    batch = build_backfill_peak_fact_provenance_batch(
         (),
         profile=DEFAULT_SIGNAL_PROCESSING_PROFILE,
     )
-    path = write_owner_backfill_peak_fact_provenance_tsv(
+    path = write_backfill_peak_fact_provenance_tsv(
         tmp_path / "canonical.tsv",
         batch,
     )
@@ -246,17 +246,17 @@ def test_strict_reader_rejects_non_writer_bytes(tmp_path: Path) -> None:
 
     path.write_bytes(original.removesuffix(b"\n"))
     with pytest.raises(ValueError, match="LF-terminated"):
-        read_owner_backfill_peak_fact_provenance_tsv(path)
+        read_backfill_peak_fact_provenance_tsv(path)
 
     lines = original.decode("utf-8").splitlines()
     values = lines[1].split("\t")
-    method_index = OWNER_BACKFILL_PEAK_FACT_PROVENANCE_COLUMNS.index(
+    method_index = BACKFILL_PEAK_FACT_PROVENANCE_COLUMNS.index(
         "signal_processing_method"
     )
     values[method_index] = '"gaussian"'
     path.write_bytes((lines[0] + "\n" + "\t".join(values) + "\n").encode("utf-8"))
     with pytest.raises(ValueError, match="not canonical writer output"):
-        read_owner_backfill_peak_fact_provenance_tsv(path)
+        read_backfill_peak_fact_provenance_tsv(path)
 
 
 def test_standalone_writer_cleans_its_temp_on_verification_failure(
@@ -278,9 +278,9 @@ def test_standalone_writer_cleans_its_temp_on_verification_failure(
     monkeypatch.setattr(Path, "open", fail_temp_verification)
 
     with pytest.raises(OSError, match="injected temp verification failure"):
-        write_owner_backfill_peak_fact_provenance_tsv(
+        write_backfill_peak_fact_provenance_tsv(
             path,
-            build_owner_backfill_peak_fact_provenance_batch(
+            build_backfill_peak_fact_provenance_batch(
                 (),
                 profile=DEFAULT_SIGNAL_PROCESSING_PROFILE,
             ),
@@ -291,13 +291,13 @@ def test_standalone_writer_cleans_its_temp_on_verification_failure(
 
 
 def test_run_profile_is_mandatory_even_without_questions(tmp_path: Path) -> None:
-    batch = build_owner_backfill_peak_fact_provenance_batch(
+    batch = build_backfill_peak_fact_provenance_batch(
         (),
         profile=DEFAULT_SIGNAL_PROCESSING_PROFILE,
     )
     assert len(batch.rows) == 1
     assert batch.rows[0].row_kind == "run_profile"
-    path = write_owner_backfill_peak_fact_provenance_tsv(tmp_path / "empty.tsv", batch)
+    path = write_backfill_peak_fact_provenance_tsv(tmp_path / "empty.tsv", batch)
     assert len(path.read_text(encoding="utf-8").splitlines()) == 2
 
 
@@ -317,7 +317,7 @@ def test_header_is_rejected_and_requires_rerun(tmp_path: Path) -> None:
     _write_projection_rows(path, legacy_header, legacy_rows)
 
     with pytest.raises(ValueError, match="provenance.*rerun alignment"):
-        read_owner_backfill_peak_fact_provenance_tsv(path)
+        read_backfill_peak_fact_provenance_tsv(path)
 
 
 def test_moved_cell_lineage_uses_source_group_not_area(tmp_path: Path) -> None:
@@ -334,8 +334,8 @@ def test_moved_cell_lineage_uses_source_group_not_area(tmp_path: Path) -> None:
         consolidation_winner_group_hypothesis_id="WINNER",
         consolidation_source_group_hypothesis_id=stage.group_hypothesis_id,
     )
-    assert owner_backfill_cell_lineage_matches(stage, moved) is True
-    owner_backfill_authority_cell_projection(
+    assert backfill_cell_lineage_matches(stage, moved) is True
+    backfill_authority_cell_projection(
         stage=stage,
         cell=moved,
         profile_id=DEFAULT_SIGNAL_PROCESSING_PROFILE.profile_id,
@@ -348,9 +348,9 @@ def test_moved_cell_lineage_uses_source_group_not_area(tmp_path: Path) -> None:
         moved,
         consolidation_source_group_hypothesis_id="OTHER-SOURCE",
     )
-    assert owner_backfill_cell_lineage_matches(stage, crossed) is False
+    assert backfill_cell_lineage_matches(stage, crossed) is False
     with pytest.raises(ValueError, match="cell lineage"):
-        owner_backfill_authority_cell_projection(
+        backfill_authority_cell_projection(
             stage=stage,
             cell=crossed,
             profile_id=DEFAULT_SIGNAL_PROCESSING_PROFILE.profile_id,
@@ -371,8 +371,8 @@ def test_primary_winner_requires_complete_winner_and_source_lineage(
         consolidation_winner_group_hypothesis_id=stage.group_hypothesis_id,
         consolidation_source_group_hypothesis_id=stage.group_hypothesis_id,
     )
-    assert owner_backfill_cell_lineage_matches(stage, primary) is True
-    authority = owner_backfill_authority_cell_projection(
+    assert backfill_cell_lineage_matches(stage, primary) is True
+    authority = backfill_authority_cell_projection(
         stage=stage,
         cell=primary,
         profile_id=DEFAULT_SIGNAL_PROCESSING_PROFILE.profile_id,
@@ -395,15 +395,15 @@ def test_primary_winner_requires_complete_winner_and_source_lineage(
         config=AlignmentConfig(),
         owner_backfill_cell_content_id=authority.owner_backfill_cell_content_id,
     )
-    valid_projection = owner_backfill_cell_projection(
+    valid_projection = backfill_cell_projection(
         authority_cell=authority,
         production_decision=production,
     )
 
     with pytest.raises(ValueError, match="invalid primary lineage"):
-        build_owner_backfill_peak_fact_provenance_batch(
+        build_backfill_peak_fact_provenance_batch(
             (
-                OwnerBackfillPeakFactObservation(
+                BackfillPeakFactObservation(
                     stage,
                     live.evaluation,
                 ),
@@ -439,21 +439,21 @@ def test_run_profile_requires_exact_owner_reconstruction(
     value: str,
     message: str,
 ) -> None:
-    path = write_owner_backfill_peak_fact_provenance_tsv(
+    path = write_backfill_peak_fact_provenance_tsv(
         tmp_path / f"tampered-{field}.tsv",
-        build_owner_backfill_peak_fact_provenance_batch(
+        build_backfill_peak_fact_provenance_batch(
             (),
             profile=DEFAULT_SIGNAL_PROCESSING_PROFILE,
         ),
     )
     lines = path.read_text(encoding="utf-8").splitlines()
     values = lines[1].split("\t")
-    values[OWNER_BACKFILL_PEAK_FACT_PROVENANCE_COLUMNS.index(field)] = value
+    values[BACKFILL_PEAK_FACT_PROVENANCE_COLUMNS.index(field)] = value
     _reseal_projection_content_id(values)
     path.write_bytes((lines[0] + "\n" + "\t".join(values) + "\n").encode("utf-8"))
 
     with pytest.raises((TypeError, ValueError), match=message):
-        read_owner_backfill_peak_fact_provenance_tsv(path)
+        read_backfill_peak_fact_provenance_tsv(path)
 
 
 @pytest.mark.parametrize(
@@ -501,7 +501,7 @@ def test_reader_rejects_owner_bearing_persisted_attack_classes(
     _write_projection_rows(path, header, rows)
 
     with pytest.raises(ValueError, match=message):
-        read_owner_backfill_peak_fact_provenance_tsv(path)
+        read_backfill_peak_fact_provenance_tsv(path)
 
 
 def test_resealed_owner_field_tamper_stays_untrusted_until_live_replay(
@@ -514,10 +514,10 @@ def test_resealed_owner_field_tamper_stays_untrusted_until_live_replay(
     _reseal_projection_content_id(physical)
     _write_projection_rows(path, header, rows)
 
-    read_result = read_owner_backfill_peak_fact_provenance_tsv(path)
+    read_result = read_backfill_peak_fact_provenance_tsv(path)
     assert read_result.projection_integrity == "verified"
     with pytest.raises(ValueError, match="crosses persisted work"):
-        compose_owner_backfill_peak_fact_provenance(
+        compose_backfill_peak_fact_provenance(
             read_result,
             live_observation_by_work={live.stage.work_unit_key: live.observation},
         )
@@ -554,11 +554,11 @@ def test_resealed_owner_bearing_class_requires_live_owner_replay(
     _mutate_owner_bearing_projection(rows, owner_class=case.owner_class)
     _write_projection_rows(path, header, rows)
 
-    read_result = read_owner_backfill_peak_fact_provenance_tsv(path)
+    read_result = read_backfill_peak_fact_provenance_tsv(path)
     assert read_result.projection_integrity == "verified"
     matrix, config, decisions = _live_final_owner_inputs(live)
     with pytest.raises(ValueError, match=case.expected_replay_error):
-        compose_owner_backfill_peak_fact_provenance(
+        compose_backfill_peak_fact_provenance(
             read_result,
             live_observation_by_work={
                 live.stage.work_unit_key: live.observation,
@@ -613,7 +613,7 @@ def test_strict_codec_rejects_scalar_and_sequence_attack_classes(
     _write_projection_rows(path, header, rows)
 
     with pytest.raises(ValueError, match=message):
-        read_owner_backfill_peak_fact_provenance_tsv(path)
+        read_backfill_peak_fact_provenance_tsv(path)
 
 
 def test_physical_claim_requires_live_alignment_and_acquisition_owner_replay(
@@ -623,23 +623,23 @@ def test_physical_claim_requires_live_alignment_and_acquisition_owner_replay(
     stage = live.stage
     extraction = live.extraction
     evaluation = live.evaluation
-    path = write_owner_backfill_peak_fact_provenance_tsv(
+    path = write_backfill_peak_fact_provenance_tsv(
         tmp_path / "composition.tsv",
-        build_owner_backfill_peak_fact_provenance_batch(
-            (OwnerBackfillPeakFactObservation(stage, evaluation),),
+        build_backfill_peak_fact_provenance_batch(
+            (BackfillPeakFactObservation(stage, evaluation),),
             profile=DEFAULT_SIGNAL_PROCESSING_PROFILE,
         ),
     )
-    read_result = read_owner_backfill_peak_fact_provenance_tsv(path)
+    read_result = read_backfill_peak_fact_provenance_tsv(path)
 
-    unavailable = compose_owner_backfill_peak_fact_provenance(read_result)
+    unavailable = compose_backfill_peak_fact_provenance(read_result)
     assert unavailable.physical_claims[0].stage_claim == (
         "unavailable_without_live_owner"
     )
     assert unavailable.physical_claims[0].physical_claim == (
         "unavailable_without_live_owner"
     )
-    verified = compose_owner_backfill_peak_fact_provenance(
+    verified = compose_backfill_peak_fact_provenance(
         read_result,
         live_observation_by_work={stage.work_unit_key: live.observation},
         live_extraction_by_work={stage.work_unit_key: extraction},
@@ -653,7 +653,7 @@ def test_physical_claim_requires_live_alignment_and_acquisition_owner_replay(
 
     crossed = _live_available_inputs(tmp_path / "crossed", feature_id="FAM000002")
     with pytest.raises(ValueError, match="crosses persisted work"):
-        compose_owner_backfill_peak_fact_provenance(
+        compose_backfill_peak_fact_provenance(
             read_result,
             live_observation_by_work={
                 stage.work_unit_key: crossed.observation,
@@ -664,16 +664,16 @@ def test_physical_claim_requires_live_alignment_and_acquisition_owner_replay(
 def test_zero_point_replay_uses_live_request_bounds(tmp_path: Path) -> None:
     live = _live_available_inputs(tmp_path, empty=True)
     stage = live.stage
-    path = write_owner_backfill_peak_fact_provenance_tsv(
+    path = write_backfill_peak_fact_provenance_tsv(
         tmp_path / "zero.tsv",
-        build_owner_backfill_peak_fact_provenance_batch(
-            (OwnerBackfillPeakFactObservation(stage, live.evaluation),),
+        build_backfill_peak_fact_provenance_batch(
+            (BackfillPeakFactObservation(stage, live.evaluation),),
             profile=DEFAULT_SIGNAL_PROCESSING_PROFILE,
         ),
     )
 
-    composed = compose_owner_backfill_peak_fact_provenance(
-        read_owner_backfill_peak_fact_provenance_tsv(path),
+    composed = compose_backfill_peak_fact_provenance(
+        read_backfill_peak_fact_provenance_tsv(path),
         live_observation_by_work={stage.work_unit_key: live.observation},
         live_extraction_by_work={stage.work_unit_key: live.extraction},
         profile=DEFAULT_SIGNAL_PROCESSING_PROFILE,
@@ -705,7 +705,7 @@ def test_numeric_cell_claim_lifts_only_after_all_three_owners_replay(
     decisions = build_production_decisions(matrix, config)
     selected_decision = decisions.cell(cell.cluster_id, cell.sample_stem)
     assert selected_decision.production_status == "accepted_backfill"
-    authority = owner_backfill_authority_cell_projection(
+    authority = backfill_authority_cell_projection(
         stage=stage,
         cell=cell,
         profile_id=DEFAULT_SIGNAL_PROCESSING_PROFILE.profile_id,
@@ -719,26 +719,26 @@ def test_numeric_cell_claim_lifts_only_after_all_three_owners_replay(
         config=config,
         owner_backfill_cell_content_id=authority.owner_backfill_cell_content_id,
     )
-    path = write_owner_backfill_peak_fact_provenance_tsv(
+    path = write_backfill_peak_fact_provenance_tsv(
         tmp_path / "three-owner.tsv",
-        build_owner_backfill_peak_fact_provenance_batch(
-            (OwnerBackfillPeakFactObservation(stage, evaluation),),
+        build_backfill_peak_fact_provenance_batch(
+            (BackfillPeakFactObservation(stage, evaluation),),
             profile=DEFAULT_SIGNAL_PROCESSING_PROFILE,
             cell_projections=(
-                owner_backfill_cell_projection(
+                backfill_cell_projection(
                     authority_cell=authority,
                     production_decision=production,
                 ),
             ),
         ),
     )
-    read_result = read_owner_backfill_peak_fact_provenance_tsv(path)
+    read_result = read_backfill_peak_fact_provenance_tsv(path)
     physical_inputs = {
         "live_observation_by_work": {stage.work_unit_key: live.observation},
         "live_extraction_by_work": {stage.work_unit_key: extraction},
         "profile": DEFAULT_SIGNAL_PROCESSING_PROFILE,
     }
-    complete = compose_owner_backfill_peak_fact_provenance(
+    complete = compose_backfill_peak_fact_provenance(
         read_result,
         **physical_inputs,
         live_matrix=matrix,
@@ -754,7 +754,7 @@ def test_numeric_cell_claim_lifts_only_after_all_three_owners_replay(
         "production_decisions": decisions,
     }
     for missing in physical_inputs:
-        incomplete = compose_owner_backfill_peak_fact_provenance(
+        incomplete = compose_backfill_peak_fact_provenance(
             read_result,
             **{key: value for key, value in physical_inputs.items() if key != missing},
             **final_inputs,
@@ -766,7 +766,7 @@ def test_numeric_cell_claim_lifts_only_after_all_three_owners_replay(
             "unavailable_without_live_owner"
         )
     for missing in final_inputs:
-        incomplete = compose_owner_backfill_peak_fact_provenance(
+        incomplete = compose_backfill_peak_fact_provenance(
             read_result,
             **physical_inputs,
             **{key: value for key, value in final_inputs.items() if key != missing},
@@ -778,7 +778,7 @@ def test_numeric_cell_claim_lifts_only_after_all_three_owners_replay(
 
     crossed_extraction = _crossed_extraction(extraction)
     with pytest.raises(ValueError, match="crosses Alignment stage identity"):
-        compose_owner_backfill_peak_fact_provenance(
+        compose_backfill_peak_fact_provenance(
             read_result,
             live_observation_by_work={stage.work_unit_key: live.observation},
             live_extraction_by_work={stage.work_unit_key: crossed_extraction},
@@ -795,7 +795,7 @@ def test_numeric_cell_claim_lifts_only_after_all_three_owners_replay(
         rows=decisions.rows,
     )
     with pytest.raises(ValueError, match="differ from live owner replay"):
-        compose_owner_backfill_peak_fact_provenance(
+        compose_backfill_peak_fact_provenance(
             read_result,
             **physical_inputs,
             live_matrix=matrix,
@@ -824,7 +824,7 @@ def test_all_authority_projection_fields_change_their_owner_id(
             != integration.selected_integration_authority_content_id
         )
 
-    authority = owner_backfill_authority_cell_projection(
+    authority = backfill_authority_cell_projection(
         stage=stage,
         cell=live.observation.cell,
         profile_id=DEFAULT_SIGNAL_PROCESSING_PROFILE.profile_id,
@@ -832,8 +832,8 @@ def test_all_authority_projection_fields_change_their_owner_id(
         physical_answer_id=facts.physical_answer_id,
         physical_segment_id=facts.physical_segment_id,
     )
-    assert len(OWNER_BACKFILL_AUTHORITY_CELL_FIELDS) == 48
-    for name in OWNER_BACKFILL_AUTHORITY_CELL_FIELDS:
+    assert len(BACKFILL_AUTHORITY_CELL_FIELDS) == 48
+    for name in BACKFILL_AUTHORITY_CELL_FIELDS:
         changed = _changed_value(getattr(authority, name))
         assert (
             replace(authority, **{name: changed}).owner_backfill_cell_content_id
@@ -844,9 +844,9 @@ def test_all_authority_projection_fields_change_their_owner_id(
 @dataclass(frozen=True, slots=True)
 class _LiveInputs:
     feature: AlignmentRowLike
-    observation: LiveOwnerBackfillPeakFactObservation
-    stage: OwnerBackfillPeakFactStageProjection
-    extraction: OwnerBackfillExtractionResult
+    observation: LiveBackfillPeakFactObservation
+    stage: BackfillPeakFactStageProjection
+    extraction: BackfillExtractionResult
     evaluation: object
 
 
@@ -889,7 +889,7 @@ def _live_available_inputs(
     )
     source = _CanonicalOwnerBoundSource(acquisition, empty=empty)
     feature = _feature(feature_family_id=feature_id, mz=500.0, rt=8.5)
-    result = build_owner_backfill_result(
+    result = build_backfill_result(
         (feature,),
         sample_order=("sample-a", "sample-b"),
         raw_sources={"sample-b": source},
@@ -903,8 +903,8 @@ def _live_available_inputs(
     evaluation = observation.physical_evaluation
     assert evaluation is not None
     assert evaluation.state == ("unavailable" if empty else "available")
-    stage = owner_backfill_peak_fact_stage_projection_from_observation(observation)
-    extraction = OwnerBackfillExtractionResult(
+    stage = backfill_peak_fact_stage_projection_from_observation(observation)
+    extraction = BackfillExtractionResult(
         request_identity=observation.request_identity,
         trace=source.last_trace,
     )
@@ -923,7 +923,7 @@ def _write_three_kind_provenance(tmp_path: Path) -> tuple[Path, _LiveInputs]:
     facts = evaluation.facts
     assert facts is not None
     cell = live.observation.cell
-    authority = owner_backfill_authority_cell_projection(
+    authority = backfill_authority_cell_projection(
         stage=live.stage,
         cell=cell,
         profile_id=DEFAULT_SIGNAL_PROCESSING_PROFILE.profile_id,
@@ -946,18 +946,18 @@ def _write_three_kind_provenance(tmp_path: Path) -> tuple[Path, _LiveInputs]:
         config=AlignmentConfig(),
         owner_backfill_cell_content_id=authority.owner_backfill_cell_content_id,
     )
-    batch = build_owner_backfill_peak_fact_provenance_batch(
-        (OwnerBackfillPeakFactObservation(live.stage, evaluation),),
+    batch = build_backfill_peak_fact_provenance_batch(
+        (BackfillPeakFactObservation(live.stage, evaluation),),
         profile=DEFAULT_SIGNAL_PROCESSING_PROFILE,
         cell_projections=(
-            owner_backfill_cell_projection(
+            backfill_cell_projection(
                 authority_cell=authority,
                 production_decision=decision,
             ),
         ),
     )
     return (
-        write_owner_backfill_peak_fact_provenance_tsv(
+        write_backfill_peak_fact_provenance_tsv(
             tmp_path / "three-kind.tsv",
             batch,
         ),
@@ -993,7 +993,7 @@ def _detected_cell(
     sample_stem: str,
     integration: object,
     *,
-    stage: OwnerBackfillPeakFactStageProjection,
+    stage: BackfillPeakFactStageProjection,
 ) -> AlignedCell:
     return AlignedCell(
         sample_stem=sample_stem,
@@ -1017,7 +1017,7 @@ def _detected_cell(
 
 
 def _production_feature(
-    stage: OwnerBackfillPeakFactStageProjection,
+    stage: BackfillPeakFactStageProjection,
 ) -> AlignmentRowLike:
     return cast(
         AlignmentRowLike,
@@ -1050,7 +1050,7 @@ def _reseal_projection_content_id(values: list[str]) -> None:
 
 
 def _column(name: str) -> int:
-    return OWNER_BACKFILL_PEAK_FACT_PROVENANCE_COLUMNS.index(name)
+    return BACKFILL_PEAK_FACT_PROVENANCE_COLUMNS.index(name)
 
 
 def _mutate_owner_bearing_projection(
@@ -1119,7 +1119,7 @@ def _cross_typed_id(value: str) -> str:
 
 
 def _recompute_cell_projection_id(values: list[str]) -> None:
-    projection = OwnerBackfillCellProjection(
+    projection = BackfillCellProjection(
         group_hypothesis_id=values[_column("group_hypothesis_id")],
         public_family_id=values[_column("public_family_id")],
         sample_stem=values[_column("sample_stem")],
@@ -1169,11 +1169,11 @@ def _read_projection_rows(path: Path) -> tuple[list[str], list[list[str]]]:
 
 
 def _crossed_extraction(
-    extraction: OwnerBackfillExtractionResult,
-) -> OwnerBackfillExtractionResult:
+    extraction: BackfillExtractionResult,
+) -> BackfillExtractionResult:
     identity = extraction.request_identity
     request = identity.request
-    crossed_identity = mint_owner_backfill_request_identity(
+    crossed_identity = mint_backfill_request_identity(
         sample_stem=identity.sample_stem,
         acquisition_source=identity.acquisition_source,
         request=XICRequest(
@@ -1188,7 +1188,7 @@ def _crossed_extraction(
         validation_mode=identity.validation_mode,
         result_semantics=identity.result_semantics,
     )
-    return OwnerBackfillExtractionResult(
+    return BackfillExtractionResult(
         request_identity=crossed_identity,
         trace=extraction.trace,
     )
@@ -1224,13 +1224,13 @@ def test_provenance_writer_streams_bytes_identical_to_single_shot_render(
     """
 
     live = _live_available_inputs(tmp_path)
-    base = build_owner_backfill_peak_fact_provenance_batch(
-        (OwnerBackfillPeakFactObservation(live.stage, live.evaluation),),
+    base = build_backfill_peak_fact_provenance_batch(
+        (BackfillPeakFactObservation(live.stage, live.evaluation),),
         profile=DEFAULT_SIGNAL_PROCESSING_PROFILE,
     )
     profile_row, physical_row = base.rows[0], base.rows[1]
     row_count = _PROVENANCE_ROWS_PER_CHUNK * 2 + 7
-    batch = OwnerBackfillPeakFactProvenanceBatch(
+    batch = BackfillPeakFactProvenanceBatch(
         rows=(
             profile_row,
             *(
@@ -1243,14 +1243,14 @@ def test_provenance_writer_streams_bytes_identical_to_single_shot_render(
         )
     )
 
-    expected = render_owner_backfill_peak_fact_provenance_tsv(batch)
-    chunks = list(_iter_owner_backfill_peak_fact_provenance_chunks(batch))
+    expected = render_backfill_peak_fact_provenance_tsv(batch)
+    chunks = list(_iter_backfill_peak_fact_provenance_chunks(batch))
 
     assert len(chunks) > 2, "batch must cross several chunk boundaries"
     assert b"".join(chunks) == expected
     assert max(len(chunk) for chunk in chunks) < len(expected)
 
-    path = write_owner_backfill_peak_fact_provenance_tsv(tmp_path / "big.tsv", batch)
+    path = write_backfill_peak_fact_provenance_tsv(tmp_path / "big.tsv", batch)
 
     assert path.read_bytes() == expected
     # header + the run_profile row + every physical_question row
@@ -1269,8 +1269,8 @@ def test_provenance_writer_detects_a_temp_file_that_does_not_match(
     """
 
     live = _live_available_inputs(tmp_path)
-    batch = build_owner_backfill_peak_fact_provenance_batch(
-        (OwnerBackfillPeakFactObservation(live.stage, live.evaluation),),
+    batch = build_backfill_peak_fact_provenance_batch(
+        (BackfillPeakFactObservation(live.stage, live.evaluation),),
         profile=DEFAULT_SIGNAL_PROCESSING_PROFILE,
     )
     path = tmp_path / "corrupt.tsv"
@@ -1289,7 +1289,7 @@ def test_provenance_writer_detects_a_temp_file_that_does_not_match(
     monkeypatch.setattr(Path, "open", corrupting_open)
 
     with pytest.raises(OSError, match="verification failed"):
-        write_owner_backfill_peak_fact_provenance_tsv(path, batch)
+        write_backfill_peak_fact_provenance_tsv(path, batch)
 
     assert not path.exists()
     assert not temporary.exists()
@@ -1297,7 +1297,7 @@ def test_provenance_writer_detects_a_temp_file_that_does_not_match(
 
 def test_provenance_writer_rejects_a_batch_of_the_wrong_type(tmp_path: Path) -> None:
     with pytest.raises(TypeError, match="typed provenance batch"):
-        write_owner_backfill_peak_fact_provenance_tsv(
+        write_backfill_peak_fact_provenance_tsv(
             tmp_path / "bad.tsv",
-            cast(OwnerBackfillPeakFactProvenanceBatch, object()),
+            cast(BackfillPeakFactProvenanceBatch, object()),
         )

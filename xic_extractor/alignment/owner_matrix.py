@@ -30,14 +30,14 @@ def build_owner_alignment_matrix(
     *,
     sample_order: tuple[str, ...],
     ambiguous_by_sample: Mapping[str, tuple[AmbiguousOwnerRecord, ...]],
-    rescued_cells: tuple[AlignedCell, ...],
+    backfilled_cells: tuple[AlignedCell, ...],
 ) -> AlignmentMatrix:
     builder = OwnerAlignmentMatrixBuilder(
         features,
         sample_order=sample_order,
         ambiguous_by_sample=ambiguous_by_sample,
     )
-    builder.consume_rescued_cells(rescued_cells)
+    builder.consume_backfilled_cells(backfilled_cells)
     return builder.finish()
 
 
@@ -79,45 +79,49 @@ class OwnerAlignmentMatrixBuilder:
         }
         self._cells_by_sample: dict[str, tuple[AlignedCell, ...]] = {}
 
-    def consume_rescued_cells(self, rescued_cells: tuple[AlignedCell, ...]) -> None:
+    def consume_backfilled_cells(
+        self, backfilled_cells: tuple[AlignedCell, ...]
+    ) -> None:
         batch_keys: set[tuple[str, str]] = set()
-        rescued_by_sample: dict[str, list[AlignedCell]] = {}
-        for rescued in rescued_cells:
-            key = (rescued.cluster_id, rescued.sample_stem)
+        backfilled_by_sample: dict[str, list[AlignedCell]] = {}
+        for backfilled in backfilled_cells:
+            key = (backfilled.cluster_id, backfilled.sample_stem)
             if key in batch_keys:
                 raise ValueError("duplicate rescued owner Matrix cell")
             batch_keys.add(key)
             if (
-                rescued.cluster_id not in self._feature_by_id
-                or rescued.sample_stem not in self._sample_rank
+                backfilled.cluster_id not in self._feature_by_id
+                or backfilled.sample_stem not in self._sample_rank
             ):
                 raise ValueError("rescued cell falls outside owner Matrix universe")
-            rescued_by_sample.setdefault(rescued.sample_stem, []).append(rescued)
-        for sample_stem, sample_cells in rescued_by_sample.items():
-            self.consume_sample_rescued_cells(sample_stem, tuple(sample_cells))
+            backfilled_by_sample.setdefault(backfilled.sample_stem, []).append(
+                backfilled
+            )
+        for sample_stem, sample_cells in backfilled_by_sample.items():
+            self.consume_sample_backfilled_cells(sample_stem, tuple(sample_cells))
 
-    def consume_sample_rescued_cells(
+    def consume_sample_backfilled_cells(
         self,
         sample_stem: str,
-        rescued_cells: tuple[AlignedCell, ...],
+        backfilled_cells: tuple[AlignedCell, ...],
     ) -> None:
         if sample_stem not in self._sample_rank:
             raise ValueError("rescued sample falls outside owner Matrix universe")
         if sample_stem in self._cells_by_sample:
             raise ValueError("owner Matrix sample was consumed more than once")
-        rescued_by_feature: dict[str, AlignedCell] = {}
-        for rescued in rescued_cells:
-            if rescued.sample_stem != sample_stem:
+        backfilled_by_feature: dict[str, AlignedCell] = {}
+        for backfilled in backfilled_cells:
+            if backfilled.sample_stem != sample_stem:
                 raise ValueError("rescued cells cross owner Matrix sample identity")
-            if rescued.cluster_id not in self._feature_by_id:
+            if backfilled.cluster_id not in self._feature_by_id:
                 raise ValueError("rescued cell falls outside owner Matrix universe")
-            if rescued.cluster_id in rescued_by_feature:
+            if backfilled.cluster_id in backfilled_by_feature:
                 raise ValueError("duplicate rescued owner Matrix cell")
-            rescued_by_feature[rescued.cluster_id] = rescued
+            backfilled_by_feature[backfilled.cluster_id] = backfilled
 
         sample_cells: list[AlignedCell] = []
         for feature in self._features:
-            rescued_cell = rescued_by_feature.get(feature.feature_family_id)
+            backfilled_cell = backfilled_by_feature.get(feature.feature_family_id)
             group_projection = self._group_projection_by_feature_id[
                 feature.feature_family_id
             ]
@@ -139,18 +143,18 @@ class OwnerAlignmentMatrixBuilder:
                 replacement = _detected_or_confirmed_cell(
                     feature,
                     detected,
-                    rescued_cell,
+                    backfilled_cell,
                     family_area=(
                         median_owner_area(feature)
-                        if rescued_cell is not None
+                        if backfilled_cell is not None
                         and feature.confirm_local_owners_with_backfill
                         else None
                     ),
                     group_projection=group_projection,
                 )
-            elif rescued_cell is not None:
-                replacement = _rescued_cell(
-                    rescued_cell,
+            elif backfilled_cell is not None:
+                replacement = _backfilled_cell(
+                    backfilled_cell,
                     group_projection=group_projection,
                 )
             elif records := self._ambiguous_by_sample.get(sample_stem, ()):
@@ -172,7 +176,7 @@ class OwnerAlignmentMatrixBuilder:
     def finish(self) -> AlignmentMatrix:
         for sample_stem in self._sample_order:
             if sample_stem not in self._cells_by_sample:
-                self.consume_sample_rescued_cells(sample_stem, ())
+                self.consume_sample_backfilled_cells(sample_stem, ())
         return AlignmentMatrix(
             clusters=self._features,
             cells=tuple(
@@ -269,24 +273,24 @@ def _detected_cell(
 def _detected_or_confirmed_cell(
     feature: OwnerGroupDeliveryFeature,
     detected: AlignedCell,
-    rescued: AlignedCell | None,
+    backfilled: AlignedCell | None,
     *,
     family_area: float | None,
     group_projection: GroupProjection,
 ) -> AlignedCell:
-    rescued_exclusion_reason = (
-        _rescued_quantification_exclusion_reason(rescued)
-        if rescued is not None and rescued.status == "backfilled"
+    backfilled_exclusion_reason = (
+        _backfilled_quantification_exclusion_reason(backfilled)
+        if backfilled is not None and backfilled.status == "backfilled"
         else None
     )
     if (
-        rescued is not None
+        backfilled is not None
         and detected.status == "unchecked"
-        and rescued.status == "backfilled"
-        and rescued_exclusion_reason is None
+        and backfilled.status == "backfilled"
+        and backfilled_exclusion_reason is None
     ):
         return replace(
-            rescued,
+            backfilled,
             reason=(
                 "owner-centered MS1 backfill replaced a local owner excluded "
                 f"from quantification; source_reason={detected.reason}"
@@ -299,13 +303,15 @@ def _detected_or_confirmed_cell(
             ),
         )
     if (
-        rescued is not None
+        backfilled is not None
         and feature.confirm_local_owners_with_backfill
-        and rescued_exclusion_reason is None
-        and _rescued_supersedes_detected(detected, rescued, family_area=family_area)
+        and backfilled_exclusion_reason is None
+        and _backfilled_supersedes_detected(
+            detected, backfilled, family_area=family_area
+        )
     ):
         return replace(
-            rescued,
+            backfilled,
             reason=(
                 "owner-centered MS1 backfill superseded low local owner; "
                 f"local_owner_area={detected.area}; "
@@ -322,34 +328,34 @@ def _detected_or_confirmed_cell(
     return detected
 
 
-def _rescued_cell(
-    rescued: AlignedCell,
+def _backfilled_cell(
+    backfilled: AlignedCell,
     *,
     group_projection: GroupProjection,
 ) -> AlignedCell:
-    if rescued.status != "backfilled":
+    if backfilled.status != "backfilled":
         return replace(
-            rescued,
+            backfilled,
             **delivery_cell_projection_from_group(
                 group_projection,
                 gap_fill_state="not_filled",
                 gap_fill_reason=(
-                    rescued.gap_fill_reason or "query_attempt_not_detected"
+                    backfilled.gap_fill_reason or "query_attempt_not_detected"
                 ),
                 missing_observation_state=(
-                    rescued.missing_observation_state or "missing_unchecked"
+                    backfilled.missing_observation_state or "missing_unchecked"
                 ),
             ),
         )
-    exclusion_reason = _rescued_quantification_exclusion_reason(rescued)
+    exclusion_reason = _backfilled_quantification_exclusion_reason(backfilled)
     if exclusion_reason is not None:
-        return _censored_rescued_cell(
-            rescued,
+        return _censored_backfilled_cell(
+            backfilled,
             exclusion_reason=exclusion_reason,
             group_projection=group_projection,
         )
     return replace(
-        rescued,
+        backfilled,
         **delivery_cell_projection_from_group(
             group_projection,
             gap_fill_state="gap_fill_rescued",
@@ -359,16 +365,16 @@ def _rescued_cell(
     )
 
 
-def _rescued_quantification_exclusion_reason(
-    rescued: AlignedCell,
+def _backfilled_quantification_exclusion_reason(
+    backfilled: AlignedCell,
 ) -> str | None:
     if not _strictly_interior(
-        rescued.apex_rt,
-        rescued.peak_start_rt,
-        rescued.peak_end_rt,
+        backfilled.apex_rt,
+        backfilled.peak_start_rt,
+        backfilled.peak_end_rt,
     ):
         return "owner_apex_on_integration_boundary"
-    integration = rescued.selected_integration
+    integration = backfilled.selected_integration
     if integration is None:
         return "owner_backfill_missing_selected_integration"
     if not _strictly_interior(
@@ -377,9 +383,9 @@ def _rescued_quantification_exclusion_reason(
         integration.rt_right_min,
     ):
         return "owner_apex_on_integration_boundary"
-    if positive_finite(rescued.area) is None:
+    if positive_finite(backfilled.area) is None:
         return "owner_backfill_invalid_area"
-    if positive_finite(rescued.matrix_area) is None:
+    if positive_finite(backfilled.matrix_area) is None:
         return "owner_backfill_invalid_matrix_area"
     return None
 
@@ -397,14 +403,14 @@ def _strictly_interior(
     )
 
 
-def _censored_rescued_cell(
-    rescued: AlignedCell,
+def _censored_backfilled_cell(
+    backfilled: AlignedCell,
     *,
     exclusion_reason: str,
     group_projection: GroupProjection,
 ) -> AlignedCell:
     return replace(
-        rescued,
+        backfilled,
         status="unchecked",
         area=None,
         height=None,
@@ -423,24 +429,24 @@ def _censored_rescued_cell(
     )
 
 
-def _rescued_supersedes_detected(
+def _backfilled_supersedes_detected(
     detected: AlignedCell,
-    rescued: AlignedCell,
+    backfilled: AlignedCell,
     *,
     family_area: float | None,
 ) -> bool:
     detected_area = positive_finite(detected.area)
-    rescued_area = positive_finite(rescued.area)
-    if detected_area is None or rescued_area is None:
+    backfilled_area = positive_finite(backfilled.area)
+    if detected_area is None or backfilled_area is None:
         return False
-    if rescued_area < detected_area * _BACKFILL_SUPERSEDES_LOCAL_AREA_RATIO:
+    if backfilled_area < detected_area * _BACKFILL_SUPERSEDES_LOCAL_AREA_RATIO:
         return False
 
     if family_area is None:
         return True
     return (
         detected_area <= family_area * _LOCAL_OWNER_LOW_FAMILY_FRACTION
-        and rescued_area >= family_area * _BACKFILL_FAMILY_SUPPORT_FRACTION
+        and backfilled_area >= family_area * _BACKFILL_FAMILY_SUPPORT_FRACTION
     )
 
 

@@ -71,7 +71,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             config=Tier2TraceProducerConfig(
                 ppm_tolerance=args.ppm_tol,
                 rt_padding_min=args.rt_padding_min,
-                max_rescued_cells_per_family=args.max_rescued_cells_per_family,
+                max_backfilled_cells_per_family=args.max_rescued_cells_per_family,
             ),
             producer_command=" ".join(sys.argv),
             python_executable=sys.executable,

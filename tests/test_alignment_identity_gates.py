@@ -15,7 +15,7 @@ def test_extreme_single_dr_backfill_gate_does_not_need_seed_enrichment() -> None
     reason = classify_single_dr_backfill_dependency(
         neutral_loss_tag="DNA_dR",
         q_detected=2,
-        q_rescue=83,
+        q_backfill=83,
         cell_count=85,
         seed_quality=None,
     )
@@ -41,7 +41,7 @@ def test_weak_seed_backfill_gate_reuses_seed_quality_summary() -> None:
     reason = classify_single_dr_backfill_dependency(
         neutral_loss_tag="dR",
         q_detected=3,
-        q_rescue=6,
+        q_backfill=6,
         cell_count=10,
         seed_quality=summary,
     )
@@ -71,7 +71,7 @@ def test_adequate_seed_backfill_is_not_a_gate_candidate() -> None:
     reason = classify_single_dr_backfill_dependency(
         neutral_loss_tag="dR",
         q_detected=3,
-        q_rescue=6,
+        q_backfill=6,
         cell_count=10,
         seed_quality=summary,
     )
@@ -98,7 +98,7 @@ def test_two_trusted_seeds_tolerate_one_weak_seed_with_warning_reason() -> None:
     reason = classify_single_dr_backfill_dependency(
         neutral_loss_tag="dR",
         q_detected=3,
-        q_rescue=6,
+        q_backfill=6,
         cell_count=10,
         seed_quality=summary,
     )
@@ -127,7 +127,7 @@ def test_high_score_seeds_are_not_trusted_without_seed_event_support() -> None:
     reason = classify_single_dr_backfill_dependency(
         neutral_loss_tag="dR",
         q_detected=3,
-        q_rescue=6,
+        q_backfill=6,
         cell_count=10,
         seed_quality=summary,
     )
@@ -155,7 +155,7 @@ def test_low_scan_support_seed_is_weak_and_not_trusted() -> None:
     reason = classify_single_dr_backfill_dependency(
         neutral_loss_tag="dR",
         q_detected=3,
-        q_rescue=6,
+        q_backfill=6,
         cell_count=10,
         seed_quality=summary,
     )
@@ -170,7 +170,7 @@ def test_non_dr_backfill_is_out_of_scope_even_when_extreme() -> None:
     reason = classify_single_dr_backfill_dependency(
         neutral_loss_tag="DNA_R",
         q_detected=1,
-        q_rescue=9,
+        q_backfill=9,
         cell_count=10,
         seed_quality=None,
     )

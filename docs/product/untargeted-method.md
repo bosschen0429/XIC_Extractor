@@ -13,7 +13,7 @@ linked owner pages.
   artifact annotation, blank/background filtering, or batch-correction system.
 - Untargeted is the general application of the shared scientific lifecycle, not
   a separate core that Targeted must call into wholesale. Targeted and
-  Untargeted share capture, CrossSample, ModeTrack, ObservationRepair, and
+  Untargeted share capture, CrossSample, ModeTrack, ObservationRevisit, and
   ProductionCellDecision implementations; they differ at search scope and
   output projection.
 - A broad candidate-discovery policy is available to both applications.

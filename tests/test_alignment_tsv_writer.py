@@ -1755,12 +1755,12 @@ def test_backfill_cell_evidence_tsv_is_compact_and_backfill_scoped(
     assert list(rows[0]) == list(ALIGNMENT_BACKFILL_CELL_EVIDENCE_COLUMNS)
     assert {row["feature_family_id"] for row in rows} == {"ALN000001"}
     assert {row["sample_stem"] for row in rows} == {"sample-a", "sample-b"}
-    rescued = next(row for row in rows if row["status"] == "backfilled")
-    assert rescued["production_cell_status"] in {
+    backfilled = next(row for row in rows if row["status"] == "backfilled")
+    assert backfilled["production_cell_status"] in {
         "accepted_backfill",
         "review_backfill",
     }
-    assert rescued["primary_matrix_area"] == "8"
+    assert backfilled["primary_matrix_area"] == "8"
     assert "region_candidate_count" not in rows[0]
 
     result = lookup_backfill_evidence_tsv(
@@ -1931,10 +1931,10 @@ def test_write_alignment_owner_backfill_seed_audit_tsv_is_sidecar(
     tmp_path: Path,
 ) -> None:
     from xic_extractor.alignment.tsv_writer import (
+        ALIGNMENT_BACKFILL_SEED_AUDIT_COLUMNS,
         ALIGNMENT_CELLS_COLUMNS,
-        ALIGNMENT_OWNER_BACKFILL_SEED_AUDIT_COLUMNS,
+        write_alignment_backfill_seed_audit_tsv,
         write_alignment_cells_tsv,
-        write_alignment_owner_backfill_seed_audit_tsv,
     )
 
     matrix = AlignmentMatrix(
@@ -1954,14 +1954,14 @@ def test_write_alignment_owner_backfill_seed_audit_tsv_is_sidecar(
 
     cells = _read_tsv(write_alignment_cells_tsv(tmp_path / "cells.tsv", matrix))
     audit = _read_tsv(
-        write_alignment_owner_backfill_seed_audit_tsv(
+        write_alignment_backfill_seed_audit_tsv(
             tmp_path / "alignment_owner_backfill_seed_audit.tsv",
             matrix,
         )
     )
 
     assert list(cells[0]) == list(ALIGNMENT_CELLS_COLUMNS)
-    assert list(audit[0]) == list(ALIGNMENT_OWNER_BACKFILL_SEED_AUDIT_COLUMNS)
+    assert list(audit[0]) == list(ALIGNMENT_BACKFILL_SEED_AUDIT_COLUMNS)
     assert len(audit) == 1
     assert audit[0]["feature_family_id"] == "ALN000001"
     assert audit[0]["sample_stem"] == "sample-a"
@@ -1978,19 +1978,19 @@ def test_write_alignment_owner_backfill_seed_audit_tsv_is_sidecar(
 def test_write_alignment_owner_backfill_candidate_audit_tsv_is_sidecar(
     tmp_path: Path,
 ) -> None:
-    from xic_extractor.alignment.owner_backfill import (
-        OwnerBackfillCandidateAuditRow,
+    from xic_extractor.alignment.backfill_peak_fact import (
+        BackfillCandidateAuditRow,
     )
     from xic_extractor.alignment.tsv_writer import (
-        ALIGNMENT_OWNER_BACKFILL_CANDIDATE_AUDIT_COLUMNS,
-        write_alignment_owner_backfill_candidate_audit_tsv,
+        ALIGNMENT_BACKFILL_CANDIDATE_AUDIT_COLUMNS,
+        write_alignment_backfill_candidate_audit_tsv,
     )
 
     audit = _read_tsv(
-        write_alignment_owner_backfill_candidate_audit_tsv(
+        write_alignment_backfill_candidate_audit_tsv(
             tmp_path / "alignment_owner_backfill_candidate_audit.tsv",
             (
-                OwnerBackfillCandidateAuditRow(
+                BackfillCandidateAuditRow(
                     feature_family_id="FAM000001",
                     group_hypothesis_id="HYP000001",
                     public_family_id="FAM000001",
@@ -2018,7 +2018,7 @@ def test_write_alignment_owner_backfill_candidate_audit_tsv_is_sidecar(
         )
     )
 
-    assert list(audit[0]) == list(ALIGNMENT_OWNER_BACKFILL_CANDIDATE_AUDIT_COLUMNS)
+    assert list(audit[0]) == list(ALIGNMENT_BACKFILL_CANDIDATE_AUDIT_COLUMNS)
     assert audit[0]["feature_family_id"] == "FAM000001"
     assert audit[0]["candidate_phase"] == "primary_query"
     assert audit[0]["selected_for_output"] == "FALSE"

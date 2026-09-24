@@ -108,9 +108,9 @@ def test_tsv_adapter_excludes_review_backfill_outside_alignment_window(
     alignment_dir = tmp_path / "alignment"
     _write_tsv(
         alignment_dir / "alignment_review.tsv",
-        (_review_row("FAM_DRIFT", q_detected=2, q_rescue=8),),
+        (_review_row("FAM_DRIFT", q_detected=2, q_backfill=8),),
     )
-    cells = _cells("FAM_DRIFT", detected=2, rescued=8)
+    cells = _cells("FAM_DRIFT", detected=2, backfilled=8)
     cells.append(
         {
             **cells[-1],
@@ -135,12 +135,12 @@ def test_tsv_adapter_reduces_generic_review_backfill_to_unavailable(
 ) -> None:
     alignment_dir = tmp_path / "alignment"
     output_dir = tmp_path / "diagnostics"
-    review_row = _review_row("FAM_REVIEW", q_detected=2, q_rescue=0)
+    review_row = _review_row("FAM_REVIEW", q_detected=2, q_backfill=0)
     review_row["review_backfill_count"] = "1"
     _write_tsv(alignment_dir / "alignment_review.tsv", (review_row,))
     _write_tsv(
         alignment_dir / "alignment_cells.tsv",
-        tuple(_cells("FAM_REVIEW", detected=2, rescued=1)),
+        tuple(_cells("FAM_REVIEW", detected=2, backfilled=1)),
     )
 
     result = report.build_decision_report(alignment_dir=alignment_dir)
@@ -154,15 +154,15 @@ def test_tsv_adapter_reduces_generic_review_backfill_to_unavailable(
     assert summary["unavailable_backfill_owner_evidence_rows"] == "1"
 
 
-def test_tsv_adapter_requires_height_for_rescue_quantifiable_parity(
+def test_tsv_adapter_requires_height_for_backfill_quantifiable_parity(
     tmp_path: Path,
 ) -> None:
     alignment_dir = tmp_path / "alignment"
     _write_tsv(
         alignment_dir / "alignment_review.tsv",
-        (_review_row("FAM_NO_HEIGHT", q_detected=2, q_rescue=8),),
+        (_review_row("FAM_NO_HEIGHT", q_detected=2, q_backfill=8),),
     )
-    cells = _cells("FAM_NO_HEIGHT", detected=2, rescued=8)
+    cells = _cells("FAM_NO_HEIGHT", detected=2, backfilled=8)
     for row in cells:
         if row["status"] == "backfilled":
             row["height"] = ""
@@ -176,15 +176,15 @@ def test_tsv_adapter_requires_height_for_rescue_quantifiable_parity(
     assert family["assessed_rescue_count"] == 0
 
 
-def test_tsv_adapter_uses_primary_matrix_area_for_rescue_evidence(
+def test_tsv_adapter_uses_primary_matrix_area_for_backfill_evidence(
     tmp_path: Path,
 ) -> None:
     alignment_dir = tmp_path / "alignment"
     _write_tsv(
         alignment_dir / "alignment_review.tsv",
-        (_review_row("FAM_PRIMARY_AREA", q_detected=2, q_rescue=8),),
+        (_review_row("FAM_PRIMARY_AREA", q_detected=2, q_backfill=8),),
     )
-    cells = _cells("FAM_PRIMARY_AREA", detected=2, rescued=8)
+    cells = _cells("FAM_PRIMARY_AREA", detected=2, backfilled=8)
     for row in cells:
         if row["status"] == "backfilled":
             row["area"] = ""
@@ -201,12 +201,12 @@ def test_tsv_adapter_uses_primary_matrix_area_for_rescue_evidence(
 
 def test_tsv_adapter_requires_review_backfill_count(tmp_path: Path) -> None:
     alignment_dir = tmp_path / "alignment"
-    review_row = _review_row("FAM_STALE_REVIEW", q_detected=2, q_rescue=8)
+    review_row = _review_row("FAM_STALE_REVIEW", q_detected=2, q_backfill=8)
     review_row.pop("review_backfill_count")
     _write_tsv(alignment_dir / "alignment_review.tsv", (review_row,))
     _write_tsv(
         alignment_dir / "alignment_cells.tsv",
-        tuple(_cells("FAM_STALE_REVIEW", detected=2, rescued=8)),
+        tuple(_cells("FAM_STALE_REVIEW", detected=2, backfilled=8)),
     )
 
     with pytest.raises(ValueError, match="missing required columns"):
@@ -222,14 +222,14 @@ def test_single_dr_gate_row_flags_use_exact_tokens(tmp_path: Path) -> None:
                 "FAM_FALSE_FLAG",
                 primary=False,
                 q_detected=2,
-                q_rescue=8,
+                q_backfill=8,
                 row_flags="not_high_backfill_dependency",
             ),
         ),
     )
     _write_tsv(
         alignment_dir / "alignment_cells.tsv",
-        tuple(_cells("FAM_FALSE_FLAG", detected=2, rescued=8)),
+        tuple(_cells("FAM_FALSE_FLAG", detected=2, backfilled=8)),
     )
 
     result = report.build_decision_report(alignment_dir=alignment_dir)
@@ -244,9 +244,9 @@ def test_tsv_diagnostic_reports_neighbor_interference_block(
     output_dir = tmp_path / "diagnostics"
     _write_tsv(
         alignment_dir / "alignment_review.tsv",
-        (_review_row("FAM_NEIGHBOR", q_detected=2, q_rescue=8),),
+        (_review_row("FAM_NEIGHBOR", q_detected=2, q_backfill=8),),
     )
-    cells = _cells("FAM_NEIGHBOR", detected=2, rescued=8)
+    cells = _cells("FAM_NEIGHBOR", detected=2, backfilled=8)
     for row in cells:
         if row["status"] == "backfilled":
             row["region_review_reason"] = "neighboring_ms1_interference"
@@ -267,11 +267,11 @@ def test_single_dr_family_writer_header_is_stable(tmp_path: Path) -> None:
     output_dir = tmp_path / "diagnostics"
     _write_tsv(
         alignment_dir / "alignment_review.tsv",
-        (_review_row("FAM_HEADER", q_detected=2, q_rescue=8),),
+        (_review_row("FAM_HEADER", q_detected=2, q_backfill=8),),
     )
     _write_tsv(
         alignment_dir / "alignment_cells.tsv",
-        tuple(_cells("FAM_HEADER", detected=2, rescued=8)),
+        tuple(_cells("FAM_HEADER", detected=2, backfilled=8)),
     )
 
     code = report.main(
@@ -320,17 +320,17 @@ def test_single_dr_family_writer_header_is_stable(tmp_path: Path) -> None:
         ]
 
 
-def test_high_detected_rescue_heavy_row_remains_strong(
+def test_high_detected_backfill_heavy_row_remains_strong(
     tmp_path: Path,
 ) -> None:
     alignment_dir = tmp_path / "alignment"
     _write_tsv(
         alignment_dir / "alignment_review.tsv",
-        (_review_row("FAM_STRONG", q_detected=20, q_rescue=60),),
+        (_review_row("FAM_STRONG", q_detected=20, q_backfill=60),),
     )
     _write_tsv(
         alignment_dir / "alignment_cells.tsv",
-        tuple(_cells("FAM_STRONG", detected=20, rescued=60, absent=5)),
+        tuple(_cells("FAM_STRONG", detected=20, backfilled=60, absent=5)),
     )
 
     result = report.build_decision_report(alignment_dir=alignment_dir)
@@ -343,7 +343,7 @@ def test_high_detected_rescue_heavy_row_remains_strong(
     assert candidates["dr_supported_backfill_capped"]["affected_primary_rows"] == 0
 
 
-def test_duplicate_pressure_low_detected_rescue_heavy_row_is_watch_only(
+def test_duplicate_pressure_low_detected_backfill_heavy_row_is_watch_only(
     tmp_path: Path,
 ) -> None:
     alignment_dir = tmp_path / "alignment"
@@ -353,7 +353,7 @@ def test_duplicate_pressure_low_detected_rescue_heavy_row_is_watch_only(
             _review_row(
                 "FAM_DUP",
                 q_detected=4,
-                q_rescue=6,
+                q_backfill=6,
                 duplicate_assigned=3,
                 row_flags="duplicate_claim_pressure;rescue_heavy",
             ),
@@ -361,7 +361,7 @@ def test_duplicate_pressure_low_detected_rescue_heavy_row_is_watch_only(
     )
     _write_tsv(
         alignment_dir / "alignment_cells.tsv",
-        tuple(_cells("FAM_DUP", detected=4, rescued=6)),
+        tuple(_cells("FAM_DUP", detected=4, backfilled=6)),
     )
 
     result = report.build_decision_report(alignment_dir=alignment_dir)
@@ -380,11 +380,11 @@ def test_rt_worsened_is_context_not_a_demotion_rule(tmp_path: Path) -> None:
     rt_context = tmp_path / "rt_normalization_families.tsv"
     _write_tsv(
         alignment_dir / "alignment_review.tsv",
-        (_review_row("FAM_RT", q_detected=20, q_rescue=0),),
+        (_review_row("FAM_RT", q_detected=20, q_backfill=0),),
     )
     _write_tsv(
         alignment_dir / "alignment_cells.tsv",
-        tuple(_cells("FAM_RT", detected=20, rescued=0)),
+        tuple(_cells("FAM_RT", detected=20, backfilled=0)),
     )
     _write_tsv(
         rt_context,
@@ -419,11 +419,11 @@ def test_missing_optional_enrichment_still_outputs_unavailable(
     alignment_dir = tmp_path / "alignment"
     _write_tsv(
         alignment_dir / "alignment_review.tsv",
-        (_review_row("FAM_WEAKISH", q_detected=3, q_rescue=6),),
+        (_review_row("FAM_WEAKISH", q_detected=3, q_backfill=6),),
     )
     _write_tsv(
         alignment_dir / "alignment_cells.tsv",
-        tuple(_cells("FAM_WEAKISH", detected=3, rescued=6, absent=1)),
+        tuple(_cells("FAM_WEAKISH", detected=3, backfilled=6, absent=1)),
     )
 
     result = report.build_decision_report(alignment_dir=alignment_dir)
@@ -439,16 +439,16 @@ def test_non_dr_primary_rows_are_out_of_scope(tmp_path: Path) -> None:
     _write_tsv(
         alignment_dir / "alignment_review.tsv",
         (
-            _review_row("FAM_DR", tag="DNA_dR", q_detected=2, q_rescue=8),
-            _review_row("FAM_R", tag="RNA_R", q_detected=1, q_rescue=9),
-            _review_row("FAM_MER", tag="DNA_MeR", q_detected=1, q_rescue=9),
+            _review_row("FAM_DR", tag="DNA_dR", q_detected=2, q_backfill=8),
+            _review_row("FAM_R", tag="RNA_R", q_detected=1, q_backfill=9),
+            _review_row("FAM_MER", tag="DNA_MeR", q_detected=1, q_backfill=9),
         ),
     )
     _write_tsv(
         alignment_dir / "alignment_cells.tsv",
-        tuple(_cells("FAM_DR", detected=2, rescued=8))
-        + tuple(_cells("FAM_R", detected=1, rescued=9))
-        + tuple(_cells("FAM_MER", detected=1, rescued=9)),
+        tuple(_cells("FAM_DR", detected=2, backfilled=8))
+        + tuple(_cells("FAM_R", detected=1, backfilled=9))
+        + tuple(_cells("FAM_MER", detected=1, backfilled=9)),
     )
 
     result = report.build_decision_report(alignment_dir=alignment_dir)
@@ -552,7 +552,7 @@ def _review_row(
     tag: str = "DNA_dR",
     primary: bool = True,
     q_detected: int,
-    q_rescue: int,
+    q_backfill: int,
     duplicate_assigned: int = 0,
     row_flags: str = "",
 ) -> dict[str, str]:
@@ -564,9 +564,9 @@ def _review_row(
         "family_product_mz": "184.0739",
         "family_observed_neutral_loss_da": "116.0474",
         "detected_count": str(q_detected),
-        "accepted_backfill_count": str(q_rescue),
+        "accepted_backfill_count": str(q_backfill),
         "quantifiable_detected_count": str(q_detected),
-        "quantifiable_backfill_count": str(q_rescue),
+        "quantifiable_backfill_count": str(q_backfill),
         "review_backfill_count": "0",
         "duplicate_assigned_count": str(duplicate_assigned),
         "include_in_primary_matrix": "TRUE" if primary else "FALSE",
@@ -584,7 +584,7 @@ def _cells(
     feature_id: str,
     *,
     detected: int,
-    rescued: int,
+    backfilled: int,
     absent: int = 0,
 ) -> list[dict[str, str]]:
     rows = []
@@ -615,7 +615,7 @@ def _cells(
                 **_backfill_evidence_row(supported=False),
             },
         )
-    for index in range(detected + 1, detected + rescued + 1):
+    for index in range(detected + 1, detected + backfilled + 1):
         rows.append(
             {
                 "feature_family_id": feature_id,
@@ -641,7 +641,7 @@ def _cells(
                 **_backfill_evidence_row(supported=True),
             },
         )
-    for index in range(detected + rescued + 1, detected + rescued + absent + 1):
+    for index in range(detected + backfilled + 1, detected + backfilled + absent + 1):
         rows.append(
             {
                 "feature_family_id": feature_id,

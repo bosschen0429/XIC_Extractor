@@ -29,7 +29,7 @@ value implementation.
   when the group is provisional or the observation is not a group member.
   Other samples cannot be filled from singleton or RT-prior evidence alone;
   they require direct local evidence or an accepted independent
-  `ObservationRepair`.
+  `ObservationRevisit`.
 - Targeted selection first owns `TargetRowBinding` and constructs
   `TargetCellSubject`. `ProductionCellDecision` then owns the selected numeric
   value or typed no-write result. The same Targeted owner afterward closes

@@ -4370,7 +4370,7 @@ def _assert_conservative_proof_seals(
             assert rebuilt == proof
         assert len(bindings) == len(proof.decision.group_facts.source_cells)
         with pytest.raises(ValueError, match="bound group facts"):
-            owner.mint_owner_backfill_conservative_no_request_proof(
+            owner.mint_backfill_conservative_no_request_proof(
                 processing_owners=proof.processing_owners,
                 group_identity=proof.group_identity,
                 sample=proof.sample,
@@ -4466,11 +4466,11 @@ def _assert_conservative_proof_seals(
         with pytest.raises(ValueError):
             replace(position, **substitution)
     with pytest.raises(ValueError):
-        owner.validate_owner_backfill_conservative_no_request_position(
+        owner.validate_backfill_conservative_no_request_position(
             position, source_population=(proof.decision.target_cell,)
         )
     with pytest.raises(ValueError):
-        owner.validate_owner_backfill_conservative_no_request_position(
+        owner.validate_backfill_conservative_no_request_position(
             position,
             source_cell=next(
                 cell
@@ -4495,7 +4495,7 @@ def _assert_conservative_proof_seals(
             "map_conservative_backfill_candidates",
             unexpected_reevaluation,
         )
-        owner.validate_owner_backfill_conservative_no_request_position(
+        owner.validate_backfill_conservative_no_request_position(
             position,
             source_cell=proof.decision.target_cell,
             source_population=proof.decision.group_facts.source_cells,

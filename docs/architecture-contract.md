@@ -93,7 +93,7 @@ Targeted and Untargeted are applications of the same evidence lifecycle.
 Targeted adds target-list/search policy and fixed-row delivery; Untargeted adds
 general discovery, grouping, and matrix delivery. Separate entry points and
 writers do not justify duplicate capture, peak identity, CrossSample,
-ModeTrack, ObservationRepair, or cell-decision owners.
+ModeTrack, ObservationRevisit, or cell-decision owners.
 
 The detailed scientific lifecycle is owned by
 [`shared-processing-kernel.md`](product/shared-processing-kernel.md),
@@ -108,7 +108,7 @@ Targeted and Untargeted now close through the shared scientific-owner
 interfaces while retaining their application-specific search scope,
 projection, and writer contracts. Discovery providers may interpret different
 inputs and publish different typed evidence, but they enter one shared
-observation, Alignment, ObservationRepair, Backfill, and cell-decision
+observation, Alignment, bounded Backfill, and cell-decision
 lifecycle. Provider-specific evidence handling must not create a parallel
 downstream decision core.
 
@@ -119,7 +119,7 @@ bands; bootstrap membership has no downstream authority. Target workflows that
 use ModeTrack may apply one initial complete-partition refinement. The final
 immutable `CrossSampleGroupingResult(processing_owners,
 partition_transition, drift_lookup)` reaches bounded Backfill,
-ObservationRepair, cell decisions, and finalization. Repair does not reopen
+ObservationRevisit, cell decisions, and finalization. A revisit does not reopen
 grouping, refit ModeTrack, replace the partition, or mint a second grouping
 owner. `CrossSamplePartitionTransition` owns only the mathematical before/after
 complete-partition transition; `ModeTrackAssignmentScope` is a plain immutable

@@ -31,11 +31,11 @@ from xic_extractor.alignment.promotion_policy import (
     BACKFILL_MS1_PATTERN_BLOCKED_REASON,
     BACKFILL_MS2_CONFLICT_REASON,
     BACKFILL_MS2_CONTEXT_BLOCKED_REASON,
+    BACKFILL_ONLY_BLOCKED_REASON,
     BACKFILL_RT_EXPLANATION_BLOCKED_REASON,
     LOW_MS1_COVERAGE_BLOCKED_REASON,
     MISSING_BACKFILL_EVIDENCE_BLOCKED_REASON,
     NEIGHBOR_INTERFERENCE_BLOCKED_REASON,
-    RESCUE_ONLY_BLOCKED_REASON,
     classify_backfill_promotion,
     evidence_from_tsv_rows,
 )
@@ -82,7 +82,7 @@ _POLICY_BLOCK_REASONS = {
     LOW_MS1_COVERAGE_BLOCKED_REASON,
     MISSING_BACKFILL_EVIDENCE_BLOCKED_REASON,
     NEIGHBOR_INTERFERENCE_BLOCKED_REASON,
-    RESCUE_ONLY_BLOCKED_REASON,
+    BACKFILL_ONLY_BLOCKED_REASON,
     "duplicate_claim_pressure",
 }
 
@@ -214,12 +214,12 @@ def _classify_family(
         review_row.get("quantifiable_detected_count", "")
         or review_row.get("detected_count", ""),
     )
-    q_rescue = _int_value(
+    q_backfill = _int_value(
         review_row.get("quantifiable_backfill_count", "")
         or review_row.get("accepted_backfill_count", ""),
     )
     denominator = sample_count or len(cells) or 1
-    rescue_fraction = q_rescue / denominator
+    backfill_fraction = q_backfill / denominator
     duplicate_count = _int_value(review_row.get("duplicate_assigned_count", ""))
     row_flags = review_row.get("row_flags", "")
     policy_evidence = evidence_from_tsv_rows(
@@ -247,7 +247,7 @@ def _classify_family(
         MISSING_BACKFILL_EVIDENCE_BLOCKED_REASON,
     }:
         classification = "blocked_missing_backfill_identity_evidence"
-    elif promotion.reason == RESCUE_ONLY_BLOCKED_REASON:
+    elif promotion.reason == BACKFILL_ONLY_BLOCKED_REASON:
         classification = "blocked_rescue_only"
     elif dependency == EXTREME_BACKFILL_REASON:
         classification = "risky_extreme_backfill"
@@ -255,10 +255,10 @@ def _classify_family(
         classification = "risky_weak_seed_backfill"
     elif dependency == WEAK_SEED_TOLERATED_REASON:
         classification = "watch_weak_seed_tolerated"
-    elif _is_duplicate_rescue_watch(
+    elif _is_duplicate_backfill_watch(
         q_detected=q_detected,
-        q_rescue=q_rescue,
-        rescue_fraction=rescue_fraction,
+        q_backfill=q_backfill,
+        backfill_fraction=backfill_fraction,
         duplicate_count=duplicate_count,
         row_flags=row_flags,
     ):
@@ -279,16 +279,16 @@ def _classify_family(
             review_row.get("include_in_primary_matrix", ""),
         ),
         "q_detected": q_detected,
-        "q_rescue": q_rescue,
+        "q_rescue": q_backfill,
         "sample_count": denominator,
-        "rescue_fraction": f"{rescue_fraction:.4f}",
+        "rescue_fraction": f"{backfill_fraction:.4f}",
         "duplicate_assigned_count": duplicate_count,
         "row_flags": row_flags,
         "promotion_state": promotion.state,
         "promotion_reason": promotion.reason,
         "promotion_flags": ";".join(promotion.flags),
-        "supported_rescue_count": promotion.supported_rescue_count,
-        "assessed_rescue_count": promotion.assessed_rescue_count,
+        "supported_rescue_count": promotion.supported_backfill_count,
+        "assessed_rescue_count": promotion.assessed_backfill_count,
         "seed_quality_status": seed_quality.status,
         "min_evidence_score": _optional_metric(seed_quality.min_evidence_score),
         "min_seed_event_count": _optional_metric(seed_quality.min_seed_event_count),
@@ -313,19 +313,24 @@ def _classify_family(
     }
 
 
-def _is_duplicate_rescue_watch(
+def _is_duplicate_backfill_watch(
     *,
     q_detected: int,
-    q_rescue: int,
-    rescue_fraction: float,
+    q_backfill: int,
+    backfill_fraction: float,
     duplicate_count: int,
     row_flags: str,
 ) -> bool:
     flags = set(_split_list(row_flags))
     duplicate_pressure = duplicate_count > 0 or "duplicate_claim_pressure" in flags
-    rescue_heavy = rescue_fraction >= 0.50 or "rescue_heavy" in flags
+    backfill_heavy = backfill_fraction >= 0.50 or "rescue_heavy" in flags
     low_detected_support = q_detected <= 5
-    return duplicate_pressure and rescue_heavy and low_detected_support and q_rescue > 0
+    return (
+        duplicate_pressure
+        and backfill_heavy
+        and low_detected_support
+        and q_backfill > 0
+    )
 
 
 def _seed_quality(

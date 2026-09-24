@@ -28,11 +28,16 @@ from tests.untargeted_cid_nl_no_raw_fixture import (
     build_untargeted_cid_nl_no_raw_fixture,
 )
 from xic_extractor.alignment.backfill.evaluation_coverage import (
-    OwnerBackfillEvaluationCoverageContext,
-    build_owner_backfill_evaluation_coverage,
-    build_owner_backfill_planning_epoch,
-    mint_owner_backfill_attempt_terminal,
-    mint_owner_backfill_planning_epoch,
+    BackfillEvaluationCoverageContext,
+    build_backfill_evaluation_coverage,
+    build_backfill_planning_epoch,
+    mint_backfill_attempt_terminal,
+    mint_backfill_planning_epoch,
+)
+from xic_extractor.alignment.backfill_request_plan import (
+    BACKFILL_TRACE_RESULT_SEMANTICS,
+    BackfillRequestEquivalenceContext,
+    build_backfill_request_plan,
 )
 from xic_extractor.alignment.cell_observations import (
     CellObservationContractError,
@@ -55,11 +60,6 @@ from xic_extractor.alignment.cross_sample_peak_groups import (
 from xic_extractor.alignment.hypothesis_owner_adapter import (
     compose_cid_nl_peak_hypotheses_from_assessment,
     owner_from_cid_nl_assessment_support,
-)
-from xic_extractor.alignment.owner_backfill_request_plan import (
-    OWNER_BACKFILL_TRACE_RESULT_SEMANTICS,
-    OwnerBackfillRequestEquivalenceContext,
-    build_owner_backfill_request_plan,
 )
 from xic_extractor.alignment.untargeted_cid_nl_golden_path import (
     CID_NL_ALIGNMENT_CONFIG,
@@ -234,8 +234,8 @@ def _outside_population_handoff(tmp_path: Path):
     )
     coverage = _coverage_for_groups(binding, identities, fixture.samples, planned=False)
     epoch = coverage.epoch
-    coverage = build_owner_backfill_evaluation_coverage(
-        mint_owner_backfill_planning_epoch(
+    coverage = build_backfill_evaluation_coverage(
+        mint_backfill_planning_epoch(
             **{
                 item.name: getattr(epoch, item.name)
                 for item in fields(epoch)
@@ -382,7 +382,7 @@ def _owner_handoff(tmp_path: Path):
     )
     feature = _runtime_feature(group)
     sample_order = tuple(sample.lookup_token for sample in fixture.samples)
-    context = OwnerBackfillEvaluationCoverageContext(
+    context = BackfillEvaluationCoverageContext(
         processing_owners=fixture.owners,
         input_features=(feature,),
         samples=fixture.samples,
@@ -393,7 +393,7 @@ def _owner_handoff(tmp_path: Path):
         window_strategy="exact",
         superwindow_span_factor=2,
         validation_mode="primary",
-        result_semantics=OWNER_BACKFILL_TRACE_RESULT_SEMANTICS,
+        result_semantics=BACKFILL_TRACE_RESULT_SEMANTICS,
         scope="full-audit",
         selected_family_ids=frozenset(),
     )
@@ -405,7 +405,7 @@ def _owner_handoff(tmp_path: Path):
             strict=True,
         )
     }
-    equivalence = OwnerBackfillRequestEquivalenceContext(
+    equivalence = BackfillRequestEquivalenceContext(
         acquisition_sources=acquisition_sources,
         backend=context.backend,
         window_strategy=context.window_strategy,
@@ -413,14 +413,14 @@ def _owner_handoff(tmp_path: Path):
         validation_mode=context.validation_mode,
         result_semantics=context.result_semantics,
     )
-    request_plan = build_owner_backfill_request_plan(
+    request_plan = build_backfill_request_plan(
         (feature,),
         sample_order=context.sample_order,
         raw_sample_stems=context.raw_sample_stems,
         alignment_config=context.alignment_config,
         equivalence_context=equivalence,
     )
-    epoch = build_owner_backfill_planning_epoch(
+    epoch = build_backfill_planning_epoch(
         context,
         selected_features=(feature,),
         request_plan=request_plan,
@@ -429,7 +429,7 @@ def _owner_handoff(tmp_path: Path):
     for position in epoch.positions:
         for planned in position.primary_logical_requests:
             terminals.append(
-                mint_owner_backfill_attempt_terminal(
+                mint_backfill_attempt_terminal(
                     position_id=position.position_id,
                     logical_request=planned.logical_request,
                     request_identity=planned.request_identity,
@@ -441,7 +441,7 @@ def _owner_handoff(tmp_path: Path):
                     physical_evaluation=None,
                 )
             )
-    coverage = build_owner_backfill_evaluation_coverage(epoch, tuple(terminals))
+    coverage = build_backfill_evaluation_coverage(epoch, tuple(terminals))
     receipt_fixture = SimpleNamespace(
         context=context,
         acquisitions=acquisition_sources,
@@ -543,7 +543,7 @@ def _coverage_for_groups(
         )
     }
     acquisition_sources = {stem: all_acquisitions[stem] for stem in sample_order}
-    context = OwnerBackfillEvaluationCoverageContext(
+    context = BackfillEvaluationCoverageContext(
         processing_owners=fixture.owners,
         input_features=features,
         samples=samples,
@@ -554,11 +554,11 @@ def _coverage_for_groups(
         window_strategy="exact",
         superwindow_span_factor=2,
         validation_mode="primary",
-        result_semantics=OWNER_BACKFILL_TRACE_RESULT_SEMANTICS,
+        result_semantics=BACKFILL_TRACE_RESULT_SEMANTICS,
         scope="full-audit" if planned else "selected-families",
         selected_family_ids=frozenset() if planned else frozenset({"not-this-family"}),
     )
-    equivalence = OwnerBackfillRequestEquivalenceContext(
+    equivalence = BackfillRequestEquivalenceContext(
         acquisition_sources=acquisition_sources,
         backend=context.backend,
         window_strategy=context.window_strategy,
@@ -566,20 +566,20 @@ def _coverage_for_groups(
         validation_mode=context.validation_mode,
         result_semantics=context.result_semantics,
     )
-    request_plan = build_owner_backfill_request_plan(
+    request_plan = build_backfill_request_plan(
         features if planned else (),
         sample_order=sample_order,
         raw_sample_stems=frozenset(sample_order),
         alignment_config=context.alignment_config,
         equivalence_context=equivalence,
     )
-    epoch = build_owner_backfill_planning_epoch(
+    epoch = build_backfill_planning_epoch(
         context,
         selected_features=features if planned else (),
         request_plan=request_plan,
     )
     terminals = tuple(
-        mint_owner_backfill_attempt_terminal(
+        mint_backfill_attempt_terminal(
             position_id=position.position_id,
             logical_request=planned_request.logical_request,
             request_identity=planned_request.request_identity,
@@ -593,7 +593,7 @@ def _coverage_for_groups(
         for position in epoch.positions
         for planned_request in position.primary_logical_requests
     )
-    return build_owner_backfill_evaluation_coverage(epoch, terminals)
+    return build_backfill_evaluation_coverage(epoch, terminals)
 
 
 def _receipt_fixture(fixture: Any, samples: tuple[Any, ...]):
@@ -853,8 +853,8 @@ def test_composer_merge_retains_both_predecessor_lanes_deterministically(
     )
     if outside_support:
         epoch = coverage.epoch
-        coverage = build_owner_backfill_evaluation_coverage(
-            mint_owner_backfill_planning_epoch(
+        coverage = build_backfill_evaluation_coverage(
+            mint_backfill_planning_epoch(
                 **{
                     item.name: getattr(epoch, item.name)
                     for item in fields(epoch)

@@ -13,7 +13,7 @@ Discovery is provider-specific at its input and initial-interpretation seam.
 CID-NL, HCD-PI, Delta Mass, and future providers may consume different evidence
 and use different candidate-generation strategies. They publish owner-backed
 observations and hypotheses through the shared evidence contract so downstream
-Alignment, ObservationRepair, and Backfill owners do not require a parallel
+Alignment, ObservationRevisit, and Backfill owners do not require a parallel
 lifecycle for each provider.
 
 ## Contract

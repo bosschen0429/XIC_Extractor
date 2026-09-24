@@ -154,12 +154,12 @@ Targeted-specific rules to keep explicit:
 Untargeted alignment is discovery-driven. It does not know target identity
 ahead of time, so CrossSample decides from trace, owner, group, identity, and
 provenance evidence rather than targeted labels. Backfill is a separate bounded
-ObservationRepair owner and does not decide membership, selected value, or row
+ObservationRevisit owner and does not decide membership, selected value, or row
 inclusion.
 
 | Decision role | Untargeted / Backfill rule |
 | --- | --- |
-| Unit | Separate decisions for owner edge, cross-sample group/disposition, ObservationRepair, Untarget row identity, Group cell value/no-write, and activation output |
+| Unit | Separate decisions for owner edge, cross-sample group/disposition, ObservationRevisit, Untarget row identity, Group cell value/no-write, and activation output |
 | Required evidence | Explicit discovery/alignment input, owner construction, row identity, typed same-peak evidence when claiming same-peak support, and provenance-valid sidecar when used for product support |
 | Hard blockers | Ambiguous owner, duplicate loser, wrong-peak conflict, missing matrix identity, stale source hash, unsupported family projection, unapproved authority scope, missing expected-diff gate for new writer behavior |
 | Support | Cross-sample coherence, m/z/RT consistency, MS1 pattern, shape and boundary agreement, MS2/NL consistency, standards/library evidence when represented as typed facts |
@@ -178,13 +178,13 @@ Untargeted-specific rules to keep explicit:
   ambiguous owner, identity conflict, non-detected owner, or backfill-bridge
   blockers.
 - Row promotion requires row identity support and at least one quantifiable
-  detected seed. Rescue-only, duplicate-only, ambiguous-only, review-only,
+  detected seed. Backfill-only, duplicate-only, ambiguous-only, review-only,
   consolidation-loser, and zero-detected rows fail closed unless an explicit
   authority contract says otherwise.
-- A repaired observation can write only after row identity passes and
+- A Backfill observation can write only after row identity passes and
   `ProductionCellDecision` independently selects a quantifiable value. If
-  repair evidence is required, the exact owner-backed ObservationRepair receipt
-  must be present; repair never grants membership or writer authority itself.
+  revisit evidence is required, the exact owner-backed ObservationRevisit receipt
+  must be present; a revisit never grants membership or writer authority itself.
 - Same-peak support is not the same as group membership. It needs selected peak
   geometry, RT or drift-supported compatibility, no MS1 pattern conflict, no
   hypothesis or claim blocker, and product-authorized trace or pattern support.

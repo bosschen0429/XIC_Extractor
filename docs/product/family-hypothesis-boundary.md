@@ -2,7 +2,7 @@
 
 This page defines the durable boundary between per-sample peak anchors, wide
 Assignment scopes, cross-sample group hypotheses, peak hypotheses, ModeTrack
-proposals, ObservationRepair, cell decisions, and product projections. Use it when a change touches
+proposals, ObservationRevisit, cell decisions, and product projections. Use it when a change touches
 discovery peak-anchor grouping, alignment owner construction, diagnostic
 ModeTrack review, Backfill activation, or any matrix identity sidecar.
 
@@ -29,7 +29,7 @@ vocabulary and persisted schema changes require explicit consumer updates.
   every membership/split/merge lineage edge. Its grouping workflow returns one
   immutable `CrossSampleGroupingResult(processing_owners,
   partition_transition, drift_lookup)`. The same result is used before bounded
-  Backfill and through finalization; repair does not reopen grouping.
+  Backfill and through finalization; a revisit does not reopen grouping.
 - `CrossSamplePartitionTransition` records the complete group partition before
   and after an accepted initial refinement. ModeTrack may propose that initial
   change where a workflow uses it, but cannot apply it or mint a second group
@@ -44,9 +44,9 @@ vocabulary and persisted schema changes require explicit consumer updates.
   identity-settlement/identity-trajectory boundary mints this internal,
   immutable diagnostic fact.
   The ModeTrack result remains proposal-only; it does not mint a second group
-  owner, refit after repair, or select a product value.
-- Backfill may return one independently traceable owner-backed repaired
-  observation. It cannot imply group membership or writer authority.
+  owner, refit after Backfill, or select a product value.
+- Backfill may return one independently traceable observation from a revisit.
+  It cannot imply group membership or writer authority.
 - Workflow projection first owns Target/Untarget row identity/binding and the
   explicit Target/Group cell subject. `ProductionCellDecision` then owns the
   selected value or typed no-write result. The same projection afterward closes
@@ -63,13 +63,13 @@ vocabulary and persisted schema changes require explicit consumer updates.
 | Discovery `peak_anchor_id` / output `feature_family_id` | Per-sample MS1 peak identity and review grouping | Cross-sample identity, Backfill promotion, selected-peak truth |
 | Alignment `public_family_id` (display label) | Stable public row label for output compatibility | Canonical identity proof - use `group_hypothesis_id` instead |
 | Internal `ModeTrackAssignmentScope` | Actual m/z/RT admissibility bounds and exact existing groups for producer-to-fit handoff | Standalone identity, persistence, chemical identity, public row identity, same-peak truth, or writer authority |
-| `CrossSampleGroupingResult` | One immutable processing-owner-bound grouping result, accepted complete-partition transition, and prepared drift lookup | Post-repair regrouping, selected values, or writer authority |
-| `CrossSamplePeakGroupHypothesis` | Cross-sample owner/group identity, membership, disposition, and lineage via `group_hypothesis_id` | Per-peak integration truth, ModeTrack fitting, repair, or ProductWriter authority |
+| `CrossSampleGroupingResult` | One immutable processing-owner-bound grouping result, accepted complete-partition transition, and prepared drift lookup | Regrouping after Backfill, selected values, or writer authority |
+| `CrossSamplePeakGroupHypothesis` | Cross-sample owner/group identity, membership, disposition, and lineage via `group_hypothesis_id` | Per-peak integration truth, ModeTrack fitting, Backfill, or ProductWriter authority |
 | `PeakHypothesis` | Candidate peak identity, evidence context, selected hypothesis semantics | Cross-sample grouping policy or final matrix writing |
-| Initial ModeTrack result | Typed sample/acquisition × existing ModeTrack correspondence, exclusions, assessability, and proposal lineage | Applying membership, post-repair refitting, minting groups, evidence/area transfer, Backfill/Matrix values, or chemical identity |
-| ObservationRepair | Bounded local repaired observation or typed no-repair result | Membership, selected value, first hit, or recursive support |
+| Initial ModeTrack result | Typed sample/acquisition × existing ModeTrack correspondence, exclusions, assessability, and proposal lineage | Applying membership, refitting after Backfill, minting groups, evidence/area transfer, Backfill/Matrix values, or chemical identity |
+| ObservationRevisit | Retained typed receipt for a bounded local revisit result or no-result | Membership, selected value, group origin, or recursive support |
 | ProductionCellDecision | Selected value or typed no-write for an explicit Target/Group subject | Row identity, RAW access, grouping, or rendering |
-| Product projection / ProductWriter | Pre-cell row binding/subject construction; post-cell inclusion, counted detection, product state, routing, delivery shape, and authorized rendering | Low-level evidence extraction, grouping, repair, or value recomputation |
+| Product projection / ProductWriter | Pre-cell row binding/subject construction; post-cell inclusion, counted detection, product state, routing, delivery shape, and authorized rendering | Low-level evidence extraction, grouping, Backfill, or value recomputation |
 
 ## Migration Rule
 
@@ -120,10 +120,10 @@ display labels. Treat this as an adapter state:
   candidate, and direct-SUPPORT assessment identities. It must not retain or
   depend on `CellObservationRef`; matching only the `PeakHypothesis` is
   insufficient provenance.
-- Do not let a consumer or ObservationRepair refit ModeTracks or reinterpret an ambiguous,
+- Do not let a consumer or ObservationRevisit refit ModeTracks or reinterpret an ambiguous,
   out-of-model, absent, or technically unassessable state as unique. Shadow
   assignments carry no value or writer authority.
-- Do not treat an accepted ObservationRepair as implicit membership or selected
+- Do not treat an accepted ObservationRevisit as implicit membership or selected
   value. Those decisions remain with CrossSample and ProductionCellDecision.
 - Do not let `alignment_review.tsv` display tokens promote rows. Positive
   product support needs provenance-valid sidecars or explicit authority records.

@@ -51,7 +51,7 @@ PRODUCTION_CANDIDATE_GATE_COLUMNS = (
 MIN_SCAN_SUPPORT_SCORE = 0.5
 LOW_SCAN_SUPPORT_MAX = 0.2
 MAX_ABS_RT_DELTA_SEC = 180.0
-MAX_RESCUED_APEX_RT_SPAN_MIN = 0.35
+MAX_BACKFILLED_APEX_RT_SPAN_MIN = 0.35
 
 _PROVISIONAL_DECISION = "provisional_discovery"
 _REQUIRED_FLAGS = frozenset({"single_detected_seed", "provisional_retention_candidate"})
@@ -307,7 +307,7 @@ def evaluate_production_candidate_gate(
             source_context=source_context,
         )
 
-    rescued = tuple(row for row in cells if row.get("status") == "backfilled")
+    backfilled = tuple(row for row in cells if row.get("status") == "backfilled")
     support = _tier2_positive_support(
         tier2_evidence,
         review_feature_family_id=review.get("feature_family_id", ""),
@@ -315,7 +315,7 @@ def evaluate_production_candidate_gate(
     tier2_available = bool(support)
     dependent = _ordered_unique(
         (
-            *_dependent_context(review, rescued),
+            *_dependent_context(review, backfilled),
             *_tier2_dependent_context(tier2_evidence),
         )
     )
@@ -326,14 +326,14 @@ def evaluate_production_candidate_gate(
                 for blocker in machine.blockers
                 if blocker == BACKFILL_OWNER_REHYDRATION_UNAVAILABLE_REASON
             ),
-            *_challenge_blockers(rescued),
+            *_challenge_blockers(backfilled),
             *_tier2_blockers(
                 tier2_evidence,
                 review_feature_family_id=review.get("feature_family_id", ""),
             ),
         )
     )
-    if _int_value(review.get("quantifiable_backfill_count")) and not rescued:
+    if _int_value(review.get("quantifiable_backfill_count")) and not backfilled:
         blockers = _ordered_unique((*blockers, "missing_rescued_cell_evidence"))
     if not tier2_available and tier2_evidence is None:
         blockers = _ordered_unique((*blockers, "missing_positive_tier2_support"))
@@ -468,14 +468,14 @@ def _is_retention_candidate(review: Mapping[str, str], flags: frozenset[str]) ->
     if not _REQUIRED_FLAGS.issubset(flags):
         return False
     detected_count = _int_value(review.get("quantifiable_detected_count"))
-    rescue_count = _int_value(review.get("quantifiable_backfill_count"))
+    backfill_count = _int_value(review.get("quantifiable_backfill_count"))
     duplicate_count = _int_value(review.get("duplicate_assigned_count"))
     ambiguous_count = _int_value(review.get("ambiguous_ms1_owner_count"))
-    if None in {detected_count, rescue_count, duplicate_count, ambiguous_count}:
+    if None in {detected_count, backfill_count, duplicate_count, ambiguous_count}:
         return False
     if detected_count != 1:
         return False
-    if rescue_count is None or rescue_count <= 0:
+    if backfill_count is None or backfill_count <= 0:
         return False
     if duplicate_count != 0:
         return False
@@ -495,26 +495,26 @@ def _structural_blockers(
 
 def _dependent_context(
     review: Mapping[str, str],
-    rescued: Sequence[Mapping[str, str]],
+    backfilled: Sequence[Mapping[str, str]],
 ) -> tuple[str, ...]:
     context: list[str] = []
     if review.get("primary_evidence") == "owner_complete_link":
         context.append("owner_backfill_context")
-    if rescued:
+    if backfilled:
         context.append("family_ms1_context")
-    if rescued and all(
+    if backfilled and all(
         (_float(row.get("scan_support_score")) or 0.0) >= MIN_SCAN_SUPPORT_SCORE
-        for row in rescued
+        for row in backfilled
     ):
         context.append("rescued_cell_scan_support_distribution")
-    if rescued and all(_local_apex_consistent(row) for row in rescued):
+    if backfilled and all(_local_apex_consistent(row) for row in backfilled):
         context.append("selected_boundary_local_apex_consistency")
-    apex_rts = [_float(row.get("apex_rt")) for row in rescued]
+    apex_rts = [_float(row.get("apex_rt")) for row in backfilled]
     finite_apex_rts = [value for value in apex_rts if value is not None]
     if (
         len(finite_apex_rts) >= 2
         and max(finite_apex_rts) - min(finite_apex_rts)
-        <= MAX_RESCUED_APEX_RT_SPAN_MIN
+        <= MAX_BACKFILLED_APEX_RT_SPAN_MIN
     ):
         context.append("rescued_cell_rt_coherence")
     return tuple(context)
@@ -590,10 +590,10 @@ def _tier2_metric_blockers(row: Mapping[str, str]) -> tuple[str, ...]:
         None if neighbor_value in (None, "") else _float(neighbor_value)
     )
     dependent_context = _split_tokens(row.get("dependent_context"))
-    rescued_checked = _int_value(row.get("rescued_cell_count_checked"))
-    rescued_supported = _int_value(row.get("rescued_cell_count_supported"))
-    rescued_apex_span = _float(row.get("rescued_apex_rt_span_sec"))
-    rescued_boundary_overlap_min = _float(row.get("rescued_boundary_overlap_min"))
+    backfilled_checked = _int_value(row.get("rescued_cell_count_checked"))
+    backfilled_supported = _int_value(row.get("rescued_cell_count_supported"))
+    backfilled_apex_span = _float(row.get("rescued_apex_rt_span_sec"))
+    backfilled_boundary_overlap_min = _float(row.get("rescued_boundary_overlap_min"))
     if any(
         value is None
         for value in (
@@ -605,10 +605,10 @@ def _tier2_metric_blockers(row: Mapping[str, str]) -> tuple[str, ...]:
             boundary_start_rt,
             boundary_end_rt,
             boundary_width_sec,
-            rescued_checked,
-            rescued_supported,
-            rescued_apex_span,
-            rescued_boundary_overlap_min,
+            backfilled_checked,
+            backfilled_supported,
+            backfilled_apex_span,
+            backfilled_boundary_overlap_min,
         )
     ):
         blockers.append("metric_unavailable")
@@ -617,10 +617,10 @@ def _tier2_metric_blockers(row: Mapping[str, str]) -> tuple[str, ...]:
     assert scan_support_score is not None
     assert apex_delta_sec is not None
     assert boundary_width_sec is not None
-    assert rescued_checked is not None
-    assert rescued_supported is not None
-    assert rescued_apex_span is not None
-    assert rescued_boundary_overlap_min is not None
+    assert backfilled_checked is not None
+    assert backfilled_supported is not None
+    assert backfilled_apex_span is not None
+    assert backfilled_boundary_overlap_min is not None
     if neighbor_value not in (None, "") and neighbor_interference_ratio is None:
         blockers.append("metric_unavailable")
         return tuple(blockers)
@@ -644,13 +644,13 @@ def _tier2_metric_blockers(row: Mapping[str, str]) -> tuple[str, ...]:
         and neighbor_interference_ratio > 0.33
     ):
         blockers.append("neighbor_interference")
-    if rescued_checked < 1 or rescued_supported < 1:
+    if backfilled_checked < 1 or backfilled_supported < 1:
         blockers.append("rescued_cell_support_low")
-    elif rescued_supported / rescued_checked < 0.50:
+    elif backfilled_supported / backfilled_checked < 0.50:
         blockers.append("rescued_cell_support_low")
-    if rescued_apex_span > 21.0:
+    if backfilled_apex_span > 21.0:
         blockers.append("rescued_apex_span_wide")
-    if rescued_boundary_overlap_min < 0.50:
+    if backfilled_boundary_overlap_min < 0.50:
         blockers.append("rescued_boundary_overlap_low")
     return _ordered_unique(blockers)
 
@@ -712,13 +712,13 @@ def _tier2_dependent_context(
     return evidence.dependent_context if evidence is not None else ()
 
 
-def _challenge_blockers(rescued: Sequence[Mapping[str, str]]) -> tuple[str, ...]:
+def _challenge_blockers(backfilled: Sequence[Mapping[str, str]]) -> tuple[str, ...]:
     blockers: list[str] = []
-    if any(_has_marker(row, _INTERFERENCE_MARKERS) for row in rescued):
+    if any(_has_marker(row, _INTERFERENCE_MARKERS) for row in backfilled):
         blockers.append("neighboring_interference_challenge")
-    if any(_low_assessable_coverage(row) for row in rescued):
+    if any(_low_assessable_coverage(row) for row in backfilled):
         blockers.append("low_assessable_coverage_challenge")
-    if any(not _local_apex_consistent(row) for row in rescued):
+    if any(not _local_apex_consistent(row) for row in backfilled):
         blockers.append("selected_boundary_local_apex_inconsistency")
     return tuple(blockers)
 

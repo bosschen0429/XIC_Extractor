@@ -28,7 +28,7 @@ SCHEMA_VERSION = "retained_backfill_evidence_gate"
 SUPPORT_OVERLAY_VERDICT = "ms1_shape_supports_family_backfill"
 MACHINE_SUPPORT_COMPONENT = "high_detected_anchor_low_rescue_machine_support"
 MACHINE_SUPPORT_DETECTED_MIN = 20
-MACHINE_SUPPORT_RESCUE_FRACTION_MAX = 0.10
+MACHINE_SUPPORT_BACKFILL_FRACTION_MAX = 0.10
 _SAFE_PREFIX_CHARS = re.compile(r"[^A-Za-z0-9_.-]+")
 
 EvidenceGateStatus = Literal[
@@ -188,7 +188,7 @@ class RetainedBackfillGateRow:
     evidence_gate_status: EvidenceGateStatus
     recommended_action: RecommendedAction
     detected_cell_count: int
-    rescued_cell_count: int
+    backfilled_cell_count: int
     accepted_backfill_count: int
     review_backfill_count: int
     include_in_primary_matrix: bool
@@ -461,7 +461,7 @@ def _evaluate_group(
         evidence_gate_status=status,
         recommended_action=_recommended_action(status),
         detected_cell_count=_count_cells(family_cells, "detected"),
-        rescued_cell_count=_count_cells(family_cells, "backfilled"),
+        backfilled_cell_count=_count_cells(family_cells, "backfilled"),
         accepted_backfill_count=_int_or_zero(review.get("accepted_backfill_count")),
         review_backfill_count=_int_or_zero(review.get("review_backfill_count")),
         include_in_primary_matrix=bool_value(
@@ -552,11 +552,11 @@ def _has_machine_support_without_overlay(
     )
     if detected_count < MACHINE_SUPPORT_DETECTED_MIN:
         return False
-    rescue_limit = max(
+    backfill_limit = max(
         5,
-        int(round(detected_count * MACHINE_SUPPORT_RESCUE_FRACTION_MAX)),
+        int(round(detected_count * MACHINE_SUPPORT_BACKFILL_FRACTION_MAX)),
     )
-    return backfilled_count <= rescue_limit
+    return backfilled_count <= backfill_limit
 
 
 def _overlay_required_by_review_flags(review: Mapping[str, str]) -> bool:
@@ -785,7 +785,7 @@ def _row_as_mapping(row: RetainedBackfillGateRow) -> dict[str, object]:
         "recommended_action": row.recommended_action,
         "diagnostic_authority": "diagnostic_only",
         "detected_cell_count": row.detected_cell_count,
-        "rescued_cell_count": row.rescued_cell_count,
+        "rescued_cell_count": row.backfilled_cell_count,
         "accepted_backfill_count": row.accepted_backfill_count,
         "review_backfill_count": row.review_backfill_count,
         "include_in_primary_matrix": row.include_in_primary_matrix,
@@ -892,7 +892,7 @@ def _missing_overlay_queue_row(
         "detected_count": row.detected_cell_count,
         "accepted_backfill_count": row.accepted_backfill_count,
         "review_backfill_count": row.review_backfill_count,
-        "rescued_cell_count": row.rescued_cell_count,
+        "rescued_cell_count": row.backfilled_cell_count,
         "seed_source_samples": ";".join(row.seed_source_samples),
         "row_flags": ";".join(row.row_flags),
         "missing_evidence": ";".join(row.missing_evidence),
@@ -905,7 +905,7 @@ def _overlay_queue_sort_key(row: RetainedBackfillGateRow) -> tuple[int, int, int
     return (
         review_only,
         -row.review_backfill_count,
-        -row.rescued_cell_count,
+        -row.backfilled_cell_count,
         row.feature_family_id,
     )
 

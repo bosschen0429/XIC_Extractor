@@ -11,6 +11,13 @@ from xic_extractor.alignment.backfill_evidence_contract import (
     ALIGNMENT_BACKFILL_CELL_EVIDENCE_COLUMNS,
     ALIGNMENT_BACKFILL_CELL_EVIDENCE_SCHEMA_VERSION,
 )
+from xic_extractor.alignment.backfill_peak_fact import BackfillCandidateAuditRow
+from xic_extractor.alignment.backfill_peak_fact_provenance import (
+    BackfillPeakFactProvenanceBatch,
+)
+from xic_extractor.alignment.backfill_peak_fact_provenance import (
+    write_backfill_peak_fact_provenance_tsv as _write_peak_fact_provenance,
+)
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.matrix import AlignedCell, AlignmentMatrix
 from xic_extractor.alignment.matrix_output_contract import (
@@ -24,13 +31,6 @@ from xic_extractor.alignment.output_rows import (
     format_value,
     row_id,
     safe_rate,
-)
-from xic_extractor.alignment.owner_backfill import OwnerBackfillCandidateAuditRow
-from xic_extractor.alignment.owner_backfill_peak_fact_provenance import (
-    OwnerBackfillPeakFactProvenanceBatch,
-)
-from xic_extractor.alignment.owner_backfill_peak_fact_provenance import (
-    write_owner_backfill_peak_fact_provenance_tsv as _write_peak_fact_provenance,
 )
 from xic_extractor.alignment.owner_group_delivery import (
     CROSS_SAMPLE_GROUP_CELL_COLUMNS,
@@ -177,7 +177,7 @@ BASE_ALIGNMENT_CELL_INTEGRATION_AUDIT_COLUMNS = (
 
 ALIGNMENT_CELL_INTEGRATION_AUDIT_COLUMNS = BASE_ALIGNMENT_CELL_INTEGRATION_AUDIT_COLUMNS
 
-ALIGNMENT_OWNER_BACKFILL_SEED_AUDIT_COLUMNS = (
+ALIGNMENT_BACKFILL_SEED_AUDIT_COLUMNS = (
     "feature_family_id",
     *GROUP_BACKFILL_SEED_AUDIT_COLUMNS,
     "sample_stem",
@@ -199,7 +199,7 @@ ALIGNMENT_OWNER_BACKFILL_SEED_AUDIT_COLUMNS = (
     "reason",
 )
 
-ALIGNMENT_OWNER_BACKFILL_CANDIDATE_AUDIT_COLUMNS = (
+ALIGNMENT_BACKFILL_CANDIDATE_AUDIT_COLUMNS = (
     "feature_family_id",
     "group_hypothesis_id",
     "public_family_id",
@@ -621,7 +621,7 @@ def _cell_integration_audit_rows(
         yield row
 
 
-def write_alignment_owner_backfill_seed_audit_tsv(
+def write_alignment_backfill_seed_audit_tsv(
     path: Path,
     matrix: AlignmentMatrix,
 ) -> Path:
@@ -664,12 +664,12 @@ def write_alignment_owner_backfill_seed_audit_tsv(
                 "reason": cell.reason,
             }
         )
-    return _write_tsv(path, ALIGNMENT_OWNER_BACKFILL_SEED_AUDIT_COLUMNS, rows)
+    return _write_tsv(path, ALIGNMENT_BACKFILL_SEED_AUDIT_COLUMNS, rows)
 
 
-def write_alignment_owner_backfill_candidate_audit_tsv(
+def write_alignment_backfill_candidate_audit_tsv(
     path: Path,
-    rows: Sequence[OwnerBackfillCandidateAuditRow],
+    rows: Sequence[BackfillCandidateAuditRow],
 ) -> Path:
     rendered: list[dict[str, object]] = []
     for row in rows:
@@ -701,14 +701,14 @@ def write_alignment_owner_backfill_candidate_audit_tsv(
         )
     return _write_tsv(
         path,
-        ALIGNMENT_OWNER_BACKFILL_CANDIDATE_AUDIT_COLUMNS,
+        ALIGNMENT_BACKFILL_CANDIDATE_AUDIT_COLUMNS,
         rendered,
     )
 
 
-def write_alignment_owner_backfill_peak_fact_provenance_tsv(
+def write_alignment_backfill_peak_fact_provenance_tsv(
     path: Path,
-    batch: OwnerBackfillPeakFactProvenanceBatch,
+    batch: BackfillPeakFactProvenanceBatch,
 ) -> Path:
     """Render an already validated bounded physical-fact projection."""
 

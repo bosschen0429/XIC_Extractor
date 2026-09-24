@@ -11,9 +11,9 @@ from xic_extractor.alignment.matrix_identity import (
     matrix_identity_row_decision_record,
 )
 from xic_extractor.alignment.promotion_policy import (
+    BACKFILL_ONLY_BLOCKED_REASON,
     HIGH_BACKFILL_CAPPED_FLAG,
     PRIMARY_IDENTITY_RETAINED_BACKFILL_REVIEW_REASON,
-    RESCUE_ONLY_BLOCKED_REASON,
 )
 from xic_extractor.peak_detection.hypotheses import IntegrationResult
 
@@ -283,7 +283,9 @@ def test_single_detected_same_peak_support_keeps_ambiguous_owner_review() -> Non
     assert HIGH_BACKFILL_CAPPED_FLAG not in decision.row_flags
 
 
-def test_one_detected_area_only_rescue_is_not_provisional_retention_candidate() -> None:
+def test_one_detected_area_only_backfill_is_not_provisional_retention_candidate() -> (
+    None
+):
     matrix = _matrix(
         _feature("FAM001", evidence="owner_complete_link;owner_count=1"),
         (
@@ -318,7 +320,7 @@ def test_one_detected_area_only_rescue_is_not_provisional_retention_candidate() 
     assert "skip_expensive_evidence" not in decision.row_flags
 
 
-def test_review_only_one_detected_rescue_is_not_provisional_candidate() -> None:
+def test_review_only_one_detected_backfill_is_not_provisional_candidate() -> None:
     matrix = _matrix(
         _feature(
             "FAM001",
@@ -677,7 +679,7 @@ def test_neighboring_ms1_interference_blocks_backfill_promotion() -> None:
     assert "neighboring_ms1_interference" in decision.row_flags
 
 
-def test_single_sample_local_owner_is_audit_even_with_rescue() -> None:
+def test_single_sample_local_owner_is_audit_even_with_backfill() -> None:
     matrix = _matrix(
         _feature("FAM001", evidence="single_sample_local_owner"),
         (
@@ -721,7 +723,7 @@ def test_weak_nonzero_detected_support_is_provisional_discovery() -> None:
     assert decision.identity_reason == "insufficient_detected_identity_support"
 
 
-def test_rescue_only_backfill_only_family_is_audit() -> None:
+def test_backfill_only_backfill_only_family_is_audit() -> None:
     matrix = _matrix(
         _feature("FAM001", evidence="owner_complete_link;owner_count=2"),
         (
@@ -734,11 +736,11 @@ def test_rescue_only_backfill_only_family_is_audit() -> None:
 
     assert decision.include_in_primary_matrix is False
     assert decision.identity_decision == "audit_family"
-    assert decision.identity_reason == RESCUE_ONLY_BLOCKED_REASON
+    assert decision.identity_reason == BACKFILL_ONLY_BLOCKED_REASON
     assert "rescue_only" in decision.row_flags
 
 
-def test_matrix_identity_decision_record_marks_rescue_only_as_not_counted() -> None:
+def test_matrix_identity_decision_record_marks_backfill_only_as_not_counted() -> None:
     matrix = _matrix(
         _feature("FAM001", evidence="owner_complete_link;owner_count=2"),
         (
@@ -751,7 +753,7 @@ def test_matrix_identity_decision_record_marks_rescue_only_as_not_counted() -> N
     record = decision.decision_record
 
     assert record.decision_class == "not_counted"
-    assert record.blockers == (RESCUE_ONLY_BLOCKED_REASON, "rescue_only")
+    assert record.blockers == (BACKFILL_ONLY_BLOCKED_REASON, "rescue_only")
     assert record.gate == (
         ("decision_class_rank", 2.0),
         ("primary_matrix_projection_rank", 1.0),

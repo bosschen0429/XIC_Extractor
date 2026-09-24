@@ -1,3 +1,5 @@
+"""Backfill request planning and identity contracts."""
+
 from __future__ import annotations
 
 import hashlib
@@ -9,19 +11,19 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Literal, NamedTuple
 
+from xic_extractor.alignment.backfill_runtime_projection import (
+    BackfillRuntimeFeature,
+    BackfillRuntimeFeatureProjection,
+    BackfillRuntimeFeatures,
+    mint_backfill_runtime_feature,
+    validate_backfill_runtime_feature,
+)
 from xic_extractor.alignment.backfill_scope import (
     backfill_request_sample_stems,
     backfill_seed_centers,
 )
 from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.alignment.ms1_index_source import OwnerBackfillXicBackend
-from xic_extractor.alignment.owner_backfill_runtime_projection import (
-    BackfillRuntimeFeature,
-    OwnerBackfillRuntimeFeatureProjection,
-    OwnerBackfillRuntimeFeatures,
-    mint_owner_backfill_runtime_feature,
-    validate_owner_backfill_runtime_feature,
-)
+from xic_extractor.alignment.ms1_index_source import BackfillXicBackend
 from xic_extractor.alignment.owner_group_delivery import (
     OwnerGroupDeliveryFeatures,
 )
@@ -29,29 +31,29 @@ from xic_extractor.processing_identity import AcquisitionSourceIdentity
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 from xic_extractor.xic_models import XICRequest
 
-OwnerBackfillWindowStrategy = Literal["exact", "super-window"]
-OWNER_BACKFILL_WINDOW_STRATEGIES: tuple[OwnerBackfillWindowStrategy, ...] = (
+BackfillWindowStrategy = Literal["exact", "super-window"]
+BACKFILL_WINDOW_STRATEGIES: tuple[BackfillWindowStrategy, ...] = (
     "exact",
     "super-window",
 )
-OwnerBackfillValidationMode = Literal["primary", "prefilter", "validation"]
-OWNER_BACKFILL_VALIDATION_MODES: tuple[OwnerBackfillValidationMode, ...] = (
+BackfillValidationMode = Literal["primary", "prefilter", "validation"]
+BACKFILL_VALIDATION_MODES: tuple[BackfillValidationMode, ...] = (
     "primary",
     "prefilter",
     "validation",
 )
-OWNER_BACKFILL_XIC_BACKENDS: tuple[OwnerBackfillXicBackend, ...] = (
+BACKFILL_XIC_BACKENDS: tuple[BackfillXicBackend, ...] = (
     "raw",
     "ms1_index",
     "ms1_index_hybrid",
 )
-OWNER_BACKFILL_TRACE_RESULT_SEMANTICS = "owner_backfill_xic_trace"
+BACKFILL_TRACE_RESULT_SEMANTICS = "owner_backfill_xic_trace"
 _REQUEST_IDENTITY_PREFIX = "xic.owner-backfill-request:"
 _LOGICAL_REQUEST_PREFIX = "xic.owner-backfill-logical-request:"
 _RUNTIME_SAMPLE_PROJECTION_PREFIX = "xic.owner-backfill-runtime-sample:"
 
 
-class OwnerBackfillRequestItem(NamedTuple):
+class BackfillRequestItem(NamedTuple):
     feature: BackfillRuntimeFeature
     sample_stem: str
     request: XICRequest
@@ -59,7 +61,7 @@ class OwnerBackfillRequestItem(NamedTuple):
 
 
 @dataclass(frozen=True, slots=True)
-class OwnerBackfillSampleRequestProjection:
+class BackfillSampleRequestProjection:
     sample_stem: str
     features: tuple[BackfillRuntimeFeature, ...]
     logical_request_count: int
@@ -79,12 +81,12 @@ class OwnerBackfillSampleRequestProjection:
 
 
 @dataclass(frozen=True, slots=True)
-class OwnerBackfillSampleRuntimeProjection:
+class BackfillSampleRuntimeProjection:
     """Sample-bound compact feature payload minted by the request-plan owner."""
 
     runtime_projection_id: str
     sample_stem: str
-    features: OwnerBackfillRuntimeFeatures
+    features: BackfillRuntimeFeatures
     logical_request_count: int
     logical_request_offset: int
     validation_request_offset: int
@@ -97,7 +99,7 @@ class OwnerBackfillSampleRuntimeProjection:
                 "runtime sample projection features must be a non-empty tuple"
             )
         if any(
-            not isinstance(feature, OwnerBackfillRuntimeFeatureProjection)
+            not isinstance(feature, BackfillRuntimeFeatureProjection)
             for feature in self.features
         ):
             raise TypeError(
@@ -153,13 +155,13 @@ class OwnerBackfillSampleRuntimeProjection:
 
 
 @dataclass(frozen=True, slots=True)
-class OwnerBackfillRequestEquivalenceContext:
+class BackfillRequestEquivalenceContext:
     acquisition_sources: Mapping[str, AcquisitionSourceIdentity]
-    backend: OwnerBackfillXicBackend
-    window_strategy: OwnerBackfillWindowStrategy
+    backend: BackfillXicBackend
+    window_strategy: BackfillWindowStrategy
     superwindow_span_factor: int
-    validation_mode: OwnerBackfillValidationMode
-    result_semantics: str = OWNER_BACKFILL_TRACE_RESULT_SEMANTICS
+    validation_mode: BackfillValidationMode
+    result_semantics: str = BACKFILL_TRACE_RESULT_SEMANTICS
 
     def __post_init__(self) -> None:
         if not isinstance(self.acquisition_sources, Mapping):
@@ -176,9 +178,9 @@ class OwnerBackfillRequestEquivalenceContext:
             "acquisition_sources",
             MappingProxyType(acquisition_sources),
         )
-        if self.backend not in OWNER_BACKFILL_XIC_BACKENDS:
+        if self.backend not in BACKFILL_XIC_BACKENDS:
             raise ValueError("unsupported owner Backfill XIC backend")
-        if self.window_strategy not in OWNER_BACKFILL_WINDOW_STRATEGIES:
+        if self.window_strategy not in BACKFILL_WINDOW_STRATEGIES:
             raise ValueError("unsupported owner Backfill window strategy")
         if (
             isinstance(self.superwindow_span_factor, bool)
@@ -186,22 +188,22 @@ class OwnerBackfillRequestEquivalenceContext:
             or self.superwindow_span_factor < 1
         ):
             raise ValueError("superwindow_span_factor must be a positive integer")
-        if self.validation_mode not in OWNER_BACKFILL_VALIDATION_MODES:
+        if self.validation_mode not in BACKFILL_VALIDATION_MODES:
             raise ValueError("unsupported owner Backfill validation mode")
-        if self.result_semantics != OWNER_BACKFILL_TRACE_RESULT_SEMANTICS:
+        if self.result_semantics != BACKFILL_TRACE_RESULT_SEMANTICS:
             raise ValueError("unsupported owner Backfill result semantics")
 
 
 @dataclass(frozen=True, slots=True)
-class OwnerBackfillRequestIdentity:
+class BackfillRequestIdentity:
     request_identity_id: str
     sample_stem: str
     acquisition_source: AcquisitionSourceIdentity
     request: XICRequest
-    backend: OwnerBackfillXicBackend
-    window_strategy: OwnerBackfillWindowStrategy
+    backend: BackfillXicBackend
+    window_strategy: BackfillWindowStrategy
     superwindow_span_factor: int
-    validation_mode: OwnerBackfillValidationMode
+    validation_mode: BackfillValidationMode
     result_semantics: str
 
     def __post_init__(self) -> None:
@@ -211,7 +213,7 @@ class OwnerBackfillRequestIdentity:
         if not isinstance(self.request, XICRequest):
             raise TypeError("request must be an XICRequest")
         _validate_request_coordinates(self.request)
-        context = OwnerBackfillRequestEquivalenceContext(
+        context = BackfillRequestEquivalenceContext(
             acquisition_sources={sample_stem: self.acquisition_source},
             backend=self.backend,
             window_strategy=self.window_strategy,
@@ -235,11 +237,11 @@ class OwnerBackfillRequestIdentity:
 
 
 @dataclass(frozen=True, slots=True)
-class OwnerBackfillLogicalRequestMember:
+class BackfillLogicalRequestMember:
     logical_request_id: str
     logical_index: int
     group_hypothesis_id: str
-    item: OwnerBackfillRequestItem
+    item: BackfillRequestItem
 
     def __post_init__(self) -> None:
         if (
@@ -252,8 +254,8 @@ class OwnerBackfillLogicalRequestMember:
             self.group_hypothesis_id,
             "group_hypothesis_id",
         )
-        if not isinstance(self.item, OwnerBackfillRequestItem):
-            raise TypeError("item must be an OwnerBackfillRequestItem")
+        if not isinstance(self.item, BackfillRequestItem):
+            raise TypeError("item must be an BackfillRequestItem")
         if group_hypothesis_id != _required_text(
             getattr(self.item.feature, "group_hypothesis_id", None),
             "feature.group_hypothesis_id",
@@ -277,13 +279,13 @@ class OwnerBackfillLogicalRequestMember:
 
 
 @dataclass(frozen=True, slots=True)
-class OwnerBackfillRequestEquivalenceClass:
-    identity: OwnerBackfillRequestIdentity
-    members: tuple[OwnerBackfillLogicalRequestMember, ...]
+class BackfillRequestEquivalenceClass:
+    identity: BackfillRequestIdentity
+    members: tuple[BackfillLogicalRequestMember, ...]
 
     def __post_init__(self) -> None:
-        if not isinstance(self.identity, OwnerBackfillRequestIdentity):
-            raise TypeError("identity must be an OwnerBackfillRequestIdentity")
+        if not isinstance(self.identity, BackfillRequestIdentity):
+            raise TypeError("identity must be an BackfillRequestIdentity")
         if not isinstance(self.members, tuple) or not self.members:
             raise ValueError("equivalence class members must be a non-empty tuple")
         indices = tuple(member.logical_index for member in self.members)
@@ -292,7 +294,7 @@ class OwnerBackfillRequestEquivalenceClass:
                 "equivalence class logical indices must be unique and ordered"
             )
         for member in self.members:
-            if not isinstance(member, OwnerBackfillLogicalRequestMember):
+            if not isinstance(member, BackfillLogicalRequestMember):
                 raise TypeError("equivalence class contains an invalid member")
             if member.item.sample_stem != self.identity.sample_stem:
                 raise ValueError("equivalence class crosses canonical samples")
@@ -305,16 +307,16 @@ class OwnerBackfillRequestEquivalenceClass:
 
 
 @dataclass(frozen=True)
-class OwnerBackfillRequestPlan:
-    requests_by_sample: Mapping[str, tuple[OwnerBackfillRequestItem, ...]]
+class BackfillRequestPlan:
+    requests_by_sample: Mapping[str, tuple[BackfillRequestItem, ...]]
     equivalence_classes_by_sample: (
         Mapping[
             str,
-            tuple[OwnerBackfillRequestEquivalenceClass, ...],
+            tuple[BackfillRequestEquivalenceClass, ...],
         ]
         | None
     ) = None
-    equivalence_context: OwnerBackfillRequestEquivalenceContext | None = None
+    equivalence_context: BackfillRequestEquivalenceContext | None = None
     equivalence_unavailable_reason: str = "owner_equivalence_context_not_supplied"
 
     def __post_init__(self) -> None:
@@ -324,7 +326,7 @@ class OwnerBackfillRequestPlan:
         for sample_stem, requests in requests_by_sample.items():
             _required_text(sample_stem, "sample_stem")
             if not isinstance(requests, tuple) or any(
-                not isinstance(item, OwnerBackfillRequestItem) for item in requests
+                not isinstance(item, BackfillRequestItem) for item in requests
             ):
                 raise TypeError("requests_by_sample must contain request tuples")
             if any(item.sample_stem != sample_stem for item in requests):
@@ -346,7 +348,7 @@ class OwnerBackfillRequestPlan:
             return
         if not isinstance(
             self.equivalence_context,
-            OwnerBackfillRequestEquivalenceContext,
+            BackfillRequestEquivalenceContext,
         ):
             raise ValueError(
                 "available equivalence partition requires its owner context"
@@ -356,7 +358,7 @@ class OwnerBackfillRequestPlan:
         equivalence_classes_by_sample = dict(self.equivalence_classes_by_sample)
         for classes in equivalence_classes_by_sample.values():
             if not isinstance(classes, tuple) or any(
-                not isinstance(item, OwnerBackfillRequestEquivalenceClass)
+                not isinstance(item, BackfillRequestEquivalenceClass)
                 for item in classes
             ):
                 raise TypeError(
@@ -397,7 +399,7 @@ class OwnerBackfillRequestPlan:
                     raise ValueError(
                         "equivalence context does not bind every request sample"
                     )
-                expected_identity = mint_owner_backfill_request_identity(
+                expected_identity = mint_backfill_request_identity(
                     sample_stem=sample_stem,
                     acquisition_source=source,
                     request=equivalence_class.identity.request,
@@ -421,7 +423,7 @@ class OwnerBackfillRequestPlan:
     def requests_for_sample(
         self,
         sample_stem: str,
-    ) -> tuple[OwnerBackfillRequestItem, ...]:
+    ) -> tuple[BackfillRequestItem, ...]:
         return self.requests_by_sample.get(sample_stem, ())
 
     def features_for_sample(
@@ -444,7 +446,7 @@ class OwnerBackfillRequestPlan:
     def equivalence_classes_for_sample(
         self,
         sample_stem: str,
-    ) -> tuple[OwnerBackfillRequestEquivalenceClass, ...]:
+    ) -> tuple[BackfillRequestEquivalenceClass, ...]:
         if self.equivalence_classes_by_sample is None:
             raise ValueError(
                 "exact request equivalence is unavailable: "
@@ -459,7 +461,7 @@ class OwnerBackfillRequestPlan:
         self,
         sample_stem: str,
     ) -> tuple[
-        tuple[OwnerBackfillLogicalRequestMember, OwnerBackfillRequestIdentity],
+        tuple[BackfillLogicalRequestMember, BackfillRequestIdentity],
         ...,
     ]:
         classes = self.equivalence_classes_for_sample(sample_stem)
@@ -476,7 +478,7 @@ class OwnerBackfillRequestPlan:
         sample_stem: str,
         group_hypothesis_id: str,
     ) -> tuple[
-        tuple[OwnerBackfillLogicalRequestMember, OwnerBackfillRequestIdentity],
+        tuple[BackfillLogicalRequestMember, BackfillRequestIdentity],
         ...,
     ]:
         _required_text(group_hypothesis_id, "group_hypothesis_id")
@@ -489,15 +491,15 @@ class OwnerBackfillRequestPlan:
         )
 
 
-def build_owner_backfill_request_plan(
+def build_backfill_request_plan(
     features: tuple[BackfillRuntimeFeature, ...],
     *,
     sample_order: tuple[str, ...],
     raw_sample_stems: frozenset[str],
     alignment_config: AlignmentConfig,
-    equivalence_context: OwnerBackfillRequestEquivalenceContext | None = None,
-) -> OwnerBackfillRequestPlan:
-    pending: dict[str, list[OwnerBackfillRequestItem]] = defaultdict(list)
+    equivalence_context: BackfillRequestEquivalenceContext | None = None,
+) -> BackfillRequestPlan:
+    pending: dict[str, list[BackfillRequestItem]] = defaultdict(list)
     rt_window_min = alignment_config.max_rt_sec / 60.0
     for feature, sample_stem, seed_centers in _iter_feature_sample_request_groups(
         features,
@@ -507,7 +509,7 @@ def build_owner_backfill_request_plan(
     ):
         for seed_mz, seed_rt in seed_centers:
             pending[sample_stem].append(
-                OwnerBackfillRequestItem(
+                BackfillRequestItem(
                     feature=feature,
                     sample_stem=sample_stem,
                     request=XICRequest(
@@ -524,15 +526,15 @@ def build_owner_backfill_request_plan(
         for sample_stem, sample_requests in pending.items()
     }
     if equivalence_context is None:
-        return OwnerBackfillRequestPlan(requests_by_sample=requests_by_sample)
+        return BackfillRequestPlan(requests_by_sample=requests_by_sample)
     classes_by_sample = {
-        sample_stem: build_owner_backfill_request_equivalence_classes(
+        sample_stem: build_backfill_request_equivalence_classes(
             sample_requests,
             context=equivalence_context,
         )
         for sample_stem, sample_requests in requests_by_sample.items()
     }
-    return OwnerBackfillRequestPlan(
+    return BackfillRequestPlan(
         requests_by_sample=requests_by_sample,
         equivalence_classes_by_sample=classes_by_sample,
         equivalence_context=equivalence_context,
@@ -540,13 +542,13 @@ def build_owner_backfill_request_plan(
     )
 
 
-def build_owner_backfill_sample_request_projections(
+def build_backfill_sample_request_projections(
     features: OwnerGroupDeliveryFeatures,
     *,
     sample_order: tuple[str, ...],
     raw_sample_stems: frozenset[str],
     alignment_config: AlignmentConfig,
-) -> Mapping[str, OwnerBackfillSampleRequestProjection]:
+) -> Mapping[str, BackfillSampleRequestProjection]:
     pending_features: dict[str, list[BackfillRuntimeFeature]] = defaultdict(list)
     request_counts: dict[str, int] = defaultdict(int)
     for feature, sample_stem, seed_centers in _iter_feature_sample_request_groups(
@@ -558,10 +560,10 @@ def build_owner_backfill_sample_request_projections(
         request_counts[sample_stem] += len(seed_centers)
         pending_features[sample_stem].append(feature)
 
-    projections: dict[str, OwnerBackfillSampleRequestProjection] = {}
+    projections: dict[str, BackfillSampleRequestProjection] = {}
     for sample_stem in tuple(pending_features):
         frozen_sample_features = tuple(pending_features.pop(sample_stem))
-        projections[sample_stem] = OwnerBackfillSampleRequestProjection(
+        projections[sample_stem] = BackfillSampleRequestProjection(
             sample_stem=sample_stem,
             features=frozen_sample_features,
             logical_request_count=request_counts[sample_stem],
@@ -569,7 +571,7 @@ def build_owner_backfill_sample_request_projections(
     return MappingProxyType(projections)
 
 
-def build_owner_backfill_sample_runtime_projections(
+def build_backfill_sample_runtime_projections(
     features: OwnerGroupDeliveryFeatures,
     *,
     sample_order: tuple[str, ...],
@@ -580,10 +582,10 @@ def build_owner_backfill_sample_runtime_projections(
         ResolvedCanonicalSampleIdentity,
     ]
     | None = None,
-) -> Mapping[str, OwnerBackfillSampleRuntimeProjection]:
+) -> Mapping[str, BackfillSampleRuntimeProjection]:
     """Mint compact, sample-bound worker inputs from the canonical request plan."""
 
-    request_projections = build_owner_backfill_sample_request_projections(
+    request_projections = build_backfill_sample_request_projections(
         features,
         sample_order=sample_order,
         raw_sample_stems=raw_sample_stems,
@@ -591,9 +593,9 @@ def build_owner_backfill_sample_runtime_projections(
     )
     runtime_features_by_object_id: dict[
         int,
-        OwnerBackfillRuntimeFeatureProjection,
+        BackfillRuntimeFeatureProjection,
     ] = {}
-    runtime_projections: dict[str, OwnerBackfillSampleRuntimeProjection] = {}
+    runtime_projections: dict[str, BackfillSampleRuntimeProjection] = {}
     logical_request_counts = {
         sample_stem: projection.logical_request_count
         for sample_stem, projection in request_projections.items()
@@ -604,16 +606,16 @@ def build_owner_backfill_sample_runtime_projections(
         projection = request_projections.get(sample_stem)
         if projection is None:
             continue
-        compact_features: list[OwnerBackfillRuntimeFeatureProjection] = []
+        compact_features: list[BackfillRuntimeFeatureProjection] = []
         for feature in projection.features:
             feature_object_id = id(feature)
             compact_feature = runtime_features_by_object_id.get(feature_object_id)
             if compact_feature is None:
-                compact_feature = mint_owner_backfill_runtime_feature(feature)
+                compact_feature = mint_backfill_runtime_feature(feature)
                 runtime_features_by_object_id[feature_object_id] = compact_feature
             compact_features.append(compact_feature)
         runtime_projections[sample_stem] = (
-            _mint_owner_backfill_sample_runtime_projection(
+            _mint_backfill_sample_runtime_projection(
                 sample_stem=sample_stem,
                 features=tuple(compact_features),
                 logical_request_count=projection.logical_request_count,
@@ -632,33 +634,33 @@ def build_owner_backfill_sample_runtime_projections(
     return MappingProxyType(runtime_projections)
 
 
-def validate_owner_backfill_sample_runtime_projection(
-    projection: OwnerBackfillSampleRuntimeProjection,
+def validate_backfill_sample_runtime_projection(
+    projection: BackfillSampleRuntimeProjection,
 ) -> None:
-    validate_owner_backfill_sample_runtime_projection_shape(projection)
+    validate_backfill_sample_runtime_projection_shape(projection)
     for feature in projection.features:
-        validate_owner_backfill_runtime_feature(feature)
+        validate_backfill_runtime_feature(feature)
 
 
-def validate_owner_backfill_sample_runtime_projection_shape(
-    projection: OwnerBackfillSampleRuntimeProjection,
+def validate_backfill_sample_runtime_projection_shape(
+    projection: BackfillSampleRuntimeProjection,
 ) -> None:
     """Validate the parent-safe envelope without rehashing every feature."""
 
-    if not isinstance(projection, OwnerBackfillSampleRuntimeProjection):
+    if not isinstance(projection, BackfillSampleRuntimeProjection):
         raise TypeError("Backfill sample runtime projection must be owner-minted")
     projection.__post_init__()
 
 
-def _mint_owner_backfill_sample_runtime_projection(
+def _mint_backfill_sample_runtime_projection(
     *,
     sample_stem: str,
-    features: OwnerBackfillRuntimeFeatures,
+    features: BackfillRuntimeFeatures,
     logical_request_count: int,
     logical_request_offset: int,
     validation_request_offset: int,
     canonical_sample: ResolvedCanonicalSampleIdentity | None = None,
-) -> OwnerBackfillSampleRuntimeProjection:
+) -> BackfillSampleRuntimeProjection:
     basis = _runtime_sample_projection_basis(
         sample_stem=sample_stem,
         features=features,
@@ -667,7 +669,7 @@ def _mint_owner_backfill_sample_runtime_projection(
         validation_request_offset=validation_request_offset,
         canonical_sample=canonical_sample,
     )
-    return OwnerBackfillSampleRuntimeProjection(
+    return BackfillSampleRuntimeProjection(
         runtime_projection_id=_typed_id(_RUNTIME_SAMPLE_PROJECTION_PREFIX, basis),
         sample_stem=sample_stem,
         features=features,
@@ -681,7 +683,7 @@ def _mint_owner_backfill_sample_runtime_projection(
 def _runtime_sample_projection_basis(
     *,
     sample_stem: str,
-    features: OwnerBackfillRuntimeFeatures,
+    features: BackfillRuntimeFeatures,
     logical_request_count: int,
     logical_request_offset: int,
     validation_request_offset: int,
@@ -727,20 +729,20 @@ def _iter_feature_sample_request_groups(
             yield feature, sample_stem, seed_centers
 
 
-def build_owner_backfill_request_equivalence_classes(
-    items: tuple[OwnerBackfillRequestItem, ...],
+def build_backfill_request_equivalence_classes(
+    items: tuple[BackfillRequestItem, ...],
     *,
-    context: OwnerBackfillRequestEquivalenceContext,
-) -> tuple[OwnerBackfillRequestEquivalenceClass, ...]:
-    if not isinstance(context, OwnerBackfillRequestEquivalenceContext):
-        raise TypeError("context must be an OwnerBackfillRequestEquivalenceContext")
+    context: BackfillRequestEquivalenceContext,
+) -> tuple[BackfillRequestEquivalenceClass, ...]:
+    if not isinstance(context, BackfillRequestEquivalenceContext):
+        raise TypeError("context must be an BackfillRequestEquivalenceContext")
     if not isinstance(items, tuple) or any(
-        not isinstance(item, OwnerBackfillRequestItem) for item in items
+        not isinstance(item, BackfillRequestItem) for item in items
     ):
-        raise TypeError("items must be an OwnerBackfillRequestItem tuple")
+        raise TypeError("items must be an BackfillRequestItem tuple")
     pending: dict[
-        OwnerBackfillRequestIdentity,
-        list[OwnerBackfillLogicalRequestMember],
+        BackfillRequestIdentity,
+        list[BackfillLogicalRequestMember],
     ] = {}
     for logical_index, item in enumerate(items):
         source = context.acquisition_sources.get(item.sample_stem)
@@ -749,7 +751,7 @@ def build_owner_backfill_request_equivalence_classes(
                 "exact request equivalence requires one owner-minted acquisition "
                 f"identity for {item.sample_stem}"
             )
-        identity = mint_owner_backfill_request_identity(
+        identity = mint_backfill_request_identity(
             sample_stem=item.sample_stem,
             acquisition_source=source,
             request=item.request,
@@ -763,14 +765,14 @@ def build_owner_backfill_request_equivalence_classes(
             getattr(item.feature, "group_hypothesis_id", None),
             "feature.group_hypothesis_id",
         )
-        member = mint_owner_backfill_logical_request_member(
+        member = mint_backfill_logical_request_member(
             logical_index=logical_index,
             group_hypothesis_id=group_hypothesis_id,
             item=item,
         )
         pending.setdefault(identity, []).append(member)
     return tuple(
-        OwnerBackfillRequestEquivalenceClass(
+        BackfillRequestEquivalenceClass(
             identity=identity,
             members=tuple(members),
         )
@@ -778,18 +780,18 @@ def build_owner_backfill_request_equivalence_classes(
     )
 
 
-def mint_owner_backfill_request_identity(
+def mint_backfill_request_identity(
     *,
     sample_stem: str,
     acquisition_source: AcquisitionSourceIdentity,
     request: XICRequest,
-    backend: OwnerBackfillXicBackend,
-    window_strategy: OwnerBackfillWindowStrategy,
+    backend: BackfillXicBackend,
+    window_strategy: BackfillWindowStrategy,
     superwindow_span_factor: int,
-    validation_mode: OwnerBackfillValidationMode,
-    result_semantics: str = OWNER_BACKFILL_TRACE_RESULT_SEMANTICS,
-) -> OwnerBackfillRequestIdentity:
-    context = OwnerBackfillRequestEquivalenceContext(
+    validation_mode: BackfillValidationMode,
+    result_semantics: str = BACKFILL_TRACE_RESULT_SEMANTICS,
+) -> BackfillRequestIdentity:
+    context = BackfillRequestEquivalenceContext(
         acquisition_sources={sample_stem: acquisition_source},
         backend=backend,
         window_strategy=window_strategy,
@@ -803,7 +805,7 @@ def mint_owner_backfill_request_identity(
         request=request,
         context=context,
     )
-    return OwnerBackfillRequestIdentity(
+    return BackfillRequestIdentity(
         request_identity_id=_typed_id(_REQUEST_IDENTITY_PREFIX, basis),
         sample_stem=sample_stem,
         acquisition_source=acquisition_source,
@@ -816,12 +818,12 @@ def mint_owner_backfill_request_identity(
     )
 
 
-def mint_owner_backfill_logical_request_member(
+def mint_backfill_logical_request_member(
     *,
     logical_index: int,
     group_hypothesis_id: str,
-    item: OwnerBackfillRequestItem,
-) -> OwnerBackfillLogicalRequestMember:
+    item: BackfillRequestItem,
+) -> BackfillLogicalRequestMember:
     basis = {
         "schema": "owner_backfill_logical_request",
         "logical_index": logical_index,
@@ -830,7 +832,7 @@ def mint_owner_backfill_logical_request_member(
         "request": _request_basis(item.request),
         "preferred_rt": item.preferred_rt,
     }
-    return OwnerBackfillLogicalRequestMember(
+    return BackfillLogicalRequestMember(
         logical_request_id=_typed_id(_LOGICAL_REQUEST_PREFIX, basis),
         logical_index=logical_index,
         group_hypothesis_id=group_hypothesis_id,
@@ -843,7 +845,7 @@ def _request_identity_basis(
     sample_stem: str,
     acquisition_source: AcquisitionSourceIdentity,
     request: XICRequest,
-    context: OwnerBackfillRequestEquivalenceContext,
+    context: BackfillRequestEquivalenceContext,
 ) -> dict[str, object]:
     return {
         "schema": "owner_backfill_request_identity",

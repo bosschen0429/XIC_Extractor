@@ -90,7 +90,7 @@ _CELL_STATUSES = frozenset(
 _PRODUCTION_STATUSES = frozenset(
     {"detected", "accepted_backfill", "review_backfill", "rejected_backfill", "blank"}
 )
-_RESCUE_TIERS = frozenset(
+_BACKFILL_TIERS = frozenset(
     {"", "accepted_backfill", "review_backfill", "rejected_backfill"}
 )
 _SKIPPED_SCOPE_REASON = {
@@ -181,7 +181,7 @@ class BackfillEvidenceRecord:
                 "unsupported production_cell_status "
                 f"{self.production_cell_status!r}"
             )
-        if self.backfill_tier not in _RESCUE_TIERS:
+        if self.backfill_tier not in _BACKFILL_TIERS:
             raise ValueError(f"unsupported backfill_tier {self.backfill_tier!r}")
         expected_tier = (
             self.production_cell_status

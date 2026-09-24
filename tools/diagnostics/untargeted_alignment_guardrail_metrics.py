@@ -44,7 +44,7 @@ def compute_guardrails(alignment_dir: Path) -> GuardrailMetrics:
     accepted_quantitative_cells = 0
     accepted_backfill_cells = 0
     review_backfill_count = 0
-    rescue_only_review = 0
+    backfill_only_review = 0
     identity_anchor_lost = 0
     duplicate_claim_pressure = 0
     for family_id in family_ids:
@@ -61,7 +61,7 @@ def compute_guardrails(alignment_dir: Path) -> GuardrailMetrics:
         accepted_backfill_cells += accepted_backfills
         review_backfill_count += review_backfills
         if "rescue_only_review" in row_flags:
-            rescue_only_review += 1
+            backfill_only_review += 1
         if "identity_anchor_lost" in row_flags:
             identity_anchor_lost += 1
         if "duplicate_claim_pressure" in row_flags:
@@ -108,7 +108,7 @@ def compute_guardrails(alignment_dir: Path) -> GuardrailMetrics:
             else 0.0
         ),
         review_backfill_count=review_backfill_count,
-        rescue_only_review_families=rescue_only_review,
+        rescue_only_review_families=backfill_only_review,
         identity_anchor_lost_families=identity_anchor_lost,
         duplicate_claim_pressure_families=duplicate_claim_pressure,
         istd_false_missing_recovery=0,

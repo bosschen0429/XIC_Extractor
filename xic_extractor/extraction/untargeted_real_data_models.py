@@ -14,7 +14,7 @@ from types import MappingProxyType
 from xic_extractor.acquisition_contract import AcquiredTrace, TraceAcquisitionBatch
 from xic_extractor.alignment.backfill.evaluation_coverage import (
     _COMPLETED_BACKFILL_CONTRACT,
-    OwnerBackfillCompletedBackfillProjection,
+    BackfillCompletionProjection,
     _completed_backfill_projection_bytes,
 )
 from xic_extractor.alignment.cell_observations import CidNlCellGroupContext
@@ -518,7 +518,7 @@ def project_untargeted_cid_nl_completed_backfill(
     result: UntargetedCidNlRuntimeSampleResult,
     *,
     group_context: CidNlCellGroupContext,
-) -> OwnerBackfillCompletedBackfillProjection:
+) -> BackfillCompletionProjection:
     """Project an existing completed empty backfill without executing it again."""
     if type(result) is not UntargetedCidNlRuntimeSampleResult:
         raise UntargetedCidNlRealDataRuntimeError("backfill requires a runtime result")
@@ -558,7 +558,7 @@ def _project_completed_backfill(
     exact_traces: Callable[
         [TraceAcquisitionBatch, XICRequest, str], tuple[AcquiredTrace, ...]
     ],
-) -> OwnerBackfillCompletedBackfillProjection:
+) -> BackfillCompletionProjection:
     """Bind an admitted batch result; standalone replay validates at its entry."""
     job = result.job
     group = validate_cross_sample_peak_group_identity(
@@ -638,7 +638,7 @@ def _project_completed_backfill(
         ),
         upstream_artifacts=(result.result_ref.artifact, assessment.artifact),
     )
-    return OwnerBackfillCompletedBackfillProjection(
+    return BackfillCompletionProjection(
         processing_owners=job.processing_owners,
         sample=job.sample,
         group_identity=group,

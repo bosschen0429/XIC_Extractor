@@ -8,7 +8,7 @@ reason to create a generic `core/` package.
 CID-NL is the first production tracer through this contract, not the product
 boundary. Additional Discovery providers may consume different source evidence
 and use different candidate-generation strategies without creating another
-Alignment, ObservationRepair, Backfill, cell-decision, or writer lifecycle.
+Alignment, ObservationRevisit, Backfill, cell-decision, or writer lifecycle.
 
 ## Current Contract
 
@@ -54,14 +54,14 @@ but callers cannot bypass the semantic owner.
 | Search scope | Target-list or Discovery/provider owner -> closed provider/capture request | Constrains what may be searched; does not claim what was observed |
 | Discovery provider | exact SearchScope + canonical sample + provider inputs -> owner-backed observations and `PeakHypothesis` values | Owns provider-specific evidence interpretation behind the shared contract; never rows, groups, values, or artifacts |
 | CrossSample | owner-backed hypotheses/observations -> canonical groups, dispositions, membership, lineage | Sole group/membership authority; does not integrate traces or select values |
-| ModeTrack | immutable trajectory snapshot -> typed refinement proposals | Proposal-only; cannot mutate groups, repair observations, or write cells |
-| ObservationRepair | one existing incomplete or inconsistent observation context -> repaired observation or typed no-repair result | Repairs an observation; no group identity, implicit membership, selected-value, or writer authority |
-| Backfill | one missing or insufficient cell plus owner-backed Target/group context -> bounded revisit result | May recover the first usable observation for that cell; cannot originate the Target/group, mint membership, or select a value |
-| Scientific alignment closure | closed request/group/membership/refinement/repair receipts -> `FinalizedScientificAlignment` | Validates shared scientific closure; does not construct workflow rows or render outputs |
+| ModeTrack | immutable trajectory snapshot -> typed refinement proposals | Proposal-only; cannot mutate groups, revisit cells, or write values |
+| ObservationRevisit receipt | one bounded revisit decision -> typed result or no-result receipt | Retained receipt contract; no group identity, implicit membership, selected-value, or writer authority |
+| Backfill | one missing or insufficient cell plus established Target/group context -> bounded revisit result | May produce the first usable observation for that cell; cannot originate the Target/group, mint membership, or select a value |
+| Scientific alignment closure | closed request/group/membership/refinement/revisit receipts -> `FinalizedScientificAlignment` | Validates shared scientific closure; does not construct workflow rows or render outputs |
 | Projection binding/subjects | finalized core + typed Target/Untarget scope -> row identity/binding + explicit cell subjects | Constructs subjects only; no value, count, or inclusion decision |
 | ProductionCellDecision | explicit subject + closed observations/receipts -> typed write or no-write | Sole selected-value owner; cannot create row or group identity |
 | Projection completion | same projection owner + cell decisions -> inclusion, counts/reasons, review/archive routing | Does not recompute evidence or selected values |
-| Result finalizer | discriminated request + shared core + completed projection -> immutable workflow result | Validates closure only; no RAW, regrouping, repair, selection, or rendering |
+| Result finalizer | discriminated request + shared core + completed projection -> immutable workflow result | Validates closure only; no RAW, regrouping, revisit, selection, or rendering |
 
 `TargetCellSubject` binds one stable `TargetKey`, exact `TargetDefinition`,
 canonical sample, `TargetRowBinding`, and optional finalized group.
@@ -131,9 +131,9 @@ evidence wins over a trajectory prior; no universal monotonic trend is assumed.
 An oversized or invalid refinement neighborhood fails closed rather than being
 silently truncated or processed in a result-changing order.
 
-### ObservationRepair
+### ObservationRevisit
 
-ObservationRepair handles an existing observation whose boundaries,
+ObservationRevisit handles an existing observation whose boundaries,
 integration, evidence closure, or consistency is incomplete. It returns one
 owner-backed repaired observation or a typed no-repair result. Repair does not
 rerun global Discovery, mint membership, select a product value, or write an
@@ -171,7 +171,7 @@ policy. One projection is never the other projection's oracle.
 | Physical observations and hypotheses | `peak_detection` owners | Supplies constrained requests | Supplies general requests |
 | Cross-sample identity | CrossSample group/membership/disposition/lineage | Target identity constrains search/binding only | Group identity is inferred from evidence |
 | Trajectory refinement | ModeTrack proposes; CrossSample applies | Same interface | Same interface |
-| Observation repair | ObservationRepair owns repair facts | Supplies Target cell context | Supplies Group cell context |
+| Observation repair | ObservationRevisit owns repair facts | Supplies Target cell context | Supplies Group cell context |
 | Missing-cell recovery | Backfill owns the bounded revisit | Supplies Target recovery context | Supplies Group recovery context |
 | Selected value | `ProductionCellDecision` | Uses `TargetCellSubject` | Uses `GroupCellSubject` |
 | Row/count/output policy | Does not own | Targeted projection/writer | Untargeted projection/writer |
@@ -182,7 +182,7 @@ policy. One projection is never the other projection's oracle.
   shared observation/evidence contract.
 - `peak_detection` owns sample-local traces, observations, hypotheses,
   integration, evidence composition, and selection.
-- Alignment CrossSample, ModeTrack, ObservationRepair, Backfill, cell-decision,
+- Alignment CrossSample, ModeTrack, ObservationRevisit, Backfill, cell-decision,
   and result modules remain distinct semantic owners.
 - `extraction` owns Targeted orchestration/policy and the retained execution
   adapter used by the finalized pure-CID-NL route; it does not own Alignment

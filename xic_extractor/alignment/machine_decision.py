@@ -151,7 +151,7 @@ def _support_reasons(
     if evidence.q_detected > 0:
         reasons.append("detected_seed")
     if not promotion.unavailable:
-        if _all_rescue_cells_supported(evidence):
+        if _all_backfill_cells_supported(evidence):
             reasons.append("ms1_backfill_supported")
             reasons.append("rt_coherent")
         elif _has_rt_coherent_cell(evidence):
@@ -212,39 +212,39 @@ def _blockers(
 def _cell_evidence_blockers(
     evidence: BackfillPromotionEvidence,
 ) -> tuple[str, ...]:
-    if evidence.q_detected <= 0 or evidence.q_rescue <= 0:
+    if evidence.q_detected <= 0 or evidence.q_backfill <= 0:
         return ()
-    rescued = tuple(
+    backfilled = tuple(
         cell
         for cell in evidence.cells
-        if cell.status == "backfilled" and cell.is_rescued_quantifiable
+        if cell.status == "backfilled" and cell.is_backfilled_quantifiable
     )
-    if len(rescued) < evidence.q_rescue:
+    if len(backfilled) < evidence.q_backfill:
         return (LOW_MS1_COVERAGE_BLOCKED_REASON,)
-    if any(cell.high_neighbor_interference for cell in rescued):
+    if any(cell.high_neighbor_interference for cell in backfilled):
         return (NEIGHBOR_INTERFERENCE_BLOCKED_REASON,)
     if any(
         cell.backfill_identity_block_reason == BACKFILL_HYPOTHESIS_BLOCKED_REASON
-        for cell in rescued
+        for cell in backfilled
     ):
         return (BACKFILL_HYPOTHESIS_BLOCKED_REASON,)
     if any(
         cell.low_assessable_coverage
         or not cell.additional_ms1_support
-        for cell in rescued
+        for cell in backfilled
     ):
         return (LOW_MS1_COVERAGE_BLOCKED_REASON,)
     for reason in (
         BACKFILL_RT_EXPLANATION_BLOCKED_REASON,
         BACKFILL_MS1_PATTERN_BLOCKED_REASON,
     ):
-        if any(cell.backfill_identity_block_reason == reason for cell in rescued):
+        if any(cell.backfill_identity_block_reason == reason for cell in backfilled):
             return (reason,)
     if any(
         cell.low_assessable_coverage
         or not cell.local_apex_supported
         or not cell.supported_for_backfill
-        for cell in rescued
+        for cell in backfilled
     ):
         return (LOW_MS1_COVERAGE_BLOCKED_REASON,)
     return ()
@@ -297,18 +297,18 @@ def _evidence_tier(
     return 0
 
 
-def _all_rescue_cells_supported(evidence: BackfillPromotionEvidence) -> bool:
-    if evidence.q_rescue <= 0:
+def _all_backfill_cells_supported(evidence: BackfillPromotionEvidence) -> bool:
+    if evidence.q_backfill <= 0:
         return False
-    rescued = tuple(
+    backfilled = tuple(
         cell
         for cell in evidence.cells
-        if cell.status == "backfilled" and cell.is_rescued_quantifiable
+        if cell.status == "backfilled" and cell.is_backfilled_quantifiable
     )
     return (
-        len(rescued) >= evidence.q_rescue
-        and bool(rescued)
-        and all(cell.supported_for_backfill for cell in rescued)
+        len(backfilled) >= evidence.q_backfill
+        and bool(backfilled)
+        and all(cell.supported_for_backfill for cell in backfilled)
     )
 
 

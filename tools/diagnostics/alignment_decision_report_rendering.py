@@ -271,13 +271,13 @@ def _economics_section(economics: Mapping[str, Any]) -> str:
         totals.get("non_primary_request_target_count", 0),
         default=0.0,
     )
-    rescued = _float_value(totals.get("rescued_target_count", 0), default=0.0)
+    backfilled = _float_value(totals.get("rescued_target_count", 0), default=0.0)
     absent = _float_value(totals.get("absent_target_count", 0), default=0.0)
     duplicate = _float_value(
         totals.get("duplicate_assigned_target_count", 0),
         default=0.0,
     )
-    outcome_other = max(request_total - rescued - absent - duplicate, 0.0)
+    outcome_other = max(request_total - backfilled - absent - duplicate, 0.0)
     visual = (
         '<div class="visual-panel">'
         + "<h3>Request Ownership</h3>"
@@ -290,7 +290,7 @@ def _economics_section(economics: Mapping[str, Any]) -> str:
         + "<h3>Request Outcomes</h3>"
         + _stacked_bar(
             (
-                ("Rescued", rescued, "production"),
+                ("Rescued", backfilled, "production"),
                 ("Absent", absent, "fail"),
                 ("Duplicate", duplicate, "warn"),
                 ("Other", outcome_other, "neutral"),

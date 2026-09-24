@@ -10,8 +10,8 @@ import numpy as np
 from numpy.typing import NDArray
 
 from xic_extractor.alignment.ms1_index_source import (
-    OwnerBackfillXicBackend,
-    source_for_owner_backfill_backend,
+    BackfillXicBackend,
+    source_for_backfill_backend,
 )
 from xic_extractor.diagnostics.timing import TimingRecorder
 from xic_extractor.xic_models import XICTrace
@@ -144,10 +144,10 @@ def timed_raw_sources(
     }
 
 
-def timed_owner_backfill_sources(
+def timed_backfill_sources(
     raw_sources: dict[str, AlignmentRawHandle],
     *,
-    backend: OwnerBackfillXicBackend,
+    backend: BackfillXicBackend,
     stage: str,
 ) -> tuple[
     dict[str, TimedRawSource],
@@ -162,7 +162,7 @@ def timed_owner_backfill_sources(
     for sample_stem, source in raw_sources.items():
         stats = RawSourceTimingStats(sample_stem=sample_stem, stage=stage)
         timing_stats.append(stats)
-        backfill_source = source_for_owner_backfill_backend(source, backend)
+        backfill_source = source_for_backfill_backend(source, backend)
         backfill_sources[sample_stem] = TimedRawSource(backfill_source, stats=stats)
         if validation_sources is not None:
             validation_sources[sample_stem] = TimedRawSource(source, stats=stats)
