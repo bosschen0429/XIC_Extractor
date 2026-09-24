@@ -431,25 +431,7 @@ compatibility-label bindings are reported separately, formula-protected machine
 IDs must resolve unambiguously against owner bindings, and a missing lookup
 remains unavailable.
 
-### `seed_aware_backfill_review.py`
 
-**#441 disposition**: Retirement candidate; removal in #446 (#441 C4a). It requires the legacy family overlay batch summary.
-
-**Purpose**: Build a seed-aware shadow review for rescued-heavy backfill families.
-**Topic group**: `seed_aware_backfill_review.py` + `_constants`, `_io`, `_model`, `_writers` (5 files)
-**Originating spec**: (none found; pre-dates the lifecycle spec)
-
----
-
-### `family_ms1_backfill_review_report.py`
-
-**#441 disposition**: Retirement candidate; removal in #446 (#441 C4a).
-
-**Purpose**: Build a review queue for low-seed/high-backfill MS1-supported families.
-**Topic group**: `family_ms1_backfill_review_report.py` + `_io`, `_model`, `_writers` (4 files)
-**Originating spec**: (none found explicitly; appears in post-PR60 cleanup spec line ~183 as Workstream G product)
-
----
 
 ### `low_ms1_assessable_coverage_audit.py`
 
@@ -492,7 +474,7 @@ sample order, and output TSV/JSON/Markdown schemas.
 **Purpose**: Emit a `diagnostic_only` machine sidecar for product-retained backfill family/seed groups, linking actual primary-matrix backfill behavior to seed provenance, MS1 overlay support/blockers, missing evidence, and source artifact hashes.
 **Topic group**: `retained_backfill_evidence_gate.py` + `xic_extractor/diagnostics/retained_backfill_evidence_gate.py`
 **Originating spec/goal/plan**: `retired-provenance:0a1c58083825`; `retired-provenance:69bd6d102e9c`; `retired-provenance:0ceba9b23ba9`
-**Status note**: Writes `alignment_retained_backfill_evidence_gate.tsv`, `alignment_retained_backfill_evidence_gate.json`, `alignment_retained_backfill_missing_overlay_queue.tsv`, and `alignment_retained_backfill_overlay_review_queue.tsv`. It consumes existing alignment review/cell/matrix, optional owner backfill seed audit, and optional overlay summary TSVs only. `detected=0` families are excluded from main rows and counted separately. Exact `seed_group_id` overlay rows are required for seed-specific MS1 support/blocker decisions; legacy overlay rows without `seed_group_id` are retained only as family context and are re-queued as `missing_seed_specific_overlay`. Missing-overlay rows with seed provenance are emitted as queues consumable by `family_ms1_overlay_batch.py`; the full missing-overlay queue and family-deduplicated review queue share one ordered candidate list during output writing. It does not accept RAW/DLL paths, does not generate overlays, does not mutate `alignment_review.tsv`, `alignment_cells.tsv`, `alignment_matrix.tsv`, workbook schemas, or product decisions, and does not declare production readiness.
+**Status note**: Writes `alignment_retained_backfill_evidence_gate.tsv`, `alignment_retained_backfill_evidence_gate.json`, `alignment_retained_backfill_missing_overlay_queue.tsv`, and `alignment_retained_backfill_overlay_review_queue.tsv`. It consumes existing alignment review/cell/matrix, optional owner backfill seed audit, and optional overlay summary TSVs only. `detected=0` families are excluded from main rows and counted separately. Exact `seed_group_id` overlay rows are required for seed-specific MS1 support/blocker decisions; legacy overlay rows without `seed_group_id` are retained only as family context and are re-queued as `missing_seed_specific_overlay`. Missing-overlay rows with seed provenance are emitted as review queues; the full missing-overlay queue and family-deduplicated review queue share one ordered candidate list during output writing. It does not accept RAW/DLL paths, does not generate overlays, does not mutate `alignment_review.tsv`, `alignment_cells.tsv`, `alignment_matrix.tsv`, workbook schemas, or product decisions, and does not declare production readiness.
 
 ---
 
@@ -514,27 +496,7 @@ sample order, and output TSV/JSON/Markdown schemas.
 
 ---
 
-### `shift_aware_backfill_calibration_pack.py`
 
-**#441 disposition**: Retirement candidate; removal in #446 (#441 C4a). It requires legacy family overlay outputs.
-
-**Purpose**: Build a standard-peak calibration/review pack from shift-aware family overlay summaries, reconciliation groups, and overlay batch summaries.
-**Topic group**: `shift_aware_backfill_calibration_pack.py`
-**Originating spec/goal/plan**: `goals/standard-peak-backfill-productization`
-**Status note**: Writes `shift_aware_backfill_calibration_pack.tsv/html` and, when `--shift-aware-summary-dir` is supplied, `shift_aware_family_best_shift_summary.tsv`. Manual labels in this pack are calibration oracle fields only; they are not a production whitelist. The default standard-peak machine threshold is `--min-shape-r 0.95`, matching the accepted broad-but-standard Gaussian-smoothed peak contract; stricter thresholds may be used for review experiments but should not silently replace the product gate. The pack can aggregate multiple `*_source_family_best_shift_summary.tsv` files and records non-reference source-family count, best-shift shape similarity, max absolute shift, overlay verdict, and provenance paths for downstream machine-gate review. Source-family summary aggregation uses a per-family accumulator while reading summary rows, so reference-only families and non-reference rows without usable shape similarity are skipped without materializing all rows for a second pass.
-
----
-
-### `shift_aware_standard_peak_gate_calibration.py`
-
-**#441 disposition**: Retirement candidate; removal in #446 (#441 C4a). It reads only the calibration pack.
-
-**Purpose**: Convert shift-aware calibration rows into a machine standard-peak gate that separates supported standard-peak same-pattern cases from blocked/review-only cases.
-**Topic group**: `shift_aware_standard_peak_gate_calibration.py`
-**Originating spec/goal/plan**: `goals/standard-peak-backfill-productization`
-**Status note**: Writes `shift_aware_standard_peak_gate_calibration.tsv` and summary JSON. `standard_peak_gate_supported` is now a historical offline pattern label only: T5D deleted every authority/productization consumer of this output. Rows without manual labels are reported as `unlabeled_machine_supported` or `unlabeled_machine_blocked`; neither label can become Owner SUPPORT or a Matrix value. Non-standard, missing-overlay, stale-provenance, and conflict rows remain fail-closed or review-only.
-
----
 
 ## T5D Standard Peak contraction
 
@@ -673,10 +635,10 @@ productization surface and its detailed evidence/oracle options.
 ### Historical record — `standard_peak_backfill_machine_pipeline.py` (retired/deleted)
 
 **Purpose**: Run the standard-peak machine-gate chain from either an existing overlay summary or a retained-backfill review queue to activated matrix and optional gallery.
-**Topic group**: `family_ms1_overlay_batch.py`, `family_ms1_alignment_experiment_batch.py`, `backfill_evidence_reconciliation_gallery.py`, `shift_aware_backfill_calibration_pack.py`, `shift_aware_standard_peak_gate_calibration.py`, `standard_peak_ms1_authority_bundle.py`, `shadow_production_projection.py`, `standard_peak_backfill_productization.py`
+**Topic group**: retired offline orchestration chain.
 **Originating spec/goal/plan**: `goals/standard-peak-backfill-productization`
 **Status note**: This explicit offline orchestrator can start from an existing
-`family_ms1_overlay_batch_summary.tsv` or from a retained-backfill review queue
+an existing overlay batch summary or from a retained-backfill review queue
 plus RAW/DLL paths. Normal presets and `scripts/run_alignment.py` have no
 referrer to it. Historical `publication_mode` values control offline evidence
 and rendering only; they are not normal-route choices or source-Matrix
@@ -851,32 +813,6 @@ matrices, remap family winners, or claim production readiness.
 
 ---
 
-### `backfill_peakhypothesis_overlay.py`
-
-**#441 disposition**: Retirement candidate; removal in #446 (#441 C4a).
-
-**Purpose**: Render RAW XIC overlay plots for corrected FULL COHORT hypothesis review
-candidates so reviewers do not need to inspect each row manually in Xcalibur.
-**Topic group**: `backfill_peakhypothesis_overlay.py` +
-`xic_extractor/diagnostics/backfill_peakhypothesis_overlay.py`
-**Originating spec/goal/plan**:
-`retired-provenance:3aee8e2b6031`
-**Status note**: Writes `backfill_peakhypothesis_overlay_index.tsv`,
-`backfill_peakhypothesis_overlay_summary.json`, an HTML gallery, and
-per-candidate PNG/PDF plots. Each plot overlays raw XIC plus
-`gaussian15_asls_residual` smoothed XIC for the candidate m/z and current
-consolidation winner m/z in the same RAW sample, with candidate anchor RT,
-candidate peak window, and winner RT marked. The overlay index also records
-machine Gaussian15 normal-shape evidence from the selected bounds' local shape
-context, using `ChromPeakSegment` baseline-return boundaries plus
-`gaussian15_positive_asls_residual` lobe area as audit evidence. It can support
-standard vs non-standard peak-shape gating, show the Gaussian area that would
-be integrated, and emit a machine same-peak verdict when the slice-gate
-PeakHypothesis/sample match, detected/rescued cell state, standard shape, and
-positive lobe area all agree. It does not apply activation, mutate matrices,
-remap family winners, or claim production readiness.
-
----
 
 ### `backfill_peakhypothesis_normal_peak_decision.py`
 
@@ -1096,16 +1032,6 @@ until an explicit product-transfer decision and consolidation policy exist.
 
 ---
 
-### `selected_envelope_plot_review.py`
-
-**#441 disposition**: Retirement candidate; removal in #446 (#441 C4a).
-
-**Purpose**: Render `diagnostic_only` selected-envelope boundary review plots from selected-envelope diagnostic rows, showing RAW XIC, AsLS baseline, Gaussian15 morphology overlay, resolver interval, selected envelope, optional manual/expert oracle overlay, and quantitation context in one figure.
-**Topic group**: `selected_envelope_plot_review.py` + `xic_extractor/diagnostics/selected_envelope_gallery.py` + `xic_extractor/peak_detection/selected_envelope_*`
-**Originating owner/plan**: `docs/product/quantitation-context.md`; retired selected full-envelope boundary spec provenance `retired-provenance:13e9499ab37d`
-**Status note**: Re-reads RAW files for bounded manual/expert review only. It can consume an optional `selected_envelope_boundary_oracle.tsv` / boundary-oracle TSV to draw expert-reviewed RT windows and record selected candidate id plus oracle id/source/status in `selected_envelope_plot_index.tsv`. It can also consume `chrom_peak_segment_review_rows.tsv` from `chrom_peak_segment_candidate_gate.py` to force explicit review-only segment rows into the plot index. Diagnostic rows may carry Gaussian15-smoothed positive AsLS residual, selected segment, and selected Gaussian peak-group evidence from upstream package logic; this plotter only renders those recorded evidence fields and is not an exact clone of Xcalibur's proprietary smoothing. Boundary promotion, final area ownership, and production selection remain outside this renderer. Plot overlays fail closed unless oracle rows are `expert_reviewed` with manual/expert sources (`manual_overlay`, `expert_overlay`, or `manual_2raw`); targeted workbook control rows remain benchmark-only and are not drawn as boundary truth. It writes PNG/PDF overlays and `selected_envelope_plot_index.tsv`; `review_gallery.html` is a sticky-table, details, and PNG-lightbox human review surface that remains `diagnostic_only`. It does not mutate selected `IntegrationResult`, change targeted workbook/CSV `Area`, or promote selected-envelope behavior by itself.
-
----
 
 ### `chrom_peak_segment_candidate_gate.py`
 
@@ -1137,15 +1063,6 @@ not formal boundary+area oracle rows.
 
 ---
 
-### `subthreshold_sensitivity_report.py`
-
-**#441 disposition**: Retirement candidate; removal in #446 (#441 C4a). Its only input is legacy family overlay trace JSON.
-
-**Purpose**: Aggregate Gaussian15 sub-threshold (missed-peak) candidates across a batch of overlay trace-data JSONs as evidence for whether/how far to relax `ms1_peak_modes.gaussian15_peak_observations` multi-peak thresholds.
-**Topic group**: reuses `subthreshold_candidate_report` (mirrors the detector's local-maximum scan).
-**Status note**: Diagnostic-only; changes NO detection logic. Reports accepted-vs-rejected local maxima, which gate (height/prominence/edge/overlapping) blocked rejects (appears-in-reasons vs SOLE blocker), and a height-recovery upper bound. Use on a real (ideally spike-in) batch, then validate any threshold change with spike-in recovery.
-
----
 
 ### `ms1_peak_group_nl_scope_gate.py`
 
@@ -1229,15 +1146,6 @@ schemas.
 
 ---
 
-### `target_pair_rt_candidate_plot_review.py`
-
-**#441 disposition**: Retirement candidate; removal in #446 (#441 C4a).
-
-**Purpose**: Render target-pair RT candidate review plots from RAW XIC traces for human adjudication of paired analyte/ISTD RT candidate selection.
-**Topic group**: target-pair RT review; reuses `gaussian15_morphology_trace`.
-**Status note**: Diagnostic-only RAW-backed review plots; does not change selection or matrix areas.
-
----
 
 ### `targeted_ms1_shape_identity_from_grid.py`
 
@@ -1383,113 +1291,12 @@ context; mode-aware outputs should use
 `peak_hypothesis_id` / selected-apex mode evidence when a row may contain
 multiple MS1 peak modes.
 
-### `family_ms1_overlay_plot.py`
 
-**#441 disposition**: Retirement candidate; removal in #446 (#441 C4a). Retarget the smoothing import in `cid_nl_differential_overlay_review.py` to `xic_extractor/peak_detection/ms1_shape_identity.py` first.
 
-**Purpose**: Render MS1 overlay evidence for one legacy family-id peak group.
-**Topic group**: `family_ms1_overlay_plot.py` + `_evidence`, `_models`, `_rendering`, `_rendering_styles`, `_trace`, `_writers` (7 files)
-**Originating spec**: (none found; landed alongside backfill review work)
-**Status note**: Peak-group overlay PNG/PDF is context-only and intentionally keeps two panels: absolute RT own-max pattern and raw-intensity signal height. The writer also emits sibling `_hypothesis.png` / `_hypothesis.pdf` files that keep apex-aligned MS1 shape on the hypothesis-evidence surface, using detected NL seed traces as the anchor reference instead of letting rescued traces define the reference shape. Detected/rescued selected-peak traces are drawn even when selected/cell local-window peak dominance is below `0.5`; low dominance is an annotation/warning for review, not a visibility gate. The shaded band marks the selected/cell peak segment used for the visual comparison. `--targeted-workbook` / `--sample-info` remain accepted for CLI compatibility, but the current two-panel peak-group context overlay does not render a drift-corrected iRT panel. Area, apex-delta, shape-similarity scatter, and iRT/mode evidence remain hypothesis/mode questions and should not be put back into the peak-group context overlay. This renderer remains diagnostic-only and does not change backfill decisions or matrix areas.
 
----
 
-### `family_ms1_overlay_batch.py`
 
-**#441 disposition**: Retirement candidate; removal in #446 (#441 C4a).
 
-**Purpose**: Render queued peak-group MS1 overlays from a backfill review report.
-**Topic group**: shares helpers with `family_ms1_overlay_plot`
-**Pairs with**: `family_ms1_backfill_review_report.py` (produces the queue, this consumes it)
-**Status note**: Preserves optional queue `seed_group_id` in `family_ms1_overlay_batch_summary.tsv` so downstream retained-backfill evidence gates can join overlay evidence at seed-group precision. Summary rows carry separate apex-aligned shape metrics and own-max absolute-RT shape / absolute apex cluster metrics; these are evidence notes, not a composite `backfill_score`. Queues without `seed_group_id` remain supported for legacy family context, but seed-specific retained-backfill gates treat them as insufficient and request an exact `seed_group_id` overlay before using visual support/blockers. The CLI writes summary/Markdown incrementally after each row and supports `--reuse-existing`, which rebuilds summary rows from completed trace artifacts and, in rendered mode, completed PNG/PDF bundles without re-reading RAW; this makes large FULL COHORT queues resumable after timeout. In-process preset callers use the same renderer without incremental summary rewrites, then write final batch outputs once. RAW trace extraction is sample-batched and uses bounded scan-window super-window grouping before cropping traces back to their original request windows; `family_ms1_overlay_batch_summary.json` records selected rows, RAW opens, XIC requests, exact scan windows, super-window groups, chromatogram calls, and trace point counts. `--evidence-only` keeps the same trace TSV/JSON and summary schema while leaving `png_path` / `pdf_path` blank for image-free publication runs.
-`--evidence-cache-dir` is an opt-in evidence-only accelerator for repeated
-modeling validation. Cache keys bind the alignment-cell hash, RAW/DLL paths,
-overlay source, rank/output prefix, legacy family/sample/seed request, mz/ppm/RT
-window, and peak-group center RT. Cache also records per-sample RAW identity
-with `path_stat` (`resolved_path`, size, mtime, device, inode). Warm hits
-reuse cached trace TSV/JSON evidence without opening RAW files only after the
-cached trace payload, stable provenance, and current RAW identities still match
-the request; missing or mismatched RAW identity fails closed to normal RAW
-extraction and can store exact evidence for future runs. Rendered PNG/PDF runs
-ignore the evidence cache. Cache rows remain evidence-provider inputs only and
-must still flow through the retained gate, shift-aware gate, consolidation, and
-publication checker before any matrix output is accepted.
-
----
-
-### `family_ms1_overlay_evidence_cache_seed.py`
-
-**#441 disposition**: Retirement candidate; removal in #446 (#441 C4a).
-
-**Purpose**: Seed a `family_ms1_overlay_batch.py` evidence cache from an
-already-reviewed overlay summary and its trace TSV/JSON artifacts.
-**Topic group**: `family_ms1_overlay_batch.py`
-**Status note**: This is a no-RAW cache warm-up helper for repeated
-8RAW/FULL COHORT validation loops. It verifies the same request/key inputs as the
-overlay batch cache, copies trace summaries, writes normalized trace JSON
-provenance with the same per-sample RAW identity binding into the cache, and
-writes the shared cache index. If RAW identity cannot be verified, the row is
-not seeded as a reusable cache hit. It does not render overlays, re-extract RAW,
-modify source summaries, or prove product readiness.
-
----
-
-### `family_ms1_alignment_experiment.py`
-
-**#441 disposition**: Retirement candidate; removal in #446 (#441 C4a).
-
-**Purpose**: Render honest RT-interpretation comparison panels for one legacy family-id peak group.
-**Topic group**: underlying single-peak-group experiment for `family_ms1_alignment_experiment_batch.py`; reuses `family_ms1_overlay_*` helpers.
-**Status note**: Diagnostic-only RT-interpretation comparison; does not change backfill decisions or matrix areas. The batch wrapper reads existing overlay trace JSONs and runs this per successful overlay row.
-
----
-
-### `family_ms1_alignment_experiment_batch.py`
-
-**#441 disposition**: Retirement candidate; removal in #446 (#441 C4a).
-
-**Purpose**: Convert `family_ms1_overlay_batch_summary.tsv` trace JSON outputs into shift-aware source-family alignment experiment outputs in batch.
-**Topic group**: `family_ms1_alignment_experiment.py`
-**Status note**: This no-RAW batch wrapper reads existing overlay trace JSONs, runs the single-peak-group shift-aware alignment experiment for successful overlay rows, and writes `family_ms1_alignment_experiment_batch_summary.tsv/json`. It preloads source-family provenance for selected peak groups once per batch and the underlying best-shift search reuses normalized trace curves across candidate shifts, so matrix-only summary generation does not rescan the full cell-evidence TSV or resmooth traces per shift. It uses deterministic `<rank>_<family>_shift_aware` output prefixes so downstream `shift_aware_backfill_calibration_pack.py --shift-aware-summary-dir` can collect `*_source_family_best_shift_summary.tsv` files without hand-built command lists. `--no-images` keeps the summary TSV outputs, including `*_source_family_best_shift_summary.tsv`, while leaving `source_best_shift_png` blank and skipping PNG review rendering; this is the matrix-only publication path. `--start-rank`, `--limit`, and `--reuse-existing` make full FULL COHORT review queues resumable after overlay rendering; in no-images mode, reuse requires completed summary TSVs rather than completed PNGs. Failed or missing overlay rows are reported as skipped/failed and do not imply standard-peak support.
-
----
-
-### `changed_row_mode_overlay_review.py`
-
-**#441 disposition**: Retirement candidate; removal in #446 (#441 C4a).
-
-**Purpose**: Convert changed-row peak-group MS1 overlay trace JSONs into a
-mode-aware review surface: RAW selected-apex RT-mode evidence TSV,
-PeakHypothesis review projection TSV, per-sample mode review TSV,
-legacy family-id summary TSV, review-only similarity TSV/summary, Gaussian15-smoothed
-mode-colored PNGs, and an HTML gallery.
-**Topic group**: consumes `family_ms1_overlay_batch.py` trace JSONs plus
-`alignment_matrix_identity.tsv`; reuses
-`xic_extractor/alignment/shared_peak_identity_explanation/rt_mode_evidence.py`
-and `peak_hypothesis_selection.py`.
-**Status note**: This tool keeps `feature_family_id` as provenance only. RAW
-overlay-derived modes are emitted as review-only evidence, not typed iRT or
-product authority. Optional matrix RT drift and MS1 pattern sidecars are
-reported in the review-only similarity panel, which computes
-Gaussian15-smoothed apex-aligned shape similarity within the selected mode and
-badges wrong-apex, partial-shape, multimodal-family, and coherent-review cases.
-Subthreshold Gaussian15 candidate markers are computed once per trace and reused
-across sample rows, family summaries, and mode plots. The similarity badge is a
-human triage aid, not a product gate. It is intended for changed-row
-adjudication where a plain family overlay can hide selected-apex multimodality
-or global trace apex conflicts.
-
----
-
-### `qc_ms1_pattern_reference.py`
-
-**#441 disposition**: Retirement candidate; removal in #446 (#441 C4a). It reads legacy family overlay trace JSON.
-
-**Purpose**: Build a `diagnostic_only` nearest-injection-QC MS1 pattern reference sidecar from `family_ms1_overlay_plot` RAW trace JSON plus SampleInfo injection order; reports whether the closest QC supports, conflicts with, or cannot adjudicate a reviewed sample's selected MS1 peak.
-**Topic group**: `qc_ms1_pattern_reference.py` + `xic_extractor/alignment/shared_peak_identity_explanation/qc_ms1_pattern_reference.py`
-**Originating context**: shared peak identity evidence-chain follow-up for using nearby QC MS1 pattern as an RT-drift / wrong-peak adjudication surface.
-
----
 
 ## Area / Region Audits
 
