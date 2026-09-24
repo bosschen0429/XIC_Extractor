@@ -25,7 +25,10 @@ bounds its active workers by sample count; that cap is scheduling, not another
 default. The profile is a settings snapshot, not a shared persistent worker pool.
 
 For Alignment, `--raw-workers` also bounds persisted physical-input indexing.
-`--raw-worker-backend process` runs the CPU-heavy sidecar parsers in separate
+Alignment defaults to the `process` RAW worker backend
+(`DEFAULT_ALIGNMENT_WORKER_BACKEND`), because Thermo reads scale poorly across
+threads in one process. `--raw-worker-backend thread` remains available.
+The process backend runs the CPU-heavy sidecar parsers in separate
 processes; only compact indices and private spool ownership cross that boundary.
 Source fingerprinting uses the same worker budget with threads. These input
 phases finish before RAW runtime, so their pools do not multiply the RAW worker
