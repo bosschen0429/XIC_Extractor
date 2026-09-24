@@ -89,6 +89,9 @@ Each sample
 distinguishes initial discovery support, reacquired support, and Backfill
 support with its exact evidence references. Backfill records are displayed as
 `Backfill（回填）支持` and their curves as `Backfill（回填）曲線`.
+The charts retain sample colours and use a solid, long-dashed, or dotted line
+for initial discovery, reacquired, or Backfill support, respectively. The
+sample legend names each origin; unavailable origin uses a separate dash.
 A physical direct-observation cell is not
 by itself evidence of initial discovery support.
 Recorded initial comparisons can link to a distinct peer group or row in the
