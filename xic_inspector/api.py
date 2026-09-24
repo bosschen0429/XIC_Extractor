@@ -23,14 +23,20 @@ from xic_inspector.selection.sampler import (
     sample_cross_sample_sha256,
 )
 from xic_inspector.sources import (
+    CurveBundleLocator,
+    CurveBundleSource,
     EvidenceLocator,
-    EvidenceSource,
     ExplanationError,
     ExplanationUnavailableError,
+    open_source,
 )
-from xic_inspector.sources import (
-    read_evidence_summary as read_evidence_summary,
-)
+
+
+def read_evidence_summary(path):
+    """Read metadata from the existing SQLite evidence source."""
+    from xic_inspector.sources.cid_nl import read_summary
+
+    return read_summary(path)
 
 StrategyKind = Literal["sample", "attention", "query"]
 CapabilityKind = Literal["retained_curves", "metadata_only"]
@@ -188,7 +194,7 @@ class ReportResult:
     """Immutable result of successful report generation."""
 
     output_path: Path
-    source: EvidenceLocator
+    source: EvidenceLocator | CurveBundleLocator
     evidence_capability: CapabilityKind
     run_total: int
     eligible_count: int
@@ -203,7 +209,7 @@ def generate_report(
     selection: SelectionRequest,
     output: Path,
     *,
-    expected_source: EvidenceLocator | None = None,
+    expected_source: EvidenceLocator | CurveBundleLocator | None = None,
     on_progress: Callable[[ReportProgress], None] | None = None,
     is_cancelled: Callable[[], bool] | None = None,
 ) -> ReportResult:
@@ -229,61 +235,60 @@ def generate_report(
         on_progress(ReportProgress(stage="metadata", completed=0, total=1))
 
     if not report_path.is_file():
-        raise InspectorError(3, f"Source DB unavailable: {report_path}")
+        raise InspectorError(3, f"Source unavailable: {report_path}")
 
     try:
-        source = EvidenceSource(report_path)
+        source = open_source(report_path)
         summary = source.summary
     except ExplanationUnavailableError as exc:
         raise InspectorError(3, str(exc), cause=exc) from exc
     except ExplanationError as exc:
         raise InspectorError(
-            4, f"Invalid explanation source: {exc}", cause=exc
+            4, f"Invalid source: {exc}", cause=exc
         ) from exc
 
-    # Validate Matrix
-    matrix_path_str = summary.get("matrix_path")
-    if not matrix_path_str:
-        raise InspectorError(4, "Source summary missing matrix_path")
-
-    matrix_file = Path(matrix_path_str)
-    if not matrix_file.is_absolute():
-        matrix_file = (report_path.parent / matrix_file).resolve()
-    else:
-        matrix_file = matrix_file.resolve()
-
-    if output_path == matrix_file:
-        raise InspectorError(6, f"Output path cannot alias matrix: {output_path}")
-
-    if not matrix_file.is_file():
-        raise InspectorError(4, f"Bound matrix file missing: {matrix_file}")
-
-    with matrix_file.open("rb") as handle:
-        actual_matrix_sha256 = hashlib.file_digest(handle, "sha256").hexdigest()
-
-    expected_matrix_sha256 = summary.get("matrix_sha256")
-    if actual_matrix_sha256 != expected_matrix_sha256:
-        raise InspectorError(
-            4,
-            f"Matrix SHA-256 mismatch: expected {expected_matrix_sha256}, "
-            f"got {actual_matrix_sha256}",
-        )
-
-    # Validate expected_source if provided
     schema_version = summary["schema_version"]
     req_id = summary.get("processing_request_id", "")
     att_id = summary.get("processing_attempt_id", "")
-
-    source_locator = EvidenceLocator(
-        report_path=report_path,
-        matrix_path=matrix_file,
-        matrix_sha256=actual_matrix_sha256,
-        processing_request_id=req_id,
-        processing_attempt_id=att_id,
-        schema_version=schema_version,
-    )
-
-    if expected_source is not None:
+    if isinstance(source, CurveBundleSource):
+        source_locator: EvidenceLocator | CurveBundleLocator = source.locator
+        if expected_source is not None and expected_source != source_locator:
+            raise InspectorError(4, "Source does not match expected_source contract")
+    else:
+        # The SQLite source is bound to its published Matrix. A portable bundle
+        # carries its own provenance and has no Matrix dependency.
+        matrix_path_str = summary.get("matrix_path")
+        if not matrix_path_str:
+            raise InspectorError(4, "Source summary missing matrix_path")
+        matrix_file = Path(matrix_path_str)
+        if not matrix_file.is_absolute():
+            matrix_file = (report_path.parent / matrix_file).resolve()
+        else:
+            matrix_file = matrix_file.resolve()
+        if output_path == matrix_file:
+            raise InspectorError(6, f"Output path cannot alias matrix: {output_path}")
+        if not matrix_file.is_file():
+            raise InspectorError(4, f"Bound matrix file missing: {matrix_file}")
+        with matrix_file.open("rb") as handle:
+            actual_matrix_sha256 = hashlib.file_digest(handle, "sha256").hexdigest()
+        expected_matrix_sha256 = summary.get("matrix_sha256")
+        if actual_matrix_sha256 != expected_matrix_sha256:
+            raise InspectorError(
+                4,
+                f"Matrix SHA-256 mismatch: expected {expected_matrix_sha256}, "
+                f"got {actual_matrix_sha256}",
+            )
+        source_locator = EvidenceLocator(
+            report_path=report_path,
+            matrix_path=matrix_file,
+            matrix_sha256=actual_matrix_sha256,
+            processing_request_id=req_id,
+            processing_attempt_id=att_id,
+            schema_version=schema_version,
+        )
+    if expected_source is not None and isinstance(source_locator, EvidenceLocator):
+        if not isinstance(expected_source, EvidenceLocator):
+            raise InspectorError(4, "Source does not match expected_source contract")
         src = source_locator
         if (
             expected_source.report_path.resolve() != src.report_path
