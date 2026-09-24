@@ -193,7 +193,8 @@ def test_merged_physical_candidate_persists_representative_search_window(
 ) -> None:
     from xic_extractor.acquisition_contract import serialize_acquired_trace
     from xic_extractor.alignment.csv_io import read_discovery_candidates_csv
-    from xic_extractor.discovery.csv_writer import write_discovery_candidates_csv
+    from xic_extractor.diagnostics.timing import TimingRecorder
+    from xic_extractor.discovery.pipeline import _write_dual_csvs
     from xic_extractor.extraction.untargeted_cid_nl_alignment import (
         _restore_physical_candidate,
     )
@@ -255,21 +256,26 @@ def test_merged_physical_candidate_persists_representative_search_window(
     before_evaluation = serialize_physical_peak_evaluation(
         selected.rt, selected.raw, profile=profile, evaluation=selected.evaluation
     )
-    csv_path = write_discovery_candidates_csv(tmp_path / "candidates.csv", (candidate,))
-    sidecar_path = tmp_path / "physical.json"
-    write_discovery_physical_fact_sidecar(
-        sidecar_path,
+    outputs = _write_dual_csvs(
+        tmp_path / "discovery", (candidate,),
+        timing_recorder=TimingRecorder.disabled("discovery"),
+        sample_stem=raw_path.stem,
         run_spec=spec,
         acquisition_input=spec.acquisition_inputs[0],
-        work_manifest=result.physical_work_manifest,
-        records=result.physical_evaluations,
+        physical_work_manifest=result.physical_work_manifest,
+        physical_evaluations=result.physical_evaluations,
+        physical_bindings=result.physical_bindings,
     )
+    csv_path = outputs.candidates_csv
+    sidecar_path = outputs.physical_facts_json
+    assert sidecar_path is not None
     records = read_discovery_physical_fact_sidecar(
         sidecar_path,
         expected_run_spec=spec,
         expected_acquisition_input=spec.acquisition_inputs[0],
         expected_work_manifest=result.physical_work_manifest,
     )
+    assert len(records) == len(binding.member_work_ordinals) == 2
     restored_record = next(
         record for record in records if record.candidate_id == candidate.candidate_id
     )
@@ -533,11 +539,7 @@ def test_sparse_trace_outside_actual_context_persists_truthful_unavailable(
     assert row["ms1_area"] == ""
     assert row["ms1_trace_quality"] == "physical_unavailable"
     assert "physical MS1 evaluation unavailable" in row["reason"]
-    assert len(captured_manifest) == 1
-    work = captured_manifest[0]
-    assert work.query_rt_min == 7.80
-    assert work.context_rt_start_min == work.context_rt_end_min == 7.90
-    assert work.xic_rt_min <= work.query_rt_min <= work.xic_rt_max
+    assert captured_manifest == ()
     assert outputs.physical_facts_json is not None
     records = read_discovery_physical_fact_sidecar(
         outputs.physical_facts_json,
@@ -545,9 +547,7 @@ def test_sparse_trace_outside_actual_context_persists_truthful_unavailable(
         expected_acquisition_input=spec.acquisition_inputs[0],
         expected_work_manifest=captured_manifest,
     )
-    assert len(records) == 1
-    assert records[0].evaluation.state == "unavailable"
-    assert records[0].evaluation.facts is None
+    assert records == ()
     assert raw.raw_chromatogram_call_count == 1
 
 

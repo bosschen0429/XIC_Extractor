@@ -164,7 +164,10 @@ Related evidence and analysis terms:
 
 - `Discovery record`: a retained sample-local observation and its qualification
   result. A record in the Discovery candidate CSV does not by itself qualify
-  as a feature for cross-sample grouping.
+  as a feature for cross-sample grouping. The persisted population contains all
+  MS1-feature-backed candidates and non-feature observations whose precursor
+  basis is `scan_precursor` or `mixed`. Physical facts persist only for the
+  feature-backed population.
 - `Alignment feature candidate`: a Discovery observation with eligible MS1
   feature support. Its physical peak may participate in cross-sample grouping;
   an NL match alone does not grant that standing.
@@ -173,6 +176,8 @@ Related evidence and analysis terms:
   without an accepted MS1 peak and records demoted by blank qualification;
   the state is not proof of random noise. A locally relevant MS2 observation
   can support an existing feature without becoming a grouping candidate.
+  Non-feature `product_plus_neutral_loss` observations, including ambiguous
+  co-isolation observations, are classified in memory but are not persisted.
 - `sidecar`: accompanying TSV, JSON, or similar metadata that explains or
   audits a primary output without inheriting its writer authority.
 - `provenance`: the inputs, effective settings, runtime, and decision path

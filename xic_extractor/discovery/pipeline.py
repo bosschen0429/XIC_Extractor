@@ -4,7 +4,7 @@ import csv
 import pickle
 from collections.abc import Callable
 from contextlib import AbstractContextManager, suppress
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Protocol, cast
@@ -39,6 +39,7 @@ from xic_extractor.discovery.grouping import group_discovery_seeds
 from xic_extractor.discovery.models import (
     DISCOVERY_BRIEF_COLUMNS,
     DISCOVERY_CANDIDATE_COLUMNS,
+    MS1_FEATURE_BACKED_STATES,
     DiscoveryBatchOutputs,
     DiscoveryCandidate,
     DiscoveryPhysicalWorkItem,
@@ -463,6 +464,7 @@ def run_discovery_batch(
             ),
         )
         per_sample.append(outputs)
+        candidates = _persisted_discovery_candidates(candidates)
         receipt = mint_discovery_candidate_universe_receipt(
             sample_stem=sample_stem,
             acquisition_source=acquisition_source,
@@ -790,6 +792,7 @@ def _run_discovery_sample_process_job(
                 candidates=candidates,
             ),
         )
+        candidates = _persisted_discovery_candidates(candidates)
         receipt = mint_discovery_candidate_universe_receipt(
             sample_stem=sample_stem,
             acquisition_source=job.acquisition_source,
@@ -891,6 +894,65 @@ def _discovery_process_error(
     )
 
 
+def _is_feature_backed_candidate(candidate: DiscoveryCandidate) -> bool:
+    return (
+        candidate.ms1_peak_found
+        and candidate.discovery_candidate_state in MS1_FEATURE_BACKED_STATES
+    )
+
+
+def _persisted_discovery_candidates(
+    candidates: tuple[DiscoveryCandidate, ...],
+) -> tuple[DiscoveryCandidate, ...]:
+    return tuple(
+        candidate for candidate in candidates
+        if _is_feature_backed_candidate(candidate)
+        or candidate.precursor_mz_basis in {"scan_precursor", "mixed"}
+    )
+
+
+def _persisted_physical_records(
+    records: tuple[DiscoveryPhysicalFactRecord, ...],
+    bindings: tuple[DiscoveryCandidatePhysicalBinding, ...],
+) -> tuple[DiscoveryPhysicalFactRecord, ...]:
+    """Project feature evidence and compact its persistence-local work indices."""
+    feature_bindings = tuple(
+        binding for binding in bindings
+        if _is_feature_backed_candidate(binding.candidate)
+    )
+    used_work = {
+        ordinal
+        for binding in feature_bindings
+        for ordinal in binding.member_work_ordinals
+    }
+    retained = tuple(
+        record for record in records if record.work_item.work_ordinal in used_work
+    )
+    work_indices = {
+        record.work_item.work_ordinal: index for index, record in enumerate(retained)
+    }
+    linked = bind_discovery_physical_record_evidence(retained, feature_bindings)
+    return tuple(
+        replace(
+            record,
+            work_item=replace(record.work_item, work_ordinal=index),
+            candidate_links=tuple(
+                replace(
+                    link,
+                    representative_work_ordinal=work_indices[
+                        link.representative_work_ordinal
+                    ],
+                    member_work_ordinals=tuple(
+                        work_indices[item] for item in link.member_work_ordinals
+                    ),
+                )
+                for link in record.candidate_links
+            ),
+        )
+        for index, record in enumerate(linked)
+    )
+
+
 def _write_dual_csvs(
     output_dir: Path,
     candidates: tuple[DiscoveryCandidate, ...],
@@ -903,6 +965,12 @@ def _write_dual_csvs(
     physical_evaluations: tuple[DiscoveryPhysicalFactRecord, ...] = (),
     physical_bindings: tuple[DiscoveryCandidatePhysicalBinding, ...] = (),
 ) -> DiscoveryRunOutputs:
+    candidates = _persisted_discovery_candidates(candidates)
+    persisted_ids = {candidate.candidate_id for candidate in candidates}
+    physical_bindings = order_physical_bindings_for_candidate_csv(tuple(
+        binding for binding in physical_bindings
+        if binding.candidate.candidate_id in persisted_ids
+    ))
     output_dir.mkdir(parents=True, exist_ok=True)
     candidates_path = output_dir / "discovery_candidates.csv"
     review_path = output_dir / "discovery_review.csv"
@@ -912,6 +980,10 @@ def _write_dual_csvs(
         raise ValueError("Discovery physical persistence binding is partial")
     if run_spec is None and (physical_work_manifest or physical_evaluations):
         raise ValueError("legacy Discovery cannot persist owner physical facts")
+    physical_evaluations = _persisted_physical_records(
+        physical_evaluations, physical_bindings,
+    )
+    physical_work_manifest = tuple(record.work_item for record in physical_evaluations)
 
     final_paths = [candidates_path, review_path, physical_facts_member_path]
     publish_count = 3 if physical_facts_path is not None else 2
@@ -960,9 +1032,7 @@ def _write_dual_csvs(
                     run_spec=run_spec,
                     acquisition_input=acquisition_input,
                     work_manifest=physical_work_manifest,
-                    records=bind_discovery_physical_record_evidence(
-                        physical_evaluations, physical_bindings
-                    ),
+                    records=physical_evaluations,
                 )
                 stage.metrics["byte_size"] = physical_tmp.stat().st_size
     except Exception:

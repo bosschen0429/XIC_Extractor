@@ -266,16 +266,19 @@ unresolved and rejected groups remain AuditTrail facts.
   first sample-local Discovery hit and does not treat a single method match as
   cross-sample identity proof by itself.
 - The RAW owner-build route consumes only Discovery's MS1-feature-backed
-  candidate states. `review_only_orphan_nl` and other review-only states remain
-  in Discovery review/audit artifacts but do not receive a second RAW XIC
+  candidate states. Non-feature rows, including `review_only_orphan_nl`, persist
+  in Discovery candidate/review artifacts only with a `scan_precursor` or `mixed`
+  basis and do not receive a second RAW XIC
   search merely by entering Alignment. This keeps candidate recall available
   for review without turning an unavailable physical feature into owner-build,
   group, Matrix, or Backfill work.
 - Persisted-input routing selects MS1-feature-backed candidates before minting
   method subjects. Review-only observations cannot choose feature query centers.
   Direct/mixed precursor NL observations may supply local scan evidence for an
-  existing feature; their own physical curves are not loaded for grouping.
-  Original Discovery artifacts retain the complete observation population.
+  existing feature through `load_review_support`; their physical facts are not
+  persisted. Physical-fact replay uses only feature-backed records. Non-feature
+  `product_plus_neutral_loss` rows are absent from Discovery artifacts; inferred
+  feature-backed rows and their physical evidence remain available.
 - Alignment retains compact cohort identities globally and restores candidate
   rows and physical records per closed working set. Scheduling packs worksets
   by 100 Da ownership and a 1,024-candidate budget; an indivisible scientific

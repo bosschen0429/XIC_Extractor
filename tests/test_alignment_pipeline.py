@@ -1,21 +1,47 @@
+import csv
+import json
 from contextlib import contextmanager, nullcontext
 from dataclasses import fields, replace
 from pathlib import Path
 from types import SimpleNamespace
 
+import numpy as np
 import pytest
 
 import xic_extractor.alignment.pipeline as pipeline_module
 from tests.alignment_pipeline_helpers import matrix as _matrix
 from tests.alignment_pipeline_helpers import peak_config as _peak_config
 from tests.alignment_pipeline_helpers import write_batch as _write_batch
+from tests.test_discovery_pipeline import (
+    _OwnerBoundFakeRawHandle,
+    _scan_event,
+)
+from tests.test_discovery_pipeline import (
+    _peak_config as _discovery_peak_config,
+)
+from tests.test_discovery_pipeline import (
+    _settings as _discovery_settings,
+)
 from tests.test_targeted_real_data_adapter import _settings
+from tests.test_untargeted_cid_nl_real_data_runtime import (
+    _FakeRaw,
+    _install_runtime_raws,
+)
 from xic_extractor.alignment import AlignmentConfig
+from xic_extractor.alignment.csv_io import read_discovery_batch_index
 from xic_extractor.alignment.process_execution import AlignmentProcessExecutionError
+from xic_extractor.discovery import pipeline as discovery_pipeline
+from xic_extractor.discovery.physical_fact_persistence import (
+    read_discovery_physical_fact_records,
+)
+from xic_extractor.discovery.processing_run_spec_adapter import (
+    compile_discovery_processing_run_spec,
+)
 from xic_extractor.peak_detection.signal_processing_profile import (
     resolve_signal_processing_profile,
 )
 from xic_extractor.sample_metadata import SampleMetadata
+from xic_extractor.xic_models import XICTrace
 
 
 def test_pure_single_provider_cid_nl_dispatches_with_route_receipt(
@@ -888,6 +914,182 @@ def test_pure_cid_nl_targets_csv_integration(
     )
 
     assert captured["known_istd_reference"] is fake_ref
+
+
+def test_reduced_discovery_persistence_keeps_alignment_families(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    raw_paths = (Path("sample-a.raw"), Path("sample-b.raw"))
+    for raw_path in raw_paths:
+        raw_path.write_bytes(raw_path.stem.encode("utf-8"))
+    settings = _discovery_settings(ms2_precursor_tol_da=1.6)
+    spec = compile_discovery_processing_run_spec(
+        raw_paths,
+        discovery_settings=settings,
+    )
+    rt = np.linspace(7.2, 8.4, 25)
+
+    class SelectiveTraceRaw(_OwnerBoundFakeRawHandle):
+        def extract_xic_many(self, requests):
+            self.raw_chromatogram_call_count += len(requests)
+            return tuple(
+                XICTrace.from_arrays(
+                    self._rt,
+                    self._intensity
+                    if request.mz > 600.0
+                    else np.zeros_like(self._rt),
+                )
+                for request in requests
+            )
+
+    discovery_handles = {
+        raw_path: SelectiveTraceRaw(
+            spec.acquisition_inputs[index].acquisition_source,
+            [
+                _scan_event(
+                    scan_number=scan_number,
+                    rt=7.8,
+                    precursor_mz=precursor_mz + 1.0,
+                    masses=[
+                        precursor_mz - 116.0474,
+                        precursor_mz + 1.0 - 116.0474,
+                    ],
+                    intensities=[10_000.0, 12_000.0],
+                )
+                for scan_number, precursor_mz in ((5, 500.0), (13, 700.0))
+            ],
+            rt=rt,
+            intensity=(
+                100.0
+                + (index + 1)
+                * 500.0
+                * np.exp(-0.5 * ((rt - 7.8) / 0.08) ** 2)
+            ),
+        )
+        for index, raw_path in enumerate(raw_paths)
+    }
+    discovery = discovery_pipeline.run_discovery_batch(
+        raw_paths,
+        output_dir=tmp_path / "discovery",
+        settings=settings,
+        peak_config=_discovery_peak_config(tmp_path),
+        raw_opener=lambda path, _dll_dir: discovery_handles[path],
+        run_spec=spec,
+    )
+    batch = read_discovery_batch_index(
+        discovery.batch_index_csv,
+        require_owner_closure=True,
+    )
+
+    def alignment_raw(index: int) -> _FakeRaw:
+        raw = _FakeRaw(
+            (7.8,),
+            scan_precursor_mz=701.0,
+            neutral_loss_das=(116.0474,),
+        )
+        raw.rt = rt
+        raw.intensity = (
+            100.0
+            + (index + 1)
+            * 500.0
+            * np.exp(-0.5 * ((rt - 7.8) / 0.08) ** 2)
+        )
+        raw.scans = tuple(
+            replace(
+                scan,
+                scan_number=13,
+                masses=np.asarray((583.9526, 584.9526)),
+                intensities=np.asarray((10_000.0, 12_000.0)),
+            )
+            for scan in raw.scans
+        )
+        return raw
+
+    _install_runtime_raws(
+        monkeypatch,
+        sources_by_path={
+            raw_paths[0].resolve(): alignment_raw(0),
+            raw_paths[1].resolve(): alignment_raw(1),
+        },
+        tmp_path=tmp_path,
+    )
+    alignment = pipeline_module.run_alignment(
+        discovery_batch_index=discovery.batch_index_csv,
+        raw_dir=tmp_path,
+        dll_dir=tmp_path,
+        output_dir=tmp_path / "alignment",
+        alignment_config=AlignmentConfig(),
+        peak_config=_discovery_peak_config(tmp_path),
+        discovery_settings=settings,
+        output_level="machine",
+        emit_alignment_cells=True,
+        raw_workers=1,
+    )
+
+    assert alignment.matrix_tsv is not None
+    assert alignment.cells_tsv is not None
+    with alignment.matrix_tsv.open(encoding="utf-8", newline="") as handle:
+        matrix = tuple(csv.DictReader(handle, delimiter="	"))
+    with alignment.cells_tsv.open(encoding="utf-8", newline="") as handle:
+        cells = tuple(csv.DictReader(handle, delimiter="	"))
+    # The m/z 700 family exists only through product + neutral-loss inference;
+    # the m/z 701 family is a direct scan-precursor match.
+    assert [row["Mz"] for row in matrix] == ["700.0000", "701.0000"]
+    by_candidate = {row["source_candidate_id"]: row for row in cells}
+    assert set(by_candidate) == {
+        f"{stem}#13@mz{mz}_p{product}"
+        for stem in ("sample-a", "sample-b")
+        for mz, product in (("700", "583.9526"), ("701", "584.9526"))
+    }
+    assert {row["status"] for row in cells} == {"detected"}
+    # Fixture apex = 100 baseline + (sample index + 1) * 500.
+    heights = {
+        (row["sample_stem"], row["family_center_mz"]): float(row["height"])
+        for row in cells
+    }
+    assert heights == {
+        ("sample-a", "700"): 600.0,
+        ("sample-a", "701"): 600.0,
+        ("sample-b", "700"): 1100.0,
+        ("sample-b", "701"): 1100.0,
+    }
+    for mz in ("700", "701"):
+        areas = {
+            row["sample_stem"]: float(row["area"])
+            for row in cells
+            if row["family_center_mz"] == mz
+        }
+        assert areas["sample-b"] / areas["sample-a"] == pytest.approx(2.0, rel=0.01)
+
+    assert {
+        stem: batch.candidate_receipts[stem].candidate_count
+        for stem in batch.sample_order
+        if batch.candidate_receipts[stem] is not None
+    } == {"sample-a": 3, "sample-b": 3}
+    assert {
+        output.candidates_csv.parent.name: len(
+            json.loads(
+                output.physical_facts_json.read_text(encoding="utf-8")
+            )["records"]
+        )
+        for output in discovery.per_sample
+        if output.physical_facts_json is not None
+    } == {"sample-a": 2, "sample-b": 2}
+    for acquisition, output in zip(
+        spec.acquisition_inputs,
+        discovery.per_sample,
+        strict=True,
+    ):
+        assert output.physical_facts_json is not None
+        assert len(
+            read_discovery_physical_fact_records(
+                output.physical_facts_json,
+                expected_run_spec=spec,
+                expected_acquisition_input=acquisition,
+            )
+        ) == 2
 
 
 def test_mixed_target_list_only_supplies_istds_to_untargeted_alignment(

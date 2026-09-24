@@ -1,15 +1,34 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
-from tests.test_discovery_physical_fact_persistence import _population
+from tests.test_discovery_ms1_backfill import (
+    _group,
+    _multi_tag_settings,
+    _seed,
+)
+from tests.test_discovery_ms1_backfill import (
+    _peak_config as _backfill_peak_config,
+)
+from tests.test_discovery_physical_fact_integration import _OwnerBoundBatchRaw
 from tests.test_discovery_pipeline import _settings
 from xic_extractor.diagnostics.timing import TimingRecorder
+from xic_extractor.discovery.models import DiscoverySettings
+from xic_extractor.discovery.ms1_backfill import (
+    _backfill_ms1_candidates_with_acquisition,
+)
+from xic_extractor.discovery.physical_fact_persistence import (
+    read_discovery_physical_fact_records,
+)
 from xic_extractor.discovery.pipeline import _write_dual_csvs
 from xic_extractor.discovery.processing_run_spec_adapter import (
     compile_discovery_processing_run_spec,
+)
+from xic_extractor.peak_detection.signal_processing_profile import (
+    SignalProcessingProfile,
 )
 
 
@@ -17,13 +36,39 @@ def test_physical_sidecar_and_publication_timing_cover_canonical_bytes_without_r
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    raw_path = tmp_path / "sample.raw"
+    raw_path = tmp_path / "TumorBC2312_DNA.raw"
     raw_path.write_bytes(b"timed sidecar")
-    spec = compile_discovery_processing_run_spec(
-        (raw_path,),
-        discovery_settings=_settings(),
+    settings = DiscoverySettings(
+        selected_tag_names=("dR", "R"),
+        tag_combine_mode="union",
+        neutral_loss_profiles=_multi_tag_settings().neutral_loss_profiles[:2],
     )
-    manifest, records = _population(spec, spec.acquisition_inputs[0])
+    profile = SignalProcessingProfile(window_points=3)
+    spec = compile_discovery_processing_run_spec(
+        (raw_path,), discovery_settings=settings, signal_processing_profile=profile
+    )
+    source = spec.acquisition_inputs[0].acquisition_source
+    groups = tuple(
+        replace(
+            _group((_seed(scan_number=scan, rt=rt, product_mz=500.0 - loss),)),
+            neutral_loss_tag=tag,
+            configured_neutral_loss_da=loss,
+            matched_tag_names=(tag,),
+        )
+        for scan, rt, tag, loss in (
+            (10, 7.78, "dR", 116.047344),
+            (20, 7.82, "R", 132.0423),
+        )
+    )
+    result = _backfill_ms1_candidates_with_acquisition(
+        _OwnerBoundBatchRaw(source),
+        groups,
+        acquisition_source=source,
+        run_spec_id=spec.run_spec_id,
+        settings=settings,
+        peak_config=_backfill_peak_config(),
+        signal_processing_profile=profile,
+    )
     from xic_extractor.peak_detection import physical_peak_codec as owner
 
     calls = {"prepare": 0, "evaluate": 0}
@@ -42,20 +87,28 @@ def test_physical_sidecar_and_publication_timing_cover_canonical_bytes_without_r
 
     outputs = _write_dual_csvs(
         tmp_path / "out",
-        (),
+        result.candidates,
         timing_recorder=recorder,
-        sample_stem="sample",
+        sample_stem=raw_path.stem,
         run_spec=spec,
         acquisition_input=spec.acquisition_inputs[0],
-        physical_work_manifest=manifest,
-        physical_evaluations=records,
+        physical_work_manifest=result.physical_work_manifest,
+        physical_evaluations=result.physical_evaluations,
+        physical_bindings=result.physical_bindings,
     )
 
     assert outputs.physical_facts_json is not None
+    persisted = read_discovery_physical_fact_records(
+        outputs.physical_facts_json,
+        expected_run_spec=spec,
+        expected_acquisition_input=spec.acquisition_inputs[0],
+    )
+    # One merged feature candidate with two member work items.
+    assert len(persisted) == 2
     by_stage = {record.stage: record for record in recorder.records}
     assert by_stage["discover.write_physical_facts_sidecar"].metrics == {
-        "work_count": len(manifest),
-        "record_count": len(records),
+        "work_count": 2,
+        "record_count": 2,
         "byte_size": outputs.physical_facts_json.stat().st_size,
     }
     assert by_stage["discover.publish_outputs"].metrics == {
