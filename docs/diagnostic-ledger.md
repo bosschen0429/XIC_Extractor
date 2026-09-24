@@ -7,7 +7,7 @@ Repo owner: docs/diagnostic-ledger.md
 Doc exit rule: Keep active while expensive RAW rerun memory is needed; retire only after durable diagnostic memory moves to a replacement canonical owner.
 
 **Status:** maintained repo-local diagnostic memory
-**Last updated:** 2026-09-22
+**Last updated:** 2026-09-24
 
 This ledger records diagnostic conclusions that should survive branch and
 worktree changes. Use it before rerunning expensive RAW validation or treating a
@@ -65,6 +65,94 @@ dated productization control-plane path is compatibility lookup only.
 | Thermo DLL dir | `$env:THERMO_RAWFILE_READER_DLL_DIR` |
 
 ## Known Diagnostic Conclusions
+
+### 2026-09-24 Partition Sizing: An 8RAW Win That Full85 Does Not Inherit
+
+Issue #463. At `9ba3a5b1` the bounded CID-NL constants (100 Da mass bin,
+1,024-membership budget, `untargeted_cid_nl_bounded_runtime.py:175,194`) stay
+unchanged: one setting wins clearly on 8RAW, but the full85 partition shape
+differs, and one full85 run cannot show output parity for a new default.
+
+- Machine and runner: i5-12400 (6C/12T), 32 GB, Windows 11, RAW and outputs on
+  internal C:. Alignment is the tissue runner's own command (`thread` backend,
+  4 raw workers, `validation-minimal` plus `--emit-alignment-cells`), with no
+  retained acquisition cache, so every run acquires cold. A driver replaces
+  the two literals at import and does not change product source. Its
+  1024/100 output hashes equal the unpatched runner's.
+- 8RAW grid, from one Discovery at head. Runtime-stage seconds, partitions,
+  summed acquisition, peak tree RSS:
+
+  | budget / bin | runtime s (n) | partitions | acquire sum s | peak RSS GB |
+  | --- | --- | --- | --- | --- |
+  | 1024 / 100 (current) | 191.5, 206.4, 222.5 (3) | 10 | 337-391 | 1.51-1.64 |
+  | 512 / 100 | 211.9 (1) | 14 | 373.5 | 1.19 |
+  | 2048 / 100 | 213.5 (1) | 8 | 385.8 | 1.40 |
+  | 4096 / 100 | 164.1 (1) | 8 | 296.3 | 1.36 |
+  | 512 / none | 186.5 (1) | 10 | 331.0 | 1.91 |
+  | 1024 / none | 198.4 (1) | 5 | 303.8 | 1.50 |
+  | 2048 / none | 121.9, 107.6, 118.4 (3) | 3 | 175-202 | 1.23-1.46 |
+  | 4096 / none | 160.2 (1) | 2 | 161.5 | 1.26 |
+
+  Matrix, identity, review and cells are byte-identical across all 12 grid
+  runs, and the first three also match the unpatched runner's own 8RAW run.
+  2048/none is 44% faster than current (means 116.0 vs 206.8 s, ranges
+  disjoint). The single-run rows sit inside the ±8% noise band that the
+  repeats show, and 2048/100 and 4096/100 produce the same 8 partitions yet
+  differ by 49 s.
+- Mechanism. Each partition acquires every sample again, so summed acquisition
+  follows partition count. Below about three partitions, acquisition can no
+  longer overlap composition: 4096/none waits 113.4 s against 1.0-2.2 s for
+  2048/none. On 8RAW the mass bin sets the partition count, because memberships
+  per bin rarely reach the budget.
+- Full85 shape does not match that. An offline replay of the partition loop
+  over the full85 worksets reproduces the observed partition count exactly
+  (49 at 1024/100; the 8RAW replay also matches all eight observed counts):
+
+  | budget | 100 Da bin | no bin |
+  | --- | --- | --- |
+  | 512 | 96 | 93 |
+  | 1024 | 49 | 45 |
+  | 2048 | 25 | 22 |
+  | 4096 | 14 | 11 |
+
+  Full85 has 3,590 worksets, 4,712 subjects and 43,652 memberships (largest
+  workset 424 memberships and 12 subjects). The 1,176-subject cap never binds.
+  The budget sets the count, and dropping the bin saves only 4 of 49
+  partitions. A current full85 partition already carries about 87k sample
+  jobs, against about 16k in the winning 8RAW setting, so the 8RAW gain is not
+  evidence for full85.
+- One full85 run at head (Discovery 977.6 s; Alignment 5,133.5 s with
+  explanation): 49 partitions, runtime 4,460.1 s, summed acquisition 8,414.5 s
+  (mean 172 s per partition), summed serial composition 718.5 s, wait
+  158.4 s, peak tree RSS 3.22 GB, explanation SQLite 6.29 GB. An unrelated
+  `du` scan overlapped Discovery and the first 36 minutes of Alignment.
+  Partitions acquired before and after it stopped have medians of 168.2 and
+  179.1 s, so no Alignment slowdown is visible. Treat the times as reference
+  only; they are not comparable with the process12 warm-cache 1,613 s above.
+- Next evidence, if full85 wall time still matters: one full85 Alignment at
+  budget 2048 or 4096 against this run's retained Discovery, reading peak RSS
+  (three resident partitions at up to 4x the current size) and full85
+  matrix/review/cells parity. Change the default only after that.
+- Carried checks from the same full85 run:
+  - #461: each of the six DNA ISTDs has a matrix row with 85/85 non-blank
+    samples.
+  - #468: detected cells integrate over their Discovery segment. Bounds are
+    identical for 496 of 508 detected ISTD cells, and the median cell/Discovery
+    area ratio is 1.000 (range 0.859-1.021). In the 1,571 rows that hold both
+    detected and backfilled cells, median widths are 0.829 and 0.814 min.
+  - #469: d3-5-hmdC still has two families, FAM005496 (85/85) and FAM005494
+    (77 non-blank, 72 of them backfilled, median apex 9.012 against 9.025). In
+    21 samples, apex and bounds are identical across the two rows. Run-wide,
+    145 same-m/z MS1-only Backfill peaks are `accepted` in more than one row.
+    d3-N6-medA's second family (FAM000832) is not a matrix row.
+  - #466 targeted NL A/B (1.6 vs 1.1 Da): both arms fail before output with
+    `SampleLocalCaptureError: retained selected hypothesis is absent from the
+    captured trace` (`peak_detection/capture.py:530`), with or without targeted
+    MS1 shape identity. That failure is owned by #435; this A/B is unanswered.
+- Evidence is `diagnostic_only`. Artifacts: `output/i463-partition-sizing/`
+  (`grid8/`, `full85-head-9ba3a5b1/`, `*-worksets.json`, `full85-*.txt`),
+  probes `partition_sizing_driver.py`, `grid.py`, `summarize.py`,
+  `partition_plan.py`, `istd_check.py` and `cells_468_469.py`.
 
 ### 2026-09-22 The Three Open Questions, Answered
 
