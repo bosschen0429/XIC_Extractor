@@ -99,11 +99,49 @@ Issue #470. Alignment's RAW worker default changes from `thread` to `process`
   8,414.5 s, and composition 625.3 s against 718.5 s. Peak tree RSS is
   6.33 GB (private 10.06 GB) against 3.22 GB. Matrix, identity, review and
   cells are byte-identical to the #463 thread run.
+- RAW open/close cost under the process backend. The probe covers full85
+  partition 0 with 4 workers. A `sitecustomize` hook logs every
+  `open_raw`/`__exit__` in every process.
+  - Each worker opens 41-44 RAWs: 2 per sample per partition, 83 ms per open
+    and 10 ms per close. That is about 15.8 worker-s per partition, or
+    roughly 190 s of full85's 2,264 s runtime at 49 partitions (inference).
+  - Once per run, the parent's main thread opens every RAW twice: 85 for
+    `extract_batch_known_istd_reference` and 85 for `read_raw_sample_header`.
+    That takes 8.4 s to open and 37.2 s to close (219 ms per close), serially.
+  - `__exit__` is only Thermo `Dispose()` (`raw_reader.py:110`). A standalone
+    close takes a median of 288 ms, and a standalone open 25 ms.
+- Remaining #470 items were measured and not pursued:
+  - **RAW content hashing** runs once per run in `verify_acquisition_sources`,
+    10.6 s on full85 (0.4%). Workers compare path identity only
+    (`raw_reader.py:432`).
+  - **Parallel parent setup.** Reading 85 headers takes 27.2/26.1 s serially
+    and 19.4/19.3 s with 4 threads (1.37x). Threading both setup passes
+    would save about 15 s (0.6%).
+  - **Worker-held RAW handles.** An open handle holds about 59 MB private:
+    40 open handles take 2,370 MB, still 2,332 MB after closing. A worker
+    would need to hold all 85 RAWs (about 20 GB for 4 workers) for cache hits,
+    because samples are not pinned to workers. Pinning them would cost about
+    5 GB for the ~8% open/close share, and would change the handle-lifetime
+    contract.
+  - **Writing during the runtime.** On 8RAW, 13.1 of the 15.3 s writing
+    outputs goes to `iter_completed_untarget_batch_writer_inputs` re-reading
+    the spool, and 2.5 s to formatting. Full85 `write_outputs` is 106 s
+    (about 4%). Rows cannot be written as partitions finish, because
+    `public_family_id` is numbered in global candidate order at finalization
+    (`untargeted_finalized_matrix.py`). Writing rows early would change row
+    order and IDs.
+  - **On-demand explanation** saves about 276 s and 6.3 GB, but only on runs
+    that request the explanation. Production and `validation-minimal` do not
+    write it.
+  - The live-timing `mkdir` takes 75 µs standalone. Its 1 s per call in the
+    profile is GIL waiting.
 - Unmeasured: 8 workers on full85, and machines with less than 32 GB. The
   thread backend stays selectable for low-memory use.
 - Evidence is local and untracked, moved to `D:\XIC_output\i470-inventory\`
-  (probes `inventory_probe.py`, `conversion_bench.py`, `p0/p0_only.py`) and
-  `D:\XIC_output\i470-full85\`.
+  (probes `inventory_probe.py`, `conversion_bench.py`, `p0/p0_only.py`),
+  `D:\XIC_output\i470-full85\` and `D:\XIC_output\i470-remaining\`
+  (`probe_site/sitecustomize.py` open/close hook, `prof8/` cProfile,
+  `p0-opens/` and `p0-stack/` events).
 
 ### 2026-09-24 Partition Sizing: An 8RAW Win That Full85 Does Not Inherit
 
@@ -170,12 +208,16 @@ differs, and one full85 run cannot show output parity for a new default.
   only; they are not comparable with the process12 warm-cache 1,613 s above.
 - Per-partition fixed cost. A probe that keeps only full85 partition 0 (85
   samples, 4 threads, acquire wall 96.8 s, composition 5.9 s) times, summed
-  over threads: 340 `open_raw` (4 per sample) 22.3 s, 340 handle closes
-  29.9 s, 968 `extract_xic_many` 266.8 s, scan-window/RT/MS2 lookups about
-  12.7 s. Open plus close is 13.5% of thread capacity. At 49 partitions that
-  is about 640 s of the 4,460 s runtime (inference). The phases open each RAW
-  in both the initial and Backfill passes of every partition
-  (`untargeted_real_data_runtime.py:815-900`).
+  over threads: 340 `open_raw` 22.3 s, 340 handle closes 29.9 s, 968
+  `extract_xic_many` 266.8 s, scan-window/RT/MS2 lookups about 12.7 s.
+  Corrected on 2026-09-25 (#470): only 170 of those opens belong to the
+  partition. That is 2 per sample, one in the initial pass and one in
+  Backfill (`untargeted_real_data_runtime.py:815-900`). The other 170 happen
+  once per run in the parent: `extract_batch_known_istd_reference` and
+  `read_raw_sample_header`, 85 each. The earlier figures here, "4 per
+  sample", "about 196 opens per RAW" and "about 640 s, 13.5%", were wrong.
+  See the 2026-09-25 entry for the per-partition cost under the process
+  backend.
 - `extract_xic_many` merges only requests with identical RT windows
   (`raw_reader.py:165-195`). On `NormalBC2259_DNA`, candidate m/z with ±1 min
   windows take 0.29 s for 200 requests called one by one, against 0.08 s in
