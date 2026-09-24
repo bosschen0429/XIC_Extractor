@@ -720,7 +720,8 @@ def plan_conservative_backfill_targets(
     The acquisition caller supplies groups constructed only from direct SUPPORT
     owners and a complete sample population. Scheduling needs their sample votes,
     not a dense population of CellObservationRefs or quantitation artifacts.
-    Final cell composition remains responsible for the output evidence.
+    Final cell composition remains responsible for the output evidence. A
+    rejected group is no row, so it searches no missing sample.
     """
     eligible_ids = frozenset(
         sample.identity.sample_identity_id
@@ -730,6 +731,8 @@ def plan_conservative_backfill_targets(
     minimum_support = minimum_direct_support_count(len(eligible_ids))
     planned = []
     for group in groups:
+        if group.disposition == "rejected":
+            continue
         support_ids = frozenset(
             member.canonical_sample_identity_id for member in group.member_subjects
         )

@@ -1704,7 +1704,9 @@ def _build_production_composition_inputs(
                 for key, hypotheses in retained_cell_hypotheses.items()
             },
             contested_backfill_peaks=contested_backfill_peaks(
-                groups=backfilled_groups, backfills=group_backfills
+                groups=backfilled_groups,
+                backfills=group_backfills,
+                alignment_config=alignment_config,
             ),
         )
         backfill_cells = (

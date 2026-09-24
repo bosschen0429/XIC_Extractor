@@ -220,6 +220,7 @@ def regroup_cid_nl_cross_sample_groups(
         rt_warp=rt_warp,
         operation_counts_sink=operation_counts_sink,
     )
+    groups = reject_shoulder_groups(groups, config=alignment_config)
     identities = tuple(
         validate_cross_sample_peak_group_identity(group, require_canonical=True)
         for group in groups
@@ -416,6 +417,73 @@ def admit_cid_nl_group_backfills(
     )
 
 
+def reject_shoulder_groups(
+    groups: tuple[CrossSamplePeakGroupHypothesis, ...],
+    *,
+    config: AlignmentConfig,
+) -> tuple[CrossSamplePeakGroupHypothesis, ...]:
+    """Reject an established group that is the split-off shoulder of another.
+
+    Discovery can cut one chromatographic peak at a valley into a small shoulder
+    and the peak. A sample holds one member per group, so the shoulders then form
+    their own group, and its Backfill finds the whole peak where no shoulder was
+    cut. A group is such a shoulder when more than half of its members share a
+    boundary with a same-m/z member of one other established group and every
+    member it shares a sample with is such a smaller, adjacent neighbour.
+    """
+    by_sample = {
+        group.group_hypothesis_id: {owner.sample_stem: owner for owner in group.owners}
+        for group in groups
+        if group.disposition == "established"
+    }
+    rejected: dict[str, str] = {}
+    for group_id, owners in by_sample.items():
+        for other_id, others in by_sample.items():
+            shared = owners.keys() & others.keys()
+            if (
+                other_id != group_id
+                and 2 * len(shared) > len(owners)
+                and all(
+                    _is_shoulder_of(owners[sample], others[sample], config=config)
+                    for sample in shared
+                )
+            ):
+                rejected[group_id] = other_id
+                break
+    if not rejected:
+        return groups
+    return tuple(
+        replace(
+            group,
+            disposition="rejected",
+            evidence=(
+                f"{group.evidence};shoulder_of:{rejected[group.group_hypothesis_id]}"
+            ),
+        )
+        if group.group_hypothesis_id in rejected
+        else group
+        for group in groups
+    )
+
+
+def _is_shoulder_of(
+    owner: SampleLocalMS1Owner,
+    neighbour: SampleLocalMS1Owner,
+    *,
+    config: AlignmentConfig,
+) -> bool:
+    return (
+        owner.owner_area < neighbour.owner_area
+        and (
+            owner.owner_peak_end_rt == neighbour.owner_peak_start_rt
+            or owner.owner_peak_start_rt == neighbour.owner_peak_end_rt
+        )
+        and _within_ppm(
+            owner.precursor_mz, neighbour.precursor_mz, config.preferred_ppm
+        )
+    )
+
+
 def contested_backfill_peaks(
     *,
     groups: tuple[CrossSamplePeakGroupHypothesis, ...],
@@ -423,27 +491,61 @@ def contested_backfill_peaks(
         tuple[str, str, str],
         tuple[ResolvedCanonicalSampleIdentity, CidNlMethodAssessmentRef],
     ],
+    alignment_config: AlignmentConfig,
 ) -> frozenset[tuple[str, str]]:
     """Physical peaks a Backfill value cannot claim for one group alone.
 
     A peak several groups' Backfills found, or one a group member already
     holds, belongs to no single row. ``groups`` are the admitted successors.
+    Each group-bounded window traces the peak again, so its content ID differs
+    from a member's or another window's; as in Discovery, one apex scan within
+    the m/z tolerance in one sample is one peak.
     """
     claims: dict[tuple[str, str], set[str]] = defaultdict(set)
+    at_apex: dict[tuple[str, float], list[tuple[float, str]]] = defaultdict(list)
     for (group_id, sample_id, _), (_, assessment) in backfills.items():
         for peak in assessment.candidate_peaks:
-            claims[(sample_id, peak.content.peak_observation_content_id)].add(group_id)
+            content = peak.content
+            claims[(sample_id, content.peak_observation_content_id)].add(group_id)
+            at_apex[(sample_id, content.integration.rt_apex_min)].append(
+                (content.mz, group_id)
+            )
     occupied = {
         (member.canonical_sample_identity_id, observation_id)
         for group in groups
         for member in group.member_subjects
         for observation_id in member.physical_observation_ids
     }
-    return frozenset(
-        key
-        for key, group_ids in claims.items()
-        if len(group_ids) > 1 or key in occupied
-    )
+    for group in groups:
+        for owner in group.owners:
+            subject = owner.cross_sample_member_subject
+            if subject is None:
+                continue
+            at_apex[(subject.canonical_sample_identity_id, owner.owner_apex_rt)].append(
+                (owner.precursor_mz, "")
+            )
+    contested = set()
+    for (group_id, sample_id, _), (_, assessment) in backfills.items():
+        for peak in assessment.candidate_peaks:
+            content = peak.content
+            key = (sample_id, content.peak_observation_content_id)
+            if (
+                len(claims[key]) > 1
+                or key in occupied
+                or any(
+                    holder != group_id
+                    and _within_ppm(content.mz, mz, alignment_config.preferred_ppm)
+                    for mz, holder in at_apex[
+                        (sample_id, content.integration.rt_apex_min)
+                    ]
+                )
+            ):
+                contested.add(key)
+    return frozenset(contested)
+
+
+def _within_ppm(first: float, second: float, ppm: float) -> bool:
+    return abs(first - second) <= ppm * 1e-6 * max(abs(first), abs(second))
 
 
 def _partition_transition(

@@ -33,7 +33,11 @@ same-sample CID-NL evidence can yield
 `ms1_only_backfill_observation`. `ProductionCellDecision` may write its area
 as `backfilled` / `accepted_backfill`; the sample does not become a detected
 group member. No peak, multiple peaks, competing evidence, insufficient group
-support, or an ineligible sample leaves the cell without that value. An
+support, or an ineligible sample leaves the cell without that value. Neither
+does a peak that another group's member holds or another group's Backfill
+also found. Each window traces the peak again with its own bounds, so one peak
+is one apex scan in one sample within the preferred m/z tolerance, as in
+Discovery, not one peak observation content ID. An
 independent Backfill assessment of an initial missing-MS1 `REJECT` retains
 the initial assessment and must earn SUPPORT through the normal relation
 owner before it can produce a numeric cell.

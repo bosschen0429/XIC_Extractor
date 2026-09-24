@@ -218,6 +218,16 @@ reasons, Review Queue/archive routing, and result finalization close afterward.
   members from at least two distinct canonical samples plus method hard gates;
   a singleton is always provisional. Low support alone is not rejection.
   Disposition and output inclusion are separate.
+- A split-off shoulder is `rejected`. Discovery can cut one chromatographic
+  peak at a valley into a small shoulder and the peak; the shoulders then form
+  their own group, whose Backfill finds the whole peak where no shoulder was
+  cut. An established Untargeted CID-NL group is a shoulder of another
+  established group when more than half of its members share a sample with that
+  group and, in every shared sample, its member is smaller in area, within the
+  preferred m/z tolerance, and shares a peak boundary with that group's member.
+  The majority is the one shoulder threshold in Alignment; it is owned here and
+  was set from the d3-5-hmdC split (#469). A rejected group becomes an archive
+  row and plans no Backfill; its members are not moved into the other group.
 
 ### ModeTrack and Backfill relationship
 
