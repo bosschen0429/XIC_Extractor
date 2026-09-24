@@ -59,6 +59,7 @@ from xic_extractor.extraction.targeted_service import (
     TargetedApplicationRequest,
 )
 from xic_extractor.extractor import ExtractionResult, FileResult, RunOutput
+from xic_extractor.mass_accuracy import neutral_loss_match
 from xic_extractor.peak_detection.capture import (
     SampleLocalCapture,
     bind_owner_backed_capture_hypothesis,
@@ -630,8 +631,13 @@ def _execute_target(
                 evidence_refs = (evidence,)
                 if (
                     observations
-                    and candidate_ms2_evidence is not None
-                    and candidate_ms2_evidence.nl_match
+                    and neutral_loss_match(
+                        product.precursor_mz,
+                        product.product_mz,
+                        _neutral_loss(target.definition.target),
+                        _support_policy(target.definition.target).neutral_loss_tolerance_ppm,
+                        observed_loss_da=product.observed_loss_da,
+                    )[2]
                     and observations[0].content.integration.rt_left_min
                     <= product.scan_rt
                     <= observations[0].content.integration.rt_right_min
