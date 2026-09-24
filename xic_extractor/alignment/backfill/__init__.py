@@ -16,11 +16,6 @@ if TYPE_CHECKING:
         ObservationRepairReceipt,
         ObservationRepairRepairAuthorization,
         ObservationRepairSubject,
-        ObservationRepairTerminalResult,
-        authorize_observation_repair,
-        close_observation_repair,
-        execute_observation_repair,
-        mint_observation_repair_subject,
     )
 
 _OBSERVATION_REPAIR_EXPORTS = {
@@ -36,11 +31,6 @@ _OBSERVATION_REPAIR_EXPORTS = {
     "ObservationRepairRepairAuthorization",
     "ObservationRepairReceipt",
     "ObservationRepairSubject",
-    "ObservationRepairTerminalResult",
-    "authorize_observation_repair",
-    "close_observation_repair",
-    "execute_observation_repair",
-    "mint_observation_repair_subject",
 }
 
 
@@ -65,9 +55,4 @@ __all__ = (
     "ObservationRepairRepairAuthorization",
     "ObservationRepairReceipt",
     "ObservationRepairSubject",
-    "ObservationRepairTerminalResult",
-    "authorize_observation_repair",
-    "close_observation_repair",
-    "execute_observation_repair",
-    "mint_observation_repair_subject",
 )

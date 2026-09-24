@@ -19,21 +19,13 @@ from tests.cid_nl_peak_support_no_raw_fixture import (
 from tests.processing_identity_no_raw_fixture import (
     build_processing_identity_no_raw_fixture,
 )
-from tests.test_alignment_owner_backfill import _peak_config
 from tests.test_cid_nl_evidence_spine import (
     _completed_receipt,
     _truth_table_fixture,
 )
 from tests.test_cross_sample_association_lineage import _final_receipt, _runtime_feature
-from tests.test_owner_backfill_peak_fact_provenance import (
-    _CanonicalOwnerBoundSource,
-)
 from tests.untargeted_cid_nl_no_raw_fixture import (
     build_untargeted_cid_nl_no_raw_fixture,
-)
-from xic_extractor.alignment.backfill import (
-    close_observation_repair,
-    mint_observation_repair_subject,
 )
 from xic_extractor.alignment.backfill.evaluation_coverage import (
     OwnerBackfillEvaluationCoverageContext,
@@ -42,7 +34,6 @@ from xic_extractor.alignment.backfill.evaluation_coverage import (
     mint_owner_backfill_attempt_terminal,
     mint_owner_backfill_planning_epoch,
 )
-from xic_extractor.alignment.backfill_transaction import OwnerBackfillSampleResult
 from xic_extractor.alignment.cell_observations import (
     CellObservationContractError,
     compose_final_group_cell_observation_population,
@@ -65,7 +56,6 @@ from xic_extractor.alignment.hypothesis_owner_adapter import (
     compose_cid_nl_peak_hypotheses_from_assessment,
     owner_from_cid_nl_assessment_support,
 )
-from xic_extractor.alignment.owner_backfill import build_owner_backfill_result
 from xic_extractor.alignment.owner_backfill_request_plan import (
     OWNER_BACKFILL_TRACE_RESULT_SEMANTICS,
     OwnerBackfillRequestEquivalenceContext,
@@ -76,9 +66,6 @@ from xic_extractor.alignment.untargeted_cid_nl_golden_path import (
 )
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     mint_cid_nl_method_assessment_ref,
-)
-from xic_extractor.peak_detection.signal_processing_profile import (
-    DEFAULT_SIGNAL_PROCESSING_PROFILE,
 )
 
 
@@ -1040,77 +1027,6 @@ def test_composer_split_keeps_cartesian_not_searched_remainder(
     assert by_key[(right, samples[0])].evidence_state == "not_searched"
     assert not by_key[(left, samples[1])].position_associations
     assert not by_key[(right, samples[0])].position_associations
-
-
-def test_composer_rejects_repair_not_authorized_by_final_receipt(
-    tmp_path: Path,
-) -> None:
-    fixture, spine, handoff = _owner_handoff(tmp_path)
-    group = validate_cross_sample_peak_group_identity(
-        spine.group,
-        require_canonical=True,
-    )
-    sample = fixture.sample("s1")
-    acquisition = fixture.request.acquisition_sources[0]
-    built = build_owner_backfill_result(
-        (_runtime_feature(group),),
-        sample_order=("s1",),
-        raw_sources={
-            "s1": _CanonicalOwnerBoundSource(acquisition, empty=False),
-        },
-        expected_acquisition_sources={"s1": acquisition},
-        alignment_config=AlignmentConfig(max_rt_sec=60.0),
-        peak_config=replace(_peak_config(), resolver_min_scans=3),
-        signal_processing_profile=DEFAULT_SIGNAL_PROCESSING_PROFILE,
-    )
-    observation = built.peak_fact_observations[0]
-    subject = mint_observation_repair_subject(
-        request_identity=observation.request_identity,
-        logical_request=observation.logical_request,
-        predecessor_group=group,
-        member_subject=next(
-            member
-            for member in group.member_subjects
-            if member.canonical_sample_identity_id == sample.identity.sample_identity_id
-        ),
-        sample_identity=sample,
-        successor_application=handoff.final_receipt.partition_transition,
-    )
-    stale_repair = close_observation_repair(
-        subject,
-        OwnerBackfillSampleResult(
-            sample_index=0,
-            sample_stem="s1",
-            cells=built.cells,
-            peak_fact_observations=(observation,),
-        ),
-    )
-    replacement = _source_cell(
-        fixture,
-        sample,
-        spine,
-        _not_evaluated_assessment(
-            fixture,
-            "s1",
-            suffix="stale-repair-trigger",
-        ),
-    )
-    predecessors = tuple(
-        replacement
-        if cell.content.canonical_sample_identity_id
-        == sample.identity.sample_identity_id
-        else cell
-        for cell in spine.cells
-    )
-
-    assert stale_repair.outcome == "repaired"
-    with pytest.raises(CellObservationContractError, match="bounded Backfill"):
-        compose_final_group_cell_observation_population(
-            handoff=handoff,
-            predecessor_cells=predecessors,
-            repair_receipts=(stale_repair,),
-            repaired_observations=(observation,),
-        )
 
 
 def test_final_member_rejects_hold_method_lane(tmp_path: Path) -> None:

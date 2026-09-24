@@ -78,27 +78,9 @@ def test_alignment_process_backend_delegates_execution_mechanics():
     assert "class TimedProcessRawSource" in process_execution_source
 
 
-def test_alignment_backfill_transaction_does_not_import_process_backend():
-    path = (
-        Path(__file__).parents[1]
-        / "xic_extractor"
-        / "alignment"
-        / "backfill_transaction.py"
-    )
-    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-    violations = [
-        imported_name
-        for node in ast.walk(tree)
-        for imported_name in _alignment_imported_module_names(node)
-        if imported_name.startswith("xic_extractor.alignment.process_backend")
-    ]
-
-    assert violations == []
-
-
 def test_alignment_import_normalization_resolves_relative_process_backend():
     tree = ast.parse(
-        "from .process_backend import OwnerBackfillSampleResult\n"
+        "from .process_backend import OwnerBuildSampleResult\n"
         "from . import process_backend\n"
     )
 

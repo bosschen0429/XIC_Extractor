@@ -87,49 +87,6 @@ _ChunkPreparedSignalCache: TypeAlias = dict[int, tuple[XICTrace, PreparedSignalR
 _RequestGroupKey = tuple[str, int | float, int | float]
 
 
-def build_owner_backfill_cells(
-    features: tuple[BackfillRuntimeFeature, ...],
-    *,
-    sample_order: tuple[str, ...],
-    raw_sources: Mapping[str, OwnerBackfillSource],
-    validation_raw_sources: Mapping[str, OwnerBackfillSource] | None = None,
-    expected_acquisition_sources: Mapping[str, AcquisitionSourceIdentity] | None = None,
-    alignment_config: AlignmentConfig,
-    peak_config: ExtractionConfig,
-    signal_processing_profile: SignalProcessingProfile | None = None,
-    raw_xic_batch_size: int = 1,
-    owner_backfill_xic_backend: OwnerBackfillXicBackend = "raw",
-    owner_backfill_window_strategy: OwnerBackfillWindowStrategy = "exact",
-    owner_backfill_superwindow_span_factor: int = 2,
-    candidate_index_offset: int = 0,
-    validation_candidate_index_offset: int | None = None,
-    emit_region_audit: bool = False,
-    region_audit_family_ids: frozenset[str] | None = None,
-    audit_evidence_mode: str = "full",
-    emit_candidate_audit_rows: bool = True,
-) -> tuple[AlignedCell, ...]:
-    return build_owner_backfill_result(
-        features,
-        sample_order=sample_order,
-        raw_sources=raw_sources,
-        validation_raw_sources=validation_raw_sources,
-        expected_acquisition_sources=expected_acquisition_sources,
-        alignment_config=alignment_config,
-        peak_config=peak_config,
-        signal_processing_profile=signal_processing_profile,
-        raw_xic_batch_size=raw_xic_batch_size,
-        owner_backfill_xic_backend=owner_backfill_xic_backend,
-        owner_backfill_window_strategy=owner_backfill_window_strategy,
-        owner_backfill_superwindow_span_factor=owner_backfill_superwindow_span_factor,
-        candidate_index_offset=candidate_index_offset,
-        validation_candidate_index_offset=validation_candidate_index_offset,
-        emit_region_audit=emit_region_audit,
-        region_audit_family_ids=region_audit_family_ids,
-        audit_evidence_mode=audit_evidence_mode,
-        emit_candidate_audit_rows=emit_candidate_audit_rows,
-    ).cells
-
-
 def build_owner_backfill_result(
     features: tuple[BackfillRuntimeFeature, ...],
     *,

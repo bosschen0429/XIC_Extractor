@@ -17,7 +17,6 @@ from xic_extractor.alignment import (
 )
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.owner_backfill import (
-    build_owner_backfill_cells,
     build_owner_backfill_result,
 )
 from xic_extractor.alignment.owner_backfill_request_plan import (
@@ -34,11 +33,15 @@ from xic_extractor.processing_identity import build_acquisition_source_identity
 _TEST_SIGNAL_PROCESSING_PROFILE = SignalProcessingProfile(window_points=3)
 
 
+def _backfill_cells(*args, **kwargs):
+    return build_owner_backfill_result(*args, **kwargs).cells
+
+
 def test_owner_backfill_rescues_missing_sample_from_feature_center() -> None:
     source = _dense_peak_source(center=8.50, height=120.0)
     feature = _feature()
 
-    cells = build_owner_backfill_cells(
+    cells = _backfill_cells(
         (feature,),
         sample_order=("sample-a", "sample-b"),
         raw_sources={"sample-b": source},
@@ -352,7 +355,7 @@ def test_owner_backfill_accepts_delivery_contract_feature_without_legacy_dto() -
         consolidation_source_group_hypothesis_id="",
     )
 
-    cells = build_owner_backfill_cells(
+    cells = _backfill_cells(
         (feature,),
         sample_order=("sample-a", "sample-b"),
         raw_sources={"sample-b": source},
@@ -386,7 +389,7 @@ def test_owner_backfill_region_audit_is_opt_in(monkeypatch) -> None:
         fail_region_audit,
     )
 
-    cells = build_owner_backfill_cells(
+    cells = _backfill_cells(
         (_feature(),),
         sample_order=("sample-a", "sample-b"),
         raw_sources={"sample-b": source},
@@ -416,7 +419,7 @@ def test_owner_backfill_audit_mode_none_skips_all_heavy_audit(monkeypatch) -> No
         fail_region_audit,
     )
 
-    cells = build_owner_backfill_cells(
+    cells = _backfill_cells(
         (_feature(),),
         sample_order=("sample-a", "sample-b"),
         raw_sources={"sample-b": source},
@@ -457,7 +460,7 @@ def test_owner_backfill_region_audit_receives_untargeted_trace_group(
         fake_region_audit,
     )
 
-    build_owner_backfill_cells(
+    _backfill_cells(
         (_feature(),),
         sample_order=("sample-a", "sample-b"),
         raw_sources={"sample-b": source},
@@ -493,7 +496,7 @@ def test_owner_backfill_region_audit_honors_family_allowlist(monkeypatch) -> Non
         fake_region_audit,
     )
 
-    cells = build_owner_backfill_cells(
+    cells = _backfill_cells(
         (
             _feature(feature_family_id="FAM000001", mz=500.0),
             _feature(feature_family_id="FAM000002", mz=501.0),
@@ -518,7 +521,7 @@ def test_owner_backfill_skips_review_only_identity_conflicts() -> None:
         intensity=np.array([0.0, 100.0, 0.0]),
     )
 
-    cells = build_owner_backfill_cells(
+    cells = _backfill_cells(
         (_feature(review_only=True),),
         sample_order=("sample-b",),
         raw_sources={"sample-b": source},
@@ -536,7 +539,7 @@ def test_owner_backfill_skips_features_below_min_detected_sample_gate() -> None:
         intensity=np.array([0.0, 100.0, 0.0]),
     )
 
-    cells = build_owner_backfill_cells(
+    cells = _backfill_cells(
         (_feature(),),
         sample_order=("sample-a", "sample-b"),
         raw_sources={"sample-b": source},
@@ -559,7 +562,7 @@ def test_owner_backfill_skips_detected_confirmation_when_owner_cannot_change() -
     )
     feature = replace(_feature(), confirm_local_owners_with_backfill=True)
 
-    cells = build_owner_backfill_cells(
+    cells = _backfill_cells(
         (feature,),
         sample_order=("sample-a", "sample-b"),
         raw_sources={"sample-a": source_a, "sample-b": source_b},
@@ -591,7 +594,7 @@ def test_owner_backfill_confirms_low_detected_preconsolidated_owner() -> None:
         confirm_local_owners_with_backfill=True,
     )
 
-    cells = build_owner_backfill_cells(
+    cells = _backfill_cells(
         (feature,),
         sample_order=("sample-a", "sample-b"),
         raw_sources={"sample-a": source_a, "sample-b": source_b},
@@ -624,7 +627,7 @@ def test_owner_backfill_confirms_any_low_owner_for_duplicate_sample() -> None:
         confirm_local_owners_with_backfill=True,
     )
 
-    cells = build_owner_backfill_cells(
+    cells = _backfill_cells(
         (feature,),
         sample_order=("sample-a", "sample-b"),
         raw_sources={"sample-a": source_a, "sample-b": source_b},
@@ -673,7 +676,7 @@ def test_owner_backfill_uses_preconsolidated_seed_centers_and_keeps_best_peak() 
         backfill_seed_centers=((500.0, 8.5), (500.0, 8.8)),
     )
 
-    cells = build_owner_backfill_cells(
+    cells = _backfill_cells(
         (feature,),
         sample_order=("sample-a", "sample-b"),
         raw_sources={"sample-b": source},
@@ -701,7 +704,7 @@ def test_owner_backfill_treats_non_finite_trace_as_unchecked() -> None:
         intensity=np.array([0.0, 100.0, 0.0]),
     )
 
-    cells = build_owner_backfill_cells(
+    cells = _backfill_cells(
         (_feature(),),
         sample_order=("sample-b",),
         raw_sources={"sample-b": source},
@@ -730,7 +733,7 @@ def test_owner_backfill_marks_no_peak_query_as_unchecked_outcome() -> None:
         intensity=np.array([0.0, 0.0, 0.0]),
     )
 
-    cells = build_owner_backfill_cells(
+    cells = _backfill_cells(
         (_feature(),),
         sample_order=("sample-b",),
         raw_sources={"sample-b": source},
@@ -839,7 +842,7 @@ def test_owner_backfill_uses_batch_source_and_preserves_feature_major_order() ->
     feature_a = _feature()
     feature_b = _feature(feature_family_id="FAM000002", mz=510.0, rt=8.8)
 
-    cells = build_owner_backfill_cells(
+    cells = _backfill_cells(
         (feature_a, feature_b),
         sample_order=("sample-a", "sample-b", "sample-c"),
         raw_sources={"sample-b": source_b, "sample-c": source_c},
@@ -966,7 +969,7 @@ def test_owner_backfill_deduplicates_identical_xic_requests() -> None:
     feature_a = _feature(feature_family_id="FAM000001", mz=500.0, rt=8.5)
     feature_b = _feature(feature_family_id="FAM000002", mz=500.0, rt=8.5)
 
-    cells = build_owner_backfill_cells(
+    cells = _backfill_cells(
         (feature_a, feature_b),
         sample_order=("sample-a", "sample-b"),
         raw_sources={"sample-b": source},
@@ -1021,7 +1024,7 @@ def test_owner_backfill_validates_prefilter_hits_with_secondary_source() -> None
         )
     )
 
-    cells = build_owner_backfill_cells(
+    cells = _backfill_cells(
         (feature_a, feature_b),
         sample_order=("sample-a", "sample-b"),
         raw_sources={"sample-b": prefilter},
@@ -1156,7 +1159,7 @@ def test_owner_backfill_batches_by_rt_window_without_changing_emit_order() -> No
     feature_b = _feature(feature_family_id="FAM000002", mz=510.0, rt=10.5)
     feature_c = _feature(feature_family_id="FAM000003", mz=520.0, rt=8.5)
 
-    cells = build_owner_backfill_cells(
+    cells = _backfill_cells(
         (feature_a, feature_b, feature_c),
         sample_order=("sample-a", "sample-b"),
         raw_sources={"sample-b": source},
@@ -1216,7 +1219,7 @@ def test_owner_backfill_does_not_split_source_scan_window_groups() -> None:
     feature_b = _feature(feature_family_id="FAM000002", mz=510.0, rt=8.51)
     feature_c = _feature(feature_family_id="FAM000003", mz=520.0, rt=8.52)
 
-    cells = build_owner_backfill_cells(
+    cells = _backfill_cells(
         (feature_a, feature_b, feature_c),
         sample_order=("sample-a", "sample-b"),
         raw_sources={"sample-b": source},
@@ -1268,7 +1271,7 @@ def test_owner_backfill_falls_back_when_scan_window_unavailable() -> None:
 
     source = BatchSource()
 
-    build_owner_backfill_cells(
+    _backfill_cells(
         (
             _feature(feature_family_id="FAM000001", mz=500.0, rt=8.5),
             _feature(feature_family_id="FAM000002", mz=510.0, rt=10.5),
@@ -1329,7 +1332,7 @@ def test_owner_backfill_superwindow_crops_to_original_request_windows() -> None:
     feature_a = _feature(feature_family_id="FAM000001", mz=500.0, rt=8.5)
     feature_b = _feature(feature_family_id="FAM000002", mz=510.0, rt=9.2)
 
-    cells = build_owner_backfill_cells(
+    cells = _backfill_cells(
         (feature_a, feature_b),
         sample_order=("sample-a", "sample-b"),
         raw_sources={"sample-b": source},
@@ -1393,7 +1396,7 @@ def test_owner_backfill_superwindow_falls_back_to_exact_without_scan_rt_lookup()
 
     source = ScanOnlySource()
 
-    build_owner_backfill_cells(
+    _backfill_cells(
         (
             _feature(feature_family_id="FAM000001", mz=500.0, rt=8.5),
             _feature(feature_family_id="FAM000002", mz=510.0, rt=9.2),

@@ -1,34 +1,21 @@
-"""One bounded Backfill transaction that closes repaired observation evidence."""
+"""Typed Backfill receipt model consumed by final cell composition."""
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from dataclasses import InitVar, dataclass, field
-from typing import TYPE_CHECKING, Literal, TypeAlias
+from typing import Literal, TypeAlias
 
-from xic_extractor.alignment.backfill.evaluation_coverage import (
-    OwnerBackfillEvaluationCoverageBatch,
-)
-from xic_extractor.alignment.backfill_transaction import OwnerBackfillSampleResult
 from xic_extractor.alignment.cross_sample_peak_groups import (
     CrossSampleGroupIdentity,
     CrossSampleGroupMemberSubject,
     CrossSamplePartitionTransition,
     mint_cross_sample_group_identity,
 )
-from xic_extractor.alignment.owner_backfill import (
-    OwnerBackfillPeakFactObservation,
-    validate_owner_backfill_peak_fact_observation,
-)
-from xic_extractor.alignment.owner_backfill_peak_fact_projection import (
-    selected_integration_authority_projection,
-)
 from xic_extractor.alignment.owner_backfill_request_plan import (
     OwnerBackfillLogicalRequestMember,
     OwnerBackfillRequestIdentity,
 )
 from xic_extractor.processing_identity import (
-    ProcessingOwnerReferences,
     canonical_identity_basis_bytes,
     typed_identity_digest,
 )
@@ -38,7 +25,6 @@ from xic_extractor.sample_metadata import (
 )
 
 from .observation_repair_authorization import (
-    _AUTHORIZATION_MINT_TOKEN,
     _AUTHORIZATION_PREFIX,
     _CANDIDATE_PREFIX,
     ObservationRepairAuthorization,
@@ -48,14 +34,9 @@ from .observation_repair_authorization import (
     ObservationRepairMultipleEligibleAuthorization,
     ObservationRepairNotRunAuthorization,
     ObservationRepairRepairAuthorization,
-    _require_current_repair_authorization,
     _validate_candidate,
     _validate_typed_id,
-    authorize_observation_repair,
 )
-
-if TYPE_CHECKING:
-    from xic_extractor.alignment.cell_observations import CellObservationRef
 
 ObservationRepairOutcome: TypeAlias = Literal["no_repair", "repaired"]
 
@@ -66,7 +47,6 @@ _PHYSICAL_ANSWER_PREFIX = "physical-answer:"
 _SUBJECT_MINT_TOKEN = object()
 _RECEIPT_MINT_TOKEN = object()
 _NO_REPAIR_TERMINAL_MINT_TOKEN = object()
-_TERMINAL_RESULT_MINT_TOKEN = object()
 
 
 @dataclass(frozen=True, slots=True)
@@ -273,329 +253,6 @@ class ObservationRepairReceipt:
         return None
 
 
-@dataclass(frozen=True, slots=True)
-class ObservationRepairTerminalResult:
-    """Closed owner result for one complete population authorization."""
-
-    authorization: ObservationRepairAuthorization
-    receipt: ObservationRepairReceipt | None
-    _mint_token: InitVar[object] = field(kw_only=True)
-
-    def __post_init__(self, _mint_token: object) -> None:
-        if _mint_token is not _TERMINAL_RESULT_MINT_TOKEN:
-            raise ObservationRepairContractError(
-                "repair terminal result must be minted by Backfill"
-            )
-        if type(self.authorization) not in {
-            ObservationRepairNotRunAuthorization,
-            ObservationRepairRepairAuthorization,
-            ObservationRepairMultipleEligibleAuthorization,
-        }:
-            raise TypeError("terminal result authorization must be owner-minted")
-        self.authorization.__post_init__(_AUTHORIZATION_MINT_TOKEN)
-        if type(self.authorization) is ObservationRepairRepairAuthorization:
-            if type(self.receipt) is not ObservationRepairReceipt:
-                raise ObservationRepairContractError(
-                    "repair terminal result requires an exact receipt"
-                )
-            if (
-                self.receipt.subject != self.authorization.candidate
-                or self.receipt.authorization_id != self.authorization.authorization_id
-                or self.receipt.candidate_id
-                != self.authorization.candidate.candidate_id
-            ):
-                raise ObservationRepairContractError(
-                    "repair terminal result receipt crosses authorization"
-                )
-        elif self.receipt is not None:
-            raise ObservationRepairContractError(
-                "blocked repair terminal result cannot carry a receipt"
-            )
-
-    @property
-    def state(self) -> ObservationRepairAuthorizationState:
-        return self.authorization.state
-
-    @property
-    def candidate(self) -> ObservationRepairCandidate | None:
-        if type(self.authorization) is ObservationRepairRepairAuthorization:
-            return self.authorization.candidate
-        return None
-
-
-def mint_observation_repair_subject(
-    *,
-    request_identity: OwnerBackfillRequestIdentity,
-    logical_request: OwnerBackfillLogicalRequestMember,
-    predecessor_group: CrossSampleGroupIdentity,
-    member_subject: CrossSampleGroupMemberSubject,
-    sample_identity: ResolvedCanonicalSampleIdentity,
-    successor_application: CrossSamplePartitionTransition,
-    repair_epoch: int = 1,
-) -> ObservationRepairSubject:
-    """Mint the only repair subject Backfill is allowed to close."""
-
-    if type(request_identity) is not OwnerBackfillRequestIdentity:
-        raise TypeError("request identity must be owner-minted")
-    if type(logical_request) is not OwnerBackfillLogicalRequestMember:
-        raise TypeError("logical request must be owner-minted")
-    if type(predecessor_group) is not CrossSampleGroupIdentity:
-        raise TypeError("predecessor group must be owner-minted")
-    if type(member_subject) is not CrossSampleGroupMemberSubject:
-        raise TypeError("member subject must be owner-minted")
-    if type(sample_identity) is not ResolvedCanonicalSampleIdentity:
-        raise TypeError("sample identity must be owner-resolved")
-    if type(successor_application) is not CrossSamplePartitionTransition:
-        raise TypeError("partition transition must be CrossSample-minted")
-    if type(repair_epoch) is not int or repair_epoch != 1:
-        raise ObservationRepairContractError("repair epoch must be exactly 1")
-    subject_id = _subject_id(
-        request_identity=request_identity,
-        logical_request=logical_request,
-        predecessor_group=predecessor_group,
-        member_subject=member_subject,
-        sample_identity=sample_identity,
-        successor_application=successor_application,
-        repair_epoch=repair_epoch,
-    )
-    return ObservationRepairSubject(
-        subject_id=subject_id,
-        request_identity=request_identity,
-        logical_request=logical_request,
-        predecessor_group=predecessor_group,
-        member_subject=member_subject,
-        sample_identity=sample_identity,
-        successor_application=successor_application,
-        repair_epoch=repair_epoch,
-        _mint_token=_SUBJECT_MINT_TOKEN,
-    )
-
-def close_observation_repair(
-    subject: (
-        ObservationRepairSubject
-        | ObservationRepairCandidate
-        | ObservationRepairRepairAuthorization
-    ),
-    result: OwnerBackfillSampleResult,
-    *,
-    authorization: ObservationRepairRepairAuthorization | None = None,
-    coverage: OwnerBackfillEvaluationCoverageBatch | None = None,
-    cell_observations: tuple[CellObservationRef, ...] | None = None,
-) -> ObservationRepairReceipt:
-    """Close one complete owner result as ``no_repair`` or ``repaired``.
-
-    A membership-neutral candidate must be closed against the complete current
-    population.  Re-authorizing at this boundary prevents an older candidate
-    from being replayed after the population cardinality or candidate changes.
-    Legacy member subjects retain their existing close-only contract.
-    """
-
-    if type(subject) is ObservationRepairRepairAuthorization:
-        if authorization is not None and authorization is not subject:
-            raise ObservationRepairContractError(
-                "repair execution received two different authorizations"
-            )
-        authorization = subject
-        authorization.__post_init__(_AUTHORIZATION_MINT_TOKEN)
-        effective_subject: ObservationRepairSubject | ObservationRepairCandidate = (
-            subject.candidate
-        )
-    elif type(subject) is ObservationRepairCandidate:
-        if type(authorization) is not ObservationRepairRepairAuthorization:
-            raise ObservationRepairContractError(
-                "repair candidate requires its exact current authorization"
-            )
-        authorization.__post_init__(_AUTHORIZATION_MINT_TOKEN)
-        if authorization.candidate is not subject:
-            raise ObservationRepairContractError(
-                "repair execution candidate is not the exact authorized candidate"
-            )
-        effective_subject = subject
-    elif type(subject) is ObservationRepairSubject:
-        if (
-            authorization is not None
-            or coverage is not None
-            or cell_observations is not None
-        ):
-            raise ObservationRepairContractError(
-                "member repair subject cannot carry population authorization"
-            )
-        effective_subject = subject
-    else:
-        raise TypeError(
-            "subject must be an owner-minted ObservationRepairSubject, candidate, "
-            "or repair authorization"
-        )
-    if type(effective_subject) is ObservationRepairCandidate:
-        _require_current_repair_authorization(
-            authorization,
-            candidate=effective_subject,
-            coverage=coverage,
-            cell_observations=cell_observations,
-        )
-    return _close_observation_repair_after_authorization(
-        effective_subject,
-        result,
-    )
-
-
-def _close_observation_repair_after_authorization(
-    subject: (ObservationRepairSubject | ObservationRepairCandidate),
-    result: OwnerBackfillSampleResult,
-) -> ObservationRepairReceipt:
-    """Close one already-authorized owner result."""
-
-    _validate_subject(subject)
-    effective_subject = subject
-    if type(result) is not OwnerBackfillSampleResult:
-        raise TypeError("result must be an OwnerBackfillSampleResult")
-    if (
-        type(result.peak_fact_observations) is not tuple
-        or type(result.prepared_peak_facts) is not tuple
-    ):
-        raise ObservationRepairContractError(
-            "repair result evidence containers must be immutable tuples"
-        )
-    if (
-        isinstance(result.sample_index, bool)
-        or not isinstance(result.sample_index, int)
-        or result.sample_index < 0
-    ):
-        raise ObservationRepairContractError(
-            "repair result sample index must be non-negative"
-        )
-    if result.sample_stem != effective_subject.request_identity.sample_stem:
-        raise ObservationRepairContractError("repair result crosses sample identity")
-
-    if result.prepared_peak_facts:
-        raise ObservationRepairContractError(
-            "prepared Backfill facts lack exact logical request closure"
-        )
-    inputs = result.peak_fact_observations
-    exact_work_units: set[str] = set()
-    exact_live: list[OwnerBackfillPeakFactObservation] = []
-    normalized_list: list[ObservationRepairEvidence] = []
-    for item in inputs:
-        normalized = _normalize_live_evidence(effective_subject, item)
-        if (
-            item.logical_request == effective_subject.logical_request
-            and item.request_identity == effective_subject.request_identity
-            and item.cell.group_hypothesis_id
-            == effective_subject.predecessor_group.group_hypothesis_id
-            and item.cell.sample_stem == effective_subject.request_identity.sample_stem
-        ):
-            if item.work_unit_key in exact_work_units:
-                raise ObservationRepairContractError(
-                    "repair result contains duplicate evidence"
-                )
-            exact_work_units.add(item.work_unit_key)
-            exact_live.append(item)
-        if normalized is not None:
-            normalized_list.append(normalized)
-    if not normalized_list:
-        evidence = None
-        if type(effective_subject) is ObservationRepairCandidate:
-            if len(exact_live) != 1:
-                raise ObservationRepairContractError(
-                    "candidate no_repair requires exactly one exact live "
-                    "evaluated observation"
-                )
-            no_repair_terminal = _mint_no_repair_terminal(
-                effective_subject,
-                exact_live[0],
-            )
-        else:
-            if not exact_live:
-                raise ObservationRepairContractError(
-                    "no_repair requires an exact live evaluated observation"
-                )
-            no_repair_terminal = None
-    elif len(normalized_list) != 1:
-        content_ids = tuple(item.fact_content_id for item in normalized_list)
-        if len(set(content_ids)) != len(content_ids):
-            raise ObservationRepairContractError(
-                "repair result contains duplicate evidence"
-            )
-        raise ObservationRepairContractError(
-            "repair result must contain exactly one complete selected evidence"
-        )
-    else:
-        evidence = normalized_list[0]
-        no_repair_terminal = None
-
-    outcome: ObservationRepairOutcome = (
-        "repaired" if evidence is not None else "no_repair"
-    )
-    receipt_id = _receipt_id(
-        subject_id=effective_subject.subject_id,
-        repair_epoch=effective_subject.repair_epoch,
-        outcome=outcome,
-        sample_stem=result.sample_stem,
-        evidence=evidence,
-        no_repair_terminal=no_repair_terminal,
-        authorization_id=(
-            effective_subject.authorization_id
-            if type(effective_subject) is ObservationRepairCandidate
-            else None
-        ),
-        candidate_id=(
-            effective_subject.candidate_id
-            if type(effective_subject) is ObservationRepairCandidate
-            else None
-        ),
-    )
-    return ObservationRepairReceipt(
-        receipt_id=receipt_id,
-        subject=effective_subject,
-        subject_id=effective_subject.subject_id,
-        repair_epoch=effective_subject.repair_epoch,
-        outcome=outcome,
-        sample_stem=result.sample_stem,
-        evidence=evidence,
-        no_repair_terminal=no_repair_terminal,
-        _mint_token=_RECEIPT_MINT_TOKEN,
-    )
-
-
-def execute_observation_repair(
-    *,
-    processing_owners: ProcessingOwnerReferences,
-    coverage: OwnerBackfillEvaluationCoverageBatch,
-    cell_observations: tuple[CellObservationRef, ...],
-    execute: Callable[[ObservationRepairCandidate], OwnerBackfillSampleResult],
-) -> ObservationRepairTerminalResult:
-    """Authorize and execute at most one bounded repair transaction.
-
-    The callback is invoked only for the single eligible candidate.  The
-    ``not_run`` and ``multiple_eligible`` branches are terminal blocks and
-    cannot produce a repair receipt.
-    """
-
-    authorization = authorize_observation_repair(
-        processing_owners=processing_owners,
-        coverage=coverage,
-        cell_observations=cell_observations,
-    )
-    if type(authorization) is not ObservationRepairRepairAuthorization:
-        return ObservationRepairTerminalResult(
-            authorization=authorization,
-            receipt=None,
-            _mint_token=_TERMINAL_RESULT_MINT_TOKEN,
-        )
-    if not callable(execute):
-        raise TypeError("execute must be a callable owner repair operation")
-    result = execute(authorization.candidate)
-    receipt = _close_observation_repair_after_authorization(
-        authorization.candidate,
-        result,
-    )
-    return ObservationRepairTerminalResult(
-        authorization=authorization,
-        receipt=receipt,
-        _mint_token=_TERMINAL_RESULT_MINT_TOKEN,
-    )
-
-
 def _validate_subject(
     subject: ObservationRepairSubject | ObservationRepairCandidate,
 ) -> None:
@@ -707,213 +364,6 @@ def _validate_subject(
         raise ObservationRepairContractError(
             "repair subject id is not bound to its complete content"
         )
-
-
-def _normalize_live_evidence(
-    subject: ObservationRepairSubject | ObservationRepairCandidate,
-    observation: OwnerBackfillPeakFactObservation,
-) -> ObservationRepairEvidence | None:
-    if observation.cell.sample_stem != subject.request_identity.sample_stem:
-        raise ObservationRepairContractError("repair evidence crosses sample identity")
-    if (
-        observation.cell.group_hypothesis_id
-        != subject.predecessor_group.group_hypothesis_id
-    ):
-        return None
-    validate_owner_backfill_peak_fact_observation(observation)
-    if observation.request_identity != subject.request_identity:
-        raise ObservationRepairContractError("repair evidence crosses request identity")
-    if observation.logical_request != subject.logical_request:
-        return None
-    if not observation.selected_for_output:
-        if not observation.trace_evaluated or observation.physical_evaluation is None:
-            raise ObservationRepairContractError(
-                "unselected repair evidence is not a completed evaluation"
-            )
-        return None
-    evaluation = observation.physical_evaluation
-    receipt = observation.facts
-    if evaluation is None:
-        raise ObservationRepairContractError(
-            "selected repair evidence is partial or unavailable"
-        )
-    if evaluation.facts is None and receipt is None:
-        if _is_completed_no_signal_evaluation(observation):
-            return None
-        raise ObservationRepairContractError(
-            "selected repair evidence is partial or unavailable"
-        )
-    if evaluation.facts is None or receipt is None:
-        raise ObservationRepairContractError(
-            "selected repair evidence is partial or unavailable"
-        )
-    facts = evaluation.facts
-    integration_id = selected_integration_authority_projection(
-        receipt.integration
-    ).selected_integration_authority_content_id
-    return _evidence(
-        subject,
-        request_identity_id=observation.request_identity.request_identity_id,
-        group_hypothesis_id=observation.cell.group_hypothesis_id,
-        sample_stem=observation.cell.sample_stem,
-        work_unit_key=observation.work_unit_key,
-        candidate_index=observation.candidate_index,
-        candidate_phase=observation.candidate_phase,
-        acquisition_source_id=(
-            observation.request_identity.acquisition_source.acquisition_source_id
-        ),
-        selection_subject_id=evaluation.question.selection_subject_id,
-        physical_question_id=facts.physical_question_id,
-        physical_answer_id=facts.physical_answer_id,
-        physical_segment_id=facts.physical_segment_id,
-        fact_content_id=facts.fact_content_id,
-        selected_integration_authority_content_id=integration_id,
-        rt_left_min=facts.left_rt_min,
-        rt_apex_min=facts.apex_rt_min,
-        rt_right_min=facts.right_rt_min,
-        height=facts.height,
-        scan_support_count=facts.scan_support_count,
-        area_counts_seconds=facts.area_counts_seconds,
-        area_source=facts.area_source,
-    )
-
-
-def _is_completed_no_signal_evaluation(
-    observation: OwnerBackfillPeakFactObservation,
-) -> bool:
-    evaluation = observation.physical_evaluation
-    if evaluation is None:
-        return False
-    return (
-        observation.trace_evaluated
-        and evaluation.state == "unavailable"
-        and evaluation.reason == "no_signal_above_baseline"
-        and evaluation.prepared.state == "unavailable"
-        and evaluation.prepared.reason == "no_signal_above_baseline"
-        and evaluation.segment_universe.state == "unavailable"
-        and evaluation.segment_universe.reason == "no_signal_above_baseline"
-        and not evaluation.segment_universe.segments
-        and evaluation.answer.state == "unavailable"
-        and evaluation.answer.reason == "no_signal_above_baseline"
-        and evaluation.answer.physical_segment_id is None
-        and evaluation.operations == ("trace_evaluation",)
-    )
-
-
-def _mint_no_repair_terminal(
-    subject: ObservationRepairCandidate,
-    observation: OwnerBackfillPeakFactObservation,
-) -> ObservationRepairNoRepairTerminal:
-    """Project one exact live terminal without recomputing scientific facts."""
-
-    validate_owner_backfill_peak_fact_observation(observation)
-    evaluation = observation.physical_evaluation
-    if not observation.trace_evaluated or evaluation is None:
-        raise ObservationRepairContractError(
-            "no_repair terminal requires a completed physical evaluation"
-        )
-    if observation.selected_for_output and not _is_completed_no_signal_evaluation(
-        observation
-    ):
-        raise ObservationRepairContractError(
-            "selected no_repair terminal is not a completed no-signal evaluation"
-        )
-    terminal_id = _no_repair_terminal_id(
-        subject_id=subject.subject_id,
-        authorization_id=subject.authorization_id,
-        candidate_id=subject.candidate_id,
-        repair_epoch=subject.repair_epoch,
-        work_unit_key=observation.work_unit_key,
-        physical_answer_id=evaluation.answer.physical_answer_id,
-    )
-    return ObservationRepairNoRepairTerminal(
-        terminal_id=terminal_id,
-        subject_id=subject.subject_id,
-        authorization_id=subject.authorization_id,
-        candidate_id=subject.candidate_id,
-        repair_epoch=subject.repair_epoch,
-        work_unit_key=observation.work_unit_key,
-        physical_answer_id=evaluation.answer.physical_answer_id,
-        _mint_token=_NO_REPAIR_TERMINAL_MINT_TOKEN,
-    )
-
-
-def _evidence(
-    subject: ObservationRepairSubject | ObservationRepairCandidate,
-    *,
-    request_identity_id: str,
-    group_hypothesis_id: str,
-    sample_stem: str,
-    work_unit_key: str,
-    candidate_index: int,
-    candidate_phase: str,
-    acquisition_source_id: str,
-    selection_subject_id: str,
-    physical_question_id: str,
-    physical_answer_id: str,
-    physical_segment_id: str,
-    fact_content_id: str,
-    selected_integration_authority_content_id: str,
-    rt_left_min: float,
-    rt_apex_min: float,
-    rt_right_min: float,
-    height: float,
-    scan_support_count: int,
-    area_counts_seconds: float,
-    area_source: str,
-) -> ObservationRepairEvidence:
-    binding = (
-        request_identity_id,
-        group_hypothesis_id,
-        sample_stem,
-        acquisition_source_id,
-    )
-    expected = (
-        subject.request_identity.request_identity_id,
-        subject.predecessor_group.group_hypothesis_id,
-        subject.request_identity.sample_stem,
-        subject.request_identity.acquisition_source.acquisition_source_id,
-    )
-    if binding != expected:
-        if request_identity_id != expected[0] or acquisition_source_id != expected[3]:
-            raise ObservationRepairContractError(
-                "repair evidence crosses request identity"
-            )
-        if group_hypothesis_id != expected[1]:
-            raise ObservationRepairContractError(
-                "repair evidence crosses group identity"
-            )
-        raise ObservationRepairContractError("repair evidence crosses sample identity")
-    return ObservationRepairEvidence(
-        logical_request_id=subject.logical_request.logical_request_id,
-        request_identity_id=request_identity_id,
-        group_hypothesis_id=group_hypothesis_id,
-        member_subject_id=(
-            None
-            if subject.member_subject is None
-            else subject.member_subject.member_subject_id
-        ),
-        sample_stem=sample_stem,
-        work_unit_key=work_unit_key,
-        candidate_index=candidate_index,
-        candidate_phase=candidate_phase,
-        acquisition_source_id=acquisition_source_id,
-        selection_subject_id=selection_subject_id,
-        physical_question_id=physical_question_id,
-        physical_answer_id=physical_answer_id,
-        physical_segment_id=physical_segment_id,
-        fact_content_id=fact_content_id,
-        selected_integration_authority_content_id=(
-            selected_integration_authority_content_id
-        ),
-        rt_left_min=rt_left_min,
-        rt_apex_min=rt_apex_min,
-        rt_right_min=rt_right_min,
-        height=height,
-        scan_support_count=scan_support_count,
-        area_counts_seconds=area_counts_seconds,
-        area_source=area_source,
-    )
 
 
 def _subject_id(
@@ -1138,9 +588,4 @@ __all__ = (
     "ObservationRepairRepairAuthorization",
     "ObservationRepairReceipt",
     "ObservationRepairSubject",
-    "ObservationRepairTerminalResult",
-    "authorize_observation_repair",
-    "close_observation_repair",
-    "execute_observation_repair",
-    "mint_observation_repair_subject",
 )

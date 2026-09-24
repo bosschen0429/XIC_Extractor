@@ -92,17 +92,6 @@ from xic_extractor.peak_detection.signal_processing_profile import (
 from xic_extractor.sample_metadata import SampleMetadata
 
 
-def _forbid_retained_production_repair(monkeypatch: pytest.MonkeyPatch) -> None:
-    from xic_extractor.alignment.backfill import observation_repair
-
-    def unexpected_repair(*args, **kwargs):
-        raise AssertionError("closed production coverage must not authorize repair")
-
-    monkeypatch.setattr(
-        observation_repair, "execute_observation_repair", unexpected_repair
-    )
-
-
 def _assert_partition_composition_parity(
     batch,
     runtime_result,
@@ -1323,7 +1312,6 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     def unexpected_mt0(*args, **kwargs):
         raise AssertionError("retained production must not execute initial refinement")
 
-    _forbid_retained_production_repair(monkeypatch)
 
     hypothesis_universe_compositions = []
     compose_hypothesis_universe = (
@@ -3572,7 +3560,6 @@ def test_production_composition_closes_observation_only_hold_without_membership(
     monkeypatch,
     scenario: str,
 ) -> None:
-    _forbid_retained_production_repair(monkeypatch)
     from xic_extractor.extraction import (
         untargeted_cid_nl_production_batch as production,
     )
@@ -4258,9 +4245,6 @@ def test_known_istd_reference_closes_drifting_group_and_cell_proof(
 def _assert_conservative_coverage_handoff(
     completed, writer_inputs, batch, runtime_result, tmp_path, *, threshold: bool
 ) -> None:
-    from xic_extractor.alignment.backfill.observation_repair import (
-        authorize_observation_repair,
-    )
     from xic_extractor.alignment.tsv_writer import write_alignment_matrix_tsv
 
     (child,) = completed.application_result.children
@@ -4309,17 +4293,6 @@ def _assert_conservative_coverage_handoff(
         assert source.content.technical_state == "evaluated"
         assert source.method_assessment.content.evaluation_receipt.search_completed
         assert source.peak_observation is source.peak_hypothesis is None
-    authorization = authorize_observation_repair(
-        processing_owners=batch.context.processing_owners,
-        coverage=coverage,
-        cell_observations=tuple(
-            cell
-            for final in scientific.cell_observations
-            for cell in final.predecessor_cells
-        ),
-    )
-    assert authorization.state == "not_run"
-    assert authorization.eligible_cell_ids == ()
     hold_decisions = tuple(
         decision
         for decision in writer_inputs.production_decisions.cells.values()
@@ -4359,9 +4332,6 @@ def _assert_conservative_proof_seals(
     from dataclasses import fields
 
     from xic_extractor.alignment.backfill import evaluation_coverage as owner
-    from xic_extractor.alignment.backfill.observation_repair import (
-        authorize_observation_repair,
-    )
     from xic_extractor.alignment.cell_observations import (
         _derive_lane_evidence_state,
         canonical_cell_observation_bytes,
@@ -4530,11 +4500,6 @@ def _assert_conservative_proof_seals(
             source_cell=proof.decision.target_cell,
             source_population=proof.decision.group_facts.source_cells,
         )
-        authorize_observation_repair(
-            processing_owners=batch.context.processing_owners,
-            coverage=coverage,
-            cell_observations=proof.decision.group_facts.source_cells,
-        )
     lane_args = dict(
         association=final_cell.position_associations[0],
         source_cell=proof.decision.target_cell,
@@ -4626,7 +4591,6 @@ def test_production_composition_closes_recovered_observation_without_candidate(
     monkeypatch,
     recovery_case: str,
 ) -> None:
-    _forbid_retained_production_repair(monkeypatch)
     sample_stems = (
         ("Support1", "Hold")
         if recovery_case == "threshold"
