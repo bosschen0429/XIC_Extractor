@@ -12,13 +12,13 @@ def test_generic_review_backfill_is_unavailable_not_primary_use() -> None:
         reason="owner_complete_link",
         primary_evidence="legacy_unrehydrated_primary_evidence",
         detected=2,
-        rescued=0,
+        backfilled=0,
     )
     review_row["review_backfill_count"] = "1"
 
     vector = project_machine_decision(
         review_row,
-        _cell_rows(detected=2, rescued=1),
+        _cell_rows(detected=2, backfilled=1),
     )
 
     assert vector.matrix_role == "audit"
@@ -37,13 +37,13 @@ def test_wrong_hypothesis_cell_blocker_is_exposed_in_machine_decision() -> None:
             reason="cell_evidence_supported_backfill",
             primary_evidence="owner_complete_link",
             detected=2,
-            rescued=1,
+            backfilled=1,
             flags="backfill_cell_evidence_required;backfill_rescue_review_only",
         ),
         _cell_rows(
             detected=2,
-            rescued=1,
-            rescue_group_claim_state="duplicate_loser",
+            backfilled=1,
+            backfill_group_claim_state="duplicate_loser",
         ),
     )
 
@@ -53,7 +53,7 @@ def test_wrong_hypothesis_cell_blocker_is_exposed_in_machine_decision() -> None:
     assert vector.recommended_action == "review"
 
 
-def test_rescue_only_row_projects_to_exclude_with_explicit_blocker() -> None:
+def test_backfill_only_row_projects_to_exclude_with_explicit_blocker() -> None:
     vector = project_machine_decision(
         _review_row(
             include="FALSE",
@@ -62,10 +62,10 @@ def test_rescue_only_row_projects_to_exclude_with_explicit_blocker() -> None:
             reason="rescue_only_blocked",
             primary_evidence="owner_complete_link",
             detected=0,
-            rescued=2,
+            backfilled=2,
             flags="rescue_only;rescue_only_review",
         ),
-        _cell_rows(detected=0, rescued=2),
+        _cell_rows(detected=0, backfilled=2),
     )
 
     assert vector.matrix_role == "excluded"
@@ -82,11 +82,11 @@ def test_ambiguous_owner_row_projects_to_audit_review() -> None:
             reason="ambiguous_only",
             primary_evidence="none",
             detected=0,
-            rescued=0,
+            backfilled=0,
             ambiguous=2,
             flags="ambiguous_only;ambiguous_ms1_owner_pressure;zero_present",
         ),
-        _cell_rows(detected=0, rescued=0, ambiguous=2),
+        _cell_rows(detected=0, backfilled=0, ambiguous=2),
     )
 
     assert vector.matrix_role == "audit"
@@ -98,7 +98,7 @@ def test_ambiguous_owner_row_projects_to_audit_review() -> None:
     )
 
 
-def test_area_only_rescue_does_not_claim_ms1_backfill_support() -> None:
+def test_area_only_backfill_does_not_claim_ms1_backfill_support() -> None:
     vector = project_machine_decision(
         _review_row(
             include="FALSE",
@@ -107,14 +107,14 @@ def test_area_only_rescue_does_not_claim_ms1_backfill_support() -> None:
             reason="insufficient_detected_identity_support",
             primary_evidence="owner_complete_link",
             detected=1,
-            rescued=2,
+            backfilled=2,
             flags="single_detected_seed",
         ),
         _cell_rows(
             detected=1,
-            rescued=2,
-            rescue_trace_quality="owner_backfill",
-            rescue_scan_support_score="",
+            backfilled=2,
+            backfill_trace_quality="owner_backfill",
+            backfill_scan_support_score="",
         ),
     )
 
@@ -124,7 +124,9 @@ def test_area_only_rescue_does_not_claim_ms1_backfill_support() -> None:
     assert "low_ms1_assessable_coverage_blocked" in vector.blockers
 
 
-def test_neighboring_interference_rescue_does_not_claim_ms1_backfill_support() -> None:
+def test_neighboring_interference_backfill_does_not_claim_ms1_backfill_support() -> (
+    None
+):
     vector = project_machine_decision(
         _review_row(
             include="FALSE",
@@ -133,13 +135,13 @@ def test_neighboring_interference_rescue_does_not_claim_ms1_backfill_support() -
             reason="insufficient_detected_identity_support",
             primary_evidence="owner_complete_link",
             detected=1,
-            rescued=2,
+            backfilled=2,
             flags="single_detected_seed",
         ),
         _cell_rows(
             detected=1,
-            rescued=2,
-            rescue_region_review_reason="neighboring_ms1_interference",
+            backfilled=2,
+            backfill_region_review_reason="neighboring_ms1_interference",
         ),
     )
 
@@ -149,7 +151,7 @@ def test_neighboring_interference_rescue_does_not_claim_ms1_backfill_support() -
     assert "neighboring_ms1_interference_blocked" in vector.blockers
 
 
-def test_low_scan_support_rescue_does_not_claim_ms1_backfill_support() -> None:
+def test_low_scan_support_backfill_does_not_claim_ms1_backfill_support() -> None:
     vector = project_machine_decision(
         _review_row(
             include="FALSE",
@@ -158,10 +160,10 @@ def test_low_scan_support_rescue_does_not_claim_ms1_backfill_support() -> None:
             reason="insufficient_detected_identity_support",
             primary_evidence="owner_complete_link",
             detected=1,
-            rescued=2,
+            backfilled=2,
             flags="single_detected_seed",
         ),
-        _cell_rows(detected=1, rescued=2, rescue_scan_support_score="0.1"),
+        _cell_rows(detected=1, backfilled=2, backfill_scan_support_score="0.1"),
     )
 
     assert vector.matrix_role == "audit"
@@ -179,9 +181,9 @@ def test_generic_provisional_label_gets_explicit_missing_support_blocker() -> No
             reason="",
             primary_evidence="single_sample_local_owner",
             detected=1,
-            rescued=0,
+            backfilled=0,
         ),
-        _cell_rows(detected=1, rescued=0),
+        _cell_rows(detected=1, backfilled=0),
     )
 
     assert vector.matrix_role == "provisional"
@@ -200,7 +202,7 @@ def _review_row(
     reason: str,
     primary_evidence: str,
     detected: int,
-    rescued: int,
+    backfilled: int,
     duplicate: int = 0,
     ambiguous: int = 0,
     flags: str = "",
@@ -214,9 +216,9 @@ def _review_row(
         "primary_evidence": primary_evidence,
         "neutral_loss_tag": "DNA_dR",
         "quantifiable_detected_count": str(detected),
-        "quantifiable_backfill_count": str(rescued),
+        "quantifiable_backfill_count": str(backfilled),
         "review_backfill_count": "0",
-        "accepted_backfill_count": str(rescued),
+        "accepted_backfill_count": str(backfilled),
         "duplicate_assigned_count": str(duplicate),
         "ambiguous_ms1_owner_count": str(ambiguous),
         "row_flags": flags,
@@ -226,38 +228,38 @@ def _review_row(
 def _cell_rows(
     *,
     detected: int,
-    rescued: int,
+    backfilled: int,
     duplicate: int = 0,
     ambiguous: int = 0,
-    rescue_trace_quality: str = "clean",
-    rescue_scan_support_score: str = "0.8",
-    rescue_reason: str = "backfilled",
-    rescue_region_review_reason: str = "",
-    rescue_rt_delta_sec: str = "0.0",
-    rescue_group_claim_state: str = "",
+    backfill_trace_quality: str = "clean",
+    backfill_scan_support_score: str = "0.8",
+    backfill_reason: str = "backfilled",
+    backfill_region_review_reason: str = "",
+    backfill_rt_delta_sec: str = "0.0",
+    backfill_group_claim_state: str = "",
 ) -> tuple[dict[str, str], ...]:
     rows: list[dict[str, str]] = []
     for index in range(detected):
         rows.append(_cell_row(index, "detected", "1000"))
-    for index in range(detected, detected + rescued):
+    for index in range(detected, detected + backfilled):
         rows.append(
             _cell_row(
                 index,
                 "backfilled",
                 "500",
-                trace_quality=rescue_trace_quality,
-                scan_support_score=rescue_scan_support_score,
-                reason=rescue_reason,
-                region_review_reason=rescue_region_review_reason,
-                rt_delta_sec=rescue_rt_delta_sec,
-                group_claim_state=rescue_group_claim_state,
+                trace_quality=backfill_trace_quality,
+                scan_support_score=backfill_scan_support_score,
+                reason=backfill_reason,
+                region_review_reason=backfill_region_review_reason,
+                rt_delta_sec=backfill_rt_delta_sec,
+                group_claim_state=backfill_group_claim_state,
             ),
         )
-    for index in range(detected + rescued, detected + rescued + duplicate):
+    for index in range(detected + backfilled, detected + backfilled + duplicate):
         rows.append(_cell_row(index, "duplicate_assigned", ""))
     for index in range(
-        detected + rescued + duplicate,
-        detected + rescued + duplicate + ambiguous,
+        detected + backfilled + duplicate,
+        detected + backfilled + duplicate + ambiguous,
     ):
         rows.append(_cell_row(index, "ambiguous_ms1_owner", ""))
     return tuple(rows)

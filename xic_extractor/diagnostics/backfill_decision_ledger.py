@@ -107,7 +107,7 @@ class _ReviewGroup:
 class _ReviewCensus:
     groups: Mapping[str, _ReviewGroup]
     consolidation_counts: Mapping[str, int]
-    loser_row_with_rescue_count: int
+    loser_row_with_backfill_count: int
     loser_quantifiable_backfill_count: int
     loser_review_backfill_count: int
 
@@ -543,7 +543,7 @@ def _iter_ledger_rows(
 def _read_review_groups(path: Path) -> _ReviewCensus:
     groups: dict[str, _ReviewGroup] = {}
     states: Counter[str] = Counter()
-    loser_row_with_rescue_count = 0
+    loser_row_with_backfill_count = 0
     loser_quantifiable_backfill_count = 0
     loser_review_backfill_count = 0
     for row_number, row in _iter_delimited_rows(
@@ -599,12 +599,12 @@ def _read_review_groups(path: Path) -> _ReviewCensus:
             loser_quantifiable_backfill_count += quantifiable_backfill_count
             loser_review_backfill_count += review_backfill_count
             if quantifiable_backfill_count > 0 or review_backfill_count > 0:
-                loser_row_with_rescue_count += 1
+                loser_row_with_backfill_count += 1
     _validate_consolidation_relationships(path, groups)
     return _ReviewCensus(
         groups=groups,
         consolidation_counts=dict(sorted(states.items())),
-        loser_row_with_rescue_count=loser_row_with_rescue_count,
+        loser_row_with_backfill_count=loser_row_with_backfill_count,
         loser_quantifiable_backfill_count=loser_quantifiable_backfill_count,
         loser_review_backfill_count=loser_review_backfill_count,
     )
@@ -999,7 +999,7 @@ def _summary(
             "group_row_count": group_count,
             "consolidation_counts": review.consolidation_counts,
             "primary_loser_fraction": _safe_ratio(loser_count, group_count),
-            "loser_row_with_rescue_count": review.loser_row_with_rescue_count,
+            "loser_row_with_rescue_count": review.loser_row_with_backfill_count,
             "loser_quantifiable_backfill_count": (
                 review.loser_quantifiable_backfill_count
             ),

@@ -19,7 +19,14 @@ from xic_extractor.alignment.artifact_write_receipts import (
     _mint_alignment_artifact_fingerprint_receipt,
 )
 from xic_extractor.alignment.backfill.evaluation_coverage import (
-    OwnerBackfillEvaluationCoverageBatch,
+    BackfillEvaluationCoverageBatch,
+)
+from xic_extractor.alignment.backfill_peak_fact import BackfillCandidateAuditRow
+from xic_extractor.alignment.backfill_peak_fact_provenance import (
+    BACKFILL_PEAK_FACT_PROVENANCE_SCHEMA_VERSION,
+    EMPTY_BACKFILL_PEAK_FACT_PROVENANCE_BATCH,
+    BackfillPeakFactProvenanceBatch,
+    render_backfill_peak_fact_provenance_tsv,
 )
 from xic_extractor.alignment.backfill_scope import (
     REQUEST_PLAN_VERSION,
@@ -31,19 +38,12 @@ from xic_extractor.alignment.debug_writer import write_owner_edge_evidence_tsv
 from xic_extractor.alignment.edge_scoring import OwnerEdgeEvidence
 from xic_extractor.alignment.matrix import AlignmentMatrix
 from xic_extractor.alignment.ms1_index_source import (
-    OwnerBackfillXicBackend,
+    BackfillXicBackend,
     OwnerBuildXicBackend,
 )
 from xic_extractor.alignment.output_levels import (
     AlignmentOutputLevel,
     artifact_names_for_output_level,
-)
-from xic_extractor.alignment.owner_backfill import OwnerBackfillCandidateAuditRow
-from xic_extractor.alignment.owner_backfill_peak_fact_provenance import (
-    EMPTY_OWNER_BACKFILL_PEAK_FACT_PROVENANCE_BATCH,
-    OWNER_BACKFILL_PEAK_FACT_PROVENANCE_SCHEMA_VERSION,
-    OwnerBackfillPeakFactProvenanceBatch,
-    render_owner_backfill_peak_fact_provenance_tsv,
 )
 from xic_extractor.alignment.owner_build_route_receipt import OwnerBuildRouteReceipt
 from xic_extractor.alignment.ownership import OwnershipBuildResult
@@ -56,13 +56,13 @@ from xic_extractor.alignment.provisional_matrix import (
     write_provisional_summary_json,
 )
 from xic_extractor.alignment.tsv_writer import (
+    write_alignment_backfill_candidate_audit_tsv,
     write_alignment_backfill_cell_evidence_tsv,
+    write_alignment_backfill_seed_audit_tsv,
     write_alignment_cell_integration_audit_tsv,
     write_alignment_cells_tsv,
     write_alignment_matrix_identity_tsv,
     write_alignment_matrix_tsv,
-    write_alignment_owner_backfill_candidate_audit_tsv,
-    write_alignment_owner_backfill_seed_audit_tsv,
     write_alignment_review_tsv,
     write_alignment_status_matrix_tsv,
     write_alignment_tsv_row_batches,
@@ -101,7 +101,7 @@ class AlignmentRunOutputs:
     provisional_summary_json: Path | None = None
     artifact_fingerprint_batch: AlignmentArtifactFingerprintBatch | None = None
     owner_build_route_receipt: OwnerBuildRouteReceipt | None = None
-    owner_backfill_evaluation_coverage: OwnerBackfillEvaluationCoverageBatch | None = (
+    owner_backfill_evaluation_coverage: BackfillEvaluationCoverageBatch | None = (
         None
     )
     # No live workflow result is published. The run closes its partition
@@ -223,7 +223,7 @@ def alignment_metadata(
     discovery_batch_index: Path,
     raw_dir: Path,
     dll_dir: Path,
-    owner_backfill_xic_backend: OwnerBackfillXicBackend,
+    owner_backfill_xic_backend: BackfillXicBackend,
     owner_build_xic_backend: OwnerBuildXicBackend = "raw",
     output_level: AlignmentOutputLevel,
     peak_config: ExtractionConfig,
@@ -314,7 +314,7 @@ def alignment_metadata(
         "signal_processing_window_points": str(signal_processing_profile.window_points),
         "physical_signal_formula": signal_processing_profile.physical_signal_formula,
         "owner_backfill_peak_fact_provenance_schema_version": (
-            OWNER_BACKFILL_PEAK_FACT_PROVENANCE_SCHEMA_VERSION
+            BACKFILL_PEAK_FACT_PROVENANCE_SCHEMA_VERSION
         ),
         "owner_backfill_peak_fact_provenance_row_count": str(
             owner_backfill_peak_fact_provenance_row_count
@@ -332,9 +332,9 @@ def write_outputs_atomic(
     alignment_config: AlignmentConfig,
     edge_evidence: Sequence[OwnerEdgeEvidence] = (),
     skipped_evidence: Sequence[SkippedEvidenceRecord] = (),
-    owner_backfill_candidate_audit_rows: Sequence[OwnerBackfillCandidateAuditRow] = (),
-    owner_backfill_peak_fact_provenance: OwnerBackfillPeakFactProvenanceBatch = (
-        EMPTY_OWNER_BACKFILL_PEAK_FACT_PROVENANCE_BATCH
+    owner_backfill_candidate_audit_rows: Sequence[BackfillCandidateAuditRow] = (),
+    backfill_peak_fact_provenance: BackfillPeakFactProvenanceBatch = (
+        EMPTY_BACKFILL_PEAK_FACT_PROVENANCE_BATCH
     ),
     production_decisions: ProductionDecisionSet,
     baseline_integration_method: str = "asls",
@@ -343,13 +343,13 @@ def write_outputs_atomic(
     capture_artifact_fingerprints: bool = False,
 ) -> AlignmentArtifactFingerprintBatch | None:
     if not isinstance(
-        owner_backfill_peak_fact_provenance,
-        OwnerBackfillPeakFactProvenanceBatch,
+        backfill_peak_fact_provenance,
+        BackfillPeakFactProvenanceBatch,
     ):
         raise TypeError("owner_backfill_peak_fact_provenance must be a typed batch")
     metadata = _metadata_bound_to_peak_fact_provenance(
         metadata,
-        row_count=len(owner_backfill_peak_fact_provenance.rows),
+        row_count=len(backfill_peak_fact_provenance.rows),
     )
     if not isinstance(production_decisions, ProductionDecisionSet):
         raise TypeError("production_decisions must be owner-minted")
@@ -481,7 +481,7 @@ def write_outputs_atomic(
         output_paths_and_writers.append(
             (
                 outputs.backfill_seed_audit_tsv,
-                lambda path: write_alignment_owner_backfill_seed_audit_tsv(
+                lambda path: write_alignment_backfill_seed_audit_tsv(
                     path,
                     matrix,
                 ),
@@ -491,7 +491,7 @@ def write_outputs_atomic(
         output_paths_and_writers.append(
             (
                 outputs.backfill_candidate_audit_tsv,
-                lambda path: write_alignment_owner_backfill_candidate_audit_tsv(
+                lambda path: write_alignment_backfill_candidate_audit_tsv(
                     path,
                     owner_backfill_candidate_audit_rows,
                 ),
@@ -501,9 +501,9 @@ def write_outputs_atomic(
         output_paths_and_writers.append(
             (
                 outputs.owner_backfill_peak_fact_provenance_tsv,
-                lambda path: _write_owner_backfill_peak_fact_provenance_temp(
+                lambda path: _write_backfill_peak_fact_provenance_temp(
                     path,
-                    owner_backfill_peak_fact_provenance,
+                    backfill_peak_fact_provenance,
                 ),
             )
         )
@@ -639,9 +639,9 @@ def write_streamed_untargeted_outputs_atomic(
             alignment_config=alignment_config,
         )
         if outputs.owner_backfill_peak_fact_provenance_tsv is not None:
-            _write_owner_backfill_peak_fact_provenance_temp(
+            _write_backfill_peak_fact_provenance_temp(
                 temp_paths[outputs.owner_backfill_peak_fact_provenance_tsv],
-                EMPTY_OWNER_BACKFILL_PEAK_FACT_PROVENANCE_BATCH,
+                EMPTY_BACKFILL_PEAK_FACT_PROVENANCE_BATCH,
             )
         if outputs.run_metadata_json is not None:
             _write_metadata_json(
@@ -853,13 +853,13 @@ def _metadata_bound_to_peak_fact_provenance(
     return bound
 
 
-def _write_owner_backfill_peak_fact_provenance_temp(
+def _write_backfill_peak_fact_provenance_temp(
     path: Path,
-    batch: OwnerBackfillPeakFactProvenanceBatch,
+    batch: BackfillPeakFactProvenanceBatch,
 ) -> Path:
     """Write owner-rendered bytes into the outer transaction's one temp path."""
 
-    payload = render_owner_backfill_peak_fact_provenance_tsv(batch)
+    payload = render_backfill_peak_fact_provenance_tsv(batch)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(payload)
     return path

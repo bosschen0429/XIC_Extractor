@@ -3,56 +3,56 @@
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from .observation_repair import (
-        ObservationRepairAuthorization,
-        ObservationRepairAuthorizationState,
-        ObservationRepairCandidate,
-        ObservationRepairContractError,
-        ObservationRepairEvidence,
-        ObservationRepairMultipleEligibleAuthorization,
-        ObservationRepairNoRepairTerminal,
-        ObservationRepairNotRunAuthorization,
-        ObservationRepairOutcome,
-        ObservationRepairReceipt,
-        ObservationRepairRepairAuthorization,
-        ObservationRepairSubject,
+    from .observation_revisit import (
+        ObservationRevisitAuthorization,
+        ObservationRevisitAuthorizationState,
+        ObservationRevisitCandidate,
+        ObservationRevisitContractError,
+        ObservationRevisitEligibleAuthorization,
+        ObservationRevisitEvidence,
+        ObservationRevisitMultipleEligibleAuthorization,
+        ObservationRevisitNoResultTerminal,
+        ObservationRevisitNotRunAuthorization,
+        ObservationRevisitOutcome,
+        ObservationRevisitReceipt,
+        ObservationRevisitSubject,
     )
 
 _OBSERVATION_REPAIR_EXPORTS = {
-    "ObservationRepairAuthorization",
-    "ObservationRepairAuthorizationState",
-    "ObservationRepairCandidate",
-    "ObservationRepairContractError",
-    "ObservationRepairEvidence",
-    "ObservationRepairMultipleEligibleAuthorization",
-    "ObservationRepairNoRepairTerminal",
-    "ObservationRepairNotRunAuthorization",
-    "ObservationRepairOutcome",
-    "ObservationRepairRepairAuthorization",
-    "ObservationRepairReceipt",
-    "ObservationRepairSubject",
+    "ObservationRevisitAuthorization",
+    "ObservationRevisitAuthorizationState",
+    "ObservationRevisitCandidate",
+    "ObservationRevisitContractError",
+    "ObservationRevisitEvidence",
+    "ObservationRevisitMultipleEligibleAuthorization",
+    "ObservationRevisitNoResultTerminal",
+    "ObservationRevisitNotRunAuthorization",
+    "ObservationRevisitOutcome",
+    "ObservationRevisitEligibleAuthorization",
+    "ObservationRevisitReceipt",
+    "ObservationRevisitSubject",
 }
 
 
 def __getattr__(name: str) -> Any:
     if name not in _OBSERVATION_REPAIR_EXPORTS:
         raise AttributeError(name)
-    from . import observation_repair
+    from . import observation_revisit
 
-    return getattr(observation_repair, name)
+    return getattr(observation_revisit, name)
 
 
 __all__ = (
-    "ObservationRepairAuthorization",
-    "ObservationRepairAuthorizationState",
-    "ObservationRepairCandidate",
-    "ObservationRepairContractError",
-    "ObservationRepairEvidence",
-    "ObservationRepairMultipleEligibleAuthorization",
-    "ObservationRepairNoRepairTerminal",
-    "ObservationRepairNotRunAuthorization",
-    "ObservationRepairOutcome",
-    "ObservationRepairRepairAuthorization",
-    "ObservationRepairReceipt",
-    "ObservationRepairSubject",
+    "ObservationRevisitAuthorization",
+    "ObservationRevisitAuthorizationState",
+    "ObservationRevisitCandidate",
+    "ObservationRevisitContractError",
+    "ObservationRevisitEvidence",
+    "ObservationRevisitMultipleEligibleAuthorization",
+    "ObservationRevisitNoResultTerminal",
+    "ObservationRevisitNotRunAuthorization",
+    "ObservationRevisitOutcome",
+    "ObservationRevisitEligibleAuthorization",
+    "ObservationRevisitReceipt",
+    "ObservationRevisitSubject",
 )

@@ -17,7 +17,7 @@ from xic_extractor.alignment.artifact_write_receipts import (
 )
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.ms1_index_source import (
-    OwnerBackfillXicBackend,
+    BackfillXicBackend,
     OwnerBuildXicBackend,
 )
 from xic_extractor.alignment.provisional_matrix import (
@@ -79,7 +79,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             raw_workers=args.raw_workers,
             raw_xic_batch_size=args.raw_xic_batch_size,
             owner_build_xic_backend=inputs.owner_build_xic_backend,
-            owner_backfill_xic_backend=_owner_backfill_backend(
+            owner_backfill_xic_backend=_backfill_backend(
                 args.owner_backfill_xic_backend
             ),
             owner_backfill_window_strategy=args.owner_backfill_window_strategy,
@@ -462,7 +462,7 @@ def _record_fingerprint_observation(
     )
 
 
-def _owner_backfill_backend(value: str) -> OwnerBackfillXicBackend:
+def _backfill_backend(value: str) -> BackfillXicBackend:
     mapped = {
         "raw": "raw",
         "ms1-index": "ms1_index",
@@ -470,7 +470,7 @@ def _owner_backfill_backend(value: str) -> OwnerBackfillXicBackend:
     }.get(value)
     if mapped is None:
         raise ValueError(f"unsupported owner Backfill XIC backend: {value}")
-    return cast(OwnerBackfillXicBackend, mapped)
+    return cast(BackfillXicBackend, mapped)
 
 
 def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:

@@ -6,22 +6,22 @@ import numpy as np
 import pytest
 from pytest import MonkeyPatch
 
-import xic_extractor.alignment.owner_backfill as owner_backfill_module
-import xic_extractor.alignment.owner_backfill_request_plan as request_plan_module
+import xic_extractor.alignment.backfill_peak_fact as owner_backfill_module
+import xic_extractor.alignment.backfill_request_plan as request_plan_module
 from tests.test_alignment_owner_clustering import _owner
 from xic_extractor.alignment import (
-    owner_backfill_acquisition as owner_backfill_acquisition_module,
+    backfill_acquisition as owner_backfill_acquisition_module,
 )
 from xic_extractor.alignment import (
-    owner_backfill_evaluation as owner_backfill_evaluation_module,
+    backfill_evaluation as owner_backfill_evaluation_module,
+)
+from xic_extractor.alignment.backfill_peak_fact import (
+    build_backfill_result,
+)
+from xic_extractor.alignment.backfill_request_plan import (
+    build_backfill_request_plan,
 )
 from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.alignment.owner_backfill import (
-    build_owner_backfill_result,
-)
-from xic_extractor.alignment.owner_backfill_request_plan import (
-    build_owner_backfill_request_plan,
-)
 from xic_extractor.alignment.owner_clustering import OwnerAlignedFeature
 from xic_extractor.config import ExtractionConfig
 from xic_extractor.peak_detection.region_audit import PeakRegionAuditSummary
@@ -34,10 +34,10 @@ _TEST_SIGNAL_PROCESSING_PROFILE = SignalProcessingProfile(window_points=3)
 
 
 def _backfill_cells(*args, **kwargs):
-    return build_owner_backfill_result(*args, **kwargs).cells
+    return build_backfill_result(*args, **kwargs).cells
 
 
-def test_owner_backfill_rescues_missing_sample_from_feature_center() -> None:
+def test_owner_backfill_backfills_missing_sample_from_feature_center() -> None:
     source = _dense_peak_source(center=8.50, height=120.0)
     feature = _feature()
 
@@ -87,7 +87,7 @@ def test_owner_backfill_shared_peak_facts_preserve_projection_and_work_telemetry
         tmp_path,
         b"owner-backfill-shadow-corpus",
     )
-    baseline = build_owner_backfill_result(
+    baseline = build_backfill_result(
         (_feature(),),
         sample_order=("sample-a", "sample-b"),
         raw_sources={"sample-b": _dense_peak_source(center=8.50, height=120.0)},
@@ -96,7 +96,7 @@ def test_owner_backfill_shared_peak_facts_preserve_projection_and_work_telemetry
         signal_processing_profile=_TEST_SIGNAL_PROCESSING_PROFILE,
     )
 
-    candidate = build_owner_backfill_result(
+    candidate = build_backfill_result(
         (_feature(),),
         sample_order=("sample-a", "sample-b"),
         raw_sources={"sample-b": bound_source},
@@ -123,7 +123,7 @@ def test_owner_backfill_shared_peak_facts_preserve_projection_and_work_telemetry
     assert observation.fact_elapsed_seconds > 0
     rehydrated_observation = pickle.loads(pickle.dumps(observation))
     assert rehydrated_observation == observation
-    owner_backfill_module.validate_owner_backfill_peak_fact_observation(
+    owner_backfill_module.validate_backfill_peak_fact_observation(
         rehydrated_observation
     )
     with pytest.raises(ValueError, match="must be minted by Owner Backfill"):
@@ -141,7 +141,7 @@ def test_owner_backfill_shared_peak_facts_preserve_projection_and_work_telemetry
                 question=forged_question,
             ),
             _mint_token=(
-                owner_backfill_module._OWNER_BACKFILL_PEAK_FACT_OBSERVATION_MINT_TOKEN
+                owner_backfill_module._BACKFILL_PEAK_FACT_OBSERVATION_MINT_TOKEN
             ),
         )
     forged_query = replace(
@@ -156,7 +156,7 @@ def test_owner_backfill_shared_peak_facts_preserve_projection_and_work_telemetry
                 question=forged_query,
             ),
             _mint_token=(
-                owner_backfill_module._OWNER_BACKFILL_PEAK_FACT_OBSERVATION_MINT_TOKEN
+                owner_backfill_module._BACKFILL_PEAK_FACT_OBSERVATION_MINT_TOKEN
             ),
         )
     assert candidate.peak_fact_unsealed_evaluation_keys == ()
@@ -166,7 +166,7 @@ def test_owner_backfill_shared_peak_facts_preserve_projection_and_work_telemetry
 
 
 def test_owner_backfill_fact_receipt_drops_trace_arrays_and_worker_payload() -> None:
-    result = build_owner_backfill_result(
+    result = build_backfill_result(
         (_feature(),),
         sample_order=("sample-a", "sample-b"),
         raw_sources={"sample-b": _dense_peak_source(center=8.50, height=120.0)},
@@ -203,7 +203,7 @@ def test_owner_backfill_canonical_path_does_not_call_retired_local_helpers(
     ):
         monkeypatch.setattr(owner_backfill_evaluation_module, name, retired)
 
-    result = build_owner_backfill_result(
+    result = build_backfill_result(
         (_feature(),),
         sample_order=("sample-a", "sample-b"),
         raw_sources={"sample-b": source},
@@ -223,7 +223,7 @@ def test_owner_backfill_canonical_path_does_not_call_retired_local_helpers(
     assert result.peak_fact_observations[0].facts is not None
 
 
-def test_owner_backfill_canonical_rescues_one_offset_physical_segment(
+def test_owner_backfill_canonical_backfills_one_offset_physical_segment(
     tmp_path,
 ) -> None:
     source, acquisition = _owner_bound_peak_source(
@@ -232,7 +232,7 @@ def test_owner_backfill_canonical_rescues_one_offset_physical_segment(
         center=7.65,
     )
 
-    result = build_owner_backfill_result(
+    result = build_backfill_result(
         (_feature(rt=8.5),),
         sample_order=("sample-a", "sample-b"),
         raw_sources={"sample-b": source},
@@ -272,7 +272,7 @@ def test_owner_backfill_canonical_rejects_multiple_offset_physical_segments(
         ),
     )
 
-    result = build_owner_backfill_result(
+    result = build_backfill_result(
         (_feature(rt=8.5),),
         sample_order=("sample-a", "sample-b"),
         raw_sources={"sample-b": source},
@@ -301,7 +301,7 @@ def test_owner_backfill_canonical_rejects_unique_segment_beyond_preferred_rt(
         center=6.9,
     )
 
-    result = build_owner_backfill_result(
+    result = build_backfill_result(
         (_feature(rt=8.5),),
         sample_order=("sample-a", "sample-b"),
         raw_sources={"sample-b": source},
@@ -780,7 +780,7 @@ def test_owner_backfill_result_records_all_candidate_audit_rows() -> None:
         backfill_seed_centers=((500.0, 8.5), (501.0, 8.5)),
     )
 
-    result = build_owner_backfill_result(
+    result = build_backfill_result(
         (feature,),
         sample_order=("sample-a", "sample-b"),
         raw_sources={"sample-b": MixedSource()},
@@ -868,7 +868,7 @@ def test_owner_backfill_request_plan_is_sample_bucketed_without_raw_access() -> 
         backfill_seed_centers=((510.0, 10.5), (511.0, 10.75)),
     )
 
-    plan = build_owner_backfill_request_plan(
+    plan = build_backfill_request_plan(
         (feature_a, feature_b),
         sample_order=("sample-a", "sample-b", "sample-c"),
         raw_sample_stems=frozenset({"sample-b"}),
@@ -914,7 +914,7 @@ def test_owner_backfill_request_plan_reuses_seed_centers_per_feature(
         fake_seed_centers,
     )
 
-    plan = request_plan_module.build_owner_backfill_request_plan(
+    plan = request_plan_module.build_backfill_request_plan(
         (feature,),
         sample_order=("sample-a", "sample-b", "sample-c"),
         raw_sample_stems=frozenset({"sample-b", "sample-c"}),
@@ -1092,7 +1092,7 @@ def test_owner_backfill_validation_pending_deduplicates_fallback_lookup() -> Non
         )
     )
 
-    result = build_owner_backfill_result(
+    result = build_backfill_result(
         (feature,),
         sample_order=("sample-a", "sample-b"),
         raw_sources={"sample-b": prefilter},
@@ -1470,7 +1470,7 @@ def test_candidate_audit_rows_follow_their_only_destination(tmp_path) -> None:
     features = (_feature(feature_family_id="FAM000001", mz=500.0, rt=8.5),)
 
     def run(emit: bool):
-        return build_owner_backfill_result(
+        return build_backfill_result(
             features,
             sample_order=("sample-b",),
             raw_sources={"sample-b": source},

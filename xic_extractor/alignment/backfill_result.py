@@ -1,3 +1,5 @@
+"""Backfill extraction result and peak fact contracts."""
+
 from __future__ import annotations
 
 import math
@@ -8,20 +10,20 @@ import numpy as np
 from numpy.typing import NDArray
 
 from xic_extractor.alignment.backfill.evaluation_coverage import (
-    OwnerBackfillAttemptTerminal,
-    OwnerBackfillCandidatePhase,
-    OwnerBackfillEvaluationCoverageBatch,
-    OwnerBackfillTerminalReason,
-    mint_owner_backfill_selection_subject_id,
+    BackfillAttemptTerminal,
+    BackfillCandidatePhase,
+    BackfillEvaluationCoverageBatch,
+    BackfillTerminalReason,
+    mint_backfill_selection_subject_id,
+)
+from xic_extractor.alignment.backfill_request_plan import (
+    BACKFILL_VALIDATION_MODES,
+    BackfillLogicalRequestMember,
+    BackfillRequestIdentity,
+    BackfillRequestItem,
+    BackfillValidationMode,
 )
 from xic_extractor.alignment.matrix import AlignedCell
-from xic_extractor.alignment.owner_backfill_request_plan import (
-    OWNER_BACKFILL_VALIDATION_MODES,
-    OwnerBackfillLogicalRequestMember,
-    OwnerBackfillRequestIdentity,
-    OwnerBackfillRequestItem,
-    OwnerBackfillValidationMode,
-)
 from xic_extractor.peak_detection.evidence_facts import (
     PeakTraceEvidenceFacts,
     TraceWindowEvidenceFacts,
@@ -36,21 +38,21 @@ from xic_extractor.peak_detection.physical_peak_models import (
 )
 from xic_extractor.xic_models import XICTrace
 
-_RequestItem = OwnerBackfillRequestItem
+_RequestItem = BackfillRequestItem
 # One extraction chunk's prepared signals, keyed by the identity of the trace
 # object request equivalence fanned out.  The cache holds the trace itself so a
 # recycled id() can never alias a different trace.
 _ChunkPreparedSignalCache: TypeAlias = dict[int, tuple[XICTrace, PreparedSignalResult]]
 _RequestGroupKey = tuple[str, int | float, int | float]
-_OWNER_BACKFILL_PEAK_FACT_OBSERVATION_MINT_TOKEN = object()
+_BACKFILL_PEAK_FACT_OBSERVATION_MINT_TOKEN = object()
 
 
 @dataclass(frozen=True, slots=True)
 
 class _ExtractionRequestItem:
     item: _RequestItem
-    logical_request: OwnerBackfillLogicalRequestMember | None = None
-    request_identity: OwnerBackfillRequestIdentity | None = None
+    logical_request: BackfillLogicalRequestMember | None = None
+    request_identity: BackfillRequestIdentity | None = None
 
     def __post_init__(self) -> None:
         if (self.logical_request is None) != (self.request_identity is None):
@@ -64,7 +66,7 @@ class _ExtractionRequestItem:
 _WindowedRequestItem = tuple[_ExtractionRequestItem, tuple[int, int]]
 
 
-class OwnerBackfillSource(Protocol):
+class BackfillSource(Protocol):
     def extract_xic(
         self,
         mz: float,
@@ -75,7 +77,7 @@ class OwnerBackfillSource(Protocol):
 
 
 @dataclass(frozen=True)
-class OwnerBackfillCandidateAuditRow:
+class BackfillCandidateAuditRow:
     feature_family_id: str
     group_hypothesis_id: str
     public_family_id: str
@@ -101,17 +103,17 @@ class OwnerBackfillCandidateAuditRow:
 
 
 @dataclass(frozen=True)
-class OwnerBackfillResult:
+class BackfillResult:
     cells: tuple[AlignedCell, ...]
-    candidate_audit_rows: tuple[OwnerBackfillCandidateAuditRow, ...]
+    candidate_audit_rows: tuple[BackfillCandidateAuditRow, ...]
     request_reuse_observations: tuple[
-        OwnerBackfillRequestReuseObservation,
+        BackfillRequestReuseObservation,
         ...,
     ] = ()
-    peak_fact_observations: tuple[OwnerBackfillPeakFactObservation, ...] = ()
+    peak_fact_observations: tuple[BackfillPeakFactObservation, ...] = ()
     peak_fact_unsealed_evaluation_keys: tuple[str, ...] = ()
-    evaluation_coverage: OwnerBackfillEvaluationCoverageBatch | None = None
-    evaluation_coverage_terminals: tuple[OwnerBackfillAttemptTerminal, ...] = ()
+    evaluation_coverage: BackfillEvaluationCoverageBatch | None = None
+    evaluation_coverage_terminals: tuple[BackfillAttemptTerminal, ...] = ()
 
     def __post_init__(self) -> None:
         if self.evaluation_coverage is not None and self.evaluation_coverage_terminals:
@@ -121,7 +123,7 @@ class OwnerBackfillResult:
 
 
 @dataclass(frozen=True, slots=True)
-class OwnerBackfillPeakFactReceipt:
+class BackfillPeakFactReceipt:
     """Bounded post-decision projection of shared peak evidence."""
 
     integration: IntegrationResult
@@ -158,14 +160,14 @@ class OwnerBackfillPeakFactReceipt:
 
 
 @dataclass(frozen=True, slots=True)
-class OwnerBackfillPeakFactObservation:
-    logical_request: OwnerBackfillLogicalRequestMember
-    request_identity: OwnerBackfillRequestIdentity
+class BackfillPeakFactObservation:
+    logical_request: BackfillLogicalRequestMember
+    request_identity: BackfillRequestIdentity
     candidate_index: int
     candidate_phase: str
     selected_for_output: bool
     cell: AlignedCell
-    facts: OwnerBackfillPeakFactReceipt | None
+    facts: BackfillPeakFactReceipt | None
     physical_evaluation: PhysicalPeakEvaluation | None
     trace_rt_start_min: float | None
     trace_rt_end_min: float | None
@@ -193,36 +195,36 @@ class OwnerBackfillPeakFactObservation:
         )
 
     def __post_init__(self, _mint_token: object) -> None:
-        if _mint_token is not _OWNER_BACKFILL_PEAK_FACT_OBSERVATION_MINT_TOKEN:
+        if _mint_token is not _BACKFILL_PEAK_FACT_OBSERVATION_MINT_TOKEN:
             raise ValueError("peak fact observation must be minted by Owner Backfill")
-        _validate_owner_backfill_peak_fact_observation(self)
+        _validate_backfill_peak_fact_observation(self)
 
 
-def validate_owner_backfill_peak_fact_observation(
-    observation: OwnerBackfillPeakFactObservation,
+def validate_backfill_peak_fact_observation(
+    observation: BackfillPeakFactObservation,
 ) -> None:
     """Re-run every bounded live-observation invariant without minting it."""
 
-    if type(observation) is not OwnerBackfillPeakFactObservation:
+    if type(observation) is not BackfillPeakFactObservation:
         raise TypeError("observation must be an Owner Backfill-minted value")
-    _validate_owner_backfill_peak_fact_observation(observation)
+    _validate_backfill_peak_fact_observation(observation)
 
 
-def _validate_owner_backfill_peak_fact_observation(
-    observation: OwnerBackfillPeakFactObservation,
+def _validate_backfill_peak_fact_observation(
+    observation: BackfillPeakFactObservation,
 ) -> None:
     if not isinstance(
         observation.logical_request,
-        OwnerBackfillLogicalRequestMember,
+        BackfillLogicalRequestMember,
     ):
         raise TypeError("logical_request must be owner-minted")
-    if not isinstance(observation.request_identity, OwnerBackfillRequestIdentity):
+    if not isinstance(observation.request_identity, BackfillRequestIdentity):
         raise TypeError("request_identity must be owner-minted")
     if not isinstance(observation.cell, AlignedCell):
         raise TypeError("cell must be an AlignedCell")
     if observation.facts is not None and not isinstance(
         observation.facts,
-        OwnerBackfillPeakFactReceipt,
+        BackfillPeakFactReceipt,
     ):
         raise TypeError("facts must be an Owner Backfill peak fact receipt")
     observed_binding = (
@@ -262,7 +264,7 @@ def _validate_owner_backfill_peak_fact_observation(
     ):
         raise TypeError("physical_evaluation must be owner-minted when available")
     if physical_evaluation is not None:
-        expected_selection_subject_id = mint_owner_backfill_selection_subject_id(
+        expected_selection_subject_id = mint_backfill_selection_subject_id(
             group_hypothesis_id=(
                 observation.logical_request.item.feature.group_hypothesis_id
             ),
@@ -315,16 +317,16 @@ def _physical_query_matches_owner_request(
 
 
 @dataclass(frozen=True, slots=True)
-class OwnerBackfillRequestReuseObservation:
+class BackfillRequestReuseObservation:
     sample_stem: str
-    validation_mode: OwnerBackfillValidationMode
+    validation_mode: BackfillValidationMode
     logical_request_count: int
     canonical_request_class_count: int
 
     def __post_init__(self) -> None:
         if not self.sample_stem or self.sample_stem != self.sample_stem.strip():
             raise ValueError("sample_stem must be owner-normalized text")
-        if self.validation_mode not in OWNER_BACKFILL_VALIDATION_MODES:
+        if self.validation_mode not in BACKFILL_VALIDATION_MODES:
             raise ValueError("unsupported owner Backfill validation mode")
         for field_name in ("logical_request_count", "canonical_request_class_count"):
             value = getattr(self, field_name)
@@ -335,29 +337,29 @@ class OwnerBackfillRequestReuseObservation:
 
 
 @dataclass(frozen=True, slots=True)
-class OwnerBackfillExtractionResult:
-    request_identity: OwnerBackfillRequestIdentity
+class BackfillExtractionResult:
+    request_identity: BackfillRequestIdentity
     trace: XICTrace
 
     def __post_init__(self) -> None:
-        if not isinstance(self.request_identity, OwnerBackfillRequestIdentity):
+        if not isinstance(self.request_identity, BackfillRequestIdentity):
             raise TypeError("request_identity must be owner-minted")
         if not isinstance(self.trace, XICTrace):
             raise TypeError("trace must be an XICTrace")
 
 
 @dataclass(frozen=True, slots=True)
-class OwnerBackfillLogicalExtractionResult:
-    logical_request: OwnerBackfillLogicalRequestMember
-    canonical_result: OwnerBackfillExtractionResult
+class BackfillLogicalExtractionResult:
+    logical_request: BackfillLogicalRequestMember
+    canonical_result: BackfillExtractionResult
 
     def __post_init__(self) -> None:
         if not isinstance(
             self.logical_request,
-            OwnerBackfillLogicalRequestMember,
+            BackfillLogicalRequestMember,
         ):
             raise TypeError("logical_request must be owner-minted")
-        if not isinstance(self.canonical_result, OwnerBackfillExtractionResult):
+        if not isinstance(self.canonical_result, BackfillExtractionResult):
             raise TypeError("canonical_result must be an owner extraction result")
         identity = self.canonical_result.request_identity
         if self.logical_request.item.sample_stem != identity.sample_stem:
@@ -371,39 +373,38 @@ class OwnerBackfillLogicalExtractionResult:
 
 
 @dataclass(frozen=True)
-class _OwnerBackfillCandidateRecord:
+class _BackfillCandidateRecord:
     cell: AlignedCell
     candidate_index: int
     candidate_phase: str
     trace_evaluated: bool = False
-    peak_facts: OwnerBackfillPeakFactReceipt | None = None
+    peak_facts: BackfillPeakFactReceipt | None = None
     peak_fact_elapsed_seconds: float | None = None
     physical_evaluation: PhysicalPeakEvaluation | None = None
     trace_rt_start_min: float | None = None
     trace_rt_end_min: float | None = None
-    logical_request: OwnerBackfillLogicalRequestMember | None = None
-    request_identity: OwnerBackfillRequestIdentity | None = None
+    logical_request: BackfillLogicalRequestMember | None = None
+    request_identity: BackfillRequestIdentity | None = None
 
 
 @dataclass(frozen=True, slots=True)
-class _OwnerBackfillCoverageAttempt:
+class _BackfillCoverageAttempt:
     position_id: str
-    logical_request: OwnerBackfillLogicalRequestMember
-    request_identity: OwnerBackfillRequestIdentity
-    candidate_phase: OwnerBackfillCandidatePhase
+    logical_request: BackfillLogicalRequestMember
+    request_identity: BackfillRequestIdentity
+    candidate_phase: BackfillCandidatePhase
     candidate_index: int
     trace_evaluated: bool
-    terminal_reason: OwnerBackfillTerminalReason | None
+    terminal_reason: BackfillTerminalReason | None
     physical_evaluation: PhysicalPeakEvaluation | None
     cell: AlignedCell
 
 
 @dataclass(frozen=True, slots=True)
-class _OwnerBackfillTraceEvaluation:
+class _BackfillTraceEvaluation:
     cell: AlignedCell
-    peak_facts: PeakTraceEvidenceFacts | OwnerBackfillPeakFactReceipt | None
+    peak_facts: PeakTraceEvidenceFacts | BackfillPeakFactReceipt | None
     peak_fact_elapsed_seconds: float | None
     physical_evaluation: PhysicalPeakEvaluation | None = None
     trace_rt_start_min: float | None = None
     trace_rt_end_min: float | None = None
-

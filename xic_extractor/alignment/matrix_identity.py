@@ -26,9 +26,9 @@ from xic_extractor.alignment.matrix import AlignedCell, AlignmentMatrix
 from xic_extractor.alignment.output_rows import row_id
 from xic_extractor.alignment.promotion_policy import (
     BACKFILL_CELL_EVIDENCE_REQUIRED_FLAG,
-    BACKFILL_RESCUE_REVIEW_ONLY_FLAG,
+    BACKFILL_ONLY_BLOCKED_REASON,
+    BACKFILL_REVIEW_ONLY_FLAG,
     PRIMARY_IDENTITY_RETAINED_BACKFILL_REVIEW_REASON,
-    RESCUE_ONLY_BLOCKED_REASON,
     BackfillPromotionDecision,
     BackfillPromotionEvidence,
     classify_backfill_promotion,
@@ -160,7 +160,7 @@ def decide_matrix_identity_row(
     q_detected = sum(
         1 for decision in cell_quality if decision.is_detected_identity_support
     )
-    q_rescue = sum(
+    q_backfill = sum(
         1
         for decision in cell_quality
         if decision.quality_status == "rescue_quantifiable"
@@ -168,7 +168,7 @@ def decide_matrix_identity_row(
     review_backfill = sum(
         1 for decision in cell_quality if decision.quality_status == "review_backfill"
     )
-    held_rescue = sum(
+    held_backfill = sum(
         1
         for decision in cell_quality
         if decision.quality_status == "review_backfill"
@@ -177,7 +177,7 @@ def decide_matrix_identity_row(
             or is_backfill_cell_only_block_reason(decision.quality_reason)
         )
     )
-    candidate_rescue_count = q_rescue + held_rescue
+    candidate_backfill_count = q_backfill + held_backfill
     duplicate_count = sum(
         1 for decision in cell_quality if decision.quality_status == "duplicate_loser"
     )
@@ -188,7 +188,7 @@ def decide_matrix_identity_row(
     backfill_dependency, seed_quality = _single_dr_backfill_context(
         cluster,
         q_detected=q_detected,
-        q_rescue=candidate_rescue_count,
+        q_backfill=candidate_backfill_count,
         cell_count=cell_count,
         cells=cells,
     )
@@ -198,7 +198,7 @@ def decide_matrix_identity_row(
         evidence=evidence,
         primary_evidence=primary_evidence,
         q_detected=q_detected,
-        q_rescue=candidate_rescue_count,
+        q_backfill=candidate_backfill_count,
         duplicate_count=duplicate_count,
         ambiguous_count=ambiguous_count,
         backfill_dependency=backfill_dependency,
@@ -207,10 +207,10 @@ def decide_matrix_identity_row(
         neutral_loss_tag=str(getattr(cluster, "neutral_loss_tag", "")),
         primary_evidence=primary_evidence,
         q_detected=q_detected,
-        q_rescue=q_rescue,
+        q_backfill=q_backfill,
         duplicate_count=duplicate_count,
         ambiguous_count=ambiguous_count,
-        held_rescue_count=held_rescue,
+        held_backfill_count=held_backfill,
         backfill_dependency=backfill_dependency,
         seed_quality=seed_quality,
         cells=cells,
@@ -227,28 +227,28 @@ def decide_matrix_identity_row(
         evidence=evidence,
         primary_evidence=primary_evidence,
         q_detected=q_detected,
-        q_rescue=candidate_rescue_count,
+        q_backfill=candidate_backfill_count,
         duplicate_count=duplicate_count,
         ambiguous_count=ambiguous_count,
         policy_evidence=policy_evidence,
     ):
         flags.append("provisional_retention_candidate")
         flags.append("skip_expensive_evidence")
-    rescue_cell_only_block = (
+    backfill_cell_only_block = (
         promotion_policy.blocked
         and is_backfill_cell_only_block_reason(promotion_policy.reason)
     )
-    if rescue_cell_only_block:
+    if backfill_cell_only_block:
         flags.append(BACKFILL_CELL_EVIDENCE_REQUIRED_FLAG)
-        flags.append(BACKFILL_RESCUE_REVIEW_ONLY_FLAG)
+        flags.append(BACKFILL_REVIEW_ONLY_FLAG)
     flags.extend(promotion_policy.flags)
     include, identity_decision, confidence, reason = _promotion_decision(
         cluster,
         evidence=evidence,
         primary_evidence=primary_evidence,
         q_detected=q_detected,
-        q_rescue=q_rescue,
-        held_rescue_count=held_rescue,
+        q_backfill=q_backfill,
+        held_backfill_count=held_backfill,
         duplicate_count=duplicate_count,
         ambiguous_count=ambiguous_count,
         backfill_dependency=backfill_dependency,
@@ -263,7 +263,7 @@ def decide_matrix_identity_row(
         primary_evidence=primary_evidence,
         identity_reason=reason,
         quantifiable_detected_count=q_detected,
-        quantifiable_backfill_count=q_rescue,
+        quantifiable_backfill_count=q_backfill,
         review_backfill_count=review_backfill,
         duplicate_assigned_count=duplicate_count,
         ambiguous_ms1_owner_count=ambiguous_count,
@@ -342,8 +342,8 @@ def _promotion_decision(
     evidence: str,
     primary_evidence: str,
     q_detected: int,
-    q_rescue: int,
-    held_rescue_count: int,
+    q_backfill: int,
+    held_backfill_count: int,
     duplicate_count: int,
     ambiguous_count: int,
     backfill_dependency: str | None,
@@ -354,8 +354,8 @@ def _promotion_decision(
         return False, "audit_family", "review", "review_only"
     if _is_consolidation_loser(evidence):
         return False, "audit_family", "review", "family_consolidation_loser"
-    if q_detected == 0 and q_rescue + held_rescue_count > 0:
-        return False, "audit_family", "review", RESCUE_ONLY_BLOCKED_REASON
+    if q_detected == 0 and q_backfill + held_backfill_count > 0:
+        return False, "audit_family", "review", BACKFILL_ONLY_BLOCKED_REASON
     if q_detected == 0 and duplicate_count > 0 and ambiguous_count == 0:
         return False, "audit_family", "review", "duplicate_only"
     if q_detected == 0 and ambiguous_count > 0 and duplicate_count == 0:
@@ -364,11 +364,11 @@ def _promotion_decision(
         return False, "audit_family", "none", "zero_quantifiable_detected"
     if duplicate_count > q_detected and not promotion_policy.supported:
         return False, "audit_family", "review", "duplicate_claim_pressure"
-    rescue_cell_only_block = (
+    backfill_cell_only_block = (
         promotion_policy.blocked
         and is_backfill_cell_only_block_reason(promotion_policy.reason)
     )
-    if promotion_policy.blocked and not rescue_cell_only_block:
+    if promotion_policy.blocked and not backfill_cell_only_block:
         return (
             False,
             "provisional_discovery",
@@ -384,7 +384,7 @@ def _promotion_decision(
         )
     if (
         backfill_dependency == EXTREME_BACKFILL_REASON
-        and not rescue_cell_only_block
+        and not backfill_cell_only_block
     ):
         return (
             False,
@@ -394,7 +394,7 @@ def _promotion_decision(
         )
     if (
         backfill_dependency == WEAK_SEED_BACKFILL_REASON
-        and not rescue_cell_only_block
+        and not backfill_cell_only_block
     ):
         return (
             False,
@@ -411,7 +411,7 @@ def _promotion_decision(
         )
     if primary_evidence in {"owner_complete_link", "cid_nl_only", "owner_identity"}:
         if q_detected >= 2:
-            if rescue_cell_only_block:
+            if backfill_cell_only_block:
                 return (
                     True,
                     "production_family",
@@ -455,7 +455,7 @@ def _promotion_decision(
                 reason,
             )
     if primary_evidence == "multi_sample_detected":
-        if rescue_cell_only_block:
+        if backfill_cell_only_block:
             return (
                 True,
                 "production_family",
@@ -484,7 +484,7 @@ def _is_provisional_retention_candidate(
     evidence: str,
     primary_evidence: str,
     q_detected: int,
-    q_rescue: int,
+    q_backfill: int,
     duplicate_count: int,
     ambiguous_count: int,
     policy_evidence: BackfillPromotionEvidence,
@@ -495,20 +495,20 @@ def _is_provisional_retention_candidate(
         return False
     if primary_evidence in {"none", "single_sample_local_owner"}:
         return False
-    if q_detected != 1 or q_rescue <= 0:
+    if q_detected != 1 or q_backfill <= 0:
         return False
     if duplicate_count != 0 or ambiguous_count != 0:
         return False
-    supported_rescue_count = sum(
+    supported_backfill_count = sum(
         1
         for cell in policy_evidence.cells
         if (
             cell.status == "backfilled"
-            and cell.is_rescued_quantifiable
+            and cell.is_backfilled_quantifiable
             and cell.supported_for_backfill
         )
     )
-    return supported_rescue_count == q_rescue
+    return supported_backfill_count == q_backfill
 
 
 def _row_flags(
@@ -517,7 +517,7 @@ def _row_flags(
     evidence: str,
     primary_evidence: str,
     q_detected: int,
-    q_rescue: int,
+    q_backfill: int,
     duplicate_count: int,
     ambiguous_count: int,
     backfill_dependency: str | None,
@@ -531,7 +531,7 @@ def _row_flags(
         flags.append("family_consolidation_loser")
     if primary_evidence == "anchored_family" and q_detected == 1:
         flags.append("anchored_single_detected")
-    if q_rescue > q_detected and q_detected > 0:
+    if q_backfill > q_detected and q_detected > 0:
         flags.append("rescue_heavy")
     if backfill_dependency == EXTREME_BACKFILL_REASON:
         flags.append("high_backfill_dependency")
@@ -539,17 +539,17 @@ def _row_flags(
         flags.append("weak_seed_backfill_dependency")
     if backfill_dependency == WEAK_SEED_TOLERATED_REASON:
         flags.append("weak_seed_tolerated")
-    if q_detected == 0 and q_rescue > 0:
+    if q_detected == 0 and q_backfill > 0:
         flags.append("rescue_only")
     if duplicate_count > 0:
         flags.append("duplicate_claim_pressure")
-    if q_detected == 0 and duplicate_count > 0 and q_rescue == 0:
+    if q_detected == 0 and duplicate_count > 0 and q_backfill == 0:
         flags.append("duplicate_only")
     if ambiguous_count > 0:
         flags.append("ambiguous_ms1_owner_pressure")
-    if q_detected == 0 and ambiguous_count > 0 and q_rescue == 0:
+    if q_detected == 0 and ambiguous_count > 0 and q_backfill == 0:
         flags.append("ambiguous_only")
-    if q_detected == 0 and q_rescue == 0 and duplicate_count == 0:
+    if q_detected == 0 and q_backfill == 0 and duplicate_count == 0:
         flags.append("zero_present")
     return flags
 
@@ -612,7 +612,7 @@ def _single_dr_backfill_context(
     cluster: Any,
     *,
     q_detected: int,
-    q_rescue: int,
+    q_backfill: int,
     cell_count: int,
     cells: Sequence[AlignedCell],
 ) -> tuple[str | None, SeedQualitySummary]:
@@ -633,7 +633,7 @@ def _single_dr_backfill_context(
         classify_single_dr_backfill_dependency(
             neutral_loss_tag=str(getattr(cluster, "neutral_loss_tag", "")),
             q_detected=q_detected,
-            q_rescue=q_rescue,
+            q_backfill=q_backfill,
             cell_count=cell_count,
             seed_quality=seed_quality,
         ),

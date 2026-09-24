@@ -2,7 +2,7 @@
 
 The target Alignment contract is the cross-sample scientific workflow. It
 consumes explicit sample-local hypotheses/observations, closes canonical group
-identity and trajectory/repair evidence, then returns
+identity and trajectory/Backfill evidence, then returns
 `FinalizedScientificAlignment` to the workflow projection's binding/subject
 operation. The immutable workflow result exists only after cell decision and
 projection completion. Alignment does not use a mutable Matrix as its internal
@@ -156,7 +156,7 @@ population of cell dictionaries.
 The initial ModeTrack model identity binds its assignment-scope bounds, exact
 group identities, eligible anchors, explicit noneligible evidence, and policy.
 Physical, candidate, integration, and group identity schemas remain unchanged.
-The stable grouping result and repair receipts bind the final cell observation
+The stable grouping result and revisit receipts bind the final cell observation
 and its production decision without a second trajectory or group identity.
 Explanation summaries publish `initial_edge_coverage`
 with this versioned policy, so an empty retained edge set is not missing audit
@@ -175,8 +175,8 @@ authorize a separate downstream decision pipeline.
 | --- | --- | --- |
 | CrossSample grouping workflow | Constrained initial grouping, membership, group identity, disposition, lineage, and application of an accepted complete-partition transition | One immutable `CrossSampleGroupingResult` |
 | ModeTrack | Optional request-bound initial trajectory modeling over immutable evidence where the workflow uses it; proposes only | Typed assessable initial refinement proposal |
-| Backfill | One bounded local `ObservationRepair` epoch | Owner-backed repaired observation or typed no-repair result |
-| Scientific alignment closure | Validate request/group/disposition/membership/refinement/repair closure | `FinalizedScientificAlignment` |
+| Backfill | One bounded local revisit under an established group | Observation or typed no-result decision |
+| Scientific alignment closure | Validate request/group/disposition/membership/refinement/revisit closure | `FinalizedScientificAlignment` |
 | Workflow projection: binding/subject operation | Target fixed-row binding or Untarget group-row identity, followed by explicit Target/Group cell-subject construction | `TargetRowBinding` + `TargetCellSubject`, or `UntargetRowKey` + `GroupCellSubject` |
 | ProductionCellDecision | Selected value or typed no-write result for one explicit Target/Group subject | Immutable cell decision with evidence refs |
 | Workflow projection: completion operation | Consume cell decisions to close row inclusion, counted-detection/count/reason fields, Review Queue refs, and archive routing | Closed typed projection decisions |
@@ -184,7 +184,7 @@ authorize a separate downstream decision pipeline.
 
 The grouping workflow alone may mint or supersede a group and apply the
 accepted `CrossSamplePartitionTransition`. ModeTrack cannot move a member or
-write a value, and Backfill cannot turn a repaired observation into implicit
+write a value, and Backfill cannot turn a revisited observation into implicit
 membership. The finalizer cannot rerun RAW access, grouping, ModeTrack,
 Backfill, integration, or selection.
 
@@ -219,7 +219,7 @@ reasons, Review Queue/archive routing, and result finalization close afterward.
   a singleton is always provisional. Low support alone is not rejection.
   Disposition and output inclusion are separate.
 
-### ModeTrack and repair relationship
+### ModeTrack and Backfill relationship
 
 - ModeTrack consumes one immutable `ModeTrackAssignmentScope` containing only
   the actual m/z/RT admissibility bounds and exact existing groups, plus the
@@ -233,15 +233,15 @@ reasons, Review Queue/archive routing, and result finalization close afterward.
   changes and adjacent-injection jumps, uses method-appropriate ISTDs plus
   several high-detection unknown features, and reports where the model is
   unassessable.
-- A bounded ObservationRepair does not change group or trajectory identity and
-  does not request another ModeTrack pass. No repair loop, refit loop,
+- A bounded revisit does not change group or trajectory identity and
+  does not request another ModeTrack pass. No revisit loop, refit loop,
   arbitrary neighborhood chunking, or singleton-based cross-sample fill is
   allowed.
 
 ### Final result and projections
 
 `FinalizedScientificAlignment` closes the request, canonical groups,
-dispositions, membership/lineage, and refinement/repair receipts. Before cell
+dispositions, membership/lineage, and refinement/revisit receipts. Before cell
 decision, Targeted adds fixed `TargetKey` rows, typed `TargetRowBinding`, and
 `TargetCellSubject`; Untargeted adds projection-owned
 `UntargetRowKey` and `GroupCellSubject`. After cell decision, the same projection
@@ -353,9 +353,9 @@ unresolved and rejected groups remain AuditTrail facts.
   composition cases under their separate cross-tag contract.
 - Initial membership is carried as compressed group member sets. Missing pair
   records mean `not_evaluated`, never `excluded`; an initial group does not
-  manufacture positive pair evidence. Backfill and repair consume the closed
-  final result and preserve indivisible confirmed identities. Explicit repair
-  pair evidence remains bounded to the actual repaired candidate and current group.
+  manufacture positive pair evidence. Backfill consumes the closed
+  final result and preserves indivisible confirmed identities. Explicit revisit
+  pair evidence remains bounded to the actual candidate and current group.
   Physical integrations, observed coordinates, sample attribution, and the
   quantification owner are unchanged by membership inference.
 - MS1-only Target owners use the precursor index and the existing physical
@@ -366,8 +366,8 @@ unresolved and rejected groups remain AuditTrail facts.
   anchors have served the warp estimate, from the processing owners, complete
   partition transition, and prepared drift lookup. Internal consumers use that
   same immutable object before bounded Backfill and through
-  finalization. Consumers still check the actual repair/source binding, and a
-  caller cannot inject a replacement partition or trajectory after repair.
+  finalization. Consumers still check the actual revisit/source binding, and a
+  caller cannot inject a replacement partition or trajectory after Backfill.
 - Batch finalization consumes completed immutable children and checks their
   parent request, attempt, sample coverage, and cross-child uniqueness. It does
   not rerun each child's scientific and post-cell completion checks. Explicit
@@ -389,10 +389,10 @@ unresolved and rejected groups remain AuditTrail facts.
   strictly inside its selected left/right bounds. An endpoint apex remains an
   owner and remains visible in diagnostics, but its Matrix cell is
   `unchecked` with no area or selected integration, and it does not count as a
-  detected owner for the Backfill sample-quorum gate. A Backfill rescue may
+  detected owner for the Backfill sample-quorum gate. A Backfill observation may
   replace that censored owner only when its scalar and selected-integration
   boundaries are both interior and its primary Matrix area is valid; an
-  endpoint or incomplete rescue is censored by the same rule. This is a
+  endpoint or incomplete observation is censored by the same rule. This is a
   quantification-authority guard, not a new peak-selection or Backfill route.
 - Retained CID-NL Alignment can optionally use
   `--known-istd-reference-workbook` for batch-local RT alignment. The report's
@@ -442,14 +442,9 @@ unresolved and rejected groups remain AuditTrail facts.
   compatibility fields, but they do not promote rows into production authority.
 - Output filenames, row ordering, column schema, schema-version signals, and
   identity/provenance sidecars are public contracts.
-- Multi-process Owner Backfill delivers each complete sample result into one
-  private Alignment transaction. The transaction replaces rescued cells in the
-  feature-major/sample-major Matrix builder, projects live peak facts through
-  the existing provenance owner, and retains audit/runtime attachments in
-  canonical owner order before releasing the worker result graph. Completion
-  order cannot change Matrix or sidecar ordering. Any worker or delivery
-  failure discards the unpublished transaction; only an all-sample success may
-  freeze the Matrix and reach the existing atomic output publication seam.
+- Retained Backfill composes completed per-sample evidence before final Matrix
+  and sidecar publication. Completion order cannot change Matrix or sidecar
+  ordering; a failed run does not publish a partial result.
   Process workers project live peak-fact observations through the existing
   provenance owner before IPC and send only typed physical rows, their bounded
   selected-integration projection, and feature/sample order binding. The parent
@@ -590,7 +585,7 @@ SUPPORT assessment × `PeakHypothesis` anchors. Scope groups must have disjoint
 owner IDs, and one `PeakHypothesis` or physical peak observation may seed at
 most one track. Fit accepts initial anchors only. Within the initial refinement,
 a uniquely assigned direct-SUPPORT observation may mint an immutable successor
-model set; ObservationRepair and downstream consumers do not refit. Each track follows its own injection-order-local, piecewise-linear
+model set; ObservationRevisit and downstream consumers do not refit. Each track follows its own injection-order-local, piecewise-linear
 trajectory. At fit time, the ModeTrack model/assignment owner projects each existing group's canonical
 center RT into the model as `ordering_reference_rt_min`. This immutable behavior
 snapshot is bound into `model_set_id`, and crossing checks read the snapshot
@@ -782,9 +777,9 @@ This diagnostic is outside the Matrix writer's artifact-fingerprint receipt.
 
 | Area | Owns | Does not own |
 | --- | --- | --- |
-| CrossSample | Grouping, membership, identity, disposition, proposal application, and split/merge lineage | ModeTrack fitting, local ObservationRepair, value selection, row inclusion, or rendering |
+| CrossSample | Grouping, membership, identity, disposition, proposal application, and split/merge lineage | ModeTrack fitting, local ObservationRevisit, value selection, row inclusion, or rendering |
 | ModeTrack | Immutable trajectory snapshots and refinement proposals | Group minting/mutation, Backfill, selected values, or Matrix authority |
-| Backfill | Bounded local ObservationRepair and provenance | First hits, membership, trajectory model, selected value, or writer authority |
+| Backfill | Bounded local ObservationRevisit and provenance | First hits, membership, trajectory model, selected value, or writer authority |
 | Cell decision/result | Typed write/no-write decisions and immutable result closure | RAW access, regrouping, refitting, repairing, or renderer policy |
 | Alignment workflow | Typed composition, runtime/transaction receipts, finalization, and delivery handoff | Mutable Matrix transport, scientific fallbacks, or emit-flag policy |
 | Discovery | Candidate generation and per-sample review surfaces | Cross-sample matrix authority |
@@ -828,7 +823,7 @@ Before changing alignment behavior, require the relevant subset of:
 - Treating ModeTrack as a second grouping owner or Backfill as a membership or
   selected-value owner.
 - Using a singleton or RT prior to fill another sample without direct local
-  evidence or an accepted independent ObservationRepair.
+  evidence or an accepted independent ObservationRevisit.
 - Calling a pre-final owner matrix `Matrix` and allowing it to cross the final
   result or delivery seam.
 

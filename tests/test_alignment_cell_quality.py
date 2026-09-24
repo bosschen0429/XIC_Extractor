@@ -76,7 +76,7 @@ def test_missing_ms1_morphology_does_not_fall_back_to_asls_or_raw() -> None:
     assert decision.quality_reason == "missing_ms1_morphology_area"
 
 
-def test_rescue_requires_complete_peak_and_rt_inside_alignment_window() -> None:
+def test_backfill_requires_complete_peak_and_rt_inside_alignment_window() -> None:
     config = AlignmentConfig(preferred_rt_sec=10.0, max_rt_sec=30.0)
 
     assert (
@@ -180,7 +180,7 @@ def test_rescue_requires_complete_peak_and_rt_inside_alignment_window() -> None:
         "low-ms1-coverage",
     ),
 )
-def test_owner_hard_negative_backfill_facts_hold_rescue_out_of_matrix(
+def test_owner_hard_negative_backfill_facts_hold_backfill_out_of_matrix(
     cell_factory: Callable[[], AlignedCell],
     expected_reason: str,
 ) -> None:
@@ -233,7 +233,7 @@ def test_owner_hard_negative_backfill_facts_hold_rescue_out_of_matrix(
         "one-envelope-supported",
     ),
 )
-def test_nonblocking_owner_facts_keep_rescue_quantifiable(
+def test_nonblocking_owner_facts_keep_backfill_quantifiable(
     cell_factory: Callable[[], AlignedCell],
 ) -> None:
     decision = decide_cell_quality(

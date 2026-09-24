@@ -6,8 +6,11 @@ from collections.abc import Sequence
 from dataclasses import InitVar, dataclass, field, fields
 from typing import Literal, TypeAlias
 
-from xic_extractor.alignment.backfill.observation_repair import (
-    ObservationRepairReceipt,
+from xic_extractor.alignment.backfill.observation_revisit import (
+    ObservationRevisitReceipt,
+)
+from xic_extractor.alignment.backfill_peak_fact import (
+    BackfillPeakFactObservation,
 )
 from xic_extractor.alignment.cell_observations import (
     CellObservationContractError,
@@ -27,9 +30,6 @@ from xic_extractor.alignment.cross_sample_peak_groups import (
 )
 from xic_extractor.alignment.grouping_result import (
     CrossSampleGroupingResult,
-)
-from xic_extractor.alignment.owner_backfill import (
-    OwnerBackfillPeakFactObservation,
 )
 from xic_extractor.peak_detection.capture import SampleLocalCapture
 from xic_extractor.peak_detection.hypotheses import PeakHypothesis
@@ -100,7 +100,7 @@ class FinalizedScientificAlignment:
     """One exact request's closed shared scientific result.
 
     This value validates and retains owner-minted inputs.  It does not rerun
-    capture, CrossSample, ModeTrack, ObservationRepair, or value selection.
+    capture, CrossSample, ModeTrack, ObservationRevisit, or value selection.
     """
 
     scope: SearchScope
@@ -193,8 +193,8 @@ def finalize_scientific_alignment(
     cell_observation_handoff: CrossSampleAssociationLineageHandoff | None,
     predecessor_cell_observations: Sequence[CellObservationRef],
     backfill_cell_observations: Sequence[CellObservationRef] = (),
-    repair_receipts: Sequence[ObservationRepairReceipt] = (),
-    repaired_observations: Sequence[OwnerBackfillPeakFactObservation] = (),
+    repair_receipts: Sequence[ObservationRevisitReceipt] = (),
+    repaired_observations: Sequence[BackfillPeakFactObservation] = (),
 ) -> FinalizedScientificAlignment:
     """Validate one complete capture population and seal its shared core."""
 

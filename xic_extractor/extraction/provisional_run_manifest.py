@@ -17,16 +17,16 @@ from typing import cast, final
 from xic_extractor.alignment.artifact_write_receipts import (
     AlignmentArtifactFingerprintBatch,
 )
+from xic_extractor.alignment.backfill_peak_fact import BackfillWindowStrategy
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.csv_io import (
     DiscoveryBatchInput,
     read_discovery_batch_index,
 )
 from xic_extractor.alignment.ms1_index_source import (
-    OwnerBackfillXicBackend,
+    BackfillXicBackend,
     OwnerBuildXicBackend,
 )
-from xic_extractor.alignment.owner_backfill import OwnerBackfillWindowStrategy
 from xic_extractor.alignment.provisional_matrix import (
     PROVISIONAL_IDENTITY_SCHEMA_VERSION,
     PROVISIONAL_MATRIX_SCHEMA_VERSION,
@@ -106,10 +106,10 @@ _FINGERPRINT_MINT_CAPABILITY = object()
 _RETAINED_METADATA_FINGERPRINT_MINT_CAPABILITY = object()
 
 _OWNER_BUILD_BACKENDS = frozenset({"raw", "raw_superwindow", "ms1_index"})
-_OWNER_BACKFILL_BACKENDS = frozenset(
+_BACKFILL_BACKENDS = frozenset(
     {"raw", "ms1_index", "ms1_index_hybrid"}
 )
-_OWNER_BACKFILL_WINDOW_STRATEGIES = frozenset({"exact", "super-window"})
+_BACKFILL_WINDOW_STRATEGIES = frozenset({"exact", "super-window"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -198,8 +198,8 @@ class ProvisionalRunRuntimeConfiguration:
     raw_workers: int
     raw_xic_batch_size: int
     owner_build_xic_backend: OwnerBuildXicBackend
-    owner_backfill_xic_backend: OwnerBackfillXicBackend
-    owner_backfill_window_strategy: OwnerBackfillWindowStrategy
+    owner_backfill_xic_backend: BackfillXicBackend
+    owner_backfill_window_strategy: BackfillWindowStrategy
     owner_backfill_superwindow_span_factor: int
     runner: str = field(
         init=False,
@@ -230,11 +230,11 @@ class ProvisionalRunRuntimeConfiguration:
                 raise ValueError(f"{name} must be a positive integer")
         if self.owner_build_xic_backend not in _OWNER_BUILD_BACKENDS:
             raise ValueError("owner_build_xic_backend is unsupported")
-        if self.owner_backfill_xic_backend not in _OWNER_BACKFILL_BACKENDS:
+        if self.owner_backfill_xic_backend not in _BACKFILL_BACKENDS:
             raise ValueError("owner_backfill_xic_backend is unsupported")
         if (
             self.owner_backfill_window_strategy
-            not in _OWNER_BACKFILL_WINDOW_STRATEGIES
+            not in _BACKFILL_WINDOW_STRATEGIES
         ):
             raise ValueError("owner_backfill_window_strategy is unsupported")
 
@@ -679,11 +679,11 @@ def _validate_runtime_configuration(
             _required_text(runtime, "owner_build_xic_backend"),
         ),
         owner_backfill_xic_backend=cast(
-            OwnerBackfillXicBackend,
+            BackfillXicBackend,
             _required_text(runtime, "owner_backfill_xic_backend"),
         ),
         owner_backfill_window_strategy=cast(
-            OwnerBackfillWindowStrategy,
+            BackfillWindowStrategy,
             _required_text(runtime, "owner_backfill_window_strategy"),
         ),
         owner_backfill_superwindow_span_factor=_positive_int(

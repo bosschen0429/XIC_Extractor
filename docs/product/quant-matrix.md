@@ -8,8 +8,8 @@ different typed names and cannot cross the delivery seam as if already final.
 ## Contract
 
 - The primary matrix exposes numeric product values and stable user-facing row/sample structure, not diagnostic evidence columns.
-- Direct observations and repaired observations are different evidence states.
-  Backfill supplies only an owner-backed repaired observation. The owning
+- Direct observations and Backfill observations are different evidence states.
+  Backfill supplies an observation under an established Target or group. The owning
   projection first constructs the explicit Target/Group cell subject;
   `ProductionCellDecision` then independently selects the final numeric value or
   typed no-write result before the same projection may include it.
@@ -108,7 +108,7 @@ themselves.
 ## Pitfalls
 
 - Treating candidate Backfill rows as accepted matrix values.
-- Treating a repaired observation as the selected value without a closed
+- Treating a Backfill observation as the selected value without a closed
   `ProductionCellDecision`.
 - Passing the pre-final owner Matrix or loose `AlignedCell` collection directly
   to a writer.

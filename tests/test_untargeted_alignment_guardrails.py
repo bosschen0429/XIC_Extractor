@@ -221,7 +221,7 @@ def test_high_backfill_dependency_uses_row_flags_before_legacy_warning(
     assert metrics.high_backfill_dependency_families == 1
 
 
-def test_guardrails_report_rescue_identity_and_duplicate_metrics(tmp_path: Path):
+def test_guardrails_report_backfill_identity_and_duplicate_metrics(tmp_path: Path):
     alignment_dir = tmp_path / "alignment"
     alignment_dir.mkdir(parents=True)
     _write_tsv(

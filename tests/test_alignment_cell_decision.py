@@ -30,9 +30,9 @@ from tests.test_untargeted_pre_cell_projection import (
     _untarget_projection_inputs,
 )
 from xic_extractor.alignment.backfill.evaluation_coverage import (
-    build_owner_backfill_evaluation_coverage,
-    mint_owner_backfill_attempt_terminal,
-    mint_owner_backfill_selection_subject_id,
+    build_backfill_evaluation_coverage,
+    mint_backfill_attempt_terminal,
+    mint_backfill_selection_subject_id,
 )
 from xic_extractor.alignment.cell_decision import (
     CellDecisionContractError,
@@ -843,7 +843,7 @@ def _with_evaluated_coverage_terminal(
         for item in handoff.coverage.terminals
         if item.logical_request.item.sample_stem == sample_stem
     )
-    selection_subject_id = mint_owner_backfill_selection_subject_id(
+    selection_subject_id = mint_backfill_selection_subject_id(
         request_identity=original.request_identity,
         group_hypothesis_id=original.logical_request.group_hypothesis_id,
         sample_stem=sample_stem,
@@ -868,7 +868,7 @@ def _with_evaluated_coverage_terminal(
         request_context_rt_start_min=7.9,
         request_context_rt_end_min=8.1,
     )
-    evaluated = mint_owner_backfill_attempt_terminal(
+    evaluated = mint_backfill_attempt_terminal(
         position_id=original.position_id,
         logical_request=original.logical_request,
         request_identity=original.request_identity,
@@ -882,7 +882,7 @@ def _with_evaluated_coverage_terminal(
     terminals = tuple(
         evaluated if item is original else item for item in handoff.coverage.terminals
     )
-    coverage = build_owner_backfill_evaluation_coverage(
+    coverage = build_backfill_evaluation_coverage(
         handoff.coverage.epoch,
         terminals,
     )

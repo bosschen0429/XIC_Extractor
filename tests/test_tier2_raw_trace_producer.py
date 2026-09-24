@@ -246,7 +246,7 @@ def test_tier2_trace_producer_uses_contract_status_for_hard_metric_failure(
     assert row["neighbor_interference_status"] == "not_assessed"
 
 
-def test_tier2_trace_producer_uses_contract_status_for_rescued_coherence_failure(
+def test_tier2_trace_producer_uses_contract_status_for_backfilled_coherence_failure(
     tmp_path: Path,
 ) -> None:
     cell_rows = (

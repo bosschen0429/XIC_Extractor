@@ -14,9 +14,8 @@ workflow through `alignment.pipeline.run_alignment`. The runtime schedules
 bounded per-sample Backfill work in
 `extraction.untargeted_real_data_worker`; production composition in
 `extraction.untargeted_production_batch` maps the resulting evidence through
-the conservative Backfill owner. This route does not call
-`process_backend.run_owner_backfill_process` or an ObservationRepair
-execute/close transaction.
+the conservative Backfill decision. This route does not execute the retained
+`ObservationRevisit` transaction.
 
 The active decision is based on a fixed group and its direct SUPPORT closure:
 
@@ -49,15 +48,15 @@ require a fixture known to exercise this path.
 
 Targeted diagnostic processing calls
 `alignment.targeted_hypothesis_backfill`, which uses
-`alignment.owner_backfill.build_owner_backfill_result` as an XIC search
+`alignment.backfill_peak_fact.build_backfill_result` as an XIC search
 capability. This does not add an Untargeted eligibility decision. Shared
 coverage and request-plan types remain available to this path and to current
 alignment metadata.
 
-Final cell composition still accepts the typed `ObservationRepairReceipt`
-input for a repaired member. No installed workflow calls the former
-ObservationRepair execute/close operation. The receipt type alone is not
-evidence that a repair transaction ran.
+Final cell composition still accepts the typed `ObservationRevisitReceipt`
+input for a revisited member. No installed workflow calls the former
+execute/close operation. The receipt type alone does not establish that a
+revisit transaction ran.
 
 ## Authority boundary
 

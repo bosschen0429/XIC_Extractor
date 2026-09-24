@@ -84,7 +84,7 @@ def test_full_cohort_acceptance_gate_uses_hypothesis_anchor_not_cross_run_fam_id
     assert index.summary["blocked_count"] == 0
 
 
-def test_full_cohort_acceptance_gate_passes_direct_primary_rescue(
+def test_full_cohort_acceptance_gate_passes_direct_primary_backfill(
     tmp_path: Path,
 ) -> None:
     index = full_cohort_acceptance_gate.build_full_cohort_acceptance_gate(

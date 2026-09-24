@@ -1,4 +1,4 @@
-"""Strict durable provenance for canonical Owner Backfill physical peak facts.
+"""Strict durable provenance for canonical Backfill physical peak facts.
 
 Persisted rows prove projection integrity only.  Alignment, physical, and final
 cell claims are lifted only by replay through their original live owners.
@@ -10,47 +10,47 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from xic_extractor.alignment.matrix import AlignedCell, AlignmentMatrix
-from xic_extractor.alignment.owner_backfill_peak_fact_codec import (
+from xic_extractor.alignment.backfill_peak_fact_codec import (
     _PROVENANCE_ROWS_PER_CHUNK,
-    EMPTY_OWNER_BACKFILL_PEAK_FACT_PROVENANCE_BATCH,
-    OWNER_BACKFILL_PEAK_FACT_PROVENANCE_COLUMNS,
-    OWNER_BACKFILL_PEAK_FACT_PROVENANCE_SCHEMA_VERSION,
-    OWNER_BACKFILL_PROVENANCE_ROW_ID_PREFIX,
-    OWNER_BACKFILL_PROVENANCE_WRITER_SCHEMA_VERSION,
+    BACKFILL_PEAK_FACT_PROVENANCE_COLUMNS,
+    BACKFILL_PEAK_FACT_PROVENANCE_SCHEMA_VERSION,
+    BACKFILL_PROVENANCE_ROW_ID_PREFIX,
+    BACKFILL_PROVENANCE_WRITER_SCHEMA_VERSION,
+    EMPTY_BACKFILL_PEAK_FACT_PROVENANCE_BATCH,
+    BackfillPeakFactProvenanceBatch,
+    BackfillPeakFactProvenanceReadResult,
+    BackfillPeakFactProvenanceRow,
     ClaimState,
-    OwnerBackfillPeakFactProvenanceBatch,
-    OwnerBackfillPeakFactProvenanceReadResult,
-    OwnerBackfillPeakFactProvenanceRow,
     RowKind,
     _cell_projection_row,
-    _iter_owner_backfill_peak_fact_provenance_chunks,
+    _iter_backfill_peak_fact_provenance_chunks,
     _run_profile_row,
-    build_owner_backfill_peak_fact_provenance_batch_from_rows,
-    read_owner_backfill_peak_fact_provenance_tsv,
-    render_owner_backfill_peak_fact_provenance_tsv,
-    write_owner_backfill_peak_fact_provenance_tsv,
+    build_backfill_peak_fact_provenance_batch_from_rows,
+    read_backfill_peak_fact_provenance_tsv,
+    render_backfill_peak_fact_provenance_tsv,
+    write_backfill_peak_fact_provenance_tsv,
 )
-from xic_extractor.alignment.owner_backfill_peak_fact_projection import (
+from xic_extractor.alignment.backfill_peak_fact_projection import (
     _STAGE_PROJECTION_MINT_TOKEN,
-    OWNER_BACKFILL_AUTHORITY_CELL_FIELDS,
-    OWNER_BACKFILL_AUTHORITY_CELL_SCHEMA_VERSION,
-    OWNER_BACKFILL_CELL_PROJECTION_ID_PREFIX,
-    OWNER_BACKFILL_CELL_PROJECTION_SCHEMA_VERSION,
+    BACKFILL_AUTHORITY_CELL_FIELDS,
+    BACKFILL_AUTHORITY_CELL_SCHEMA_VERSION,
+    BACKFILL_CELL_PROJECTION_ID_PREFIX,
+    BACKFILL_CELL_PROJECTION_SCHEMA_VERSION,
     SELECTED_INTEGRATION_AUTHORITY_FIELDS,
     SELECTED_INTEGRATION_AUTHORITY_ID_PREFIX,
     SELECTED_INTEGRATION_AUTHORITY_SCHEMA_VERSION,
-    OwnerBackfillAuthorityCellProjection,
-    OwnerBackfillCellProjection,
-    OwnerBackfillPeakFactObservation,
-    OwnerBackfillPeakFactStageProjection,
+    BackfillAuthorityCellProjection,
+    BackfillCellProjection,
+    BackfillPeakFactObservation,
+    BackfillPeakFactStageProjection,
     SelectedIntegrationAuthorityProjection,
-    owner_backfill_authority_cell_projection,
-    owner_backfill_cell_lineage_matches,
-    owner_backfill_cell_projection,
-    owner_backfill_peak_fact_stage_projection_from_observation,
+    backfill_authority_cell_projection,
+    backfill_cell_lineage_matches,
+    backfill_cell_projection,
+    backfill_peak_fact_stage_projection_from_observation,
     selected_integration_authority_projection,
 )
+from xic_extractor.alignment.matrix import AlignedCell, AlignmentMatrix
 from xic_extractor.alignment.production_decisions import (
     ProductionDecisionSet,
     build_production_decisions,
@@ -72,20 +72,20 @@ from xic_extractor.peak_detection.signal_processing_profile import (
 )
 
 if TYPE_CHECKING:
+    from xic_extractor.alignment.backfill_peak_fact import (
+        BackfillExtractionResult,
+    )
+    from xic_extractor.alignment.backfill_peak_fact import (
+        BackfillPeakFactObservation as LiveBackfillPeakFactObservation,
+    )
     from xic_extractor.alignment.config import AlignmentConfig
-    from xic_extractor.alignment.owner_backfill import (
-        OwnerBackfillExtractionResult,
-    )
-    from xic_extractor.alignment.owner_backfill import (
-        OwnerBackfillPeakFactObservation as LiveOwnerBackfillPeakFactObservation,
-    )
 
 
 @dataclass(frozen=True, slots=True)
-class PreparedOwnerBackfillPeakFact:
+class PreparedBackfillPeakFact:
     feature_family_id: str
-    stage: OwnerBackfillPeakFactStageProjection
-    physical_row: OwnerBackfillPeakFactProvenanceRow
+    stage: BackfillPeakFactStageProjection
+    physical_row: BackfillPeakFactProvenanceRow
     selected_integration_authority: SelectedIntegrationAuthorityProjection | None
     selected_integration_authority_content_id: str | None
 
@@ -142,31 +142,31 @@ class PreparedOwnerBackfillPeakFact:
 
 
 @dataclass(frozen=True, slots=True)
-class OwnerBackfillPhysicalClaim:
+class BackfillPhysicalClaim:
     work_unit_key: str
     stage_claim: ClaimState
     physical_claim: ClaimState
 
 
 @dataclass(frozen=True, slots=True)
-class OwnerBackfillCellClaim:
+class BackfillCellClaim:
     group_hypothesis_id: str
     sample_stem: str
     cell_projection_claim: ClaimState
 
 
 @dataclass(frozen=True, slots=True)
-class OwnerBackfillPeakFactCompositionResult:
-    physical_claims: tuple[OwnerBackfillPhysicalClaim, ...]
-    cell_claims: tuple[OwnerBackfillCellClaim, ...]
+class BackfillPeakFactCompositionResult:
+    physical_claims: tuple[BackfillPhysicalClaim, ...]
+    cell_claims: tuple[BackfillCellClaim, ...]
 
 
 def row_from_terminal_observation(
-    stage: OwnerBackfillPeakFactStageProjection,
+    stage: BackfillPeakFactStageProjection,
     physical_evaluation: PhysicalPeakEvaluation,
     *,
     profile: SignalProcessingProfile,
-) -> OwnerBackfillPeakFactProvenanceRow:
+) -> BackfillPeakFactProvenanceRow:
     validate_bounded_physical_peak_evaluation(physical_evaluation)
     prepared = physical_evaluation.prepared
     universe = physical_evaluation.segment_universe
@@ -186,7 +186,7 @@ def row_from_terminal_observation(
             raise ValueError("stage trace range differs from owner-derived context")
     elif stage.trace_rt_start_min is not None or stage.trace_rt_end_min is not None:
         raise ValueError("zero-point trace must not assert observed RT endpoints")
-    return OwnerBackfillPeakFactProvenanceRow(
+    return BackfillPeakFactProvenanceRow(
         row_kind="physical_question",
         work_unit_key=stage.work_unit_key,
         group_hypothesis_id=stage.group_hypothesis_id,
@@ -241,14 +241,14 @@ def row_from_terminal_observation(
     )
 
 
-def prepare_owner_backfill_peak_fact(
-    observation: LiveOwnerBackfillPeakFactObservation,
+def prepare_backfill_peak_fact(
+    observation: LiveBackfillPeakFactObservation,
     *,
     feature_order_index: int,
     sample_order_index: int,
     profile: SignalProcessingProfile,
-) -> PreparedOwnerBackfillPeakFact:
-    stage = owner_backfill_peak_fact_stage_projection_from_observation(
+) -> PreparedBackfillPeakFact:
+    stage = backfill_peak_fact_stage_projection_from_observation(
         observation,
         feature_order_index=feature_order_index,
         sample_order_index=sample_order_index,
@@ -265,7 +265,7 @@ def prepare_owner_backfill_peak_fact(
         selected_integration = selected_integration_authority_projection(
             observation.facts.integration
         )
-    return PreparedOwnerBackfillPeakFact(
+    return PreparedBackfillPeakFact(
         feature_family_id=observation.cell.cluster_id,
         stage=stage,
         physical_row=row_from_terminal_observation(
@@ -282,12 +282,12 @@ def prepare_owner_backfill_peak_fact(
     )
 
 
-def build_owner_backfill_peak_fact_provenance_batch(
-    observations: Sequence[OwnerBackfillPeakFactObservation],
+def build_backfill_peak_fact_provenance_batch(
+    observations: Sequence[BackfillPeakFactObservation],
     *,
     profile: SignalProcessingProfile,
-    cell_projections: Sequence[OwnerBackfillCellProjection] = (),
-) -> OwnerBackfillPeakFactProvenanceBatch:
+    cell_projections: Sequence[BackfillCellProjection] = (),
+) -> BackfillPeakFactProvenanceBatch:
     ordered_physical = sorted(
         observations,
         key=lambda item: (
@@ -297,7 +297,7 @@ def build_owner_backfill_peak_fact_provenance_batch(
             item.stage.candidate_phase,
         ),
     )
-    return OwnerBackfillPeakFactProvenanceBatch(
+    return BackfillPeakFactProvenanceBatch(
         rows=(
             _run_profile_row(profile),
             *(
@@ -313,11 +313,11 @@ def build_owner_backfill_peak_fact_provenance_batch(
     )
 
 
-def rehydrate_owner_backfill_peak_fact_provenance_row(
-    row: OwnerBackfillPeakFactProvenanceRow,
-    extraction: OwnerBackfillExtractionResult,
+def rehydrate_backfill_peak_fact_provenance_row(
+    row: BackfillPeakFactProvenanceRow,
+    extraction: BackfillExtractionResult,
     *,
-    stage: OwnerBackfillPeakFactStageProjection,
+    stage: BackfillPeakFactStageProjection,
     profile: SignalProcessingProfile,
 ) -> PhysicalPeakEvaluation:
     """Replay one physical row from live Alignment and acquisition-owner inputs."""
@@ -357,18 +357,18 @@ def rehydrate_owner_backfill_peak_fact_provenance_row(
     return actual
 
 
-def compose_owner_backfill_peak_fact_provenance(
-    read_result: OwnerBackfillPeakFactProvenanceReadResult,
+def compose_backfill_peak_fact_provenance(
+    read_result: BackfillPeakFactProvenanceReadResult,
     *,
-    live_observation_by_work: Mapping[str, LiveOwnerBackfillPeakFactObservation]
+    live_observation_by_work: Mapping[str, LiveBackfillPeakFactObservation]
     | None = None,
-    live_extraction_by_work: Mapping[str, OwnerBackfillExtractionResult] | None = None,
+    live_extraction_by_work: Mapping[str, BackfillExtractionResult] | None = None,
     profile: SignalProcessingProfile | None = None,
     live_matrix: AlignmentMatrix | None = None,
     alignment_config: AlignmentConfig | None = None,
     production_decisions: ProductionDecisionSet | None = None,
-) -> OwnerBackfillPeakFactCompositionResult:
-    if not isinstance(read_result, OwnerBackfillPeakFactProvenanceReadResult):
+) -> BackfillPeakFactCompositionResult:
+    if not isinstance(read_result, BackfillPeakFactProvenanceReadResult):
         raise TypeError("read_result must come from the strict provenance reader")
     observations = live_observation_by_work or {}
     extractions = live_extraction_by_work or {}
@@ -380,13 +380,13 @@ def compose_owner_backfill_peak_fact_provenance(
     physical_rows = tuple(
         row for row in read_result.rows if row.row_kind == "physical_question"
     )
-    verified_physical: dict[str, OwnerBackfillPeakFactProvenanceRow] = {}
-    verified_stages: dict[str, OwnerBackfillPeakFactStageProjection] = {}
-    physical_claims: list[OwnerBackfillPhysicalClaim] = []
+    verified_physical: dict[str, BackfillPeakFactProvenanceRow] = {}
+    verified_stages: dict[str, BackfillPeakFactStageProjection] = {}
+    physical_claims: list[BackfillPhysicalClaim] = []
     for row in physical_rows:
         observation = observations.get(row.work_unit_key)
         stage = (
-            owner_backfill_peak_fact_stage_projection_from_observation(observation)
+            backfill_peak_fact_stage_projection_from_observation(observation)
             if observation is not None
             else None
         )
@@ -398,7 +398,7 @@ def compose_owner_backfill_peak_fact_provenance(
             verified_stages[row.work_unit_key] = stage
         extraction = extractions.get(row.work_unit_key)
         if stage is not None and extraction is not None and profile is not None:
-            rehydrate_owner_backfill_peak_fact_provenance_row(
+            rehydrate_backfill_peak_fact_provenance_row(
                 row,
                 extraction,
                 stage=stage,
@@ -407,7 +407,7 @@ def compose_owner_backfill_peak_fact_provenance(
             physical_claim = "verified"
             verified_physical[row.work_unit_key] = row
         physical_claims.append(
-            OwnerBackfillPhysicalClaim(
+            BackfillPhysicalClaim(
                 work_unit_key=row.work_unit_key,
                 stage_claim=stage_claim,
                 physical_claim=physical_claim,
@@ -429,7 +429,7 @@ def compose_owner_backfill_peak_fact_provenance(
                 "supplied production decisions differ from live owner replay"
             )
 
-    cell_claims: list[OwnerBackfillCellClaim] = []
+    cell_claims: list[BackfillCellClaim] = []
     for row in (
         item for item in read_result.rows if item.row_kind == "cell_projection"
     ):
@@ -445,7 +445,7 @@ def compose_owner_backfill_peak_fact_provenance(
             assert live_matrix is not None
             assert alignment_config is not None
             cell = _live_cell_for_projection(live_matrix, row)
-            authority = owner_backfill_authority_cell_projection(
+            authority = backfill_authority_cell_projection(
                 stage=stage,
                 cell=cell,
                 profile_id=profile.profile_id,
@@ -461,7 +461,7 @@ def compose_owner_backfill_peak_fact_provenance(
                 owner_backfill_cell_content_id=authority.owner_backfill_cell_content_id,
             )
             expected = _cell_projection_row(
-                owner_backfill_cell_projection(
+                backfill_cell_projection(
                     authority_cell=authority,
                     production_decision=production_projection,
                 ),
@@ -473,21 +473,21 @@ def compose_owner_backfill_peak_fact_provenance(
                 )
             claim = "verified"
         cell_claims.append(
-            OwnerBackfillCellClaim(
+            BackfillCellClaim(
                 group_hypothesis_id=row.group_hypothesis_id,
                 sample_stem=row.sample_stem,
                 cell_projection_claim=claim,
             )
         )
-    return OwnerBackfillPeakFactCompositionResult(
+    return BackfillPeakFactCompositionResult(
         physical_claims=tuple(physical_claims),
         cell_claims=tuple(cell_claims),
     )
 
 
 def _compare_stage_to_row(
-    stage: OwnerBackfillPeakFactStageProjection,
-    row: OwnerBackfillPeakFactProvenanceRow,
+    stage: BackfillPeakFactStageProjection,
+    row: BackfillPeakFactProvenanceRow,
 ) -> None:
     observed = (
         stage.work_unit_key,
@@ -522,12 +522,12 @@ def _compare_stage_to_row(
 
 
 def _validate_live_extraction(
-    stage: OwnerBackfillPeakFactStageProjection,
-    extraction: OwnerBackfillExtractionResult,
+    stage: BackfillPeakFactStageProjection,
+    extraction: BackfillExtractionResult,
 ) -> None:
-    from xic_extractor.alignment.owner_backfill import OwnerBackfillExtractionResult
+    from xic_extractor.alignment.backfill_peak_fact import BackfillExtractionResult
 
-    if not isinstance(extraction, OwnerBackfillExtractionResult):
+    if not isinstance(extraction, BackfillExtractionResult):
         raise TypeError("extraction must be owner-minted")
     identity = extraction.request_identity
     if (
@@ -552,7 +552,7 @@ def _validate_live_extraction(
 
 def _live_cell_for_projection(
     matrix: AlignmentMatrix,
-    row: OwnerBackfillPeakFactProvenanceRow,
+    row: BackfillPeakFactProvenanceRow,
 ) -> AlignedCell:
     matches = tuple(
         cell
@@ -567,49 +567,49 @@ def _live_cell_for_projection(
 
 
 __all__ = [
-    "EMPTY_OWNER_BACKFILL_PEAK_FACT_PROVENANCE_BATCH",
-    "OWNER_BACKFILL_AUTHORITY_CELL_FIELDS",
-    "OWNER_BACKFILL_AUTHORITY_CELL_SCHEMA_VERSION",
-    "OWNER_BACKFILL_CELL_PROJECTION_ID_PREFIX",
-    "OWNER_BACKFILL_CELL_PROJECTION_SCHEMA_VERSION",
-    "OWNER_BACKFILL_PEAK_FACT_PROVENANCE_COLUMNS",
-    "OWNER_BACKFILL_PEAK_FACT_PROVENANCE_SCHEMA_VERSION",
-    "OWNER_BACKFILL_PROVENANCE_ROW_ID_PREFIX",
-    "OWNER_BACKFILL_PROVENANCE_WRITER_SCHEMA_VERSION",
+    "EMPTY_BACKFILL_PEAK_FACT_PROVENANCE_BATCH",
+    "BACKFILL_AUTHORITY_CELL_FIELDS",
+    "BACKFILL_AUTHORITY_CELL_SCHEMA_VERSION",
+    "BACKFILL_CELL_PROJECTION_ID_PREFIX",
+    "BACKFILL_CELL_PROJECTION_SCHEMA_VERSION",
+    "BACKFILL_PEAK_FACT_PROVENANCE_COLUMNS",
+    "BACKFILL_PEAK_FACT_PROVENANCE_SCHEMA_VERSION",
+    "BACKFILL_PROVENANCE_ROW_ID_PREFIX",
+    "BACKFILL_PROVENANCE_WRITER_SCHEMA_VERSION",
     "SELECTED_INTEGRATION_AUTHORITY_FIELDS",
     "SELECTED_INTEGRATION_AUTHORITY_ID_PREFIX",
     "SELECTED_INTEGRATION_AUTHORITY_SCHEMA_VERSION",
     "ClaimState",
-    "OwnerBackfillAuthorityCellProjection",
-    "OwnerBackfillCellClaim",
-    "OwnerBackfillCellProjection",
-    "OwnerBackfillPeakFactCompositionResult",
-    "OwnerBackfillPeakFactObservation",
-    "OwnerBackfillPeakFactProvenanceBatch",
-    "OwnerBackfillPeakFactProvenanceReadResult",
-    "OwnerBackfillPeakFactProvenanceRow",
-    "OwnerBackfillPeakFactStageProjection",
-    "OwnerBackfillPhysicalClaim",
-    "PreparedOwnerBackfillPeakFact",
+    "BackfillAuthorityCellProjection",
+    "BackfillCellClaim",
+    "BackfillCellProjection",
+    "BackfillPeakFactCompositionResult",
+    "BackfillPeakFactObservation",
+    "BackfillPeakFactProvenanceBatch",
+    "BackfillPeakFactProvenanceReadResult",
+    "BackfillPeakFactProvenanceRow",
+    "BackfillPeakFactStageProjection",
+    "BackfillPhysicalClaim",
+    "PreparedBackfillPeakFact",
     "RowKind",
     "SelectedIntegrationAuthorityProjection",
     "_PROVENANCE_ROWS_PER_CHUNK",
     "_STAGE_PROJECTION_MINT_TOKEN",
     "_cell_projection_row",
-    "_iter_owner_backfill_peak_fact_provenance_chunks",
+    "_iter_backfill_peak_fact_provenance_chunks",
     "_run_profile_row",
-    "build_owner_backfill_peak_fact_provenance_batch",
-    "build_owner_backfill_peak_fact_provenance_batch_from_rows",
-    "compose_owner_backfill_peak_fact_provenance",
-    "owner_backfill_authority_cell_projection",
-    "owner_backfill_cell_lineage_matches",
-    "owner_backfill_cell_projection",
-    "owner_backfill_peak_fact_stage_projection_from_observation",
-    "prepare_owner_backfill_peak_fact",
-    "read_owner_backfill_peak_fact_provenance_tsv",
-    "render_owner_backfill_peak_fact_provenance_tsv",
-    "rehydrate_owner_backfill_peak_fact_provenance_row",
+    "build_backfill_peak_fact_provenance_batch",
+    "build_backfill_peak_fact_provenance_batch_from_rows",
+    "compose_backfill_peak_fact_provenance",
+    "backfill_authority_cell_projection",
+    "backfill_cell_lineage_matches",
+    "backfill_cell_projection",
+    "backfill_peak_fact_stage_projection_from_observation",
+    "prepare_backfill_peak_fact",
+    "read_backfill_peak_fact_provenance_tsv",
+    "render_backfill_peak_fact_provenance_tsv",
+    "rehydrate_backfill_peak_fact_provenance_row",
     "row_from_terminal_observation",
     "selected_integration_authority_projection",
-    "write_owner_backfill_peak_fact_provenance_tsv",
+    "write_backfill_peak_fact_provenance_tsv",
 ]

@@ -20,7 +20,7 @@ from xic_extractor.peak_detection.integration_result import IntegrationResult
 from xic_extractor.peak_detection.region_audit import PeakRegionAuditSummary
 
 
-def _rescue_integration(
+def _backfill_integration(
     *,
     area: float,
     apex: float = 8.55,
@@ -42,9 +42,9 @@ def _rescue_integration(
     )
 
 
-def test_owner_matrix_writes_detected_rescued_ambiguous_and_absent_cells() -> None:
+def test_owner_matrix_writes_detected_backfilled_ambiguous_and_absent_cells() -> None:
     feature = _feature()
-    rescued = AlignedCell(
+    backfilled = AlignedCell(
         sample_stem="sample-b",
         cluster_id=feature.feature_family_id,
         status="backfilled",
@@ -59,7 +59,7 @@ def test_owner_matrix_writes_detected_rescued_ambiguous_and_absent_cells() -> No
         source_candidate_id=None,
         source_raw_file=None,
         reason="owner-centered MS1 backfill",
-        selected_integration=_rescue_integration(area=90.0),
+        selected_integration=_backfill_integration(area=90.0),
     )
     ambiguous = AmbiguousOwnerRecord(
         ambiguity_id="AMB-sample-c-000001",
@@ -72,7 +72,7 @@ def test_owner_matrix_writes_detected_rescued_ambiguous_and_absent_cells() -> No
         (feature,),
         sample_order=("sample-a", "sample-b", "sample-c", "sample-d"),
         ambiguous_by_sample=ambiguous_records_by_sample((ambiguous,)),
-        rescued_cells=(rescued,),
+        backfilled_cells=(backfilled,),
     )
 
     by_sample = {cell.sample_stem: cell for cell in matrix.cells}
@@ -127,7 +127,7 @@ def test_owner_matrix_censors_endpoint_apex_owner_without_backfill_request() -> 
         (feature,),
         sample_order=("sample-a",),
         ambiguous_by_sample={},
-        rescued_cells=(),
+        backfilled_cells=(),
     )
 
     cell = matrix.cells[0]
@@ -162,7 +162,7 @@ def test_owner_area_median_ignores_censored_owner() -> None:
     assert median_owner_area(feature) == 1000.0
 
 
-def test_owner_matrix_allows_valid_rescue_to_replace_censored_owner() -> None:
+def test_owner_matrix_allows_valid_backfill_to_replace_censored_owner() -> None:
     owner = replace(
         _owner("sample-a", "edge"),
         quantification_eligible=False,
@@ -173,7 +173,7 @@ def test_owner_matrix_allows_valid_rescue_to_replace_censored_owner() -> None:
         owners=(owner,),
         confirm_local_owners_with_backfill=False,
     )
-    rescued = AlignedCell(
+    backfilled = AlignedCell(
         sample_stem="sample-a",
         cluster_id=feature.feature_family_id,
         status="backfilled",
@@ -188,14 +188,14 @@ def test_owner_matrix_allows_valid_rescue_to_replace_censored_owner() -> None:
         source_candidate_id=None,
         source_raw_file=None,
         reason="owner-centered MS1 backfill",
-        selected_integration=_rescue_integration(area=900.0),
+        selected_integration=_backfill_integration(area=900.0),
     )
 
     matrix = build_owner_alignment_matrix(
         (feature,),
         sample_order=("sample-a",),
         ambiguous_by_sample={},
-        rescued_cells=(rescued,),
+        backfilled_cells=(backfilled,),
     )
 
     assert matrix.cells[0].status == "backfilled"
@@ -203,13 +203,13 @@ def test_owner_matrix_allows_valid_rescue_to_replace_censored_owner() -> None:
     assert matrix.cells[0].matrix_area == 900.0
 
 
-def test_owner_matrix_censors_endpoint_rescue_before_matrix_write() -> None:
+def test_owner_matrix_censors_endpoint_backfill_before_matrix_write() -> None:
     feature = replace(
         _feature(),
         owners=(),
         confirm_local_owners_with_backfill=False,
     )
-    rescued = AlignedCell(
+    backfilled = AlignedCell(
         sample_stem="sample-a",
         cluster_id=feature.feature_family_id,
         status="backfilled",
@@ -224,7 +224,7 @@ def test_owner_matrix_censors_endpoint_rescue_before_matrix_write() -> None:
         source_candidate_id=None,
         source_raw_file=None,
         reason="owner-centered MS1 backfill",
-        selected_integration=_rescue_integration(
+        selected_integration=_backfill_integration(
             area=900.0,
             apex=8.50,
             left=8.50,
@@ -236,7 +236,7 @@ def test_owner_matrix_censors_endpoint_rescue_before_matrix_write() -> None:
         (feature,),
         sample_order=("sample-a",),
         ambiguous_by_sample={},
-        rescued_cells=(rescued,),
+        backfilled_cells=(backfilled,),
     )
 
     cell = matrix.cells[0]
@@ -289,7 +289,7 @@ def test_owner_matrix_accepts_delivery_contract_feature_without_legacy_dto() -> 
         (feature,),
         sample_order=("sample-a", "sample-b"),
         ambiguous_by_sample={},
-        rescued_cells=(),
+        backfilled_cells=(),
     )
 
     assert not isinstance(feature, OwnerAlignedFeature)
@@ -333,7 +333,7 @@ def test_owner_matrix_preserves_unchecked_backfill_outcome(tmp_path: Path) -> No
         (feature,),
         sample_order=("sample-a", "sample-b", "sample-c"),
         ambiguous_by_sample={},
-        rescued_cells=(unchecked,),
+        backfilled_cells=(unchecked,),
     )
 
     by_sample = {cell.sample_stem: cell for cell in matrix.cells}
@@ -362,7 +362,7 @@ def test_owner_matrix_detected_cell_does_not_invent_raw_path() -> None:
         (_feature(),),
         sample_order=("sample-a",),
         ambiguous_by_sample={},
-        rescued_cells=(),
+        backfilled_cells=(),
     )
 
     assert matrix.cells[0].source_raw_file is None
@@ -408,7 +408,7 @@ def test_owner_matrix_carries_detected_owner_region_audit() -> None:
         (feature,),
         sample_order=("sample-a",),
         ambiguous_by_sample={},
-        rescued_cells=(),
+        backfilled_cells=(),
     )
 
     cell = matrix.cells[0]
@@ -445,7 +445,7 @@ def test_owner_matrix_uses_backfill_confirmation_for_severe_low_local_owner() ->
         evidence="owner_complete_link;owner_count=3",
         confirm_local_owners_with_backfill=True,
     )
-    rescued = AlignedCell(
+    backfilled = AlignedCell(
         sample_stem="sample-a",
         cluster_id=feature.feature_family_id,
         status="backfilled",
@@ -460,14 +460,14 @@ def test_owner_matrix_uses_backfill_confirmation_for_severe_low_local_owner() ->
         source_candidate_id=None,
         source_raw_file=None,
         reason="owner-centered MS1 backfill",
-        selected_integration=_rescue_integration(area=900.0),
+        selected_integration=_backfill_integration(area=900.0),
     )
 
     matrix = build_owner_alignment_matrix(
         (feature,),
         sample_order=("sample-a",),
         ambiguous_by_sample={},
-        rescued_cells=(rescued,),
+        backfilled_cells=(backfilled,),
     )
 
     assert matrix.cells[0].status == "backfilled"
@@ -480,7 +480,7 @@ def test_owner_matrix_uses_backfill_confirmation_for_severe_low_local_owner() ->
 
 def test_owner_matrix_keeps_detected_cell_when_local_owner_is_not_low_outlier() -> None:
     feature = replace(_feature(), confirm_local_owners_with_backfill=True)
-    rescued = AlignedCell(
+    backfilled = AlignedCell(
         sample_stem="sample-a",
         cluster_id=feature.feature_family_id,
         status="backfilled",
@@ -495,14 +495,14 @@ def test_owner_matrix_keeps_detected_cell_when_local_owner_is_not_low_outlier() 
         source_candidate_id=None,
         source_raw_file=None,
         reason="owner-centered MS1 backfill",
-        selected_integration=_rescue_integration(area=4000.0),
+        selected_integration=_backfill_integration(area=4000.0),
     )
 
     matrix = build_owner_alignment_matrix(
         (feature,),
         sample_order=("sample-a",),
         ambiguous_by_sample={},
-        rescued_cells=(rescued,),
+        backfilled_cells=(backfilled,),
     )
 
     assert matrix.cells[0].status == "detected"
@@ -523,7 +523,7 @@ def test_owner_matrix_ambiguous_review_feature_does_not_contaminate_other_featur
         (detected_feature, ambiguous_feature),
         sample_order=("sample-a", "sample-b"),
         ambiguous_by_sample={},
-        rescued_cells=(),
+        backfilled_cells=(),
     )
 
     cells = {

@@ -6,9 +6,9 @@ from dataclasses import InitVar, dataclass, field
 from typing import Literal, TypeAlias
 
 from xic_extractor.alignment.backfill.evaluation_coverage import (
-    OwnerBackfillEvaluationCoverageBatch,
-    OwnerBackfillPlanningPosition,
-    validate_owner_backfill_evaluation_coverage,
+    BackfillEvaluationCoverageBatch,
+    BackfillPlanningPosition,
+    validate_backfill_evaluation_coverage,
 )
 from xic_extractor.alignment.cross_sample_peak_groups import (
     CrossSampleContractError,
@@ -77,12 +77,12 @@ class CrossSamplePredecessorAssociation:
 class CrossSampleCoveragePositionAssociation:
     """One exact final successor for one sealed Backfill coverage position."""
 
-    position: OwnerBackfillPlanningPosition
+    position: BackfillPlanningPosition
     final_successor: CrossSampleGroupIdentity
     resolution: CrossSamplePositionResolution
 
     def __post_init__(self) -> None:
-        if type(self.position) is not OwnerBackfillPlanningPosition:
+        if type(self.position) is not BackfillPlanningPosition:
             raise CrossSampleAssociationContractError(
                 "position association requires an exact coverage position"
             )
@@ -105,7 +105,7 @@ class CrossSampleAssociationLineageHandoff:
     """Immutable owner handoff from exact coverage to exact final group lineage."""
 
     handoff_id: str
-    coverage: OwnerBackfillEvaluationCoverageBatch
+    coverage: BackfillEvaluationCoverageBatch
     final_receipt: CrossSampleGroupingResult
     predecessor_associations: tuple[CrossSamplePredecessorAssociation, ...]
     position_associations: tuple[CrossSampleCoveragePositionAssociation, ...]
@@ -147,7 +147,7 @@ class CrossSampleAssociationLineageHandoff:
 
 def build_cross_sample_association_lineage_handoff(
     *,
-    coverage: OwnerBackfillEvaluationCoverageBatch,
+    coverage: BackfillEvaluationCoverageBatch,
     final_receipt: CrossSampleGroupingResult,
 ) -> CrossSampleAssociationLineageHandoff:
     """Compile exact coverage positions onto exact final CrossSample groups."""
@@ -189,15 +189,15 @@ def validate_cross_sample_association_lineage_handoff(
 
 def _validate_inputs(
     *,
-    coverage: OwnerBackfillEvaluationCoverageBatch,
+    coverage: BackfillEvaluationCoverageBatch,
     final_receipt: CrossSampleGroupingResult,
 ) -> None:
-    if type(coverage) is not OwnerBackfillEvaluationCoverageBatch:
+    if type(coverage) is not BackfillEvaluationCoverageBatch:
         raise CrossSampleAssociationContractError(
             "coverage must be an exact Owner Backfill coverage batch"
         )
     try:
-        validate_owner_backfill_evaluation_coverage(coverage)
+        validate_backfill_evaluation_coverage(coverage)
     except (TypeError, ValueError) as exc:
         raise CrossSampleAssociationContractError(
             f"coverage is not owner-closed: {exc}"
@@ -216,7 +216,7 @@ def _validate_inputs(
 
 def _validate_initial_population(
     *,
-    coverage: OwnerBackfillEvaluationCoverageBatch,
+    coverage: BackfillEvaluationCoverageBatch,
     final_receipt: CrossSampleGroupingResult,
 ) -> None:
     coverage_by_id = _population_by_id(
@@ -233,7 +233,7 @@ def _validate_initial_population(
 
 def _compile_associations(
     *,
-    coverage: OwnerBackfillEvaluationCoverageBatch,
+    coverage: BackfillEvaluationCoverageBatch,
     final_receipt: CrossSampleGroupingResult,
 ) -> tuple[
     tuple[CrossSamplePredecessorAssociation, ...],
@@ -301,7 +301,7 @@ def _associate_predecessor(
 
 def _associate_position(
     *,
-    position: OwnerBackfillPlanningPosition,
+    position: BackfillPlanningPosition,
     predecessor_association: CrossSamplePredecessorAssociation | None,
 ) -> CrossSampleCoveragePositionAssociation:
     if predecessor_association is None or (
@@ -390,7 +390,7 @@ def _validate_handoff(handoff: CrossSampleAssociationLineageHandoff) -> None:
 
 def _handoff_basis(
     *,
-    coverage: OwnerBackfillEvaluationCoverageBatch,
+    coverage: BackfillEvaluationCoverageBatch,
     final_receipt: CrossSampleGroupingResult,
     predecessor_associations: tuple[CrossSamplePredecessorAssociation, ...],
     position_associations: tuple[CrossSampleCoveragePositionAssociation, ...],

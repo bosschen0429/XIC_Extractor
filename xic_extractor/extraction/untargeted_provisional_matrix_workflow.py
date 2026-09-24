@@ -6,12 +6,12 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
+from xic_extractor.alignment.backfill_peak_fact import BackfillWindowStrategy
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.ms1_index_source import (
-    OwnerBackfillXicBackend,
+    BackfillXicBackend,
     OwnerBuildXicBackend,
 )
-from xic_extractor.alignment.owner_backfill import OwnerBackfillWindowStrategy
 from xic_extractor.alignment.pipeline import (
     _validate_untargeted_cid_nl_alignment_options,
     run_alignment,
@@ -45,8 +45,8 @@ def run_untargeted_provisional_matrix_workflow(
     raw_workers: int = DEFAULT_ALIGNMENT_WORKERS,
     raw_xic_batch_size: int = 1,
     owner_build_xic_backend: OwnerBuildXicBackend = "raw",
-    owner_backfill_xic_backend: OwnerBackfillXicBackend = "raw",
-    owner_backfill_window_strategy: OwnerBackfillWindowStrategy = "exact",
+    owner_backfill_xic_backend: BackfillXicBackend = "raw",
+    owner_backfill_window_strategy: BackfillWindowStrategy = "exact",
     owner_backfill_superwindow_span_factor: int = 2,
     sample_column_injection_order: Path | None = None,
     sample_metadata: tuple[SampleMetadata, ...] | None = None,

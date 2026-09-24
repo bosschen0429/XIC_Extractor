@@ -16,9 +16,9 @@ WEAK_SEED_TOLERATED_REASON = "weak_seed_tolerated"
 
 SeedQualityStatus = Literal["unavailable", "missing_lookup", "adequate", "weak"]
 
-_EXTREME_BACKFILL_MIN_RESCUE_FRACTION = 0.70
+_EXTREME_BACKFILL_MIN_BACKFILL_FRACTION = 0.70
 _EXTREME_BACKFILL_MAX_DETECTED_SUPPORT = 2
-_WEAK_SEED_BACKFILL_MIN_RESCUE_FRACTION = 0.60
+_WEAK_SEED_BACKFILL_MIN_BACKFILL_FRACTION = 0.60
 _WEAK_SEED_BACKFILL_MAX_DETECTED_SUPPORT = 3
 _WEAK_SEED_MIN_EVIDENCE_SCORE = 60
 _WEAK_SEED_MIN_EVENT_COUNT = 2
@@ -121,7 +121,7 @@ def classify_single_dr_backfill_dependency(
     *,
     neutral_loss_tag: str,
     q_detected: int,
-    q_rescue: int,
+    q_backfill: int,
     cell_count: int,
     seed_quality: SeedQualitySummary | None,
 ) -> str | None:
@@ -130,15 +130,15 @@ def classify_single_dr_backfill_dependency(
     if q_detected <= 0 or cell_count <= 0:
         return None
 
-    rescue_fraction = q_rescue / cell_count
+    backfill_fraction = q_backfill / cell_count
     if (
         q_detected <= _EXTREME_BACKFILL_MAX_DETECTED_SUPPORT
-        and rescue_fraction >= _EXTREME_BACKFILL_MIN_RESCUE_FRACTION
+        and backfill_fraction >= _EXTREME_BACKFILL_MIN_BACKFILL_FRACTION
     ):
         return EXTREME_BACKFILL_REASON
     if (
         q_detected <= _WEAK_SEED_BACKFILL_MAX_DETECTED_SUPPORT
-        and rescue_fraction >= _WEAK_SEED_BACKFILL_MIN_RESCUE_FRACTION
+        and backfill_fraction >= _WEAK_SEED_BACKFILL_MIN_BACKFILL_FRACTION
         and seed_quality is not None
     ):
         if seed_quality.weak:

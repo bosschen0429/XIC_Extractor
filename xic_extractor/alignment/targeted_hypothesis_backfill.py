@@ -6,15 +6,15 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Literal
 
+from xic_extractor.alignment.backfill_peak_fact import (
+    BackfillSource,
+    build_backfill_result,
+)
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.cross_sample_peak_groups import (
     CrossSamplePeakGroupHypothesis,
 )
 from xic_extractor.alignment.matrix import AlignedCell
-from xic_extractor.alignment.owner_backfill import (
-    OwnerBackfillSource,
-    build_owner_backfill_result,
-)
 from xic_extractor.alignment.targeted_hypothesis_alignment import (
     TargetedHypothesisAlignmentInput,
 )
@@ -58,7 +58,7 @@ def build_targeted_hypothesis_cells(
     inputs: tuple[TargetedHypothesisAlignmentInput, ...],
     groups: tuple[CrossSamplePeakGroupHypothesis, ...],
     *,
-    backfill_sources: Mapping[str, OwnerBackfillSource],
+    backfill_sources: Mapping[str, BackfillSource],
     alignment_config: AlignmentConfig,
     peak_config: ExtractionConfig,
 ) -> tuple[TargetedHypothesisCell, ...]:
@@ -151,7 +151,7 @@ def _backfill_no_candidate(
     item: TargetedHypothesisAlignmentInput,
     *,
     groups: tuple[CrossSamplePeakGroupHypothesis, ...],
-    source: OwnerBackfillSource | None,
+    source: BackfillSource | None,
     alignment_config: AlignmentConfig,
     peak_config: ExtractionConfig,
 ) -> TargetedHypothesisCell:
@@ -175,7 +175,7 @@ def _backfill_no_candidate(
             group=group,
             reason="no local evidence source was supplied for the missing cell",
         )
-    result = build_owner_backfill_result(
+    result = build_backfill_result(
         (group,),
         sample_order=(item.sample.metadata.raw_stem,),
         raw_sources={item.sample.metadata.raw_stem: source},

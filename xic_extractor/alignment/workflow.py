@@ -8,7 +8,7 @@ from enum import Enum
 from typing import TypeAlias, cast
 
 from xic_extractor.alignment.backfill.evaluation_coverage import (
-    OwnerBackfillEvaluationCoverageBatch,
+    BackfillEvaluationCoverageBatch,
 )
 from xic_extractor.alignment.cell_observations import CellObservationRef
 from xic_extractor.alignment.config import AlignmentConfig
@@ -355,7 +355,7 @@ class TargetWorkflowAdapter(_WorkflowAdapterFields):
 @dataclass(frozen=True, slots=True)
 class UntargetWorkflowAdapter(_WorkflowAdapterFields):
     completed_grouping: CrossSampleGroupingResult | None = None
-    closed_cell_coverage: OwnerBackfillEvaluationCoverageBatch | None = None
+    closed_cell_coverage: BackfillEvaluationCoverageBatch | None = None
 
     def __post_init__(self) -> None:
         super(UntargetWorkflowAdapter, self).__post_init__()
@@ -372,7 +372,7 @@ class UntargetWorkflowAdapter(_WorkflowAdapterFields):
             )
         if self.closed_cell_coverage is not None:
             coverage = self.closed_cell_coverage
-            if type(coverage) is not OwnerBackfillEvaluationCoverageBatch:
+            if type(coverage) is not BackfillEvaluationCoverageBatch:
                 raise AlignmentWorkflowContractError(
                     "closed cell coverage must be exact"
                 )

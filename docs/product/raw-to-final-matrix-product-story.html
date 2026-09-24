@@ -448,7 +448,7 @@
               </div>
               <div class="flow-node">
                 <strong>7. Backfill</strong>
-                <span>對 family 中沒檢出的樣本回 RAW 搜尋，嘗試 rescue。</span>
+<span>對 family 中沒檢出的樣本回 RAW 搜尋，嘗試 Backfill。</span>
               </div>
               <div class="flow-node">
                 <strong>8. Claim + 合併</strong>
@@ -707,7 +707,7 @@
                 </td>
                 <td>
                   Discovery 不一定抓到所有樣本中的弱訊號。Backfill 讓 matrix 能填補
-                  「有可能存在但 MS2 沒觸發」的觀察。成功找到的 cell 標記為 rescued。
+「有可能存在但 MS2 沒觸發」的觀察。成功找到的 cell 標記為 backfilled。
                 </td>
               </tr>
               <tr>
@@ -776,7 +776,7 @@
                 <li><code>xic_extractor/alignment/owner_clustering.py</code> — bounded complete-link / full-batch continuity adapter</li>
                 <li><code>xic_extractor/alignment/cross_sample_peak_groups.py</code> — group hypothesis 模型</li>
                 <li><code>xic_extractor/alignment/edge_scoring.py</code> — 跨樣本 RT/m/z 評分</li>
-                <li><code>xic_extractor/alignment/owner_backfill.py</code> — 缺值 rescue 抽取</li>
+<li><code>xic_extractor/alignment/backfill_peak_fact.py</code> — 缺值 Backfill 抽取</li>
                 <li><code>xic_extractor/alignment/matrix_identity.py</code> — row identity decision</li>
                 <li><code>xic_extractor/alignment/production_decisions.py</code> — cell production decision</li>
               </ul>
@@ -888,7 +888,7 @@
             <summary>工程模組</summary>
             <div class="details-body">
               <ul>
-                <li><code>xic_extractor/alignment/owner_matrix.py</code> — 建立 detected/rescued/absent/ambiguous cells</li>
+<li><code>xic_extractor/alignment/owner_matrix.py</code> — 建立 detected/backfilled/absent/ambiguous cells</li>
                 <li><code>xic_extractor/alignment/production_decisions.py</code> — row/cell production decision</li>
                 <li><code>xic_extractor/alignment/tsv_writer.py</code> — TSV 輸出</li>
                 <li><code>xic_extractor/alignment/xlsx_writer.py</code> — XLSX 多 sheet 輸出</li>
@@ -965,7 +965,7 @@
             <li><code>xic_extractor/alignment/ownership.py</code></li>
             <li><code>xic_extractor/alignment/owner_clustering.py</code></li>
             <li><code>xic_extractor/alignment/cross_sample_peak_groups.py</code></li>
-            <li><code>xic_extractor/alignment/owner_backfill.py</code></li>
+<li><code>xic_extractor/alignment/backfill_peak_fact.py</code></li>
             <li><code>xic_extractor/alignment/matrix_identity.py</code></li>
             <li><code>xic_extractor/alignment/production_decisions.py</code></li>
             <li><code>xic_extractor/alignment/tsv_writer.py</code></li>

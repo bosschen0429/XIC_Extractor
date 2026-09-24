@@ -27,7 +27,7 @@ from xic_extractor.ms1_scan_index import (
 from xic_extractor.xic_models import XICRequest, XICTrace, crop_xic_trace_by_rt
 
 OwnerBuildXicBackend = Literal["raw", "raw_superwindow", "ms1_index"]
-OwnerBackfillXicBackend = Literal["raw", "ms1_index", "ms1_index_hybrid"]
+BackfillXicBackend = Literal["raw", "ms1_index", "ms1_index_hybrid"]
 
 _WindowedRequest = tuple[int, XICRequest, tuple[int, int]]
 
@@ -194,9 +194,9 @@ class RawSuperWindowSource:
         return value
 
 
-def source_for_owner_backfill_backend(
+def source_for_backfill_backend(
     source: Any,
-    backend: OwnerBackfillXicBackend,
+    backend: BackfillXicBackend,
 ) -> Any:
     if backend == "raw":
         return source

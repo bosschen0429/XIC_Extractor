@@ -10,7 +10,7 @@ from tests.processing_identity_no_raw_fixture import (
     processing_identity_hypothesis,
     processing_identity_selection,
 )
-from xic_extractor.alignment import owner_backfill_evaluation
+from xic_extractor.alignment import backfill_evaluation
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.targeted_hypothesis_alignment import (
     TargetedHypothesisAlignmentInput,
@@ -96,12 +96,12 @@ def test_no_profile_targeted_backfill_preserves_activation_base_compatibility(
         )
 
     monkeypatch.setattr(
-        owner_backfill_evaluation,
+        backfill_evaluation,
         "prepare_physical_signal",
         reject_canonical_owner,
     )
     monkeypatch.setattr(
-        owner_backfill_evaluation,
+        backfill_evaluation,
         "evaluate_physical_peak",
         reject_canonical_owner,
     )

@@ -6,8 +6,15 @@ import json
 from dataclasses import InitVar, asdict, dataclass, field, fields
 from typing import Literal
 
-from xic_extractor.alignment.backfill.observation_repair import (
-    ObservationRepairReceipt,
+from xic_extractor.alignment.backfill.observation_revisit import (
+    ObservationRevisitReceipt,
+)
+from xic_extractor.alignment.backfill_peak_fact import (
+    BackfillPeakFactObservation,
+    validate_backfill_peak_fact_observation,
+)
+from xic_extractor.alignment.backfill_peak_fact_projection import (
+    selected_integration_authority_projection,
 )
 from xic_extractor.alignment.cell_group_context import (
     _ARTIFACT_CONTENT_ID_PREFIX,
@@ -36,13 +43,6 @@ from xic_extractor.alignment.cross_sample_peak_groups import (
 from xic_extractor.alignment.hypothesis_owner_adapter import (
     HypothesisOwnerAdapterError,
     validate_cid_nl_assessment_hypothesis_closure,
-)
-from xic_extractor.alignment.owner_backfill import (
-    OwnerBackfillPeakFactObservation,
-    validate_owner_backfill_peak_fact_observation,
-)
-from xic_extractor.alignment.owner_backfill_peak_fact_projection import (
-    selected_integration_authority_projection,
 )
 from xic_extractor.configuration.target_identity import ResolvedTargetDefinition
 from xic_extractor.evidence_artifacts import (
@@ -570,8 +570,8 @@ def _repaired_member_integration(
     member: CrossSampleGroupMemberSubject | None,
     group: CrossSampleGroupIdentity,
     canonical_sample: ResolvedCanonicalSampleIdentity,
-    repair_receipt: ObservationRepairReceipt | None,
-    repaired_observation: OwnerBackfillPeakFactObservation | None,
+    repair_receipt: ObservationRevisitReceipt | None,
+    repaired_observation: BackfillPeakFactObservation | None,
 ) -> IntegrationResult | None:
     if repair_receipt is None and repaired_observation is None:
         return None
@@ -579,7 +579,7 @@ def _repaired_member_integration(
         raise CellObservationContractError(
             "repaired member requires both receipt and live owner observation"
         )
-    if type(repair_receipt) is not ObservationRepairReceipt:
+    if type(repair_receipt) is not ObservationRevisitReceipt:
         raise CellObservationContractError("repair receipt is not owner-minted")
     if member is None:
         return None
@@ -598,7 +598,7 @@ def _repaired_member_integration(
             "repair receipt does not authorize the exact final member"
         )
     try:
-        validate_owner_backfill_peak_fact_observation(repaired_observation)
+        validate_backfill_peak_fact_observation(repaired_observation)
     except (AttributeError, TypeError, ValueError) as exc:
         raise CellObservationContractError(str(exc)) from exc
     facts = repaired_observation.facts

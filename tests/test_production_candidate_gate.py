@@ -32,10 +32,10 @@ def test_direct_review_row_tier2_token_does_not_promote_without_sidecar(
                 "skip_expensive_evidence"
             ),
             detected=1,
-            rescued=2,
+            backfilled=2,
             independent_support=TIER2_SUPPORT_COMPONENT,
         ),
-        _cell_rows(detected=1, rescued=2),
+        _cell_rows(detected=1, backfilled=2),
         source_context=source_context_for_artifacts(
             review_path=review_path,
             cell_path=cell_path,
@@ -57,7 +57,7 @@ def test_valid_tier2_sidecar_support_tracks_candidate(tmp_path: Path) -> None:
 
     decision = evaluate_production_candidate_gate(
         review_row,
-        _cell_rows(detected=1, rescued=2),
+        _cell_rows(detected=1, backfilled=2),
         source_context=source_context,
         tier2_evidence=evidence,
     )
@@ -86,9 +86,9 @@ def test_retention_candidate_without_positive_tier2_support_stays_provisional(
         _review_row(
             flags="single_detected_seed;provisional_retention_candidate",
             detected=1,
-            rescued=1,
+            backfilled=1,
         ),
-        _cell_rows(detected=1, rescued=1, scan_support_score="0.3"),
+        _cell_rows(detected=1, backfilled=1, scan_support_score="0.3"),
         source_context=source_context_for_artifacts(
             review_path=review_path,
             cell_path=cell_path,
@@ -116,11 +116,11 @@ def test_neighboring_interference_forces_audit(tmp_path: Path) -> None:
         _review_row(
             flags="single_detected_seed;provisional_retention_candidate",
             detected=1,
-            rescued=1,
+            backfilled=1,
         ),
         _cell_rows(
             detected=1,
-            rescued=1,
+            backfilled=1,
             region_review_reason="neighboring_ms1_interference",
         ),
         source_context=source_context_for_artifacts(
@@ -142,9 +142,9 @@ def test_low_scan_support_forces_audit(tmp_path: Path) -> None:
         _review_row(
             flags="single_detected_seed;provisional_retention_candidate",
             detected=1,
-            rescued=1,
+            backfilled=1,
         ),
-        _cell_rows(detected=1, rescued=1, scan_support_score="0.1"),
+        _cell_rows(detected=1, backfilled=1, scan_support_score="0.1"),
         source_context=source_context_for_artifacts(
             review_path=review_path,
             cell_path=cell_path,
@@ -158,7 +158,7 @@ def test_low_scan_support_forces_audit(tmp_path: Path) -> None:
     assert "missing_positive_tier2_support" in decision.challenge_blockers
 
 
-def test_missing_rescued_cell_evidence_blocks_tier2_candidate(
+def test_missing_backfilled_cell_evidence_blocks_tier2_candidate(
     tmp_path: Path,
 ) -> None:
     evidence, review_row, source_context = _load_tier2_fixture(tmp_path)
@@ -185,10 +185,10 @@ def test_fractional_counts_are_not_valid_candidate_eligibility(
         _review_row(
             flags="single_detected_seed;provisional_retention_candidate",
             detected="1.5",
-            rescued=1,
+            backfilled=1,
             independent_support=TIER2_SUPPORT_COMPONENT,
         ),
-        _cell_rows(detected=1, rescued=1),
+        _cell_rows(detected=1, backfilled=1),
         source_context=source_context_for_artifacts(
             review_path=review_path,
             cell_path=cell_path,
@@ -211,10 +211,10 @@ def test_dependent_or_provenance_only_support_tokens_do_not_promote(
         _review_row(
             flags="single_detected_seed;provisional_retention_candidate",
             detected=1,
-            rescued=2,
+            backfilled=2,
             independent_support="owner_backfill_context;rescued_cell_rt_coherence",
         ),
-        _cell_rows(detected=1, rescued=2),
+        _cell_rows(detected=1, backfilled=2),
         source_context=source_context_for_artifacts(
             review_path=review_path,
             cell_path=cell_path,
@@ -234,10 +234,10 @@ def test_unknown_support_token_does_not_promote(tmp_path: Path) -> None:
         _review_row(
             flags="single_detected_seed;provisional_retention_candidate",
             detected=1,
-            rescued=2,
+            backfilled=2,
             independent_support="unreviewed_tier2_placeholder",
         ),
-        _cell_rows(detected=1, rescued=2),
+        _cell_rows(detected=1, backfilled=2),
         source_context=source_context_for_artifacts(
             review_path=review_path,
             cell_path=cell_path,
@@ -251,7 +251,7 @@ def test_unknown_support_token_does_not_promote(tmp_path: Path) -> None:
     assert "missing_positive_tier2_support" in decision.challenge_blockers
 
 
-def test_review_only_exact_token_excludes_but_rescue_only_review_does_not(
+def test_review_only_exact_token_excludes_but_backfill_only_review_does_not(
     tmp_path: Path,
 ) -> None:
     review_path, cell_path, matrix_path = _write_sources(tmp_path)
@@ -266,30 +266,30 @@ def test_review_only_exact_token_excludes_but_rescue_only_review_does_not(
             identity_reason="review_only",
             flags="single_detected_seed;provisional_retention_candidate",
             detected=1,
-            rescued=1,
+            backfilled=1,
         ),
-        _cell_rows(detected=1, rescued=1),
+        _cell_rows(detected=1, backfilled=1),
         source_context=context,
     )
-    rescue_only_review = evaluate_production_candidate_gate(
+    backfill_only_review = evaluate_production_candidate_gate(
         _review_row(
             flags=(
                 "single_detected_seed;provisional_retention_candidate;"
                 "rescue_only_review"
             ),
             detected=1,
-            rescued=1,
+            backfilled=1,
         ),
-        _cell_rows(detected=1, rescued=1),
+        _cell_rows(detected=1, backfilled=1),
         source_context=context,
     )
 
     assert review_only.candidate_gate_status == "audit"
     assert review_only.recommended_action == "review"
     assert "review_only" in review_only.challenge_blockers
-    assert "review_only" not in rescue_only_review.challenge_blockers
-    assert rescue_only_review.candidate_gate_status == "keep_provisional"
-    assert "missing_positive_tier2_support" in rescue_only_review.challenge_blockers
+    assert "review_only" not in backfill_only_review.challenge_blockers
+    assert backfill_only_review.candidate_gate_status == "keep_provisional"
+    assert "missing_positive_tier2_support" in backfill_only_review.challenge_blockers
 
 
 def test_non_retention_candidate_is_reported_without_tier2_promotion(
@@ -297,8 +297,8 @@ def test_non_retention_candidate_is_reported_without_tier2_promotion(
 ) -> None:
     review_path, cell_path, matrix_path = _write_sources(tmp_path)
     decision = evaluate_production_candidate_gate(
-        _review_row(flags="single_detected_seed", detected=1, rescued=1),
-        _cell_rows(detected=1, rescued=1),
+        _review_row(flags="single_detected_seed", detected=1, backfilled=1),
+        _cell_rows(detected=1, backfilled=1),
         source_context=source_context_for_artifacts(
             review_path=review_path,
             cell_path=cell_path,
@@ -319,9 +319,9 @@ def test_gate_row_has_stable_columns_and_hashes(tmp_path: Path) -> None:
         _review_row(
             flags="single_detected_seed;provisional_retention_candidate",
             detected=1,
-            rescued=1,
+            backfilled=1,
         ),
-        _cell_rows(detected=1, rescued=1),
+        _cell_rows(detected=1, backfilled=1),
         source_context=source_context_for_artifacts(
             review_path=review_path,
             cell_path=cell_path,
@@ -349,7 +349,7 @@ def test_summarize_gate_decisions_reports_diagnostic_only_counts(
     production_evidence, review_row, context = _load_tier2_fixture(tmp_path)
     production_candidate = evaluate_production_candidate_gate(
         review_row,
-        _cell_rows(detected=1, rescued=2),
+        _cell_rows(detected=1, backfilled=2),
         source_context=context,
         tier2_evidence=production_evidence,
     )
@@ -357,20 +357,20 @@ def test_summarize_gate_decisions_reports_diagnostic_only_counts(
         _review_row(
             flags="single_detected_seed;provisional_retention_candidate",
             detected=1,
-            rescued=1,
+            backfilled=1,
         ),
-        _cell_rows(detected=1, rescued=1),
+        _cell_rows(detected=1, backfilled=1),
         source_context=context,
     )
     audit = evaluate_production_candidate_gate(
         _review_row(
             flags="single_detected_seed;provisional_retention_candidate",
             detected=1,
-            rescued=1,
+            backfilled=1,
         ),
         _cell_rows(
             detected=1,
-            rescued=1,
+            backfilled=1,
             region_review_reason="neighboring_ms1_interference",
         ),
         source_context=context,
@@ -395,7 +395,7 @@ def test_stale_tier2_source_hash_blocks_support(tmp_path: Path) -> None:
 
     decision = evaluate_production_candidate_gate(
         review_row,
-        _cell_rows(detected=1, rescued=2),
+        _cell_rows(detected=1, backfilled=2),
         source_context=source_context,
         tier2_evidence=evidence,
     )
@@ -413,7 +413,7 @@ def test_unknown_tier2_criteria_version_blocks_support(tmp_path: Path) -> None:
 
     decision = evaluate_production_candidate_gate(
         review_row,
-        _cell_rows(detected=1, rescued=2),
+        _cell_rows(detected=1, backfilled=2),
         source_context=source_context,
         tier2_evidence=evidence,
     )
@@ -434,7 +434,7 @@ def test_inconclusive_tier2_sidecar_does_not_promote(tmp_path: Path) -> None:
 
     decision = evaluate_production_candidate_gate(
         review_row,
-        _cell_rows(detected=1, rescued=2),
+        _cell_rows(detected=1, backfilled=2),
         source_context=source_context,
         tier2_evidence=evidence,
     )
@@ -452,7 +452,7 @@ def test_tier2_hard_challenge_blocker_prevents_support(tmp_path: Path) -> None:
 
     decision = evaluate_production_candidate_gate(
         review_row,
-        _cell_rows(detected=1, rescued=2),
+        _cell_rows(detected=1, backfilled=2),
         source_context=source_context,
         tier2_evidence=evidence,
     )
@@ -470,7 +470,7 @@ def test_mismatched_tier2_family_id_does_not_promote(tmp_path: Path) -> None:
 
     decision = evaluate_production_candidate_gate(
         review_row,
-        _cell_rows(detected=1, rescued=2),
+        _cell_rows(detected=1, backfilled=2),
         source_context=source_context,
         tier2_evidence=evidence,
     )
@@ -511,7 +511,7 @@ def test_invalid_tier2_sidecar_fields_do_not_promote(
 
     decision = evaluate_production_candidate_gate(
         review_row,
-        _cell_rows(detected=1, rescued=2),
+        _cell_rows(detected=1, backfilled=2),
         source_context=source_context,
         tier2_evidence=evidence,
     )
@@ -531,7 +531,7 @@ def test_blank_tier2_neighbor_interference_requires_not_assessed_context(
 
     decision = evaluate_production_candidate_gate(
         review_row,
-        _cell_rows(detected=1, rescued=2),
+        _cell_rows(detected=1, backfilled=2),
         source_context=source_context,
         tier2_evidence=evidence,
     )
@@ -568,7 +568,7 @@ def test_required_tier2_full_schema_values_do_not_promote(
 
     decision = evaluate_production_candidate_gate(
         review_row,
-        _cell_rows(detected=1, rescued=2),
+        _cell_rows(detected=1, backfilled=2),
         source_context=source_context,
         tier2_evidence=evidence,
     )
@@ -609,7 +609,7 @@ def test_tier2_threshold_failures_do_not_promote(
 
     decision = evaluate_production_candidate_gate(
         review_row,
-        _cell_rows(detected=1, rescued=2),
+        _cell_rows(detected=1, backfilled=2),
         source_context=source_context,
         tier2_evidence=evidence,
     )
@@ -626,7 +626,7 @@ def test_tier2_sidecar_missing_metric_column_is_rejected(
     review_row = _review_row(
         flags="single_detected_seed;provisional_retention_candidate",
         detected=1,
-        rescued=2,
+        backfilled=2,
     )
     source_context = source_context_for_artifacts(
         review_path=review_path,
@@ -677,7 +677,7 @@ def test_diagnostic_tier2_sidecar_is_diagnostic_only(tmp_path: Path) -> None:
 
     decision = evaluate_production_candidate_gate(
         review_row,
-        _cell_rows(detected=1, rescued=2),
+        _cell_rows(detected=1, backfilled=2),
         source_context=source_context,
         tier2_evidence=evidence,
     )
@@ -731,7 +731,7 @@ def test_diagnostic_gate_adds_diagnostic_only_blocker_when_row_omits_it(
 
     decision = evaluate_production_candidate_gate(
         review_row,
-        _cell_rows(detected=1, rescued=2),
+        _cell_rows(detected=1, backfilled=2),
         source_context=source_context,
         tier2_evidence=evidence,
     )
@@ -762,7 +762,7 @@ def test_diagnostic_validated_support_spoof_cannot_promote(tmp_path: Path) -> No
 
     decision = evaluate_production_candidate_gate(
         review_row,
-        _cell_rows(detected=1, rescued=2),
+        _cell_rows(detected=1, backfilled=2),
         source_context=source_context,
         tier2_evidence=evidence,
     )
@@ -816,7 +816,7 @@ def _load_tier2_fixture(
     review_row = _review_row(
         flags="single_detected_seed;provisional_retention_candidate",
         detected=1,
-        rescued=2,
+        backfilled=2,
     )
     source_context = source_context_for_artifacts(
         review_path=review_path,
@@ -961,7 +961,7 @@ def _review_row(
     *,
     flags: str,
     detected: object,
-    rescued: object,
+    backfilled: object,
     decision: str = "provisional_discovery",
     identity_reason: str = "insufficient_detected_identity_support",
     duplicate: object = 0,
@@ -977,9 +977,9 @@ def _review_row(
         "identity_reason": identity_reason,
         "primary_evidence": "owner_complete_link",
         "quantifiable_detected_count": str(detected),
-        "quantifiable_backfill_count": str(rescued),
+        "quantifiable_backfill_count": str(backfilled),
         "review_backfill_count": "0",
-        "accepted_backfill_count": str(rescued),
+        "accepted_backfill_count": str(backfilled),
         "duplicate_assigned_count": str(duplicate),
         "ambiguous_ms1_owner_count": str(ambiguous),
         "row_flags": flags,
@@ -991,14 +991,14 @@ def _review_row(
 def _cell_rows(
     *,
     detected: int,
-    rescued: int,
+    backfilled: int,
     scan_support_score: str = "0.8",
     region_review_reason: str = "",
 ) -> tuple[dict[str, str], ...]:
     rows: list[dict[str, str]] = []
     for index in range(detected):
         rows.append(_cell_row(index, "detected", "1000", "0.8", ""))
-    for index in range(detected, detected + rescued):
+    for index in range(detected, detected + backfilled):
         rows.append(
             _cell_row(
                 index,

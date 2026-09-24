@@ -16,13 +16,18 @@ from tests.test_alignment_owner_backfill import _feature
 from tests.test_alignment_owner_clustering import _owner
 from tests.test_backfill_evaluation_coverage import _coverage_fixture
 from xic_extractor.alignment import (
-    owner_backfill_acquisition as owner_backfill_acquisition_runtime,
+    backfill_acquisition as owner_backfill_acquisition_runtime,
 )
 from xic_extractor.alignment.backfill.evaluation_coverage import (
-    OwnerBackfillEvaluationCoverageBatch,
-    OwnerBackfillEvaluationCoverageContext,
-    build_owner_backfill_evaluation_coverage,
-    build_owner_backfill_planning_epoch,
+    BackfillEvaluationCoverageBatch,
+    BackfillEvaluationCoverageContext,
+    build_backfill_evaluation_coverage,
+    build_backfill_planning_epoch,
+)
+from xic_extractor.alignment.backfill_request_plan import (
+    BACKFILL_TRACE_RESULT_SEMANTICS,
+    BackfillRequestEquivalenceContext,
+    build_backfill_request_plan,
 )
 from xic_extractor.alignment.cross_sample import (
     CrossSampleAssociationContractError,
@@ -39,11 +44,6 @@ from xic_extractor.alignment.cross_sample_peak_groups import (
 from xic_extractor.alignment.grouping_result import (
     CrossSampleGroupingContractError,
     CrossSampleGroupingResult,
-)
-from xic_extractor.alignment.owner_backfill_request_plan import (
-    OWNER_BACKFILL_TRACE_RESULT_SEMANTICS,
-    OwnerBackfillRequestEquivalenceContext,
-    build_owner_backfill_request_plan,
 )
 from xic_extractor.alignment.pipeline_outputs import AlignmentRunOutputs
 from xic_extractor.processing_identity import (
@@ -501,9 +501,9 @@ def _runtime_feature(group: CrossSampleGroupIdentity):
 def _coverage(
     fixture: _Fixture,
     groups: tuple[CrossSampleGroupIdentity, ...],
-) -> OwnerBackfillEvaluationCoverageBatch:
+) -> BackfillEvaluationCoverageBatch:
     features = tuple(_runtime_feature(group) for group in groups)
-    context = OwnerBackfillEvaluationCoverageContext(
+    context = BackfillEvaluationCoverageContext(
         processing_owners=fixture.context.processing_owners,
         input_features=features,
         samples=fixture.context.samples,
@@ -514,11 +514,11 @@ def _coverage(
         window_strategy="exact",
         superwindow_span_factor=2,
         validation_mode="primary",
-        result_semantics=OWNER_BACKFILL_TRACE_RESULT_SEMANTICS,
+        result_semantics=BACKFILL_TRACE_RESULT_SEMANTICS,
         scope="selected-families",
         selected_family_ids=frozenset({"not-this-family"}),
     )
-    equivalence = OwnerBackfillRequestEquivalenceContext(
+    equivalence = BackfillRequestEquivalenceContext(
         acquisition_sources=fixture.acquisitions,
         backend=context.backend,
         window_strategy=context.window_strategy,
@@ -526,19 +526,19 @@ def _coverage(
         validation_mode=context.validation_mode,
         result_semantics=context.result_semantics,
     )
-    request_plan = build_owner_backfill_request_plan(
+    request_plan = build_backfill_request_plan(
         (),
         sample_order=context.sample_order,
         raw_sample_stems=context.raw_sample_stems,
         alignment_config=context.alignment_config,
         equivalence_context=equivalence,
     )
-    epoch = build_owner_backfill_planning_epoch(
+    epoch = build_backfill_planning_epoch(
         context,
         selected_features=(),
         request_plan=request_plan,
     )
-    return build_owner_backfill_evaluation_coverage(epoch, ())
+    return build_backfill_evaluation_coverage(epoch, ())
 
 
 def _final_receipt(

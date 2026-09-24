@@ -7,11 +7,11 @@ import json
 from collections.abc import Callable, Mapping
 from dataclasses import asdict, dataclass
 
+from xic_extractor.alignment.backfill_peak_fact import BackfillSource
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.cross_sample_peak_groups import (
     CrossSamplePeakGroupHypothesis,
 )
-from xic_extractor.alignment.owner_backfill import OwnerBackfillSource
 from xic_extractor.alignment.targeted_hypothesis_alignment import (
     TargetedHypothesisAlignmentInput,
     align_selected_targeted_hypotheses,
@@ -57,7 +57,7 @@ class TargetedDiagnosticProjection:
 @dataclass(frozen=True, slots=True)
 class TargetedDiagnosticMethodRequest:
     alignment_inputs: tuple[TargetedHypothesisAlignmentInput, ...]
-    backfill_sources: Mapping[str, OwnerBackfillSource]
+    backfill_sources: Mapping[str, BackfillSource]
     alignment_config: AlignmentConfig
     peak_config: ExtractionConfig
     targets: tuple[Target, ...]

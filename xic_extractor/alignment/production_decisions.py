@@ -45,7 +45,7 @@ ALIGNMENT_DECISION_CONFIG_SCHEMA_VERSION = "alignment_decision_config_projection
 PRODUCTION_CELL_DECISION_SCHEMA_VERSION = "production_cell_decision_projection"
 ALIGNMENT_DECISION_CONFIG_ID_PREFIX = "alignment-decision-config:"
 PRODUCTION_CELL_DECISION_ID_PREFIX = "production-cell-decision:"
-OWNER_BACKFILL_AUTHORITY_CELL_ID_PREFIX = "owner-backfill-authority-cell:"
+BACKFILL_AUTHORITY_CELL_ID_PREFIX = "owner-backfill-authority-cell:"
 
 ALIGNMENT_DECISION_CONFIG_FIELDS = (
     "preferred_ppm",
@@ -239,7 +239,7 @@ def production_cell_decision_projection(
         raise TypeError("cell must be an AlignedCell")
     _require_typed_authority_id(
         owner_backfill_cell_content_id,
-        prefix=OWNER_BACKFILL_AUTHORITY_CELL_ID_PREFIX,
+        prefix=BACKFILL_AUTHORITY_CELL_ID_PREFIX,
         field="owner_backfill_cell_content_id",
     )
     if (decision.feature_family_id, decision.sample_stem, decision.raw_status) != (
@@ -296,7 +296,7 @@ def production_cell_decision_record(
             "production_status_rank",
             float(_PRODUCTION_STATUS_RANK[decision.production_status]),
         ),
-        ("backfill_tier_rank", float(_RESCUE_TIER_RANK[decision.backfill_tier])),
+        ("backfill_tier_rank", float(_BACKFILL_TIER_RANK[decision.backfill_tier])),
         (
             "matrix_value_present_rank",
             0.0 if decision.matrix_value is not None else 1.0,
@@ -364,7 +364,7 @@ _PRODUCTION_STATUS_RANK: dict[ProductionStatus, int] = {
     "rejected_backfill": 3,
     "blank": 4,
 }
-_RESCUE_TIER_RANK: dict[BackfillTier, int] = {
+_BACKFILL_TIER_RANK: dict[BackfillTier, int] = {
     "": 0,
     "accepted_backfill": 1,
     "review_backfill": 2,

@@ -143,7 +143,7 @@
       <p class="intro">Targeted 已知要找哪些 Target，Untargeted 從證據形成群組；兩者共用候選後的科學責任，再由各自的投影決定列、檢視與輸出樣式。</p>
       <div class="grid">
         <div class="card"><h3>入口約束不等於觀察結果</h3><p>Targeted 的目標清單限制搜尋並固定輸出列，但不能證明某樣本真的有峰。Untargeted 搜尋設定的證據空間，從關閉的 CrossSample 群組取得列身份。兩個入口都要走觀察、群組、可選修復與格值決策。</p></div>
-        <div class="card"><h3>每個 owner 只回答自己的問題</h3><p>Discovery 產生候選；CrossSample 管群組；ObservationRepair 修一個不完整的觀察；Backfill 重訪缺格；<code>ProductionCellDecision</code> 選數值或不寫。結果關閉後，writer 只呈現已完成的決策，不重新讀 RAW 或重做科學判斷。</p></div>
+        <div class="card"><h3>每個 owner 只回答自己的問題</h3><p>Discovery 產生候選；CrossSample 管群組；ObservationRevisit 修一個不完整的觀察；Backfill 重訪缺格；<code>ProductionCellDecision</code> 選數值或不寫。結果關閉後，writer 只呈現已完成的決策，不重新讀 RAW 或重做科學判斷。</p></div>
       </div>
       <p class="owner"><strong>正式產品 owner：</strong><code>docs/product/shared-processing-kernel.md</code>。介面、生命周期與 Targeted／Untargeted 責任邊界以該文件為準。</p>
     </section>
@@ -153,7 +153,7 @@
       <p class="intro">Backfill 是有限、依證據的本地重訪。已有直接觀察的格子可能不需要重訪；證據不足也可以保留未修復的理由。</p>
       <div class="grid">
         <div class="card example"><h3>例子：C 的缺格</h3><p>若 A、B 提供已由 owner 支持的群組脈絡，C 可以依那個脈絡檢查本地訊號。找到峰也只是新增或修復一個觀察；還要另外判斷它是否屬於群組、是否可量化，以及能否寫出數值。</p></div>
-        <div class="card"><h3>回填不是插值</h3><p>Backfill 不從 A、B 的面積猜 C 的數字，也不能從零建立 Target／群組。它回傳可追溯的 <code>ObservationRepair</code> 決定或明確的不修復結果；不直接給群組成員資格、選定數值或 writer 權限。</p></div>
+        <div class="card"><h3>回填不是插值</h3><p>Backfill 不從 A、B 的面積猜 C 的數字，也不能從零建立 Target／群組。它回傳可追溯的 <code>ObservationRevisit</code> 決定或明確的不修復結果；不直接給群組成員資格、選定數值或 writer 權限。</p></div>
       </div>
       <p class="owner"><strong>正式產品 owner：</strong><code>docs/product/backfill.md</code>。重訪資格、來源證據、修復結果與套用邊界以該文件為準。</p>
     </section>
@@ -163,7 +163,7 @@
       <p class="intro">觀察證據、排序分數與產品決策是三件事。高分只能在可比較的候選之間排序，不能跳過缺少必要證據、錯峰衝突或來源不明等硬阻擋。</p>
       <div class="grid">
         <div class="card"><h3>一個可解釋的決策順序</h3><p>先說正在決定哪個群組或格子；列出必要的 trace、峰、來源等證據；檢查衝突與歧義；最後才用支持事實和排序解決仍可比較的候選。Targeted 與 Untargeted 各自決定列、計數、理由與檢視路由。</p></div>
-        <div class="card example"><h3>例子：C 找到峰也可能不寫</h3><p>C 的 repaired observation 若與群組身份不符，或積分不可用，格值可以明確停在 no-write。投影先建立列與格的 subject；<code>ProductionCellDecision</code> 再決定數值或不寫；同一投影最後處理列納入與理由。</p></div>
+        <div class="card example"><h3>例子：C 找到峰也可能不寫</h3><p>C 的 Backfill observation 若與群組身份不符，或積分不可用，格值可以明確停在 no-write。投影先建立列與格的 subject；<code>ProductionCellDecision</code> 再決定數值或不寫；同一投影最後處理列納入與理由。</p></div>
       </div>
       <p class="owner"><strong>正式產品 owner：</strong><code>docs/product/decision-policy.md</code>。證據語義、硬門檻、排序與工作模式決策以該文件為準。</p>
     </section>
@@ -186,7 +186,7 @@
         <div class="term"><dt>PeakHypothesis</dt><dd>提出某個峰的身份、RT 範圍和積分依據；被選中也不等於有寫入權限。</dd></div>
         <div class="term"><dt>CrossSample</dt><dd>跨樣本群組、成員與身份的科學 owner。</dd></div>
         <div class="term"><dt>ModeTrack</dt><dd>從不可變的 RT 軌跡證據提出修正建議，不能自行移動群組成員。</dd></div>
-        <div class="term"><dt>ObservationRepair</dt><dd>一個已有脈絡的本地觀察的修復決定；不等於插值或最後格值。</dd></div>
+        <div class="term"><dt>ObservationRevisit</dt><dd>一個已有脈絡的本地觀察的修復決定；不等於插值或最後格值。</dd></div>
         <div class="term"><dt>ProductionCellDecision</dt><dd>對一個明確 Target／群組格子，獨立選定數值或 no-write 的 owner。</dd></div>
       </dl>
       <p class="owner"><strong>正式詞彙 owner：</strong><code>docs/product/domain-glossary.md</code>。完整術語、Targeted／Untargeted 與產品權限定義以該文件為準。</p>

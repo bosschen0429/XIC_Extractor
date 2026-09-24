@@ -10,6 +10,10 @@ from typing import Any
 from xic_extractor.alignment.artifact_write_receipts import (
     AlignmentArtifactFingerprintBatch,
 )
+from xic_extractor.alignment.backfill_peak_fact import BackfillWindowStrategy
+from xic_extractor.alignment.backfill_peak_fact_provenance import (
+    EMPTY_BACKFILL_PEAK_FACT_PROVENANCE_BATCH,
+)
 from xic_extractor.alignment.backfill_scope import BackfillScope
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.csv_io import (
@@ -23,17 +27,13 @@ from xic_extractor.alignment.drift_evidence import (
     read_known_istd_reference,
 )
 from xic_extractor.alignment.ms1_index_source import (
-    OwnerBackfillXicBackend,
+    BackfillXicBackend,
     OwnerBuildXicBackend,
 )
 from xic_extractor.alignment.output_levels import (
     EXPLANATION_ARTIFACT_NAME,
     AlignmentOutputLevel,
     artifact_names_for_output_level,
-)
-from xic_extractor.alignment.owner_backfill import OwnerBackfillWindowStrategy
-from xic_extractor.alignment.owner_backfill_peak_fact_provenance import (
-    EMPTY_OWNER_BACKFILL_PEAK_FACT_PROVENANCE_BATCH,
 )
 from xic_extractor.alignment.owner_build_route_receipt import (
     OwnerBuildRouteReceipt,
@@ -156,8 +156,8 @@ def run_alignment(
     raw_worker_backend: str = "thread",
     raw_xic_batch_size: int = 1,
     owner_build_xic_backend: OwnerBuildXicBackend = "raw",
-    owner_backfill_xic_backend: OwnerBackfillXicBackend = "raw",
-    owner_backfill_window_strategy: OwnerBackfillWindowStrategy = "exact",
+    owner_backfill_xic_backend: BackfillXicBackend = "raw",
+    owner_backfill_window_strategy: BackfillWindowStrategy = "exact",
     owner_backfill_superwindow_span_factor: int = 2,
     sample_column_injection_order: Path | None = None,
     sample_metadata: tuple[SampleMetadata, ...] | None = None,
@@ -321,8 +321,8 @@ def _validate_untargeted_alignment_options(
     raw_workers: int = DEFAULT_ALIGNMENT_WORKERS,
     raw_worker_backend: str = "thread",
     raw_xic_batch_size: int = 1,
-    owner_backfill_xic_backend: OwnerBackfillXicBackend = "raw",
-    owner_backfill_window_strategy: OwnerBackfillWindowStrategy = "exact",
+    owner_backfill_xic_backend: BackfillXicBackend = "raw",
+    owner_backfill_window_strategy: BackfillWindowStrategy = "exact",
     owner_backfill_superwindow_span_factor: int = 2,
     sample_column_injection_order: Path | None = None,
     backfill_scope: BackfillScope = "full-audit",
@@ -391,8 +391,8 @@ def _run_untargeted_alignment(
     raw_worker_backend: str = "thread",
     raw_xic_batch_size: int,
     owner_build_xic_backend: OwnerBuildXicBackend,
-    owner_backfill_xic_backend: OwnerBackfillXicBackend,
-    owner_backfill_window_strategy: OwnerBackfillWindowStrategy,
+    owner_backfill_xic_backend: BackfillXicBackend,
+    owner_backfill_window_strategy: BackfillWindowStrategy,
     owner_backfill_superwindow_span_factor: int,
     sample_column_injection_order: Path | None,
     sample_metadata: tuple[SampleMetadata, ...] | None,
@@ -533,7 +533,7 @@ def _run_untargeted_alignment(
             require_discovery_owner_closure=True,
             signal_processing_profile=signal_processing_profile,
             owner_backfill_peak_fact_provenance_row_count=len(
-                EMPTY_OWNER_BACKFILL_PEAK_FACT_PROVENANCE_BATCH.rows
+                EMPTY_BACKFILL_PEAK_FACT_PROVENANCE_BATCH.rows
             ),
         )
         metadata.update(
@@ -581,7 +581,7 @@ def _run_untargeted_alignment(
                         owners=(), assignments=(), ambiguous_records=()
                     ),
                     alignment_config=alignment_config,
-                    owner_backfill_peak_fact_provenance=EMPTY_OWNER_BACKFILL_PEAK_FACT_PROVENANCE_BATCH,
+                    backfill_peak_fact_provenance=EMPTY_BACKFILL_PEAK_FACT_PROVENANCE_BATCH,
                     production_decisions=writer_inputs.production_decisions,
                     baseline_integration_method=getattr(
                         peak_config, "baseline_integration_method", "asls"

@@ -18,15 +18,15 @@ evidence rather than through dataset-specific shortcuts.
 
 The three core product stages are **Discovery → Alignment → Backfill（回填）**.
 Backfill is the canonical name for the bounded missing-cell revisit, in product
-text and in implementation identifiers. `ObservationRepair` names its typed
-decision contract. Backfill is conditional: cells with sufficient existing
-observations need no revisit.
+text and in implementation identifiers. `ObservationRevisit` names the retained
+typed receipt for such a revisit. Backfill is conditional: cells with sufficient
+existing observations need no revisit.
 
 XIC has one shared scientific processing lifecycle. Untargeted extraction is
 its general application; Targeted extraction is a constrained application,
 not a second peer core:
 
-`SearchScope -> provider-specific Discovery/capture -> shared observation/evidence contract -> PeakHypothesis/owner evidence -> constrained CrossSample grouping -> optional initial ModeTrack refinement where the workflow uses it -> stable CrossSampleGroupingResult -> optional bounded Backfill/ObservationRepair -> projection binding/subjects -> ProductionCellDecision -> projection completion -> result finalizer`
+`SearchScope -> provider-specific Discovery/capture -> shared observation/evidence contract -> PeakHypothesis/owner evidence -> constrained CrossSample grouping -> optional initial ModeTrack refinement where the workflow uses it -> stable CrossSampleGroupingResult -> optional bounded Backfill/ObservationRevisit -> projection binding/subjects -> ProductionCellDecision -> projection completion -> result finalizer`
 
 - Both applications may use a broad candidate-discovery policy. Here, `broad`
   describes which evidence relationships the method may inspect, such as dR,
@@ -40,7 +40,7 @@ not a second peer core:
 - Targeted supplies an exact `TargetListSnapshot` and a constrained
   `TargetSearchScope`. It retains one fixed output row per `TargetKey` and
   discards unrelated groups from that delivery. It does not require a second
-  peak-capture, cross-sample, trajectory, repair, or cell-decision core.
+  peak-capture, cross-sample, trajectory, Backfill, or cell-decision core.
 
 Discovery providers such as CID-NL, HCD-PI, and Delta Mass interpret their
 method-specific inputs and produce sample-local evidence and hypotheses through
@@ -52,11 +52,12 @@ identity, disposition, and lineage. It returns one immutable
 Backfill and through finalization. `ModeTrack` may propose an initial
 trajectory-based refinement only where the workflow explicitly uses it, and
 the grouping workflow applies an accepted complete-partition transition before
-the result becomes stable. `ObservationRepair` repairs
-an existing but incomplete or inconsistent observation. Backfill uses an
-already owner-backed Target or group context to make one bounded revisit of a
-missing or insufficient cell and returns a repaired/new observation or typed
-no-repair result. It may backfill the first usable observation for that cell,
+the result becomes stable. Backfill uses an already established Target or group
+context to make one bounded revisit of a missing or insufficient cell and may
+return an observation or typed no-observation result. The retained
+`ObservationRevisit` receipt can represent that decision; the current Untargeted
+CID-NL production route uses the conservative Backfill decision. Backfill may
+produce the first usable observation for that cell,
 but it cannot originate the Target/group, mint membership, select a product
 value, or grant writer authority.
 The workflow-owned projection first creates typed Target/Group row bindings and
@@ -69,7 +70,7 @@ Targeted and Untargeted may apply different search scopes, priors, projection
 rules, GUI flows, and output contracts. Evidence or output authority from one
 projection does not grant write authority in the other without an explicit
 contract, expected-diff evidence, and focused tests. Different projections do
-not imply different capture, group, ModeTrack, ObservationRepair, or cell-
+not imply different capture, group, ModeTrack, ObservationRevisit, or cell-
 decision implementations.
 
 ## Evidence Spine
@@ -98,7 +99,7 @@ Use these terms consistently:
 - `CrossSampleGroupingResult`: one immutable request-bound result containing
   the exact processing owners, accepted complete-partition transition, and
   prepared drift lookup. Its groups stay fixed through bounded Backfill,
-  ObservationRepair, cell decisions, and finalization.
+  ObservationRevisit, cell decisions, and finalization.
 - `CrossSamplePartitionTransition`: the CrossSample-owned mathematical
   before/after transition between two complete group partitions. It is the
   application record for an accepted initial refinement, not a mutable
@@ -123,15 +124,16 @@ Use these terms consistently:
   refinement before `CrossSampleGroupingResult` closes. It does not refit after
   repair, mint groups, re-integrate traces, repair observations, or write
   values.
-- `ObservationRepair`: one bounded Backfill decision that may produce an
-  owner-backed repaired observation for a pre-existing Target or group cell.
+- `ObservationRevisit`: the retained typed receipt for one bounded Backfill
+  revisit of a pre-existing Target or group cell. The revisit may produce its
+  first usable observation.
   It is not imputation, group membership, or product-value authority.
 - `ProductionCellDecision`: the sole core owner of the selected numeric value
   or typed no-write result for one `TargetCellSubject` or `GroupCellSubject`.
   Observations retain measurement facts; they do not select the delivered
   value themselves.
 - `FinalizedScientificAlignment`: immutable shared core containing the stable
-  grouping result, dispositions, membership/lineage, and closed repair receipts
+  grouping result, dispositions, membership/lineage, and closed revisit receipts
   needed by a workflow projection. It is not an output artifact or mutable
   Matrix.
 - `TargetRowBinding`: Target projection decision that binds one fixed
@@ -337,7 +339,7 @@ Untargeted lane:
 - The feature-by-sample quantitative matrix is the downstream analytical
   handoff. Its sample identity and order may share method-document-derived
   metadata with Targeted delivery without sharing its output schema.
-- ObservationRepair must stay bounded and owner-backed. Broad Backfill
+- ObservationRevisit must stay bounded and owner-backed. Broad Backfill
   diagnostics or blockers cannot select values merely because they classify
   rows; only `ProductionCellDecision` and the owning projection can authorize a
   delivery value.
@@ -355,28 +357,40 @@ Shared lane:
 
 ## One Word, One Meaning
 
-A word used in an identifier or artifact name carries one meaning across the
-repository. When a word already carries several, the table records each sense
-and its owner until the extra senses are renamed; a new use picks the word that
-belongs to its sense instead of adding another.
+A word earns its place in an identifier when removing it changes the meaning.
+New internal names use one word per concept. Persisted spellings below remain
+stable because they identify existing data or public interfaces.
 
 | Word | Meaning | Not this word |
 | --- | --- | --- |
 | `backfill` | the bounded missing-cell revisit stage | — |
+| `revisit` | one context-directed Backfill attempt, represented by the retained `ObservationRevisit*` receipt types | a repair of a previously observed peak |
 | `recovery` | resuming or closing a run after a runtime failure (`recover_after_coordinator_loss`, `recovery_marker`) | Backfill; candidate search; ISTD retry; oracle recall |
 | `relaxed search` | the peak-detection search near a preferred RT with relaxed thresholds (`peak_detection/relaxed_search.py`) | — |
 | `retry` | the Targeted ISTD anchor search repeated with a wider window (`extraction/istd_anchor_retry.py`) | — |
 | `recall` | the fraction of oracle reference compounds a run finds | — |
 
-Persisted values keep their earlier spelling until their public-surface change:
-the `preferred_rt_recovery` proposal-source label and the CID-NL oracle
-`recovery_claim_label` column and its values.
+The surviving `owner` senses are the sample-local MS1 peak to which candidates
+are attributed (`SampleLocalMS1Owner`, `owner_apex_rt`), processing authority
+(`processing_owners`, `capture_owner`), and module responsibility
+(`owner_build_xic_backend`). The adjective formerly attached to internal
+Backfill types, functions, constants, and modules adds no meaning and is removed.
 
-`owner` still carries several senses: the sample-local MS1 peak candidates are
-attributed to (`SampleLocalMS1Owner`, `owner_apex_rt`), processing authority
-(`processing_owners`, `owner_seal`), module responsibility (`OWNER_REHYDRATED`),
-and an adjective in `owner_backfill*`. `owner_backfill*` converges with #431,
-the rest with #426.
+Persisted and public exceptions retain their exact spelling:
+
+| Spelling | Why it remains |
+| --- | --- |
+| `preferred_rt_recovery`, `recovery_claim_label` | Existing proposal-source and oracle labels |
+| `xic.observation-repair-*`, `observation_repair_*`, `repair_epoch`, `no_repair`, `repaired` | Typed identity prefixes, schema names, fields, and hash inputs in retained revisit receipts |
+| `owner_backfill_xic_backend`, `owner_backfill_window_strategy`, `owner_backfill_superwindow_span_factor`, `owner_backfill_min_detected_samples` | Existing config and run-metadata keys |
+| `owner_backfill_cell_content_id`, `owner_backfill_peak_fact_provenance_row_count`, `owner_backfill_peak_fact_provenance_tsv`, `owner_backfill_evaluation_coverage`, `owner_backfill_candidate_audit_rows` | Content identity, metadata, and public run/output fields |
+| `owner_finalized_cell_decision`, `owner_finalized`, `owner_rehydrated`, `owner_bounded_continuity` and their longer diagnostic forms | Existing metadata, decision, and diagnostic values |
+| `alignment_owner_backfill_*`, `owner_backfill_revisit`, `alignment.owner_backfill` | Existing artifact names, source labels, and timing stage |
+| `rescue_quantifiable`, `rescued_cell_*`, `cross_mode_rescue_*`, `q_rescue` | Existing quality, diagnostic TSV/JSON, and decision-record keys |
+| `ms1_feature_nl_rescued` | Discovery NL evidence state, not a Backfill cell status |
+
+The MS2 boundary search's `boundary_rescue` names a distinct peak-detection
+fallback and stays outside Backfill vocabulary.
 
 ## Maintenance
 

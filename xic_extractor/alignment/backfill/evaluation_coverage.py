@@ -8,6 +8,16 @@ from dataclasses import InitVar, asdict, dataclass, field, replace
 from typing import TYPE_CHECKING, Literal, cast
 
 from xic_extractor.acquisition_contract import TraceCoordinate
+from xic_extractor.alignment.backfill_request_plan import (
+    BACKFILL_TRACE_RESULT_SEMANTICS,
+    BackfillLogicalRequestMember,
+    BackfillRequestIdentity,
+    BackfillRequestItem,
+    BackfillRequestPlan,
+    BackfillValidationMode,
+    BackfillWindowStrategy,
+    mint_backfill_logical_request_member,
+)
 from xic_extractor.alignment.backfill_scope import (
     BackfillScope,
     backfill_request_planning_reason,
@@ -22,17 +32,7 @@ from xic_extractor.alignment.cross_sample_peak_groups import (
     validate_cross_sample_group_population,
     validate_cross_sample_peak_group_identity,
 )
-from xic_extractor.alignment.ms1_index_source import OwnerBackfillXicBackend
-from xic_extractor.alignment.owner_backfill_request_plan import (
-    OWNER_BACKFILL_TRACE_RESULT_SEMANTICS,
-    OwnerBackfillLogicalRequestMember,
-    OwnerBackfillRequestIdentity,
-    OwnerBackfillRequestItem,
-    OwnerBackfillRequestPlan,
-    OwnerBackfillValidationMode,
-    OwnerBackfillWindowStrategy,
-    mint_owner_backfill_logical_request_member,
-)
+from xic_extractor.alignment.ms1_index_source import BackfillXicBackend
 from xic_extractor.alignment.owner_group_delivery import OwnerGroupDeliveryFeatures
 from xic_extractor.evidence_artifacts import (
     EvidenceArtifactRef,
@@ -63,8 +63,8 @@ if TYPE_CHECKING:
 
 _CONSERVATIVE_PROOF_MINT_TOKEN = object()
 
-OwnerBackfillPlanningState = Literal["planned", "not_planned"]
-OwnerBackfillPlanningReason = Literal[
+BackfillPlanningState = Literal["planned", "not_planned"]
+BackfillPlanningReason = Literal[
     "planned",
     "production_equivalent_excluded",
     "selected_family_excluded",
@@ -78,7 +78,7 @@ OwnerBackfillPlanningReason = Literal[
     "backfill_search_completed_empty",
     "no_discovery_input",
 ]
-OWNER_BACKFILL_PLANNING_REASONS: tuple[OwnerBackfillPlanningReason, ...] = (
+BACKFILL_PLANNING_REASONS: tuple[BackfillPlanningReason, ...] = (
     "planned",
     "production_equivalent_excluded",
     "selected_family_excluded",
@@ -93,7 +93,7 @@ OWNER_BACKFILL_PLANNING_REASONS: tuple[OwnerBackfillPlanningReason, ...] = (
     "no_discovery_input",
 )
 
-OwnerBackfillCandidatePhase = Literal[
+BackfillCandidatePhase = Literal[
     "primary_query",
     "prefilter_query",
     "primary_fallback",
@@ -101,7 +101,7 @@ OwnerBackfillCandidatePhase = Literal[
     "validation_unavailable",
     "validation_fallback",
 ]
-OWNER_BACKFILL_CANDIDATE_PHASES: tuple[OwnerBackfillCandidatePhase, ...] = (
+BACKFILL_CANDIDATE_PHASES: tuple[BackfillCandidatePhase, ...] = (
     "primary_query",
     "prefilter_query",
     "primary_fallback",
@@ -109,12 +109,12 @@ OWNER_BACKFILL_CANDIDATE_PHASES: tuple[OwnerBackfillCandidatePhase, ...] = (
     "validation_unavailable",
     "validation_fallback",
 )
-OwnerBackfillTerminalReason = Literal[
+BackfillTerminalReason = Literal[
     "primary_unassessable",
     "validation_source_unavailable",
     "validation_unassessable",
 ]
-OWNER_BACKFILL_TERMINAL_REASONS: tuple[OwnerBackfillTerminalReason, ...] = (
+BACKFILL_TERMINAL_REASONS: tuple[BackfillTerminalReason, ...] = (
     "primary_unassessable",
     "validation_source_unavailable",
     "validation_unassessable",
@@ -136,7 +136,7 @@ _COMPLETED_BACKFILL_CONTRACT = _mint_artifact_semantic_contract_ref(
 
 
 @dataclass(frozen=True, slots=True)
-class OwnerBackfillCompletedBackfillProjection:
+class BackfillCompletionProjection:
     """Runtime-issued completion evidence; it makes no physical absence claim."""
 
     processing_owners: ProcessingOwnerReferences
@@ -231,12 +231,12 @@ class OwnerBackfillCompletedBackfillProjection:
             raise ValueError("completed backfill lost its runtime artifact closure")
         verify_evidence_artifact_payload(
             self.artifact,
-            canonical_owner_backfill_completed_backfill_bytes(self),
+            canonical_backfill_completion_bytes(self),
         )
 
 
-def canonical_owner_backfill_completed_backfill_bytes(
-    projection: OwnerBackfillCompletedBackfillProjection,
+def canonical_backfill_completion_bytes(
+    projection: BackfillCompletionProjection,
 ) -> bytes:
     return _completed_backfill_projection_bytes(
         processing_owners=projection.processing_owners,
@@ -305,9 +305,9 @@ class ConservativeNoRequestProofBuilder:
         *,
         sample: ResolvedCanonicalSampleIdentity,
         decision: ConservativeBackfillCellDecision,
-        completion: OwnerBackfillCompletedBackfillProjection | None = None,
-    ) -> OwnerBackfillConservativeNoRequestProof:
-        return mint_owner_backfill_conservative_no_request_proof(
+        completion: BackfillCompletionProjection | None = None,
+    ) -> BackfillConservativeNoRequestProof:
+        return mint_backfill_conservative_no_request_proof(
             processing_owners=self.processing_owners,
             group_identity=self.group_identity,
             sample=sample,
@@ -318,7 +318,7 @@ class ConservativeNoRequestProofBuilder:
 
 
 @dataclass(frozen=True, slots=True)
-class OwnerBackfillConservativeNoRequestProof:
+class BackfillConservativeNoRequestProof:
     """Exact conservative decision retained across a no-request coverage lane."""
 
     proof_id: str
@@ -326,7 +326,7 @@ class OwnerBackfillConservativeNoRequestProof:
     group_identity: CrossSampleGroupIdentity
     sample: ResolvedCanonicalSampleIdentity
     decision: ConservativeBackfillCellDecision
-    completion: OwnerBackfillCompletedBackfillProjection | None = None
+    completion: BackfillCompletionProjection | None = None
     # Construction-only: persisted proof fields and IDs remain unchanged.
     # Direct construction/replacement still validates the complete binding.
     _group_binding: InitVar[ConservativeNoRequestProofBuilder | None] = None
@@ -341,7 +341,7 @@ class OwnerBackfillConservativeNoRequestProof:
         )
 
     @property
-    def planning_reason(self) -> OwnerBackfillPlanningReason:
+    def planning_reason(self) -> BackfillPlanningReason:
         return (
             "direct_support_threshold_not_met"
             if self.completion is None
@@ -371,16 +371,16 @@ class OwnerBackfillConservativeNoRequestProof:
             raise ValueError("conservative no-request proof identity was substituted")
 
 
-def mint_owner_backfill_conservative_no_request_proof(
+def mint_backfill_conservative_no_request_proof(
     *,
     processing_owners: ProcessingOwnerReferences,
     group_identity: CrossSampleGroupIdentity,
     sample: ResolvedCanonicalSampleIdentity,
     decision: ConservativeBackfillCellDecision,
-    completion: OwnerBackfillCompletedBackfillProjection | None = None,
+    completion: BackfillCompletionProjection | None = None,
     _group_binding: ConservativeNoRequestProofBuilder | None = None,
-) -> OwnerBackfillConservativeNoRequestProof:
-    return OwnerBackfillConservativeNoRequestProof(
+) -> BackfillConservativeNoRequestProof:
+    return BackfillConservativeNoRequestProof(
         proof_id=_typed_id(
             "xic.owner-backfill-conservative-no-request:",
             _conservative_no_request_basis(
@@ -441,7 +441,7 @@ def _validate_conservative_group_binding(
 
 
 def _validate_conservative_no_request(
-    proof: OwnerBackfillConservativeNoRequestProof,
+    proof: BackfillConservativeNoRequestProof,
     group_binding: ConservativeNoRequestProofBuilder | None = None,
 ) -> None:
     # These owners consume coverage types; defer their validation imports.
@@ -524,7 +524,7 @@ def _conservative_no_request_basis(
     group_identity: CrossSampleGroupIdentity,
     sample: ResolvedCanonicalSampleIdentity,
     decision: ConservativeBackfillCellDecision,
-    completion: OwnerBackfillCompletedBackfillProjection | None,
+    completion: BackfillCompletionProjection | None,
 ) -> Mapping[str, object]:
     facts = decision.group_facts
     basis: dict[str, object] = {
@@ -599,17 +599,17 @@ def _canonical_proof_bytes(basis: Mapping[str, object]) -> bytes:
 
 
 @dataclass(frozen=True, slots=True)
-class OwnerBackfillEvaluationCoverageContext:
+class BackfillEvaluationCoverageContext:
     processing_owners: ProcessingOwnerReferences
     input_features: OwnerGroupDeliveryFeatures
     samples: tuple[ResolvedCanonicalSampleIdentity, ...]
     sample_order: tuple[str, ...]
     raw_sample_stems: frozenset[str]
     alignment_config: AlignmentConfig
-    backend: OwnerBackfillXicBackend
-    window_strategy: OwnerBackfillWindowStrategy
+    backend: BackfillXicBackend
+    window_strategy: BackfillWindowStrategy
     superwindow_span_factor: int
-    validation_mode: OwnerBackfillValidationMode
+    validation_mode: BackfillValidationMode
     result_semantics: str
     scope: BackfillScope
     selected_family_ids: frozenset[str]
@@ -647,17 +647,17 @@ class OwnerBackfillEvaluationCoverageContext:
 
 
 @dataclass(frozen=True, slots=True)
-class OwnerBackfillPlannedLogicalRequest:
-    logical_request: OwnerBackfillLogicalRequestMember
-    request_identity: OwnerBackfillRequestIdentity
+class BackfillPlannedLogicalRequest:
+    logical_request: BackfillLogicalRequestMember
+    request_identity: BackfillRequestIdentity
 
     def __post_init__(self) -> None:
         if not isinstance(
             self.logical_request,
-            OwnerBackfillLogicalRequestMember,
+            BackfillLogicalRequestMember,
         ):
             raise TypeError("logical_request must be owner-minted")
-        if not isinstance(self.request_identity, OwnerBackfillRequestIdentity):
+        if not isinstance(self.request_identity, BackfillRequestIdentity):
             raise TypeError("request_identity must be owner-minted")
         if self.logical_request.item.sample_stem != self.request_identity.sample_stem:
             raise ValueError("logical request crosses canonical samples")
@@ -666,21 +666,21 @@ class OwnerBackfillPlannedLogicalRequest:
 
 
 @dataclass(frozen=True, slots=True)
-class OwnerBackfillPlanningPosition:
+class BackfillPlanningPosition:
     position_id: str
     group_identity: CrossSampleGroupIdentity
     sample: ResolvedCanonicalSampleIdentity
-    planning_state: OwnerBackfillPlanningState
-    planning_reason: OwnerBackfillPlanningReason
-    primary_logical_requests: tuple[OwnerBackfillPlannedLogicalRequest, ...]
-    conservative_no_request_proof: OwnerBackfillConservativeNoRequestProof | None = None
+    planning_state: BackfillPlanningState
+    planning_reason: BackfillPlanningReason
+    primary_logical_requests: tuple[BackfillPlannedLogicalRequest, ...]
+    conservative_no_request_proof: BackfillConservativeNoRequestProof | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.group_identity, CrossSampleGroupIdentity):
             raise TypeError("group_identity must be CrossSample-owned")
         if not isinstance(self.sample, ResolvedCanonicalSampleIdentity):
             raise TypeError("sample must be owner-resolved")
-        expected = mint_owner_backfill_position_id(
+        expected = mint_backfill_position_id(
             processing_request_id=self.group_identity.processing_request_id,
             group_hypothesis_id=self.group_identity.group_hypothesis_id,
             sample_identity_id=self.sample.identity.sample_identity_id,
@@ -689,12 +689,12 @@ class OwnerBackfillPlanningPosition:
             raise ValueError("position_id mismatches exact group/sample identity")
         if self.planning_state not in {"planned", "not_planned"}:
             raise ValueError("planning_state is not closed")
-        if self.planning_reason not in OWNER_BACKFILL_PLANNING_REASONS:
+        if self.planning_reason not in BACKFILL_PLANNING_REASONS:
             raise ValueError("planning_reason is not closed")
         if not isinstance(self.primary_logical_requests, tuple):
             raise TypeError("primary_logical_requests must be a tuple")
         if any(
-            not isinstance(item, OwnerBackfillPlannedLogicalRequest)
+            not isinstance(item, BackfillPlannedLogicalRequest)
             for item in self.primary_logical_requests
         ):
             raise TypeError("primary logical request is not owner-minted")
@@ -713,7 +713,7 @@ class OwnerBackfillPlanningPosition:
             raise ValueError("no-input position cannot discard a group member")
         proof = self.conservative_no_request_proof
         if proof is not None:
-            if not isinstance(proof, OwnerBackfillConservativeNoRequestProof):
+            if not isinstance(proof, BackfillConservativeNoRequestProof):
                 raise TypeError("position requires a conservative no-request proof")
             if (
                 self.planning_state != "not_planned"
@@ -739,8 +739,8 @@ class OwnerBackfillPlanningPosition:
                 raise ValueError("logical request crosses canonical sample lookup")
 
 
-def validate_owner_backfill_retained_candidate_position(
-    position: OwnerBackfillPlanningPosition,
+def validate_backfill_retained_candidate_position(
+    position: BackfillPlanningPosition,
     *,
     source_cell: CellObservationRef,
 ) -> bool:
@@ -762,12 +762,12 @@ def validate_owner_backfill_retained_candidate_position(
     return True
 
 
-def validate_owner_backfill_conservative_no_request_position(
-    position: OwnerBackfillPlanningPosition,
+def validate_backfill_conservative_no_request_position(
+    position: BackfillPlanningPosition,
     *,
     source_cell: CellObservationRef | None = None,
     source_population: tuple[CellObservationRef, ...] | None = None,
-) -> OwnerBackfillConservativeNoRequestProof | None:
+) -> BackfillConservativeNoRequestProof | None:
     """Bind the existing decision to its exact current consumer population."""
     proof = position.conservative_no_request_proof
     if proof is None:
@@ -800,21 +800,21 @@ def validate_owner_backfill_conservative_no_request_position(
 
 
 @dataclass(frozen=True, slots=True)
-class OwnerBackfillEvaluationPlanningEpoch:
+class BackfillEvaluationPlanningEpoch:
     epoch_id: str
     processing_owners: ProcessingOwnerReferences
     group_identities: tuple[CrossSampleGroupIdentity, ...]
     samples: tuple[ResolvedCanonicalSampleIdentity, ...]
     raw_sample_stems: frozenset[str]
     alignment_config: AlignmentConfig
-    backend: OwnerBackfillXicBackend
-    window_strategy: OwnerBackfillWindowStrategy
+    backend: BackfillXicBackend
+    window_strategy: BackfillWindowStrategy
     superwindow_span_factor: int
-    validation_mode: OwnerBackfillValidationMode
+    validation_mode: BackfillValidationMode
     result_semantics: str
     scope: BackfillScope
     selected_family_ids: frozenset[str]
-    positions: tuple[OwnerBackfillPlanningPosition, ...]
+    positions: tuple[BackfillPlanningPosition, ...]
 
     def __post_init__(self) -> None:
         if not isinstance(self.processing_owners, ProcessingOwnerReferences):
@@ -868,7 +868,7 @@ class OwnerBackfillEvaluationPlanningEpoch:
         if actual_positions != expected_positions:
             raise ValueError("planning epoch does not close the Cartesian population")
         for position in self.positions:
-            proof = validate_owner_backfill_conservative_no_request_position(position)
+            proof = validate_backfill_conservative_no_request_position(position)
             if proof is not None and (
                 proof.processing_owners is not self.processing_owners
                 or proof.decision.group_facts.group_context.config
@@ -898,28 +898,28 @@ class OwnerBackfillEvaluationPlanningEpoch:
 
 
 @dataclass(frozen=True, slots=True)
-class OwnerBackfillAttemptTerminal:
+class BackfillAttemptTerminal:
     terminal_id: str
     position_id: str
-    logical_request: OwnerBackfillLogicalRequestMember
-    request_identity: OwnerBackfillRequestIdentity
-    candidate_phase: OwnerBackfillCandidatePhase
+    logical_request: BackfillLogicalRequestMember
+    request_identity: BackfillRequestIdentity
+    candidate_phase: BackfillCandidatePhase
     candidate_index: int
     trace_evaluated: bool
     selected_for_output: bool
-    terminal_reason: OwnerBackfillTerminalReason | None
+    terminal_reason: BackfillTerminalReason | None
     physical_evaluation: PhysicalPeakEvaluation | None
 
     def __post_init__(self) -> None:
-        if not isinstance(self.logical_request, OwnerBackfillLogicalRequestMember):
+        if not isinstance(self.logical_request, BackfillLogicalRequestMember):
             raise TypeError("terminal logical_request must be owner-minted")
-        if not isinstance(self.request_identity, OwnerBackfillRequestIdentity):
+        if not isinstance(self.request_identity, BackfillRequestIdentity):
             raise TypeError("terminal request_identity must be owner-minted")
         if self.logical_request.item.sample_stem != self.request_identity.sample_stem:
             raise ValueError("terminal crosses canonical samples")
         if self.logical_request.item.request != self.request_identity.request:
             raise ValueError("terminal crosses canonical extraction semantics")
-        if self.candidate_phase not in OWNER_BACKFILL_CANDIDATE_PHASES:
+        if self.candidate_phase not in BACKFILL_CANDIDATE_PHASES:
             raise ValueError("terminal candidate phase is not closed")
         if (
             isinstance(self.candidate_index, bool)
@@ -936,7 +936,7 @@ class OwnerBackfillAttemptTerminal:
             "prefilter_query",
             "validation_query",
         }
-        expected_reason: OwnerBackfillTerminalReason | None = None
+        expected_reason: BackfillTerminalReason | None = None
         if self.candidate_phase == "primary_fallback":
             expected_reason = "primary_unassessable"
         elif self.candidate_phase == "validation_unavailable":
@@ -951,7 +951,7 @@ class OwnerBackfillAttemptTerminal:
             if not isinstance(self.physical_evaluation, PhysicalPeakEvaluation):
                 raise ValueError("query terminal requires physical evaluation facts")
             validate_bounded_physical_peak_evaluation(self.physical_evaluation)
-            expected_subject_id = mint_owner_backfill_selection_subject_id(
+            expected_subject_id = mint_backfill_selection_subject_id(
                 request_identity=self.request_identity,
                 group_hypothesis_id=self.logical_request.group_hypothesis_id,
                 sample_stem=self.logical_request.item.sample_stem,
@@ -969,7 +969,7 @@ class OwnerBackfillAttemptTerminal:
                 raise ValueError("fallback terminal cannot claim physical evaluation")
             if self.terminal_reason != expected_reason:
                 raise ValueError("fallback terminal reason mismatches its phase")
-        expected = mint_owner_backfill_terminal_id(
+        expected = mint_backfill_terminal_id(
             position_id=self.position_id,
             logical_request_id=self.logical_request.logical_request_id,
             request_identity_id=self.request_identity.request_identity_id,
@@ -981,10 +981,10 @@ class OwnerBackfillAttemptTerminal:
 
 
 @dataclass(frozen=True, slots=True)
-class OwnerBackfillEvaluationCoverageBatch:
+class BackfillEvaluationCoverageBatch:
     coverage_id: str
-    epoch: OwnerBackfillEvaluationPlanningEpoch
-    terminals: tuple[OwnerBackfillAttemptTerminal, ...]
+    epoch: BackfillEvaluationPlanningEpoch
+    terminals: tuple[BackfillAttemptTerminal, ...]
 
     def __post_init__(self) -> None:
         _validate_batch(self.epoch, self.terminals)
@@ -1003,7 +1003,7 @@ class OwnerBackfillEvaluationCoverageBatch:
             raise ValueError("coverage_id mismatches complete evaluation coverage")
 
 
-def mint_owner_backfill_position_id(
+def mint_backfill_position_id(
     *,
     processing_request_id: str,
     group_hypothesis_id: str,
@@ -1029,12 +1029,12 @@ def mint_owner_backfill_position_id(
     )
 
 
-def mint_owner_backfill_terminal_id(
+def mint_backfill_terminal_id(
     *,
     position_id: str,
     logical_request_id: str,
     request_identity_id: str,
-    candidate_phase: OwnerBackfillCandidatePhase,
+    candidate_phase: BackfillCandidatePhase,
     candidate_index: int,
 ) -> str:
     return _typed_id(
@@ -1056,9 +1056,9 @@ def mint_owner_backfill_terminal_id(
     )
 
 
-def mint_owner_backfill_selection_subject_id(
+def mint_backfill_selection_subject_id(
     *,
-    request_identity: OwnerBackfillRequestIdentity | None,
+    request_identity: BackfillRequestIdentity | None,
     group_hypothesis_id: str,
     sample_stem: str,
     request: XICRequest,
@@ -1086,24 +1086,24 @@ def mint_owner_backfill_selection_subject_id(
     return "owner-backfill-subject:" + hashlib.sha256(canonical).hexdigest()
 
 
-def mint_owner_backfill_planning_epoch(
+def mint_backfill_planning_epoch(
     *,
     processing_owners: ProcessingOwnerReferences,
     group_identities: tuple[CrossSampleGroupIdentity, ...],
     samples: tuple[ResolvedCanonicalSampleIdentity, ...],
     raw_sample_stems: frozenset[str],
     alignment_config: AlignmentConfig,
-    backend: OwnerBackfillXicBackend,
-    window_strategy: OwnerBackfillWindowStrategy,
+    backend: BackfillXicBackend,
+    window_strategy: BackfillWindowStrategy,
     superwindow_span_factor: int,
-    validation_mode: OwnerBackfillValidationMode,
+    validation_mode: BackfillValidationMode,
     result_semantics: str,
     scope: BackfillScope,
     selected_family_ids: frozenset[str],
-    positions: tuple[OwnerBackfillPlanningPosition, ...],
-) -> OwnerBackfillEvaluationPlanningEpoch:
+    positions: tuple[BackfillPlanningPosition, ...],
+) -> BackfillEvaluationPlanningEpoch:
     request_id = processing_owners.request.processing_request_id
-    return OwnerBackfillEvaluationPlanningEpoch(
+    return BackfillEvaluationPlanningEpoch(
         epoch_id=_typed_id(
             _EPOCH_PREFIX,
             _epoch_basis(
@@ -1138,15 +1138,15 @@ def mint_owner_backfill_planning_epoch(
     )
 
 
-def build_owner_backfill_planning_epoch(
-    context: OwnerBackfillEvaluationCoverageContext,
+def build_backfill_planning_epoch(
+    context: BackfillEvaluationCoverageContext,
     *,
     selected_features: tuple[object, ...],
-    request_plan: OwnerBackfillRequestPlan,
-) -> OwnerBackfillEvaluationPlanningEpoch:
-    if not isinstance(context, OwnerBackfillEvaluationCoverageContext):
+    request_plan: BackfillRequestPlan,
+) -> BackfillEvaluationPlanningEpoch:
+    if not isinstance(context, BackfillEvaluationCoverageContext):
         raise TypeError("coverage context must be owner-closed")
-    if not isinstance(request_plan, OwnerBackfillRequestPlan):
+    if not isinstance(request_plan, BackfillRequestPlan):
         raise TypeError("request_plan must be Owner Backfill-minted")
     if not request_plan.exact_equivalence_available:
         raise ValueError("evaluation coverage requires exact request identity")
@@ -1175,7 +1175,7 @@ def build_owner_backfill_planning_epoch(
         scope=context.scope,
         selected_family_ids=context.selected_family_ids,
     )
-    positions: list[OwnerBackfillPlanningPosition] = []
+    positions: list[BackfillPlanningPosition] = []
     expected_logical_ids: set[str] = set()
     for feature, group_identity in zip(
         context.input_features,
@@ -1184,7 +1184,7 @@ def build_owner_backfill_planning_epoch(
     ):
         scope_reason = exclusion_reasons.get(id(feature))
         for sample in context.samples:
-            reason: OwnerBackfillPlanningReason = (
+            reason: BackfillPlanningReason = (
                 scope_reason
                 if scope_reason is not None
                 else backfill_request_planning_reason(
@@ -1194,10 +1194,10 @@ def build_owner_backfill_planning_epoch(
                     alignment_config=context.alignment_config,
                 )
             )
-            logical_requests: tuple[OwnerBackfillPlannedLogicalRequest, ...] = ()
+            logical_requests: tuple[BackfillPlannedLogicalRequest, ...] = ()
             if reason == "planned":
                 logical_requests = tuple(
-                    OwnerBackfillPlannedLogicalRequest(logical, identity)
+                    BackfillPlannedLogicalRequest(logical, identity)
                     for logical, identity in request_plan.logical_bindings_for_position(
                         sample_stem=sample.lookup_token,
                         group_hypothesis_id=group_identity.group_hypothesis_id,
@@ -1207,8 +1207,8 @@ def build_owner_backfill_planning_epoch(
                     item.logical_request.logical_request_id for item in logical_requests
                 )
             positions.append(
-                OwnerBackfillPlanningPosition(
-                    position_id=mint_owner_backfill_position_id(
+                BackfillPlanningPosition(
+                    position_id=mint_backfill_position_id(
                         processing_request_id=group_identity.processing_request_id,
                         group_hypothesis_id=group_identity.group_hypothesis_id,
                         sample_identity_id=sample.identity.sample_identity_id,
@@ -1229,7 +1229,7 @@ def build_owner_backfill_planning_epoch(
     }
     if actual_logical_ids != expected_logical_ids:
         raise ValueError("request plan is missing, extra, or rebound to coverage")
-    return mint_owner_backfill_planning_epoch(
+    return mint_backfill_planning_epoch(
         processing_owners=context.processing_owners,
         group_identities=group_identities,
         samples=context.samples,
@@ -1246,20 +1246,20 @@ def build_owner_backfill_planning_epoch(
     )
 
 
-def mint_owner_backfill_attempt_terminal(
+def mint_backfill_attempt_terminal(
     *,
     position_id: str,
-    logical_request: OwnerBackfillLogicalRequestMember,
-    request_identity: OwnerBackfillRequestIdentity,
-    candidate_phase: OwnerBackfillCandidatePhase,
+    logical_request: BackfillLogicalRequestMember,
+    request_identity: BackfillRequestIdentity,
+    candidate_phase: BackfillCandidatePhase,
     candidate_index: int,
     trace_evaluated: bool,
     selected_for_output: bool,
-    terminal_reason: OwnerBackfillTerminalReason | None,
+    terminal_reason: BackfillTerminalReason | None,
     physical_evaluation: PhysicalPeakEvaluation | None,
-) -> OwnerBackfillAttemptTerminal:
-    return OwnerBackfillAttemptTerminal(
-        terminal_id=mint_owner_backfill_terminal_id(
+) -> BackfillAttemptTerminal:
+    return BackfillAttemptTerminal(
+        terminal_id=mint_backfill_terminal_id(
             position_id=position_id,
             logical_request_id=logical_request.logical_request_id,
             request_identity_id=request_identity.request_identity_id,
@@ -1278,12 +1278,12 @@ def mint_owner_backfill_attempt_terminal(
     )
 
 
-def build_owner_backfill_evaluation_coverage(
-    epoch: OwnerBackfillEvaluationPlanningEpoch,
-    terminals: Sequence[OwnerBackfillAttemptTerminal],
-) -> OwnerBackfillEvaluationCoverageBatch:
+def build_backfill_evaluation_coverage(
+    epoch: BackfillEvaluationPlanningEpoch,
+    terminals: Sequence[BackfillAttemptTerminal],
+) -> BackfillEvaluationCoverageBatch:
     canonical = _canonical_terminals(epoch, tuple(terminals))
-    return OwnerBackfillEvaluationCoverageBatch(
+    return BackfillEvaluationCoverageBatch(
         coverage_id=_typed_id(
             _BATCH_PREFIX,
             {
@@ -1300,22 +1300,22 @@ def build_owner_backfill_evaluation_coverage(
     )
 
 
-def validate_owner_backfill_evaluation_coverage(
-    batch: OwnerBackfillEvaluationCoverageBatch,
+def validate_backfill_evaluation_coverage(
+    batch: BackfillEvaluationCoverageBatch,
 ) -> None:
     """Require coverage whose constructor already checked epoch and terminals."""
-    if not isinstance(batch, OwnerBackfillEvaluationCoverageBatch):
+    if not isinstance(batch, BackfillEvaluationCoverageBatch):
         raise TypeError("batch must be Owner Backfill evaluation coverage")
 
 
 def _validate_batch(
-    epoch: OwnerBackfillEvaluationPlanningEpoch,
-    terminals: tuple[OwnerBackfillAttemptTerminal, ...],
+    epoch: BackfillEvaluationPlanningEpoch,
+    terminals: tuple[BackfillAttemptTerminal, ...],
 ) -> None:
-    if not isinstance(epoch, OwnerBackfillEvaluationPlanningEpoch):
+    if not isinstance(epoch, BackfillEvaluationPlanningEpoch):
         raise TypeError("coverage requires an owner planning epoch")
     if not isinstance(terminals, tuple) or any(
-        not isinstance(item, OwnerBackfillAttemptTerminal) for item in terminals
+        not isinstance(item, BackfillAttemptTerminal) for item in terminals
     ):
         raise TypeError("coverage terminals must be a typed tuple")
     if terminals != _canonical_terminals(epoch, terminals):
@@ -1370,7 +1370,7 @@ def _validate_batch(
             ):
                 validation_index = validation_index_by_sample[logical.item.sample_stem]
                 validation_index_by_sample[logical.item.sample_stem] += 1
-                validation_member = mint_owner_backfill_logical_request_member(
+                validation_member = mint_backfill_logical_request_member(
                     logical_index=validation_index,
                     group_hypothesis_id=logical.group_hypothesis_id,
                     item=logical.item,
@@ -1417,15 +1417,15 @@ def _validate_batch(
 
 
 def _canonical_terminals(
-    epoch: OwnerBackfillEvaluationPlanningEpoch,
-    terminals: tuple[OwnerBackfillAttemptTerminal, ...],
-) -> tuple[OwnerBackfillAttemptTerminal, ...]:
+    epoch: BackfillEvaluationPlanningEpoch,
+    terminals: tuple[BackfillAttemptTerminal, ...],
+) -> tuple[BackfillAttemptTerminal, ...]:
     terminals = tuple(_canonical_terminal_payload(epoch, item) for item in terminals)
     position_rank = {
         position.position_id: index for index, position in enumerate(epoch.positions)
     }
     phase_rank = {
-        phase: index for index, phase in enumerate(OWNER_BACKFILL_CANDIDATE_PHASES)
+        phase: index for index, phase in enumerate(BACKFILL_CANDIDATE_PHASES)
     }
     return tuple(
         sorted(
@@ -1442,9 +1442,9 @@ def _canonical_terminals(
 
 
 def _canonical_terminal_payload(
-    epoch: OwnerBackfillEvaluationPlanningEpoch,
-    terminal: OwnerBackfillAttemptTerminal,
-) -> OwnerBackfillAttemptTerminal:
+    epoch: BackfillEvaluationPlanningEpoch,
+    terminal: BackfillAttemptTerminal,
+) -> BackfillAttemptTerminal:
     position = next(
         (item for item in epoch.positions if item.position_id == terminal.position_id),
         None,
@@ -1483,7 +1483,7 @@ def _canonical_terminal_payload(
     if not matching_primary:
         return terminal
     source_item = terminal.logical_request.item
-    canonical_item = OwnerBackfillRequestItem(
+    canonical_item = BackfillRequestItem(
         matching_primary[0].logical_request.item.feature,
         source_item.sample_stem,
         source_item.request,
@@ -1496,7 +1496,7 @@ def _canonical_terminal_payload(
 
 
 def _planned_request_signature(
-    planned: OwnerBackfillPlannedLogicalRequest,
+    planned: BackfillPlannedLogicalRequest,
 ) -> tuple[object, ...]:
     logical = planned.logical_request
     return (
@@ -1508,7 +1508,7 @@ def _planned_request_signature(
 
 
 def _terminal_request_signature(
-    terminal: OwnerBackfillAttemptTerminal,
+    terminal: BackfillAttemptTerminal,
 ) -> tuple[object, ...]:
     logical = terminal.logical_request
     return (
@@ -1520,9 +1520,9 @@ def _terminal_request_signature(
 
 
 def _validate_validation_request_identity(
-    validation: OwnerBackfillRequestIdentity,
+    validation: BackfillRequestIdentity,
     *,
-    primary_identity: OwnerBackfillRequestIdentity,
+    primary_identity: BackfillRequestIdentity,
 ) -> None:
     if validation.validation_mode != "validation":
         raise ValueError("validation terminal lacks validation request semantics")
@@ -1546,14 +1546,14 @@ def _epoch_basis(
     samples: tuple[ResolvedCanonicalSampleIdentity, ...],
     raw_sample_stems: frozenset[str],
     alignment_config: AlignmentConfig,
-    backend: OwnerBackfillXicBackend,
-    window_strategy: OwnerBackfillWindowStrategy,
+    backend: BackfillXicBackend,
+    window_strategy: BackfillWindowStrategy,
     superwindow_span_factor: int,
-    validation_mode: OwnerBackfillValidationMode,
+    validation_mode: BackfillValidationMode,
     result_semantics: str,
     scope: BackfillScope,
     selected_family_ids: frozenset[str],
-    positions: tuple[OwnerBackfillPlanningPosition, ...],
+    positions: tuple[BackfillPlanningPosition, ...],
 ) -> Mapping[str, object]:
     return {
         "schema": "owner_backfill_planning_epoch",
@@ -1615,10 +1615,10 @@ def _epoch_basis(
 
 def _validate_request_semantics(
     *,
-    backend: OwnerBackfillXicBackend,
-    window_strategy: OwnerBackfillWindowStrategy,
+    backend: BackfillXicBackend,
+    window_strategy: BackfillWindowStrategy,
     superwindow_span_factor: int,
-    validation_mode: OwnerBackfillValidationMode,
+    validation_mode: BackfillValidationMode,
     result_semantics: str,
 ) -> None:
     if backend not in {"raw", "ms1_index", "ms1_index_hybrid"}:
@@ -1633,12 +1633,12 @@ def _validate_request_semantics(
         raise ValueError("coverage superwindow span factor must be positive")
     if validation_mode not in {"primary", "prefilter", "validation"}:
         raise ValueError("coverage validation mode is not closed")
-    if result_semantics != OWNER_BACKFILL_TRACE_RESULT_SEMANTICS:
+    if result_semantics != BACKFILL_TRACE_RESULT_SEMANTICS:
         raise ValueError("coverage result semantics crossed the owner contract")
 
 
 def _terminal_evaluation_basis(
-    terminal: OwnerBackfillAttemptTerminal,
+    terminal: BackfillAttemptTerminal,
 ) -> Mapping[str, object]:
     evaluation = terminal.physical_evaluation
     return {
@@ -1731,26 +1731,26 @@ def _required_text(value: object, field: str) -> str:
 
 
 __all__ = [
-    "OWNER_BACKFILL_CANDIDATE_PHASES",
-    "OWNER_BACKFILL_PLANNING_REASONS",
-    "OWNER_BACKFILL_TERMINAL_REASONS",
-    "OwnerBackfillAttemptTerminal",
-    "OwnerBackfillCandidatePhase",
-    "OwnerBackfillEvaluationCoverageBatch",
-    "OwnerBackfillEvaluationCoverageContext",
-    "OwnerBackfillEvaluationPlanningEpoch",
-    "OwnerBackfillPlannedLogicalRequest",
-    "OwnerBackfillPlanningPosition",
-    "OwnerBackfillPlanningReason",
-    "OwnerBackfillPlanningState",
-    "OwnerBackfillTerminalReason",
-    "build_owner_backfill_evaluation_coverage",
-    "build_owner_backfill_planning_epoch",
-    "mint_owner_backfill_attempt_terminal",
-    "mint_owner_backfill_planning_epoch",
-    "mint_owner_backfill_position_id",
-    "mint_owner_backfill_selection_subject_id",
-    "mint_owner_backfill_terminal_id",
-    "validate_owner_backfill_evaluation_coverage",
-    "validate_owner_backfill_retained_candidate_position",
+    "BACKFILL_CANDIDATE_PHASES",
+    "BACKFILL_PLANNING_REASONS",
+    "BACKFILL_TERMINAL_REASONS",
+    "BackfillAttemptTerminal",
+    "BackfillCandidatePhase",
+    "BackfillEvaluationCoverageBatch",
+    "BackfillEvaluationCoverageContext",
+    "BackfillEvaluationPlanningEpoch",
+    "BackfillPlannedLogicalRequest",
+    "BackfillPlanningPosition",
+    "BackfillPlanningReason",
+    "BackfillPlanningState",
+    "BackfillTerminalReason",
+    "build_backfill_evaluation_coverage",
+    "build_backfill_planning_epoch",
+    "mint_backfill_attempt_terminal",
+    "mint_backfill_planning_epoch",
+    "mint_backfill_position_id",
+    "mint_backfill_selection_subject_id",
+    "mint_backfill_terminal_id",
+    "validate_backfill_evaluation_coverage",
+    "validate_backfill_retained_candidate_position",
 ]

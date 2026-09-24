@@ -340,7 +340,7 @@ def _write_review(path: Path, *, clean: bool, feature_id: str = "FAM001") -> Non
             primary=True,
             present_rate="1",
             detected="2",
-            rescue="0",
+            backfill="0",
             flags=warning_flags,
         ),
         _review_row(
@@ -349,7 +349,7 @@ def _write_review(path: Path, *, clean: bool, feature_id: str = "FAM001") -> Non
             primary=False,
             present_rate="0",
             detected="1",
-            rescue="0",
+            backfill="0",
             flags="",
         ),
         _review_row(
@@ -358,7 +358,7 @@ def _write_review(path: Path, *, clean: bool, feature_id: str = "FAM001") -> Non
             primary=False,
             present_rate="0",
             detected="0",
-            rescue="0",
+            backfill="0",
             flags="rescue_heavy",
         ),
     )
@@ -388,7 +388,7 @@ def _review_row(
     primary: bool,
     present_rate: str,
     detected: str,
-    rescue: str,
+    backfill: str,
     flags: str,
 ) -> dict[str, str]:
     return {
@@ -397,7 +397,7 @@ def _review_row(
         "family_center_mz": "300.0",
         "family_center_rt": "8.0",
         "detected_count": detected,
-        "accepted_backfill_count": rescue,
+        "accepted_backfill_count": backfill,
         "present_rate": present_rate,
         "identity_decision": identity,
         "include_in_primary_matrix": "TRUE" if primary else "FALSE",

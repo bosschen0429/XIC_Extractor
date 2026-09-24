@@ -1,4 +1,4 @@
-"""Strict in-memory projections and authority bindings for Owner Backfill facts.
+"""Strict in-memory projections and authority bindings for Backfill facts.
 
 This module houses stage, selected integration, authority cell, and cell
 projections as pure in-memory domain models and deterministic identity bindings.
@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING
 
 from xic_extractor.alignment.matrix import AlignedCell
 from xic_extractor.alignment.production_decisions import (
-    OWNER_BACKFILL_AUTHORITY_CELL_ID_PREFIX,
+    BACKFILL_AUTHORITY_CELL_ID_PREFIX,
     ProductionCellDecisionProjection,
 )
 from xic_extractor.peak_detection.physical_peak_evaluation import (
@@ -28,8 +28,8 @@ from xic_extractor.peak_detection.physical_peak_models import (
 )
 
 if TYPE_CHECKING:
-    from xic_extractor.alignment.owner_backfill import (
-        OwnerBackfillPeakFactObservation as LiveOwnerBackfillPeakFactObservation,
+    from xic_extractor.alignment.backfill_peak_fact import (
+        BackfillPeakFactObservation as LiveBackfillPeakFactObservation,
     )
     from xic_extractor.peak_detection.integration_result import IntegrationResult
 
@@ -37,16 +37,16 @@ if TYPE_CHECKING:
 SELECTED_INTEGRATION_AUTHORITY_SCHEMA_VERSION = (
     "selected_integration_authority_projection"
 )
-OWNER_BACKFILL_AUTHORITY_CELL_SCHEMA_VERSION = (
-    "owner_backfill_authority_cell_projection"
+BACKFILL_AUTHORITY_CELL_SCHEMA_VERSION = (
+    "backfill_authority_cell_projection"
 )
-OWNER_BACKFILL_CELL_PROJECTION_SCHEMA_VERSION = "owner_backfill_cell_projection"
-OWNER_BACKFILL_PROVENANCE_WRITER_SCHEMA_VERSION = (
+BACKFILL_CELL_PROJECTION_SCHEMA_VERSION = "owner_backfill_cell_projection"
+BACKFILL_PROVENANCE_WRITER_SCHEMA_VERSION = (
     "alignment-owner-backfill-peak-fact-provenance-writer"
 )
 
 SELECTED_INTEGRATION_AUTHORITY_ID_PREFIX = "selected-integration-authority:"
-OWNER_BACKFILL_CELL_PROJECTION_ID_PREFIX = "owner-backfill-cell-projection:"
+BACKFILL_CELL_PROJECTION_ID_PREFIX = "owner-backfill-cell-projection:"
 
 _STAGE_PROJECTION_MINT_TOKEN = object()
 
@@ -71,7 +71,7 @@ SELECTED_INTEGRATION_AUTHORITY_FIELDS = (
     "ms1_morphology_trace_effective_points",
 )
 
-OWNER_BACKFILL_AUTHORITY_CELL_FIELDS = (
+BACKFILL_AUTHORITY_CELL_FIELDS = (
     "work_unit_key",
     "acquisition_source_id",
     "profile_id",
@@ -235,7 +235,7 @@ def _authority_value(value: object, *, field: str) -> object:
 
 
 @dataclass(frozen=True, slots=True)
-class OwnerBackfillPeakFactStageProjection:
+class BackfillPeakFactStageProjection:
     feature_family_id: str
     selected_integration_authority_content_id: str | None
     work_unit_key: str
@@ -281,33 +281,33 @@ class OwnerBackfillPeakFactStageProjection:
         _required_finite_float(self.query_rt_min, field="query_rt_min")
 
 
-def owner_backfill_peak_fact_stage_projection_from_observation(
-    observation: LiveOwnerBackfillPeakFactObservation,
+def backfill_peak_fact_stage_projection_from_observation(
+    observation: LiveBackfillPeakFactObservation,
     *,
     feature_order_index: int = 0,
     sample_order_index: int = 0,
-) -> OwnerBackfillPeakFactStageProjection:
+) -> BackfillPeakFactStageProjection:
     """Project a complete owner-minted Alignment observation for provenance."""
 
-    from xic_extractor.alignment.owner_backfill import (
-        OwnerBackfillPeakFactObservation as LiveOwnerBackfillPeakFactObservation,
+    from xic_extractor.alignment.backfill_peak_fact import (
+        BackfillPeakFactObservation as LiveBackfillPeakFactObservation,
     )
-    from xic_extractor.alignment.owner_backfill import (
-        validate_owner_backfill_peak_fact_observation,
+    from xic_extractor.alignment.backfill_peak_fact import (
+        validate_backfill_peak_fact_observation,
     )
-    from xic_extractor.alignment.owner_backfill_request_plan import (
-        OwnerBackfillLogicalRequestMember,
-        OwnerBackfillRequestIdentity,
+    from xic_extractor.alignment.backfill_request_plan import (
+        BackfillLogicalRequestMember,
+        BackfillRequestIdentity,
     )
 
-    if not isinstance(observation, LiveOwnerBackfillPeakFactObservation):
+    if not isinstance(observation, LiveBackfillPeakFactObservation):
         raise TypeError("observation must be owner-minted by Alignment")
-    validate_owner_backfill_peak_fact_observation(observation)
+    validate_backfill_peak_fact_observation(observation)
     logical_request = observation.logical_request
     request_identity = observation.request_identity
-    if not isinstance(logical_request, OwnerBackfillLogicalRequestMember):
+    if not isinstance(logical_request, BackfillLogicalRequestMember):
         raise TypeError("observation logical_request must be owner-minted")
-    if not isinstance(request_identity, OwnerBackfillRequestIdentity):
+    if not isinstance(request_identity, BackfillRequestIdentity):
         raise TypeError("observation request_identity must be owner-minted")
     if not isinstance(observation.cell, AlignedCell):
         raise TypeError("observation cell must be an AlignedCell")
@@ -369,7 +369,7 @@ def owner_backfill_peak_fact_stage_projection_from_observation(
         selected_integration_id = selected_integration_authority_projection(
             observation.facts.integration
         ).selected_integration_authority_content_id
-    return OwnerBackfillPeakFactStageProjection(
+    return BackfillPeakFactStageProjection(
         feature_family_id=cell.cluster_id,
         selected_integration_authority_content_id=selected_integration_id,
         work_unit_key=observation.work_unit_key,
@@ -393,12 +393,12 @@ def owner_backfill_peak_fact_stage_projection_from_observation(
 
 
 @dataclass(frozen=True, slots=True)
-class OwnerBackfillPeakFactObservation:
-    stage: OwnerBackfillPeakFactStageProjection
+class BackfillPeakFactObservation:
+    stage: BackfillPeakFactStageProjection
     physical_evaluation: PhysicalPeakEvaluation
 
     def __post_init__(self) -> None:
-        if not isinstance(self.stage, OwnerBackfillPeakFactStageProjection):
+        if not isinstance(self.stage, BackfillPeakFactStageProjection):
             raise TypeError("stage must be owner-minted")
         validate_bounded_physical_peak_evaluation(self.physical_evaluation)
 
@@ -437,7 +437,7 @@ class SelectedIntegrationAuthorityProjection:
 
 
 @dataclass(frozen=True, slots=True)
-class OwnerBackfillAuthorityCellProjection:
+class BackfillAuthorityCellProjection:
     work_unit_key: str
     acquisition_source_id: str
     profile_id: str
@@ -490,17 +490,17 @@ class OwnerBackfillAuthorityCellProjection:
     @property
     def owner_backfill_cell_content_id(self) -> str:
         return _authority_id(
-            OWNER_BACKFILL_AUTHORITY_CELL_ID_PREFIX,
-            OWNER_BACKFILL_AUTHORITY_CELL_SCHEMA_VERSION,
+            BACKFILL_AUTHORITY_CELL_ID_PREFIX,
+            BACKFILL_AUTHORITY_CELL_SCHEMA_VERSION,
             tuple(
                 (name, getattr(self, name))
-                for name in OWNER_BACKFILL_AUTHORITY_CELL_FIELDS
+                for name in BACKFILL_AUTHORITY_CELL_FIELDS
             ),
         )
 
 
 @dataclass(frozen=True, slots=True)
-class OwnerBackfillCellProjection:
+class BackfillCellProjection:
     group_hypothesis_id: str
     public_family_id: str
     sample_stem: str
@@ -515,13 +515,13 @@ class OwnerBackfillCellProjection:
     consolidation_source_group_hypothesis_id: str
     matrix_value_counts_seconds: float
     matrix_value_source: str
-    writer_schema_version: str = OWNER_BACKFILL_PROVENANCE_WRITER_SCHEMA_VERSION
+    writer_schema_version: str = BACKFILL_PROVENANCE_WRITER_SCHEMA_VERSION
 
     @property
     def cell_projection_id(self) -> str:
         return _authority_id(
-            OWNER_BACKFILL_CELL_PROJECTION_ID_PREFIX,
-            OWNER_BACKFILL_CELL_PROJECTION_SCHEMA_VERSION,
+            BACKFILL_CELL_PROJECTION_ID_PREFIX,
+            BACKFILL_CELL_PROJECTION_SCHEMA_VERSION,
             (
                 ("group_hypothesis_id", self.group_hypothesis_id),
                 ("public_family_id", self.public_family_id),
@@ -582,8 +582,8 @@ def selected_integration_authority_projection(
     )
 
 
-def owner_backfill_cell_lineage_matches(
-    stage: OwnerBackfillPeakFactStageProjection,
+def backfill_cell_lineage_matches(
+    stage: BackfillPeakFactStageProjection,
     cell: AlignedCell,
 ) -> bool:
     """Return whether a live final cell legally represents one owner stage.
@@ -593,7 +593,7 @@ def owner_backfill_cell_lineage_matches(
     alias and is therefore only required for an un-consolidated exact match.
     """
 
-    if not isinstance(stage, OwnerBackfillPeakFactStageProjection):
+    if not isinstance(stage, BackfillPeakFactStageProjection):
         raise TypeError("stage must be owner-minted")
     if not isinstance(cell, AlignedCell):
         raise TypeError("cell must be an AlignedCell")
@@ -624,32 +624,32 @@ def owner_backfill_cell_lineage_matches(
     return False
 
 
-def _require_owner_backfill_cell_lineage(
-    stage: OwnerBackfillPeakFactStageProjection,
+def _require_backfill_cell_lineage(
+    stage: BackfillPeakFactStageProjection,
     cell: AlignedCell,
 ) -> None:
-    if not owner_backfill_cell_lineage_matches(stage, cell):
+    if not backfill_cell_lineage_matches(stage, cell):
         raise ValueError("selected stage crosses its live Alignment cell lineage")
 
 
-def owner_backfill_authority_cell_projection(
+def backfill_authority_cell_projection(
     *,
-    stage: OwnerBackfillPeakFactStageProjection,
+    stage: BackfillPeakFactStageProjection,
     cell: AlignedCell,
     profile_id: str,
     selected_fact_content_id: str,
     physical_answer_id: str,
     physical_segment_id: str,
-) -> OwnerBackfillAuthorityCellProjection:
-    if not isinstance(stage, OwnerBackfillPeakFactStageProjection):
+) -> BackfillAuthorityCellProjection:
+    if not isinstance(stage, BackfillPeakFactStageProjection):
         raise TypeError("stage must be owner-minted")
     if not isinstance(cell, AlignedCell):
         raise TypeError("cell must be an AlignedCell")
-    _require_owner_backfill_cell_lineage(stage, cell)
+    _require_backfill_cell_lineage(stage, cell)
     integration = selected_integration_authority_projection(cell.selected_integration)
     missing = tuple(
         name
-        for name in OWNER_BACKFILL_AUTHORITY_CELL_FIELDS
+        for name in BACKFILL_AUTHORITY_CELL_FIELDS
         if not hasattr(cell, name)
         and name
         not in {
@@ -664,7 +664,7 @@ def owner_backfill_authority_cell_projection(
     )
     if missing:
         raise ValueError(f"live Alignment cell lacks authority fields: {missing!r}")
-    return OwnerBackfillAuthorityCellProjection(
+    return BackfillAuthorityCellProjection(
         work_unit_key=stage.work_unit_key,
         acquisition_source_id=stage.acquisition_source_id,
         profile_id=profile_id,
@@ -726,11 +726,11 @@ def owner_backfill_authority_cell_projection(
     )
 
 
-def owner_backfill_cell_projection(
+def backfill_cell_projection(
     *,
-    authority_cell: OwnerBackfillAuthorityCellProjection,
+    authority_cell: BackfillAuthorityCellProjection,
     production_decision: ProductionCellDecisionProjection,
-) -> OwnerBackfillCellProjection:
+) -> BackfillCellProjection:
     if (
         production_decision.owner_backfill_cell_content_id
         != authority_cell.owner_backfill_cell_content_id
@@ -747,7 +747,7 @@ def owner_backfill_cell_projection(
         or production_decision.raw_status != authority_cell.status
     ):
         raise ValueError("production decision crosses its authority cell")
-    return OwnerBackfillCellProjection(
+    return BackfillCellProjection(
         group_hypothesis_id=authority_cell.group_hypothesis_id,
         public_family_id=authority_cell.public_family_id,
         sample_stem=authority_cell.sample_stem,
@@ -770,18 +770,18 @@ def owner_backfill_cell_projection(
 
 
 __all__ = [
-    "OWNER_BACKFILL_AUTHORITY_CELL_FIELDS",
-    "OWNER_BACKFILL_AUTHORITY_CELL_SCHEMA_VERSION",
-    "OWNER_BACKFILL_CELL_PROJECTION_ID_PREFIX",
-    "OWNER_BACKFILL_CELL_PROJECTION_SCHEMA_VERSION",
-    "OWNER_BACKFILL_PROVENANCE_WRITER_SCHEMA_VERSION",
+    "BACKFILL_AUTHORITY_CELL_FIELDS",
+    "BACKFILL_AUTHORITY_CELL_SCHEMA_VERSION",
+    "BACKFILL_CELL_PROJECTION_ID_PREFIX",
+    "BACKFILL_CELL_PROJECTION_SCHEMA_VERSION",
+    "BACKFILL_PROVENANCE_WRITER_SCHEMA_VERSION",
     "SELECTED_INTEGRATION_AUTHORITY_FIELDS",
     "SELECTED_INTEGRATION_AUTHORITY_ID_PREFIX",
     "SELECTED_INTEGRATION_AUTHORITY_SCHEMA_VERSION",
-    "OwnerBackfillAuthorityCellProjection",
-    "OwnerBackfillCellProjection",
-    "OwnerBackfillPeakFactObservation",
-    "OwnerBackfillPeakFactStageProjection",
+    "BackfillAuthorityCellProjection",
+    "BackfillCellProjection",
+    "BackfillPeakFactObservation",
+    "BackfillPeakFactStageProjection",
     "SelectedIntegrationAuthorityProjection",
     "_STAGE_PROJECTION_MINT_TOKEN",
     "_authority_id",
@@ -791,16 +791,16 @@ __all__ = [
     "_nonnegative_int",
     "_positive_int",
     "_require_lower_sha256",
-    "_require_owner_backfill_cell_lineage",
+    "_require_backfill_cell_lineage",
     "_require_typed_id",
     "_required_finite_float",
     "_required_text",
     "_safe_text",
     "_unique_string_tuple",
     "_validate_optional_range",
-    "owner_backfill_authority_cell_projection",
-    "owner_backfill_cell_lineage_matches",
-    "owner_backfill_cell_projection",
-    "owner_backfill_peak_fact_stage_projection_from_observation",
+    "backfill_authority_cell_projection",
+    "backfill_cell_lineage_matches",
+    "backfill_cell_projection",
+    "backfill_peak_fact_stage_projection_from_observation",
     "selected_integration_authority_projection",
 ]

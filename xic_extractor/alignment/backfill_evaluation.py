@@ -1,4 +1,4 @@
-"""Owner Backfill candidate evaluation and cell assembly helpers."""
+"""Backfill candidate evaluation and cell assembly helpers."""
 
 from __future__ import annotations
 
@@ -10,6 +10,21 @@ from typing import TypeAlias
 import numpy as np
 from numpy.typing import NDArray
 
+from xic_extractor.alignment.backfill_acquisition import (
+    _peak_facts_match_baseline,
+    _positive_elapsed,
+)
+from xic_extractor.alignment.backfill_request_plan import (
+    BackfillRequestItem,
+)
+from xic_extractor.alignment.backfill_result import (
+    BackfillPeakFactReceipt,
+    _BackfillTraceEvaluation,
+    validate_backfill_peak_fact_observation,  # noqa: F401
+)
+from xic_extractor.alignment.backfill_runtime_projection import (
+    BackfillRuntimeFeature,
+)
 from xic_extractor.alignment.backfill_scope import (
     any_detected_owner_can_be_superseded,
     backfill_seed_centers,
@@ -18,21 +33,6 @@ from xic_extractor.alignment.cell_region_audit import with_region_audit
 from xic_extractor.alignment.matrix import AlignedCell
 from xic_extractor.alignment.matrix_handoff import integration_from_peak
 from xic_extractor.alignment.owner_area import median_owner_area, positive_finite
-from xic_extractor.alignment.owner_backfill_acquisition import (
-    _peak_facts_match_baseline,
-    _positive_elapsed,
-)
-from xic_extractor.alignment.owner_backfill_request_plan import (
-    OwnerBackfillRequestItem,
-)
-from xic_extractor.alignment.owner_backfill_result import (
-    OwnerBackfillPeakFactReceipt,
-    _OwnerBackfillTraceEvaluation,
-    validate_owner_backfill_peak_fact_observation,  # noqa: F401
-)
-from xic_extractor.alignment.owner_backfill_runtime_projection import (
-    BackfillRuntimeFeature,
-)
 from xic_extractor.alignment.owner_group_delivery import (
     delivery_cell_projection,
 )
@@ -62,7 +62,7 @@ from xic_extractor.peak_detection.signal_processing_profile import (
 from xic_extractor.signal_processing import find_peak_and_area
 from xic_extractor.xic_models import XICRequest, XICTrace
 
-_RequestItem = OwnerBackfillRequestItem
+_RequestItem = BackfillRequestItem
 # One extraction chunk's prepared signals, keyed by the identity of the trace
 # object request equivalence fanned out.  The cache holds the trace itself so a
 # recycled id() can never alias a different trace.
@@ -91,7 +91,7 @@ def _backfill_feature_sample_trace(
     prepared_signal_cache: _ChunkPreparedSignalCache,
     require_sealed_facts: bool = False,
     emit_region_audit: bool = False,
-) -> _OwnerBackfillTraceEvaluation:
+) -> _BackfillTraceEvaluation:
     if signal_processing_profile is None:
         return _backfill_feature_sample_trace_legacy_audit(
             feature,
@@ -128,7 +128,7 @@ def _backfill_feature_sample_trace_legacy_audit(
     peak_config: ExtractionConfig,
     require_sealed_facts: bool,
     emit_region_audit: bool,
-) -> _OwnerBackfillTraceEvaluation:
+) -> _BackfillTraceEvaluation:
     peak_preferred_rt = (
         feature.family_center_rt if preferred_rt is None else preferred_rt
     )
@@ -141,7 +141,7 @@ def _backfill_feature_sample_trace_legacy_audit(
         peak_finder=find_peak_and_area,
     )
     if detection.status == "unassessable_trace":
-        return _OwnerBackfillTraceEvaluation(
+        return _BackfillTraceEvaluation(
             cell=_backfill_unchecked_cell(
                 feature,
                 sample_stem,
@@ -158,7 +158,7 @@ def _backfill_feature_sample_trace_legacy_audit(
         or detection.result is None
         or detection.peak is None
     ):
-        return _OwnerBackfillTraceEvaluation(
+        return _BackfillTraceEvaluation(
             cell=_backfill_unchecked_cell(
                 feature,
                 sample_stem,
@@ -203,7 +203,7 @@ def _backfill_feature_sample_trace_legacy_audit(
         base_integration,
         peak_facts,
     ):
-        return _OwnerBackfillTraceEvaluation(
+        return _BackfillTraceEvaluation(
             cell=_backfill_unchecked_cell(
                 feature,
                 sample_stem,
@@ -283,7 +283,7 @@ def _backfill_feature_sample_trace_legacy_audit(
             missing_observation_state="queried_and_detected",
         ),
     )
-    return _OwnerBackfillTraceEvaluation(
+    return _BackfillTraceEvaluation(
         cell=with_region_audit(cell, region_audit),
         peak_facts=peak_facts,
         peak_fact_elapsed_seconds=fact_elapsed_seconds,
@@ -303,7 +303,7 @@ def _backfill_feature_sample_trace_canonical(
     signal_processing_profile: SignalProcessingProfile,
     selection_subject_id: str,
     prepared_signal_cache: _ChunkPreparedSignalCache,
-) -> _OwnerBackfillTraceEvaluation:
+) -> _BackfillTraceEvaluation:
     query_rt = feature.family_center_rt if preferred_rt is None else preferred_rt
     started = perf_counter()
     # Request equivalence fans one extracted trace object out to every logical
@@ -363,7 +363,7 @@ def _backfill_feature_sample_trace_canonical(
                 f"{physical_evaluation.state}/{physical_evaluation.reason}"
             ),
         )
-        return _OwnerBackfillTraceEvaluation(
+        return _BackfillTraceEvaluation(
             cell=cell,
             peak_facts=None,
             peak_fact_elapsed_seconds=elapsed,
@@ -380,7 +380,7 @@ def _backfill_feature_sample_trace_canonical(
             physical_evaluation,
             operations=(*physical_evaluation.operations, "region_audit_projection"),
         )
-    peak_fact_receipt = OwnerBackfillPeakFactReceipt(
+    peak_fact_receipt = BackfillPeakFactReceipt(
         integration=integration,
         physical_evaluation=physical_evaluation,
         normalized_shape_status="ok",
@@ -438,7 +438,7 @@ def _backfill_feature_sample_trace_canonical(
             cell,
             _canonical_region_audit(physical_evaluation, signal_processing_profile),
         )
-    return _OwnerBackfillTraceEvaluation(
+    return _BackfillTraceEvaluation(
         cell=cell,
         peak_facts=peak_fact_receipt,
         peak_fact_elapsed_seconds=elapsed,
@@ -572,11 +572,11 @@ def _keep_best_backfill_outcome_cell(
         return
     if candidate.status != "backfilled":
         return
-    if _rescued_cell_sort_key(candidate) < _rescued_cell_sort_key(current):
+    if _backfilled_cell_sort_key(candidate) < _backfilled_cell_sort_key(current):
         cells[key] = candidate
 
 
-def _rescued_cell_sort_key(cell: AlignedCell) -> tuple[float, float, float]:
+def _backfilled_cell_sort_key(cell: AlignedCell) -> tuple[float, float, float]:
     area = float(cell.area or 0.0)
     rt_delta = abs(cell.rt_delta_sec) if cell.rt_delta_sec is not None else np.inf
     apex_rt = float(cell.apex_rt or 0.0)
