@@ -119,7 +119,7 @@ def test_bundle_cli_does_not_import_raw_reader(tmp_path: Path) -> None:
         "else status)"
     )
     completed = subprocess.run(
-        [sys.executable, "-c", code], capture_output=True, text=True
+        [sys.executable, "-c", code], capture_output=True, text=True, encoding="utf-8"
     )
     assert completed.returncode == 0, completed.stderr
     assert output.is_file()

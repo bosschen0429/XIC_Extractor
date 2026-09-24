@@ -10,6 +10,8 @@ from scripts.check_cid_nl_discovery_full_scope_classification import (
     CHECK_COLUMNS,
     DEFAULT_DOCS_DIR,
     MANIFEST_COLUMNS,
+    NO_AUTHORITY_EFFECT,
+    _hold_block_problem_count,
     check_cid_nl_discovery_full_scope_classification,
 )
 from xic_extractor.tabular_io import read_tsv_required, write_tsv
@@ -82,6 +84,39 @@ def test_stale_summary_hash_fails_closed(tmp_path: Path) -> None:
     )
 
     assert any("summary checks_tsv sha256 mismatch" in problem for problem in problems)
+
+
+def test_hold_and_block_require_bundle_review_locator() -> None:
+    common = {
+        "transition_key": "source->successor",
+        "source_peak_hypothesis_id": "source",
+        "successor_peak_hypothesis_id": "successor",
+        "product_authority_effect": NO_AUTHORITY_EFFECT,
+        "review_path": "review_curves.json",
+        "trace_data_json": "trace.json",
+    }
+    held = {
+        **common,
+        "review_resolution_action": "agent_hold_current_bundle",
+        "review_resolution_status": "held",
+        "review_resolution_reason": "review pending",
+    }
+    blocked = {
+        **common,
+        "feature_inclusion_review_status": "blocked",
+        "identity_authority_status": "not_granted",
+        "product_gate_action": "exclude_from_current_activation_bundle",
+        "review_reason": "insufficient support",
+    }
+    rows = {
+        "agent_hold": (held,),
+        "manual_hold": (),
+        "user_review": (),
+        "blocked": (blocked,),
+    }
+    assert _hold_block_problem_count(rows) == 0
+    rows["blocked"] = ({**blocked, "review_path": ""},)
+    assert _hold_block_problem_count(rows) == 1
 
 
 def _copy_contract(tmp_path: Path) -> tuple[Path, Path, Path]:

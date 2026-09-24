@@ -92,6 +92,17 @@ def test_builds_feature_inclusion_gate_without_product_authority(
     ).read_text(encoding="utf-8")
     assert "FAM000003->FAM000004" in review_queue
     assert "queue_review_before_expected_diff" in review_queue
+    transition_rows = read_tsv_required(
+        tmp_path / "gate" / "cid_nl_feature_inclusion_gate_transitions.tsv",
+        gate.GATE_TRANSITION_COLUMNS,
+    )
+    by_key = {row["transition_key"]: row for row in transition_rows}
+    assert by_key["FAM000001->FAM000002"]["review_path"] == (
+        "FAM000001->FAM000002_curves.json"
+    )
+    assert by_key["FAM000003->FAM000004"]["review_path"] == (
+        "FAM000003->FAM000004_curves.json"
+    )
 
     agent_expected_diff_rows = read_tsv_required(
         tmp_path
@@ -389,7 +400,7 @@ def _overlay(transition_key: str) -> dict[str, object]:
     return {
         "transition_key": transition_key,
         "status": "success",
-        "png_path": f"{transition_key}.png",
+        "review_path": f"{transition_key}_curves.json",
         "trace_data_json": f"{transition_key}.json",
         "source_trace_max_median": "10",
         "successor_trace_max_median": "100",
