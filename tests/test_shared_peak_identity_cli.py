@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import csv
 import hashlib
-import json
 from pathlib import Path
 
 from tools.diagnostics.shared_peak_identity_explanation import main
@@ -482,65 +481,6 @@ def test_cli_can_generate_rt_mode_evidence_from_mode_assignment(
     )
 
 
-def test_cli_can_generate_rt_mode_evidence_from_overlay_trace_data(
-    tmp_path: Path,
-) -> None:
-    fixture = _write_cli_fixture(tmp_path)
-    overlay_trace_data = tmp_path / "overlay_trace_data.json"
-    _write_overlay_trace_data(overlay_trace_data)
-
-    assert (
-        main(
-            [
-                "--manual-oracle-tsv",
-                str(fixture["oracle"]),
-                "--alignment-review-tsv",
-                str(fixture["review"]),
-                "--alignment-cells-tsv",
-                str(fixture["cells"]),
-                "--output-dir",
-                str(tmp_path / "out"),
-                "--enable-shadow-label-alignment",
-                "--candidate-ms2-pattern-evidence-tsv",
-                str(fixture["candidate_ms2"]),
-                "--generate-rt-mode-evidence",
-                "--rt-mode-evidence-overlay-trace-data-json",
-                str(overlay_trace_data),
-                "--generate-peak-hypothesis-selection",
-            ]
-        )
-        == 0
-    )
-
-    output_dir = tmp_path / "out"
-    generated = output_dir / "shared_peak_identity_rt_mode_evidence.tsv"
-    generated_peak_hypothesis = (
-        output_dir / "shared_peak_identity_peak_hypothesis_selection.tsv"
-    )
-    generated_rows = _read_tsv(generated)
-    assert generated_rows[0]["rt_mode_status"] == "mode_supported"
-    assert generated_rows[0]["rt_mode_evidence_level"] == "raw_selected_apex_modes"
-    assert generated_rows[0]["selected_mode_role"] == "single_mode"
-
-    peak_hypothesis_rows = _read_tsv(generated_peak_hypothesis)
-    assert peak_hypothesis_rows[0]["peak_hypothesis_status"] == ("raw_mode_review_only")
-    assert peak_hypothesis_rows[0]["product_selection_action"] == (
-        "require_raw_mode_review"
-    )
-
-    support = _read_tsv(
-        output_dir / "shared_peak_identity_machine_evidence_support.tsv"
-    )[0]
-    assert (
-        "rt_mode_evidence_level=raw_selected_apex_modes"
-        in support["observed_machine_metrics"]
-    )
-    assert (
-        "peak_hypothesis_status=raw_mode_review_only"
-        in support["observed_machine_metrics"]
-    )
-
-
 def test_cli_can_generate_typed_mode_hypothesis_assignment(
     tmp_path: Path,
 ) -> None:
@@ -769,103 +709,6 @@ def test_cli_can_generate_ms1_pattern_coherence_evidence(
     )[0]
     assert "formal_pattern_metric" not in support["missing_machine_evidence"]
     assert "ms1_pattern_status=supportive" in support["observed_machine_metrics"]
-
-
-def test_cli_can_generate_ms1_pattern_with_raw_overlay_shape_metrics(
-    tmp_path: Path,
-) -> None:
-    fixture = _write_cli_fixture(tmp_path)
-
-    assert (
-        main(
-            [
-                "--manual-oracle-tsv",
-                str(fixture["oracle"]),
-                "--alignment-review-tsv",
-                str(fixture["review"]),
-                "--alignment-cells-tsv",
-                str(fixture["cells"]),
-                "--candidate-gate-tsv",
-                str(fixture["gate"]),
-                "--output-dir",
-                str(tmp_path / "out"),
-                "--enable-shadow-label-alignment",
-                "--generate-ms1-pattern-coherence-evidence",
-                "--ms1-pattern-coherence-overlay-trace-data-json",
-                str(fixture["overlay_trace_data"]),
-            ]
-        )
-        == 0
-    )
-
-    output_dir = tmp_path / "out"
-    generated = output_dir / "shared_peak_identity_ms1_pattern_coherence_evidence.tsv"
-    generated_rows = _read_tsv(generated)
-    assert generated_rows[0]["ms1_pattern_evidence_level"] == "trace_constellation"
-    assert generated_rows[0]["shape_correlation_score"] == "0.94"
-    assert generated_rows[0]["shape_metric_source"] == ("family_ms1_overlay_raw_trace")
-    assert generated_rows[0]["peak_quality_vector_status"] == "supportive"
-    assert generated_rows[0]["peak_quality_vector_basis"] == (
-        "family_ms1_overlay_raw_trace_vector"
-    )
-    support = _read_tsv(
-        output_dir / "shared_peak_identity_machine_evidence_support.tsv"
-    )[0]
-    assert "formal_shape_metric" not in support["missing_machine_evidence"]
-    assert "formal_pattern_metric" not in support["missing_machine_evidence"]
-    assert (
-        "ms1_shape_metric_source=family_ms1_overlay_raw_trace"
-        in support["observed_machine_metrics"]
-    )
-    assert (
-        "ms1_peak_quality_vector_basis=family_ms1_overlay_raw_trace_vector"
-        in (support["observed_machine_metrics"])
-    )
-    assert support["evidence_support_status"] == "machine_observed_sufficient"
-
-
-def test_cli_can_generate_candidate_ms2_pattern_evidence_from_batch_index(
-    tmp_path: Path,
-) -> None:
-    fixture = _write_cli_fixture(tmp_path)
-
-    assert (
-        main(
-            [
-                "--manual-oracle-tsv",
-                str(fixture["oracle"]),
-                "--alignment-review-tsv",
-                str(fixture["review"]),
-                "--alignment-cells-tsv",
-                str(fixture["cells"]),
-                "--candidate-gate-tsv",
-                str(fixture["gate"]),
-                "--output-dir",
-                str(tmp_path / "out"),
-                "--enable-shadow-label-alignment",
-                "--cwt-shape-evidence-tsv",
-                str(fixture["cwt"]),
-                "--tier2-trace-evidence-tsv",
-                str(fixture["tier2_trace"]),
-                "--candidate-ms2-pattern-batch-index",
-                str(fixture["batch_index"]),
-            ]
-        )
-        == 0
-    )
-
-    output_dir = tmp_path / "out"
-    generated = output_dir / "shared_peak_identity_candidate_ms2_pattern_evidence.tsv"
-    assert generated.exists()
-    generated_rows = _read_tsv(generated)
-    assert generated_rows[0]["candidate_ms2_pattern_status"] == "supportive"
-    support = _read_tsv(
-        output_dir / "shared_peak_identity_machine_evidence_support.tsv"
-    )[0]
-    assert (
-        "candidate_ms2_pattern_status=supportive" in support["observed_machine_metrics"]
-    )
-    assert support["evidence_support_status"] == "machine_observed_sufficient"
 
 
 def test_cli_can_generate_matrix_rt_drift_policy_from_existing_artifacts(
@@ -1240,7 +1083,6 @@ def _write_cli_fixture(tmp_path: Path) -> dict[str, Path]:
     sample_negative = inputs / "sample_negative.tsv"
     matrix_drift = inputs / "matrix_rt_drift.tsv"
     owner_edge = inputs / "owner_edge_evidence.tsv"
-    overlay_trace_data = inputs / "fam001_overlay_trace_data.json"
     batch_index = inputs / "discovery_batch_index.csv"
     discovery_dir = inputs / "S1"
     discovery_dir.mkdir()
@@ -1257,7 +1099,6 @@ def _write_cli_fixture(tmp_path: Path) -> dict[str, Path]:
     _write_sample_negative(sample_negative)
     _write_matrix_rt_drift(matrix_drift)
     _write_owner_edge(owner_edge)
-    _write_overlay_trace_data(overlay_trace_data)
     _write_discovery_batch_index(batch_index, discovery_candidates)
     _write_discovery_candidates(discovery_candidates)
     fixture_cohort = _write_blast_radius_run(tmp_path / "fixture_cohort")
@@ -1275,7 +1116,6 @@ def _write_cli_fixture(tmp_path: Path) -> dict[str, Path]:
         "sample_negative": sample_negative,
         "matrix_drift": matrix_drift,
         "owner_edge": owner_edge,
-        "overlay_trace_data": overlay_trace_data,
         "batch_index": batch_index,
         "fixture_cohort": fixture_cohort,
         "full_cohort": full_cohort,
@@ -1804,40 +1644,6 @@ def _write_mode_assignments(path: Path, rows: list[dict[str, str]]) -> None:
             "norm_apex_rt",
         ),
         rows,
-    )
-
-
-def _write_overlay_trace_data(path: Path) -> None:
-    path.write_text(
-        json.dumps(
-            {
-                "family_id": "FAM001",
-                "rt_min": 0.5,
-                "rt_max": 1.5,
-                "evidence_summary": {
-                    "family_verdict": "ms1_shape_supports_family_backfill"
-                },
-                "traces": [
-                    {
-                        "sample_stem": "S1",
-                        "status": "backfilled",
-                        "cell_apex_rt": 1.0,
-                        "cell_start_rt": 0.9,
-                        "cell_end_rt": 1.1,
-                        "cell_height": 980.0,
-                        "local_window_max_intensity": 1000.0,
-                        "trace_max_intensity": 1000.0,
-                        "apex_aligned_shape_similarity": 0.94,
-                        "local_window_to_global_max_ratio": 0.98,
-                        "local_window_apex_delta_min": 0.01,
-                        "global_trace_apex_delta_min": 0.02,
-                        "rt": [0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3],
-                        "intensity": [10.0, 12.0, 100.0, 1000.0, 120.0, 14.0, 11.0],
-                    }
-                ],
-            }
-        ),
-        encoding="utf-8",
     )
 
 

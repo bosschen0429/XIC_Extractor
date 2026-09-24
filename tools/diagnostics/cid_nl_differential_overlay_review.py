@@ -10,9 +10,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from tools.diagnostics.family_ms1_overlay_evidence import _gaussian_smooth_values
-from tools.diagnostics.family_ms1_overlay_rendering_styles import (
-    PLOT_GAUSSIAN_SMOOTH_POINTS,
+from xic_extractor.peak_detection.ms1_shape_identity import (
+    DEFAULT_OWN_MAX_SMOOTH_POINTS,
+)
+from xic_extractor.peak_detection.ms1_shape_identity import (
+    gaussian_smooth_values as _gaussian_smooth_values,
 )
 from xic_extractor.tabular_io import read_tsv_required, text_value, write_tsv
 from xic_extractor.xic_models import XICTrace
@@ -812,7 +814,7 @@ def _gaussian15_intensity(trace: XICTrace) -> Any:
     return np.asarray(
         _gaussian_smooth_values(
             trace.intensity,
-            points=PLOT_GAUSSIAN_SMOOTH_POINTS,
+            points=DEFAULT_OWN_MAX_SMOOTH_POINTS,
         ),
         dtype=float,
     )

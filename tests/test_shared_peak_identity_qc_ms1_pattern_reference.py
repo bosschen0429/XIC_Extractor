@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from tools.diagnostics import qc_ms1_pattern_reference as qc_reference_cli
 from xic_extractor.alignment.shared_peak_identity_explanation import (
     qc_ms1_pattern_reference,
 )
@@ -246,43 +245,6 @@ def test_qc_ms1_pattern_reference_rejects_blank_raw_trace_qc(
     assert rows[0]["nearest_qc_sample_stem"] == "Breast_Cancer_Tissue_pooled_QC5"
     assert rows[0]["qc_reference_status"] == "partial_support"
     assert rows[0]["qc_reference_policy"] == "qc_consensus_with_local_support"
-
-
-def test_qc_ms1_pattern_reference_cli_writes_tsv(tmp_path: Path) -> None:
-    overlay = tmp_path / "fam001_overlay_trace_data.json"
-    injection_order = tmp_path / "injection_order.csv"
-    output = tmp_path / "qc_reference.tsv"
-    _write_overlay(
-        overlay,
-        target_apex_rt=10.01,
-        qc_apex_rt=10.00,
-        target_intensity=(0.0, 30.0, 100.0, 35.0, 0.0),
-        qc_intensity=(0.0, 28.0, 100.0, 32.0, 0.0),
-    )
-    injection_order.write_text(
-        "Sample_Name,Injection_Order\n"
-        "TumorBC0001_DNA,10\n"
-        "Breast_Cancer_Tissue_pooled_QC5,11\n",
-        encoding="utf-8",
-    )
-
-    exit_code = qc_reference_cli.main(
-        (
-            "--overlay-trace-data-json",
-            str(overlay),
-            "--injection-order-source",
-            str(injection_order),
-            "--oracle-key",
-            "FAM001|TumorBC0001_DNA",
-            "--output-tsv",
-            str(output),
-        )
-    )
-
-    assert exit_code == 0
-    output_text = output.read_text(encoding="utf-8")
-    assert "qc_consensus_and_local_qc_support" in output_text
-    assert "qc_reference_policy" in output_text
 
 
 def _write_overlay(

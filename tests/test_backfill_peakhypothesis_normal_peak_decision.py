@@ -531,7 +531,6 @@ def _machine_shape_row(
     same_peak_verdict: str = "same_peak_supported",
 ) -> dict[str, str]:
     return {
-        "schema_version": "backfill_peakhypothesis_overlay",
         "source_peak_hypothesis_id": source_peak_hypothesis_id,
         "sample_stem": sample,
         "full_cohort_matched_peak_hypothesis_id": matched_peak_hypothesis_id,
