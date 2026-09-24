@@ -89,7 +89,12 @@ def test_support_origin_styles_fixture_curves_in_both_views(
     node = shutil.which("node")
     assert node is not None, "Node.js is required to test the embedded JavaScript"
     result = subprocess.run(
-        [node], input=js, capture_output=True, text=True, check=True
+        [node],
+        input=js,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=True,
     )
     rendered = json.loads(result.stdout)
 
