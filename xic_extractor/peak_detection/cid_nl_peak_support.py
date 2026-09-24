@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from xic_extractor.evidence_artifacts import _mint_evidence_artifact_ref
+from xic_extractor.mass_accuracy import neutral_loss_match
 from xic_extractor.peak_detection.cid_nl_evidence import (
     CidNlEvidenceContractError,
     CidNlEvidenceRef,
@@ -56,7 +57,13 @@ def resolve_dda_cid_nl_peak_support_ref(
     )
 
     observation = canonical_evidence.observation
-    if observation.observed_loss_error_ppm > policy.neutral_loss_tolerance_ppm:
+    if not neutral_loss_match(
+        observation.precursor_mz,
+        observation.product_mz,
+        observation.configured_neutral_loss_da,
+        policy.neutral_loss_tolerance_ppm,
+        observed_loss_da=observation.observed_neutral_loss_da,
+    )[2]:
         raise DdaCidNlPeakSupportContractError(
             "CID-NL evidence does not satisfy the strict neutral-loss tolerance"
         )
@@ -211,6 +218,8 @@ def _support_content(
         peak_mz=peak_content.mz,
         precursor_delta_da=observation.precursor_mz - peak_content.mz,
         observed_loss_error_ppm=observation.observed_loss_error_ppm,
+        observed_product_mz=observation.product_mz,
+        configured_neutral_loss_da=observation.configured_neutral_loss_da,
         policy=policy,
         relationship=RELATIONSHIP,
     )

@@ -1,5 +1,10 @@
 # Targeted Selection
 
+Targeted CID-NL uses the same quadrature precursor/product m/z window as
+Discovery when it evaluates a configured neutral loss. `nl_ppm_max` and the
+CID-NL support policy tolerance are per-ion ppm inputs to that window. The
+reported observed-loss error in ppm remains a descriptive measurement.
+
 Targeted selection is the Targeted workflow projection for known targets. It
 constrains the shared scientific lifecycle with an exact target-list snapshot,
 binds finalized groups to fixed target rows, applies Targeted inclusion/counting

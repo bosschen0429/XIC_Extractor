@@ -992,13 +992,17 @@ def test_composer_split_keeps_cartesian_not_searched_remainder(
         predecessor_spine.group,
         require_canonical=True,
     )
+    members_by_sample = {
+        member.canonical_sample_identity_id: member
+        for member in predecessor.member_subjects
+    }
     left = mint_cross_sample_group_identity(
         processing_request_id=predecessor.processing_request_id,
-        member_subjects=(predecessor.member_subjects[0],),
+        member_subjects=(members_by_sample[samples[0].identity.sample_identity_id],),
     )
     right = mint_cross_sample_group_identity(
         processing_request_id=predecessor.processing_request_id,
-        member_subjects=(predecessor.member_subjects[1],),
+        member_subjects=(members_by_sample[samples[1].identity.sample_identity_id],),
     )
     coverage = _coverage_for_groups(
         fixture,

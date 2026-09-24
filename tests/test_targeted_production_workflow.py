@@ -356,7 +356,13 @@ def test_diagnostic_nl_evidence_finalizes_without_strict_support(
     assert candidate_evidence is not None
     product_evidence = candidate_evidence.best_product_evidence
     assert product_evidence is not None
-    observed_loss_da = 116.0058
+    observed_loss_da = 115.9
+    assert target.neutral_loss_da is not None
+    loss_error_ppm = (
+        abs(observed_loss_da - target.neutral_loss_da)
+        / target.neutral_loss_da
+        * 1_000_000.0
+    )
     output.file_results[0].results[target.label] = replace(
         original,
         candidate_ms2_evidence=replace(
@@ -364,12 +370,12 @@ def test_diagnostic_nl_evidence_finalizes_without_strict_support(
             nl_match=False,
             nl_status="NL_FAIL",
             strict_nl_scan_count=0,
-            best_loss_ppm=50.0,
+            best_loss_ppm=loss_error_ppm,
             best_product_evidence=replace(
                 product_evidence,
                 product_mz=product_evidence.precursor_mz - observed_loss_da,
                 observed_loss_da=observed_loss_da,
-                observed_loss_error_ppm=50.0,
+                observed_loss_error_ppm=loss_error_ppm,
             ),
         ),
     )

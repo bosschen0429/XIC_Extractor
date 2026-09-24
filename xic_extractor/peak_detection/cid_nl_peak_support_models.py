@@ -5,13 +5,14 @@ from __future__ import annotations
 import json
 import math
 import re
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 
 from xic_extractor.evidence_artifacts import (
     EvidenceArtifactRef,
     _mint_artifact_semantic_contract_ref,
     verify_evidence_artifact_payload,
 )
+from xic_extractor.mass_accuracy import neutral_loss_match
 from xic_extractor.peak_detection.cid_nl_evidence import ACQUISITION_MODE
 
 SCHEMA_VERSION = "dda_cid_nl_peak_support"
@@ -88,8 +89,12 @@ class DdaCidNlPeakSupportContent:
     peak_mz: float
     precursor_delta_da: float
     observed_loss_error_ppm: float
+    observed_product_mz: float
+    configured_neutral_loss_da: float
     policy: DdaCidNlPeakSupportPolicy
     relationship: str
+    observed_loss_error_da: float = field(init=False)
+    neutral_loss_window_da: float = field(init=False)
 
     def __post_init__(self) -> None:
         _validate_typed_digest_id(
@@ -154,6 +159,12 @@ class DdaCidNlPeakSupportContent:
             self.observed_loss_error_ppm,
             field="observed_loss_error_ppm",
         )
+        observed_product_mz = _finite_float(
+            self.observed_product_mz, field="observed_product_mz"
+        )
+        configured_loss_da = _finite_float(
+            self.configured_neutral_loss_da, field="configured_neutral_loss_da"
+        )
         if peak_rt_min >= peak_rt_max:
             raise DdaCidNlPeakSupportContractError(
                 "peak_rt_min must be less than peak_rt_max"
@@ -184,10 +195,18 @@ class DdaCidNlPeakSupportContent:
             raise DdaCidNlPeakSupportContractError(
                 "DDA precursor is outside the MS1 peak m/z tolerance"
             )
-        if observed_loss_error > self.policy.neutral_loss_tolerance_ppm:
+        loss_error_da, loss_window_da, matches = neutral_loss_match(
+            precursor_mz,
+            observed_product_mz,
+            configured_loss_da,
+            self.policy.neutral_loss_tolerance_ppm,
+        )
+        if not matches:
             raise DdaCidNlPeakSupportContractError(
                 "CID-NL evidence does not satisfy the strict neutral-loss tolerance"
             )
+        object.__setattr__(self, "observed_loss_error_da", loss_error_da)
+        object.__setattr__(self, "neutral_loss_window_da", loss_window_da)
         if self.relationship != RELATIONSHIP:
             raise DdaCidNlPeakSupportContractError(
                 f"relationship must be {RELATIONSHIP!r}"

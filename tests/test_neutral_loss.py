@@ -69,6 +69,19 @@ def test_check_nl_returns_fail_with_best_ppm_when_product_is_only_diagnostic() -
     assert result.to_token() == "NL_FAIL"
 
 
+def test_targeted_check_accepts_loss_error_inside_ion_window() -> None:
+    raw = _FakeRaw([_scan_event(
+        precursor_mz=PRECURSOR_MZ,
+        masses=[_product_for_loss_ppm(PRECURSOR_MZ, 40.0)],
+        intensities=[100.0],
+    )])
+
+    result = _check(raw)
+
+    assert result.status == "WARN"
+    assert result.best_ppm == pytest.approx(40.0)
+
+
 def test_check_nl_returns_fail_without_best_ppm_when_no_product_is_diagnostic() -> None:
     raw = _FakeRaw(
         [

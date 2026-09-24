@@ -7,9 +7,36 @@ from xic_extractor.mass_accuracy import (
     is_within_mz_tolerance,
     mz_tolerance_da,
     mz_window,
+    neutral_loss_match,
     signed_ppm_error,
     within_ppm,
 )
+
+
+def test_neutral_loss_match_uses_quadrature_window_at_boundary() -> None:
+    # At 500/400 m/z and 20 ppm, the window is about 0.012806 Da.
+    inside_error, inside_window, inside = neutral_loss_match(
+        500.0, 400.0128, 100.0, 20.0
+    )
+    outside_error, outside_window, outside = neutral_loss_match(
+        500.0, 400.0129, 100.0, 20.0
+    )
+
+    assert inside_error == pytest.approx(0.0128)
+    assert inside_window == pytest.approx(0.0128064, rel=1e-5)
+    assert inside is True
+    assert outside_error == pytest.approx(0.0129)
+    assert outside_window == pytest.approx(inside_window, rel=1e-5)
+    assert outside is False
+
+
+def test_neutral_loss_match_allows_asymmetric_ion_error() -> None:
+    # A 25 ppm product deviation can be within the propagated two-ion window.
+    error_da, window_da, matches = neutral_loss_match(500.0, 400.01, 100.0, 20.0)
+
+    assert error_da == pytest.approx(0.01)
+    assert window_da == pytest.approx(0.0128064, rel=1e-5)
+    assert matches is True
 
 
 def test_signed_ppm_error_uses_reference_mz_denominator() -> None:
