@@ -41,9 +41,6 @@ def main(argv: Sequence[str] | None = None) -> int:
             alignment_matrix_tsv=args.alignment_matrix_tsv,
             alignment_matrix_identity_tsv=args.alignment_matrix_identity_tsv,
             overlay_batch_summary_tsvs=tuple(args.overlay_batch_summary_tsv or ()),
-            ms1_pattern_coherence_tsvs=tuple(
-                args.ms1_pattern_coherence_tsv or ()
-            ),
             source_run_id=args.source_run_id or "",
         )
     except (OSError, ValueError) as exc:
@@ -63,7 +60,6 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument("--alignment-matrix-tsv", type=Path)
     parser.add_argument("--alignment-matrix-identity-tsv", type=Path)
     parser.add_argument("--overlay-batch-summary-tsv", action="append", type=Path)
-    parser.add_argument("--ms1-pattern-coherence-tsv", action="append", type=Path)
     parser.add_argument("--source-run-id")
     return parser.parse_args(argv)
 

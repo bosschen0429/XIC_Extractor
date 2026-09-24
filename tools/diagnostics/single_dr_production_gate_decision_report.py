@@ -29,7 +29,6 @@ from xic_extractor.alignment.identity_gates import (
 )
 from xic_extractor.alignment.promotion_policy import (
     BACKFILL_MS1_PATTERN_BLOCKED_REASON,
-    BACKFILL_MS1_PATTERN_CONFLICT_REASON,
     BACKFILL_MS2_CONFLICT_REASON,
     BACKFILL_MS2_CONTEXT_BLOCKED_REASON,
     BACKFILL_RT_EXPLANATION_BLOCKED_REASON,
@@ -49,16 +48,6 @@ _REVIEW_REQUIRED_COLUMNS = (
     "include_in_primary_matrix",
 )
 _BACKFILL_EVIDENCE_COLUMNS = (
-    "backfill_ms1_pattern_status",
-    "backfill_ms1_pattern_evidence_level",
-    "backfill_qc_reference_status",
-    "backfill_qc_reference_evidence_level",
-    "backfill_matrix_rt_drift_status",
-    "backfill_drift_evidence_level",
-    "backfill_drift_compatible_status",
-    "backfill_drift_corrected_delta_sec",
-    "backfill_candidate_ms2_pattern_status",
-    "backfill_candidate_ms2_evidence_level",
     "backfill_ms2_trigger_scan_count",
     "backfill_strict_nl_scan_count",
     "backfill_ms2_trace_strength",
@@ -87,7 +76,6 @@ _WEAK_SEED_TOLERATED_GATE_ID = "dr_weak_seed_tolerated_watch"
 _DUPLICATE_GATE_ID = "dr_duplicate_rescue_pressure"
 _POLICY_BLOCK_REASONS = {
     BACKFILL_MS1_PATTERN_BLOCKED_REASON,
-    BACKFILL_MS1_PATTERN_CONFLICT_REASON,
     BACKFILL_MS2_CONTEXT_BLOCKED_REASON,
     BACKFILL_MS2_CONFLICT_REASON,
     BACKFILL_RT_EXPLANATION_BLOCKED_REASON,
@@ -253,7 +241,6 @@ def _classify_family(
         classification = "blocked_low_ms1_assessable_coverage"
     elif promotion.reason in {
         BACKFILL_MS1_PATTERN_BLOCKED_REASON,
-        BACKFILL_MS1_PATTERN_CONFLICT_REASON,
         BACKFILL_MS2_CONTEXT_BLOCKED_REASON,
         BACKFILL_MS2_CONFLICT_REASON,
         BACKFILL_RT_EXPLANATION_BLOCKED_REASON,

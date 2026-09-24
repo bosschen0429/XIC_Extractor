@@ -280,44 +280,25 @@ Authority state: owner and identity evidence can permit, block, or review a
 matrix cell, but a new writer scope still needs activation/expected diff. Owner
 ambiguity is a blocker until resolved.
 
-### Backfill Evidence Projection And Product-Authority Sidecars
+### Backfill Promotion Evidence
 
 Owners:
 
 - `xic_extractor/alignment/promotion_policy.py`
-- `xic_extractor/alignment/backfill_evidence_projection.py`
-- `xic_extractor/alignment/backfill_ms1_product_authority.py`
-- `xic_extractor/alignment/backfill_candidate_ms2_product_authority.py`
 - `xic_extractor/alignment/shared_peak_identity_explanation/machine_evidence_support.py`
 
 Purpose: decide whether a currently blank/rescued cell has enough evidence to
 be accepted, reviewed, held, or written inside a bounded Backfill lane.
 
-Evidence states:
+Evidence states: Candidate MS2 strict NL, trigger, trace strength, and
+DDA-missing-NL facts carried on the cell, plus RT evidence.
 
-- MS1 pattern: `backfill_ms1_pattern_status`,
-  `backfill_ms1_pattern_evidence_level`, product-authority source/scope/hash,
-  and own-max shape support.
-- QC reference: `backfill_qc_reference_status`,
-  `backfill_qc_reference_evidence_level`.
-- RT drift: `backfill_matrix_rt_drift_status`,
-  `backfill_drift_evidence_level`, drift compatibility, drift-corrected delta.
-- Candidate MS2: `backfill_candidate_ms2_pattern_status`,
-  `backfill_candidate_ms2_evidence_level`, strict NL, trigger, trace strength,
-  DDA-missing-NL, required-tag status, and product-authority provenance.
-- MS1 product authority requires allowlist status, source evidence, overlay
-  JSON provenance/hash, same family/sample/vector, own-max metric, supportive
-  quality vector, and threshold compliance.
-- The retired 666-cell and 84-cell Backfill expansion experiments remain only as
-  negative scope tombstones in the authority manifest. Their packets and
-  checkers are available from Git history, not as current evidence-chain gates.
-- Candidate MS2 product authority requires supportive/partial support,
-  `sample_candidate_aligned` or `sample_boundary_aligned` level, source hash,
-  schema version, source match, and similarity threshold compliance.
-
-Authority state: these sidecars are acceptance/provenance gates. They are not
-raw MS1/MS2 providers. A row without product-authorized scope/source remains
-review or diagnostic evidence.
+Authority state: the reviewed-sidecar product-authority mechanism (MS1 pattern,
+Candidate MS2, QC reference, and RT drift projections) was retired in #447; it
+was reachable only from diagnostics. The `shared_peak_identity_explanation`
+producers of MS1 pattern, Candidate MS2, QC reference, and RT drift sidecars
+remain review evidence for mode-hypothesis assignment and grant no cell
+authority.
 
 ### Quant Matrix Expected-Diff And Provenance
 

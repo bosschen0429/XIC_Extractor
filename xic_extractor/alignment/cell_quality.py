@@ -8,7 +8,6 @@ from typing import Literal
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.matrix import AlignedCell
 from xic_extractor.alignment.promotion_policy import (
-    cell_has_product_authorized_drift_corrected_same_peak_backfill_support,
     cell_owner_backfill_write_block_reason,
 )
 
@@ -87,11 +86,6 @@ def decide_cell_quality(
             return _decision(cell, "review_backfill", None, "rt_outside_max")
         rt_delta_sec = abs(cell.rt_delta_sec)
         if rt_delta_sec <= config.preferred_rt_sec:
-            return _decision(cell, "rescue_quantifiable", area, "")
-        if cell_has_product_authorized_drift_corrected_same_peak_backfill_support(
-            cell,
-            preferred_rt_sec=config.preferred_rt_sec,
-        ):
             return _decision(cell, "rescue_quantifiable", area, "")
         if rt_delta_sec > config.max_rt_sec:
             return _decision(cell, "review_backfill", None, "rt_outside_max")

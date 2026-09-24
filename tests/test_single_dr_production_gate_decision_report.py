@@ -1,5 +1,4 @@
 import csv
-import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -11,157 +10,11 @@ from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.matrix import AlignedCell, AlignmentMatrix
 from xic_extractor.alignment.matrix_identity import build_matrix_identity_decisions
 from xic_extractor.alignment.production_decisions import build_production_decisions
-from xic_extractor.alignment.promotion_policy import (
-    ANCHOR_OWN_MAX_MS1_SUPPORT_REASON,
-    CELL_EVIDENCE_SUPPORTED_REASON,
-    DDA_LIMITED_MS2_SHAPE_REASON,
-)
 from xic_extractor.alignment.tsv_writer import (
     write_alignment_cells_tsv,
     write_alignment_review_tsv,
 )
 from xic_extractor.peak_detection.hypotheses import IntegrationResult
-
-
-def test_extreme_dr_backfill_row_becomes_supported_capped_warning(
-    tmp_path: Path,
-) -> None:
-    alignment_dir = tmp_path / "alignment"
-    output_dir = tmp_path / "diagnostics"
-    _write_tsv(
-        alignment_dir / "alignment_review.tsv",
-        (_review_row("FAM_EXT", q_detected=2, q_rescue=8),),
-    )
-    _write_tsv(
-        alignment_dir / "alignment_cells.tsv",
-        tuple(_cells("FAM_EXT", detected=2, rescued=8)),
-    )
-
-    code = report.main(
-        [
-            "--alignment-dir",
-            str(alignment_dir),
-            "--output-dir",
-            str(output_dir),
-        ],
-    )
-
-    assert code == 0
-    families = _read_tsv(output_dir / "single_dr_gate_decision_families.tsv")
-    assert families[0]["risk_classification"] == "supported_backfill_capped"
-    assert families[0]["promotion_state"] == "supported"
-    assert families[0]["promotion_reason"] == CELL_EVIDENCE_SUPPORTED_REASON
-    assert families[0]["rescue_fraction"] == "0.8000"
-
-    candidates = _read_tsv(output_dir / "single_dr_gate_candidates.tsv")
-    extreme = _candidate(candidates, "dr_extreme_backfill_dependency")
-    assert extreme["affected_primary_rows"] == "0"
-    assert extreme["affected_istd_rows"] == "0"
-    assert extreme["recommended_action"] == "reject"
-    supported = _candidate(candidates, "dr_supported_backfill_capped")
-    assert supported["affected_primary_rows"] == "1"
-    assert supported["recommended_action"] == "keep_warning"
-    detected_cells = _read_tsv(
-        output_dir / "single_dr_gate_decision_detected_cells.tsv",
-    )
-    assert detected_cells[0]["seed_candidate_joined"] == "False"
-    assert (output_dir / "single_dr_gate_decision_summary.tsv").is_file()
-    assert (output_dir / "single_dr_gate_decision_detected_cells.tsv").is_file()
-    assert (output_dir / "single_dr_gate_decision.json").is_file()
-    assert (output_dir / "single_dr_gate_decision.md").is_file()
-
-
-def test_weak_seed_rescue_heavy_row_becomes_supported_capped_warning(
-    tmp_path: Path,
-) -> None:
-    alignment_dir = tmp_path / "alignment"
-    output_dir = tmp_path / "diagnostics"
-    discovery_dir = tmp_path / "discovery"
-    _write_tsv(
-        alignment_dir / "alignment_review.tsv",
-        (_review_row("FAM_WEAK", q_detected=3, q_rescue=6),),
-    )
-    _write_tsv(
-        alignment_dir / "alignment_cells.tsv",
-        tuple(_cells("FAM_WEAK", detected=3, rescued=6, absent=1)),
-    )
-    batch_index = _write_discovery_index(
-        discovery_dir,
-        [
-            _candidate_row("S001", "FAM_WEAK_C001", evidence_score="55"),
-            _candidate_row("S002", "FAM_WEAK_C002", seed_event_count="1"),
-            _candidate_row("S003", "FAM_WEAK_C003", nl_ppm="12.5"),
-        ],
-    )
-
-    result = report.build_decision_report(
-        alignment_dir=alignment_dir,
-        discovery_batch_index=batch_index,
-    )
-
-    family = result["families"][0]
-    assert family["risk_classification"] == "supported_backfill_capped"
-    assert family["promotion_state"] == "supported"
-    assert family["promotion_reason"] == DDA_LIMITED_MS2_SHAPE_REASON
-    assert family["seed_quality_status"] == "weak"
-    assert family["min_evidence_score"] == 55.0
-    assert family["min_seed_event_count"] == 1.0
-    assert family["max_abs_nl_ppm"] == 12.5
-
-    report.write_outputs(output_dir, result)
-    candidates = _read_tsv(output_dir / "single_dr_gate_candidates.tsv")
-    weak_seed = _candidate(candidates, "dr_weak_seed_backfill_dependency")
-    assert weak_seed["affected_primary_rows"] == "0"
-    assert weak_seed["recommended_action"] == "reject"
-
-
-def test_weak_seed_tolerated_row_is_supported_capped_warning(
-    tmp_path: Path,
-) -> None:
-    alignment_dir = tmp_path / "alignment"
-    output_dir = tmp_path / "diagnostics"
-    discovery_dir = tmp_path / "discovery"
-    _write_tsv(
-        alignment_dir / "alignment_review.tsv",
-        (
-            _review_row(
-                "FAM_TOL",
-                q_detected=3,
-                q_rescue=6,
-                row_flags="rescue_heavy;weak_seed_tolerated",
-            ),
-        ),
-    )
-    _write_tsv(
-        alignment_dir / "alignment_cells.tsv",
-        tuple(_cells("FAM_TOL", detected=3, rescued=6, absent=1)),
-    )
-    batch_index = _write_discovery_index(
-        discovery_dir,
-        [
-            _candidate_row("S001", "FAM_TOL_C001", evidence_score="55"),
-            _candidate_row("S002", "FAM_TOL_C002"),
-            _candidate_row("S003", "FAM_TOL_C003"),
-        ],
-    )
-
-    result = report.build_decision_report(
-        alignment_dir=alignment_dir,
-        discovery_batch_index=batch_index,
-    )
-
-    family = result["families"][0]
-    assert family["risk_classification"] == "supported_backfill_capped"
-    assert family["promotion_state"] == "supported"
-    assert family["promotion_reason"] == DDA_LIMITED_MS2_SHAPE_REASON
-    assert family["seed_quality_status"] == "adequate"
-
-    report.write_outputs(output_dir, result)
-    candidates = _read_tsv(output_dir / "single_dr_gate_candidates.tsv")
-    tolerated = _candidate(candidates, "dr_weak_seed_tolerated_watch")
-    assert tolerated["affected_primary_rows"] == "0"
-    supported = _candidate(candidates, "dr_supported_backfill_capped")
-    assert supported["affected_primary_rows"] == "1"
 
 
 def test_discovery_candidate_loader_reuses_duplicate_candidate_tables(
@@ -272,8 +125,8 @@ def test_tsv_adapter_excludes_review_backfill_outside_alignment_window(
     result = report.build_decision_report(alignment_dir=alignment_dir)
 
     family = result["families"][0]
-    assert family["risk_classification"] == "supported_backfill_capped"
-    assert family["promotion_state"] == "supported"
+    assert family["risk_classification"] == "blocked_missing_backfill_identity_evidence"
+    assert family["promotion_state"] == "blocked"
     assert family["assessed_rescue_count"] == 8
 
 
@@ -341,24 +194,9 @@ def test_tsv_adapter_uses_primary_matrix_area_for_rescue_evidence(
     result = report.build_decision_report(alignment_dir=alignment_dir)
 
     family = result["families"][0]
-    assert family["risk_classification"] == "supported_backfill_capped"
-    assert family["promotion_state"] == "supported"
+    assert family["risk_classification"] == "blocked_missing_backfill_identity_evidence"
+    assert family["promotion_state"] == "blocked"
     assert family["assessed_rescue_count"] == 8
-
-
-def test_tsv_adapter_requires_backfill_evidence_schema(tmp_path: Path) -> None:
-    alignment_dir = tmp_path / "alignment"
-    _write_tsv(
-        alignment_dir / "alignment_review.tsv",
-        (_review_row("FAM_STALE_SCHEMA", q_detected=2, q_rescue=8),),
-    )
-    cells = _cells("FAM_STALE_SCHEMA", detected=2, rescued=8)
-    for row in cells:
-        row.pop("backfill_ms1_pattern_status")
-    _write_tsv(alignment_dir / "alignment_cells.tsv", tuple(cells))
-
-    with pytest.raises(ValueError, match="missing required columns"):
-        report.build_decision_report(alignment_dir=alignment_dir)
 
 
 def test_tsv_adapter_requires_review_backfill_count(tmp_path: Path) -> None:
@@ -620,58 +458,9 @@ def test_non_dr_primary_rows_are_out_of_scope(tmp_path: Path) -> None:
     ]
 
 
-def test_istd_impact_blocks_automatic_implement_recommendation(
+def test_diagnostic_tsv_adapter_reports_unavailable_without_owner_evidence(
     tmp_path: Path,
 ) -> None:
-    alignment_dir = tmp_path / "alignment"
-    benchmark_json = tmp_path / "targeted_istd_benchmark.json"
-    _write_tsv(
-        alignment_dir / "alignment_review.tsv",
-        (_review_row("FAM_ISTD", q_detected=2, q_rescue=8),),
-    )
-    _write_tsv(
-        alignment_dir / "alignment_cells.tsv",
-        tuple(_cells("FAM_ISTD", detected=2, rescued=8)),
-    )
-    benchmark_json.write_text(
-        json.dumps(
-            {
-                "summaries": [
-                    {
-                        "target_label": "d3-N6-medA",
-                        "selected_feature_id": "FAM_ISTD",
-                        "primary_feature_ids": ["FAM_ISTD"],
-                        "status": "FAIL",
-                        "failure_modes": ["AREA_MISMATCH"],
-                    },
-                ],
-            },
-        ),
-        encoding="utf-8",
-    )
-
-    result = report.build_decision_report(
-        alignment_dir=alignment_dir,
-        targeted_istd_benchmark_json=benchmark_json,
-    )
-
-    family = result["families"][0]
-    assert family["targeted_istd_labels"] == "d3-N6-medA"
-    assert family["risk_classification"] == "supported_backfill_capped"
-    extreme = _candidate(
-        result["gate_candidates"],
-        "dr_extreme_backfill_dependency",
-    )
-    assert extreme["affected_istd_rows"] == 0
-    supported = _candidate(
-        result["gate_candidates"],
-        "dr_supported_backfill_capped",
-    )
-    assert supported["affected_istd_rows"] == 1
-    assert supported["recommended_action"] == "keep_warning"
-
-
-def test_diagnostic_tsv_adapter_matches_production_policy(tmp_path: Path) -> None:
     alignment_dir = tmp_path / "alignment"
     matrix = AlignmentMatrix(
         clusters=(_alignment_feature("FAM_PARITY"),),
@@ -708,9 +497,11 @@ def test_diagnostic_tsv_adapter_matches_production_policy(tmp_path: Path) -> Non
     result = report.build_decision_report(alignment_dir=alignment_dir)
 
     family = result["families"][0]
-    assert production.identity_reason == CELL_EVIDENCE_SUPPORTED_REASON
-    assert family["promotion_reason"] == production.identity_reason
-    assert family["promotion_flags"] == "high_backfill_dependency_capped"
+    assert production.identity_reason == (
+        "primary_identity_retained_backfill_review_only"
+    )
+    assert family["promotion_reason"] == "backfill_owner_rehydration_unavailable"
+    assert family["promotion_flags"] == "owner_rehydration_required"
 
 
 def test_rt_held_owner_decision_is_unavailable_after_tsv_roundtrip(
@@ -1027,44 +818,13 @@ def _integration(*, raw_area: float, asls_area: float) -> IntegrationResult:
 
 
 def _backfill_evidence_row(*, supported: bool) -> dict[str, str]:
-    if not supported:
-        return {
-            "backfill_ms1_pattern_status": "",
-            "backfill_ms1_pattern_evidence_level": "",
-            "backfill_qc_reference_status": "",
-            "backfill_qc_reference_evidence_level": "",
-            "backfill_matrix_rt_drift_status": "",
-            "backfill_drift_evidence_level": "",
-            "backfill_drift_compatible_status": "",
-            "backfill_drift_corrected_delta_sec": "",
-            "backfill_candidate_ms2_pattern_status": "",
-            "backfill_candidate_ms2_evidence_level": "",
-            "backfill_ms2_trigger_scan_count": "",
-            "backfill_strict_nl_scan_count": "",
-            "backfill_ms2_trace_strength": "",
-            "backfill_dda_missing_nl_policy_status": "",
-            "backfill_family_ms2_required_tag_status": "",
-            "backfill_evidence_reason": "",
-            **_blank_product_authority_fields(),
-        }
     return {
-        "backfill_ms1_pattern_status": "supportive",
-        "backfill_ms1_pattern_evidence_level": "trace_constellation",
-        "backfill_qc_reference_status": "supportive",
-        "backfill_qc_reference_evidence_level": "qc_consensus_with_local_qc_overlay",
-        "backfill_matrix_rt_drift_status": "",
-        "backfill_drift_evidence_level": "",
-        "backfill_drift_compatible_status": "",
-        "backfill_drift_corrected_delta_sec": "",
-        "backfill_candidate_ms2_pattern_status": "partial_support",
-        "backfill_candidate_ms2_evidence_level": "sample_candidate_aligned",
-        "backfill_ms2_trigger_scan_count": "3",
-        "backfill_strict_nl_scan_count": "1",
-        "backfill_ms2_trace_strength": "moderate",
+        "backfill_ms2_trigger_scan_count": "3" if supported else "",
+        "backfill_strict_nl_scan_count": "1" if supported else "",
+        "backfill_ms2_trace_strength": "moderate" if supported else "",
         "backfill_dda_missing_nl_policy_status": "",
         "backfill_family_ms2_required_tag_status": "",
-        "backfill_evidence_reason": ANCHOR_OWN_MAX_MS1_SUPPORT_REASON,
-        **_product_authority_fields(),
+        "backfill_evidence_reason": "",
     }
 
 
@@ -1072,38 +832,8 @@ def _backfill_evidence_fields(*, status: str) -> dict[str, object]:
     if status != "backfilled":
         return {}
     return {
-        "backfill_ms1_pattern_status": "supportive",
-        "backfill_ms1_pattern_evidence_level": "trace_constellation",
-        "backfill_qc_reference_status": "supportive",
-        "backfill_qc_reference_evidence_level": "qc_consensus_with_local_qc_overlay",
-        "backfill_candidate_ms2_pattern_status": "partial_support",
-        "backfill_candidate_ms2_evidence_level": "sample_candidate_aligned",
         "backfill_ms2_trigger_scan_count": 3,
         "backfill_strict_nl_scan_count": 1,
         "backfill_ms2_trace_strength": "moderate",
-        "backfill_evidence_reason": ANCHOR_OWN_MAX_MS1_SUPPORT_REASON,
-        **_product_authority_fields(),
+        "backfill_evidence_reason": "",
     }
-
-
-def _product_authority_fields() -> dict[str, object]:
-    return {
-        "backfill_ms1_product_authority_status": "product_authorized",
-        "backfill_ms1_product_authority_scope": "feature_family_sample",
-        "backfill_ms1_product_authority_source": "unit_test_reviewed_allowlist",
-        "backfill_ms1_product_authority_reason": "unit_test_authorized",
-        "backfill_ms1_product_authority_evidence_sha256": "unit-test-ms1-sha256",
-        "backfill_candidate_ms2_product_authority_status": "product_authorized",
-        "backfill_candidate_ms2_product_authority_scope": "feature_family_sample",
-        "backfill_candidate_ms2_product_authority_source": (
-            "unit_test_reviewed_allowlist"
-        ),
-        "backfill_candidate_ms2_product_authority_reason": "unit_test_authorized",
-        "backfill_candidate_ms2_product_authority_evidence_sha256": (
-            "unit-test-ms2-sha256"
-        ),
-    }
-
-
-def _blank_product_authority_fields() -> dict[str, str]:
-    return {key: "" for key in _product_authority_fields()}

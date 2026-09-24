@@ -25,15 +25,8 @@ from xic_extractor.alignment.production_decisions import (
     production_cell_decision_record,
 )
 from xic_extractor.alignment.promotion_policy import (
-    ANCHOR_OWN_MAX_MS1_SUPPORT_REASON,
-    BACKFILL_CELL_EVIDENCE_REQUIRED_FLAG,
-    BACKFILL_HYPOTHESIS_BLOCKED_REASON,
     BACKFILL_MS1_PATTERN_BLOCKED_REASON,
-    CELL_EVIDENCE_SUPPORTED_REASON,
-    DDA_LIMITED_MS2_SHAPE_REASON,
-    HIGH_BACKFILL_CAPPED_FLAG,
     PRIMARY_IDENTITY_RETAINED_BACKFILL_REVIEW_REASON,
-    STANDARD_PEAK_GATE_MS1_SUPPORT_REASON,
 )
 from xic_extractor.peak_detection.hypotheses import IntegrationResult
 
@@ -421,113 +414,6 @@ def test_rescue_heavy_row_needs_multiple_detected_owners_for_primary_promotion()
     assert decisions.row("FAM001").include_in_primary_matrix is False
 
 
-def test_single_detected_product_authorized_same_peak_rescues_write_matrix_values():
-    matrix = _matrix(
-        clusters=(_feature("FAM001", evidence="owner_complete_link;owner_count=1"),),
-        cells=(
-            _cell("seed1", "FAM001", "detected", 100.0),
-            _cell("rescue1", "FAM001", "backfilled", 90.0),
-            _cell("rescue2", "FAM001", "backfilled", 80.0),
-        ),
-        sample_order=("seed1", "rescue1", "rescue2"),
-    )
-
-    decisions = build_production_decisions(matrix, AlignmentConfig())
-
-    assert decisions.row("FAM001").include_in_primary_matrix is True
-    assert decisions.row("FAM001").identity_decision == "production_family"
-    assert decisions.row("FAM001").identity_reason == CELL_EVIDENCE_SUPPORTED_REASON
-    assert decisions.row("FAM001").accepted_cell_count == 3
-    assert decisions.row("FAM001").accepted_backfill_count == 2
-    assert decisions.cell("FAM001", "seed1").write_matrix_value is True
-    assert decisions.cell("FAM001", "rescue1").production_status == "accepted_backfill"
-    assert decisions.cell("FAM001", "rescue1").write_matrix_value is True
-    assert decisions.cell("FAM001", "rescue1").matrix_value == 90.0
-
-
-def test_single_detected_ms1_same_peak_without_candidate_ms2_writes_rescue():
-    matrix = _matrix(
-        clusters=(_feature("FAM001", evidence="owner_complete_link;owner_count=1"),),
-        cells=(
-            _cell("seed1", "FAM001", "detected", 100.0),
-            _cell(
-                "rescue_ms1_only",
-                "FAM001",
-                "backfilled",
-                90.0,
-                candidate_ms2_evidence=False,
-            ),
-        ),
-        sample_order=("seed1", "rescue_ms1_only"),
-    )
-
-    decisions = build_production_decisions(matrix, AlignmentConfig())
-    rescue = decisions.cell("FAM001", "rescue_ms1_only")
-
-    assert decisions.row("FAM001").include_in_primary_matrix is True
-    assert decisions.row("FAM001").identity_reason == CELL_EVIDENCE_SUPPORTED_REASON
-    assert rescue.production_status == "accepted_backfill"
-    assert rescue.write_matrix_value is True
-    assert rescue.matrix_value == 90.0
-
-
-def test_standard_peak_gate_ms1_authority_writes_rescue():
-    matrix = _matrix(
-        clusters=(_feature("FAM001", evidence="owner_complete_link;owner_count=1"),),
-        cells=(
-            _cell("seed1", "FAM001", "detected", 100.0),
-            _cell(
-                "standard_rescue",
-                "FAM001",
-                "backfilled",
-                90.0,
-                candidate_ms2_evidence=False,
-                backfill_ms1_reason=STANDARD_PEAK_GATE_MS1_SUPPORT_REASON,
-            ),
-        ),
-        sample_order=("seed1", "standard_rescue"),
-    )
-
-    decisions = build_production_decisions(matrix, AlignmentConfig())
-    rescue = decisions.cell("FAM001", "standard_rescue")
-
-    assert decisions.row("FAM001").include_in_primary_matrix is True
-    assert decisions.row("FAM001").identity_reason == CELL_EVIDENCE_SUPPORTED_REASON
-    assert rescue.production_status == "accepted_backfill"
-    assert rescue.write_matrix_value is True
-    assert rescue.matrix_value == 90.0
-
-
-def test_extreme_backfill_dependency_row_is_supported_with_capped_warning():
-    matrix = _matrix(
-        clusters=(_feature("FAM001", evidence="owner_complete_link;owner_count=2"),),
-        cells=(
-            _cell("seed1", "FAM001", "detected", 100.0),
-            _cell("seed2", "FAM001", "detected", 95.0),
-            *tuple(
-                _cell(f"rescue{i:02d}", "FAM001", "backfilled", 80.0 + i)
-                for i in range(1, 84)
-            ),
-        ),
-        sample_order=(
-            "seed1",
-            "seed2",
-            *(f"rescue{i:02d}" for i in range(1, 84)),
-        ),
-    )
-
-    decisions = build_production_decisions(matrix, AlignmentConfig())
-
-    assert decisions.row("FAM001").include_in_primary_matrix is True
-    assert decisions.row("FAM001").identity_decision == "production_family"
-    assert decisions.row("FAM001").identity_reason == CELL_EVIDENCE_SUPPORTED_REASON
-    assert "high_backfill_dependency" in decisions.row("FAM001").row_flags
-    assert HIGH_BACKFILL_CAPPED_FLAG in decisions.row("FAM001").row_flags
-    assert decisions.cell("FAM001", "seed1").write_matrix_value is True
-    assert decisions.cell("FAM001", "rescue01").production_status == "accepted_backfill"
-    assert decisions.cell("FAM001", "rescue01").write_matrix_value is True
-
-
 def test_scan_support_only_backfill_keeps_seeds_and_reviews_rescues():
     matrix = _matrix(
         clusters=(_feature("FAM001", evidence="owner_complete_link;owner_count=2"),),
@@ -619,68 +505,6 @@ def test_production_cell_decision_record_keeps_review_backfill_out_of_matrix() -
     )
 
 
-def test_weak_seed_backfill_dependency_row_is_supported_by_cell_evidence():
-    matrix = _matrix(
-        clusters=(
-            _feature(
-                "FAM001",
-                evidence="owner_complete_link;owner_count=3",
-                members=(
-                    _candidate("seed1#candidate", evidence_score=55),
-                    _candidate("seed2#candidate", seed_event_count=1),
-                    _candidate("seed3#candidate", nl_ppm=12.0),
-                ),
-            ),
-        ),
-        cells=(
-            _cell(
-                "seed1",
-                "FAM001",
-                "detected",
-                100.0,
-                source_candidate_id="seed1#candidate",
-            ),
-            _cell(
-                "seed2",
-                "FAM001",
-                "detected",
-                95.0,
-                source_candidate_id="seed2#candidate",
-            ),
-            _cell(
-                "seed3",
-                "FAM001",
-                "detected",
-                90.0,
-                source_candidate_id="seed3#candidate",
-            ),
-            *tuple(
-                _cell(f"rescue{i}", "FAM001", "backfilled", 70.0 + i)
-                for i in range(1, 7)
-            ),
-            _cell("absent", "FAM001", "absent", None),
-        ),
-        sample_order=(
-            "seed1",
-            "seed2",
-            "seed3",
-            *(f"rescue{i}" for i in range(1, 7)),
-            "absent",
-        ),
-    )
-
-    decisions = build_production_decisions(matrix, AlignmentConfig())
-
-    assert decisions.row("FAM001").include_in_primary_matrix is True
-    assert decisions.row("FAM001").identity_decision == "production_family"
-    assert decisions.row("FAM001").identity_reason == DDA_LIMITED_MS2_SHAPE_REASON
-    assert "weak_seed_backfill_dependency" in decisions.row("FAM001").row_flags
-    assert HIGH_BACKFILL_CAPPED_FLAG in decisions.row("FAM001").row_flags
-    assert decisions.cell("FAM001", "seed1").write_matrix_value is True
-    assert decisions.cell("FAM001", "rescue1").production_status == "accepted_backfill"
-    assert decisions.cell("FAM001", "rescue1").write_matrix_value is True
-
-
 def test_duplicate_claim_pressure_blocks_unconsolidated_primary_promotion():
     matrix = _matrix(
         clusters=(_feature("FAM001", evidence="owner_complete_link;owner_count=2"),),
@@ -699,36 +523,6 @@ def test_duplicate_claim_pressure_blocks_unconsolidated_primary_promotion():
         "duplicate_claim_pressure",
     )
     assert decisions.row("FAM001").include_in_primary_matrix is False
-
-
-def test_same_peak_product_authority_writes_rescues_under_duplicate_pressure():
-    matrix = _matrix(
-        clusters=(_feature("FAM001", evidence="owner_complete_link;owner_count=1"),),
-        cells=(
-            _cell("seed1", "FAM001", "detected", 100.0),
-            _cell("rescue1", "FAM001", "backfilled", 90.0),
-            _cell("rescue2", "FAM001", "backfilled", 80.0),
-            _cell("dup1", "FAM001", "duplicate_assigned", 70.0),
-            _cell("dup2", "FAM001", "duplicate_assigned", 60.0),
-        ),
-        sample_order=("seed1", "rescue1", "rescue2", "dup1", "dup2"),
-    )
-
-    decisions = build_production_decisions(matrix, AlignmentConfig())
-
-    assert decisions.row("FAM001").include_in_primary_matrix is True
-    assert decisions.row("FAM001").identity_decision == "production_family"
-    assert decisions.row("FAM001").identity_reason == CELL_EVIDENCE_SUPPORTED_REASON
-    assert "duplicate_claim_pressure" not in decisions.row("FAM001").row_flags
-    assert "same_peak_multi_claim" in decisions.row("FAM001").row_flags
-    assert decisions.cell("FAM001", "seed1").write_matrix_value is True
-    assert decisions.cell("FAM001", "rescue1").write_matrix_value is True
-    assert decisions.cell("FAM001", "rescue1").production_status == "accepted_backfill"
-    assert decisions.cell("FAM001", "rescue2").write_matrix_value is True
-    assert decisions.cell("FAM001", "dup1").write_matrix_value is False
-    assert decisions.cell("FAM001", "dup1").blank_reason == "duplicate_loser"
-    assert decisions.cell("FAM001", "dup2").write_matrix_value is False
-    assert decisions.cell("FAM001", "dup2").blank_reason == "duplicate_loser"
 
 
 def test_rescue_without_identity_support_is_review_only_and_row_is_excluded():
@@ -882,126 +676,6 @@ def test_rescued_outside_preferred_without_drift_is_review_only():
     assert decisions.row("FAM001").accepted_backfill_count == 0
 
 
-def test_product_authorized_same_peak_with_drift_evidence_writes_large_rt_delta():
-    config = AlignmentConfig(preferred_rt_sec=10.0, max_rt_sec=30.0)
-    matrix = _matrix(
-        clusters=(_feature("FAM001", evidence="owner_complete_link;owner_count=3"),),
-        cells=(
-            _cell("d1", "FAM001", "detected", 100.0),
-            _cell("d2", "FAM001", "detected", 95.0),
-            _cell("d3", "FAM001", "detected", 90.0),
-            _cell(
-                "rescued_drift",
-                "FAM001",
-                "backfilled",
-                80.0,
-                rt_delta_sec=240.0,
-                backfill_evidence=True,
-                backfill_drift_supported=True,
-            ),
-        ),
-        sample_order=("d1", "d2", "d3", "rescued_drift"),
-    )
-
-    decision = build_production_decisions(matrix, config).cell(
-        "FAM001",
-        "rescued_drift",
-    )
-
-    assert decision.write_matrix_value is True
-    assert decision.production_status == "accepted_backfill"
-    assert decision.matrix_value == 80.0
-
-
-def test_product_authorized_same_peak_wrong_hypothesis_stays_review_backfill():
-    matrix = _matrix(
-        clusters=(_feature("FAM001", evidence="owner_complete_link;owner_count=3"),),
-        cells=(
-            _cell("d1", "FAM001", "detected", 100.0),
-            _cell("d2", "FAM001", "detected", 95.0),
-            _cell(
-                "rescued_wrong_claim",
-                "FAM001",
-                "backfilled",
-                80.0,
-                group_claim_state="duplicate_loser",
-                claim_winner_group_hypothesis_id="FAM_WINNER",
-                claim_source_group_hypothesis_id="FAM001",
-            ),
-        ),
-        sample_order=("d1", "d2", "rescued_wrong_claim"),
-    )
-
-    decisions = build_production_decisions(matrix, AlignmentConfig())
-    rescue = decisions.cell("FAM001", "rescued_wrong_claim")
-
-    assert decisions.row("FAM001").include_in_primary_matrix is True
-    assert BACKFILL_CELL_EVIDENCE_REQUIRED_FLAG in decisions.row("FAM001").row_flags
-    assert rescue.write_matrix_value is False
-    assert rescue.production_status == "review_backfill"
-    assert rescue.blank_reason == BACKFILL_HYPOTHESIS_BLOCKED_REASON
-
-
-def test_product_authorized_claim_resolved_by_current_winner_writes_rescue():
-    matrix = _matrix(
-        clusters=(_feature("FAM001", evidence="owner_complete_link;owner_count=3"),),
-        cells=(
-            _cell("d1", "FAM001", "detected", 100.0),
-            _cell("d2", "FAM001", "detected", 95.0),
-            _cell(
-                "rescued_moved_to_winner",
-                "FAM001",
-                "backfilled",
-                80.0,
-                group_hypothesis_id="FAM001",
-                group_claim_state="duplicate_loser",
-                claim_winner_group_hypothesis_id="FAM001",
-                claim_source_group_hypothesis_id="FAM_LOSER",
-                consolidation_state="moved_to_primary_winner",
-            ),
-        ),
-        sample_order=("d1", "d2", "rescued_moved_to_winner"),
-    )
-
-    rescue = build_production_decisions(matrix, AlignmentConfig()).cell(
-        "FAM001",
-        "rescued_moved_to_winner",
-    )
-
-    assert rescue.write_matrix_value is True
-    assert rescue.production_status == "accepted_backfill"
-    assert rescue.matrix_value == 80.0
-
-
-def test_product_authorized_same_peak_mode_split_blocker_stays_review_backfill():
-    matrix = _matrix(
-        clusters=(_feature("FAM001", evidence="owner_complete_link;owner_count=3"),),
-        cells=(
-            _cell("d1", "FAM001", "detected", 100.0),
-            _cell("d2", "FAM001", "detected", 95.0),
-            _cell(
-                "rescued_mode_split",
-                "FAM001",
-                "backfilled",
-                80.0,
-                peak_hypothesis_status="mode_split_required",
-                product_selection_blocker="mode_split_required",
-                rt_mode_status="mode_split_required",
-            ),
-        ),
-        sample_order=("d1", "d2", "rescued_mode_split"),
-    )
-
-    decision = build_production_decisions(matrix, AlignmentConfig()).cell(
-        "FAM001",
-        "rescued_mode_split",
-    )
-
-    assert decision.write_matrix_value is False
-    assert decision.production_status == "review_backfill"
-    assert decision.blank_reason == BACKFILL_HYPOTHESIS_BLOCKED_REASON
-
-
 def test_bool_area_is_not_a_valid_production_matrix_area():
     matrix = _matrix(
         clusters=(_feature("FAM001", evidence="single_sample_local_owner"),),
@@ -1084,9 +758,6 @@ def _cell(
     source_candidate_id: str | None = None,
     selected_integration: IntegrationResult | None = None,
     backfill_evidence: bool = True,
-    backfill_ms1_reason: str = ANCHOR_OWN_MAX_MS1_SUPPORT_REASON,
-    backfill_drift_supported: bool = False,
-    candidate_ms2_evidence: bool = True,
     group_hypothesis_id: str = "",
     group_claim_state: str = "",
     claim_winner_group_hypothesis_id: str = "",
@@ -1146,9 +817,6 @@ def _cell(
             _backfill_evidence_fields(
                 status=status,
                 enabled=backfill_evidence,
-                ms1_reason=backfill_ms1_reason,
-                drift_supported=backfill_drift_supported,
-                candidate_ms2_evidence=candidate_ms2_evidence,
             ),
         ),
     )
@@ -1196,66 +864,13 @@ def _integration(
     )
 
 
-def _backfill_evidence_fields(
-    *,
-    status: str,
-    enabled: bool,
-    ms1_reason: str,
-    drift_supported: bool,
-    candidate_ms2_evidence: bool,
-) -> dict[str, object]:
+def _backfill_evidence_fields(*, status: str, enabled: bool) -> dict[str, object]:
     if status != "backfilled" or not enabled:
         return {}
-    fields: dict[str, object] = {
-        "backfill_ms1_pattern_status": "supportive",
-        "backfill_ms1_pattern_evidence_level": "trace_constellation",
-        "backfill_qc_reference_status": "supportive",
-        "backfill_qc_reference_evidence_level": "qc_consensus_with_local_qc_overlay",
+    return {
         "backfill_ms2_trigger_scan_count": 3,
         "backfill_strict_nl_scan_count": 1,
         "backfill_ms2_trace_strength": "moderate",
-        "backfill_evidence_reason": ms1_reason,
-        **_product_authority_fields(),
-    }
-    if not candidate_ms2_evidence:
-        for key in tuple(fields):
-            if key.startswith("backfill_candidate_ms2"):
-                del fields[key]
-    else:
-        fields.update(
-            {
-                "backfill_candidate_ms2_pattern_status": "partial_support",
-                "backfill_candidate_ms2_evidence_level": "sample_candidate_aligned",
-            },
-        )
-    if drift_supported:
-        fields.update(
-            {
-                "backfill_matrix_rt_drift_status": "drift_supported",
-                "backfill_drift_evidence_level": "sample_istd_aligned",
-                "backfill_drift_compatible_status": "compatible",
-                "backfill_drift_corrected_delta_sec": 4.0,
-            },
-        )
-    return fields
-
-
-def _product_authority_fields() -> dict[str, object]:
-    return {
-        "backfill_ms1_product_authority_status": "product_authorized",
-        "backfill_ms1_product_authority_scope": "feature_family_sample",
-        "backfill_ms1_product_authority_source": "unit_test_reviewed_allowlist",
-        "backfill_ms1_product_authority_reason": "unit_test_authorized",
-        "backfill_ms1_product_authority_evidence_sha256": "unit-test-ms1-sha256",
-        "backfill_candidate_ms2_product_authority_status": "product_authorized",
-        "backfill_candidate_ms2_product_authority_scope": "feature_family_sample",
-        "backfill_candidate_ms2_product_authority_source": (
-            "unit_test_reviewed_allowlist"
-        ),
-        "backfill_candidate_ms2_product_authority_reason": "unit_test_authorized",
-        "backfill_candidate_ms2_product_authority_evidence_sha256": (
-            "unit-test-ms2-sha256"
-        ),
     }
 
 

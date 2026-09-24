@@ -38,7 +38,7 @@ SELECTED_INTEGRATION_AUTHORITY_SCHEMA_VERSION = (
     "selected_integration_authority_projection"
 )
 OWNER_BACKFILL_AUTHORITY_CELL_SCHEMA_VERSION = (
-    "owner_backfill_authority_cell_projection"
+    "owner_backfill_authority_cell_projection_v2"
 )
 OWNER_BACKFILL_CELL_PROJECTION_SCHEMA_VERSION = "owner_backfill_cell_projection"
 OWNER_BACKFILL_PROVENANCE_WRITER_SCHEMA_VERSION = (
@@ -97,26 +97,6 @@ OWNER_BACKFILL_AUTHORITY_CELL_FIELDS = (
     "backfill_request_rt_min",
     "backfill_request_rt_max",
     "backfill_request_ppm",
-    "backfill_ms1_pattern_status",
-    "backfill_ms1_pattern_evidence_level",
-    "backfill_ms1_product_authority_status",
-    "backfill_ms1_product_authority_scope",
-    "backfill_ms1_product_authority_source",
-    "backfill_ms1_product_authority_reason",
-    "backfill_ms1_product_authority_evidence_sha256",
-    "backfill_qc_reference_status",
-    "backfill_qc_reference_evidence_level",
-    "backfill_matrix_rt_drift_status",
-    "backfill_drift_evidence_level",
-    "backfill_drift_compatible_status",
-    "backfill_drift_corrected_delta_sec",
-    "backfill_candidate_ms2_pattern_status",
-    "backfill_candidate_ms2_evidence_level",
-    "backfill_candidate_ms2_product_authority_status",
-    "backfill_candidate_ms2_product_authority_scope",
-    "backfill_candidate_ms2_product_authority_source",
-    "backfill_candidate_ms2_product_authority_reason",
-    "backfill_candidate_ms2_product_authority_evidence_sha256",
     "backfill_ms2_trigger_scan_count",
     "backfill_strict_nl_scan_count",
     "backfill_ms2_trace_strength",
@@ -483,26 +463,6 @@ class OwnerBackfillAuthorityCellProjection:
     backfill_request_rt_min: float | None
     backfill_request_rt_max: float | None
     backfill_request_ppm: float | None
-    backfill_ms1_pattern_status: str
-    backfill_ms1_pattern_evidence_level: str
-    backfill_ms1_product_authority_status: str
-    backfill_ms1_product_authority_scope: str
-    backfill_ms1_product_authority_source: str
-    backfill_ms1_product_authority_reason: str
-    backfill_ms1_product_authority_evidence_sha256: str
-    backfill_qc_reference_status: str
-    backfill_qc_reference_evidence_level: str
-    backfill_matrix_rt_drift_status: str
-    backfill_drift_evidence_level: str
-    backfill_drift_compatible_status: str
-    backfill_drift_corrected_delta_sec: float | None
-    backfill_candidate_ms2_pattern_status: str
-    backfill_candidate_ms2_evidence_level: str
-    backfill_candidate_ms2_product_authority_status: str
-    backfill_candidate_ms2_product_authority_scope: str
-    backfill_candidate_ms2_product_authority_source: str
-    backfill_candidate_ms2_product_authority_reason: str
-    backfill_candidate_ms2_product_authority_evidence_sha256: str
     backfill_ms2_trigger_scan_count: int | None
     backfill_strict_nl_scan_count: int | None
     backfill_ms2_trace_strength: str
@@ -732,52 +692,6 @@ def owner_backfill_authority_cell_projection(
         backfill_request_rt_min=cell.backfill_request_rt_min,
         backfill_request_rt_max=cell.backfill_request_rt_max,
         backfill_request_ppm=cell.backfill_request_ppm,
-        backfill_ms1_pattern_status=cell.backfill_ms1_pattern_status,
-        backfill_ms1_pattern_evidence_level=(cell.backfill_ms1_pattern_evidence_level),
-        backfill_ms1_product_authority_status=(
-            cell.backfill_ms1_product_authority_status
-        ),
-        backfill_ms1_product_authority_scope=(
-            cell.backfill_ms1_product_authority_scope
-        ),
-        backfill_ms1_product_authority_source=(
-            cell.backfill_ms1_product_authority_source
-        ),
-        backfill_ms1_product_authority_reason=(
-            cell.backfill_ms1_product_authority_reason
-        ),
-        backfill_ms1_product_authority_evidence_sha256=(
-            cell.backfill_ms1_product_authority_evidence_sha256
-        ),
-        backfill_qc_reference_status=cell.backfill_qc_reference_status,
-        backfill_qc_reference_evidence_level=(
-            cell.backfill_qc_reference_evidence_level
-        ),
-        backfill_matrix_rt_drift_status=cell.backfill_matrix_rt_drift_status,
-        backfill_drift_evidence_level=cell.backfill_drift_evidence_level,
-        backfill_drift_compatible_status=cell.backfill_drift_compatible_status,
-        backfill_drift_corrected_delta_sec=(cell.backfill_drift_corrected_delta_sec),
-        backfill_candidate_ms2_pattern_status=(
-            cell.backfill_candidate_ms2_pattern_status
-        ),
-        backfill_candidate_ms2_evidence_level=(
-            cell.backfill_candidate_ms2_evidence_level
-        ),
-        backfill_candidate_ms2_product_authority_status=(
-            cell.backfill_candidate_ms2_product_authority_status
-        ),
-        backfill_candidate_ms2_product_authority_scope=(
-            cell.backfill_candidate_ms2_product_authority_scope
-        ),
-        backfill_candidate_ms2_product_authority_source=(
-            cell.backfill_candidate_ms2_product_authority_source
-        ),
-        backfill_candidate_ms2_product_authority_reason=(
-            cell.backfill_candidate_ms2_product_authority_reason
-        ),
-        backfill_candidate_ms2_product_authority_evidence_sha256=(
-            cell.backfill_candidate_ms2_product_authority_evidence_sha256
-        ),
         backfill_ms2_trigger_scan_count=cell.backfill_ms2_trigger_scan_count,
         backfill_strict_nl_scan_count=cell.backfill_strict_nl_scan_count,
         backfill_ms2_trace_strength=cell.backfill_ms2_trace_strength,
