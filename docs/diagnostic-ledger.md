@@ -101,9 +101,9 @@ Issue #470. Alignment's RAW worker default changes from `thread` to `process`
   cells are byte-identical to the #463 thread run.
 - Unmeasured: 8 workers on full85, and machines with less than 32 GB. The
   thread backend stays selectable for low-memory use.
-- Evidence is local and untracked: `output/i470-inventory/` (probes
-  `inventory_probe.py`, `conversion_bench.py`, `p0/p0_only.py`) and
-  `output/i470-full85/`.
+- Evidence is local and untracked, moved to `D:\XIC_output\i470-inventory\`
+  (probes `inventory_probe.py`, `conversion_bench.py`, `p0/p0_only.py`) and
+  `D:\XIC_output\i470-full85\`.
 
 ### 2026-09-24 Partition Sizing: An 8RAW Win That Full85 Does Not Inherit
 
