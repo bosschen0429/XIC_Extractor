@@ -33,7 +33,10 @@ from xic_extractor.config import ExtractionConfig
 from xic_extractor.configuration.models import ConfigError
 from xic_extractor.diagnostics.process_memory import ProcessTreeMemorySampler
 from xic_extractor.diagnostics.timing import TimingRecorder
-from xic_extractor.execution_settings import load_execution_profile
+from xic_extractor.execution_settings import (
+    DEFAULT_ALIGNMENT_WORKER_BACKEND,
+    load_execution_profile,
+)
 from xic_extractor.extraction.untargeted_cid_nl_production_batch import (
     is_supported_alignment_discovery,
 )
@@ -430,10 +433,11 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument(
         "--raw-worker-backend",
         choices=("process", "thread"),
-        default="thread",
+        default=DEFAULT_ALIGNMENT_WORKER_BACKEND,
         help=(
             "Backend for persisted-input indexing and RAW sample execution "
-            "('process' or 'thread', default: 'thread'). Fingerprinting uses threads."
+            f"('process' or 'thread', default: '{DEFAULT_ALIGNMENT_WORKER_BACKEND}'). "
+            "Fingerprinting uses threads."
         ),
     )
     parser.add_argument(

@@ -348,7 +348,7 @@ def test_run_alignment_cli_accepts_output_level_debug(
     assert code == 0
     assert captured["output_level"] == "debug"
     assert captured["raw_workers"] == raw_workers
-    assert captured["raw_worker_backend"] == "thread"
+    assert captured["raw_worker_backend"] == "process"
 
 
 def test_run_alignment_cli_accepts_raw_worker_backend(

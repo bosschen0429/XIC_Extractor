@@ -7,6 +7,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 DEFAULT_ALIGNMENT_WORKERS = 4
+# Thermo reads scale poorly across threads in one process; separate worker
+# processes run them in parallel (#470).
+DEFAULT_ALIGNMENT_WORKER_BACKEND = "process"
 
 
 def default_parallel_workers() -> int:
