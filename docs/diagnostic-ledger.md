@@ -168,7 +168,7 @@ differs, and one full85 run cannot show output parity for a new default.
   moved off the checkout to `D:\XIC_output\i463-partition-sizing\` (`grid8/`, `full85-head-9ba3a5b1/`, `*-worksets.json`, `full85-*.txt`),
   probes `partition_sizing_driver.py`, `grid.py`, `summarize.py`,
   `partition_plan.py`, `istd_check.py` and `cells_468_469.py`; the
-  fixed-cost probe and benchmark are `output/i463-fixed-cost/`
+  fixed-cost probe and benchmark are under `D:\XIC_output\i463-fixed-cost\`
   (`fixed_cost_probe.py`, `xic_batch_bench.py`, `stats.json`).
 
 ### 2026-09-22 The Three Open Questions, Answered
