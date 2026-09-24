@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
+import subprocess
 import tempfile
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import pytest
@@ -15,6 +18,106 @@ from xic_inspector.rendering.html_builder import (
     serialize_safe_inline_json,
     write_report_atomically,
 )
+
+
+@pytest.fixture
+def origin_curve_payload() -> dict:
+    kinds = ["discovery_support", "reacquired_support", "backfill_support"]
+    labels = ["初始探索支持", "重新擷取支持", "Backfill（回填）支持"]
+    samples = [{"id": f"S{i}", "label": f"Sample {i}"} for i in range(3)]
+    rows = [
+        {
+            "sample_id": f"S{i}",
+            "support_origin": {
+                "kind": kind,
+                "label": labels[i],
+                "capture_refs": [f"curve-{i}"],
+            },
+        }
+        for i, kind in enumerate(kinds)
+    ]
+    curves = [
+        {
+            "sample_id": f"S{i}",
+            "evidence_ref": f"curve-{i}",
+            "raw_rts": [1.0, 1.1, 1.2],
+            "raw_intensities": [0.0, 10.0 + i, 0.0],
+            "processed_curves": [
+                {"kind": "smoothed", "intensities": [0.0, 8.0 + i, 0.0]}
+            ],
+        }
+        for i in range(3)
+    ]
+    return {
+        "samples": samples,
+        "items": [{"id": "group", "kind": "group", "samples": rows, "curves": curves}],
+    }
+
+
+def test_support_origin_styles_fixture_curves_in_both_views(
+    origin_curve_payload: dict,
+) -> None:
+    report = build_report_html(
+        title="Origin curves",
+        evidence_capability="retained_curves",
+        strategy="sample",
+        request_id="origin",
+        run_total=1,
+        eligible_count=1,
+        selected_count=1,
+        source_db_name="fixture.sqlite",
+        payload_data=origin_curve_payload,
+    )
+    script = re.search(r"<script>(.*?)</script>", report, re.S)
+    assert script is not None
+    # Exercise the report's actual JavaScript with its embedded fixture. Stop before
+    # DOM event registration; rendering functions need only the report data.
+    prefix = script[1].split("  $('record-list').addEventListener", 1)[0]
+    assert prefix != script[1]
+    data = json.dumps(origin_curve_payload, ensure_ascii=False)
+    document = (
+        "var document={getElementById:id=>id==='inspector-data'"
+        f"?{{textContent:{json.dumps(data)}}}:{{dataset:{{strategy:'sample'}}}}}};"
+    )
+    js = (
+        document
+        + "console.log("
+        + prefix
+        + "return JSON.stringify({plot:plot(items[0],'raw'),"
+        "legend:legend(items[0]),lanes:relationshipLanes(items[0],relationshipModel(items[0]))});})());"
+    )
+    node = shutil.which("node")
+    assert node is not None, "Node.js is required to test the embedded JavaScript"
+    result = subprocess.run(
+        [node],
+        input=js,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=True,
+    )
+    rendered = json.loads(result.stdout)
+
+    chart = ET.fromstring(rendered["plot"])
+    plotted = {
+        line.attrib["data-curve-ref"]: line
+        for line in chart.findall("{http://www.w3.org/2000/svg}polyline")
+    }
+    assert len(plotted) == 3
+    for i, (origin, dash) in enumerate(
+        zip(
+            ("discovery_support", "reacquired_support", "backfill_support"),
+            ("", "8 4", "2 4"),
+            strict=True,
+        )
+    ):
+        line = plotted[f"curve-{i}"]
+        assert line.attrib["data-support-origin"] == origin
+        assert line.attrib["stroke-dasharray"] == dash
+        assert len(line.attrib["points"].split()) == 3
+        assert f"Sample {i} · " in rendered["legend"]
+        assert f'data-support-origin="{origin}"' in rendered["lanes"]
+        assert f'stroke-dasharray="{dash}"' in rendered["lanes"]
 
 
 def test_safe_inline_json_escaping() -> None:
