@@ -121,7 +121,7 @@ def _reduce_mapping_proxy(
 copyreg.pickle(MappingProxyType, _reduce_mapping_proxy)
 
 
-SCHEMA_VERSION = "untargeted_cid_nl_real_data_runtime_result_v2"
+SCHEMA_VERSION = "untargeted_cid_nl_real_data_runtime_result"
 VALIDATION_STATUS = "diagnostic_only"
 RUNTIME_CALL_COST_METRIC_NAMES = (
     "raw_open_count",

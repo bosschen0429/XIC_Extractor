@@ -16,6 +16,7 @@ import hashlib
 import importlib
 import json
 import os
+import re
 import subprocess
 import sys
 import tomllib
@@ -53,6 +54,38 @@ _GIT_LOCAL_ENVIRONMENT_VARIABLES = frozenset(
 ARCHITECTURE_OWNER = "docs/architecture-contract.md"
 PUBLIC_CONTRACT_OWNER = "docs/agent/architecture-public-contracts.md"
 LAYOUT_OWNER = "docs/project-layout.md"
+
+# Historical immutable provenance may be exempted only with a path, value, and
+# reason. Current contracts have no exemptions.
+STANDARD_PEAK_T0_README = (
+    "docs/superpowers/validation/standard_peak_shared_evidence_t0/README.md"
+)
+HISTORICAL_IDENTIFIER_ALLOWLIST: Mapping[tuple[str, str], str] = {
+    ("docs/diagnostic-ledger.md", "discovery_batch_index_v2"): (
+        "Names a rejected historical input in the diagnostic ledger."
+    ),
+    (STANDARD_PEAK_T0_README, "call_cost_baseline_v1"): (
+        "Names an immutable Standard Peak validation artifact."
+    ),
+    (STANDARD_PEAK_T0_README, "quant_matrix_promotion_validation_packet_v2"): (
+        "Names an immutable Standard Peak validation artifact."
+    ),
+    (STANDARD_PEAK_T0_README, "quant_matrix_default_product_activation_v1"): (
+        "Names an immutable Standard Peak validation artifact."
+    ),
+    (STANDARD_PEAK_T0_README, "productization_status_index_v1"): (
+        "Names an immutable Standard Peak validation artifact."
+    ),
+    (STANDARD_PEAK_T0_README, "rule_disposition_v1"): (
+        "Names an immutable Standard Peak validation artifact."
+    ),
+    (STANDARD_PEAK_T0_README, "historical_failure_matrix_v1"): (
+        "Names an immutable Standard Peak validation artifact."
+    ),
+}
+VERSIONED_IDENTIFIER = re.compile(
+    r"(?<![a-z0-9_])([a-z][a-z0-9_]*(?:_v[0-9]+|_by_[0-9]+))(?![a-z0-9_])"
+)
 
 # Pointers only. The referenced files retain authority for their claims.
 CENSUS_OWNER_REFS: Mapping[str, str] = {
@@ -398,7 +431,85 @@ def validate_architecture_census(
         if owner is None or not owner.is_file():
             problems.append(f"architecture census owner does not resolve: {owner_ref}")
     problems.extend(validate_runtime_boundary_authority(repo_root))
+    problems.extend(validate_semantic_identifiers(repo_root))
     return problems
+
+
+def validate_semantic_identifiers(
+    repo_root: Path,
+    paths: Sequence[Path] | None = None,
+) -> list[str]:
+    """Reject historical version and ticket labels used as current identifiers."""
+    scan_repository = paths is None
+    if paths is None:
+        paths = tuple(
+            path
+            for path in repository_tracked_paths(repo_root)
+            if path.suffix == ".py"
+            or (
+                path.suffix == ".md"
+                and (path.parts[0] == "docs" or len(path.parts) == 1)
+            )
+        )
+    problems: list[str] = []
+    observed_exemptions: set[tuple[str, str]] = set()
+    for (path_key, value), reason in HISTORICAL_IDENTIFIER_ALLOWLIST.items():
+        if not reason.strip():
+            problems.append(
+                f"{path_key}: {value}: historical identifier exemption needs a reason"
+            )
+    for relative_path in paths:
+        path_key = relative_path.as_posix()
+        try:
+            source = (repo_root / relative_path).read_text(encoding="utf-8")
+        except OSError as exc:
+            problems.append(f"{path_key}: identifier scan failed: {exc}")
+            continue
+        if relative_path.suffix == ".py":
+            try:
+                tree = ast.parse(source, path_key)
+            except SyntaxError as exc:
+                problems.append(f"{path_key}: identifier AST scan failed: {exc}")
+                continue
+            exemptions = {
+                child
+                for node in tree.body
+                if isinstance(node, (ast.Assign, ast.AnnAssign))
+                and any(
+                    isinstance(target, ast.Name)
+                    and target.id == "HISTORICAL_IDENTIFIER_ALLOWLIST"
+                    for target in (
+                        node.targets if isinstance(node, ast.Assign) else (node.target,)
+                    )
+                )
+                for child in ast.walk(node)
+            }
+            candidates = (
+                (node.lineno, node.value)
+                for node in ast.walk(tree)
+                if isinstance(node, ast.Constant)
+                and isinstance(node.value, str)
+                and node not in exemptions
+            )
+        else:
+            candidates = enumerate(source.splitlines(), start=1)
+        for line, value in candidates:
+            for match in VERSIONED_IDENTIFIER.finditer(value):
+                identifier = match.group(1)
+                if (path_key, identifier) in HISTORICAL_IDENTIFIER_ALLOWLIST:
+                    observed_exemptions.add((path_key, identifier))
+                else:
+                    problems.append(
+                        f"{path_key}:{line}: versioned identifier {identifier}"
+                    )
+    if scan_repository:
+        for path_key, identifier in (
+            HISTORICAL_IDENTIFIER_ALLOWLIST.keys() - observed_exemptions
+        ):
+            problems.append(
+                f"{path_key}: unused historical identifier exemption {identifier}"
+            )
+    return sorted(set(problems))
 
 
 def validate_runtime_boundary_authority(
@@ -663,6 +774,7 @@ def repository_tracked_paths(repo_root: Path = ROOT) -> tuple[Path, ...]:
         check=True,
         capture_output=True,
         text=True,
+        encoding="utf-8",
         env=_git_subprocess_environment(),
     )
     candidates = sorted(
@@ -723,6 +835,7 @@ def repository_tracked_path_keys(repo_root: Path = ROOT) -> frozenset[str]:
         check=True,
         capture_output=True,
         text=True,
+        encoding="utf-8",
         env=_git_subprocess_environment(),
     )
     return frozenset(line for line in completed.stdout.splitlines() if line)
@@ -1405,6 +1518,7 @@ def _source_identity(
         check=True,
         capture_output=True,
         text=True,
+        encoding="utf-8",
         env=_git_subprocess_environment(),
     )
     head = subprocess.run(
@@ -1412,6 +1526,7 @@ def _source_identity(
         check=True,
         capture_output=True,
         text=True,
+        encoding="utf-8",
         env=_git_subprocess_environment(),
     ).stdout.strip()
     encoded = json.dumps(

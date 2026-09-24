@@ -52,6 +52,71 @@ def test_current_architecture_census_is_valid_and_static_only(
     } & set(observed.serializable())
 
 
+def test_semantic_identifier_gate_scans_python_values_and_maintained_docs(
+    tmp_path: Path,
+) -> None:
+    python_path = Path("xic_extractor/example.py")
+    markdown_path = Path("docs/product/example.md")
+    for path in (python_path, markdown_path):
+        (tmp_path / path).parent.mkdir(parents=True)
+    (tmp_path / python_path).write_text(
+        "LABEL = 'sample_" + "v2'\nTICKET = 'sample_" + "by_455'\n",
+        encoding="utf-8",
+    )
+    (tmp_path / markdown_path).write_text(
+        "Current `sample_" + "v2` and `sample_" + "by_455`.\n",
+        encoding="utf-8",
+    )
+
+    problems = census.validate_semantic_identifiers(
+        tmp_path, (python_path, markdown_path)
+    )
+
+    version_label = "sample_" + "v2"
+    ticket_label = "sample_" + "by_455"
+    expected = {
+        f"xic_extractor/example.py:1: versioned identifier {version_label}",
+        f"xic_extractor/example.py:2: versioned identifier {ticket_label}",
+        f"docs/product/example.md:1: versioned identifier {version_label}",
+        f"docs/product/example.md:1: versioned identifier {ticket_label}",
+    }
+    assert expected <= set(problems)
+
+
+def test_historical_identifier_exemption_is_exact_and_requires_a_reason(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source_path = Path("docs/product/example.md")
+    source = tmp_path / source_path
+    source.parent.mkdir(parents=True)
+    label = "sample_" + "v2"
+    source.write_text(f"`{label}`\n", encoding="utf-8")
+    monkeypatch.setattr(
+        census,
+        "HISTORICAL_IDENTIFIER_ALLOWLIST",
+        {(source_path.as_posix(), label): ""},
+    )
+
+    problems = census.validate_semantic_identifiers(tmp_path, (source_path,))
+    assert any("needs a reason" in problem for problem in problems)
+
+    monkeypatch.setattr(
+        census,
+        "HISTORICAL_IDENTIFIER_ALLOWLIST",
+        {(source_path.as_posix(), label): "Immutable fixture name."},
+    )
+    assert census.validate_semantic_identifiers(tmp_path, (source_path,)) == []
+
+    source.write_text("Current semantic name only.\n", encoding="utf-8")
+    monkeypatch.setattr(
+        census, "repository_tracked_paths", lambda root: (source_path,)
+    )
+    assert any(
+        "unused historical identifier exemption" in problem
+        for problem in census.validate_semantic_identifiers(tmp_path)
+    )
+
+
 def test_runtime_low_level_exports_evaluate_to_exact_immutable_tuples() -> None:
     assert census._runtime_export_invariant_problems() == []
 
@@ -1010,6 +1075,7 @@ allow_indirect_imports = False
         cwd=tmp_path,
         capture_output=True,
         text=True,
+        encoding="utf-8",
         check=False,
     )
 
@@ -1028,6 +1094,7 @@ allow_indirect_imports = False
         cwd=tmp_path,
         capture_output=True,
         text=True,
+        encoding="utf-8",
         check=False,
     )
 
@@ -1042,6 +1109,7 @@ allow_indirect_imports = False
         cwd=tmp_path,
         capture_output=True,
         text=True,
+        encoding="utf-8",
         check=False,
     )
 
@@ -1091,6 +1159,7 @@ unmatched_ignore_imports_alerting = error
         cwd=tmp_path,
         capture_output=True,
         text=True,
+        encoding="utf-8",
         check=False,
     )
     assert grandfathered_result.returncode == 0
@@ -1102,6 +1171,7 @@ unmatched_ignore_imports_alerting = error
         cwd=tmp_path,
         capture_output=True,
         text=True,
+        encoding="utf-8",
         check=False,
     )
     assert new_caller_result.returncode == 1
@@ -1114,6 +1184,7 @@ unmatched_ignore_imports_alerting = error
         cwd=tmp_path,
         capture_output=True,
         text=True,
+        encoding="utf-8",
         check=False,
     )
     assert stale_ignore_result.returncode == 1

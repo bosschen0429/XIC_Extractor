@@ -774,9 +774,9 @@ def _trajectory_input_payload(
 ) -> dict[str, object]:
     return {
         "schema_version": (
-            "mode_track_trajectory_input_sparse_v1"
+            "mode_track_trajectory_sparse_input"
             if initial_grouping_receipt_id is None
-            else "mode_track_trajectory_input_grouping_receipt_v2"
+            else "mode_track_trajectory_grouping_receipt_input"
         ),
         "initial_pair_policy": (
             INITIAL_PAIR_POLICY

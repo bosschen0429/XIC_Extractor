@@ -52,7 +52,8 @@ projection persists or certifies facts.
 - Validate cardinality at the semantic owner.
 - Preserve terminal failure and provenance when a current consumer relies on
   them.
-- Version persisted or canonical schemas when their semantic shape changes.
+- Give persisted or canonical schemas a new semantic name when their meaning
+  changes; content changes retain the name.
 - Keep adapters translational: they may reject invalid projections but must
   not silently recompute, collapse, or invent owner facts.
 - A lossy projection is valid only when its current consumer and reduced claim

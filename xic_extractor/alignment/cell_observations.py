@@ -66,7 +66,7 @@ from xic_extractor.processing_identity import (
 )
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 
-SCHEMA_VERSION = "cell_observation_v2"
+SCHEMA_VERSION = "cell_observation"
 ARTIFACT_SEMANTIC_ROLE = "diagnostic_cell_observation"
 VALIDATION_STATUS = "diagnostic_only"
 MEDIA_TYPE = "application/json"
@@ -1217,7 +1217,7 @@ def _final_closure_basis(
     if resolved_handoff_id is None:
         raise CellObservationContractError("final cell basis requires exact handoff")
     payload: dict[str, object] = {
-        "schema_version": "final_group_cell_observation_v3",
+        "schema_version": "final_group_cell_observation",
         "processing_request_id": processing_request_id,
         "handoff_id": resolved_handoff_id,
         "group": {

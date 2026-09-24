@@ -55,7 +55,7 @@ class CrossSampleGroupingResult:
             )
         basis = canonical_identity_basis_bytes(
             {
-                "schema_version": "cross_sample_grouping_result_v1",
+                "schema_version": "cross_sample_grouping_result",
                 "processing_request_id": self.processing_request_id,
                 "initial_group_ids": [
                     group.group_hypothesis_id for group in partition.predecessors
