@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 from tools.diagnostics.diagnose_shared_peak_wrong_peak import main
@@ -153,7 +152,6 @@ def test_wrong_peak_ignores_machine_support_without_conflict_evidence() -> None:
 def test_wrong_peak_cli_writes_root_cause_tsv(tmp_path: Path) -> None:
     support = tmp_path / "support.tsv"
     cells = tmp_path / "cells.tsv"
-    trace = tmp_path / "trace.json"
     _write_tsv(
         support,
         (
@@ -197,23 +195,6 @@ def test_wrong_peak_cli_writes_root_cause_tsv(tmp_path: Path) -> None:
             )
         ],
     )
-    trace.write_text(
-        json.dumps(
-            {
-                "family_id": "FAM011810",
-                "family_center_rt": 7.21,
-                "traces": [
-                    {
-                        "sample_stem": "TumorBC2263_DNA",
-                        "rt": [6.2, 6.56, 6.8, 7.72, 7.93, 8.1],
-                        "intensity": [0, 100, 0, 0, 40, 0],
-                    }
-                ],
-            }
-        ),
-        encoding="utf-8",
-    )
-
     assert (
         main(
             [
@@ -221,8 +202,6 @@ def test_wrong_peak_cli_writes_root_cause_tsv(tmp_path: Path) -> None:
                 str(support),
                 "--alignment-cells-tsv",
                 str(cells),
-                "--trace-data-json",
-                str(trace),
                 "--output-dir",
                 str(tmp_path / "out"),
             ]

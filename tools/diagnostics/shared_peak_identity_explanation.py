@@ -94,7 +94,6 @@ def run_explanation(
     rt_mode_evidence_mode_assignment_tsv: Path | None = None,
     rt_mode_evidence_mode_summary_tsv: Path | None = None,
     rt_mode_evidence_family_id: str | None = None,
-    rt_mode_evidence_overlay_trace_data_json: Sequence[Path] | None = None,
     peak_hypothesis_selection_tsv: Path | None = None,
     generate_peak_hypothesis_selection: bool = False,
     generate_mode_hypothesis_assignment: bool = False,
@@ -108,7 +107,6 @@ def run_explanation(
     matrix_rt_drift_policy_rt_normalization_leave_one_out_tsv: Path | None = None,
     matrix_rt_drift_policy_istd_rt_trend_tsv: Path | None = None,
     matrix_rt_drift_policy_istd_phase_summary_tsv: Path | None = None,
-    ms1_pattern_coherence_overlay_trace_data_json: Sequence[Path] | None = None,
 ) -> Mapping[str, Path | str]:
     optional_artifacts = _parse_optional_blast_radius_artifacts(
         optional_blast_radius_artifacts
@@ -149,7 +147,6 @@ def run_explanation(
         or rt_mode_evidence_mode_assignment_tsv is not None
         or rt_mode_evidence_mode_summary_tsv is not None
         or rt_mode_evidence_family_id is not None
-        or bool(rt_mode_evidence_overlay_trace_data_json)
     )
     if rt_mode_evidence_tsv and rt_mode_evidence_generation_requested:
         raise ValueError(
@@ -160,14 +157,13 @@ def run_explanation(
         raise ValueError(
             "RT mode evidence producer inputs require --enable-shadow-label-alignment"
         )
-    if rt_mode_evidence_generation_requested and (
-        rt_mode_evidence_mode_assignment_tsv is None
-        and not rt_mode_evidence_overlay_trace_data_json
+    if (
+        rt_mode_evidence_generation_requested
+        and rt_mode_evidence_mode_assignment_tsv is None
     ):
         raise ValueError(
             "RT mode evidence generation requires "
-            "--rt-mode-evidence-mode-assignment-tsv or "
-            "--rt-mode-evidence-overlay-trace-data-json"
+            "--rt-mode-evidence-mode-assignment-tsv"
         )
     if rt_mode_evidence_mode_assignment_tsv is None and (
         rt_mode_evidence_mode_summary_tsv is not None
@@ -218,13 +214,6 @@ def run_explanation(
         raise ValueError(
             "--candidate-ms2-pattern-raw-dll-dir requires "
             "--candidate-ms2-pattern-batch-index"
-        )
-    if ms1_pattern_coherence_overlay_trace_data_json and (
-        not generate_ms1_pattern_coherence_evidence
-    ):
-        raise ValueError(
-            "--ms1-pattern-coherence-overlay-trace-data-json requires "
-            "--generate-ms1-pattern-coherence-evidence"
         )
     matrix_rt_drift_policy_generation_requested = (
         generate_matrix_rt_drift_policy
@@ -332,38 +321,22 @@ def run_explanation(
         generated_rt_mode_path = (
             output_dir / "shared_peak_identity_rt_mode_evidence.tsv"
         )
-        rt_mode_row_groups = []
-        if rt_mode_evidence_mode_assignment_tsv is not None:
-            rt_mode_row_groups.append(
-                rt_mode_evidence.build_rt_mode_evidence_rows(
-                    mode_assignment_tsv=rt_mode_evidence_mode_assignment_tsv,
-                    mode_summary_tsv=rt_mode_evidence_mode_summary_tsv,
-                    feature_family_id=rt_mode_evidence_family_id,
-                    candidate_ms2_pattern_evidence_tsv=(
-                        candidate_ms2_pattern_evidence_tsv
-                    ),
-                    oracle_keys=(
-                        (row.feature_family_id, row.sample_id)
-                        for row in oracle_rows
-                        if not row.is_sentinel
-                    ),
-                )
-            )
-        if rt_mode_evidence_overlay_trace_data_json:
-            rt_mode_row_groups.append(
-                rt_mode_evidence.build_rt_mode_evidence_rows_from_overlay_trace_data(
-                    overlay_trace_data_jsons=rt_mode_evidence_overlay_trace_data_json,
-                    candidate_ms2_pattern_evidence_tsv=candidate_ms2_pattern_evidence_tsv,
-                    oracle_keys=(
-                        (row.feature_family_id, row.sample_id)
-                        for row in oracle_rows
-                        if not row.is_sentinel
-                    ),
-                )
-            )
+        if rt_mode_evidence_mode_assignment_tsv is None:
+            raise AssertionError("RT mode assignment input was validated above")
+        rt_mode_rows = rt_mode_evidence.build_rt_mode_evidence_rows(
+            mode_assignment_tsv=rt_mode_evidence_mode_assignment_tsv,
+            mode_summary_tsv=rt_mode_evidence_mode_summary_tsv,
+            feature_family_id=rt_mode_evidence_family_id,
+            candidate_ms2_pattern_evidence_tsv=candidate_ms2_pattern_evidence_tsv,
+            oracle_keys=(
+                (row.feature_family_id, row.sample_id)
+                for row in oracle_rows
+                if not row.is_sentinel
+            ),
+        )
         rt_mode_evidence.write_rt_mode_evidence_rows(
             generated_rt_mode_path,
-            rt_mode_evidence.merge_rt_mode_evidence_rows(*rt_mode_row_groups),
+            rt_mode_rows,
         )
         rt_mode_evidence_tsv = generated_rt_mode_path
         generated_evidence_outputs["rt_mode_evidence"] = generated_rt_mode_path
@@ -408,9 +381,6 @@ def run_explanation(
             ms1_pattern_coherence.build_ms1_pattern_coherence_rows(
                 alignment_cells_tsv=alignment_cells_tsv,
                 matrix_rt_drift_policy_tsv=matrix_rt_drift_policy_tsv,
-                family_ms1_overlay_trace_data_jsons=(
-                    ms1_pattern_coherence_overlay_trace_data_json or ()
-                ),
                 oracle_keys=(
                     (row.feature_family_id, row.sample_id)
                     for row in oracle_rows
@@ -688,11 +658,6 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument("--rt-mode-evidence-mode-assignment-tsv", type=Path)
     parser.add_argument("--rt-mode-evidence-mode-summary-tsv", type=Path)
     parser.add_argument("--rt-mode-evidence-family-id")
-    parser.add_argument(
-        "--rt-mode-evidence-overlay-trace-data-json",
-        action="append",
-        type=Path,
-    )
     parser.add_argument("--peak-hypothesis-selection-tsv", type=Path)
     parser.add_argument("--generate-peak-hypothesis-selection", action="store_true")
     parser.add_argument(
@@ -726,12 +691,6 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     )
     parser.add_argument("--matrix-rt-drift-policy-istd-rt-trend-tsv", type=Path)
     parser.add_argument("--matrix-rt-drift-policy-istd-phase-summary-tsv", type=Path)
-    parser.add_argument(
-        "--ms1-pattern-coherence-overlay-trace-data-json",
-        action="append",
-        default=[],
-        type=Path,
-    )
     parser.add_argument(
         "--optional-blast-radius-artifact",
         dest="optional_blast_radius_artifacts",

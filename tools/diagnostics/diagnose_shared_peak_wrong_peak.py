@@ -39,7 +39,6 @@ def main(argv: Sequence[str] | None = None) -> int:
             machine_evidence_support_tsv=args.machine_evidence_support_tsv,
             alignment_cells_tsv=args.alignment_cells_tsv,
             output_dir=args.output_dir,
-            trace_data_json=args.trace_data_json,
         )
     except (OSError, ValueError) as exc:
         print(str(exc), file=sys.stderr)
@@ -54,7 +53,6 @@ def run_diagnostic(
     machine_evidence_support_tsv: Path,
     alignment_cells_tsv: Path,
     output_dir: Path,
-    trace_data_json: Sequence[Path] = (),
 ) -> Mapping[str, Path]:
     support_rows = read_tsv_required(
         machine_evidence_support_tsv,
@@ -64,11 +62,9 @@ def run_diagnostic(
         alignment_cells_tsv,
         _ALIGNMENT_CELL_REQUIRED_COLUMNS,
     )
-    trace_index = wrong_peak_root_cause.load_overlay_trace_data(trace_data_json)
     rows = wrong_peak_root_cause.build_wrong_peak_root_cause_rows(
         machine_evidence_support_rows=support_rows,
         alignment_cell_rows=cell_rows,
-        overlay_traces=trace_index,
     )
     output_dir.mkdir(parents=True, exist_ok=True)
     path = output_dir / "shared_peak_identity_wrong_peak_root_cause.tsv"
@@ -89,13 +85,6 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         type=Path,
         required=True,
         help="alignment_cells.tsv used by the explanation run",
-    )
-    parser.add_argument(
-        "--trace-data-json",
-        type=Path,
-        action="append",
-        default=[],
-        help="family_ms1_overlay_* trace-data JSON; repeatable",
     )
     parser.add_argument(
         "--output-dir",
