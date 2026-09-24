@@ -111,7 +111,7 @@ These values apply unless overridden in the `[discovery]` section.
 
 | Parameter | Default | Description |
 | --- | --- | --- |
-| `nl_tolerance_ppm` | 20.0 | Neutral loss mass tolerance (PPM) |
+| `nl_tolerance_ppm` | 20.0 | Per-ion precursor/product m/z tolerance (ppm); their absolute Da windows combine in quadrature for neutral-loss matching |
 | `precursor_mz_tolerance_ppm` | 20.0 | Precursor m/z tolerance (PPM) |
 | `product_mz_tolerance_ppm` | 20.0 | Product ion m/z tolerance (PPM) |
 | `product_search_ppm` | 50.0 | Product ion search window (PPM) |

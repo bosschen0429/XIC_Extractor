@@ -4,6 +4,7 @@ from typing import Literal, Protocol
 
 import numpy as np
 
+from xic_extractor.mass_accuracy import neutral_loss_match
 from xic_extractor.ms2_scan_models import Ms2Scan, Ms2ScanEvent
 from xic_extractor.ms2_trace_evidence import (
     MS2TraceEvidence,
@@ -56,6 +57,18 @@ class MS2ProductEvidence:
     observed_loss_error_ppm: float
     scan_number: int | None = None
     acquisition_source_id: str = ""
+
+
+def _matches_loss(
+    evidence: MS2ProductEvidence, expected_loss_da: float, tolerance_ppm: float
+) -> bool:
+    return neutral_loss_match(
+        evidence.precursor_mz,
+        evidence.product_mz,
+        expected_loss_da,
+        tolerance_ppm,
+        observed_loss_da=evidence.observed_loss_da,
+    )[2]
 
 
 @dataclass(frozen=True)
@@ -142,7 +155,7 @@ def find_nl_anchor_rt(
             min_intensity_ratio=nl_min_intensity_ratio,
             diagnostic_ppm=diagnostic_ppm,
         )
-        if evidence is None or evidence.observed_loss_error_ppm > nl_ppm_max:
+        if evidence is None or not _matches_loss(evidence, neutral_loss_da, nl_ppm_max):
             continue
         if reference_rt is None:
             if event.scan.base_peak > best_base_peak:
@@ -180,6 +193,7 @@ def check_nl(
     matched_count = 0
     best_ppm: float | None = None
     best_scan_rt: float | None = None
+    best_strict_match = False
 
     for event in raw.iter_ms2_scans(rt_min, rt_max):
         if event.parse_error is not None:
@@ -201,17 +215,26 @@ def check_nl(
             min_intensity_ratio=nl_min_intensity_ratio,
             diagnostic_ppm=diagnostic_ppm,
         )
+        strict_match = evidence is not None and _matches_loss(
+            evidence, neutral_loss_da, nl_ppm_max
+        )
         if evidence is not None and (
-            best_ppm is None or evidence.observed_loss_error_ppm < best_ppm
+            best_ppm is None
+            or (strict_match and not best_strict_match)
+            or (
+                strict_match == best_strict_match
+                and evidence.observed_loss_error_ppm < best_ppm
+            )
         ):
             best_ppm = evidence.observed_loss_error_ppm
             best_scan_rt = event.scan.rt
+            best_strict_match = strict_match
 
     status = _classify_nl_result(
         matched_scan_count=matched_count,
         best_ppm=best_ppm,
+        strict_match=best_strict_match,
         nl_ppm_warn=nl_ppm_warn,
-        nl_ppm_max=nl_ppm_max,
     )
     return NLResult(
         status=status,
@@ -327,7 +350,9 @@ def collect_candidate_ms2_evidence(
 
         if scoped_peak_group is not None and not inside_peak_group:
             outside_peak_group_trigger_scan_count += 1
-            if evidence is not None and evidence.observed_loss_error_ppm <= nl_ppm_max:
+            if evidence is not None and _matches_loss(
+                evidence, neutral_loss_da, nl_ppm_max
+            ):
                 outside_peak_group_strict_nl_scan_count += 1
             continue
 
@@ -340,7 +365,7 @@ def collect_candidate_ms2_evidence(
 
         if evidence is None:
             continue
-        strict_nl_match = evidence.observed_loss_error_ppm <= nl_ppm_max
+        strict_nl_match = _matches_loss(evidence, neutral_loss_da, nl_ppm_max)
         if not primary_aligned and not strict_nl_match:
             continue
         if not primary_aligned:
@@ -357,7 +382,16 @@ def collect_candidate_ms2_evidence(
             )
         if (
             best_evidence is None
-            or evidence.observed_loss_error_ppm < best_evidence.observed_loss_error_ppm
+            or (
+                strict_nl_match
+                and not _matches_loss(best_evidence, neutral_loss_da, nl_ppm_max)
+            )
+            or (
+                strict_nl_match
+                == _matches_loss(best_evidence, neutral_loss_da, nl_ppm_max)
+                and evidence.observed_loss_error_ppm
+                < best_evidence.observed_loss_error_ppm
+            )
         ):
             best_evidence = evidence
             best_evidence_source = source
@@ -377,8 +411,11 @@ def collect_candidate_ms2_evidence(
     nl_status = _classify_nl_result(
         matched_scan_count=trigger_scan_count,
         best_ppm=best_loss_ppm,
+        strict_match=(
+            best_evidence is not None
+            and _matches_loss(best_evidence, neutral_loss_da, nl_ppm_max)
+        ),
         nl_ppm_warn=nl_ppm_warn,
-        nl_ppm_max=nl_ppm_max,
     )
     alignment_source: CandidateMS2AlignmentSource
     if nl_status in {"OK", "WARN"} and best_evidence_source is not None:
@@ -553,7 +590,13 @@ def _best_product_probe(
         abs(nearest_observed_loss_da - neutral_loss_da) / neutral_loss_da * 1_000_000.0
     )
     nearest_product_base_ratio = float(intensities[nearest_index] / scan.base_peak)
-    mask = (intensities >= intensity_floor) & (scan_product_ppm <= diagnostic_ppm)
+    effective_diagnostic_ppm = max(
+        diagnostic_ppm,
+        2.0 * scan.precursor_mz * nl_ppm_max / expected_product,
+    )
+    mask = (intensities >= intensity_floor) & (
+        scan_product_ppm <= effective_diagnostic_ppm
+    )
     if not mask.any():
         if float(scan_product_ppm[nearest_index]) > diagnostic_ppm:
             absence_reason = "product_outside_diagnostic_window"
@@ -586,7 +629,12 @@ def _best_product_probe(
         observed_loss_error_ppm = (
             abs(observed_loss_da - neutral_loss_da) / neutral_loss_da * 1_000_000.0
         )
-        if observed_loss_error_ppm > max(diagnostic_ppm, 3.0 * nl_ppm_max):
+        if (
+            observed_loss_error_ppm > max(diagnostic_ppm, 3.0 * nl_ppm_max)
+            and not neutral_loss_match(
+                scan.precursor_mz, product_mz, neutral_loss_da, nl_ppm_max
+            )[2]
+        ):
             continue
         candidates.append(
             MS2ProductEvidence(
@@ -657,12 +705,12 @@ def _classify_nl_result(
     *,
     matched_scan_count: int,
     best_ppm: float | None,
+    strict_match: bool,
     nl_ppm_warn: float,
-    nl_ppm_max: float,
 ) -> NLStatus:
     if matched_scan_count == 0:
         return "NO_MS2"
-    if best_ppm is None or best_ppm > nl_ppm_max:
+    if best_ppm is None or not strict_match:
         return "NL_FAIL"
     if best_ppm > nl_ppm_warn:
         return "WARN"

@@ -356,7 +356,13 @@ def test_diagnostic_nl_evidence_finalizes_without_strict_support(
     assert candidate_evidence is not None
     product_evidence = candidate_evidence.best_product_evidence
     assert product_evidence is not None
-    observed_loss_da = 116.0058
+    observed_loss_da = 115.9
+    assert target.neutral_loss_da is not None
+    loss_error_ppm = (
+        abs(observed_loss_da - target.neutral_loss_da)
+        / target.neutral_loss_da
+        * 1_000_000.0
+    )
     output.file_results[0].results[target.label] = replace(
         original,
         candidate_ms2_evidence=replace(
@@ -364,12 +370,12 @@ def test_diagnostic_nl_evidence_finalizes_without_strict_support(
             nl_match=False,
             nl_status="NL_FAIL",
             strict_nl_scan_count=0,
-            best_loss_ppm=50.0,
+            best_loss_ppm=loss_error_ppm,
             best_product_evidence=replace(
                 product_evidence,
                 product_mz=product_evidence.precursor_mz - observed_loss_da,
                 observed_loss_da=observed_loss_da,
-                observed_loss_error_ppm=50.0,
+                observed_loss_error_ppm=loss_error_ppm,
             ),
         ),
     )
@@ -385,6 +391,66 @@ def test_diagnostic_nl_evidence_finalizes_without_strict_support(
     assert len(finalized) == 1
     assert finalized[0].completed_projection.counted_detection_count == 2
     assert finalized[0].completed_projection.no_write_count == 0
+
+
+def test_targeted_relation_uses_quadrature_for_retained_product(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config, target, output = production_case(tmp_path)
+    original = output.file_results[0].results[target.label]
+    candidate_evidence = original.candidate_ms2_evidence
+    assert candidate_evidence is not None
+    product = candidate_evidence.best_product_evidence
+    assert product is not None
+    observed_loss_da = 116.0058
+    assert target.neutral_loss_da is not None
+    observed_loss_error_ppm = (
+        abs(observed_loss_da - target.neutral_loss_da)
+        / target.neutral_loss_da
+        * 1_000_000.0
+    )
+    assert observed_loss_error_ppm > target.nl_ppm_max
+    output.file_results[0].results[target.label] = replace(
+        original,
+        candidate_ms2_evidence=replace(
+            candidate_evidence,
+            nl_match=False,
+            nl_status="NL_FAIL",
+            strict_nl_scan_count=0,
+            best_loss_ppm=observed_loss_error_ppm,
+            best_product_evidence=replace(
+                product,
+                product_mz=product.precursor_mz - observed_loss_da,
+                observed_loss_da=observed_loss_da,
+                observed_loss_error_ppm=observed_loss_error_ppm,
+            ),
+        ),
+    )
+    assessments = []
+    original_assessment = production_workflow.mint_cid_nl_method_assessment_ref
+
+    def record_assessment(**kwargs):
+        assessment = original_assessment(**kwargs)
+        assessments.append(assessment)
+        return assessment
+
+    monkeypatch.setattr(
+        production_workflow,
+        "mint_cid_nl_method_assessment_ref",
+        record_assessment,
+    )
+    execute_targeted_production_workflow(
+        build_targeted_application_request(
+            config,
+            [target],
+            injection_order={"SampleA": 1},
+        ),
+        output,
+    )
+    assert len(assessments) == 1
+    assert len(assessments[0].individual_support_refs) == 1
+    assert assessments[0].content.method_result == "SUPPORT"
 
 
 @pytest.mark.parametrize("promoted_retained", (False, True))

@@ -85,13 +85,14 @@ _FROZEN_TRACE_ORACLE = {
     ),
 }
 _FROZEN_HYPOTHESIS_ORACLE = {
+    # Support content now records loss error and the quadrature window in Da.
     "observed-a": (
         "xic.peak-hypothesis:"
-        "2483367d2bf8aac07eec9bd2e94f1b4fd78f09a2fde6462d05c47aac90e52e18"
+        "9ca2cb8a6921a95340603d7a76c35502b2e2426b63fbff85e4931e5e49d72abc"
     ),
     "observed-b": (
         "xic.peak-hypothesis:"
-        "2faad514f96092bc4da6f0b107aa782fd9550a131755ae2c5e184c2f8e5463a1"
+        "c1f77e83b27aacd60fba2993ff97a2d907a1298bf05e483426cb7d8f5c205f28"
     ),
 }
 

@@ -54,7 +54,7 @@ def test_out_of_neutral_loss_tolerance_product_is_rejected() -> None:
         [
             _scan_event(
                 precursor_mz=258.1085,
-                masses=[_product_for_loss_ppm(precursor_mz=258.1085, ppm=25.0)],
+                masses=[_product_for_loss_ppm(precursor_mz=258.1085, ppm=30.0)],
                 intensities=[12000.0],
             )
         ]
@@ -67,6 +67,33 @@ def test_out_of_neutral_loss_tolerance_product_is_rejected() -> None:
     )
 
     assert seeds == ()
+
+
+def test_quadrature_window_accepts_forty_ppm_loss_and_rejects_outside_product() -> None:
+    precursor_mz = 482.0
+    product_inside = _product_for_loss_ppm(precursor_mz=precursor_mz, ppm=40.0)
+    product_outside = _product_for_loss_ppm(precursor_mz=precursor_mz, ppm=120.0)
+    raw = _FakeRaw([_scan_event(
+        precursor_mz=precursor_mz,
+        masses=[product_inside, product_outside],
+        intensities=[12000.0, 10000.0],
+    )])
+
+    seeds = collect_strict_nl_seeds(
+        raw,
+        raw_file=RAW_FILE,
+        settings=_settings(nl_tolerance_ppm=20.0, product_search_ppm=1.0),
+    )
+
+    direct = [seed for seed in seeds if seed.precursor_mz_basis == "scan_precursor"]
+    assert len(direct) == 1
+    assert direct[0].product_mz == pytest.approx(product_inside)
+    assert direct[0].observed_loss_error_ppm == pytest.approx(40.0)
+    tag_evidence = json.loads(direct[0].tag_evidence_json)["DNA_dR"]
+    assert (
+        tag_evidence["neutral_loss_error_da"]
+        < tag_evidence["neutral_loss_window_da"]
+    )
 
 
 def test_parse_error_event_is_ignored() -> None:

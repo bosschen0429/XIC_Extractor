@@ -173,7 +173,8 @@ def _nl_reason(
         return (
             f"Precursor {target.mz} triggered {nl.matched_scan_count} MS2 scans; "
             f"NL {nl_da:g} Da → expected product m/z {expected_product:.4f}; "
-            f"best match {nl.best_ppm:.1f} ppm (limit {limit:g} ppm){rt_info}"
+            f"best observed-loss error {nl.best_ppm:.1f} ppm "
+            f"(quadrature window at {limit:g} ppm per ion){rt_info}"
         )
 
     return (
@@ -203,7 +204,8 @@ def _candidate_ms2_reason(target: Target, evidence: CandidateMS2Evidence) -> str
             f"selected candidate has {evidence.trigger_scan_count} "
             f"candidate-aligned MS2 trigger scans; strict observed neutral loss "
             f"{nl_da:g} Da not matched; best observed-loss error "
-            f"{evidence.best_loss_ppm:.1f} ppm (limit {limit:g} ppm){rt_info}; "
+            f"{evidence.best_loss_ppm:.1f} ppm "
+            f"(quadrature window at {limit:g} ppm per ion){rt_info}; "
             f"alignment={evidence.alignment_source}"
         )
     probe_info = _candidate_product_probe_info(evidence)

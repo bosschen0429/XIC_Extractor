@@ -329,7 +329,7 @@ def test_nonselected_candidate_mutation_invalidates_bound_universe(
 
 def test_non_strict_neutral_loss_cannot_mint_support(tmp_path: Path) -> None:
     fixture = _identity_fixture(tmp_path)
-    observed_loss = _NEUTRAL_LOSS_DA + 0.01
+    observed_loss = _NEUTRAL_LOSS_DA + 0.02
     observed_error_ppm = (
         abs(observed_loss - _NEUTRAL_LOSS_DA) / _NEUTRAL_LOSS_DA * 1_000_000.0
     )
@@ -343,6 +343,26 @@ def test_non_strict_neutral_loss_cannot_mint_support(tmp_path: Path) -> None:
 
     with pytest.raises(DdaCidNlPeakSupportContractError, match="strict"):
         _resolve(fixture, evidence, _peak(fixture.owners, fixture.sample))
+
+
+def test_cid_nl_support_accepts_loss_inside_ion_window(tmp_path: Path) -> None:
+    fixture = _identity_fixture(tmp_path)
+    observed_loss = _NEUTRAL_LOSS_DA * (1.0 + 40.0e-6)
+    evidence = _evidence(
+        fixture.owners,
+        fixture.sample,
+        product_mz=_PRECURSOR_MZ - observed_loss,
+        observed_neutral_loss_da=observed_loss,
+        observed_loss_error_ppm=40.0,
+    )
+
+    support = _resolve(fixture, evidence, _peak(fixture.owners, fixture.sample))
+
+    assert support.content.observed_loss_error_ppm == pytest.approx(40.0)
+    assert (
+        support.content.observed_loss_error_da
+        < support.content.neutral_loss_window_da
+    )
 
 
 def test_sample_request_and_attempt_substitution_fail_closed(tmp_path: Path) -> None:

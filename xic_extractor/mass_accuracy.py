@@ -1,9 +1,7 @@
 """Shared m/z accuracy primitives.
 
-This module centralizes ppm arithmetic so feature matchers, XIC extraction,
-alignment, and diagnostics can converge on the same reference-m/z semantics as
-they are migrated. The current contract uses the expected/reference m/z as the
-ppm denominator.
+This module centralizes ppm arithmetic and the derived neutral-loss window.
+Ordinary ppm errors use the expected/reference m/z as the denominator.
 """
 
 from __future__ import annotations
@@ -39,6 +37,32 @@ def mz_tolerance_da(
     _require_positive_finite("tolerance_ppm", tolerance_ppm)
     _require_non_negative_finite("minimum_da", minimum_da)
     return max(reference_mz * tolerance_ppm * 1e-6, minimum_da)
+
+
+def neutral_loss_match(
+    precursor_mz: float,
+    observed_product_mz: float,
+    expected_loss_da: float,
+    tolerance_ppm: float,
+    *,
+    observed_loss_da: float | None = None,
+) -> tuple[float, float, bool]:
+    """Return loss error, quadrature ion window (Da), and inclusive match.
+
+    ``tolerance_ppm`` applies separately to precursor and observed product m/z.
+    """
+
+    _require_finite_mz("precursor_mz", precursor_mz)
+    _require_finite_mz("observed_product_mz", observed_product_mz)
+    _require_positive_finite("expected_loss_da", expected_loss_da)
+    _require_positive_finite("tolerance_ppm", tolerance_ppm)
+    if observed_loss_da is None:
+        observed_loss_da = precursor_mz - observed_product_mz
+    if not math.isfinite(observed_loss_da):
+        raise ValueError("observed_loss_da must be finite")
+    error_da = abs(observed_loss_da - expected_loss_da)
+    window_da = math.hypot(precursor_mz, observed_product_mz) * tolerance_ppm * 1e-6
+    return error_da, window_da, error_da <= window_da
 
 
 def mz_window(

@@ -249,7 +249,14 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         "--tag-combine-mode",
         choices=("union", "intersection"),
     )
-    parser.add_argument("--nl-tolerance-ppm", type=_positive_float)
+    parser.add_argument(
+        "--nl-tolerance-ppm",
+        type=_positive_float,
+        help=(
+            "Per-ion precursor/product m/z ppm used for the quadrature "
+            "neutral-loss window."
+        ),
+    )
     parser.add_argument(
         "--precursor-mz-tolerance-ppm",
         type=_positive_float,

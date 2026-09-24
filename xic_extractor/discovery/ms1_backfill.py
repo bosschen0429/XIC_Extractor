@@ -37,7 +37,7 @@ from xic_extractor.discovery.priority import (
     assign_review_priority,
     build_candidate_reason,
 )
-from xic_extractor.mass_accuracy import within_ppm
+from xic_extractor.mass_accuracy import neutral_loss_match, within_ppm
 from xic_extractor.peak_detection.background_shape import is_provisional_peak_shape
 from xic_extractor.peak_detection.ms1_morphology import DEFAULT_GAUSSIAN15_WINDOW_POINTS
 from xic_extractor.peak_detection.ms1_trace_detection import detect_ms1_trace_peak
@@ -943,11 +943,13 @@ def _configured_neutral_loss_compatible(
     *,
     settings: DiscoverySettings,
 ) -> bool:
-    return _within_ppm(
-        candidate.observed_neutral_loss_da,
+    return neutral_loss_match(
+        candidate.precursor_mz,
+        candidate.product_mz,
         candidate.configured_neutral_loss_da,
         settings.nl_tolerance_ppm,
-    )
+        observed_loss_da=candidate.observed_neutral_loss_da,
+    )[2]
 
 
 def _merge_candidate_pair(
@@ -1347,7 +1349,12 @@ def _merge_max_intensity_fields(
         else first
     )
     merged["max_intensity"] = _optional_float(winner.get("max_intensity"))
-    for key in ("product_mz", "neutral_loss_error_ppm"):
+    for key in (
+        "product_mz",
+        "neutral_loss_error_ppm",
+        "neutral_loss_error_da",
+        "neutral_loss_window_da",
+    ):
         if key in winner:
             merged[key] = winner[key]
 

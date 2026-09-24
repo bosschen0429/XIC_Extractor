@@ -573,7 +573,15 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     )
     parser.add_argument("--neutral-loss-tag", default="DNA_dR")
     parser.add_argument("--neutral-loss-da", type=_positive_float, default=116.0474)
-    parser.add_argument("--nl-tolerance-ppm", type=_positive_float, default=20.0)
+    parser.add_argument(
+        "--nl-tolerance-ppm",
+        type=_positive_float,
+        default=20.0,
+        help=(
+            "Per-ion precursor/product m/z ppm used for the quadrature "
+            "neutral-loss window."
+        ),
+    )
     parser.add_argument(
         "--product-mz-tolerance-ppm",
         type=_positive_float,

@@ -116,8 +116,8 @@ identifier in workbook output and downstream CSV files.
 | Column | Type | Constraints | Description |
 | --- | --- | --- | --- |
 | `neutral_loss_da` | float | > 0, < `mz`; empty to disable | Expected neutral-loss mass (Da) |
-| `nl_ppm_warn` | float | > 0; required if `neutral_loss_da` set | NL PPM warning threshold |
-| `nl_ppm_max` | float | >= `nl_ppm_warn`; required if `neutral_loss_da` set | NL PPM maximum threshold |
+| `nl_ppm_warn` | float | > 0; required if `neutral_loss_da` set | Warning threshold on descriptive ppm-of-loss error; does not determine NL acceptance |
+| `nl_ppm_max` | float | >= `nl_ppm_warn`; required if `neutral_loss_da` set | Per-ion precursor/product m/z tolerance (ppm) for the quadrature NL match window |
 
 ### ISTD Pairing Columns
 

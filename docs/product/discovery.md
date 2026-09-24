@@ -16,6 +16,12 @@ observations and hypotheses through the shared evidence contract so downstream
 Alignment, ObservationRevisit, and Backfill owners do not require a parallel
 lifecycle for each provider.
 
+For CID-NL, `nl_tolerance_ppm` (default 20) is a per-ion m/z tolerance. A
+direct product matches the configured loss when its absolute loss error is at
+most `sqrt((precursor_mz × tol)^2 + (observed_product_mz × tol)^2)` Da, where
+`tol = nl_tolerance_ppm × 1e-6`. The reported loss-error ppm still describes
+the error relative to the configured loss mass; it is not the acceptance gate.
+
 ## Contract
 
 - Discovery produces candidate and review surfaces, not final product authority.

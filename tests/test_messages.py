@@ -35,7 +35,8 @@ def test_build_diagnostic_records_reports_peak_and_nl_failures() -> None:
 
     assert [record.issue for record in records] == ["PEAK_NOT_FOUND", "NL_FAIL"]
     assert "max=1234" in records[0].reason
-    assert "best match 80.0 ppm" in records[1].reason
+    assert "best observed-loss error 80.0 ppm" in records[1].reason
+    assert "quadrature window at 50 ppm per ion" in records[1].reason
 
 
 def test_build_diagnostic_records_reports_selected_candidate_observed_loss() -> None:

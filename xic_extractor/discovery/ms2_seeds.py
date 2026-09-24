@@ -13,6 +13,7 @@ from xic_extractor.discovery.models import (
     NeutralLossProfile,
     PrecursorMzBasis,
 )
+from xic_extractor.mass_accuracy import neutral_loss_match
 from xic_extractor.ms2_scan_models import Ms2Scan, Ms2ScanEvent
 
 
@@ -122,7 +123,14 @@ def _seeds_from_scan_profile(
         observed_loss_error_ppm = (
             abs(observed_loss_da - neutral_loss_da) / neutral_loss_da * 1_000_000.0
         )
-        if observed_loss_error_ppm > settings.nl_tolerance_ppm + 1e-9:
+        _, _, matches = neutral_loss_match(
+            scan.precursor_mz,
+            product_mz,
+            neutral_loss_da,
+            settings.nl_tolerance_ppm,
+            observed_loss_da=observed_loss_da,
+        )
+        if not matches:
             continue
 
         direct_candidates.append(
@@ -136,6 +144,7 @@ def _seeds_from_scan_profile(
                 neutral_loss_da=neutral_loss_da,
                 observed_loss_da=observed_loss_da,
                 observed_loss_error_ppm=observed_loss_error_ppm,
+                tolerance_ppm=settings.nl_tolerance_ppm,
                 precursor_mz_basis="scan_precursor",
             )
         )
@@ -158,6 +167,7 @@ def _seeds_from_scan_profile(
                 neutral_loss_da=neutral_loss_da,
                 observed_loss_da=neutral_loss_da,
                 observed_loss_error_ppm=0.0,
+                tolerance_ppm=settings.nl_tolerance_ppm,
                 precursor_mz_basis="product_plus_neutral_loss",
             )
         )
@@ -189,7 +199,7 @@ def _direct_product_mask(
         return np.zeros_like(masses, dtype=bool)
     effective_product_search_ppm = max(
         settings.product_search_ppm,
-        settings.nl_tolerance_ppm * neutral_loss_da / expected_product,
+        2.0 * scan.precursor_mz * settings.nl_tolerance_ppm / expected_product,
     )
     product_window_ppm = (
         np.abs(masses - expected_product) / expected_product * 1_000_000.0
@@ -213,6 +223,7 @@ def _build_seed(
     neutral_loss_da: float,
     observed_loss_da: float,
     observed_loss_error_ppm: float,
+    tolerance_ppm: float,
     precursor_mz_basis: PrecursorMzBasis,
 ) -> DiscoverySeed:
     return DiscoverySeed(
@@ -235,6 +246,8 @@ def _build_seed(
             product_mz=product_mz,
             product_intensity=product_intensity,
             observed_loss_error_ppm=observed_loss_error_ppm,
+            neutral_loss_da=neutral_loss_da,
+            tolerance_ppm=tolerance_ppm,
             precursor_mz_basis=precursor_mz_basis,
         ),
         scan_precursor_mz=scan.precursor_mz,
@@ -272,9 +285,14 @@ def _tag_evidence_json(
     product_mz: float,
     product_intensity: float,
     observed_loss_error_ppm: float,
+    neutral_loss_da: float,
+    tolerance_ppm: float,
     precursor_mz_basis: PrecursorMzBasis,
 ) -> str:
     scan_precursor_delta_da = scan.precursor_mz - precursor_mz
+    loss_error_da, loss_window_da, _ = neutral_loss_match(
+        precursor_mz, product_mz, neutral_loss_da, tolerance_ppm
+    )
     payload = {
         tag: {
             "scan_count": 1,
@@ -287,6 +305,8 @@ def _tag_evidence_json(
             "product_mz": product_mz,
             "max_intensity": product_intensity,
             "neutral_loss_error_ppm": observed_loss_error_ppm,
+            "neutral_loss_error_da": loss_error_da,
+            "neutral_loss_window_da": loss_window_da,
         }
     }
     return json.dumps(payload, sort_keys=True, separators=(",", ":"))

@@ -964,7 +964,11 @@ def test_run_writes_peak_diagnostics(
 @pytest.mark.parametrize(
     ("nl_result", "issue", "reason_part"),
     [
-        (NLResult("NL_FAIL", 78.4, None, 10, 1, 3), "NL_FAIL", "best match 78.4 ppm"),
+        (
+            NLResult("NL_FAIL", 78.4, None, 10, 1, 3),
+            "NL_FAIL",
+            "best observed-loss error 78.4 ppm (quadrature window at 50 ppm per ion)",
+        ),
         (
             NLResult("NL_FAIL", None, None, 10, 1, 3),
             "NL_FAIL",

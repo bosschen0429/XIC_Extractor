@@ -22,6 +22,7 @@ from xic_extractor.configuration.target_identity import (
     mint_target_list_snapshot,
 )
 from xic_extractor.injection_rolling import read_injection_order, rolling_median_rt
+from xic_extractor.mass_accuracy import neutral_loss_match
 
 DriftPriorSource = Literal["targeted_istd_trend", "batch_istd_trend", "none"]
 LocalLandmarkQuality = Literal["accepted", "poor"]
@@ -223,9 +224,15 @@ class KnownIstdReference:
                 and owner.primary_identity_event is not None
                 and target.neutral_loss_da is not None
                 and target.nl_ppm_max is not None
-                and abs(owner.primary_identity_event.observed_neutral_loss_da
-                        - target.neutral_loss_da)
-                <= target.neutral_loss_da * target.nl_ppm_max / 1_000_000.0
+                and neutral_loss_match(
+                    owner.primary_identity_event.precursor_mz,
+                    owner.primary_identity_event.product_mz,
+                    target.neutral_loss_da,
+                    target.nl_ppm_max,
+                    observed_loss_da=(
+                        owner.primary_identity_event.observed_neutral_loss_da
+                    ),
+                )[2]
                 and self.anchor.matches_observation(
                     target,
                     # SUPPORT projects a typed CID-NL method tag, while the

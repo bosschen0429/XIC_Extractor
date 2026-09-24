@@ -21,6 +21,7 @@ from xic_extractor.evidence_artifacts import (
     _mint_evidence_artifact_ref,
     verify_evidence_artifact_payload,
 )
+from xic_extractor.mass_accuracy import neutral_loss_match
 from xic_extractor.peak_detection.cid_nl_candidate_set_relation import (
     DdaCidNlCandidateSetRelationContractError,
     DdaCidNlCandidateSetRelationRef,
@@ -826,9 +827,14 @@ def _validate_upstream_bindings(
         )
     settled_evidence_ids = individual_evidence_ids | set_relation_evidence_ids
     for evidence_content_id, evidence in evidence_by_content_id.items():
-        if evidence.observation.observed_loss_error_ppm > (
-            support_policy.neutral_loss_tolerance_ppm
-        ):
+        observation = evidence.observation
+        if not neutral_loss_match(
+            observation.precursor_mz,
+            observation.product_mz,
+            observation.configured_neutral_loss_da,
+            support_policy.neutral_loss_tolerance_ppm,
+            observed_loss_da=observation.observed_neutral_loss_da,
+        )[2]:
             continue
         if (
             _evidence_matches_candidate_universe(
@@ -945,8 +951,13 @@ def _method_result(
     if set_relation_refs:
         return "HOLD", ("set_level_relation",)
     if not candidate_peaks and any(
-        evidence.observation.observed_loss_error_ppm
-        <= evaluation_receipt.support_policy.neutral_loss_tolerance_ppm
+        neutral_loss_match(
+            evidence.observation.precursor_mz,
+            evidence.observation.product_mz,
+            evidence.observation.configured_neutral_loss_da,
+            evaluation_receipt.support_policy.neutral_loss_tolerance_ppm,
+            observed_loss_da=evidence.observation.observed_neutral_loss_da,
+        )[2]
         for evidence in evidence_refs
     ):
         return "REJECT", ("qualifying_cid_nl_without_usable_ms1_peak",)

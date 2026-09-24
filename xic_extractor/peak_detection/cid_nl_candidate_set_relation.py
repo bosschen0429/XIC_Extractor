@@ -18,6 +18,7 @@ from xic_extractor.evidence_artifacts import (
     _mint_evidence_artifact_ref,
     verify_evidence_artifact_payload,
 )
+from xic_extractor.mass_accuracy import neutral_loss_match
 from xic_extractor.peak_detection.cid_nl_evidence import (
     ACQUISITION_MODE,
     CidNlEvidenceContractError,
@@ -353,9 +354,14 @@ def _validate_inputs(
             )
         except PeakObservationContractError as exc:
             raise DdaCidNlCandidateSetRelationContractError(str(exc)) from exc
-    if canonical_evidence.observation.observed_loss_error_ppm > (
-        policy.neutral_loss_tolerance_ppm
-    ):
+    observation = canonical_evidence.observation
+    if not neutral_loss_match(
+        observation.precursor_mz,
+        observation.product_mz,
+        observation.configured_neutral_loss_da,
+        policy.neutral_loss_tolerance_ppm,
+        observed_loss_da=observation.observed_neutral_loss_da,
+    )[2]:
         raise DdaCidNlCandidateSetRelationContractError(
             "CID-NL evidence does not satisfy the strict neutral-loss tolerance"
         )

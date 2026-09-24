@@ -78,7 +78,7 @@ independently enter Alignment RAW owner build.
 | seed_scan_ids | string | Semicolon-separated scan IDs |
 | neutral_loss_tag | string | NL identifier/tag |
 | configured_neutral_loss_da | float | Configured NL mass |
-| neutral_loss_mass_error_ppm | float | NL mass error (PPM) |
+| neutral_loss_mass_error_ppm | float | Descriptive NL mass error (ppm of configured loss); acceptance uses the quadrature per-ion m/z window |
 | neutral_loss_error_basis | string | Error measurement basis |
 | precursor_mz_basis | string | Precursor source basis |
 | scan_precursor_mz | float | Scan-observed precursor m/z |
