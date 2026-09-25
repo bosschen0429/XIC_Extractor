@@ -217,6 +217,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             "emit_alignment_cells": args.emit_alignment_cells,
             "emit_cid_nl_explanation": args.emit_cid_nl_explanation,
             "retain_acquisition_cache": args.retain_acquisition_cache,
+            "acquisition_cache_dir": args.acquisition_cache_dir,
             "emit_alignment_status_matrix": args.emit_alignment_status_matrix,
             "emit_alignment_integration_audit": args.emit_alignment_integration_audit,
             "emit_alignment_backfill_seed_audit": (
@@ -535,6 +536,15 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
             "keep .cid_nl_acquisition_cache after a successful run so a repeat "
             "run skips rereading the RAW files; a failed attempt keeps it "
             "either way"
+        ),
+    )
+    parser.add_argument(
+        "--acquisition-cache-dir",
+        type=Path,
+        help=(
+            "keep the RAW acquisition cache in this directory instead of the "
+            "output directory; runs share it and it is never removed, so a "
+            "repeat run into a new output directory skips rereading the RAW files"
         ),
     )
     parser.add_argument(

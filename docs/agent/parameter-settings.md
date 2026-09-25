@@ -48,6 +48,7 @@ the public template.
 | XIC_RAW_VALIDATION_DIR | lane-specified validation subset |
 | THERMO_RAWFILE_READER_DLL_DIR | Thermo DLL directory |
 | XIC_MANUAL_2RAW_ROOT | manual-truth calibration inputs |
+| XIC_ACQUISITION_CACHE_DIR | shared Alignment RAW acquisition cache; keep it on a fast local disk |
 
 Stable accepted-input paths and hashes live in
 docs/diagnostic-ledger.md#stable-inputs. Verify the named path and the owning

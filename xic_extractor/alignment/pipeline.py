@@ -152,6 +152,7 @@ def run_alignment(
     emit_alignment_status_matrix: bool = False,
     emit_cid_nl_explanation: bool = False,
     retain_acquisition_cache: bool = False,
+    acquisition_cache_dir: Path | None = None,
     emit_alignment_integration_audit: bool = False,
     emit_alignment_backfill_seed_audit: bool = False,
     emit_alignment_backfill_candidate_audit: bool = False,
@@ -296,6 +297,7 @@ def run_alignment(
         output_level=output_level,
         emit_cid_nl_explanation=emit_cid_nl_explanation,
         retain_acquisition_cache=retain_acquisition_cache,
+        acquisition_cache_dir=acquisition_cache_dir,
         owner_build_route_receipt=owner_build_route_receipt,
         timing_recorder=recorder,
         capture_artifact_fingerprints=capture_artifact_fingerprints,
@@ -387,6 +389,7 @@ def _run_untargeted_alignment(
     output_level: AlignmentOutputLevel,
     emit_cid_nl_explanation: bool = False,
     retain_acquisition_cache: bool = False,
+    acquisition_cache_dir: Path | None = None,
     owner_build_route_receipt: OwnerBuildRouteReceipt,
     timing_recorder: TimingRecorder,
     capture_artifact_fingerprints: bool,
@@ -450,6 +453,7 @@ def _run_untargeted_alignment(
                 should_cancel=should_cancel,
                 retain_partition_memory=False,
                 retain_acquisition_cache=retain_acquisition_cache,
+                acquisition_cache_dir=acquisition_cache_dir,
                 max_partition_jobs=max_partition_jobs,
             )
         else:
@@ -471,6 +475,7 @@ def _run_untargeted_alignment(
                 should_cancel=should_cancel,
                 retain_partition_memory=False,
                 retain_acquisition_cache=retain_acquisition_cache,
+                acquisition_cache_dir=acquisition_cache_dir,
                 max_partition_jobs=max_partition_jobs,
             )
     except RuntimeError as exc:

@@ -82,6 +82,13 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument("--raw-dir", type=Path)
     parser.add_argument("--dll-dir", type=Path)
     parser.add_argument(
+        "--acquisition-cache-dir", type=Path,
+        help=(
+            "Shared RAW acquisition cache for Alignment "
+            "(default: XIC_ACQUISITION_CACHE_DIR, else the run's own output)."
+        ),
+    )
+    parser.add_argument(
         "--blank-library", type=Path,
         help="Explicitly opt in to blank filtering with this library (default: off).",
     )
@@ -147,6 +154,9 @@ def _build_plan(args: argparse.Namespace) -> dict[str, Any]:
         blank_library = args.blank_library.resolve()
         BlankBackgroundLibrary.load_json(blank_library)
     targets_csv, workbook = _validate_istd_input(args)
+    acquisition_cache_dir = _acquisition_cache_dir(
+        args.acquisition_cache_dir, environment
+    )
 
     discovery_dir = output_dir / "discovery"
     alignment_dir = output_dir / "alignment"
@@ -196,6 +206,10 @@ def _build_plan(args: argparse.Namespace) -> dict[str, Any]:
     if blank_library is not None:
         discovery_command.extend(["--blank-library", str(blank_library)])
         alignment_command.extend(["--blank-library", str(blank_library)])
+    if acquisition_cache_dir is not None:
+        alignment_command.extend(
+            ["--acquisition-cache-dir", str(acquisition_cache_dir)]
+        )
     if workbook is not None:
         alignment_command.extend(
             ["--known-istd-reference-workbook", str(workbook)]
@@ -226,6 +240,11 @@ def _build_plan(args: argparse.Namespace) -> dict[str, Any]:
             "targets_csv": str(targets_csv) if targets_csv is not None else None,
             "known_istd_reference_workbook": (
                 str(workbook) if workbook is not None else None
+            ),
+            "acquisition_cache_dir": (
+                str(acquisition_cache_dir)
+                if acquisition_cache_dir is not None
+                else None
             ),
         },
         "execution": {
@@ -262,9 +281,19 @@ def _read_local_environment(path: Path) -> dict[str, str]:
             "XIC_RAW_VALIDATION_DIR",
             "XIC_RAW_ROOT",
             "THERMO_RAWFILE_READER_DLL_DIR",
+            "XIC_ACQUISITION_CACHE_DIR",
         }:
             values[key] = value.strip().strip('"').strip("'")
     return values
+
+
+def _acquisition_cache_dir(
+    explicit: Path | None, environment: Mapping[str, str]
+) -> Path | None:
+    if explicit is not None:
+        return explicit.resolve()
+    configured = environment.get("XIC_ACQUISITION_CACHE_DIR", "").strip()
+    return Path(configured).resolve() if configured else None
 
 
 def _resolve_input_dir(
