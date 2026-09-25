@@ -67,6 +67,10 @@ _DISCOVERY_MS1_PREDICTION_MAX_REQUESTS = 256
 _DISCOVERY_PHYSICAL_CONTEXT_HALF_WINDOW_MIN = 0.60
 
 
+MS1CentroidMz = Callable[[float, float, float], float | None]
+"""(apex RT, m/z min, m/z max) -> most intense MS1 centroid m/z at that scan."""
+
+
 class MS1XicSource(Protocol):
     def extract_xic(
         self,
@@ -200,6 +204,7 @@ def _backfill_ms1_candidates_with_acquisition(
     peak_config: ExtractionConfig,
     measurement_observer: Callable[[_DiscoveryMs1Measurements], None] | None = None,
     signal_processing_profile: SignalProcessingProfile | None = None,
+    ms1_centroid_mz: MS1CentroidMz | None = None,
 ) -> _DiscoveryMs1AcquisitionResult:
     """Acquire canonical Discovery requests in bounded owner-minted batches."""
 
@@ -393,6 +398,7 @@ def _backfill_ms1_candidates_with_acquisition(
     merge_result = merge_candidates_by_ms1_peak_with_lineage(
         candidates,
         settings=settings,
+        ms1_centroid_mz=ms1_centroid_mz,
     )
     physical_bindings: tuple[DiscoveryCandidatePhysicalBinding, ...] = ()
     if signal_processing_profile is not None:
@@ -765,8 +771,7 @@ def _candidate_from_trace(
         review_priority=priority,
         reason=reason,
         is_provisional=(
-            len(group.seeds) < 2
-            and ms1_fields.trace_quality == "provisional"
+            len(group.seeds) < 2 and ms1_fields.trace_quality == "provisional"
         ),
     )
     candidate = _with_tag_fields(candidate, group=group, settings=settings)
@@ -812,10 +817,12 @@ def merge_candidates_by_ms1_peak(
     candidates: Iterable[DiscoveryCandidate],
     *,
     settings: DiscoverySettings,
+    ms1_centroid_mz: MS1CentroidMz | None = None,
 ) -> tuple[DiscoveryCandidate, ...]:
     return merge_candidates_by_ms1_peak_with_lineage(
         candidates,
         settings=settings,
+        ms1_centroid_mz=ms1_centroid_mz,
     ).candidates
 
 
@@ -823,13 +830,14 @@ def merge_candidates_by_ms1_peak_with_lineage(
     candidates: Iterable[DiscoveryCandidate],
     *,
     settings: DiscoverySettings,
+    ms1_centroid_mz: MS1CentroidMz | None = None,
 ) -> DiscoveryCandidateMergeResult:
     merged: list[DiscoveryCandidate] = []
     member_source_ordinals: list[list[int]] = []
     representative_source_ordinals: list[int] = []
     for source_ordinal, candidate in enumerate(candidates):
         merge_index = _matching_ms1_peak_candidate_index(
-            candidate, merged, settings=settings
+            candidate, merged, settings=settings, ms1_centroid_mz=ms1_centroid_mz
         )
         if merge_index is None:
             merged.append(candidate)
@@ -873,9 +881,12 @@ def _matching_ms1_peak_candidate_index(
     merged: list[DiscoveryCandidate],
     *,
     settings: DiscoverySettings,
+    ms1_centroid_mz: MS1CentroidMz | None = None,
 ) -> int | None:
     for index, existing in enumerate(merged):
-        if _can_merge_by_ms1_peak(existing, candidate, settings=settings):
+        if _can_merge_by_ms1_peak(
+            existing, candidate, settings=settings, ms1_centroid_mz=ms1_centroid_mz
+        ):
             return index
     return None
 
@@ -885,8 +896,13 @@ def _can_merge_by_ms1_peak(
     second: DiscoveryCandidate,
     *,
     settings: DiscoverySettings,
+    ms1_centroid_mz: MS1CentroidMz | None = None,
 ) -> bool:
-    if _same_ms1_apex_within_extraction_tolerance(first, second, settings=settings):
+    if _same_ms1_apex_within_extraction_tolerance(
+        first, second, settings=settings
+    ) or _same_ms1_apex_on_one_measured_ion(
+        first, second, settings=settings, ms1_centroid_mz=ms1_centroid_mz
+    ):
         return (
             first.neutral_loss_tag == second.neutral_loss_tag
             or settings.tag_combine_mode in {"union", "intersection"}
@@ -1057,6 +1073,43 @@ def _same_ms1_apex_within_extraction_tolerance(
             second.precursor_mz,
             settings.precursor_mz_tolerance_ppm,
         )
+    )
+
+
+def _same_ms1_apex_on_one_measured_ion(
+    first: DiscoveryCandidate,
+    second: DiscoveryCandidate,
+    *,
+    settings: DiscoverySettings,
+    ms1_centroid_mz: MS1CentroidMz | None,
+) -> bool:
+    """Whether one MS1 ion at a shared apex lies within both extraction windows.
+
+    A precursor inferred as product + loss carries the MS2 product error, so two
+    candidates of one ion can differ by more than the MS1 tolerance. When their
+    windows still overlap, the apex scan's measured centroid decides.
+    """
+
+    tolerance = settings.precursor_mz_tolerance_ppm
+    if not (
+        ms1_centroid_mz is not None
+        and first.raw_file == second.raw_file
+        and first.sample_stem == second.sample_stem
+        and first.ms1_peak_found
+        and second.ms1_peak_found
+        and first.ms1_apex_rt is not None
+        and first.ms1_apex_rt == second.ms1_apex_rt
+        and _within_ppm(first.precursor_mz, second.precursor_mz, 2 * tolerance)
+    ):
+        return False
+    low, high = sorted((first.precursor_mz, second.precursor_mz))
+    measured = ms1_centroid_mz(
+        first.ms1_apex_rt, low * (1 - tolerance * 1e-6), high * (1 + tolerance * 1e-6)
+    )
+    return (
+        measured is not None
+        and _within_ppm(measured, first.precursor_mz, tolerance)
+        and _within_ppm(measured, second.precursor_mz, tolerance)
     )
 
 
@@ -1465,14 +1518,12 @@ def _physical_ms1_peak_fields(
                 raw_seg = np.asarray(
                     intensity[seg.start_index : seg.end_index], dtype=float
                 )
-                rt_seg = np.asarray(
-                    rt[seg.start_index : seg.end_index], dtype=float
-                )
+                rt_seg = np.asarray(rt[seg.start_index : seg.end_index], dtype=float)
                 if len(raw_seg) >= 3:
                     w = (rt_seg[2:] - rt_seg[1:-1]) / (rt_seg[2:] - rt_seg[:-2])
                     res = (
                         w * raw_seg[:-2] + (1.0 - w) * raw_seg[2:] - raw_seg[1:-1]
-                    ) / np.sqrt(1.0 + w**2 + (1.0 - w)**2)
+                    ) / np.sqrt(1.0 + w**2 + (1.0 - w) ** 2)
                     mad = float(np.median(np.abs(res - np.median(res))))
                 else:
                     mad = 0.0

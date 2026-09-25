@@ -526,9 +526,7 @@ def test_candidates_sharing_an_ms1_apex_within_extraction_tolerance_are_one_peak
         rt_seed_max=41.3285,
         best_seed_rt=41.3285,
         ms1_apex_rt=40.579393,
-        ms1_feature_row_id=(
-            f"NormalBC2259_DNA|dR|{second_precursor_mz:.6f}|40.579393"
-        ),
+        ms1_feature_row_id=(f"NormalBC2259_DNA|dR|{second_precursor_mz:.6f}|40.579393"),
     )
 
     merged = merge_candidates_by_ms1_peak([first, second], settings=settings)
@@ -602,6 +600,48 @@ def test_shared_ms1_apex_merges_whatever_the_fragment_or_loss(
 
     assert len(merged) == 1
     assert merged[0].seed_event_count == 2
+
+
+@pytest.mark.parametrize(
+    ("ms1_centroid", "offset_ppm", "merged_count"),
+    [
+        (400.005, 25.0, 1),  # one ion 12.5 ppm from each MS2-derived m/z
+        (400.0, 25.0, 2),  # the ion is the first candidate's alone
+        (None, 25.0, 2),  # no MS1 centroid at the apex scan
+        (400.01, 45.0, 2),  # windows share no ion, so no scan is read
+    ],
+    ids=["one-ion", "first-ion", "no-centroid", "disjoint-windows"],
+)
+def test_shared_ms1_apex_beyond_tolerance_merges_on_the_measured_ms1_ion(
+    ms1_centroid: float | None, offset_ppm: float, merged_count: int
+) -> None:
+    """Two MS2-derived precursors of one ion can differ by more than 20 ppm."""
+
+    settings = _multi_tag_settings()
+    first = _candidate("dR")
+    second = replace(_candidate("dR"), precursor_mz=400.0 * (1 + offset_ppm * 1e-6))
+    reads: list[tuple[float, float, float]] = []
+
+    def centroid(rt: float, mz_min: float, mz_max: float) -> float | None:
+        reads.append((rt, mz_min, mz_max))
+        return ms1_centroid
+
+    merged = merge_candidates_by_ms1_peak(
+        [first, second], settings=settings, ms1_centroid_mz=centroid
+    )
+
+    assert len(merged) == merged_count
+    if offset_ppm > 2 * settings.precursor_mz_tolerance_ppm:
+        assert reads == []
+    else:
+        assert reads == [
+            (
+                first.ms1_apex_rt,
+                pytest.approx(400.0 * (1 - 20e-6)),
+                pytest.approx(400.0 * (1 + offset_ppm * 1e-6) * (1 + 20e-6)),
+            )
+        ]
+    assert len(merge_candidates_by_ms1_peak([first, second], settings=settings)) == 2
 
 
 def test_cross_tag_candidates_do_not_merge_without_ms1_overlap() -> None:

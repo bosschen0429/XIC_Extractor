@@ -169,6 +169,31 @@ def test_backfill_peak_of_another_rows_member_is_contested() -> None:
     assert contested == frozenset({(s1, "bf-s1"), (s4, "bf-s4-a"), (s4, "bf-s4-b")})
 
 
+def test_backfill_peak_held_only_by_an_archived_group_is_not_contested() -> None:
+    """An archive row writes no value, so its member cannot take the peak away."""
+
+    owners = tuple(_main(f"S{index}") for index in range(1, 4))
+    (group,) = construct_cross_sample_peak_group_hypotheses(
+        owners, config=_CONFIG, sample_universe=frozenset({"S1", "S2", "S3"})
+    )
+    s1 = _sample_id(owners[0])
+    backfills = {
+        ("matrix-row", s1, "subject"): _backfill(_candidate("bf-s1", apex=9.0)),
+    }
+
+    assert (
+        contested_backfill_peaks(
+            groups=(replace(group, disposition="unresolved"),),
+            backfills=backfills,
+            alignment_config=_CONFIG,
+        )
+        == frozenset()
+    )
+    assert contested_backfill_peaks(
+        groups=(group,), backfills=backfills, alignment_config=_CONFIG
+    ) == frozenset({(s1, "bf-s1")})
+
+
 def test_backfill_peak_at_another_apex_or_mass_is_not_contested() -> None:
     owners = tuple(_main(f"S{index}") for index in range(1, 4))
     (group,) = construct_cross_sample_peak_group_hypotheses(

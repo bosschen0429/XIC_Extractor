@@ -34,8 +34,10 @@ same-sample CID-NL evidence can yield
 as `backfilled` / `accepted_backfill`; the sample does not become a detected
 group member. No peak, multiple peaks, competing evidence, insufficient group
 support, or an ineligible sample leaves the cell without that value. Neither
-does a peak that another group's member holds or another group's Backfill
-also found. Each window traces the peak again with its own bounds, so one peak
+does a peak that a Matrix row's member holds or another group's Backfill also
+found; an archive row's member writes no value and does not hold the peak. When
+two rows' windows resolve the same peak, the cell stays unresolved in both
+rather than taking one value twice. Each window traces the peak again with its own bounds, so one peak
 is one apex scan in one sample within the preferred m/z tolerance, as in
 Discovery, not one peak observation content ID. An
 independent Backfill assessment of an initial missing-MS1 `REJECT` retains

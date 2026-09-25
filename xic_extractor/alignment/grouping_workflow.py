@@ -516,7 +516,10 @@ def contested_backfill_peaks(
         for member in group.member_subjects
         for observation_id in member.physical_observation_ids
     }
+    # An archive row writes no value, so only a Matrix row's member holds a peak.
     for group in groups:
+        if group.disposition != "established":
+            continue
         for owner in group.owners:
             subject = owner.cross_sample_member_subject
             if subject is None:
