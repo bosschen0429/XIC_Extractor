@@ -4,13 +4,14 @@ from dataclasses import dataclass
 from typing import Literal, Sequence
 
 import numpy as np
-from scipy.signal import find_peaks
+from scipy.signal import find_peaks, peak_prominences
 
 from xic_extractor.peak_detection.baseline import integrate_with_baseline
 from xic_extractor.peak_detection.ms1_morphology import (
     DEFAULT_GAUSSIAN15_WINDOW_POINTS,
     gaussian15_morphology_trace,
 )
+from xic_extractor.peak_detection.scoring_metrics import short_scale_noise_mad
 from xic_extractor.peak_detection.selected_envelope import TraceInterval
 
 ChromPeakSegmentStatus = Literal[
@@ -39,6 +40,7 @@ class ChromPeakSegmentPolicy:
     clear_valley_max_fraction: float = 0.30
     morphology_trace_method: str = "gaussian_15"
     morphology_trace_window_points: int = DEFAULT_GAUSSIAN15_WINDOW_POINTS
+    min_prominence_noise_mad: float = 0.0
 
     def baseline_return_threshold(self, apex_residual: float) -> float:
         return max(
@@ -94,6 +96,7 @@ def enumerate_chrom_peak_segments(
     quantitation_context_rt_start: float | None = None,
     quantitation_context_rt_end: float | None = None,
     policy: ChromPeakSegmentPolicy | None = None,
+    acquired_intensity_values: np.ndarray | None = None,
 ) -> ChromPeakSegmentEnumeration:
     """Enumerate diagnostic chromatographic peak segments in one XIC context.
 
@@ -130,6 +133,19 @@ def enumerate_chrom_peak_segments(
         active_policy,
     )
     seeds = _apex_seeds(morphology_trace, context_interval, active_policy)
+    if active_policy.min_prominence_noise_mad > 0.0:
+        seeds = _supported_apex_seeds(
+            seeds,
+            morphology_trace,
+            rt,
+            (
+                intensity
+                if acquired_intensity_values is None
+                else acquired_intensity_values
+            ),
+            context_interval,
+            active_policy,
+        )
     if not seeds:
         return ChromPeakSegmentEnumeration(
             status="PEAK_NOT_FOUND",
@@ -335,6 +351,48 @@ def _local_peak_indices(values: np.ndarray) -> tuple[int, ...]:
     return tuple(sorted(set(peak_indices)))
 
 
+def _supported_apex_seeds(
+    seeds: tuple[_ApexSeed, ...],
+    signal: np.ndarray,
+    rt: np.ndarray,
+    acquired: np.ndarray,
+    context: TraceInterval,
+    policy: ChromPeakSegmentPolicy,
+) -> tuple[_ApexSeed, ...]:
+    # Measure the whole contour before neighboring ripple can truncate it.
+    # Edge maxima remain candidates: missing context is not noise evidence.
+    start, end = context.start_index, context.end_index
+    interior = tuple(seed for seed in seeds if start < seed.index < end - 1)
+    prominences, left_bases, right_bases = peak_prominences(
+        signal[start:end], [seed.index - start for seed in interior]
+    )
+    relations = _adjacent_relations(signal, seeds, policy)
+    retained = {seed.index for seed in seeds if seed.index in (start, end - 1)}
+    supported: set[int] = set()
+    for seed, prominence, left, right in zip(
+        interior, prominences, left_bases, right_bases
+    ):
+        left, right = start + int(left), start + int(right) + 1
+        noise = short_scale_noise_mad(rt[left:right], acquired[left:right])
+        if prominence >= policy.min_prominence_noise_mad * noise:
+            supported.add(seed.index)
+    # Suppress subordinate ripple only inside an independently supported
+    # envelope. A clear valley starts another group. An unsupported group is
+    # retained for the ordinary support/contrast gates, not removed to make a
+    # window question artificially unique.
+    group: list[_ApexSeed] = []
+    for index, seed in enumerate(seeds):
+        group.append(seed)
+        if index < len(relations) and relations[index].relation_class != "clear_split":
+            continue
+        if any(item.index in supported for item in group):
+            retained.update(item.index for item in group if item.index in supported)
+        else:
+            retained.update(item.index for item in group)
+        group = []
+    return tuple(seed for seed in seeds if seed.index in retained)
+
+
 def _adjacent_relations(
     morphology_trace: np.ndarray,
     seeds: tuple[_ApexSeed, ...],
@@ -384,29 +442,10 @@ def _segment_from_seed(
     right_relation: _AdjacentPeakRelation | None,
     policy: ChromPeakSegmentPolicy,
 ) -> ChromPeakSegment:
-    left = _left_baseline_boundary(
-        morphology_trace,
-        seed.index,
-        seed.threshold,
-        context_interval,
+    left, right = _seed_interval_indices(
+        morphology_trace, context_interval, seed, left_relation, right_relation, policy
     )
-    right = _right_baseline_boundary(
-        morphology_trace,
-        seed.index,
-        seed.threshold,
-        context_interval,
-    )
-    if policy.include_baseline_return_samples:
-        # Retain the scans bracketing the return to baseline. An MS2 event can
-        # fall between the last positive MS1 scan and that return scan.
-        left = max(context_interval.start_index, left - 1)
-        right = min(context_interval.end_index, right + 1)
     relation_labels = _relation_labels(left_relation, right_relation)
-    if left_relation is not None:
-        left = max(left, left_relation.valley_index)
-    if right_relation is not None:
-        right = min(right, right_relation.valley_index + 1)
-    right = max(left + 1, right)
     interval = _trace_interval(rt, left, right)
     segment_class = _segment_class(interval, relation_labels, policy)
     stop_reason = _boundary_stop_reason(segment_class, relation_labels)
@@ -439,6 +478,38 @@ def _segment_from_seed(
         boundary_stop_reason=stop_reason,
         evidence_sources=_evidence_sources(relation_labels, segment_class),
     )
+
+
+def _seed_interval_indices(
+    morphology_trace: np.ndarray,
+    context_interval: TraceInterval,
+    seed: _ApexSeed,
+    left_relation: _AdjacentPeakRelation | None,
+    right_relation: _AdjacentPeakRelation | None,
+    policy: ChromPeakSegmentPolicy,
+) -> tuple[int, int]:
+    left = _left_baseline_boundary(
+        morphology_trace,
+        seed.index,
+        seed.threshold,
+        context_interval,
+    )
+    right = _right_baseline_boundary(
+        morphology_trace,
+        seed.index,
+        seed.threshold,
+        context_interval,
+    )
+    if policy.include_baseline_return_samples:
+        # Retain the scans bracketing the return to baseline. An MS2 event can
+        # fall between the last positive MS1 scan and that return scan.
+        left = max(context_interval.start_index, left - 1)
+        right = min(context_interval.end_index, right + 1)
+    if left_relation is not None:
+        left = max(left, left_relation.valley_index)
+    if right_relation is not None:
+        right = min(right, right_relation.valley_index + 1)
+    return left, max(left + 1, right)
 
 
 def _left_baseline_boundary(

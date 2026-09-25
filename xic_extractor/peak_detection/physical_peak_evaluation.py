@@ -70,6 +70,7 @@ from xic_extractor.peak_detection.physical_peak_models import (
 )
 from xic_extractor.peak_detection.scoring_metrics import (
     noise_shape_severity,
+    short_scale_noise_mad,
 )
 from xic_extractor.peak_detection.signal_processing_profile import (
     DEFAULT_SIGNAL_PROCESSING_PROFILE,
@@ -256,6 +257,7 @@ def enumerate_physical_segment_universe(
     if state == "available" and prepared is not None:
         rt = np.asarray(prepared.rt, dtype=float)
         signal = np.asarray(prepared.positive_signal, dtype=float)
+        acquired = np.asarray(prepared.raw, dtype=float)
         zero_baseline = np.zeros_like(signal)
         segment_policy = ChromPeakSegmentPolicy(
             morphology_trace_method="canonical_signal",
@@ -263,6 +265,7 @@ def enumerate_physical_segment_universe(
             baseline_return_fraction=0.0,
             baseline_return_min_residual=0.0,
             include_baseline_return_samples=True,
+            min_prominence_noise_mad=_PHYSICAL_LOCAL_CONTRAST_MIN_MAD,
         )
         enumeration = enumerate_chrom_peak_segments(
             rt,
@@ -271,6 +274,7 @@ def enumerate_physical_segment_universe(
             quantitation_context_rt_start=context_start,
             quantitation_context_rt_end=context_end,
             policy=segment_policy,
+            acquired_intensity_values=acquired,
         )
         if enumeration.status == "OK":
             segments = enumeration.segments
@@ -296,6 +300,7 @@ def enumerate_physical_segment_universe(
                             else _PHYSICAL_EDGE_RETURN_FRACTION
                         ),
                     ),
+                    acquired_intensity_values=acquired,
                 )
                 alternatives = {s.apex_index: s for s in near_baseline.segments}
                 recovered = []
@@ -585,20 +590,7 @@ def answer_physical_peak_question(
                     )
                     raw = np.asarray(prepared.raw[left:right], dtype=float)
                     rt = np.asarray(prepared.rt[left:right], dtype=float)
-                    if len(raw) >= 3:
-                        # Deviation from the line through each point's two
-                        # neighbors removes constant/linear background, also
-                        # on uneven RT grids. Normalize the coefficient norm
-                        # (sqrt(6) for a uniform-grid second difference).
-                        weight = (rt[2:] - rt[1:-1]) / (rt[2:] - rt[:-2])
-                        residual = (
-                            weight * raw[:-2] + (1.0 - weight) * raw[2:] - raw[1:-1]
-                        ) / np.sqrt(1.0 + weight**2 + (1.0 - weight)**2)
-                        noise_mad = float(
-                            np.median(np.abs(residual - np.median(residual)))
-                        )
-                    else:
-                        noise_mad = 0.0
+                    noise_mad = short_scale_noise_mad(rt, raw)
                     if prominence < _PHYSICAL_LOCAL_CONTRAST_MIN_MAD * noise_mad:
                         state, reason = (
                             "unavailable", "insufficient_local_peak_contrast"

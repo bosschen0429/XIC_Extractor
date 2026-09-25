@@ -63,6 +63,19 @@ be consecutive, or change the quantitative trace or peak boundaries.
 Baseline crossings do not count as missing acquired samples in this
 fragmentation check.
 
+Low-contrast maxima inside a supported envelope must not first become artificial
+integration boundaries. The physical owner measures each interior maximum's
+topographic prominence over the acquired canonical signal, before adjacent
+maxima truncate its interval. It compares that prominence with twice the raw
+three-point noise MAD between the prominence bases. Within a group connected
+by shoulder valleys, independently supported maxima remain and subordinate
+unsupported maxima are removed before boundaries are built. A clear valley
+separates groups; an entirely unsupported group remains for the ordinary
+qualification gates, so weak neighboring peaks cannot be dropped merely to
+make a window question unique. Edge maxima also remain subject to the existing
+context-completeness rule. This removes measurement-noise ripple, not every
+periodic fluctuation or unresolved chemical shoulder.
+
 Sampling support alone also accepts shallow ripples on a background plateau.
 Fresh qualification therefore compares the selected canonical peak's relief
 above its two local valleys with fluctuations in the same original interval.
