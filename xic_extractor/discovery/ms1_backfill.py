@@ -1113,8 +1113,8 @@ def _same_ms1_peak_on_one_measured_ion(
         ms1_centroid_mz is not None
         and first.raw_file == second.raw_file
         and first.sample_stem == second.sample_stem
-        and _traced_peak(first)
-        and _traced_peak(second)
+        and _has_resolved_ms1_peak(first)
+        and _has_resolved_ms1_peak(second)
         and _within_ppm(first.precursor_mz, second.precursor_mz, 2 * tolerance)
     ):
         return None
@@ -1136,7 +1136,7 @@ def _same_ms1_peak_on_one_measured_ion(
     return anchor
 
 
-def _traced_peak(candidate: DiscoveryCandidate) -> bool:
+def _has_resolved_ms1_peak(candidate: DiscoveryCandidate) -> bool:
     return (
         candidate.ms1_peak_found
         and candidate.ms1_apex_rt is not None
