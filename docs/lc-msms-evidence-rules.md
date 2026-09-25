@@ -58,7 +58,15 @@ processing, see [`product/signal-processing-rationale.md`](product/signal-proces
   unresolved clipped segments remain unavailable. The profile binds the formula;
   the physical question and segment universe bind the selection policy. Persisted
   evaluations replay their recorded policy and retain their exact identity.
-- Current physical selection first uses the complete positive peak interval
+- Before constructing physical intervals, interior apex candidates use their
+  full-context topographic prominence and the original three-point noise MAD
+  over the prominence bases. A candidate with prominence below twice that MAD
+  is subordinate ripple only when its shoulder-connected group contains an
+  independently supported apex. It cannot truncate that envelope. Clear valleys
+  separate groups; entirely unsupported groups and edge maxima remain for the
+  normal qualification gates. This does not discard a separate weak component
+  to resolve a window's ambiguity or alter the canonical quantitative signal.
+- Current physical selection then uses the complete positive peak interval
   through the first baseline-return samples, bounded by adjacent valleys.
   Only an interval reaching an acquired edge may use an observed return at
   0.1% of its apex residual. This alternative must have the same apex, be fully

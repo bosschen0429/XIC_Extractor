@@ -783,10 +783,12 @@ def test_strong_product_inferred_seed_group_uses_widened_initial_context(
 
 
 @pytest.mark.parametrize("shared_request_count", (1, 2))
-def test_provisional_qualification_survives_physical_fact_reuse(
+@pytest.mark.parametrize("provisional", (False, True))
+def test_qualification_survives_physical_fact_reuse(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     shared_request_count: int,
+    provisional: bool,
 ) -> None:
     from xic_extractor.alignment.config import AlignmentConfig
     from xic_extractor.alignment.ownership import (
@@ -803,10 +805,18 @@ def test_provisional_qualification_survives_physical_fact_reuse(
     )
     raw = _OwnerBoundBatchRaw(source)
     raw.rt = np.linspace(7.45, 8.15, 141)
+    if provisional:
+        # The fixed short-scale noise gives raw MAD near 12.25 counts and
+        # peak-to-edge SNR near 4, within the existing provisional band.
+        noise = 10.0 * np.resize([1, -1, 1, -1, 1, 1, -1, -1], raw.rt.size)
+    else:
+        # This original trace is clean once ripple no longer truncates its
+        # interval: its full-peak raw SNR exceeds the provisional threshold.
+        noise = 10.0 * np.random.default_rng(0).normal(size=raw.rt.size)
     raw.intensity = (
         1000.0
         + 50.0 * np.exp(-0.5 * ((raw.rt - 7.8) / 0.05) ** 2)
-        + 10.0 * np.random.default_rng(0).normal(size=raw.rt.size)
+        + noise
     )
     qualifier = Mock(wraps=is_provisional_peak_shape)
     monkeypatch.setattr(
@@ -825,16 +835,28 @@ def test_provisional_qualification_survives_physical_fact_reuse(
     )
 
     (candidate,) = result.candidates
-    assert candidate.ms1_trace_quality == "provisional"
-    assert candidate.is_provisional is True
+    assert candidate.ms1_trace_quality == ("provisional" if provisional else "clean")
+    assert candidate.is_provisional is provisional
     assert result.measurements.reacquisition_request_count == 0
     assert raw.raw_chromatogram_call_count == 1
     assert qualifier.call_count == 1
+    _, qualified_raw = qualifier.call_args.args
+    apex = qualifier.call_args.kwargs["apex_index"]
+    edge_count = max(1, min(5, len(qualified_raw) // 6))
+    edge = max(
+        np.median(qualified_raw[:edge_count]), np.median(qualified_raw[-edge_count:])
+    )
+    centre = np.median(qualified_raw[max(0, apex - 1):apex + 2])
+    snr = (centre - edge) / qualifier.call_args.kwargs["raw_noise_mad"]
+    if provisional:
+        assert centre / edge < 1.5 and 3.0 < snr < 5.0
+    else:
+        assert snr >= 5.0
     ownership = build_sample_local_owners_from_discovery_bindings(
         result.physical_bindings, alignment_config=AlignmentConfig()
     )
     assert len(ownership.owners) == 1
-    assert ownership.owners[0].is_provisional is True
+    assert ownership.owners[0].is_provisional is provisional
 
 
 def test_spec_bound_physical_owner_reuses_preparation_without_extra_acquisition(
