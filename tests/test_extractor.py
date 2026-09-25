@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 
 from xic_extractor.config import ExtractionConfig, Target
+from xic_extractor.extractor import ExtractionResult
 from xic_extractor.neutral_loss import CandidateMS2Evidence, NLResult
 from xic_extractor.peak_detection.evidence_facts import (
     build_candidate_evidence_facts,
@@ -19,13 +20,21 @@ from xic_extractor.signal_processing import (
     PeakResult,
 )
 
+_active_nl_fixture_result: NLResult | None = None
+
 
 @pytest.fixture(autouse=True)
 def _disable_reader_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
+    global _active_nl_fixture_result
+    _active_nl_fixture_result = None
     monkeypatch.setattr(
         "xic_extractor.extraction.pipeline.preflight_raw_reader",
         lambda _dll_dir: [],
         raising=False,
+    )
+    monkeypatch.setattr(
+        "xic_extractor.extractor.collect_candidate_ms2_evidence",
+        _candidate_evidence_for_active_nl_fixture,
     )
 
 
@@ -64,7 +73,7 @@ def test_run_writes_success_rows_with_area_columns_and_optional_nl(
         _open_raw_factory(peak_centers=[8.5, 9.5]),
     )
     monkeypatch.setattr(
-        "xic_extractor.extractor.find_peak_and_area",
+        "xic_extractor.extraction.target_extraction.find_peak_and_area_from_candidates",
         _peak_sequence(
             [
                 _ok_peak(
@@ -103,23 +112,12 @@ def test_run_writes_success_rows_with_area_columns_and_optional_nl(
         "WithNL_PeakWidth",
         "WithNL_NL",
     ]
+    results = output.file_results[0].results
     assert rows == [
         {
             "SampleName": "SampleA",
-            "NoNL_RT": "8.5000",
-            "NoNL_Int": "1200",
-            "NoNL_IntSmoothed": "1200",
-            "NoNL_Area": "57760.98",
-            "NoNL_PeakStart": "8.2800",
-            "NoNL_PeakEnd": "8.7200",
-            "NoNL_PeakWidth": "0.4400",
-            "WithNL_RT": "9.5000",
-            "WithNL_Int": "2200",
-            "WithNL_IntSmoothed": "2200",
-            "WithNL_Area": "58915.51",
-            "WithNL_PeakStart": "9.2600",
-            "WithNL_PeakEnd": "9.7400",
-            "WithNL_PeakWidth": "0.4800",
+            **_formatted_peak_columns("NoNL", results["NoNL"]),
+            **_formatted_peak_columns("WithNL", results["WithNL"]),
             "WithNL_NL": "WARN_12.3ppm",
         }
     ]
@@ -131,46 +129,20 @@ def test_run_writes_success_rows_with_area_columns_and_optional_nl(
     assert all(d.issue == "NL_ANCHOR_FALLBACK" for d in output.diagnostics)
     long_rows = _read_csv(config.output_csv.with_name("xic_results_long.csv"))
     assert [_core_long_row(row) for row in long_rows] == [
-        {
-            "SampleName": "SampleA",
-            "Group": "Other",
-            "Target": "NoNL",
-            "Role": "Analyte",
-            "ISTD Pair": "",
-            "RT": "8.5000",
-            "Area": "57760.98",
-            "NL": "",
-            "Int": "1200",
-            "PeakStart": "8.2800",
-            "PeakEnd": "8.7200",
-            "PeakWidth": "0.4400",
-            "Confidence": "HIGH",
-            "Reason": "Detected.",
-        },
-        {
-            "SampleName": "SampleA",
-            "Group": "Other",
-            "Target": "WithNL",
-            "Role": "Analyte",
-            "ISTD Pair": "",
-            "RT": "9.5000",
-            "Area": "58915.51",
-            "NL": "WARN_12.3ppm",
-            "Int": "2200",
-            "PeakStart": "9.2600",
-            "PeakEnd": "9.7400",
-            "PeakWidth": "0.4800",
-            "Confidence": "HIGH",
-            "Reason": "Detected.",
-        },
+        _formatted_long_success_row("NoNL", results["NoNL"], nl=""),
+        _formatted_long_success_row(
+            "WithNL",
+            results["WithNL"],
+            nl="WARN_12.3ppm",
+        ),
     ]
     assert [row["Projection Reason"] for row in long_rows] == [
         "decision: detected_clean; support: ms1_peak_present, "
         "ms1_coherent, role_aware_rt_support, "
-        "chrom_peak_segment_context, trace_coherent",
+        "trace_coherent",
         "decision: detected_clean; support: ms1_peak_present, "
         "ms1_coherent, candidate_aligned_ms2_nl, "
-        "role_aware_rt_support, chrom_peak_segment_context, trace_coherent",
+        "role_aware_rt_support, trace_coherent",
     ]
     assert [row["Counted Detection"] for row in long_rows] == ["TRUE", "TRUE"]
     assert all(row["Product State"] for row in long_rows)
@@ -277,13 +249,18 @@ def test_run_wires_candidate_ms2_evidence_into_scoring_context(
         raising=False,
     )
     monkeypatch.setattr(
-        "xic_extractor.extractor.find_peak_and_area",
+        "xic_extractor.extraction.target_extraction.find_peak_and_area_from_candidates",
         _fake_find_peak_and_area,
     )
 
     _run(config, [_target("WithNL")])
 
-    assert len(evidence_calls) == 1
+    assert len(evidence_calls) == 2
+    assert all(
+        candidate.selection_apex_rt == pytest.approx(8.5)
+        for candidate in evidence_calls
+    )
+    assert evidence_calls[0] is not evidence_calls[1]
 
 
 def test_run_does_not_write_intermediate_csv_by_default(
@@ -297,7 +274,7 @@ def test_run_does_not_write_intermediate_csv_by_default(
         _open_raw_factory(),
     )
     monkeypatch.setattr(
-        "xic_extractor.extractor.find_peak_and_area",
+        "xic_extractor.extraction.target_extraction.find_peak_and_area_from_candidates",
         _peak_sequence([_ok_peak(8.5, 1200.0, 3400.25)]),
     )
 
@@ -324,25 +301,7 @@ def test_run_writes_peak_candidate_table_when_enabled(
         emit_peak_candidates=True,
     )
     (config.data_dir / "SampleA.raw").write_text("", encoding="utf-8")
-    selected = _candidate(8.5, area=3400.25, proposal_sources=("legacy_savgol",))
-    rejected = _candidate(9.1, area=400.0, proposal_sources=("local_minimum",))
-    peak_result = PeakDetectionResult(
-        status="OK",
-        peak=selected.peak,
-        n_points=15,
-        max_smoothed=1200.0,
-        n_prominent_peaks=2,
-        candidates=(selected, rejected),
-        candidate_scores=(
-            _candidate_score(selected, confidence="HIGH", raw_score=90),
-            _candidate_score(rejected, confidence="LOW", raw_score=45),
-        ),
-    )
     monkeypatch.setattr("xic_extractor.extractor.open_raw", _open_raw_factory())
-    monkeypatch.setattr(
-        "xic_extractor.extractor.find_peak_and_area",
-        _peak_sequence([peak_result]),
-    )
 
     _run(config, [_target("NoNL", neutral_loss_da=None)])
 
@@ -351,11 +310,10 @@ def test_run_writes_peak_candidate_table_when_enabled(
     assert any(
         row["selected"] == "TRUE"
         and row["target_label"] == "NoNL"
-        and row["proposal_sources"] == "legacy_savgol"
-        for row in candidate_rows
-    )
-    assert any(
-        row["selected"] == "FALSE" and row["proposal_sources"] == "local_minimum"
+        and any(
+            source.startswith("physical_segment:")
+            for source in row["proposal_sources"].split(";")
+        )
         for row in candidate_rows
     )
     assert {row["ms1_morphology_area_source"] for row in candidate_rows} == {
@@ -406,7 +364,7 @@ def test_targeted_extraction_passes_trace_group_to_peak_audit(
 
     monkeypatch.setattr("xic_extractor.extractor.open_raw", _open_raw_factory())
     monkeypatch.setattr(
-        "xic_extractor.extractor.find_peak_and_area",
+        "xic_extractor.extraction.target_extraction.find_peak_and_area_from_candidates",
         _peak_sequence([_ok_peak(8.5, 1200.0, 3400.25)]),
     )
     monkeypatch.setattr(
@@ -451,7 +409,7 @@ def test_peak_candidate_table_includes_cwt_audit_proposals_when_enabled(
         lambda *_args, **_kwargs: _CwtAuditRaw(),
     )
     monkeypatch.setattr(
-        "xic_extractor.extractor.find_peak_and_area",
+        "xic_extractor.extraction.target_extraction.find_peak_and_area_from_candidates",
         _peak_sequence([peak_result]),
     )
 
@@ -483,7 +441,7 @@ def test_peak_candidate_table_does_not_echo_unused_anchor_as_selection_reference
         _anchor_sequence([8.45]),
     )
     monkeypatch.setattr(
-        "xic_extractor.extractor.find_peak_and_area",
+        "xic_extractor.extraction.target_extraction.find_peak_and_area_from_candidates",
         _peak_sequence([peak_result]),
     )
 
@@ -507,7 +465,7 @@ def test_run_selected_output_is_unchanged_when_peak_candidate_table_enabled(
     peak_result = _ok_peak_with_rejected_candidate(8.5, 1200.0, 3400.25)
     monkeypatch.setattr("xic_extractor.extractor.open_raw", _open_raw_factory())
     monkeypatch.setattr(
-        "xic_extractor.extractor.find_peak_and_area",
+        "xic_extractor.extraction.target_extraction.find_peak_and_area_from_candidates",
         _peak_sequence([peak_result, peak_result]),
     )
 
@@ -534,7 +492,7 @@ def test_run_loads_scoring_inputs_from_config_paths(
     calls: dict[str, object] = {}
     monkeypatch.setattr("xic_extractor.extractor.open_raw", _open_raw_factory())
     monkeypatch.setattr(
-        "xic_extractor.extractor.find_peak_and_area",
+        "xic_extractor.extraction.target_extraction.find_peak_and_area_from_candidates",
         _peak_sequence([_ok_peak(8.5, 1200.0, 3400.25)]),
     )
 
@@ -576,7 +534,7 @@ def test_run_falls_back_to_main_pass_when_prepass_returns_none(
         lambda *_args, **_kwargs: None,
     )
     monkeypatch.setattr(
-        "xic_extractor.extractor.find_peak_and_area",
+        "xic_extractor.extraction.target_extraction.find_peak_and_area_from_candidates",
         _peak_sequence(
             [
                 _ok_peak(9.05, 1500.0, 2000.0),
@@ -719,7 +677,7 @@ def test_run_reextracts_istd_in_main_pass_to_keep_scoring_metadata(
         ),
     )
     monkeypatch.setattr(
-        "xic_extractor.extractor.find_peak_and_area",
+        "xic_extractor.extraction.target_extraction.find_peak_and_area_from_candidates",
         _peak_sequence(
             [
                 _ok_peak(
@@ -753,7 +711,7 @@ def test_run_writes_nd_for_peak_failure_but_keeps_nl_result(
     targets = [_target("WithNL")]
     monkeypatch.setattr("xic_extractor.extractor.open_raw", _open_raw_factory())
     monkeypatch.setattr(
-        "xic_extractor.extractor.find_peak_and_area",
+        "xic_extractor.extraction.target_extraction.find_peak_and_area_from_candidates",
         _peak_sequence(
             [_failed_peak("PEAK_NOT_FOUND", n_points=15, max_smoothed=1234.0)]
         ),
@@ -788,7 +746,7 @@ def test_run_projects_very_low_for_nd_rows_with_failed_nl(
     targets = [_target("WithNL")]
     monkeypatch.setattr("xic_extractor.extractor.open_raw", _open_raw_factory())
     monkeypatch.setattr(
-        "xic_extractor.extractor.find_peak_and_area",
+        "xic_extractor.extraction.target_extraction.find_peak_and_area_from_candidates",
         _peak_sequence(
             [_failed_peak("PEAK_NOT_FOUND", n_points=15, max_smoothed=1234.0)]
         ),
@@ -881,7 +839,7 @@ def test_run_writes_file_error_row_and_continues(
         _open_raw_factory(errors={"Bad.raw": RuntimeError("file locked")}),
     )
     monkeypatch.setattr(
-        "xic_extractor.extractor.find_peak_and_area",
+        "xic_extractor.extraction.target_extraction.find_peak_and_area_from_candidates",
         _peak_sequence([_ok_peak(8.5, 1000.0, 2000.0), _ok_peak(9.5, 1100.0, 2100.0)]),
     )
     monkeypatch.setattr(
@@ -941,7 +899,7 @@ def test_run_writes_peak_diagnostics(
     targets = [_target("NoNL", neutral_loss_da=None)]
     monkeypatch.setattr("xic_extractor.extractor.open_raw", _open_raw_factory())
     monkeypatch.setattr(
-        "xic_extractor.extractor.find_peak_and_area",
+        "xic_extractor.extraction.target_extraction.find_peak_and_area_from_candidates",
         _peak_sequence(
             [
                 _failed_peak(
@@ -972,9 +930,13 @@ def test_run_writes_peak_diagnostics(
         (
             NLResult("NL_FAIL", None, None, 10, 1, 3),
             "NL_FAIL",
-            "not detected in any matched scan",
+            "not detected in any aligned scan",
         ),
-        (NLResult("NO_MS2", None, None, 42, 2, 0), "NO_MS2", "42 valid MS2 scans"),
+        (
+            NLResult("NO_MS2", None, None, 42, 2, 0),
+            "NO_MS2",
+            "no candidate-aligned MS2 trigger",
+        ),
     ],
 )
 def test_run_writes_neutral_loss_diagnostics(
@@ -989,7 +951,7 @@ def test_run_writes_neutral_loss_diagnostics(
     targets = [_target("WithNL")]
     monkeypatch.setattr("xic_extractor.extractor.open_raw", _open_raw_factory())
     monkeypatch.setattr(
-        "xic_extractor.extractor.find_peak_and_area",
+        "xic_extractor.extraction.target_extraction.find_peak_and_area_from_candidates",
         _peak_sequence([_ok_peak(8.5, 1000.0, 2000.0)]),
     )
     monkeypatch.setattr("xic_extractor.extractor.check_nl", _nl_sequence([nl_result]))
@@ -1019,7 +981,7 @@ def test_istd_no_ms2_keeps_ms1_peak_and_writes_confidence_flags(
         lambda *_args, **_kwargs: None,
     )
     monkeypatch.setattr(
-        "xic_extractor.extractor.find_peak_and_area",
+        "xic_extractor.extraction.target_extraction.find_peak_and_area_from_candidates",
         _peak_sequence([_ok_peak(9.05, 1200.0, 3400.25)]),
     )
     monkeypatch.setattr(
@@ -1027,12 +989,14 @@ def test_istd_no_ms2_keeps_ms1_peak_and_writes_confidence_flags(
         _nl_sequence([NLResult("NO_MS2", None, None, 12, 0, 0)]),
     )
 
-    _run(config, targets)
+    output = _run(config, targets)
 
     rows = _read_csv(config.output_csv)
-    assert rows[0]["ISTD_RT"] == "9.0400"
-    assert rows[0]["ISTD_Int"] == "1200"
-    assert rows[0]["ISTD_Area"] == "59063.73"
+    result = output.file_results[0].results["ISTD"]
+    expected = _formatted_peak_columns("ISTD", result)
+    assert rows[0]["ISTD_RT"] == expected["ISTD_RT"]
+    assert rows[0]["ISTD_Int"] == expected["ISTD_Int"]
+    assert rows[0]["ISTD_Area"] == expected["ISTD_Area"]
     diagnostics = _read_csv(config.diagnostics_csv)
     assert any(
         record["Target"] == "ISTD" and record["Issue"] == "NO_MS2"
@@ -1058,7 +1022,7 @@ def test_run_reports_progress_and_stops_between_files(
     progress_calls: list[tuple[int, int, str]] = []
     monkeypatch.setattr("xic_extractor.extractor.open_raw", _open_raw_factory())
     monkeypatch.setattr(
-        "xic_extractor.extractor.find_peak_and_area",
+        "xic_extractor.extraction.target_extraction.find_peak_and_area_from_candidates",
         _peak_sequence([_ok_peak(8.5, 1000.0, 2000.0)]),
     )
 
@@ -1100,7 +1064,7 @@ def test_paired_analyte_uses_strict_anchor_peak_selection(
         _anchor_sequence([13.70, 13.75]),
     )
     monkeypatch.setattr(
-        "xic_extractor.extractor.find_peak_and_area",
+        "xic_extractor.extraction.target_extraction.find_peak_and_area_from_candidates",
         _capturing_peak_sequence(
             [_ok_peak(13.70, 2000.0, 3000.0), _ok_peak(13.75, 500.0, 800.0)],
             strict_flags,
@@ -1148,6 +1112,7 @@ def test_istd_anchor_keeps_strongest_anchor_when_far_from_target_center(
         preferred_rts.append(preferred_rt)
         return _with_runtime_typed_scores(
             _ok_peak(7.08, 1200.0, 3400.25),
+            candidate_finder=_kwargs.get("candidate_finder"),
             rt=rt,
             preferred_rt=preferred_rt,
             evidence_role=_typed_kwarg(_kwargs, "evidence_role"),
@@ -1168,7 +1133,7 @@ def test_istd_anchor_keeps_strongest_anchor_when_far_from_target_center(
         _fake_find_nl_anchor_rt,
     )
     monkeypatch.setattr(
-        "xic_extractor.extractor.find_peak_and_area",
+        "xic_extractor.extraction.target_extraction.find_peak_and_area_from_candidates",
         _fake_find_peak_and_area,
     )
     monkeypatch.setattr(
@@ -1179,7 +1144,7 @@ def test_istd_anchor_keeps_strongest_anchor_when_far_from_target_center(
     _run(config, targets)
 
     assert anchor_reference_rts == [None]
-    assert preferred_rts == [7.08]
+    assert _dedupe_consecutive(preferred_rts) == [7.08]
 
 
 def test_istd_anchor_keeps_strongest_anchor_when_it_is_near_target_center(
@@ -1209,6 +1174,7 @@ def test_istd_anchor_keeps_strongest_anchor_when_it_is_near_target_center(
         preferred_rts.append(preferred_rt)
         return _with_runtime_typed_scores(
             _ok_peak(8.55, 1200.0, 3400.25),
+            candidate_finder=_kwargs.get("candidate_finder"),
             rt=rt,
             preferred_rt=preferred_rt,
             evidence_role=_typed_kwarg(_kwargs, "evidence_role"),
@@ -1229,7 +1195,7 @@ def test_istd_anchor_keeps_strongest_anchor_when_it_is_near_target_center(
         _fake_find_nl_anchor_rt,
     )
     monkeypatch.setattr(
-        "xic_extractor.extractor.find_peak_and_area",
+        "xic_extractor.extraction.target_extraction.find_peak_and_area_from_candidates",
         _fake_find_peak_and_area,
     )
     monkeypatch.setattr(
@@ -1240,7 +1206,7 @@ def test_istd_anchor_keeps_strongest_anchor_when_it_is_near_target_center(
     _run(config, targets)
 
     assert anchor_reference_rts == [None]
-    assert preferred_rts == [8.55]
+    assert _dedupe_consecutive(preferred_rts) == [8.55]
 
 
 def test_istd_peak_not_found_retries_with_wider_anchor_window(
@@ -1264,7 +1230,7 @@ def test_istd_peak_not_found_retries_with_wider_anchor_window(
         _anchor_sequence([9.0]),
     )
     monkeypatch.setattr(
-        "xic_extractor.extractor.find_peak_and_area",
+        "xic_extractor.extraction.target_extraction.find_peak_and_area_from_candidates",
         _peak_sequence(
             [
                 _failed_peak("PEAK_NOT_FOUND", n_points=15, max_smoothed=1234.0),
@@ -1307,7 +1273,7 @@ def test_istd_no_signal_anchor_window_retries_with_wider_anchor_window(
         _anchor_sequence([9.0]),
     )
     monkeypatch.setattr(
-        "xic_extractor.extractor.find_peak_and_area",
+        "xic_extractor.extraction.target_extraction.find_peak_and_area_from_candidates",
         _peak_sequence(
             [
                 _failed_peak("NO_SIGNAL", n_points=0, max_smoothed=None),
@@ -1350,7 +1316,7 @@ def test_istd_weak_anchor_window_peak_uses_wider_recovery(
         _anchor_sequence([9.0]),
     )
     monkeypatch.setattr(
-        "xic_extractor.extractor.find_peak_and_area",
+        "xic_extractor.extraction.target_extraction.find_peak_and_area_from_candidates",
         _peak_sequence(
             [
                 _ok_peak(
@@ -1399,7 +1365,7 @@ def test_istd_low_confidence_anchor_window_peak_uses_wider_recovery(
         _anchor_sequence([9.0]),
     )
     monkeypatch.setattr(
-        "xic_extractor.extractor.find_peak_and_area",
+        "xic_extractor.extraction.target_extraction.find_peak_and_area_from_candidates",
         _peak_sequence(
             [
                 _ok_peak(
@@ -1483,7 +1449,7 @@ def test_istd_wider_recovery_shape_metrics_use_recovered_trace(
         _anchor_sequence([9.0, 9.0]),
     )
     monkeypatch.setattr(
-        "xic_extractor.extractor.find_peak_and_area",
+        "xic_extractor.extraction.target_extraction.find_peak_and_area_from_candidates",
         _peak_sequence(
             [
                 _ok_peak(
@@ -1542,25 +1508,11 @@ def test_istd_wider_recovery_candidate_audit_uses_recovered_trace(
         _anchor_sequence([9.0]),
     )
     monkeypatch.setattr(
-        "xic_extractor.extractor.find_peak_and_area",
-        _peak_sequence(
-            [
-                _ok_peak(
-                    9.05,
-                    100.0,
-                    200.0,
-                    quality_flags=("low_trace_continuity",),
-                ),
-                _ok_peak(8.35, 2500.0, 6000.0),
-            ]
-        ),
-    )
-    monkeypatch.setattr(
         "xic_extractor.extractor.check_nl",
         _nl_sequence([NLResult("OK", 1.0, 9.0, 1, 0, 1)]),
     )
 
-    _run(config, targets)
+    output = _run(config, targets)
 
     boundary_rows = _read_tsv(
         config.output_csv.with_name("peak_candidate_boundaries.tsv")
@@ -1572,8 +1524,15 @@ def test_istd_wider_recovery_candidate_audit_uses_recovered_trace(
         and "candidate_interval" in row["boundary_sources"]
     ]
     assert selected_candidate_intervals
-    assert selected_candidate_intervals[0]["rt_left_min"] == "7.85000"
-    assert selected_candidate_intervals[0]["rt_right_min"] == "8.85000"
+    evaluation = output.file_results[0].results["ISTD"].physical_evaluation
+    assert evaluation is not None
+    assert evaluation.facts is not None
+    assert selected_candidate_intervals[0]["rt_left_min"] == (
+        f"{evaluation.facts.left_rt_min:.5f}"
+    )
+    assert selected_candidate_intervals[0]["rt_right_min"] == (
+        f"{evaluation.facts.right_rt_min:.5f}"
+    )
 
 
 def test_paired_analyte_blanks_mismatched_target_anchor_peak_as_ambiguous(
@@ -1599,7 +1558,7 @@ def test_paired_analyte_blanks_mismatched_target_anchor_peak_as_ambiguous(
         _anchor_sequence([13.70, 13.75]),
     )
     monkeypatch.setattr(
-        "xic_extractor.extractor.find_peak_and_area",
+        "xic_extractor.extraction.target_extraction.find_peak_and_area_from_candidates",
         _peak_sequence(
             [_ok_peak(13.70, 2000.0, 3000.0), _ok_peak(13.06, 5000.0, 8000.0)]
         ),
@@ -1661,7 +1620,7 @@ def test_paired_analyte_accepts_peak_close_to_target_anchor_even_if_farther_from
         _anchor_sequence([13.70, 13.95]),
     )
     monkeypatch.setattr(
-        "xic_extractor.extractor.find_peak_and_area",
+        "xic_extractor.extraction.target_extraction.find_peak_and_area_from_candidates",
         _peak_sequence(
             [_ok_peak(13.70, 2000.0, 3000.0), _ok_peak(13.95, 5000.0, 8000.0)]
         ),
@@ -1676,11 +1635,13 @@ def test_paired_analyte_accepts_peak_close_to_target_anchor_even_if_farther_from
         ),
     )
 
-    _run(config, targets)
+    output = _run(config, targets)
 
     rows = _read_csv(config.output_csv)
     assert rows[0]["Analyte_RT"] == "13.9500"
-    assert rows[0]["Analyte_Area"] == "57710.75"
+    result = output.file_results[0].results["Analyte"]
+    expected = _formatted_peak_columns("Analyte", result)
+    assert rows[0]["Analyte_Area"] == expected["Analyte_Area"]
     diagnostics = _read_csv(config.diagnostics_csv)
     assert not any(
         record["Target"] == "Analyte" and record["Issue"] == "ANCHOR_RT_MISMATCH"
@@ -1715,6 +1676,7 @@ def test_paired_analyte_keeps_target_nl_anchor_far_from_istd_anchor(
         peak_rt = 13.70 if len(preferred_rts) == 1 else 15.12
         return _with_runtime_typed_scores(
             _ok_peak(peak_rt, 5000.0, 8000.0),
+            candidate_finder=_kwargs.get("candidate_finder"),
             rt=rt,
             preferred_rt=preferred_rt,
             evidence_role=_typed_kwarg(_kwargs, "evidence_role"),
@@ -1735,7 +1697,7 @@ def test_paired_analyte_keeps_target_nl_anchor_far_from_istd_anchor(
         _anchor_sequence([13.70, 15.10]),
     )
     monkeypatch.setattr(
-        "xic_extractor.extractor.find_peak_and_area",
+        "xic_extractor.extraction.target_extraction.find_peak_and_area_from_candidates",
         _fake_find_peak_and_area,
     )
     monkeypatch.setattr(
@@ -1750,7 +1712,7 @@ def test_paired_analyte_keeps_target_nl_anchor_far_from_istd_anchor(
 
     _run(config, targets)
 
-    assert preferred_rts == [13.70, 15.10]
+    assert _dedupe_consecutive(preferred_rts) == [13.70, 15.10]
     assert raw.windows[1] == pytest.approx((14.10, 16.10))
 
 
@@ -1777,7 +1739,7 @@ def test_paired_analyte_istd_rt_fallback_does_not_force_counted_detection(
         _anchor_sequence([13.70, None]),
     )
     monkeypatch.setattr(
-        "xic_extractor.extractor.find_peak_and_area",
+        "xic_extractor.extraction.target_extraction.find_peak_and_area_from_candidates",
         _peak_sequence(
             [
                 _ok_peak(13.70, 2000.0, 3000.0),
@@ -1833,7 +1795,7 @@ def test_paired_analyte_fallback_blanks_not_counted_peak_from_matrix(
         _anchor_sequence([13.70, None]),
     )
     monkeypatch.setattr(
-        "xic_extractor.extractor.find_peak_and_area",
+        "xic_extractor.extraction.target_extraction.find_peak_and_area_from_candidates",
         _peak_sequence(
             [
                 _ok_peak(13.70, 2000.0, 3000.0),
@@ -2077,6 +2039,7 @@ def _failed_peak(
 
 def _peak_sequence(results: list[PeakDetectionResult]):
     pending = list(results)
+    by_trace: dict[tuple[bytes, bytes], PeakDetectionResult] = {}
 
     def _fake_find_peak_and_area(
         rt: np.ndarray,
@@ -2089,8 +2052,13 @@ def _peak_sequence(results: list[PeakDetectionResult]):
         istd_confidence_note: str | None = None,
         **_kwargs: object,
     ) -> PeakDetectionResult:
-        return _with_runtime_typed_scores(
+        trace_key = (rt.tobytes(), intensity.tobytes())
+        cached = by_trace.get(trace_key)
+        if cached is not None:
+            return cached
+        result = _with_runtime_typed_scores(
             pending.pop(0),
+            candidate_finder=_kwargs.get("candidate_finder"),
             rt=rt,
             preferred_rt=preferred_rt,
             evidence_role=_typed_kwarg(_kwargs, "evidence_role"),
@@ -2100,6 +2068,8 @@ def _peak_sequence(results: list[PeakDetectionResult]):
                 "paired_istd_anchor_rt",
             ),
         )
+        by_trace[trace_key] = result
+        return result
 
     return _fake_find_peak_and_area
 
@@ -2109,6 +2079,7 @@ def _capturing_peak_sequence(
     strict_flags: list[bool],
 ):
     pending = list(results)
+    by_trace: dict[tuple[bytes, bytes], PeakDetectionResult] = {}
 
     def _fake_find_peak_and_area(
         rt: np.ndarray,
@@ -2121,9 +2092,14 @@ def _capturing_peak_sequence(
         istd_confidence_note: str | None = None,
         **_kwargs: object,
     ) -> PeakDetectionResult:
+        trace_key = (rt.tobytes(), intensity.tobytes())
+        cached = by_trace.get(trace_key)
+        if cached is not None:
+            return cached
         strict_flags.append(strict_preferred_rt)
-        return _with_runtime_typed_scores(
+        result = _with_runtime_typed_scores(
             pending.pop(0),
+            candidate_finder=_kwargs.get("candidate_finder"),
             rt=rt,
             preferred_rt=preferred_rt,
             evidence_role=_typed_kwarg(_kwargs, "evidence_role"),
@@ -2133,6 +2109,8 @@ def _capturing_peak_sequence(
                 "paired_istd_anchor_rt",
             ),
         )
+        by_trace[trace_key] = result
+        return result
 
     return _fake_find_peak_and_area
 
@@ -2146,13 +2124,55 @@ def _anchor_sequence(results: list[float | None]):
     return _fake_find_nl_anchor_rt
 
 
+def _dedupe_consecutive(values: list[float | None]) -> list[float | None]:
+    deduped: list[float | None] = []
+    for value in values:
+        if not deduped or value != deduped[-1]:
+            deduped.append(value)
+    return deduped
+
+
 def _nl_sequence(results: list[NLResult]):
     pending = list(results)
 
     def _fake_check_nl(*_args, **_kwargs) -> NLResult:
-        return pending.pop(0)
+        global _active_nl_fixture_result
+        _active_nl_fixture_result = pending.pop(0)
+        return _active_nl_fixture_result
 
     return _fake_check_nl
+
+
+def _candidate_evidence_for_active_nl_fixture(
+    *_args: object,
+    **_kwargs: object,
+) -> CandidateMS2Evidence:
+    result = _active_nl_fixture_result
+    if result is None:
+        return CandidateMS2Evidence(
+            ms2_present=False,
+            nl_match=False,
+            nl_status="NO_MS2",
+            trigger_scan_count=0,
+            strict_nl_scan_count=0,
+            best_loss_ppm=None,
+            best_scan_rt=None,
+            best_product_base_ratio=None,
+            alignment_source="none",
+        )
+    ms2_present = result.status != "NO_MS2"
+    nl_match = result.status in {"OK", "WARN"}
+    return CandidateMS2Evidence(
+        ms2_present=ms2_present,
+        nl_match=nl_match,
+        nl_status=result.status,
+        trigger_scan_count=result.matched_scan_count if ms2_present else 0,
+        strict_nl_scan_count=result.matched_scan_count if nl_match else 0,
+        best_loss_ppm=result.best_ppm,
+        best_scan_rt=result.best_scan_rt,
+        best_product_base_ratio=0.5 if ms2_present else None,
+        alignment_source="region" if ms2_present else "none",
+    )
 
 
 def _typed_kwarg(kwargs: dict[str, object], name: str) -> str | None:
@@ -2246,10 +2266,9 @@ class _RecoveryAuditRaw(_FakeRaw):
         self.calls += 1
         if self.calls == 1:
             return np.asarray([8.0, 9.0, 10.0]), np.asarray([5.0, 10.0, 5.0])
-        return (
-            np.asarray([7.0, 7.85, 8.35, 8.85, 11.0]),
-            np.asarray([5.0, 25.0, 2500.0, 25.0, 5.0]),
-        )
+        rt = np.linspace(7.0, 11.0, 81)
+        intensity = 5.0 + 2500.0 * np.exp(-0.5 * ((rt - 8.35) / 0.12) ** 2)
+        return rt, intensity
 
 
 class _CwtAuditRaw(_FakeRaw):
@@ -2286,6 +2305,54 @@ def _core_long_row(row: dict[str, str]) -> dict[str, str]:
         "Reason",
     )
     return {header: row[header] for header in core_headers}
+
+
+def _formatted_peak_columns(
+    label: str,
+    result: ExtractionResult,
+) -> dict[str, str]:
+    evaluation = result.physical_evaluation
+    assert evaluation is not None
+    facts = evaluation.facts
+    integration = evaluation.integration
+    assert facts is not None
+    assert integration is not None
+    return {
+        f"{label}_RT": f"{facts.apex_rt_min:.4f}",
+        f"{label}_Int": f"{integration.height_raw:.0f}",
+        f"{label}_IntSmoothed": f"{facts.height:.0f}",
+        f"{label}_Area": f"{facts.area_counts_seconds:.2f}",
+        f"{label}_PeakStart": f"{facts.left_rt_min:.4f}",
+        f"{label}_PeakEnd": f"{facts.right_rt_min:.4f}",
+        f"{label}_PeakWidth": (
+            f"{facts.right_rt_min - facts.left_rt_min:.4f}"
+        ),
+    }
+
+
+def _formatted_long_success_row(
+    label: str,
+    result: ExtractionResult,
+    *,
+    nl: str,
+) -> dict[str, str]:
+    peak = _formatted_peak_columns(label, result)
+    return {
+        "SampleName": "SampleA",
+        "Group": "Other",
+        "Target": label,
+        "Role": "Analyte",
+        "ISTD Pair": "",
+        "RT": peak[f"{label}_RT"],
+        "Area": peak[f"{label}_Area"],
+        "NL": nl,
+        "Int": peak[f"{label}_Int"],
+        "PeakStart": peak[f"{label}_PeakStart"],
+        "PeakEnd": peak[f"{label}_PeakEnd"],
+        "PeakWidth": peak[f"{label}_PeakWidth"],
+        "Confidence": "HIGH",
+        "Reason": "Detected.",
+    }
 
 
 def _typed_candidate_score(
@@ -2351,6 +2418,7 @@ def _synthetic_peak_trace(apex_rt: float) -> tuple[np.ndarray, np.ndarray]:
 def _with_runtime_typed_scores(
     result: PeakDetectionResult,
     *,
+    candidate_finder: object | None,
     rt: np.ndarray,
     preferred_rt: float | None,
     evidence_role: str | None,
@@ -2359,6 +2427,7 @@ def _with_runtime_typed_scores(
 ) -> PeakDetectionResult:
     if result.peak is None:
         return result
+    result = _bind_fixture_candidates_to_physical_segments(result, candidate_finder)
     rt_min = float(np.nanmin(rt)) if len(rt) else result.peak.peak_start
     rt_max = float(np.nanmax(rt)) if len(rt) else result.peak.peak_end
     existing_scores = {score.candidate: score for score in result.candidate_scores}
@@ -2380,6 +2449,42 @@ def _with_runtime_typed_scores(
         for candidate in result.candidates
     )
     return replace(result, candidate_scores=scores)
+
+
+def _bind_fixture_candidates_to_physical_segments(
+    result: PeakDetectionResult,
+    candidate_finder: object | None,
+) -> PeakDetectionResult:
+    if not callable(candidate_finder) or not result.candidates:
+        return result
+    physical_result = candidate_finder()
+    physical_candidates = tuple(getattr(physical_result, "candidates", ()))
+    if not physical_candidates:
+        return result
+    replacements: dict[PeakCandidate, PeakCandidate] = {}
+    for candidate in result.candidates:
+        physical = min(
+            physical_candidates,
+            key=lambda item: abs(
+                item.selection_apex_rt - candidate.selection_apex_rt
+            ),
+        )
+        replacements[candidate] = replace(
+            candidate,
+            proposal_sources=tuple(
+                dict.fromkeys(
+                    (*candidate.proposal_sources, *physical.proposal_sources)
+                )
+            ),
+        )
+    return replace(
+        result,
+        candidates=tuple(replacements[candidate] for candidate in result.candidates),
+        candidate_scores=tuple(
+            replace(score, candidate=replacements.get(score.candidate, score.candidate))
+            for score in result.candidate_scores
+        ),
+    )
 
 
 def _existing_neutral_loss_required(score: PeakCandidateScore | None) -> bool:

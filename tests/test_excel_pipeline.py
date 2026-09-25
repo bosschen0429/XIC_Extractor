@@ -88,7 +88,8 @@ def test_write_excel_from_run_output_uses_in_memory_rows_and_metadata(
         "config_hash",
         "app_version",
         "generated_at",
-        "resolver_mode",
+        "signal_processing_method",
+        "signal_processing_window_points",
     } <= metadata_keys
 
 
