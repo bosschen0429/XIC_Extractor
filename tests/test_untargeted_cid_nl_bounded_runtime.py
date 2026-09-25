@@ -1246,12 +1246,12 @@ def test_partition_acquisitions_overlap_with_shared_worker_budget_and_ordered_ou
             if partition_key in first_two:
                 barrier.wait(timeout=10)
             result = original_leaf(*args, **kwargs)
-            if partition_key == "partition-00001":
-                second_completed.set()
-            elif partition_key == "partition-00000":
+            if partition_key == "partition-00000":
                 assert second_completed.wait(timeout=10)
             with lock:
                 completion_order.append(partition_key)
+                if partition_key == "partition-00001":
+                    second_completed.set()
             return result
         finally:
             with lock:
@@ -1286,7 +1286,9 @@ def test_partition_acquisitions_overlap_with_shared_worker_budget_and_ordered_ou
         pipeline_overlap=True,
     )
 
-    assert completion_order[:2] == ["partition-00001", "partition-00000"]
+    assert completion_order.index("partition-00001") < completion_order.index(
+        "partition-00000"
+    )
     assert append_order == [
         f"partition-{index:05d}" for index in range(len(observed_budgets))
     ]

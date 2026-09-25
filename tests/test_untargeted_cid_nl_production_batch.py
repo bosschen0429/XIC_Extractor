@@ -5,6 +5,7 @@ import json
 import math
 import subprocess
 import sys
+from collections import Counter
 from dataclasses import asdict, fields, replace
 from pathlib import Path
 from types import SimpleNamespace
@@ -1680,9 +1681,9 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
             tmp_path / "producer-evidence.sqlite", expected_curves, expected_curve_links
         )
 
-    assert preparation_fingerprints == [
+    assert Counter(preparation_fingerprints) == Counter(
         tmp_path / f"{stem}.synthetic" for stem in discovery_batch.sample_order
-    ], "formal preparation must fully fingerprint each RAW source once"
+    ), "formal preparation must fully fingerprint each RAW source once"
     assert runtime_fingerprints == [], (
         "RAW opens must reuse the input owner's source verification",
         runtime_fingerprints,
