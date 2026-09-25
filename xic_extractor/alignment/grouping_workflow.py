@@ -47,6 +47,7 @@ from xic_extractor.alignment.mode_track.contracts import (
     apply_accepted_mode_track_refinement,
 )
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
+from xic_extractor.mass_accuracy import within_ppm
 from xic_extractor.peak_detection.capture import SampleLocalCapture
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessmentRef,
@@ -503,7 +504,7 @@ def merge_sample_disjoint_groups(
     pairs = []
     for index, first in enumerate(candidates):
         for second in candidates[index + 1 :]:
-            if not _within_ppm(
+            if not within_ppm(
                 first.family_center_mz, second.family_center_mz, config.preferred_ppm
             ):
                 break
@@ -595,9 +596,7 @@ def _is_shoulder_of(
             owner.owner_peak_end_rt == neighbour.owner_peak_start_rt
             or owner.owner_peak_start_rt == neighbour.owner_peak_end_rt
         )
-        and _within_ppm(
-            owner.precursor_mz, neighbour.precursor_mz, config.preferred_ppm
-        )
+        and within_ppm(owner.precursor_mz, neighbour.precursor_mz, config.preferred_ppm)
     )
 
 
@@ -654,7 +653,7 @@ def contested_backfill_peaks(
                 or key in occupied
                 or any(
                     holder != group_id
-                    and _within_ppm(content.mz, mz, alignment_config.preferred_ppm)
+                    and within_ppm(content.mz, mz, alignment_config.preferred_ppm)
                     for mz, holder in at_apex[
                         (sample_id, content.integration.rt_apex_min)
                     ]
@@ -662,10 +661,6 @@ def contested_backfill_peaks(
             ):
                 contested.add(key)
     return frozenset(contested)
-
-
-def _within_ppm(first: float, second: float, ppm: float) -> bool:
-    return abs(first - second) <= ppm * 1e-6 * max(abs(first), abs(second))
 
 
 def _partition_transition(
