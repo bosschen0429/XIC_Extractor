@@ -922,7 +922,7 @@ def test_retry_issues_new_attempt_without_mutating_request_or_predecessor(
     }
 
     changed_request = _request(
-        replace(_config(tmp_path), peak_rel_height=0.03),
+        replace(_config(tmp_path), nl_min_intensity_ratio=0.02),
         [path],
         resolved=ResolvedTargetedInputs(
             injection_order={"sample_a": 1},
