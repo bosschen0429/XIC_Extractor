@@ -685,7 +685,7 @@ def test_arbitrated_resolver_mode_is_retired() -> None:
     rt = np.linspace(8.0, 8.30, 31)
     intensity = _gaussian(rt, center=7.96, sigma=0.06, height=1500.0) + 5.0
 
-    with pytest.raises(ValueError, match="retired; use region_first_safe_merge"):
+    with pytest.raises(ValueError, match="arbitrated resolver mode is retired"):
         find_peak_candidates(
             rt,
             intensity,
@@ -701,31 +701,6 @@ def test_arbitrated_resolver_mode_is_retired() -> None:
                 resolver_min_scans=5,
             ),
         )
-
-
-def test_region_first_safe_merge_routes_to_local_minimum_candidate_finder() -> None:
-    rt = np.linspace(8.0, 8.30, 31)
-    intensity = _gaussian(rt, center=8.12, sigma=0.04, height=1500.0) + 5.0
-
-    result = find_peak_candidates(
-        rt,
-        intensity,
-        _config(
-            resolver_mode="region_first_safe_merge",
-            resolver_chrom_threshold=0.05,
-            resolver_min_search_range_min=0.04,
-            resolver_min_relative_height=0.05,
-            resolver_min_absolute_height=25.0,
-            resolver_min_ratio_top_edge=1.3,
-            resolver_peak_duration_min=0.03,
-            resolver_peak_duration_max=0.50,
-            resolver_min_scans=5,
-        ),
-    )
-
-    assert result.status == "OK"
-    assert result.candidates
-    assert result.candidates[0].proposal_sources == ("local_minimum",)
 
 
 def test_unknown_resolver_mode_is_rejected() -> None:

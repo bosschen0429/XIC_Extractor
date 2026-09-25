@@ -14,7 +14,6 @@ from xic_extractor.alignment.primary_matrix_area import (
 )
 from xic_extractor.extractor import ExtractionResult
 from xic_extractor.output.schema import LONG_COLUMNS
-from xic_extractor.peak_detection import region_safe_merge
 from xic_extractor.peak_detection.hypotheses import (
     AuditTrail,
     EvidenceVector,
@@ -122,14 +121,6 @@ def test_peak_candidate_boundaries_recompute_baseline_for_rendering() -> None:
 
     assert "integrate_with_baseline(" in source
     assert "baseline_score=baseline.baseline_score" in source
-
-
-def test_region_first_safe_merge_remains_compatibility_not_envelope_authority() -> None:
-    source = inspect.getsource(region_safe_merge.apply_region_first_safe_merge_decision)
-
-    assert "eligibility_for_region_first_safe_merge" in source
-    assert "selected_full_envelope" not in source
-    assert "legacy_resolver_provenance" not in source
 
 
 def _hypothesis(integration: IntegrationResult) -> PeakHypothesis:

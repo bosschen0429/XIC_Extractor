@@ -6,6 +6,8 @@ from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+import numpy as np
+
 from xic_extractor.config import ExtractionConfig, Target
 from xic_extractor.extraction.anchors import (
     apply_anchor_mismatch_penalty,
@@ -19,7 +21,6 @@ from xic_extractor.extraction.diagnostics import (
 )
 from xic_extractor.extraction.drift import estimate_sample_drift
 from xic_extractor.extraction.handoff_spine_runtime import (
-    promote_targeted_boundary_hypothesis,
     selected_handoff_peak,
 )
 from xic_extractor.extraction.istd_anchor_retry import retry_istd_anchor_peak_if_needed
@@ -38,16 +39,36 @@ from xic_extractor.output.messages import (
     build_diagnostic_records,
     istd_confidence_note,
 )
+from xic_extractor.peak_detection.engine import (
+    find_peak_and_area as find_peak_and_area_from_candidates,
+)
 from xic_extractor.peak_detection.model_selection import ExpectedDiffApprovalRecords
-from xic_extractor.peak_detection.ms1_morphology import (
-    configured_morphology_window_points,
+from xic_extractor.peak_detection.models import (
+    PeakCandidatesResult,
+    PeakDetectionResult,
+    PeakResult,
+    PeakStatus,
 )
-from xic_extractor.peak_detection.selected_envelope import (
-    SelectedEnvelopeBoundaryEvaluation,
+from xic_extractor.peak_detection.observations import (
+    physical_peak_observation_integration,
 )
+from xic_extractor.peak_detection.physical_peak_evaluation import (
+    answer_physical_peak_question,
+    enumerate_physical_segment_universe,
+    mint_physical_peak_question,
+    prepare_physical_signal,
+)
+from xic_extractor.peak_detection.physical_peak_models import (
+    PhysicalSegment,
+    PhysicalSegmentUniverse,
+    PreparedSignalResult,
+)
+from xic_extractor.peak_detection.scoring_models import ScoringContext
 from xic_extractor.peak_detection.selection_decision import (
-    PeakHypothesisSelectionDecision,
     selection_decision_from_hypothesis,
+)
+from xic_extractor.peak_detection.signal_processing_profile import (
+    resolve_signal_processing_profile,
 )
 from xic_extractor.processing_identity import AcquisitionSourceExpectation
 from xic_extractor.rt_prior_library import LibraryEntry
@@ -245,8 +266,11 @@ def extract_one_target(
     shape_metrics_by_label: dict[str, tuple[float, float | None]] | None = None,
     model_selection_expected_diff_approvals: ExpectedDiffApprovalRecords | None = None,
 ) -> float | None:
-    from xic_extractor import extractor
-
+    selection_config = replace(
+        config,
+        resolver_mode="local_minimum",
+        baseline_integration_method="asls",
+    )
     target_reference_rt = paired_target_reference_rt(
         target,
         reference_rt=reference_rt,
@@ -262,6 +286,81 @@ def extract_one_target(
     )
     rt, intensity = raw.extract_xic(target.mz, rt_min, rt_max, target.ppm_tol)
     nl_result = check_target_nl(raw, target, config)
+    profile = resolve_signal_processing_profile(
+        signal_processing_method=config.signal_processing_method,
+        signal_processing_window_points=config.signal_processing_window_points,
+    )
+    physical_trace_cache: dict[
+        tuple[bytes, bytes],
+        tuple[PreparedSignalResult, PhysicalSegmentUniverse, PeakCandidatesResult],
+    ] = {}
+
+    def _physical_trace_owners(
+        rt_values: object,
+        intensity_values: object,
+    ) -> tuple[PreparedSignalResult, PhysicalSegmentUniverse, PeakCandidatesResult]:
+        rt_array = np.asarray(rt_values, dtype=float)
+        intensity_array = np.asarray(intensity_values, dtype=float)
+        cache_key = (rt_array.tobytes(), intensity_array.tobytes())
+        cached = physical_trace_cache.get(cache_key)
+        if cached is not None:
+            return cached
+        prepared_result = prepare_physical_signal(
+            rt_array,
+            intensity_array,
+            profile=profile,
+        )
+        segment_universe = enumerate_physical_segment_universe(
+            prepared_result,
+            request_context_rt_start_min=rt_min,
+            request_context_rt_end_min=rt_max,
+        )
+        cached = (
+            prepared_result,
+            segment_universe,
+            _physical_candidates_result(prepared_result, segment_universe),
+        )
+        physical_trace_cache[cache_key] = cached
+        return cached
+
+    def _find_physical_peak(
+        rt_values: object,
+        intensity_values: object,
+        _config: ExtractionConfig,
+        *,
+        preferred_rt: float | None = None,
+        strict_preferred_rt: bool = False,
+        scoring_context_builder: (
+            Callable[[PeakCandidate], ScoringContext] | None
+        ) = None,
+        istd_confidence_note: str | None = None,
+        evidence_role: str = "",
+        istd_pair: str = "",
+        paired_istd_anchor_rt: float | None = None,
+    ) -> PeakDetectionResult:
+        _, _, candidates_result = _physical_trace_owners(
+            rt_values, intensity_values
+        )
+
+        def _find_candidates(
+            *_args: object, **_kwargs: object
+        ) -> PeakCandidatesResult:
+            return candidates_result
+
+        return find_peak_and_area_from_candidates(
+            np.asarray(rt_values, dtype=float),
+            np.asarray(intensity_values, dtype=float),
+            selection_config,
+            candidate_finder=_find_candidates,
+            preferred_rt=preferred_rt,
+            strict_preferred_rt=strict_preferred_rt,
+            scoring_context_builder=scoring_context_builder,
+            istd_confidence_note=istd_confidence_note,
+            evidence_role=evidence_role,
+            istd_pair=istd_pair,
+            paired_istd_anchor_rt=paired_istd_anchor_rt,
+        )
+
     scoring_context_builder = None
     candidate_ms2_builder = candidate_ms2_evidence_builder(raw, target, config)
     candidate_ms2_cache: dict[PeakCandidate, CandidateMS2Evidence] = {}
@@ -291,10 +390,10 @@ def extract_one_target(
                 candidate_ms2_evidence_builder=_cached_candidate_ms2_builder,
             )
         if scoring_context_builder is not None:
-            peak_result = extractor.find_peak_and_area(
+            peak_result = _find_physical_peak(
                 rt,
                 intensity,
-                config,
+                selection_config,
                 preferred_rt=anchor_rt,
                 strict_preferred_rt=strict_preferred_rt,
                 scoring_context_builder=scoring_context_builder,
@@ -304,10 +403,10 @@ def extract_one_target(
                 paired_istd_anchor_rt=istd_rt_in_this_sample,
             )
         else:
-            peak_result = extractor.find_peak_and_area(
+            peak_result = _find_physical_peak(
                 rt,
                 intensity,
-                config,
+                selection_config,
                 preferred_rt=anchor_rt,
                 strict_preferred_rt=strict_preferred_rt,
                 evidence_role="ISTD" if target.is_istd else "Analyte",
@@ -336,7 +435,7 @@ def extract_one_target(
     retry_decision = retry_istd_anchor_peak_if_needed(
         peak_result,
         raw=raw,
-        config=config,
+        config=selection_config,
         target=target,
         anchor_used=anchor_used,
         anchor_rt=anchor_rt,
@@ -347,9 +446,39 @@ def extract_one_target(
         istd_confidence_note=istd_confidence_note,
         istd_rt_in_this_sample=istd_rt_in_this_sample,
         paired_istd_fwhm=paired_istd_fwhm,
-        peak_finder=extractor.find_peak_and_area,
+        peak_finder=_find_physical_peak,
     )
     peak_result = retry_decision.peak_result
+    audit_rt = retry_decision.rt if retry_decision.rt is not None else rt
+    audit_intensity = (
+        retry_decision.intensity
+        if retry_decision.intensity is not None
+        else intensity
+    )
+    if retry_decision.rt is not None and scoring_context_factory is not None:
+        scoring_context_builder = scoring_context_factory(
+            target=target,
+            sample_name=sample_name,
+            rt=audit_rt,
+            intensity=audit_intensity,
+            istd_rt_in_this_sample=istd_rt_in_this_sample,
+            paired_istd_fwhm=paired_istd_fwhm,
+            nl_result=nl_result,
+            candidate_ms2_evidence_builder=_cached_candidate_ms2_builder,
+        )
+    prepared, universe, _ = _physical_trace_owners(audit_rt, audit_intensity)
+    peak_result = _find_physical_peak(
+        audit_rt,
+        audit_intensity,
+        selection_config,
+        preferred_rt=anchor_rt,
+        strict_preferred_rt=strict_preferred_rt,
+        scoring_context_builder=scoring_context_builder,
+        istd_confidence_note=istd_confidence_note,
+        evidence_role="ISTD" if target.is_istd else "Analyte",
+        istd_pair=target.istd_pair,
+        paired_istd_anchor_rt=istd_rt_in_this_sample,
+    )
     paired_rejection = paired_anchor_mismatch_diagnostic(
         sample_name,
         target,
@@ -369,18 +498,12 @@ def extract_one_target(
             peak_result,
             paired_istd_anchor_rt=istd_rt_in_this_sample,
         )
-    audit_rt = retry_decision.rt if retry_decision.rt is not None else rt
-    audit_intensity = (
-        retry_decision.intensity
-        if retry_decision.intensity is not None
-        else intensity
-    )
     shape_metrics = selected_shape_metrics(audit_intensity, peak_result)
     candidate = selected_candidate(peak_result)
     if shape_metrics_by_label is not None and shape_metrics is not None:
         shape_metrics_by_label[target.label] = shape_metrics
     handoff_peak = selected_handoff_peak(
-        config=config,
+        config=selection_config,
         sample_name=sample_name,
         target=target,
         peak_result=peak_result,
@@ -395,47 +518,54 @@ def extract_one_target(
         paired_istd_anchor_rt=istd_rt_in_this_sample,
         model_selection_expected_diff_approvals=model_selection_expected_diff_approvals,
     )
-    if handoff_peak.selected_hypothesis is not None:
-        guard_rt = audit_rt
-        guard_intensity = audit_intensity
-        if handoff_peak.trace_group is not None:
-            guard_trace = handoff_peak.trace_group.primary_trace
-            guard_rt = guard_trace.rt
-            guard_intensity = guard_trace.intensity
-        context_rt_start, context_rt_end = _trace_rt_bounds(
-            guard_rt,
-            fallback_start=rt_min,
-            fallback_end=rt_max,
+    physical_evaluation = None
+    if handoff_peak.trace_group is not None:
+        selected_physical_segment = _selected_physical_segment(
+            selected_candidate(peak_result), universe
         )
-        morphology_window_points = configured_morphology_window_points(config)
-        boundary_promotion = promote_targeted_boundary_hypothesis(
-            handoff_peak.selected_hypothesis,
-            rt=guard_rt,
-            intensity=guard_intensity,
-            context_rt_start=context_rt_start,
-            context_rt_end=context_rt_end,
-            morphology_window_points=morphology_window_points,
+        query_rt_min = (
+            selected_physical_segment.apex_rt_min
+            if selected_physical_segment is not None
+            else None
         )
-        promoted_hypothesis = boundary_promotion.hypothesis
-        if promoted_hypothesis is not handoff_peak.selected_hypothesis:
-            handoff_peak = replace(
-                handoff_peak,
-                selected_hypothesis=promoted_hypothesis,
-                selection_decision=selection_decision_from_hypothesis(
-                    promoted_hypothesis,
-                    peak_result=peak_result,
+        if query_rt_min is None and universe.state != "available":
+            acquisition_trace = handoff_peak.trace_group.primary_trace
+            query_rt_min = (acquisition_trace.rt_min + acquisition_trace.rt_max) / 2
+        if query_rt_min is not None:
+            question = mint_physical_peak_question(
+                prepared.projection,
+                universe,
+                selection_subject_id=target.label,
+                query_rt_min=query_rt_min,
+            )
+            physical_evaluation = answer_physical_peak_question(
+                prepared,
+                universe,
+                question,
+            )
+        physical_hypothesis = None
+        if (
+            handoff_peak.selected_hypothesis is not None
+            and physical_evaluation is not None
+            and physical_evaluation.integration is not None
+        ):
+            physical_hypothesis = replace(
+                handoff_peak.selected_hypothesis,
+                integration=physical_peak_observation_integration(
+                    physical_evaluation
                 ),
             )
-        if (
-            boundary_promotion.selected_envelope_evaluation is not None
-            and handoff_peak.selection_decision is not None
-            and not boundary_promotion.chrom_segment_boundary_accepted
-        ):
+        if handoff_peak.selected_hypothesis is not None:
             handoff_peak = replace(
                 handoff_peak,
-                selection_decision=_selected_envelope_guarded_decision(
-                    handoff_peak.selection_decision,
-                    boundary_promotion.selected_envelope_evaluation,
+                selected_hypothesis=physical_hypothesis,
+                selection_decision=(
+                    handoff_peak.selection_decision
+                    if physical_hypothesis is None
+                    else selection_decision_from_hypothesis(
+                        physical_hypothesis,
+                        peak_result=peak_result,
+                    )
                 ),
             )
 
@@ -454,6 +584,7 @@ def extract_one_target(
             if handoff_peak.trace_group is None
             else handoff_peak.trace_group.primary_trace
         ),
+        physical_evaluation=physical_evaluation,
         sample_name=sample_name,
     )
     results[target.label] = result
@@ -495,6 +626,106 @@ def extract_one_target(
     return anchor_rt
 
 
+def _physical_candidates_result(
+    prepared_result: PreparedSignalResult,
+    universe: PhysicalSegmentUniverse,
+) -> PeakCandidatesResult:
+    prepared = prepared_result.prepared
+    if universe.state != "available" or prepared is None:
+        status: PeakStatus = (
+            "NO_SIGNAL"
+            if universe.reason == "no_signal_above_baseline"
+            else "PEAK_NOT_FOUND"
+        )
+        return PeakCandidatesResult(
+            status=status,
+            candidates=(),
+            n_points=prepared_result.projection.trace_point_count,
+            max_smoothed=None,
+            n_prominent_peaks=0,
+        )
+    candidates = tuple(
+        _physical_segment_candidate(prepared_result, segment)
+        for segment in universe.segments
+    )
+    if not candidates:
+        return PeakCandidatesResult(
+            status="PEAK_NOT_FOUND",
+            candidates=(),
+            n_points=len(prepared.rt),
+            max_smoothed=max(prepared.smoothed, default=None),
+            n_prominent_peaks=0,
+        )
+    return PeakCandidatesResult(
+        status="OK",
+        candidates=candidates,
+        n_points=len(prepared.rt),
+        max_smoothed=max(prepared.smoothed, default=None),
+        n_prominent_peaks=len(candidates),
+    )
+
+
+def _physical_segment_candidate(
+    prepared_result: PreparedSignalResult,
+    segment: PhysicalSegment,
+) -> PeakCandidate:
+    prepared = prepared_result.prepared
+    assert prepared is not None
+    raw_apex = float(prepared.raw[segment.apex_index])
+    smoothed_apex = float(prepared.smoothed[segment.apex_index])
+    duration = segment.right_rt_min - segment.left_rt_min
+    edge_signal = max(
+        float(prepared.positive_signal[segment.start_index]),
+        float(prepared.positive_signal[segment.end_index - 1]),
+    )
+    edge_ratio = edge_signal / segment.height if segment.height > 0 else None
+    return PeakCandidate(
+        peak=PeakResult(
+            rt=segment.apex_rt_min,
+            intensity=raw_apex,
+            intensity_smoothed=smoothed_apex,
+            area=segment.area_counts_seconds,
+            peak_start=segment.left_rt_min,
+            peak_end=segment.right_rt_min,
+        ),
+        selection_apex_rt=segment.apex_rt_min,
+        selection_apex_intensity=smoothed_apex,
+        selection_apex_index=segment.apex_index,
+        raw_apex_rt=segment.apex_rt_min,
+        raw_apex_intensity=raw_apex,
+        raw_apex_index=segment.apex_index,
+        prominence=segment.height,
+        region_scan_count=segment.scan_support_count,
+        region_duration_min=duration,
+        region_edge_ratio=edge_ratio,
+        region_trace_continuity=1.0,
+        proposal_sources=(f"physical_segment:{segment.physical_segment_id}",),
+    )
+
+
+def _selected_physical_segment(
+    candidate: PeakCandidate | None,
+    universe: PhysicalSegmentUniverse,
+) -> PhysicalSegment | None:
+    if candidate is None:
+        return None
+    segment_ids = {
+        source.removeprefix("physical_segment:")
+        for source in candidate.proposal_sources
+        if source.startswith("physical_segment:")
+    }
+    matches = tuple(
+        segment
+        for segment in universe.segments
+        if segment.physical_segment_id in segment_ids
+    )
+    if len(matches) != 1:
+        raise ValueError(
+            "selected Targeted candidate must identify one physical segment"
+        )
+    return matches[0]
+
+
 def paired_target_reference_rt(
     target: Target,
     *,
@@ -533,60 +764,3 @@ def credible_istd_anchor_rt(result: ExtractionResult | None) -> float | None:
 
 def _finite_positive(value: float | None) -> bool:
     return value is not None and math.isfinite(value) and value > 0
-
-
-def _trace_rt_bounds(
-    rt_values: Any,
-    *,
-    fallback_start: float,
-    fallback_end: float,
-) -> tuple[float, float]:
-    try:
-        values = [float(value) for value in rt_values]
-    except (TypeError, ValueError):
-        values = []
-    finite_values = [value for value in values if math.isfinite(value)]
-    if len(finite_values) >= 2:
-        return min(finite_values), max(finite_values)
-    return min(float(fallback_start), float(fallback_end)), max(
-        float(fallback_start),
-        float(fallback_end),
-    )
-
-
-def _selected_envelope_guarded_decision(
-    decision: PeakHypothesisSelectionDecision,
-    evaluation: SelectedEnvelopeBoundaryEvaluation,
-) -> PeakHypothesisSelectionDecision:
-    if evaluation.row_boundary_decision == "accept_candidate":
-        return decision
-    guard = f"selected_envelope_{evaluation.boundary_change_class}"
-    if (
-        evaluation.boundary_change_class == "split_supported"
-        and evaluation.selected_boundary_mode == "review_only"
-        and evaluation.row_boundary_decision == "externalize"
-    ):
-        # The expansion stays diagnostic; the selected resolver interval remains.
-        return replace(
-            decision,
-            projected_reason=f"{decision.projected_reason}; review: {guard}",
-            review_reasons=_append_unique(decision.review_reasons, guard),
-        )
-    not_counted = f"selected_envelope_boundary_{evaluation.row_boundary_decision}"
-    projected_reason = (
-        f"decision: not_counted; not_counted: {not_counted}; review: {guard}"
-    )
-    return replace(
-        decision,
-        projected_confidence="VERY_LOW",
-        projected_reason=projected_reason,
-        review_reasons=_append_unique(decision.review_reasons, guard),
-        not_counted_reasons=_append_unique(
-            decision.not_counted_reasons,
-            not_counted,
-        ),
-    )
-
-
-def _append_unique(values: tuple[str, ...], value: str) -> tuple[str, ...]:
-    return tuple(dict.fromkeys((*values, value)))

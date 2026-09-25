@@ -50,6 +50,7 @@ from xic_extractor.execution_runtime_owner import (
 )
 from xic_extractor.extraction.targeted_inputs import (
     ResolvedTargetedInputs,
+    bind_targeted_physical_capture_request,
     build_targeted_processing_request_identity,
     resolve_targeted_inputs,
     resolve_targeted_raw_paths,
@@ -95,6 +96,10 @@ from xic_extractor.peak_detection.search_scope import (
     EvidenceProviderBinding,
     TargetSearchScope,
     target_ms1_subject_id,
+)
+from xic_extractor.peak_detection.signal_processing_profile import (
+    SignalProcessingProfile,
+    resolve_signal_processing_profile,
 )
 from xic_extractor.peak_detection.traces import Trace
 from xic_extractor.processing_identity import (
@@ -262,7 +267,6 @@ def prepare_targeted_production_workflow(
     )
     resolved_inputs = current_inputs.resolved_inputs
     target_snapshot = current_inputs.target_snapshot
-    processing_request = current_inputs.processing_request
     rows = tuple(
         SampleMetadata(
             sample_name=file_result.sample_name,
@@ -279,11 +283,34 @@ def prepare_targeted_production_workflow(
     samples = tuple(
         resolve_canonical_sample_identity(sample_snapshot, row.raw_stem) for row in rows
     )
-    attempt = issue_processing_attempt(processing_request)
     resolved_targets = tuple(
         resolve_target_definition(target_snapshot, target.label)
         for target in request.targets
     )
+    profile = _targeted_signal_processing_profile(request.config)
+    physical_evaluations = {}
+    for sample, (_, file_result) in zip(
+        samples,
+        results_by_raw_path,
+        strict=True,
+    ):
+        for target in resolved_targets:
+            result = file_result.results.get(target.definition.target.label)
+            if result is not None and result.physical_evaluation is not None:
+                physical_evaluations[_candidate_id(target, sample)] = (
+                    result.physical_evaluation
+                )
+    if any(
+        evaluation.prepared.profile_id != profile.profile_id
+        for evaluation in physical_evaluations.values()
+    ):
+        raise RuntimeError("Targeted acquisition crossed its configured signal profile")
+    processing_request = bind_targeted_physical_capture_request(
+        current_inputs.processing_request,
+        profile=profile,
+        evaluations=physical_evaluations,
+    )
+    attempt = issue_processing_attempt(processing_request)
     owners = compose_processing_owner_references(
         request=processing_request,
         attempt=attempt,
@@ -491,7 +518,8 @@ def _execute_target(
             raise RuntimeError(
                 "MS1-only Target is missing retained acquisition evidence"
             )
-        candidates.append((sample, extraction, _candidate_id(target, sample)))
+        if extraction.physical_evaluation is not None:
+            candidates.append((sample, extraction, _candidate_id(target, sample)))
     bindings = tuple(
         _capture_binding(
             context.owners,
@@ -500,7 +528,6 @@ def _execute_target(
             result,
             candidate_id,
             method_subject_id=method_subject_id,
-            retained_only=ms1_only,
         )
         for sample, result, candidate_id in candidates
     )
@@ -509,8 +536,11 @@ def _execute_target(
         request=context.owners.request,
         samples=context.samples,
         method_constraints=CaptureMethodConstraints(
-            boundary_policy="targeted_gaussian15",
+            boundary_policy="resolver_interval",
             peak_config=request.config,
+            signal_processing_profile=_targeted_signal_processing_profile(
+                request.config
+            ),
         ),
         evidence_providers=(
             ()
@@ -846,7 +876,6 @@ def _capture_binding(
     candidate_id: str,
     *,
     method_subject_id: str,
-    retained_only: bool,
 ) -> CaptureCandidateBinding:
     trace = _target_capture_trace(
         owners,
@@ -854,20 +883,10 @@ def _capture_binding(
         result,
         target.definition.target,
     )
-    target_value = target.definition.target
-    retained_integration = (
-        None
-        if result.selected_hypothesis is None
-        else result.selected_hypothesis.integration
-    )
-    if retained_integration is not None and not _matches_target_rt(
-        retained_integration.rt_apex_min,
-        target_value,
-    ):
-        retained_integration = None
-    preferred_rt = result.reported_rt
-    if preferred_rt is None or not _matches_target_rt(preferred_rt, target_value):
-        preferred_rt = (target_value.rt_min + target_value.rt_max) / 2
+    physical_evaluation = result.physical_evaluation
+    if physical_evaluation is None:
+        raise RuntimeError("Targeted capture lost its acquisition physical evaluation")
+    preferred_rt = physical_evaluation.question.query_rt_min
     source = resolve_request_acquisition_source(
         processing_owners=owners,
         sample=sample,
@@ -883,8 +902,9 @@ def _capture_binding(
         query_rt_max=trace.rt_max,
         query_ppm_tol=trace.ppm_tol,
         preferred_rt=preferred_rt,
-        retained_selected_integration=retained_integration,
-        selection_policy="retained_only" if retained_only else "capture_default",
+        retained_selected_integration=None,
+        selection_policy="capture_default",
+        physical_evaluation=physical_evaluation,
     )
 
 
@@ -923,6 +943,8 @@ def _target_capture_trace(
     target: Target,
 ) -> Trace:
     trace = _owner_bound_trace(owners, sample, result)
+    if result.physical_evaluation is not None:
+        return trace
     retained = result.selected_hypothesis
     if retained is not None and _matches_target_rt(
         retained.integration.rt_apex_min,
@@ -972,6 +994,15 @@ def _matches_target_precursor(observed_mz: float, target: Target) -> bool:
 
 def _matches_target_rt(observed_rt: float, target: Target) -> bool:
     return target.rt_min <= observed_rt <= target.rt_max
+
+
+def _targeted_signal_processing_profile(
+    config: ExtractionConfig,
+) -> SignalProcessingProfile:
+    return resolve_signal_processing_profile(
+        signal_processing_method=config.signal_processing_method,
+        signal_processing_window_points=config.signal_processing_window_points,
+    )
 
 
 def _neutral_loss(target: Target) -> float:

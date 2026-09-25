@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from xic_extractor.config import ExtractionConfig, Target
 from xic_extractor.extractor import ExtractionResult
 from xic_extractor.neutral_loss import CandidateMS2Evidence, NLResult
@@ -8,7 +10,49 @@ from xic_extractor.output.messages import (
     build_diagnostic_records,
     istd_confidence_note,
 )
+from xic_extractor.peak_detection.physical_peak_evaluation import (
+    evaluate_physical_peak,
+    prepare_physical_signal,
+)
 from xic_extractor.signal_processing import PeakDetectionResult, PeakResult
+
+
+@pytest.mark.parametrize("point_count, expected_reason", [
+    (2, "insufficient_points_for_profile"),
+    (21, "no_signal_above_baseline"),
+])
+def test_physical_unavailability_keeps_owner_reason_in_diagnostics(
+    point_count: int, expected_reason: str,
+) -> None:
+    evaluation = evaluate_physical_peak(
+        prepare_physical_signal(
+            [8.0 + index * 0.1 for index in range(point_count)],
+            [0.0] * point_count,
+        ),
+        selection_subject_id="WithNL",
+        query_rt_min=9.0,
+        request_context_rt_start_min=8.0,
+        request_context_rt_end_min=10.0,
+    )
+    assert evaluation.state == "unavailable"
+    assert evaluation.reason == expected_reason
+    result = ExtractionResult(
+        peak_result=PeakDetectionResult(
+            status="NO_SIGNAL" if point_count == 21 else "PEAK_NOT_FOUND",
+            peak=None,
+            n_points=point_count,
+            max_smoothed=None,
+            n_prominent_peaks=0,
+        ),
+        nl=None,
+        physical_evaluation=evaluation,
+    )
+
+    records = build_diagnostic_records("SampleA", _target("WithNL"), result, _config())
+
+    assert len(records) == 1
+    assert expected_reason in records[0].reason
+    assert "prominence" not in records[0].reason
 
 
 def test_build_diagnostic_records_reports_peak_and_nl_failures() -> None:

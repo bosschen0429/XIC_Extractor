@@ -11,6 +11,7 @@ from xic_extractor.config import (
     migrate_settings_dict,
 )
 from xic_extractor.settings_schema import (
+    CANONICAL_RESOLVER_MODE,
     CANONICAL_SETTINGS_DEFAULTS,
     default_parallel_workers,
 )
@@ -43,10 +44,6 @@ def _settings_rows(config_dir: Path) -> dict[str, str]:
     return {
         "data_dir": str(data_dir),
         "dll_dir": str(dll_dir),
-        "smooth_window": "15",
-        "smooth_polyorder": "3",
-        "peak_rel_height": "0.95",
-        "peak_min_prominence_ratio": "0.10",
         "ms2_precursor_tol_da": "0.5",
         "nl_min_intensity_ratio": "0.01",
         "count_no_ms2_as_detected": "false",
@@ -124,7 +121,7 @@ def test_load_config_derives_output_paths_and_creates_output_dir(
     assert config.signal_processing_window_points == 15
     assert config.ms1_morphology_smoothing_window_points == 15
     assert config.count_no_ms2_as_detected is False
-    assert config.resolver_mode == "region_first_safe_merge"
+    assert config.resolver_mode == "local_minimum"
     assert config.resolver_chrom_threshold == pytest.approx(0.05)
     assert config.resolver_min_search_range_min == pytest.approx(0.08)
     assert config.resolver_min_relative_height == pytest.approx(0.02)
@@ -243,82 +240,64 @@ def test_load_config_rejects_empty_targets_file(tmp_path: Path) -> None:
     _assert_error(exc_info, "targets.csv", "label")
 
 
-def test_migrate_settings_dict_renames_legacy_key_and_backfills_defaults() -> None:
+def test_migrate_settings_dict_backfills_current_defaults_only() -> None:
     migrated, warnings = migrate_settings_dict(
         {
             "data_dir": "C:/data",
             "dll_dir": "C:/dll",
             "smooth_points": "17",
+            "smooth_sigma": "3.0",
         }
     )
 
-    assert migrated["smooth_window"] == "17"
-    assert "smooth_points" not in migrated
-    assert migrated["smooth_polyorder"] == "3"
-    assert migrated["peak_rel_height"] == "0.95"
+    assert "smooth_window" not in CANONICAL_SETTINGS_DEFAULTS
+    assert "smooth_polyorder" not in CANONICAL_SETTINGS_DEFAULTS
+    assert "peak_rel_height" not in CANONICAL_SETTINGS_DEFAULTS
     assert migrated["parallel_mode"] == "process"
     assert migrated["parallel_workers"] == str(default_parallel_workers())
-    assert any(
-        "smooth_points" in warning and "smooth_window" in warning
-        for warning in warnings
-    )
-    assert any("smooth_polyorder" in warning for warning in warnings)
+    assert not any("smooth" in warning for warning in warnings)
 
 
-def test_migrate_settings_dict_drops_smooth_sigma_with_warning() -> None:
-    migrated, warnings = migrate_settings_dict({"smooth_sigma": "3.0"})
-
-    assert "smooth_sigma" not in migrated
-    assert any("smooth_sigma" in warning for warning in warnings)
-
-
-def test_load_config_accepts_local_minimum_resolver_settings(tmp_path: Path) -> None:
+def test_load_config_ignores_obsolete_targeted_peak_settings(tmp_path: Path) -> None:
     config_dir = tmp_path / "config"
     _write_settings(
         config_dir,
         {
-            "resolver_mode": "local_minimum",
-            "resolver_chrom_threshold": "0.08",
-            "resolver_min_search_range_min": "0.06",
-            "resolver_min_relative_height": "0.12",
-            "resolver_min_absolute_height": "90",
-            "resolver_min_ratio_top_edge": "1.8",
-            "resolver_peak_duration_min": "0.04",
-            "resolver_peak_duration_max": "0.80",
-            "resolver_min_scans": "9",
+            "smooth_window": "4",
+            "smooth_polyorder": "99",
+            "peak_rel_height": "0.01",
+            "peak_min_prominence_ratio": "99",
+            "resolver_chrom_threshold": "2",
+            "resolver_min_search_range_min": "-1",
+            "resolver_min_relative_height": "2",
+            "resolver_min_absolute_height": "-1",
+            "resolver_min_ratio_top_edge": "0",
+            "resolver_peak_duration_min": "9",
+            "resolver_peak_duration_max": "1",
+            "resolver_min_scans": "0",
+            "baseline_integration_method": "linear_edge",
         },
     )
     _write_targets(config_dir)
 
     config, _ = load_config(config_dir)
 
-    assert config.resolver_mode == "local_minimum"
-    assert config.resolver_chrom_threshold == pytest.approx(0.08)
-    assert config.resolver_min_search_range_min == pytest.approx(0.06)
-    assert config.resolver_min_relative_height == pytest.approx(0.12)
-    assert config.resolver_min_absolute_height == pytest.approx(90.0)
-    assert config.resolver_min_ratio_top_edge == pytest.approx(1.8)
-    assert config.resolver_peak_duration_min == pytest.approx(0.04)
-    assert config.resolver_peak_duration_max == pytest.approx(0.80)
-    assert config.resolver_min_scans == 9
+    assert config.smooth_window == 15
+    assert config.smooth_polyorder == 3
+    assert config.peak_rel_height == pytest.approx(0.95)
+    assert config.peak_min_prominence_ratio == pytest.approx(0.10)
+    assert config.resolver_chrom_threshold == pytest.approx(0.05)
+    assert config.resolver_min_search_range_min == pytest.approx(0.08)
+    assert config.resolver_min_relative_height == pytest.approx(0.02)
+    assert config.resolver_min_absolute_height == pytest.approx(25.0)
+    assert config.resolver_min_ratio_top_edge == pytest.approx(1.7)
+    assert config.resolver_peak_duration_min == pytest.approx(0.0)
+    assert config.resolver_peak_duration_max == pytest.approx(2.0)
+    assert config.resolver_min_scans == 5
+    assert config.baseline_integration_method == "asls"
 
 
-def test_load_config_rejects_retired_arbitrated_resolver_mode(
-    tmp_path: Path,
-) -> None:
-    config_dir = tmp_path / "config"
-    _write_settings(config_dir, {"resolver_mode": "arbitrated"})
-    _write_targets(config_dir)
-
-    with pytest.raises(ConfigError) as exc_info:
-        load_config(config_dir)
-
-    _assert_error(exc_info, "settings.csv", "resolver_mode", "arbitrated")
-    assert "retired" in str(exc_info.value)
-    assert "region_first_safe_merge" in str(exc_info.value)
-
-
-def test_load_config_accepts_region_first_safe_merge_resolver_mode(
+def test_load_config_ignores_retired_targeted_resolver_setting(
     tmp_path: Path,
 ) -> None:
     config_dir = tmp_path / "config"
@@ -327,7 +306,8 @@ def test_load_config_accepts_region_first_safe_merge_resolver_mode(
 
     config, _ = load_config(config_dir)
 
-    assert config.resolver_mode == "region_first_safe_merge"
+    assert config.resolver_mode == CANONICAL_RESOLVER_MODE
+    assert config.signal_processing_method == "gaussian"
 
 
 def test_load_config_migrates_ms1_morphology_smoothing_window_points(
@@ -410,59 +390,6 @@ def test_load_config_rejects_conflicting_canonical_and_legacy_signal_window(
         "21",
         "15",
     )
-
-
-def test_resolver_and_savgol_settings_do_not_alias_signal_profile(
-    tmp_path: Path,
-) -> None:
-    config_dir = tmp_path / "config"
-    _write_settings(
-        config_dir,
-        {
-            "smooth_window": "21",
-            "smooth_polyorder": "5",
-            "resolver_mode": "legacy_savgol",
-        },
-    )
-    _write_targets(config_dir)
-
-    config, _ = load_config(config_dir)
-
-    assert config.smooth_window == 21
-    assert config.smooth_polyorder == 5
-    assert config.resolver_mode == "legacy_savgol"
-    assert config.signal_processing_method == "gaussian"
-    assert config.signal_processing_window_points == 15
-
-
-def test_load_config_accepts_legacy_savgol_resolver_mode(tmp_path: Path) -> None:
-    config_dir = tmp_path / "config"
-    _write_settings(config_dir, {"resolver_mode": "legacy_savgol"})
-    _write_targets(config_dir)
-
-    config, _ = load_config(config_dir)
-
-    assert config.resolver_mode == "legacy_savgol"
-
-
-def test_load_config_accepts_zero_local_minimum_floor_values(tmp_path: Path) -> None:
-    config_dir = tmp_path / "config"
-    _write_settings(
-        config_dir,
-        {
-            "resolver_mode": "local_minimum",
-            "resolver_min_relative_height": "0.0",
-            "resolver_peak_duration_min": "0.0",
-            "resolver_peak_duration_max": "10.0",
-        },
-    )
-    _write_targets(config_dir)
-
-    config, _ = load_config(config_dir)
-
-    assert config.resolver_min_relative_height == pytest.approx(0.0)
-    assert config.resolver_peak_duration_min == pytest.approx(0.0)
-    assert config.resolver_peak_duration_max == pytest.approx(10.0)
 
 
 def test_load_config_accepts_process_parallel_settings(tmp_path: Path) -> None:
@@ -733,38 +660,6 @@ def test_load_config_defaults_baseline_integration_method_to_asls(
     assert config.baseline_integration_method == "asls"
 
 
-def test_load_config_rejects_retired_linear_edge_baseline_integration_method(
-    tmp_path: Path,
-) -> None:
-    config_dir = tmp_path / "config"
-    _write_settings(config_dir, {"baseline_integration_method": "linear_edge"})
-    _write_targets(config_dir)
-
-    with pytest.raises(ConfigError) as exc_info:
-        load_config(config_dir)
-
-    _assert_error(
-        exc_info,
-        "settings.csv",
-        "baseline_integration_method",
-        "linear_edge",
-    )
-    assert "retired" in str(exc_info.value)
-
-
-def test_load_config_rejects_unknown_baseline_integration_method(
-    tmp_path: Path,
-) -> None:
-    config_dir = tmp_path / "config"
-    _write_settings(config_dir, {"baseline_integration_method": "airpls"})
-    _write_targets(config_dir)
-
-    with pytest.raises(ConfigError) as exc_info:
-        load_config(config_dir)
-
-    _assert_error(exc_info, "settings.csv", "baseline_integration_method", "airpls")
-
-
 def test_load_config_rejects_unknown_baseline_audit_method(tmp_path: Path) -> None:
     config_dir = tmp_path / "config"
     _write_settings(config_dir, {"baseline_audit_method": "airpls"})
@@ -782,25 +677,22 @@ def test_canonical_settings_defaults_include_parallel_settings() -> None:
         default_parallel_workers()
     )
     assert CANONICAL_SETTINGS_DEFAULTS["baseline_audit_method"] == ""
-    assert CANONICAL_SETTINGS_DEFAULTS["baseline_integration_method"] == "asls"
+    assert "baseline_integration_method" not in CANONICAL_SETTINGS_DEFAULTS
     assert CANONICAL_SETTINGS_DEFAULTS["signal_processing_method"] == "gaussian"
     assert CANONICAL_SETTINGS_DEFAULTS["signal_processing_window_points"] == "15"
     assert CANONICAL_SETTINGS_DEFAULTS["ms1_morphology_smoothing_window_points"] == "15"
 
 
-def test_canonical_settings_defaults_include_local_minimum_preset() -> None:
-    assert CANONICAL_SETTINGS_DEFAULTS["resolver_mode"] == "region_first_safe_merge"
-    assert CANONICAL_SETTINGS_DEFAULTS["resolver_chrom_threshold"] == "0.05"
-    assert CANONICAL_SETTINGS_DEFAULTS["resolver_min_search_range_min"] == "0.08"
-    assert CANONICAL_SETTINGS_DEFAULTS["resolver_min_relative_height"] == "0.02"
-    assert CANONICAL_SETTINGS_DEFAULTS["resolver_min_absolute_height"] == "25.0"
-    assert CANONICAL_SETTINGS_DEFAULTS["resolver_min_ratio_top_edge"] == "1.7"
-    assert CANONICAL_SETTINGS_DEFAULTS["resolver_peak_duration_min"] == "0.0"
-    assert CANONICAL_SETTINGS_DEFAULTS["resolver_peak_duration_max"] == "2.0"
-    assert CANONICAL_SETTINGS_DEFAULTS["resolver_min_scans"] == "5"
+def test_canonical_settings_defaults_omit_obsolete_peak_controls() -> None:
+    assert "resolver_mode" not in CANONICAL_SETTINGS_DEFAULTS
+    assert "smooth_window" not in CANONICAL_SETTINGS_DEFAULTS
+    assert "smooth_polyorder" not in CANONICAL_SETTINGS_DEFAULTS
+    assert "peak_rel_height" not in CANONICAL_SETTINGS_DEFAULTS
+    assert "peak_min_prominence_ratio" not in CANONICAL_SETTINGS_DEFAULTS
+    assert "resolver_chrom_threshold" not in CANONICAL_SETTINGS_DEFAULTS
 
 
-def test_extraction_config_default_resolver_mode_matches_canonical_settings() -> None:
+def test_extraction_config_retains_direct_finder_default_resolver_mode() -> None:
     config = ExtractionConfig(
         data_dir=Path("raw"),
         dll_dir=Path("dll"),
@@ -814,7 +706,7 @@ def test_extraction_config_default_resolver_mode_matches_canonical_settings() ->
         nl_min_intensity_ratio=0.01,
     )
 
-    assert config.resolver_mode == CANONICAL_SETTINGS_DEFAULTS["resolver_mode"]
+    assert config.resolver_mode == CANONICAL_RESOLVER_MODE
 
 
 @pytest.mark.parametrize(
@@ -857,8 +749,11 @@ def test_settings_example_omits_machine_specific_worker_count() -> None:
     assert rows["parallel_mode"] == "process"
     assert "parallel_workers" not in rows
     assert rows["baseline_audit_method"] == ""
-    assert rows["baseline_integration_method"] == "asls"
-    assert rows["ms1_morphology_smoothing_window_points"] == "15"
+    assert "baseline_integration_method" not in rows
+    assert rows["signal_processing_method"] == "gaussian"
+    assert rows["signal_processing_window_points"] == "15"
+    assert "ms1_morphology_smoothing_window_points" not in rows
+    assert "resolver_mode" not in rows
 
 
 def test_settings_example_includes_review_report_setting() -> None:
@@ -901,38 +796,22 @@ def test_targets_example_includes_optional_target_pair_rt_metadata() -> None:
     assert rows["8-oxo-Guo"]["sample_applicability"] == "rna_containing"
 
 
-def test_settings_example_includes_local_minimum_preset() -> None:
+def test_settings_example_omits_obsolete_peak_controls() -> None:
     example_path = Path("config/settings.example.csv")
 
     with example_path.open(newline="", encoding="utf-8-sig") as handle:
         rows = {row["key"]: row["value"] for row in csv.DictReader(handle)}
 
-    assert rows["resolver_chrom_threshold"] == "0.05"
-    assert rows["resolver_min_search_range_min"] == "0.08"
-    assert rows["resolver_min_relative_height"] == "0.02"
-    assert rows["resolver_min_absolute_height"] == "25.0"
-    assert rows["resolver_min_ratio_top_edge"] == "1.7"
-    assert rows["resolver_peak_duration_min"] == "0.0"
-    assert rows["resolver_peak_duration_max"] == "2.0"
-    assert rows["resolver_min_scans"] == "5"
-
-
-def test_settings_example_documents_region_first_safe_merge_mode() -> None:
-    example_path = Path("config/settings.example.csv")
-
-    with example_path.open(newline="", encoding="utf-8-sig") as handle:
-        rows = {row["key"]: row for row in csv.DictReader(handle)}
-
-    resolver_row = rows["resolver_mode"]
-    assert resolver_row["value"] == "region_first_safe_merge"
-    assert "region_first_safe_merge" in resolver_row["description"]
+    assert "smooth_window" not in rows
+    assert "smooth_polyorder" not in rows
+    assert "peak_rel_height" not in rows
+    assert "peak_min_prominence_ratio" not in rows
+    assert "resolver_chrom_threshold" not in rows
 
 
 @pytest.mark.parametrize(
     ("column", "value"),
     [
-        ("smooth_window", "14"),
-        ("smooth_polyorder", "15"),
         ("signal_processing_method", "asls"),
         ("signal_processing_window_points", "14"),
         ("signal_processing_window_points", "1"),
@@ -940,10 +819,6 @@ def test_settings_example_documents_region_first_safe_merge_mode() -> None:
         ("signal_processing_window_points", "true"),
         ("ms1_morphology_smoothing_window_points", "14"),
         ("ms1_morphology_smoothing_window_points", "1"),
-        ("peak_rel_height", "0.49"),
-        ("peak_rel_height", "1.00"),
-        ("peak_min_prominence_ratio", "0.00"),
-        ("peak_min_prominence_ratio", "0.51"),
         ("ms2_precursor_tol_da", "0"),
         ("nl_min_intensity_ratio", "0"),
         ("nl_min_intensity_ratio", "1.1"),
@@ -955,16 +830,6 @@ def test_settings_example_documents_region_first_safe_merge_mode() -> None:
         ("nl_fallback_half_window_min", "-0.1"),
         ("rolling_window_size", "0"),
         ("rolling_window_size", "-1"),
-        ("resolver_chrom_threshold", "-0.01"),
-        ("resolver_chrom_threshold", "1.01"),
-        ("resolver_min_search_range_min", "0"),
-        ("resolver_min_relative_height", "-0.01"),
-        ("resolver_min_relative_height", "1.1"),
-        ("resolver_min_absolute_height", "-1"),
-        ("resolver_min_ratio_top_edge", "1.0"),
-        ("resolver_peak_duration_min", "-0.01"),
-        ("resolver_peak_duration_max", "0"),
-        ("resolver_min_scans", "0"),
         ("parallel_workers", "0"),
         ("parallel_workers", "-1"),
     ],
@@ -982,15 +847,14 @@ def test_load_config_rejects_invalid_settings(
     _assert_error(exc_info, "settings.csv", column, value)
 
 
-def test_load_config_rejects_unknown_resolver_mode(tmp_path: Path) -> None:
+def test_load_config_ignores_unknown_resolver_mode(tmp_path: Path) -> None:
     config_dir = tmp_path / "config"
     _write_settings(config_dir, {"resolver_mode": "wavelet"})
     _write_targets(config_dir)
 
-    with pytest.raises(ConfigError) as exc_info:
-        load_config(config_dir)
+    config, _ = load_config(config_dir)
 
-    _assert_error(exc_info, "settings.csv", "resolver_mode", "wavelet")
+    assert config.resolver_mode == CANONICAL_RESOLVER_MODE
 
 
 def test_load_config_rejects_unknown_parallel_mode(tmp_path: Path) -> None:
@@ -1052,23 +916,6 @@ def _write_calibration(
     )
     rows = [row, row] if duplicate else [row]
     write_target_pair_rt_calibration_tsv(path, rows)
-
-
-def test_load_config_rejects_peak_duration_min_above_max(tmp_path: Path) -> None:
-    config_dir = tmp_path / "config"
-    _write_settings(
-        config_dir,
-        {
-            "resolver_peak_duration_min": "0.40",
-            "resolver_peak_duration_max": "0.20",
-        },
-    )
-    _write_targets(config_dir)
-
-    with pytest.raises(ConfigError) as exc_info:
-        load_config(config_dir)
-
-    _assert_error(exc_info, "settings.csv", "resolver_peak_duration_min", "0.40")
 
 
 def test_load_config_rejects_duplicate_target_labels(tmp_path: Path) -> None:

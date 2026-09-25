@@ -6,21 +6,8 @@ def _canonical_settings() -> dict[str, str]:
     return {
         "data_dir": "C:\\data",
         "dll_dir": "C:\\dll",
-        "smooth_window": "17",
-        "smooth_polyorder": "2",
         "signal_processing_method": "gaussian",
         "signal_processing_window_points": "15",
-        "peak_rel_height": "0.90",
-        "peak_min_prominence_ratio": "0.15",
-        "resolver_mode": "legacy_savgol",
-        "resolver_chrom_threshold": "0.05",
-        "resolver_min_search_range_min": "0.04",
-        "resolver_min_relative_height": "0.05",
-        "resolver_min_absolute_height": "25.0",
-        "resolver_min_ratio_top_edge": "1.3",
-        "resolver_peak_duration_min": "0.03",
-        "resolver_peak_duration_max": "1.00",
-        "resolver_min_scans": "5",
         "ms2_precursor_tol_da": "0.4",
         "nl_min_intensity_ratio": "0.02",
         "count_no_ms2_as_detected": "true",
@@ -36,7 +23,6 @@ def _canonical_settings() -> dict[str, str]:
         "emit_review_report": "false",
         "emit_peak_candidates": "false",
         "baseline_audit_method": "",
-        "baseline_integration_method": "asls",
         "keep_intermediate_csv": "false",
         "nl_rt_anchor_search_margin_min": "2.0",
         "nl_rt_anchor_half_window_min": "1.0",
@@ -54,13 +40,9 @@ def test_settings_section_saves_canonical_keys_after_canonical_load(qtbot) -> No
     values = section.get_values()
 
     assert migrated is False
-    assert values["smooth_window"] == "17"
-    assert values["smooth_polyorder"] == "2"
     assert values["signal_processing_method"] == "gaussian"
     assert values["signal_processing_window_points"] == "15"
     assert "ms1_morphology_smoothing_window_points" not in values
-    assert values["peak_rel_height"] == "0.90"
-    assert values["peak_min_prominence_ratio"] == "0.15"
     assert values["ms2_precursor_tol_da"] == "0.4"
     assert values["nl_min_intensity_ratio"] == "0.02"
     assert values["count_no_ms2_as_detected"] == "true"
@@ -72,29 +54,37 @@ def test_settings_section_saves_canonical_keys_after_canonical_load(qtbot) -> No
     assert "smooth_sigma" not in values
 
 
-def test_settings_section_migrates_legacy_smoothing_keys_on_save(qtbot) -> None:
+def test_settings_section_drops_obsolete_peak_keys_on_save(qtbot) -> None:
     section = SettingsSection()
     qtbot.addWidget(section)
     migrated = section.load(
         {
-            "data_dir": "C:\\data",
-            "dll_dir": "C:\\dll",
+            **_canonical_settings(),
             "smooth_points": "19",
             "smooth_sigma": "3.0",
+            "smooth_window": "21",
+            "smooth_polyorder": "5",
+            "peak_rel_height": "0.8",
+            "peak_min_prominence_ratio": "0.2",
+            "resolver_min_scans": "9",
+            "baseline_integration_method": "linear_edge",
         }
     )
 
     values = section.get_values()
 
-    assert migrated is True
-    assert values["smooth_window"] == "19"
-    assert values["smooth_polyorder"] == "3"
-    assert values["peak_rel_height"] == "0.95"
+    assert migrated is False
     assert values["signal_processing_method"] == "gaussian"
     assert values["signal_processing_window_points"] == "15"
     assert "ms1_morphology_smoothing_window_points" not in values
     assert "smooth_points" not in values
     assert "smooth_sigma" not in values
+    assert "smooth_window" not in values
+    assert "smooth_polyorder" not in values
+    assert "peak_rel_height" not in values
+    assert "peak_min_prominence_ratio" not in values
+    assert "resolver_min_scans" not in values
+    assert "baseline_integration_method" not in values
 
 
 def test_settings_section_exposes_new_processing_controls(qtbot) -> None:
@@ -102,8 +92,6 @@ def test_settings_section_exposes_new_processing_controls(qtbot) -> None:
     qtbot.addWidget(section)
     section.load(_canonical_settings())
 
-    section._peak_rel_height_spin.setValue(0.88)
-    section._peak_min_prominence_ratio_spin.setValue(0.25)
     section._ms2_precursor_tol_da_spin.setValue(0.7)
     section._nl_min_intensity_ratio_spin.setValue(0.03)
     section._ms1_morphology_smoothing_window_spin.setValue(21)
@@ -111,8 +99,6 @@ def test_settings_section_exposes_new_processing_controls(qtbot) -> None:
 
     values = section.get_values()
 
-    assert values["peak_rel_height"] == "0.88"
-    assert values["peak_min_prominence_ratio"] == "0.25"
     assert values["ms2_precursor_tol_da"] == "0.7"
     assert values["nl_min_intensity_ratio"] == "0.03"
     assert values["signal_processing_method"] == "gaussian"
@@ -188,14 +174,6 @@ def test_settings_section_numeric_rules_do_not_require_existing_paths(qtbot) -> 
 
     assert section.is_valid()
 
-    section._smooth_window_spin.setValue(4)
-    assert not section.is_valid()
-
-    section._smooth_window_spin.setValue(5)
-    section._smooth_polyorder_spin.setValue(5)
-    assert not section.is_valid()
-
-    section._smooth_polyorder_spin.setValue(2)
     section._ms1_morphology_smoothing_window_spin.setValue(4)
     assert not section.is_valid()
 
@@ -239,7 +217,7 @@ def test_settings_section_editing_main_fields_marks_dirty(qtbot) -> None:
     assert section._save_button.isVisible()
 
     section.load(_canonical_settings())
-    section._peak_rel_height_spin.setValue(0.91)
+    section._ms1_morphology_smoothing_window_spin.setValue(21)
 
     assert section._save_button.isVisible()
 
@@ -317,17 +295,6 @@ def test_settings_section_save_emits_signal_and_clears_dirty(qtbot) -> None:
 
     assert emitted == [True]
     assert not section._save_button.isVisible()
-
-
-def test_settings_section_resolver_mode_change_marks_dirty(qtbot) -> None:
-    section = SettingsSection()
-    qtbot.addWidget(section)
-    section.show()
-    section.load(_canonical_settings())
-
-    section._resolver_mode_combo.setCurrentText("local_minimum")
-
-    assert section._save_button.isVisible()
 
 
 def test_settings_section_advanced_flag_change_marks_dirty(qtbot) -> None:

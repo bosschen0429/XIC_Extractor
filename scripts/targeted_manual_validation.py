@@ -7,7 +7,6 @@ import shutil
 import sys
 from collections.abc import Sequence
 from dataclasses import dataclass
-from itertools import product
 from pathlib import Path
 from statistics import median
 from typing import Callable, Iterable
@@ -54,13 +53,7 @@ class ProgramPeakRow:
 
 
 @dataclass(frozen=True)
-class ParameterSet:
-    name: str
-    settings_overrides: dict[str, str]
-
-
-@dataclass(frozen=True)
-class SweepCase:
+class ManualValidationCase:
     name: str
     sample_name: str
     raw_path: Path
@@ -87,9 +80,9 @@ class PerTargetScoreRow:
 
 
 @dataclass(frozen=True)
-class ParameterSetScore:
+class ManualValidationScore:
     name: str
-    settings_overrides: dict[str, str]
+    execution_overrides: dict[str, str]
     detected_rows: int
     scored_rows: int
     missing_manual_peaks: int
@@ -105,130 +98,13 @@ class ParameterSetScore:
 
 
 @dataclass(frozen=True)
-class SweepResult:
-    scores: list[ParameterSetScore]
+class ManualValidationResult:
+    score: ManualValidationScore
 
 
-SweepRunner = Callable[[ParameterSet], list[ProgramPeakRow]]
-GridValues = dict[str, tuple[str, ...]]
+ManualValidationRunner = Callable[[], list[ProgramPeakRow]]
 FailureRecord = tuple[str, object, str]
 FailureRecordsByRow = dict[PerTargetScoreRow, list[FailureRecord]]
-
-
-_STATIC_LOCAL_MINIMUM_PARAMS = {
-    "resolver_min_relative_height": "0.02",
-    "resolver_min_absolute_height": "25.0",
-    "resolver_peak_duration_min": "0.0",
-    "resolver_peak_duration_max": "2.0",
-}
-
-_CALIBRATION_DURATION_SEARCH_OVERRIDES = (
-    ("local_minimum_duration_1p5", {"resolver_peak_duration_max": "1.5"}),
-    ("local_minimum_duration_2p0", {"resolver_peak_duration_max": "2.0"}),
-    ("local_minimum_duration_3p0", {"resolver_peak_duration_max": "3.0"}),
-    (
-        "local_minimum_search_0p05",
-        {"resolver_min_search_range_min": "0.05"},
-    ),
-    (
-        "local_minimum_search_0p04",
-        {"resolver_min_search_range_min": "0.04"},
-    ),
-    (
-        "local_minimum_search_0p05_duration_2p0",
-        {
-            "resolver_min_search_range_min": "0.05",
-            "resolver_peak_duration_max": "2.0",
-        },
-    ),
-    (
-        "local_minimum_search_0p04_duration_2p0",
-        {
-            "resolver_min_search_range_min": "0.04",
-            "resolver_peak_duration_max": "2.0",
-        },
-    ),
-    (
-        "local_minimum_search_0p05_duration_1p5",
-        {
-            "resolver_min_search_range_min": "0.05",
-            "resolver_peak_duration_max": "1.5",
-        },
-    ),
-    (
-        "local_minimum_search_0p05_duration_2p0_edge_1p5",
-        {
-            "resolver_min_search_range_min": "0.05",
-            "resolver_peak_duration_max": "2.0",
-            "resolver_min_ratio_top_edge": "1.5",
-        },
-    ),
-)
-
-_CALIBRATION_DURATION_HEIGHT_OVERRIDES = (
-    (
-        "local_minimum_min_duration_0p02",
-        {"resolver_peak_duration_min": "0.02"},
-    ),
-    (
-        "local_minimum_min_duration_0p03",
-        {"resolver_peak_duration_min": "0.03"},
-    ),
-    (
-        "local_minimum_rel_height_0p01",
-        {"resolver_min_relative_height": "0.01"},
-    ),
-    (
-        "local_minimum_rel_height_0p00",
-        {"resolver_min_relative_height": "0.0"},
-    ),
-    (
-        "local_minimum_rel_height_0p03",
-        {"resolver_min_relative_height": "0.03"},
-    ),
-    (
-        "local_minimum_min_duration_0p02_rel_height_0p01",
-        {
-            "resolver_peak_duration_min": "0.02",
-            "resolver_min_relative_height": "0.01",
-        },
-    ),
-    (
-        "local_minimum_min_duration_0p02_rel_height_0p00",
-        {
-            "resolver_peak_duration_min": "0.02",
-            "resolver_min_relative_height": "0.0",
-        },
-    ),
-    (
-        "local_minimum_min_duration_0p03_rel_height_0p01",
-        {
-            "resolver_peak_duration_min": "0.03",
-            "resolver_min_relative_height": "0.01",
-        },
-    ),
-)
-
-_GRID_VALUES: dict[str, GridValues] = {
-    "quick": {
-        "resolver_chrom_threshold": ("0.03", "0.05"),
-        "resolver_min_search_range_min": ("0.05", "0.08"),
-        "resolver_min_ratio_top_edge": ("1.5", "1.7"),
-        "resolver_min_scans": ("3", "5"),
-    },
-    "standard": {
-        "resolver_chrom_threshold": ("0.03", "0.05", "0.08"),
-        "resolver_min_search_range_min": ("0.05", "0.08", "0.12"),
-        "resolver_min_ratio_top_edge": ("1.3", "1.5", "1.7", "2.0"),
-        "resolver_min_scans": ("3", "5"),
-    },
-}
-
-GRID_CHOICES = (
-    *_GRID_VALUES.keys(),
-    "calibration-duration-search",
-    "calibration-duration-height",
-)
 
 _THIN = Side(style="thin", color="BDBDBD")
 _BORDER = Border(left=_THIN, right=_THIN, top=_THIN, bottom=_THIN)
@@ -237,77 +113,25 @@ _HEADER_FILL = PatternFill("solid", fgColor="37474F")
 _FAIL_FILL = PatternFill("solid", fgColor="FFCDD2")
 
 
-def build_parameter_sets(*, grid: str) -> list[ParameterSet]:
-    if grid not in GRID_CHOICES:
-        raise ValueError(f"Unknown grid: {grid}")
-
-    parameter_sets = [
-        ParameterSet("legacy_savgol", {"resolver_mode": "legacy_savgol"}),
-        ParameterSet(
-            "local_minimum_current",
-            {"resolver_mode": "local_minimum", **_STATIC_LOCAL_MINIMUM_PARAMS},
-        ),
-    ]
-    if grid == "calibration-duration-search":
-        parameter_sets.extend(
-            ParameterSet(
-                name,
-                {
-                    "resolver_mode": "local_minimum",
-                    **_STATIC_LOCAL_MINIMUM_PARAMS,
-                    **overrides,
-                },
-            )
-            for name, overrides in _CALIBRATION_DURATION_SEARCH_OVERRIDES
-        )
-        return parameter_sets
-
-    if grid == "calibration-duration-height":
-        parameter_sets.extend(
-            ParameterSet(
-                name,
-                {
-                    "resolver_mode": "local_minimum",
-                    **_STATIC_LOCAL_MINIMUM_PARAMS,
-                    **overrides,
-                },
-            )
-            for name, overrides in _CALIBRATION_DURATION_HEIGHT_OVERRIDES
-        )
-        return parameter_sets
-
-    grid_values = _GRID_VALUES[grid]
-    keys = list(grid_values.keys())
-    for idx, values in enumerate(product(*(grid_values[key] for key in keys)), start=1):
-        settings = {
-            "resolver_mode": "local_minimum",
-            **_STATIC_LOCAL_MINIMUM_PARAMS,
-            **dict(zip(keys, values)),
-        }
-        parameter_sets.append(ParameterSet(f"local_minimum_grid_{idx:03d}", settings))
-    return parameter_sets
-
-
 def main(argv: Sequence[str] | None = None) -> int:
     multiprocessing.freeze_support()
     args = _parse_args(argv)
     output_dir = args.output_dir.resolve()
     try:
         truth_rows = read_manual_truth(args.manual_workbook.resolve())
-        parameter_sets = _apply_execution_overrides(
-            build_parameter_sets(grid=args.grid),
+        execution_overrides = _execution_overrides(
             parallel_mode=args.parallel_mode,
             parallel_workers=args.parallel_workers,
         )
         cases = _build_cases(args)
-        result = run_sweep(
+        result = run_manual_validation(
             truth_rows,
-            parameter_sets,
-            lambda parameter_set: _run_parameter_set(parameter_set, cases, output_dir),
+            lambda: _run_cases(cases, output_dir, execution_overrides),
+            execution_overrides=execution_overrides,
         )
-        output_path = write_sweep_workbook(
-            output_dir / "local_minimum_param_sweep_summary.xlsx",
-            result.scores,
+        output_path = write_validation_workbook(
+            output_dir / "targeted_manual_validation.xlsx",
+            [result.score],
         )
     except (ConfigError, RawReaderError, OSError, ValueError) as exc:
         print(str(exc), file=sys.stderr)
@@ -331,7 +155,7 @@ def read_manual_truth(path: Path) -> list[ManualTruthRow]:
 
 def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Sweep local_minimum resolver parameters against manual truth."
+        description="Compare the current Targeted extractor with manual truth."
     )
     parser.add_argument("--manual-workbook", type=Path, required=True)
     parser.add_argument("--nosplit-raw", type=Path, required=True)
@@ -341,48 +165,34 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default=Path("output/local_minimum_param_sweep_manual"),
-    )
-    parser.add_argument(
-        "--grid",
-        choices=GRID_CHOICES,
-        default="quick",
+        default=Path("output/targeted_manual_validation"),
     )
     parser.add_argument(
         "--parallel-mode",
         choices=("serial", "process"),
         default=None,
-        help="Optional execution backend override for every sweep run.",
+        help="Optional execution backend override for the validation run.",
     )
     parser.add_argument(
         "--parallel-workers",
         type=_positive_int,
         default=None,
-        help="Optional process worker override for every sweep run.",
+        help="Optional process worker override for the validation run.",
     )
     return parser.parse_args(argv)
 
 
-def _apply_execution_overrides(
-    parameter_sets: list[ParameterSet],
+def _execution_overrides(
     *,
     parallel_mode: str | None,
     parallel_workers: int | None,
-) -> list[ParameterSet]:
+) -> dict[str, str]:
     overrides: dict[str, str] = {}
     if parallel_mode is not None:
         overrides["parallel_mode"] = parallel_mode
     if parallel_workers is not None:
         overrides["parallel_workers"] = str(parallel_workers)
-    if not overrides:
-        return parameter_sets
-    return [
-        ParameterSet(
-            parameter_set.name,
-            {**parameter_set.settings_overrides, **overrides},
-        )
-        for parameter_set in parameter_sets
-    ]
+    return overrides
 
 
 def _positive_int(value: str) -> int:
@@ -392,15 +202,15 @@ def _positive_int(value: str) -> int:
     return parsed
 
 
-def _build_cases(args: argparse.Namespace) -> list[SweepCase]:
+def _build_cases(args: argparse.Namespace) -> list[ManualValidationCase]:
     return [
-        SweepCase(
+        ManualValidationCase(
             name="nosplit",
             sample_name=args.nosplit_raw.resolve().stem,
             raw_path=args.nosplit_raw.resolve(),
             targets_path=args.nosplit_targets.resolve(),
         ),
-        SweepCase(
+        ManualValidationCase(
             name="split",
             sample_name=args.split_raw.resolve().stem,
             raw_path=args.split_raw.resolve(),
@@ -409,36 +219,36 @@ def _build_cases(args: argparse.Namespace) -> list[SweepCase]:
     ]
 
 
-def _run_parameter_set(
-    parameter_set: ParameterSet,
-    cases: list[SweepCase],
+def _run_cases(
+    cases: list[ManualValidationCase],
     output_dir: Path,
+    execution_overrides: dict[str, str],
 ) -> list[ProgramPeakRow]:
     rows: list[ProgramPeakRow] = []
     for case in cases:
-        rows.extend(_run_case(parameter_set, case, output_dir))
+        rows.extend(_run_case(case, output_dir, execution_overrides))
     return rows
 
 
 def _run_case(
-    parameter_set: ParameterSet,
-    case: SweepCase,
+    case: ManualValidationCase,
     output_dir: Path,
+    execution_overrides: dict[str, str],
 ) -> list[ProgramPeakRow]:
     data_dir = _stage_raw_case(case, output_dir / "staged_raw" / case.name)
-    config_dir = output_dir / "runs" / parameter_set.name / case.name / "config"
+    config_dir = output_dir / "runs" / "canonical_targeted" / case.name / "config"
     _write_case_config(
         config_dir,
         data_dir=data_dir,
         targets_path=case.targets_path,
-        settings_overrides=parameter_set.settings_overrides,
+        execution_overrides=execution_overrides,
     )
     config, targets = load_config(config_dir)
     run_output = extractor.acquire(config, targets)
     return _collect_program_rows(run_output, targets)
 
 
-def _stage_raw_case(case: SweepCase, data_dir: Path) -> Path:
+def _stage_raw_case(case: ManualValidationCase, data_dir: Path) -> Path:
     if not case.raw_path.exists():
         raise FileNotFoundError(f"{case.raw_path}: raw file is missing")
     data_dir.mkdir(parents=True, exist_ok=True)
@@ -457,7 +267,7 @@ def _write_case_config(
     *,
     data_dir: Path,
     targets_path: Path,
-    settings_overrides: dict[str, str],
+    execution_overrides: dict[str, str],
 ) -> None:
     if not targets_path.exists():
         raise FileNotFoundError(f"{targets_path}: targets file is missing")
@@ -466,7 +276,7 @@ def _write_case_config(
     settings = {
         **CANONICAL_SETTINGS_DEFAULTS,
         "data_dir": str(data_dir),
-        **settings_overrides,
+        **execution_overrides,
     }
     _write_settings_csv(config_dir / "settings.csv", settings)
 
@@ -518,42 +328,38 @@ def _collect_program_rows(
     return rows
 
 
-def _print_summary(output_path: Path, result: SweepResult) -> None:
-    ranked = _rank_scores(result.scores)
-    best = ranked[0] if ranked else None
+def _print_summary(output_path: Path, result: ManualValidationResult) -> None:
+    score = result.score
     print(f"Summary workbook: {output_path}")
-    if best is not None:
-        print(
-            "Best: "
-            f"{best.name}, area_median_abs_pct_error="
-            f"{best.area_median_abs_pct_error}, "
-            f"missing_manual_peaks={best.missing_manual_peaks}"
-        )
+    print(
+        "Current Targeted: "
+        f"area_median_abs_pct_error={score.area_median_abs_pct_error}, "
+        f"missing_manual_peaks={score.missing_manual_peaks}"
+    )
 
 
-def run_sweep(
+def run_manual_validation(
     truth_rows: list[ManualTruthRow],
-    parameter_sets: list[ParameterSet],
-    runner: SweepRunner,
+    runner: ManualValidationRunner,
     *,
+    execution_overrides: dict[str, str] | None = None,
     istd_targets: set[str] | None = None,
-) -> SweepResult:
-    scores: list[ParameterSetScore] = []
-    for parameter_set in parameter_sets:
-        program_rows = runner(parameter_set)
-        scores.append(
-            score_parameter_set(
-                parameter_set.name,
-                parameter_set.settings_overrides,
-                truth_rows,
-                program_rows,
-                istd_targets=istd_targets,
-            )
+) -> ManualValidationResult:
+    program_rows = runner()
+    return ManualValidationResult(
+        score=score_manual_validation(
+            "canonical_targeted",
+            execution_overrides or {},
+            truth_rows,
+            program_rows,
+            istd_targets=istd_targets,
         )
-    return SweepResult(scores=scores)
+    )
 
 
-def write_sweep_workbook(output_path: Path, scores: list[ParameterSetScore]) -> Path:
+def write_validation_workbook(
+    output_path: Path, scores: list[ManualValidationScore]
+) -> Path:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     workbook = Workbook()
     failure_records_by_row = _collect_failure_records_by_row(scores)
@@ -575,14 +381,14 @@ def write_sweep_workbook(output_path: Path, scores: list[ParameterSetScore]) -> 
     return output_path
 
 
-def score_parameter_set(
+def score_manual_validation(
     name: str,
-    settings_overrides: dict[str, str],
+    execution_overrides: dict[str, str],
     truth_rows: list[ManualTruthRow],
     program_rows: list[ProgramPeakRow],
     *,
     istd_targets: set[str] | None = None,
-) -> ParameterSetScore:
+) -> ManualValidationScore:
     program_by_key = {(row.sample_name, row.target): row for row in program_rows}
     istd_target_names = set(istd_targets or ())
     per_target_rows: list[PerTargetScoreRow] = []
@@ -649,9 +455,9 @@ def score_parameter_set(
         if row.rt_abs_delta_min is not None
     ]
     missing_rows = [row for row in per_target_rows if row.missing_peak]
-    return ParameterSetScore(
+    return ManualValidationScore(
         name=name,
-        settings_overrides=settings_overrides,
+        execution_overrides=execution_overrides,
         detected_rows=sum(not row.missing_peak for row in per_target_rows),
         scored_rows=len(area_errors),
         missing_manual_peaks=len(missing_rows),
@@ -737,9 +543,10 @@ def _cell_text(value: object | None) -> str:
     return str(value).strip()
 
 
-def _write_summary_sheet(worksheet: Worksheet, scores: list[ParameterSetScore]) -> None:
+def _write_summary_sheet(
+    worksheet: Worksheet, scores: list[ManualValidationScore]
+) -> None:
     headers = [
-        "Rank",
         "Name",
         "GuardrailStatus",
         "DetectedRows",
@@ -755,12 +562,11 @@ def _write_summary_sheet(worksheet: Worksheet, scores: list[ParameterSetScore]) 
         "RTMaxAbsDeltaMin",
     ]
     _write_header(worksheet, headers)
-    for rank, score in enumerate(_rank_scores(scores), start=1):
+    for row_index, score in enumerate(scores, start=2):
         _write_row(
             worksheet,
-            rank + 1,
+            row_index,
             [
-                rank,
                 score.name,
                 "PASS" if _guardrail_passes(score) else "FAIL",
                 score.detected_rows,
@@ -782,7 +588,7 @@ def _write_summary_sheet(worksheet: Worksheet, scores: list[ParameterSetScore]) 
 
 def _write_per_target_sheet(
     worksheet: Worksheet,
-    scores: list[ParameterSetScore],
+    scores: list[ManualValidationScore],
     failure_records_by_row: FailureRecordsByRow,
 ) -> None:
     headers = [
@@ -834,7 +640,7 @@ def _write_per_target_sheet(
 
 def _write_failures_sheet(
     worksheet: Worksheet,
-    scores: list[ParameterSetScore],
+    scores: list[ManualValidationScore],
     failure_records_by_row: FailureRecordsByRow,
 ) -> None:
     headers = ["Name", "SampleName", "Target", "Issue", "MetricValue", "Limit"]
@@ -861,32 +667,19 @@ def _write_failures_sheet(
 
 
 def _write_run_config_sheet(
-    worksheet: Worksheet, scores: list[ParameterSetScore]
+    worksheet: Worksheet, scores: list[ManualValidationScore]
 ) -> None:
     headers = ["Name", "Key", "Value"]
     _write_header(worksheet, headers)
     row_idx = 2
     for score in scores:
-        for key, value in sorted(score.settings_overrides.items()):
+        for key, value in sorted(score.execution_overrides.items()):
             _write_row(worksheet, row_idx, [score.name, key, value], failed=False)
             row_idx += 1
     _autosize(worksheet, len(headers))
 
 
-def _rank_scores(scores: list[ParameterSetScore]) -> list[ParameterSetScore]:
-    return sorted(
-        scores,
-        key=lambda score: (
-            not _guardrail_passes(score),
-            score.missing_manual_peaks,
-            _none_last(score.area_median_abs_pct_error),
-            _none_last(score.rt_median_abs_delta_min),
-            score.name,
-        ),
-    )
-
-
-def _guardrail_passes(score: ParameterSetScore) -> bool:
+def _guardrail_passes(score: ManualValidationScore) -> bool:
     return (
         score.missing_manual_peaks == 0
         and score.istd_misses == 0
@@ -900,7 +693,7 @@ def _guardrail_passes(score: ParameterSetScore) -> bool:
 
 
 def _collect_failure_records_by_row(
-    scores: Sequence[ParameterSetScore],
+    scores: Sequence[ManualValidationScore],
 ) -> FailureRecordsByRow:
     return {
         row: _failure_records(row) for score in scores for row in score.per_target_rows
@@ -916,10 +709,6 @@ def _failure_records(row: PerTargetScoreRow) -> list[FailureRecord]:
     if row.area_abs_pct_error is not None and row.area_abs_pct_error > 0.20:
         failures.append(("AREA_ERROR", row.area_abs_pct_error, "<=0.20"))
     return failures
-
-
-def _none_last(value: float | None) -> float:
-    return float("inf") if value is None else value
 
 
 def _write_header(worksheet: Worksheet, headers: list[str]) -> None:

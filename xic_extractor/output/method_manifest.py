@@ -589,14 +589,11 @@ def _utc_now_text() -> str:
 
 def _method_settings(config: ExtractionConfig) -> dict[str, object]:
     return {
-        "resolver_mode": config.resolver_mode,
-        "smooth_window": config.smooth_window,
-        "smooth_polyorder": config.smooth_polyorder,
+        "signal_processing_method": config.signal_processing_method,
+        "signal_processing_window_points": config.signal_processing_window_points,
         "ms1_morphology_smoothing_window_points": (
             config.ms1_morphology_smoothing_window_points
         ),
-        "peak_rel_height": config.peak_rel_height,
-        "peak_min_prominence_ratio": config.peak_min_prominence_ratio,
         "ms2_precursor_tol_da": config.ms2_precursor_tol_da,
         "nl_min_intensity_ratio": config.nl_min_intensity_ratio,
         "count_no_ms2_as_detected": config.count_no_ms2_as_detected,

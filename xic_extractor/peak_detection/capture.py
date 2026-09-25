@@ -7,9 +7,6 @@ from typing import cast
 import numpy as np
 
 from xic_extractor.peak_detection.baseline import BaselineMethod, asls_baseline
-from xic_extractor.peak_detection.capture_boundary_policy import (
-    promote_targeted_boundary_hypothesis,
-)
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     CidNlMethodSubject,
     cid_nl_method_subject_from_request,
@@ -43,9 +40,11 @@ from xic_extractor.peak_detection.observations import (
     validate_peak_observation_trace_binding,
 )
 from xic_extractor.peak_detection.physical_peak_evaluation import (
-    _physical_owner_context,
     evaluate_physical_peak,
     prepare_physical_signal,
+)
+from xic_extractor.peak_detection.physical_peak_identity import (
+    mint_physical_trace_content_id,
 )
 from xic_extractor.peak_detection.physical_peak_models import (
     PHYSICAL_PEAK_GROUP_WINDOW_POLICY,
@@ -193,40 +192,6 @@ def capture_peak_hypotheses(
                 hypotheses,
                 binding.retained_selected_integration,
             )
-        if (
-            selected is not None
-            and (
-                binding.retained_selected_integration is None
-                or binding.retained_selected_integration.integration_method
-                in (
-                    "selected_envelope_gaussian15",
-                    "chrom_peak_segment_gaussian15",
-                )
-            )
-            and scope.method_constraints.boundary_policy == "targeted_gaussian15"
-            and binding.selection_policy == "capture_default"
-        ):
-            selected = promote_targeted_boundary_hypothesis(
-                selected,
-                rt=detection.rt,
-                intensity=detection.intensity,
-                context_rt_start=float(detection.rt[0]),
-                context_rt_end=float(detection.rt[-1]),
-                morphology_window_points=(
-                    peak_config.ms1_morphology_smoothing_window_points
-                ),
-            ).hypothesis
-            selected = _normalize_promoted_capture_hypothesis(
-                selected,
-                detection=detection,
-                morphology_window_points=(
-                    peak_config.ms1_morphology_smoothing_window_points
-                ),
-            )
-            hypotheses = tuple(
-                selected if item.hypothesis_id == selected.hypothesis_id else item
-                for item in hypotheses
-            )
     owner_seal = _CaptureOwnerSeal(
         scope=scope,
         candidate_id=candidate,
@@ -329,39 +294,33 @@ def _capture_physical_peak(
         raise SampleLocalCaptureError(
             "physical capture requires its closed owner question"
         )
-    prepared = prepare_physical_signal(
-        trace.rt,
-        trace.intensity,
-        profile=profile,
-        trace_content_id=expected.prepared.trace_content_id,
-    )
-    context = _physical_owner_context(
-        prepared,
-        request_context_rt_start_min=binding.query_rt_min,
-        request_context_rt_end_min=binding.query_rt_max,
-    )
-    if context != (
-        expected.question.context_rt_start_min,
-        expected.question.context_rt_end_min,
+    if mint_physical_trace_content_id(trace.rt, trace.intensity) != (
+        expected.prepared.trace_content_id
     ):
         raise SampleLocalCaptureError(
-            "physical capture changed the exact acquired trace context"
+            "physical capture trace_content_id differs from the retained owner trace"
         )
-    if prepared.projection != expected.prepared:
+    retained = expected.retained_prepared_signal
+    if expected.state == "available" and (
+        retained is None or retained.projection != expected.prepared
+    ):
         raise SampleLocalCaptureError(
-            "physical capture changed the retained owner answer"
+            "physical capture lost the retained prepared signal"
         )
-    # The binding owns this exact question and answer. Preparing its verified
-    # trace supplies observation values and fresh diagnostic curves; it does
-    # not require repeating segmentation, selection, and integration.
-    evaluation = replace(expected, retained_prepared_signal=prepared.prepared)
+    prepared = PreparedSignalResult(
+        projection=expected.prepared,
+        prepared=retained,
+        operations=expected.operations,
+        trace_context_rt_start_min=expected.question.context_rt_start_min,
+        trace_context_rt_end_min=expected.question.context_rt_end_min,
+    )
     return _project_physical_capture(
         scope=scope,
         binding=binding,
         trace=trace,
         trace_group=trace_group,
         prepared=prepared,
-        evaluation=evaluation,
+        evaluation=expected,
     )
 
 

@@ -12,10 +12,10 @@ from time import perf_counter, sleep
 import pytest
 from openpyxl import Workbook
 
+from tests.cid_nl_raw_fixture import _peak_config, _settings
 from tests.runtime_telemetry_fixtures import (
     build_runtime_telemetry_samples_from_coordinator,
 )
-from tests.test_targeted_real_data_adapter import _peak_config, _settings
 from tests.test_untargeted_cid_nl_batch_runtime import _nearby_subject_candidates
 from tests.test_untargeted_cid_nl_real_data_runtime import (
     _current_candidates,

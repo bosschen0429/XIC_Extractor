@@ -16,6 +16,4 @@ def selected_candidate_ms2_evidence(
     evidence = candidate_ms2_cache.get(candidate)
     if evidence is not None:
         return evidence
-    if "region_first_safe_merge" not in candidate.merge_note.split(";"):
-        return None
     return candidate_ms2_builder(candidate)

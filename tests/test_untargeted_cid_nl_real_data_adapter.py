@@ -6,7 +6,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from tests.test_targeted_real_data_adapter import (
+from tests.cid_nl_raw_fixture import (
     _current_candidates,
     _FakeRaw,
     _open_bound_raw,

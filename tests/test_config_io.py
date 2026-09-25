@@ -9,7 +9,8 @@ from gui.config_io import read_settings, read_targets, write_settings, write_tar
 def tmp_config(tmp_path):
     (tmp_path / "settings.csv").write_text(
         "key,value,description\ndata_dir,C:\\data,資料目錄\ndll_dir,C:\\dll,DLL路徑\n"
-        "smooth_sigma,3.0,sigma\nsmooth_points,15,points\n",
+        "signal_processing_method,gaussian,method\n"
+        "signal_processing_window_points,15,window\n",
         encoding="utf-8-sig",
     )
     (tmp_path / "targets.csv").write_text(
@@ -23,7 +24,7 @@ def tmp_config(tmp_path):
 
 def test_read_settings(tmp_config, monkeypatch):
     monkeypatch.setattr("gui.config_io.CONFIG_DIR", tmp_config)
-    assert read_settings()["smooth_sigma"] == "3.0"
+    assert read_settings()["signal_processing_window_points"] == "15"
 
 
 def test_saved_worker_budget_reaches_shared_execution_profile(tmp_config, monkeypatch):
@@ -44,8 +45,8 @@ def test_write_settings_round_trips(tmp_config, monkeypatch):
         {
             "data_dir": "C:\\new",
             "dll_dir": "C:\\d",
-            "smooth_sigma": "4.0",
-            "smooth_points": "11",
+            "signal_processing_method": "gaussian",
+            "signal_processing_window_points": "21",
         }
     )
     assert read_settings()["data_dir"] == "C:\\new"
@@ -57,8 +58,8 @@ def test_write_settings_preserves_description(tmp_config, monkeypatch):
         {
             "data_dir": "C:\\x",
             "dll_dir": "C:\\y",
-            "smooth_sigma": "3.0",
-            "smooth_points": "15",
+            "signal_processing_method": "gaussian",
+            "signal_processing_window_points": "15",
         }
     )
     rows = list(
@@ -67,7 +68,7 @@ def test_write_settings_preserves_description(tmp_config, monkeypatch):
     assert {row["key"]: row["description"] for row in rows}["data_dir"] == "資料目錄"
 
 
-def test_write_settings_backfills_description_for_migrated_smooth_window(
+def test_write_settings_backfills_descriptions_for_current_settings(
     tmp_config, monkeypatch
 ):
     monkeypatch.setattr("gui.config_io.CONFIG_DIR", tmp_config)
@@ -75,10 +76,8 @@ def test_write_settings_backfills_description_for_migrated_smooth_window(
         {
             "data_dir": "C:\\x",
             "dll_dir": "C:\\y",
-            "smooth_window": "15",
-            "smooth_polyorder": "3",
-            "peak_rel_height": "0.95",
-            "peak_min_prominence_ratio": "0.10",
+            "signal_processing_method": "gaussian",
+            "signal_processing_window_points": "15",
             "ms2_precursor_tol_da": "0.5",
             "nl_min_intensity_ratio": "0.01",
             "count_no_ms2_as_detected": "false",
@@ -90,8 +89,8 @@ def test_write_settings_backfills_description_for_migrated_smooth_window(
     )
 
     descriptions = {row["key"]: row["description"] for row in rows}
-    assert descriptions["smooth_window"]
-    assert "Savitzky-Golay" in descriptions["smooth_window"]
+    assert descriptions["signal_processing_method"]
+    assert descriptions["signal_processing_window_points"]
     assert descriptions["count_no_ms2_as_detected"]
 
 

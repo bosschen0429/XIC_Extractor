@@ -1,20 +1,8 @@
 ﻿key,value,description
 data_dir,C:/your/data/folder,資料來源資料夾（換批次只改這裡）
 dll_dir,<thermo-rawfile-reader-dll-dir>,Thermo RawFileReader DLL 路徑（本機設定用；不要提交真實路徑）
-smooth_window,15,Savitzky-Golay 平滑視窗長度（必須為奇數，建議 9-21）
-smooth_polyorder,3,Savitzky-Golay 多項式階數（通常 2-4）
-ms1_morphology_smoothing_window_points,15,MS1 morphology Gaussian15 smoothing 視窗點數（必須為奇數；預設 15）
-peak_rel_height,0.95,Peak 邊界的相對高度（0.95 = 積分到 apex 的 5%，範圍 0.5-0.99）
-peak_min_prominence_ratio,0.1,Peak prominence 至少為 apex 的比例（越低越寬容，0.05-0.20）
-resolver_mode,region_first_safe_merge,峰切割演算法（legacy_savgol、local_minimum 或 region_first_safe_merge；arbitrated 已退休）
-resolver_chrom_threshold,0.05,Local minimum resolver 低強度剪枝百分位（0-1）
-resolver_min_search_range_min,0.08,Local minimum 搜尋 valley 的 RT 視窗（分鐘）
-resolver_min_relative_height,0.02,Local minimum 最低相對 apex 高度（相對全 trace 最大值）
-resolver_min_absolute_height,25.0,Local minimum 最低絕對 apex 強度
-resolver_min_ratio_top_edge,1.7,Local minimum apex 與兩側 edge 的最小比值（需 > 1）
-resolver_peak_duration_min,0.0,Local minimum 峰最短持續時間（分鐘）
-resolver_peak_duration_max,2.0,Local minimum 峰最長持續時間（分鐘）
-resolver_min_scans,5,Local minimum 區段最少 scans 數
+signal_processing_method,gaussian,Canonical signal smoothing method（固定 gaussian）
+signal_processing_window_points,15,Canonical Gaussian smoothing 視窗點數（必須為奇數；預設 15）
 ms2_precursor_tol_da,1.1,MS2 precursor m/z 半徑（Da，|scan precursor − 推算 precursor| 上限；儀器隔離寬度 1.6 Da（±0.8）加實測邊緣透過量 → 1.1 Da，見 #466）
 nl_min_intensity_ratio,0.01,NL product 強度至少為該 scan base peak 的比例（1% 排除 noise）
 count_no_ms2_as_detected,FALSE,是否將無 MS2 觸發的樣品算為偵測到（DDA 隨機性假陰性補救用）
@@ -22,7 +10,6 @@ keep_intermediate_csv,false,是否保留中間 CSV 檔（除錯用，預設關�
 emit_review_report,false,是否輸出 Review Report HTML（預設關閉）
 emit_peak_candidates,false,是否輸出 Peak Candidate TSV（除錯/審計用，預設關閉）
 baseline_audit_method,,Integration audit baseline shadow method; leave empty for default TSV schema or set to asls to emit AsLS comparison columns
-baseline_integration_method,asls,Alignment integration-audit baseline method (asls)
 parallel_mode,process,執行後端（serial 或 process；預設 process）
 rt_prior_library_path,,developer/debug RT prior library CSV path; leave empty for normal use
 target_pair_rt_calibration_path,,target pair RT calibration TSV path for shadow auto-reselection diagnostics; leave empty to disable

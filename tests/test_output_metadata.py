@@ -48,11 +48,9 @@ def test_build_metadata_rows_returns_contract_keys_in_order() -> None:
         "config_hash",
         "app_version",
         "generated_at",
-        "resolver_mode",
-        "smooth_window",
-        "smooth_polyorder",
+        "signal_processing_method",
+        "signal_processing_window_points",
         "ms1_morphology_smoothing_window_points",
-        "peak_min_prominence_ratio",
         "nl_min_intensity_ratio",
         "ms2_precursor_tol_da",
         "targeted_output_schema_version",
@@ -62,11 +60,9 @@ def test_build_metadata_rows_returns_contract_keys_in_order() -> None:
     ]
     values = dict(rows)
     assert values["config_hash"] == "abc12345"
-    assert values["resolver_mode"] == "local_minimum"
-    assert values["smooth_window"] == 17
-    assert values["smooth_polyorder"] == 3
+    assert values["signal_processing_method"] == "gaussian"
+    assert values["signal_processing_window_points"] == 21
     assert values["ms1_morphology_smoothing_window_points"] == 21
-    assert values["peak_min_prominence_ratio"] == 0.12
     assert values["nl_min_intensity_ratio"] == 0.02
     assert values["ms2_precursor_tol_da"] == 0.4
     assert values["targeted_output_schema_version"] == "targeted_output"
@@ -109,6 +105,7 @@ def _config(output_dir: Path) -> ExtractionConfig:
         smooth_window=17,
         smooth_polyorder=3,
         ms1_morphology_smoothing_window_points=21,
+        signal_processing_window_points=21,
         peak_rel_height=0.95,
         peak_min_prominence_ratio=0.12,
         ms2_precursor_tol_da=0.4,

@@ -9,14 +9,13 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from gui.sections.settings_controls import AdvancedControls, ResolverControls
+from gui.sections.settings_controls import AdvancedControls
 from gui.sections.settings_value_helpers import _bool_value, _float_value, _int_value
 from gui.sections.settings_widgets import (
     CollapsibleSection,
     _LabeledSpin,
     _set_float_range,
 )
-from xic_extractor.settings_schema import RESOLVER_MODES
 
 
 def configure_advanced_controls(controls: AdvancedControls) -> None:
@@ -112,7 +111,6 @@ def build_advanced_section(
 def load_advanced_values(
     settings_values: dict[str, str],
     advanced_controls: AdvancedControls,
-    resolver_controls: ResolverControls,
 ) -> None:
     advanced_controls.keep_intermediate_csv_checkbox.setChecked(
         _bool_value(settings_values, "keep_intermediate_csv")
@@ -140,34 +138,6 @@ def load_advanced_values(
     )
     advanced_controls.injection_order_source_edit.setText(
         settings_values.get("injection_order_source", "")
-    )
-    resolver_mode = settings_values.get("resolver_mode", "region_first_safe_merge")
-    if resolver_mode not in RESOLVER_MODES:
-        resolver_mode = "region_first_safe_merge"
-    resolver_controls.mode_combo.setCurrentText(resolver_mode)
-    resolver_controls.chrom_threshold_spin.setValue(
-        _float_value(settings_values, "resolver_chrom_threshold")
-    )
-    resolver_controls.min_search_range_min_spin.setValue(
-        _float_value(settings_values, "resolver_min_search_range_min")
-    )
-    resolver_controls.min_relative_height_spin.setValue(
-        _float_value(settings_values, "resolver_min_relative_height")
-    )
-    resolver_controls.min_absolute_height_spin.setValue(
-        _float_value(settings_values, "resolver_min_absolute_height")
-    )
-    resolver_controls.min_ratio_top_edge_spin.setValue(
-        _float_value(settings_values, "resolver_min_ratio_top_edge")
-    )
-    resolver_controls.peak_duration_min_spin.setValue(
-        _float_value(settings_values, "resolver_peak_duration_min")
-    )
-    resolver_controls.peak_duration_max_spin.setValue(
-        _float_value(settings_values, "resolver_peak_duration_max")
-    )
-    resolver_controls.min_scans_spin.setValue(
-        _int_value(settings_values, "resolver_min_scans")
     )
     advanced_controls.nl_rt_anchor_search_margin_min_spin.setValue(
         _float_value(settings_values, "nl_rt_anchor_search_margin_min")

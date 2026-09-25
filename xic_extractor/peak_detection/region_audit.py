@@ -1,15 +1,28 @@
 from __future__ import annotations
 
 import warnings
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import numpy as np
 
 from xic_extractor.config import ExtractionConfig
+from xic_extractor.peak_detection.baseline import (
+    BaselineMethod,
+    integrate_with_baseline,
+)
+from xic_extractor.peak_detection.boundaries import (
+    BoundaryHypothesis,
+    enumerate_boundary_hypotheses,
+)
+from xic_extractor.peak_detection.boundary_scoring import score_boundary_hypothesis
 from xic_extractor.peak_detection.cwt import add_cwt_proposals_for_audit
 from xic_extractor.peak_detection.integration_audit import (
     CellIntegrationAuditSummary,
     build_cell_integration_audit_summary,
+)
+from xic_extractor.peak_detection.interval_selection import (
+    WeightedInterval,
+    select_weighted_nonoverlap_intervals,
 )
 from xic_extractor.peak_detection.models import (
     PeakCandidate,
@@ -21,12 +34,11 @@ from xic_extractor.peak_detection.region_mixture_diagnostic import (
     classify_local_mixture,
 )
 from xic_extractor.peak_detection.region_model_selection import (
+    RegionBoundaryEvidence,
     RegionSelectionDecision,
     decide_region_selection,
 )
-from xic_extractor.peak_detection.region_safe_merge import (
-    scored_region_boundaries_for_candidates,
-)
+from xic_extractor.peak_detection.trace_quality import trace_continuity_score
 from xic_extractor.peak_detection.traces import TraceGroup
 
 
@@ -53,6 +65,166 @@ class PeakRegionAuditSummary:
 
 
 EMPTY_REGION_AUDIT = PeakRegionAuditSummary()
+
+
+@dataclass(frozen=True)
+class _ScoredBoundary:
+    boundary: BoundaryHypothesis
+    evidence: RegionBoundaryEvidence
+    score: int
+
+
+def _scored_region_boundaries_for_candidates(
+    rt_values: np.ndarray,
+    intensity_values: np.ndarray,
+    candidates: tuple[PeakCandidate, ...],
+    selected_candidate: PeakCandidate,
+    *,
+    baseline_integration_method: BaselineMethod = "asls",
+) -> tuple[_ScoredBoundary, ...]:
+    scored: list[_ScoredBoundary] = []
+    for index, candidate in enumerate(candidates):
+        candidate_id = _audit_candidate_id(index, candidate)
+        boundaries = enumerate_boundary_hypotheses(
+            rt_values,
+            intensity_values,
+            candidate,
+            candidate_id=candidate_id,
+        )
+        reference = _candidate_interval_reference(boundaries)
+        scored.extend(
+            _score_boundary(
+                boundary,
+                reference,
+                rt_values,
+                intensity_values,
+                candidate,
+                candidate_id,
+                selected_candidate=candidate == selected_candidate,
+                baseline_integration_method=baseline_integration_method,
+            )
+            for boundary in boundaries
+        )
+    selected_ids = _selected_top_boundary_ids(tuple(scored))
+    return tuple(
+        replace(
+            boundary,
+            evidence=replace(
+                boundary.evidence,
+                nonoverlap_selected=boundary.evidence.boundary_id in selected_ids,
+            ),
+        )
+        for boundary in scored
+    )
+
+
+def _selected_top_boundary_ids(
+    scored_boundaries: tuple[_ScoredBoundary, ...],
+) -> set[str]:
+    top_by_candidate: dict[str, _ScoredBoundary] = {}
+    for boundary in scored_boundaries:
+        current = top_by_candidate.get(boundary.evidence.candidate_id)
+        if current is None or _top_boundary_rank(boundary) > _top_boundary_rank(
+            current
+        ):
+            top_by_candidate[boundary.evidence.candidate_id] = boundary
+    intervals = tuple(
+        WeightedInterval(
+            item_id=boundary.evidence.boundary_id,
+            left=boundary.evidence.rt_left_min,
+            right=boundary.evidence.rt_right_min,
+            weight=boundary.score,
+            selected_priority=1 if boundary.evidence.selected_candidate else 0,
+            candidate_interval_priority=(
+                1 if boundary.evidence.is_candidate_interval else 0
+            ),
+        )
+        for boundary in top_by_candidate.values()
+    )
+    return {
+        interval.item_id
+        for interval in select_weighted_nonoverlap_intervals(intervals)
+    }
+
+
+def _score_boundary(
+    boundary: BoundaryHypothesis,
+    reference: BoundaryHypothesis,
+    rt_values: np.ndarray,
+    intensity_values: np.ndarray,
+    candidate: PeakCandidate,
+    candidate_id: str,
+    *,
+    selected_candidate: bool,
+    baseline_integration_method: BaselineMethod,
+) -> _ScoredBoundary:
+    baseline = integrate_with_baseline(
+        intensity_values,
+        rt_values,
+        boundary.left_index,
+        boundary.right_index,
+        baseline_method=baseline_integration_method,
+    )
+    score = score_boundary_hypothesis(
+        boundary,
+        reference,
+        baseline_score=baseline.baseline_score,
+        trace_continuity=trace_continuity_score(
+            intensity_values,
+            left=boundary.left_index,
+            right=boundary.right_index,
+        ),
+    )
+    return _ScoredBoundary(
+        boundary=boundary,
+        evidence=RegionBoundaryEvidence(
+            boundary_id=boundary.boundary_id,
+            candidate_id=candidate_id,
+            proposal_sources=candidate.proposal_sources,
+            boundary_sources=boundary.sources,
+            selected_candidate=selected_candidate,
+            is_candidate_interval="candidate_interval" in boundary.sources,
+            nonoverlap_selected=False,
+            rt_left_min=boundary.rt_left_min,
+            rt_apex_min=boundary.rt_apex_min,
+            rt_right_min=boundary.rt_right_min,
+            area_raw_counts_seconds=boundary.area_raw_counts_seconds,
+            boundary_score=score.score,
+            scan_count=boundary.scan_count,
+            support_labels=score.support_labels,
+            concern_labels=score.concern_labels,
+        ),
+        score=score.score,
+    )
+
+
+def _audit_candidate_id(index: int, candidate: PeakCandidate) -> str:
+    return "|".join(
+        (
+            f"candidate-{index}",
+            ";".join(candidate.proposal_sources),
+            f"{candidate.selection_apex_rt:.5f}",
+        )
+    )
+
+
+def _candidate_interval_reference(
+    boundaries: tuple[BoundaryHypothesis, ...],
+) -> BoundaryHypothesis:
+    for boundary in boundaries:
+        if "candidate_interval" in boundary.sources:
+            return boundary
+    if not boundaries:
+        raise ValueError("region audit requires at least one boundary hypothesis")
+    return boundaries[0]
+
+
+def _top_boundary_rank(boundary: _ScoredBoundary) -> tuple[int, int, float]:
+    return (
+        boundary.score,
+        1 if boundary.evidence.is_candidate_interval else 0,
+        boundary.evidence.area_raw_counts_seconds,
+    )
 
 
 def build_peak_region_audit_summary(
@@ -97,7 +269,7 @@ def build_peak_region_audit_summary(
         decision = decide_region_selection(
             tuple(
                 scored.evidence
-                for scored in scored_region_boundaries_for_candidates(
+                for scored in _scored_region_boundaries_for_candidates(
                     rt_values,
                     intensity_values,
                     candidates_result.candidates,

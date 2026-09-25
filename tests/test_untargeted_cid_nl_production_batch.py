@@ -19,13 +19,13 @@ import xic_extractor.extraction.untargeted_cid_nl_alignment as alignment_adapter
 import xic_extractor.extraction.untargeted_cid_nl_real_data_inputs as input_owner
 import xic_extractor.processing_identity as identity_owner
 import xic_extractor.raw_reader as raw_reader_owner
-from tests.runtime_telemetry_fixtures import (
-    build_runtime_telemetry_samples_from_coordinator,
-)
-from tests.test_targeted_real_data_adapter import (
+from tests.cid_nl_raw_fixture import (
     _multi_tag_settings,
     _peak_config,
     _settings,
+)
+from tests.runtime_telemetry_fixtures import (
+    build_runtime_telemetry_samples_from_coordinator,
 )
 from tests.test_untargeted_cid_nl_batch_runtime import _nearby_subject_candidates
 from tests.test_untargeted_cid_nl_real_data_runtime import (
@@ -3197,7 +3197,14 @@ def test_sample_job_builder_rejects_changed_request_bound_inputs(
         ({"processing_owners": other.owners}, "supported real-data runtime contract"),
         ({"sample": other.sample("Other")}, "candidate universe"),
         ({"settings": replace(settings, rt_min=7.0)}, "Discovery settings"),
-        ({"peak_config": replace(peak_config, smooth_window=17)}, "peak settings"),
+        (
+            {
+                "peak_config": replace(
+                    peak_config, ms1_morphology_smoothing_window_points=17
+                )
+            },
+            "peak settings",
+        ),
         (
             {"candidates": (replace(candidates[0], reason="changed"), *candidates[1:])},
             "candidate universe",

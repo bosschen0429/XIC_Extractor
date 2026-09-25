@@ -5,14 +5,14 @@ from pathlib import Path
 
 import pytest
 
-from tests.runtime_telemetry_fixtures import (
-    build_runtime_telemetry_samples_from_coordinator,
-)
-from tests.test_targeted_real_data_adapter import (
+from tests.cid_nl_raw_fixture import (
     _current_candidates,
     _FakeRaw,
     _peak_config,
     _settings,
+)
+from tests.runtime_telemetry_fixtures import (
+    build_runtime_telemetry_samples_from_coordinator,
 )
 from tests.test_untargeted_cid_nl_real_data_runtime import (
     _assert_partition_matches_runtime,

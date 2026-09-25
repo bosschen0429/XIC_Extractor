@@ -10,20 +10,18 @@ from xic_extractor.targeted_ms1_shape_identity_policy import (
 RESOLVER_MODES: tuple[str, ...] = (
     "legacy_savgol",
     "local_minimum",
-    "region_first_safe_merge",
 )
-CANONICAL_RESOLVER_MODE = "region_first_safe_merge"
+CANONICAL_RESOLVER_MODE = "local_minimum"
 
 ARBITRATED_RESOLVER_RETIRED_MESSAGE = (
-    "arbitrated resolver mode is retired; use region_first_safe_merge"
+    "arbitrated resolver mode is retired; legacy diagnostics use local_minimum. "
+    "Targeted uses the canonical signal-processing profile."
 )
 
 
 CANONICAL_SETTINGS_DEFAULTS: dict[str, str] = {
     "data_dir": "C:/your/data/folder",
     "dll_dir": "C:\\Xcalibur\\system\\programs",
-    "smooth_window": "15",
-    "smooth_polyorder": "3",
     "signal_processing_method": DEFAULT_SIGNAL_PROCESSING_PROFILE.method,
     "signal_processing_window_points": str(
         DEFAULT_SIGNAL_PROCESSING_PROFILE.window_points
@@ -33,17 +31,6 @@ CANONICAL_SETTINGS_DEFAULTS: dict[str, str] = {
     "ms1_morphology_smoothing_window_points": str(
         DEFAULT_SIGNAL_PROCESSING_PROFILE.window_points
     ),
-    "peak_rel_height": "0.95",
-    "peak_min_prominence_ratio": "0.10",
-    "resolver_mode": CANONICAL_RESOLVER_MODE,
-    "resolver_chrom_threshold": "0.05",
-    "resolver_min_search_range_min": "0.08",
-    "resolver_min_relative_height": "0.02",
-    "resolver_min_absolute_height": "25.0",
-    "resolver_min_ratio_top_edge": "1.7",
-    "resolver_peak_duration_min": "0.0",
-    "resolver_peak_duration_max": "2.0",
-    "resolver_min_scans": "5",
     "ms2_precursor_tol_da": "1.1",
     "nl_min_intensity_ratio": "0.01",
     "count_no_ms2_as_detected": "false",
@@ -60,7 +47,6 @@ CANONICAL_SETTINGS_DEFAULTS: dict[str, str] = {
     "emit_peak_candidates": "false",
     "keep_intermediate_csv": "false",
     "baseline_audit_method": "",
-    "baseline_integration_method": "asls",
     "nl_rt_anchor_search_margin_min": "2.0",
     "nl_rt_anchor_half_window_min": "1.0",
     "nl_fallback_half_window_min": "2.0",
@@ -71,8 +57,6 @@ CANONICAL_SETTINGS_DEFAULTS: dict[str, str] = {
 CANONICAL_SETTINGS_DESCRIPTIONS: dict[str, str] = {
     "data_dir": "資料來源資料夾（換批次只改這裡）",
     "dll_dir": "Xcalibur DLL 路徑（通常不需更改）",
-    "smooth_window": "Savitzky-Golay 平滑視窗長度（必須為奇數，建議 9-21）",
-    "smooth_polyorder": "Savitzky-Golay 多項式階數（通常 2-4）",
     "signal_processing_method": (
         "Canonical signal smoothing method (gaussian only). AsLS is the fixed "
         "baseline estimator, not a smoothing method."
@@ -84,28 +68,6 @@ CANONICAL_SETTINGS_DESCRIPTIONS: dict[str, str] = {
         "Legacy Gaussian15 alias for signal_processing_window_points; "
         "do not use in new settings"
     ),
-    "peak_rel_height": (
-        "Peak 邊界的相對高度（0.95 = 積分到 apex 的 5%，範圍 0.5-0.99）"
-    ),
-    "peak_min_prominence_ratio": (
-        "Peak prominence 至少為 apex 的比例（越低越寬容，0.05-0.20）"
-    ),
-    "resolver_mode": (
-        "峰切割演算法（legacy_savgol、local_minimum "
-        "或 region_first_safe_merge；arbitrated 已退休）"
-    ),
-    "resolver_chrom_threshold": "Local minimum resolver 低強度剪枝百分位（0-1）",
-    "resolver_min_search_range_min": "Local minimum 搜尋 valley 的 RT 視窗（分鐘）",
-    "resolver_min_relative_height": (
-        "Local minimum 最低相對 apex 高度（相對全 trace 最大值）"
-    ),
-    "resolver_min_absolute_height": "Local minimum 最低絕對 apex 強度",
-    "resolver_min_ratio_top_edge": (
-        "Local minimum apex 與兩側 edge 的最小比值（需 > 1）"
-    ),
-    "resolver_peak_duration_min": "Local minimum 峰最短持續時間（分鐘）",
-    "resolver_peak_duration_max": "Local minimum 峰最長持續時間（分鐘）",
-    "resolver_min_scans": "Local minimum 區段最少 scans 數",
     "ms2_precursor_tol_da": (
         "MS2 precursor m/z 半徑（Da，|scan precursor − 推算 precursor| 上限；"
         "儀器隔離寬度 1.6 Da（±0.8）加實測邊緣透過量 → 1.1 Da，見 #466）"
@@ -152,11 +114,6 @@ CANONICAL_SETTINGS_DESCRIPTIONS: dict[str, str] = {
     "baseline_audit_method": (
         "Integration audit baseline shadow method; leave empty for default TSV "
         "schema or set to asls to emit AsLS comparison columns"
-    ),
-    "baseline_integration_method": (
-        "Baseline-corrected integration method for hypothesis, boundary, "
-        "region, and alignment audit surfaces "
-        "(asls only; linear_edge is retired)"
     ),
     "nl_rt_anchor_search_margin_min": (
         "NL 錨定搜尋半徑（min）：以 rt_center ±此值搜尋 NL 確認的 MS2 作為 RT anchor"

@@ -39,7 +39,7 @@ def preferred_rt_relaxed_search(
         return None, None
 
     resolver_mode = getattr(config, "resolver_mode", CANONICAL_RESOLVER_MODE)
-    if resolver_mode in {"local_minimum", "region_first_safe_merge"}:
+    if resolver_mode == "local_minimum":
         relaxed_config = relaxed_local_minimum_config(config)
         if relaxed_config == config:
             return None, None

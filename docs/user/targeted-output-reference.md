@@ -3,12 +3,9 @@
 Column-level reference for every sheet in the Targeted Extraction Excel workbook.
 The workbook is written to `<output_dir>/<batch_name>_xic_results.xlsx`.
 
-This page documents the current public workbook, not the frozen internal
-architecture migration. `TargetKey`, `TargetDefinition`, `TargetRowBinding`,
-typed no-write reasons, and archive references remain internal until a
-separately versioned schema/expected-diff promotion changes these columns. The
-existing Review Queue remains the user-facing location for Targeted unresolved
-and diagnostic reasons.
+`TargetKey`, `TargetDefinition`, `TargetRowBinding`, typed no-write reasons,
+and archive references are internal lifecycle records. The Review Queue is
+the user-facing location for Targeted unresolved and diagnostic reasons.
 
 ## Overview Sheet
 
@@ -33,9 +30,9 @@ One row per sample-target pair. This is the primary quantitative output.
 | Role | string | `Analyte` or `ISTD` |
 | ISTD Pair | string | Paired internal standard label |
 | RT | float | Smoothed peak apex retention time (min) |
-| Area | float | Gaussian15-smoothed positive AsLS residual area |
+| Area | float | Selected shared physical peak's Gaussian-smoothed positive AsLS residual area (counts·seconds) |
 | NL | string | Neutral loss status: `OK`, `WARN_*`, `NL_FAIL`, `NO_MS2` |
-| IntSmoothed | float | Existing selected peak's Gaussian-smoothed apex intensity |
+| IntSmoothed | float | Selected physical peak's Gaussian-smoothed positive AsLS residual apex intensity |
 | Confidence | string | `HIGH`, `MEDIUM`, `LOW`, or `VERY_LOW` |
 | Reason | string | Human-readable explanation of the result |
 | Product State | string | Product quantification state |
@@ -113,7 +110,7 @@ One row per flagged sample-target pair. Sorted by priority.
 | Status | string | Detection status |
 | Why | string | Reason for review flag |
 | RT | float | Retention time (min) |
-| Area | float | Peak area |
+| Area | float | Selected peak area (counts·seconds) |
 | Action | string | Recommended action |
 | Issue Count | int | Number of issues |
 | Evidence | string | Supporting evidence |
@@ -162,9 +159,8 @@ Key-value pairs recording settings and provenance for the run.
 | config_hash | `a3f2...` | SHA-256 hash of config |
 | app_version | `1.2.0` | Application version |
 | generated_at | `2026-06-27T10:00:00` | ISO 8601 timestamp |
-| resolver_mode | `region_first_safe_merge` | Peak separation algorithm |
-| smooth_window | `15` | Smoothing window (points) |
-| smooth_polyorder | `3` | Polynomial order |
+| signal_processing_method | `gaussian` | Shared physical signal smoothing method |
+| signal_processing_window_points | `15` | Gaussian smoothing window (points) |
 | targeted_output_schema_version | `targeted_output` | Output schema version |
 | method_manifest_sha256 | `b7c4...` | Method manifest hash |
 

@@ -6,9 +6,6 @@ from dataclasses import replace
 import numpy as np
 
 from xic_extractor.config import ExtractionConfig
-from xic_extractor.peak_detection.chrom_peak_candidate_adapter import (
-    chrom_peak_segment_candidates,
-)
 from xic_extractor.peak_detection.legacy_savgol import (
     find_peak_candidates_legacy_savgol,
 )
@@ -38,7 +35,7 @@ def find_peak_candidates(
     ),
 ) -> PeakCandidatesResult:
     resolver_mode = getattr(config, "resolver_mode", CANONICAL_RESOLVER_MODE)
-    if resolver_mode in {"local_minimum", "region_first_safe_merge"}:
+    if resolver_mode == "local_minimum":
         return local_minimum_finder(rt, intensity, config)
     if resolver_mode == "arbitrated":
         raise ValueError(ARBITRATED_RESOLVER_RETIRED_MESSAGE)
@@ -51,50 +48,6 @@ def find_peak_candidates(
         )
     allowed = ", ".join(RESOLVER_MODES[:-1]) + f", or {RESOLVER_MODES[-1]}"
     raise ValueError(f"unsupported resolver mode {resolver_mode!r}; must be {allowed}")
-
-
-def augment_with_chrom_peak_segment_candidates(
-    rt: np.ndarray,
-    intensity: np.ndarray,
-    config: ExtractionConfig,
-    candidates_result: PeakCandidatesResult,
-) -> PeakCandidatesResult:
-    resolver_mode = getattr(config, "resolver_mode", CANONICAL_RESOLVER_MODE)
-    if resolver_mode != CANONICAL_RESOLVER_MODE:
-        return candidates_result
-    chrom_candidates = chrom_peak_segment_candidates(rt, intensity, config)
-    if not chrom_candidates:
-        return candidates_result
-    candidates = candidates_result.candidates
-    for candidate in chrom_candidates:
-        candidates = append_or_merge_chrom_peak_segment_candidate(
-            candidates,
-            candidate,
-        )
-    status = "OK" if candidates else candidates_result.status
-    return replace(
-        candidates_result,
-        status=status,
-        candidates=candidates,
-        n_prominent_peaks=len(candidates),
-    )
-
-
-def append_or_merge_chrom_peak_segment_candidate(
-    candidates: tuple[PeakCandidate, ...],
-    chrom_candidate: PeakCandidate,
-) -> tuple[PeakCandidate, ...]:
-    merged: list[PeakCandidate] = []
-    replaced = False
-    for candidate in candidates:
-        if _same_chrom_peak_segment_identity(candidate, chrom_candidate):
-            merged.append(_chrom_boundary_upgrade_candidate(candidate, chrom_candidate))
-            replaced = True
-        else:
-            merged.append(candidate)
-    if not replaced:
-        merged.append(chrom_candidate)
-    return tuple(merged)
 
 
 def append_or_merge_relaxed_candidate(
@@ -144,56 +97,6 @@ def with_candidates(
     )
 
 
-def _same_chrom_peak_segment_identity(
-    candidate: PeakCandidate,
-    chrom_candidate: PeakCandidate,
-) -> bool:
-    if _same_peak_candidate_identity(candidate, chrom_candidate):
-        return True
-    if candidate.selection_apex_index == chrom_candidate.selection_apex_index:
-        return True
-    return abs(candidate.selection_apex_rt - chrom_candidate.selection_apex_rt) <= 1e-9
-
-
-def _chrom_boundary_upgrade_candidate(
-    candidate: PeakCandidate,
-    chrom_candidate: PeakCandidate,
-) -> PeakCandidate:
-    return replace(
-        chrom_candidate,
-        proposal_sources=_combine_proposal_sources(candidate, chrom_candidate),
-        source_apex_rank=(
-            candidate.source_apex_rank
-            if candidate.source_apex_rank is not None
-            else chrom_candidate.source_apex_rank
-        ),
-        cwt_best_scale=(
-            chrom_candidate.cwt_best_scale
-            if chrom_candidate.cwt_best_scale is not None
-            else candidate.cwt_best_scale
-        ),
-        cwt_ridge_persistence=(
-            chrom_candidate.cwt_ridge_persistence
-            if chrom_candidate.cwt_ridge_persistence is not None
-            else candidate.cwt_ridge_persistence
-        ),
-        ms2_evidence_peak_start=(
-            chrom_candidate.ms2_evidence_peak_start
-            if chrom_candidate.ms2_evidence_peak_start is not None
-            else candidate.ms2_evidence_peak_start
-        ),
-        ms2_evidence_peak_end=(
-            chrom_candidate.ms2_evidence_peak_end
-            if chrom_candidate.ms2_evidence_peak_end is not None
-            else candidate.ms2_evidence_peak_end
-        ),
-        merge_note=_combine_merge_note(
-            candidate.merge_note,
-            chrom_candidate.merge_note,
-        ),
-    )
-
-
 def _combine_proposal_sources(
     first: PeakCandidate,
     second: PeakCandidate,
@@ -205,14 +108,6 @@ def _combine_proposal_sources(
             if source
         )
     )
-
-
-def _combine_merge_note(current: str, note: str) -> str:
-    if not current:
-        return note
-    if not note or note in current.split("; "):
-        return current
-    return f"{current}; {note}"
 
 
 def _same_peak_candidate_identity(

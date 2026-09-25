@@ -17,29 +17,16 @@ contain local machine paths.
 
 ### Peak Detection
 
+Targeted and Untargeted use the same physical signal and peak-boundary owner.
+The same trace, context, profile and physical question produce the same facts.
+Gaussian smoothing and the fixed AsLS baseline define the signal; Targeted
+reference and ISTD evidence select a component without recomputing its area.
+
 | Field | Type | Default | Valid range | Description |
 | --- | --- | --- | --- | --- |
-| `resolver_mode` | enum | `region_first_safe_merge` | `legacy_savgol`, `local_minimum`, `region_first_safe_merge` | Peak separation algorithm |
-| `smooth_window` | int | 15 | odd, >= 3 | Savitzky-Golay smoothing window (points) |
-| `smooth_polyorder` | int | 3 | >= 1, < `smooth_window` | Savitzky-Golay polynomial order |
+| `signal_processing_method` | enum | `gaussian` | `gaussian` | Shared physical signal smoothing method |
+| `signal_processing_window_points` | int | 15 | odd, 3–999 | Gaussian smoothing window (points) |
 | `ms1_morphology_smoothing_window_points` | int | 15 | odd, >= 3 | MS1 morphology Gaussian smoothing window (points) |
-| `peak_rel_height` | float | 0.95 | 0.5 – 0.99 | Relative height for peak boundary (0.95 = integrate down to 5% of apex) |
-| `peak_min_prominence_ratio` | float | 0.10 | 0.01 – 0.50 | Minimum peak prominence as fraction of apex (lower = more permissive) |
-
-### Local Minimum Resolver
-
-These apply only when `resolver_mode` is `local_minimum` or `region_first_safe_merge`.
-
-| Field | Type | Default | Valid range | Description |
-| --- | --- | --- | --- | --- |
-| `resolver_chrom_threshold` | float | 0.05 | 0.0 – 1.0 | Low-intensity pruning percentile |
-| `resolver_min_search_range_min` | float | 0.08 | > 0 | RT window for valley search (minutes) |
-| `resolver_min_relative_height` | float | 0.02 | 0.0 – 1.0 | Minimum peak height relative to apex |
-| `resolver_min_absolute_height` | float | 25.0 | >= 0 | Minimum absolute apex intensity |
-| `resolver_min_ratio_top_edge` | float | 1.7 | > 1 | Minimum apex-to-edge intensity ratio |
-| `resolver_peak_duration_min` | float | 0.0 | >= 0 | Minimum peak duration (minutes) |
-| `resolver_peak_duration_max` | float | 2.0 | > `resolver_peak_duration_min` | Maximum peak duration (minutes) |
-| `resolver_min_scans` | int | 5 | >= 1 | Minimum scan count per peak region |
 
 ### Neutral Loss Confirmation
 
@@ -73,7 +60,6 @@ These apply only when `resolver_mode` is `local_minimum` or `region_first_safe_m
 | `emit_review_report` | bool | `false` | Generate Review Report HTML |
 | `emit_peak_candidates` | bool | `false` | Output Peak Candidate TSV for audit |
 | `baseline_audit_method` | enum | *(empty)* | Shadow baseline method: empty or `asls` |
-| `baseline_integration_method` | enum | `asls` | Integration baseline method (`asls`; `linear_edge` is retired) |
 
 ### Parallelization
 

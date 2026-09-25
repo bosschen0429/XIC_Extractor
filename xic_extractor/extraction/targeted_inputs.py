@@ -19,6 +19,14 @@ from xic_extractor.peak_detection.model_selection import (
 from xic_extractor.peak_detection.model_selection_approval_registry import (
     load_expected_diff_approval_registry,
 )
+from xic_extractor.peak_detection.physical_peak_models import PhysicalPeakEvaluation
+from xic_extractor.peak_detection.search_scope import (
+    PHYSICAL_CAPTURE_INPUT_KEY,
+    physical_capture_input_payload,
+)
+from xic_extractor.peak_detection.signal_processing_profile import (
+    SignalProcessingProfile,
+)
 from xic_extractor.processing_identity import (
     AcquisitionInputBinding,
     IdentityContractError,
@@ -59,22 +67,9 @@ TARGETED_REAL_DATA_DISCOVERY_SETTINGS_SCHEMA_VERSION = (
     "targeted_real_data_discovery_settings"
 )
 TARGETED_SCIENTIFIC_SETTING_FIELDS = (
-    "smooth_window",
-    "smooth_polyorder",
-    "peak_rel_height",
-    "peak_min_prominence_ratio",
     "ms2_precursor_tol_da",
     "nl_min_intensity_ratio",
     "ms1_morphology_smoothing_window_points",
-    "resolver_mode",
-    "resolver_chrom_threshold",
-    "resolver_min_search_range_min",
-    "resolver_min_relative_height",
-    "resolver_min_absolute_height",
-    "resolver_min_ratio_top_edge",
-    "resolver_peak_duration_min",
-    "resolver_peak_duration_max",
-    "resolver_min_scans",
     "count_no_ms2_as_detected",
     "nl_rt_anchor_search_margin_min",
     "nl_rt_anchor_half_window_min",
@@ -82,7 +77,6 @@ TARGETED_SCIENTIFIC_SETTING_FIELDS = (
     "rolling_window_size",
     "dirty_matrix_mode",
     "baseline_audit_method",
-    "baseline_integration_method",
 )
 
 
@@ -204,6 +198,35 @@ def build_targeted_processing_request_identity(
         scientific_input_schema_version=TARGETED_PROCESSING_INPUT_SCHEMA_VERSION,
         processing_algorithm_version=TARGETED_PROCESSING_ALGORITHM_VERSION,
         processing_contract_version=TARGETED_PROCESSING_CONTRACT_VERSION,
+        scientific_inputs=scientific_inputs,
+    )
+
+
+def bind_targeted_physical_capture_request(
+    request: ProcessingRequestIdentity,
+    *,
+    profile: SignalProcessingProfile,
+    evaluations: Mapping[str, PhysicalPeakEvaluation],
+) -> ProcessingRequestIdentity:
+    """Mint the attempt-owning request after acquisition physical facts exist."""
+
+    if not isinstance(request, ProcessingRequestIdentity):
+        raise IdentityContractError("physical capture requires a Targeted request")
+    scientific_inputs = json.loads(request.normalized_scientific_inputs_json)
+    if PHYSICAL_CAPTURE_INPUT_KEY in scientific_inputs:
+        raise IdentityContractError(
+            "Targeted physical capture is already request-bound"
+        )
+    scientific_inputs[PHYSICAL_CAPTURE_INPUT_KEY] = physical_capture_input_payload(
+        profile,
+        evaluations,
+    )
+    return build_processing_request_identity(
+        acquisition_sources=request.acquisition_sources,
+        acquisition_bindings=request.acquisition_bindings,
+        scientific_input_schema_version=request.scientific_input_schema_version,
+        processing_algorithm_version=request.processing_algorithm_version,
+        processing_contract_version=request.processing_contract_version,
         scientific_inputs=scientific_inputs,
     )
 

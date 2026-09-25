@@ -446,7 +446,6 @@ def _peak_config(
     settings: DiscoverySettings,
     args: argparse.Namespace,
 ) -> ExtractionConfig:
-    defaults = CANONICAL_SETTINGS_DEFAULTS
     return ExtractionConfig(
         data_dir=data_dir,
         dll_dir=dll_dir,
@@ -462,14 +461,6 @@ def _peak_config(
         ms2_precursor_tol_da=settings.ms2_precursor_tol_da,
         nl_min_intensity_ratio=settings.nl_min_intensity_ratio,
         resolver_mode=settings.resolver_mode,
-        resolver_chrom_threshold=float(defaults["resolver_chrom_threshold"]),
-        resolver_min_search_range_min=float(defaults["resolver_min_search_range_min"]),
-        resolver_min_relative_height=float(defaults["resolver_min_relative_height"]),
-        resolver_min_absolute_height=float(defaults["resolver_min_absolute_height"]),
-        resolver_min_ratio_top_edge=float(defaults["resolver_min_ratio_top_edge"]),
-        resolver_peak_duration_min=float(defaults["resolver_peak_duration_min"]),
-        resolver_peak_duration_max=float(defaults["resolver_peak_duration_max"]),
-        resolver_min_scans=int(defaults["resolver_min_scans"]),
     )
 
 
@@ -606,12 +597,12 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument(
         "--smooth-window",
         type=_positive_int,
-        default=int(defaults["smooth_window"]),
+        default=15,
     )
     parser.add_argument(
         "--smooth-polyorder",
         type=_positive_int,
-        default=int(defaults["smooth_polyorder"]),
+        default=3,
     )
     parser.add_argument(
         "--ms1-morphology-smoothing-window-points",
@@ -621,12 +612,12 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument(
         "--peak-rel-height",
         type=_positive_float,
-        default=float(defaults["peak_rel_height"]),
+        default=0.95,
     )
     parser.add_argument(
         "--peak-min-prominence-ratio",
         type=_positive_float,
-        default=float(defaults["peak_min_prominence_ratio"]),
+        default=0.10,
     )
     parser.add_argument(
         "--sample-identity-namespace",

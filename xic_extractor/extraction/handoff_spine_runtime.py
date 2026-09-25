@@ -14,9 +14,6 @@ from xic_extractor.extraction.scoring_factory import selected_candidate
 from xic_extractor.extraction.trace_context import targeted_extraction_trace_group
 from xic_extractor.neutral_loss import CandidateMS2Evidence
 from xic_extractor.peak_detection.baseline import BaselineMethod
-from xic_extractor.peak_detection.capture_boundary_policy import (
-    promote_targeted_boundary_hypothesis as promote_targeted_boundary_hypothesis,
-)
 from xic_extractor.peak_detection.hypotheses import PeakHypothesis
 from xic_extractor.peak_detection.model_selection import (
     ExpectedDiffApprovalRecords,
@@ -39,8 +36,6 @@ from xic_extractor.target_sample_applicability import (
     TARGET_SAMPLE_APPLICABILITY_RNA_CONTAINING,
     target_sample_is_applicable,
 )
-
-# Finite re-export: remove after target_extraction imports the capture owner directly.
 
 
 @dataclass(frozen=True)

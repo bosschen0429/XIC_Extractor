@@ -1161,7 +1161,7 @@ def test_owner_binding_rejects_observation_from_other_capture_trace(
 
 
 @pytest.mark.parametrize("ripple", [False, True])
-def test_physical_capture_projects_trace_identity_once_across_mint_and_bind(
+def test_physical_capture_reuses_owner_evaluation_across_mint_and_bind(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     ripple: bool,
@@ -1293,6 +1293,11 @@ def test_physical_capture_projects_trace_identity_once_across_mint_and_bind(
     )
     monkeypatch.setattr(
         physical_identity,
+        "mint_physical_trace_content_id",
+        count_trace_hash,
+    )
+    monkeypatch.setattr(
+        capture_owner,
         "mint_physical_trace_content_id",
         count_trace_hash,
     )

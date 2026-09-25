@@ -56,7 +56,6 @@ from xic_extractor.peak_detection.cid_nl_method_subject import (
     mint_untargeted_cid_nl_method_subject,
 )
 from xic_extractor.sample_metadata import SampleMetadata
-from xic_extractor.settings_schema import CANONICAL_SETTINGS_DEFAULTS
 
 
 @dataclass(frozen=True, slots=True)
@@ -300,16 +299,15 @@ def _peak_config(
     output_dir: Path,
     settings: DiscoverySettings,
 ) -> ExtractionConfig:
-    defaults = CANONICAL_SETTINGS_DEFAULTS
     return ExtractionConfig(
         data_dir=data_dir,
         dll_dir=dll_dir,
         output_csv=output_dir / "unused_xic_results.csv",
         diagnostics_csv=output_dir / "unused_xic_diagnostics.csv",
-        smooth_window=int(defaults["smooth_window"]),
-        smooth_polyorder=int(defaults["smooth_polyorder"]),
-        peak_rel_height=float(defaults["peak_rel_height"]),
-        peak_min_prominence_ratio=float(defaults["peak_min_prominence_ratio"]),
+        smooth_window=15,
+        smooth_polyorder=3,
+        peak_rel_height=0.95,
+        peak_min_prominence_ratio=0.10,
         ms2_precursor_tol_da=settings.ms2_precursor_tol_da,
         nl_min_intensity_ratio=settings.nl_min_intensity_ratio,
         resolver_mode=settings.resolver_mode,

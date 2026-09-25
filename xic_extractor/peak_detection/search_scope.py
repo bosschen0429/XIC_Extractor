@@ -188,12 +188,6 @@ class TargetSearchScope:
     target: ResolvedTargetDefinition
 
     def __post_init__(self) -> None:
-        if self.method_constraints.signal_processing_profile is not None or any(
-            binding.physical_evaluation is not None for binding in self.capture_bindings
-        ):
-            raise SearchScopeContractError(
-                "Target scope does not consume physical replay"
-            )
         _validate_common_scope(
             schema_version=self.schema_version,
             request=self.request,
@@ -226,6 +220,7 @@ class TargetSearchScope:
             target=self.target,
         )
         _validate_targeted_capture_bindings(self.capture_bindings, target=self.target)
+        _validate_physical_capture_scope(self)
 
     @property
     def variant(self) -> Literal["targeted"]:
@@ -325,7 +320,7 @@ def request_binds_physical_capture_profile(
     )
 
 
-def _validate_physical_capture_scope(scope: UntargetedSearchScope) -> None:
+def _validate_physical_capture_scope(scope: SearchScope) -> None:
     profile = scope.method_constraints.signal_processing_profile
     payload = _request_inputs(scope.request).get(PHYSICAL_CAPTURE_INPUT_KEY)
     if profile is None:
@@ -578,7 +573,13 @@ def _validate_targeted_capture_bindings(
                 "Target capture binding mismatches exact Target subject/m/z/ppm"
             )
         expected_selection_policy = (
-            "retained_only" if value.neutral_loss_da is None else "capture_default"
+            "capture_default"
+            if binding.physical_evaluation is not None
+            else (
+                "retained_only"
+                if value.neutral_loss_da is None
+                else "capture_default"
+            )
         )
         if binding.selection_policy != expected_selection_policy:
             raise SearchScopeContractError(
