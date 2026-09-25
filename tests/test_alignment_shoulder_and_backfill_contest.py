@@ -12,6 +12,7 @@ from xic_extractor.alignment.cross_sample_peak_groups import (
 )
 from xic_extractor.alignment.grouping_workflow import (
     contested_backfill_peaks,
+    merge_sample_disjoint_groups,
     reject_shoulder_groups,
 )
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
@@ -213,3 +214,57 @@ def test_backfill_peak_at_another_apex_or_mass_is_not_contested() -> None:
         )
         == frozenset()
     )
+
+
+def _feature(sample: str, apex: float, suffix: str = "f") -> SampleLocalMS1Owner:
+    return _peak(
+        sample, suffix, apex=apex, start=apex - 0.2, end=apex + 0.2, area=5_000.0
+    )
+
+
+def _two_bands(early: tuple[str, ...], late: tuple[str, ...], *, gap: float):
+    owners = (
+        *(_feature(sample, 9.0) for sample in early),
+        *(_feature(sample, 9.0 + gap, "late") for sample in late),
+    )
+    groups = construct_cross_sample_peak_group_hypotheses(
+        owners,
+        config=_CONFIG,
+        sample_universe=frozenset(owner.sample_stem for owner in owners),
+    )
+    assert len(groups) == 2
+    assert all(group.disposition == "established" for group in groups)
+    return groups
+
+
+def test_sample_disjoint_rows_within_one_backfill_window_merge() -> None:
+    """No sample shows both peaks, and each row would Backfill the other's."""
+
+    groups = _two_bands(("S1", "S2", "S3"), ("S4", "S5", "S6"), gap=1.8)
+
+    (merged,) = merge_sample_disjoint_groups(
+        groups, config=_CONFIG, backfill_half_window_min=2.0
+    )
+
+    assert merged.disposition == "established"
+    assert sorted(merged.owner_ids) == sorted(
+        owner_id for group in groups for owner_id in group.owner_ids
+    )
+    assert merged.public_family_id == min(group.public_family_id for group in groups)
+    assert (
+        len({member.canonical_sample_identity_id for member in merged.member_subjects})
+        == 6
+    )
+
+
+def test_rows_with_a_shared_sample_or_beyond_the_window_stay_apart() -> None:
+    shared = _two_bands(("S1", "S2", "S3"), ("S3", "S4", "S5"), gap=1.8)
+    distant = _two_bands(("S1", "S2", "S3"), ("S4", "S5", "S6"), gap=3.0)
+
+    for groups in (shared, distant):
+        assert (
+            merge_sample_disjoint_groups(
+                groups, config=_CONFIG, backfill_half_window_min=2.0
+            )
+            == groups
+        )

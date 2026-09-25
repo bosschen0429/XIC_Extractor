@@ -228,6 +228,14 @@ reasons, Review Queue/archive routing, and result finalization close afterward.
   The majority is the one shoulder threshold in Alignment; it is owned here and
   was set from the d3-5-hmdC split (#469). A rejected group becomes an archive
   row and plans no Backfill; its members are not moved into the other group.
+- Rows of one feature that no sample tells apart merge. Two peaks are only
+  evidenced by one sample holding both, not by an RT or m/z distance. After the
+  final regroup, established Untargeted CID-NL groups within the preferred m/z
+  tolerance whose centers lie within one Backfill half window
+  (`nl_rt_anchor_half_window_min`) and that share no sample merge, closest
+  first; a merge never joins groups that share a sample. Such rows would
+  otherwise Backfill each other's peak (#469). Known-identity groups keep
+  their own membership.
 
 ### ModeTrack and Backfill relationship
 

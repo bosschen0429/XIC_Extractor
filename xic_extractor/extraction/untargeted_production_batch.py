@@ -1456,6 +1456,9 @@ def prepare_untargeted_cid_nl_grouping(
             alignment_config=alignment_config,
             injection_order=injection_order,
             rt_warp=rt_warp,
+            backfill_half_window_min=(
+                batch.context.peak_config.nl_rt_anchor_half_window_min
+            ),
             operation_counts_sink=operation_counts,
         )
         final_worksets.append(

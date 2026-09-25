@@ -24,6 +24,7 @@ from xic_extractor.alignment.edge_scoring import DriftLookupProtocol
 from xic_extractor.alignment.feature_membership_inference import (
     BatchRtWarp,
     FeatureInferenceOperationCounts,
+    FeatureMembershipGroup,
     supports_existing_feature,
 )
 from xic_extractor.alignment.grouping_bootstrap import (
@@ -205,6 +206,7 @@ def regroup_cid_nl_cross_sample_groups(
     alignment_config: AlignmentConfig,
     injection_order: Mapping[str, int],
     rt_warp: BatchRtWarp,
+    backfill_half_window_min: float,
     operation_counts_sink: list[FeatureInferenceOperationCounts] | None = None,
 ) -> tuple[ModeTrackAssignmentScope, CrossSampleGroupingResult]:
     """Reconsider every ordinary owner after the batch anchor warp is known."""
@@ -220,7 +222,14 @@ def regroup_cid_nl_cross_sample_groups(
         rt_warp=rt_warp,
         operation_counts_sink=operation_counts_sink,
     )
-    groups = reject_shoulder_groups(groups, config=alignment_config)
+    groups = reject_shoulder_groups(
+        merge_sample_disjoint_groups(
+            groups,
+            config=alignment_config,
+            backfill_half_window_min=backfill_half_window_min,
+        ),
+        config=alignment_config,
+    )
     identities = tuple(
         validate_cross_sample_peak_group_identity(group, require_canonical=True)
         for group in groups
@@ -464,6 +473,114 @@ def reject_shoulder_groups(
         else group
         for group in groups
     )
+
+
+def merge_sample_disjoint_groups(
+    groups: tuple[CrossSamplePeakGroupHypothesis, ...],
+    *,
+    config: AlignmentConfig,
+    backfill_half_window_min: float,
+) -> tuple[CrossSamplePeakGroupHypothesis, ...]:
+    """Merge established rows of one feature that no sample tells apart.
+
+    Two peaks are only evidenced by one sample holding both. Rows of the same
+    m/z with no shared sample, whose centers lie within one Backfill half
+    window, would Backfill each other's peak, so they are one feature. Closer
+    rows merge first; a merge never joins two rows that share a sample.
+    """
+    candidates = sorted(
+        (
+            group
+            for group in groups
+            if group.disposition == "established"
+            and not (
+                group.inference_basis is not None
+                and group.inference_basis.known_identity_label
+            )
+        ),
+        key=lambda group: group.family_center_mz,
+    )
+    pairs = []
+    for index, first in enumerate(candidates):
+        for second in candidates[index + 1 :]:
+            if not _within_ppm(
+                first.family_center_mz, second.family_center_mz, config.preferred_ppm
+            ):
+                break
+            gap = abs(first.family_center_rt - second.family_center_rt)
+            if gap <= backfill_half_window_min:
+                pairs.append(
+                    (gap, first.group_hypothesis_id, second.group_hypothesis_id)
+                )
+    if not pairs:
+        return groups
+    root = {group.group_hypothesis_id: group.group_hypothesis_id for group in groups}
+    samples = {
+        group.group_hypothesis_id: {owner.sample_stem for owner in group.owners}
+        for group in groups
+    }
+
+    def find(group_id: str) -> str:
+        while root[group_id] != group_id:
+            group_id = root[group_id]
+        return group_id
+
+    for _, first_id, second_id in sorted(pairs):
+        first_root, second_root = find(first_id), find(second_id)
+        if first_root == second_root or samples[first_root] & samples[second_root]:
+            continue
+        keep, absorbed = sorted((first_root, second_root))
+        root[absorbed] = keep
+        samples[keep] |= samples.pop(absorbed)
+    members: dict[str, list[CrossSamplePeakGroupHypothesis]] = defaultdict(list)
+    for group in groups:
+        members[find(group.group_hypothesis_id)].append(group)
+    merged = []
+    for parts in members.values():
+        if len(parts) == 1:
+            merged.append(parts[0])
+            continue
+        parts.sort(key=lambda group: group.public_family_id)
+        owners = tuple(
+            sorted(
+                (owner for group in parts for owner in group.owners),
+                key=lambda owner: owner.owner_id,
+            )
+        )
+        hypothesis = _hypothesis_from_owner_group(
+            owners,
+            group_identity=_identity_from_owners(
+                owners, processing_request_id=parts[0].processing_request_id
+            ),
+            public_family_id=parts[0].public_family_id,
+            evidence=";".join(
+                (
+                    parts[0].evidence,
+                    *(
+                        f"sample_disjoint_merge:{group.group_hypothesis_id}"
+                        for group in parts[1:]
+                    ),
+                )
+            ),
+            identity_conflict=any(group.identity_conflict for group in parts),
+        )
+        merged.append(
+            replace(
+                hypothesis,
+                inference_basis=FeatureMembershipGroup(
+                    owner_ids=tuple(owner.owner_id for owner in owners),
+                    disposition="assigned",
+                    basis="window_level_rt_band",
+                    reason="sample_disjoint_within_backfill_window",
+                ),
+                inference_decisions=tuple(
+                    decision
+                    for group in parts
+                    for decision in group.inference_decisions
+                ),
+            )
+        )
+    return tuple(merged)
 
 
 def _is_shoulder_of(
