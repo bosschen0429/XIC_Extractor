@@ -1160,9 +1160,11 @@ def test_owner_binding_rejects_observation_from_other_capture_trace(
         )
 
 
+@pytest.mark.parametrize("ripple", [False, True])
 def test_physical_capture_projects_trace_identity_once_across_mint_and_bind(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    ripple: bool,
 ) -> None:
     import json
 
@@ -1191,8 +1193,16 @@ def test_physical_capture_projects_trace_identity_once_across_mint_and_bind(
         processing_owners=fixture.owners,
         sample=sample,
     )
-    rt = np.linspace(7.7, 8.3, 61)
-    intensity = 100.0 * np.exp(-0.5 * ((rt - 8.0) / 0.06) ** 2)
+    if ripple:
+        rt = np.linspace(5.0, 11.0, 601)
+        intensity = (
+            300.0
+            + 12000.0 * np.exp(-0.5 * ((rt - 8.0) / 0.8) ** 2)
+            + np.random.default_rng(479).uniform(-150.0, 150.0, rt.size)
+        )
+    else:
+        rt = np.linspace(7.7, 8.3, 61)
+        intensity = 100.0 * np.exp(-0.5 * ((rt - 8.0) / 0.06) ** 2)
     profile = SignalProcessingProfile(window_points=15)
     prepared = prepare_physical_signal(rt, intensity, profile=profile)
     evaluation = evaluate_physical_peak(
@@ -1345,6 +1355,15 @@ def test_physical_capture_projects_trace_identity_once_across_mint_and_bind(
     )
 
     assert bound.selected_hypothesis is owner_hypothesis
+    assert evaluation.facts is not None
+    assert owner_hypothesis.integration.rt_apex_min == evaluation.facts.apex_rt_min
+    assert (
+        owner_hypothesis.integration.area_ms1_morphology
+        == evaluation.facts.area_counts_seconds
+    )
+    if ripple:
+        assert owner_hypothesis.integration.rt_left_min <= 6.8
+        assert owner_hypothesis.integration.rt_right_min >= 9.2
     assert trace_hashes == 1
     assert projections == 1
     assert evaluation_calls == 0

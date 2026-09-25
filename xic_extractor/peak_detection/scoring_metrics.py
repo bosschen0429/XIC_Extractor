@@ -29,6 +29,19 @@ _RT_PRIOR_NO_SIGMA_SOFT_MIN = 0.2
 _RT_PRIOR_NO_SIGMA_HARD_MIN = 1.0
 
 
+def short_scale_noise_mad(rt: np.ndarray, intensity: np.ndarray) -> float:
+    """Unscaled MAD of normalized, RT-weighted three-point residuals."""
+    if len(intensity) < 3:
+        return 0.0
+    weight = (rt[2:] - rt[1:-1]) / (rt[2:] - rt[:-2])
+    residual = (
+        weight * intensity[:-2]
+        + (1.0 - weight) * intensity[2:]
+        - intensity[1:-1]
+    ) / np.sqrt(1.0 + weight**2 + (1.0 - weight)**2)
+    return float(np.median(np.abs(residual - np.median(residual))))
+
+
 def symmetry_severity(half_width_ratio: float) -> tuple[int, str]:
     if not _is_finite(half_width_ratio):
         return 2, LABEL_SYMMETRY

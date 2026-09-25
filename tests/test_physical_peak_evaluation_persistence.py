@@ -358,12 +358,11 @@ def test_current_discovery_qualification_persists_exactly(
             prepared, selection_subject_id="policy-replay", query_rt_min=query,
             selection_policy_version=policy,
         )
-        qualified = policy == DISCOVERY_PHYSICAL_PEAK_POINT_POLICY
-        assert answer.state == (
-            "unavailable" if qualified and background else "available"
-        )
-        if qualified and background:
-            assert answer.reason == "background_like_peak_shape"
+        assert answer.state == ("unavailable" if background else "available")
+        if background:
+            # Removing unsupported internal maxima exposes this background
+            # envelope's acquired edge; neither policy may quantify it.
+            assert answer.reason == "incomplete_peak_context"
         payload = serialize_physical_peak_evaluation(
             rt, raw, profile=profile, evaluation=answer,
         )
@@ -511,6 +510,61 @@ def test_other_peak_support_cannot_backfill_a_singleton_or_resolve_ambiguity(
     assert result.reason == reason
     assert result.facts is None
     assert result.integration is None
+
+
+def test_low_contrast_ripple_keeps_one_wide_gaussian_envelope_measurable() -> None:
+    rt = np.linspace(0.0, 6.0, 601)
+    center = 3.0
+    sigma = 0.8
+    amplitude = 12000.0
+    rng = np.random.default_rng(479)
+    analytic_envelope = amplitude * np.exp(-0.5 * ((rt - center) / sigma) ** 2)
+    # Bounded raw measurement noise is at most 1.25% of the analytic apex.
+    # Gaussian15 smoothing leaves low-contrast ripple inside one broad envelope.
+    raw = 300.0 + analytic_envelope + rng.uniform(-150.0, 150.0, rt.size)
+
+    result = evaluate_physical_peak(
+        prepare_physical_signal(rt, raw),
+        selection_subject_id="wide-gaussian-with-ripple",
+        query_rt_min=center,
+    )
+
+    assert result.state == "available", result.reason
+    assert result.facts is not None
+    assert result.facts.apex_rt_min == pytest.approx(center, abs=0.03)
+    assert result.facts.left_rt_min <= center - 1.5 * sigma
+    assert result.facts.right_rt_min >= center + 1.5 * sigma
+
+
+def test_analytic_doublet_keeps_the_true_valley_as_two_peak_boundaries() -> None:
+    rt = np.linspace(0.0, 6.0, 601)
+    left_center, right_center = 2.5, 3.5
+    sigma = 0.18
+    analytic_doublet = (
+        9000.0 * np.exp(-0.5 * ((rt - left_center) / sigma) ** 2)
+        + 8500.0 * np.exp(-0.5 * ((rt - right_center) / sigma) ** 2)
+    )
+    rng = np.random.default_rng(2479)
+    raw = 300.0 + analytic_doublet + rng.uniform(-25.0, 25.0, rt.size)
+    prepared = prepare_physical_signal(rt, raw)
+    valley_rt = (left_center + right_center) / 2.0
+
+    left = evaluate_physical_peak(
+        prepared, selection_subject_id="resolved-doublet-left", query_rt_min=left_center
+    )
+    right = evaluate_physical_peak(
+        prepared,
+        selection_subject_id="resolved-doublet-right",
+        query_rt_min=right_center,
+    )
+
+    assert left.state == "available" and left.facts is not None
+    assert right.state == "available" and right.facts is not None
+    assert left.facts.apex_rt_min == pytest.approx(left_center, abs=0.03)
+    assert right.facts.apex_rt_min == pytest.approx(right_center, abs=0.03)
+    assert left.facts.right_rt_min <= valley_rt
+    assert right.facts.left_rt_min >= valley_rt
+    assert left.facts.physical_segment_id != right.facts.physical_segment_id
 
 
 @pytest.mark.parametrize("query_rt", [1.525, 2.475, 1.542])
