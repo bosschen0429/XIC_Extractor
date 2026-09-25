@@ -38,8 +38,6 @@ def test_validation_harness_defaults_use_env_paths(
             output_root=tmp_path / "validation_harness",
             run_id="env_defaults",
             workers=4,
-            resolver_mode="region_first_safe_merge",
-            grid="quick",
         )
 
         assert str(manual_root) in core.command_to_powershell(specs[0].command)
@@ -66,8 +64,6 @@ def test_validation_harness_defaults_fall_back_to_repo_placeholders(
             output_root=tmp_path / "validation_harness",
             run_id="fallback_defaults",
             workers=4,
-            resolver_mode="region_first_safe_merge",
-            grid="quick",
         )
 
         commands = [core.command_to_powershell(spec.command) for spec in specs]
@@ -86,8 +82,6 @@ def test_build_validation_specs_freezes_tiers_commands_and_output_paths(
         output_root=tmp_path / "validation_harness",
         run_id="20260506_test",
         workers=4,
-        resolver_mode="local_minimum",
-        grid="quick",
     )
 
     assert [spec.name for spec in specs] == [
@@ -100,25 +94,26 @@ def test_build_validation_specs_freezes_tiers_commands_and_output_paths(
         / "validation_harness"
         / "20260506_test"
         / "manual_2raw"
-        / "local_minimum_param_sweep_summary.xlsx"
+        / "targeted_manual_validation.xlsx"
     )
     assert specs[1].output_path == (
         tmp_path
         / "validation_harness"
         / "20260506_test"
-        / "tissue_fixture_cohort_local_minimum"
+        / "tissue_fixture_cohort"
         / "xic_results_process_w4.xlsx"
     )
     assert specs[2].requires_confirmation is True
 
     manual_command = command_to_powershell(specs[0].command)
-    assert "scripts\\local_minimum_param_sweep.py" in manual_command
+    assert "scripts\\targeted_manual_validation.py" in manual_command
     assert "--parallel-mode process" in manual_command
     assert "--parallel-workers 4" in manual_command
 
     tissue_command = command_to_powershell(specs[1].command)
     assert str(PureWindowsPath(DEFAULT_TISSUE_VALIDATION_DIR)) in tissue_command
-    assert "--resolver-mode local_minimum" in tissue_command
+    assert "resolver" not in tissue_command
+    assert "grid" not in tissue_command
     assert "--parallel-mode process" in tissue_command
     assert "--parallel-workers 4" in tissue_command
 
@@ -127,7 +122,7 @@ def test_build_validation_specs_freezes_tiers_commands_and_output_paths(
     assert "--confirm-full-run" in full_command
 
 
-def test_build_validation_specs_includes_candidate_settings_in_commands(
+def test_build_validation_specs_includes_canonical_settings_in_commands(
     tmp_path: Path,
 ) -> None:
     specs = build_validation_specs(
@@ -136,114 +131,14 @@ def test_build_validation_specs_includes_candidate_settings_in_commands(
         output_root=tmp_path / "validation_harness",
         run_id="candidate",
         workers=4,
-        resolver_mode="local_minimum",
-        grid="quick",
-        settings_overrides=(("resolver_min_relative_height", "0.03"),),
+        settings_overrides=(("signal_processing_window_points", "21"),),
     )
 
     assert specs[0].settings_overrides == (
-        ("resolver_min_relative_height", "0.03"),
+        ("signal_processing_window_points", "21"),
     )
     command = command_to_powershell(specs[0].command)
-    assert "--setting resolver_min_relative_height=0.03" in command
-
-
-def test_build_validation_specs_accepts_region_first_safe_merge_mode(
-    tmp_path: Path,
-) -> None:
-    specs = build_validation_specs(
-        suite_names=("tissue-fixture-cohort",),
-        base_dir=Path("C:/repo/XIC_Extractor"),
-        output_root=tmp_path / "validation_harness",
-        run_id="safe_merge",
-        workers=4,
-        resolver_mode="region_first_safe_merge",
-        grid="quick",
-    )
-
-    assert specs[0].output_path == (
-        tmp_path
-        / "validation_harness"
-        / "safe_merge"
-        / "tissue_fixture_cohort_region_first_safe_merge"
-        / "xic_results_process_w4.xlsx"
-    )
-    assert "--resolver-mode region_first_safe_merge" in command_to_powershell(
-        specs[0].command
-    )
-
-
-def test_cli_defaults_extraction_suite_to_region_first_safe_merge(
-    tmp_path: Path,
-    capsys,
-) -> None:
-    exit_code = main(
-        [
-            "--suite",
-            "tissue-fixture-cohort",
-            "--output-root",
-            str(tmp_path / "validation_harness"),
-            "--run-id",
-            "default_safe_merge",
-            "--dry-run",
-        ]
-    )
-
-    output = capsys.readouterr().out
-    assert exit_code == 0
-    assert "--resolver-mode region_first_safe_merge" in output
-
-
-def test_build_validation_specs_rejects_resolver_mode_setting(
-    tmp_path: Path,
-) -> None:
-    with pytest.raises(ValueError, match="resolver_mode"):
-        build_validation_specs(
-            suite_names=("tissue-fixture-cohort",),
-            base_dir=Path("C:/repo/XIC_Extractor"),
-            output_root=tmp_path / "validation_harness",
-            run_id="candidate",
-            workers=4,
-            resolver_mode="local_minimum",
-            grid="quick",
-            settings_overrides=(("resolver_mode", "legacy_savgol"),),
-        )
-
-
-def test_build_validation_specs_rejects_retired_arbitrated_resolver(
-    tmp_path: Path,
-) -> None:
-    with pytest.raises(ValueError, match="retired; use region_first_safe_merge"):
-        build_validation_specs(
-            suite_names=("tissue-fixture-cohort",),
-            base_dir=Path("C:/repo/XIC_Extractor"),
-            output_root=tmp_path / "validation_harness",
-            run_id="candidate",
-            workers=4,
-            resolver_mode="arbitrated",
-            grid="quick",
-        )
-
-
-def test_validation_harness_cli_rejects_retired_arbitrated_resolver(
-    tmp_path: Path,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    with pytest.raises(SystemExit) as exc_info:
-        main(
-            [
-                "--suite",
-                "tissue-fixture-cohort",
-                "--resolver-mode",
-                "arbitrated",
-                "--output-root",
-                str(tmp_path / "validation_harness"),
-                "--dry-run",
-            ]
-        )
-
-    assert exc_info.value.code == 2
-    assert "arbitrated resolver mode is retired" in capsys.readouterr().err
+    assert "--setting signal_processing_window_points=21" in command
 
 
 def test_run_validation_specs_compares_exact_baseline_workbook_paths(
@@ -259,17 +154,16 @@ def test_run_validation_specs_compares_exact_baseline_workbook_paths(
         name="tissue-fixture-cohort",
         kind="extraction",
         description="8 raw subset",
-        output_dir=output_root / "run1" / "tissue_fixture_cohort_local_minimum",
+        output_dir=output_root / "run1" / "tissue_fixture_cohort",
         output_path=(
             output_root
             / "run1"
-            / "tissue_fixture_cohort_local_minimum"
+            / "tissue_fixture_cohort"
             / "xic_results_process_w4.xlsx"
         ),
         command=("uv", "run", "python", "scripts/validate.py"),
         data_dir=data_dir,
         expected_raw_count=8,
-        resolver_mode="local_minimum",
         parallel_mode="process",
         workers=4,
     )
@@ -277,7 +171,7 @@ def test_run_validation_specs_compares_exact_baseline_workbook_paths(
     baseline_path = (
         baseline_root
         / "run1"
-        / "tissue_fixture_cohort_local_minimum"
+        / "tissue_fixture_cohort"
         / "xic_results_process_w4.xlsx"
     )
     runner_calls: list[dict[str, object]] = []
@@ -308,7 +202,7 @@ def test_run_validation_specs_compares_exact_baseline_workbook_paths(
             "mode": "process",
             "workers": 4,
             "output_dir": spec.output_dir,
-            "settings_overrides": {"resolver_mode": "local_minimum"},
+            "settings_overrides": {},
         }
     ]
     assert compare_calls == [(baseline_path, spec.output_path)]
@@ -334,7 +228,7 @@ def test_run_validation_specs_compares_exact_baseline_workbook_paths(
     assert ",pass," in summary
 
 
-def test_run_validation_specs_passes_candidate_settings_to_extraction_runner(
+def test_run_validation_specs_passes_canonical_settings_to_extraction_runner(
     tmp_path: Path,
 ) -> None:
     data_dir = tmp_path / "validation"
@@ -347,20 +241,19 @@ def test_run_validation_specs_passes_candidate_settings_to_extraction_runner(
         name="tissue-fixture-cohort",
         kind="extraction",
         description="8 raw subset",
-        output_dir=output_root / "run1" / "tissue_fixture_cohort_local_minimum",
+        output_dir=output_root / "run1" / "tissue_fixture_cohort",
         output_path=(
             output_root
             / "run1"
-            / "tissue_fixture_cohort_local_minimum"
+            / "tissue_fixture_cohort"
             / "xic_results_process_w4.xlsx"
         ),
         command=("uv", "run", "python", "scripts/validate.py"),
         data_dir=data_dir,
         expected_raw_count=8,
-        resolver_mode="local_minimum",
         parallel_mode="process",
         workers=4,
-        settings_overrides=(("resolver_min_relative_height", "0.03"),),
+        settings_overrides=(("nl_min_intensity_ratio", "0.02"),),
     )
     runner_calls: list[dict[str, object]] = []
 
@@ -378,8 +271,7 @@ def test_run_validation_specs_passes_candidate_settings_to_extraction_runner(
 
     assert results[0].status == "passed"
     assert runner_calls[0]["settings_overrides"] == {
-        "resolver_mode": "local_minimum",
-        "resolver_min_relative_height": "0.03",
+        "nl_min_intensity_ratio": "0.02"
     }
 
 
@@ -396,17 +288,16 @@ def test_run_validation_specs_records_compare_errors_without_traceback(
         name="tissue-fixture-cohort",
         kind="extraction",
         description="8 raw subset",
-        output_dir=output_root / "run1" / "tissue_fixture_cohort_local_minimum",
+        output_dir=output_root / "run1" / "tissue_fixture_cohort",
         output_path=(
             output_root
             / "run1"
-            / "tissue_fixture_cohort_local_minimum"
+            / "tissue_fixture_cohort"
             / "xic_results_process_w4.xlsx"
         ),
         command=("uv", "run", "python", "scripts/validate.py"),
         data_dir=data_dir,
         expected_raw_count=8,
-        resolver_mode="local_minimum",
         parallel_mode="process",
         workers=4,
     )
@@ -449,7 +340,6 @@ def test_run_validation_specs_records_baseline_path_errors_without_traceback(
         command=("uv", "run", "python", "scripts/validate.py"),
         data_dir=data_dir,
         expected_raw_count=8,
-        resolver_mode="local_minimum",
         parallel_mode="process",
         workers=4,
     )
@@ -490,17 +380,16 @@ def test_run_validation_specs_records_extraction_setup_errors_without_traceback(
         name="tissue-fixture-cohort",
         kind="extraction",
         description="8 raw subset",
-        output_dir=output_root / "run1" / "tissue_fixture_cohort_local_minimum",
+        output_dir=output_root / "run1" / "tissue_fixture_cohort",
         output_path=(
             output_root
             / "run1"
-            / "tissue_fixture_cohort_local_minimum"
+            / "tissue_fixture_cohort"
             / "xic_results_process_w4.xlsx"
         ),
         command=("uv", "run", "python", "scripts/validate.py"),
         data_dir=data_dir,
         expected_raw_count=8,
-        resolver_mode="local_minimum",
         parallel_mode="process",
         workers=4,
     )
@@ -525,7 +414,7 @@ def test_run_validation_specs_records_extraction_setup_errors_without_traceback(
     assert expected_message in summary
 
 
-def test_run_validation_specs_runs_manual_sweep_with_script_arguments(
+def test_run_validation_specs_runs_manual_validation_with_script_arguments(
     tmp_path: Path,
 ) -> None:
     spec = build_validation_specs(
@@ -534,13 +423,11 @@ def test_run_validation_specs_runs_manual_sweep_with_script_arguments(
         output_root=tmp_path / "validation_harness",
         run_id="run1",
         workers=4,
-        resolver_mode="local_minimum",
-        grid="quick",
     )[0]
-    sweep_args: list[str] = []
+    validation_args: list[str] = []
 
-    def fake_sweep_runner(argv) -> int:
-        sweep_args.extend(argv)
+    def fake_manual_validation_runner(argv) -> int:
+        validation_args.extend(argv)
         return 0
 
     results = run_validation_specs(
@@ -548,40 +435,15 @@ def test_run_validation_specs_runs_manual_sweep_with_script_arguments(
         base_dir=tmp_path,
         output_root=tmp_path / "validation_harness",
         run_id="run1",
-        sweep_runner=fake_sweep_runner,
+        manual_validation_runner=fake_manual_validation_runner,
     )
 
     assert results[0].status == "passed"
-    assert sweep_args[0] == "--manual-workbook"
-    assert "scripts\\local_minimum_param_sweep.py" not in sweep_args
-    assert "--parallel-workers" in sweep_args
+    assert validation_args[0] == "--manual-workbook"
+    assert "--parallel-workers" in validation_args
 
 
-@pytest.mark.parametrize(
-    "grid", ["calibration-duration-search", "calibration-duration-height"]
-)
-def test_cli_accepts_calibration_grid_for_manual_sweep(
-    tmp_path: Path, capsys, grid: str
-) -> None:
-    exit_code = main(
-        [
-            "--suite",
-            "manual-2raw",
-            "--grid",
-            grid,
-            "--output-root",
-            str(tmp_path / "validation_harness"),
-            "--run-id",
-            "run1",
-            "--dry-run",
-        ]
-    )
-
-    assert exit_code == 0
-    assert f"--grid {grid}" in capsys.readouterr().out
-
-
-def test_cli_accepts_repeated_candidate_settings_for_extraction_suite(
+def test_cli_accepts_repeated_canonical_settings_for_extraction_suite(
     tmp_path: Path, capsys
 ) -> None:
     exit_code = main(
@@ -589,9 +451,9 @@ def test_cli_accepts_repeated_candidate_settings_for_extraction_suite(
             "--suite",
             "tissue-fixture-cohort",
             "--setting",
-            "resolver_peak_duration_max=2.0",
+            "signal_processing_window_points=21",
             "--setting",
-            "resolver_min_relative_height=0.03",
+            "nl_min_intensity_ratio=0.02",
             "--output-root",
             str(tmp_path / "validation_harness"),
             "--run-id",
@@ -602,17 +464,17 @@ def test_cli_accepts_repeated_candidate_settings_for_extraction_suite(
 
     output = capsys.readouterr().out
     assert exit_code == 0
-    assert "--setting resolver_peak_duration_max=2.0" in output
-    assert "--setting resolver_min_relative_height=0.03" in output
+    assert "--setting signal_processing_window_points=21" in output
+    assert "--setting nl_min_intensity_ratio=0.02" in output
 
 
-def test_cli_strips_candidate_setting_values(tmp_path: Path, capsys) -> None:
+def test_cli_strips_canonical_setting_values(tmp_path: Path, capsys) -> None:
     exit_code = main(
         [
             "--suite",
             "tissue-fixture-cohort",
             "--setting",
-            "resolver_peak_duration_max= 2.0 ",
+            "nl_min_intensity_ratio= 0.02 ",
             "--output-root",
             str(tmp_path / "validation_harness"),
             "--run-id",
@@ -623,20 +485,18 @@ def test_cli_strips_candidate_setting_values(tmp_path: Path, capsys) -> None:
 
     output = capsys.readouterr().out
     assert exit_code == 0
-    assert "--setting resolver_peak_duration_max=2.0" in output
+    assert "--setting nl_min_intensity_ratio=0.02" in output
 
 
 @pytest.mark.parametrize(
     "setting",
     [
-        "resolver_peak_duration_max=",
-        "resolver_peak_duration_max=   ",
-        "resolver_mode=legacy_savgol",
+        "nl_min_intensity_ratio=",
+        "nl_min_intensity_ratio=   ",
+        "=0.02",
     ],
 )
-def test_cli_rejects_invalid_candidate_setting(
-    tmp_path: Path, setting: str
-) -> None:
+def test_cli_rejects_malformed_setting(tmp_path: Path, setting: str) -> None:
     with pytest.raises(SystemExit):
         main(
             [
@@ -666,7 +526,6 @@ def test_run_validation_specs_rejects_wrong_raw_count(tmp_path: Path) -> None:
         command=("uv", "run", "python", "scripts/validate.py"),
         data_dir=data_dir,
         expected_raw_count=8,
-        resolver_mode="local_minimum",
         parallel_mode="process",
         workers=4,
     )

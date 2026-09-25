@@ -167,24 +167,16 @@ def _peak_config(
         dll_dir=dll_dir,
         output_csv=output_dir / "unused_xic_results.csv",
         diagnostics_csv=output_dir / "unused_xic_diagnostics.csv",
-        smooth_window=int(defaults["smooth_window"]),
-        smooth_polyorder=int(defaults["smooth_polyorder"]),
+        smooth_window=15,
+        smooth_polyorder=3,
         ms1_morphology_smoothing_window_points=int(
             defaults["ms1_morphology_smoothing_window_points"]
         ),
-        peak_rel_height=float(defaults["peak_rel_height"]),
-        peak_min_prominence_ratio=float(defaults["peak_min_prominence_ratio"]),
+        peak_rel_height=0.95,
+        peak_min_prominence_ratio=0.10,
         ms2_precursor_tol_da=settings.ms2_precursor_tol_da,
         nl_min_intensity_ratio=settings.nl_min_intensity_ratio,
         resolver_mode=settings.resolver_mode,
-        resolver_chrom_threshold=float(defaults["resolver_chrom_threshold"]),
-        resolver_min_search_range_min=float(defaults["resolver_min_search_range_min"]),
-        resolver_min_relative_height=float(defaults["resolver_min_relative_height"]),
-        resolver_min_absolute_height=float(defaults["resolver_min_absolute_height"]),
-        resolver_min_ratio_top_edge=float(defaults["resolver_min_ratio_top_edge"]),
-        resolver_peak_duration_min=float(defaults["resolver_peak_duration_min"]),
-        resolver_peak_duration_max=float(defaults["resolver_peak_duration_max"]),
-        resolver_min_scans=int(defaults["resolver_min_scans"]),
     )
 
 

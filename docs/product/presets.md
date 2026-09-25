@@ -9,10 +9,10 @@ they are not product authority by themselves.
 - Changing a default preset or silent resolver behavior changes public
   behavior. It needs expected-diff framing, focused tests, and relevant
   evidence.
-- The current tracked resolver token is `region_first_safe_merge`; alignment
-  production maps it to `local_minimum`. `local_minimum` remains an explicit
-  direct mode or validation slice, not a silent default unless config, CLI, or
-  GUI selection says so.
+- Targeted and profile-bound Untargeted processing use the shared physical
+  signal owner. Direct legacy diagnostic callers retain their explicit
+  `local_minimum` or `legacy_savgol` configuration; those settings do not choose
+  the formal Targeted physical algorithm.
 - GUI local profiles can expose explicit preset buttons but must not silently
   overwrite user intent.
 - Preset runs should be reproducible from documented CLI/config surfaces and
@@ -42,7 +42,7 @@ they are not product authority by themselves.
 | `scripts/run_discovery.py --preset ...` | Discovery CLI using the same recipe binder; only explicit tuning flags override the method |
 | `scripts/run_alignment.py --preset ...` | CLI path that activates alignment presets |
 | `scripts/run_tissue_validation.py --dataset {8,85}` | Shared tissue validation launch defaults; delegates Discovery and Alignment to their current CLIs |
-| Resolver settings in config/GUI | Public behavior surface for peak detection choices |
+| Signal profile settings in config/GUI | Shared physical signal configuration |
 | Runner metadata and sidecars | Provenance for preset-backed runs |
 
 ## CID-NL Workflow Composition

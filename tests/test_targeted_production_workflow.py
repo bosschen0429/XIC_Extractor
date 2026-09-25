@@ -5,7 +5,6 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from xic_extractor.alignment import workflow as alignment_workflow
 from xic_extractor.alignment.result.application_result import (
     FinalizedTargetApplicationResult,
 )
@@ -26,10 +25,18 @@ from xic_extractor.extraction.targeted_production_workflow import (
 from xic_extractor.extraction.targeted_service import build_targeted_application_request
 from xic_extractor.extractor import ExtractionResult, FileResult, RunOutput
 from xic_extractor.neutral_loss import CandidateMS2Evidence, MS2ProductEvidence
-from xic_extractor.peak_detection.capture_boundary_policy import (
-    promote_targeted_boundary_hypothesis,
-)
+from xic_extractor.peak_detection import capture as capture_owner
 from xic_extractor.peak_detection.hypotheses import build_peak_hypotheses
+from xic_extractor.peak_detection.observations import (
+    physical_peak_observation_integration,
+)
+from xic_extractor.peak_detection.physical_peak_evaluation import (
+    evaluate_physical_peak,
+    prepare_physical_signal,
+)
+from xic_extractor.peak_detection.signal_processing_profile import (
+    resolve_signal_processing_profile,
+)
 from xic_extractor.peak_detection.targeted_product_projection import (
     TargetedPriorContext,
     build_targeted_product_projection,
@@ -63,6 +70,61 @@ def test_retained_trace_reaches_one_finalized_target_result(tmp_path: Path) -> N
     assert finalized[0].scientific_core.cell_observations == ()
     assert (
         finalized[0].scientific_core.grouping_result.partition_transition.lineage == ()
+    )
+
+
+def test_two_samples_reuse_exact_acquired_physical_evaluations(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    config, target, output = production_case(
+        tmp_path,
+        sample_names=("SampleA", "SampleB"),
+        sample_peak_scales={"SampleA": 1.0, "SampleB": 2.0},
+    )
+    acquired = {
+        file_result.sample_name: file_result.results[target.label].physical_evaluation
+        for file_result in output.file_results
+    }
+    captured = {}
+    capture_peak_hypotheses = production_workflow.capture_peak_hypotheses
+
+    def _capture(*, scope, candidate_id, trace):
+        binding = next(
+            item for item in scope.capture_bindings if item.candidate_id == candidate_id
+        )
+        captured[trace.sample_name] = binding.physical_evaluation
+        return capture_peak_hypotheses(
+            scope=scope,
+            candidate_id=candidate_id,
+            trace=trace,
+        )
+
+    monkeypatch.setattr(production_workflow, "capture_peak_hypotheses", _capture)
+    monkeypatch.setattr(
+        capture_owner,
+        "prepare_physical_signal",
+        lambda *_args, **_kwargs: pytest.fail(
+            "retained Targeted capture must not prepare or reintegrate"
+        ),
+    )
+
+    finalized = execute_targeted_production_workflow(
+        build_targeted_application_request(
+            config,
+            [target],
+            injection_order={"SampleA": 1, "SampleB": 2},
+        ),
+        output,
+    )
+
+    assert len(finalized) == 1
+    assert captured == acquired
+    assert acquired["SampleA"] is not None and acquired["SampleB"] is not None
+    assert acquired["SampleA"].facts is not None
+    assert acquired["SampleB"].facts is not None
+    assert acquired["SampleB"].facts.area_counts_seconds == pytest.approx(
+        acquired["SampleA"].facts.area_counts_seconds * 2.0
     )
 
 
@@ -453,132 +515,6 @@ def test_targeted_relation_uses_quadrature_for_retained_product(
     assert assessments[0].content.method_result == "SUPPORT"
 
 
-@pytest.mark.parametrize("promoted_retained", (False, True))
-def test_finalization_preserves_the_acquisition_selected_hypothesis(
-    tmp_path: Path,
-    monkeypatch,
-    promoted_retained: bool,
-) -> None:
-    config, target, output = production_case(tmp_path)
-    rt = np.linspace(1.0, 2.0, 401)
-    intensity = (
-        10.0
-        + 100.0 * np.exp(-((rt - 1.40) ** 2) / 0.0005)
-        + 1000.0 * np.exp(-((rt - 1.62) ** 2) / 0.0005)
-    )
-    trace = Trace.from_arrays(
-        sample_name="SampleA",
-        mz=target.mz,
-        rt=rt,
-        intensity=intensity,
-        rt_min=target.rt_min,
-        rt_max=target.rt_max,
-        ppm_tol=target.ppm_tol,
-    )
-    peak_result = find_peak_and_area(rt, intensity, config, preferred_rt=1.62)
-    hypotheses = build_peak_hypotheses(
-        analysis_mode="targeted",
-        common_evidence_source_id="test-retained-trace",
-        sample_name="SampleA",
-        target_label=target.label,
-        role="Analyte",
-        istd_pair="",
-        resolver_mode=config.resolver_mode,
-        peak_result=peak_result,
-        trace_group=targeted_trace_group(
-            trace,
-            target_label=target.label,
-            resolver_mode=config.resolver_mode,
-        ),
-        count_no_ms2_as_detected=True,
-    )
-    assert len(hypotheses) >= 2
-    selected = min(hypotheses, key=lambda item: item.integration.height_raw)
-    expected_capture_height = selected.integration.height_smoothed
-    if promoted_retained:
-        selected = promote_targeted_boundary_hypothesis(
-            selected,
-            rt=rt,
-            intensity=intensity,
-            context_rt_start=float(rt[0]),
-            context_rt_end=float(rt[-1]),
-            morphology_window_points=15,
-        ).hypothesis
-        selected = replace(
-            selected,
-            integration=replace(
-                selected.integration,
-                height_smoothed=selected.integration.height_smoothed * 0.75,
-            ),
-        )
-    original = output.file_results[0].results[target.label]
-    evidence = original.candidate_ms2_evidence
-    assert evidence is not None
-    product = evidence.best_product_evidence
-    assert product is not None
-    output.file_results[0].results[target.label] = replace(
-        original,
-        peak_result=peak_result,
-        selected_hypothesis=selected,
-        acquisition_trace=trace,
-        candidate_ms2_evidence=replace(
-            evidence,
-            best_scan_rt=selected.integration.rt_apex_min,
-            best_product_evidence=replace(
-                product,
-                scan_rt=selected.integration.rt_apex_min,
-            ),
-        ),
-        targeted_product_projection=build_targeted_product_projection(
-            TargetedPriorContext(role="Analyte"),
-            rt=selected.integration.rt_apex_min,
-            area=selected.integration.area_raw_counts_seconds,
-            confidence="HIGH",
-            nl_status="OK",
-        ),
-    )
-    selected_area = output.file_results[0].results[target.label].reported_peak_area
-
-    captured = []
-    original_capture = production_workflow.capture_peak_hypotheses
-
-    def record_capture(**kwargs):
-        value = original_capture(**kwargs)
-        captured.append(value)
-        return value
-
-    monkeypatch.setattr(
-        production_workflow,
-        "capture_peak_hypotheses",
-        record_capture,
-    )
-    monkeypatch.setattr(
-        alignment_workflow,
-        "capture_peak_hypotheses",
-        record_capture,
-    )
-
-    finalized = execute_targeted_production_workflow(
-        build_targeted_application_request(
-            config,
-            [target],
-            injection_order={"SampleA": 1},
-        ),
-        output,
-    )
-
-    assert finalized[0].completed_projection.decisions[0].value == selected_area
-    assert len(captured) == 1
-    assert captured[0].selected_hypothesis is not None
-    captured_integration = captured[0].selected_hypothesis.integration
-    assert captured_integration.rt_apex_min == selected.integration.rt_apex_min
-    assert captured_integration.raw_apex_rt_min == (
-        selected.integration.raw_apex_rt_min
-    )
-    assert captured_integration.height_raw == selected.integration.height_raw
-    assert captured_integration.height_smoothed == expected_capture_height
-
-
 @pytest.mark.parametrize("sample_names", [("SampleA",), ("SampleA", "SampleB")])
 def test_missing_selected_peak_finalizes_as_searched_no_observation(
     tmp_path: Path,
@@ -610,6 +546,7 @@ def test_missing_selected_peak_finalizes_as_searched_no_observation(
         ),
         selected_hypothesis=None,
         acquisition_trace=trace,
+        physical_evaluation=_physical_evaluation(trace, config, query_rt_min=1.5),
     )
 
     finalized = execute_targeted_production_workflow(
@@ -647,53 +584,6 @@ def test_assessment_handoff_is_independent_of_injection_order(tmp_path: Path) ->
     assert finalized[0].completed_projection.counted_detection_count == 2
 
 
-def test_retained_boundary_apex_rebinds_to_same_physical_raw_peak(
-    tmp_path: Path,
-) -> None:
-    config, target, output = production_case(tmp_path)
-    original = output.file_results[0].results[target.label]
-    selected = original.selected_hypothesis
-    assert selected is not None
-    integration = selected.integration
-    shifted_apex = (integration.rt_apex_min + integration.rt_right_min) / 2
-    shifted = replace(
-        selected,
-        integration=replace(
-            integration,
-            rt_apex_min=shifted_apex,
-            raw_apex_rt_min=shifted_apex,
-            integration_method="chrom_peak_segment_gaussian15",
-        ),
-    )
-    evidence = original.candidate_ms2_evidence
-    assert evidence is not None
-    product = evidence.best_product_evidence
-    assert product is not None
-    output.file_results[0].results[target.label] = replace(
-        original,
-        selected_hypothesis=shifted,
-        candidate_ms2_evidence=replace(
-            evidence,
-            best_scan_rt=integration.rt_apex_min,
-            best_product_evidence=replace(
-                product,
-                scan_rt=integration.rt_apex_min,
-            ),
-        ),
-    )
-
-    finalized = execute_targeted_production_workflow(
-        build_targeted_application_request(
-            config,
-            [target],
-            injection_order={"SampleA": 1},
-        ),
-        output,
-    )
-
-    assert finalized[0].completed_projection.counted_detection_count == 1
-
-
 def test_neutral_loss_disabled_target_uses_shared_cell_decision(tmp_path: Path) -> None:
     config, target, output = production_case(
         tmp_path,
@@ -720,8 +610,6 @@ def test_neutral_loss_disabled_target_uses_shared_cell_decision(tmp_path: Path) 
     assert isinstance(result, FinalizedTargetApplicationResult)
     assert result.completed_projection.row_binding.target.definition.target == target
     assert len(result.completed_projection.decisions) == 2
-    assert len(result.scientific_core.final_population) == 1
-    assert len(result.scientific_core.final_population[0].member_subjects) == 2
     assert all(
         decision.variant == "numeric"
         for decision in result.completed_projection.decisions
@@ -750,9 +638,31 @@ def test_neutral_loss_disabled_target_without_selected_ms1_is_no_write(
     )
     for file_result in output.file_results:
         original = file_result.results[target.label]
+        rt = np.linspace(1.0, 2.0, 101)
+        trace = Trace.from_arrays(
+            sample_name=file_result.sample_name,
+            mz=target.mz,
+            rt=rt,
+            intensity=np.zeros_like(rt),
+            rt_min=target.rt_min,
+            rt_max=target.rt_max,
+            ppm_tol=target.ppm_tol,
+        )
         file_result.results[target.label] = replace(
             original,
+            peak_result=find_peak_and_area(
+                rt,
+                trace.intensity,
+                config,
+                preferred_rt=1.5,
+            ),
             selected_hypothesis=None,
+            acquisition_trace=trace,
+            physical_evaluation=_physical_evaluation(
+                trace,
+                config,
+                query_rt_min=1.5,
+            ),
         )
 
     finalized = execute_targeted_production_workflow(
@@ -1021,6 +931,22 @@ def production_case(
             count_no_ms2_as_detected=True,
         )
         selected = next(item for item in hypotheses if item.audit.selected)
+        profile = resolve_signal_processing_profile(
+            signal_processing_method=config.signal_processing_method,
+            signal_processing_window_points=config.signal_processing_window_points,
+        )
+        physical_evaluation = evaluate_physical_peak(
+            prepare_physical_signal(rt, intensity, profile=profile),
+            selection_subject_id=target.label,
+            query_rt_min=selected.integration.rt_apex_min,
+            request_context_rt_start_min=trace.rt_min,
+            request_context_rt_end_min=trace.rt_max,
+        )
+        assert physical_evaluation.integration is not None
+        selected = replace(
+            selected,
+            integration=physical_peak_observation_integration(physical_evaluation),
+        )
         file_results.append(
             FileResult(
                 sample_name=sample_name,
@@ -1055,6 +981,7 @@ def production_case(
                         role="Analyte",
                         selected_hypothesis=selected,
                         acquisition_trace=trace,
+                        physical_evaluation=physical_evaluation,
                         targeted_product_projection=build_targeted_product_projection(
                             TargetedPriorContext(role="Analyte"),
                             rt=selected.integration.rt_apex_min,
@@ -1101,4 +1028,23 @@ def _target() -> Target:
         nl_ppm_max=40.0,
         is_istd=False,
         istd_pair="",
+    )
+
+
+def _physical_evaluation(
+    trace: Trace,
+    config: ExtractionConfig,
+    *,
+    query_rt_min: float,
+):
+    profile = resolve_signal_processing_profile(
+        signal_processing_method=config.signal_processing_method,
+        signal_processing_window_points=config.signal_processing_window_points,
+    )
+    return evaluate_physical_peak(
+        prepare_physical_signal(trace.rt, trace.intensity, profile=profile),
+        selection_subject_id="Analyte",
+        query_rt_min=query_rt_min,
+        request_context_rt_start_min=trace.rt_min,
+        request_context_rt_end_min=trace.rt_max,
     )

@@ -246,7 +246,7 @@ def test_acceptance_a9_pipeline_shared_callable_handoff(tmp_path, monkeypatch) -
     )
     import xic_extractor.alignment.pipeline as pipeline
     from tests.alignment_pipeline_helpers import peak_config, write_batch
-    from tests.test_targeted_real_data_adapter import _settings
+    from tests.cid_nl_raw_fixture import _settings
 
     batch_index = write_batch(tmp_path, ("S1", "S2"))
     # The pipeline reads candidates through DiscoveryInputSource; the CSV

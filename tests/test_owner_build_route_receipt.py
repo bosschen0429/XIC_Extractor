@@ -4,7 +4,7 @@ import pytest
 
 import xic_extractor.alignment.pipeline as pipeline_module
 from tests.alignment_pipeline_helpers import peak_config as _peak_config
-from tests.test_targeted_real_data_adapter import _settings
+from tests.cid_nl_raw_fixture import _settings
 from xic_extractor.alignment import AlignmentConfig
 from xic_extractor.alignment.owner_build_route_receipt import (
     OwnerBuildRouteReceipt,

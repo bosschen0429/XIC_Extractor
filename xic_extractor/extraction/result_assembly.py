@@ -15,6 +15,7 @@ from xic_extractor.peak_detection.hypotheses import (
     validate_peak_hypothesis_selection_authority,
 )
 from xic_extractor.peak_detection.model_selection import PeakModelSelectionResult
+from xic_extractor.peak_detection.physical_peak_models import PhysicalPeakEvaluation
 from xic_extractor.peak_detection.scoring_quality import (
     candidate_quality_penalty,
     hard_quality_flags,
@@ -51,6 +52,7 @@ def build_extraction_result(
     selection_decision: PeakHypothesisSelectionDecision | None = None,
     model_selection_result: PeakModelSelectionResult | None = None,
     acquisition_trace: Trace | None = None,
+    physical_evaluation: PhysicalPeakEvaluation | None = None,
     sample_name: str = "",
 ) -> ExtractionResult:
     if selected_hypothesis is not None:
@@ -92,6 +94,7 @@ def build_extraction_result(
         selection_decision=resolved_selection_decision,
         model_selection_result=model_selection_result,
         acquisition_trace=acquisition_trace,
+        physical_evaluation=physical_evaluation,
     )
     return replace(
         result,

@@ -21,7 +21,6 @@ from xic_extractor.peak_detection.models import (
     PeakCandidatesResult,
     PeakDetectionResult,
 )
-from xic_extractor.peak_detection.region_safe_merge import apply_region_first_safe_merge
 from xic_extractor.peak_detection.scoring_models import ScoringContext
 
 find_peak_candidates_legacy_savgol = (
@@ -31,19 +30,13 @@ find_peak_candidates_local_minimum = (
     candidate_flow.find_peak_candidates_local_minimum
 )
 
-_append_or_merge_chrom_peak_segment_candidate = (
-    candidate_flow.append_or_merge_chrom_peak_segment_candidate
-)
-
 __all__ = [
     "find_peak_and_area",
     "find_peak_candidates",
     "score_candidate",
     "select_candidate_by_evidence",
-    "apply_region_first_safe_merge",
     "find_peak_candidates_legacy_savgol",
     "find_peak_candidates_local_minimum",
-    "_append_or_merge_chrom_peak_segment_candidate",
 ]
 
 
@@ -74,7 +67,6 @@ def find_peak_and_area(
         candidate_finder=find_peak_candidates,
         score_candidate_func=score_candidate,
         evidence_selector=select_candidate_by_evidence,
-        safe_merge_func=apply_region_first_safe_merge,
     )
 
 

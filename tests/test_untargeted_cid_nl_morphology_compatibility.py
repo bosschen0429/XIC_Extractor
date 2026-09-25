@@ -6,16 +6,16 @@ from typing import cast
 
 import pytest
 
-from tests.runtime_telemetry_fixtures import (
-    build_runtime_telemetry_samples_from_coordinator,
-)
-from tests.test_targeted_real_data_adapter import (
+from tests.cid_nl_raw_fixture import (
     _current_candidates,
     _FakeRaw,
     _open_bound_raw,
     _peak_config,
     _settings,
     _source_for,
+)
+from tests.runtime_telemetry_fixtures import (
+    build_runtime_telemetry_samples_from_coordinator,
 )
 from tests.test_untargeted_cid_nl_real_data_runtime import (
     _discovery_receipts,

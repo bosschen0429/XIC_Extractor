@@ -51,19 +51,9 @@ def find_peak_and_area(
     candidate_finder: Callable[..., PeakCandidatesResult] | None = None,
     score_candidate_func: Callable[..., ScoredCandidate] = score_candidate,
     evidence_selector: Callable[..., ScoredCandidate] = select_candidate_by_evidence,
-    safe_merge_func: output_flow.SafeMergeFunc = (
-        output_flow.apply_region_first_safe_merge
-    ),
 ) -> PeakDetectionResult:
     candidate_finder = candidate_finder or find_peak_candidates
     candidates_result = candidate_finder(rt, intensity, config)
-    if scoring_context_builder is not None:
-        candidates_result = candidate_flow.augment_with_chrom_peak_segment_candidates(
-            rt,
-            intensity,
-            config,
-            candidates_result,
-        )
     chosen_confidence: str | None = None
     chosen_reason: str | None = None
     chosen_severities: tuple[tuple[int, str], ...] = ()
@@ -148,17 +138,6 @@ def find_peak_and_area(
                     preferred_rt=preferred_rt,
                     strict_preferred_rt=strict_preferred_rt,
                 )
-        result_for_output, best_candidate, candidate_scores = (
-            output_flow.apply_region_first_safe_merge_if_enabled(
-                rt,
-                intensity,
-                config,
-                result_for_output,
-                best_candidate,
-                candidate_scores,
-                safe_merge_func=safe_merge_func,
-            )
-        )
         return output_flow.detection_success(
             result_for_output,
             best_candidate,
@@ -200,17 +179,6 @@ def find_peak_and_area(
             candidate_scores = (
                 scoring_flow.candidate_score_summary(scored_relaxed_search),
             )
-            relaxed_search_result, relaxed_candidate, candidate_scores = (
-                output_flow.apply_region_first_safe_merge_if_enabled(
-                    rt,
-                    intensity,
-                    config,
-                    relaxed_search_result,
-                    relaxed_candidate,
-                    candidate_scores,
-                    safe_merge_func=safe_merge_func,
-                )
-            )
             return output_flow.detection_success(
                 relaxed_search_result,
                 relaxed_candidate,
@@ -222,17 +190,6 @@ def find_peak_and_area(
                 selection_reference_rt=preferred_rt,
                 paired_istd_anchor_rt=paired_istd_anchor_rt,
             )
-        relaxed_search_result, relaxed_candidate, candidate_scores = (
-            output_flow.apply_region_first_safe_merge_if_enabled(
-                rt,
-                intensity,
-                config,
-                relaxed_search_result,
-                relaxed_candidate,
-                candidate_scores,
-                safe_merge_func=safe_merge_func,
-            )
-        )
         return output_flow.detection_success(
             relaxed_search_result,
             relaxed_candidate,

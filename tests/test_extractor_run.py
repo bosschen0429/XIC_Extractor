@@ -16,11 +16,6 @@ from xic_extractor.processing_identity import (
     build_acquisition_source_identity,
 )
 from xic_extractor.rt_prior_library import LibraryEntry
-from xic_extractor.signal_processing import (
-    PeakCandidate,
-    PeakDetectionResult,
-    PeakResult,
-)
 from xic_extractor.target_pair_rt_calibration import (
     TARGET_PAIR_RT_CALIBRATION_FIELDS,
 )
@@ -626,10 +621,6 @@ def test_serial_backend_keeps_sorted_raw_output_order(
     (config.data_dir / "A.raw").write_text("", encoding="utf-8")
     targets = [_target("Analyte")]
     monkeypatch.setattr("xic_extractor.extractor.open_raw", _open_raw_factory())
-    monkeypatch.setattr(
-        "xic_extractor.extractor.find_peak_and_area",
-        _peak_sequence([_ok_peak(8.5, 1000.0, 2000.0), _ok_peak(8.6, 1100.0, 2100.0)]),
-    )
 
     output = acquire(config, targets)
 
@@ -650,10 +641,6 @@ def test_per_file_result_primitive_returns_worker_payload_and_is_pickleable(
     raw_path.write_text("", encoding="utf-8")
     targets = [_target("Analyte")]
     monkeypatch.setattr("xic_extractor.extractor.open_raw", _open_raw_factory())
-    monkeypatch.setattr(
-        "xic_extractor.extractor.find_peak_and_area",
-        _peak_sequence([_ok_peak(8.5, 1000.0, 2000.0)]),
-    )
 
     result = extract_raw_file_result(
         7,
@@ -668,6 +655,7 @@ def test_per_file_result_primitive_returns_worker_payload_and_is_pickleable(
     assert restored.sample_name == "SampleA"
     assert restored.file_result.sample_name == "SampleA"
     assert restored.diagnostics == []
+    assert restored.file_result.results["Analyte"].peak_result.peak is not None
     assert not hasattr(restored, "wide_rows")
     assert not hasattr(restored, "long_rows")
     assert not hasattr(restored, "score_breakdown_rows")
@@ -770,58 +758,6 @@ def _expected_diff_approval() -> ExpectedDiffApprovalRecord:
     )
 
 
-def _ok_peak(rt: float, intensity: float, area: float) -> PeakDetectionResult:
-    peak = PeakResult(
-        rt=rt,
-        intensity=intensity,
-        intensity_smoothed=intensity,
-        area=area,
-        peak_start=rt - 0.5,
-        peak_end=rt + 0.5,
-    )
-    candidate = PeakCandidate(
-        peak=peak,
-        selection_apex_rt=rt,
-        selection_apex_intensity=intensity,
-        selection_apex_index=7,
-        raw_apex_rt=rt,
-        raw_apex_intensity=intensity,
-        raw_apex_index=7,
-        prominence=intensity * 0.5,
-        quality_flags=(),
-        region_scan_count=15,
-        region_duration_min=1.0,
-        region_edge_ratio=1.5,
-    )
-    return PeakDetectionResult(
-        status="OK",
-        peak=peak,
-        n_points=15,
-        max_smoothed=intensity,
-        n_prominent_peaks=1,
-        candidates=(candidate,),
-    )
-
-
-def _peak_sequence(results: list[PeakDetectionResult]):
-    pending = list(results)
-
-    def _fake_find_peak_and_area(
-        rt: np.ndarray,
-        intensity: np.ndarray,
-        config: ExtractionConfig,
-        *,
-        preferred_rt: float | None = None,
-        strict_preferred_rt: bool = False,
-        scoring_context_builder: object | None = None,
-        istd_confidence_note: str | None = None,
-        **_kwargs: object,
-    ) -> PeakDetectionResult:
-        return pending.pop(0)
-
-    return _fake_find_peak_and_area
-
-
 def _open_raw_factory(*, errors: dict[str, Exception] | None = None):
     error_by_name = errors or {}
 
@@ -843,9 +779,8 @@ class _FakeRaw:
     def extract_xic(
         self, mz: float, rt_min: float, rt_max: float, ppm_tol: float
     ) -> tuple[np.ndarray, np.ndarray]:
-        return np.asarray([rt_min, rt_max], dtype=float), np.asarray(
-            [1.0, 2.0], dtype=float
-        )
+        rt = np.linspace(rt_min, rt_max, 101)
+        return rt, 1.0 + 1000.0 * np.exp(-0.5 * ((rt - 8.5) / 0.08) ** 2)
 
     def iter_ms2_scans(self, rt_min: float, rt_max: float):
         return iter([])

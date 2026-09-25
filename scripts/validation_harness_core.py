@@ -9,10 +9,6 @@ from scripts.benchmark_parallel import _run_extraction_once
 from scripts.compare_workbooks import WorkbookCompareResult, compare_workbooks
 from xic_extractor.config import ConfigError
 from xic_extractor.raw_reader import RawReaderError
-from xic_extractor.settings_schema import (
-    ARBITRATED_RESOLVER_RETIRED_MESSAGE,
-    RESOLVER_MODES,
-)
 from xic_extractor.tabular_io import write_delimited_rows
 
 DEFAULT_MANUAL_DIR = Path(
@@ -38,7 +34,6 @@ DEFAULT_FULL_TISSUE_DIR = Path(
 )
 
 SUITE_CHOICES = ("manual-2raw", "tissue-fixture-cohort", "tissue-full-cohort")
-_RESERVED_SETTING_OVERRIDE_KEYS = {"resolver_mode"}
 
 
 @dataclass(frozen=True)
@@ -51,7 +46,6 @@ class ValidationRunSpec:
     command: tuple[str, ...]
     data_dir: Path | None = None
     expected_raw_count: int | None = None
-    resolver_mode: str = "region_first_safe_merge"
     parallel_mode: str = "process"
     workers: int = 4
     settings_overrides: tuple[tuple[str, str], ...] = ()
@@ -71,7 +65,7 @@ class ValidationRunResult:
 
 
 ExtractionRunner = Callable[..., Path]
-SweepRunner = Callable[[Sequence[str]], int]
+ManualValidationRunner = Callable[[Sequence[str]], int]
 Comparer = Callable[[Path, Path], WorkbookCompareResult]
 
 
@@ -82,13 +76,10 @@ def build_validation_specs(
     output_root: Path,
     run_id: str,
     workers: int,
-    resolver_mode: str,
-    grid: str,
     parallel_mode: str = "process",
     data_dir_override: Path | None = None,
     settings_overrides: tuple[tuple[str, str], ...] = (),
 ) -> list[ValidationRunSpec]:
-    resolver_mode = _validate_resolver_mode(resolver_mode)
     settings_overrides = _normalize_settings_overrides(settings_overrides)
     run_root = output_root / run_id
     specs: list[ValidationRunSpec] = []
@@ -98,13 +89,12 @@ def build_validation_specs(
             specs.append(
                 ValidationRunSpec(
                     name=suite_name,
-                    kind="manual_truth_sweep",
+                    kind="manual_truth_validation",
                     description="Two standard RAW files scored against manual truth.",
                     output_dir=output_dir,
-                    output_path=output_dir / "local_minimum_param_sweep_summary.xlsx",
+                    output_path=output_dir / "targeted_manual_validation.xlsx",
                     command=_manual_2raw_command(
                         output_dir=output_dir,
-                        grid=grid,
                         parallel_mode=parallel_mode,
                         workers=workers,
                     ),
@@ -115,7 +105,7 @@ def build_validation_specs(
             )
         elif suite_name == "tissue-fixture-cohort":
             data_dir = data_dir_override or DEFAULT_TISSUE_VALIDATION_DIR
-            output_dir = run_root / f"tissue_fixture_cohort_{resolver_mode}"
+            output_dir = run_root / "tissue_fixture_cohort"
             specs.append(
                 ValidationRunSpec(
                     name=suite_name,
@@ -130,7 +120,6 @@ def build_validation_specs(
                         base_dir=base_dir,
                         output_root=output_root,
                         run_id=run_id,
-                        resolver_mode=resolver_mode,
                         parallel_mode=parallel_mode,
                         workers=workers,
                         data_dir=data_dir,
@@ -138,7 +127,6 @@ def build_validation_specs(
                     ),
                     data_dir=data_dir,
                     expected_raw_count=8,
-                    resolver_mode=resolver_mode,
                     parallel_mode=parallel_mode,
                     workers=workers,
                     settings_overrides=settings_overrides,
@@ -146,7 +134,7 @@ def build_validation_specs(
             )
         elif suite_name == "tissue-full-cohort":
             data_dir = data_dir_override or DEFAULT_FULL_TISSUE_DIR
-            output_dir = run_root / f"tissue_full_cohort_{resolver_mode}"
+            output_dir = run_root / "tissue_full_cohort"
             specs.append(
                 ValidationRunSpec(
                     name=suite_name,
@@ -162,7 +150,6 @@ def build_validation_specs(
                             base_dir=base_dir,
                             output_root=output_root,
                             run_id=run_id,
-                            resolver_mode=resolver_mode,
                             parallel_mode=parallel_mode,
                             workers=workers,
                             data_dir=data_dir,
@@ -172,7 +159,6 @@ def build_validation_specs(
                     ),
                     data_dir=data_dir,
                     expected_raw_count=85,
-                    resolver_mode=resolver_mode,
                     parallel_mode=parallel_mode,
                     workers=workers,
                     settings_overrides=settings_overrides,
@@ -193,20 +179,8 @@ def _normalize_settings_overrides(
             raise ValueError(
                 "settings_overrides must contain non-empty KEY=VALUE pairs"
             )
-        if normalized_key in _RESERVED_SETTING_OVERRIDE_KEYS:
-            raise ValueError("settings_overrides cannot include resolver_mode")
         normalized.append((normalized_key, normalized_value))
     return tuple(normalized)
-
-
-def _validate_resolver_mode(resolver_mode: str) -> str:
-    normalized = resolver_mode.strip()
-    if normalized == "arbitrated":
-        raise ValueError(ARBITRATED_RESOLVER_RETIRED_MESSAGE)
-    if normalized not in RESOLVER_MODES:
-        allowed = ", ".join(RESOLVER_MODES[:-1]) + f", or {RESOLVER_MODES[-1]}"
-        raise ValueError(f"resolver_mode must be {allowed}")
-    return normalized
 
 
 def command_to_powershell(command: Sequence[str]) -> str:
@@ -234,11 +208,11 @@ def run_validation_specs(
     run_id: str,
     baseline_root: Path | None = None,
     extraction_runner: ExtractionRunner = _run_extraction_once,
-    sweep_runner: SweepRunner | None = None,
+    manual_validation_runner: ManualValidationRunner | None = None,
     comparer: Comparer = compare_workbooks,
 ) -> list[ValidationRunResult]:
-    if sweep_runner is None:
-        sweep_runner = _run_command
+    if manual_validation_runner is None:
+        manual_validation_runner = _run_manual_validation_command
     results: list[ValidationRunResult] = []
     for spec in specs:
         result = _run_one_spec(
@@ -247,7 +221,7 @@ def run_validation_specs(
             output_root=output_root,
             baseline_root=baseline_root,
             extraction_runner=extraction_runner,
-            sweep_runner=sweep_runner,
+            manual_validation_runner=manual_validation_runner,
             comparer=comparer,
         )
         results.append(result)
@@ -267,7 +241,7 @@ def _run_one_spec(
     output_root: Path,
     baseline_root: Path | None,
     extraction_runner: ExtractionRunner,
-    sweep_runner: SweepRunner,
+    manual_validation_runner: ManualValidationRunner,
     comparer: Comparer,
 ) -> ValidationRunResult:
     raw_count = _raw_count(spec)
@@ -287,8 +261,8 @@ def _run_one_spec(
         )
 
     try:
-        if spec.kind == "manual_truth_sweep":
-            exit_code = sweep_runner(spec.command[4:])
+        if spec.kind == "manual_truth_validation":
+            exit_code = manual_validation_runner(spec.command[4:])
             if exit_code != 0:
                 return ValidationRunResult(
                     suite=spec.name,
@@ -297,7 +271,7 @@ def _run_one_spec(
                     output_path=spec.output_path,
                     compare_result="manual_truth",
                     status="failed",
-                    message=f"manual truth sweep exited with {exit_code}",
+                    message=f"manual truth validation exited with {exit_code}",
                 )
         elif spec.kind == "extraction":
             if spec.data_dir is None:
@@ -308,10 +282,7 @@ def _run_one_spec(
                 mode=spec.parallel_mode,
                 workers=spec.workers,
                 output_dir=spec.output_dir,
-                settings_overrides={
-                    "resolver_mode": spec.resolver_mode,
-                    **dict(spec.settings_overrides),
-                },
+                settings_overrides=dict(spec.settings_overrides),
             )
             if workbook_path != spec.output_path:
                 raise ValueError(
@@ -362,7 +333,6 @@ def _run_one_spec(
 def _manual_2raw_command(
     *,
     output_dir: Path,
-    grid: str,
     parallel_mode: str,
     workers: int,
 ) -> tuple[str, ...]:
@@ -370,7 +340,7 @@ def _manual_2raw_command(
         "uv",
         "run",
         "python",
-        r"scripts\local_minimum_param_sweep.py",
+        r"scripts\targeted_manual_validation.py",
         "--manual-workbook",
         str(DEFAULT_MANUAL_WORKBOOK),
         "--nosplit-raw",
@@ -383,8 +353,6 @@ def _manual_2raw_command(
         str(DEFAULT_SPLIT_TARGETS),
         "--output-dir",
         str(output_dir),
-        "--grid",
-        grid,
         "--parallel-mode",
         parallel_mode,
         "--parallel-workers",
@@ -398,7 +366,6 @@ def _harness_command(
     base_dir: Path,
     output_root: Path,
     run_id: str,
-    resolver_mode: str,
     parallel_mode: str,
     workers: int,
     data_dir: Path,
@@ -417,8 +384,6 @@ def _harness_command(
         str(output_root),
         "--run-id",
         run_id,
-        "--resolver-mode",
-        resolver_mode,
         "--parallel-mode",
         parallel_mode,
         "--parallel-workers",
@@ -445,7 +410,7 @@ def _expand_suite_names(suite_names: Sequence[str]) -> tuple[str, ...]:
 
 
 def _raw_count(spec: ValidationRunSpec) -> int | None:
-    if spec.kind == "manual_truth_sweep":
+    if spec.kind == "manual_truth_validation":
         return spec.expected_raw_count
     if spec.data_dir is None:
         return None
@@ -459,7 +424,7 @@ def _compare_if_requested(
     baseline_root: Path | None,
     comparer: Comparer,
 ) -> tuple[str, tuple[str, ...]]:
-    if spec.kind == "manual_truth_sweep":
+    if spec.kind == "manual_truth_validation":
         return "manual_truth", ()
     if baseline_root is None:
         return "not_requested", ()
@@ -506,10 +471,10 @@ def _write_validation_summary(
     return path
 
 
-def _run_command(argv: Sequence[str]) -> int:
-    from scripts import local_minimum_param_sweep
+def _run_manual_validation_command(argv: Sequence[str]) -> int:
+    from scripts import targeted_manual_validation
 
-    return local_minimum_param_sweep.main(argv)
+    return targeted_manual_validation.main(argv)
 
 
 def _quote_powershell_arg(value: str) -> str:

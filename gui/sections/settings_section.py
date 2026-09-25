@@ -22,14 +22,7 @@ from gui.sections.settings_advanced_panel import (
     load_advanced_values,
 )
 from gui.sections.settings_constants import _ADVANCED_SETTING_KEYS
-from gui.sections.settings_controls import AdvancedControls, ResolverControls
-from gui.sections.settings_resolver_panel import (
-    apply_local_minimum_preset,
-    build_resolver_detail_panel,
-    build_resolver_mode_row,
-    configure_resolver_controls,
-    update_resolver_profile_visibility,
-)
+from gui.sections.settings_controls import AdvancedControls
 from gui.sections.settings_value_helpers import (
     _float_setting_text,
     _float_value,
@@ -82,11 +75,7 @@ class SettingsSection(QWidget):
 
         self._data_dir_edit = QLineEdit()
         self._dll_dir_edit = QLineEdit()
-        self._smooth_window_spin = QSpinBox()
-        self._smooth_polyorder_spin = QSpinBox()
         self._ms1_morphology_smoothing_window_spin = QSpinBox()
-        self._peak_rel_height_spin = QDoubleSpinBox()
-        self._peak_min_prominence_ratio_spin = QDoubleSpinBox()
         self._ms2_precursor_tol_da_spin = QDoubleSpinBox()
         self._nl_min_intensity_ratio_spin = QDoubleSpinBox()
         self._count_no_ms2_checkbox = QCheckBox("將 NO_MS2 視為偵測到")
@@ -99,50 +88,15 @@ class SettingsSection(QWidget):
         self._rt_prior_library_path_edit = QLineEdit()
         self._target_pair_rt_calibration_path_edit = QLineEdit()
         self._injection_order_source_edit = QLineEdit()
-        self._resolver_mode_combo = QComboBox()
-        self._resolver_chrom_threshold_spin = QDoubleSpinBox()
-        self._resolver_min_search_range_min_spin = QDoubleSpinBox()
-        self._resolver_min_relative_height_spin = QDoubleSpinBox()
-        self._resolver_min_absolute_height_spin = QDoubleSpinBox()
-        self._resolver_min_ratio_top_edge_spin = QDoubleSpinBox()
-        self._resolver_peak_duration_min_spin = QDoubleSpinBox()
-        self._resolver_peak_duration_max_spin = QDoubleSpinBox()
-        self._resolver_min_scans_spin = QSpinBox()
         self._nl_rt_anchor_search_margin_min_spin = QDoubleSpinBox()
         self._nl_rt_anchor_half_window_min_spin = QDoubleSpinBox()
         self._nl_fallback_half_window_min_spin = QDoubleSpinBox()
         self._parallel_mode_combo = QComboBox()
         self._parallel_workers_spin = QSpinBox()
-        self._legacy_resolver_panel = QWidget()
-        self._local_minimum_resolver_panel = QWidget()
-        self._apply_local_minimum_preset_button = QPushButton(
-            "Apply Local Minimum Preset"
-        )
         self._save_button = QPushButton("儲存設定")
         self._save_button.setObjectName("btn_save")
         self._save_button.setVisible(False)
 
-        self._resolver_controls = ResolverControls(
-            mode_combo=self._resolver_mode_combo,
-            legacy_panel=self._legacy_resolver_panel,
-            local_minimum_panel=self._local_minimum_resolver_panel,
-            apply_local_minimum_preset_button=(self._apply_local_minimum_preset_button),
-            smooth_window_spin=self._smooth_window_spin,
-            smooth_polyorder_spin=self._smooth_polyorder_spin,
-            ms1_morphology_smoothing_window_spin=(
-                self._ms1_morphology_smoothing_window_spin
-            ),
-            peak_rel_height_spin=self._peak_rel_height_spin,
-            peak_min_prominence_ratio_spin=self._peak_min_prominence_ratio_spin,
-            chrom_threshold_spin=self._resolver_chrom_threshold_spin,
-            min_search_range_min_spin=self._resolver_min_search_range_min_spin,
-            min_relative_height_spin=self._resolver_min_relative_height_spin,
-            min_absolute_height_spin=self._resolver_min_absolute_height_spin,
-            min_ratio_top_edge_spin=self._resolver_min_ratio_top_edge_spin,
-            peak_duration_min_spin=self._resolver_peak_duration_min_spin,
-            peak_duration_max_spin=self._resolver_peak_duration_max_spin,
-            min_scans_spin=self._resolver_min_scans_spin,
-        )
         self._advanced_controls = AdvancedControls(
             keep_intermediate_csv_checkbox=self._keep_intermediate_csv_checkbox,
             emit_score_breakdown_checkbox=self._emit_score_breakdown_checkbox,
@@ -165,7 +119,8 @@ class SettingsSection(QWidget):
             parallel_workers_spin=self._parallel_workers_spin,
         )
 
-        configure_resolver_controls(self._resolver_controls)
+        self._ms1_morphology_smoothing_window_spin.setRange(3, 999)
+        self._ms1_morphology_smoothing_window_spin.setSingleStep(2)
         self._ms2_precursor_tol_da_spin.setRange(0.01, 10.0)
         self._ms2_precursor_tol_da_spin.setSingleStep(0.1)
         self._ms2_precursor_tol_da_spin.setDecimals(2)
@@ -196,18 +151,16 @@ class SettingsSection(QWidget):
         self.environment_section.add_row(environment_panel)
         body_layout.addWidget(self.environment_section, 2, 0, 1, 3)
 
-        body_layout.addWidget(QLabel("峰值解析"), 3, 0)
+        body_layout.addWidget(QLabel("共用物理峰"), 3, 0)
         body_layout.addWidget(
-            build_resolver_mode_row(self._resolver_controls), 3, 1, 1, 2
+            _LabeledSpin(
+                "Gaussian 視窗點數",
+                self._ms1_morphology_smoothing_window_spin,
+            ),
+            3, 1, 1, 2,
         )
 
-        # The per-mode resolver numerics and the MS2/NL tolerances are seldom
-        # tuned per run (sensible CANONICAL defaults apply), so collapse them by
-        # default — only the resolver Mode stays visible above.
         self.method_advanced_section = CollapsibleSection("峰偵測進階參數")
-        self.method_advanced_section.add_row(
-            build_resolver_detail_panel(self._resolver_controls)
-        )
         ms2_row = QWidget()
         ms2_layout = QHBoxLayout(ms2_row)
         ms2_layout.setContentsMargins(0, 0, 0, 0)
@@ -238,18 +191,13 @@ class SettingsSection(QWidget):
         card_layout.addLayout(button_row)
 
         self._wire_signals()
-        self._update_resolver_profile_visibility()
         self._update_dll_presentation(initial=True)
 
     def load(self, settings: dict[str, str]) -> bool:
         blockers = [
             QSignalBlocker(self._data_dir_edit),
             QSignalBlocker(self._dll_dir_edit),
-            QSignalBlocker(self._smooth_window_spin),
-            QSignalBlocker(self._smooth_polyorder_spin),
             QSignalBlocker(self._ms1_morphology_smoothing_window_spin),
-            QSignalBlocker(self._peak_rel_height_spin),
-            QSignalBlocker(self._peak_min_prominence_ratio_spin),
             QSignalBlocker(self._ms2_precursor_tol_da_spin),
             QSignalBlocker(self._nl_min_intensity_ratio_spin),
             QSignalBlocker(self._count_no_ms2_checkbox),
@@ -262,15 +210,6 @@ class SettingsSection(QWidget):
             QSignalBlocker(self._rt_prior_library_path_edit),
             QSignalBlocker(self._target_pair_rt_calibration_path_edit),
             QSignalBlocker(self._injection_order_source_edit),
-            QSignalBlocker(self._resolver_mode_combo),
-            QSignalBlocker(self._resolver_chrom_threshold_spin),
-            QSignalBlocker(self._resolver_min_search_range_min_spin),
-            QSignalBlocker(self._resolver_min_relative_height_spin),
-            QSignalBlocker(self._resolver_min_absolute_height_spin),
-            QSignalBlocker(self._resolver_min_ratio_top_edge_spin),
-            QSignalBlocker(self._resolver_peak_duration_min_spin),
-            QSignalBlocker(self._resolver_peak_duration_max_spin),
-            QSignalBlocker(self._resolver_min_scans_spin),
             QSignalBlocker(self._nl_rt_anchor_search_margin_min_spin),
             QSignalBlocker(self._nl_rt_anchor_half_window_min_spin),
             QSignalBlocker(self._nl_fallback_half_window_min_spin),
@@ -289,23 +228,11 @@ class SettingsSection(QWidget):
             )
             self._data_dir_edit.setText(self._settings_values.get("data_dir", ""))
             self._dll_dir_edit.setText(self._settings_values.get("dll_dir", ""))
-            self._smooth_window_spin.setValue(
-                _int_value(self._settings_values, "smooth_window")
-            )
-            self._smooth_polyorder_spin.setValue(
-                _int_value(self._settings_values, "smooth_polyorder")
-            )
             self._ms1_morphology_smoothing_window_spin.setValue(
                 _int_value(
                     self._settings_values,
                     "signal_processing_window_points",
                 )
-            )
-            self._peak_rel_height_spin.setValue(
-                _float_value(self._settings_values, "peak_rel_height")
-            )
-            self._peak_min_prominence_ratio_spin.setValue(
-                _float_value(self._settings_values, "peak_min_prominence_ratio")
             )
             self._ms2_precursor_tol_da_spin.setValue(
                 _float_value(self._settings_values, "ms2_precursor_tol_da")
@@ -320,9 +247,7 @@ class SettingsSection(QWidget):
             load_advanced_values(
                 self._settings_values,
                 self._advanced_controls,
-                self._resolver_controls,
             )
-            self._update_resolver_profile_visibility()
         finally:
             del blockers
         self._set_dirty(False)
@@ -330,23 +255,20 @@ class SettingsSection(QWidget):
         return migrated != settings
 
     def get_values(self) -> dict[str, str]:
-        values = dict(self._settings_values)
-        values.pop("ms1_morphology_smoothing_window_points", None)
+        values = {
+            key: self._settings_values[key]
+            for key in CANONICAL_SETTINGS_DEFAULTS
+            if key != "ms1_morphology_smoothing_window_points"
+        }
         values.update(
             {
                 "data_dir": self._data_dir_edit.text().strip(),
                 "dll_dir": self._dll_dir_edit.text().strip(),
-                "smooth_window": str(self._smooth_window_spin.value()),
-                "smooth_polyorder": str(self._smooth_polyorder_spin.value()),
                 "signal_processing_method": CANONICAL_SETTINGS_DEFAULTS[
                     "signal_processing_method"
                 ],
                 "signal_processing_window_points": str(
                     self._ms1_morphology_smoothing_window_spin.value()
-                ),
-                "peak_rel_height": f"{self._peak_rel_height_spin.value():.2f}",
-                "peak_min_prominence_ratio": (
-                    f"{self._peak_min_prominence_ratio_spin.value():.2f}"
                 ),
                 "ms2_precursor_tol_da": f"{self._ms2_precursor_tol_da_spin.value():g}",
                 "nl_min_intensity_ratio": (
@@ -389,47 +311,6 @@ class SettingsSection(QWidget):
                 ),
                 "injection_order_source": (
                     self._injection_order_source_edit.text().strip()
-                ),
-                "resolver_mode": self._resolver_mode_combo.currentText(),
-                "resolver_chrom_threshold": _float_setting_text(
-                    self._settings_values,
-                    "resolver_chrom_threshold",
-                    self._resolver_chrom_threshold_spin,
-                ),
-                "resolver_min_search_range_min": _float_setting_text(
-                    self._settings_values,
-                    "resolver_min_search_range_min",
-                    self._resolver_min_search_range_min_spin,
-                ),
-                "resolver_min_relative_height": _float_setting_text(
-                    self._settings_values,
-                    "resolver_min_relative_height",
-                    self._resolver_min_relative_height_spin,
-                ),
-                "resolver_min_absolute_height": _float_setting_text(
-                    self._settings_values,
-                    "resolver_min_absolute_height",
-                    self._resolver_min_absolute_height_spin,
-                ),
-                "resolver_min_ratio_top_edge": _float_setting_text(
-                    self._settings_values,
-                    "resolver_min_ratio_top_edge",
-                    self._resolver_min_ratio_top_edge_spin,
-                ),
-                "resolver_peak_duration_min": _float_setting_text(
-                    self._settings_values,
-                    "resolver_peak_duration_min",
-                    self._resolver_peak_duration_min_spin,
-                ),
-                "resolver_peak_duration_max": _float_setting_text(
-                    self._settings_values,
-                    "resolver_peak_duration_max",
-                    self._resolver_peak_duration_max_spin,
-                ),
-                "resolver_min_scans": _int_setting_text(
-                    self._settings_values,
-                    "resolver_min_scans",
-                    self._resolver_min_scans_spin,
                 ),
                 "nl_rt_anchor_search_margin_min": _float_setting_text(
                     self._settings_values,
@@ -489,31 +370,12 @@ class SettingsSection(QWidget):
     def advanced_section_field_keys(self) -> tuple[str, ...]:
         return _ADVANCED_SETTING_KEYS
 
-    def _update_resolver_profile_visibility(self) -> None:
-        update_resolver_profile_visibility(self._resolver_controls)
-
-    def _on_resolver_mode_changed(self, _mode: str) -> None:
-        self._update_resolver_profile_visibility()
-        self._set_dirty(True)
-
-    def _apply_local_minimum_preset(self) -> None:
-        apply_local_minimum_preset(self._resolver_controls, self._settings_values)
-        self._set_dirty(True)
-
     def _wire_signals(self) -> None:
         self._data_dir_edit.textChanged.connect(self._validate_data_dir)
         self._data_dir_edit.textChanged.connect(lambda _: self._set_dirty(True))
         self._dll_dir_edit.textChanged.connect(self._update_dll_presentation)
         self._dll_dir_edit.textChanged.connect(lambda _: self._set_dirty(True))
-        self._smooth_window_spin.valueChanged.connect(lambda _: self._set_dirty(True))
-        self._smooth_polyorder_spin.valueChanged.connect(
-            lambda _: self._set_dirty(True)
-        )
         self._ms1_morphology_smoothing_window_spin.valueChanged.connect(
-            lambda _: self._set_dirty(True)
-        )
-        self._peak_rel_height_spin.valueChanged.connect(lambda _: self._set_dirty(True))
-        self._peak_min_prominence_ratio_spin.valueChanged.connect(
             lambda _: self._set_dirty(True)
         )
         self._ms2_precursor_tol_da_spin.valueChanged.connect(
@@ -543,12 +405,6 @@ class SettingsSection(QWidget):
             self._injection_order_source_edit,
         ):
             line_edit.textChanged.connect(lambda _: self._set_dirty(True))
-        self._resolver_mode_combo.currentTextChanged.connect(
-            self._on_resolver_mode_changed
-        )
-        self._apply_local_minimum_preset_button.clicked.connect(
-            self._apply_local_minimum_preset
-        )
         self._parallel_mode_combo.currentTextChanged.connect(
             self._on_parallel_mode_changed
         )
@@ -557,14 +413,6 @@ class SettingsSection(QWidget):
         )
         for spin in (
             self._rolling_window_size_spin,
-            self._resolver_chrom_threshold_spin,
-            self._resolver_min_search_range_min_spin,
-            self._resolver_min_relative_height_spin,
-            self._resolver_min_absolute_height_spin,
-            self._resolver_min_ratio_top_edge_spin,
-            self._resolver_peak_duration_min_spin,
-            self._resolver_peak_duration_max_spin,
-            self._resolver_min_scans_spin,
             self._nl_rt_anchor_search_margin_min_spin,
             self._nl_rt_anchor_half_window_min_spin,
             self._nl_fallback_half_window_min_spin,

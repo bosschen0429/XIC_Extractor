@@ -7,10 +7,10 @@ from types import SimpleNamespace
 import pytest
 
 import xic_extractor.extraction.untargeted_cid_nl_mode_track_workflow as workflow
+from tests.cid_nl_raw_fixture import _peak_config, _settings
 from tests.processing_identity_no_raw_fixture import (
     build_processing_identity_no_raw_fixture,
 )
-from tests.test_targeted_real_data_adapter import _peak_config, _settings
 from tests.test_untargeted_cid_nl_real_data_runtime import _discovery_receipts
 from xic_extractor.execution_runtime_finalization import (
     RuntimeResourceKind,

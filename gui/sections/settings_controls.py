@@ -5,31 +5,8 @@ from PyQt6.QtWidgets import (
     QComboBox,
     QDoubleSpinBox,
     QLineEdit,
-    QPushButton,
     QSpinBox,
-    QWidget,
 )
-
-
-@dataclass(frozen=True)
-class ResolverControls:
-    mode_combo: QComboBox
-    legacy_panel: QWidget
-    local_minimum_panel: QWidget
-    apply_local_minimum_preset_button: QPushButton
-    smooth_window_spin: QSpinBox
-    smooth_polyorder_spin: QSpinBox
-    ms1_morphology_smoothing_window_spin: QSpinBox
-    peak_rel_height_spin: QDoubleSpinBox
-    peak_min_prominence_ratio_spin: QDoubleSpinBox
-    chrom_threshold_spin: QDoubleSpinBox
-    min_search_range_min_spin: QDoubleSpinBox
-    min_relative_height_spin: QDoubleSpinBox
-    min_absolute_height_spin: QDoubleSpinBox
-    min_ratio_top_edge_spin: QDoubleSpinBox
-    peak_duration_min_spin: QDoubleSpinBox
-    peak_duration_max_spin: QDoubleSpinBox
-    min_scans_spin: QSpinBox
 
 
 @dataclass(frozen=True)

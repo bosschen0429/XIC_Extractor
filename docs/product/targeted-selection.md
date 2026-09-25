@@ -16,6 +16,12 @@ value implementation.
 
 ## Contract
 
+- Acquisition enumerates the shared physical segment universe for the configured
+  signal profile. Targeted scoring and identity evidence choose a component;
+  its physical evaluation supplies the boundary and counts·seconds area.
+  Profile-bound capture retains that evaluation through finalization and does
+  not run a second boundary resolver or integration. RT, bounds and width are
+  expressed in minutes.
 - Product targeted output is a workflow-owned projection from evidence and selection decisions. Shared evidence providers inform but do not choose targeted product state.
 - `TargetKey` is the stable logical row identity. `TargetDefinition` is the
   exact immutable scientific revision, and `TargetListSnapshot` is the exact
@@ -96,10 +102,9 @@ value implementation.
   `TargetRowBinding`/`TargetCellSubject`, post-cell inclusion,
   typed confidence/reason/product-state/counting decisions, existing Review Queue
   routing, MS1 rescue policy scope, and target-pair RT rules.
-- **Compatibility state:** current Targeted projection code still participates
-  in selected peak/area assembly. Structural migration must preserve those
-  outputs while moving sole selected-value authority to
-  `ProductionCellDecision`; any actual value change is a separate promotion.
+- **Selected value:** `ProductionCellDecision` owns the selected numeric value.
+  Targeted projection renders that decision and its retained physical evidence;
+  it does not rerun peak selection or integration.
 - **Does not own:** Backfill/Discovery writer scope, specific target's current selected peak, full review-action apply behavior, or maturity tier decisions.
 - Targeted authority does not extend to untargeted pipelines, and untargeted authority does not extend back.
 

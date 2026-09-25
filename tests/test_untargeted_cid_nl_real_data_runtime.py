@@ -8,13 +8,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from tests.processing_identity_no_raw_fixture import (
-    build_targeted_processing_identity_raw_fixture,
-)
-from tests.runtime_telemetry_fixtures import (
-    build_runtime_telemetry_samples_from_coordinator,
-)
-from tests.test_targeted_real_data_adapter import (
+from tests.cid_nl_raw_fixture import (
     _current_candidates,
     _FakeRaw,
     _FakeThermoRaw,
@@ -23,6 +17,12 @@ from tests.test_targeted_real_data_adapter import (
     _settings,
     _source_for,
     _working_imports,
+)
+from tests.processing_identity_no_raw_fixture import (
+    build_targeted_processing_identity_raw_fixture,
+)
+from tests.runtime_telemetry_fixtures import (
+    build_runtime_telemetry_samples_from_coordinator,
 )
 from tests.test_untargeted_cid_nl_real_data_adapter import _without_ms1_peak
 from xic_extractor.acquisition_contract import (

@@ -8,9 +8,7 @@ from xic_extractor import extractor
 from xic_extractor.config import ExtractionConfig, Target
 from xic_extractor.extraction.output_dispatch import write_outputs
 from xic_extractor.extractor import DiagnosticRecord, RunOutput
-from xic_extractor.neutral_loss import NLResult
 from xic_extractor.output.excel_pipeline import write_excel_from_run_output
-from xic_extractor.signal_processing import PeakDetectionResult, PeakResult
 
 
 @pytest.fixture(autouse=True)
@@ -95,7 +93,13 @@ def test_run_metadata_sheet_has_required_keys(tmp_path: Path, monkeypatch) -> No
     wb = load_workbook(xlsx_path)
     ws = wb["Run Metadata"]
     keys = {ws.cell(row=row, column=1).value for row in range(2, ws.max_row + 1)}
-    assert {"config_hash", "app_version", "generated_at", "resolver_mode"} <= keys
+    assert {
+        "config_hash",
+        "app_version",
+        "generated_at",
+        "signal_processing_method",
+        "signal_processing_window_points",
+    } <= keys
 
 
 def _run_pipeline(
@@ -117,14 +121,6 @@ def _run_pipeline(
     target = _target("Analyte")
 
     monkeypatch.setattr("xic_extractor.extractor.open_raw", _open_raw_factory())
-    monkeypatch.setattr(
-        "xic_extractor.extractor.find_peak_and_area",
-        lambda *_args, **_kwargs: _ok_peak(),
-    )
-    monkeypatch.setattr(
-        "xic_extractor.extractor.check_nl",
-        lambda *_args, **_kwargs: NLResult("OK", 1.0, None, 1, 0, 1),
-    )
 
     run_output = extractor.acquire(config, [target])
     write_outputs(config, [target], run_output)
@@ -179,32 +175,11 @@ def _target(label: str) -> Target:
         rt_min=8.0,
         rt_max=10.0,
         ppm_tol=20.0,
-        neutral_loss_da=116.0474,
-        nl_ppm_warn=20.0,
-        nl_ppm_max=50.0,
+        neutral_loss_da=None,
+        nl_ppm_warn=None,
+        nl_ppm_max=None,
         is_istd=False,
         istd_pair="",
-    )
-
-
-def _ok_peak() -> PeakDetectionResult:
-    peak = PeakResult(
-        rt=9.0,
-        intensity=1000.0,
-        intensity_smoothed=900.0,
-        area=1234.5,
-        peak_start=8.8,
-        peak_end=9.2,
-    )
-    return PeakDetectionResult(
-        status="OK",
-        peak=peak,
-        n_points=12,
-        max_smoothed=900.0,
-        n_prominent_peaks=1,
-        confidence="HIGH",
-        reason="all checks passed",
-        severities=((0, "local_sn"),),
     )
 
 
@@ -219,7 +194,8 @@ def _open_raw_factory():
         def extract_xic(
             self, mz: float, rt_min: float, rt_max: float, ppm_tol: float
         ) -> tuple[np.ndarray, np.ndarray]:
-            return np.asarray([8.8, 9.0, 9.2]), np.asarray([1.0, 3.0, 1.0])
+            rt = np.linspace(rt_min, rt_max, 101)
+            return rt, 1.0 + 1000.0 * np.exp(-0.5 * ((rt - 9.0) / 0.08) ** 2)
 
         def iter_ms2_scans(self, rt_min: float, rt_max: float):
             return iter([])

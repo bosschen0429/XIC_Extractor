@@ -430,13 +430,12 @@ def test_main_window_does_not_start_worker_when_parallel_settings_are_invalid(
     assert "設定值無效" in window.statusBar().currentMessage()
 
 
-def test_main_window_load_config_persists_first_run_settings_migration(
+def test_main_window_load_config_persists_canonical_settings_on_first_run(
     tmp_path: Path,
     monkeypatch,
     qtbot,
 ) -> None:
-    # MainWindow construction calls targeted_view.load_config(), which migrates
-    # legacy setting keys and persists them on first run.
+    # MainWindow fills missing defaults and persists the user's current profile.
     import gui.main_window as module
     import gui.views.targeted_view as targeted_module
 
@@ -451,8 +450,7 @@ def test_main_window_load_config_persists_first_run_settings_migration(
         lambda: {
             "data_dir": str(data_dir),
             "dll_dir": str(dll_dir),
-            "smooth_points": "19",
-            "smooth_sigma": "3.0",
+            "signal_processing_window_points": "19",
         },
     )
     monkeypatch.setattr(targeted_module, "read_targets", lambda: [])
@@ -465,9 +463,10 @@ def test_main_window_load_config_persists_first_run_settings_migration(
     qtbot.addWidget(window)
 
     assert len(saved) == 1
-    assert saved[0]["smooth_window"] == "19"
-    assert "smooth_points" not in saved[0]
-    assert "smooth_sigma" not in saved[0]
+    assert saved[0]["signal_processing_method"] == "gaussian"
+    assert saved[0]["signal_processing_window_points"] == "19"
+    assert saved[0]["data_dir"] == str(data_dir)
+    assert saved[0]["dll_dir"] == str(dll_dir)
 
 
 def _module():

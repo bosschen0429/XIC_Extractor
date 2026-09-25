@@ -9,19 +9,8 @@ def _canonical_settings() -> dict[str, str]:
     return {
         "data_dir": "C:\\data",
         "dll_dir": "C:\\dll",
-        "smooth_window": "17",
-        "smooth_polyorder": "2",
-        "peak_rel_height": "0.90",
-        "peak_min_prominence_ratio": "0.15",
-        "resolver_mode": "legacy_savgol",
-        "resolver_chrom_threshold": "0.05",
-        "resolver_min_search_range_min": "0.04",
-        "resolver_min_relative_height": "0.05",
-        "resolver_min_absolute_height": "25.0",
-        "resolver_min_ratio_top_edge": "1.3",
-        "resolver_peak_duration_min": "0.03",
-        "resolver_peak_duration_max": "1.00",
-        "resolver_min_scans": "5",
+        "signal_processing_method": "gaussian",
+        "signal_processing_window_points": "15",
         "ms2_precursor_tol_da": "0.4",
         "nl_min_intensity_ratio": "0.02",
         "count_no_ms2_as_detected": "true",
@@ -80,15 +69,6 @@ def test_advanced_section_contains_required_flags(qtbot) -> None:
         "rt_prior_library_path",
         "target_pair_rt_calibration_path",
         "injection_order_source",
-        "resolver_mode",
-        "resolver_chrom_threshold",
-        "resolver_min_search_range_min",
-        "resolver_min_relative_height",
-        "resolver_min_absolute_height",
-        "resolver_min_ratio_top_edge",
-        "resolver_peak_duration_min",
-        "resolver_peak_duration_max",
-        "resolver_min_scans",
         "nl_rt_anchor_search_margin_min",
         "nl_rt_anchor_half_window_min",
         "nl_fallback_half_window_min",
@@ -104,15 +84,13 @@ def test_reset_button_restores_param_defaults_keeping_paths(qtbot) -> None:
     section.load(
         {**_canonical_settings(), "data_dir": "C:\\keep", "dll_dir": "C:\\dll"}
     )
-    section._smooth_window_spin.setValue(
-        int(_canonical_settings()["smooth_window"]) + 4
-    )
+    section._ms1_morphology_smoothing_window_spin.setValue(21)
 
     section._reset_button.click()
 
     values = section.get_values()
-    assert int(values["smooth_window"]) == int(
-        CANONICAL_SETTINGS_DEFAULTS["smooth_window"]
+    assert values["signal_processing_window_points"] == (
+        CANONICAL_SETTINGS_DEFAULTS["signal_processing_window_points"]
     )
     assert values["data_dir"] == "C:\\keep"
     assert values["dll_dir"] == "C:\\dll"
@@ -194,194 +172,41 @@ def test_advanced_section_uses_compact_rows_for_related_controls(qtbot) -> None:
     assert mode_index < workers_index
 
 
-def test_resolver_profiles_show_legacy_controls_for_legacy_mode(qtbot) -> None:
+def test_obsolete_peak_controls_are_not_exposed(qtbot) -> None:
     section = SettingsSection()
     qtbot.addWidget(section)
     section.show()
-    section.load({**_canonical_settings(), "resolver_mode": "legacy_savgol"})
-    section.method_advanced_section._toggle.setChecked(True)
+    section.load(_canonical_settings())
 
-    assert section._legacy_resolver_panel.isVisible()
-    assert not section._local_minimum_resolver_panel.isVisible()
-    assert section._smooth_window_spin.isVisible()
-    assert section._peak_min_prominence_ratio_spin.isVisible()
-    assert not section._resolver_chrom_threshold_spin.isVisible()
-    assert not section._resolver_min_ratio_top_edge_spin.isVisible()
-    assert section._resolver_mode_combo.isVisible()
+    assert not hasattr(section, "_smooth_window_spin")
+    assert not hasattr(section, "_peak_min_prominence_ratio_spin")
+    assert not hasattr(section, "_resolver_chrom_threshold_spin")
 
 
-def test_resolver_profiles_show_local_controls_for_local_minimum_mode(qtbot) -> None:
-    section = SettingsSection()
-    qtbot.addWidget(section)
-    section.show()
-    section.load({**_canonical_settings(), "resolver_mode": "local_minimum"})
-    section.method_advanced_section._toggle.setChecked(True)
-
-    assert not section._legacy_resolver_panel.isVisible()
-    assert section._local_minimum_resolver_panel.isVisible()
-    assert not section._smooth_window_spin.isVisible()
-    assert not section._peak_min_prominence_ratio_spin.isVisible()
-    assert section._resolver_chrom_threshold_spin.isVisible()
-    assert section._resolver_min_ratio_top_edge_spin.isVisible()
-    assert section._apply_local_minimum_preset_button.isVisible()
-
-
-def test_resolver_profiles_do_not_offer_retired_arbitrated_mode(qtbot) -> None:
-    section = SettingsSection()
-    qtbot.addWidget(section)
-    section.show()
-    section.load({**_canonical_settings(), "resolver_mode": "arbitrated"})
-    section.method_advanced_section._toggle.setChecked(True)
-
-    assert "arbitrated" not in [
-        section._resolver_mode_combo.itemText(index)
-        for index in range(section._resolver_mode_combo.count())
-    ]
-    assert section._resolver_mode_combo.currentText() == "region_first_safe_merge"
-    assert section._legacy_resolver_panel.isVisible()
-    assert section._local_minimum_resolver_panel.isVisible()
-    assert section._smooth_window_spin.isVisible()
-    assert section._peak_min_prominence_ratio_spin.isVisible()
-    assert section._resolver_chrom_threshold_spin.isVisible()
-    assert section._resolver_min_ratio_top_edge_spin.isVisible()
-    assert section._apply_local_minimum_preset_button.isVisible()
-
-
-def test_resolver_profiles_show_both_controls_for_region_first_safe_merge_mode(
-    qtbot,
-) -> None:
-    section = SettingsSection()
-    qtbot.addWidget(section)
-    section.show()
-    section.load(
-        {**_canonical_settings(), "resolver_mode": "region_first_safe_merge"}
-    )
-    section.method_advanced_section._toggle.setChecked(True)
-
-    assert section._legacy_resolver_panel.isVisible()
-    assert section._local_minimum_resolver_panel.isVisible()
-    assert section._smooth_window_spin.isVisible()
-    assert section._peak_min_prominence_ratio_spin.isVisible()
-    assert section._resolver_chrom_threshold_spin.isVisible()
-    assert section._resolver_min_ratio_top_edge_spin.isVisible()
-    assert section._apply_local_minimum_preset_button.isVisible()
-
-
-def test_switching_to_local_minimum_preserves_inactive_custom_values(qtbot) -> None:
+def test_obsolete_peak_settings_are_not_serialized(qtbot) -> None:
     section = SettingsSection()
     qtbot.addWidget(section)
     section.show()
     section.load(
         {
             **_canonical_settings(),
-            "resolver_mode": "legacy_savgol",
-            "resolver_min_search_range_min": "0.123",
-            "resolver_min_ratio_top_edge": "2.5",
-            "resolver_peak_duration_max": "3.5",
+            "resolver_mode": "region_first_safe_merge",
+            "smooth_window": "21",
+            "peak_rel_height": "0.8",
+            "resolver_min_absolute_height": "80",
+            "baseline_integration_method": "linear_edge",
         }
     )
 
-    section._resolver_mode_combo.setCurrentText("local_minimum")
-
+    assert section._ms1_morphology_smoothing_window_spin.isVisible()
+    section._ms1_morphology_smoothing_window_spin.setValue(21)
     values = section.get_values()
-    assert values["resolver_mode"] == "local_minimum"
-    assert values["resolver_min_search_range_min"] == "0.123"
-    assert values["resolver_min_ratio_top_edge"] == "2.5"
-    assert values["resolver_peak_duration_max"] == "3.5"
-
-
-def test_apply_local_minimum_preset_button_applies_validated_preset(qtbot) -> None:
-    section = SettingsSection()
-    qtbot.addWidget(section)
-    section.show()
-    section.load(
-        {
-            **_canonical_settings(),
-            "resolver_mode": "local_minimum",
-            "resolver_min_search_range_min": "0.123",
-            "resolver_min_ratio_top_edge": "2.5",
-            "resolver_peak_duration_max": "3.5",
-        }
-    )
-
-    section._apply_local_minimum_preset_button.click()
-
-    values = section.get_values()
-    assert values["resolver_chrom_threshold"] == "0.05"
-    assert values["resolver_min_search_range_min"] == "0.08"
-    assert values["resolver_min_relative_height"] == "0.02"
-    assert values["resolver_min_ratio_top_edge"] == "1.7"
-    assert values["resolver_peak_duration_min"] == "0.0"
-    assert values["resolver_peak_duration_max"] == "2.0"
-
-
-def test_local_minimum_profile_allows_zero_floor_values(qtbot) -> None:
-    section = SettingsSection()
-    qtbot.addWidget(section)
-    section.show()
-    section.load({**_canonical_settings(), "resolver_mode": "local_minimum"})
-
-    section._resolver_min_relative_height_spin.setValue(0.0)
-    section._resolver_peak_duration_min_spin.setValue(0.0)
-
-    values = section.get_values()
-    assert values["resolver_min_relative_height"] == "0"
-    assert values["resolver_peak_duration_min"] == "0"
-
-
-def test_local_minimum_profile_rejects_duration_min_above_max(qtbot) -> None:
-    section = SettingsSection()
-    qtbot.addWidget(section)
-    section.show()
-    section.load({**_canonical_settings(), "resolver_mode": "local_minimum"})
-
-    section._resolver_peak_duration_min_spin.setValue(20.0)
-    section._resolver_peak_duration_max_spin.setValue(10.0)
-
-    assert not section.is_valid()
-
-
-def test_local_minimum_profile_preserves_cli_valid_large_values(qtbot) -> None:
-    section = SettingsSection()
-    qtbot.addWidget(section)
-    section.show()
-    section.load(
-        {
-            **_canonical_settings(),
-            "resolver_mode": "local_minimum",
-            "resolver_min_search_range_min": "120.0",
-            "resolver_min_ratio_top_edge": "120.0",
-            "resolver_peak_duration_min": "120.0",
-            "resolver_peak_duration_max": "120.0",
-        }
-    )
-
-    values = section.get_values()
-
-    assert values["resolver_min_search_range_min"] == "120.0"
-    assert values["resolver_min_ratio_top_edge"] == "120.0"
-    assert values["resolver_peak_duration_min"] == "120.0"
-    assert values["resolver_peak_duration_max"] == "120.0"
-
-
-def test_loading_local_minimum_preserves_existing_local_values(qtbot) -> None:
-    section = SettingsSection()
-    qtbot.addWidget(section)
-    section.show()
-    section.load(
-        {
-            **_canonical_settings(),
-            "resolver_mode": "local_minimum",
-            "resolver_min_search_range_min": "0.123",
-            "resolver_min_ratio_top_edge": "2.5",
-            "resolver_peak_duration_max": "3.5",
-        }
-    )
-
-    values = section.get_values()
-    assert values["resolver_min_search_range_min"] == "0.123"
-    assert values["resolver_min_ratio_top_edge"] == "2.5"
-    assert values["resolver_peak_duration_max"] == "3.5"
+    assert values["signal_processing_window_points"] == "21"
+    assert "resolver_mode" not in values
+    assert "smooth_window" not in values
+    assert "peak_rel_height" not in values
+    assert "resolver_min_absolute_height" not in values
+    assert "baseline_integration_method" not in values
 
 
 def test_advanced_section_edits_round_trip_through_get_values(qtbot) -> None:
@@ -402,8 +227,6 @@ def test_advanced_section_edits_round_trip_through_get_values(qtbot) -> None:
         "C:\\data\\target_pair_rt_calibration.tsv"
     )
     section._injection_order_source_edit.setText("C:\\data\\sample_order.csv")
-    section._resolver_mode_combo.setCurrentText("local_minimum")
-    section._resolver_min_absolute_height_spin.setValue(80.0)
     section._nl_rt_anchor_half_window_min_spin.setValue(0.75)
     section._parallel_mode_combo.setCurrentText("process")
     section._parallel_workers_spin.setValue(4)
@@ -422,8 +245,6 @@ def test_advanced_section_edits_round_trip_through_get_values(qtbot) -> None:
         "C:\\data\\target_pair_rt_calibration.tsv"
     )
     assert values["injection_order_source"] == "C:\\data\\sample_order.csv"
-    assert values["resolver_mode"] == "local_minimum"
-    assert values["resolver_min_absolute_height"] == "80"
     assert values["nl_rt_anchor_half_window_min"] == "0.75"
     assert values["parallel_mode"] == "process"
     assert values["parallel_workers"] == "4"
@@ -437,8 +258,6 @@ def test_advanced_section_preserves_loaded_strings_without_edits(qtbot) -> None:
 
     values = section.get_values()
 
-    assert values["resolver_min_absolute_height"] == "25.0"
-    assert values["resolver_peak_duration_max"] == "1.00"
     assert values["nl_rt_anchor_search_margin_min"] == "2.0"
     assert values["parallel_mode"] == "serial"
     assert values["parallel_workers"] == "1"
@@ -478,19 +297,6 @@ def test_parallel_loaded_values_round_trip_through_get_values(qtbot) -> None:
 
     assert values["parallel_mode"] == "process"
     assert values["parallel_workers"] == "4"
-
-
-def test_advanced_section_records_small_numeric_edits(qtbot) -> None:
-    section = SettingsSection()
-    qtbot.addWidget(section)
-    section.show()
-    section.load(_canonical_settings())
-
-    section._resolver_min_absolute_height_spin.setValue(25.001)
-
-    values = section.get_values()
-
-    assert values["resolver_min_absolute_height"] == "25.001"
 
 
 def _grid_position(widget) -> tuple[int, int, int, int]:

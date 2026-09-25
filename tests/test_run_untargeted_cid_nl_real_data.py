@@ -5,7 +5,7 @@ from dataclasses import replace
 from pathlib import Path
 
 from scripts.run_untargeted_cid_nl_real_data import main
-from tests.test_targeted_real_data_adapter import (
+from tests.cid_nl_raw_fixture import (
     _current_candidates,
     _FakeRaw,
     _peak_config,

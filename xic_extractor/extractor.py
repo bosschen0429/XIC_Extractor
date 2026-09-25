@@ -20,6 +20,7 @@ from xic_extractor.peak_detection.model_selection import (
     ExpectedDiffApprovalRecords,
     PeakModelSelectionResult,
 )
+from xic_extractor.peak_detection.physical_peak_models import PhysicalPeakEvaluation
 from xic_extractor.peak_detection.selection_decision import (
     PeakHypothesisSelectionDecision,
 )
@@ -70,6 +71,7 @@ class ExtractionResult:
     selection_decision: PeakHypothesisSelectionDecision | None = None
     model_selection_result: PeakModelSelectionResult | None = None
     acquisition_trace: Trace | None = None
+    physical_evaluation: PhysicalPeakEvaluation | None = None
     targeted_product_projection: TargetedProductProjection | None = None
 
     def __post_init__(self) -> None:

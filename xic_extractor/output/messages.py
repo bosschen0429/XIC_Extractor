@@ -51,12 +51,20 @@ def build_diagnostic_records(
 ) -> list[DiagnosticRecord]:
     records: list[DiagnosticRecord] = []
     if result.peak_result.status != "OK":
+        physical_evaluation = getattr(result, "physical_evaluation", None)
+        peak_reason = (
+            f"Physical peak {physical_evaluation.state}: {physical_evaluation.reason}"
+            if physical_evaluation is not None
+            and physical_evaluation.state != "available"
+            else result.peak_result.reason
+            or _peak_reason(target, result.peak_result, config)
+        )
         records.append(
             DiagnosticRecord(
                 sample_name=sample_name,
                 target_label=target.label,
                 issue=result.peak_result.status,
-                reason=_peak_reason(target, result.peak_result, config),
+                reason=peak_reason,
             )
         )
 

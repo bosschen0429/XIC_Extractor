@@ -12,6 +12,7 @@ import xic_extractor.alignment.pipeline as pipeline_module
 from tests.alignment_pipeline_helpers import matrix as _matrix
 from tests.alignment_pipeline_helpers import peak_config as _peak_config
 from tests.alignment_pipeline_helpers import write_batch as _write_batch
+from tests.cid_nl_raw_fixture import _settings
 from tests.test_discovery_pipeline import (
     _OwnerBoundFakeRawHandle,
     _scan_event,
@@ -22,7 +23,6 @@ from tests.test_discovery_pipeline import (
 from tests.test_discovery_pipeline import (
     _settings as _discovery_settings,
 )
-from tests.test_targeted_real_data_adapter import _settings
 from tests.test_untargeted_cid_nl_real_data_runtime import (
     _FakeRaw,
     _install_runtime_raws,

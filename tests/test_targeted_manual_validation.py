@@ -5,15 +5,13 @@ from pathlib import Path
 
 from openpyxl import Workbook, load_workbook
 
-from scripts.local_minimum_param_sweep import (
+from scripts.targeted_manual_validation import (
     ManualTruthRow,
-    ParameterSet,
     ProgramPeakRow,
-    build_parameter_sets,
     read_manual_truth,
-    run_sweep,
-    score_parameter_set,
-    write_sweep_workbook,
+    run_manual_validation,
+    score_manual_validation,
+    write_validation_workbook,
 )
 
 
@@ -106,7 +104,7 @@ def test_read_manual_truth_parses_dna_rna_two_raw_blocks(tmp_path: Path) -> None
     assert rows[2].manual_shape == "正常"
 
 
-def test_score_parameter_set_ranks_by_area_mape_and_tracks_guardrails() -> None:
+def test_score_manual_validation_tracks_numeric_errors_and_guardrails() -> None:
     truth = [
         ManualTruthRow(
             "DNA",
@@ -144,7 +142,7 @@ def test_score_parameter_set_ranks_by_area_mape_and_tracks_guardrails() -> None:
         ProgramPeakRow("SampleA", "Analyte", False, 11.10, 2300.0, 26000.0, True),
     ]
 
-    score = score_parameter_set("candidate", {}, truth, peaks)
+    score = score_manual_validation("canonical_targeted", {}, truth, peaks)
 
     assert score.area_median_abs_pct_error == 0.2
     assert score.area_within_10pct == 1
@@ -156,96 +154,7 @@ def test_score_parameter_set_ranks_by_area_mape_and_tracks_guardrails() -> None:
     assert score.large_area_misses == 1
 
 
-def test_build_parameter_sets_includes_legacy_current_and_candidate_grid() -> None:
-    parameter_sets = build_parameter_sets(grid="quick")
-
-    names = [item.name for item in parameter_sets]
-    assert names[0] == "legacy_savgol"
-    assert names[1] == "local_minimum_current"
-    assert any(name.startswith("local_minimum_grid_") for name in names)
-    assert parameter_sets[0].settings_overrides["resolver_mode"] == "legacy_savgol"
-    assert parameter_sets[1].settings_overrides["resolver_mode"] == "local_minimum"
-
-
-def test_calibration_grid_focuses_duration_and_search() -> None:
-    parameter_sets = build_parameter_sets(grid="calibration-duration-search")
-
-    by_name = {item.name: item.settings_overrides for item in parameter_sets}
-
-    assert list(by_name)[:2] == ["legacy_savgol", "local_minimum_current"]
-    assert by_name["local_minimum_duration_2p0"]["resolver_peak_duration_max"] == "2.0"
-    assert (
-        by_name["local_minimum_search_0p05_duration_2p0"][
-            "resolver_min_search_range_min"
-        ]
-        == "0.05"
-    )
-    assert (
-        by_name["local_minimum_search_0p05"]["resolver_peak_duration_max"]
-        == "2.0"
-    )
-    assert (
-        by_name["local_minimum_search_0p04_duration_2p0"][
-            "resolver_min_search_range_min"
-        ]
-        == "0.04"
-    )
-    assert all(
-        settings.get("resolver_mode") in {"legacy_savgol", "local_minimum"}
-        for settings in by_name.values()
-    )
-    assert len(parameter_sets) <= 12
-
-
-def test_calibration_grid_focuses_min_duration_and_height() -> None:
-    parameter_sets = build_parameter_sets(grid="calibration-duration-height")
-
-    by_name = {item.name: item.settings_overrides for item in parameter_sets}
-
-    assert list(by_name)[:2] == ["legacy_savgol", "local_minimum_current"]
-    assert (
-        by_name["local_minimum_current"]["resolver_min_relative_height"]
-        == "0.02"
-    )
-    assert (
-        by_name["local_minimum_rel_height_0p00"][
-            "resolver_min_relative_height"
-        ]
-        == "0.0"
-    )
-    assert (
-        by_name["local_minimum_min_duration_0p02"][
-            "resolver_peak_duration_min"
-        ]
-        == "0.02"
-    )
-    assert (
-        by_name["local_minimum_rel_height_0p01"][
-            "resolver_min_relative_height"
-        ]
-        == "0.01"
-    )
-    assert (
-        by_name["local_minimum_min_duration_0p02_rel_height_0p01"][
-            "resolver_peak_duration_min"
-        ]
-        == "0.02"
-    )
-    assert (
-        by_name["local_minimum_min_duration_0p02_rel_height_0p01"][
-            "resolver_min_relative_height"
-        ]
-        == "0.01"
-    )
-    assert all(
-        settings.get("resolver_peak_duration_max") == "2.0"
-        for name, settings in by_name.items()
-        if name.startswith("local_minimum_") and name != "local_minimum_current"
-    )
-    assert len(parameter_sets) <= 12
-
-
-def test_run_sweep_scores_each_parameter_set_with_injected_runner() -> None:
+def test_run_manual_validation_scores_one_current_pass() -> None:
     truth = [
         ManualTruthRow(
             "DNA",
@@ -258,13 +167,11 @@ def test_run_sweep_scores_each_parameter_set_with_injected_runner() -> None:
             "正常",
         )
     ]
-    parameter_sets = [
-        ParameterSet("legacy_savgol", {"resolver_mode": "legacy_savgol"}),
-        ParameterSet("local_minimum_current", {"resolver_mode": "local_minimum"}),
-    ]
+    calls = 0
 
-    def fake_runner(parameter_set: ParameterSet) -> list[ProgramPeakRow]:
-        area = 10000.0 if parameter_set.name == "legacy_savgol" else 12000.0
+    def fake_runner() -> list[ProgramPeakRow]:
+        nonlocal calls
+        calls += 1
         return [
             ProgramPeakRow(
                 "SampleA",
@@ -272,22 +179,19 @@ def test_run_sweep_scores_each_parameter_set_with_injected_runner() -> None:
                 False,
                 10.01,
                 1000.0,
-                area,
+                12000.0,
                 True,
             )
         ]
 
-    result = run_sweep(truth, parameter_sets, fake_runner)
+    result = run_manual_validation(truth, fake_runner)
 
-    assert [score.name for score in result.scores] == [
-        "legacy_savgol",
-        "local_minimum_current",
-    ]
-    assert result.scores[0].area_median_abs_pct_error == 0.0
-    assert result.scores[1].area_median_abs_pct_error == 0.2
+    assert calls == 1
+    assert result.score.name == "canonical_targeted"
+    assert result.score.area_median_abs_pct_error == 0.2
 
 
-def test_write_sweep_workbook_contains_required_sheets(tmp_path: Path) -> None:
+def test_write_validation_workbook_contains_required_sheets(tmp_path: Path) -> None:
     truth = [
         ManualTruthRow(
             "DNA",
@@ -303,23 +207,23 @@ def test_write_sweep_workbook_contains_required_sheets(tmp_path: Path) -> None:
     peaks = [
         ProgramPeakRow("SampleA", "TargetA", False, 10.01, 1000.0, 10000.0, True)
     ]
-    score = score_parameter_set(
-        "legacy_savgol",
-        {"resolver_mode": "legacy_savgol"},
+    score = score_manual_validation(
+        "canonical_targeted",
+        {},
         truth,
         peaks,
     )
     output = tmp_path / "summary.xlsx"
 
-    write_sweep_workbook(output, [score])
+    write_validation_workbook(output, [score])
 
     wb = load_workbook(output, read_only=True, data_only=True)
     assert wb.sheetnames == ["Summary", "PerTarget", "Failures", "RunConfig"]
-    assert wb["Summary"]["A1"].value == "Rank"
+    assert wb["Summary"]["A1"].value == "Name"
 
 
 def test_write_settings_csv_preserves_staging_config_contract(tmp_path: Path) -> None:
-    import scripts.local_minimum_param_sweep as module
+    import scripts.targeted_manual_validation as module
 
     settings_csv = tmp_path / "settings.csv"
 
@@ -342,7 +246,7 @@ def test_write_settings_csv_preserves_staging_config_contract(tmp_path: Path) ->
     assert rows[1]["description"] == ""
 
 
-def test_write_sweep_workbook_lists_per_target_failures(tmp_path: Path) -> None:
+def test_write_validation_workbook_lists_per_target_failures(tmp_path: Path) -> None:
     truth = [
         ManualTruthRow(
             "DNA",
@@ -376,15 +280,15 @@ def test_write_sweep_workbook_lists_per_target_failures(tmp_path: Path) -> None:
             True,
         )
     ]
-    score = score_parameter_set(
-        "candidate",
-        {"resolver_mode": "local_minimum"},
+    score = score_manual_validation(
+        "canonical_targeted",
+        {},
         truth,
         peaks,
     )
     output = tmp_path / "summary.xlsx"
 
-    write_sweep_workbook(output, [score])
+    write_validation_workbook(output, [score])
 
     wb = load_workbook(output, read_only=True, data_only=True)
     per_target_rows = list(wb["PerTarget"].iter_rows(values_only=True))
@@ -410,10 +314,10 @@ def test_write_sweep_workbook_lists_per_target_failures(tmp_path: Path) -> None:
     assert [row[2] for row in per_target_rows[1:]] == ["LargeError", "Missing"]
     assert per_target_rows[2][13] is True
     assert failure_rows[1:] == [
-        ("candidate", "SampleA", "LargeError", "RT_MAX_DELTA", 0.25, "<=0.20"),
-        ("candidate", "SampleA", "LargeError", "AREA_ERROR", 0.4, "<=0.20"),
+        ("canonical_targeted", "SampleA", "LargeError", "RT_MAX_DELTA", 0.25, "<=0.20"),
+        ("canonical_targeted", "SampleA", "LargeError", "AREA_ERROR", 0.4, "<=0.20"),
         (
-            "candidate",
+            "canonical_targeted",
             "SampleA",
             "Missing",
             "MISSING_PEAK",
@@ -423,10 +327,41 @@ def test_write_sweep_workbook_lists_per_target_failures(tmp_path: Path) -> None:
     ]
 
 
+def test_run_cases_executes_each_case_once_with_current_config(
+    tmp_path: Path, monkeypatch
+) -> None:
+    import scripts.targeted_manual_validation as module
+
+    cases = [
+        module.ManualValidationCase(
+            name=name,
+            sample_name=name,
+            raw_path=tmp_path / f"{name}.raw",
+            targets_path=tmp_path / f"{name}.csv",
+        )
+        for name in ("nosplit", "split")
+    ]
+    calls: list[tuple[str, dict[str, str]]] = []
+
+    def fake_run_case(
+        case: module.ManualValidationCase,
+        _output_dir: Path,
+        execution_overrides: dict[str, str],
+    ) -> list[module.ProgramPeakRow]:
+        calls.append((case.name, execution_overrides))
+        return []
+
+    monkeypatch.setattr(module, "_run_case", fake_run_case)
+    overrides = {"parallel_mode": "process", "parallel_workers": "4"}
+
+    assert module._run_cases(cases, tmp_path, overrides) == []
+    assert calls == [("nosplit", overrides), ("split", overrides)]
+
+
 def test_main_writes_workbook_with_injected_runner(
     tmp_path: Path, monkeypatch
 ) -> None:
-    import scripts.local_minimum_param_sweep as module
+    import scripts.targeted_manual_validation as module
 
     manual_workbook = tmp_path / "manual.xlsx"
     _write_manual_workbook(manual_workbook)
@@ -440,11 +375,10 @@ def test_main_writes_workbook_with_injected_runner(
     split_targets.write_text("label\nTargetA\n", encoding="utf-8")
 
     def fake_runner(
-        parameter_set: module.ParameterSet,
-        cases: list[module.SweepCase],
+        cases: list[module.ManualValidationCase],
         _output_dir: Path,
+        _execution_overrides: dict[str, str],
     ) -> list[module.ProgramPeakRow]:
-        area = 10000.0 if parameter_set.name == "legacy_savgol" else 12000.0
         return [
             module.ProgramPeakRow(
                 case.sample_name,
@@ -452,14 +386,14 @@ def test_main_writes_workbook_with_injected_runner(
                 False,
                 10.01,
                 1000.0,
-                area,
+                12000.0,
                 True,
             )
             for case in cases
         ]
 
-    monkeypatch.setattr(module, "_run_parameter_set", fake_runner)
-    output_dir = tmp_path / "sweep"
+    monkeypatch.setattr(module, "_run_cases", fake_runner)
+    output_dir = tmp_path / "validation"
 
     exit_code = module.main(
         [
@@ -475,19 +409,17 @@ def test_main_writes_workbook_with_injected_runner(
             str(split_targets),
             "--output-dir",
             str(output_dir),
-            "--grid",
-            "quick",
         ]
     )
 
     assert exit_code == 0
-    assert (output_dir / "local_minimum_param_sweep_summary.xlsx").exists()
+    assert (output_dir / "targeted_manual_validation.xlsx").exists()
 
 
-def test_main_applies_parallel_overrides_to_every_parameter_set(
+def test_main_applies_parallel_overrides_to_one_current_run(
     tmp_path: Path, monkeypatch
 ) -> None:
-    import scripts.local_minimum_param_sweep as module
+    import scripts.targeted_manual_validation as module
 
     manual_workbook = tmp_path / "manual.xlsx"
     _write_manual_workbook(manual_workbook)
@@ -502,11 +434,11 @@ def test_main_applies_parallel_overrides_to_every_parameter_set(
     seen_overrides: list[dict[str, str]] = []
 
     def fake_runner(
-        parameter_set: module.ParameterSet,
-        cases: list[module.SweepCase],
+        cases: list[module.ManualValidationCase],
         _output_dir: Path,
+        execution_overrides: dict[str, str],
     ) -> list[module.ProgramPeakRow]:
-        seen_overrides.append(parameter_set.settings_overrides)
+        seen_overrides.append(execution_overrides)
         return [
             module.ProgramPeakRow(
                 case.sample_name,
@@ -520,7 +452,7 @@ def test_main_applies_parallel_overrides_to_every_parameter_set(
             for case in cases
         ]
 
-    monkeypatch.setattr(module, "_run_parameter_set", fake_runner)
+    monkeypatch.setattr(module, "_run_cases", fake_runner)
 
     exit_code = module.main(
         [
@@ -535,9 +467,7 @@ def test_main_applies_parallel_overrides_to_every_parameter_set(
             "--split-targets",
             str(split_targets),
             "--output-dir",
-            str(tmp_path / "sweep"),
-            "--grid",
-            "quick",
+            str(tmp_path / "validation"),
             "--parallel-mode",
             "process",
             "--parallel-workers",
@@ -546,16 +476,16 @@ def test_main_applies_parallel_overrides_to_every_parameter_set(
     )
 
     assert exit_code == 0
-    assert seen_overrides
-    assert all(settings["parallel_mode"] == "process" for settings in seen_overrides)
-    assert all(settings["parallel_workers"] == "4" for settings in seen_overrides)
+    assert seen_overrides == [
+        {"parallel_mode": "process", "parallel_workers": "4"}
+    ]
 
 
 def test_script_file_exposes_cli_help() -> None:
     completed = subprocess.run(
         [
             sys.executable,
-            "scripts/local_minimum_param_sweep.py",
+            "scripts/targeted_manual_validation.py",
             "--help",
         ],
         text=True,
@@ -564,7 +494,12 @@ def test_script_file_exposes_cli_help() -> None:
     )
 
     assert completed.returncode == 0
-    assert "Sweep local_minimum resolver parameters" in completed.stdout
+    assert (
+        "Compare the current Targeted extractor with manual truth"
+        in completed.stdout
+    )
+    assert "resolver" not in completed.stdout
+    assert "grid" not in completed.stdout
 
 
 def _write_manual_workbook(path: Path) -> None:
