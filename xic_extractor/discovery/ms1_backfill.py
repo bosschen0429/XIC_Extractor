@@ -836,16 +836,17 @@ def merge_candidates_by_ms1_peak_with_lineage(
     member_source_ordinals: list[list[int]] = []
     representative_source_ordinals: list[int] = []
     for source_ordinal, candidate in enumerate(candidates):
-        merge_index = _matching_ms1_peak_candidate_index(
+        match = _matching_ms1_peak_candidate(
             candidate, merged, settings=settings, ms1_centroid_mz=ms1_centroid_mz
         )
-        if merge_index is None:
+        if match is None:
             merged.append(candidate)
             member_source_ordinals.append([source_ordinal])
             representative_source_ordinals.append(source_ordinal)
             continue
+        merge_index, anchor = match
         current = merged[merge_index]
-        representative = _representative_candidate(
+        representative = anchor or _representative_candidate(
             current,
             candidate,
             settings=settings,
@@ -854,6 +855,7 @@ def merge_candidates_by_ms1_peak_with_lineage(
             current,
             candidate,
             settings=settings,
+            representative=representative,
         )
         member_source_ordinals[merge_index].append(source_ordinal)
         if representative is candidate:
@@ -876,19 +878,38 @@ def merge_candidates_by_ms1_peak_with_lineage(
 _merge_candidates_by_ms1_peak = merge_candidates_by_ms1_peak
 
 
-def _matching_ms1_peak_candidate_index(
+def _matching_ms1_peak_candidate(
     candidate: DiscoveryCandidate,
     merged: list[DiscoveryCandidate],
     *,
     settings: DiscoverySettings,
     ms1_centroid_mz: MS1CentroidMz | None = None,
-) -> int | None:
+) -> tuple[int, DiscoveryCandidate | None] | None:
+    """The merge target and, for one measured ion, the candidate that holds it."""
+
     for index, existing in enumerate(merged):
-        if _can_merge_by_ms1_peak(
+        if _can_merge_by_ms1_peak(existing, candidate, settings=settings):
+            return index, None
+        if not _tags_can_merge(existing, candidate, settings=settings):
+            continue
+        anchor = _same_ms1_peak_on_one_measured_ion(
             existing, candidate, settings=settings, ms1_centroid_mz=ms1_centroid_mz
-        ):
-            return index
+        )
+        if anchor is not None:
+            return index, anchor
     return None
+
+
+def _tags_can_merge(
+    first: DiscoveryCandidate,
+    second: DiscoveryCandidate,
+    *,
+    settings: DiscoverySettings,
+) -> bool:
+    return (
+        first.neutral_loss_tag == second.neutral_loss_tag
+        or settings.tag_combine_mode in {"union", "intersection"}
+    )
 
 
 def _can_merge_by_ms1_peak(
@@ -896,17 +917,9 @@ def _can_merge_by_ms1_peak(
     second: DiscoveryCandidate,
     *,
     settings: DiscoverySettings,
-    ms1_centroid_mz: MS1CentroidMz | None = None,
 ) -> bool:
-    if _same_ms1_apex_within_extraction_tolerance(
-        first, second, settings=settings
-    ) or _same_ms1_apex_on_one_measured_ion(
-        first, second, settings=settings, ms1_centroid_mz=ms1_centroid_mz
-    ):
-        return (
-            first.neutral_loss_tag == second.neutral_loss_tag
-            or settings.tag_combine_mode in {"union", "intersection"}
-        )
+    if _same_ms1_apex_within_extraction_tolerance(first, second, settings=settings):
+        return _tags_can_merge(first, second, settings=settings)
     same_ms1_feature_row = _same_ms1_feature_row_identity(first, second)
     if not (
         first.raw_file == second.raw_file
@@ -973,8 +986,8 @@ def _merge_candidate_pair(
     second: DiscoveryCandidate,
     *,
     settings: DiscoverySettings,
+    representative: DiscoveryCandidate,
 ) -> DiscoveryCandidate:
-    representative = _representative_candidate(first, second, settings=settings)
     seed_scan_ids = tuple(sorted(set(first.seed_scan_ids + second.seed_scan_ids)))
     seed_event_count = first.seed_event_count + second.seed_event_count
     rt_seed_min = min(first.rt_seed_min, second.rt_seed_min)
@@ -1076,18 +1089,23 @@ def _same_ms1_apex_within_extraction_tolerance(
     )
 
 
-def _same_ms1_apex_on_one_measured_ion(
+def _same_ms1_peak_on_one_measured_ion(
     first: DiscoveryCandidate,
     second: DiscoveryCandidate,
     *,
     settings: DiscoverySettings,
     ms1_centroid_mz: MS1CentroidMz | None,
-) -> bool:
-    """Whether one MS1 ion at a shared apex lies within both extraction windows.
+) -> DiscoveryCandidate | None:
+    """The candidate whose trace holds the whole peak of one ion both traced.
 
     A precursor inferred as product + loss carries the MS2 product error, so two
-    candidates of one ion can differ by more than the MS1 tolerance. When their
-    windows still overlap, the apex scan's measured centroid decides.
+    candidates of one ion can differ by more than the MS1 tolerance. A window
+    that clips the ion shows only part of its peak, such as the tail, and the
+    resolver reports that part with its own apex. The higher candidate (the
+    anchor) traced the peak itself: the other apex inside the anchor's bounds is
+    one peak on the anchor's trace, and the ions read at the two apexes, each
+    inside its own window, agreeing within tolerance show that both traces came
+    from one ion. Returns the anchor, or None when either condition fails.
     """
 
     tolerance = settings.precursor_mz_tolerance_ppm
@@ -1095,21 +1113,49 @@ def _same_ms1_apex_on_one_measured_ion(
         ms1_centroid_mz is not None
         and first.raw_file == second.raw_file
         and first.sample_stem == second.sample_stem
-        and first.ms1_peak_found
-        and second.ms1_peak_found
-        and first.ms1_apex_rt is not None
-        and first.ms1_apex_rt == second.ms1_apex_rt
+        and _traced_peak(first)
+        and _traced_peak(second)
         and _within_ppm(first.precursor_mz, second.precursor_mz, 2 * tolerance)
     ):
-        return False
-    low, high = sorted((first.precursor_mz, second.precursor_mz))
-    measured = ms1_centroid_mz(
-        first.ms1_apex_rt, low * (1 - tolerance * 1e-6), high * (1 + tolerance * 1e-6)
-    )
+        return None
+    anchor, other = sorted((first, second), key=lambda c: -cast(float, c.ms1_height))
+    if not (
+        cast(float, anchor.ms1_peak_rt_start)
+        <= cast(float, other.ms1_apex_rt)
+        <= cast(float, anchor.ms1_peak_rt_end)
+    ):
+        return None
+    anchor_ion = _ion_in_window(anchor, ms1_centroid_mz, tolerance)
+    other_ion = _ion_in_window(other, ms1_centroid_mz, tolerance)
+    if (
+        anchor_ion is None
+        or other_ion is None
+        or not _within_ppm(anchor_ion, other_ion, tolerance)
+    ):
+        return None
+    return anchor
+
+
+def _traced_peak(candidate: DiscoveryCandidate) -> bool:
     return (
-        measured is not None
-        and _within_ppm(measured, first.precursor_mz, tolerance)
-        and _within_ppm(measured, second.precursor_mz, tolerance)
+        candidate.ms1_peak_found
+        and candidate.ms1_apex_rt is not None
+        and candidate.ms1_height is not None
+        and _candidate_peak_bounds_present(candidate)
+    )
+
+
+def _ion_in_window(
+    candidate: DiscoveryCandidate,
+    ms1_centroid_mz: MS1CentroidMz,
+    tolerance_ppm: float,
+) -> float | None:
+    """The MS1 ion at the candidate's apex inside its own extraction window."""
+
+    return ms1_centroid_mz(
+        cast(float, candidate.ms1_apex_rt),
+        candidate.precursor_mz * (1 - tolerance_ppm * 1e-6),
+        candidate.precursor_mz * (1 + tolerance_ppm * 1e-6),
     )
 
 
