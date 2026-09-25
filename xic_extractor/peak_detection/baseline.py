@@ -7,7 +7,7 @@ from typing import Literal
 import numpy as np
 from numpy.linalg import LinAlgError
 from scipy import sparse
-from scipy.linalg import solveh_banded
+from scipy.linalg import solve_banded, solveh_banded
 from scipy.sparse.linalg import spsolve
 
 from xic_extractor.peak_detection.integration import integrate_area_counts_seconds
@@ -83,6 +83,97 @@ def asls_baseline(
             weight_matrix = sparse.diags(weights, 0, format="csc")
             baseline = spsolve((weight_matrix + penalty).tocsc(), weights * values)
         weights = p * (values > baseline) + (1 - p) * (values < baseline)
+    return baseline
+
+
+def asls_baseline_on_rt(
+    rt_values: np.ndarray,
+    intensity_values: np.ndarray,
+    *,
+    lam: float,
+    p: float = 0.01,
+    n_iter: int = 10,
+) -> np.ndarray:
+    """Return an AsLS baseline on a strictly increasing RT grid.
+
+    RT is measured in minutes and ``lam`` in minutes to the fourth power. The
+    data and curvature terms use trapezoidal cell widths, while curvature is
+    the three-point nonuniform-grid second derivative. This keeps a physical
+    ``lam`` independent of scan density without resampling the trace.
+    """
+    rt = np.asarray(rt_values, dtype=float)
+    values = np.asarray(intensity_values, dtype=float)
+    if rt.ndim != 1 or values.ndim != 1:
+        raise ValueError("rt_values and intensity_values must be one-dimensional")
+    if len(rt) != len(values):
+        raise ValueError("rt_values and intensity_values must have the same length")
+    if not np.all(np.isfinite(rt)) or not np.all(np.isfinite(values)):
+        raise ValueError(
+            "rt_values and intensity_values must contain only finite values"
+        )
+    if len(rt) > 1 and np.any(np.diff(rt) <= 0):
+        raise ValueError("rt_values must be strictly increasing")
+    if not np.isfinite(lam) or lam <= 0:
+        raise ValueError("lam must be finite and > 0")
+    if not np.isfinite(p) or not 0 < p < 1:
+        raise ValueError("p must be finite, > 0, and < 1")
+    if n_iter < 1:
+        raise ValueError("n_iter must be >= 1")
+    n = len(values)
+    if n < 3:
+        return values.copy()
+
+    spacing = np.diff(rt)
+    cell_widths = np.empty(n, dtype=float)
+    cell_widths[0] = spacing[0] / 2.0
+    cell_widths[-1] = spacing[-1] / 2.0
+    cell_widths[1:-1] = (spacing[:-1] + spacing[1:]) / 2.0
+
+    previous_spacing = spacing[:-1]
+    next_spacing = spacing[1:]
+    interior_widths = (previous_spacing + next_spacing) / 2.0
+    derivative_scale = 2.0 / (previous_spacing + next_spacing)
+    curvature = sparse.diags(
+        [
+            derivative_scale / previous_spacing,
+            -derivative_scale * (1.0 / previous_spacing + 1.0 / next_spacing),
+            derivative_scale / next_spacing,
+        ],
+        [0, 1, 2],
+        shape=(n - 2, n),
+        dtype=float,
+        format="csc",
+    )
+    objective_scale = float(np.median(cell_widths))
+    weighted_curvature = sparse.diags(
+        np.sqrt(float(lam) * interior_widths / objective_scale), 0, format="csc"
+    ) @ curvature
+    curvature_rows = weighted_curvature.tocsr()
+    system_size = 2 * n - 2
+    z_positions = np.concatenate((2 * np.arange(n - 1), [system_size - 1]))
+    curvature_positions = 2 * np.arange(n - 2) + 1
+    weights = np.ones(n, dtype=float)
+    baseline = values.copy()
+    for _ in range(n_iter):
+        data_weights = cell_widths * weights / objective_scale
+        bands = np.zeros((7, system_size), dtype=float)
+        bands[3, z_positions] = data_weights
+        bands[3, curvature_positions] = -1.0
+        for offset in range(3):
+            coefficients = curvature_rows.diagonal(offset)
+            rows = curvature_positions
+            columns = z_positions[offset : offset + n - 2]
+            bands[3 + rows - columns, columns] = coefficients
+            bands[3 + columns - rows, rows] = coefficients
+        target = np.zeros(system_size, dtype=float)
+        target[z_positions] = data_weights * values
+        solution = solve_banded(
+            (3, 3), bands, target, overwrite_ab=True, check_finite=False
+        )
+        baseline = solution[z_positions]
+        if not np.all(np.isfinite(baseline)):
+            raise FloatingPointError("RT-aware AsLS solve produced non-finite values")
+        weights = np.where(values > baseline, p, 1.0 - p)
     return baseline
 
 
