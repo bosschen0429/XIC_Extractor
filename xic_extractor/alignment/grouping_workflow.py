@@ -24,6 +24,7 @@ from xic_extractor.alignment.edge_scoring import DriftLookupProtocol
 from xic_extractor.alignment.feature_membership_inference import (
     BatchRtWarp,
     FeatureInferenceOperationCounts,
+    FeatureMembershipGroup,
     supports_existing_feature,
 )
 from xic_extractor.alignment.grouping_bootstrap import (
@@ -46,6 +47,7 @@ from xic_extractor.alignment.mode_track.contracts import (
     apply_accepted_mode_track_refinement,
 )
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
+from xic_extractor.mass_accuracy import within_ppm
 from xic_extractor.peak_detection.capture import SampleLocalCapture
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessmentRef,
@@ -205,6 +207,7 @@ def regroup_cid_nl_cross_sample_groups(
     alignment_config: AlignmentConfig,
     injection_order: Mapping[str, int],
     rt_warp: BatchRtWarp,
+    backfill_half_window_min: float,
     operation_counts_sink: list[FeatureInferenceOperationCounts] | None = None,
 ) -> tuple[ModeTrackAssignmentScope, CrossSampleGroupingResult]:
     """Reconsider every ordinary owner after the batch anchor warp is known."""
@@ -219,6 +222,14 @@ def regroup_cid_nl_cross_sample_groups(
         drift_lookup=grouping_result.drift_lookup,
         rt_warp=rt_warp,
         operation_counts_sink=operation_counts_sink,
+    )
+    groups = reject_shoulder_groups(
+        merge_sample_disjoint_groups(
+            groups,
+            config=alignment_config,
+            backfill_half_window_min=backfill_half_window_min,
+        ),
+        config=alignment_config,
     )
     identities = tuple(
         validate_cross_sample_peak_group_identity(group, require_canonical=True)
@@ -416,6 +427,179 @@ def admit_cid_nl_group_backfills(
     )
 
 
+def reject_shoulder_groups(
+    groups: tuple[CrossSamplePeakGroupHypothesis, ...],
+    *,
+    config: AlignmentConfig,
+) -> tuple[CrossSamplePeakGroupHypothesis, ...]:
+    """Reject an established group that is the split-off shoulder of another.
+
+    Discovery can cut one chromatographic peak at a valley into a small shoulder
+    and the peak. A sample holds one member per group, so the shoulders then form
+    their own group, and its Backfill finds the whole peak where no shoulder was
+    cut. A group is such a shoulder when more than half of its members share a
+    boundary with a same-m/z member of one other established group and every
+    member it shares a sample with is such a smaller, adjacent neighbour.
+    """
+    by_sample = {
+        group.group_hypothesis_id: {owner.sample_stem: owner for owner in group.owners}
+        for group in groups
+        if group.disposition == "established"
+    }
+    rejected: dict[str, str] = {}
+    for group_id, owners in by_sample.items():
+        for other_id, others in by_sample.items():
+            shared = owners.keys() & others.keys()
+            if (
+                other_id != group_id
+                and 2 * len(shared) > len(owners)
+                and all(
+                    _is_shoulder_of(owners[sample], others[sample], config=config)
+                    for sample in shared
+                )
+            ):
+                rejected[group_id] = other_id
+                break
+    if not rejected:
+        return groups
+    return tuple(
+        replace(
+            group,
+            disposition="rejected",
+            evidence=(
+                f"{group.evidence};shoulder_of:{rejected[group.group_hypothesis_id]}"
+            ),
+        )
+        if group.group_hypothesis_id in rejected
+        else group
+        for group in groups
+    )
+
+
+def merge_sample_disjoint_groups(
+    groups: tuple[CrossSamplePeakGroupHypothesis, ...],
+    *,
+    config: AlignmentConfig,
+    backfill_half_window_min: float,
+) -> tuple[CrossSamplePeakGroupHypothesis, ...]:
+    """Merge established rows of one feature that no sample tells apart.
+
+    Two peaks are only evidenced by one sample holding both. Rows of the same
+    m/z with no shared sample, whose centers lie within one Backfill half
+    window, would Backfill each other's peak, so they are one feature. Closer
+    rows merge first; a merge never joins two rows that share a sample.
+    """
+    candidates = sorted(
+        (
+            group
+            for group in groups
+            if group.disposition == "established"
+            and not (
+                group.inference_basis is not None
+                and group.inference_basis.known_identity_label
+            )
+        ),
+        key=lambda group: group.family_center_mz,
+    )
+    pairs = []
+    for index, first in enumerate(candidates):
+        for second in candidates[index + 1 :]:
+            if not within_ppm(
+                first.family_center_mz, second.family_center_mz, config.preferred_ppm
+            ):
+                break
+            gap = abs(first.family_center_rt - second.family_center_rt)
+            if gap <= backfill_half_window_min:
+                pairs.append(
+                    (gap, first.group_hypothesis_id, second.group_hypothesis_id)
+                )
+    if not pairs:
+        return groups
+    root = {group.group_hypothesis_id: group.group_hypothesis_id for group in groups}
+    samples = {
+        group.group_hypothesis_id: {owner.sample_stem for owner in group.owners}
+        for group in groups
+    }
+
+    def find(group_id: str) -> str:
+        while root[group_id] != group_id:
+            group_id = root[group_id]
+        return group_id
+
+    for _, first_id, second_id in sorted(pairs):
+        first_root, second_root = find(first_id), find(second_id)
+        if first_root == second_root or samples[first_root] & samples[second_root]:
+            continue
+        keep, absorbed = sorted((first_root, second_root))
+        root[absorbed] = keep
+        samples[keep] |= samples.pop(absorbed)
+    members: dict[str, list[CrossSamplePeakGroupHypothesis]] = defaultdict(list)
+    for group in groups:
+        members[find(group.group_hypothesis_id)].append(group)
+    merged = []
+    for parts in members.values():
+        if len(parts) == 1:
+            merged.append(parts[0])
+            continue
+        parts.sort(key=lambda group: group.public_family_id)
+        owners = tuple(
+            sorted(
+                (owner for group in parts for owner in group.owners),
+                key=lambda owner: owner.owner_id,
+            )
+        )
+        hypothesis = _hypothesis_from_owner_group(
+            owners,
+            group_identity=_identity_from_owners(
+                owners, processing_request_id=parts[0].processing_request_id
+            ),
+            public_family_id=parts[0].public_family_id,
+            evidence=";".join(
+                (
+                    parts[0].evidence,
+                    *(
+                        f"sample_disjoint_merge:{group.group_hypothesis_id}"
+                        for group in parts[1:]
+                    ),
+                )
+            ),
+            identity_conflict=any(group.identity_conflict for group in parts),
+        )
+        merged.append(
+            replace(
+                hypothesis,
+                inference_basis=FeatureMembershipGroup(
+                    owner_ids=tuple(owner.owner_id for owner in owners),
+                    disposition="assigned",
+                    basis="window_level_rt_band",
+                    reason="sample_disjoint_within_backfill_window",
+                ),
+                inference_decisions=tuple(
+                    decision
+                    for group in parts
+                    for decision in group.inference_decisions
+                ),
+            )
+        )
+    return tuple(merged)
+
+
+def _is_shoulder_of(
+    owner: SampleLocalMS1Owner,
+    neighbour: SampleLocalMS1Owner,
+    *,
+    config: AlignmentConfig,
+) -> bool:
+    return (
+        owner.owner_area < neighbour.owner_area
+        and (
+            owner.owner_peak_end_rt == neighbour.owner_peak_start_rt
+            or owner.owner_peak_start_rt == neighbour.owner_peak_end_rt
+        )
+        and within_ppm(owner.precursor_mz, neighbour.precursor_mz, config.preferred_ppm)
+    )
+
+
 def contested_backfill_peaks(
     *,
     groups: tuple[CrossSamplePeakGroupHypothesis, ...],
@@ -423,27 +607,60 @@ def contested_backfill_peaks(
         tuple[str, str, str],
         tuple[ResolvedCanonicalSampleIdentity, CidNlMethodAssessmentRef],
     ],
+    alignment_config: AlignmentConfig,
 ) -> frozenset[tuple[str, str]]:
     """Physical peaks a Backfill value cannot claim for one group alone.
 
     A peak several groups' Backfills found, or one a group member already
     holds, belongs to no single row. ``groups`` are the admitted successors.
+    Each group-bounded window traces the peak again, so its content ID differs
+    from a member's or another window's; as in Discovery, one apex scan within
+    the m/z tolerance in one sample is one peak.
     """
     claims: dict[tuple[str, str], set[str]] = defaultdict(set)
+    at_apex: dict[tuple[str, float], list[tuple[float, str]]] = defaultdict(list)
     for (group_id, sample_id, _), (_, assessment) in backfills.items():
         for peak in assessment.candidate_peaks:
-            claims[(sample_id, peak.content.peak_observation_content_id)].add(group_id)
+            content = peak.content
+            claims[(sample_id, content.peak_observation_content_id)].add(group_id)
+            at_apex[(sample_id, content.integration.rt_apex_min)].append(
+                (content.mz, group_id)
+            )
     occupied = {
         (member.canonical_sample_identity_id, observation_id)
         for group in groups
         for member in group.member_subjects
         for observation_id in member.physical_observation_ids
     }
-    return frozenset(
-        key
-        for key, group_ids in claims.items()
-        if len(group_ids) > 1 or key in occupied
-    )
+    # An archive row writes no value, so only a Matrix row's member holds a peak.
+    for group in groups:
+        if group.disposition != "established":
+            continue
+        for owner in group.owners:
+            subject = owner.cross_sample_member_subject
+            if subject is None:
+                continue
+            at_apex[(subject.canonical_sample_identity_id, owner.owner_apex_rt)].append(
+                (owner.precursor_mz, "")
+            )
+    contested = set()
+    for (group_id, sample_id, _), (_, assessment) in backfills.items():
+        for peak in assessment.candidate_peaks:
+            content = peak.content
+            key = (sample_id, content.peak_observation_content_id)
+            if (
+                len(claims[key]) > 1
+                or key in occupied
+                or any(
+                    holder != group_id
+                    and within_ppm(content.mz, mz, alignment_config.preferred_ppm)
+                    for mz, holder in at_apex[
+                        (sample_id, content.integration.rt_apex_min)
+                    ]
+                )
+            ):
+                contested.add(key)
+    return frozenset(contested)
 
 
 def _partition_transition(

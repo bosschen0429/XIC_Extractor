@@ -668,6 +668,26 @@ def test_extract_xic_returns_positions_and_intensities() -> None:
     assert intensity.tolist() == [10.0, 20.0]
 
 
+def test_ms1_centroid_mz_reads_the_most_intense_centroid_in_range() -> None:
+    from xic_extractor.raw_reader import RawFileHandle
+
+    raw = _FakeRaw(
+        filters={
+            1: _FakeFilter(is_ms2=False, precursor_mz=0.0),
+            2: _FakeFilter(is_ms2=True, precursor_mz=714.0),
+        }
+    )
+    raw.GetCentroidStream = lambda scan, _refresh: SimpleNamespace(
+        Masses=[714.360, 714.3696, 714.390, 714.500],
+        Intensities=[5.0, 9.0, 20.0, 99.0],
+    )
+    handle = RawFileHandle(raw, _fake_thermo(raw))
+
+    assert handle.ms1_centroid_mz(7.9, 714.35, 714.38) == 714.3696
+    assert handle.ms1_centroid_mz(7.9, 714.40, 714.45) is None
+    assert handle.ms1_centroid_mz(8.1, 714.35, 714.38) is None  # an MS2 scan
+
+
 def test_extract_xic_many_batches_shared_scan_window() -> None:
     from xic_extractor.raw_reader import RawFileHandle
     from xic_extractor.xic_models import XICRequest

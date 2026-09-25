@@ -134,6 +134,31 @@ def test_roles_votes_and_full_support_trace_set_are_owner_derived(
     )
 
 
+def test_rejected_group_plans_no_backfill(tmp_path: Path) -> None:
+    fixture = _study_fixture(tmp_path, ("s1", "s2", "s3"))
+    spine = _spine(
+        fixture,
+        support_apex_by_sample={"s1": 8.0, "s2": 8.0},
+        invocation="rejected",
+    )
+    assert spine.group is not None
+    established = plan_conservative_backfill_targets(
+        (spine.group,), sample_population=fixture.samples
+    )
+    assert established == (
+        (spine.group, frozenset({fixture.sample("s3").identity.sample_identity_id})),
+    )
+
+    rejected = replace(spine.group, disposition="rejected")
+
+    assert (
+        plan_conservative_backfill_targets(
+            (rejected,), sample_population=fixture.samples
+        )
+        == ()
+    )
+
+
 def test_group_exists_below_threshold_but_cannot_trigger_recovery(
     tmp_path: Path,
 ) -> None:

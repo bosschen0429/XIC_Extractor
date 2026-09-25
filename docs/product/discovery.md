@@ -153,6 +153,13 @@ the error relative to the configured loss mass; it is not the acceptance gate.
   multiple hypotheses for the same peak remain allowed. The label must not be
   treated as cross-sample identity, selected-peak truth, or Backfill promotion
   authority by itself.
+- Candidates of one sample whose MS1 traces share the apex scan are one
+  Discovery peak when their precursor m/z agree within
+  `precursor_mz_tolerance_ppm`. A precursor inferred as product + loss carries
+  the MS2 product error, so two candidates of one ion can differ by more; when
+  they differ by at most twice the tolerance, the most intense MS1 centroid at
+  the apex scan within both windows decides, and they merge when it lies within
+  the tolerance of each (#469).
 - The peak-anchor schema migration intentionally removed legacy
   `family_context`, `feature_superfamily_id`, `feature_superfamily_size`,
   `feature_superfamily_role`, `feature_superfamily_confidence`, and

@@ -48,6 +48,7 @@ from xic_extractor.discovery.models import (
     ReviewPriority,
 )
 from xic_extractor.discovery.ms1_backfill import (
+    MS1CentroidMz,
     MS1XicSource,
     _backfill_ms1_candidates_with_acquisition,
     _DiscoveryMs1Measurements,
@@ -89,6 +90,7 @@ from xic_extractor.processing_run_spec import (
 from xic_extractor.raw_reader import (
     THERMO_RAW_ACQUISITION_FORMAT,
     THERMO_RAW_OBSERVATION_NAMESPACE,
+    RawFileHandle,
 )
 from xic_extractor.tabular_io import write_delimited_rows
 
@@ -241,7 +243,8 @@ def _apply_blank_qualification_if_enabled(
     ) as stage:
         if acquisition_input is None:
             library = resolve_background_library(
-                raw_dir=raw_path.parent, library_path=settings.blank_library_path,
+                raw_dir=raw_path.parent,
+                library_path=settings.blank_library_path,
             )
         elif acquisition_input.blank_library_sha256 is None:
             library = None
@@ -905,7 +908,8 @@ def _persisted_discovery_candidates(
     candidates: tuple[DiscoveryCandidate, ...],
 ) -> tuple[DiscoveryCandidate, ...]:
     return tuple(
-        candidate for candidate in candidates
+        candidate
+        for candidate in candidates
         if _is_feature_backed_candidate(candidate)
         or candidate.precursor_mz_basis in {"scan_precursor", "mixed"}
     )
@@ -917,7 +921,8 @@ def _persisted_physical_records(
 ) -> tuple[DiscoveryPhysicalFactRecord, ...]:
     """Project feature evidence and compact its persistence-local work indices."""
     feature_bindings = tuple(
-        binding for binding in bindings
+        binding
+        for binding in bindings
         if _is_feature_backed_candidate(binding.candidate)
     )
     used_work = {
@@ -967,10 +972,13 @@ def _write_dual_csvs(
 ) -> DiscoveryRunOutputs:
     candidates = _persisted_discovery_candidates(candidates)
     persisted_ids = {candidate.candidate_id for candidate in candidates}
-    physical_bindings = order_physical_bindings_for_candidate_csv(tuple(
-        binding for binding in physical_bindings
-        if binding.candidate.candidate_id in persisted_ids
-    ))
+    physical_bindings = order_physical_bindings_for_candidate_csv(
+        tuple(
+            binding
+            for binding in physical_bindings
+            if binding.candidate.candidate_id in persisted_ids
+        )
+    )
     output_dir.mkdir(parents=True, exist_ok=True)
     candidates_path = output_dir / "discovery_candidates.csv"
     review_path = output_dir / "discovery_review.csv"
@@ -981,7 +989,8 @@ def _write_dual_csvs(
     if run_spec is None and (physical_work_manifest or physical_evaluations):
         raise ValueError("legacy Discovery cannot persist owner physical facts")
     physical_evaluations = _persisted_physical_records(
-        physical_evaluations, physical_bindings,
+        physical_evaluations,
+        physical_bindings,
     )
     physical_work_manifest = tuple(record.work_item for record in physical_evaluations)
 
@@ -1314,6 +1323,7 @@ def _discover_raw_file(
                         peak_config=peak_config,
                         measurement_observer=_capture_acquired_measurements,
                         signal_processing_profile=(run_spec.signal_processing_profile),
+                        ms1_centroid_mz=_ms1_centroid_source(raw),
                     )
                     candidates = acquisition_result.candidates
                     ms1_measurements = acquisition_result.measurements
@@ -1339,6 +1349,7 @@ def _discover_raw_file(
                         settings=settings,
                         peak_config=peak_config,
                         measurement_observer=_capture_acquired_measurements,
+                        ms1_centroid_mz=_ms1_centroid_source(raw),
                     )
                     candidates = acquisition_result.candidates
                     ms1_measurements = acquisition_result.measurements
@@ -1378,6 +1389,10 @@ def _discover_raw_file(
                                 f"{type(diagnostic_exc).__name__}: {diagnostic_exc}"
                             ),
                         )
+
+
+def _ms1_centroid_source(raw: object) -> MS1CentroidMz | None:
+    return raw.ms1_centroid_mz if isinstance(raw, RawFileHandle) else None
 
 
 def _owner_bound_acquisition_source(

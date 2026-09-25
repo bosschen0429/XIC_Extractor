@@ -204,6 +204,25 @@ class RawFileHandle:
     def retention_time_for_scan(self, scan_number: int) -> float:
         return float(self._raw_file.RetentionTimeFromScanNumber(scan_number))
 
+    def ms1_centroid_mz(self, rt: float, mz_min: float, mz_max: float) -> float | None:
+        """Most intense MS1 centroid within [mz_min, mz_max] at the scan at ``rt``."""
+        raw = self._raw_file
+        scan_number = int(raw.ScanNumberFromRetentionTime(rt))
+        if (
+            getattr(raw.GetFilterForScanNumber(scan_number), "MSOrder", None)
+            == self._thermo.ms2_order
+        ):
+            return None
+        centroids = raw.GetCentroidStream(scan_number, False)
+        masses = np.asarray(getattr(centroids, "Masses", None) or [], dtype=float)
+        intensities = np.asarray(
+            getattr(centroids, "Intensities", None) or [], dtype=float
+        )
+        inside = (masses >= mz_min) & (masses <= mz_max)
+        if not inside.any():
+            return None
+        return float(masses[inside][np.argmax(intensities[inside])])
+
     def iter_ms2_scans(self, rt_min: float, rt_max: float) -> Iterator[Ms2ScanEvent]:
         yield from self._iter_ms2_scans(rt_min, rt_max, scan_numbers=None)
 

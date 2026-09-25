@@ -1456,6 +1456,9 @@ def prepare_untargeted_cid_nl_grouping(
             alignment_config=alignment_config,
             injection_order=injection_order,
             rt_warp=rt_warp,
+            backfill_half_window_min=(
+                batch.context.peak_config.nl_rt_anchor_half_window_min
+            ),
             operation_counts_sink=operation_counts,
         )
         final_worksets.append(
@@ -1704,7 +1707,9 @@ def _build_production_composition_inputs(
                 for key, hypotheses in retained_cell_hypotheses.items()
             },
             contested_backfill_peaks=contested_backfill_peaks(
-                groups=backfilled_groups, backfills=group_backfills
+                groups=backfilled_groups,
+                backfills=group_backfills,
+                alignment_config=alignment_config,
             ),
         )
         backfill_cells = (
