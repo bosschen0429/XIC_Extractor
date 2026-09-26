@@ -199,6 +199,8 @@ the error relative to the configured loss mass; it is not the acceptance gate.
   machine handoff surfaces.
 - Discovery UX and review surfaces are public handoffs when they define
   filenames, columns, row identity, output level, or downstream consumption.
+### Scope limits
+
 - CID-NL Discovery is a bounded accepted slice, separate from Backfill. Future
   expansion needs successor-level tag context, MS1/quant support, provenance,
   value-delta framing, expected matrix effect, and explicit expected-diff review.
@@ -210,7 +212,8 @@ the error relative to the configured loss mass; it is not the acceptance gate.
 - The Untargeted lane runs Discovery, Alignment, and Backfill, with
   conservative primary-matrix delivery. The Untargeted lane addresses false
   missingness, RT-driven splitting, owner-centered Backfill, duplicate-claim
-  control, and Review/Audit separation. The Untargeted lane is not a full LC-MS QA/QC normalization, artifact deconvolution, blank/background
+  control, and Review/Audit separation. The Untargeted lane is not a full
+  LC-MS QA/QC normalization, artifact deconvolution, blank/background
   contaminant, isotope/adduct annotation, or post-acquisition normalization
   system; see [Untargeted Method](untargeted-method.md) for the absorbed
   method/literature boundary.
