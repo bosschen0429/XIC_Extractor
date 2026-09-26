@@ -59,8 +59,8 @@ Each maintenance cycle keeps at most one lane of each kind:
 - one lane dedicated to diagnostics.
 
 When a lane kind is already occupied, a new lane of that kind can start only
-after the current lane is promoted, parked with a reopening condition,
-externalized/killed, or abandoned.
+after promoting the current lane, parking it with a reopening condition,
+externalizing/killing it, or abandoning it.
 
 A new lane names:
 
