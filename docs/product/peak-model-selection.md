@@ -1,12 +1,24 @@
 # Peak Model Selection
 
-Peak model selection defines the durable product invariants for selected-hypothesis model selection over `PeakHypothesis`. Legacy scoring remains a compatibility oracle while public outputs still expose legacy confidence, reason, score breakdown, selected markers, or matrix values. Raw score arithmetic is not future product truth. The successor policy (`selected_hypothesis_model_selection`) may become product authority only through parity or explicit expected-diff approval.
+Peak model selection defines the durable product invariants for
+selected-hypothesis model selection over `PeakHypothesis`.
+
+Legacy scoring remains a compatibility oracle while public outputs still
+expose legacy confidence, reason, score breakdown, selected markers, or matrix
+values. Raw score arithmetic is not future product truth. The successor policy
+(`selected_hypothesis_model_selection`) can become product authority only
+through parity or explicit expected-diff approval.
 
 ## Contract
 
-- Legacy scoring coverage is protected while public projections still expose legacy semantics, but that coverage preserves compatibility behavior rather than declaring score product authority.
-- The successor may replace legacy scoring only when parity holds or an approved expected-diff record allows the change.
-- Blocked and inconclusive states are no-switch states -- they do not permit product-candidate changes.
+- Legacy scoring coverage stays protected while public projections still
+  expose legacy semantics.
+- Legacy scoring coverage preserves compatibility behavior. Legacy scoring
+  coverage does not declare score as product authority.
+- The successor can replace legacy scoring only when parity holds or when an
+  approved expected-diff record allows the change.
+- Blocked and inconclusive states are no-switch states. A no-switch state does
+  not permit a product-candidate change.
 - Synthetic fixtures alone cannot authorize final-matrix behavior changes.
 
 ## Invariant Classes
