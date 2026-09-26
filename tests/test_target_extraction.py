@@ -130,10 +130,12 @@ def test_credible_istd_anchor_rt_rejects_not_counted_projection() -> None:
 
 
 @pytest.mark.parametrize("resolver_mode", ["legacy_savgol", "local_minimum"])
+@pytest.mark.parametrize("is_istd", [False, True])
 def test_extract_one_target_uses_shared_physical_candidate_and_owner_apex(
     tmp_path,
     monkeypatch,
     resolver_mode: str,
+    is_istd: bool,
 ) -> None:
     config = ExtractionConfig(
         data_dir=tmp_path,
@@ -150,7 +152,7 @@ def test_extract_one_target_uses_shared_physical_candidate_and_owner_apex(
         resolver_mode=resolver_mode,
     )
     target = Target(
-        label="Analyte",
+        label="ISTD" if is_istd else "Analyte",
         mz=258.1085,
         rt_min=8.0,
         rt_max=9.0,
@@ -158,8 +160,8 @@ def test_extract_one_target_uses_shared_physical_candidate_and_owner_apex(
         neutral_loss_da=None,
         nl_ppm_warn=None,
         nl_ppm_max=None,
-        is_istd=False,
-        istd_pair="ISTD",
+        is_istd=is_istd,
+        istd_pair="" if is_istd else "ISTD",
     )
     captured: dict[str, object] = {}
     physical_calls = {"prepare": 0, "enumerate": 0}
@@ -192,13 +194,13 @@ def test_extract_one_target_uses_shared_physical_candidate_and_owner_apex(
 
     monkeypatch.setattr(target_extraction, "selected_handoff_peak", _handoff)
 
+    acquired_rt = np.linspace(8.0, 8.8, 41)
+    acquired_intensity = 10.0 + 100.0 * np.exp(-((acquired_rt - 8.4) ** 2) / 0.002)
+    audit_rt = 8.4 + 0.5 * (acquired_rt - 8.4) if is_istd else acquired_rt
+
     class _Raw:
         def extract_xic(self, *_args, **_kwargs):
-            rt = np.linspace(8.0, 8.8, 41)
-            return (
-                rt,
-                10.0 + 100.0 * np.exp(-((rt - 8.4) ** 2) / 0.002),
-            )
+            return acquired_rt, acquired_intensity
 
     monkeypatch.setattr(
         "xic_extractor.extractor.find_peak_and_area",
@@ -214,7 +216,11 @@ def test_extract_one_target_uses_shared_physical_candidate_and_owner_apex(
     monkeypatch.setattr(
         target_extraction,
         "retry_istd_anchor_peak_if_needed",
-        lambda peak_result, **_kwargs: IstdAnchorRetryDecision(peak_result),
+        lambda peak_result, **_kwargs: IstdAnchorRetryDecision(
+            peak_result,
+            rt=audit_rt if is_istd else None,
+            intensity=acquired_intensity if is_istd else None,
+        ),
     )
     monkeypatch.setattr(
         target_extraction,
@@ -237,6 +243,7 @@ def test_extract_one_target_uses_shared_physical_candidate_and_owner_apex(
     )
 
     results: dict[str, ExtractionResult] = {}
+    shape_metrics_by_label = {}
     diagnostics = []
     anchor_rt = target_extraction.extract_one_target(
         _Raw(),
@@ -247,6 +254,7 @@ def test_extract_one_target_uses_shared_physical_candidate_and_owner_apex(
         results=results,
         diagnostics=diagnostics,
         istd_rt_in_this_sample=8.55,
+        shape_metrics_by_label=shape_metrics_by_label,
     )
 
     selected = captured["selected_hypothesis"]
@@ -261,7 +269,7 @@ def test_extract_one_target_uses_shared_physical_candidate_and_owner_apex(
     assert model_selection_result.product_switch_allowed is True
     assert model_selection_result.selected_candidate_id == selected.hypothesis_id
     assert decision.legacy_projection_status == "active_policy_remaining"
-    assert selected.target_label == "Analyte"
+    assert selected.target_label == target.label
     assert captured["peak_result"].peak.rt == pytest.approx(8.4)
     selected_candidate_value = target_extraction.selected_candidate(
         captured["peak_result"]
@@ -286,7 +294,11 @@ def test_extract_one_target_uses_shared_physical_candidate_and_owner_apex(
     assert evaluation.question.admissible_segment_ids == (segment.physical_segment_id,)
     assert evaluation.segment_universe == universe
     assert evaluation.retained_prepared_signal == prepared
-    assert physical_calls == {"prepare": 1, "enumerate": 1}
+    expected_physical_calls = 2 if is_istd else 1
+    assert physical_calls == {
+        "prepare": expected_physical_calls,
+        "enumerate": expected_physical_calls,
+    }
     handoff_inputs = captured["handoff_inputs"]
     assert handoff_inputs["candidate"] == selected_candidate_value
     assert handoff_inputs["paired_istd_anchor_rt"] == 8.55
@@ -300,7 +312,15 @@ def test_extract_one_target_uses_shared_physical_candidate_and_owner_apex(
         captured["physical_evaluation"].facts.area_counts_seconds
     )
     assert captured["peak_result"].paired_istd_anchor_rt == 8.55
-    assert isinstance(results["Analyte"], ExtractionResult)
+    assert isinstance(results[target.label], ExtractionResult)
+    # The raw half-prominence crossing lies between samples 18 and 19.
+    left_ip = 18.0 + (50.0 - 100.0 * np.exp(-0.8)) / (
+        100.0 * np.exp(-0.2) - 100.0 * np.exp(-0.8)
+    )
+    expected_width_min = 2.0 * (20.0 - left_ip) * (0.01 if is_istd else 0.02)
+    assert shape_metrics_by_label[target.label] == pytest.approx(
+        (1.0, expected_width_min)
+    )
 
 
 def test_physical_candidate_projection_preserves_owner_values_and_segment_order(

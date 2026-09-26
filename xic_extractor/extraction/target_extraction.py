@@ -499,7 +499,7 @@ def extract_one_target(
             peak_result,
             paired_istd_anchor_rt=istd_rt_in_this_sample,
         )
-    shape_metrics = selected_shape_metrics(audit_intensity, peak_result)
+    shape_metrics = selected_shape_metrics(audit_rt, audit_intensity, peak_result)
     candidate = selected_candidate(peak_result)
     if shape_metrics_by_label is not None and shape_metrics is not None:
         shape_metrics_by_label[target.label] = shape_metrics
