@@ -2,59 +2,79 @@
 
 This page defines the durable boundary between per-sample peak anchors, wide
 Assignment scopes, cross-sample group hypotheses, peak hypotheses, ModeTrack
-proposals, ObservationRevisit, cell decisions, and product projections. Use it when a change touches
-discovery peak-anchor grouping, alignment owner construction, diagnostic
-ModeTrack review, Backfill activation, or any matrix identity sidecar.
+proposals, ObservationRevisit, cell decisions, and product projections. Read
+this page when a change touches Discovery peak-anchor grouping, alignment
+owner construction, diagnostic ModeTrack review, Backfill activation, or any
+matrix identity sidecar.
 
 ## Contract
 
-`ModeTrackAssignmentScope` and `ModeTrackAssignment` are internal values used
-for an optional initial trajectory decision. The scope contains only actual
-m/z and RT admissibility bounds plus the exact existing groups; it has no
-standalone identity, serialization contract, product authority, or public
-Family meaning. Their algorithms and structures may be replaced when the
-scientific decision and its consumers change.
-Preserve physical observations, sample/acquisition provenance, explicit
-uncertainty, and confirmed identity constraints; no particular clustering
-strategy or complete pair graph is an invariant. Public/legacy `family`
-vocabulary and persisted schema changes require explicit consumer updates.
+`ModeTrackAssignmentScope` and `ModeTrackAssignment` are internal values for an
+optional initial trajectory decision.
+
+- The scope contains only actual m/z and RT admissibility bounds plus the
+  exact existing groups.
+- The scope has no standalone identity, serialization contract, product
+  authority, or public Family meaning.
+- The algorithms and structures of both values can be replaced when the
+  scientific decision and its consumers change.
+- A change must preserve physical observations, sample/acquisition
+  provenance, explicit uncertainty, and confirmed identity constraints.
+- No particular clustering strategy or complete pair graph is an invariant.
+- A change to public/legacy `family` vocabulary or to a persisted schema
+  requires explicit consumer updates.
+
+### Owners
 
 - `peak_anchor_id` (discovery `feature_family_id`) groups candidates that share
-  the same MS1 chromatographic peak within a single sample. It is a per-sample
-  trace-identity label, not a chemical identity claim.
+  the same MS1 chromatographic peak within a single sample. `peak_anchor_id` is a
+  per-sample trace-identity label. `peak_anchor_id` is not a chemical identity
+  claim.
 - `CrossSamplePeakGroupHypothesis` owns cross-sample group identity:
-  membership, feature inference evidence, identity constraints, review-only records, and
-  group delivery metadata. Use `group_hypothesis_id` for identity.
+  membership, feature inference evidence, identity constraints, review-only
+  records, and group delivery metadata. `group_hypothesis_id` is the identity
+  key.
 - CrossSample grouping also owns the mutually exclusive group disposition and
-  every membership/split/merge lineage edge. Its grouping workflow returns one
-  immutable `CrossSampleGroupingResult(processing_owners,
-  partition_transition, drift_lookup)`. The same result is used before bounded
-  Backfill and through finalization; a revisit does not reopen grouping.
+  every membership/split/merge lineage edge.
+- The CrossSample grouping workflow returns one immutable
+  `CrossSampleGroupingResult(processing_owners, partition_transition,
+  drift_lookup)`.
+- The same `CrossSampleGroupingResult` is used before bounded Backfill and
+  through finalization. A revisit does not reopen grouping.
 - `CrossSamplePartitionTransition` records the complete group partition before
-  and after an accepted initial refinement. ModeTrack may propose that initial
-  change where a workflow uses it, but cannot apply it or mint a second group
-  owner.
+  and after an accepted initial refinement.
+- ModeTrack can propose that initial change where a workflow uses ModeTrack.
+  ModeTrack cannot apply the change and cannot mint a second group owner.
 - `PeakHypothesis` owns candidate chromatographic identity: the physical peak
   candidate, selected integration, typed evidence, and selected-hypothesis
   decision semantics.
-- `ModeTrackAssignment` currently records for debug or batch review whether one
-  sample-local `PeakHypothesis` is
-  uniquely assigned to one existing ModeTrack, ambiguous across tracks,
-  outside the model, absent, or technically unassessable. The
-  identity-settlement/identity-trajectory boundary mints this internal,
+- For debug or batch review, `ModeTrackAssignment` records one state for one
+  sample-local `PeakHypothesis`:
+  - uniquely assigned to one existing ModeTrack;
+  - ambiguous across tracks;
+  - outside the model;
+  - absent;
+  - technically unassessable.
+- The identity-settlement/identity-trajectory boundary mints this internal,
   immutable diagnostic fact.
-  The ModeTrack result remains proposal-only; it does not mint a second group
-  owner, refit after Backfill, or select a product value.
-- Backfill may return one independently traceable observation from a revisit.
-  It cannot imply group membership or writer authority.
-- Workflow projection first owns Target/Untarget row identity/binding and the
-  explicit Target/Group cell subject. `ProductionCellDecision` then owns the
-  selected value or typed no-write result. The same projection afterward closes
-  inclusion, counted detection, Review Queue/archive routing, and output shape.
-  ProductWriter renders only an authorized finalized result.
-- Legacy score, confidence, family role, and review tokens may rank, annotate,
-  or preserve compatibility behavior. They must not become standalone product
-  truth.
+- The ModeTrack result remains proposal-only. The ModeTrack result does not
+  mint a second group owner, refit after Backfill, or select a product value.
+- Backfill can return one independently traceable observation from a revisit.
+  That observation cannot imply group membership or writer authority.
+
+### Decision order
+
+1. Workflow projection owns Target/Untarget row identity/binding and the
+   explicit Target/Group cell subject.
+2. `ProductionCellDecision` owns the selected value or the typed no-write
+   result.
+3. The same projection then closes inclusion, counted detection, Review
+   Queue/archive routing, and output shape.
+4. ProductWriter renders only an authorized finalized result.
+
+Legacy score, confidence, family role, and review tokens can rank, annotate,
+or preserve compatibility behavior. These legacy signals must not become
+standalone product truth.
 
 ## Roles
 
@@ -74,70 +94,82 @@ vocabulary and persisted schema changes require explicit consumer updates.
 ## Migration Rule
 
 The codebase is in a compatibility transition. Discovery outputs still expose
-`feature_family_id` for per-sample peak anchors, and alignment outputs still
+`feature_family_id` for per-sample peak anchors. Alignment outputs still
 expose `public_family_id` or legacy `feature_family_id` as cross-sample group
-display labels. Treat this as an adapter state:
+display labels. These legacy labels form an adapter state with these rules:
 
-1. Preserve legacy IDs when they are public output contracts.
-   Persisted matrix identity field `source_feature_family_ids` keeps its current
-   name and source-lineage meaning; it is not an assignment-scope identity.
-2. Add successor IDs alongside legacy IDs when identity semantics become
-   product-relevant.
-3. Use `group_hypothesis_id` for successor alignment identity decisions when a
-   workflow has promoted it as the decision key. Until then, public
-   matrix/projection maps may still key by legacy row labels and must describe
-   that compatibility state.
-4. Do not collapse multiple source peak anchors or cross-sample groups into one
-   product row unless an explicit split/consolidation contract and tests approve
-   it.
-5. Keep review-only group context out of ProductWriter authority unless it is
-   converted into typed same-peak or group-hypothesis evidence.
-6. Introduce projection-owned `UntargetRowKey` separately from canonical group
-   identity. Do not make `group_hypothesis_id` itself the public Matrix row key
-   or derive row identity from m/z/RT/display order.
+1. A legacy ID that is a public output contract must be preserved.
+   The persisted matrix identity field `source_feature_family_ids` keeps its
+   current name and source-lineage meaning. `source_feature_family_ids` is not
+   an assignment-scope identity.
+2. A successor ID is added alongside the legacy ID when identity semantics
+   become product-relevant.
+3. Successor alignment identity decisions use `group_hypothesis_id` after a
+   workflow has promoted `group_hypothesis_id` as the decision key. Before that
+   promotion, public matrix/projection maps can still key by legacy row labels.
+   Those maps must describe that compatibility state.
+4. Multiple source peak anchors or cross-sample groups must not collapse into
+   one product row. Only an explicit split/consolidation contract with tests
+   can approve a collapse.
+5. Review-only group context must stay out of ProductWriter authority. The
+   exception is context that is converted into typed same-peak or
+   group-hypothesis evidence.
+6. Projection-owned `UntargetRowKey` is introduced separately from canonical
+   group identity. `group_hypothesis_id` itself must not become the public
+   Matrix row key. Row identity must not derive from m/z/RT/display order.
 
 ## Design Red Lines
 
-- Do not say "the score decides whether the peak is trustworthy." Say which
-  evidence facts, selected hypothesis, and workflow projection own the decision.
-- Do not use discovery peak-anchor membership as cross-sample identity proof.
+- Do not say "the score decides whether the peak is trustworthy." Name the
+  evidence facts, selected hypothesis, and workflow projection that own the
+  decision.
+- Do not use Discovery peak-anchor membership as cross-sample identity proof.
   Cross-sample identity belongs to `CrossSamplePeakGroupHypothesis` and
   `group_hypothesis_id`.
 - Do not use cross-sample group membership as same-peak proof. Same-peak support
   needs a typed anchor, selected mode, or PeakHypothesis-level reason.
-- When a `PeakHypothesis` is already an exact owner of one ModeTrack in the
-  current `ModeTrackAssignmentScope`, preserve that exact owner identity as observed occupancy;
-  do not reclassify the same owner from aggregate group-center geometry. This
-  grants no SUPPORT vote, trajectory reinforcement, or product authority.
-- Do not treat a Family as a same-peak or chemical-identity claim. Two resolved
-  peaks in one sample may occupy different ModeTracks in the same Family, and
-  either track may be absent in another sample.
+- A `PeakHypothesis` can already be an exact owner of one ModeTrack in the
+  current `ModeTrackAssignmentScope`. In that case, preserve that exact owner
+  identity as observed occupancy. Do not reclassify the same owner from
+  aggregate group-center geometry.
+- Preserved occupancy grants no SUPPORT vote, trajectory reinforcement, or
+  product authority.
+- Do not treat a Family as a same-peak or chemical-identity claim. Two
+  resolved peaks in one sample can occupy different ModeTracks in the same
+  Family. Either track can be absent in another sample.
 - Do not train a ModeTrack from MS1-only, Backfill, inferred, deconvolved,
-  manual, shared-set, or other non-training observations. Only an existing
-  owner-proven direct-SUPPORT `PeakHypothesis` may seed or reinforce one track,
-  and reinforcement follows unique assignment only. ModeTrack must retain and
-  revalidate the exact processing request/attempt, physical peak observation,
-  candidate, and direct-SUPPORT assessment identities. It must not retain or
-  depend on `CellObservationRef`; matching only the `PeakHypothesis` is
-  insufficient provenance.
-- Do not let a consumer or ObservationRevisit refit ModeTracks or reinterpret an ambiguous,
-  out-of-model, absent, or technically unassessable state as unique. Shadow
-  assignments carry no value or writer authority.
-- Do not treat an accepted ObservationRevisit as implicit membership or selected
-  value. Those decisions remain with CrossSample and ProductionCellDecision.
+  manual, shared-set, or other non-training observations.
+- Only an existing owner-proven direct-SUPPORT `PeakHypothesis` can seed or
+  reinforce one track. Reinforcement follows unique assignment only.
+- ModeTrack must retain and revalidate the exact processing request/attempt,
+  physical peak observation, candidate, and direct-SUPPORT assessment
+  identities.
+- ModeTrack must not retain or depend on `CellObservationRef`. A match on the
+  `PeakHypothesis` alone is insufficient provenance.
+- Do not let a consumer or ObservationRevisit refit ModeTracks. Do not let a
+  consumer or ObservationRevisit reinterpret an ambiguous, out-of-model,
+  absent, or technically unassessable state as unique.
+- Shadow assignments carry no value or writer authority.
+- Do not treat an accepted ObservationRevisit as implicit membership or
+  selected value. CrossSample owns membership. ProductionCellDecision owns the
+  selected value.
 - Do not let `alignment_review.tsv` display tokens promote rows. Positive
-  product support needs provenance-valid sidecars or explicit authority records.
-- Do not treat `family_projection` rows as canonical identity proof. They are
-  unresolved projection rows until replaced by explicit PeakHypothesis
-  assignments or an approved product contract says they are out of scope.
-- Helpers that can emit or include `family_projection` rows must default to
-  excluding them. Any inclusion path needs an explicit diagnostic or compatibility
-  opt-in and must keep canonical identity readiness fail-closed.
+  product support needs provenance-valid sidecars or explicit authority
+  records.
+- Do not treat `family_projection` rows as canonical identity proof. A
+  `family_projection` row stays an unresolved projection row until one of
+  these events happens:
+  - explicit PeakHypothesis assignments replace the row;
+  - an approved product contract declares the row out of scope.
+- A helper that can emit or include `family_projection` rows must exclude them
+  by default. Any inclusion path needs an explicit diagnostic or compatibility
+  opt-in. Any inclusion path must keep canonical identity readiness
+  fail-closed.
 
 ## Codebase Smells To Audit
 
-These patterns are not automatically bugs, but they require close review before
-refactor or promotion:
+These patterns are not automatically bugs. Each pattern requires close review
+before refactor or promotion:
 
 - A peak-anchor assignment function writes `evidence_score`, `evidence_tier`,
   confidence, or product-like status.
@@ -147,7 +179,7 @@ refactor or promotion:
 - A diagnostic sidecar exposes supportive labels without product-authority
   provenance.
 - A new helper extracts shared code by moving discovery/alignment policy into
-  `peak_detection/` instead of keeping the helper trace-level and role-neutral.
+  `peak_detection/`. The helper must instead stay trace-level and role-neutral.
 
 ## Verification
 
