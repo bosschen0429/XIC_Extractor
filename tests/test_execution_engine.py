@@ -110,9 +110,6 @@ class SharedProcessResult:
 
 
 _SHARED_PROCESS_INITIALIZED = False
-_MOCK_PROCESS_ACTIVE = 0
-_MOCK_PROCESS_MAX_ACTIVE = 0
-_MOCK_PROCESS_LOCK = threading.Lock()
 
 
 def _initialize_shared_process_test() -> None:
@@ -128,26 +125,6 @@ def _execute_shared_process_task(task: SharedProcessTask) -> SharedProcessResult
         os.getpid(),
         _SHARED_PROCESS_INITIALIZED,
     )
-
-
-def _execute_shared_process_budget_task(task: SharedProcessTask) -> SharedProcessResult:
-    global _MOCK_PROCESS_ACTIVE, _MOCK_PROCESS_MAX_ACTIVE
-    with _MOCK_PROCESS_LOCK:
-        _MOCK_PROCESS_ACTIVE += 1
-        _MOCK_PROCESS_MAX_ACTIVE = max(
-            _MOCK_PROCESS_MAX_ACTIVE, _MOCK_PROCESS_ACTIVE
-        )
-    try:
-        time.sleep(0.02)
-        return SharedProcessResult(
-            task.owner,
-            task.value,
-            os.getpid(),
-            _SHARED_PROCESS_INITIALIZED,
-        )
-    finally:
-        with _MOCK_PROCESS_LOCK:
-            _MOCK_PROCESS_ACTIVE -= 1
 
 
 # ---------------------------------------------------------------------------
@@ -1528,6 +1505,30 @@ def test_worker_admission_pool_concurrent_batches_share_one_executor_and_budget(
 ) -> None:
     import xic_extractor.execution_engine.worker_pool as owner
 
+    active_count = 0
+    max_active = 0
+    active_lock = threading.Lock()
+    overlap_requested = False
+    four_started = threading.Event()
+    release_work = threading.Event()
+
+    def budget_task(task: SharedProcessTask) -> SharedProcessResult:
+        nonlocal active_count, max_active
+        with active_lock:
+            active_count += 1
+            max_active = max(max_active, active_count)
+            if overlap_requested and active_count == 4:
+                four_started.set()
+        try:
+            if overlap_requested and not release_work.wait(5):
+                raise AssertionError("timed out releasing overlapping work")
+            return SharedProcessResult(
+                task.owner, task.value, os.getpid(), _SHARED_PROCESS_INITIALIZED
+            )
+        finally:
+            with active_lock:
+                active_count -= 1
+
     created = []
     original_executor = owner.ThreadPoolExecutor
 
@@ -1566,10 +1567,6 @@ def test_worker_admission_pool_concurrent_batches_share_one_executor_and_budget(
     creation_gate_used = [False]
     creation_started = threading.Event()
     release_creation = threading.Event()
-    global _MOCK_PROCESS_ACTIVE, _MOCK_PROCESS_MAX_ACTIVE
-    with _MOCK_PROCESS_LOCK:
-        _MOCK_PROCESS_ACTIVE = 0
-        _MOCK_PROCESS_MAX_ACTIVE = 0
     shared_owner = object()
     cold_pool = WorkerAdmissionPool(
         max_workers=4,
@@ -1585,7 +1582,7 @@ def test_worker_admission_pool_concurrent_batches_share_one_executor_and_budget(
             cold_barrier.wait(timeout=5)
             cold_pool.run_windowed(
                 (0, 1),
-                _execute_shared_process_budget_task,
+                budget_task,
                 task_arg_fn=lambda value: SharedProcessTask(shared_owner, value),
                 on_completed=lambda _c, _t, _item, result: cold_results.append(result),
             )
@@ -1606,9 +1603,7 @@ def test_worker_admission_pool_concurrent_batches_share_one_executor_and_budget(
     assert len(cold_results) == 4
 
     created.clear()
-    with _MOCK_PROCESS_LOCK:
-        _MOCK_PROCESS_ACTIVE = 0
-        _MOCK_PROCESS_MAX_ACTIVE = 0
+    active_count = max_active = 0
     pool = WorkerAdmissionPool(
         max_workers=4,
         backend="process",
@@ -1623,7 +1618,7 @@ def test_worker_admission_pool_concurrent_batches_share_one_executor_and_budget(
             barrier.wait(timeout=5)
             pool.run_windowed(
                 tuple(range(4)),
-                _execute_shared_process_budget_task,
+                budget_task,
                 task_arg_fn=lambda value: SharedProcessTask(shared_owner, value),
                 on_completed=lambda _c, _t, _item, result: results.append(result),
             )
@@ -1632,22 +1627,29 @@ def test_worker_admission_pool_concurrent_batches_share_one_executor_and_budget(
 
     pool.run_windowed(
         (0,),
-        _execute_shared_process_budget_task,
+        budget_task,
         task_arg_fn=lambda value: SharedProcessTask(shared_owner, value),
         on_completed=lambda _c, _t, _item, result: results.append(result),
     )
+    # Hold the first wave until the configured capacity is actually occupied;
+    # task duration and OS scheduling must not determine the observation.
+    overlap_requested = True
     threads = [threading.Thread(target=run_batch, args=(name,)) for name in ("a", "b")]
     for thread in threads:
         thread.start()
-    for thread in threads:
-        thread.join(timeout=10)
-    with pool:
-        pass
+    try:
+        assert four_started.wait(5), "four workers did not enter the shared pool"
+    finally:
+        release_work.set()
+        for thread in threads:
+            thread.join(timeout=10)
+        pool.shutdown()
 
     assert not errors
+    assert all(not thread.is_alive() for thread in threads)
     assert len(created) == 1
     assert created[0].max_workers == 4
-    assert _MOCK_PROCESS_MAX_ACTIVE == 4
+    assert max_active == 4
     assert len(results) == 9
     assert all(result.owner is shared_owner for result in results)
 
