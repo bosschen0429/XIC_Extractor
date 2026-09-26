@@ -213,7 +213,7 @@ reasons, Review Queue/archive routing, and result finalization close afterward.
   group identity and immutable lineage, and closes before bounded Backfill. A
   new processing request creates new group identity; this contract does not
   infer cross-request continuity.
-- `GroupDispositionDecision` is exactly one of `established`, `provisional`,
+- `CrossSampleGroupDisposition` is exactly one of `established`, `provisional`,
   `unresolved`, or `rejected`. Established requires accepted identity-bearing
   members from at least two distinct canonical samples plus method hard gates;
   a singleton is always provisional. Low support alone is not rejection.

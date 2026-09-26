@@ -116,13 +116,13 @@ Use these terms consistently:
   physical-observation identity. The canonical variant tag is part of identity;
   wrappers over the same physical observation canonicalize to one subject unless
   explicit different tags deliberately preserve distinct identities.
-- `GroupDispositionDecision`: the CrossSample-owned, mutually exclusive
+- `CrossSampleGroupDisposition`: the CrossSample-owned, mutually exclusive
   disposition of one finalized group: `established`, `provisional`,
   `unresolved`, or `rejected`. Disposition does not decide output inclusion.
 - `ModeTrack`: one request-bound trajectory model over immutable CrossSample
   evidence. Where a workflow uses it, it proposes an assessable initial
   refinement before `CrossSampleGroupingResult` closes. It does not refit after
-  repair, mint groups, re-integrate traces, repair observations, or write
+  Backfill, mint groups, re-integrate traces, repair observations, or write
   values.
 - `ObservationRevisit`: the retained typed receipt for one bounded Backfill
   revisit of a pre-existing Target or group cell. The revisit may produce its

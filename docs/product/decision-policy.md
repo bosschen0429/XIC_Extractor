@@ -197,8 +197,8 @@ Untargeted-specific rules to keep explicit:
 - Owner-centered MS1 backfill can change alignment cell status during alignment
   construction. That is still not broad ProductWriter authority unless the
   relevant matrix/activation contract grants it.
-- Broad Backfill remains gated. Diagnostic sidecars, `shadow_gate_ready`, and
-  visual overlay evidence are not production readiness by themselves.
+- Broad Backfill remains gated. Diagnostic sidecars and visual overlay
+  evidence are not production readiness by themselves.
 
 ## Score Position
 
