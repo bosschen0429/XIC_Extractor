@@ -1,19 +1,19 @@
-import warnings
 from collections.abc import Callable
 from typing import Any
 
 import numpy as np
-from scipy.signal import peak_widths
 
 from xic_extractor.config import ExtractionConfig, Target
 from xic_extractor.injection_rolling import rolling_median_rt
 from xic_extractor.neutral_loss import CandidateMS2Evidence, NLResult
+from xic_extractor.peak_detection import ms1_morphology
 from xic_extractor.peak_detection.ms1_morphology import (
     MS1_MORPHOLOGY_AREA_SOURCE,
     MS1_MORPHOLOGY_TRACE_METHOD,
     configured_morphology_window_points,
     gaussian15_positive_asls_residual_trace,
 )
+from xic_extractor.peak_detection.physical_peak_models import PreparedSignalResult
 from xic_extractor.peak_detection.scoring_metrics import compute_local_sn_cache
 from xic_extractor.peak_detection.scoring_models import ScoringContext
 from xic_extractor.peak_detection.scoring_quality import hard_quality_flags
@@ -37,6 +37,7 @@ def build_scoring_context_factory(
         sample_name: str,
         rt: np.ndarray,
         intensity: np.ndarray,
+        prepared_result: PreparedSignalResult,
         istd_rt_in_this_sample: float | None,
         paired_istd_fwhm: float | None,
         nl_result: NLResult | None,
@@ -82,6 +83,11 @@ def build_scoring_context_factory(
 
         rt_values = np.asarray(rt, dtype=float)
         intensity_values = np.asarray(intensity, dtype=float)
+        prepared = prepared_result.prepared
+        shape_rt = np.asarray(prepared.rt if prepared is not None else (), dtype=float)
+        shape_signal = np.asarray(
+            prepared.positive_signal if prepared is not None else (), dtype=float
+        )
         baseline_array, residual_mad = compute_local_sn_cache(intensity_values)
         morphology_window_points = configured_morphology_window_points(config)
         active_intensity_values = intensity_values
@@ -187,9 +193,9 @@ def build_scoring_context_factory(
                 if candidate_ms2 is not None
                 else None
             )
-            half_width_ratio, width_min = compute_shape_metrics(
-                rt_values,
-                active_intensity_values,
+            half_width_ratio, width_min = ms1_morphology.compute_shape_metrics(
+                shape_rt,
+                shape_signal,
                 candidate.selection_apex_index,
             )
             # Both widths are half-prominence widths in minutes; carrier names
@@ -269,50 +275,20 @@ def make_scoring_context_factory(
     )
 
 
-def compute_shape_metrics(
-    rt: np.ndarray,
-    intensity: np.ndarray,
-    apex_index: int,
-) -> tuple[float, float | None]:
-    """Return the RT half-width ratio and half-prominence width in minutes."""
-    rt_values = np.asarray(rt, dtype=float)
-    values = np.asarray(intensity, dtype=float)
-    if len(values) == 0 or apex_index < 0 or apex_index >= len(values):
-        return 1.0, None
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        widths, _, left_ips, right_ips = peak_widths(
-            values,
-            [apex_index],
-            rel_height=0.5,
-        )
-    if len(widths) == 0:
-        return 1.0, None
-    left_rt, right_rt = np.interp(
-        [left_ips[0], right_ips[0]],
-        np.arange(len(values)),
-        rt_values,
-    )
-    width_min = float(right_rt - left_rt)
-    if not np.isfinite(width_min) or width_min <= 0:
-        return 1.0, None
-    left = float(rt_values[apex_index] - left_rt)
-    right = float(right_rt - rt_values[apex_index])
-    if left <= 0 or right <= 0:
-        return 1.0, width_min
-    return float(left / right), width_min
-
-
 def selected_shape_metrics(
-    rt: np.ndarray,
-    intensity: np.ndarray,
+    prepared_result: PreparedSignalResult,
     peak_result: PeakDetectionResult,
 ) -> tuple[float, float | None] | None:
-    """Return selected trace shape with its half-prominence width in minutes."""
+    """Return selected physical-signal shape and half-prominence width in minutes."""
     candidate = selected_candidate(peak_result)
-    if candidate is None:
+    prepared = prepared_result.prepared
+    if candidate is None or prepared is None:
         return None
-    return compute_shape_metrics(rt, intensity, candidate.selection_apex_index)
+    return ms1_morphology.compute_shape_metrics(
+        np.asarray(prepared.rt),
+        np.asarray(prepared.positive_signal),
+        candidate.selection_apex_index,
+    )
 
 
 def selected_candidate(peak_result: PeakDetectionResult) -> PeakCandidate | None:

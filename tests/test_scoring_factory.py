@@ -1,4 +1,3 @@
-import warnings
 from pathlib import Path
 
 import numpy as np
@@ -8,15 +7,17 @@ from xic_extractor.config import ExtractionConfig, Target
 from xic_extractor.extraction.scoring_factory import (
     allow_prepass_anchor,
     build_scoring_context_factory,
-    compute_shape_metrics,
     paired_istd_fwhm,
     selected_candidate,
     selected_shape_metrics,
 )
 from xic_extractor.peak_detection.evidence_facts import build_candidate_evidence_facts
-from xic_extractor.peak_detection.scoring_metrics import (
-    peak_width_severity,
-    symmetry_severity,
+from xic_extractor.peak_detection.ms1_morphology import compute_shape_metrics
+from xic_extractor.peak_detection.physical_peak_evaluation import (
+    prepare_physical_signal,
+)
+from xic_extractor.peak_detection.signal_processing_profile import (
+    SignalProcessingProfile,
 )
 from xic_extractor.rt_prior_library import LibraryEntry
 from xic_extractor.signal_processing import (
@@ -52,6 +53,9 @@ def test_factory_uses_delta_rt_library_and_exposes_prior_metadata() -> None:
         sample_name="S2",
         rt=np.linspace(9.9, 10.5, 7),
         intensity=np.array([0.0, 1.0, 4.0, 8.0, 4.0, 1.0, 0.0]),
+        prepared_result=_prepared(
+            np.linspace(9.9, 10.5, 7), np.array([0.0, 1.0, 4.0, 8.0, 4.0, 1.0, 0.0])
+        ),
         istd_rt_in_this_sample=10.0,
         paired_istd_fwhm=2.0,
         nl_result=None,
@@ -123,99 +127,49 @@ def test_prepass_anchor_allows_adap_equivalent_legacy_flags() -> None:
     assert allow_prepass_anchor(peak_result) is True
 
 
-def test_compute_shape_metrics_handles_non_peak_apex_without_warning() -> None:
-    with warnings.catch_warnings(record=True) as captured:
-        warnings.simplefilter("always")
-        ratio, width_min = compute_shape_metrics(
-            np.linspace(0.0, 2.0, 5), np.ones(5), 2
-        )
-
-    assert captured == []
-    assert ratio == pytest.approx(1.0)
-    assert width_min is None
-
-
-def test_shape_width_and_paired_quality_are_stable_across_scan_densities() -> None:
+@pytest.mark.parametrize("window_points", [7, 15])
+@pytest.mark.parametrize("sample_count", [101, 301, 901])
+def test_same_prepared_shape_is_shared_by_analyte_and_selected_istd(
+    window_points: int, sample_count: int
+) -> None:
     target = _target(label="Analyte-A", is_istd=False, istd_pair="ISTD-A")
-    analyte_rt = np.linspace(0.0, 2.0, 301)
-    analyte_intensity = _gaussian(analyte_rt)
-    analyte_candidate = _candidate(apex_index=150)
+    rt = np.linspace(0.0, 2.0, sample_count)
+    intensity = _gaussian(rt) + 20.0 + 5.0 * rt
+    prepared_result = prepare_physical_signal(
+        rt, intensity, profile=SignalProcessingProfile(window_points=window_points)
+    )
+    candidate = _candidate(apex_index=sample_count // 2)
+    metrics = selected_shape_metrics(
+        prepared_result, _peak_result(candidate, sample_count)
+    )
+    assert metrics is not None
     factory = build_scoring_context_factory(
-        config=_config(),
+        config=_config(signal_processing_window_points=window_points),
         injection_order={},
         istd_rts_by_sample={},
         rt_prior_library={},
     )
-    widths_min = []
-    paired_ratios = []
-    for sample_count in (101, 301, 901):
-        istd_rt = np.linspace(0.0, 2.0, sample_count)
-        istd_candidate = _candidate(apex_index=sample_count // 2)
-        metrics = selected_shape_metrics(
-            istd_rt,
-            _gaussian(istd_rt),
-            _peak_result(istd_candidate, sample_count),
-        )
-        assert metrics is not None
-        ratio, width_min = metrics
-        assert ratio == pytest.approx(1.0)
-        assert width_min == pytest.approx(
-            2.0 * np.sqrt(2.0 * np.log(2.0)) * 0.1, rel=0.001
-        )
-        widths_min.append(width_min)
-        ctx = factory(
-            target=target,
-            sample_name="SampleA",
-            rt=analyte_rt,
-            intensity=analyte_intensity,
-            istd_rt_in_this_sample=1.0,
-            paired_istd_fwhm=paired_istd_fwhm(target, {"ISTD-A": metrics}),
-            nl_result=None,
-        )(analyte_candidate)
-        facts = build_candidate_evidence_facts(analyte_candidate, ctx, role="Analyte")
-        assert ctx.active_trace_source == "gaussian15_positive_asls_residual"
-        assert ctx.fwhm_ratio == pytest.approx(0.9802, rel=0.001)
-        assert facts.trace.width_quality == "clean"
-        paired_ratios.append(ctx.fwhm_ratio)
-    assert max(widths_min) / min(widths_min) - 1.0 <= 0.001
-    assert max(paired_ratios) / min(paired_ratios) - 1.0 <= 0.001
-
-
-def test_shape_symmetry_uses_nonuniform_rt_coordinates() -> None:
-    rt = np.r_[np.linspace(0.0, 1.0, 151), np.linspace(1.02, 2.0, 50)]
-    ratio, width_min = compute_shape_metrics(rt, _gaussian(rt), 150)
-
-    assert ratio == pytest.approx(1.0, abs=0.001)
-    assert width_min == pytest.approx(2.0 * np.sqrt(2.0 * np.log(2.0)) * 0.1, rel=0.001)
-    assert symmetry_severity(ratio)[0] == 0
-
-
-def test_shape_metrics_interpolate_fractional_half_prominence_crossings() -> None:
-    rt = np.array([0.0, 1.0, 2.0, 4.0, 8.0])
-    intensity = np.array([5.0, 6.0, 9.0, 6.0, 5.0])
-
-    ratio, width_min = compute_shape_metrics(rt, intensity, 2)
-
-    # Half prominence is 7: the RT crossings are 4/3 and 10/3 minutes.
-    assert width_min == pytest.approx(2.0)
-    assert ratio == pytest.approx(0.5)
-
-
-def test_shape_metrics_distinguish_real_broad_and_asymmetric_peaks() -> None:
-    rt = np.linspace(-2.0, 4.0, 901)
-    _, paired_width_min = compute_shape_metrics(rt, _gaussian(rt), 450)
-    broad_ratio, broad_width_min = compute_shape_metrics(
-        rt, _gaussian(rt, sigma=0.25), 450
+    ctx = factory(
+        target=target,
+        sample_name="SampleA",
+        rt=rt,
+        intensity=intensity,
+        prepared_result=prepared_result,
+        istd_rt_in_this_sample=1.0,
+        paired_istd_fwhm=paired_istd_fwhm(target, {"ISTD-A": metrics}),
+        nl_result=None,
+    )(candidate)
+    prepared = prepared_result.prepared
+    assert prepared is not None
+    expected = compute_shape_metrics(
+        rt, np.asarray(prepared.positive_signal), candidate.selection_apex_index
     )
-    sigma = np.where(rt < 1.0, 0.3, 0.1)
-    asymmetric = 1000.0 * np.exp(-0.5 * ((rt - 1.0) / sigma) ** 2)
-    asymmetric_ratio, _ = compute_shape_metrics(rt, asymmetric, 450)
-
-    assert broad_width_min / paired_width_min == pytest.approx(2.5, rel=0.001)
-    assert peak_width_severity(broad_width_min / paired_width_min)[0] == 1
-    assert broad_ratio == pytest.approx(1.0)
-    assert asymmetric_ratio == pytest.approx(3.0, rel=0.001)
-    assert symmetry_severity(asymmetric_ratio)[0] == 1
+    assert metrics == expected
+    assert ctx.half_width_ratio == metrics[0]
+    assert ctx.fwhm_ratio == 1.0
+    assert build_candidate_evidence_facts(candidate, ctx).trace.width_quality == "clean"
+    # These carriers describe the existing S/N view, independent of shape.
+    assert ctx.active_trace_source == "gaussian15_positive_asls_residual"
 
 
 def test_missing_paired_width_retains_neutral_width_quality() -> None:
@@ -233,6 +187,7 @@ def test_missing_paired_width_retains_neutral_width_quality() -> None:
         sample_name="SampleA",
         rt=rt,
         intensity=_gaussian(rt),
+        prepared_result=_prepared(rt, _gaussian(rt)),
         istd_rt_in_this_sample=1.0,
         paired_istd_fwhm=paired_istd_fwhm(target, {}),
         nl_result=None,
@@ -240,6 +195,45 @@ def test_missing_paired_width_retains_neutral_width_quality() -> None:
 
     assert ctx.fwhm_ratio is None
     assert build_candidate_evidence_facts(candidate, ctx).trace.width_quality == "clean"
+
+
+def test_missing_prepared_shape_never_falls_back_to_raw_peak() -> None:
+    rt = np.linspace(0.0, 2.0, 7)
+    intensity = _gaussian(rt)
+    prepared_result = prepare_physical_signal(
+        rt, intensity, profile=SignalProcessingProfile()
+    )
+    assert prepared_result.prepared is None
+    candidate = _candidate(apex_index=3)
+    factory = build_scoring_context_factory(
+        config=_config(), injection_order={}, istd_rts_by_sample={}, rt_prior_library={}
+    )
+    ctx = factory(
+        target=_target(label="Analyte-A", is_istd=False, istd_pair="ISTD-A"),
+        sample_name="SampleA",
+        rt=rt,
+        intensity=intensity,
+        prepared_result=prepared_result,
+        istd_rt_in_this_sample=None,
+        paired_istd_fwhm=0.2,
+        nl_result=None,
+    )(candidate)
+    assert ctx.half_width_ratio == 1.0
+    assert ctx.fwhm_ratio is None
+    assert (
+        selected_shape_metrics(prepared_result, _peak_result(candidate, len(rt)))
+        is None
+    )
+    available = _prepared(rt, intensity)
+    no_peak = PeakDetectionResult(
+        status="PEAK_NOT_FOUND",
+        peak=None,
+        n_points=len(rt),
+        max_smoothed=0.0,
+        n_prominent_peaks=0,
+        candidates=(),
+    )
+    assert selected_shape_metrics(available, no_peak) is None
 
 
 def _gaussian(rt: np.ndarray, *, sigma: float = 0.1) -> np.ndarray:
@@ -318,3 +312,9 @@ def _candidate(
     if quality_flags:
         object.__setattr__(candidate, "quality_flags", quality_flags)
     return candidate
+
+
+def _prepared(rt: np.ndarray, intensity: np.ndarray):
+    return prepare_physical_signal(
+        rt, intensity, profile=SignalProcessingProfile(window_points=3)
+    )

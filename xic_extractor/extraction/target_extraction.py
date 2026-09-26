@@ -324,6 +324,20 @@ def extract_one_target(
         physical_trace_cache[cache_key] = cached
         return cached
 
+    trace_scoring_context_factory: Callable[..., Any] | None = None
+    if scoring_context_factory is not None:
+        source_factory = scoring_context_factory
+
+        def _trace_scoring_context_factory(
+            *, rt: object, intensity: object, **kwargs: Any
+        ) -> Any:
+            prepared_result, _, _ = _physical_trace_owners(rt, intensity)
+            return source_factory(
+                rt=rt, intensity=intensity, prepared_result=prepared_result, **kwargs
+            )
+
+        trace_scoring_context_factory = _trace_scoring_context_factory
+
     def _find_physical_peak(
         rt_values: object,
         intensity_values: object,
@@ -379,8 +393,8 @@ def extract_one_target(
 
     for allow_context_extension in (True, False):
         scoring_context_builder = None
-        if scoring_context_factory is not None:
-            scoring_context_builder = scoring_context_factory(
+        if trace_scoring_context_factory is not None:
+            scoring_context_builder = trace_scoring_context_factory(
                 target=target,
                 sample_name=sample_name,
                 rt=rt,
@@ -440,7 +454,7 @@ def extract_one_target(
         target=target,
         anchor_used=anchor_used,
         anchor_rt=anchor_rt,
-        scoring_context_factory=scoring_context_factory,
+        scoring_context_factory=trace_scoring_context_factory,
         candidate_ms2_evidence_builder=_cached_candidate_ms2_builder,
         sample_name=sample_name,
         nl_result=nl_result,
@@ -456,8 +470,8 @@ def extract_one_target(
         if retry_decision.intensity is not None
         else intensity
     )
-    if retry_decision.rt is not None and scoring_context_factory is not None:
-        scoring_context_builder = scoring_context_factory(
+    if retry_decision.rt is not None and trace_scoring_context_factory is not None:
+        scoring_context_builder = trace_scoring_context_factory(
             target=target,
             sample_name=sample_name,
             rt=audit_rt,
@@ -499,7 +513,7 @@ def extract_one_target(
             peak_result,
             paired_istd_anchor_rt=istd_rt_in_this_sample,
         )
-    shape_metrics = selected_shape_metrics(audit_rt, audit_intensity, peak_result)
+    shape_metrics = selected_shape_metrics(prepared, peak_result)
     candidate = selected_candidate(peak_result)
     if shape_metrics_by_label is not None and shape_metrics is not None:
         shape_metrics_by_label[target.label] = shape_metrics
