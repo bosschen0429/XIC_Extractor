@@ -16,6 +16,8 @@ through parity or explicit expected-diff approval.
   authority.
 - The successor can replace legacy scoring only when parity holds or when an
   approved expected-diff record allows the change.
+- The protection, replacement, and test-retention conditions on this page
+  apply together. No single condition releases legacy scoring coverage.
 - Blocked and inconclusive states are no-switch states. A no-switch state does
   not permit a product-candidate change.
 - Synthetic fixtures alone cannot authorize final-matrix behavior changes.

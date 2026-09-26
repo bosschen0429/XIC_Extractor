@@ -53,7 +53,7 @@ Backfill and through finalization. `ModeTrack` may propose an initial
 trajectory-based refinement only where the workflow explicitly uses it, and
 the grouping workflow applies an accepted complete-partition transition before
 the result becomes stable. Backfill uses an already established Target or group
-context to make one bounded revisit of a missing or insufficient cell and may
+context to make one bounded revisit of a missing cell and may
 return an observation or typed no-observation result. The retained
 `ObservationRevisit` receipt can represent that decision; the current Untargeted
 CID-NL production route uses the conservative Backfill decision. Backfill may
@@ -377,7 +377,7 @@ stable because they identify existing data or public interfaces.
 
 | Word | Meaning | Not this word |
 | --- | --- | --- |
-| `backfill` | the bounded missing-cell revisit stage | — |
+| `backfill` | the bounded missing-cell revisit stage; a missing cell is an eligible sample position without direct SUPPORT for an established group | — |
 | `Matrix` | the finalized product-facing numeric feature-by-sample grid; see [Quant Matrix](quant-matrix.md) | a sample matrix; a pre-final cell collection |
 | `sample matrix` | the chemical background of a sample (clean standard, biological extract) | the product `Matrix` |
 | `SDO/LEK` | the lab's two-standard instrument-check set (SDO and LEK); `sdolek` in code | `SDOLEK` in prose |

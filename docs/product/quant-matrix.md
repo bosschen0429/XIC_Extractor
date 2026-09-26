@@ -84,10 +84,13 @@ delivery seam as if they were already final.
 - This in-process handoff does not define a durable decision carrier by
   itself. This handoff does not replace the separate file-backed activation
   contracts in Acceptance authority and Activation.
-- `ProductionDecisionSet` is the current compatibility surface. The successor
-  of `ProductionDecisionSet` is one deep `ProductionCellDecision` owner over
-  explicit Target and Group subjects. Discriminated immutable finalized results
-  will carry that successor owner.
+- The live cell-decision owner is `ProductionCellDecision` in
+  `alignment/cell_decision/owner.py`. Target and Untarget post-cell
+  projections consume its decisions.
+- `ProductionDecisionSet` in `alignment/production_decisions.py` is the
+  writer-input projection of those finalized decisions for the existing TSV,
+  XLSX, and HTML writers. `ProductionDecisionSet` holds a separate
+  compatibility cell type that is also named `ProductionCellDecision`.
 - The structural migration must preserve current values, states, counts, row
   inclusion, and renderer bytes before any behavior promotion.
 

@@ -218,7 +218,7 @@ the error relative to the configured loss mass; it is not the acceptance gate.
   system; see [Untargeted Method](untargeted-method.md) for the absorbed
   method/literature boundary.
 - Current Untargeted product direction preserves a clean primary `Matrix` while
-  keeping rescue-only, ambiguous, and diagnostic candidates in Review/Audit
+  keeping Backfill-only (`rescue_only`), ambiguous, and diagnostic candidates in Review/Audit
   surfaces. Do not judge the lane by exact equality to old upstream feature
   tables when the accepted contract is matrix hygiene plus Targeted benchmark
   recall.

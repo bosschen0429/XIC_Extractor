@@ -32,7 +32,8 @@ that group.
 | `S` | Counts distinct eligible samples with direct SUPPORT for that exact group. Each sample counts once. |
 
 - If `S < K`, the conservative revisit does not start for that group.
-- The workset contains the eligible missing sample/group positions. The frozen
+- The workset contains every eligible sample without direct SUPPORT for the
+  group, including samples with a HOLD or REJECT assessment. The frozen
   group and the local RT/mass request bound the workset.
 - A Backfill candidate does not add a direct SUPPORT vote.
 
@@ -75,8 +76,11 @@ that group.
    diagnostic path and to the current alignment metadata.
 4. Final cell composition still accepts the typed `ObservationRevisitReceipt`
    input for a revisited member.
-5. No installed workflow calls the former execute/close operation. The receipt
-   type alone does not prove that a revisit transaction ran.
+5. No installed workflow calls the former execute/close operation. No
+   production code mints the receipt, because the receipt mint token in
+   `alignment/backfill/observation_revisit.py` is never passed outside its
+   module. The receipt type alone does not prove that a revisit transaction
+   ran.
 
 ## Surfaces
 

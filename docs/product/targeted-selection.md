@@ -33,8 +33,10 @@ CrossSample, ModeTrack, Backfill, or selected-value implementation.
   integration.
 - RT, bounds, and width are expressed in minutes.
 - An NL-focused acquisition can clip a selected peak at an acquired trace edge
-  within the configured target scope. In that case the acquisition restores
-  the union with that RT window once. The same peak and evidence owners then
+  within the configured target scope, while the apex stays inside the
+  configured target RT window. In that case the acquisition widens its query
+  once to the union of the current query RT range and the configured target RT
+  window (`rt_min`..`rt_max`). The same peak and evidence owners then
   select from the observed context.
 - A complete selected peak keeps its original query. A manual RT does not
   trigger this window restore and does not choose its result.
@@ -70,9 +72,11 @@ CrossSample, ModeTrack, Backfill, or selected-value implementation.
 - An owner-backed direct local observation can produce a Target cell value.
   This rule holds even when the group is provisional or the observation is not
   a group member.
-- Singleton or RT-prior evidence alone cannot fill another sample. Another
-  sample requires direct local evidence or an accepted independent
-  `ObservationRevisit`.
+- A sample without its own owner-backed direct local observation cannot get
+  a Target cell value from singleton or RT-prior evidence of other samples.
+  Such a sample requires direct local evidence or an accepted independent
+  `ObservationRevisit`. No production code currently mints an
+  `ObservationRevisit` receipt.
 
 ### Cell decision order
 

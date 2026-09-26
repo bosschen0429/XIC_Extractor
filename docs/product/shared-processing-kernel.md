@@ -57,7 +57,7 @@ but callers cannot bypass the semantic owner.
 | CrossSample | owner-backed hypotheses/observations -> canonical groups, dispositions, membership, lineage | Sole group/membership authority; does not integrate traces or select values |
 | ModeTrack | immutable trajectory snapshot -> typed refinement proposals | Proposal-only; cannot mutate groups, revisit cells, or write values |
 | ObservationRevisit receipt | one bounded revisit decision -> typed result or no-result receipt | Retained receipt contract; no group identity, implicit membership, selected-value, or writer authority |
-| Backfill | one missing or insufficient cell plus established Target/group context -> bounded revisit result | May produce the first usable observation for that cell; cannot originate the Target/group, mint membership, or select a value |
+| Backfill | one missing cell plus established Target/group context -> bounded revisit result | May produce the first usable observation for that cell; cannot originate the Target/group, mint membership, or select a value |
 | Scientific alignment closure | closed request/group/membership/refinement/revisit receipts -> `FinalizedScientificAlignment` | Validates shared scientific closure; does not construct workflow rows or render outputs |
 | Projection binding/subjects | finalized core + typed Target/Untarget scope -> row identity/binding + explicit cell subjects | Constructs subjects only; no value, count, or inclusion decision |
 | ProductionCellDecision | explicit subject + closed observations/receipts -> typed write or no-write | Sole selected-value owner; cannot create row or group identity |
@@ -134,21 +134,24 @@ silently truncated or processed in a result-changing order.
 
 ### ObservationRevisit
 
-ObservationRevisit handles an existing observation whose boundaries,
-integration, evidence closure, or consistency is incomplete. It returns one
-owner-backed repaired observation or a typed no-repair result. Repair does not
-rerun global Discovery, mint membership, select a product value, or write an
-output.
+`ObservationRevisitReceipt` is a retained typed Backfill receipt. Final cell
+composition accepts a sequence of these receipts. No production code mints a
+receipt: the receipt mint token in
+`alignment/backfill/observation_revisit.py` is never passed outside its
+module, so production receipt sequences are empty. The receipt type grants no
+membership, selected value, or writer authority.
 
 ### Backfill
 
-Backfill handles a missing or insufficient cell under an already owner-backed
-Target or existing-group context. Backfill can perform one bounded, context-directed
-RAW/evidence revisit. Backfill can produce the first usable observation for
-that cell. Backfill cannot bootstrap a Target/group that has no prior
-owner-backed context.
+Backfill handles a missing cell under an already owner-backed Target or
+existing-group context. A missing cell is an eligible sample position without
+direct SUPPORT for an established group. A sample with a HOLD or REJECT
+assessment for that group is also a missing cell. Backfill can perform one
+bounded, context-directed RAW/evidence revisit. Backfill can produce the first
+usable observation for that cell. Backfill cannot bootstrap a Target/group that
+has no prior owner-backed context.
 
-An accepted Backfill result enters the observation/repair contract for cell
+An accepted Backfill result enters the cell-observation contract as cell
 evidence. The existing `CrossSampleGroupingResult` keeps membership fixed;
 `ProductionCellDecision` decides value/no-write. Backfill does not rebuild
 the grouping result or trigger another ModeTrack pass.
@@ -156,7 +159,7 @@ the grouping result or trigger another ModeTrack pass.
 ### Cell Decision And Projection
 
 `ProductionCellDecision` consumes finalized evidence for one explicit Target or
-Group subject and is the sole selected-value owner. A repaired observation is
+Group subject and is the sole selected-value owner. A Backfill observation is
 not automatically group membership or a writable value.
 
 Projection remains workflow-specific. Targeted retains one row per `TargetKey`
@@ -172,7 +175,6 @@ policy. One projection is never the other projection's oracle.
 | Physical observations and hypotheses | `peak_detection` owners | Supplies constrained requests | Supplies general requests |
 | Cross-sample identity | CrossSample group/membership/disposition/lineage | Target identity constrains search/binding only | Group identity is inferred from evidence |
 | Trajectory refinement | ModeTrack proposes; CrossSample applies | Same interface | Same interface |
-| Observation repair | ObservationRevisit owns repair facts | Supplies Target cell context | Supplies Group cell context |
 | Missing-cell Backfill | Backfill owns the bounded revisit | Supplies Target Backfill context | Supplies Group Backfill context |
 | Selected value | `ProductionCellDecision` | Uses `TargetCellSubject` | Uses `GroupCellSubject` |
 | Row/count/output policy | Does not own | Targeted projection/writer | Untargeted projection/writer |
@@ -206,7 +208,7 @@ oracle is unchanged unless an expected difference is separately approved.
 - Provider-specific integration or interpretation belongs behind typed
   provenance, capability, or strategy seams and remains auditable.
 - Backfill requests without an owner-backed Target/group context are rejected.
-- Repaired evidence cannot implicitly create membership or a selected value.
+- Backfill evidence cannot implicitly create membership or a selected value.
 - Writers cannot rescan RAW data or recompute scientific decisions.
 - Current public commands, schemas, and persisted receipts remain stable unless
   their current consumer and observable change are explicitly approved.
