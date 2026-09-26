@@ -2,27 +2,31 @@
 
 Quantitation context is the acquired RT and trace context available to the
 shared physical peak owner. A candidate proposal interval can be narrower than
-this context. The selected physical component, rather than the entire search
-window, supplies the integration bounds.
+the quantitation context. The selected physical component supplies the
+integration bounds. The entire search window does not supply them.
 
 ## Contract
 
-- The acquired trace, configured signal profile, request context and physical
-  question identify the shared evaluation. Targeted selection chooses among
-  its physical components and retains the selected evaluation through capture.
-- The shared owner determines whether the observed context supports complete
-  peak bounds. Missing or clipped support keeps its explicit unavailable reason;
-  a downstream adapter must not invent flanks or integrate a replacement region.
-- Targeted NL acquisition can restore the configured target window once when a
-  focused query clips the peak. The new acquired trace is evaluated by the same
-  physical owner; the writer does not extend bounds.
-- CWT, local minima, derivative, and alternate boundary proposals remain
-  diagnostic or model-selection evidence. They do not replace the retained
-  physical integration.
-- Selected-full-envelope evidence remains diagnostic/review context unless a later activation contract promotes it.
-- A boundary review annotation does not itself replace the physical integration
-  or establish chemical absence. Workflow identity and counting decisions keep
-  their existing owners.
+- The acquired trace, configured signal profile, request context, and physical
+  question identify the shared evaluation.
+- Targeted selection chooses among the physical components of that evaluation.
+  Targeted selection retains the selected evaluation through capture.
+- The shared physical owner determines whether the observed context supports
+  complete peak bounds.
+- Missing or clipped support keeps its explicit unavailable reason. A
+  downstream adapter must not invent flanks or integrate a replacement region.
+- If a focused query clips the peak, Targeted NL acquisition can restore the
+  configured target window once.
+- The same physical owner evaluates the newly acquired trace. The writer does
+  not extend bounds.
+- CWT, local-minimum, derivative, and alternate boundary proposals remain
+  diagnostic or model-selection evidence. These proposals do not replace the
+  retained physical integration.
+- Selected-full-envelope evidence remains diagnostic/review context unless a
+  later activation contract promotes it.
+- A boundary review annotation does not by itself replace the physical
+  integration or establish chemical absence.
+- Workflow identity and counting decisions keep their existing owners.
 
 ## Surfaces
 
@@ -39,7 +43,8 @@ window, supplies the integration bounds.
 
 - **Owns:** candidate-to-observed-context mapping and `ChromPeakSegment` boundary semantics.
 - **Does not own:** the selected area for any specific row, whether a candidate segment is production-ready, Backfill writer authority, or matrix activation.
-- The discovery candidate interval is not the whole final trace context; the full search window is not the quantitation context either.
+- The Discovery candidate interval is not the whole final trace context.
+- The full search window is not the quantitation context.
 
 ## Verification
 
@@ -51,7 +56,7 @@ window, supplies the integration bounds.
 
 ## Pitfalls
 
-- Treating the discovery candidate interval as the whole final trace context.
+- Treating the Discovery candidate interval as the whole final trace context.
 - Integrating every positive residual in a broad RT context.
 - Letting safe-merge, local-minimum, CWT, or derivative signals become hidden product authority.
 - Treating an 8RAW candidate result as broad production readiness.

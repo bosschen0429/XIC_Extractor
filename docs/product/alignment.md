@@ -10,6 +10,8 @@ transport contract or let writers recompute science.
 
 ## Execution Boundary
 
+### Job planning and acquisition
+
 The bounded production entry creates initial jobs only for sample/subject pairs
 with Discovery candidates. One shared template per sample retains the complete
 sample population and acquisition settings. Backfill creates a missing pair's
@@ -18,12 +20,12 @@ Unsearched pairs receive their method assessment during final cell composition,
 without a worker dispatch or a runtime sample-result artifact. The direct batch
 interface retains its declared, complete job manifest.
 
-Acquisition backfill planning uses direct-SUPPORT group membership and the
+Acquisition Backfill planning uses direct-SUPPORT group membership and the
 eligible sample population to apply the conservative support threshold. It
 does not construct a dense group-by-sample CellObservation population merely
 to decide which missing samples to search. Cell evidence and quantitation
 remain responsibilities of the later composition stage.
-Process backfill requests contain only subjects with scheduled searches;
+Process Backfill requests contain only subjects with scheduled searches;
 responses use work-unit keys to update those subjects while retaining the
 other subjects' initial results.
 
@@ -46,6 +48,8 @@ Targeted and Untargeted CID-NL close through the shared scientific workflow.
 and renders its finalized result. It requires explicit pure CID-NL discovery
 settings; the Alignment CLI supplies them through a bound preset. Unsupported
 discovery settings are rejected before acquisition or output creation.
+
+### ISTD input and RT drift correction
 
 The Alignment CLI resolves ISTD input before RAW acquisition. An explicit
 targets CSV or reference workbook takes precedence; otherwise it uses the same
@@ -77,7 +81,7 @@ After a query, correction that worsens the pair by more than the existing
 10-second contradiction threshold, or moves raw RT from inside to outside the
 preferred window, falls back to the raw-only score and decision. Fallback does
 not keep a prior bonus, promote a weak edge to strong, or bypass the applicable
-hard gates. The existing targeted-ISTD product/loss hard-gate exceptions
+hard gates. The existing Targeted-ISTD product/loss hard-gate exceptions
 retain their RT query. Group ranking reuses the cached edge's chosen coordinate.
 
 Edge evidence and its audit projections record `rt_basis` as `raw` or
@@ -86,6 +90,8 @@ that correction was applied. Unqueried or unavailable corrected RT is absent;
 the reason distinguishes raw sufficiency, insufficient non-RT evidence,
 unavailability and post-query fallback. Historical explanation records remain
 readable as recorded; they are not reclassified by this field addition.
+
+### Grouping result and Backfill
 
 The grouping workflow consumes candidate and exact owner evidence, applies the
 constrained group rules, and returns one immutable
@@ -97,16 +103,16 @@ groups directly into the same result without model fitting or assignment.
 Initial candidates retain their request, sample, acquisition, physical-
 hypothesis, integration, and evidence bindings.
 
-Initial members stay in their original groups through bounded backfill.
-A group-bound backfill with unique SUPPORT may add a missing sample member
+Initial members stay in their original groups through bounded Backfill.
+A group-bound Backfill with unique SUPPORT may add a missing sample member
 when it passes the existing feature evidence rule. The grouping owner records
 the admitted member and exact predecessor/successor lineage; it does not refit,
 move original members, split known ISTD bindings, or create new groups.
 Competing claims on the same physical content remain unresolved and supply no
 numeric value. Final cells retain the original cell for provenance and the
-completed backfill assessment/observation for the final decision and integral.
+completed Backfill assessment/observation for the final decision and integral.
 Cell evidence uses `cell_observation` and final-cell canonical bases use
-`final_group_cell_observation` to bind unresolved SUPPORT and backfill
+`final_group_cell_observation` to bind unresolved SUPPORT and Backfill
 provenance explicitly. Old diagnostic evidence remains historical; acquisition
 cache facts do not depend on these cell schemas.
 
@@ -123,7 +129,9 @@ its alignment configuration and known-ISTD reference at execution time;
 composition cannot replace that grouping context.
 The acquisition boundary canonicalizes repeated or unordered subject/RT
 queries. Different groups may reuse the same physical trace while retaining
-separate group-bound backfill attempts and decisions.
+separate group-bound Backfill attempts and decisions.
+
+### Initial grouping index
 
 Initial grouping uses the sparse feature index described below. It scores only
 compatible feature candidates and retains the evaluated evidence. Missing pair
@@ -147,6 +155,8 @@ next-best cost, including the private unassigned option. Equal or near-equal
 optima retain ambiguity. A stable ID selects the diagnostic representative of
 an exact tie; it does not authorize membership. General multi-owner,
 multi-feature components retain the joint assignment solver.
+
+### Finalization, projection, and explanation coverage
 
 Writer projection checks sample completeness per finalized row without building
 a second global row-by-sample key set. Cell and integration-audit TSV writers
@@ -213,7 +223,7 @@ reasons, Review Queue/archive routing, and result finalization close afterward.
   group identity and immutable lineage, and closes before bounded Backfill. A
   new processing request creates new group identity; this contract does not
   infer cross-request continuity.
-- `GroupDispositionDecision` is exactly one of `established`, `provisional`,
+- `CrossSampleGroupDisposition` is exactly one of `established`, `provisional`,
   `unresolved`, or `rejected`. Established requires accepted identity-bearing
   members from at least two distinct canonical samples plus method hard gates;
   a singleton is always provisional. Low support alone is not rejection.
@@ -276,6 +286,8 @@ unresolved and rejected groups remain AuditTrail facts.
 
 ## Contract
 
+### Inputs and candidate routing
+
 - Alignment inputs must be explicit: accepted target input, discovery batch
   index, or documented local validation input. Do not rely on old worktree
   output paths as durable inputs.
@@ -307,6 +319,9 @@ unresolved and rejected groups remain AuditTrail facts.
   when combining overlapping RT contexts. Preparation sharing may extend the
   RT interval; it does not replace the candidate center with a method-subject
   center. Only identical resulting requests share an acquired trace.
+
+### Method subjects
+
 - A CID-NL method subject identifies an acquisition/assessment question, not a
   feature boundary. Non-composite Untargeted subjects with the same scalar
   neutral loss form alignment worksets using resolver intervals together with
@@ -319,12 +334,15 @@ unresolved and rejected groups remain AuditTrail facts.
   SearchScope preserves request-bound provider and candidate membership; it
   does not re-partition an upstream workset using resolver intervals alone.
 - A cross-subject group retains each SUPPORT cell's exact assessment and
-  hypothesis binding. Its canonical backfill subject is the supporting subject
+  hypothesis binding. Its canonical Backfill subject is the supporting subject
   nearest the formal group center, with method-subject ID breaking ties.
-  Missing/non-support cells and backfill jobs use that exact backfill subject;
+  Missing/non-support cells and Backfill jobs use that exact Backfill subject;
   support from another subject is admissible only through the group's exact
   owner-backed support binding. Matrix rows consume these completed groups and
   cells; writers do not merge subjects or invent cross-subject values.
+
+### Cross-sample grouping and batch finalization
+
 - Two resolved peaks in one sample count as an unresolved doublet only when
   their apex separation is chromatographically meaningful against the narrower
   of them, not on an absolute bound alone. One MS1 peak spans many scans and its
@@ -393,6 +411,9 @@ unresolved and rejected groups remain AuditTrail facts.
   parent request, attempt, sample coverage, and cross-child uniqueness. It does
   not rerun each child's scientific and post-cell completion checks. Explicit
   finalization and private-spool publication retain their own boundary checks.
+
+### Edge support, RT reference map, and quantification
+
 - Cross-sample edge seed support is rated on the peak Alignment resolved, not
   on Discovery's `evidence_score`. Every owner exists because ownership
   re-extracted the XIC and found a peak, so the Discovery score -- which is
@@ -438,6 +459,9 @@ unresolved and rejected groups remain AuditTrail facts.
   no observed RT or integrated value, and report areas are not inputs.
   Omitting the reference keeps the ordinary route. Exact owner bindings also
   supply the indivisible identity constraints above.
+
+### Outputs and compatibility
+
 - `validation-minimal` is the standard fast public validation profile unless a
   stronger gate is explicitly requested.
 - Alignment may write matrix, review, identity, evidence, and conditional
@@ -531,7 +555,7 @@ retained accepted landmark; an absent landmark cannot be relabelled as
 conflict. Landmarks for one sample must agree on its injection order. The
 comparison retains the complete landmark point set and does not collapse it
 into a median template.
-The existing targeted/batch ISTD trend remains a separate diagnostic prior and
+The existing Targeted/batch ISTD trend remains a separate diagnostic prior and
 cannot be passed to the identity-trajectory assessor as universal identity
 truth for unknown features. No universal drift, width, valley, or identity
 threshold is introduced.
@@ -545,14 +569,14 @@ receipt. H1b settlement, split lineage, and same-identity aggregation must all
 reuse that exact receipt; a settlement cannot be replayed against a stale,
 partial, expanded, or repartitioned component set.
 
-The current Backfill backfill receipt does not prove that caller-supplied group facts
+The current Backfill receipt does not prove that caller-supplied group facts
 are the complete same-target parent universe (tracked as #156 gap 10). The
 identity-settlement owner therefore accepts only exact direct SUPPORT observations from its parent group;
-any non-empty backfill candidate universe fails closed before component
+any non-empty Backfill candidate universe fails closed before component
 membership. A receipt's declared parent count, explicit identity-settlement
 membership label, or Backfill mapping result cannot substitute for the missing
 complete-group owner. This
-is a deliberate shadow-capability narrowing: backfill candidate membership
+is a deliberate shadow-capability narrowing: Backfill candidate membership
 remains scientifically uncertain until that upstream contract exists.
 
 Repeated components disfavor the one-component model but do not prove `H2`.
@@ -584,7 +608,7 @@ control plane remains unchanged.
 ModeTrack is an optional initial refinement and review surface over groups that
 already exist. The Target workflow uses its established initial refinement;
 the retained Untargeted CID-NL route carries initial groups directly. ModeTrack
-is not a fallback grouping route, a post-repair refit, or a product control
+is not a fallback grouping route, a post-Backfill refit, or a product control
 plane. `ModeTrackAssignmentScope` carries only the actual m/z/RT admissibility
 bounds and exact groups from producer to fit. It has no standalone hash,
 serialization, shadow authority, or public Family identity. Each existing group
@@ -722,12 +746,12 @@ Alignment owner.
 
 ## Retained Validation Anchors
 
-- The 2026-05-28 targeted GT alignment audit fixtures for `5-medC` are
+- The 2026-05-28 Targeted GT alignment audit fixtures for `5-medC` are
   diagnostic anchors for the 8RAW validation-minimal and primary-delivery-fix
   alignment slices. Both recorded `PASS 8/8`, zero `SPLIT`, zero `DRIFT`, zero
-  `DUPLICATE`, and zero `MISS` against the targeted GT RT rows.
+  `DUPLICATE`, and zero `MISS` against the Targeted GT RT rows.
 - Those fixture reports prove the audited alignment slice did not lose the
-  `5-medC` targeted rows, but they do not grant ProductWriter authority,
+  `5-medC` Targeted rows, but they do not grant ProductWriter authority,
   broaden matrix publication, or replace stronger 85RAW/product gates.
 - Historical `FAM*` labels in those reports are compatibility traceability for
   the audited run. They are not canonical cross-sample identity proof when a
@@ -738,7 +762,7 @@ Alignment owner.
 The default `production` Matrix artifact is `alignment_matrix.tsv`. Retained
 CID-NL runs also emit `cid_nl_explanation.sqlite` after successful Matrix
 publication, alongside their runtime marker.
-Identity, review, provenance, backfill evidence, HTML, and workbook artifacts
+Identity, review, provenance, Backfill evidence, HTML, and workbook artifacts
 remain explicit machine, validation, diagnostic, or compatibility outputs;
 their schemas and value policies are unchanged. TSV-only `production` and
 `validation-minimal` publication consumes finalized rows in one pass, retaining
@@ -755,7 +779,7 @@ projection API. Both routes use the same atomic publication and rollback owner.
 | `alignment_matrix_identity.tsv` | Identity and owner traceability |
 | `alignment_backfill_cell_evidence.tsv` | Backfill-related cell evidence sidecar |
 | `alignment_run_metadata.json` | Conditional run settings and provenance sidecar |
-| `alignment-results/v3/v4` metadata | Schema-version signals for public behavior changes; unanchored accepts the legacy or canonical Matrix value policy, historical paired targeted-ISTD requires the canonical policy, and requires that same paired binding and canonical policy |
+| `alignment-results/v3/v4` metadata | Schema-version signals for public behavior changes; unanchored accepts the legacy or canonical Matrix value policy, historical paired Targeted-ISTD requires the canonical policy, and requires that same paired binding and canonical policy |
 
 ### CID-NL execution explanations
 
@@ -801,7 +825,7 @@ This diagnostic is outside the Matrix writer's artifact-fingerprint receipt.
 | CrossSample | Grouping, membership, identity, disposition, proposal application, and split/merge lineage | ModeTrack fitting, local ObservationRevisit, value selection, row inclusion, or rendering |
 | ModeTrack | Immutable trajectory snapshots and refinement proposals | Group minting/mutation, Backfill, selected values, or Matrix authority |
 | Backfill | Bounded local ObservationRevisit and provenance | First hits, membership, trajectory model, selected value, or writer authority |
-| Cell decision/result | Typed write/no-write decisions and immutable result closure | RAW access, regrouping, refitting, repairing, or renderer policy |
+| Cell decision/result | Typed write/no-write decisions and immutable result closure | RAW access, regrouping, refitting, repairing observations, or renderer policy |
 | Alignment workflow | Typed composition, runtime/transaction receipts, finalization, and delivery handoff | Mutable Matrix transport, scientific fallbacks, or emit-flag policy |
 | Discovery | Candidate generation and per-sample review surfaces | Cross-sample matrix authority |
 | Output | Rendering TSV/XLSX/HTML artifacts from domain decisions | Recomputing evidence or selecting authority |
@@ -844,7 +868,7 @@ Before changing alignment behavior, require the relevant subset of:
 - Treating ModeTrack as a second grouping owner or Backfill as a membership or
   selected-value owner.
 - Using a singleton or RT prior to fill another sample without direct local
-  evidence or an accepted independent ObservationRevisit.
+  evidence.
 - Calling a pre-final owner matrix `Matrix` and allowing it to cross the final
   result or delivery seam.
 

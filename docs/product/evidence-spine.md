@@ -1,36 +1,46 @@
 # Evidence Spine
 
-The evidence spine is the shared layer that converts chromatographic observations into auditable peak hypotheses. It provides workflow-neutral identity facts consumed by both targeted and untargeted pipelines, but it does not own product output decisions -- those belong to each workflow's projection layer.
+The evidence spine is the shared layer that converts chromatographic
+observations into auditable peak hypotheses. The spine provides
+workflow-neutral identity facts to both Targeted and Untargeted pipelines. The
+spine does not own product output decisions. The projection layer of each
+workflow owns those decisions.
 
 ## Contract
 
-- Evidence providers are inputs to `EvidenceVector`, `PeakHypothesis`, `IntegrationResult`, model selection, audit, and activation contracts. They do not write product matrices directly.
+- Evidence providers are inputs to `EvidenceVector`, `PeakHypothesis`,
+  `IntegrationResult`, model selection, audit, and activation contracts.
+  Evidence providers do not write product matrices directly.
 - Shared peak identity owns workflow-neutral facts: trace shape, candidate-to-anchor RT delta, competing-peak summaries, boundary assessability, and provenance validation.
-- Targeted workflows add known-target policy: analyte/ISTD role, paired-ISTD RT, target RT windows, NL/MS2 opportunity, paired area ratio, and targeted expected-diff activation.
+- Targeted workflows add known-target policy: analyte/ISTD role, paired-ISTD RT, target RT windows, NL/MS2 opportunity, paired area ratio, and Targeted expected-diff activation.
 - Untargeted workflows add alignment/Backfill policy: owner construction, same-peak anchor, cell-level Backfill decision, authority manifest, and quant-matrix activation.
 - A shared evidence provider may serve both workflows only if its output is a typed fact, not a hidden product decision.
 - The shared-spine direction is to preserve and adapt existing typed evidence objects rather than replace workflow policies.
-- The bounded CID-NL tracer now freezes the measured field intersection shared
-  by Targeted `MS2ProductEvidence` and Untargeted direct `DiscoverySeed` as
-  `CidNlEvidenceRef`. Target/Discovery-only fields remain in thin adapters;
-  both adapters must match the request-bound acquisition source, Targeted must
-  also match the exact request-pinned target snapshot and scan number, and its
-  measured scan precursor must remain within that exact target's ppm tolerance;
-  direct Discovery must carry a finite measured `scan_precursor_mz` equal to
-  the canonical evidence precursor;
-  neither projection artifact is a selection or delivery decision.
-- The existing `peak_detection` owner now exposes a bounded
-  `PeakObservationRef`. Its physical content is canonical sample identity, m/z,
-  one contiguous selected RT/intensity subtrace, and its signal-validated
-  `IntegrationResult`. The owner checks raw apex/height/area against that exact
-  subtrace, smoothed height against the exact selection trace, and any declared
-  AsLS/Gaussian15 facts against the deterministic existing helpers before
-  minting. Semantically equal present integer/float numeric inputs receive one
-  canonical representation before identity hashing while existing null
-  semantics remain unchanged. Exact request-bound acquisition source plus full
-  raw/selection-trace, query, and resolver provenance and producer
-  request/attempt remain explicit without becoming physical-content identity.
-- For the lab's current Untargeted acquisition method, the CID-NL owner now
+- The bounded CID-NL tracer freezes the measured field intersection shared by
+  Targeted `MS2ProductEvidence` and Untargeted direct `DiscoverySeed` as
+  `CidNlEvidenceRef`.
+  - Target-only and Discovery-only fields remain in thin adapters.
+  - Both adapters must match the request-bound acquisition source.
+  - The Targeted adapter must also match the exact request-pinned target
+    snapshot and scan number. Its measured scan precursor must remain within
+    the ppm tolerance of that exact target.
+  - Direct Discovery must carry a finite measured `scan_precursor_mz` equal to
+    the canonical evidence precursor.
+  - Neither projection artifact is a selection or delivery decision.
+- The existing `peak_detection` owner exposes a bounded `PeakObservationRef`.
+  - The physical content of a `PeakObservationRef` is canonical sample
+    identity, m/z, one contiguous selected RT/intensity subtrace, and its
+    signal-validated `IntegrationResult`.
+  - Before minting, the owner checks raw apex/height/area against that exact
+    subtrace, smoothed height against the exact selection trace, and any
+    declared AsLS/Gaussian15 facts against the deterministic existing helpers.
+  - Semantically equal present integer/float numeric inputs receive one
+    canonical representation before identity hashing. Existing null semantics
+    remain unchanged.
+  - The exact request-bound acquisition source, full raw/selection-trace,
+    query, and resolver provenance, and producer request/attempt remain
+    explicit. These fields do not become physical-content identity.
+- For the lab's current Untargeted acquisition method, the CID-NL owner
   exposes one bounded DDA/ddMS2 applicability relation. A
   `DdaCidNlPeakSupportRef` binds one exact MS2 scan and direct measured CID-NL
   artifact to exactly one physical MS1 peak within the exact supplied candidate
@@ -41,7 +51,7 @@ The evidence spine is the shared layer that converts chromatographic observation
   for that physical peak. Scan reorder is identity-neutral; duplicate scans or
   mixed peak, candidate-universe, policy, sample, request, or attempt refs fail
   closed.
-- The existing `PeakHypothesis` model now has one bounded owner-backed branch.
+- The existing `PeakHypothesis` model has one bounded owner-backed branch.
   `compose_cid_nl_peak_hypothesis` consumes one `PeakObservationRef` and one
   `CidNlChromatographicSupportRef` bound to the same sample, request, attempt,
   and physical peak. It does not mint Targeted context, selection semantics, or
@@ -132,8 +142,10 @@ repeated DDA/NL scans inside one selected MS1 peak are multiple scans but one
 chromatographic support event. It is not a second `PeakHypothesis` and grants
 no independent support votes.
 
-The owner-backed CID-NL hypothesis branch closes the next handoff under these
-bounded rules:
+### Owner-backed CID-NL hypothesis
+
+The owner-backed CID-NL hypothesis branch closes the handoff from
+`CidNlChromatographicSupportRef` to `PeakHypothesis` under these bounded rules:
 
 1. Hypothesis content identity includes the method, canonical sample, physical
    peak content ID, and chromatographic-support artifact content ID. Scan or
@@ -155,7 +167,9 @@ bounded rules:
    substitution, stale cross-attempt applicability, event substitution, and
    identity tamper fail closed.
 
-The CID-NL owner now also closes the complete method attempt before grouping.
+### Method subject
+
+The CID-NL owner also closes the complete method attempt before grouping.
 `CidNlMethodSubject` is the smallest shared Targeted/Untargeted subject: exact
 precursor m/z, precursor tolerance, configured neutral loss, and an immutable
 subject ID. A multi-tag CID-NL subject instead binds the ordered tag/loss
@@ -172,6 +186,8 @@ contracts. Runtime jobs retain that validated subject configuration for candidat
 membership and scheduling; SearchScope and capture consume the same owner reader.
 Physical capture, settings and candidate-universe validation retain their existing
 owners. The derived runtime value does not mint or change request identity.
+
+### Candidate assignment to method subjects
 
 The Untargeted batch factory assigns each Discovery candidate to one bounded
 method-query subject. Within each scalar loss or full configured composition,
@@ -209,6 +225,8 @@ relationships from acquisition arrays or Discovery rows. Acquisition receipts
 remain with the runtime owner, and the shared workflow still validates its own
 complete search scope before composing downstream results.
 
+### Method assessment
+
 `CidNlMethodAssessmentRef` binds one detector invocation, method subject, candidate
 universe, completed-search receipt with the exact DDA support policy, measured
 evidence, and individual or set-level relations to the existing processing
@@ -229,27 +247,33 @@ eligibility filter. Its search receipt stays incomplete; it does not represent
 a completed method evaluation. Discovery eligibility exclusions remain owned by
 `UntargetedCandidateExclusion`.
 
-An existing owner-backed group may guide a bounded recovery for such an
-unsearched sample after the conservative sample-role and direct-support gates
-pass. Missing input alone grants no recovery authority. A group below the support
-threshold retains the exact no-request proof and a `not_searched` cell. A recovery
-that actually acquires or consumes its bound XIC trace and evaluates the candidate
-universe records a completed search, even when it finds no peaks or qualifying
-CID-NL evidence. That completed result remains `HOLD`; it is distinct from an
-initial unsearched slot and does not prove method rejection.
+### Backfill of unsearched and rejected samples
+
+An existing owner-backed group can guide a bounded Backfill for a sample whose
+initial Discovery assessment is `not_evaluated` with
+`no_search_eligible_discovery_input`, after the conservative sample-role and
+direct-support gates pass. Missing input alone grants no Backfill authority. A group below the
+support threshold retains the exact no-request proof and a `not_searched` cell.
+A Backfill that actually acquires or consumes its bound XIC trace and evaluates
+the candidate universe records a completed search, even when the Backfill finds
+no peaks or qualifying CID-NL evidence. That completed result remains `HOLD`.
+This completed `HOLD` result is distinct from an initial unsearched slot and
+does not prove method rejection.
 
 An evaluated `REJECT` with the exact reason
 `qualifying_nl_evidence_without_any_ms1_candidate_peak` remains the result of its
-original assessment. Retained CID-NL production may independently authorize one
-group-guided recovery after the same frozen-group, direct-support and sample-role
-gates. The adapter validates the original sample, acquisition source, method and
+original assessment. Retained CID-NL production can independently authorize one
+group-guided Backfill after the same frozen-group, direct-support, and
+sample-role gates. The adapter validates the original sample, acquisition source, method and
 processing lineage, reuses only its immutable qualifying MS2 evidence within the
 new local window, and assesses fresh MS1 peaks with the existing individual/set
 relation rules. A new `SUPPORT` may reach CrossSample and the final cell owner;
 MS1 presence alone cannot promote a cell. The original rejection, Discovery
 exclusions and new assessment remain queryable together in the explanation store.
 
-For single-loss methods, one assessment may contain at most one measured
+### Evidence keys and relation rules
+
+For single-loss methods, one assessment can contain at most one measured
 evidence ref for each exact `(acquisition_source_id, scan_number)` key.
 Composite methods add the configured loss to that evidence key, so one physical
 scan can support two distinct required losses without being counted as two scans.
@@ -275,7 +299,7 @@ SUPPORT for a single-loss method even when other scans retain set-level relation
 For composite methods, OR requires a qualifying configured loss and AND requires
 every configured loss on the same physical peak in the same sample. Different
 peaks, samples, or unclosed tag labels cannot pool evidence into AND support.
-Initial discovery and recovery apply the same requirement. Set-only evidence is
+Initial Discovery and Backfill apply the same requirement. Set-only evidence is
 HOLD, and REJECT requires qualifying CID-NL evidence with no usable physical
 MS1 peak; non-qualifying scans cannot manufacture a negative result. A unique
 SUPPORT may compose the existing owner-backed `PeakHypothesis` and enter
@@ -294,6 +318,8 @@ cannot supply negative evidence. Failed, unsupported, or other incomplete
 assessments cannot stand in for this evidence.
 The subject does not enter ModeTrack group construction. An all-excluded batch
 completes with an empty canonical Matrix and preserves its assessment evidence.
+
+### Cell observation reference
 
 The CellObservationRef reference spine creates one minimal `CellObservationRef` only after a
 SUPPORT assessment has established a provisional group. Targeted and
@@ -347,13 +373,13 @@ unlabeled tuple must not be guessed into method semantics.
 | CID-NL Targeted/Untargeted reference projections | Two internal views that retain the same exact group/cell refs and explicitly carry no product authority |
 | `IntegrationResult` | Integrated signal and boundary result |
 | `AuditTrail` / reason strings | Human-readable explanation and review evidence |
-| Targeted product projection | Workflow-owned targeted output decision |
-| Backfill / alignment projection | Workflow-owned untargeted or matrix decision |
+| Targeted product projection | Workflow-owned Targeted output decision |
+| Backfill / alignment projection | Workflow-owned Untargeted or matrix decision |
 
 ## Boundaries
 
 - **Owns:** workflow-neutral identity facts (trace shape, RT delta, boundary assessability, provenance), candidate hypothesis lifecycle, typed evidence vocabulary.
-- **Does not own:** product matrix values, Backfill writer scope, targeted rescue activation policy, or promotion/maturity decisions.
+- **Does not own:** product matrix values, Backfill writer scope, Targeted rescue activation policy, or promotion/maturity decisions.
 - A typed fact shared across workflows is evidence; a product decision shared across workflows is a bug.
 
 ## Verification
@@ -364,42 +390,11 @@ unlabeled tuple must not be guessed into method semantics.
 - RAW-tier evidence label matching the claim.
 - Productization owner update when product authority changes.
 
-## Issue #161 Package 3B Salvage Census
-
-The read-only quarry is
-`codex/package-3b-untargeted-widening-rebuild-157` at
-`44c7601241d894a5b13cf470b6e47d7797f5184e`; the reference-spine activation base is
-`621d3312e0510587b88189edb01e29fb4bacd64c`. The complete 150-path quarry diff
-is classified by the following ordered rules, so no unlisted path falls
-through implicitly:
-
-| Disposition | Paths / ordered rule | Count | Reference-spine treatment |
-| --- | --- | ---: | --- |
-| `candidate_for_adaptation` | exact paths `xic_extractor/alignment/hypothesis_owner_adapter.py` and `xic_extractor/alignment/untargeted_hypothesis_alignment.py` | 2 | Inspect dependency and authority closure before any reuse |
-| `evidence_only` | Package 3B 7/28–7/29 plan files; all changed `docs/superpowers/validation/` paths; Package 3B/chromatographic/Untargeted test fixtures selected by `tests/(fixtures/package3b|test_(chrom_peak_anchor|chromatographic_quantitation|cid_nl_chromatographic|package3b|untargeted))`; matching chromatographic/Package 3B diagnostic tools; and all changed `xic_extractor/diagnostics/` paths | 54 | May inform tests or risk inventory; no code or policy import |
-| `out_of_scope` | every remaining path in the exact base-to-quarry diff after the two rules above | 94 | No reference-spine mutation or reuse; this includes the oversized candidate-universe/control-plane path, governance, runtime, RAW canaries, quantitation, Backfill, oracle, output, and productization changes |
-
-Only one source hunk was adapted. Source commit `1a654a08` introduced
-`xic_extractor/alignment/hypothesis_owner_adapter.py`; the reference-spine owner adapted its
-workflow-neutral measured-hypothesis → `IdentityEvent` /
-`SampleLocalMS1Owner` projection into the live
-`alignment/hypothesis_owner_adapter.py`. The destination replaces caller-owned
-method values with exact `CidNlMethodAssessmentRef` closure, verifies that the
-hypothesis uses the assessment's individual relation set, and retains no
-selection, Matrix, or writer authority. This hunk serves P4a/P16a, depends only
-on live owner-backed hypothesis, sample identity, assessment, and Alignment
-owner types, and is `adapted_with_live_contracts` rather than byte-copied.
-
-`untargeted_hypothesis_alignment.py` remained only a candidate: the reference-spine owner did not copy
-it because its quarry dependency is the rejected oversized Untargeted universe.
-No whole commit was cherry-picked. The census is an audit of possible salvage,
-not activation evidence or permission to merge the quarry later.
-
 ## Pitfalls
 
 - Treating shared evidence as shared product authority.
 - Treating family membership as same-peak proof or ProductWriter authority.
-- Letting untargeted Backfill rules silently become targeted rescue rules (or vice versa).
+- Letting Untargeted Backfill rules silently become Targeted rescue rules (or vice versa).
 - Counting multiple typed facts as independent observations when they describe the same physical evidence.
 - Promoting diagnostic-only or shadow evidence into matrix values.
 

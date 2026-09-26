@@ -1,29 +1,34 @@
 # Presets
 
 Presets are named Discovery methods with effective tuning and the retained
-alignment runtime option. They are reproducibility and public behavior surfaces;
-they are not product authority by themselves.
+alignment runtime option. Presets are reproducibility and public behavior
+surfaces. Presets are not product authority by themselves.
 
 ## Contract
 
 - Changing a default preset or silent resolver behavior changes public
-  behavior. It needs expected-diff framing, focused tests, and relevant
-  evidence.
+  behavior. Such a change needs expected-diff framing, focused tests, and
+  relevant evidence.
 - Targeted and profile-bound Untargeted processing use the shared physical
-  signal owner. Direct legacy diagnostic callers retain their explicit
-  `local_minimum` or `legacy_savgol` configuration; those settings do not choose
-  the formal Targeted physical algorithm.
-- GUI local profiles can expose explicit preset buttons but must not silently
-  overwrite user intent.
-- Preset runs should be reproducible from documented CLI/config surfaces and
-  metadata, not from branch-local command diaries.
-- `serialize_preset` and `save_preset` own portable method export. They resolve
-  effective Discovery values and the preset-owned runtime option before writing
-  the existing TOML shape, then validate it through the same parser and apply
-  functions used for intake. Invalid methods leave an existing destination intact.
-  Export preserves tag order and combination; `source` is derived on load and
-  is never a TOML field or scientific identity. The format carries method intent,
-  not RAW/output paths, worker counts, or GUI state.
+  signal owner.
+- Direct legacy diagnostic callers retain their explicit `local_minimum` or
+  `legacy_savgol` configuration. Those settings do not choose the formal
+  Targeted physical algorithm.
+- GUI local profiles can expose explicit preset buttons. GUI local profiles
+  must not silently overwrite user intent.
+- A preset run must be reproducible from documented CLI/config surfaces and
+  metadata. A branch-local command diary is not a reproducibility source.
+- `serialize_preset` and `save_preset` own portable method export.
+- Export resolves the effective Discovery values and the preset-owned runtime
+  option. Export then writes the existing TOML shape.
+- Export validates the written TOML through the same parser and apply
+  functions that intake uses.
+- An invalid method leaves an existing destination intact.
+- Export preserves tag order and combination.
+- `source` is derived on load. `source` is never a TOML field or a scientific
+  identity.
+- The TOML format carries method intent. The format does not carry RAW/output
+  paths, worker counts, or GUI state.
 - `dna_dr_product_ready` is a historical compatibility name for the
   `raw_superwindow` Owner Build profile. A successful run does not assert
   product readiness and does not invoke Standard Peak or a publication checker.
@@ -51,27 +56,30 @@ they are not product authority by themselves.
 
 The 8RAW validation set is a subset of the 85RAW tissue cohort. Both use the
 same `dna_dr` method and effective scientific settings, including disabled
-blank-background qualification. Dataset selection changes sample scope, not
-the method. The maintained tissue validation runner owns paths, timing, and
-stage launch order; it consumes the shared
-[execution profile](execution-runtime.md#worker-settings) for worker budgets
-and does not maintain a second scientific preset.
+blank-background qualification. Dataset selection changes the sample scope.
+Dataset selection does not change the method.
+
+The maintained tissue validation runner owns paths, timing, and stage launch
+order. The runner consumes the shared
+[execution profile](execution-runtime.md#worker-settings) for worker budgets.
+The runner does not maintain a second scientific preset.
 
 Neither scale resolves or loads a blank library by default. An explicit
-`--blank-library` opts in and binds the same library in Discovery and Alignment;
-its suitability must be established separately. ISTD input
-follows the normal Alignment targets CSV; a historical reference workbook is
-an explicit override. Resolved inputs and commands are visible before RAW work.
+`--blank-library` opts in and binds the same library in Discovery and
+Alignment. The suitability of that library must be established separately.
+ISTD input follows the normal Alignment targets CSV. A historical reference
+workbook is an explicit override. Resolved inputs and commands are visible
+before RAW work.
 See [local validation commands](../agent/parameter-settings.md#validation-scale).
 
 ### Recipe Binding
 
 A CID-NL preset is bound once, before expensive work, to one immutable
 in-memory recipe. The recipe contains the existing typed Discovery and
-Alignment settings plus the preset-owned owner-build choice. It has no
-Standard Peak or Backfill-expansion post-stage choice and does not contain
-RAW/output paths, sample metadata, worker counts,
-review inputs, a persisted recipe identity, or a second invocation schema.
+Alignment settings plus the preset-owned owner-build choice. The recipe has no
+Standard Peak or Backfill-expansion post-stage choice. The recipe does not
+contain RAW/output paths, sample metadata, worker counts, review inputs, a
+persisted recipe identity, or a second invocation schema.
 
 The current routes remain the existing entry-point modes:
 
@@ -83,29 +91,42 @@ The current routes remain the existing entry-point modes:
 | diagnostic ModeTrack review runner | Opt-in single-subject debug/batch review; no product authority |
 
 The retained finalized CID-NL batch closes the Matrix loop for neutral-loss
-presets, including multi-tag `union` (OR) and `intersection` (AND). OR accepts
-any configured tag on the same physical peak; AND requires all configured tags
-on that peak within one sample. Alignment and recovery use the same method
-requirement. Different tag hits across samples can share a row when the existing
-physical peak compatibility gates pass; labels alone do not establish identity.
-Its route receipt preserves any configured legacy
-owner-build backend for compatibility but reports no effective legacy backend.
-Normal Alignment rejects methods outside this CID-NL route. Standard Peak is
-not reachable from normal CLI/GUI/preset execution, and the source-Matrix
-republisher and its authority/productization chain are deleted. Retained
-Standard Peak helpers are explicit offline falsifiers/renderers only; T5D does
-not invent a new HOLD selector or product authority. The historical clean-target
-packet retains diagnostic context and current-file self-consistency checks only;
-it has no independent historical seal, and its ownerless writer and registered
-scope are retired.
-The provisional full-universe runner continues to stop after its
-existing provisional diagnostic projection. Diagnostic ModeTrack review retains
-its precursor, metadata, injection-order, namespace, and reviewed-input owners,
-but it is not a product route and cannot replace canonical Alignment output.
+presets, including multi-tag `union` (OR) and `intersection` (AND).
 
-These route names are existing in-memory selectors, not new preset TOML fields
-or a user-authored workflow graph. Pt and Pt + CID-NL composite presets remain
-owned by the delta-mass Discovery path and are rejected by CID-NL-only binders.
+- OR accepts any configured tag on the same physical peak.
+- AND requires all configured tags on that peak within one sample.
+- Alignment and Backfill use the same method requirement.
+- Different tag hits across samples can share a row when the existing physical
+  peak compatibility gates pass. Labels alone do not establish identity.
+- The route receipt of the batch preserves any configured legacy owner-build
+  backend for compatibility. The route receipt reports no effective legacy
+  backend.
+
+Other routes and retained artifacts:
+
+- Normal Alignment rejects methods outside this CID-NL route.
+- Standard Peak is not reachable from normal CLI/GUI/preset execution.
+- The source-Matrix republisher and its authority/productization chain are
+  deleted.
+- Retained Standard Peak helpers are explicit offline falsifiers/renderers
+  only. The
+  [Standard Peak T5D contraction](../superpowers/validation/standard_peak_t5d_contraction/README.md)
+  does not invent a new selector for CID-NL `HOLD` results or new product
+  authority.
+- The historical clean-target packet retains diagnostic context and
+  current-file self-consistency checks only. The packet has no independent
+  historical seal. The ownerless writer and registered scope of the packet are
+  retired.
+- The provisional full-universe runner continues to stop after its existing
+  provisional diagnostic projection.
+- Diagnostic ModeTrack review retains its precursor, metadata,
+  injection-order, namespace, and reviewed-input owners. Diagnostic ModeTrack
+  review is not a product route and cannot replace canonical Alignment output.
+
+These route names are existing in-memory selectors. The route names are not
+new preset TOML fields or a user-authored workflow graph. The delta-mass
+Discovery path owns the Pt and Pt + CID-NL composite presets. CID-NL-only
+binders reject those composite presets.
 
 ### Resolver Presets
 
@@ -125,28 +146,32 @@ Code: `xic_extractor/presets/`; built-in TOML: `xic_extractor/presets/data/`.
 
 Rules:
 
-- Prefer preset surfaces over hand-written long command recipes for repeatable
-  validation.
-- Built-in product-facing presets should emit the expected seed audit and
-  `alignment_backfill_cell_evidence.tsv` where required by the runner contract.
-- Former Standard Peak and Backfill expansion preset keys are rejected from
-  normal recipes; no replacement publication choice is exposed.
+- For repeatable validation, prefer preset surfaces over hand-written long
+  command recipes.
+- A built-in product-facing preset must emit the expected seed audit and
+  `alignment_backfill_cell_evidence.tsv` where the runner contract requires
+  them.
+- Normal recipes reject the former Standard Peak and Backfill expansion preset
+  keys. No replacement publication choice is exposed.
 - Non-standard peaks and candidate-only evidence stay outside automatic
   publication policy unless the authority manifest says otherwise.
 
 ### Performance Anchors
 
 - The 2026-06-22 `dna_dr_product_ready` 8RAW performance pass is retained as an
-  exact-output-preserving preset/runtime anchor: total wall time improved from
-  about 252.5s to 170.5s while public TSV hashes and product-ready preset
-  checks stayed matched.
-- The durable lesson is call-shape discipline, not a new product contract:
-  reuse generated overlays where provenance matches, batch or slice existing
-  summaries instead of regenerating them per chunk, keep RAW/render worker caps
-  conservative, and keep payload validation cheap for scalar leaves.
+  exact-output-preserving preset/runtime anchor. Total wall time improved from
+  about 252.5s to 170.5s. Public TSV hashes and product-ready preset checks
+  stayed matched.
+- The durable lesson is call-shape discipline. The lesson is not a new product
+  contract. Call-shape discipline means:
+  - reuse generated overlays where provenance matches;
+  - batch or slice existing summaries instead of regenerating them per chunk;
+  - keep RAW/render worker caps conservative;
+  - keep payload validation cheap for scalar leaves.
 - Performance archives and timing packets do not change preset defaults,
-  matrix authority, Backfill scope, or GUI behavior. They are evidence for safe
-  runtime implementation choices under the same preset contract.
+  matrix authority, Backfill scope, or GUI behavior. Performance archives and
+  timing packets are evidence for safe runtime implementation choices under
+  the same preset contract.
 
 ## Boundaries
 

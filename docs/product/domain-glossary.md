@@ -53,7 +53,7 @@ Backfill and through finalization. `ModeTrack` may propose an initial
 trajectory-based refinement only where the workflow explicitly uses it, and
 the grouping workflow applies an accepted complete-partition transition before
 the result becomes stable. Backfill uses an already established Target or group
-context to make one bounded revisit of a missing or insufficient cell and may
+context to make one bounded revisit of a missing cell and may
 return an observation or typed no-observation result. The retained
 `ObservationRevisit` receipt can represent that decision; the current Untargeted
 CID-NL production route uses the conservative Backfill decision. Backfill may
@@ -110,19 +110,19 @@ Use these terms consistently:
 - `CID-NL alignment workset`: compatible method subjects scheduled and composed
   together so their observations can reach the same CrossSample decision.
   Workset membership is computational scope, not chemical identity. Alignment
-  owns its compatibility and backfill-binding policy in [alignment.md](alignment.md).
+  owns its compatibility and Backfill-binding policy in [alignment.md](alignment.md).
 - `identity-bearing member subject`: canonical sample identity plus a
   discriminated union of owner-backed `PeakHypothesis` identity or owner-backed
   physical-observation identity. The canonical variant tag is part of identity;
   wrappers over the same physical observation canonicalize to one subject unless
   explicit different tags deliberately preserve distinct identities.
-- `GroupDispositionDecision`: the CrossSample-owned, mutually exclusive
+- `CrossSampleGroupDisposition`: the CrossSample-owned, mutually exclusive
   disposition of one finalized group: `established`, `provisional`,
   `unresolved`, or `rejected`. Disposition does not decide output inclusion.
 - `ModeTrack`: one request-bound trajectory model over immutable CrossSample
   evidence. Where a workflow uses it, it proposes an assessable initial
   refinement before `CrossSampleGroupingResult` closes. It does not refit after
-  repair, mint groups, re-integrate traces, repair observations, or write
+  Backfill, mint groups, re-integrate traces, repair observations, or write
   values.
 - `ObservationRevisit`: the retained typed receipt for one bounded Backfill
   revisit of a pre-existing Target or group cell. The revisit may produce its
@@ -238,6 +238,13 @@ concerns explain ambiguity and review priority, not the detected call itself.
   paired-area context, and method QC.
 - `NL`: neutral loss, the mass difference between a precursor ion and a product
   ion after fragmentation.
+- `sample matrix`: the chemical background of a sample, such as a clean
+  solvent standard or a biological tissue extract. A sample-matrix effect
+  changes RT or response. Do not shorten it to `matrix`; `Matrix` is the
+  product output.
+- `SDO/LEK`: the lab's fixed clean-standard set for instrument checks. The set
+  contains two standards, SDO and LEK. Code and file names spell it `sdolek`
+  (for example `run_sdolek_pipeline`, `instrument_qc_sdolek_trend.tsv`).
 
 ## Product Authority Terms
 
@@ -315,7 +322,9 @@ contract says otherwise.
   revision, not the stable cell position.
 - `UntargetedDeliveryCellKey`: canonical sample identity plus
   `UntargetRowKey`. A legacy family label, m/z/RT display text, or current row
-  number is not this identity.
+  number is not this identity. Not planned: Untargeted delivery uses one
+  output-level seal instead; see the
+  [Untargeted delivery decision](processing-lineage.md#untargeted-delivery-decision).
 - `DeliveryRevision`: immutable proposed or sealed value/null for one delivery
   cell, linked to the producing attempt and kernel decision.
 - `DeliverySeal`: immutable manifest proving that a complete delivery revision
@@ -331,12 +340,12 @@ request, attempt, artifact bundle, or delivery revision.
 Targeted lane:
 
 - Target lists and method settings constrain the shared lifecycle; they do not
-  create a separate peak-identity or backfill system.
+  create a separate peak-identity or Backfill system.
 - Limited rescue workflows may produce `detected_flagged` when explicitly
   contracted.
-- Treat the targeted result as its own delivery contract. Do not require an
+- Treat the Targeted result as its own delivery contract. Do not require an
   analytical downstream reader when no such product consumer exists.
-- Do not expand targeted rescue to new analytes or default extraction behavior
+- Do not expand Targeted rescue to new analytes or default extraction behavior
   without expected-diff evidence and a product decision.
 
 Untargeted lane:
@@ -368,12 +377,19 @@ stable because they identify existing data or public interfaces.
 
 | Word | Meaning | Not this word |
 | --- | --- | --- |
-| `backfill` | the bounded missing-cell revisit stage | — |
+| `backfill` | the bounded missing-cell revisit stage; the missing-cell definition per workflow is in [Shared Processing Kernel](shared-processing-kernel.md#backfill) | — |
+| `Matrix` | the finalized product-facing numeric feature-by-sample grid; see [Quant Matrix](quant-matrix.md) | a sample matrix; a pre-final cell collection |
+| `sample matrix` | the chemical background of a sample (clean standard, biological extract) | the product `Matrix` |
+| `SDO/LEK` | the lab's two-standard instrument-check set (SDO and LEK); `sdolek` in code | `SDOLEK` in prose |
 | `revisit` | one context-directed Backfill attempt, represented by the retained `ObservationRevisit*` receipt types | a repair of a previously observed peak |
 | `recovery` | resuming or closing a run after a runtime failure (`recover_after_coordinator_loss`, `recovery_marker`) | Backfill; candidate search; ISTD retry; oracle recall |
 | `relaxed search` | the peak-detection search near a preferred RT with relaxed thresholds (`peak_detection/relaxed_search.py`) | — |
 | `retry` | the Targeted ISTD anchor search repeated with a wider window (`extraction/istd_anchor_retry.py`) | — |
 | `recall` | the fraction of oracle reference compounds a run finds | — |
+
+The `recovery`, `repair`, and `rescue` words must not describe Backfill in
+prose either. Use them only in the senses in this table or in the preserved
+spellings below.
 
 The surviving `owner` senses are the sample-local MS1 peak to which candidates
 are attributed (`SampleLocalMS1Owner`, `owner_apex_rt`), processing authority

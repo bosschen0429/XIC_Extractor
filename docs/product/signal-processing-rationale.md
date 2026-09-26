@@ -33,6 +33,8 @@ The physical baseline cannot be negative: extrapolated negative background
 must not create positive peak signal. A selected interval reaching an acquired
 trace edge lacks observed boundary context and has no numeric physical answer.
 
+### Edge-reaching intervals
+
 For fresh selection, an edge-reaching interval can instead use a fully observed
 return at 0.1% of its apex residual, with the return samples retained. This
 alternative must keep the same apex and lie within the original interval;
@@ -40,14 +42,19 @@ both ends must be inside the acquired trace. Already complete intervals and
 their values remain exact, and no candidate is dropped to resolve ambiguity.
 The bounded tolerance prevents a small context-dependent AsLS change near zero
 from necessarily joining a returned peak to an incomplete neighboring lobe.
-It preserves the Gaussian trace and makes the stability/quantitation tradeoff
-explicit in the versioned selection policy. A context window can still contain
-a different candidate population; this is not a guarantee of window invariance.
+The bounded tolerance preserves the Gaussian trace and makes the
+stability/quantitation tradeoff explicit in the versioned selection policy. A
+context window can still contain a different candidate population. The
+bounded tolerance is not a guarantee of window invariance.
 
-AsLS estimates background; it is not a smoothing method exposed alongside
+### Baseline and raw intensity
+
+AsLS estimates background. AsLS is not a smoothing method exposed alongside
 Gaussian. Raw vendor intensity remains an input to both fixed transforms and is
-retained where required for audit/provenance, but it is not a second covered
-peak answer or compatibility area source.
+retained where required for audit/provenance. Raw vendor intensity is not a
+second covered peak answer or a compatibility area source.
+
+### Original sampling support
 
 Fresh physical answers also check original sampling support before exposing
 numeric facts: Gaussian spread cannot create independent acquired evidence or
@@ -57,24 +64,29 @@ the owner baseline; a constant background is not acquired peak support.
 Repeated short fragments can still contain adjacent pairs, so fresh
 answers additionally reject intervals with at least three positive runs
 separated by zeros and severe original jaggedness. This conjunction detects
-raw interruptions hidden by a smooth envelope; neither occasional gaps nor
-jaggedness alone rejects a peak. It does not require every positive sample to
-be consecutive, or change the quantitative trace or peak boundaries.
+raw interruptions hidden by a smooth envelope. Neither occasional gaps nor
+jaggedness alone rejects a peak. The fragmentation check does not require
+every positive sample to be consecutive. The check does not change the
+quantitative trace or peak boundaries.
 Baseline crossings do not count as missing acquired samples in this
 fragmentation check.
+
+### Interior maxima
 
 Low-contrast maxima inside a supported envelope must not first become artificial
 integration boundaries. The physical owner measures each interior maximum's
 topographic prominence over the acquired canonical signal, before adjacent
-maxima truncate its interval. It compares that prominence with twice the raw
-three-point noise MAD between the prominence bases. Within a group connected
+maxima truncate its interval. The physical owner compares that prominence with
+twice the raw three-point noise MAD between the prominence bases. Within a group connected
 by shoulder valleys, independently supported maxima remain and subordinate
 unsupported maxima are removed before boundaries are built. A clear valley
 separates groups; an entirely unsupported group remains for the ordinary
 qualification gates, so weak neighboring peaks cannot be dropped merely to
 make a window question unique. Edge maxima also remain subject to the existing
-context-completeness rule. This removes measurement-noise ripple, not every
-periodic fluctuation or unresolved chemical shoulder.
+context-completeness rule. The interior-maxima rule removes measurement-noise
+ripple, not every periodic fluctuation or unresolved chemical shoulder.
+
+### Local relief
 
 Sampling support alone also accepts shallow ripples on a background plateau.
 Fresh qualification therefore compares the selected canonical peak's relief
@@ -82,11 +94,14 @@ above its two local valleys with fluctuations in the same original interval.
 The relief must be at least twice the unscaled MAD of normalized local
 three-point differences in the original signal. Each interior point is compared
 with linear interpolation between its immediate neighbors, using actual RT
-spacing and the coefficient norm. This removes constant and linear background;
-on a uniform grid it is `diff(raw, n=2) / sqrt(6)`. Comparing raw values with a
-wide smoother instead would confuse resolved neighboring peaks with noise.
-This is a local contrast requirement, not the full residual height above an
-AsLS floor; it uses the existing prepared arrays without recomputation.
+spacing and the coefficient norm. This normalized difference removes constant
+and linear background. On a uniform grid the difference is
+`diff(raw, n=2) / sqrt(6)`. Comparing raw values with a wide smoother instead
+would confuse resolved neighboring peaks with noise.
+
+The local-relief rule is a local contrast requirement, not the full residual
+height above an AsLS floor. The rule uses the existing prepared arrays without
+recomputation.
 The local-relief construction follows the surrounding-contour interpretation
 of [peak prominence](https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.peak_prominences.html),
 bounded here by the selected interval. The factor 2 is an explicit minimum
@@ -137,8 +152,8 @@ Gaussian smoothing can systematically reduce absolute area and intensity. This
 quantitative difference is accepted for the canonical direction because stable
 same-feature interpretation is the higher-level requirement; the pipeline does
 not manufacture parity with legacy raw integration. Comparable processing makes
-relative quantitation the intended use, but it does not prove that bias cancels
-for every peak, sample, scan rate, or matrix. Non-default production claims and
+relative quantitation the intended use. Comparable processing does not prove
+that bias cancels for every peak, sample, scan rate, or sample matrix. Non-default production claims and
 external absolute-value comparisons therefore require method-appropriate
 evidence.
 
@@ -184,8 +199,9 @@ Most advanced smoothing methods optimize for preserving original signal detail.
 The smoothed-everywhere principle explicitly does not want to preserve
 high-frequency detail, because in the full-scan HRMS noise regime that detail
 is predominantly noise. Gaussian's uniform peak-height suppression and uniform
-broadening — typically cited as its weaknesses — are advantages here: they make
-smoothing behavior fully predictable across samples and features.
+broadening — typically cited as its weaknesses — are advantages here. Uniform
+suppression and broadening make smoothing behavior fully predictable across
+samples and features.
 
 Key properties that align with the design goals:
 
@@ -207,10 +223,10 @@ cannot change profile-covered physical facts. The only canonical public method
 is `gaussian`; its public point count is
 `signal_processing_window_points` (default 15, odd integer 3–999).
 
-Untargeted Owner Backfill was the first bounded consumer of the canonical
-profile and shared physical owner. Current normal Untargeted Discovery,
-Alignment owner-build, and Owner Backfill routes are now cut over without
-waiting for Targeted parity. The former Standard Peak product route and
+Untargeted Backfill was the first bounded consumer of the canonical profile
+and shared physical owner. Current normal Untargeted Discovery, Alignment
+owner-build, and Backfill routes are now cut over without waiting for
+Targeted parity. The former Standard Peak product route and
 source-Matrix republisher are retired; retained shape/overlay helpers are
 offline diagnostics only. The automatic GUI gallery route is parked. Targeted
 and any deliberately retained diagnostic computation remain separately
@@ -218,9 +234,10 @@ bounded and cannot supply a second answer for profile-covered Untargeted work.
 
 The physical owner answers a closed stage-supplied peak question from the
 canonical signal. It does not choose a `PeakHypothesis`, group, feature row,
-Backfill status, activation, or Matrix identity. A question with zero admissible
-segments is unavailable; one with multiple admissible segments is ambiguous.
-Neither case may be resolved by nearest apex, height, area, or legacy fallback.
+Backfill status, activation, or Matrix identity. A question with zero
+admissible segments is unavailable. A question with multiple admissible
+segments is ambiguous. The physical owner must not resolve either case by
+nearest apex, height, area, or legacy fallback.
 
 ## Baseline Estimation Order
 

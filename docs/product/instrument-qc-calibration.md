@@ -1,42 +1,50 @@
 # Instrument QC and Calibration
 
 Instrument QC and calibration artifacts diagnose method and instrument
-behavior. They are evidence and review surfaces until a separate activation
-contract promotes a correction or gate.
+behavior. These artifacts are evidence and review surfaces until a separate
+activation contract promotes a correction or gate.
 
 ## Contract
 
-- Clean standards diagnose clean-matrix instrument/method behavior. They
-  cannot alone represent biological matrix effects.
-- Biological QC ISTDs are the primary anchors for real-matrix RT/response
+- Clean standards diagnose instrument/method behavior in a clean sample
+  matrix. Clean standards alone cannot represent biological sample-matrix
+  effects.
+- Biological QC ISTDs are the primary anchors for biological sample-matrix
+  RT/response
   transfer evidence when they exist.
 - HCD/product-ion audit is a human review and plausibility surface. It must
   not become a hard pass/fail production gate without an explicit activation
   contract.
-- Method evidence remains method-specific: SDO/LEK interpretation uses HCD;
-  MixSTDs may use CID or HCD; a Targeted method consumes the evidence provider
-  configured for that method. Architecture convergence must not replace these
-  choices with a universal CID-NL or QC rule.
-- Level 3 RT calibration remains `NO-GO`: leave-one-anchor-out residuals,
+- Method evidence remains method-specific:
+  - SDO/LEK interpretation uses HCD.
+  - MixSTDs can use CID or HCD.
+  - A Targeted method consumes the evidence provider configured for that
+    method.
+- Architecture convergence must not replace these method choices with a
+  universal CID-NL or QC rule.
+- Level 3 RT calibration remains `NO-GO`. Leave-one-anchor-out residuals,
   transfer support, extrapolated rows, and blocked rows do not yet support
   production correction.
 - RT-aware midterm preview artifacts are shadow/readiness evidence only.
-  They do not activate RT correction, response correction, normalization,
-  matrix mutation, or default gating.
+  Preview artifacts do not activate RT correction, response correction,
+  normalization, matrix mutation, or default gating.
 - The next safe calibration direction is shadow/readiness evidence, not
   value mutation.
 - `scripts/add_istd_rt_trend.py` is a maintained operator diagnostic for
   visualizing measured ISTD RT drift. The observed ISTD trend does not justify
   inferring, correcting, or gating other-feature RT behavior.
-- A future ModeTrack sensitivity packet must not assume one batch-wide monotonic
-  shift. It must permit feature-specific directions and adjacent-injection
-  jumps, examine several high-detection unknown features as well as method-
-  appropriate ISTDs, report interpolation/extrapolation support, and retain
-  unassessable cases.
-- `scripts/run_instrument_qc.py` is a contract-bearing product adapter. Its
-  method-document path already produces sequence, injection-order, and
-  `sample_metadata` projections that should be reused rather than
-  reimplemented by a future downstream handoff.
+- A future ModeTrack sensitivity packet must not assume one batch-wide
+  monotonic shift. The packet must:
+  - permit feature-specific directions and adjacent-injection jumps;
+  - examine several high-detection unknown features and method-appropriate
+    ISTDs;
+  - report interpolation/extrapolation support;
+  - retain unassessable cases.
+- `scripts/run_instrument_qc.py` is a contract-bearing product adapter. The
+  method-document path of `run_instrument_qc.py` already produces sequence,
+  injection-order, and `sample_metadata` projections.
+- A future downstream handoff must reuse these projections. The handoff must
+  not reimplement them.
 
 ## Surfaces
 
@@ -47,7 +55,7 @@ contract promotes a correction or gate.
 | `add_istd_rt_trend.py` visualization | Direct ISTD drift review; not an other-feature RT model |
 | HCD audit TSV/JSON/workbook sheet | Product-ion audit evidence |
 | Calibration maturity gate | Readiness and blocker summary |
-| Biological ISTD transfer audit | Real-matrix transfer evidence |
+| Biological ISTD transfer audit | Biological sample-matrix transfer evidence |
 | Calibration preview outputs | Shadow or diagnostic evidence only |
 
 ## Boundaries
@@ -56,12 +64,14 @@ contract promotes a correction or gate.
   calibration maturity gate classification, and transfer audit structure.
 - Does not own: a specific run's QC acceptance, RT/response/normalization
   activation, DNP or downstream normalization behavior, or matrix activation.
-- Dated QC/calibration notes and specs become history stubs after their
-  stable claims are absorbed here.
-- SDOLEK trend rows currently carry `injection_order` but remain in
-  filename/target production order; the TSV/workbook writers do not sort by
-  injection order. A sorted compatibility projection is a known product gap
-  related to the Untargeted downstream handoff in #137.
+- Dated QC/calibration notes and specs become history stubs after this page
+  absorbs their stable claims.
+- SDO/LEK trend rows (`instrument_qc_sdolek_trend.tsv`) carry
+  `injection_order`. The rows remain in
+  filename/target production order.
+- The TSV/workbook writers do not sort by injection order. A sorted
+  compatibility projection is a known product gap. The gap relates to the
+  Untargeted downstream handoff in #137.
 
 ## Verification
 
@@ -72,9 +82,10 @@ contract promotes a correction or gate.
 
 ## Pitfalls
 
-- Treating clean-standard behavior as proof of biological matrix performance.
+- Treating clean-standard behavior as proof of biological sample-matrix
+  performance.
 - Making HCD support a hard gate from audit evidence alone.
-- Applying Level 3 RT correction while maturity gate remains `NO-GO`.
+- Applying Level 3 RT correction while the maturity gate remains `NO-GO`.
 - Treating a global LOESS/ISTD trend as identity or fill authority for every
   unknown feature.
 - Hiding calibration assumptions in private notes without a repo owner.

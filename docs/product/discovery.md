@@ -5,8 +5,8 @@ Untargeted retains every candidate qualifying under its configured evidence
 space; Targeted supplies a `TargetSearchScope` that retains only configured
 targets. Both may inspect a broad evidence policy such as dR, R, or MeR through
 the same scientific task. Discovery turns seed evidence and MS1 traces into
-reviewable candidates. It does not directly publish product outputs;
-publication requires closed cell decisions and the relevant workflow
+reviewable candidates. Discovery does not directly publish product outputs.
+Publication requires closed cell decisions and the relevant workflow
 projection/writer authority.
 
 Discovery is provider-specific at its input and initial-interpretation seam.
@@ -24,6 +24,8 @@ the error relative to the configured loss mass; it is not the acceptance gate.
 
 ## Contract
 
+### Scope and candidate state
+
 - Discovery produces candidate and review surfaces, not final product authority.
 - `broad candidate discovery` describes evidence-provider/search coverage, not
   an Untargeted-only implementation. Targeted narrows the accepted target/row
@@ -39,7 +41,7 @@ the error relative to the configured loss mass; it is not the acceptance gate.
   MS1-feature-backed candidate before sample-by-subject scheduling. Their
   candidates close with Discovery eligibility exclusions without method
   assessments. Each eligible subject still assesses the complete sample
-  universe, including samples without a local candidate, for recovery.
+  universe, including samples without a local candidate, for Backfill.
 - Persistence filtering does not change classification or product-plus-neutral-loss
   precursor inference. `discovery_physical_facts.json` retains physical records
   only for feature-backed candidates, including their merge-member evidence;
@@ -47,6 +49,9 @@ the error relative to the configured loss mass; it is not the acceptance gate.
   counts and hashes describe the persisted candidate rows.
 - Seed evidence can include MS2 neutral loss, precursor inference, MS1 trace
   support, and future evidence providers.
+
+### Physical qualification
+
 - Discovery's Gaussian15 physical point policy rejects an irregular background
   maximum only when both the acquired trace and its existing, unclipped
   baseline residual lack sufficient rise/fall shape or local apex relief.
@@ -61,6 +66,9 @@ the error relative to the configured loss mass; it is not the acceptance gate.
   replay, including merged candidates. Legacy CSVs without provisional evidence
   remain readable; legacy rows marked provisional without the decision field
   are rejected because their final qualification cannot be recovered exactly.
+
+### Blank qualification
+
 - Blank qualification is disabled by default for newly configured ordinary
   mainline Discovery runs. Library resolution prefers an explicitly selected
   library, then a sample-local `blank_library.json.gz` or `blank_library.json`,
@@ -96,6 +104,9 @@ the error relative to the configured loss mass; it is not the acceptance gate.
   with a `scan_precursor` or `mixed` basis. Qualification classifies downstream
   eligibility; it does not undo the physical trace-shape result or change the
   selected peak's boundaries, apex, or integrated area.
+
+### Precursor inference
+
 - CID-NL precursor inference supports both direct scan-precursor seeds and the
   bounded `product_mz + neutral_loss` basis when the inferred precursor remains
   within `DiscoverySettings.ms2_precursor_tol_da` of the measured filter/
@@ -129,8 +140,11 @@ the error relative to the configured loss mass; it is not the acceptance gate.
   precursor and its derived loss are not reported as directly measured facts.
   Inferred evidence requires a qualifying relation to a usable physical MS1
   peak to support the method. CrossSample and cell-decision owners still decide
-  identity, recovery, and Matrix publication; candidate eligibility alone grants
-  none of these authorities.
+  identity, Backfill, and Matrix publication. Candidate eligibility alone
+  grants none of these authorities.
+
+### Methods and validation
+
 - CID-NL, HCD-PI, Delta Mass, and future configured methods are Discovery
   methods when they are used to find features matching method-specific evidence
   settings. They produce feature candidates plus typed evidence, not
@@ -142,6 +156,9 @@ the error relative to the configured loss mass; it is not the acceptance gate.
   evidence, no-write authority checks, and independent human adjudication unless
   a later Pt owner explicitly names a different fixture. Reviewed Pt labels are
   method-development evidence, not ground truth or an accuracy oracle by default.
+
+### Outputs, peak anchors, and batch handoff
+
 - Standard per-sample outputs: `discovery_candidates.csv` (archival/alignment
   detail) and `discovery_review.csv` (compact human review).
 - Discovery `feature_family_id` remains a public output header and dataclass
@@ -182,23 +199,29 @@ the error relative to the configured loss mass; it is not the acceptance gate.
   machine handoff surfaces.
 - Discovery UX and review surfaces are public handoffs when they define
   filenames, columns, row identity, output level, or downstream consumption.
+### Scope limits
+
 - CID-NL Discovery is a bounded accepted slice, separate from Backfill. Future
   expansion needs successor-level tag context, MS1/quant support, provenance,
   value-delta framing, expected matrix effect, and explicit expected-diff review.
 - Do not introduce vendor RAW-to-mzML conversion as an implicit product
   dependency without a separate public contract.
-- The untargeted lane runs Discovery, Alignment, and Backfill, with conservative
-  primary-matrix delivery. It addresses false missingness, RT-driven splitting,
-  owner-centered Backfill, duplicate-claim control, and Review/Audit separation.
-  It is not a full LC-MS QA/QC normalization, artifact deconvolution, blank/background
+
+### Untargeted lane
+
+- The Untargeted lane runs Discovery, Alignment, and Backfill, with
+  conservative primary-matrix delivery. The Untargeted lane addresses false
+  missingness, RT-driven splitting, owner-centered Backfill, duplicate-claim
+  control, and Review/Audit separation. The Untargeted lane is not a full
+  LC-MS QA/QC normalization, artifact deconvolution, blank/background
   contaminant, isotope/adduct annotation, or post-acquisition normalization
   system; see [Untargeted Method](untargeted-method.md) for the absorbed
   method/literature boundary.
-- Current untargeted product direction preserves a clean primary `Matrix` while
-  keeping rescue-only, ambiguous, and diagnostic candidates in Review/Audit
+- Current Untargeted product direction preserves a clean primary `Matrix` while
+  keeping Backfill-only (`rescue_only`), ambiguous, and diagnostic candidates in Review/Audit
   surfaces. Do not judge the lane by exact equality to old upstream feature
-  tables when the accepted contract is matrix hygiene plus targeted benchmark
-  recovery.
+  tables when the accepted contract is matrix hygiene plus Targeted benchmark
+  recall.
 
 ## Core Product Flow
 
@@ -212,7 +235,7 @@ The intended product flow is:
    to it. A Discovery hit is a candidate anchor, not cross-sample truth by
    itself.
 3. Backfill revisits accepted candidates, aligned groups, or configured target
-   cells to recover results that were not counted for normal signal, threshold,
+   cells to find results that were not counted for normal signal, threshold,
    or workflow reasons.
    Backfill still requires provenance-valid evidence; it is not blind
    imputation and it does not create counted Discovery detections.
@@ -238,6 +261,12 @@ method name, and `pt_pattern` may be used as a method or preset label for
 Discovery strategy unless a successor design intentionally replaces the
 strategy-family model.
 
+Discovery evidence providers create candidates and typed review evidence.
+Discovery evidence providers must not directly grant ProductWriter authority,
+Backfill promotion, counted detection, or Matrix changes.
+
+### Composite methods
+
 Composite methods combine providers by explicit set operations, not by creating
 new primitive strategies. The planned first composite is
 `pt_pattern + cid_nl(dR)`, defined as `delta_mass(pattern_id=pt)` intersected
@@ -249,6 +278,10 @@ instead of running a broad provider over every possible anchor and filtering
 afterward. For `pt_pattern + cid_nl(dR)`, CID-NL(dR) base candidates seed the
 base feature IDs, then Pt pattern evidence checks only those bases for
 `+1.002111`, `+2.002271`, and `+4.005213`.
+
+## Pt Pattern Diagnostic Evidence
+
+### Evidence layers and position roles
 
 Delta Mass / Pt pattern diagnostic evidence has two layers. The first layer is a
 scan-level delta-pattern seed: base / `+1.002111` / `+2.002271` / `+4.005213` are
@@ -300,6 +333,8 @@ an independent truth set shows that they separate physical Pt envelopes from
 false patterns. Current human `uncertain` labels are unresolved evidence, not
 true rejects.
 
+### Mass arithmetic and candidate matching
+
 Pt pattern m/z arithmetic uses shared mass-accuracy primitives: expected m/z is
 the ppm denominator, exact Pt deltas are part of the built-in pattern contract,
 and local `_ppm()` helpers should not be added to the core matcher path.
@@ -324,6 +359,8 @@ detected feature declares the exact shared-namespace capability
 and unknown source IDs remain detector-local even when their strings happen to
 match; they may participate only through the bounded same-sample m/z/RT
 fallback. A declared shared-namespace mismatch must not fall back.
+
+### Local MS1 feature tables
 
 Local MS1 feature table generation is the candidate-source replacement path for
 the scan-level Pt proxy. It does not by itself create product detections.
@@ -361,6 +398,8 @@ The reusable co-elution support semantics belong in
 RAW files and write CSV/JSON probes, but they should call this package owner
 instead of carrying their own Pt trace-support rules.
 
+### Trace assessment
+
 Pt pattern diagnostic trace assessments use Gaussian15-smoothed XIC intensity as the
 decision basis for apex, shape similarity, active overlap, and support status.
 Raw vendor trace points remain in the artifacts as audit/reference evidence;
@@ -381,6 +420,8 @@ the current anchor-local schema, trace ambiguity, anchor segmentation, and bound
 review must all be explicitly `clear`; any missing, unknown, or review-required
 state returns `uncertain` rather than becoming a threshold reject or final
 detector decision.
+
+### Artifact lineage and joins
 
 Current Pt trace/review artifacts are sealed as a lineage chain. Full-context
 trace summary/metrics/points use `pt_pattern_trace_diagnosis`; anchor-local
@@ -441,6 +482,8 @@ JSON/CSV structures used by the synthesis must satisfy these input contracts;
 invalid supplied evidence fails closed instead of being truncated or silently
 replaced with zero/false.
 
+### Gaussian15 time width
+
 Because Gaussian15 is point-based, its time width depends on scan density.
 Trace diagnosis therefore records `median_rt_step_sec` and
 `effective_smoothing_window_sec` per position, plus
@@ -462,6 +505,8 @@ The blind overlay HTML is a review surface, not the decision basis: each case
 can display raw vendor traces, the current Gaussian15 point-smoothed trace, and
 a 20-second time-smoothed trace side by side while sealed machine calls continue
 to use the packet's trace-decision metrics.
+
+### Intensity ratios and RT shifts
 
 Intensity ratios are useful Pt-pattern evidence but are not a machine gate yet.
 Treat base/+1/+2/+4 ratios as ambiguity and review-priority signals until an
@@ -526,6 +571,8 @@ smoothing-window context. They must not become a product detection without a
 later independent truth set showing improved discrimination without
 nearby-coeluter or tail-following failures.
 
+### Current Pt validation pair
+
 For the current 20251210 Pt validation pair, the Fullscan RAW is the Discovery
 authority because it was acquired as high-resolution MS1 specifically to find
 Pt-pattern candidates. The DDMS2 RAW has lower MS1 resolution and targeted/DDA
@@ -548,10 +595,6 @@ shifted-shape and ambiguity columns. Missing shifted-shape columns are treated
 as blank optional evidence: they cannot support the shifted-shape accept path,
 but they also do not invalidate close-apex trace evidence. This is backwards
 compatibility for existing diagnostic artifacts, not a weaker detection rule.
-
-These providers create candidates and typed review evidence. They must not
-directly grant ProductWriter authority, Backfill promotion, counted detection,
-or Matrix changes.
 
 ## Surfaces
 
@@ -631,7 +674,7 @@ Before changing discovery behavior, require the relevant subset of:
 - Treating a new evidence provider as ProductWriter authority without Backfill
   activation.
 - Dragging CID-NL Discovery decisions into the Backfill lane.
-- Starting untargeted performance work before timing/locality evidence
+- Starting Untargeted performance work before timing/locality evidence
   identifies the bottleneck and correctness gate.
 
 ## See Also

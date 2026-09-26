@@ -2,8 +2,8 @@
 
 This page owns the workflow-neutral scientific contract shared by Targeted and
 Untargeted processing. The kernel is a collaboration of the existing
-`peak_detection`, `alignment`, result, and projection owners; it is not a
-reason to create a generic `core/` package.
+`peak_detection`, `alignment`, result, and projection owners. The kernel is
+not a reason to create a generic `core/` package.
 
 CID-NL is the first production tracer through this contract, not the product
 boundary. Additional Discovery providers may consume different source evidence
@@ -27,8 +27,8 @@ their application boundaries:
   regroup observations, or recompute selected values.
 
 Shared means that lifecycle, authority, terminal states, and public contracts
-do not fork by Discovery provider. It does not mean method-blind:
-scientifically necessary interpretation or integration differences may be
+do not fork by Discovery provider. Shared does not mean method-blind.
+Scientifically necessary interpretation or integration differences can be
 selected through typed provenance, declared capabilities, or a
 provider-supplied strategy.
 
@@ -38,8 +38,9 @@ XIC has one shared scientific processing lifecycle:
 
 `SearchScope -> provider-specific Discovery/capture -> shared observation/evidence contract -> PeakHypothesis -> CrossSample grouping and initial ModeTrack refinement -> CrossSampleGroupingResult -> optional bounded Backfill -> FinalizedScientificAlignment -> projection binding/subjects -> ProductionCellDecision -> projection completion -> result finalizer`
 
-A configured Target constrains search and fixes a projection row; it does not
-prove a sample-local observation, group membership, or selected value.
+A configured Target constrains search and fixes a projection row. A
+configured Target does not prove a sample-local observation, group
+membership, or selected value.
 Untargeted derives group rows from finalized CrossSample groups. The two
 applications keep separate GUI flow, row policy, output schemas, and writer
 authority over the same finalized scientific-owner results.
@@ -56,7 +57,7 @@ but callers cannot bypass the semantic owner.
 | CrossSample | owner-backed hypotheses/observations -> canonical groups, dispositions, membership, lineage | Sole group/membership authority; does not integrate traces or select values |
 | ModeTrack | immutable trajectory snapshot -> typed refinement proposals | Proposal-only; cannot mutate groups, revisit cells, or write values |
 | ObservationRevisit receipt | one bounded revisit decision -> typed result or no-result receipt | Retained receipt contract; no group identity, implicit membership, selected-value, or writer authority |
-| Backfill | one missing or insufficient cell plus established Target/group context -> bounded revisit result | May produce the first usable observation for that cell; cannot originate the Target/group, mint membership, or select a value |
+| Backfill | one missing cell plus established Target/group context -> bounded revisit result | May produce the first usable observation for that cell; cannot originate the Target/group, mint membership, or select a value |
 | Scientific alignment closure | closed request/group/membership/refinement/revisit receipts -> `FinalizedScientificAlignment` | Validates shared scientific closure; does not construct workflow rows or render outputs |
 | Projection binding/subjects | finalized core + typed Target/Untarget scope -> row identity/binding + explicit cell subjects | Constructs subjects only; no value, count, or inclusion decision |
 | ProductionCellDecision | explicit subject + closed observations/receipts -> typed write or no-write | Sole selected-value owner; cannot create row or group identity |
@@ -114,8 +115,8 @@ Discovery is provider-specific. CID-NL, HCD-PI, Delta Mass, and future
 providers may consume different evidence and run different candidate
 generation or initial interpretation. Each provider publishes owner-backed
 observations/hypotheses through the shared evidence contract. Targeted and
-Untargeted may give it different SearchScope values without creating separate
-downstream owners.
+Untargeted can give a provider different SearchScope values without creating
+separate downstream owners.
 
 ### Alignment
 
@@ -133,21 +134,29 @@ silently truncated or processed in a result-changing order.
 
 ### ObservationRevisit
 
-ObservationRevisit handles an existing observation whose boundaries,
-integration, evidence closure, or consistency is incomplete. It returns one
-owner-backed repaired observation or a typed no-repair result. Repair does not
-rerun global Discovery, mint membership, select a product value, or write an
-output.
+`ObservationRevisitReceipt` is a retained typed Backfill receipt. Final cell
+composition accepts a sequence of these receipts. No code creates a receipt:
+the receipt mint token in `alignment/backfill/observation_revisit.py` is never
+passed to the receipt constructor, so production receipt sequences are
+empty. The receipt type grants no
+membership, selected value, or writer authority.
 
 ### Backfill
 
-Backfill handles a missing or insufficient cell under an already owner-backed
-Target or existing-group context. It may perform one bounded, context-directed
-RAW/evidence revisit. Backfill may recover the first usable observation for
-that cell, but it cannot bootstrap a Target/group that has no prior owner-backed
-context.
+Backfill handles a missing cell under an already owner-backed Target or
+existing-group context. The two workflows define a missing cell differently:
 
-An accepted Backfill result enters the observation/repair contract for cell
+- Untargeted CID-NL: every activation-eligible sample without direct SUPPORT
+  for a non-rejected group that passes the group support gate. A sample with a
+  HOLD or REJECT assessment for that group is also a missing cell.
+- Targeted diagnostic: a `no_candidate` cell whose Target binds exactly one
+  group with owners. `ambiguous` and `failed` cells are not searched.
+
+Backfill can perform one bounded, context-directed RAW/evidence revisit.
+Backfill can produce the first usable observation for that cell. Backfill
+cannot bootstrap a Target/group that has no prior owner-backed context.
+
+An accepted Backfill result enters the cell-observation contract as cell
 evidence. The existing `CrossSampleGroupingResult` keeps membership fixed;
 `ProductionCellDecision` decides value/no-write. Backfill does not rebuild
 the grouping result or trigger another ModeTrack pass.
@@ -155,7 +164,7 @@ the grouping result or trigger another ModeTrack pass.
 ### Cell Decision And Projection
 
 `ProductionCellDecision` consumes finalized evidence for one explicit Target or
-Group subject and is the sole selected-value owner. A repaired observation is
+Group subject and is the sole selected-value owner. A Backfill observation is
 not automatically group membership or a writable value.
 
 Projection remains workflow-specific. Targeted retains one row per `TargetKey`
@@ -171,8 +180,7 @@ policy. One projection is never the other projection's oracle.
 | Physical observations and hypotheses | `peak_detection` owners | Supplies constrained requests | Supplies general requests |
 | Cross-sample identity | CrossSample group/membership/disposition/lineage | Target identity constrains search/binding only | Group identity is inferred from evidence |
 | Trajectory refinement | ModeTrack proposes; CrossSample applies | Same interface | Same interface |
-| Observation repair | ObservationRevisit owns repair facts | Supplies Target cell context | Supplies Group cell context |
-| Missing-cell recovery | Backfill owns the bounded revisit | Supplies Target recovery context | Supplies Group recovery context |
+| Missing-cell Backfill | Backfill owns the bounded revisit | Supplies Target Backfill context | Supplies Group Backfill context |
 | Selected value | `ProductionCellDecision` | Uses `TargetCellSubject` | Uses `GroupCellSubject` |
 | Row/count/output policy | Does not own | Targeted projection/writer | Untargeted projection/writer |
 
@@ -205,7 +213,7 @@ oracle is unchanged unless an expected difference is separately approved.
 - Provider-specific integration or interpretation belongs behind typed
   provenance, capability, or strategy seams and remains auditable.
 - Backfill requests without an owner-backed Target/group context are rejected.
-- Repaired evidence cannot implicitly create membership or a selected value.
+- Backfill evidence cannot implicitly create membership or a selected value.
 - Writers cannot rescan RAW data or recompute scientific decisions.
 - Current public commands, schemas, and persisted receipts remain stable unless
   their current consumer and observable change are explicitly approved.
@@ -215,7 +223,7 @@ oracle is unchanged unless an expected difference is separately approved.
 - [`discovery.md`](discovery.md) owns Discovery provider behavior.
 - [`alignment.md`](alignment.md) owns CrossSample, ModeTrack, repair, and
   finalized-alignment behavior.
-- [`backfill.md`](backfill.md) owns missing-cell recovery details.
+- [`backfill.md`](backfill.md) owns missing-cell Backfill details.
 - [`decision-policy.md`](decision-policy.md) owns selected-value resolution.
 - [`processing-lineage.md`](processing-lineage.md) owns processing and delivery
   identity.

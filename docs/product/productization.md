@@ -1,9 +1,9 @@
 # Productization
 
-Productization is the stable capability map and authority router for XIC product
-surfaces. It explains which owner answers which question; it does not repeat the
-mutable lane board, current accepted counts, writer scopes, or promotion
-verdicts.
+Productization is the stable capability map and authority router for XIC
+product surfaces. This page names the owner that answers each question. This
+page does not repeat the mutable lane board, current accepted counts, writer
+scopes, or promotion verdicts.
 
 ## Authority Model
 
@@ -18,10 +18,11 @@ verdicts.
 | Compatibility lookup from historical control-plane anchors | [Productization compatibility index](../superpowers/plans/2026-06-15-productization-control-plane.md) |
 | Historical chronology and retired reasoning | Git history plus the private source copy keyed by `source_repo_path` |
 
-Narrative owners must not restate mutable status-index fields or authority-
-manifest values. The dependent-effect manifest does not extend the registered
-ProductWriter scopes. If narrative wording conflicts with an unchanged
-structured owner, the structured owner wins and the narrative must be corrected.
+Narrative owners must not restate mutable status-index fields or
+authority-manifest values. The dependent-effect manifest does not extend the
+registered ProductWriter scopes. If narrative wording conflicts with an
+unchanged structured owner, the structured owner wins. The narrative must then
+be corrected.
 
 ## Capability Map
 
@@ -30,7 +31,7 @@ structured owner, the structured owner wins and the narrative must be corrected.
 | Domain evidence | Typed observations, hypotheses, evidence vectors, decisions, integration results, and audit records remain distinct from product projection | [Evidence Spine](evidence-spine.md) |
 | Discovery | Method-specific evidence providers create sample-local candidates without directly granting matrix authority | [Discovery](discovery.md) |
 | Alignment | Cross-sample correspondence and group hypotheses remain separate from candidate generation and publication | [Alignment](alignment.md) |
-| Backfill | Evidence-based recovery reaches product outputs only through an explicit authority and expected-diff path | [Backfill](backfill.md) |
+| Backfill | An evidence-based Backfill value reaches product outputs only through an explicit authority and expected-diff path | [Backfill](backfill.md) |
 | Quant output | Accepted values, cell provenance, and matrix-version contracts are public output responsibilities | [Quant Matrix](quant-matrix.md) |
 | Targeted selection | Configured identity and bounded rescue behavior have their own public and evidence boundaries | [Targeted Selection](targeted-selection.md) |
 | Review | Human or automated review stays auditable and cannot silently become writer authority | [Review Roundtrip](review-roundtrip.md) |
@@ -44,35 +45,63 @@ structured owner, the structured owner wins and the narrative must be corrected.
   field-level authority partition above.
 - **Does not own:** current lane state or counts, ProductWriter scopes, active
   WIP, or a specific promotion verdict.
-- Validation packets and diagnostics support a decision; they do not become a
-  second current-state board.
+- Validation packets and diagnostics support a decision. Validation packets
+  and diagnostics do not become a second current-state board.
 - The compatibility index preserves stable lookup keys only. It must not grow a
   new maintenance log or duplicate rule prose from canonical owners.
 
 ## Work Intake And Closeout
 
-Per maintenance cycle, keep at most one primary productization lane, one
-supporting-infrastructure lane, and one lane dedicated to diagnostics. Starting
-another requires promoting, parking with a reopening condition, externalizing/killing,
-or abandoning one current lane. A new lane names its structured current and
-intended state, capability owner, affected public surface, expected behavior
-diff and required non-changes, evidence tier, downstream consumer, and
-stop/rollback rule. If values or identity may change without an expected-diff
-plan, stop intake.
+Each maintenance cycle keeps at most one lane of each kind:
 
-Read current state from the status index and authority manifests, not a branch
-diary or compatibility index. Diagnostics, reports, and sidecars need a
-promote, kill, externalize, or missing-evidence exit. Closeout names the evidence
-actually used, resolves only the active branch handoff, and keeps the durable
-delivery receipt in the PR body rather than another progress board.
+- one primary productization lane;
+- one supporting-infrastructure lane;
+- one lane dedicated to diagnostics.
+
+When a lane kind is already occupied, a new lane of that kind can start only
+after promoting the current lane, parking it with a reopening condition,
+externalizing/killing it, or abandoning it.
+
+A new lane names:
+
+- its structured current and intended state;
+- its capability owner;
+- the affected public surface;
+- the expected behavior diff and required non-changes;
+- the evidence tier;
+- the downstream consumer;
+- the stop/rollback rule.
+
+If values or identity can change without an expected-diff plan, intake stops.
+
+Current state comes from the status index and authority manifests. A branch
+diary or the compatibility index is not a current-state source. Diagnostics,
+reports, and sidecars need a promote, kill, externalize, or missing-evidence
+exit.
+
+Closeout does three things:
+
+1. Closeout names the evidence actually used.
+2. Closeout resolves only the active branch handoff.
+3. Closeout keeps the durable delivery receipt in the PR body. Closeout does
+   not create another progress board.
 
 ## Promotion Inputs
 
-A product-surface change should route to the promotion contract when it can
-change selected values, counted detections, matrix identity, output schema,
-CLI/config/GUI behavior, review/replay behavior, or writer authority. The
-promotion packet records the proposed behavior delta, required non-changes,
-evidence, expected diff, replay, downstream smoke, stop condition, and rollback.
+A product-surface change must route to the promotion contract when the change
+can alter any of these:
+
+- selected values;
+- counted detections;
+- matrix identity;
+- output schema;
+- CLI/config/GUI behavior;
+- review/replay behavior;
+- writer authority.
+
+The promotion packet records the proposed behavior delta, required
+non-changes, evidence, expected diff, replay, downstream smoke, stop
+condition, and rollback.
 
 Stable implementation priorities remain:
 

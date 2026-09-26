@@ -1,13 +1,36 @@
-# Execution Runtime Contract
+# Run Lifecycle Management（執行生命週期管理）
+
+Run lifecycle management answers one question: what happened to one run? It
+covers scheduling, cancellation, worker loss, retry, cleanup, and cache use.
+It records what executed. It does not decide what the evidence means or what
+the product publishes.
+
+## Current Status
+
+This table records which parts of this contract exist in code. The rest of
+this page is the target design.
+
+| Part | Plain meaning | Status |
+| --- | --- | --- |
+| `AttemptRuntime` and its finalization, marker, and receipt modules (`xic_extractor/execution_runtime*.py`) | One state machine for one run attempt | Implemented; the Targeted path (`extraction.targeted_service`), the Untargeted path (`extraction.untargeted_real_data_runtime`, `extraction.untargeted_production_batch`), and the GUI pipeline worker use it |
+| `RequiredWorkManifest`, `WorkUnit` | The closed list of work one attempt must finish | Implemented inside the runtime |
+| `RuntimeEvent` | One ordered event log for scheduling, resources, outcome, cleanup, and cache | Not implemented |
+| `ValidatedDependencyToken` | Approval to reuse a prior attempt's output during retry or resume | Not implemented; retry and resume from prior work are not available |
+
+Status source: module definitions and production import paths, checked on
+2026-09-26. A status row is not validation evidence.
+
+## Scope
 
 This page defines the minimum workflow-neutral execution contract for Issue
 #128. It covers how one lineage-identified `ProcessingAttempt` is scheduled,
 observed, stopped, cleaned, and retried without taking over scientific or
 product decisions.
 
-No integration evidence above `diagnostic_only` currently exists for this
-contract. That evidence posture belongs to future validation artifacts, not to
-this topic page. The contract grants no selected-value, counted-detection,
+Production paths call the runtime, as the status table shows. The validation
+evidence for this contract is still `diagnostic_only`: no integration evidence
+above `diagnostic_only` exists. The evidence label describes validation, not
+whether code is wired. The contract grants no selected-value, counted-detection,
 Matrix, workbook, Backfill-write, activation, publication, or export authority.
 
 ## Worker Settings
