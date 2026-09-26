@@ -28,8 +28,10 @@ linked owner pages.
   `provisional` groups stay in a compact machine archive/review surface;
   `unresolved` and `rejected` groups remain AuditTrail facts. Disposition and
   row inclusion are separate typed decisions.
-- `UntargetedDeliveryCellKey` is canonical sample plus `UntargetRowKey`.
-  `FAM...`, row order, m/z/RT display coordinates, and current Matrix text are
+- Untargeted delivery uses one output-level seal, not per-cell delivery
+  revisions. See the
+  [Untargeted delivery decision](processing-lineage.md#untargeted-delivery-decision).
+- `FAM...`, row order, m/z/RT display coordinates, and current Matrix text are
   compatibility/display facts, not canonical cell identity.
 - Exact equality to old upstream feature tables is not the success definition.
   The accepted method direction is owner-centered Backfill plus duplicate-claim

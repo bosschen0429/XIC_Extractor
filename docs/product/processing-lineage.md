@@ -15,10 +15,33 @@ this page is the target design.
 | Target identity (`TargetKey`, `TargetListSnapshot` in `xic_extractor/configuration/target_identity.py`) | Which exact target list a run used | Implemented; production Targeted modules use it |
 | Targeted delivery lineage (`TargetedDeliveryCellKey`, `DeliveryRevision`, `DeliverySeal` in `xic_extractor/delivery_lineage.py`) | A sealed record for each delivered Targeted cell | Implemented for Targeted; reached through `extraction.targeted_service` |
 | Untargeted row identity (`UntargetRowKey`) | A stable identity for one Untargeted Matrix row | Implemented in `alignment/projection/untarget/pre_cell.py` |
-| Untargeted delivery lineage (`UntargetedDeliveryCellKey`, Untargeted `DeliverySeal`) | A sealed record for each delivered Untargeted Matrix cell | Not implemented; Untargeted cells rely on sidecars such as `cell_provenance.tsv` |
+| Untargeted per-cell delivery lineage (`UntargetedDeliveryCellKey`, per-cell `DeliveryRevision`) | A sealed record for each delivered Untargeted Matrix cell | Not planned; see [Untargeted delivery decision](#untargeted-delivery-decision) |
+| Untargeted output-level seal | One sealed manifest for one complete Untargeted Matrix delivery | Planned; not implemented |
 
 Status source: module definitions and production import paths, checked on
 2026-09-26. A status row is not validation evidence.
+
+### Untargeted Delivery Decision
+
+Decision (2026-09-26): Untargeted delivery uses one output-level seal. It does
+not use a per-cell delivery revision or per-cell evidence retention.
+
+- The output-level seal binds one complete Matrix delivery to one processing
+  attempt, its input source identities, and its output artifact hashes.
+- Per-cell tracing uses the retained cell ledger (`alignment_cells.tsv`) of
+  the sealed attempt, or a replay of that attempt.
+- Targeted delivery keeps per-cell delivery revisions.
+
+Rationale: per-cell evidence retention costs far more than the review value it
+adds. One 85-RAW Untargeted run delivered 2,455 rows × 85 samples (about
+209,000 cells) in a 1.1 MB Matrix. The same run already wrote a 297 MB cell
+ledger. Per-cell evidence retention would add trace or plot payloads on top of
+that ledger. An output-level seal adds a manifest of a few kilobytes and closes
+the missing link between the ledger and one sealed attempt.
+
+This decision narrows the frozen workflow-neutral design below for
+Untargeted. Where the design text describes Untargeted per-cell delivery
+revisions, this decision wins.
 
 ## Scope
 
@@ -40,10 +63,14 @@ to the exact processing attempt, evidence artifacts, and source observations.
 
 The product rule is:
 
-> Every delivered value or explicit null comes from one sealed delivery
-> revision. That revision must trace to one processing attempt, the selected
-> hypothesis/integration or non-observation conclusion, immutable evidence
-> artifacts, and source-observation references.
+> Every delivered Targeted value or explicit null comes from one sealed
+> delivery revision. That revision must trace to one processing attempt, the
+> selected hypothesis/integration or non-observation conclusion, immutable
+> evidence artifacts, and source-observation references.
+>
+> Every delivered Untargeted Matrix comes from one output-level seal. That
+> seal must trace to one processing attempt, its input source identities, its
+> retained cell ledger, and its output artifact hashes.
 
 Retries and recomputation create new attempts. They never overwrite the
 identity or evidence of an earlier attempt. A new result can supersede an old
@@ -331,9 +358,9 @@ Required invariants:
 10. Sealing a successor does not mutate the prior seal. It records an explicit
    supersession edge and changes the current delivery only through the
    authorized writer.
-11. Targeted and Untargeted may use different `DeliveryCellKey` and projection
-    policy. They can still reference the same kernel decision and evidence
-    artifacts.
+11. Targeted uses a per-cell `DeliveryCellKey`. Untargeted uses one
+    output-level seal (see [Untargeted delivery decision](#untargeted-delivery-decision)).
+    Both can still reference the same kernel decision and evidence artifacts.
 
 ## Source-Observation And Plot-Ready Evidence
 

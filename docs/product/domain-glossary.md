@@ -322,8 +322,9 @@ contract says otherwise.
   revision, not the stable cell position.
 - `UntargetedDeliveryCellKey`: canonical sample identity plus
   `UntargetRowKey`. A legacy family label, m/z/RT display text, or current row
-  number is not this identity. Not implemented yet; see the
-  [Result Traceability status](processing-lineage.md#current-status).
+  number is not this identity. Not planned: Untargeted delivery uses one
+  output-level seal instead; see the
+  [Untargeted delivery decision](processing-lineage.md#untargeted-delivery-decision).
 - `DeliveryRevision`: immutable proposed or sealed value/null for one delivery
   cell, linked to the producing attempt and kernel decision.
 - `DeliverySeal`: immutable manifest proving that a complete delivery revision
