@@ -122,7 +122,7 @@ workflows. The workspace does not create a separate product-authority lane.
   **Open XIC Inspector** can later reopen that HTML without the source files.
 - The report uses the [shared Inspector API](xic-inspector.md), including its
   source binding and error/cancellation rules.
-- The GUI does not re-read RAW or alter the Matrix for a report.
+- The GUI does not re-read RAW or alter the Matrix.
 - A new run or batch clears the current locator and the Open target.
 - A running report keeps its original locator. The completion message
   identifies the original request/attempt of that report.
@@ -160,7 +160,7 @@ workflows. The workspace does not create a separate product-authority lane.
 - Missing sample identity, duplicate semantic columns, and header-only inputs
   are import errors.
 - Word inputs retain the shared document parser.
-- The GUI does not guess an unsupported decorated header by substring.
+- Unsupported decorated headers are not guessed by substring.
 
 ### Internal-standard targets
 
@@ -182,8 +182,8 @@ workflows. The workspace does not create a separate product-authority lane.
 | `discovery_only` | Single RAW file, DLL directory, output directory | Single-file discovery |
 | `align_only` | RAW directory, `discovery_batch_index.csv`, DLL directory, output directory | Alignment |
 
-Batch Discovery-only remains a CLI surface. Use `full` when the GUI must run
-directory-level Discovery plus alignment.
+Batch Discovery-only remains a CLI surface. To run directory-level Discovery
+plus alignment from the GUI, use `full`.
 
 ## Surfaces
 

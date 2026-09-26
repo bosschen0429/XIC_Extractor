@@ -28,9 +28,9 @@ decisions.
 - Peak detection is a strategy layer, not the underlying truth. Qual Browser
   exposes multiple peak detection algorithms. XIC Extractor can use its own
   model only if the settings and consequences of that model are explicit.
-- Manual review and overrides are review-layer facts. Review-layer facts must
-  not silently rewrite automatic Discovery, Alignment, Backfill, or
-  ProductWriter rules.
+- Manual review and overrides are review-layer facts. Manual review and
+  overrides must not silently rewrite automatic Discovery, Alignment, Backfill,
+  or ProductWriter rules.
 - Evidence providers create typed facts. Evidence providers do not write
   matrices directly unless a separate activation/export contract grants
   ProductWriter authority.
