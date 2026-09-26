@@ -11,6 +11,7 @@ from xic_extractor.extractor import (
     RunOutput,
 )
 from xic_extractor.neutral_loss import NLResult
+from xic_extractor.output.schema import TARGETED_PRODUCT_PROJECTION_HEADERS
 from xic_extractor.peak_detection.targeted_product_projection import (
     TargetedProductProjection,
 )
@@ -65,8 +66,17 @@ def test_write_excel_from_run_output_uses_in_memory_rows_and_metadata(
     assert ws["C2"].value == "WithNL"
     assert ws["F2"].value == 9.0
     assert ws["G2"].value == 123.45
-    assert ws["H2"].value == "⚠ 12.3ppm"
-    assert ws["N2"].value == "LOW"
+    assert ws["H1"].value == "NL Evidence"
+    assert ws["H2"].value == "Observed with tolerance warning"
+    assert ws["I1"].value == "NL"
+    assert ws["I2"].value == "⚠ 12.3ppm"
+    assert ws["O1"].value == "Confidence"
+    assert ws["O2"].value == "LOW"
+    result_columns = {cell.value: cell.column_letter for cell in ws[1]}
+    for header in ("NL", *TARGETED_PRODUCT_PROJECTION_HEADERS):
+        assert ws.column_dimensions[result_columns[header]].hidden is True
+    for header in ("RT", "Area", "NL Evidence", "PeakStart", "PeakEnd", "Reason"):
+        assert ws.column_dimensions[result_columns[header]].hidden is not True
 
     ws_diagnostics = wb["Diagnostics"]
     assert ws_diagnostics.sheet_state == "hidden"
