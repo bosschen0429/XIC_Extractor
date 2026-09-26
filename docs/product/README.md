@@ -106,3 +106,65 @@ These apply to all topic pages and do not need to be restated in each file:
 - **Update triggers**: update a topic page when it gains or changes a durable
   output, contract, boundary, or verification gate. If the change affects
   product authority, update the owning spec and tests first.
+
+## Writing Standard
+
+Topic pages follow plain-language principles (ISO 24495-1) and a light subset
+of controlled-language rules. The reader must find the rule, understand it,
+and act on it after one read. A rewrite for clarity must not change a claim;
+if a rewrite would change a claim, it is a contract change and follows the
+update triggers above.
+
+### Sentence rules
+
+1. **One claim per sentence.** Split a sentence that states two rules, or a
+   rule and its exception, into two sentences.
+2. **Name the subject.** Each rule names the owner that acts: `CrossSample
+   owns membership.` not `Membership is owned.` Use the passive voice only
+   when the actor is unknown or irrelevant.
+3. **Subject, action, object.** Put the actor first, then the verb, then the
+   thing acted on. Put conditions before the rule: `If S < K, Backfill does not
+   start.`
+4. **No ambiguous pronouns.** Do not start a sentence with `This`, `That`,
+   `It`, or `These` unless the noun follows (`This route`, `That receipt`).
+   Repeat the noun when the referent is more than one sentence back.
+5. **Rule words.** Use `must` / `must not` for a contract, `does` / `does not`
+   for current behavior, and `can` for a permitted but optional behavior. Do
+   not use `should`, `may`, or `ideally` for a contract.
+6. **Short sentences.** Aim for 25 words or fewer. A longer sentence is
+   acceptable only for one list-like chain that a table cannot hold.
+7. **Negatives are explicit.** State what an owner does not do as a separate
+   sentence, and name the owner that does it instead.
+
+### Vocabulary rules
+
+1. **One word, one meaning.** Use the terms in the
+   [Domain Glossary](domain-glossary.md). Do not introduce a synonym for a
+   glossary term (for example `rescue` or `repair` for Backfill).
+2. **Stable spelling.** Write a code identifier, file name, field, or label in
+   backticks with its exact spelling. Write a product concept in plain words
+   with the glossary capitalization (`Backfill`, `CrossSample`, `Matrix`).
+3. **Define before use.** A term that is not in the glossary gets a one-line
+   definition at its first use, or moves to the glossary if two pages use it.
+4. **No filler.** Delete words that do not change the meaning: `currently`
+   when the page already describes current behavior, `simply`, `basically`,
+   `in order to`.
+
+### Page schema
+
+A topic page uses these sections in this order. Omit a section that has no
+content. Keep a page-specific section only when its content fits none of the
+standard sections, and place it after `Contract`.
+
+| Section | Content |
+| --- | --- |
+| Title + purpose | One paragraph: what the topic owns and what it does not own. |
+| `## Contract` | Numbered or bulleted rules that code and tests must keep. |
+| `## Surfaces` | Outputs, CLIs, files, and fields that expose the topic. |
+| `## Boundaries` | What other owners decide; the authority routes. |
+| `## Verification` | Tests, fixtures, and gates that prove the contract. |
+| `## Pitfalls` | Known mistakes and the correct reading. |
+| `## See Also` | Links to owners and neighboring topics. |
+
+Metadata lines (`Doc placement`, `Doc kind`, `Doc lifecycle`, `Repo owner`,
+`Doc exit rule`) stay directly under the title when a page has them.
