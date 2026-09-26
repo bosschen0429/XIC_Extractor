@@ -1,3 +1,5 @@
+from dataclasses import replace
+
 import numpy as np
 import pytest
 
@@ -11,11 +13,26 @@ from xic_extractor.neutral_loss import CandidateMS2Evidence, NLResult
 from xic_extractor.peak_detection.hypotheses import PeakHypothesis
 from xic_extractor.peak_detection.models import (
     PeakCandidate,
+    PeakCandidatesResult,
     PeakDetectionResult,
     PeakResult,
 )
+from xic_extractor.peak_detection.physical_peak_candidate_adapter import (
+    physical_candidates_result,
+    selected_physical_segment,
+)
+from xic_extractor.peak_detection.physical_peak_models import (
+    PhysicalSegment,
+    PhysicalSegmentUniverse,
+    PreparedSignal,
+    PreparedSignalProjection,
+    PreparedSignalResult,
+)
 from xic_extractor.peak_detection.selection_decision import (
     PeakHypothesisSelectionDecision,
+)
+from xic_extractor.peak_detection.signal_processing_profile import (
+    DEFAULT_SIGNAL_PROCESSING_PROFILE,
 )
 from xic_extractor.peak_detection.targeted_product_projection import (
     TargetedProductProjection,
@@ -153,16 +170,27 @@ def test_extract_one_target_uses_shared_physical_candidate_and_owner_apex(
 
     def _prepare(*args, **kwargs):
         physical_calls["prepare"] += 1
-        return prepare_physical_signal(*args, **kwargs)
+        result = prepare_physical_signal(*args, **kwargs)
+        captured["prepared_result"] = result
+        return result
 
     def _enumerate(*args, **kwargs):
         physical_calls["enumerate"] += 1
-        return enumerate_physical_segment_universe(*args, **kwargs)
+        result = enumerate_physical_segment_universe(*args, **kwargs)
+        captured["universe"] = result
+        return result
 
     monkeypatch.setattr(target_extraction, "prepare_physical_signal", _prepare)
     monkeypatch.setattr(
         target_extraction, "enumerate_physical_segment_universe", _enumerate
     )
+    selected_handoff_peak = target_extraction.selected_handoff_peak
+
+    def _handoff(**kwargs):
+        captured["handoff_inputs"] = kwargs
+        return selected_handoff_peak(**kwargs)
+
+    monkeypatch.setattr(target_extraction, "selected_handoff_peak", _handoff)
 
     class _Raw:
         def extract_xic(self, *_args, **_kwargs):
@@ -210,7 +238,7 @@ def test_extract_one_target_uses_shared_physical_candidate_and_owner_apex(
 
     results: dict[str, ExtractionResult] = {}
     diagnostics = []
-    target_extraction.extract_one_target(
+    anchor_rt = target_extraction.extract_one_target(
         _Raw(),
         config,
         "SampleA",
@@ -239,18 +267,168 @@ def test_extract_one_target_uses_shared_physical_candidate_and_owner_apex(
         captured["peak_result"]
     )
     assert selected_candidate_value is not None
-    assert any(
-        source.startswith("physical_segment:")
-        for source in selected_candidate_value.proposal_sources
+    evaluation = captured["physical_evaluation"]
+    universe = captured["universe"]
+    prepared = captured["prepared_result"].prepared
+    segment = next(
+        segment
+        for segment in universe.segments
+        if segment.physical_segment_id == evaluation.answer.physical_segment_id
     )
-    assert captured["physical_evaluation"].facts is not None
-    assert captured["physical_evaluation"].question.query_rt_min == pytest.approx(8.4)
+    assert selected_candidate_value.proposal_sources == (
+        f"physical_segment:{segment.physical_segment_id}",
+    )
+    assert selected_candidate_value.selection_apex_index == segment.apex_index
+    assert selected_candidate_value.raw_apex_index == segment.apex_index
+    assert evaluation.facts is not None
+    assert evaluation.facts.physical_segment_id == segment.physical_segment_id
+    assert evaluation.question.query_rt_min == pytest.approx(8.4)
+    assert evaluation.question.admissible_segment_ids == (segment.physical_segment_id,)
+    assert evaluation.segment_universe == universe
+    assert evaluation.retained_prepared_signal == prepared
     assert physical_calls == {"prepare": 1, "enumerate": 1}
+    handoff_inputs = captured["handoff_inputs"]
+    assert handoff_inputs["candidate"] == selected_candidate_value
+    assert handoff_inputs["paired_istd_anchor_rt"] == 8.55
+    assert handoff_inputs["expected_rt_min"] is None
+    np.testing.assert_array_equal(handoff_inputs["rt"], prepared.rt)
+    np.testing.assert_array_equal(handoff_inputs["intensity"], prepared.raw)
+    assert captured["acquisition_trace"].sample_name == "SampleA"
+    assert captured["acquisition_trace"].mz == target.mz
+    assert anchor_rt is None
     assert selected.integration.area_ms1_morphology == pytest.approx(
         captured["physical_evaluation"].facts.area_counts_seconds
     )
     assert captured["peak_result"].paired_istd_anchor_rt == 8.55
     assert isinstance(results["Analyte"], ExtractionResult)
+
+
+def test_physical_candidate_projection_preserves_owner_values_and_segment_order(
+    physical_candidate_input,
+) -> None:
+    prepared, universe = physical_candidate_input
+
+    result = physical_candidates_result(prepared, universe)
+
+    assert result == PeakCandidatesResult(
+        status="OK",
+        candidates=(
+            PeakCandidate(
+                peak=PeakResult(3.0, 90.0, 75.0, 1200.0, 2.0, 4.0),
+                selection_apex_rt=3.0,
+                selection_apex_intensity=75.0,
+                selection_apex_index=3,
+                raw_apex_rt=3.0,
+                raw_apex_intensity=90.0,
+                raw_apex_index=3,
+                prominence=65.0,
+                region_scan_count=3,
+                region_duration_min=2.0,
+                region_edge_ratio=3.0 / 65.0,
+                region_trace_continuity=1.0,
+                proposal_sources=("physical_segment:segment:later",),
+            ),
+            PeakCandidate(
+                peak=PeakResult(1.0, 60.0, 45.0, 600.0, 0.0, 2.0),
+                selection_apex_rt=1.0,
+                selection_apex_intensity=45.0,
+                selection_apex_index=1,
+                raw_apex_rt=1.0,
+                raw_apex_intensity=60.0,
+                raw_apex_index=1,
+                prominence=35.0,
+                region_scan_count=3,
+                region_duration_min=2.0,
+                region_edge_ratio=3.0 / 35.0,
+                region_trace_continuity=1.0,
+                proposal_sources=("physical_segment:segment:earlier",),
+            ),
+        ),
+        n_points=5,
+        max_smoothed=75.0,
+        n_prominent_peaks=2,
+    )
+
+
+@pytest.mark.parametrize(
+    ("state", "reason", "prepared_missing", "status"),
+    [
+        ("unavailable", "no_signal_above_baseline", False, "NO_SIGNAL"),
+        ("unavailable", "insufficient_trace_points", False, "PEAK_NOT_FOUND"),
+        ("failed", "context_unavailable", False, "PEAK_NOT_FOUND"),
+        ("available", "available", True, "PEAK_NOT_FOUND"),
+    ],
+)
+def test_physical_candidate_projection_preserves_unavailable_status(
+    physical_candidate_input,
+    state,
+    reason,
+    prepared_missing,
+    status,
+) -> None:
+    prepared, universe = physical_candidate_input
+    if prepared_missing:
+        prepared = replace(prepared, prepared=None)
+    universe = replace(universe, state=state, reason=reason)
+
+    result = physical_candidates_result(prepared, universe)
+
+    assert result == PeakCandidatesResult(status, (), 5, None, 0)
+
+
+def test_physical_candidate_projection_preserves_empty_universe(
+    physical_candidate_input,
+) -> None:
+    prepared, universe = physical_candidate_input
+
+    result = physical_candidates_result(prepared, replace(universe, segments=()))
+
+    assert result == PeakCandidatesResult("PEAK_NOT_FOUND", (), 5, 75.0, 0)
+
+
+def test_physical_candidate_selection_binds_unique_owner_segment(
+    physical_candidate_input,
+) -> None:
+    prepared, universe = physical_candidate_input
+    candidates = physical_candidates_result(prepared, universe).candidates
+
+    assert selected_physical_segment(None, universe) is None
+    for candidate, segment in zip(candidates, universe.segments, strict=True):
+        assert selected_physical_segment(candidate, universe) == segment
+    repeated_source = replace(
+        candidates[0],
+        proposal_sources=(
+            "other_proposal",
+            "physical_segment:segment:later",
+            "physical_segment:segment:later",
+        ),
+    )
+    assert selected_physical_segment(repeated_source, universe) == universe.segments[0]
+
+
+@pytest.mark.parametrize(
+    "sources",
+    [
+        (),
+        ("other_proposal",),
+        ("physical_segment:missing",),
+        ("physical_segment:segment:later", "physical_segment:segment:earlier"),
+    ],
+)
+def test_physical_candidate_selection_rejects_nonunique_binding(
+    physical_candidate_input,
+    sources,
+) -> None:
+    prepared, universe = physical_candidate_input
+    candidate = physical_candidates_result(prepared, universe).candidates[0]
+
+    with pytest.raises(
+        ValueError,
+        match="^selected Targeted candidate must identify one physical segment$",
+    ):
+        selected_physical_segment(
+            replace(candidate, proposal_sources=sources), universe
+        )
 
 
 def test_paired_analyte_fallback_window_uses_target_region_not_istd_rt(
@@ -475,6 +653,74 @@ def test_paired_target_reference_rt_uses_active_pair_delta() -> None:
     )
 
     assert expected == pytest.approx(16.45)
+
+
+@pytest.fixture
+def physical_candidate_input() -> tuple[PreparedSignalResult, PhysicalSegmentUniverse]:
+    profile = DEFAULT_SIGNAL_PROCESSING_PROFILE
+    projection = PreparedSignalProjection(
+        schema_version="prepared_signal",
+        trace_content_id="trace:test",
+        profile_id=profile.profile_id,
+        prepared_signal_id="prepared:test",
+        trace_point_count=5,
+        state="available",
+        reason="available",
+    )
+    prepared = PreparedSignal(
+        projection=projection,
+        profile=profile,
+        rt=(0.0, 1.0, 2.0, 3.0, 4.0),
+        raw=(11.0, 60.0, 21.0, 90.0, 14.0),
+        baseline=(10.0,) * 5,
+        smoothed=(12.0, 45.0, 13.0, 75.0, 11.0),
+        positive_signal=(2.0, 35.0, 3.0, 65.0, 1.0),
+    )
+    segments = (
+        PhysicalSegment(
+            physical_segment_id="segment:later",
+            start_index=2,
+            end_index=5,
+            apex_index=3,
+            left_rt_min=2.0,
+            right_rt_min=4.0,
+            apex_rt_min=3.0,
+            height=65.0,
+            scan_support_count=3,
+            area_counts_seconds=1200.0,
+            segment_class="isolated_peak",
+            boundary_stop_reason="baseline_return",
+            evidence_sources=("owner_segment",),
+        ),
+        PhysicalSegment(
+            physical_segment_id="segment:earlier",
+            start_index=0,
+            end_index=3,
+            apex_index=1,
+            left_rt_min=0.0,
+            right_rt_min=2.0,
+            apex_rt_min=1.0,
+            height=35.0,
+            scan_support_count=3,
+            area_counts_seconds=600.0,
+            segment_class="low_scan_segment",
+            boundary_stop_reason="baseline_return",
+            evidence_sources=("owner_segment",),
+        ),
+    )
+    return (
+        PreparedSignalResult(projection, prepared, ("trace_evaluation",)),
+        PhysicalSegmentUniverse(
+            schema_version="physical_segment_universe",
+            prepared_signal_id=projection.prepared_signal_id,
+            context_rt_start_min=0.0,
+            context_rt_end_min=4.0,
+            state="available",
+            reason="available",
+            segments=segments,
+            segment_universe_id="universe:test",
+        ),
+    )
 
 
 def _candidate(
