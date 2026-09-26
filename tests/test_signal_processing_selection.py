@@ -1,9 +1,11 @@
+from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
 import pytest
 
 from xic_extractor.config import ExtractionConfig
+from xic_extractor.peak_detection.candidate_scoring import score_candidate
 from xic_extractor.peak_detection.scoring_models import ScoringContext
 from xic_extractor.signal_processing import find_peak_and_area
 
@@ -404,23 +406,26 @@ def test_typed_recovery_selection_ignores_legacy_confidence_monkeypatch(
             dirty_matrix=False,
         )
 
-    def _score_candidate(candidate, ctx, prior_rt, istd_confidence_note=None):
-        from xic_extractor.peak_detection.scoring_models import (
-            Confidence,
-            ScoredCandidate,
-        )
+    def _score_candidate(
+        candidate, ctx, prior_rt, istd_confidence_note=None, **evidence_context
+    ):
+        from xic_extractor.peak_detection.scoring_models import Confidence
 
         confidence = (
             Confidence.HIGH
             if candidate.selection_apex_rt < 9.0
             else Confidence.VERY_LOW
         )
-        return ScoredCandidate(
-            candidate=candidate,
-            severities=tuple(),
+        return replace(
+            score_candidate(
+                candidate,
+                ctx,
+                prior_rt,
+                istd_confidence_note,
+                **evidence_context,
+            ),
             confidence=confidence,
             reason=confidence.value,
-            prior_rt=prior_rt,
         )
 
     monkeypatch.setattr(
@@ -518,19 +523,16 @@ def test_find_peak_and_area_passes_context_prior_into_scoring(
             dirty_matrix=False,
         )
 
-    def _score_candidate(candidate, ctx, prior_rt, istd_confidence_note=None):
+    def _score_candidate(
+        candidate, ctx, prior_rt, istd_confidence_note=None, **evidence_context
+    ):
         observed_prior_rts.append(prior_rt)
-        from xic_extractor.peak_detection.scoring_models import (
-            Confidence,
-            ScoredCandidate,
-        )
-
-        return ScoredCandidate(
-            candidate=candidate,
-            severities=tuple(),
-            confidence=Confidence.HIGH,
-            reason="all checks passed",
-            prior_rt=prior_rt,
+        return score_candidate(
+            candidate,
+            ctx,
+            prior_rt,
+            istd_confidence_note,
+            **evidence_context,
         )
 
     monkeypatch.setattr(
@@ -599,6 +601,12 @@ def test_find_peak_and_area_uses_paired_istd_anchor_in_typed_evidence() -> None:
         key=lambda score: score.candidate.selection_apex_rt,
     )
     assert far_score.evidence_facts is not None
+    assert far_score.evidence_facts.rt.role == "Analyte"
+    assert far_score.evidence_facts.rt.istd_pair == "ISTD"
+    assert far_score.evidence_facts.rt.paired_istd_anchor_rt_min == 10.0
+    assert far_score.evidence_facts.rt.paired_istd_delta_min == pytest.approx(1.25)
     assert far_score.evidence_facts.rt.paired_istd_status == "far"
+    assert far_score.evidence_facts.chemical.nl_match is False
+    assert far_score.evidence_facts.area == far_score.candidate.peak.area
     assert far_score.confidence == "VERY_LOW"
     assert "paired_istd_rt_mismatch_policy" in far_score.reason
