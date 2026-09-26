@@ -266,7 +266,7 @@ def test_formal_target_ranks_only_physically_supported_signal(
         assert result.selected_hypothesis is None
         assert result.selection_decision is None
         assert evaluation.state == "unavailable"
-        assert evaluation.reason == "fragmented_original_xic_support"
+        assert evaluation.reason == "no_selection"
         assert projection.counted_detection is False
         assert rows[0]["Qualified_RT"] == rows[0]["Qualified_Area"] == "ND"
         assert long_rows[0]["Counted Detection"] == "FALSE"
@@ -317,6 +317,81 @@ def test_formal_target_drops_selection_when_final_physical_owner_is_unavailable(
     assert result.targeted_product_projection.counted_detection is False
     row = _read_csv(config.output_csv)[0]
     assert row["Rejected_RT"] == row["Rejected_Area"] == "ND"
+
+
+@pytest.mark.parametrize("neutral_loss_da", [None, 116.0474])
+def test_no_selected_apex_does_not_capture_a_broad_tail(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    neutral_loss_da: float | None,
+) -> None:
+    config = _config(tmp_path)
+    (config.data_dir / "SampleA.raw").write_text("", encoding="utf-8")
+    target = replace(
+        _target("OutsideApex", neutral_loss_da=neutral_loss_da),
+        rt_min=9.3,
+        rt_max=12.3,
+    )
+
+    class BroadTailRaw(_FakeRaw):
+        def extract_xic(self, mz, rt_min, rt_max, ppm_tol):
+            rt = np.linspace(rt_min, rt_max, 1801)
+            return rt, 5000.0 * np.exp(-0.5 * ((rt - 12.6) / 0.8) ** 2)
+
+    monkeypatch.setattr(
+        "xic_extractor.extractor.open_raw", lambda *_args, **_kwargs: BroadTailRaw()
+    )
+    monkeypatch.setattr(
+        "xic_extractor.extractor.find_nl_anchor_rt", _anchor_sequence([10.8])
+    )
+    monkeypatch.setattr(
+        "xic_extractor.extractor.check_nl",
+        _nl_sequence([NLResult("OK", 1.0, 10.8, 1, 0, 1)]),
+    )
+
+    output = _run(config, [target])
+    result = output.file_results[0].results[target.label]
+    evaluation = result.physical_evaluation
+    assert evaluation is not None
+    assert evaluation.segment_universe.state == "available"
+    assert evaluation.segment_universe.segments
+    assert all(
+        segment.apex_rt_min > target.rt_max
+        for segment in evaluation.segment_universe.segments
+    )
+    assert any(
+        segment.left_rt_min < 10.8 < segment.right_rt_min
+        for segment in evaluation.segment_universe.segments
+    )
+    assert evaluation.state == "unavailable"
+    assert evaluation.reason == "no_selection"
+    assert evaluation.facts is None
+    assert evaluation.integration is None
+    assert result.peak is None
+    assert result.selected_hypothesis is None
+    assert result.reported_rt is None
+    assert result.reported_peak_area is None
+    assert result.targeted_product_projection is not None
+    assert result.targeted_product_projection.counted_detection is False
+    row = _read_csv(config.output_csv)[0]
+    assert row["OutsideApex_RT"] == row["OutsideApex_Area"] == "ND"
+
+    from xic_extractor.extraction.targeted_production_workflow import (
+        execute_targeted_production_workflow,
+    )
+    from xic_extractor.extraction.targeted_service import (
+        build_targeted_application_request,
+    )
+
+    finalized = execute_targeted_production_workflow(
+        build_targeted_application_request(
+            config, [target], injection_order={"SampleA": 1}
+        ),
+        output,
+    )
+    assert len(finalized) == 1
+    assert finalized[0].scientific_core.cell_observations == ()
+    assert finalized[0].completed_projection.no_write_count == 1
 
 
 def test_target_selection_window_uses_one_wide_physical_context(
@@ -878,12 +953,13 @@ def test_run_writes_nd_for_peak_failure_but_keeps_nl_result(
     config = _config(tmp_path)
     (config.data_dir / "SampleA.raw").write_text("", encoding="utf-8")
     targets = [_target("WithNL")]
-    monkeypatch.setattr("xic_extractor.extractor.open_raw", _open_raw_factory())
+    class FlatRaw(_FakeRaw):
+        def extract_xic(self, mz, rt_min, rt_max, ppm_tol):
+            rt = np.linspace(rt_min, rt_max, 201)
+            return rt, np.full(len(rt), 10.0)
+
     monkeypatch.setattr(
-        "xic_extractor.extraction.target_extraction.find_peak_and_area_from_candidates",
-        _peak_sequence(
-            [_failed_peak("PEAK_NOT_FOUND", n_points=15, max_smoothed=1234.0)]
-        ),
+        "xic_extractor.extractor.open_raw", lambda *_args, **_kwargs: FlatRaw()
     )
     monkeypatch.setattr(
         "xic_extractor.extractor.check_nl",
@@ -903,8 +979,7 @@ def test_run_writes_nd_for_peak_failure_but_keeps_nl_result(
     diagnostics = _read_csv(config.diagnostics_csv)
     assert diagnostics[0]["Issue"] == "PEAK_NOT_FOUND"
     assert diagnostics[0]["Target"] == "WithNL"
-    assert "prominence" in diagnostics[0]["Reason"]
-    assert "max=1234" in diagnostics[0]["Reason"]
+    assert diagnostics[0]["Reason"] == "Physical peak unavailable: peak_not_found"
 
 
 def test_run_projects_very_low_for_nd_rows_with_failed_nl(
@@ -1054,38 +1129,30 @@ def test_run_writes_file_error_row_and_continues(
         ("PEAK_NOT_FOUND", 15, 25.0, "PEAK_NOT_FOUND", "prominence"),
     ],
 )
-def test_run_writes_peak_diagnostics(
+def test_peak_diagnostic_owner_preserves_status_and_reason(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
     peak_status: str,
     n_points: int,
     max_smoothed: float | None,
     issue: str,
     reason_part: str,
 ) -> None:
+    from xic_extractor.output.messages import build_diagnostic_records
+
     config = _config(tmp_path)
-    (config.data_dir / "SampleA.raw").write_text("", encoding="utf-8")
-    targets = [_target("NoNL", neutral_loss_da=None)]
-    monkeypatch.setattr("xic_extractor.extractor.open_raw", _open_raw_factory())
-    monkeypatch.setattr(
-        "xic_extractor.extraction.target_extraction.find_peak_and_area_from_candidates",
-        _peak_sequence(
-            [
-                _failed_peak(
-                    peak_status,
-                    n_points=n_points,
-                    max_smoothed=max_smoothed,
-                )
-            ]
+    target = _target("NoNL", neutral_loss_da=None)
+    result = ExtractionResult(
+        peak_result=_failed_peak(
+            peak_status,
+            n_points=n_points,
+            max_smoothed=max_smoothed,
         ),
+        nl=None,
     )
-
-    _run(config, targets)
-
-    diagnostics = _read_csv(config.diagnostics_csv)
-    assert diagnostics[0]["Issue"] == issue
-    assert diagnostics[0]["Target"] == "NoNL"
-    assert reason_part in diagnostics[0]["Reason"]
+    diagnostics = build_diagnostic_records("SampleA", target, result, config)
+    assert diagnostics[0].issue == issue
+    assert diagnostics[0].target_label == "NoNL"
+    assert reason_part in diagnostics[0].reason
 
 
 @pytest.mark.parametrize(
@@ -1423,7 +1490,12 @@ def test_istd_no_signal_does_not_reacquire_context(
     config = _config(tmp_path)
     (config.data_dir / "SampleA.raw").write_text("", encoding="utf-8")
     targets = [_target("ISTD", is_istd=True)]
-    raw = _RecordingRaw()
+    class NoSignalRaw(_RecordingRaw):
+        def extract_xic(self, mz, rt_min, rt_max, ppm_tol):
+            rt, _intensity = super().extract_xic(mz, rt_min, rt_max, ppm_tol)
+            return rt, np.zeros(len(rt))
+
+    raw = NoSignalRaw()
 
     monkeypatch.setattr(
         "xic_extractor.extractor.open_raw",

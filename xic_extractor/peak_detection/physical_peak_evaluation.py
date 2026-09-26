@@ -52,6 +52,7 @@ from xic_extractor.peak_detection.physical_peak_models import (
     _PHYSICAL_PEAK_SELECTION_POLICIES,
     DISCOVERY_PHYSICAL_PEAK_POINT_POLICY,
     PHYSICAL_PEAK_GROUP_WINDOW_POLICY,
+    PHYSICAL_PEAK_NO_SELECTION_POLICY,
     PHYSICAL_PEAK_POINT_POLICY,
     PHYSICAL_PEAK_WINDOW_POLICY,
     PHYSICAL_SEGMENT_UNIVERSE_SCHEMA,
@@ -429,6 +430,8 @@ def _admissible_physical_segments(
         raise ValueError("unsupported physical peak selection policy")
     if universe.schema_version != PHYSICAL_SEGMENT_UNIVERSE_SCHEMA:
         raise ValueError("physical question crosses boundary policy")
+    if selection_policy_version == PHYSICAL_PEAK_NO_SELECTION_POLICY:
+        return ()
     if selection_policy_version in {
         PHYSICAL_PEAK_WINDOW_POLICY,
         PHYSICAL_PEAK_GROUP_WINDOW_POLICY,

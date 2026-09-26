@@ -32,6 +32,9 @@ CrossSample, ModeTrack, Backfill, or selected-value implementation.
   Profile-bound capture does not run a second boundary resolver or
   integration.
 - RT, bounds, and width are expressed in minutes.
+- When identity selection chooses no component, the physical question retains
+  the acquired context and full segment universe with no admissible selection;
+  capture preserves the unavailable answer instead of selecting a broad tail.
 - An anchor-guided NL-focused acquisition can clip a selected peak at an
   acquired trace edge within the configured target scope, while the apex stays
   inside the configured target RT window. In that case the acquisition widens

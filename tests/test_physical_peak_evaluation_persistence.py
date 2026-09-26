@@ -30,6 +30,7 @@ from xic_extractor.peak_detection.physical_peak_evaluation import (
 from xic_extractor.peak_detection.physical_peak_models import (
     DISCOVERY_PHYSICAL_PEAK_POINT_POLICY,
     PHYSICAL_PEAK_GROUP_WINDOW_POLICY,
+    PHYSICAL_PEAK_NO_SELECTION_POLICY,
     PHYSICAL_PEAK_POINT_POLICY,
     PHYSICAL_PEAK_WINDOW_POLICY,
 )
@@ -735,6 +736,55 @@ def test_group_window_prefers_the_one_peak_containing_the_group_rt(
     if not expected_reason:
         assert result.facts is not None
         assert result.facts.apex_rt_min == pytest.approx(2.0)
+
+
+@pytest.mark.parametrize("has_signal", [True, False])
+def test_no_selection_policy_roundtrip_preserves_physical_context(
+    has_signal: bool,
+) -> None:
+    profile = SignalProcessingProfile(window_points=3)
+    rt = np.linspace(0.0, 3.0, 31)
+    raw = np.full(31, 10.0)
+    if has_signal:
+        raw[7:10] += [30.0, 100.0, 30.0]
+    else:
+        raw = np.zeros(len(rt))
+    prepared = prepare_physical_signal(rt, raw, profile=profile)
+    ordinary = evaluate_physical_peak(
+        prepared, selection_subject_id="selection-state", query_rt_min=0.8
+    )
+    evaluation = evaluate_physical_peak(
+        prepared,
+        selection_subject_id="selection-state",
+        query_rt_min=0.8,
+        selection_policy_version=PHYSICAL_PEAK_NO_SELECTION_POLICY,
+    )
+
+    assert evaluation.prepared == ordinary.prepared
+    assert evaluation.segment_universe == ordinary.segment_universe
+    assert evaluation.question.query_rt_min == 0.8
+    assert evaluation.question.segment_ids == ordinary.question.segment_ids
+    assert evaluation.question.admissible_segment_ids == ()
+    assert evaluation.state == "unavailable"
+    assert evaluation.facts is None
+    assert evaluation.integration is None
+    if has_signal:
+        assert ordinary.state == "available"
+        assert evaluation.segment_universe.segments
+        assert evaluation.reason == "no_selection"
+    else:
+        assert evaluation.reason == ordinary.reason == "no_signal_above_baseline"
+
+    payload = serialize_physical_peak_evaluation(
+        rt, raw, profile=profile, evaluation=evaluation
+    )
+    retained_rt, retained_raw, retained_profile, retained = (
+        deserialize_physical_peak_evaluation(payload, expected_profile=profile)
+    )
+    np.testing.assert_array_equal(retained_rt, rt)
+    np.testing.assert_array_equal(retained_raw, raw)
+    assert retained_profile == profile
+    assert retained == evaluation
 
 
 @pytest.mark.parametrize("terminal", ["available", "unavailable", "failed"])

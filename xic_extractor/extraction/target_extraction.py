@@ -60,6 +60,8 @@ from xic_extractor.peak_detection.physical_peak_evaluation import (
     prepare_physical_signal,
 )
 from xic_extractor.peak_detection.physical_peak_models import (
+    PHYSICAL_PEAK_NO_SELECTION_POLICY,
+    PHYSICAL_PEAK_POINT_POLICY,
     PhysicalSegmentUniverse,
     PreparedSignalResult,
 )
@@ -501,6 +503,11 @@ def extract_one_target(
                 universe,
                 selection_subject_id=target.label,
                 query_rt_min=query_rt_min,
+                selection_policy_version=(
+                    PHYSICAL_PEAK_POINT_POLICY
+                    if selected_segment is not None
+                    else PHYSICAL_PEAK_NO_SELECTION_POLICY
+                ),
             )
             physical_evaluation = answer_physical_peak_question(
                 prepared,
