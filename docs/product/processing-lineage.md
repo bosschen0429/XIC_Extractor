@@ -1,4 +1,26 @@
-# Processing Identity, Lineage, And Retention
+# Result Traceability（結果可追溯性）
+
+Result traceability answers one question: which run, RAW sources, evidence,
+and decision produced this delivered value or this explicit null? This page
+defines the identities and rules that make that answer durable.
+
+## Current Status
+
+This table records which parts of this contract exist in code. The rest of
+this page is the target design.
+
+| Part | Plain meaning | Status |
+| --- | --- | --- |
+| Processing identity (`xic_extractor/processing_identity.py`) | Which request and attempt ran, over which RAW sources | Implemented; production Alignment, Backfill, and Discovery modules use it |
+| Target identity (`TargetKey`, `TargetListSnapshot` in `xic_extractor/configuration/target_identity.py`) | Which exact target list a run used | Implemented; production Targeted modules use it |
+| Targeted delivery lineage (`TargetedDeliveryCellKey`, `DeliveryRevision`, `DeliverySeal` in `xic_extractor/delivery_lineage.py`) | A sealed record for each delivered Targeted cell | Implemented for Targeted; reached through `extraction.targeted_service` |
+| Untargeted row identity (`UntargetRowKey`) | A stable identity for one Untargeted Matrix row | Implemented in `alignment/projection/untarget/pre_cell.py` |
+| Untargeted delivery lineage (`UntargetedDeliveryCellKey`, Untargeted `DeliverySeal`) | A sealed record for each delivered Untargeted Matrix cell | Not implemented; Untargeted cells rely on sidecars such as `cell_provenance.tsv` |
+
+Status source: module definitions and production import paths, checked on
+2026-09-26. A status row is not validation evidence.
+
+## Scope
 
 This page defines the minimum cross-workflow lineage contract for Issue #123.
 It connects the shared scientific kernel to workflow-owned delivery without
