@@ -8,6 +8,10 @@ import pytest
 import xic_extractor.peak_detection.evidence_facts as evidence_facts_module
 from xic_extractor.config import ExtractionConfig
 from xic_extractor.peak_detection.baseline import asls_baseline
+from xic_extractor.peak_detection.engine_scoring import (
+    candidate_score_summary,
+    score_with_context,
+)
 from xic_extractor.peak_detection.evidence_facts import (
     build_candidate_evidence_facts,
     decision_semantics_from_candidate_facts,
@@ -778,16 +782,39 @@ def test_paired_istd_anchor_delta_is_typed_rt_evidence() -> None:
         residual_mad=5.0,
     )
 
-    facts = build_candidate_evidence_facts(
+    scored = score_with_context(
         candidate,
         ctx,
-        role="Analyte",
+        istd_confidence_note="paired ISTD confirmed",
+        evidence_role="Analyte",
         istd_pair="ISTD",
-        paired_istd_anchor_rt_min=7.8,
+        paired_istd_anchor_rt=7.8,
     )
 
+    facts = scored.evidence_facts
+    assert facts is not None
     assert facts.rt.paired_istd_delta_min == 0.7
     assert facts.rt.paired_istd_status == "close"
+    assert facts.rt.role == "Analyte"
+    assert facts.rt.istd_pair == "ISTD"
+    assert facts.chemical.ms2_present is False
+    assert scored.confidence.value == "VERY_LOW"
+    assert "missing_ms2_policy_not_counted" in scored.reason
+    assert scored.reason.endswith("; paired ISTD confirmed")
+
+    summary = candidate_score_summary(scored)
+    assert summary.evidence_facts is not None
+    assert summary.evidence_facts.rt.paired_istd_delta_min == 0.7
+    assert summary.evidence_facts.rt.role == "Analyte"
+    assert summary.evidence_facts.chemical.ms2_present is False
+    assert summary.evidence_facts.area == candidate.peak.area
+    assert summary.confidence == scored.confidence.value
+    assert summary.reason == scored.reason
+    assert scored.evidence_score is not None
+    assert summary.raw_score == scored.evidence_score.raw_score
+    assert summary.support_labels == scored.evidence_score.support_labels
+    assert summary.concern_labels == scored.evidence_score.concern_labels
+    assert summary.cap_labels == scored.evidence_score.cap_labels
 
 
 def test_paired_istd_anchor_projects_one_role_aware_rt_support_reason() -> None:

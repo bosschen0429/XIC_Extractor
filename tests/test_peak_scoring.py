@@ -9,6 +9,7 @@ from xic_extractor.peak_detection.candidate_scoring import (
 from xic_extractor.peak_detection.candidate_selection import (
     select_candidate_with_confidence,
 )
+from xic_extractor.peak_detection.engine_scoring import score_with_context
 from xic_extractor.peak_detection.hypotheses import EvidenceVector
 from xic_extractor.peak_detection.scoring_models import (
     Confidence,
@@ -808,7 +809,20 @@ def test_score_candidate_keeps_in_window_edge_peak_as_rt_centrality_concern() ->
     assert "targeted_rt_conflict" in scored.reason
 
 
-def test_score_candidate_penalizes_flagged_candidate_quality() -> None:
+@pytest.mark.parametrize(
+    ("evidence_context", "include_quality_note"),
+    [
+        (None, True),
+        ({}, True),
+        ({"evidence_role": "ISTD"}, False),
+        ({"evidence_role": "Analyte", "istd_pair": "ISTD"}, False),
+        ({"istd_pair": "ISTD"}, False),
+        ({"paired_istd_anchor_rt": 10.0}, False),
+    ],
+)
+def test_score_candidate_penalizes_flagged_candidate_quality(
+    evidence_context, include_quality_note: bool
+) -> None:
     cand = _make_flagged_candidate(
         apex_rt=10.0,
         apex_intensity=1000.0,
@@ -832,12 +846,28 @@ def test_score_candidate_penalizes_flagged_candidate_quality() -> None:
         prefer_rt_prior_tiebreak=False,
     )
 
-    scored = score_candidate(cand, ctx, prior_rt=10.0)
+    note = "paired ISTD confirmed"
+    if evidence_context is None:
+        scored = score_candidate(cand, ctx, prior_rt=10.0, istd_confidence_note=note)
+    else:
+        scored = score_with_context(
+            cand,
+            ctx,
+            istd_confidence_note=note,
+            **evidence_context,
+        )
 
     assert scored.confidence == Confidence.LOW
     assert scored.evidence_facts is not None
     assert "too_broad" in scored.evidence_facts.trace.quality_flags
     assert "hard_quality_flag_conflict" in scored.reason
+    assert ("weak candidate: too_broad" in scored.reason) is include_quality_note
+    assert scored.reason.endswith(f"; {note}")
+    assert scored.quality_penalty == 1
+    assert scored.selection_quality_penalty == 1
+    assert scored.evidence_score is not None
+    assert "hard_quality_flag" in scored.evidence_score.concern_labels
+    assert "hard_quality_flag_cap" in scored.evidence_score.cap_labels
     assert len(scored.severities) == 10
 
 

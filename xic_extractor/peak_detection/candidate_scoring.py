@@ -41,7 +41,6 @@ from xic_extractor.peak_detection.scoring_quality import (
     trace_quality_cap_required,
     trace_quality_severities,
 )
-from xic_extractor.peak_detection.scoring_reason import build_evidence_reason
 from xic_extractor.peak_scoring_evidence import (
     ConfidenceCap,
     EvidenceSignal,
@@ -54,6 +53,10 @@ def score_candidate(
     ctx: ScoringContext,
     prior_rt: float | None,
     istd_confidence_note: str | None = None,
+    *,
+    evidence_role: str = "",
+    istd_pair: str = "",
+    paired_istd_anchor_rt: float | None = None,
 ) -> ScoredCandidate:
     quality_penalty, quality_notes = candidate_quality_penalty(candidate)
     selection_quality_penalty = quality_penalty + candidate_selection_quality_penalty(
@@ -90,7 +93,13 @@ def score_candidate(
         quality_penalty,
     )
     evidence_score = score_evidence(positive=positive, negative=negative, caps=caps)
-    evidence_facts = build_candidate_evidence_facts(candidate, ctx)
+    evidence_facts = build_candidate_evidence_facts(
+        candidate,
+        ctx,
+        role=evidence_role,
+        istd_pair=istd_pair,
+        paired_istd_anchor_rt_min=paired_istd_anchor_rt,
+    )
     semantics = decision_semantics_from_candidate_facts(
         evidence_facts,
         count_no_ms2_as_detected=ctx.count_no_ms2_as_detected,
@@ -99,18 +108,17 @@ def score_candidate(
         projected_confidence_from_candidate_facts(evidence_facts, semantics)
     )
     reason = projected_reason_from_candidate_facts(evidence_facts, semantics)
-    legacy_reason = build_evidence_reason(
-        evidence_score,
-        istd_confidence_note,
-        extra_notes=quality_notes,
-        count_no_ms2_as_detected=ctx.count_no_ms2_as_detected,
-    )
-    if quality_notes:
+    # Contextual reasons carry quality through facts; empty-context scoring
+    # also exposes the detailed legacy quality note to its current consumers.
+    if (
+        quality_notes
+        and not evidence_role
+        and not istd_pair
+        and paired_istd_anchor_rt is None
+    ):
         reason = f"{reason}; {'; '.join(quality_notes)}"
     if istd_confidence_note:
         reason = f"{reason}; {istd_confidence_note}"
-    if not reason:
-        reason = legacy_reason
     return ScoredCandidate(
         candidate=candidate,
         severities=tuple(severities),
