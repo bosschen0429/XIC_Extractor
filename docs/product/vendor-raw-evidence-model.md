@@ -26,12 +26,14 @@ decisions.
   carry lineage. At minimum, distinguish vendor raw trace, smoothed trace,
   detection basis, boundary basis, and quantitation basis.
 - Peak detection is a strategy layer, not the underlying truth. Qual Browser
-  exposes multiple peak detection algorithms; XIC Extractor can use its own
-  model only if its settings and consequences are explicit.
-- Manual review and overrides are review-layer facts. They must not silently
-  rewrite automatic Discovery, Alignment, Backfill, or ProductWriter rules.
-- Evidence providers create typed facts. They do not write matrices directly
-  unless a separate activation/export contract grants ProductWriter authority.
+  exposes multiple peak detection algorithms. XIC Extractor can use its own
+  model only if the settings and consequences of that model are explicit.
+- Manual review and overrides are review-layer facts. Review-layer facts must
+  not silently rewrite automatic Discovery, Alignment, Backfill, or
+  ProductWriter rules.
+- Evidence providers create typed facts. Evidence providers do not write
+  matrices directly unless a separate activation/export contract grants
+  ProductWriter authority.
 
 ## Concept Mapping
 
@@ -48,9 +50,9 @@ decisions.
 ## Discovery Implications
 
 - CID-NL, HCD-PI, Delta Mass, RT/iRT, MS1 pattern, shape, standards, and future
-  learned models are evidence providers. They should be modeled as evidence
-  queries over RAW-derived observations, not as permanent matrix-writing
-  authorities.
+  learned models are evidence providers. Evidence providers should be modeled
+  as evidence queries over RAW-derived observations, not as permanent
+  matrix-writing authorities.
 - Composite Discovery strategies should compose evidence queries on an explicit
   anchor. For example, `pt_pattern + cid_nl(dR)` is an intersection on the same
   base peak, not two independent writers competing for the Matrix.
