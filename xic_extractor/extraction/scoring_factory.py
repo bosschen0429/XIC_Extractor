@@ -187,18 +187,21 @@ def build_scoring_context_factory(
                 if candidate_ms2 is not None
                 else None
             )
-            half_width_ratio, fwhm = compute_shape_metrics(
+            half_width_ratio, width_min = compute_shape_metrics(
+                rt_values,
                 active_intensity_values,
                 candidate.selection_apex_index,
             )
+            # Both widths are half-prominence widths in minutes; carrier names
+            # retain the existing fwhm spelling.
             fwhm_ratio: float | None = None
             if (
                 not target.is_istd
-                and fwhm is not None
+                and width_min is not None
                 and paired_istd_fwhm is not None
                 and paired_istd_fwhm > 0
             ):
-                fwhm_ratio = fwhm / paired_istd_fwhm
+                fwhm_ratio = width_min / paired_istd_fwhm
             return ScoringContext(
                 rt_array=rt_values,
                 intensity_array=active_intensity_values,
@@ -267,9 +270,12 @@ def make_scoring_context_factory(
 
 
 def compute_shape_metrics(
+    rt: np.ndarray,
     intensity: np.ndarray,
     apex_index: int,
 ) -> tuple[float, float | None]:
+    """Return the RT half-width ratio and half-prominence width in minutes."""
+    rt_values = np.asarray(rt, dtype=float)
     values = np.asarray(intensity, dtype=float)
     if len(values) == 0 or apex_index < 0 or apex_index >= len(values):
         return 1.0, None
@@ -282,24 +288,31 @@ def compute_shape_metrics(
         )
     if len(widths) == 0:
         return 1.0, None
-    fwhm = float(widths[0])
-    if not np.isfinite(fwhm) or fwhm <= 0:
+    left_rt, right_rt = np.interp(
+        [left_ips[0], right_ips[0]],
+        np.arange(len(values)),
+        rt_values,
+    )
+    width_min = float(right_rt - left_rt)
+    if not np.isfinite(width_min) or width_min <= 0:
         return 1.0, None
-    left = apex_index - float(left_ips[0])
-    right = float(right_ips[0]) - apex_index
+    left = float(rt_values[apex_index] - left_rt)
+    right = float(right_rt - rt_values[apex_index])
     if left <= 0 or right <= 0:
-        return 1.0, fwhm
-    return float(left / right), fwhm
+        return 1.0, width_min
+    return float(left / right), width_min
 
 
 def selected_shape_metrics(
+    rt: np.ndarray,
     intensity: np.ndarray,
     peak_result: PeakDetectionResult,
 ) -> tuple[float, float | None] | None:
+    """Return selected trace shape with its half-prominence width in minutes."""
     candidate = selected_candidate(peak_result)
     if candidate is None:
         return None
-    return compute_shape_metrics(intensity, candidate.selection_apex_index)
+    return compute_shape_metrics(rt, intensity, candidate.selection_apex_index)
 
 
 def selected_candidate(peak_result: PeakDetectionResult) -> PeakCandidate | None:
@@ -323,6 +336,7 @@ def paired_istd_fwhm(
     target: Target,
     istd_shape_metrics_by_label: dict[str, tuple[float, float | None]],
 ) -> float | None:
+    """Return selected ISTD half-prominence width in minutes (legacy name)."""
     if not target.istd_pair:
         return None
     metrics = istd_shape_metrics_by_label.get(target.istd_pair)
