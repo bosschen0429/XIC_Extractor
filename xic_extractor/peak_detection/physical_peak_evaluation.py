@@ -504,6 +504,14 @@ def validate_physical_peak_question_identity(
             raise ValueError("physical question crosses universe context")
 
 
+def physical_segment_has_incomplete_context(
+    prepared: PreparedSignalProjection,
+    segment: PhysicalSegment,
+) -> bool:
+    """Read clipped boundaries from trusted owner geometry."""
+    return segment.start_index == 0 or segment.end_index == prepared.trace_point_count
+
+
 def qualified_physical_segments(
     prepared: PreparedSignal,
     segments: tuple[PhysicalSegment, ...],
@@ -523,7 +531,7 @@ def qualified_physical_segments(
 def _physical_segment_support_failure(
     prepared: PreparedSignal, selected: PhysicalSegment
 ) -> str:
-    if selected.start_index == 0 or selected.end_index == len(prepared.rt):
+    if physical_segment_has_incomplete_context(prepared.projection, selected):
         return "incomplete_peak_context"
     # Smoothing may spread acquired impulses into a peak. Acquired background
     # is not support; reuse the prepared baseline for the original XIC.

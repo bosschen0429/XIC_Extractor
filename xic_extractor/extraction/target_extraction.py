@@ -57,6 +57,7 @@ from xic_extractor.peak_detection.physical_peak_evaluation import (
     answer_physical_peak_question,
     enumerate_physical_segment_universe,
     mint_physical_peak_question,
+    physical_segment_has_incomplete_context,
     prepare_physical_signal,
 )
 from xic_extractor.peak_detection.physical_peak_models import (
@@ -356,6 +357,25 @@ def extract_one_target(
         cached = (prepared_result, segment_universe, candidates_result)
         physical_trace_cache[cache_key] = cached
         return cached
+
+    initial_prepared, initial_universe, initial_candidates = _physical_trace_owners(
+        rt, intensity
+    )
+    if not initial_candidates.candidates and any(
+        selection_rt_min <= segment.apex_rt_min <= selection_rt_max
+        and physical_segment_has_incomplete_context(
+            initial_prepared.projection, segment
+        )
+        for segment in initial_universe.segments
+    ):
+        context_rt_min = max(0.0, context_rt_min - configured_width)
+        context_rt_max += configured_width
+        rt, intensity = raw.extract_xic(
+            target.mz,
+            context_rt_min,
+            context_rt_max,
+            target.ppm_tol,
+        )
 
     trace_scoring_context_factory: Callable[..., Any] | None = None
     if scoring_context_factory is not None:

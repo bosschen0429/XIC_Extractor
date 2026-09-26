@@ -35,14 +35,11 @@ CrossSample, ModeTrack, Backfill, or selected-value implementation.
 - When identity selection chooses no component, the physical question retains
   the acquired context and full segment universe with no admissible selection;
   capture preserves the unavailable answer instead of selecting a broad tail.
-- An anchor-guided NL-focused acquisition can clip a selected peak at an
-  acquired trace edge within the configured target scope, while the apex stays
-  inside the configured target RT window. In that case the acquisition widens
-  its query once to the union of the current query RT range and the configured
-  target RT window (`rt_min`..`rt_max`). The same peak and evidence owners then
-  select from the observed context.
-- A complete selected peak keeps its original query. A manual RT does not
-  trigger this window restore and does not choose its result.
+- If the selection window has no qualified physical candidate but contains a
+  clipped segment's apex, acquisition expands its context once by the configured
+  target-window width on each side, with a zero lower RT limit. Selection bounds
+  and reference RT stay unchanged. An existing qualified in-window candidate
+  keeps its original acquisition and quantitation.
 
 ### Target identity and search scope
 

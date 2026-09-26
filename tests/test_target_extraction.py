@@ -1050,3 +1050,147 @@ def _evidence(nl_status: str) -> CandidateMS2Evidence:
         best_product_base_ratio=None,
         alignment_source="none",
     )
+
+
+@pytest.mark.parametrize(
+    "trace_case", ["clipped", "repeated_clipped", "complete", "remote_clipped"]
+)
+def test_target_reacquires_only_clipped_peak_inside_original_selection(
+    tmp_path, monkeypatch, trace_case: str
+) -> None:
+    config = ExtractionConfig(
+        data_dir=tmp_path,
+        dll_dir=tmp_path,
+        output_csv=tmp_path / "results.csv",
+        diagnostics_csv=tmp_path / "diagnostics.csv",
+        smooth_window=15,
+        smooth_polyorder=3,
+        peak_rel_height=0.95,
+        peak_min_prominence_ratio=0.1,
+        ms2_precursor_tol_da=0.5,
+        nl_min_intensity_ratio=0.01,
+        nl_fallback_half_window_min=0.25,
+    )
+    target = Target(
+        label="Analyte",
+        mz=258.1085,
+        rt_min=8.0,
+        rt_max=10.0,
+        ppm_tol=20.0,
+        neutral_loss_da=116.047344,
+        nl_ppm_warn=10.0,
+        nl_ppm_max=20.0,
+        is_istd=False,
+        istd_pair="ISTD",
+    )
+    full_rt = np.arange(3.0, 18.0001, 0.02)
+    center = 10.6 if trace_case == "remote_clipped" else 9.94
+    offset = full_rt - center
+    sigma = np.where(offset < 0.0, 0.2, 4.0)
+    if trace_case == "complete":
+        center = 9.8
+        offset = full_rt - center
+        sigma = np.full_like(full_rt, 0.08)
+    full_intensity = 100.0 + 10_000.0 * np.exp(-0.5 * (offset / sigma) ** 2)
+
+    class Raw:
+        def __init__(self):
+            self.requests = []
+            self.traces = []
+            self.ms2_windows = []
+
+        def extract_xic(self, mz, rt_min, rt_max, ppm_tol):
+            self.requests.append((mz, rt_min, rt_max, ppm_tol))
+            mask = (full_rt >= rt_min - 1e-9) & (full_rt <= rt_max + 1e-9)
+            trace = (full_rt[mask], full_intensity[mask])
+            if trace_case == "repeated_clipped" and self.traces:
+                trace = self.traces[0]
+            self.traces.append(trace)
+            return trace
+
+        def iter_ms2_scans(self, rt_min, rt_max):
+            self.ms2_windows.append((rt_min, rt_max))
+            return iter(())
+
+    raw = Raw()
+    calls = {"prepare": 0, "enumerate": 0}
+    preparations = []
+    universes = []
+    real_prepare = target_extraction.prepare_physical_signal
+    real_enumerate = target_extraction.enumerate_physical_segment_universe
+
+    def prepare(*args, **kwargs):
+        calls["prepare"] += 1
+        result = real_prepare(*args, **kwargs)
+        preparations.append(result)
+        return result
+
+    def enumerate_segments(*args, **kwargs):
+        calls["enumerate"] += 1
+        result = real_enumerate(*args, **kwargs)
+        universes.append(result)
+        return result
+
+    monkeypatch.setattr(target_extraction, "prepare_physical_signal", prepare)
+    monkeypatch.setattr(
+        target_extraction, "enumerate_physical_segment_universe", enumerate_segments
+    )
+    results = {}
+    anchor = target_extraction.extract_one_target(
+        raw,
+        config,
+        "Sample",
+        target,
+        reference_rt=9.75,
+        strict_preferred_rt=True,
+        istd_rt_in_this_sample=9.75,
+        results=results,
+        diagnostics=[],
+    )
+    result = results[target.label]
+    assert anchor == 9.75
+    assert raw.requests[0] == (target.mz, 6.0, 12.0, target.ppm_tol)
+    assert (8.0, 10.0) in raw.ms2_windows
+    initial = universes[0]
+    eligible = tuple(s for s in initial.segments if 9.5 <= s.apex_rt_min <= 10.0)
+    clipped = tuple(
+        s
+        for s in eligible
+        if s.start_index == 0
+        or s.end_index == preparations[0].projection.trace_point_count
+    )
+    needs_extension = trace_case in {"clipped", "repeated_clipped"}
+    assert bool(clipped) is needs_extension
+    assert len(raw.requests) == (2 if needs_extension else 1)
+    expected_preparations = 2 if trace_case == "clipped" else 1
+    assert calls == {
+        "prepare": expected_preparations,
+        "enumerate": expected_preparations,
+    }
+    if needs_extension:
+        assert physical_candidates_result(preparations[0], initial).candidates == ()
+        assert raw.requests[1] == (target.mz, 4.0, 14.0, target.ppm_tol)
+    assert result.acquisition_trace is not None
+    assert result.acquisition_trace.rt_min == raw.requests[-1][1]
+    assert result.acquisition_trace.rt_max == raw.requests[-1][2]
+    np.testing.assert_array_equal(result.acquisition_trace.rt, raw.traces[-1][0])
+    np.testing.assert_array_equal(result.acquisition_trace.intensity, raw.traces[-1][1])
+    assert result.physical_evaluation is not None
+    if trace_case in {"repeated_clipped", "remote_clipped"}:
+        assert result.peak is None
+        assert result.physical_evaluation.state == "unavailable"
+        assert result.physical_evaluation.facts is None
+        assert result.reported_peak_area is None
+    else:
+        assert result.peak is not None
+        assert 9.5 <= result.peak.rt <= 10.0
+        assert result.peak.rt == pytest.approx(center, abs=0.08)
+        facts = result.physical_evaluation.facts
+        assert facts is not None
+        assert result.selected_hypothesis is not None
+        assert (
+            result.selected_hypothesis.integration.area_ms1_morphology
+            == facts.area_counts_seconds
+        )
+        if trace_case == "clipped":
+            assert facts.right_rt_min > 12.0
