@@ -117,8 +117,10 @@ update triggers above.
 
 ### Sentence rules
 
-1. **One claim per sentence.** Split a sentence that states two rules, or a
-   rule and its exception, into two sentences.
+1. **One claim per sentence.** Split a sentence that states two independent
+   rules. A rule with its condition or exception (`unless`, `until`, `only
+   when`) is one claim; keep it in one sentence. An `X, not Y` contrast is
+   also one claim.
 2. **Name the subject.** Each rule names the owner that acts: `CrossSample
    owns membership.` not `Membership is owned.` Use the passive voice only
    when the actor is unknown or irrelevant.
@@ -126,7 +128,8 @@ update triggers above.
    thing acted on. Put conditions before the rule: `If S < K, Backfill does not
    start.`
 4. **No ambiguous pronouns.** Do not start a sentence with `This`, `That`,
-   `It`, or `These` unless the noun follows (`This route`, `That receipt`).
+   `It`, `These`, `Those`, or `They` unless the noun follows (`This route`,
+   `That receipt`).
    Repeat the noun when the referent is more than one sentence back.
 5. **Rule words.** Use `must` / `must not` for a contract, `does` / `does not`
    for current behavior, and `can` for a permitted but optional behavior. Do
@@ -134,7 +137,9 @@ update triggers above.
 6. **Short sentences.** Aim for 25 words or fewer. A longer sentence is
    acceptable only for one list-like chain that a table cannot hold.
 7. **Negatives are explicit.** State what an owner does not do as a separate
-   sentence, and name the owner that does it instead.
+   sentence. Name the owner that does it instead when that owner is known. A
+   `Does not own:` list in `## Boundaries` is exempt; `## See Also` routes
+   those owners.
 
 ### Vocabulary rules
 
@@ -143,7 +148,7 @@ update triggers above.
    glossary term (for example `rescue` or `repair` for Backfill).
 2. **Stable spelling.** Write a code identifier, file name, field, or label in
    backticks with its exact spelling. Write a product concept in plain words
-   with the glossary capitalization (`Backfill`, `CrossSample`, `Matrix`).
+   with the glossary capitalization (`Backfill`, `CrossSample`).
 3. **Define before use.** A term that is not in the glossary gets a one-line
    definition at its first use, or moves to the glossary if two pages use it.
 4. **No filler.** Delete words that do not change the meaning: `currently`
