@@ -61,7 +61,7 @@ def build_scoring_context_factory(
             )
             if rt_prior is not None:
                 prior_source = "rolling_median"
-            else:
+            elif target.neutral_loss_da is not None:
                 library_entry = rt_prior_library.get((target.label, "ISTD"))
                 if (
                     library_entry is not None
@@ -70,7 +70,7 @@ def build_scoring_context_factory(
                     rt_prior = library_entry.median_abs_rt
                     rt_prior_sigma = library_entry.sigma_abs_rt
                     prior_source = "library_abs"
-        else:
+        elif target.neutral_loss_da is not None:
             library_entry = rt_prior_library.get((target.label, "analyte"))
             if (
                 library_entry is not None

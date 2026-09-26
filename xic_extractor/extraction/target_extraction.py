@@ -38,8 +38,14 @@ from xic_extractor.output.messages import (
     build_diagnostic_records,
     istd_confidence_note,
 )
+from xic_extractor.peak_detection.candidate_selection import (
+    select_candidate_by_evidence,
+)
 from xic_extractor.peak_detection.engine import (
     find_peak_and_area as find_peak_and_area_from_candidates,
+)
+from xic_extractor.peak_detection.evidence_facts import (
+    decision_semantics_from_candidate_facts,
 )
 from xic_extractor.peak_detection.model_selection import ExpectedDiffApprovalRecords
 from xic_extractor.peak_detection.models import (
@@ -66,7 +72,7 @@ from xic_extractor.peak_detection.physical_peak_models import (
     PhysicalSegmentUniverse,
     PreparedSignalResult,
 )
-from xic_extractor.peak_detection.scoring_models import ScoringContext
+from xic_extractor.peak_detection.scoring_models import ScoredCandidate, ScoringContext
 from xic_extractor.peak_detection.selection_decision import (
     selection_decision_from_hypothesis,
 )
@@ -193,6 +199,9 @@ def process_file(
             else:
                 istd_anchor_rts = dict(precomputed_istd_anchor_rts)
             sample_drift = estimate_sample_drift(targets, istd_anchor_rts)
+            istd_targets = {
+                target.label: target for target in targets if target.is_istd
+            }
 
             for target in targets:
                 if target.is_istd:
@@ -211,6 +220,7 @@ def process_file(
                     sample_name,
                     target,
                     reference_rt=reference_rt,
+                    paired_target=istd_targets.get(target.istd_pair),
                     rt_prior_library=active_rt_prior_library,
                     sample_drift=sample_drift,
                     strict_preferred_rt=reference_rt is not None,
@@ -254,6 +264,7 @@ def extract_one_target(
     target: Target,
     *,
     reference_rt: float | None,
+    paired_target: Target | None = None,
     rt_prior_library: dict[tuple[str, str], LibraryEntry] | None = None,
     sample_drift: float = 0.0,
     strict_preferred_rt: bool = False,
@@ -278,6 +289,7 @@ def extract_one_target(
         target,
         reference_rt=reference_rt,
         rt_prior_library=rt_prior_library,
+        paired_target=paired_target,
     )
     selection_rt_min, selection_rt_max, anchor_used, anchor_rt = get_rt_window(
         raw,
@@ -287,6 +299,8 @@ def extract_one_target(
         target_reference_rt=target_reference_rt,
         sample_drift=sample_drift,
     )
+    if target.neutral_loss_da is None:
+        strict_preferred_rt = True
     configured_width = target.rt_max - target.rt_min
     context_rt_min = max(
         0.0,
@@ -423,6 +437,11 @@ def extract_one_target(
             evidence_role=evidence_role,
             istd_pair=istd_pair,
             paired_istd_anchor_rt=paired_istd_anchor_rt,
+            evidence_selector=(
+                _select_no_nl_candidate_by_reference
+                if target.neutral_loss_da is None
+                else select_candidate_by_evidence
+            ),
         )
 
     scoring_context_builder = None
@@ -640,14 +659,62 @@ def extract_one_target(
     return anchor_rt
 
 
+def _select_no_nl_candidate_by_reference(
+    scored: list[ScoredCandidate],
+    *,
+    selection_rt: float | None = None,
+    strict_selection_rt: bool = False,
+) -> ScoredCandidate:
+    """Rank supported physical components by reference without changing facts."""
+    supported = []
+    for item in scored:
+        facts = item.evidence_facts
+        evidence = item.evidence_score
+        if (
+            facts is not None
+            and not facts.chemical.neutral_loss_required
+            and not facts.trace.quality_flags
+            and not facts.trace.hard_quality_flags
+            and evidence is not None
+            and "local_sn_strong" in evidence.support_labels
+            and set(evidence.concern_labels) <= {"shape_poor", "shape_borderline"}
+            and not decision_semantics_from_candidate_facts(
+                facts, count_no_ms2_as_detected=False
+            ).ambiguity_reasons
+        ):
+            supported.append(item)
+    if supported and selection_rt is not None:
+
+        def reference_key(item: ScoredCandidate) -> tuple[bool, float]:
+            peak = item.candidate.peak
+            return (
+                not peak.peak_start <= selection_rt <= peak.peak_end,
+                abs(item.candidate.selection_apex_rt - selection_rt),
+            )
+
+        nearest = min(reference_key(item) for item in supported)
+        scored = [item for item in supported if reference_key(item) == nearest]
+    return select_candidate_by_evidence(
+        scored, selection_rt=selection_rt, strict_selection_rt=strict_selection_rt
+    )
+
+
 def paired_target_reference_rt(
     target: Target,
     *,
     reference_rt: float | None,
     rt_prior_library: dict[tuple[str, str], LibraryEntry] | None,
+    paired_target: Target | None = None,
 ) -> float | None:
     if target.is_istd or not target.istd_pair or reference_rt is None:
         return None
+    if target.neutral_loss_da is None:
+        if paired_target is None:
+            return None
+        # Transfer observed drift, preserving the configured analyte/ISTD offset.
+        target_center = (target.rt_min + target.rt_max) / 2.0
+        paired_center = (paired_target.rt_min + paired_target.rt_max) / 2.0
+        return target_center + reference_rt - paired_center
     library = rt_prior_library or {}
     entry = library.get((target.label, "analyte"))
     if (

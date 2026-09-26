@@ -314,12 +314,12 @@ def test_extract_one_target_uses_shared_physical_candidate_and_owner_apex(
     handoff_inputs = captured["handoff_inputs"]
     assert handoff_inputs["candidate"] == selected_candidate_value
     assert handoff_inputs["paired_istd_anchor_rt"] == 8.55
-    assert handoff_inputs["expected_rt_min"] is None
+    assert handoff_inputs["expected_rt_min"] == pytest.approx(8.5)
     np.testing.assert_array_equal(handoff_inputs["rt"], prepared.rt)
     np.testing.assert_array_equal(handoff_inputs["intensity"], prepared.raw)
     assert captured["acquisition_trace"].sample_name == "SampleA"
     assert captured["acquisition_trace"].mz == target.mz
-    assert anchor_rt is None
+    assert anchor_rt == pytest.approx(8.5)
     assert selected.integration.area_ms1_morphology == pytest.approx(
         captured["physical_evaluation"].facts.area_counts_seconds
     )

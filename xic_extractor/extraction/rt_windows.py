@@ -20,7 +20,16 @@ def get_rt_window(
     """Return (rt_min, rt_max, anchor_used, anchor_rt)."""
     from xic_extractor import extractor
 
-    if target.neutral_loss_da is None or target.nl_ppm_max is None:
+    if target.neutral_loss_da is None:
+        # The configured center guides identity; acquisition retains its full
+        # scope and the reference does not claim a measured NL anchor.
+        reference = (
+            target_reference_rt
+            if target_reference_rt is not None
+            else (target.rt_min + target.rt_max) / 2.0 + sample_drift
+        )
+        return target.rt_min, target.rt_max, False, reference
+    if target.nl_ppm_max is None:
         return target.rt_min, target.rt_max, False, None
 
     rt_center = (target.rt_min + target.rt_max) / 2.0 + sample_drift
