@@ -14,7 +14,7 @@ delivery seam as if they were already final.
   row/sample structure. The primary matrix does not expose diagnostic evidence
   columns.
 - Identity, row-basis, source, evidence, and review details belong in
-  sidecars. An explicit public schema can override this placement.
+  sidecars unless an explicit public schema says otherwise.
 - LC-MS/MS evidence rules and morphology-aware area policy supersede the
   historical AsLS primary-matrix policy.
 

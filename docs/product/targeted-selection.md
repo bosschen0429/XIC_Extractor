@@ -88,13 +88,12 @@ CrossSample, ModeTrack, Backfill, or selected-value implementation.
 
 - Region, boundary, and selected-envelope logic are candidate and
   model-selection surfaces.
-- A change from region, boundary, or selected-envelope logic requires
-  expected-diff review before the change alters any selected peak, area,
-  confidence, reason, product state, counted detection, workbook value, or
-  matrix value.
+- Before region, boundary, or selected-envelope logic changes any selected
+  peak, area, confidence, reason, product state, counted detection, workbook
+  value, or matrix value, the change requires expected-diff review.
 - Selected-hypothesis public behavior must preserve compatibility
-  projections. Only an explicit schema/versioning plan can change downstream
-  contracts.
+  projections unless an explicit schema/versioning plan changes the
+  downstream contracts.
 - A positive, coherent analyte peak can sit inside the configured search scope
   with candidate-associated MS2/NL support. Such a peak keeps
   RT-prior/window-position conflicts as review, independent of the sample
@@ -109,13 +108,13 @@ CrossSample, ModeTrack, Backfill, or selected-value implementation.
   shape-identity rescue scope with accepted `detected_flagged` expected-diff
   evidence.
 - That contract grants no authority to broader targets, GUI wiring, or default
-  broad NL_FAIL rescue. Each of these extensions requires a new target-family
-  evidence gate.
-- The status index owns current lane readiness.
+  broad NL_FAIL rescue. These extensions require a new target-family evidence
+  gate.
+- Current lane readiness lives in the status index.
 - Target-pair RT auto-reselection and calibration artifacts are
-  activation-gated selection aids. These aids are not default authority. The
-  status index, authority manifest, promotion contract, and focused tests must
-  all grant that authority first.
+  activation-gated selection aids. These aids are not default authority unless
+  the status index, authority manifest, promotion contract, and focused tests
+  say so.
 
 ### Expected-diff inputs
 

@@ -101,6 +101,9 @@ presets, including multi-tag `union` (OR) and `intersection` (AND).
 - The route receipt of the batch preserves any configured legacy owner-build
   backend for compatibility. The route receipt reports no effective legacy
   backend.
+
+Other routes and retained artifacts:
+
 - Normal Alignment rejects methods outside this CID-NL route.
 - Standard Peak is not reachable from normal CLI/GUI/preset execution.
 - The source-Matrix republisher and its authority/productization chain are
@@ -140,15 +143,15 @@ Code: `xic_extractor/presets/`; built-in TOML: `xic_extractor/presets/data/`.
 
 Rules:
 
-- Repeatable validation uses preset surfaces in preference to hand-written
-  long command recipes.
+- For repeatable validation, prefer preset surfaces over hand-written long
+  command recipes.
 - A built-in product-facing preset must emit the expected seed audit and
   `alignment_backfill_cell_evidence.tsv` where the runner contract requires
   them.
 - Normal recipes reject the former Standard Peak and Backfill expansion preset
   keys. No replacement publication choice is exposed.
 - Non-standard peaks and candidate-only evidence stay outside automatic
-  publication policy. Only the authority manifest can override this rule.
+  publication policy unless the authority manifest says otherwise.
 
 ### Performance Anchors
 

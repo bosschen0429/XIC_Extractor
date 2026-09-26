@@ -78,7 +78,7 @@ approved product changes.
 - Selected-candidate switching and manual-boundary area recomputation have no
   product apply authority. That authority requires stable IDs, recompute rules,
   and expected-diff apply contracts first.
-- The status index owns current lane readiness.
+- Current lane readiness lives in the status index.
 - Peak-choice truth labels are separate from product authority. Peak-choice
   truth labels can inform future automation only through an active authority
   and expected-diff gate.

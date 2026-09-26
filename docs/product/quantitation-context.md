@@ -22,10 +22,10 @@ integration bounds. The entire search window does not supply them.
 - CWT, local-minimum, derivative, and alternate boundary proposals remain
   diagnostic or model-selection evidence. These proposals do not replace the
   retained physical integration.
-- Selected-full-envelope evidence remains diagnostic/review context. Only a
-  later activation contract can promote selected-full-envelope evidence.
-- A boundary review annotation does not replace the physical integration.
-  A boundary review annotation does not establish chemical absence.
+- Selected-full-envelope evidence remains diagnostic/review context unless a
+  later activation contract promotes it.
+- A boundary review annotation does not by itself replace the physical
+  integration or establish chemical absence.
 - Workflow identity and counting decisions keep their existing owners.
 
 ## Surfaces

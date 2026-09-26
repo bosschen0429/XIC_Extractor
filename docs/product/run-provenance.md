@@ -25,8 +25,8 @@ lineage seal.
   from the revision that sealed the reviewed evidence of the packet.
 - A packet replay resolves each seal against the declared frozen Git object of
   that seal. A packet replay must not reinterpret the current checkout of the
-  caller as historical evidence.
-- Current CI and a new validation decision judge current source evolution.
+  caller as historical evidence. Current CI and a new validation decision
+  judge current source evolution.
 - Provenance writers render run context only. They must not recompute domain
   evidence or change selected peaks, areas, confidence, counted detections,
   workbook values, or matrix values.

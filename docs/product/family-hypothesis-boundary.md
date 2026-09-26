@@ -55,8 +55,8 @@ optional initial trajectory decision.
   - outside the model;
   - absent;
   - technically unassessable.
-- The identity-settlement/identity-trajectory boundary mints this internal,
-  immutable diagnostic fact.
+- The identity-settlement/identity-trajectory boundary mints the
+  `ModeTrackAssignment` state as an internal, immutable diagnostic fact.
 - The ModeTrack result remains proposal-only. The ModeTrack result does not
   mint a second group owner, refit after Backfill, or select a product value.
 - Backfill can return one independently traceable observation from a revisit.
@@ -102,19 +102,19 @@ display labels. These legacy labels form an adapter state with these rules:
    The persisted matrix identity field `source_feature_family_ids` keeps its
    current name and source-lineage meaning. `source_feature_family_ids` is not
    an assignment-scope identity.
-2. A successor ID is added alongside the legacy ID when identity semantics
+2. A successor ID must be added alongside the legacy ID when identity semantics
    become product-relevant.
 3. Successor alignment identity decisions use `group_hypothesis_id` after a
    workflow has promoted `group_hypothesis_id` as the decision key. Before that
    promotion, public matrix/projection maps can still key by legacy row labels.
    Those maps must describe that compatibility state.
 4. Multiple source peak anchors or cross-sample groups must not collapse into
-   one product row. Only an explicit split/consolidation contract with tests
-   can approve a collapse.
+   one product row. Only an explicit split/consolidation contract and its
+   tests together can approve a collapse.
 5. Review-only group context must stay out of ProductWriter authority. The
    exception is context that is converted into typed same-peak or
    group-hypothesis evidence.
-6. Projection-owned `UntargetRowKey` is introduced separately from canonical
+6. Projection-owned `UntargetRowKey` must be introduced separately from canonical
    group identity. `group_hypothesis_id` itself must not become the public
    Matrix row key. Row identity must not derive from m/z/RT/display order.
 
@@ -179,7 +179,7 @@ before refactor or promotion:
 - A diagnostic sidecar exposes supportive labels without product-authority
   provenance.
 - A new helper extracts shared code by moving discovery/alignment policy into
-  `peak_detection/`. The helper must instead stay trace-level and role-neutral.
+  `peak_detection/` instead of staying trace-level and role-neutral.
 
 ## Verification
 

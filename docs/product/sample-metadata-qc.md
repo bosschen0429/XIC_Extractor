@@ -8,8 +8,7 @@ interpretation, and future activation gates.
 ## Contract
 
 - The accepted `sample_metadata` contract covers no-output-change sample
-  identity, injection-order projection, and lookup parity. The status index
-  owns current lane readiness.
+  identity, injection-order projection, and lookup parity. Current lane readiness lives in the status index.
 - Within `sample_metadata`, `sample_name` is the owner-stable,
   case-sensitive primary sample key.
 - `raw_stem` is a lookup alias only.
@@ -42,7 +41,7 @@ interpretation, and future activation gates.
   normalization behavior must not alter extraction, QC, alignment, counted,
   workbook, or matrix values without an explicit activation/export contract.
 - Instrument-QC and calibration sidecars are evidence and observability
-  surfaces. Only productization authority can promote these sidecars.
+  surfaces unless productization authority promotes these sidecars.
 - Sample metadata is part of run provenance. Sample metadata does not replace
   method manifests or output schemas.
 

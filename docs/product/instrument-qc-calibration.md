@@ -1,8 +1,8 @@
 # Instrument QC and Calibration
 
 Instrument QC and calibration artifacts diagnose method and instrument
-behavior. These artifacts are evidence and review surfaces. Only a separate
-activation contract can promote a correction or gate.
+behavior. These artifacts are evidence and review surfaces until a separate
+activation contract promotes a correction or gate.
 
 ## Contract
 
@@ -26,8 +26,8 @@ activation contract can promote a correction or gate.
 - RT-aware midterm preview artifacts are shadow/readiness evidence only.
   Preview artifacts do not activate RT correction, response correction,
   normalization, matrix mutation, or default gating.
-- The next safe calibration direction is shadow/readiness evidence. The next
-  safe calibration direction is not value mutation.
+- The next safe calibration direction is shadow/readiness evidence, not
+  value mutation.
 - `scripts/add_istd_rt_trend.py` is a maintained operator diagnostic for
   visualizing measured ISTD RT drift. The observed ISTD trend does not justify
   inferring, correcting, or gating other-feature RT behavior.
