@@ -143,7 +143,7 @@ output.
 ### Backfill
 
 Backfill handles a missing or insufficient cell under an already owner-backed
-Target or existing-group context. It may perform one bounded, context-directed
+Target or existing-group context. Backfill can perform one bounded, context-directed
 RAW/evidence revisit. Backfill can produce the first usable observation for
 that cell. Backfill cannot bootstrap a Target/group that has no prior
 owner-backed context.

@@ -101,8 +101,11 @@ Invariants:
   loss flags, scores, or caps.
 - `_display_confidence` may demote projected rows to `VERY_LOW`; it must not
   promote rows. If a row should read higher, fix the projection decision.
-- `_display_reason` prefers `projection.projection_reason` when present,
-  otherwise it falls back to stored `result.reason`.
+- When a Targeted product projection exists, `_display_reason` renders the
+  `Reason` cell from `projection.product_state` and its typed reason tuples
+  through `display_product_reason`. Otherwise `_display_reason` falls back to
+  the stored `result.reason`. `projection.projection_reason` feeds the separate
+  `Projection Reason` column.
 - New evidence sources must enter as typed evidence or selection context and be
   reconciled by workflow projection; they must not create another direct display
   or count authority.
