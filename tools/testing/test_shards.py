@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import re
 import shutil
 import subprocess
 import sys
@@ -46,6 +47,36 @@ _ALIGNMENT_CORE_EXCLUDED_PATHS = frozenset(
 #   2. its test has gone red only because recorded numbers moved, twice;
 #   3. the register's owning milestone is retired.
 SNAPSHOT_MARKER = "ledger_snapshot"
+
+# Markers whose tests are expensive and guard a narrow set of files. A change
+# that touches none of a marker's paths skips that marker's tests. CI
+# (.github/workflows/ci.yml) and local shard runs both read this table, so the
+# two select the same tests for the same change.
+RELEVANCE_RULES: dict[str, re.Pattern[str]] = {
+    "packaging_build": re.compile(
+        r"^(pyproject\.toml|uv\.lock|xic_extractor\.spec|tests/test_pyinstaller_spec\.py"
+        r"|assets/|config/(settings|targets)\.example\.csv|gui/main\.py"
+        r"|scripts/(csv_to_excel|xlsx_to_targets)\.py|xic_extractor/presets/data/"
+        r"|xic_extractor/alignment/(__init__\.py|quantitative_projection_authority\.py"
+        r"|data/quantitative_projection_authority\.json))"
+    ),
+    "agent_hooks": re.compile(
+        r"^(\.codex/(hooks/|hooks\.json$|rules/)|tests/test_config_codex_hooks\.py$"
+        r"|pyproject\.toml$)"
+    ),
+    "product_governance": re.compile(
+        r"^(scripts/check_productization_state\.py|tests/test_productization_state_index\.py"
+        r"|docs/product/|docs/superpowers/(validation|schemas|productization)/"
+        r"|docs/superpowers/plans/2026-06-15-productization-control-plane\.md"
+        r"|tools/diagnostics/docs_(policy|scan)\.py"
+        r"|xic_extractor/alignment/(production_acceptance|quant_matrix_version)\.py)"
+    ),
+}
+# The main CI pytest session: snapshots never run, the census runs once in the
+# lint job, and serial tests run after the parallel session.
+CI_BASE_MARKER_EXPRESSION = (
+    f"not {SNAPSHOT_MARKER} and not current_repository_census and not serial_ci"
+)
 
 # Every test carrying that marker, locked. The marker takes a test out of CI, so
 # it needs the same ratchet the shard budgets have: adding one is a decision,
@@ -417,7 +448,73 @@ def _check(root: Path) -> int:
     return 0
 
 
-def _run_shard(shard: str, pytest_args: Sequence[str], root: Path) -> int:
+def irrelevant_markers(changed_paths: Sequence[str]) -> tuple[str, ...]:
+    """Return the relevance-gated markers that no changed path touches."""
+    return tuple(
+        marker
+        for marker, pattern in RELEVANCE_RULES.items()
+        if not any(pattern.match(path) for path in changed_paths)
+    )
+
+
+def changed_paths(base: str, head: str | None = None) -> list[str] | None:
+    """Paths changed from ``base``; with no ``head``, include uncommitted files.
+
+    Returns None when git cannot answer, so callers fall back to running every
+    marker instead of silently skipping tests.
+    """
+    diff = ["git", "diff", "--name-only", base] + ([head] if head else [])
+    commands = [diff]
+    if head is None:
+        commands.append(["git", "ls-files", "--others", "--exclude-standard"])
+    paths: list[str] = []
+    for command in commands:
+        result = subprocess.run(command, capture_output=True, text=True)
+        if result.returncode != 0:
+            return None
+        paths.extend(line for line in result.stdout.splitlines() if line)
+    return paths
+
+
+def _local_change_base() -> str | None:
+    result = subprocess.run(
+        ["git", "merge-base", "HEAD", "origin/master"], capture_output=True, text=True
+    )
+    return result.stdout.strip() if result.returncode == 0 else None
+
+
+def _relevance_exclusion(all_markers: bool) -> str | None:
+    """Marker expression that skips irrelevant gated tests for this checkout."""
+    if all_markers:
+        return None
+    base = _local_change_base()
+    paths = changed_paths(base) if base else None
+    if paths is None:
+        print("Could not diff against origin/master; running every marker", flush=True)
+        return None
+    skipped = irrelevant_markers(paths)
+    if not skipped:
+        return None
+    print(
+        "Skipping tests unrelated to this change: "
+        + ", ".join(skipped)
+        + " (use --all-markers to run them)",
+        flush=True,
+    )
+    return " and ".join(f"not {marker}" for marker in skipped)
+
+
+def ci_marker_expression(base: str, head: str) -> str | None:
+    paths = changed_paths(base, head)
+    if paths is None:
+        return None
+    exclusions = [f"not {marker}" for marker in irrelevant_markers(paths)]
+    return " and ".join([CI_BASE_MARKER_EXPRESSION, *exclusions])
+
+
+def _run_shard(
+    shard: str, pytest_args: Sequence[str], root: Path, *, all_markers: bool = False
+) -> int:
     assigned = assign_shards(discover_test_files(root))
     if shard not in assigned:
         available = ", ".join(sorted(assigned))
@@ -431,9 +528,13 @@ def _run_shard(shard: str, pytest_args: Sequence[str], root: Path) -> int:
         print(f"Shard {shard!r} has no test files", file=sys.stderr)
         return 2
     target_args = [path.as_posix() for path in targets]
+    required = f"not {SNAPSHOT_MARKER}"
+    exclusion = _relevance_exclusion(all_markers)
+    if exclusion:
+        required = f"{required} and {exclusion}"
     owned_pytest_args = _intersect_marker_selection(
         pytest_args,
-        required=f"not {SNAPSHOT_MARKER}",
+        required=required,
     )
     if owned_pytest_args is None:
         print("Invalid pytest marker selection", file=sys.stderr)
@@ -526,9 +627,30 @@ def main(argv: Sequence[str] | None = None) -> int:
         action="store_true",
         help=f"Run only the {SNAPSHOT_MARKER} tests, which the shards exclude",
     )
+    parser.add_argument(
+        "--all-markers",
+        action="store_true",
+        help="Run relevance-gated tests even when this change does not touch them",
+    )
+    parser.add_argument(
+        "--marker-expression",
+        action="store_true",
+        help="Print the CI pytest marker expression for --base..--head and exit",
+    )
+    parser.add_argument("--base", help="Base revision for --marker-expression")
+    parser.add_argument("--head", help="Head revision for --marker-expression")
     args, rest = parser.parse_known_args(argv)
     pytest_args = rest[1:] if rest[:1] == ["--"] else rest
     root = Path(args.root)
+    if args.marker_expression:
+        if not (args.base and args.head):
+            parser.error("--marker-expression requires --base and --head")
+        expression = ci_marker_expression(args.base, args.head)
+        if expression is None:
+            print("git diff failed", file=sys.stderr)
+            return 2
+        print(expression)
+        return 0
     if args.list:
         return _print_summary(root)
     if args.check:
@@ -537,7 +659,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _run_snapshots(pytest_args, root)
     if args.shard is None:
         parser.error("a shard name is required unless --list or --check is used")
-    return _run_shard(args.shard, pytest_args, root)
+    return _run_shard(args.shard, pytest_args, root, all_markers=args.all_markers)
 
 
 if __name__ == "__main__":
