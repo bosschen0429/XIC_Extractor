@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -385,7 +386,7 @@ def test_strict_nl_candidate_beats_candidate_with_trigger_but_failed_nl() -> Non
     assert selected.candidate is candidate_with_nl
 
 
-def test_scoring_context_caches_asls_inputs_per_xic(
+def test_scoring_context_caches_asls_without_retained_intermediate(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     call_count = 0
@@ -416,7 +417,7 @@ def test_scoring_context_caches_asls_inputs_per_xic(
         sample_name="S2",
         rt=rt,
         intensity=intensity,
-        prepared_result=_prepared(rt, intensity),
+        prepared_result=replace(_prepared(rt, intensity), baseline_unclipped=None),
         istd_rt_in_this_sample=None,
         paired_istd_fwhm=None,
         nl_result=None,

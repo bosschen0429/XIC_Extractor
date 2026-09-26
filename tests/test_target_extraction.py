@@ -13,6 +13,8 @@ from xic_extractor.extraction.scoring_factory import build_scoring_context_facto
 from xic_extractor.extractor import ExtractionResult
 from xic_extractor.ms2_scan_models import Ms2Scan, Ms2ScanEvent
 from xic_extractor.neutral_loss import CandidateMS2Evidence, NLResult
+from xic_extractor.peak_detection.baseline import asls_baseline
+from xic_extractor.peak_detection.evidence_facts import build_candidate_evidence_facts
 from xic_extractor.peak_detection.hypotheses import PeakHypothesis
 from xic_extractor.peak_detection.models import (
     PeakCandidate,
@@ -35,7 +37,6 @@ from xic_extractor.peak_detection.physical_peak_models import (
     PreparedSignalProjection,
     PreparedSignalResult,
 )
-from xic_extractor.peak_detection.scoring_metrics import compute_local_sn_cache
 from xic_extractor.peak_detection.selection_decision import (
     PeakHypothesisSelectionDecision,
 )
@@ -427,6 +428,21 @@ def test_targeted_shape_routes_use_cached_canonical_signal(
     monkeypatch.setattr(
         "xic_extractor.extraction.istd_prepass.open_raw", lambda *_args, **_kwargs: raw
     )
+    import xic_extractor.peak_detection.physical_peak_evaluation as physical_owner
+    import xic_extractor.peak_detection.scoring_metrics as sn_owner
+
+    solves = {"physical": [], "sn": []}
+
+    def _physical_asls(values, **kwargs):
+        solves["physical"].append(tuple(values))
+        return asls_baseline(values, **kwargs)
+
+    def _sn_asls(values, **kwargs):
+        solves["sn"].append(tuple(values))
+        return asls_baseline(values, **kwargs)
+
+    monkeypatch.setattr(physical_owner, "asls_baseline", _physical_asls)
+    monkeypatch.setattr(sn_owner, "asls_baseline", _sn_asls)
     prepared_results = []
     enumerations = []
     prepare = target_extraction.prepare_physical_signal
@@ -519,21 +535,47 @@ def test_targeted_shape_routes_use_cached_canonical_signal(
         np.asarray(prepared.raw),
         candidate.selection_apex_index,
     )
-    baseline, _ = compute_local_sn_cache(np.asarray(prepared.raw))
+    baseline = asls_baseline(np.asarray(prepared.raw))
     legacy = gaussian15_positive_asls_residual_trace(np.asarray(prepared.raw), baseline)
     legacy_shape = compute_shape_metrics(
         np.asarray(prepared.rt), legacy, candidate.selection_apex_index
     )
     assert expected != pytest.approx(raw_shape)
     assert expected != pytest.approx(legacy_shape)
+    expected_standalone = [
+        tuple(kwargs["intensity"]) for kwargs, _ in builders
+        if kwargs["prepared_result"].baseline_unclipped is None
+    ]
+    assert solves["sn"] == expected_standalone
+    assert solves["physical"] == [
+        tuple(result.prepared.raw)
+        for result in prepared_results if result.prepared is not None
+    ]
     for kwargs, builder in builders:
         physical = kwargs["prepared_result"].prepared
         if physical is None:
             continue
         np.testing.assert_array_equal(kwargs["rt"], physical.rt)
         np.testing.assert_array_equal(kwargs["intensity"], physical.raw)
+        oracle_baseline = asls_baseline(np.asarray(physical.raw))
+        residual = np.asarray(physical.raw) - oracle_baseline
+        oracle_mad = float(np.median(np.abs(residual - np.median(residual))))
+        oracle_active = gaussian15_positive_asls_residual_trace(
+            np.asarray(physical.raw), oracle_baseline
+        )
+        for apex in (int(np.argmax(physical.positive_signal)), 0):
+            bound_candidate = replace(candidate, selection_apex_index=apex)
+            ctx = builder(bound_candidate)
+            np.testing.assert_array_equal(ctx.intensity_array, oracle_active)
+            assert ctx.residual_mad == oracle_mad
+            facts = build_candidate_evidence_facts(bound_candidate, ctx).trace
+            if oracle_mad > 0:
+                assert facts.local_sn_ratio == (
+                    oracle_active[bound_candidate.selection_apex_index] / oracle_mad
+                )
         if tuple(physical.rt) == tuple(prepared.rt):
             assert builder(candidate).half_width_ratio == expected[0]
+    assert solves["sn"] == expected_standalone
     expected_calls = 2 if route in {"paired", "context_extension", "wider_retry"} else 1
     assert len(prepared_results) == len(enumerations) == expected_calls
     if route == "context_extension":

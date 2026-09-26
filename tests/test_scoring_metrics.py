@@ -1,7 +1,9 @@
 import numpy as np
 import pytest
 
+from xic_extractor.peak_detection.baseline import asls_baseline
 from xic_extractor.peak_detection.scoring_metrics import (
+    compute_local_sn_cache,
     local_sn_severity,
     nl_support_severity,
     noise_shape_severity,
@@ -48,6 +50,44 @@ def _make_trace(
     peak = peak_height * np.exp(-((x - n / 2) ** 2) / (2 * 5**2))
     noise = rng.normal(0.0, noise_std, n)
     return peak + noise + 1.0
+
+
+def test_sn_cache_reuses_live_baseline_with_whole_trace_residual_mad(
+    monkeypatch,
+) -> None:
+    values = _make_trace(10.0)
+    baseline = asls_baseline(values)
+    residual = values - baseline
+    expected_mad = float(np.median(np.abs(residual - np.median(residual))))
+
+    def unexpected_solve(*_args, **_kwargs):
+        raise AssertionError("live baseline must not be solved again")
+
+    monkeypatch.setattr(
+        "xic_extractor.peak_detection.scoring_metrics.asls_baseline", unexpected_solve
+    )
+    actual_baseline, mad = compute_local_sn_cache(
+        values, baseline_unclipped=tuple(baseline)
+    )
+    np.testing.assert_array_equal(actual_baseline, baseline)
+    assert mad == expected_mad
+
+
+@pytest.mark.parametrize("error", [ValueError, FloatingPointError, TypeError])
+def test_standalone_sn_cache_preserves_solver_exception_policy(
+    monkeypatch, error
+) -> None:
+    def failed_solve(*_args, **_kwargs):
+        raise error("controlled solver failure")
+
+    monkeypatch.setattr(
+        "xic_extractor.peak_detection.scoring_metrics.asls_baseline", failed_solve
+    )
+    if error is ValueError:
+        assert compute_local_sn_cache(_make_trace(10.0)) == (None, None)
+    else:
+        with pytest.raises(error, match="controlled solver failure"):
+            compute_local_sn_cache(_make_trace(10.0))
 
 
 def test_local_sn_pass_high_peak() -> None:

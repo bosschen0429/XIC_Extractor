@@ -164,13 +164,13 @@ def prepare_physical_signal(
             *(trace_context or (None, None)),
         )
     try:
-        baseline = asls_baseline(
+        baseline_unclipped = asls_baseline(
             np.asarray(raw, dtype=float),
             lam=profile.baseline_lam,
             p=profile.baseline_p,
             n_iter=profile.baseline_n_iter,
         )
-        baseline = np.maximum(baseline, 0.0)
+        baseline = np.maximum(baseline_unclipped, 0.0)
     except (ValueError, FloatingPointError, ArithmeticError) as exc:
         projection = projection_for(
             state="failed",
@@ -218,11 +218,14 @@ def prepare_physical_signal(
         smoothed=tuple(float(value) for value in smoothed),
         positive_signal=tuple(float(value) for value in positive),
     )
+    context_start, context_end = trace_context or (None, None)
     return PreparedSignalResult(
         projection,
         prepared,
         operations,
-        *(trace_context or (None, None)),
+        context_start,
+        context_end,
+        baseline_unclipped=tuple(float(value) for value in baseline_unclipped),
     )
 
 

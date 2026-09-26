@@ -82,6 +82,8 @@ class PreparedSignalResult:
     operations: tuple[PhysicalPeakOperation, ...]
     trace_context_rt_start_min: float | None = None
     trace_context_rt_end_min: float | None = None
+    # Live AsLS intermediate; excluded from prepared-signal persistence and identity.
+    baseline_unclipped: tuple[float, ...] | None = None
 
 
 @dataclass(frozen=True, slots=True)
