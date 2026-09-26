@@ -19,6 +19,12 @@ from xic_extractor.peak_detection.ms1_morphology import (
     MS1_MORPHOLOGY_AREA_SOURCE,
     MS1_MORPHOLOGY_TRACE_METHOD,
 )
+from xic_extractor.peak_detection.physical_peak_evaluation import (
+    prepare_physical_signal,
+)
+from xic_extractor.peak_detection.signal_processing_profile import (
+    SignalProcessingProfile,
+)
 from xic_extractor.rt_prior_library import LibraryEntry
 from xic_extractor.signal_processing import find_peak_and_area
 
@@ -36,6 +42,9 @@ def test_istd_context_uses_rolling_median_prior() -> None:
         sample_name="S2",
         rt=np.linspace(9.7, 10.3, 7),
         intensity=np.array([0.0, 1.0, 4.0, 7.0, 4.0, 1.0, 0.0]),
+        prepared_result=_prepared(
+            np.linspace(9.7, 10.3, 7), np.array([0.0, 1.0, 4.0, 7.0, 4.0, 1.0, 0.0])
+        ),
         istd_rt_in_this_sample=None,
         paired_istd_fwhm=None,
         nl_result=None,
@@ -67,6 +76,10 @@ def test_scoring_context_uses_configured_ms1_morphology_smoothing_window() -> No
         sample_name="S2",
         rt=np.linspace(9.7, 10.3, 9),
         intensity=np.array([0.0, 1.0, 4.0, 7.0, 10.0, 7.0, 4.0, 1.0, 0.0]),
+        prepared_result=_prepared(
+            np.linspace(9.7, 10.3, 9),
+            np.array([0.0, 1.0, 4.0, 7.0, 10.0, 7.0, 4.0, 1.0, 0.0]),
+        ),
         istd_rt_in_this_sample=None,
         paired_istd_fwhm=None,
         nl_result=None,
@@ -105,6 +118,9 @@ def test_analyte_context_uses_delta_rt_library_and_shape_ratio() -> None:
         sample_name="S2",
         rt=np.linspace(9.9, 10.5, 7),
         intensity=np.array([0.0, 1.0, 4.0, 8.0, 4.0, 1.0, 0.0]),
+        prepared_result=_prepared(
+            np.linspace(9.9, 10.5, 7), np.array([0.0, 1.0, 4.0, 8.0, 4.0, 1.0, 0.0])
+        ),
         istd_rt_in_this_sample=10.0,
         paired_istd_fwhm=2.0,
         nl_result=NLResult(
@@ -142,6 +158,9 @@ def test_context_without_injection_order_or_library_has_no_prior() -> None:
         sample_name="S-missing",
         rt=np.linspace(9.9, 10.5, 7),
         intensity=np.array([0.0, 1.0, 4.0, 8.0, 4.0, 1.0, 0.0]),
+        prepared_result=_prepared(
+            np.linspace(9.9, 10.5, 7), np.array([0.0, 1.0, 4.0, 8.0, 4.0, 1.0, 0.0])
+        ),
         istd_rt_in_this_sample=None,
         paired_istd_fwhm=None,
         nl_result=NLResult(
@@ -176,6 +195,9 @@ def test_scoring_context_uses_candidate_ms2_evidence_not_target_window_nl() -> N
         sample_name="S2",
         rt=np.linspace(9.9, 10.5, 7),
         intensity=np.array([0.0, 1.0, 4.0, 8.0, 4.0, 1.0, 0.0]),
+        prepared_result=_prepared(
+            np.linspace(9.9, 10.5, 7), np.array([0.0, 1.0, 4.0, 8.0, 4.0, 1.0, 0.0])
+        ),
         istd_rt_in_this_sample=None,
         paired_istd_fwhm=None,
         nl_result=NLResult(
@@ -217,6 +239,9 @@ def test_scoring_context_keeps_trigger_without_strict_nl_match() -> None:
         sample_name="S2",
         rt=np.linspace(9.9, 10.5, 7),
         intensity=np.array([0.0, 1.0, 4.0, 8.0, 4.0, 1.0, 0.0]),
+        prepared_result=_prepared(
+            np.linspace(9.9, 10.5, 7), np.array([0.0, 1.0, 4.0, 8.0, 4.0, 1.0, 0.0])
+        ),
         istd_rt_in_this_sample=None,
         paired_istd_fwhm=None,
         nl_result=None,
@@ -251,6 +276,9 @@ def test_scoring_context_copies_candidate_ms2_trace_strength() -> None:
         sample_name="S2",
         rt=np.linspace(9.9, 10.5, 7),
         intensity=np.array([0.0, 1.0, 4.0, 8.0, 4.0, 1.0, 0.0]),
+        prepared_result=_prepared(
+            np.linspace(9.9, 10.5, 7), np.array([0.0, 1.0, 4.0, 8.0, 4.0, 1.0, 0.0])
+        ),
         istd_rt_in_this_sample=None,
         paired_istd_fwhm=None,
         nl_result=None,
@@ -328,6 +356,9 @@ def test_strict_nl_candidate_beats_candidate_with_trigger_but_failed_nl() -> Non
         sample_name="S2",
         rt=np.linspace(9.8, 10.4, 7),
         intensity=np.array([0.0, 1.0, 4.0, 8.0, 7.0, 1.0, 0.0]),
+        prepared_result=_prepared(
+            np.linspace(9.8, 10.4, 7), np.array([0.0, 1.0, 4.0, 8.0, 7.0, 1.0, 0.0])
+        ),
         istd_rt_in_this_sample=None,
         paired_istd_fwhm=None,
         nl_result=NLResult(
@@ -370,8 +401,8 @@ def test_scoring_context_caches_asls_inputs_per_xic(
     )
 
     rt = np.linspace(9.6, 10.4, 401)
-    intensity = 300 * np.exp(-((rt - 10.00) / 0.03) ** 2)
-    intensity += 300 * np.exp(-((rt - 10.25) / 0.03) ** 2)
+    intensity = 300 * np.exp(-(((rt - 10.00) / 0.03) ** 2))
+    intensity += 300 * np.exp(-(((rt - 10.25) / 0.03) ** 2))
     intensity += 2.0
 
     factory = build_scoring_context_factory(
@@ -385,6 +416,7 @@ def test_scoring_context_caches_asls_inputs_per_xic(
         sample_name="S2",
         rt=rt,
         intensity=intensity,
+        prepared_result=_prepared(rt, intensity),
         istd_rt_in_this_sample=None,
         paired_istd_fwhm=None,
         nl_result=None,
@@ -438,12 +470,16 @@ def _target(*, label: str, is_istd: bool, istd_pair: str) -> Target:
     )
 
 
-def _candidate(
-    *, apex_index: int, apex_rt: float, intensity: float
-) -> SimpleNamespace:
+def _candidate(*, apex_index: int, apex_rt: float, intensity: float) -> SimpleNamespace:
     return SimpleNamespace(
         selection_apex_index=apex_index,
         selection_apex_rt=apex_rt,
         selection_apex_intensity=intensity,
         quality_flags=(),
+    )
+
+
+def _prepared(rt: np.ndarray, intensity: np.ndarray):
+    return prepare_physical_signal(
+        rt, intensity, profile=SignalProcessingProfile(window_points=3)
     )

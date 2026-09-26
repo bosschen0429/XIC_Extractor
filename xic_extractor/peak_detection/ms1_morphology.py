@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass
 
 import numpy as np
+from scipy.signal import peak_widths
 
 from xic_extractor.peak_detection.signal_processing_profile import (
     SignalProcessingProfile,
@@ -11,6 +13,40 @@ from xic_extractor.peak_detection.signal_processing_profile import (
 MS1_MORPHOLOGY_TRACE_METHOD = "gaussian_15"
 MS1_MORPHOLOGY_AREA_SOURCE = "gaussian15_positive_asls_residual"
 DEFAULT_GAUSSIAN15_WINDOW_POINTS = 15
+
+
+def compute_shape_metrics(
+    rt: np.ndarray,
+    intensity: np.ndarray,
+    apex_index: int,
+) -> tuple[float, float | None]:
+    """Return the RT half-width ratio and half-prominence width in minutes."""
+    rt_values = np.asarray(rt, dtype=float)
+    values = np.asarray(intensity, dtype=float)
+    if len(values) == 0 or apex_index < 0 or apex_index >= len(values):
+        return 1.0, None
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        widths, _, left_ips, right_ips = peak_widths(
+            values,
+            [apex_index],
+            rel_height=0.5,
+        )
+    if len(widths) == 0:
+        return 1.0, None
+    left_rt, right_rt = np.interp(
+        [left_ips[0], right_ips[0]],
+        np.arange(len(values)),
+        rt_values,
+    )
+    width_min = float(right_rt - left_rt)
+    if not np.isfinite(width_min) or width_min <= 0:
+        return 1.0, None
+    left = float(rt_values[apex_index] - left_rt)
+    right = float(right_rt - rt_values[apex_index])
+    if left <= 0 or right <= 0:
+        return 1.0, width_min
+    return float(left / right), width_min
 
 
 @dataclass(frozen=True)

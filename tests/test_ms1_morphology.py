@@ -1,3 +1,5 @@
+import warnings
+
 import numpy as np
 import pytest
 
@@ -5,10 +7,15 @@ from xic_extractor.peak_detection.ms1_morphology import (
     DEFAULT_GAUSSIAN15_WINDOW_POINTS,
     MS1_MORPHOLOGY_AREA_SOURCE,
     MS1_MORPHOLOGY_TRACE_METHOD,
+    compute_shape_metrics,
     gaussian15_morphology_trace,
     gaussian15_positive_asls_residual_metrics,
     gaussian_raw_minus_asls_raw_positive_trace,
     positive_residual_area,
+)
+from xic_extractor.peak_detection.scoring_metrics import (
+    peak_width_severity,
+    symmetry_severity,
 )
 from xic_extractor.peak_detection.signal_processing_profile import (
     SignalProcessingProfile,
@@ -160,3 +167,67 @@ def test_canonical_formula_rejects_short_trace_instead_of_shrinking_window() -> 
             np.zeros(7),
             profile=profile,
         )
+
+
+def test_compute_shape_metrics_handles_non_peak_apex_without_warning() -> None:
+    with warnings.catch_warnings(record=True) as captured:
+        warnings.simplefilter("always")
+        ratio, width_min = compute_shape_metrics(
+            np.linspace(0.0, 2.0, 5), np.ones(5), 2
+        )
+
+    assert captured == []
+    assert ratio == pytest.approx(1.0)
+    assert width_min is None
+
+
+def test_shape_symmetry_uses_nonuniform_rt_coordinates() -> None:
+    rt = np.r_[np.linspace(0.0, 1.0, 151), np.linspace(1.02, 2.0, 50)]
+    ratio, width_min = compute_shape_metrics(rt, _gaussian(rt), 150)
+
+    assert ratio == pytest.approx(1.0, abs=0.001)
+    assert width_min == pytest.approx(2.0 * np.sqrt(2.0 * np.log(2.0)) * 0.1, rel=0.001)
+    assert symmetry_severity(ratio)[0] == 0
+
+
+def test_shape_metrics_interpolate_fractional_half_prominence_crossings() -> None:
+    rt = np.array([0.0, 1.0, 2.0, 4.0, 8.0])
+    intensity = np.array([5.0, 6.0, 9.0, 6.0, 5.0])
+
+    ratio, width_min = compute_shape_metrics(rt, intensity, 2)
+
+    # Half prominence is 7: the RT crossings are 4/3 and 10/3 minutes.
+    assert width_min == pytest.approx(2.0)
+    assert ratio == pytest.approx(0.5)
+
+
+def test_shape_metrics_distinguish_real_broad_and_asymmetric_peaks() -> None:
+    rt = np.linspace(-2.0, 4.0, 901)
+    _, paired_width_min = compute_shape_metrics(rt, _gaussian(rt), 450)
+    broad_ratio, broad_width_min = compute_shape_metrics(
+        rt, _gaussian(rt, sigma=0.25), 450
+    )
+    sigma = np.where(rt < 1.0, 0.3, 0.1)
+    asymmetric = 1000.0 * np.exp(-0.5 * ((rt - 1.0) / sigma) ** 2)
+    asymmetric_ratio, _ = compute_shape_metrics(rt, asymmetric, 450)
+
+    assert broad_width_min / paired_width_min == pytest.approx(2.5, rel=0.001)
+    assert peak_width_severity(broad_width_min / paired_width_min)[0] == 1
+    assert broad_ratio == pytest.approx(1.0)
+    assert asymmetric_ratio == pytest.approx(3.0, rel=0.001)
+    assert symmetry_severity(asymmetric_ratio)[0] == 1
+
+
+def test_shape_time_width_is_stable_for_direct_gaussian_scan_densities() -> None:
+    widths = []
+    for sample_count in (101, 301, 901):
+        rt = np.linspace(0.0, 2.0, sample_count)
+        ratio, width = compute_shape_metrics(rt, _gaussian(rt), sample_count // 2)
+        assert ratio == pytest.approx(1.0)
+        assert width == pytest.approx(2.0 * np.sqrt(2.0 * np.log(2.0)) * 0.1, rel=0.001)
+        widths.append(width)
+    assert max(widths) / min(widths) - 1.0 <= 0.001
+
+
+def _gaussian(rt: np.ndarray, *, sigma: float = 0.1) -> np.ndarray:
+    return 1000.0 * np.exp(-0.5 * ((rt - 1.0) / sigma) ** 2)

@@ -6,9 +6,12 @@ import pytest
 import xic_extractor.extraction.target_extraction as target_extraction
 from xic_extractor.config import ExtractionConfig, Target
 from xic_extractor.extraction.istd_anchor_retry import IstdAnchorRetryDecision
+from xic_extractor.extraction.istd_prepass import extract_istd_anchors_only
 from xic_extractor.extraction.ms2_selection import selected_candidate_ms2_evidence
 from xic_extractor.extraction.rt_windows import get_rt_window
+from xic_extractor.extraction.scoring_factory import build_scoring_context_factory
 from xic_extractor.extractor import ExtractionResult
+from xic_extractor.ms2_scan_models import Ms2Scan, Ms2ScanEvent
 from xic_extractor.neutral_loss import CandidateMS2Evidence, NLResult
 from xic_extractor.peak_detection.hypotheses import PeakHypothesis
 from xic_extractor.peak_detection.models import (
@@ -16,6 +19,10 @@ from xic_extractor.peak_detection.models import (
     PeakCandidatesResult,
     PeakDetectionResult,
     PeakResult,
+)
+from xic_extractor.peak_detection.ms1_morphology import (
+    compute_shape_metrics,
+    gaussian15_positive_asls_residual_trace,
 )
 from xic_extractor.peak_detection.physical_peak_candidate_adapter import (
     physical_candidates_result,
@@ -28,6 +35,7 @@ from xic_extractor.peak_detection.physical_peak_models import (
     PreparedSignalProjection,
     PreparedSignalResult,
 )
+from xic_extractor.peak_detection.scoring_metrics import compute_local_sn_cache
 from xic_extractor.peak_detection.selection_decision import (
     PeakHypothesisSelectionDecision,
 )
@@ -131,11 +139,13 @@ def test_credible_istd_anchor_rt_rejects_not_counted_projection() -> None:
 
 @pytest.mark.parametrize("resolver_mode", ["legacy_savgol", "local_minimum"])
 @pytest.mark.parametrize("is_istd", [False, True])
+@pytest.mark.parametrize("with_scoring", [False, True])
 def test_extract_one_target_uses_shared_physical_candidate_and_owner_apex(
     tmp_path,
     monkeypatch,
     resolver_mode: str,
     is_istd: bool,
+    with_scoring: bool,
 ) -> None:
     config = ExtractionConfig(
         data_dir=tmp_path,
@@ -255,6 +265,16 @@ def test_extract_one_target_uses_shared_physical_candidate_and_owner_apex(
         diagnostics=diagnostics,
         istd_rt_in_this_sample=8.55,
         shape_metrics_by_label=shape_metrics_by_label,
+        scoring_context_factory=(
+            build_scoring_context_factory(
+                config=config,
+                injection_order={},
+                istd_rts_by_sample={},
+                rt_prior_library={},
+            )
+            if with_scoring
+            else None
+        ),
     )
 
     selected = captured["selected_hypothesis"]
@@ -268,7 +288,9 @@ def test_extract_one_target_uses_shared_physical_candidate_and_owner_apex(
     assert model_selection_result.selection_status == "parity"
     assert model_selection_result.product_switch_allowed is True
     assert model_selection_result.selected_candidate_id == selected.hypothesis_id
-    assert decision.legacy_projection_status == "active_policy_remaining"
+    assert decision.legacy_projection_status == (
+        "successor_owned" if with_scoring else "active_policy_remaining"
+    )
     assert selected.target_label == target.label
     assert captured["peak_result"].peak.rt == pytest.approx(8.4)
     selected_candidate_value = target_extraction.selected_candidate(
@@ -313,14 +335,213 @@ def test_extract_one_target_uses_shared_physical_candidate_and_owner_apex(
     )
     assert captured["peak_result"].paired_istd_anchor_rt == 8.55
     assert isinstance(results[target.label], ExtractionResult)
-    # The raw half-prominence crossing lies between samples 18 and 19.
-    left_ip = 18.0 + (50.0 - 100.0 * np.exp(-0.8)) / (
-        100.0 * np.exp(-0.2) - 100.0 * np.exp(-0.8)
+    expected_shape = compute_shape_metrics(
+        np.asarray(prepared.rt),
+        np.asarray(prepared.positive_signal),
+        selected_candidate_value.selection_apex_index,
     )
-    expected_width_min = 2.0 * (20.0 - left_ip) * (0.01 if is_istd else 0.02)
-    assert shape_metrics_by_label[target.label] == pytest.approx(
-        (1.0, expected_width_min)
+    assert shape_metrics_by_label[target.label] == expected_shape
+    if with_scoring:
+        ctx = captured["scoring_context_builder"](selected_candidate_value)
+        assert ctx.half_width_ratio == expected_shape[0]
+
+
+@pytest.mark.parametrize(
+    "route", ["paired", "context_extension", "wider_retry", "prepass_none"]
+)
+@pytest.mark.parametrize("window_points", [7, 15])
+def test_targeted_shape_routes_use_cached_canonical_signal(
+    tmp_path, monkeypatch, route: str, window_points: int
+) -> None:
+    config = ExtractionConfig(
+        data_dir=tmp_path,
+        dll_dir=tmp_path,
+        output_csv=tmp_path / "xic_results.csv",
+        diagnostics_csv=tmp_path / "diagnostics.csv",
+        smooth_window=15,
+        smooth_polyorder=3,
+        peak_rel_height=0.95,
+        peak_min_prominence_ratio=0.1,
+        ms2_precursor_tol_da=0.5,
+        nl_min_intensity_ratio=0.01,
+        signal_processing_window_points=window_points,
+        nl_rt_anchor_half_window_min=0.2,
+        nl_fallback_half_window_min=0.8,
     )
+    uses_anchor = route in {"context_extension", "wider_retry"}
+    target = Target(
+        label="ISTD",
+        mz=258.1085,
+        rt_min=0.0,
+        rt_max=2.0,
+        ppm_tol=20.0,
+        neutral_loss_da=116.0474 if uses_anchor else None,
+        nl_ppm_warn=20.0 if uses_anchor else None,
+        nl_ppm_max=50.0 if uses_anchor else None,
+        is_istd=route != "context_extension",
+        istd_pair="",
+    )
+    rt = np.linspace(0.0, 2.0, 201)
+    center = (
+        0.8 if route == "context_extension" else 0.5 if route == "wider_retry" else 1.0
+    )
+    sigma = 0.1 if route == "context_extension" else 0.04
+    intensity = 1000.0 * np.exp(-0.5 * ((rt - center) / sigma) ** 2)
+    if route == "wider_retry":
+        intensity[np.abs(rt - center) > 0.2] = 0.0
+    elif route != "context_extension":
+        intensity += 20.0 + 5.0 * rt
+    acquisitions = []
+
+    class _Raw:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def extract_xic(self, _mz, rt_min, rt_max, _ppm):
+            acquisitions.append((rt_min, rt_max))
+            mask = (rt >= rt_min - 1e-12) & (rt <= rt_max + 1e-12)
+            return rt[mask], intensity[mask]
+
+        def iter_ms2_scans(self, rt_min, rt_max):
+            if uses_anchor and rt_min <= 1.0 <= rt_max:
+                yield Ms2ScanEvent(
+                    Ms2Scan(
+                        1,
+                        1.0,
+                        target.mz,
+                        np.array([target.mz - 116.0474]),
+                        np.array([1000.0]),
+                        1000.0,
+                    ),
+                    None,
+                    1,
+                )
+
+    raw = _Raw()
+    monkeypatch.setattr(
+        "xic_extractor.extractor.open_raw", lambda *_args, **_kwargs: raw
+    )
+    monkeypatch.setattr(
+        "xic_extractor.extraction.istd_prepass.open_raw", lambda *_args, **_kwargs: raw
+    )
+    prepared_results = []
+    enumerations = []
+    prepare = target_extraction.prepare_physical_signal
+    enumerate_segments = target_extraction.enumerate_physical_segment_universe
+
+    def _prepare(*args, **kwargs):
+        result = prepare(*args, **kwargs)
+        prepared_results.append(result)
+        return result
+
+    def _enumerate(*args, **kwargs):
+        result = enumerate_segments(*args, **kwargs)
+        enumerations.append(result)
+        return result
+
+    monkeypatch.setattr(target_extraction, "prepare_physical_signal", _prepare)
+    monkeypatch.setattr(
+        target_extraction, "enumerate_physical_segment_universe", _enumerate
+    )
+    true_factory = build_scoring_context_factory(
+        config=config, injection_order={}, istd_rts_by_sample={}, rt_prior_library={}
+    )
+    builders = []
+
+    def _factory(**kwargs):
+        builder = true_factory(**kwargs)
+        builders.append((kwargs, builder))
+        return builder
+
+    if route == "paired":
+        analyte = replace(target, label="Analyte", is_istd=False, istd_pair="ISTD")
+        file_result, _ = target_extraction.process_file(
+            config,
+            [target, analyte],
+            tmp_path / "SampleA.raw",
+            scoring_context_factory=_factory,
+        )
+        assert file_result.error is None
+        result = file_result.results["ISTD"]
+        analyte_candidate = target_extraction.selected_candidate(
+            file_result.results["Analyte"].peak_result
+        )
+        assert analyte_candidate is not None
+        analyte_kwargs, analyte_builder = next(
+            (kwargs, builder)
+            for kwargs, builder in builders
+            if kwargs["target"].label == "Analyte"
+        )
+        assert analyte_kwargs["paired_istd_fwhm"] > 0
+        assert analyte_builder(analyte_candidate).fwhm_ratio == 1.0
+        shapes = {
+            "ISTD": target_extraction.selected_shape_metrics(
+                prepared_results[0], result.peak_result
+            )
+        }
+    elif route == "prepass_none":
+        prepass = extract_istd_anchors_only(config, [target], tmp_path / "SampleA.raw")
+        assert prepass is not None
+        _, results, _, shapes = prepass
+        result = results[target.label]
+        assert builders == []
+    else:
+        results = {}
+        shapes = {}
+        target_extraction.extract_one_target(
+            raw,
+            config,
+            "SampleA",
+            target,
+            reference_rt=None,
+            results=results,
+            diagnostics=[],
+            scoring_context_factory=_factory,
+            shape_metrics_by_label=shapes,
+        )
+        result = results[target.label]
+    candidate = target_extraction.selected_candidate(result.peak_result)
+    assert candidate is not None
+    prepared = prepared_results[-1].prepared
+    assert prepared is not None
+    assert prepared.profile.window_points == window_points
+    expected = compute_shape_metrics(
+        np.asarray(prepared.rt),
+        np.asarray(prepared.positive_signal),
+        candidate.selection_apex_index,
+    )
+    assert shapes[target.label] == expected
+    raw_shape = compute_shape_metrics(
+        np.asarray(prepared.rt),
+        np.asarray(prepared.raw),
+        candidate.selection_apex_index,
+    )
+    baseline, _ = compute_local_sn_cache(np.asarray(prepared.raw))
+    legacy = gaussian15_positive_asls_residual_trace(np.asarray(prepared.raw), baseline)
+    legacy_shape = compute_shape_metrics(
+        np.asarray(prepared.rt), legacy, candidate.selection_apex_index
+    )
+    assert expected != pytest.approx(raw_shape)
+    assert expected != pytest.approx(legacy_shape)
+    for kwargs, builder in builders:
+        physical = kwargs["prepared_result"].prepared
+        if physical is None:
+            continue
+        np.testing.assert_array_equal(kwargs["rt"], physical.rt)
+        np.testing.assert_array_equal(kwargs["intensity"], physical.raw)
+        if tuple(physical.rt) == tuple(prepared.rt):
+            assert builder(candidate).half_width_ratio == expected[0]
+    expected_calls = 2 if route in {"paired", "context_extension", "wider_retry"} else 1
+    assert len(prepared_results) == len(enumerations) == expected_calls
+    if route == "context_extension":
+        np.testing.assert_allclose(acquisitions, [(0.8, 1.2), (0.0, 2.0)])
+    elif route == "wider_retry":
+        np.testing.assert_allclose(acquisitions, [(0.8, 1.2), (0.2, 1.8)])
+        # Initial, retry, and accepted-trace audit reuse the physical cache.
+        assert len(builders) == 3
 
 
 def test_physical_candidate_projection_preserves_owner_values_and_segment_order(
