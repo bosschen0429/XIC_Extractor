@@ -45,7 +45,9 @@ def test_unavailable_prepared_signal_keeps_live_asls_intermediate(monkeypatch) -
     rt = np.linspace(0.0, 2.0, 31)
     raw = np.ones(len(rt))
     baseline = np.full(len(rt), 2.0)
-    monkeypatch.setattr(owner, "asls_baseline", lambda *_args, **_kwargs: baseline)
+    monkeypatch.setattr(
+        owner, "asls_baseline_on_rt", lambda *_args, **_kwargs: baseline
+    )
     result = prepare_physical_signal(rt, raw)
     assert result.projection.state == "unavailable"
     assert result.projection.reason == "no_signal_above_baseline"
@@ -55,8 +57,8 @@ def test_unavailable_prepared_signal_keeps_live_asls_intermediate(monkeypatch) -
 
 
 def _context_sensitive_trace() -> tuple[np.ndarray, np.ndarray]:
-    # Scaled observed XIC with scan-ordinal RT: removing one exterior scan
-    # changes the AsLS valley sign while the retained Gaussian peak is exact.
+    # Scaled observed XIC, with RT in minutes at 1.5 seconds per scan.
+    # Removing one exterior scan leaves the retained Gaussian peak exact.
     raw = np.asarray(
         [
             236.132, 164.179, 104.242, 84.744, 131.893, 59.936, 55.567, 29.262,
@@ -68,7 +70,7 @@ def _context_sensitive_trace() -> tuple[np.ndarray, np.ndarray]:
             227.957, 399.121, 895.663, 2136.916, 4325.4,
         ]
     )
-    return np.arange(len(raw), dtype=float), raw
+    return np.arange(len(raw), dtype=float) * 0.025, raw
 
 
 def test_exterior_context_change_keeps_observed_near_baseline_peak_available() -> None:
@@ -76,7 +78,7 @@ def test_exterior_context_change_keeps_observed_near_baseline_peak_available() -
     full_signal = prepare_physical_signal(rt, raw)
     cropped_signal = prepare_physical_signal(rt[:-1], raw[:-1])
     full = evaluate_physical_peak(
-        full_signal, selection_subject_id="exterior-context", query_rt_min=23.0
+        full_signal, selection_subject_id="exterior-context", query_rt_min=rt[23]
     )
     assert full.state == "available" and full.facts is not None
     selected = next(
@@ -91,13 +93,13 @@ def test_exterior_context_change_keeps_observed_near_baseline_peak_available() -
     )
 
     cropped = evaluate_physical_peak(
-        cropped_signal, selection_subject_id="exterior-context", query_rt_min=23.0
+        cropped_signal, selection_subject_id="exterior-context", query_rt_min=rt[23]
     )
     assert cropped.state == "available"
     assert cropped.facts is not None and cropped.integration is not None
     assert cropped.facts.apex_rt_min == full.facts.apex_rt_min
     assert (
-        rt[0] < cropped.facts.left_rt_min < 23.0 < cropped.facts.right_rt_min < rt[-2]
+        rt[0] < cropped.facts.left_rt_min < rt[23] < cropped.facts.right_rt_min < rt[-2]
     )
 
 
@@ -375,9 +377,9 @@ def test_current_discovery_qualification_persists_exactly(
         )
         assert answer.state == ("unavailable" if background else "available")
         if background:
-            # Removing unsupported internal maxima exposes this background
-            # envelope's acquired edge; neither policy may quantify it.
-            assert answer.reason == "incomplete_peak_context"
+            # A noise-level return can close this background interval, but it
+            # still lacks peak contrast; neither policy may quantify it.
+            assert answer.reason == "insufficient_local_peak_contrast"
         payload = serialize_physical_peak_evaluation(
             rt, raw, profile=profile, evaluation=answer,
         )
@@ -577,8 +579,11 @@ def test_analytic_doublet_keeps_the_true_valley_as_two_peak_boundaries() -> None
     assert right.state == "available" and right.facts is not None
     assert left.facts.apex_rt_min == pytest.approx(left_center, abs=0.03)
     assert right.facts.apex_rt_min == pytest.approx(right_center, abs=0.03)
-    assert left.facts.right_rt_min <= valley_rt
-    assert right.facts.left_rt_min >= valley_rt
+    # Unequal amplitudes and measurement noise move the sampled valley away
+    # from the midpoint; both boundaries must stay within one acquired scan.
+    scan_spacing = float(np.max(np.diff(rt)))
+    assert left.facts.right_rt_min == pytest.approx(valley_rt, abs=scan_spacing)
+    assert right.facts.left_rt_min == pytest.approx(valley_rt, abs=scan_spacing)
     assert left.facts.physical_segment_id != right.facts.physical_segment_id
 
 
@@ -678,13 +683,15 @@ def _hmdc_tail_noise_trace() -> tuple[np.ndarray, np.ndarray]:
 @pytest.mark.parametrize(
     "policy,expected_reason",
     [
-        (PHYSICAL_PEAK_WINDOW_POLICY, "incomplete_peak_context"),
+        (PHYSICAL_PEAK_WINDOW_POLICY, "ambiguous_segment_candidates"),
         (PHYSICAL_PEAK_GROUP_WINDOW_POLICY, ""),
     ],
 )
-def test_group_window_closes_a_peak_whose_tail_noise_never_reaches_zero(
+def test_shared_owner_closes_observed_tail_at_measurement_noise(
     policy: str, expected_reason: str
 ) -> None:
+    # The edge candidate remains part of a whole-context uniqueness question;
+    # the group prior selects the complete central peak without hiding the edge.
     rt, raw = _hmdc_tail_noise_trace()
     result = evaluate_physical_peak(
         prepare_physical_signal(rt, raw),

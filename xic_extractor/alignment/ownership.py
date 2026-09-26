@@ -238,11 +238,13 @@ def build_sample_local_owners_from_discovery_bindings(
                         integration.rt_apex_min,
                         integration.rt_left_min,
                         integration.rt_right_min,
+                        physical_overlap=evaluation.requires_overlap_review,
                     ),
                     quantification_exclusion_reason=_quantification_exclusion_reason(
                         integration.rt_apex_min,
                         integration.rt_left_min,
                         integration.rt_right_min,
+                        physical_overlap=evaluation.requires_overlap_review,
                     ),
                     cross_sample_member_subject=member_subject,
                 ),
@@ -413,11 +415,19 @@ def _resolve_candidate_trace(
                 quantification_apex,
                 quantification_left,
                 quantification_right,
+                physical_overlap=(
+                    getattr(candidate, "ms1_trace_quality", "")
+                    == "physical_shoulder_overlap"
+                ),
             ),
             quantification_exclusion_reason=_quantification_exclusion_reason(
                 quantification_apex,
                 quantification_left,
                 quantification_right,
+                physical_overlap=(
+                    getattr(candidate, "ms1_trace_quality", "")
+                    == "physical_shoulder_overlap"
+                ),
             ),
             cross_sample_member_subject=_member_subject_from_raw_trace(
                 candidate=candidate,
@@ -605,8 +615,10 @@ def _unresolved_outcome(candidate: Any, reason: str) -> _ResolutionOutcome:
     )
 
 
-def _quantification_eligible(apex: float, left: float, right: float) -> bool:
-    return left < apex < right
+def _quantification_eligible(
+    apex: float, left: float, right: float, *, physical_overlap: bool = False,
+) -> bool:
+    return not physical_overlap and left < apex < right
 
 
 def _resolved_peak_quantification_bounds(
@@ -622,7 +634,11 @@ def _resolved_peak_quantification_bounds(
     return peak.rt, peak.peak_start, peak.peak_end
 
 
-def _quantification_exclusion_reason(apex: float, left: float, right: float) -> str:
+def _quantification_exclusion_reason(
+    apex: float, left: float, right: float, *, physical_overlap: bool = False,
+) -> str:
+    if physical_overlap:
+        return "physical_shoulder_overlap"
     if _quantification_eligible(apex, left, right):
         return ""
     return "owner_apex_on_integration_boundary"

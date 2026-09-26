@@ -737,6 +737,10 @@ def _candidate_from_trace(
             settings=settings,
         )
     )
+    physical_overlap = ms1_fields.trace_quality == "physical_shoulder_overlap"
+    if physical_overlap:
+        priority = "MEDIUM"
+        reason += "; physical_shoulder_overlap"
     candidate = DiscoveryCandidate.from_values(
         raw_file=group.raw_file,
         sample_stem=group.sample_stem,
@@ -771,7 +775,8 @@ def _candidate_from_trace(
         review_priority=priority,
         reason=reason,
         is_provisional=(
-            len(group.seeds) < 2 and ms1_fields.trace_quality == "provisional"
+            physical_overlap
+            or (len(group.seeds) < 2 and ms1_fields.trace_quality == "provisional")
         ),
     )
     candidate = _with_tag_fields(candidate, group=group, settings=settings)
@@ -1527,7 +1532,7 @@ def _physical_ms1_peak_fields(
                     mad = float(np.median(np.abs(res - np.median(res))))
                 else:
                     mad = 0.0
-                if is_provisional_peak_shape(
+                if fields.trace_quality == "clean" and is_provisional_peak_shape(
                     rt_seg,
                     raw_seg,
                     apex_index=seg.apex_index - seg.start_index,
@@ -1562,7 +1567,10 @@ def _ms1_fields_from_physical_evaluation(
         seed_delta_min=facts.apex_rt_min - work_item.query_rt_min,
         peak_rt_start=facts.left_rt_min,
         peak_rt_end=facts.right_rt_min,
-        trace_quality="clean",
+        trace_quality=(
+            "physical_shoulder_overlap"
+            if evaluation.requires_overlap_review else "clean"
+        ),
         scan_support_score=scan_support_score,
     )
 

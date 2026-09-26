@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Literal, Sequence
 
 import numpy as np
+from scipy.ndimage import gaussian_filter1d
 from scipy.signal import find_peaks, peak_prominences
 
 from xic_extractor.peak_detection.baseline import integrate_with_baseline
@@ -40,7 +41,9 @@ class ChromPeakSegmentPolicy:
     clear_valley_max_fraction: float = 0.30
     morphology_trace_method: str = "gaussian_15"
     morphology_trace_window_points: int = DEFAULT_GAUSSIAN15_WINDOW_POINTS
+    morphology_min_sigma_rt: float = 0.0
     min_prominence_noise_mad: float = 0.0
+    min_prominence_fraction_of_envelope: float = 0.04
 
     def baseline_return_threshold(self, apex_residual: float) -> float:
         return max(
@@ -127,10 +130,13 @@ def enumerate_chrom_peak_segments(
     if context_residual.size == 0 or float(np.max(context_residual)) <= 0.0:
         return _empty_result("NO_SIGNAL", rt, active_policy)
 
-    morphology_trace = _morphology_trace(residual, active_policy)
+    morphology_trace = _morphology_trace(rt, residual, active_policy)
     morphology_effective_points = _morphology_trace_effective_points(
         len(rt),
         active_policy,
+    )
+    acquired = (
+        intensity if acquired_intensity_values is None else acquired_intensity_values
     )
     seeds = _apex_seeds(morphology_trace, context_interval, active_policy)
     if active_policy.min_prominence_noise_mad > 0.0:
@@ -138,11 +144,17 @@ def enumerate_chrom_peak_segments(
             seeds,
             morphology_trace,
             rt,
-            (
-                intensity
-                if acquired_intensity_values is None
-                else acquired_intensity_values
-            ),
+            acquired,
+            context_interval,
+            active_policy,
+        )
+    if active_policy.morphology_trace_method == "rt_envelope":
+        seeds = _restore_rt_envelope_clear_splits(
+            seeds,
+            morphology_trace,
+            residual,
+            rt,
+            acquired,
             context_interval,
             active_policy,
         )
@@ -159,7 +171,12 @@ def enumerate_chrom_peak_segments(
             morphology_trace_values=tuple(float(value) for value in morphology_trace),
         )
 
-    relations = _adjacent_relations(morphology_trace, seeds, active_policy)
+    relation_trace = (
+        residual
+        if active_policy.morphology_trace_method == "rt_envelope"
+        else morphology_trace
+    )
+    relations = _adjacent_relations(relation_trace, seeds, active_policy)
     segments = tuple(
         _segment_from_seed(
             rt,
@@ -277,18 +294,55 @@ def _context_interval(
 
 
 def _morphology_trace(
+    rt: np.ndarray,
     residual: np.ndarray,
     policy: ChromPeakSegmentPolicy,
 ) -> np.ndarray:
     window = _morphology_trace_effective_points(len(residual), policy)
-    if window <= 1:
-        return residual.copy()
     if policy.morphology_trace_method == "gaussian_15":
+        if window <= 1:
+            return residual.copy()
         return gaussian15_morphology_trace(residual, window_points=window)
     if policy.morphology_trace_method == "smooth_15":
+        if window <= 1:
+            return residual.copy()
         kernel = np.ones(window, dtype=float) / float(window)
         return np.convolve(residual, kernel, mode="same")
+    if policy.morphology_trace_method == "rt_envelope":
+        return _rt_envelope_trace(rt, residual, policy)
     return residual.copy()
+
+
+def _rt_envelope_trace(
+    rt: np.ndarray,
+    residual: np.ndarray,
+    policy: ChromPeakSegmentPolicy,
+) -> np.ndarray:
+    min_sigma_rt = max(float(policy.morphology_min_sigma_rt), 0.0)
+    if min_sigma_rt == 0.0:
+        return residual.copy()
+
+    median_spacing = float(np.median(np.diff(rt)))
+    existing_sigma_rt = (
+        median_spacing * float(policy.morphology_trace_window_points) / 6.0
+    )
+    if existing_sigma_rt >= min_sigma_rt:
+        return residual.copy()
+
+    additional_sigma_rt = float(np.sqrt(min_sigma_rt**2 - existing_sigma_rt**2))
+    uniform_rt = np.arange(
+        float(rt[0]),
+        float(rt[-1]) + median_spacing,
+        median_spacing,
+        dtype=float,
+    )
+    uniform_residual = np.interp(uniform_rt, rt, residual)
+    uniform_envelope = gaussian_filter1d(
+        uniform_residual,
+        sigma=additional_sigma_rt / median_spacing,
+        mode="nearest",
+    )
+    return np.interp(rt, uniform_rt, uniform_envelope)
 
 
 def _morphology_trace_effective_points(
@@ -297,7 +351,11 @@ def _morphology_trace_effective_points(
 ) -> int:
     if trace_length <= 0:
         return 0
-    if policy.morphology_trace_method not in {"gaussian_15", "smooth_15"}:
+    if policy.morphology_trace_method not in {
+        "gaussian_15",
+        "smooth_15",
+        "rt_envelope",
+    }:
         return 1
     if policy.morphology_trace_window_points <= 1:
         return 1
@@ -369,28 +427,104 @@ def _supported_apex_seeds(
     relations = _adjacent_relations(signal, seeds, policy)
     retained = {seed.index for seed in seeds if seed.index in (start, end - 1)}
     supported: set[int] = set()
+    prominence_by_index: dict[int, float] = {}
     for seed, prominence, left, right in zip(
         interior, prominences, left_bases, right_bases
     ):
         left, right = start + int(left), start + int(right) + 1
+        prominence_by_index[seed.index] = float(prominence)
         noise = short_scale_noise_mad(rt[left:right], acquired[left:right])
         if prominence >= policy.min_prominence_noise_mad * noise:
             supported.add(seed.index)
-    # Suppress subordinate ripple only inside an independently supported
-    # envelope. A clear valley starts another group. An unsupported group is
-    # retained for the ordinary support/contrast gates, not removed to make a
-    # window question artificially unique.
+    # Noise significance does not make a bump a separate chromatographic peak.
+    # Compare its prominence with the whole connected envelope before using a
+    # neighboring valley as a quantitative boundary. Baseline-separated weak
+    # peaks form their own groups, so a strong remote peak cannot erase them.
+    # Unsupported groups still reach the ordinary support/contrast gates.
     group: list[_ApexSeed] = []
     for index, seed in enumerate(seeds):
         group.append(seed)
         if index < len(relations) and relations[index].relation_class != "clear_split":
             continue
         if any(item.index in supported for item in group):
-            retained.update(item.index for item in group if item.index in supported)
+            envelope_height = max(item.height for item in group)
+            retained.update(
+                item.index
+                for item in group
+                if item.index in supported
+                and prominence_by_index[item.index]
+                >= policy.min_prominence_fraction_of_envelope * envelope_height
+            )
         else:
             retained.update(item.index for item in group)
         group = []
     return tuple(seed for seed in seeds if seed.index in retained)
+
+
+def _restore_rt_envelope_clear_splits(
+    envelope_seeds: tuple[_ApexSeed, ...],
+    envelope_trace: np.ndarray,
+    canonical_residual: np.ndarray,
+    rt: np.ndarray,
+    acquired: np.ndarray,
+    context: TraceInterval,
+    policy: ChromPeakSegmentPolicy,
+) -> tuple[_ApexSeed, ...]:
+    canonical_seeds = _apex_seeds(canonical_residual, context, policy)
+    if policy.min_prominence_noise_mad > 0.0:
+        canonical_seeds = _supported_apex_seeds(
+            canonical_seeds,
+            canonical_residual,
+            rt,
+            acquired,
+            context,
+            policy,
+        )
+    canonical_relations = _adjacent_relations(
+        canonical_residual, canonical_seeds, policy
+    )
+    connected_groups: list[list[_ApexSeed]] = []
+    group: list[_ApexSeed] = []
+    for index, seed in enumerate(canonical_seeds):
+        group.append(seed)
+        if (
+            index < len(canonical_relations)
+            and canonical_relations[index].relation_class != "clear_split"
+        ):
+            continue
+        connected_groups.append(group)
+        group = []
+    if len(connected_groups) < 2:
+        return envelope_seeds
+
+    restored = {seed.index: seed for seed in envelope_seeds}
+    envelope_relations = _adjacent_relations(envelope_trace, envelope_seeds, policy)
+    for index, envelope_seed in enumerate(envelope_seeds):
+        left = (
+            context.start_index
+            if index == 0
+            else envelope_relations[index - 1].valley_index
+        )
+        right = (
+            context.end_index
+            if index == len(envelope_seeds) - 1
+            else envelope_relations[index].valley_index + 1
+        )
+        enclosed = tuple(
+            connected
+            for connected in connected_groups
+            if left <= connected[0].index <= connected[-1].index < right
+        )
+        if len(enclosed) < 2:
+            continue
+        restored.pop(envelope_seed.index)
+        for connected in enclosed:
+            representative = max(
+                connected,
+                key=lambda seed: (seed.height, -seed.index),
+            )
+            restored[representative.index] = representative
+    return tuple(restored[index] for index in sorted(restored))
 
 
 def _adjacent_relations(
@@ -407,7 +541,10 @@ def _adjacent_relations(
         )
         valley_fraction = _safe_ratio(
             float(morphology_trace[valley_index]),
-            min(left_seed.height, right_seed.height),
+            min(
+                float(morphology_trace[left_seed.index]),
+                float(morphology_trace[right_seed.index]),
+            ),
         )
         relation_class: Literal["clear_split", "shoulder_overlap"] = (
             "clear_split"
@@ -442,8 +579,16 @@ def _segment_from_seed(
     right_relation: _AdjacentPeakRelation | None,
     policy: ChromPeakSegmentPolicy,
 ) -> ChromPeakSegment:
+    # The RT envelope establishes supported lobes and separating valleys.
+    # Its convolution tails are not acquired quantitative support: close the
+    # interval on the unchanged canonical signal used for area and apex.
+    boundary_signal = (
+        np.maximum(intensity - baseline, 0.0)
+        if policy.morphology_trace_method == "rt_envelope"
+        else morphology_trace
+    )
     left, right = _seed_interval_indices(
-        morphology_trace, context_interval, seed, left_relation, right_relation, policy
+        boundary_signal, context_interval, seed, left_relation, right_relation, policy
     )
     relation_labels = _relation_labels(left_relation, right_relation)
     interval = _trace_interval(rt, left, right)
@@ -462,16 +607,29 @@ def _segment_from_seed(
         interval.start_index,
         interval.end_index,
     )
+    apex_index = seed.index
+    if policy.morphology_trace_method == "rt_envelope":
+        segment_residual = np.maximum(
+            intensity[interval.start_index : interval.end_index]
+            - baseline[interval.start_index : interval.end_index],
+            0.0,
+        )
+        apex_index = interval.start_index + int(np.argmax(segment_residual))
+    apex_residual = (
+        float(boundary_signal[apex_index])
+        if policy.morphology_trace_method == "rt_envelope"
+        else float(morphology_trace[apex_index])
+    )
     return ChromPeakSegment(
         segment_id=f"chrom_peak_segment_{seed_index + 1:03d}",
         interval=interval,
-        apex_index=seed.index,
-        apex_rt_min=float(rt[seed.index]),
+        apex_index=apex_index,
+        apex_rt_min=float(rt[apex_index]),
         raw_apex_residual=max(
             0.0,
-            float(intensity[seed.index] - baseline[seed.index]),
+            float(intensity[apex_index] - baseline[apex_index]),
         ),
-        morphology_apex_residual=seed.height,
+        morphology_apex_residual=apex_residual,
         area_baseline_corrected=area,
         morphology_area_shadow=morphology_area,
         segment_class=segment_class,
@@ -520,8 +678,7 @@ def _left_baseline_boundary(
 ) -> int:
     left = apex_index
     while (
-        left > context_interval.start_index
-        and morphology_trace[left - 1] > threshold
+        left > context_interval.start_index and morphology_trace[left - 1] > threshold
     ):
         left -= 1
     return left
@@ -534,10 +691,7 @@ def _right_baseline_boundary(
     context_interval: TraceInterval,
 ) -> int:
     right = apex_index + 1
-    while (
-        right < context_interval.end_index
-        and morphology_trace[right] > threshold
-    ):
+    while right < context_interval.end_index and morphology_trace[right] > threshold:
         right += 1
     return right
 

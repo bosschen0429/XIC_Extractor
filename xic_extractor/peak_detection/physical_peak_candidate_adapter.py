@@ -8,6 +8,9 @@ from xic_extractor.peak_detection.models import (
     PeakResult,
     PeakStatus,
 )
+from xic_extractor.peak_detection.physical_peak_evaluation import (
+    qualified_physical_segments,
+)
 from xic_extractor.peak_detection.physical_peak_models import (
     PhysicalSegment,
     PhysicalSegmentUniverse,
@@ -35,7 +38,7 @@ def physical_candidates_result(
         )
     candidates = tuple(
         _physical_segment_candidate(prepared_result, segment)
-        for segment in universe.segments
+        for segment in qualified_physical_segments(prepared, universe.segments)
     )
     if not candidates:
         return PeakCandidatesResult(

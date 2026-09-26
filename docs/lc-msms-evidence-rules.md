@@ -48,7 +48,7 @@ processing, see [`product/signal-processing-rationale.md`](product/signal-proces
 
 - For profile-covered physical work, the canonical signal is exactly
   `max(Gaussian(raw; window_points, sigma=window_points/6, unit_sum,
-  zero_pad_same) - max(AsLS(raw; lam=100000, p=0.01, n_iter=10), 0), 0)`. Gaussian and
+  zero_pad_same) - max(AsLS_RT(rt_minutes, raw; lam=1 minute^4, p=0.01, n_iter=10), 0), 0)`. Gaussian and
   AsLS are both computed from raw independently. AsLS is fixed baseline
   estimation, not a second smoothing method. Its physical baseline is bounded
   below by zero so a negative fitted baseline cannot manufacture peak signal.
@@ -58,18 +58,28 @@ processing, see [`product/signal-processing-rationale.md`](product/signal-proces
   unresolved clipped segments remain unavailable. The profile binds the formula;
   the physical question and segment universe bind the selection policy. Persisted
   evaluations replay their recorded policy and retain their exact identity.
-- Before constructing physical intervals, interior apex candidates use their
-  full-context topographic prominence and the original three-point noise MAD
-  over the prominence bases. A candidate with prominence below twice that MAD
+- Before constructing physical intervals, interior apex candidates use an RT
+  envelope with minimum sigma 0.08 minutes. Supported clear valleys on the
+  canonical signal preserve separated groups, each with one apex representative.
+  Candidate support uses topographic prominence and the original three-point
+  noise MAD over the prominence bases. A candidate with prominence below twice that MAD
   is subordinate ripple only when its shoulder-connected group contains an
   independently supported apex. It cannot truncate that envelope. Clear valleys
   separate groups; entirely unsupported groups and edge maxima remain for the
   normal qualification gates. This does not discard a separate weak component
   to resolve a window's ambiguity or alter the canonical quantitative signal.
+  Supported seeds also need 4% of their shoulder-connected group's maximum.
+  Clear valleys separate groups before that comparison. Seed eligibility does
+  not depend on a fraction of the entire acquired context maximum. The envelope only
+  supplies lobe/valley evidence; boundary walks, final apex, and area use the
+  canonical signal. An unresolved shoulder carries `physical_shoulder_overlap`
+  into Targeted review reasons and Untargeted provisional evidence; it cannot
+  claim independent Untargeted owner quantification.
 - Current physical selection then uses the complete positive peak interval
   through the first baseline-return samples, bounded by adjacent valleys.
   Only an interval reaching an acquired edge may use an observed return at
-  0.1% of its apex residual. This alternative must have the same apex, be fully
+  the greater of 0.1% of its apex residual and original-signal noise MAD.
+  This alternative must have the same apex, be fully
   interior, and lie within the original interval. Already complete intervals
   retain their exact boundaries and values; every original candidate remains
   in the universe. A still-clipped or unmatched alternative supplies no recovery.

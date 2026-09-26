@@ -7,7 +7,7 @@ import pytest
 
 import xic_extractor.peak_detection.evidence_facts as evidence_facts_module
 from xic_extractor.config import ExtractionConfig
-from xic_extractor.peak_detection.baseline import asls_baseline
+from xic_extractor.peak_detection.baseline import asls_baseline, asls_baseline_on_rt
 from xic_extractor.peak_detection.engine_scoring import (
     candidate_score_summary,
     score_with_context,
@@ -281,11 +281,15 @@ def test_seed_485_separates_required_residual_first_and_legacy_formulas() -> Non
     required = np.maximum(gaussian15_morphology_trace(raw) - baseline, 0.0)
     residual_first = gaussian15_positive_asls_residual_trace(raw, baseline)
 
+    canonical_baseline = np.maximum(asls_baseline_on_rt(rt, raw, lam=1.0), 0.0)
+    canonical_signal = np.maximum(
+        gaussian15_morphology_trace(raw) - canonical_baseline, 0.0
+    )
     prepared_result = prepare_physical_signal(rt, raw)
     assert prepared_result.prepared is not None
     np.testing.assert_allclose(
         prepared_result.prepared.baseline,
-        baseline,
+        canonical_baseline,
         rtol=0.0,
         atol=1e-12,
     )
@@ -297,7 +301,7 @@ def test_seed_485_separates_required_residual_first_and_legacy_formulas() -> Non
     )
     np.testing.assert_allclose(
         prepared_result.prepared.positive_signal,
-        required,
+        canonical_signal,
         rtol=0.0,
         atol=1e-12,
     )

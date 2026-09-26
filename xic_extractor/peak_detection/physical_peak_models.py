@@ -27,7 +27,6 @@ _PHYSICAL_PEAK_SELECTION_POLICIES = frozenset(
     }
 )
 _PHYSICAL_EDGE_RETURN_FRACTION = 0.001
-_PHYSICAL_GROUP_WINDOW_EDGE_RETURN_FRACTION = 0.02
 _PHYSICAL_LOCAL_CONTRAST_MIN_MAD = 2.0
 PhysicalPeakOperation = Literal[
     "trace_evaluation",
@@ -179,3 +178,16 @@ class PhysicalPeakEvaluation:
     operations: tuple[PhysicalPeakOperation, ...]
     # Diagnostic evidence only: never part of scientific equality or identity.
     retained_prepared_signal: PreparedSignal | None = field(default=None, compare=False)
+
+    @property
+    def requires_overlap_review(self) -> bool:
+        selected_id = self.answer.physical_segment_id
+        return selected_id is not None and any(
+            segment.physical_segment_id == selected_id
+            and (
+                segment.segment_class == "shoulder_candidate"
+                or segment.boundary_stop_reason == "shoulder_overlap_review"
+                or "shoulder_overlap" in segment.evidence_sources
+            )
+            for segment in self.segment_universe.segments
+        )

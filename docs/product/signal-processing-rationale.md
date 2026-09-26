@@ -21,7 +21,7 @@ integration, intensity measurement, scan support, and relative-shape comparison
 operate on one canonical positive signal:
 
 ```text
-baseline = max(AsLS(raw; lam=100000, p=0.01, n_iter=10), 0)
+baseline = max(AsLS_RT(rt_minutes, raw; lam=1 minute^4, p=0.01, n_iter=10), 0)
 smoothed = Gaussian(raw; window_points,
                     sigma=window_points/6,
                     unit_sum=true,
@@ -36,7 +36,8 @@ trace edge lacks observed boundary context and has no numeric physical answer.
 ### Edge-reaching intervals
 
 For fresh selection, an edge-reaching interval can instead use a fully observed
-return at 0.1% of its apex residual, with the return samples retained. This
+return at the greater of 0.1% of its apex residual and the local original-signal
+noise MAD, with the return samples retained. This
 alternative must keep the same apex and lie within the original interval;
 both ends must be inside the acquired trace. Already complete intervals and
 their values remain exact, and no candidate is dropped to resolve ambiguity.
@@ -74,17 +75,37 @@ fragmentation check.
 ### Interior maxima
 
 Low-contrast maxima inside a supported envelope must not first become artificial
-integration boundaries. The physical owner measures each interior maximum's
-topographic prominence over the acquired canonical signal, before adjacent
-maxima truncate its interval. The physical owner compares that prominence with
-twice the raw three-point noise MAD between the prominence bases. Within a group connected
-by shoulder valleys, independently supported maxima remain and subordinate
-unsupported maxima are removed before boundaries are built. A clear valley
+integration boundaries. The physical owner uses an RT envelope with a minimum
+Gaussian sigma of 0.08 minutes to identify supported lobes and valleys, while
+preserving supported clear valleys already visible on the canonical signal.
+A coarse envelope cannot merge those separated components. Only the
+additional smoothing needed beyond the configured scan-point Gaussian is
+applied. This envelope is boundary evidence: it does not replace the canonical
+signal for apex intensity or integration. Boundary walks use the canonical
+signal, and the final apex is its maximum within the supported interval.
+
+The physical owner measures each interior maximum's
+topographic prominence over the RT envelope, before adjacent
+maxima truncate its interval. It compares that prominence with twice the raw
+three-point noise MAD between the prominence bases. Within a group connected
+by shoulder valleys, maxima must also reach 4% of the group's maximum to remain
+independent seeds. There is no seed-height fraction relative to the maximum
+of the entire acquired context: a remote strong peak cannot erase a local
+weak component before grouping. Subordinate maxima are removed before boundaries are built. A clear valley
 separates groups; an entirely unsupported group remains for the ordinary
 qualification gates, so weak neighboring peaks cannot be dropped merely to
 make a window question unique. Edge maxima also remain subject to the existing
 context-completeness rule. The interior-maxima rule removes measurement-noise
 ripple, not every periodic fluctuation or unresolved chemical shoulder.
+
+An unresolved shoulder remains a review condition (`physical_shoulder_overlap`).
+Targeted carries it into the product review reasons; Untargeted retains it as
+provisional evidence and excludes it from independent owner quantification.
+NL evidence does not change this physical definition. Targeted uses the same
+owner for NL and no-NL inputs; its acquisition context includes one configured
+window width on each side, while only apexes inside the original selection
+window may compete. Wider acquisition must not silently widen the target's
+selection question.
 
 ### Local relief
 
@@ -241,19 +262,32 @@ nearest apex, height, area, or legacy fallback.
 
 ## Baseline Estimation Order
 
+The baseline penalty uses retention time in minutes, including nonuniform
+sampling, rather than scan ordinal. Its fixed regularization is 1 minute^4.
+This prevents a change in scan density from making the baseline follow a broad
+chromatographic peak. It does not guarantee an unbiased area for every curved
+background or a complete peak when the acquired context is clipped.
+
 The canonical formula deliberately computes `Gaussian(raw)` and `AsLS(raw)`
 independently, then subtracts and positive-clips. It is not
 `Gaussian(raw - AsLS(raw))` and not `Gaussian(raw) - AsLS(Gaussian(raw))`.
 These alternatives are not equivalent because AsLS is nonlinear. The formula
 and all fixed mechanism versions are part of profile identity; changing the
 order requires a new profile version and evidence contract.
+The RT baseline and envelope parameters are bound into profile identity.
+Retained Discovery facts with a different profile cannot be used as current
+physical answers; they must be regenerated through the existing acquisition
+route.
 
 ## Parameters
 
 | Parameter | Default | Derived | Scope |
 | --- | --- | --- | --- |
 | `signal_processing_method` | `gaussian` only | AsLS remains a fixed baseline mechanism | Canonical profile |
-| `signal_processing_window_points` | 15 (odd integer, 3–999) | sigma = window / 6.0 | Canonical signal, boundaries, area, shape |
+| `signal_processing_window_points` | 15 (odd integer, 3–999) | sigma = window / 6.0 | Canonical signal, area, shape |
+| `baseline_lam` | 1.0 minute^4 (fixed) | RT-aware AsLS penalty | Canonical baseline |
+| `boundary_min_sigma_rt` | 0.08 minutes (fixed) | Additional Gaussian smoothing only if needed | Lobe and valley evidence |
+| `segment_min_prominence_fraction` | 0.04 (fixed) | Fraction of shoulder-connected envelope maximum | Independent seed evidence |
 | `DEFAULT_OWN_MAX_SMOOTH_POINTS` | 15 | sigma = window / 6.0 | Shape-identity comparisons |
 
 Sigma is not independently configurable; it is derived from window size. The

@@ -164,13 +164,44 @@ def test_discovery_retained_physical_peak_cardinality(
         tmp_path / "candidates.csv", result.candidates
     )
     valid = [c for c in read_discovery_candidates_csv(path) if c.ms1_peak_found]
+    if representative_scan is not None:
+        # A weaker connected shoulder is retained for review, while the clean
+        # peak still has one representative. Remote height cannot erase it.
+        shoulders = [c for c in valid if c.is_provisional]
+        assert [c.best_ms2_scan_id for c in shoulders] == [14067]
+        assert all(
+            c.ms1_trace_quality == "physical_shoulder_overlap" for c in shoulders
+        )
+        valid = [c for c in valid if not c.is_provisional]
     assert sorted(c.ms1_apex_rt for c in valid) == [
         round(apex, 4) for apex in expected_apices
     ]
     assert sorted(
-        c.ms1_apex_rt for c in result.candidates if c.ms1_peak_found
+        c.ms1_apex_rt for c in result.candidates
+        if c.ms1_peak_found and (representative_scan is None or not c.is_provisional)
     ) == pytest.approx(expected_apices)
     assert len(result.physical_work_manifest) == len(fixture["seed_scans"])
+    if fixture_name == "discovery_true_double_peak":
+        from xic_extractor.alignment.config import AlignmentConfig
+        from xic_extractor.alignment.ownership import (
+            build_sample_local_owners_from_discovery_bindings,
+        )
+
+        assert all(candidate.is_provisional for candidate in valid)
+        assert all(
+            candidate.ms1_trace_quality == "physical_shoulder_overlap"
+            for candidate in valid
+        )
+        assert all(
+            "physical_shoulder_overlap" in candidate.reason for candidate in valid
+        )
+        ownership = build_sample_local_owners_from_discovery_bindings(
+            result.physical_bindings, alignment_config=AlignmentConfig()
+        )
+        assert len(ownership.owners) == 2
+        assert all(not owner.quantification_eligible for owner in ownership.owners)
+        assert all(owner.quantification_exclusion_reason == "physical_shoulder_overlap"
+                   for owner in ownership.owners)
     if representative_scan is not None:
         assert [c.best_ms2_scan_id for c in valid] == [representative_scan]
         # Baseline-return boundaries admit both supporting seeds. The merge
@@ -179,12 +210,12 @@ def test_discovery_retained_physical_peak_cardinality(
             record.work_item.best_ms2_scan_id
             for record in result.physical_evaluations
             if record.evaluation.facts is not None
-        } == {14712, 14922}
+        } == {14067, 14712, 14922}
         assert {
             record.work_item.best_ms2_scan_id: record.evaluation.reason
             for record in result.physical_evaluations
             if record.evaluation.facts is None
-        } == {14067: "no_selection", 14291: "no_selection"}
+        } == {14291: "background_like_peak_shape"}
 
 
 @pytest.mark.parametrize("combine_mode", ("union", "intersection"))
@@ -806,16 +837,21 @@ def test_qualification_survives_physical_fact_reuse(
     raw = _OwnerBoundBatchRaw(source)
     raw.rt = np.linspace(7.45, 8.15, 141)
     if provisional:
-        # The fixed short-scale noise gives raw MAD near 12.25 counts and
-        # peak-to-edge SNR near 4, within the existing provisional band.
-        noise = 10.0 * np.resize([1, -1, 1, -1, 1, 1, -1, -1], raw.rt.size)
+        # An independently defined marginal peak stays in the SNR 3..5 band
+        # across small flank crops, rather than relying on a ripple boundary.
+        indices = np.arange(raw.rt.size)
+        noise = 8.0 * np.sin(2.0 * np.pi * indices / 3.0) + 6.0 * np.cos(
+            2.0 * np.pi * indices / 5.0
+        )
+        amplitude = 30.0
     else:
         # This original trace is clean once ripple no longer truncates its
         # interval: its full-peak raw SNR exceeds the provisional threshold.
         noise = 10.0 * np.random.default_rng(0).normal(size=raw.rt.size)
+        amplitude = 50.0
     raw.intensity = (
         1000.0
-        + 50.0 * np.exp(-0.5 * ((raw.rt - 7.8) / 0.05) ** 2)
+        + amplitude * np.exp(-0.5 * ((raw.rt - 7.8) / 0.05) ** 2)
         + noise
     )
     qualifier = Mock(wraps=is_provisional_peak_shape)
@@ -1196,7 +1232,7 @@ def test_discovery_recovers_near_baseline_peak_after_exterior_context_crop(
     from tests.test_physical_peak_evaluation_persistence import _context_sensitive_trace
 
     rt, intensity = _context_sensitive_trace()
-    rt = 7.8 + (rt[:-1] - 23.0) * 0.025
+    rt = 7.8 + rt[:-1] - rt[23]
     intensity = intensity[:-1]
     profile = SignalProcessingProfile(window_points=15)
     raw_path = tmp_path / "sample.raw"
