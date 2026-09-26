@@ -110,7 +110,7 @@ Use these terms consistently:
 - `CID-NL alignment workset`: compatible method subjects scheduled and composed
   together so their observations can reach the same CrossSample decision.
   Workset membership is computational scope, not chemical identity. Alignment
-  owns its compatibility and backfill-binding policy in [alignment.md](alignment.md).
+  owns its compatibility and Backfill-binding policy in [alignment.md](alignment.md).
 - `identity-bearing member subject`: canonical sample identity plus a
   discriminated union of owner-backed `PeakHypothesis` identity or owner-backed
   physical-observation identity. The canonical variant tag is part of identity;
@@ -340,12 +340,12 @@ request, attempt, artifact bundle, or delivery revision.
 Targeted lane:
 
 - Target lists and method settings constrain the shared lifecycle; they do not
-  create a separate peak-identity or backfill system.
+  create a separate peak-identity or Backfill system.
 - Limited rescue workflows may produce `detected_flagged` when explicitly
   contracted.
-- Treat the targeted result as its own delivery contract. Do not require an
+- Treat the Targeted result as its own delivery contract. Do not require an
   analytical downstream reader when no such product consumer exists.
-- Do not expand targeted rescue to new analytes or default extraction behavior
+- Do not expand Targeted rescue to new analytes or default extraction behavior
   without expected-diff evidence and a product decision.
 
 Untargeted lane:

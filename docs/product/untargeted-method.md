@@ -1,7 +1,7 @@
 # Untargeted Method
 
 This page is the durable product-method owner for stable conclusions formerly
-spread across the dated 2026-05-14 untargeted method/literature reports and
+spread across the dated 2026-05-14 Untargeted method/literature reports and
 public `deepresearch` stubs. The original long-form reports are historical
 private context after their stable claims are represented here and in the
 linked owner pages.
@@ -62,7 +62,7 @@ by itself:
 | Stable conclusion | Durable owner |
 | --- | --- |
 | Untargeted LC-MS literature expects pooled QC, injection-order tracking, blank/background handling, batch drift checks, sample-matrix-effect awareness, missingness classification, and artifact/adduct/isotope review. | [Sample Metadata And QC](sample-metadata-qc.md), [Instrument QC And Calibration](instrument-qc-calibration.md), [Productization](productization.md) |
-| XIC's current untargeted value is narrower: sample-local owner finding, owner-centered Backfill, RT-aware alignment, duplicate-claim control, and Matrix/Review/Audit separation. | [Discovery](discovery.md), [Alignment](alignment.md), [Backfill](backfill.md), [Quant Matrix](quant-matrix.md) |
+| XIC's current Untargeted value is narrower: sample-local owner finding, owner-centered Backfill, RT-aware alignment, duplicate-claim control, and Matrix/Review/Audit separation. | [Discovery](discovery.md), [Alignment](alignment.md), [Backfill](backfill.md), [Quant Matrix](quant-matrix.md) |
 | Targeted ISTD recall is a useful benchmark gate, but historical 8RAW/85RAW results are evidence snapshots, not permanent product authority. Current validation verdicts must come from the diagnostic ledger, validation packets, status index, and authority manifest. | [Diagnostic ledger](../diagnostic-ledger.md), [Productization](productization.md) |
 | Pre-Backfill consolidation and primary-promotion rules reduce matrix pollution only when tied to explicit writer authority and expected-diff tests. | [Backfill](backfill.md), [Decision Policy](decision-policy.md), [Productization](productization.md) |
 | Old reports, research notes, and deepresearch imports may explain why a direction was chosen, but they do not override current product owners. | This page, [Product Topic Index](README.md), [Project Layout](../project-layout.md) |

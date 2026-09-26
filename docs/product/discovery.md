@@ -671,7 +671,7 @@ Before changing discovery behavior, require the relevant subset of:
 - Treating a new evidence provider as ProductWriter authority without Backfill
   activation.
 - Dragging CID-NL Discovery decisions into the Backfill lane.
-- Starting untargeted performance work before timing/locality evidence
+- Starting Untargeted performance work before timing/locality evidence
   identifies the bottleneck and correctness gate.
 
 ## See Also
