@@ -39,6 +39,21 @@ from xic_extractor.peak_detection.signal_processing_profile import (
 )
 
 
+def test_unavailable_prepared_signal_keeps_live_asls_intermediate(monkeypatch) -> None:
+    import xic_extractor.peak_detection.physical_peak_evaluation as owner
+
+    rt = np.linspace(0.0, 2.0, 31)
+    raw = np.ones(len(rt))
+    baseline = np.full(len(rt), 2.0)
+    monkeypatch.setattr(owner, "asls_baseline", lambda *_args, **_kwargs: baseline)
+    result = prepare_physical_signal(rt, raw)
+    assert result.projection.state == "unavailable"
+    assert result.projection.reason == "no_signal_above_baseline"
+    assert result.prepared is not None
+    np.testing.assert_array_equal(result.prepared.positive_signal, np.zeros(len(rt)))
+    assert result.baseline_unclipped == tuple(baseline)
+
+
 def _context_sensitive_trace() -> tuple[np.ndarray, np.ndarray]:
     # Scaled observed XIC with scan-ordinal RT: removing one exterior scan
     # changes the AsLS valley sign while the retained Gaussian peak is exact.

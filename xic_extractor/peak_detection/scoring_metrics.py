@@ -91,14 +91,20 @@ def local_sn_severity(
 
 def compute_local_sn_cache(
     intensity: np.ndarray,
+    *,
+    baseline_unclipped: tuple[float, ...] | None = None,
 ) -> tuple[np.ndarray | None, float | None]:
+    """Return unclipped AsLS and whole-trace residual MAD, reusing live preparation."""
     values = np.asarray(intensity, dtype=float)
     if len(values) < 5 or not np.all(np.isfinite(values)):
         return None, None
-    try:
-        baseline = asls_baseline(values)
-    except ValueError:
-        return None, None
+    if baseline_unclipped is None:
+        try:
+            baseline = asls_baseline(values)
+        except ValueError:
+            return None, None
+    else:
+        baseline = np.asarray(baseline_unclipped, dtype=float)
     residual = values - baseline
     mad = float(np.median(np.abs(residual - np.median(residual))))
     return baseline, mad

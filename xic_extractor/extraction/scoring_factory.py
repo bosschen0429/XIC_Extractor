@@ -88,7 +88,9 @@ def build_scoring_context_factory(
         shape_signal = np.asarray(
             prepared.positive_signal if prepared is not None else (), dtype=float
         )
-        baseline_array, residual_mad = compute_local_sn_cache(intensity_values)
+        baseline_array, residual_mad = compute_local_sn_cache(
+            intensity_values, baseline_unclipped=prepared_result.baseline_unclipped
+        )
         morphology_window_points = configured_morphology_window_points(config)
         active_intensity_values = intensity_values
         active_baseline_array = baseline_array
