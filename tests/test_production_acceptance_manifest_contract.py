@@ -212,6 +212,32 @@ def test_checker_rejects_source_artifact_hash_mismatch(tmp_path: Path) -> None:
     assert any("source_artifact_sha256 mismatch" in problem for problem in problems)
 
 
+def test_checker_reports_hash_mismatch_per_row_for_shared_source(
+    tmp_path: Path,
+) -> None:
+    manifest = tmp_path / "production_acceptance.tsv"
+    second = _valid_accept_row()
+    second["peak_hypothesis_id"] = "PH002"
+    _write_manifest(manifest, [_valid_accept_row(), second])
+    header, rows = _read_manifest(manifest)
+    for source_name in ("doublet_source", "source_artifact"):
+        shared = tmp_path / rows[0][f"{source_name}_relpath"]
+        actual = hashlib.sha256(shared.read_bytes()).hexdigest().upper()
+        for row in rows:
+            row[f"{source_name}_sha256"] = actual
+    rows[1]["source_artifact_sha256"] = "0" * 64
+    manifest_sha = production_acceptance_manifest_sha256(rows)
+    for row in rows:
+        row["manifest_sha256"] = manifest_sha
+    _write_raw_manifest(manifest, header, rows)
+
+    problems = _check_manifest(manifest)
+
+    assert [p for p in problems if "sha256 mismatch" in p] == [
+        "row 3: source_artifact_sha256 mismatch"
+    ]
+
+
 def test_checker_rejects_source_path_traversal(tmp_path: Path) -> None:
     cases = (
         ("source_artifact_relpath", "sources/../../outside.tsv"),

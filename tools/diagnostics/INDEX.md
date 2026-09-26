@@ -60,13 +60,6 @@ method, and `linear_edge` is retired as a selectable baseline method. Do not add
 new diagnostics that compare against or fall back to linear-edge; use current
 AsLS/boundary/product contracts instead.
 
-### `alignment_parity.py`
-
-**Purpose**: Run alignment parity checks across matrix, identity-review, and targeted benchmark artifacts.
-**Topic group**: `alignment_parity.py`
-**Originating spec/plan**: `retired-provenance:ad226e2eb39a`, `retired-provenance:10eb03817ff8`
-**Note**: Diagnostic-only parity oracle; it does not authorize matrix values.
-
 ---
 
 ### `backfill_evidence_cost_summary.py`
@@ -196,21 +189,7 @@ diagnostic IO helpers where their schemas permit it, but keep separate row
 models because their output schemas are intentionally different; see
 `retired-provenance:9ac1510742f0` Cluster 1.
 
-### `evidence_spine_consistency.py`
-
-**Purpose**: Compare targeted candidate and untargeted alignment evidence.
-**Topic group**: `evidence_spine_consistency.py` + `_io`, `_models`, `_analysis`, `_writers` (5 files)
-**Originating decision**: `retired-provenance:2a2ae49b79cb`
-**Recent commit**: `a3e4ea0 2026-05-25` (feat: add phase 1 peak pipeline gates)
-
 ---
-
-### `cross_report_evidence_consistency.py`
-
-**Purpose**: Compare targeted reliability and peak candidate evidence.
-**Topic group**: `cross_report_evidence_consistency.py` + `_io`, `_models`, `_analysis`, `_writers` (5 files)
-**Originating spec**: (none found — likely landed alongside post-PR60 cleanup; see `retired-provenance:100307efc8fa` Workstream G context)
-**Duplication note**: Low-level parsing/writing helpers are consolidated through `xic_extractor/tabular_io.py`; `xic_extractor/diagnostics/diagnostic_io.py` and `tools/diagnostics/diagnostic_io.py` remain compatibility shims. Row dataclasses stay separate because the schemas differ.
 
 ---
 
@@ -233,13 +212,6 @@ opt-in. Hypothesis consistency and mode assignments are diagnostic outputs and
 cannot authorize values, rewrite matrices, or apply product activation.
 
 ---
-
-### `build_mode_hypothesis_assignment.py`
-
-**Purpose**: Build typed sample-level PeakHypothesis assignment rows from `shared_peak_identity_rt_mode_evidence.tsv` plus candidate MS2 tag/opportunity, RAW-backed MS1 pattern, QC MS1 reference, and matrix RT drift policy sidecars.
-**Topic group**: `shared_peak_identity_explanation.py` + `xic_extractor/alignment/shared_peak_identity_explanation/mode_hypothesis_assignment.py`
-**Originating owner/plan**: `docs/product/quant-matrix.md`; retired sidecar-to-product activation spec provenance.
-**Status note**: This diagnostic produces mode-aware sample assignments in `shared_peak_identity_peak_hypothesis_selection.tsv`. The sidecar records `peak_hypothesis_id` for review and consistency checks; it does not authorize matrix construction or activation. A sample can become `product_candidate_core` only when typed iRT/mode evidence assigns it to a mode that has required-tag support and the sample-level MS1 shape, QC context, RT-drift policy, and boundary/MS2 opportunity evidence do not conflict. QC is a context/conflict gate, not a hard required gate: missing QC does not block when sample-level MS1, RT drift, and MS2/tag evidence support the assignment. RAW-selected or raw-overlay-only modes stay `raw_mode_review_only`; a family with no required tag becomes `consolidation_no_go`; a sample assigned to a non-tag mode while another mode carries the tag becomes `cross_mode_rescue_blocked`.
 
 ---
 
@@ -266,8 +238,8 @@ compact summary or exact candidate details without reading RAW.
 **Status**: Maintained diagnostic reader. Retains owner assessment, initial
 CrossSample and final disposition facts; does not recalculate decisions or grant
 Matrix authority. Existing `alignment_health_packet.py` summarizes machine-level
-health, while `alignment_decision_report_io.py` reads existing review tables;
-neither contains excluded candidate and initial weak-edge facts from default runs.
+health; it does not contain excluded candidate and initial weak-edge facts from
+default runs.
 
 ---
 
@@ -290,21 +262,7 @@ selected values/counting.
 
 ---
 
-### `alignment_decision_report.py`
-
-**Purpose**: Render an HTML decision report from alignment diagnostics.
-**Topic group**: `alignment_decision_report.py` + `_io`, `_styles`, `_components`, `_model`, `_rendering` (6 files)
-**Originating spec**: `retired-provenance:038bfb65fe90` (decomposition target PR1) + `retired-provenance:100307efc8fa` Workstream G
-**Note**: Rendering / components / styles split landed in commit `4549cdd 2026-05-24`.
-
 ---
-
-### `untargeted_alignment_guardrails.py`
-
-**Purpose**: Compute and compare untargeted alignment guardrails.
-**Topic group**: `untargeted_alignment_guardrails.py` + `_io`, `_models`, `_metrics`, `_outputs`, `_targets` (6 files)
-**Originating plan**: `retired-provenance:6a962d15a062`
-**Spec status**: ACTIVE facade per `retired-provenance:100307efc8fa:638` ("now stays as the CLI/orchestration compatibility facade").
 
 ---
 
@@ -431,41 +389,11 @@ compatibility-label bindings are reported separately, formula-protected machine
 IDs must resolve unambiguously against owner bindings, and a missing lookup
 remains unavailable.
 
-
-
-### `low_ms1_assessable_coverage_audit.py`
-
-**Purpose**: Classify low_ms1_assessable_coverage_review families as RT/window, single-center XIC, or primary-backfill support issues.
-**Topic group**: `low_ms1_assessable_coverage_audit.py` + `low_ms1_coverage_review_{classifier, loaders, models, writers}` (5 files; 683-line classifier is the largest)
-**Originating spec**: `retired-provenance:f59e13685ecc`
+---
 
 ---
 
-### `ms1_index_backfill_audit.py`
-
-**Purpose**: Audit owner-backfill vendor XIC versus MS1-index XIC.
-**Topic group**: `ms1_index_backfill_audit.py` (single-file)
-**Originating note**: `retired-provenance:10d87af35fec` (recent investigation context)
-
 ---
-
-### `owner_backfill_request_economics.py`
-
-**Purpose**: Summarize owner-backfill request cost by final row identity.
-**Topic group**: `owner_backfill_request_economics.py` (single-file)
-**Originating spec**: `retired-provenance:fa041eff0067`
-**Cleanup note**: Cell-row preparation now builds per-family cell groups and
-first-seen sample order in one input index while preserving feature row order,
-sample order, and output TSV/JSON/Markdown schemas.
-
----
-
-### `provisional_backfill_candidate_gate.py`
-
-**Purpose**: Emit a `diagnostic_only` machine sidecar for retained provisional backfill rows, including Tier 2 support components, challenge blockers, and source artifact hashes.
-**Topic group**: `provisional_backfill_candidate_gate.py` + `xic_extractor/alignment/production_candidate_gate.py`
-**Originating spec/plan**: `retired-provenance:481a2032bd31`; `retired-provenance:902c312d3c37`
-**Status note**: Writes `alignment_production_candidate_gate.tsv`; optional Tier 2 support must come from `--tier2-trace-evidence-tsv` plus `--tier2-raw-manifest-tsv`, not direct `alignment_review.tsv` tokens. Does not mutate `alignment_review.tsv`, `alignment_matrix.tsv`, workbook schemas, or downstream correction/statistics contracts.
 
 ---
 
@@ -478,25 +406,9 @@ sample order, and output TSV/JSON/Markdown schemas.
 
 ---
 
-### `backfill_shadow_policy_report.py`
-
-**Purpose**: Emit a `diagnostic_only` cell-level MS1+RT shadow-policy report for retained backfill seed groups, showing which rescued cells already fill now, which would fill under an MS1 own-max + RT policy, which still need MS1 same-peak evidence, and which are blocked by missing seed/overlay evidence or visual-review blockers.
-**Topic group**: `backfill_shadow_policy_report.py` + `xic_extractor/diagnostics/backfill_shadow_policy.py`
-**Originating spec/goal/plan**: `retired-provenance:0a1c58083825`; `retired-provenance:69bd6d102e9c`; `retired-provenance:0ceba9b23ba9`
-**Status note**: Writes `backfill_shadow_policy_cells.tsv`, `backfill_shadow_policy_summary.json`, and `backfill_shadow_policy_report.html`. It consumes existing `alignment_cells.tsv`, `alignment_retained_backfill_evidence_gate.tsv`, optional `alignment_matrix.tsv` for source hashing, and optional overlay batch summaries for own-max metric display. Decision/reason/gap serialization uses the shared diagnostics-only `BackfillDecisionExplanation` payload, but the shadow-policy decision taxonomy remains separate from `shadow_production_projection.py`. The report does not accept RAW/DLL paths, generate overlays, compute a composite score, mutate alignment artifacts, workbook schemas, or product decisions, and remains a calibration surface for a future reviewed production-policy contract.
-
 ---
 
-### `shadow_production_projection.py`
-
-**Purpose**: Emit a `shadow_projection_only` cell-level current-production-decision vs projected-decision sidecar for retained backfill seed groups, using formal `build_production_decisions()` as the current product snapshot and applying the reviewed shadow criteria only as a projection.
-**Topic group**: `shadow_production_projection.py` + `xic_extractor/diagnostics/shadow_production_projection.py`
-**Originating spec/goal/plan**: `retired-provenance:0a1c58083825`; `retired-provenance:69bd6d102e9c`; `retired-provenance:0ceba9b23ba9`
-**Status note**: Writes `shadow_production_projection_cells.tsv` and `shadow_production_projection_summary.json`. The tool entry point is a thin CLI facade; reusable TSV loading, production-decision reconstruction, matrix cross-check loading, and output writing live in `xic_extractor/diagnostics/shadow_production_projection.py`. Rows expose `current_matrix_written`, `current_matrix_source`, `current_production_status`, `shadow_decision` (`accept` / `block` / `context`), `projected_matrix_written`, reasons, warnings, detected-anchor count, request-window overlap status, and overlay provenance. Decision reason/warning serialization uses the shared diagnostics-only `BackfillDecisionExplanation` payload; the projection decision taxonomy remains separate from `backfill_shadow_policy_report.py`. When both `--alignment-matrix-tsv` and `--alignment-matrix-identity-tsv` are supplied, `current_matrix_written` and `current_matrix_value` are grounded in the actual public matrix cell and `current_matrix_source=alignment_matrix_tsv`; otherwise the tool falls back to the formal production-decision snapshot. Matrix cross-check loading limits materialized public matrix cells to retained-gate requested `(family, sample)` keys while preserving source-family aliases and the production snapshot fallback. Seed provenance plus MS1 same-peak visual support is emitted as `shadow_decision=context` with `shadow_reasons=identity_supported_review`; it keeps the positive projected value for reviewed allowlist calibration but leaves `projected_matrix_written=FALSE`. Missing detected anchors, missing selected peak segments, outside-window cells, explicit wrong-peak/hypothesis blockers, hard MS1 blockers, and retained-gate `review_required_*` challenge blockers remain closed or context. `local/global` dominance is annotation only and does not hide traces. The summary separately reports `gate_row_count`, `projectable_gate_row_count`, `unprojectable_gate_row_count`, and `unprojectable_gate_reasons`; `row_count=0` can therefore mean that retained gate rows lacked seed/cell provenance such as `missing_seed_audit`, not that risk was absent. This tool does not mutate `alignment_review.tsv`, `alignment_cells.tsv`, `alignment_matrix.tsv`, workbooks, or product decisions.
-
 ---
-
-
 
 ## T5D Standard Peak contraction
 
@@ -714,191 +626,17 @@ itself.
 
 ---
 
-### `backfill_peakhypothesis_promotion.py`
-
-**Purpose**: Convert reviewed PeakHypothesis/sample-cell backfill projection rows
-into an allowlisted product-candidate promotion sidecar while keeping
-nonstandard but assessable peaks review-only.
-**Topic group**: `backfill_peakhypothesis_promotion.py` +
-`xic_extractor/diagnostics/backfill_peakhypothesis_promotion.py`
-**Originating spec/goal/plan**:
-`retired-provenance:3aee8e2b6031`
-**Status note**: Writes `backfill_peakhypothesis_promotion_cells.tsv`,
-`backfill_peakhypothesis_area_uncertainty.tsv`, and
-`backfill_peakhypothesis_promotion_summary.json`. It consumes
-`shadow_production_projection_cells.tsv` and a reviewed allowlist only. It can
-promote either formal product-authorized `accept` rows or
-`identity_supported_review` context rows when an exact PeakHypothesis/sample
-allowlist marks the area as `standard_assessable_area`. It does not read RAW,
-generate overlays, mutate alignment artifacts, change workbook schemas, or write
-final matrices. `nonstandard_assessable_area` rows can be review evidence only
-and remain blocked until a separate integration policy exists.
-8RAW activation and FULL COHORT validation are still required before production-ready
-claims.
+---
 
 ---
 
-### `backfill_peakhypothesis_acceptance_gate.py`
-
-**Purpose**: Gate reviewed PeakHypothesis backfill promotion cells against an
-existing FULL COHORT alignment artifact refresh before any direct production-transfer
-trial.
-**Topic group**: `backfill_peakhypothesis_acceptance_gate.py` +
-`xic_extractor/diagnostics/backfill_peakhypothesis_acceptance_gate.py`
-**Originating spec/goal/plan**:
-`retired-provenance:3aee8e2b6031`
-**Status note**: Writes `backfill_peakhypothesis_acceptance_gate.tsv` and
-`backfill_peakhypothesis_acceptance_gate_summary.json`. It consumes only
-`backfill_peakhypothesis_promotion_cells.tsv`, FULL COHORT `alignment_review.tsv`,
-and FULL COHORT `alignment_cells.tsv`. Cross-run `feature_family_id` values are not
-treated as stable identity; when the promotion row carries a seed m/z/RT anchor,
-the FULL COHORT candidate is selected by hypothesis-anchor m/z/RT plus sample. A
-direct-transfer candidate requires that anchored PeakHypothesis/sample cell to
-exist, remain a primary matrix row, avoid unresolved family consolidation, have
-`detected` or `backfilled` status, and carry a positive
-`gaussian15_positive_asls_residual` primary matrix area. Anchored detected or
-rescued cells blocked only by family consolidation/non-primary-row ownership are
-reported as `hypothesis_candidate_review`, not as absent. Hard missing cells,
-absent cells, duplicate-assigned cells, and missing Gaussian15 area still fail
-closed. This diagnostic does not read RAW, remap winners, apply activation,
-mutate alignment artifacts, change workbook schemas, or claim production
-readiness. This diagnostic's `backfilled` eligibility is not a heldout-oracle
-contract: standard-path heldout oracle manifests separately require
-`heldout_original_cell_status` proving the masked source cell was originally
-detected, and `backfilled` rows fail closed for product-readiness oracle evidence.
+---
 
 ---
 
-### `backfill_peakhypothesis_winner_remap.py`
-
-**Purpose**: Build diagnostic FULL COHORT primary-winner remap proposals for reviewed
-PeakHypothesis backfill cells that became consolidation losers in the direct
-FULL COHORT slice gate.
-**Topic group**: `backfill_peakhypothesis_winner_remap.py` +
-`xic_extractor/diagnostics/backfill_peakhypothesis_winner_remap.py`
-**Originating spec/goal/plan**:
-`retired-provenance:3aee8e2b6031`
-**Status note**: Legacy family-consolidation context only. It writes
-`backfill_peakhypothesis_winner_remap.tsv` and
-`backfill_peakhypothesis_winner_remap_summary.json` from a slice-gate TSV
-plus FULL COHORT `alignment_review.tsv` and `alignment_cells.tsv`. It must not be used
-as hypothesis identity authority, because family winners can collapse multiple
-peaks inside a broad family/window. The 2026-06-09 top14 winner-remap artifact
-generated before the hypothesis-anchor correction is obsolete. Use the
-hypothesis-anchor slice gate as the current review surface; winner-remap output,
-if regenerated later, is only family-consolidation context and not product
-activation. It does not read RAW, change row identity, apply activation, mutate
-matrices, remap public outputs, or claim production readiness.
-
 ---
 
-### `backfill_peakhypothesis_hypothesis_review.py`
-
-**Purpose**: Package corrected FULL COHORT hypothesis-anchor slice-gate candidates
-into a compact manual review queue before any product-transfer decision.
-**Topic group**: `backfill_peakhypothesis_hypothesis_review.py` +
-`xic_extractor/diagnostics/backfill_peakhypothesis_hypothesis_review.py`
-**Originating spec/goal/plan**:
-`retired-provenance:3aee8e2b6031`
-**Status note**: Writes
-`backfill_peakhypothesis_hypothesis_review_queue.tsv` and
-`backfill_peakhypothesis_hypothesis_review_summary.json` from the corrected
-FULL COHORT slice-gate TSV only. It keeps source PeakHypothesis identity, m/z/RT
-anchor, matched FULL COHORT PeakHypothesis, same-sample area/status, and family
-consolidation context in one review row. It intentionally leaves
-`reviewer_verdict` and `reviewer_note` blank and records
-`proposed_product_transfer_status=review_only_pending_same_peak_and_consolidation_policy`.
-It does not read RAW, judge peak shape, choose S/N, apply activation, mutate
-matrices, remap family winners, or claim production readiness.
-
 ---
-
-
-### `backfill_peakhypothesis_normal_peak_decision.py`
-
-**Purpose**: Convert PeakHypothesis promotion rows, corrected FULL COHORT
-hypothesis-anchor slice-gate rows, machine Gaussian15 shape evidence, and
-same-peak verdicts into an explicit normal-peak backfill decision surface.
-**Topic group**: `backfill_peakhypothesis_normal_peak_decision.py` +
-`xic_extractor/diagnostics/backfill_peakhypothesis_normal_peak_decision.py`
-**Originating spec/goal/plan**:
-`retired-provenance:3aee8e2b6031`
-**Status note**: Writes `backfill_peakhypothesis_normal_peak_decisions.tsv` and
-`backfill_peakhypothesis_normal_peak_decision_summary.json`. The normal-peak
-shape definition is
-`gaussian15_asls_residual_selected_shape_context_single_complete_unimodal_peak;raw_spikes_neighbor_contact_family_multiplet_not_blockers`:
-the selected PeakHypothesis/sample must show a complete Gaussian15 positive
-AsLS residual single peak in the selected bounds' local shape context, from
-broad/flat through sharp/peaked. This avoids treating a too-narrow integration
-bound as the whole peak-shape review window. Raw XIC spikes, neighboring peak
-contact, family/window-level multiplets, and
-family consolidation/non-primary ownership are not peak-shape hard blockers by
-themselves. When `--machine-shape-evidence-tsv` is supplied, the standard vs
-non-standard peak-shape decision comes from `machine_shape_decision`; a
-`standard_peak_shape_supported` row can resolve a missing/legacy area label to
-`standard_assessable_area`, while `nonstandard_peak_shape` stays review-only and
-does not activate. Same-peak support is still a separate evidence requirement,
-but it can now come from the overlay index's `machine_same_peak_verdict` when
-manual review is absent; manual same-peak conflicts still override and block.
-For standard machine-shape rows, the decision TSV selects
-`normal_peak_quantitation_area` from the overlay's Gaussian15
-baseline-return lobe area (`gaussian15_lobe_area`), with boundary start/end and
-source fields preserved for audit. Without machine-shape evidence, the legacy
-fallback remains the reviewed `full_cohort_primary_matrix_area`. For product
-activation, use the end-to-end normal-peak activation CLI so matrix writing is
-gated by post-activation matrix diff acceptance.
-
----
-
-### `backfill_peakhypothesis_activation_trial.py`
-
-**Purpose**: Run a no-RAW, artifact-only FULL COHORT normal-peak activation trial for
-reviewed PeakHypothesis/sample cells before launching a new full FULL COHORT rerun.
-**Topic group**: `backfill_peakhypothesis_activation_trial.py` +
-`xic_extractor/diagnostics/backfill_peakhypothesis_activation_trial.py`
-**Originating spec/goal/plan**:
-`retired-provenance:3aee8e2b6031`
-**Status note**: Writes `backfill_peakhypothesis_activation_trial.tsv`
-and `backfill_peakhypothesis_activation_trial_summary.json`. It consumes
-only current FULL COHORT `alignment_matrix.tsv`, `alignment_matrix_identity.tsv`,
-`alignment_run_metadata.json`, `timing.json`, and normal-peak decision rows.
-Manual same-peak verdict rows are optional override/review evidence; when they
-are absent, the trial consumes `same_peak_verdict` from the normal-peak
-decision TSV. It does not read RAW, load `alignment_cells.tsv`,
-apply activation, mutate alignment artifacts, or claim production readiness. It
-uses `full_cohort_matched_peak_hypothesis_id + sample` as the transfer trial key
-rather than cross-run source FAM IDs. The 2026-06-09 artifact-only trial found
-`normal_peak_required_count=11`, `primary_loser_count=9`,
-`primary_winner_count=2`, `expected_matrix_diff_count=11`,
-`unexpected_diff_count=0`, and a pass status, so the next action is implementing
-the normal-peak override through the activation owner rather than rerunning
-FULL COHORT unchanged.
-
----
-
-### `backfill_peakhypothesis_activation_transfer.py`
-
-**Purpose**: Transfer reviewed normal-peak FULL COHORT backfill decisions into
-full_cohort-keyed promotion rows that the existing activation bridge can consume.
-**Topic group**: `backfill_peakhypothesis_activation_transfer.py` +
-`xic_extractor/diagnostics/backfill_peakhypothesis_activation_transfer.py`
-**Originating spec/goal/plan**:
-`retired-provenance:3aee8e2b6031`
-**Status note**: Writes
-`backfill_peakhypothesis_full_cohort_transfer_promotion_cells.tsv`,
-`backfill_peakhypothesis_activation_transfer.tsv`, and
-`backfill_peakhypothesis_activation_transfer_summary.json`. It uses
-`full_cohort_matched_peak_hypothesis_id + sample` as the activation key, keeps source
-PeakHypothesis/FAM ids as audit-only provenance, and writes
-`source_artifact_sha256` as the content bundle hash of
-`normal_peak_decisions_tsv + activation_trial_tsv`, with row-level
-`source_row_sha256` for each transfer/promotion row. It fails closed on
-normal-peak decision blockers, same-peak conflicts, non-positive normal-peak
-quantitation area, non-Gaussian15 quantitation area source, or activation-trial
-blockers. The projected value is
-`normal_peak_quantitation_area` when present, so machine-shape standard peaks
-write the Gaussian15 lobe area selected by the decision TSV. It does not apply activation or write matrices. Transfer rows remain
-diagnostic proposals and do not grant matrix-writing authority.
 
 ---
 
@@ -965,13 +703,6 @@ until an explicit product-transfer decision and consolidation policy exist.
 
 ---
 
-### `gallery_browser_smoke.py`
-
-**Purpose**: Run a deterministic headless Chromium smoke test against an already-rendered gallery HTML, independent of Codex MCP tabs or the Chrome extension.
-**Topic group**: `gallery_browser_smoke.py`
-**Originating spec/goal/plan**: `retired-provenance:0a1c58083825`; `retired-provenance:69bd6d102e9c`; `retired-provenance:0ceba9b23ba9`
-**Status note**: Opens a local HTML file through Playwright/Chromium and checks desktop, mobile, and 200 percent zoom viewports; sticky review table chrome; Focus/search behavior including `Projection accepts`; detail drawer open/close; PNG anchor fallback plus lightbox focus/Esc close; and coarse table-cell overlap. It writes screenshots plus `gallery_browser_smoke_summary.json` under the requested output directory. It does not parse TSVs, generate reports, mutate artifacts, depend on MCP/Chrome-extension state, or modify product behavior. Playwright is a repo dev dependency; use `uv sync --extra dev --group dev` before running it. The runner defaults to bundled Playwright Chromium only and fails fast when that browser is missing; pass `--browser-channel auto`, `chrome`, or `msedge` only when system-browser fallback is explicitly intended.
-
 ---
 
 ### `tier2_raw_trace_reread_producer.py`
@@ -985,19 +716,7 @@ until an explicit product-transfer decision and consolidation policy exist.
 
 ## Peak / Candidate Audits
 
-### `cwt_peak_candidate_audit.py`
-
-**Purpose**: Audit CWT peak candidate agreement from peak_candidates.tsv.
-**Topic group**: `cwt_peak_candidate_audit.py` + `_io`, `_models`, `_analysis`, `_writers` (5 files)
-**Originating spec**: `retired-provenance:22f973e5ed27` + `retired-provenance:0091435e5f7e`
-
 ---
-
-### `peak_candidate_score_calibration_report.py`
-
-**Purpose**: Audit peak candidate scoring against newer evidence labels without changing production selection.
-**Topic group**: `peak_candidate_score_calibration_report.py` + `_io`, `_models`, `_analysis`, `_writers` (5 files)
-**Originating spec**: `retired-provenance:22f973e5ed27`
 
 ---
 
@@ -1010,58 +729,7 @@ until an explicit product-transfer decision and consolidation policy exist.
 
 ---
 
-
-### `chrom_peak_segment_candidate_gate.py`
-
-**Purpose**: Summarize scored `chrom_peak_segment` candidate adoption from
-`peak_candidates.tsv`, compare selected-row area deltas against a baseline
-candidate TSV, and emit a segment-native gate manifest plus changed-row TSV.
-**Topic group**: `chrom_peak_segment_candidate_gate.py` (single-file)
-**Originating spec/plan**:
-`docs/product/quantitation-context.md`;
-retired selected full-envelope boundary spec provenance `retired-provenance:129cc4823496`
-**Status note**: Writes
-`chrom_peak_segment_gate_manifest.json` and
-`chrom_peak_segment_changed_rows.tsv`, plus
-`chrom_peak_segment_review_rows.tsv`. This is a product-candidate diagnostic
-gate for segment enumeration, not a selected-envelope promotion gate. It reports
-boundary and presence sub-gates separately so area/boundary regressions do not
-get mixed with analyte false-pick or review-only detection policy risk. Manual
-presence review verdicts such as `expected_peak_change`, `blocked`,
-`false_pick`, `inconclusive`, and `needs_followup` keep the presence gate in
-`defer` until the product-selection or review policy is resolved. Optional
-`--manual-selected-envelope-review-tsv` rows are matched by
-`selected_candidate_id`; `extend_right_boundary_before_promotion` keeps the
-boundary gate in `defer`, while
-`select_alternate_or_keep_not_counted_until_rerun` keeps the presence gate in
-`defer`. Typed `decision: not_counted` review-only rows with explicit
-not-counted policy evidence are diagnostic non-presence rows and do not require a
-manual presence verdict. These rows are review comments / promotion blockers,
-not formal boundary+area oracle rows.
-
 ---
-
-
-### `ms1_peak_group_nl_scope_gate.py`
-
-**Purpose**: Gate selected `chrom_peak_segment` candidate MS2/NL evidence so
-strict neutral-loss support must belong to the same Gaussian15 MS1 peak group,
-not merely the same target or candidate window.
-**Topic group**: `ms1_peak_group_nl_scope_gate.py` (single-file)
-**Originating note**: 2026-06-05 Gaussian15 MS1 peak-group MS2/NL ownership
-production-readiness follow-up.
-**Status note**: Consumes `peak_candidates.tsv` rows with
-`ms1_peak_group_*` and `outside_ms1_peak_group_*` diagnostics, writes
-`ms1_peak_group_nl_scope_gate_manifest.json` plus
-`ms1_peak_group_nl_scope_review_rows.tsv` and the non-blocking
-`ms1_peak_group_nl_scope_context_rows.tsv`. It fails closed when a selected
-chrom peak segment lacks Gaussian15 MS1 peak-group scope, uses an unexpected
-group source, has a selected apex outside the group bounds, or appears to borrow
-active strict NL support from outside that selected group. Repeated DDA/NL scans
-inside the same selected group are counted as multiple scans but one
-chromatographic support event; outside strict-NL observations with valid
-in-group support are listed for review context only. This gate does not mutate
-workbook, matrix, or candidate-selection outputs.
 
 ---
 
@@ -1077,64 +745,15 @@ workbook, matrix, or candidate-selection outputs.
 
 ---
 
-### `targeted_evidence_review_report.py`
-
-**Purpose**: Render a human-first HTML report from targeted diagnostics.
-**Topic group**: `targeted_evidence_review_report.py` + `_components`, `_model`, `_rendering`, `_styles` (5 files)
-**Originating spec**: `retired-provenance:100307efc8fa` Workstream G (rendering split twin with `alignment_decision_report`)
+---
 
 ---
 
-### `targeted_peak_reliability_audit.py`
-
-**Purpose**: Audit targeted peak reliability for benchmark eligibility.
-**Topic group**: `targeted_peak_reliability_audit.py` + `_classifier`, `_loaders`, `_models`, `_writers` (5 files)
-**Originating spec**: `retired-provenance:53a763b9ec7a`
+---
 
 ---
 
-### `targeted_nl_dropout_root_cause_audit.py`
-
-**Purpose**: Classify targeted review-positive NL dropout root causes.
-**Topic group**: `targeted_nl_dropout_root_cause_audit.py` + `_io`, `_models`, `_logic`, `_writers` (5 files)
-**Originating spec**: `retired-provenance:8adf83f1a353`
-
 ---
-
-### `single_dr_production_gate_decision_report.py`
-
-**Purpose**: Build a single-dR production gate decision report.
-**Topic group**: `single_dr_production_gate_decision_report.py` + `single_dr_gate_decision_{loaders, writers}` (3 files)
-**Originating spec**: `retired-provenance:038bfb65fe90:29` (designated PR2 split target)
-**Status note**: Writes family and detected-cell evidence, gate-candidate
-summaries, and JSON/Markdown reports for review. These outputs do not grant
-matrix-writing authority. Gate-candidate report assembly
-indexes family rows by risk classification once and reuses those buckets for the
-individual gate summaries while preserving blocked-row order and existing output
-schemas.
-
----
-
-### `multi_tag_adduct_audit.py`
-
-**Purpose**: Audit multi-tag and adduct evidence.
-**Topic group**: `multi_tag_adduct_audit.py` (single-file)
-**Originating spec**: `retired-provenance:b11335f3179c`
-**Recent doc**: `retired-provenance:000d7d4caa29`
-
----
-
-
-### `targeted_ms1_shape_identity_from_grid.py`
-
-**Purpose**: Convert an existing targeted own-max trace grid plus per-sample
-summary into `targeted_ms1_shape_identity` evidence rows with the formal
-`own_max_same_peak_support` token.
-**Topic group**: targeted NL dropout / MS1 shape identity; reuses
-`xic_extractor.diagnostics.targeted_ms1_shape_identity`.
-**Status note**: Reads existing TSV artifacts only and writes a diagnostic TSV.
-It does not open RAW files, recompute extraction, inject support into normal
-runs, change selected RT/area, or mutate workbooks/matrices.
 
 ---
 
@@ -1269,32 +888,7 @@ context; mode-aware outputs should use
 `peak_hypothesis_id` / selected-apex mode evidence when a row may contain
 multiple MS1 peak modes.
 
-
-
-
-
-
-
-
 ## Area / Region Audits
-
-### `alignment_primary_area_authority_audit.py`
-
-**Purpose**: Audit `alignment_cells.tsv` primary matrix area authority against
-the Gaussian15 morphology area contract; reports fail-closed rows with missing
-MS1 morphology area and hard-fails any non-Gaussian source that still writes
-primary matrix area.
-**Topic group**: `alignment_primary_area_authority_audit.py` (single-file)
-**Originating context**: 2026-06-05 Product Authority Reconciliation
-follow-up for owner scalar fallback / retired area-source leakage.
-**Status note**: Reads existing `alignment_cells.tsv`, writes summary and
-flagged-row TSV/JSON only, and does not mutate matrices, workbook outputs,
-owner backfill, or RAW-derived evidence. The CLI loads `alignment_cells.tsv`
-once and shares the row analysis between summary counts and flagged-row output;
-the path-based summary/flagged helper functions remain available for focused
-tests and ad hoc checks. A non-Gaussian primary area source is a
-product-authority failure; missing Gaussian15 morphology area remains fail-closed
-and requires trigger-rate review before promotion.
 
 ### `gaussian15_area_pressure_audit.py`
 
@@ -1314,17 +908,6 @@ counts from the already computed row audit so it reads `peak_candidates.tsv`
 once while preserving the path-based summary/detail helper functions. It does
 not mutate selected boundaries, selected area, confidence, presence, workbook
 output, matrix values, or candidate selection.
-
-### `area_integration_uncertainty_audit.py`
-
-**Purpose**: Classify targeted/untargeted area mismatch by integration audit.
-**Topic group**: `area_integration_uncertainty_audit.py` + `_io`, `_models`, `_analysis`, `_writers` (5 files)
-**Originating spec**: `retired-provenance:298c51c7ae51`
-**Recent doc**: `retired-provenance:62bdbc64baf0`, `retired-provenance:f5c2e710208f`
-**Schema note**: The current accepted `alignment_cell_integration_audit.tsv`
-schema no longer emits or consumes linear-edge rollback columns. Area
-uncertainty uses the reported `area_baseline_corrected` value from the current
-audit schema only.
 
 ---
 
@@ -1748,15 +1331,6 @@ counts before treating retained docs as cleaned-up knowledge. Use it after major
 docs cleanup and before PR closeout when the repo/vault split changed.
 
 ---
-
-### `validate_vault_page.py`
-
-**Purpose**: Validate required Obsidian vault page metadata before promotion:
-frontmatter, summary, lifecycle, tier, and visibility tag.
-**Topic group**: `docs_management_audit.py` + `validate_vault_page.py`
-**Governing doc**: `docs/agent/obsidian-handoff-contract.md`
-**Status note**: Read-only single-page metadata check. It does not edit vault
-pages, promote staged notes, update manifests, or change repo files.
 
 ---
 

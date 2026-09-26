@@ -341,6 +341,23 @@ def _check_schema_authority_rules(
             problems.append(f"production acceptance authority_rules.{key} drifted")
 
 
+class _SourceDigests:
+    """Source path resolution and digests reused across rows of one check."""
+
+    __slots__ = (
+        "artifact_digests",
+        "file_digests",
+        "resolved_paths",
+        "resolved_root",
+    )
+
+    def __init__(self) -> None:
+        self.resolved_root: Path | None = None
+        self.resolved_paths: dict[str, Path] = {}
+        self.file_digests: dict[Path, str | None] = {}
+        self.artifact_digests: dict[str, str] = {}
+
+
 def _check_manifest_rows(
     rows: Sequence[Mapping[str, str]],
     expected_manifest_sha: str,
@@ -354,6 +371,7 @@ def _check_manifest_rows(
         for row in rows
         if row.get("peak_hypothesis_id", "") and row.get("sample_stem", "")
     )
+    digests = _SourceDigests()
     duplicate_keys = sorted(key for key, count in primary_counts.items() if count > 1)
     for peak_hypothesis_id, sample_stem in duplicate_keys:
         problems.append(
@@ -368,6 +386,7 @@ def _check_manifest_rows(
             repo_root,
             problems,
             source_artifacts=source_artifacts,
+            digests=digests,
         )
 
 
@@ -379,6 +398,7 @@ def _check_manifest_row(
     problems: list[str],
     *,
     source_artifacts: Mapping[str, bytes] | None = None,
+    digests: _SourceDigests,
 ) -> None:
     if row.get("schema_version") != MANIFEST_SCHEMA_VERSION:
         problems.append(f"row {row_number}: schema_version mismatch")
@@ -440,6 +460,7 @@ def _check_manifest_row(
         repo_root,
         problems,
         source_artifacts=source_artifacts,
+        digests=digests,
     )
     _check_write_blockers(
         row,
@@ -553,6 +574,7 @@ def _check_hashes_and_paths(
     problems: list[str],
     *,
     source_artifacts: Mapping[str, bytes] | None = None,
+    digests: _SourceDigests,
 ) -> dict[str, str]:
     resolved_source_paths: dict[str, str] = {}
     for field in (
@@ -590,6 +612,7 @@ def _check_hashes_and_paths(
                 row=row,
                 row_number=row_number,
                 problems=problems,
+                digests=digests,
             )
         else:
             if repo_root is None:
@@ -600,11 +623,12 @@ def _check_hashes_and_paths(
                 field=field,
                 row_number=row_number,
                 problems=problems,
+                digests=digests,
             )
             if path is None:
                 continue
             resolved_source_paths[field] = path.relative_to(
-                repo_root.resolve()
+                _resolved_root(repo_root, digests)
             ).as_posix()
             _check_source_artifact_hash(
                 path=path,
@@ -613,6 +637,7 @@ def _check_hashes_and_paths(
                 row=row,
                 row_number=row_number,
                 problems=problems,
+                digests=digests,
             )
     return resolved_source_paths
 
@@ -636,6 +661,12 @@ def _normalize_source_relpath(
     return PurePosixPath(normalized_path).as_posix()
 
 
+def _resolved_root(repo_root: Path, digests: _SourceDigests) -> Path:
+    if digests.resolved_root is None:
+        digests.resolved_root = repo_root.resolve()
+    return digests.resolved_root
+
+
 def _resolve_source_path(
     *,
     repo_root: Path,
@@ -643,6 +674,7 @@ def _resolve_source_path(
     field: str,
     row_number: int,
     problems: list[str],
+    digests: _SourceDigests,
 ) -> Path | None:
     normalized_path = _normalize_source_relpath(
         relative_path=relative_path,
@@ -652,9 +684,11 @@ def _resolve_source_path(
     )
     if normalized_path is None:
         return None
-    path = Path(normalized_path)
-    root = repo_root.resolve()
-    resolved = (root / path).resolve()
+    root = _resolved_root(repo_root, digests)
+    resolved = digests.resolved_paths.get(normalized_path)
+    if resolved is None:
+        resolved = (root / Path(normalized_path)).resolve()
+        digests.resolved_paths[normalized_path] = resolved
     try:
         resolved.relative_to(root)
     except ValueError:
@@ -672,6 +706,7 @@ def _check_in_process_source_artifact_hash(
     row: Mapping[str, str],
     row_number: int,
     problems: list[str],
+    digests: _SourceDigests,
 ) -> None:
     artifact = source_artifacts.get(normalized_path)
     if artifact is None:
@@ -683,7 +718,10 @@ def _check_in_process_source_artifact_hash(
         )
         return
     expected_hash = row.get(hash_field, "")
-    actual_hash = hashlib.sha256(artifact).hexdigest().upper()
+    actual_hash = digests.artifact_digests.get(normalized_path)
+    if actual_hash is None:
+        actual_hash = hashlib.sha256(artifact).hexdigest().upper()
+        digests.artifact_digests[normalized_path] = actual_hash
     if _is_sha256(expected_hash) and actual_hash != expected_hash.upper():
         problems.append(f"row {row_number}: {hash_field} mismatch")
 
@@ -696,12 +734,16 @@ def _check_source_artifact_hash(
     row: Mapping[str, str],
     row_number: int,
     problems: list[str],
+    digests: _SourceDigests,
 ) -> None:
-    if not path.exists():
+    if path not in digests.file_digests:
+        digests.file_digests[path] = file_sha256(path) if path.exists() else None
+    actual_hash = digests.file_digests[path]
+    if actual_hash is None:
         problems.append(f"row {row_number}: {relative_path} source artifact missing")
         return
     expected_hash = row.get(hash_field, "")
-    if _is_sha256(expected_hash) and file_sha256(path) != expected_hash:
+    if _is_sha256(expected_hash) and actual_hash != expected_hash:
         problems.append(f"row {row_number}: {hash_field} mismatch")
 
 

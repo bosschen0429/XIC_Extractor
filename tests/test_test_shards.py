@@ -27,14 +27,6 @@ _ALLOWED_SHARD_OVERLAPS: dict[Path, tuple[str, ...]] = {
         "alignment-core",
         "product-gates-evidence",
     ),
-    Path("tests/test_matrix_identity_projection.py"): (
-        "alignment-core",
-        "product-gates-evidence",
-    ),
-    Path("tests/test_ms1_index_backfill_audit.py"): (
-        "alignment-core",
-        "product-gates-evidence",
-    ),
     Path("tests/test_ms1_scan_index.py"): ("alignment-core", "product-gates-evidence"),
     Path("tests/test_peak_model_selection.py"): ("docs-config", "targeted-core"),
     Path("tests/test_pt_pattern_presets.py"): ("docs-config", "alignment-core"),

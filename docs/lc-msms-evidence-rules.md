@@ -409,8 +409,7 @@ policy, and machine-readable GO/NO-GO blockers.
   `safe_merge_eligible` class are not product authority. `wider_boundary_preferred`,
   `neighbor_apex_preferred`, and `split_supported` remain
   `behavior_change_required` until a future oracle and public behavior addendum
-  promote or retire them. `area_integration_uncertainty` outputs remain
-  diagnostic/review evidence unless a future contract names a specific gate.
+  promote or retire them.
 
 ## Targeted And Untargeted Boundary
 
