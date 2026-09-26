@@ -4,31 +4,34 @@ Run provenance records method and artifact context so a product run can be
 reviewed, replayed, or compared without relying on branch-local command
 diaries.
 
-The workflow-neutral request/attempt/artifact/delivery identity and retention
-contract is owned by [`processing-lineage.md`](processing-lineage.md). This
-page owns the current Targeted method-manifest and run-metadata projection of
-that broader contract; `method_manifest.json` is not yet a complete lineage
-seal.
+[`processing-lineage.md`](processing-lineage.md) owns the workflow-neutral
+request/attempt/artifact/delivery identity and retention contract. This page
+owns the current Targeted method-manifest and run-metadata projection of the
+processing-lineage contract. `method_manifest.json` is not yet a complete
+lineage seal.
 
 ## Contract
 
-- `config_hash` and `target_config_hash` are useful configuration fragments,
-  not a complete method manifest. Do not treat them as full method replay.
-- A method manifest is an additive run envelope: input artifact hashes,
+- `config_hash` and `target_config_hash` are configuration fragments. The two
+  hashes are not a complete method manifest and do not provide full method
+  replay.
+- A method manifest is an additive run envelope. The envelope holds input
+  artifact hashes,
   settings fragments, runtime/backend, CLI invocation when available, output
   pointers, and schema versions.
 - A generated timestamp, config hash, output path, or successful process exit
   is not a canonical processing-attempt or delivery identity.
-- A point-in-time validation packet must distinguish the revision being
-  evaluated from the revision that sealed its reviewed evidence. Replaying the
-  packet resolves each seal against its declared frozen Git object; it must not
-  reinterpret the caller's current checkout as historical evidence. Current
-  source evolution is judged by current CI and a new validation decision.
+- A point-in-time validation packet must distinguish the evaluated revision
+  from the revision that sealed the reviewed evidence of the packet.
+- A packet replay resolves each seal against the declared frozen Git object of
+  that seal. A packet replay must not reinterpret the current checkout of the
+  caller as historical evidence.
+- Current CI and a new validation decision judge current source evolution.
 - Provenance writers render run context only. They must not recompute domain
   evidence or change selected peaks, areas, confidence, counted detections,
   workbook values, or matrix values.
-- Command diaries are not durable replay contracts. If a run matters, convert
-  the stable command shape and artifact contract into a repo owner.
+- A command diary is not a durable replay contract. If a run matters, the
+  stable command shape and artifact contract must move into a repo owner.
 
 ## Surfaces
 
@@ -45,8 +48,8 @@ seal.
 - Owns: method manifest structure, run metadata keys, config hashes, output
   schema version tracking, and replay artifact validation.
 - Does not own: workflow-neutral processing identity, evidence retention,
-  delivery-cell lineage, or delivery sealing; those belong to the processing
-  lineage contract.
+  delivery-cell lineage, or delivery sealing. The processing-lineage contract
+  owns these four concerns.
 - Does not own: exact replay CLI semantics for every workflow, sample metadata
   role behavior, review action import, matrix activation authority, or
   productization tier decisions.
