@@ -317,7 +317,12 @@ def test_ci_shard_intersects_caller_marker_with_snapshot_exclusion(
         lambda command: commands.append(command) or 0,
     )
 
-    assert test_shards._run_shard("docs-config", ("-m", "slow"), Path("tests")) == 0
+    assert (
+        test_shards._run_shard(
+            "docs-config", ("-m", "slow"), Path("tests"), all_markers=True
+        )
+        == 0
+    )
 
     assert len(commands) == 1
     command = commands[0]
@@ -375,3 +380,84 @@ def test_snapshot_runner_rejects_malformed_marker_before_pytest(
     )
 
     assert test_shards._run_snapshots(pytest_args, Path("tests")) == 2
+
+
+@pytest.mark.parametrize(
+    ("path", "kept"),
+    (
+        (".codex/hooks/xic_pre_tool_guard.py", {"agent_hooks"}),
+        (".codex/hooks.json", {"agent_hooks"}),
+        (".codex/rules/xic-safety.rules", {"agent_hooks"}),
+        ("tests/test_config_codex_hooks.py", {"agent_hooks"}),
+        ("pyproject.toml", {"agent_hooks", "packaging_build"}),
+        ("xic_extractor.spec", {"packaging_build"}),
+        ("xic_extractor/presets/data/dna_dr.toml", {"packaging_build"}),
+        ("docs/product/backfill.md", {"product_governance"}),
+        ("scripts/check_productization_state.py", {"product_governance"}),
+        (".codex/skills/foo/SKILL.md", set()),
+        (".codex/hooks.jsonx", set()),
+        ("tests/test_config_codex_hooks_extra.py", set()),
+        ("xic_extractor/alignment/pipeline.py", set()),
+    ),
+)
+def test_relevance_rules_keep_only_markers_whose_paths_changed(
+    path: str, kept: set[str]
+) -> None:
+    skipped = set(test_shards.irrelevant_markers([path]))
+
+    assert set(test_shards.RELEVANCE_RULES) - skipped == kept
+
+
+def _capture_shard_marker(monkeypatch: pytest.MonkeyPatch, **run_kwargs) -> str:
+    commands: list[list[str]] = []
+    monkeypatch.setattr(
+        test_shards,
+        "assign_shards",
+        lambda _files: {"docs-config": (Path("tests/test_regular.py"),)},
+    )
+    monkeypatch.setattr(test_shards, "discover_test_files", lambda _root: ())
+    monkeypatch.setattr(
+        test_shards, "_pytest_command", lambda: ["python", "-m", "pytest"]
+    )
+    monkeypatch.setattr(
+        test_shards.subprocess, "call", lambda command: commands.append(command) or 0
+    )
+
+    assert test_shards._run_shard("docs-config", (), Path("tests"), **run_kwargs) == 0
+
+    pytest_args = commands[0][3:]
+    return pytest_args[pytest_args.index("-m") + 1]
+
+
+def test_local_shard_skips_markers_unrelated_to_the_change(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(test_shards, "_local_change_base", lambda: "base")
+    monkeypatch.setattr(
+        test_shards,
+        "changed_paths",
+        lambda base, head=None: ["docs/product/backfill.md"],
+    )
+
+    expression = _capture_shard_marker(monkeypatch)
+
+    assert expression == (
+        "not ledger_snapshot and not packaging_build and not agent_hooks"
+    )
+    assert _capture_shard_marker(monkeypatch, all_markers=True) == "not ledger_snapshot"
+
+
+def test_local_shard_runs_every_marker_when_git_cannot_diff(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(test_shards, "_local_change_base", lambda: None)
+
+    assert _capture_shard_marker(monkeypatch) == "not ledger_snapshot"
+
+
+def test_ci_reads_relevance_rules_from_the_shard_owner() -> None:
+    workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+
+    assert "tools.testing.test_shards --marker-expression" in workflow
+    for pattern in test_shards.RELEVANCE_RULES.values():
+        assert pattern.pattern[:30] not in workflow

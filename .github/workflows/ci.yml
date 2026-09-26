@@ -91,34 +91,11 @@ jobs:
           if ("${{ github.event_name }}" -eq "pull_request") {
             $baseSha = "${{ github.event.pull_request.base.sha }}"
             $headSha = "${{ github.event.pull_request.head.sha }}"
-            $changedPaths = @(git diff --name-only $baseSha $headSha)
+            # tools.testing.test_shards owns which gated markers this change needs.
+            $markerExpression = & .\.venv\Scripts\python.exe -m tools.testing.test_shards --marker-expression --base $baseSha --head $headSha
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-            $packagingRelevant = @(
-              $changedPaths | Where-Object {
-                $_ -match '^(pyproject\.toml|uv\.lock|xic_extractor\.spec|tests/test_pyinstaller_spec\.py|assets/|config/(settings|targets)\.example\.csv|gui/main\.py|scripts/(csv_to_excel|xlsx_to_targets)\.py|xic_extractor/presets/data/|xic_extractor/alignment/(__init__\.py|quantitative_projection_authority\.py|data/quantitative_projection_authority\.json))'
-              }
-            )
-            if ($packagingRelevant.Count -eq 0) {
-              $runPackagingBuild = $false
-              $markerExpression += " and not packaging_build"
-            }
-            $agentHooksRelevant = @(
-              $changedPaths | Where-Object {
-                $_ -match '^(\.codex/(hooks/|hooks\.json$|rules/)|tests/test_config_codex_hooks\.py$|pyproject\.toml$)'
-              }
-            )
-            if ($agentHooksRelevant.Count -eq 0) {
-              $runAgentHooks = $false
-              $markerExpression += " and not agent_hooks"
-            }
-            $productGovernanceRelevant = @(
-              $changedPaths | Where-Object {
-                $_ -match '^(scripts/check_productization_state\.py|tests/test_productization_state_index\.py|docs/product/|docs/superpowers/(validation|schemas|productization)/|docs/superpowers/plans/2026-06-15-productization-control-plane\.md|tools/diagnostics/docs_(policy|scan)\.py|xic_extractor/alignment/(production_acceptance|quant_matrix_version)\.py)'
-              }
-            )
-            if ($productGovernanceRelevant.Count -eq 0) {
-              $markerExpression += " and not product_governance"
-            }
+            $runPackagingBuild = $markerExpression -notmatch 'not packaging_build'
+            $runAgentHooks = $markerExpression -notmatch 'not agent_hooks'
           }
           $started = Get-Date
           & .\.venv\Scripts\python.exe -m pytest -m $markerExpression -n 4 --dist loadfile -v --tb=short -x --durations=10
