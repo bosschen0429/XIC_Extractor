@@ -53,7 +53,7 @@ lineage seal.
 - Does not own: exact replay CLI semantics for every workflow, sample metadata
   role behavior, review action import, matrix activation authority, or
   productization tier decisions.
-- Expanding a targeted method-manifest slice into sample metadata, review
+- Expanding a Targeted method-manifest slice into sample metadata, review
   roundtrip, or matrix activation requires a separate contract.
 
 ## Verification

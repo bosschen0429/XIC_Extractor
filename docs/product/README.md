@@ -149,9 +149,11 @@ update triggers above.
 2. **Stable spelling.** Write a code identifier, file name, field, or label in
    backticks with its exact spelling. Write a product concept in plain words
    with the glossary capitalization (`Backfill`, `CrossSample`).
-3. **Define before use.** A term that is not in the glossary gets a one-line
+3. **Workflow names.** Capitalize `Targeted` and `Untargeted` when they name
+   a workflow.
+4. **Define before use.** A term that is not in the glossary gets a one-line
    definition at its first use, or moves to the glossary if two pages use it.
-4. **No filler.** Delete words that do not change the meaning: `currently`
+5. **No filler.** Delete words that do not change the meaning: `currently`
    when the page already describes current behavior, `simply`, `basically`,
    `in order to`.
 

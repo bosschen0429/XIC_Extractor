@@ -6,9 +6,11 @@ activation contract promotes a correction or gate.
 
 ## Contract
 
-- Clean standards diagnose clean-matrix instrument/method behavior. Clean
-  standards alone cannot represent biological matrix effects.
-- Biological QC ISTDs are the primary anchors for real-matrix RT/response
+- Clean standards diagnose instrument/method behavior in a clean sample
+  matrix. Clean standards alone cannot represent biological sample-matrix
+  effects.
+- Biological QC ISTDs are the primary anchors for biological sample-matrix
+  RT/response
   transfer evidence when they exist.
 - HCD/product-ion audit is a human review and plausibility surface. It must
   not become a hard pass/fail production gate without an explicit activation
@@ -53,7 +55,7 @@ activation contract promotes a correction or gate.
 | `add_istd_rt_trend.py` visualization | Direct ISTD drift review; not an other-feature RT model |
 | HCD audit TSV/JSON/workbook sheet | Product-ion audit evidence |
 | Calibration maturity gate | Readiness and blocker summary |
-| Biological ISTD transfer audit | Real-matrix transfer evidence |
+| Biological ISTD transfer audit | Biological sample-matrix transfer evidence |
 | Calibration preview outputs | Shadow or diagnostic evidence only |
 
 ## Boundaries
@@ -64,7 +66,8 @@ activation contract promotes a correction or gate.
   activation, DNP or downstream normalization behavior, or matrix activation.
 - Dated QC/calibration notes and specs become history stubs after this page
   absorbs their stable claims.
-- SDOLEK trend rows carry `injection_order`. The rows remain in
+- SDO/LEK trend rows (`instrument_qc_sdolek_trend.tsv`) carry
+  `injection_order`. The rows remain in
   filename/target production order.
 - The TSV/workbook writers do not sort by injection order. A sorted
   compatibility projection is a known product gap. The gap relates to the
@@ -79,7 +82,8 @@ activation contract promotes a correction or gate.
 
 ## Pitfalls
 
-- Treating clean-standard behavior as proof of biological matrix performance.
+- Treating clean-standard behavior as proof of biological sample-matrix
+  performance.
 - Making HCD support a hard gate from audit evidence alone.
 - Applying Level 3 RT correction while the maturity gate remains `NO-GO`.
 - Treating a global LOESS/ISTD trend as identity or fill authority for every

@@ -12,7 +12,7 @@ interpretation, and future activation gates.
 - Within `sample_metadata`, `sample_name` is the owner-stable,
   case-sensitive primary sample key.
 - `raw_stem` is a lookup alias only.
-- Injection order, role, batch, matrix, group, and exclusion fields do not
+- Injection order, role, batch, `matrix_type`, group, and exclusion fields do not
   participate in canonical sample identity.
 - Only `xic_extractor.sample_metadata` mints `CanonicalSampleIdentity`. The
   identity is `xic.sample:<sha256>` over an explicit stable owner namespace,
@@ -37,7 +37,7 @@ interpretation, and future activation gates.
   without reconstructing sample identity.
 - Sample metadata can act as an injection-order and sample-identity projection
   surface when sample metadata preserves existing output values.
-- Role, batch, matrix type, exclusion, calibrator, blank, QC, or
+- Role, batch, `matrix_type`, exclusion, calibrator, blank, QC, or
   normalization behavior must not alter extraction, QC, alignment, counted,
   workbook, or matrix values without an explicit activation/export contract.
 - Instrument-QC and calibration sidecars are evidence and observability
@@ -49,7 +49,7 @@ interpretation, and future activation gates.
 
 | Surface | Role |
 | --- | --- |
-| `sample_metadata` CSV/TSV | Shared sample identity, order, role, batch, matrix, group, exclusion schema |
+| `sample_metadata` CSV/TSV | Shared sample identity, order, role, batch, `matrix_type`, group, exclusion schema |
 | `SampleMetadataSnapshot` | Owner-minted content identity for one complete normalized metadata snapshot and stable identity namespace |
 | `mint_canonical_sample_identity` / `resolve_canonical_sample_identity` | Owner-only namespaced identity minting and self-validating fail-closed lookup resolution |
 | `injection_order_source` | Current no-value-change ordering projection |
