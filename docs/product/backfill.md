@@ -1,7 +1,7 @@
 # Backfill
 
-Backfill（回填）revisits a missing cell. Backfill starts only after Discovery
-and Alignment have established an owner-backed Target or cross-sample group.
+Backfill（回填）revisits a missing cell after Discovery and Alignment have
+established an owner-backed Target or cross-sample group.
 A revisit can produce a local observation. Backfill does not create a group,
 decide membership, or count a detection. Backfill does not grant Matrix writer
 authority on its own. The current Untargeted CID-NL path uses the bounded
@@ -58,9 +58,10 @@ that group.
 7. Each window traces the peak again with its own bounds. Therefore one peak
    means one apex scan in one sample within the preferred m/z tolerance, as in
    Discovery. One peak does not mean one peak-observation content ID.
-8. An initial missing-MS1 `REJECT` keeps its initial assessment when Backfill
-   assesses the cell independently. The Backfill assessment must earn SUPPORT
-   through the normal relation owner before the cell can hold a numeric value.
+8. When Backfill independently assesses a cell with an initial missing-MS1
+   `REJECT`, the Backfill assessment retains the initial `REJECT`. The Backfill
+   assessment must earn SUPPORT through the normal relation owner before the
+   cell can hold a numeric value.
 
 ### Other current consumers
 
@@ -96,4 +97,4 @@ that group.
   and the [authority manifest](../superpowers/schemas/productization_authority_manifest.json)
   own publication scope.
 - Diagnostic traces, a well-formed coverage epoch, and candidate records do not
-  grant write authority or publication scope.
+  grant any of the authorities listed above.

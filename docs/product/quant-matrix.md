@@ -83,11 +83,11 @@ delivery seam as if they were already final.
   competing values, statuses, counts, or row inclusion from raw cells.
 - This in-process handoff does not define a durable decision carrier by
   itself. This handoff does not replace the separate file-backed activation
-  contracts in this section.
+  contracts in Acceptance authority and Activation.
 - `ProductionDecisionSet` is the current compatibility surface. The successor
   of `ProductionDecisionSet` is one deep `ProductionCellDecision` owner over
   explicit Target and Group subjects. Discriminated immutable finalized results
-  carry that owner.
+  will carry that successor owner.
 - The structural migration must preserve current values, states, counts, row
   inclusion, and renderer bytes before any behavior promotion.
 

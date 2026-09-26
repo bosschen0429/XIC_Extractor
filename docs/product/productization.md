@@ -52,14 +52,15 @@ be corrected.
 
 ## Work Intake And Closeout
 
-Each maintenance cycle keeps at most three open lanes:
+Each maintenance cycle keeps at most one lane of each kind:
 
 - one primary productization lane;
 - one supporting-infrastructure lane;
 - one lane dedicated to diagnostics.
 
-A new lane can start only after one current lane is promoted, parked with a
-reopening condition, externalized/killed, or abandoned.
+When a lane kind is already occupied, a new lane of that kind can start only
+after the current lane is promoted, parked with a reopening condition,
+externalized/killed, or abandoned.
 
 A new lane names:
 

@@ -59,7 +59,8 @@ approved product changes.
 - The registry snapshot has its own content-derived ID and canonical record
   ordering. Therefore omission or substitution produces a different bound
   snapshot.
-- Lineage accepts the resolved-current type plus its exact snapshot. Lineage
+- Lineage accepts a `ResolvedReviewRecordRef` plus its exact registry
+  snapshot. Lineage
   does not accept a freshly minted unresolved record or a tuple of
   caller-selected records.
 - Within one registry snapshot, every review subject has exactly one decision
@@ -81,8 +82,8 @@ approved product changes.
 - Peak-choice truth labels are separate from product authority. Peak-choice
   truth labels can inform future automation only through an active authority
   and expected-diff gate.
-- Reviewer rationale and dispute discussion are private notes. The exception
-  is a required compact public verdict or checker-readable artifact.
+- Reviewer rationale and dispute discussion are private notes unless a
+  compact public verdict or checker-readable artifact is required.
 
 ## Surfaces
 
