@@ -11,6 +11,8 @@ from pathlib import Path
 
 import pytest
 
+pytestmark = pytest.mark.agent_hooks
+
 ROOT = Path(__file__).resolve().parents[1]
 HOOKS_CONFIG = ROOT / ".codex" / "hooks.json"
 HOOKS_DIR = ROOT / ".codex" / "hooks"

@@ -87,6 +87,7 @@ jobs:
           $env:PATH = "$venvScripts;$env:PATH"
           $markerExpression = "not ledger_snapshot and not current_repository_census and not serial_ci"
           $runPackagingBuild = $true
+          $runAgentHooks = $true
           if ("${{ github.event_name }}" -eq "pull_request") {
             $baseSha = "${{ github.event.pull_request.base.sha }}"
             $headSha = "${{ github.event.pull_request.head.sha }}"
@@ -100,6 +101,15 @@ jobs:
             if ($packagingRelevant.Count -eq 0) {
               $runPackagingBuild = $false
               $markerExpression += " and not packaging_build"
+            }
+            $agentHooksRelevant = @(
+              $changedPaths | Where-Object {
+                $_ -match '^(\.codex/(hooks/|hooks\.json$|rules/)|tests/test_config_codex_hooks\.py$|pyproject\.toml$)'
+              }
+            )
+            if ($agentHooksRelevant.Count -eq 0) {
+              $runAgentHooks = $false
+              $markerExpression += " and not agent_hooks"
             }
             $productGovernanceRelevant = @(
               $changedPaths | Where-Object {
@@ -118,17 +128,22 @@ jobs:
           "- parallel_test_seconds=$parallelElapsed" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
           if ($parallelExitCode -ne 0) { exit $parallelExitCode }
 
-          $serialTargets = @(
-            "tests/test_config_codex_hooks.py::test_existing_hook_behavior_fixture_runs_in_ordinary_pytest"
-          )
+          $serialTargets = @()
+          if ($runAgentHooks) {
+            $serialTargets += "tests/test_config_codex_hooks.py::test_existing_hook_behavior_fixture_runs_in_ordinary_pytest"
+          }
           if ($runPackagingBuild) {
             $serialTargets += "tests/test_pyinstaller_spec.py::test_built_wheel_contains_one_byte_identical_quantitative_authority"
             $serialTargets += "tests/test_pyinstaller_spec.py::test_final_pyinstaller_output_contains_one_byte_identical_quantitative_authority"
             $serialTargets += "tests/test_pyinstaller_spec.py::test_built_wheel_exposes_public_cid_nl_activation_surface"
           }
           $serialStarted = Get-Date
-          & .\.venv\Scripts\python.exe -m pytest @serialTargets -v --tb=short -x --durations=10
-          $serialExitCode = $LASTEXITCODE
+          $serialExitCode = 0
+          if ($serialTargets.Count -gt 0) {
+            & .\.venv\Scripts\python.exe -m pytest @serialTargets -v --tb=short -x --durations=10
+            $serialExitCode = $LASTEXITCODE
+          }
+          "- agent_hooks_run=$runAgentHooks" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
           $serialElapsed = [math]::Round(((Get-Date) - $serialStarted).TotalSeconds, 1)
           $elapsed = [math]::Round(((Get-Date) - $started).TotalSeconds, 1)
           "- serial_test_seconds=$serialElapsed" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
