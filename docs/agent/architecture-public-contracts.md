@@ -27,16 +27,12 @@ schema versions, and command flags. Do not copy those inventories here.
   plotting, and writers belong in package modules.
 - Writers render owner results; they do not recompute domain evidence or
   rescan RAW files.
-- The only Alignment orchestration imports for retained pure untargeted/CID-NL execution
-  are the exact `alignment.pipeline` adapter/predicate edges. Shared batch execution and
-  diagnostics are named by capability (`untargeted_production_batch`, `untargeted_alignment`,
-  `alignment_explanation`), with `untargeted_cid_nl_*` and `cid_nl_explanation*` retained
-  as transparent compatibility facades. The finalized projection stays in Alignment, and
-  the extraction adapter never writes.
-- On that retained route, `OwnerBuildRouteReceipt` keeps the configured legacy
-  backend as input provenance but reports
-  `retained_untargeted_cid_nl_batch` as the effective route and no effective
-  legacy backend.
+- Retained pure untargeted/CID-NL execution enters Alignment only through the
+  exact `alignment.pipeline` adapter/predicate edges. The finalized projection
+  stays in Alignment, and the extraction adapter never writes.
+  `tests/test_docs_architecture_census.py` pins the allowed Alignment edges;
+  `xic_extractor.alignment.owner_build_route_receipt` and
+  `tests/test_alignment_pipeline.py` own the route receipt labels.
 - Shared models or protocols are justified when they prevent an actual cycle
   or schema drift.
 - Separate real-data validation from normal unit tests.
