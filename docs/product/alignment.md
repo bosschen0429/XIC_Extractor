@@ -868,7 +868,7 @@ Before changing alignment behavior, require the relevant subset of:
 - Treating ModeTrack as a second grouping owner or Backfill as a membership or
   selected-value owner.
 - Using a singleton or RT prior to fill another sample without direct local
-  evidence or an accepted independent ObservationRevisit.
+  evidence.
 - Calling a pre-final owner matrix `Matrix` and allowing it to cross the final
   result or delivery seam.
 

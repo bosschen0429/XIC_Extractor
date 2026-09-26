@@ -91,6 +91,9 @@ delivery seam as if they were already final.
   writer-input projection of those finalized decisions for the existing TSV,
   XLSX, and HTML writers. `ProductionDecisionSet` holds a separate
   compatibility cell type that is also named `ProductionCellDecision`.
+- The legacy matrix-based `build_production_decisions` still builds a
+  `ProductionDecisionSet` as the fallback in `alignment/product_matrix.py` and
+  for diagnostics and provenance replay.
 - The structural migration must preserve current values, states, counts, row
   inclusion, and renderer bytes before any behavior promotion.
 

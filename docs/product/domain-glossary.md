@@ -377,7 +377,7 @@ stable because they identify existing data or public interfaces.
 
 | Word | Meaning | Not this word |
 | --- | --- | --- |
-| `backfill` | the bounded missing-cell revisit stage; a missing cell is an eligible sample position without direct SUPPORT for an established group | — |
+| `backfill` | the bounded missing-cell revisit stage; the missing-cell definition per workflow is in [Shared Processing Kernel](shared-processing-kernel.md#backfill) | — |
 | `Matrix` | the finalized product-facing numeric feature-by-sample grid; see [Quant Matrix](quant-matrix.md) | a sample matrix; a pre-final cell collection |
 | `sample matrix` | the chemical background of a sample (clean standard, biological extract) | the product `Matrix` |
 | `SDO/LEK` | the lab's two-standard instrument-check set (SDO and LEK); `sdolek` in code | `SDOLEK` in prose |

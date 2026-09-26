@@ -135,21 +135,26 @@ silently truncated or processed in a result-changing order.
 ### ObservationRevisit
 
 `ObservationRevisitReceipt` is a retained typed Backfill receipt. Final cell
-composition accepts a sequence of these receipts. No production code mints a
-receipt: the receipt mint token in
-`alignment/backfill/observation_revisit.py` is never passed outside its
-module, so production receipt sequences are empty. The receipt type grants no
+composition accepts a sequence of these receipts. No code creates a receipt:
+the receipt mint token in `alignment/backfill/observation_revisit.py` is never
+passed to the receipt constructor, so production receipt sequences are
+empty. The receipt type grants no
 membership, selected value, or writer authority.
 
 ### Backfill
 
 Backfill handles a missing cell under an already owner-backed Target or
-existing-group context. A missing cell is an eligible sample position without
-direct SUPPORT for an established group. A sample with a HOLD or REJECT
-assessment for that group is also a missing cell. Backfill can perform one
-bounded, context-directed RAW/evidence revisit. Backfill can produce the first
-usable observation for that cell. Backfill cannot bootstrap a Target/group that
-has no prior owner-backed context.
+existing-group context. The two workflows define a missing cell differently:
+
+- Untargeted CID-NL: every activation-eligible sample without direct SUPPORT
+  for a non-rejected group that passes the group support gate. A sample with a
+  HOLD or REJECT assessment for that group is also a missing cell.
+- Targeted diagnostic: a `no_candidate` cell whose Target binds exactly one
+  group with owners. `ambiguous` and `failed` cells are not searched.
+
+Backfill can perform one bounded, context-directed RAW/evidence revisit.
+Backfill can produce the first usable observation for that cell. Backfill
+cannot bootstrap a Target/group that has no prior owner-backed context.
 
 An accepted Backfill result enters the cell-observation contract as cell
 evidence. The existing `CrossSampleGroupingResult` keeps membership fixed;

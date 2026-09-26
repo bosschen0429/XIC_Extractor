@@ -77,9 +77,9 @@ that group.
 4. Final cell composition still accepts the typed `ObservationRevisitReceipt`
    input for a revisited member.
 5. No installed workflow calls the former execute/close operation. No
-   production code mints the receipt, because the receipt mint token in
-   `alignment/backfill/observation_revisit.py` is never passed outside its
-   module. The receipt type alone does not prove that a revisit transaction
+   code creates the receipt, because the receipt mint token in
+   `alignment/backfill/observation_revisit.py` is never passed to the receipt
+   constructor. The receipt type alone does not prove that a revisit transaction
    ran.
 
 ## Surfaces
