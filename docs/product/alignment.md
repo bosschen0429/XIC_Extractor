@@ -156,7 +156,7 @@ optima retain ambiguity. A stable ID selects the diagnostic representative of
 an exact tie; it does not authorize membership. General multi-owner,
 multi-feature components retain the joint assignment solver.
 
-### Finalization and projection
+### Finalization, projection, and explanation coverage
 
 Writer projection checks sample completeness per finalized row without building
 a second global row-by-sample key set. Cell and integration-audit TSV writers
@@ -341,7 +341,7 @@ unresolved and rejected groups remain AuditTrail facts.
   owner-backed support binding. Matrix rows consume these completed groups and
   cells; writers do not merge subjects or invent cross-subject values.
 
-### Cross-sample grouping
+### Cross-sample grouping and batch finalization
 
 - Two resolved peaks in one sample count as an unresolved doublet only when
   their apex separation is chromatographically meaningful against the narrower
@@ -412,7 +412,7 @@ unresolved and rejected groups remain AuditTrail facts.
   not rerun each child's scientific and post-cell completion checks. Explicit
   finalization and private-spool publication retain their own boundary checks.
 
-### Edge support and quantification
+### Edge support, RT reference map, and quantification
 
 - Cross-sample edge seed support is rated on the peak Alignment resolved, not
   on Discovery's `evidence_score`. Every owner exists because ownership
@@ -825,7 +825,7 @@ This diagnostic is outside the Matrix writer's artifact-fingerprint receipt.
 | CrossSample | Grouping, membership, identity, disposition, proposal application, and split/merge lineage | ModeTrack fitting, local ObservationRevisit, value selection, row inclusion, or rendering |
 | ModeTrack | Immutable trajectory snapshots and refinement proposals | Group minting/mutation, Backfill, selected values, or Matrix authority |
 | Backfill | Bounded local ObservationRevisit and provenance | First hits, membership, trajectory model, selected value, or writer authority |
-| Cell decision/result | Typed write/no-write decisions and immutable result closure | RAW access, regrouping, refitting, repairing, or renderer policy |
+| Cell decision/result | Typed write/no-write decisions and immutable result closure | RAW access, regrouping, refitting, repairing observations, or renderer policy |
 | Alignment workflow | Typed composition, runtime/transaction receipts, finalization, and delivery handoff | Mutable Matrix transport, scientific fallbacks, or emit-flag policy |
 | Discovery | Candidate generation and per-sample review surfaces | Cross-sample matrix authority |
 | Output | Rendering TSV/XLSX/HTML artifacts from domain decisions | Recomputing evidence or selecting authority |
