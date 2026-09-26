@@ -196,21 +196,7 @@ diagnostic IO helpers where their schemas permit it, but keep separate row
 models because their output schemas are intentionally different; see
 `retired-provenance:9ac1510742f0` Cluster 1.
 
-### `evidence_spine_consistency.py`
-
-**Purpose**: Compare targeted candidate and untargeted alignment evidence.
-**Topic group**: `evidence_spine_consistency.py` + `_io`, `_models`, `_analysis`, `_writers` (5 files)
-**Originating decision**: `retired-provenance:2a2ae49b79cb`
-**Recent commit**: `a3e4ea0 2026-05-25` (feat: add phase 1 peak pipeline gates)
-
 ---
-
-### `cross_report_evidence_consistency.py`
-
-**Purpose**: Compare targeted reliability and peak candidate evidence.
-**Topic group**: `cross_report_evidence_consistency.py` + `_io`, `_models`, `_analysis`, `_writers` (5 files)
-**Originating spec**: (none found — likely landed alongside post-PR60 cleanup; see `retired-provenance:100307efc8fa` Workstream G context)
-**Duplication note**: Low-level parsing/writing helpers are consolidated through `xic_extractor/tabular_io.py`; `xic_extractor/diagnostics/diagnostic_io.py` and `tools/diagnostics/diagnostic_io.py` remain compatibility shims. Row dataclasses stay separate because the schemas differ.
 
 ---
 
@@ -266,8 +252,8 @@ compact summary or exact candidate details without reading RAW.
 **Status**: Maintained diagnostic reader. Retains owner assessment, initial
 CrossSample and final disposition facts; does not recalculate decisions or grant
 Matrix authority. Existing `alignment_health_packet.py` summarizes machine-level
-health, while `alignment_decision_report_io.py` reads existing review tables;
-neither contains excluded candidate and initial weak-edge facts from default runs.
+health; it does not contain excluded candidate and initial weak-edge facts from
+default runs.
 
 ---
 
@@ -290,21 +276,7 @@ selected values/counting.
 
 ---
 
-### `alignment_decision_report.py`
-
-**Purpose**: Render an HTML decision report from alignment diagnostics.
-**Topic group**: `alignment_decision_report.py` + `_io`, `_styles`, `_components`, `_model`, `_rendering` (6 files)
-**Originating spec**: `retired-provenance:038bfb65fe90` (decomposition target PR1) + `retired-provenance:100307efc8fa` Workstream G
-**Note**: Rendering / components / styles split landed in commit `4549cdd 2026-05-24`.
-
 ---
-
-### `untargeted_alignment_guardrails.py`
-
-**Purpose**: Compute and compare untargeted alignment guardrails.
-**Topic group**: `untargeted_alignment_guardrails.py` + `_io`, `_models`, `_metrics`, `_outputs`, `_targets` (6 files)
-**Originating plan**: `retired-provenance:6a962d15a062`
-**Spec status**: ACTIVE facade per `retired-provenance:100307efc8fa:638` ("now stays as the CLI/orchestration compatibility facade").
 
 ---
 
@@ -431,14 +403,6 @@ compatibility-label bindings are reported separately, formula-protected machine
 IDs must resolve unambiguously against owner bindings, and a missing lookup
 remains unavailable.
 
-
-
-### `low_ms1_assessable_coverage_audit.py`
-
-**Purpose**: Classify low_ms1_assessable_coverage_review families as RT/window, single-center XIC, or primary-backfill support issues.
-**Topic group**: `low_ms1_assessable_coverage_audit.py` + `low_ms1_coverage_review_{classifier, loaders, models, writers}` (5 files; 683-line classifier is the largest)
-**Originating spec**: `retired-provenance:f59e13685ecc`
-
 ---
 
 ### `ms1_index_backfill_audit.py`
@@ -495,8 +459,6 @@ sample order, and output TSV/JSON/Markdown schemas.
 **Status note**: Writes `shadow_production_projection_cells.tsv` and `shadow_production_projection_summary.json`. The tool entry point is a thin CLI facade; reusable TSV loading, production-decision reconstruction, matrix cross-check loading, and output writing live in `xic_extractor/diagnostics/shadow_production_projection.py`. Rows expose `current_matrix_written`, `current_matrix_source`, `current_production_status`, `shadow_decision` (`accept` / `block` / `context`), `projected_matrix_written`, reasons, warnings, detected-anchor count, request-window overlap status, and overlay provenance. Decision reason/warning serialization uses the shared diagnostics-only `BackfillDecisionExplanation` payload; the projection decision taxonomy remains separate from `backfill_shadow_policy_report.py`. When both `--alignment-matrix-tsv` and `--alignment-matrix-identity-tsv` are supplied, `current_matrix_written` and `current_matrix_value` are grounded in the actual public matrix cell and `current_matrix_source=alignment_matrix_tsv`; otherwise the tool falls back to the formal production-decision snapshot. Matrix cross-check loading limits materialized public matrix cells to retained-gate requested `(family, sample)` keys while preserving source-family aliases and the production snapshot fallback. Seed provenance plus MS1 same-peak visual support is emitted as `shadow_decision=context` with `shadow_reasons=identity_supported_review`; it keeps the positive projected value for reviewed allowlist calibration but leaves `projected_matrix_written=FALSE`. Missing detected anchors, missing selected peak segments, outside-window cells, explicit wrong-peak/hypothesis blockers, hard MS1 blockers, and retained-gate `review_required_*` challenge blockers remain closed or context. `local/global` dominance is annotation only and does not hide traces. The summary separately reports `gate_row_count`, `projectable_gate_row_count`, `unprojectable_gate_row_count`, and `unprojectable_gate_reasons`; `row_count=0` can therefore mean that retained gate rows lacked seed/cell provenance such as `missing_seed_audit`, not that risk was absent. This tool does not mutate `alignment_review.tsv`, `alignment_cells.tsv`, `alignment_matrix.tsv`, workbooks, or product decisions.
 
 ---
-
-
 
 ## T5D Standard Peak contraction
 
@@ -813,7 +775,6 @@ matrices, remap family winners, or claim production readiness.
 
 ---
 
-
 ### `backfill_peakhypothesis_normal_peak_decision.py`
 
 **Purpose**: Convert PeakHypothesis promotion rows, corrected FULL COHORT
@@ -965,13 +926,6 @@ until an explicit product-transfer decision and consolidation policy exist.
 
 ---
 
-### `gallery_browser_smoke.py`
-
-**Purpose**: Run a deterministic headless Chromium smoke test against an already-rendered gallery HTML, independent of Codex MCP tabs or the Chrome extension.
-**Topic group**: `gallery_browser_smoke.py`
-**Originating spec/goal/plan**: `retired-provenance:0a1c58083825`; `retired-provenance:69bd6d102e9c`; `retired-provenance:0ceba9b23ba9`
-**Status note**: Opens a local HTML file through Playwright/Chromium and checks desktop, mobile, and 200 percent zoom viewports; sticky review table chrome; Focus/search behavior including `Projection accepts`; detail drawer open/close; PNG anchor fallback plus lightbox focus/Esc close; and coarse table-cell overlap. It writes screenshots plus `gallery_browser_smoke_summary.json` under the requested output directory. It does not parse TSVs, generate reports, mutate artifacts, depend on MCP/Chrome-extension state, or modify product behavior. Playwright is a repo dev dependency; use `uv sync --extra dev --group dev` before running it. The runner defaults to bundled Playwright Chromium only and fails fast when that browser is missing; pass `--browser-channel auto`, `chrome`, or `msedge` only when system-browser fallback is explicitly intended.
-
 ---
 
 ### `tier2_raw_trace_reread_producer.py`
@@ -985,19 +939,7 @@ until an explicit product-transfer decision and consolidation policy exist.
 
 ## Peak / Candidate Audits
 
-### `cwt_peak_candidate_audit.py`
-
-**Purpose**: Audit CWT peak candidate agreement from peak_candidates.tsv.
-**Topic group**: `cwt_peak_candidate_audit.py` + `_io`, `_models`, `_analysis`, `_writers` (5 files)
-**Originating spec**: `retired-provenance:22f973e5ed27` + `retired-provenance:0091435e5f7e`
-
 ---
-
-### `peak_candidate_score_calibration_report.py`
-
-**Purpose**: Audit peak candidate scoring against newer evidence labels without changing production selection.
-**Topic group**: `peak_candidate_score_calibration_report.py` + `_io`, `_models`, `_analysis`, `_writers` (5 files)
-**Originating spec**: `retired-provenance:22f973e5ed27`
 
 ---
 
@@ -1009,7 +951,6 @@ until an explicit product-transfer decision and consolidation policy exist.
 **Status note**: Writes `selected_envelope_changed_rows.tsv`, `selected_envelope_oracle_review_queue.tsv`, `selected_envelope_diagnostic_manifest.tsv`, and `selected_envelope_review_queue.json` under an explicit output directory. This tool only packages the audit sidecar for manual/expert boundary review; it does not run RAW files, mutate selected `IntegrationResult`, change targeted workbook/CSV `Area`, or authorize FE4/8RAW by itself.
 
 ---
-
 
 ### `chrom_peak_segment_candidate_gate.py`
 
@@ -1040,7 +981,6 @@ manual presence verdict. These rows are review comments / promotion blockers,
 not formal boundary+area oracle rows.
 
 ---
-
 
 ### `ms1_peak_group_nl_scope_gate.py`
 
@@ -1077,27 +1017,9 @@ workbook, matrix, or candidate-selection outputs.
 
 ---
 
-### `targeted_evidence_review_report.py`
-
-**Purpose**: Render a human-first HTML report from targeted diagnostics.
-**Topic group**: `targeted_evidence_review_report.py` + `_components`, `_model`, `_rendering`, `_styles` (5 files)
-**Originating spec**: `retired-provenance:100307efc8fa` Workstream G (rendering split twin with `alignment_decision_report`)
-
 ---
 
-### `targeted_peak_reliability_audit.py`
-
-**Purpose**: Audit targeted peak reliability for benchmark eligibility.
-**Topic group**: `targeted_peak_reliability_audit.py` + `_classifier`, `_loaders`, `_models`, `_writers` (5 files)
-**Originating spec**: `retired-provenance:53a763b9ec7a`
-
 ---
-
-### `targeted_nl_dropout_root_cause_audit.py`
-
-**Purpose**: Classify targeted review-positive NL dropout root causes.
-**Topic group**: `targeted_nl_dropout_root_cause_audit.py` + `_io`, `_models`, `_logic`, `_writers` (5 files)
-**Originating spec**: `retired-provenance:8adf83f1a353`
 
 ---
 
@@ -1115,26 +1037,7 @@ schemas.
 
 ---
 
-### `multi_tag_adduct_audit.py`
-
-**Purpose**: Audit multi-tag and adduct evidence.
-**Topic group**: `multi_tag_adduct_audit.py` (single-file)
-**Originating spec**: `retired-provenance:b11335f3179c`
-**Recent doc**: `retired-provenance:000d7d4caa29`
-
 ---
-
-
-### `targeted_ms1_shape_identity_from_grid.py`
-
-**Purpose**: Convert an existing targeted own-max trace grid plus per-sample
-summary into `targeted_ms1_shape_identity` evidence rows with the formal
-`own_max_same_peak_support` token.
-**Topic group**: targeted NL dropout / MS1 shape identity; reuses
-`xic_extractor.diagnostics.targeted_ms1_shape_identity`.
-**Status note**: Reads existing TSV artifacts only and writes a diagnostic TSV.
-It does not open RAW files, recompute extraction, inject support into normal
-runs, change selected RT/area, or mutate workbooks/matrices.
 
 ---
 
@@ -1269,13 +1172,6 @@ context; mode-aware outputs should use
 `peak_hypothesis_id` / selected-apex mode evidence when a row may contain
 multiple MS1 peak modes.
 
-
-
-
-
-
-
-
 ## Area / Region Audits
 
 ### `alignment_primary_area_authority_audit.py`
@@ -1314,17 +1210,6 @@ counts from the already computed row audit so it reads `peak_candidates.tsv`
 once while preserving the path-based summary/detail helper functions. It does
 not mutate selected boundaries, selected area, confidence, presence, workbook
 output, matrix values, or candidate selection.
-
-### `area_integration_uncertainty_audit.py`
-
-**Purpose**: Classify targeted/untargeted area mismatch by integration audit.
-**Topic group**: `area_integration_uncertainty_audit.py` + `_io`, `_models`, `_analysis`, `_writers` (5 files)
-**Originating spec**: `retired-provenance:298c51c7ae51`
-**Recent doc**: `retired-provenance:62bdbc64baf0`, `retired-provenance:f5c2e710208f`
-**Schema note**: The current accepted `alignment_cell_integration_audit.tsv`
-schema no longer emits or consumes linear-edge rollback columns. Area
-uncertainty uses the reported `area_baseline_corrected` value from the current
-audit schema only.
 
 ---
 
