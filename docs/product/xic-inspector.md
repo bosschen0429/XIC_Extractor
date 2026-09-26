@@ -117,8 +117,6 @@ Inspector.
 - The HTML has no report-time database, server, CDN, or network dependency.
 - Item, sample, and candidate navigation, filters, evidence details, lightbox
   views, and keyboard interaction operate on the embedded selected subset.
-- The bundle reader rejects malformed files, missing provenance, and inputs
-  over 50 MiB.
 - The generated HTML uses the existing atomic replacement and 50 MiB output
   limit for both sources.
 
@@ -133,7 +131,7 @@ Inspector.
 - An ordinary report initially shows the other items. Explicit queries and
   in-report filters expose matching excluded records.
 - A report that contains only excluded candidates explains how to open them.
-- This list presentation does not alter the selected population, retained
+- This excluded-candidate presentation does not alter the selected population, retained
   evidence, or API selection semantics.
 
 ### Item workbench
@@ -201,10 +199,11 @@ Inspector.
   distinct entry labels.
 - An excluded candidate can open its recorded exclusion evidence even when no
   curve is available.
-- Closing an evidence record returns focus to its opening control.
+- Closing an evidence record returns to its opening control.
 - A link opens a record only when the record content is embedded in this
   report. An external or missing reference remains identifiable. The report
-  does not claim that its content is available offline.
+  does not claim that the content of an external or missing reference is
+  available offline.
 - CID-NL decision and curve records link to related method assessments and
   initial edges through exact sample and candidate keys. Those links do not
   establish formal quantification adoption.
@@ -257,7 +256,10 @@ Inspector.
   method HOLD and its source reason. Item explanations do not treat those
   conditions as the final cell decision.
 
-### Write safety
+### Write safety and limits
+
+- The bundle reader rejects malformed files, missing provenance, and inputs
+  over 50 MiB.
 
 - Report generation writes through a temporary file. The generator replaces
   the requested output only after successful completion.

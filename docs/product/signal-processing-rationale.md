@@ -236,8 +236,8 @@ The physical owner answers a closed stage-supplied peak question from the
 canonical signal. It does not choose a `PeakHypothesis`, group, feature row,
 Backfill status, activation, or Matrix identity. A question with zero
 admissible segments is unavailable. A question with multiple admissible
-segments is ambiguous. Neither case can be resolved by nearest apex, height,
-area, or legacy fallback.
+segments is ambiguous. The physical owner must not resolve either case by
+nearest apex, height, area, or legacy fallback.
 
 ## Baseline Estimation Order
 
