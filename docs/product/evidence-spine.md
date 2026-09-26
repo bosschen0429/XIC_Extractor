@@ -144,8 +144,8 @@ no independent support votes.
 
 ### Owner-backed CID-NL hypothesis
 
-The owner-backed CID-NL hypothesis branch closes the next handoff under these
-bounded rules:
+The owner-backed CID-NL hypothesis branch closes the handoff from
+`CidNlChromatographicSupportRef` to `PeakHypothesis` under these bounded rules:
 
 1. Hypothesis content identity includes the method, canonical sample, physical
    peak content ID, and chromatographic-support artifact content ID. Scan or
@@ -249,15 +249,16 @@ a completed method evaluation. Discovery eligibility exclusions remain owned by
 
 ### Backfill of unsearched and rejected samples
 
-An existing owner-backed group can guide a bounded Backfill for such an
-unsearched sample after the conservative sample-role and direct-support gates
-pass. Missing input alone grants no Backfill authority. A group below the
+An existing owner-backed group can guide a bounded Backfill for a sample whose
+initial Discovery assessment is `not_evaluated` with
+`no_search_eligible_discovery_input`, after the conservative sample-role and
+direct-support gates pass. Missing input alone grants no Backfill authority. A group below the
 support threshold retains the exact no-request proof and a `not_searched` cell.
 A Backfill that actually acquires or consumes its bound XIC trace and evaluates
 the candidate universe records a completed search, even when the Backfill finds
 no peaks or qualifying CID-NL evidence. That completed result remains `HOLD`.
-The `HOLD` result is distinct from an initial unsearched slot and does not
-prove method rejection.
+This completed `HOLD` result is distinct from an initial unsearched slot and
+does not prove method rejection.
 
 An evaluated `REJECT` with the exact reason
 `qualifying_nl_evidence_without_any_ms1_candidate_peak` remains the result of its
