@@ -36,9 +36,6 @@ TARGETED_PRODUCT_PROJECTION_HEADERS: tuple[str, ...] = (
     "Legacy Authority Status",
     "Benchmark Eligibility State",
 )
-TARGETED_PRODUCT_VISIBLE_HEADERS: frozenset[str] = frozenset(
-    {"Product State", "Counted Detection", "Review State"}
-)
 
 LONG_COLUMNS: tuple[OutputColumn, ...] = (
     OutputColumn("SampleName"),
@@ -49,18 +46,19 @@ LONG_COLUMNS: tuple[OutputColumn, ...] = (
     OutputColumn("RT", description="smoothed peak apex RT (min)"),
     OutputColumn(
         "Area",
-        description="Gaussian15-smoothed positive AsLS residual area",
+        description="Gaussian15-smoothed positive AsLS residual area (counts·s)",
     ),
-    OutputColumn("NL"),
+    OutputColumn("NL Evidence"),
+    OutputColumn("NL", advanced=True),
     OutputColumn("Int", advanced=True, description="raw apex intensity"),
     OutputColumn("IntSmoothed", description="selected smoothed peak apex intensity"),
-    OutputColumn("PeakStart", advanced=True),
-    OutputColumn("PeakEnd", advanced=True),
+    OutputColumn("PeakStart", description="integration start RT (min)"),
+    OutputColumn("PeakEnd", description="integration end RT (min)"),
     OutputColumn("PeakWidth", advanced=True),
     OutputColumn("Confidence", advanced=True),
     OutputColumn("Reason"),
     *(
-        OutputColumn(header, advanced=header not in TARGETED_PRODUCT_VISIBLE_HEADERS)
+        OutputColumn(header, advanced=True)
         for header in TARGETED_PRODUCT_PROJECTION_HEADERS
     ),
 )

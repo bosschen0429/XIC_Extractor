@@ -451,7 +451,7 @@ def test_diagnostic_nl_evidence_finalizes_without_strict_support(
     )
 
     assert len(finalized) == 1
-    assert finalized[0].completed_projection.counted_detection_count == 2
+    assert finalized[0].completed_projection.accepted_cell_count == 2
     assert finalized[0].completed_projection.no_write_count == 0
 
 
@@ -562,7 +562,7 @@ def test_missing_selected_peak_finalizes_as_searched_no_observation(
     assert tuple(
         subject.terminal_subject.variant for subject in projection.cell_subjects
     ) == ("searched_no_observation",) + ("observed",) * (len(sample_names) - 1)
-    assert projection.counted_detection_count == len(sample_names) - 1
+    assert projection.accepted_cell_count == len(sample_names) - 1
     assert projection.no_write_count == 1
 
 
@@ -581,7 +581,7 @@ def test_assessment_handoff_is_independent_of_injection_order(tmp_path: Path) ->
         output,
     )
 
-    assert finalized[0].completed_projection.counted_detection_count == 2
+    assert finalized[0].completed_projection.accepted_cell_count == 2
 
 
 def test_neutral_loss_disabled_target_uses_shared_cell_decision(tmp_path: Path) -> None:

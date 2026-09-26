@@ -27,7 +27,7 @@ def test_targeted_area_column_and_reported_peak_area_use_ms1_morphology_area() -
     area_column = next(column for column in LONG_COLUMNS if column.name == "Area")
     assert (
         area_column.description
-        == "Gaussian15-smoothed positive AsLS residual area"
+        == "Gaussian15-smoothed positive AsLS residual area (counts·s)"
     )
 
     integration = IntegrationResult(

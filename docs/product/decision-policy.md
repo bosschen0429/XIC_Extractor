@@ -25,9 +25,10 @@ questions:
 - Score is a ranking and compatibility tool. A high score cannot bypass missing
   required evidence, hard conflicts, unresolved ambiguity, missing provenance,
   or workflow-specific activation gates.
-- Targeted and Untargeted workflows can use the same typed evidence facts.
-  The two workflows must not share hidden product decisions. Each workflow owns
-  its own projection policy.
+- Targeted and Untargeted workflows share the cell value/no-write owner.
+  Detection-count policy must not discard a numeric value from the same closed
+  observation and integration evidence. Each workflow owns its search/row
+  context and explicit inclusion, count, and review projection.
 - Diagnostic, shadow, gallery, review, lockbox, and sidecar evidence can
   explain a decision. Such evidence becomes product authority only through an
   explicit activation/export contract and expected-diff gate.
@@ -80,11 +81,32 @@ Every value-changing decision should be explainable in this order:
 If a decision cannot name these fields, it is not ready to become product
 behavior. It can remain diagnostic, shadow, or review-only.
 
+## Quantification, Detection Counts, And Observation Origin
+
+| Concept | Owner and meaning | Public consequence |
+| --- | --- | --- |
+| Numeric or no-write | `ProductionCellDecision`, from closed observation and integration evidence | Finalized RT/area/bounds are rendered; a typed no-write has no numeric output |
+| `accepted_cell_count` | Number of cells accepted for numeric output in the completed Target or Untarget projection | Includes accepted MS1-only cells; is not a direct-detection count |
+| Counted detection | Explicit evidence/count policy | Controls detection statistics and the existing trusted-reference consumers, not whether an accepted value is rendered |
+| Direct observation / Backfill | The actual capture or Backfill observation evidence | A usable MS1 value does not imply that a Backfill operation ran or that NL was observed |
+| NL observation | Configured provider result | Missing NL or missing MS2 is visible evidence context; blank NL configuration remains unconfigured |
+| Review | Retained reason and review state | Review can coexist with a numeric value |
+
+Same-feature MS1 Backfill can be numeric without becoming a direct detection.
+An observed Target-local peak can likewise be numeric while its count policy is
+false. These conclusions use the shared value owner; a writer must not turn
+either accepted value into ND by inspecting count, confidence, or review. A
+TargetKey or matching search window alone does not mint Group membership or a
+Backfill receipt. Actual observation origins remain explicit rather than being
+renamed to imply an operation that did not run.
+
 ## Targeted Confidence / Reason / Counted Detection Precedence
 
-Targeted workbook rows display `Confidence` and `Reason`, but those cells are
-not the authority for counted detections or matrix presence. The authority is
-the Targeted product projection, with these layers feeding it:
+Targeted workbook rows present the retained RT, area, integration boundaries,
+`NL Evidence`, and a plain-language `Reason`. These displayed cells do not
+decide counted detections or numeric availability. The Targeted product
+projection supplies count/review policy. The finalized cell decision supplies
+the values. The following layers feed the displayed result:
 
 | Layer | Produces | Resolution point |
 | --- | --- | --- |
@@ -96,16 +118,26 @@ the Targeted product projection, with these layers feeding it:
 
 Invariants:
 
-- Counted detection, summary counts, and matrix presence read
-  `projection.counted_detection` and `product_state`, not `Confidence`, neutral
-  loss flags, scores, or caps.
+- Counted detection and detection summaries read `projection.counted_detection`
+  and `product_state`, not `Confidence`, neutral loss flags, scores, or caps.
+  CSV and workbook numeric columns render the retained finalized peak even
+  when `counted_detection` is false. GUI median area uses the retained numeric
+  population independently of its detection tally.
 - `_display_confidence` may demote projected rows to `VERY_LOW`; it must not
   promote rows. If a row should read higher, fix the projection decision.
-- When a Targeted product projection exists, `_display_reason` renders the
-  `Reason` cell from `projection.product_state` and its typed reason tuples
-  through `display_product_reason`. Otherwise `_display_reason` falls back to
-  the stored `result.reason`. `projection.projection_reason` feeds the separate
-  `Projection Reason` column.
+- When a Targeted product projection exists, `_display_reason` describes the
+  retained MS1 measurement and its review reasons through
+  `display_measurement_reason`. Otherwise `_display_reason` uses the stored
+  `result.reason`. `projection.projection_reason` feeds the separate
+  `Projection Reason` column. The workbook preserves the CSV explanation.
+- `NL Evidence` distinguishes observed support, no support within tolerance,
+  no MS2 spectrum, and an unrequested check. Blank NL configuration is
+  `Not requested`, not failed evidence.
+- Internal count/product/review codes, raw NL tokens, and confidence remain
+  available as advanced workbook columns. They do not replace the main
+  measurement and evidence explanation. Missing support or shape concerns do
+  not themselves establish that the declared target is absent; the user
+  interprets these facts.
 - New evidence sources must enter as typed evidence or selection context and be
   reconciled by workflow projection; they must not create another direct display
   or count authority.
@@ -143,6 +175,9 @@ Targeted-specific rules to keep explicit:
 - ISTD and analyte missing-MS2/NL behavior are not symmetric. A configured ISTD
   plausible dropout can be counted as `detected_flagged`; an analyte NL fail or
   missing MS2 needs paired-support or expected-diff policy before it can count.
+  This is count/trusted-reference eligibility, not a second quantification
+  decision. Neither branch can discard the finalized cell owner's numeric
+  answer or manufacture a value when that owner returned no-write.
 - Paired analyte support is a bundle: coherent MS1, role-aware RT context,
   paired-area support, same-peak support, and no hard quality blocker. No single
   paired fact is standalone product authority.

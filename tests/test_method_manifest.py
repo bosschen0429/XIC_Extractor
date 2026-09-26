@@ -84,8 +84,11 @@ def test_build_method_manifest_labels_hashes_as_fragments(tmp_path: Path) -> Non
     assert payload["method_settings"]["signal_processing_method"] == "gaussian"
     assert payload["method_settings"]["signal_processing_window_points"] == 15
     assert not {
-        "resolver_mode", "smooth_window", "smooth_polyorder",
-        "peak_rel_height", "peak_min_prominence_ratio",
+        "resolver_mode",
+        "smooth_window",
+        "smooth_polyorder",
+        "peak_rel_height",
+        "peak_min_prominence_ratio",
     }.intersection(payload["method_settings"])
     assert payload["target_summary"] == {
         "target_count": 2,
@@ -106,6 +109,7 @@ def test_build_method_manifest_labels_hashes_as_fragments(tmp_path: Path) -> Non
                 "ISTD Pair",
                 "RT",
                 "Area",
+                "NL Evidence",
                 "NL",
                 "Int",
                 "IntSmoothed",

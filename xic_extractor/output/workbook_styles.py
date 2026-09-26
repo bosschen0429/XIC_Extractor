@@ -168,6 +168,7 @@ def _long_column_width(header: str) -> int:
         "RT": 12,
         "Area": 16,
         "NL": 14,
+        "NL Evidence": 34,
         "Int": 14,
         "IntSmoothed": 16,
         "PeakStart": 14,

@@ -7,7 +7,6 @@ from xic_extractor.output.schema import (
     TARGETED_LONG_CSV_SCHEMA_VERSION,
     TARGETED_OUTPUT_SCHEMA_VERSION,
     TARGETED_PRODUCT_PROJECTION_HEADERS,
-    TARGETED_PRODUCT_VISIBLE_HEADERS,
     TARGETED_SCORE_BREAKDOWN_CSV_SCHEMA_VERSION,
 )
 
@@ -16,24 +15,22 @@ def test_targeted_output_schema_versions_are_explicit() -> None:
     assert TARGETED_OUTPUT_SCHEMA_VERSION == "targeted_output"
     assert TARGETED_LONG_CSV_SCHEMA_VERSION == "targeted_long_csv"
     assert TARGETED_DIAGNOSTIC_CSV_SCHEMA_VERSION == "targeted_diagnostics_csv"
-    assert (
-        TARGETED_SCORE_BREAKDOWN_CSV_SCHEMA_VERSION == "targeted_score_breakdown_csv"
-    )
+    assert TARGETED_SCORE_BREAKDOWN_CSV_SCHEMA_VERSION == "targeted_score_breakdown_csv"
 
 
 def test_long_schema_has_projection_columns() -> None:
-    assert len(LONG_HEADERS) == 26
+    assert len(LONG_HEADERS) == 27
     assert LONG_HEADERS[0] == "SampleName"
-    assert LONG_HEADERS[14] == "Reason"
-    assert LONG_HEADERS[8:10] == ("Int", "IntSmoothed")
+    assert LONG_HEADERS[15] == "Reason"
+    assert LONG_HEADERS[9:11] == ("Int", "IntSmoothed")
     assert "Int" in LONG_ADVANCED_HEADERS
     assert "IntSmoothed" not in LONG_ADVANCED_HEADERS
     assert LONG_HEADERS[-11:] == TARGETED_PRODUCT_PROJECTION_HEADERS
     assert "Confidence" in LONG_ADVANCED_HEADERS
-    assert TARGETED_PRODUCT_VISIBLE_HEADERS.isdisjoint(LONG_ADVANCED_HEADERS)
-    assert (
-        set(TARGETED_PRODUCT_PROJECTION_HEADERS) - TARGETED_PRODUCT_VISIBLE_HEADERS
-        <= LONG_ADVANCED_HEADERS
+    assert set(TARGETED_PRODUCT_PROJECTION_HEADERS) <= LONG_ADVANCED_HEADERS
+    assert "NL" in LONG_ADVANCED_HEADERS
+    assert {"NL Evidence", "PeakStart", "PeakEnd", "Reason"}.isdisjoint(
+        LONG_ADVANCED_HEADERS
     )
 
 

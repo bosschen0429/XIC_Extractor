@@ -116,7 +116,7 @@ def _target_summary(
     nl_warn = 0
     nl_fail = 0
     nl_no_ms2 = 0
-    detected_areas: list[float] = []
+    accepted_areas: list[float] = []
 
     for file_result in output.file_results:
         result = file_result.results.get(target.label)
@@ -133,10 +133,10 @@ def _target_summary(
                 nl_no_ms2 += 1
         if _is_detected(config, target, result):
             detected += 1
-            if result.reported_peak_area is not None:
-                detected_areas.append(result.reported_peak_area)
+        if result.reported_peak_area is not None:
+            accepted_areas.append(result.reported_peak_area)
 
-    median_area = statistics.median(detected_areas) if detected_areas else None
+    median_area = statistics.median(accepted_areas) if accepted_areas else None
     return {
         "label": target.label,
         "detected": detected,
