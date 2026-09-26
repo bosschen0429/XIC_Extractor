@@ -16,7 +16,7 @@ questions:
 
 - Evidence providers feed typed facts into `EvidenceVector`,
   `EvidenceDecisionSemantics`, `PeakHypothesis`, `IntegrationResult`, and audit
-  records. They do not write product matrices directly.
+  records. Evidence providers do not write product matrices directly.
 - Decision policy owns gate order. `ProductionCellDecision` is the sole owner
   that converts closed observation evidence into a selected value or typed
   no-write result. If a rule affects selected peak, selected area, counted
@@ -25,12 +25,12 @@ questions:
 - Score is a ranking and compatibility tool. A high score cannot bypass missing
   required evidence, hard conflicts, unresolved ambiguity, missing provenance,
   or workflow-specific activation gates.
-- Targeted and untargeted workflows may use the same typed evidence facts, but
-  they must not share hidden product decisions. Each workflow owns its own
-  projection policy.
+- Targeted and Untargeted workflows can use the same typed evidence facts.
+  The two workflows must not share hidden product decisions. Each workflow owns
+  its own projection policy.
 - Diagnostic, shadow, gallery, review, lockbox, and sidecar evidence can
-  explain a decision. They become product authority only through an explicit
-  activation/export contract and expected-diff gate.
+  explain a decision. Such evidence becomes product authority only through an
+  explicit activation/export contract and expected-diff gate.
 
 ## Current Transition State
 
@@ -52,7 +52,7 @@ baseline for proving behavior, not the owner of product truth.
 | Decision semantics | Accepted/review/not-counted/ambiguous/excluded classes, support reasons, conflict reasons, blocker reasons | Workflow-specific writer authority |
 | Model selection / ranking | Choosing among comparable `PeakHypothesis` candidates after typed gates | Overriding hard gates or granting matrix writes |
 | Cell decision | Selected value or typed no-write for explicit Target/Group subjects | Row identity, grouping, RAW access, or rendering |
-| Workflow projection | Pre-cell row identity/binding and explicit cell subjects; post-cell inclusion, counted detection, product state, reasons, Review Queue/archive routing, and ProductWriter gates | Low-level evidence extraction, Backfill repair, or value recomputation |
+| Workflow projection | Pre-cell row identity/binding and explicit cell subjects; post-cell inclusion, counted detection, product state, reasons, Review Queue/archive routing, and ProductWriter gates | Low-level evidence extraction, Backfill revisit, or value recomputation |
 | Audit trail | Human-readable explanation, review queue, expected-diff evidence | Silent product behavior |
 
 The pre-cell and post-cell projection steps are two ordered operations of the
@@ -84,7 +84,7 @@ behavior. It can remain diagnostic, shadow, or review-only.
 
 Targeted workbook rows display `Confidence` and `Reason`, but those cells are
 not the authority for counted detections or matrix presence. The authority is
-the targeted product projection, with these layers feeding it:
+the Targeted product projection, with these layers feeding it:
 
 | Layer | Produces | Resolution point |
 | --- | --- | --- |
@@ -123,12 +123,12 @@ generic evidence provider.
 | Hard blockers | Sample not applicable, invalid selected hypothesis, hard wrong-peak conflict, missing positive MS1 for counted detection, unapproved expected diff, role-incoherent paired context, missing activation for value-changing rescue |
 | Support | Candidate-aligned MS2/NL, target RT window, paired ISTD/standard RT context, paired area ratio, own-max same-peak support, morphology, boundary assessability, local S/N |
 | Tie-break | Decision class first, then blocker count, abundance demotion, role-aware RT/context, chemical evidence, trace strength, quality penalty, RT distance, abundance, and finally compatibility score only when comparable |
-| Projection | `TargetedProductProjection` first owns fixed Target row binding and Target cell-subject construction; `ProductionCellDecision` then supplies the selected value/no-write result; the same projection finally owns product state, counted detection, confidence, reason, Review Queue routing, and targeted output fields |
+| Projection | `TargetedProductProjection` first owns fixed Target row binding and Target cell-subject construction; `ProductionCellDecision` then supplies the selected value/no-write result; the same projection finally owns product state, counted detection, confidence, reason, Review Queue routing, and Targeted output fields |
 
 Targeted policy may prioritize paired ISTD/standard RT context because the
-targeted method declares that relationship ahead of time. That priority must
-remain in targeted projection or activation policy; it must not leak into
-untargeted identity decisions as if the workflow had known targets.
+Targeted method declares that relationship ahead of time. That priority must
+remain in Targeted projection or activation policy; it must not leak into
+Untargeted identity decisions as if the workflow had known targets.
 
 Targeted-specific rules to keep explicit:
 
@@ -136,7 +136,7 @@ Targeted-specific rules to keep explicit:
   row or cell must project to explicit no-peak or not-counted state, not counted
   detection by implication.
 - Sample applicability gates can exclude a target/sample pair before scoring,
-  such as role or matrix constraints.
+  such as role or sample-matrix constraints.
 - ISTD and analyte missing-MS2/NL behavior are not symmetric. A configured ISTD
   plausible dropout can be counted as `detected_flagged`; an analyte NL fail or
   missing MS2 needs paired-support or expected-diff policy before it can count.
@@ -153,7 +153,7 @@ Targeted-specific rules to keep explicit:
 
 Untargeted alignment is discovery-driven. It does not know target identity
 ahead of time, so CrossSample decides from trace, owner, group, identity, and
-provenance evidence rather than targeted labels. Backfill is a separate bounded
+provenance evidence rather than Targeted labels. Backfill is a separate bounded
 ObservationRevisit owner and does not decide membership, selected value, or row
 inclusion.
 
@@ -167,7 +167,7 @@ inclusion.
 | Projection | Untarget projection first decides typed row identity and Group cell subjects; `ProductionCellDecision` then decides cell value/no-write; the same projection closes row inclusion and archive routing before ProductWriter/activation authorizes rendering or publication. Backfill supplies observation facts only |
 
 Targeted outputs may be used as benchmark, audit, or falsification evidence for
-untargeted behavior. They must not directly promote untargeted rows unless a
+Untargeted behavior. They must not directly promote Untargeted rows unless a
 separate product contract converts that evidence into typed same-peak,
 group-hypothesis, or `PeakHypothesis` support.
 
@@ -175,7 +175,7 @@ Untargeted-specific rules to keep explicit:
 
 - Owner-edge score supports group construction only after hard gates pass. It
   cannot override same-sample conflicts, tag mismatch, m/z/product/NL mismatch,
-  ambiguous owner, identity conflict, non-detected owner, or backfill-bridge
+  ambiguous owner, identity conflict, non-detected owner, or Backfill-bridge
   blockers.
 - Row promotion requires row identity support and at least one quantifiable
   detected seed. Backfill-only, duplicate-only, ambiguous-only, review-only,
@@ -188,13 +188,13 @@ Untargeted-specific rules to keep explicit:
 - Same-peak support is not the same as group membership. It needs selected peak
   geometry, RT or drift-supported compatibility, no MS1 pattern conflict, no
   hypothesis or claim blocker, and product-authorized trace or pattern support.
-- MS2/NL, MS1 pattern, QC reference, matrix RT drift, and shape or region audit
+- MS2/NL, MS1 pattern, QC reference, sample-matrix RT drift, and shape or region audit
   are typed facts. They strengthen or block decisions only through Backfill
   projection and authority fields.
 - `feature_family_id` and `public_family_id` remain compatibility/display
   labels. `group_hypothesis_id` and `peak_hypothesis_id` are the
   authority-ready identity handles when available.
-- Owner-centered MS1 backfill can change alignment cell status during alignment
+- Owner-centered MS1 Backfill can change alignment cell status during alignment
   construction. That is still not broad ProductWriter authority unless the
   relevant matrix/activation contract grants it.
 - Broad Backfill remains gated. Diagnostic sidecars and visual overlay
@@ -221,7 +221,7 @@ Score is not allowed to:
   blockers;
 - replace a lower-score candidate when typed facts produce worse decision
   semantics for the higher-score candidate;
-- collapse targeted and untargeted policy into one global weighting scheme;
+- collapse Targeted and Untargeted policy into one global weighting scheme;
 - turn diagnostic-only or shadow-only artifacts into matrix values;
 - hide a new product rule behind a numeric threshold without an owner, tests,
   and expected-diff framing.
@@ -254,7 +254,7 @@ reconstruct the policy:
 | Support | RT, shape, MS2/NL, standard/library, paired-context, group/coherence support |
 | Tie-break basis | score, RT distance, abundance, deterministic order, compatibility fallback |
 | Projection authority | ProductionCellDecision, Targeted/Untargeted projection, ProductWriter scope |
-| Validation status | synthetic, focused tests, targeted benchmark, 8RAW, 85RAW, manual review, expected diff |
+| Validation status | synthetic, focused tests, Targeted benchmark, 8RAW, 85RAW, manual review, expected diff |
 
 The decision record can live in different artifacts for different workflows,
 but the meaning must remain stable: evidence explains, policy gates, score
@@ -278,7 +278,7 @@ contract.
 - Do not say "the score decided the peak." Say which typed facts passed, which
   blockers were absent, and which projection wrote the output.
 - Do not let a shared evidence provider carry workflow-specific authority.
-- Do not move targeted-only role policy into shared evidence semantics unless
+- Do not move Targeted-only role policy into shared evidence semantics unless
   the output stays role-neutral or the projection layer still owns authority.
 - Do not treat review labels, display tokens, family labels, galleries, or
   lockbox labels as product writes.
