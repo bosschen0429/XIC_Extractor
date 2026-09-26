@@ -4,108 +4,173 @@
 
 ![Untargeted Discovery in Graphite / Amber](../../assets/screenshots/untargeted-workspace-dark.png)
 
-The Untargeted workspace is the human GUI surface for discovery, alignment,
-and reviewable output access. It orchestrates existing product workflows; it
-does not create a separate product-authority lane.
+The Untargeted workspace is the human GUI surface for Discovery, alignment,
+and reviewable output access. The workspace orchestrates existing product
+workflows. The workspace does not create a separate product-authority lane.
 
 ## Contract
+
+### Workspaces and theme
 
 - The main window exposes **Targeted Extraction** and **Untargeted Discovery**
   as first-class workspaces.
 - The application provides Porcelain / Indigo (light) and Graphite / Amber
-  (dark) themes. Switch using the button below the sidebar brand, **檢視 → 深色模式**,
-  or `Ctrl+D`. Both workspaces update immediately; the choice survives restart
-  through the main window's existing `QSettings` preference. `gui/styles.py`
-  owns the shared palette, including method-editor actions.
-- Untargeted settings are local GUI state in `config/discovery_gui.json`;
-  that file stays ignored.
+  (dark) themes. The operator switches themes with the button below the
+  sidebar brand, **檢視 → 深色模式**, or `Ctrl+D`.
+- Both workspaces update immediately after a theme switch. The theme choice
+  survives restart through the existing `QSettings` preference of the main
+  window.
+- `gui/styles.py` owns the shared palette, including method-editor actions.
+- Untargeted settings are local GUI state in `config/discovery_gui.json`. That
+  file stays ignored.
+
+### Batch setup
+
 - Batch setup uses a scrollable overview with shared run feedback below it.
-  Sample and target tables open in a full-height detail workspace; **返回批次設定**
-  (`Alt+Left`) restores the overview without rebuilding data or discarding edits.
-  Table filtering, role correction, import, and export retain their existing owners.
-- DLL and internal-standard inputs show compact status summaries when valid;
-  invalid restored inputs expand for correction. **查看問題** reveals the relevant
-  setup section. Method selection and editing share one row; import and creation
-  are available under **更多**.
-- An existing DLL directory entered in either workspace is remembered immediately
-  in the main window's machine-local `QSettings`, independently of Save or Run.
-  Startup reuses it in both workspaces, ahead of batch-config defaults. A valid
-  existing workspace path seeds this preference on first use; missing remembered
-  paths remain visible for correction instead of silently selecting another path.
+- Sample and target tables open in a full-height detail workspace.
+  **返回批次設定** (`Alt+Left`) restores the overview without rebuilding data or
+  discarding edits.
+- Table filtering, role correction, import, and export retain their existing
+  owners.
+- DLL and internal-standard inputs show compact status summaries when valid.
+  Invalid restored inputs expand for correction. **查看問題** reveals the
+  relevant setup section.
+- Method selection and editing share one row. Import and creation are
+  available under **更多**.
+
+### DLL directory memory
+
+- An existing DLL directory entered in either workspace is remembered
+  immediately in the machine-local `QSettings` of the main window. Saving or
+  running is not required.
+- Startup reuses the remembered DLL directory in both workspaces, ahead of
+  batch-config defaults.
+- A valid existing workspace path seeds this preference on first use.
+- A missing remembered path remains visible for correction. The GUI does not
+  silently select another path.
+
+### New batch and reset
+
 - **開始新批次** preserves the selected method, explicit overrides, internal
-  standards, DLL, and mode. It clears RAW/batch-index/output inputs, sample roles,
-  acquisition-source binding, and displayed results. **清空來源** retains the
-  existing reset behavior, including resetting the method to dR.
+  standards, DLL, and mode.
+- **開始新批次** clears RAW/batch-index/output inputs, sample roles,
+  acquisition-source binding, and displayed results.
+- **清空來源** retains the existing reset behavior, including resetting the
+  method to dR.
+
+### Run feedback and stop
+
 - Completion, failure, and stopping feedback survive readiness refreshes.
-  Editing settings after a run labels its results as previous results; starting
-  another run or batch clears them. Stop remains disabled while cancellation is
-  pending. These states describe worker feedback, not scientific acceptance.
+- Editing settings after a run labels the results of that run as previous
+  results. Starting another run or batch clears them.
+- Stop remains disabled while cancellation is pending.
+- These feedback states describe worker feedback, not scientific acceptance.
+- Stop requests cancellation, then waits for the current worker stage to
+  yield.
+
+### Method selection and editing
+
 - Method settings come from built-in presets or imported TOML methods through
-  the same `xic_extractor.presets` loader used by the CLI. The method section
-  exposes create, import, edit, Apply, and Save As operations for CID-NL methods.
-  The starting choices are dR, R, and MeR. The editor selects and combines their
-  tags, or adds custom neutral losses; Delta Mass, HCD-PI, and mixed methods are
-  not exposed by this GUI. Unsupported imports leave the selected method intact.
+  the same `xic_extractor.presets` loader that the CLI uses.
+- The method section exposes create, import, edit, Apply, and Save As
+  operations for CID-NL methods.
+- The starting choices are dR, R, and MeR. The editor selects and combines
+  their tags, or adds custom neutral losses.
+- This GUI does not expose Delta Mass, HCD-PI, or mixed methods. An
+  unsupported import leaves the selected method intact.
 - The operator configures Discovery tags, their combination, Discovery tuning,
   and dataset inputs. Alignment and Backfill strategy remain platform-owned.
 - Advanced values are explicit user overrides layered on the selected preset.
 - The GUI uses an explicit RT range of 0–60 minutes for built-in starting
-  methods. This override travels with the request and exported TOML; CLI defaults
-  are unchanged. Imported out-of-range methods are rejected, not clipped.
-- Save As materializes the effective method values through the preset owner;
-  the result can be used directly with CLI `--preset`. Apply stores an effective
-  method through the same owner in local `config/current_discovery_method.toml`,
-  without a Save As dialog. Cancelling the editor or rejecting an import
-  preserves the current method. The GUI stores only the
-  selected locator and overrides in its local config, not a second method format.
-- A run uses the method snapshot displayed by the GUI. External edits to the
-  source file do not silently change that run; re-import selects the new content.
-  On restart the locator is loaded normally. Missing or invalid persisted methods
-  remain visible and block Run until the operator selects a valid method.
-- Stop requests cancellation, then waits for the current worker stage to
-  yield.
+  methods. This override travels with the request and the exported TOML. CLI
+  defaults are unchanged.
+- An imported out-of-range method is rejected, not clipped.
+- Save As materializes the effective method values through the preset owner.
+  The result can be used directly with CLI `--preset`.
+- Apply stores an effective method through the same owner in local
+  `config/current_discovery_method.toml`, without a Save As dialog.
+- Cancelling the editor or rejecting an import preserves the current method.
+- The GUI stores only the selected locator and overrides in its local config.
+  The local config is not a second method format.
+- A run uses the method snapshot that the GUI displays. External edits to the
+  source file do not silently change that run. Re-import selects the new
+  content.
+- On restart, the GUI loads the locator normally. A missing or invalid
+  persisted method remains visible and blocks Run until the operator selects a
+  valid method.
+
+### Backfill gallery
+
 - Automatic Backfill gallery / MS1 overlay generation is parked outside the
-  normal GUI route and cannot change the Matrix.
+  normal GUI route. That generation cannot change the Matrix.
+
+### XIC Inspector export
+
 - A completed alignment with a published evidence locator enables manual
-  **Export XIC Inspector** in the results section. Completion never starts a
-  report. The settings dialog reads source sample metadata in the background,
-  displays stems and submits canonical sample IDs. It offers Sample, Attention,
-  and Query selection, a 1–50 limit (default 30), seed (default 0), query
-  candidate/group IDs, m/z and RT bounds (minutes), query offset, and HTML
-  output path. **Export and Open** opens the completed HTML in the default browser;
+  **Export XIC Inspector** in the results section.
+- Completion never starts a report.
+- The settings dialog reads source sample metadata in the background. The
+  dialog displays stems and submits canonical sample IDs.
+- The dialog offers:
+  - Sample, Attention, and Query selection;
+  - a 1–50 limit (default 30) and a seed (default 0);
+  - query candidate/group IDs;
+  - m/z and RT bounds (minutes);
+  - a query offset;
+  - an HTML output path.
+- **Export and Open** opens the completed HTML in the default browser.
   **Open XIC Inspector** can later reopen that HTML without the source files.
-  The report uses the [shared Inspector API](xic-inspector.md), including its
-  source binding and error/cancellation rules; the GUI does not re-read RAW or
-  alter the Matrix. A new run or batch clears the current locator and Open
-  target. A running report keeps its original locator and identifies its
-  original request/attempt in the completion message.
-- Frozen builds bundle preset TOMLs and the Inspector modules used by manual
-  export.
-- Selecting a RAW directory lists files without assigning injection order. The
-  imported acquisition-information document supplies order through the shared
-  sample-metadata loader and matcher. Its source is persisted and reloaded before
-  explicit role corrections; folder changes clear the old sequence binding.
-  Matching uses the RAW files enumerated from the selected directory. Existing
-  sequence rows are never treated as RAW files; without enumerated RAW files,
-  importing another source replaces the sequence table.
+- The report uses the [shared Inspector API](xic-inspector.md), including its
+  source binding and error/cancellation rules.
+- The GUI does not re-read RAW or alter the Matrix for a report.
+- A new run or batch clears the current locator and the Open target.
+- A running report keeps its original locator. The completion message
+  identifies the original request/attempt of that report.
+
+### Packaging
+
+- Frozen builds bundle preset TOMLs and the Inspector modules that manual
+  export uses.
+
+### Sample sequence and metadata
+
+- Selecting a RAW directory lists files without assigning injection order.
+- The imported acquisition-information document supplies injection order
+  through the shared sample-metadata loader and matcher.
+- The GUI persists the source of that document and reloads it before explicit
+  role corrections. A folder change clears the old sequence binding.
+- Matching uses the RAW files enumerated from the selected directory. Existing
+  sequence rows are never treated as RAW files.
+- Without enumerated RAW files, importing another source replaces the
+  sequence table.
 - The sample table edits a view of the complete imported metadata record.
-  Undisplayed fields, including exclusions and their reasons, survive visible
-  edits, filtering, request construction, and CSV export. Filters change only
-  visibility, not the submitted population. Importing a replacement source uses
-  its records; clearing or changing the RAW source removes the previous records.
-  A failed explicit import preserves the current data. A failed persisted-source
-  restore still clears injection order so a run cannot use stale acquisition order.
-- Generic CSV/TSV and XLSX sequences share the sample-metadata owner's finite
-  header aliases. Case, spaces, underscores, and punctuation are normalized before
-  exact matching; `Sample ID`, `Injection Order`, `Sample Type`, and `Batch ID`
-  have distinct meanings. Missing sample identity, duplicate semantic columns,
-  and header-only inputs are import errors. Word inputs retain the shared document
-  parser. Unsupported decorated headers are not guessed by substring.
-- The shared targets example is loaded by default. Untargeted uses only rows
-  marked `is_istd=TRUE` through `read_istd_targets`, the same selection consumed
-  by Alignment CLI. The GUI reports the selected and skipped row counts. Other
-  analytes do not become expected detections or constrain discovery. A supplied
-  list without internal standards is invalid; an empty input opts out.
+- Undisplayed fields, including exclusions and their reasons, survive visible
+  edits, filtering, request construction, and CSV export.
+- Filters change only visibility, not the submitted population.
+- Importing a replacement source uses the records of that source. Clearing or
+  changing the RAW source removes the previous records.
+- A failed explicit import preserves the current data.
+- A failed persisted-source restore still clears injection order, so a run
+  cannot use stale acquisition order.
+- Generic CSV/TSV and XLSX sequences share the finite header aliases of the
+  sample-metadata owner.
+- Header matching normalizes case, spaces, underscores, and punctuation before
+  exact matching. `Sample ID`, `Injection Order`, `Sample Type`, and
+  `Batch ID` have distinct meanings.
+- Missing sample identity, duplicate semantic columns, and header-only inputs
+  are import errors.
+- Word inputs retain the shared document parser.
+- The GUI does not guess an unsupported decorated header by substring.
+
+### Internal-standard targets
+
+- The shared targets example is loaded by default.
+- Untargeted uses only rows marked `is_istd=TRUE` through
+  `read_istd_targets`. Alignment CLI consumes the same selection.
+- The GUI reports the selected and skipped row counts.
+- Other analytes do not become expected detections or constrain Discovery.
+- A supplied list without internal standards is invalid. An empty input opts
+  out.
 - Opening the bundled targets example for external editing first saves a user
   copy. Reload validates external edits through the shared targets reader.
 
@@ -117,8 +182,8 @@ does not create a separate product-authority lane.
 | `discovery_only` | Single RAW file, DLL directory, output directory | Single-file discovery |
 | `align_only` | RAW directory, `discovery_batch_index.csv`, DLL directory, output directory | Alignment |
 
-Batch discovery-only remains a CLI surface. Use `full` when the GUI should
-run directory-level discovery plus alignment.
+Batch Discovery-only remains a CLI surface. Use `full` when the GUI must run
+directory-level Discovery plus alignment.
 
 ## Surfaces
 
@@ -152,7 +217,7 @@ for machine, validation, or diagnostic workflows.
 
 - Owns: workspace layout, run/stop lifecycle, local config persistence,
   preset loading, mode dispatch, and output link presentation.
-- Does not own: product authority, selected backfill values, counted
+- Does not own: product authority, selected Backfill values, counted
   detections, matrix publication, maturity tier, or RAW-tier production
   readiness. Those belong to [Discovery](discovery.md),
   [Alignment](alignment.md), [Presets](presets.md), and
