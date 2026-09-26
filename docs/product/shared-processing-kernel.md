@@ -70,6 +70,13 @@ canonical sample, `TargetRowBinding`, and optional finalized group.
 Membership and value selection remain independent: member/value, member/null,
 nonmember/Target-local-value, and nonmember/null are all valid outcomes.
 
+The Target post-cell projection and Untarget writer row summary use
+`accepted_cell_count` for the numeric cell population. Detection counts describe
+their explicit evidence policy and are separate from numeric availability.
+Public writers preserve the cell owner's value/no-write answer.
+Missing NL, a false detection-count flag, or a review reason cannot independently
+replace an accepted value with ND.
+
 An identity-bearing CrossSample member combines canonical sample identity with
 a discriminated owner-backed `PeakHypothesis` or physical-observation identity.
 The canonical variant tag is part of identity. Canonical serialization and

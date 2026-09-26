@@ -774,7 +774,7 @@ def test_run_projects_very_low_for_nd_rows_with_failed_nl(
             "PeakEnd": "ND",
             "PeakWidth": "ND",
             "Confidence": "VERY_LOW",
-            "Reason": "Not counted: no positive MS1 peak available.",
+            "Reason": "No quantifiable MS1 peak was retained in the searched window.",
         }
     ]
     assert long_rows[0]["Projection Reason"] == (
@@ -819,7 +819,7 @@ def test_run_leaves_confidence_blank_for_file_error_rows(
             "PeakEnd": "ERROR",
             "PeakWidth": "ERROR",
             "Confidence": "",
-            "Reason": "",
+            "Reason": "RAW file could not be processed.",
         }
     ]
     assert long_rows[0]["Product State"] == "excluded"
@@ -1535,7 +1535,7 @@ def test_istd_wider_recovery_candidate_audit_uses_recovered_trace(
     )
 
 
-def test_paired_analyte_blanks_mismatched_target_anchor_peak_as_ambiguous(
+def test_paired_analyte_preserves_mismatched_target_anchor_peak_as_ambiguous(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     config = _config(tmp_path)
@@ -1576,9 +1576,12 @@ def test_paired_analyte_blanks_mismatched_target_anchor_peak_as_ambiguous(
     output = _run(config, targets)
 
     rows = _read_csv(config.output_csv)
-    assert rows[0]["Analyte_RT"] == "ND"
-    assert rows[0]["Analyte_Int"] == "ND"
-    assert rows[0]["Analyte_Area"] == "ND"
+    expected_peak = _formatted_peak_columns(
+        "Analyte", output.file_results[0].results["Analyte"]
+    )
+    assert rows[0]["Analyte_RT"] == "13.0600"
+    assert rows[0]["Analyte_Int"] == expected_peak["Analyte_Int"]
+    assert rows[0]["Analyte_Area"] == expected_peak["Analyte_Area"]
     long_rows = _read_csv(config.output_csv.with_name("xic_results_long.csv"))
     analyte_row = next(row for row in long_rows if row["Target"] == "Analyte")
     assert analyte_row["Confidence"] == "VERY_LOW"
@@ -1757,12 +1760,15 @@ def test_paired_analyte_istd_rt_fallback_does_not_force_counted_detection(
         ),
     )
 
-    _run(config, targets)
+    output = _run(config, targets)
 
     long_rows = _read_csv(config.output_csv.with_name("xic_results_long.csv"))
     analyte_row = next(row for row in long_rows if row["Target"] == "Analyte")
-    assert analyte_row["RT"] == "ND"
-    assert analyte_row["Area"] == "ND"
+    expected_peak = _formatted_peak_columns(
+        "Analyte", output.file_results[0].results["Analyte"]
+    )
+    assert analyte_row["RT"] == "13.7200"
+    assert analyte_row["Area"] == expected_peak["Analyte_Area"]
     assert analyte_row["NL"] == "NL_FAIL"
     assert analyte_row["Product State"] == "not_counted"
     assert analyte_row["Counted Detection"] == "FALSE"
@@ -1772,7 +1778,7 @@ def test_paired_analyte_istd_rt_fallback_does_not_force_counted_detection(
     )
 
 
-def test_paired_analyte_fallback_blanks_not_counted_peak_from_matrix(
+def test_paired_analyte_fallback_preserves_not_counted_peak_in_matrix(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     config = _config(tmp_path)
@@ -1816,12 +1822,15 @@ def test_paired_analyte_fallback_blanks_not_counted_peak_from_matrix(
     output = _run(config, targets)
 
     rows = _read_csv(config.output_csv)
-    assert rows[0]["Analyte_RT"] == "ND"
-    assert rows[0]["Analyte_Area"] == "ND"
+    expected_peak = _formatted_peak_columns(
+        "Analyte", output.file_results[0].results["Analyte"]
+    )
+    assert rows[0]["Analyte_RT"] == "14.3000"
+    assert rows[0]["Analyte_Area"] == expected_peak["Analyte_Area"]
     long_rows = _read_csv(config.output_csv.with_name("xic_results_long.csv"))
     analyte_row = next(row for row in long_rows if row["Target"] == "Analyte")
-    assert analyte_row["RT"] == "ND"
-    assert analyte_row["Area"] == "ND"
+    assert analyte_row["RT"] == expected_peak["Analyte_RT"]
+    assert analyte_row["Area"] == expected_peak["Analyte_Area"]
     assert analyte_row["Confidence"] == "VERY_LOW"
     assert analyte_row["Product State"] == "ambiguous"
     assert analyte_row["Counted Detection"] == "FALSE"
@@ -2324,9 +2333,7 @@ def _formatted_peak_columns(
         f"{label}_Area": f"{facts.area_counts_seconds:.2f}",
         f"{label}_PeakStart": f"{facts.left_rt_min:.4f}",
         f"{label}_PeakEnd": f"{facts.right_rt_min:.4f}",
-        f"{label}_PeakWidth": (
-            f"{facts.right_rt_min - facts.left_rt_min:.4f}"
-        ),
+        f"{label}_PeakWidth": (f"{facts.right_rt_min - facts.left_rt_min:.4f}"),
     }
 
 
@@ -2351,7 +2358,7 @@ def _formatted_long_success_row(
         "PeakEnd": peak[f"{label}_PeakEnd"],
         "PeakWidth": peak[f"{label}_PeakWidth"],
         "Confidence": "HIGH",
-        "Reason": "Detected.",
+        "Reason": "MS1 peak measured.",
     }
 
 
@@ -2465,16 +2472,12 @@ def _bind_fixture_candidates_to_physical_segments(
     for candidate in result.candidates:
         physical = min(
             physical_candidates,
-            key=lambda item: abs(
-                item.selection_apex_rt - candidate.selection_apex_rt
-            ),
+            key=lambda item: abs(item.selection_apex_rt - candidate.selection_apex_rt),
         )
         replacements[candidate] = replace(
             candidate,
             proposal_sources=tuple(
-                dict.fromkeys(
-                    (*candidate.proposal_sources, *physical.proposal_sources)
-                )
+                dict.fromkeys((*candidate.proposal_sources, *physical.proposal_sources))
             ),
         )
     return replace(

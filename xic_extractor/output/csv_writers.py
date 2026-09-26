@@ -5,7 +5,10 @@ from typing import Protocol
 from xic_extractor.config import ExtractionConfig, Target
 from xic_extractor.neutral_loss import CandidateMS2Evidence, NLResult
 from xic_extractor.output.detection import is_accepted_result_detection
-from xic_extractor.output.reason_display import display_product_reason
+from xic_extractor.output.reason_display import (
+    display_measurement_reason,
+    display_nl_evidence,
+)
 from xic_extractor.output.schema import (
     DIAGNOSTIC_HEADERS,
     LONG_HEADERS,
@@ -191,6 +194,7 @@ def _long_output_rows(
             "RT": "",
             "Area": "",
             "NL": "",
+            "NL Evidence": "",
             "Int": "",
             "IntSmoothed": "",
             "PeakStart": "",
@@ -203,12 +207,19 @@ def _long_output_rows(
         if file_result.error is not None:
             _set_long_ms1_values(row, "ERROR")
             row["NL"] = "ERROR" if target.neutral_loss_da is not None else ""
+            row["NL Evidence"] = display_nl_evidence(
+                "ERROR", configured=target.neutral_loss_da is not None
+            )
+            row["Reason"] = "RAW file could not be processed."
             row.update(_error_projection_fields())
         else:
             result = file_result.results[target.label]
             _set_long_peak_values(row, result)
             row["NL"] = (
                 result.nl_token or "" if target.neutral_loss_da is not None else ""
+            )
+            row["NL Evidence"] = display_nl_evidence(
+                result.nl_token, configured=target.neutral_loss_da is not None
             )
             row["Confidence"] = _display_confidence(result)
             row["Reason"] = _display_reason(result)
@@ -325,8 +336,8 @@ def _projection_fields(
 def _display_reason(result: ExtractionResultLike) -> str:
     projection = result.targeted_product_projection
     if projection is not None:
-        return display_product_reason(
-            projection.product_state,
+        return display_measurement_reason(
+            has_quantifiable_peak=_has_reported_peak(result),
             review_reasons=projection.review_reasons,
             conflict_reasons=projection.conflict_reasons,
             not_counted_reasons=projection.not_counted_reasons,
@@ -400,7 +411,7 @@ def _set_long_ms1_values(row: dict[str, str], value: str) -> None:
 
 
 def _set_long_peak_values(row: dict[str, str], result: ExtractionResultLike) -> None:
-    if not _should_report_peak_values(result):
+    if not _has_reported_peak(result):
         _set_long_ms1_values(row, "ND")
         return
     row["RT"] = _format_peak_decimal(result.reported_rt, digits=4)
@@ -456,7 +467,7 @@ def _set_peak_values(
     target: Target,
     result: ExtractionResultLike,
 ) -> None:
-    if not _should_report_peak_values(result):
+    if not _has_reported_peak(result):
         for suffix in MS1_SUFFIXES:
             row[f"{target.label}_{suffix}"] = "ND"
         return
@@ -499,13 +510,6 @@ def _has_reported_peak(result: ExtractionResultLike) -> bool:
             result.reported_peak_width,
         )
     )
-
-
-def _should_report_peak_values(result: ExtractionResultLike) -> bool:
-    projection = result.targeted_product_projection
-    if projection is not None and not projection.counted_detection:
-        return False
-    return _has_reported_peak(result)
 
 
 def _format_peak_decimal(value: float | None, *, digits: int) -> str:

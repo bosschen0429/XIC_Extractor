@@ -3,6 +3,8 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Literal
 
+import pytest
+
 from xic_extractor.config import ExtractionConfig, Target
 from xic_extractor.extraction.handoff_spine_runtime import (
     build_production_peak_hypotheses,
@@ -189,7 +191,7 @@ def test_row_builders_report_selected_candidate_nl_before_target_window_nl() -> 
     assert long_row["NL"] == "NL_FAIL"
 
 
-def test_not_counted_product_projection_blanks_matrix_peak_values() -> None:
+def test_not_counted_product_projection_preserves_matrix_peak_values() -> None:
     target = _target("WithNL")
     result = replace(
         _result(nl=NLResult("NL_FAIL", 125.0, None, 1, 0, 1)),
@@ -211,17 +213,18 @@ def test_not_counted_product_projection_blanks_matrix_peak_values() -> None:
     wide_row = _output_row(file_result, [target])
     long_row = _long_output_rows(file_result, [target])[0]
 
-    for suffix in (
-        "RT",
-        "Int",
-        "IntSmoothed",
-        "Area",
-        "PeakStart",
-        "PeakEnd",
-        "PeakWidth",
-    ):
-        assert wide_row[f"WithNL_{suffix}"] == "ND"
-        assert long_row[suffix if suffix != "PeakWidth" else "PeakWidth"] == "ND"
+    expected_peak = {
+        "RT": "9.0000",
+        "Int": "500",
+        "IntSmoothed": "450",
+        "Area": "123.45",
+        "PeakStart": "8.9000",
+        "PeakEnd": "9.2000",
+        "PeakWidth": "0.3000",
+    }
+    for suffix, value in expected_peak.items():
+        assert wide_row[f"WithNL_{suffix}"] == value
+        assert long_row[suffix] == value
     assert wide_row["WithNL_NL"] == "NL_FAIL"
     assert long_row["NL"] == "NL_FAIL"
     assert long_row["Product State"] == "not_counted"
@@ -246,13 +249,14 @@ def test_write_wide_and_long_csv(tmp_path: Path) -> None:
         "RT": "9.0000",
         "Area": "123.45",
         "NL": "WARN_12.3ppm",
+        "NL Evidence": "Observed with tolerance warning",
         "Int": "500",
         "IntSmoothed": "450",
         "PeakStart": "8.9000",
         "PeakEnd": "9.2000",
         "PeakWidth": "0.3000",
         "Confidence": "LOW",
-        "Reason": "Detected; review: weak local signal-to-noise.",
+        "Reason": "MS1 peak measured; review: weak local signal-to-noise.",
         "Product State": "detected_flagged",
         "Counted Detection": "TRUE",
         "Review State": "flagged",
@@ -457,7 +461,7 @@ def test_long_and_score_breakdown_rows_use_targeted_product_projection(
     assert long_row["Confidence"] == "VERY_LOW"
     assert (
         long_row["Reason"]
-        == "Detected; review: MS2/NL may be missing from DDA sampling."
+        == "MS1 peak measured; review: MS2/NL may be missing from DDA sampling."
     )
     assert long_row["Product State"] == "detected_flagged"
     assert long_row["Counted Detection"] == "TRUE"
@@ -494,7 +498,7 @@ def test_long_row_reason_prefers_projection_over_legacy_not_counted_text() -> No
 
     assert long_row["Counted Detection"] == "TRUE"
     assert long_row["Product State"] == "detected_flagged"
-    assert long_row["Reason"].startswith("Detected; review:")
+    assert long_row["Reason"].startswith("MS1 peak measured; review:")
     assert "not counted" not in long_row["Reason"]
 
 
@@ -524,7 +528,10 @@ def test_long_row_confidence_follows_not_counted_projection() -> None:
     assert long_row["Product State"] == "not_counted"
     assert long_row["Counted Detection"] == "FALSE"
     assert long_row["Confidence"] == "VERY_LOW"
-    assert long_row["Reason"] == "Not counted: no positive MS1 peak available."
+    assert (
+        long_row["Reason"]
+        == "MS1 peak measured; review: no positive MS1 peak available."
+    )
 
 
 def test_long_reason_explains_conflict_without_repeating_support() -> None:
@@ -544,11 +551,13 @@ def test_long_reason_explains_conflict_without_repeating_support() -> None:
     result = replace(_result(), targeted_product_projection=projection)
     row = _long_output_rows(FileResult("SampleA", {target.label: result}), [target])[0]
 
-    assert (
-        row["Reason"]
-        == "Not counted: peak position conflicts with the RT reference/window."
+    assert row["Reason"] == (
+        "MS1 peak measured; review: "
+        "peak position conflicts with the RT reference/window."
     )
-    assert row["RT"] == "ND"
+    assert row["RT"] == "9.0000"
+    assert row["Area"] == "123.45"
+    assert row["Counted Detection"] == "FALSE"
     assert row["Projection Reason"] == projection.projection_reason
     assert row["Projection Support Reasons"] == "ms1_coherent; candidate_aligned_ms2_nl"
     assert row["Projection Conflict Reasons"] == "targeted_rt_conflict"
@@ -560,7 +569,7 @@ def test_long_reason_explains_conflict_without_repeating_support() -> None:
         FileResult("SampleA", {target.label: result}), [target]
     )[0]
     assert precise_row["Reason"] == (
-        "Not counted: peak is off-centre in the RT window (borderline)."
+        "MS1 peak measured; review: peak is off-centre in the RT window (borderline)."
     )
 
 
@@ -580,7 +589,10 @@ def test_long_reason_prioritizes_unresolved_boundaries_over_review_flags() -> No
     result = replace(_result(), targeted_product_projection=projection)
     row = _long_output_rows(FileResult("SampleA", {target.label: result}), [target])[0]
 
-    assert row["Reason"] == "Not counted: peak/integration boundaries are unresolved."
+    assert (
+        row["Reason"]
+        == "MS1 peak measured; review: peak/integration boundaries are unresolved."
+    )
     assert row["Projection Review Reasons"] == (
         "legacy_confidence_review; selected_envelope_split_supported"
     )
@@ -657,7 +669,7 @@ def test_csv_rows_preserve_values_with_runtime_selected_hypothesis() -> None:
         if header in {*TARGETED_PRODUCT_PROJECTION_HEADERS, "Reason"}:
             continue
         assert selected_long[header] == fallback_value
-    assert selected_long["Reason"].startswith("Detected; review:")
+    assert selected_long["Reason"].startswith("MS1 peak measured; review:")
     assert selected_long["Product State"]
     assert selected_long["Counted Detection"] in {"TRUE", "FALSE"}
 
@@ -714,7 +726,9 @@ def test_csv_rows_project_selected_integration_values_when_present() -> None:
     assert long_row["PeakWidth"] == "0.4200"
     assert long_row["NL"] == "WARN_12.3ppm"
     assert long_row["Confidence"] == "LOW"
-    assert long_row["Reason"] == "Detected; review: weak local signal-to-noise."
+    assert (
+        long_row["Reason"] == "MS1 peak measured; review: weak local signal-to-noise."
+    )
 
 
 def test_csv_rows_preserve_no_peak_nd_projection() -> None:
@@ -798,3 +812,42 @@ def _selected_hypothesis_with_integration(
         evidence=EvidenceVector(confidence="LOW", reason="selected spine"),
         audit=AuditTrail(selected=True, selection_rank=1),
     )
+
+
+@pytest.mark.parametrize(
+    ("nl", "configured", "expected"),
+    [
+        (None, False, "Not requested"),
+        (NLResult("OK", 1.0, 9.0, 1, 0, 1), True, "Observed"),
+        (NLResult("WARN", 25.0, 9.0, 1, 0, 1), True, "Observed with tolerance warning"),
+        (
+            NLResult("NL_FAIL", 125.0, None, 1, 0, 1),
+            True,
+            "Not observed within tolerance",
+        ),
+        (NLResult("NO_MS2", None, None, 0, 0, 0), True, "No MS2 spectrum"),
+    ],
+)
+def test_long_csv_reports_configured_nl_observation(
+    tmp_path: Path, nl: NLResult | None, configured: bool, expected: str
+) -> None:
+    config = _config(tmp_path)
+    target = _target("WithNL", neutral_loss_da=116.0474 if configured else None)
+    write_long_csv(
+        config, [target], [FileResult("SampleA", {target.label: _result(nl=nl)})]
+    )
+    row = _read_csv(config.output_csv.with_name("xic_results_long.csv"))[0]
+    assert row["NL Evidence"] == expected
+    assert row["Area"] == "123.45"
+
+
+def test_long_csv_reports_file_processing_error(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    write_long_csv(
+        config, [_target("WithNL")], [FileResult("Bad", {}, error="read failed")]
+    )
+    row = _read_csv(config.output_csv.with_name("xic_results_long.csv"))[0]
+    assert row["NL Evidence"] == "Processing error"
+    assert row["Reason"] == "RAW file could not be processed."
+    assert row["Area"] == "ERROR"
+    assert row["Counted Detection"] == "FALSE"

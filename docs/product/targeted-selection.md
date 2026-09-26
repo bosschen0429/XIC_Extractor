@@ -87,6 +87,18 @@ CrossSample, ModeTrack, Backfill, or selected-value implementation.
    typed reason facts, and Review Queue routing. The Targeted owner must not
    recompute the value.
 
+### Numeric output and evidence
+
+- Finalized CSV/workbook RT, area, and bounds render the cell owner's numeric
+  answer even when `Counted Detection` is false.
+- Count, confidence, and review remain separate evidence/policy fields.
+- A typed no-write clears the retained peak before rendering.
+- Missing NL alone is not another writer veto.
+- Accepted MS1-only cells in Untargeted output follow the same distinction.
+- The main workbook table shows measurements, integration boundaries,
+  `NL Evidence`, and a plain-language `Reason` for user interpretation.
+- Internal product/count/review codes remain available in advanced columns.
+
 ### Detection and review policy
 
 - Region, boundary, and selected-envelope logic are candidate and
@@ -150,8 +162,10 @@ CrossSample, ModeTrack, Backfill, or selected-value implementation.
 | Surface | Role |
 | --- | --- |
 | Targeted CSV/workbook fields | Public output for target decisions |
-| `Product State` / `Counted Detection` | User-facing product projection |
-| Confidence and reason fields | Existing review surface rendered from typed projection decisions |
+| RT / Area / PeakStart / PeakEnd | Retained cell-owner measurements |
+| `NL Evidence` / `Reason` | Human-readable observations and review context |
+| `Product State` / `Counted Detection` / `Review State` | Advanced product-policy fields; do not veto a retained numeric value |
+| Confidence | Advanced review context rendered from typed projection decisions |
 | Region and selected-envelope candidates | Boundary and model-selection evidence |
 | Target-pair RT calibration artifacts | Activation-gated selection support |
 | Expected-diff packets | Required gate for output-changing behavior |

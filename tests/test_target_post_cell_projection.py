@@ -55,7 +55,7 @@ def test_target_post_cell_projection_closes_fixed_row_counts_and_review_routing(
     )
     assert completed.include_row is True
     assert completed.inclusion_reason == "fixed_target_row"
-    assert completed.counted_detection_count == 1
+    assert completed.accepted_cell_count == 1
     assert completed.no_write_count == 1
     assert completed.decision_count == 2
     assert completed.review_queue_count == 1
@@ -92,7 +92,7 @@ def test_disjoint_internal_groups_bind_one_fixed_target_row(
     completed = project_target_post_cell(pre_cell, decisions)
 
     assert pre_cell.row_binding.variant == "bound"
-    assert completed.counted_detection_count == 2
+    assert completed.accepted_cell_count == 2
     assert completed.no_write_count == 0
     assert completed.review_queue_count == 0
 
@@ -193,7 +193,7 @@ def test_target_post_cell_validation_rejects_derived_count_substitution(
         decide_target_cell_population(pre_cell),
     )
 
-    object.__setattr__(completed, "counted_detection_count", 1)
+    object.__setattr__(completed, "accepted_cell_count", 1)
 
     with pytest.raises(TargetProjectionContractError, match="counts"):
         validate_target_post_cell_projection(completed)

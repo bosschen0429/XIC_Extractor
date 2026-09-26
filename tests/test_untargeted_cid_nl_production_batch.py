@@ -1313,7 +1313,6 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     def unexpected_mt0(*args, **kwargs):
         raise AssertionError("retained production must not execute initial refinement")
 
-
     hypothesis_universe_compositions = []
     compose_hypothesis_universe = (
         bootstrap_owner.compose_peak_hypotheses_from_assessment_universe
@@ -4922,6 +4921,173 @@ def test_production_composition_closes_recovered_observation_without_candidate(
         assert float(identity_row["RT"]) == pytest.approx(row.family_center_rt)
         assert identity_row["center_rt_basis"] == row.center_rt_basis
         assert identity_row["center_weight_basis"] == row.center_weight_basis
+
+
+def test_atomic_publication_preserves_ms1_only_backfill_and_no_peak(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    sample_stems = ("Support1", "Support2", "Support3", "MS1Only", "NoPeak")
+    raw_paths = tuple(tmp_path / f"{stem}.synthetic" for stem in sample_stems)
+    settings = _settings()
+    peak_config = _peak_config(tmp_path)
+    source_raws = {}
+    for index, (raw_path, apex_rt) in enumerate(
+        zip(raw_paths, (7.97, 7.99, 8.01, 8.03, 8.05), strict=True),
+        start=1,
+    ):
+        raw_path.write_bytes(f"ms1-only-publication:{raw_path.stem}".encode())
+        source_raw = _FakeRaw((apex_rt,))
+        source_raw.intensity *= index
+        if raw_path.stem in {"MS1Only", "NoPeak"}:
+            source_raw.scans = ()
+        if raw_path.stem == "NoPeak":
+            source_raw.intensity[:] = 0.0
+        source_raws[raw_path] = source_raw
+    candidates_by_sample = {
+        raw_path.stem: tuple(
+            _current_candidates(
+                source_raws[raw_path],
+                raw_file=raw_path,
+                settings=settings,
+                peak_config=peak_config,
+            )
+        )
+        for raw_path in raw_paths
+    }
+    assert all(len(candidates_by_sample[stem]) == 1 for stem in sample_stems[:3])
+    assert candidates_by_sample["MS1Only"] == candidates_by_sample["NoPeak"] == ()
+    for raw_path in raw_paths[3:]:
+        assert (
+            tuple(
+                source_raws[raw_path].iter_ms2_scans(settings.rt_min, settings.rt_max)
+            )
+            == ()
+        )
+    assert source_raws[raw_paths[3]].intensity.max() > 0
+    assert source_raws[raw_paths[4]].intensity.max() == 0
+    batch = build_untargeted_cid_nl_production_batch(
+        raw_paths=raw_paths,
+        sample_metadata=tuple(
+            SampleMetadata(
+                sample_name=stem,
+                raw_stem=stem,
+                injection_order=index,
+                sample_role="study_sample",
+            )
+            for index, stem in enumerate(sample_stems, start=1)
+        ),
+        settings=settings,
+        peak_config=peak_config,
+        candidates_by_sample=candidates_by_sample,
+        discovery_receipts_by_sample=_discovery_receipts(
+            tmp_path, raw_paths, candidates_by_sample
+        ),
+        dll_dir=tmp_path,
+        sample_identity_namespace="study:ms1-only-publication",
+    )
+    _install_runtime_raws(monkeypatch, sources_by_path=source_raws, tmp_path=tmp_path)
+
+    runtime = execute_untargeted_cid_nl_production_batch(
+        batch,
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+        recovery_marker=OwnerPathRuntimeMarker(
+            tmp_path / "runtime.json", "ms1-only-publication"
+        ),
+    )
+    assert runtime.succeeded
+    recovered = {
+        result.job.sample.metadata.raw_stem: result for result in runtime.sample_results
+    }
+    assert recovered["MS1Only"].backfill_attempt is not None
+    assert recovered["NoPeak"].backfill_attempt is not None
+    assert recovered["MS1Only"].effective_assessment.content.method_result == "HOLD"
+    assert recovered["NoPeak"].effective_assessment.content.method_result == "HOLD"
+    alignment_config = AlignmentConfig(anchor_min_seed_events=1)
+    completed = compose_untargeted_cid_nl_production_result(
+        batch, runtime, alignment_config=alignment_config
+    )
+    (child,) = completed.application_result.children
+    (owner_row,) = child.completed_projection.rows
+    owner_decisions = {
+        decision.subject.canonical_sample.metadata.raw_stem: decision
+        for decision in owner_row.decisions
+    }
+    assert set(owner_decisions) == set(sample_stems)
+    assert owner_row.counts.numeric_cells == 4
+    ms1_only = owner_decisions["MS1Only"]
+    assert ms1_only.variant == "numeric" and ms1_only.value > 0
+    assert ms1_only.evidence.evidence_states == ("ms1_only_backfill_observation",)
+    assert len(ms1_only.evidence.ms1_only_backfill_observations) == 1
+    assert ms1_only.subject.member_subject is None
+    no_peak = owner_decisions["NoPeak"]
+    assert no_peak.value is None
+    assert no_peak.variant == "unavailable"
+    assert all(owner_decisions[stem].variant == "numeric" for stem in sample_stems[:3])
+    assert len({owner_decisions[stem].value for stem in sample_stems[:4]}) == 4
+
+    writer_inputs = project_completed_untarget_batch_writer_inputs(completed)
+    outputs = output_paths(
+        tmp_path / "writer",
+        output_level="machine",
+        emit_alignment_cells=True,
+        emit_alignment_status_matrix=False,
+    )
+    write_outputs_atomic(
+        outputs,
+        writer_inputs.matrix,
+        metadata=alignment_metadata(
+            discovery_batch_index=tmp_path / "discovery_batch_index.csv",
+            raw_dir=tmp_path,
+            dll_dir=tmp_path,
+            owner_build_xic_backend="raw",
+            owner_backfill_xic_backend="raw",
+            output_level="machine",
+            peak_config=peak_config,
+            audit_evidence_mode="none",
+            heavy_audit_enabled=False,
+            require_discovery_owner_closure=True,
+            owner_backfill_peak_fact_provenance_row_count=1,
+        ),
+        ownership=OwnershipBuildResult(owners=(), assignments=(), ambiguous_records=()),
+        alignment_config=alignment_config,
+        production_decisions=writer_inputs.production_decisions,
+    )
+    assert outputs.matrix_tsv is not None
+    assert outputs.review_tsv is not None
+    assert outputs.cells_tsv is not None
+    with outputs.matrix_tsv.open(encoding="utf-8", newline="") as handle:
+        (matrix_row,) = tuple(csv.DictReader(handle, delimiter="	"))
+    with outputs.review_tsv.open(encoding="utf-8", newline="") as handle:
+        (review_row,) = tuple(csv.DictReader(handle, delimiter="	"))
+    with outputs.cells_tsv.open(encoding="utf-8", newline="") as handle:
+        cell_rows = {
+            row["sample_stem"]: row for row in csv.DictReader(handle, delimiter="	")
+        }
+    assert set(cell_rows) == set(sample_stems)
+    for stem in sample_stems[:4]:
+        value = owner_decisions[stem].value
+        assert float(matrix_row[stem]) == pytest.approx(value, rel=5e-6)
+        assert float(cell_rows[stem]["area"]) == pytest.approx(value, rel=5e-6)
+    assert matrix_row["NoPeak"] == cell_rows["NoPeak"]["area"] == ""
+    assert review_row["detected_count"] == "3"
+    assert review_row["quantifiable_detected_count"] == "3"
+    assert review_row["quantifiable_backfill_count"] == "1"
+    assert review_row["accepted_backfill_count"] == "1"
+    assert review_row["accepted_cell_count"] == "4"
+    assert review_row["absent_count"] == "1"
+    for stem in sample_stems[:3]:
+        assert cell_rows[stem]["status"] == "detected"
+        assert cell_rows[stem]["source_candidate_id"] == (
+            candidates_by_sample[stem][0].candidate_id
+        )
+    assert cell_rows["MS1Only"]["status"] == "backfilled"
+    assert cell_rows["MS1Only"]["source_candidate_id"] == ""
+    assert cell_rows["MS1Only"]["gap_fill_state"] == "accepted"
+    assert cell_rows["MS1Only"]["gap_fill_reason"] == "ms1_only_backfill_observation"
+    assert cell_rows["NoPeak"]["status"] == "absent"
+    assert cell_rows["NoPeak"]["source_candidate_id"] == ""
+    assert cell_rows["NoPeak"]["missing_observation_state"] == "unavailable"
 
 
 @pytest.mark.parametrize("exclude_all", (False, True))

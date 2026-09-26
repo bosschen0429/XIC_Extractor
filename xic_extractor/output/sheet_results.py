@@ -4,7 +4,6 @@ from openpyxl.utils import get_column_letter
 
 from xic_extractor.output.reason_display import (
     display_conflicts_and_concerns,
-    display_row_reason,
     display_supporting_evidence,
 )
 from xic_extractor.output.schema import LONG_ADVANCED_HEADERS as _ADVANCED_HEADERS
@@ -41,7 +40,6 @@ def _build_data_sheet(ws, rows: list[dict[str, str]]) -> None:
     for row_idx, row in enumerate(rows, start=2):
         alt = row_idx % 2 == 0
         display_fields = {
-            "Reason": display_row_reason(row),
             "Supporting Evidence": display_supporting_evidence(row),
             "Conflicts / Concerns": display_conflicts_and_concerns(row),
         }
@@ -54,7 +52,9 @@ def _build_data_sheet(ws, rows: list[dict[str, str]]) -> None:
                 cell,
                 fill=_long_cell_fill(header, raw_val, alt),
                 alignment=(
-                    CENTER_WRAP if header in {"Reason", *_EVIDENCE_HEADERS} else CENTER
+                    CENTER_WRAP
+                    if header in {"Reason", "NL Evidence", *_EVIDENCE_HEADERS}
+                    else CENTER
                 ),
                 border=BORDER,
             )

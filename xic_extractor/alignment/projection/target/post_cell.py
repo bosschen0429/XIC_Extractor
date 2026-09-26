@@ -28,9 +28,7 @@ TargetReviewQueueReason: TypeAlias = Literal[
 ]
 
 _POST_CELL_MINT_TOKEN = object()
-_TARGET_NO_WRITE_REASONS = frozenset(
-    {"searched_no_observation", "not_quantifiable"}
-)
+_TARGET_NO_WRITE_REASONS = frozenset({"searched_no_observation", "not_quantifiable"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,7 +58,7 @@ class TargetPostCellProjection:
 
     pre_cell_projection: TargetPreCellProjection
     decisions: tuple[ProductionCellDecision, ...]
-    counted_detection_count: int
+    accepted_cell_count: int
     no_write_count: int
     review_queue_references: tuple[TargetReviewQueueReference, ...]
     _completion_seal: tuple[object, ...] = field(
@@ -122,7 +120,7 @@ def project_target_post_cell(
         decisions,
         owner_subjects=owner_subjects,
     )
-    counted_detection_count, no_write_count = _decision_counts(ordered_decisions)
+    accepted_cell_count, no_write_count = _decision_counts(ordered_decisions)
     review_queue_references = _build_review_queue_references(
         pre_cell_projection.row_binding,
         ordered_decisions,
@@ -130,7 +128,7 @@ def project_target_post_cell(
     return TargetPostCellProjection(
         pre_cell_projection=pre_cell_projection,
         decisions=ordered_decisions,
-        counted_detection_count=counted_detection_count,
+        accepted_cell_count=accepted_cell_count,
         no_write_count=no_write_count,
         review_queue_references=review_queue_references,
         _mint_token=_POST_CELL_MINT_TOKEN,
@@ -165,9 +163,9 @@ def validate_target_post_cell_projection(
             "completed Target decisions are not in canonical subject order"
         )
 
-    expected_counted, expected_no_write = _decision_counts(ordered_decisions)
+    expected_accepted, expected_no_write = _decision_counts(ordered_decisions)
     if (
-        projection.counted_detection_count != expected_counted
+        projection.accepted_cell_count != expected_accepted
         or projection.no_write_count != expected_no_write
     ):
         raise TargetProjectionContractError(
@@ -237,8 +235,8 @@ def _target_completion_state(
         ),
         retained_owner_digest(projection.decisions),
         (
-            type(projection.counted_detection_count),
-            projection.counted_detection_count,
+            type(projection.accepted_cell_count),
+            projection.accepted_cell_count,
         ),
         (type(projection.no_write_count), projection.no_write_count),
         retained_owner_digest(projection.review_queue_references),
@@ -328,8 +326,8 @@ def _bind_complete_decision_population(
 def _decision_counts(
     decisions: tuple[ProductionCellDecision, ...],
 ) -> tuple[int, int]:
-    counted = sum(decision.variant == "numeric" for decision in decisions)
-    return counted, len(decisions) - counted
+    accepted = sum(decision.variant == "numeric" for decision in decisions)
+    return accepted, len(decisions) - accepted
 
 
 def _build_review_queue_references(

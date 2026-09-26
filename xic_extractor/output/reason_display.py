@@ -19,9 +19,12 @@ _REASON_TEXT = {
     "targeted_rt_conflict": "peak position conflicts with the RT reference/window",
     "targeted_rt_review": "RT position needs review",
     "anchor_conflict": "peak RT disagrees with the ISTD anchor",
-    "candidate_aligned_ms2_nl_conflict": "candidate MS2/NL support failed",
-    "hard_local_quality_conflict": "local peak quality failed",
-    "trace_morphology_conflict": "XIC shape/continuity failed quality checks",
+    "candidate_aligned_ms2_nl_conflict": (
+        "expected candidate MS2/NL support was not observed"
+    ),
+    "hard_nl_conflict": "expected NL support was not observed",
+    "hard_local_quality_conflict": "local peak quality needs review",
+    "trace_morphology_conflict": "XIC shape/continuity needs review",
     "hard_quality_flag_conflict": "major XIC quality flags",
     "trace_morphology_review": "XIC shape/continuity needs review",
     "chrom_peak_segment_shoulder_review": "shoulder near the selected peak",
@@ -32,6 +35,10 @@ _REASON_TEXT = {
     ),
     "missing_positive_ms1_peak": "no positive MS1 peak available",
     "plausible_dda_nl_dropout": "MS2/NL may be missing from DDA sampling",
+    "analyte_nl_fail_requires_policy": (
+        "configured neutral loss was not observed within tolerance"
+    ),
+    "analyte_missing_ms2_requires_policy": "no MS2 spectrum for the selected peak",
     "local_sn_minor": "weak local signal-to-noise",
     "file_error": "RAW file could not be processed",
 }
@@ -44,49 +51,44 @@ _RT_CONCERN_TEXT = {
 }
 
 
-def display_product_reason(
-    product_state: str,
+def display_measurement_reason(
     *,
+    has_quantifiable_peak: bool,
     review_reasons: tuple[str, ...] = (),
     conflict_reasons: tuple[str, ...] = (),
     not_counted_reasons: tuple[str, ...] = (),
     exclusion_reasons: tuple[str, ...] = (),
     concerns: str = "",
 ) -> str:
-    """Summarize the decisive owner category; never mix support into the reason."""
-    if product_state == "detected_clean":
-        return "Detected."
-    if product_state == "detected_flagged":
-        if review_reasons:
-            return f"Detected; review: {_reason_text(review_reasons[0])}."
-        return "Detected; review required."
-    reasons = exclusion_reasons or conflict_reasons or not_counted_reasons
+    """Describe retained measurements and review evidence without denying a value."""
+    if not has_quantifiable_peak:
+        return "No quantifiable MS1 peak was retained in the searched window."
+    reasons = (
+        conflict_reasons or not_counted_reasons or exclusion_reasons or review_reasons
+    )
     if reasons:
         if reasons[0] == "targeted_rt_conflict":
             tokens = frozenset(part.strip() for part in concerns.split(";"))
             for token, text in _RT_CONCERN_TEXT.items():
                 if token in tokens:
-                    return f"Not counted: {text}."
-        return f"Not counted: {_reason_text(reasons[0])}."
-    return "Not counted: decision unresolved; review required."
+                    return f"MS1 peak measured; review: {text}."
+        return f"MS1 peak measured; review: {_reason_text(reasons[0])}."
+    return "MS1 peak measured."
 
 
-def display_row_reason(row: Mapping[str, str]) -> str:
-    reason = row.get("Reason", "")
-    state = row.get("Product State", "")
-    if not state or row.get("Counted Detection", "").upper() not in {"TRUE", "FALSE"}:
-        return reason
-    # Current CSV/in-memory rows already carry the owner's presentation; reuse it.
-    # Older canonical rows carry the long serialized projection instead.
-    if reason.startswith(("Detected.", "Detected; review:", "Not counted:")):
-        return reason
-    return display_product_reason(
-        state,
-        review_reasons=_row_reasons(row, "Projection Review Reasons"),
-        conflict_reasons=_row_reasons(row, "Projection Conflict Reasons"),
-        not_counted_reasons=_row_reasons(row, "Projection Not Counted Reasons"),
-        exclusion_reasons=_row_reasons(row, "Projection Exclusion Reasons"),
-    )
+def display_nl_evidence(token: str | None, *, configured: bool) -> str:
+    """Render the configured observation; lack of support is not chemical absence."""
+    if not configured:
+        return "Not requested"
+    if token and token.startswith("WARN_"):
+        return "Observed with tolerance warning"
+    return {
+        "OK": "Observed",
+        "WARN": "Observed with tolerance warning",
+        "NL_FAIL": "Not observed within tolerance",
+        "NO_MS2": "No MS2 spectrum",
+        "ERROR": "Processing error",
+    }.get(token or "", "Unavailable")
 
 
 def display_supporting_evidence(row: Mapping[str, str]) -> str:
@@ -98,18 +100,17 @@ def display_supporting_evidence(row: Mapping[str, str]) -> str:
 
 
 def display_conflicts_and_concerns(row: Mapping[str, str]) -> str:
-    sections = []
-    for label, field in (
-        ("Conflict", "Projection Conflict Reasons"),
-        ("Not counted", "Projection Not Counted Reasons"),
-        ("Excluded", "Projection Exclusion Reasons"),
-        ("Review", "Projection Review Reasons"),
-    ):
-        reasons = _row_reasons(row, field)
-        if reasons:
-            text = "; ".join(dict.fromkeys(_reason_text(reason) for reason in reasons))
-            sections.append(f"{label}: {text}")
-    return "\n".join(sections)
+    reasons = (
+        _reason_text(reason)
+        for field in (
+            "Projection Conflict Reasons",
+            "Projection Not Counted Reasons",
+            "Projection Exclusion Reasons",
+            "Projection Review Reasons",
+        )
+        for reason in _row_reasons(row, field)
+    )
+    return "; ".join(dict.fromkeys(reasons))
 
 
 def _row_reasons(row: Mapping[str, str], field: str) -> tuple[str, ...]:

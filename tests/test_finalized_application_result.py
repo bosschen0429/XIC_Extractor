@@ -246,8 +246,8 @@ def test_target_result_rejects_substituted_completed_counts(tmp_path: Path) -> N
     scientific_core, projection = _target_completion(tmp_path / "target")
     object.__setattr__(
         projection,
-        "counted_detection_count",
-        bool(projection.counted_detection_count),
+        "accepted_cell_count",
+        bool(projection.accepted_cell_count),
     )
 
     with pytest.raises(ApplicationResultContractError, match="receipt|substituted"):
@@ -586,7 +586,8 @@ def test_untarget_owner_pickle_rebinds_completion_and_still_rejects_substitution
     assert graph_walks == []
     if tamper == "core":
         object.__setattr__(
-            restored_core, "grouping_result",
+            restored_core,
+            "grouping_result",
             copy(restored_core.grouping_result),
         )
     else:
