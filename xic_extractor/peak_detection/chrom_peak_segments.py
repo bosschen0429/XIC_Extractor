@@ -497,6 +497,14 @@ def _restore_rt_envelope_clear_splits(
     if len(connected_groups) < 2:
         return envelope_seeds
 
+    group_boundaries = (
+        context.start_index,
+        *(
+            _valley_index(canonical_residual, left[-1].index, right[0].index)
+            for left, right in zip(connected_groups, connected_groups[1:])
+        ),
+        context.end_index,
+    )
     restored = {seed.index: seed for seed in envelope_seeds}
     envelope_relations = _adjacent_relations(envelope_trace, envelope_seeds, policy)
     for index, envelope_seed in enumerate(envelope_seeds):
@@ -511,14 +519,23 @@ def _restore_rt_envelope_clear_splits(
             else envelope_relations[index].valley_index + 1
         )
         enclosed = tuple(
-            connected
-            for connected in connected_groups
+            (group_index, connected)
+            for group_index, connected in enumerate(connected_groups)
             if left <= connected[0].index <= connected[-1].index < right
         )
         if len(enclosed) < 2:
             continue
+        # Replacement groups must cover this maximum's canonical basin. Use
+        # separating valleys: smoothing can move an asymmetric maximum outside
+        # the canonical apex span. Distant flank groups cannot replace it.
+        if not (
+            group_boundaries[enclosed[0][0]]
+            <= envelope_seed.index
+            <= group_boundaries[enclosed[-1][0] + 1]
+        ):
+            continue
         restored.pop(envelope_seed.index)
-        for connected in enclosed:
+        for _, connected in enclosed:
             representative = max(
                 connected,
                 key=lambda seed: (seed.height, -seed.index),

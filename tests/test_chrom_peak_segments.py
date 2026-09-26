@@ -212,6 +212,48 @@ def test_envelope_support_preserves_doublet_and_weak_isolated_peak() -> None:
     assert result.segments[1].interval.rt_start_min > 3.6
 
 
+@pytest.mark.parametrize("reverse", (False, True))
+def test_remote_small_pulses_preserve_supported_overlapping_doublet(
+    reverse: bool,
+) -> None:
+    from xic_extractor.peak_detection.ms1_morphology import (
+        gaussian15_morphology_trace,
+    )
+
+    rt = np.linspace(0.0, 16.0, 8001)
+    signal = (
+        10000.0 * np.exp(-0.5 * ((rt - 7.5) / 0.6) ** 2)
+        + 14000.0 * np.exp(-0.5 * ((rt - 9.1) / 0.6) ** 2)
+    )
+    for center in (12.5, 13.5):
+        signal += 20.0 * np.exp(-0.5 * ((rt - center) / 0.003) ** 2)
+    if reverse:
+        signal = signal[::-1]
+    canonical = gaussian15_morphology_trace(signal, window_points=15)
+    result = enumerate_chrom_peak_segments(
+        rt,
+        canonical,
+        np.zeros_like(signal),
+        policy=ChromPeakSegmentPolicy(
+            morphology_trace_method="rt_envelope",
+            morphology_min_sigma_rt=0.08,
+            min_apex_fraction_of_context=0.0,
+            min_prominence_noise_mad=2.0,
+            baseline_return_fraction=0.0,
+            baseline_return_min_residual=0.0,
+            include_baseline_return_samples=True,
+        ),
+        acquired_intensity_values=signal,
+    )
+
+    # The two analytical broad lobes remain resolvable. Remote pulses at 0.2%
+    # of their height cannot remove either lobe and merge their intervals.
+    principal = [s for s in result.segments if 6.0 < s.apex_rt_min < 11.0]
+    expected = [6.9, 8.5] if reverse else [7.5, 9.1]
+    assert [s.apex_rt_min for s in principal] == pytest.approx(expected, abs=0.12)
+    assert principal[0].interval.rt_end_min <= principal[1].interval.rt_start_min
+
+
 def test_rt_envelope_peak_count_and_apex_are_stable_across_rt_density() -> None:
     observations: list[tuple[int, float]] = []
     for point_count in (1201, 2401):
@@ -338,3 +380,33 @@ def test_clear_valley_classification_uses_one_signal_scale() -> None:
         # The analytical valley is ~22% of either apex, below the 30%
         # clear-valley limit, even though envelope smoothing lowers the apex.
         assert not answer.requires_overlap_review
+
+
+@pytest.mark.parametrize("reverse", (False, True))
+def test_clear_split_survives_asymmetric_envelope_apex_shift(reverse: bool) -> None:
+    from xic_extractor.peak_detection.physical_peak_evaluation import (
+        evaluate_physical_peak,
+        prepare_physical_signal,
+    )
+
+    rt = np.linspace(0.0, 2.0, 1001)
+    width = np.where(rt < 1.0, 0.08, 0.005)
+    raw = (
+        10.0
+        + 1000.0 * np.exp(-0.5 * ((rt - 1.0) / width) ** 2)
+        + 1000.0 * np.exp(-0.5 * ((rt - 1.1) / 0.005) ** 2)
+    )
+    if reverse:
+        raw = raw[::-1]
+    query = 0.9 if reverse else 1.1
+    answer = evaluate_physical_peak(
+        prepare_physical_signal(rt, raw),
+        selection_subject_id="asymmetric-separated-doublet",
+        query_rt_min=query,
+    )
+
+    assert answer.state == "available"
+    assert answer.facts is not None
+    assert answer.facts.apex_rt_min == pytest.approx(query, abs=0.002)
+    assert len(answer.segment_universe.segments) == 2
+    assert not answer.requires_overlap_review
