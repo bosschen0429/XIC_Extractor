@@ -38,6 +38,15 @@ class RtCalibrationPolicy:
 
 
 @dataclass(frozen=True)
+class PriorInjection:
+    """Injection-timeline context that can explain a measured front shift."""
+
+    pre_flagged: bool
+    # Previous run is a short method under the timeline policy, at any idle.
+    after_short_run: bool
+
+
+@dataclass(frozen=True)
 class CalibrationKnot:
     """Co-eluting anchor features collapsed to one reference position."""
 
@@ -54,7 +63,7 @@ class SampleRtCalibration:
     # (observed_rt_min, reference_rt_min), strictly increasing in both.
     knots: tuple[tuple[float, float], ...]
     front_shift_min: float | None
-    possibly_perturbed: bool
+    prior_injection: PriorInjection | None
     perturbation_status: str
 
     @property
@@ -82,13 +91,14 @@ def build_batch_rt_calibration(
     detected_rt_by_feature: Mapping[str, Mapping[str, float]],
     *,
     sample_stems: Sequence[str],
-    possibly_perturbed: Mapping[str, bool],
+    prior_injections: Mapping[str, PriorInjection],
     policy: RtCalibrationPolicy,
 ) -> BatchRtCalibration:
     """Build piecewise sample knots from features detected batch-wide.
 
     ``detected_rt_by_feature`` holds directly detected apex RTs only; backfilled
-    or inferred observations must not become anchors.
+    or inferred observations must not become anchors. The measured front shift
+    decides a perturbation; the injection timeline only explains it.
     """
     samples = tuple(sorted(set(sample_stems)))
     knots, shifts_by_knot = _build_knots(detected_rt_by_feature, samples, policy)
@@ -128,15 +138,15 @@ def build_batch_rt_calibration(
 
     calibrations: dict[str, SampleRtCalibration] = {}
     for sample in samples:
-        flagged = bool(possibly_perturbed.get(sample, False))
+        prior = prior_injections.get(sample)
         front = front_shifts.get(sample)
         calibrations[sample] = SampleRtCalibration(
             sample_stem=sample,
             status=_sample_status(sample_knots[sample], sample in usable),
             knots=sample_knots[sample] if sample in usable else (),
             front_shift_min=front,
-            possibly_perturbed=flagged,
-            perturbation_status=_perturbation_status(flagged, front, center, tolerance),
+            prior_injection=prior,
+            perturbation_status=_perturbation_status(prior, front, center, tolerance),
         )
     return BatchRtCalibration(
         policy=policy,
@@ -213,15 +223,19 @@ def _sample_status(knots: tuple[tuple[float, float], ...], usable: bool) -> str:
 
 
 def _perturbation_status(
-    flagged: bool,
+    prior: PriorInjection | None,
     front_shift: float | None,
     center: float | None,
     tolerance: float | None,
 ) -> str:
-    if not flagged:
-        return "not_flagged"
     if front_shift is None or center is None or tolerance is None:
-        return "flagged_unmeasured"
+        return "unmeasured"
     if abs(front_shift - center) > tolerance:
-        return "confirmed"
-    return "flagged_unconfirmed"
+        if prior is None:
+            return "outlier_without_timeline"
+        if prior.pre_flagged or prior.after_short_run:
+            return "confirmed"
+        return "unexplained_outlier"
+    if prior is not None and prior.pre_flagged:
+        return "flagged_unconfirmed"
+    return "not_perturbed"

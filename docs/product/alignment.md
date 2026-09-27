@@ -766,14 +766,20 @@ model and has no RAW, file, or Matrix access.
   sample's first and last knot; outside that span it is unavailable, never
   extrapolated. Fewer than two knots, or crossing knots, leave the sample
   uncalibrated.
-- Perturbation confirmation consumes the
+- Measured data decides a perturbation; the
   [injection timeline](sample-metadata-qc.md#injection-timeline-diagnostic)
-  pre-flag. The front shift is the median shift at the batch's earliest knots.
-  A pre-flagged sample is `confirmed` only when its front shift differs from
-  the batch median by more than max(k × batch MAD, a minimum shift). Unflagged
-  samples are never confirmed, and a missing front knot is `flagged_unmeasured`.
-  Confirmation does not remove a sample's own calibration; no current consumer
-  reads the status.
+  explains it. The front shift is the median shift at the batch's earliest
+  knots. It is an outlier when it differs from the batch median, in either
+  direction, by more than max(k × batch MAD, a minimum shift). An outlier is
+  `confirmed` when the sample is pre-flagged or follows a short method. A short
+  method uses the timeline's persisted run-length limits without the idle
+  limit, because a short method can leave the gradient unsettled after a long
+  idle. An outlier after a full-length run is `unexplained_outlier`, such as a
+  matrix effect, and one without a timeline row is `outlier_without_timeline`.
+  A pre-flagged sample within tolerance is `flagged_unconfirmed`; a missing
+  front knot is `unmeasured`. Sample rows carry the previous injection, its run
+  length, and the idle time. Confirmation does not remove a sample's own
+  calibration; no current consumer reads the status.
 - Held-out validation compares non-anchor features before and after
   calibration on the same observations: those inside each sample's anchor span,
   for features with at least the configured fraction of such observations.

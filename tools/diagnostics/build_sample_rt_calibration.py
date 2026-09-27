@@ -14,6 +14,7 @@ from statistics import median
 
 from xic_extractor.alignment.sample_rt_calibration import (
     BatchRtCalibration,
+    PriorInjection,
     RtCalibrationPolicy,
     build_batch_rt_calibration,
 )
@@ -46,14 +47,37 @@ def read_detected_rts(
     return detected, tuple(sorted(samples))
 
 
-def read_perturbation_flags(timeline_path: Path) -> dict[str, bool]:
+def read_prior_injections(
+    timeline_path: Path,
+) -> dict[str, tuple[PriorInjection, dict[str, object]]]:
+    """Timeline context per sample, judged by the timeline's persisted policy.
+
+    ``after_short_run`` reuses the pre-flag run-length limits without the idle
+    limit: a short method can leave the gradient unsettled after a long idle.
+    """
     payload = json.loads(timeline_path.read_text(encoding="utf-8"))
     if payload.get("schema") != "injection_timeline":
         raise ValueError(f"{timeline_path} is not an injection_timeline sidecar")
-    return {
-        row["raw_stem"]: bool(row["possibly_perturbed"])
-        for row in payload["injections"]
-    }
+    policy = payload["policy"]
+    context: dict[str, tuple[PriorInjection, dict[str, object]]] = {}
+    for row in payload["injections"]:
+        previous = row["previous_run_length_min"]
+        after_short_run = previous is not None and (
+            previous <= policy["max_previous_run_min"]
+            and previous <= row["run_length_min"] * policy["max_previous_run_fraction"]
+        )
+        context[row["raw_stem"]] = (
+            PriorInjection(
+                pre_flagged=bool(row["possibly_perturbed"]),
+                after_short_run=after_short_run,
+            ),
+            {
+                "previous_raw_stem": row["previous_raw_stem"],
+                "previous_run_length_min": _round(previous),
+                "idle_min": _round(row["idle_min"]),
+            },
+        )
+    return context
 
 
 def heldout_band_offsets(
@@ -144,10 +168,15 @@ def _round(value: float | None) -> float | None:
     return None if value is None else round(float(value), 4)
 
 
-def _sample_rows(calibration: BatchRtCalibration) -> list[dict[str, object]]:
+def _sample_rows(
+    calibration: BatchRtCalibration,
+    timeline_context: Mapping[str, Mapping[str, object]],
+) -> list[dict[str, object]]:
     rows = []
     for sample in calibration.samples.values():
         span = sample.reliable_observed_range
+        prior = sample.prior_injection
+        context = timeline_context.get(sample.sample_stem, {})
         rows.append(
             {
                 "sample_stem": sample.sample_stem,
@@ -156,8 +185,12 @@ def _sample_rows(calibration: BatchRtCalibration) -> list[dict[str, object]]:
                 "reliable_observed_start_min": _round(span[0]) if span else None,
                 "reliable_observed_end_min": _round(span[1]) if span else None,
                 "front_shift_min": _round(sample.front_shift_min),
-                "possibly_perturbed": sample.possibly_perturbed,
                 "perturbation_status": sample.perturbation_status,
+                "pre_flagged": prior.pre_flagged if prior else None,
+                "after_short_run": prior.after_short_run if prior else None,
+                "previous_raw_stem": context.get("previous_raw_stem"),
+                "previous_run_length_min": context.get("previous_run_length_min"),
+                "idle_min": context.get("idle_min"),
             }
         )
     return rows
@@ -180,7 +213,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument(
         "--injection-timeline",
         type=Path,
-        help="injection_timeline JSON; without it no injection is flagged",
+        help="injection_timeline JSON; explains measured front-shift outliers",
     )
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument(
@@ -227,13 +260,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     band_edges = tuple(sorted(args.band_edges))
     detected, samples = read_detected_rts(args.alignment_cells)
-    flags = (
-        read_perturbation_flags(args.injection_timeline)
+    timeline = (
+        read_prior_injections(args.injection_timeline)
         if args.injection_timeline
         else {}
     )
     calibration = build_batch_rt_calibration(
-        detected, sample_stems=samples, possibly_perturbed=flags, policy=policy
+        detected,
+        sample_stems=samples,
+        prior_injections={s: prior for s, (prior, _) in timeline.items()},
+        policy=policy,
     )
     heldout_rows, heldout_summary = heldout_band_offsets(
         detected,
@@ -241,7 +277,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         min_samples=math.ceil(args.heldout_min_sample_fraction * len(samples)),
         band_edges=band_edges,
     )
-    sample_rows = _sample_rows(calibration)
+    sample_rows = _sample_rows(
+        calibration, {s: ctx for s, (_, ctx) in timeline.items()}
+    )
     payload = {
         "schema": "sample_rt_calibration",
         "schema_version": 1,
@@ -252,9 +290,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         ),
         "policy": asdict(policy),
         "sample_count": len(samples),
-        "timeline_unmatched_samples": sorted(set(samples) - set(flags))
-        if flags
-        else None,
+        "timeline_unmatched_samples": (
+            sorted(set(samples) - set(timeline)) if args.injection_timeline else None
+        ),
         "front_shift_center_min": _round(calibration.front_shift_center_min),
         "front_shift_mad_min": _round(calibration.front_shift_mad_min),
         "perturbation_tolerance_min": _round(calibration.perturbation_tolerance_min),

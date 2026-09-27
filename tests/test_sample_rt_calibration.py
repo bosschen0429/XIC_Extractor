@@ -6,6 +6,7 @@ import pytest
 
 from tools.diagnostics.build_sample_rt_calibration import main
 from xic_extractor.alignment.sample_rt_calibration import (
+    PriorInjection,
     RtCalibrationPolicy,
     build_batch_rt_calibration,
 )
@@ -30,11 +31,11 @@ def _batch(
     return detected
 
 
-def _calibrate(detected, flags=None, **policy):
+def _calibrate(detected, priors=None, **policy):
     return build_batch_rt_calibration(
         detected,
         sample_stems=SAMPLES,
-        possibly_perturbed=flags or {},
+        prior_injections=priors or {},
         policy=RtCalibrationPolicy(**policy),
     )
 
@@ -96,23 +97,32 @@ def test_crossing_anchor_order_leaves_sample_uncalibrated() -> None:
     assert calibration.samples["S02"].status == "calibrated"
 
 
-def test_only_flagged_injection_with_measured_front_shift_is_confirmed() -> None:
-    front = (-0.6, -0.6, 0.0, 0.0, 0.0)
-    detected = _batch({"S01": front, "S02": front})
-    # S04 is flagged but lacks the first knot, so its front cannot be measured.
-    del detected["F0"]["S04"]
+def test_measured_front_shift_decides_and_timeline_explains() -> None:
+    early = (-0.6, -0.6, 0.0, 0.0, 0.0)
+    late = (0.4, 0.4, 0.0, 0.0, 0.0)
+    detected = _batch({"S01": early, "S02": late, "S03": early, "S04": late})
+    # S06 cannot be measured: it lacks the first knot.
+    del detected["F0"]["S06"]
+    normal = PriorInjection(pre_flagged=False, after_short_run=False)
+    priors = {s: normal for s in SAMPLES}
+    # Short method, short idle: the pre-flagged early shift.
+    priors["S01"] = PriorInjection(pre_flagged=True, after_short_run=True)
+    # Short method, long idle: not pre-flagged, gradient still unsettled.
+    priors["S02"] = PriorInjection(pre_flagged=False, after_short_run=True)
+    # S03 follows a full-length run; S04 has no timeline row.
+    del priors["S04"]
+    priors["S05"] = PriorInjection(pre_flagged=True, after_short_run=True)
 
-    calibration = _calibrate(
-        detected,
-        flags={"S01": True, "S03": True, "S04": True},
-        anchor_min_sample_fraction=0.9,
-    )
+    calibration = _calibrate(detected, priors, anchor_min_sample_fraction=0.9)
 
     status = {s: c.perturbation_status for s, c in calibration.samples.items()}
     assert status["S01"] == "confirmed"
-    assert status["S02"] == "not_flagged"
-    assert status["S03"] == "flagged_unconfirmed"
-    assert status["S04"] == "flagged_unmeasured"
+    assert status["S02"] == "confirmed"
+    assert status["S03"] == "unexplained_outlier"
+    assert status["S04"] == "outlier_without_timeline"
+    assert status["S05"] == "flagged_unconfirmed"
+    assert status["S06"] == "unmeasured"
+    assert status["S07"] == "not_perturbed"
     assert calibration.perturbation_tolerance_min == pytest.approx(0.1)
 
 
@@ -134,8 +144,24 @@ def test_cli_writes_calibration_and_heldout_evidence(tmp_path: Path) -> None:
         json.dumps(
             {
                 "schema": "injection_timeline",
+                "policy": {
+                    "max_previous_run_min": 20.0,
+                    "max_previous_run_fraction": 0.5,
+                    "max_idle_min": 5.0,
+                },
                 "injections": [
-                    {"raw_stem": s, "possibly_perturbed": s == "S01"} for s in SAMPLES
+                    {
+                        "raw_stem": s,
+                        "possibly_perturbed": s == "S01",
+                        "previous_raw_stem": "SDOLEK" if s == "S01" else "prior",
+                        # S02: within the length ratio, above the 20-min limit.
+                        "previous_run_length_min": {"S01": 8.0, "S02": 30.0}.get(
+                            s, 60.0
+                        ),
+                        "run_length_min": 70.0 if s == "S02" else 60.0,
+                        "idle_min": 1.9,
+                    }
+                    for s in SAMPLES
                 ],
             }
         ),
@@ -168,6 +194,9 @@ def test_cli_writes_calibration_and_heldout_evidence(tmp_path: Path) -> None:
     assert len(payload["knots"]) == len(REFERENCE_RTS)
     by_sample = {row["sample_stem"]: row for row in payload["samples"]}
     assert by_sample["S01"]["perturbation_status"] == "confirmed"
+    assert by_sample["S01"]["after_short_run"] is True
+    assert by_sample["S01"]["previous_raw_stem"] == "SDOLEK"
+    assert by_sample["S02"]["after_short_run"] is False
     assert by_sample["S11"]["status"] == "insufficient_anchors"
     heldout = payload["heldout_validation"]
     assert heldout["paired_feature_count"] == 1
