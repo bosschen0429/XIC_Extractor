@@ -66,6 +66,8 @@ type = forbidden
 source_modules =
     xic_extractor.output
 forbidden_modules =
+    xic_extractor.extraction
+    xic_extractor.extractor
     xic_extractor.raw_reader
 allow_indirect_imports = False
 ignore_imports =
@@ -75,13 +77,3 @@ ignore_imports =
     xic_extractor.output.messages -> xic_extractor.neutral_loss
     xic_extractor.output.messages -> xic_extractor.signal_processing
 unmatched_ignore_imports_alerting = error
-
-[importlinter:contract:output-does-not-import-orchestration]
-name = Output does not import orchestration
-type = forbidden
-source_modules =
-    xic_extractor.output
-forbidden_modules =
-    xic_extractor.extraction
-    xic_extractor.extractor
-allow_indirect_imports = False
