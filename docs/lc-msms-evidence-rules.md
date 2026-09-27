@@ -98,25 +98,19 @@ processing, see [`product/signal-processing-rationale.md`](product/signal-proces
   share the selected bounds, including inter-scan peak tails. Group-guided
   recovery uses `unique_baseline_peak_in_context`: its center locates the bounded search
   context and need not fall inside the peak, but multiple local peaks remain
-  ambiguous and nonnumeric. Both current policies require at least two original
-  XIC values strictly greater than the owner baseline within the uniquely selected, complete
-  interval. Fewer points give `insufficient_original_xic_support` with no numeric
-  physical facts. Those original values must also include at least one adjacent
-  pair strictly greater than that baseline; otherwise the answer is unavailable with
-  `insufficient_original_xic_continuity`. Gaussian spread cannot supply
-  independent sampling support or join isolated impulses into acquired
-  continuity, and a constant background cannot supply that support. Fresh
-  answers also reject `fragmented_original_xic_support` when
-  the selected original interval has at least three maximal positive runs
-  separated by zeros **and** severe original jaggedness. Jaggedness is the sum
-  of absolute second differences divided by the original intensity range and
-  selected point count; severe means greater than 0.5, the existing
-  `noise_shape_severity` hard level. This narrow conjunction belongs to the
-  versioned physical policy; changing that threshold requires policy review
-  and versioning. One interruption, smooth low-level fragments around a main
-  peak, or jaggedness without repeated zero interruptions does not trigger it.
-  Baseline crossings are not missing acquired samples and do not count as zero
-  interruptions for this fragmentation check.
+  ambiguous and nonnumeric. Ordinary continuous peaks require at least two
+  original XIC values above the owner baseline, including an adjacent pair.
+  Missing support gives `insufficient_original_xic_support`; no adjacent pair
+  gives `insufficient_original_xic_continuity`. Gaussian spread and constant
+  background cannot supply independent acquired support.
+  Censored detection clusters use local hit-density enrichment instead: the
+  observed hit rate must exceed both local flanks fourfold and pass a one-sided
+  exact test corrected for trace length. A cluster containing an ordinary
+  continuous peak retains its morphology segmentation. A qualified censored
+  cluster bypasses adjacency and intensity-shape checks, uses its observed
+  trapezoid area, and carries `local_hit_density_enrichment` and
+  `near_detection_limit`. Censored values are not imputed. Fragmented ordinary
+  cores without enrichment give `insufficient_local_hit_enrichment`.
   A selected peak also needs local relief at least twice a local fluctuation
   scale. For each interior original point, subtract its value from the linear
   interpolation between its immediate neighbors and divide by the Euclidean
@@ -138,15 +132,7 @@ processing, see [`product/signal-processing-rationale.md`](product/signal-proces
   identity or quantification readiness. Qualification neither
   changes integration nor removes weak segments to resolve ambiguity. Fresh
   policies use segment-universe-v3; questions cannot cross boundary-policy
-  families. Recorded point/window receipts retain above-zero acquired
-  support and fragmentation checks, without baseline-relative support or local
-  contrast qualification. Recorded point/window receipts retain the adjacency-only
-  requirement and edge recovery with segment-universe, without the fragmented
-  support check. Recorded point/window receipts retain exact-zero returns and
-  the adjacency requirement with segment-universe. Recorded point/window
-  receipts retain the minimum-two-positive-points rule without the adjacency
-  requirement. Recorded point/window receipts replay without either
-  original-support rule. Legacy
+  families. Legacy
   `closed_segment_contains_query` receipts retain their original 2%-height
   bounds. Explicit fresh evaluation uses the current policy and new answer
   identity; replay never rewrites a saved answer.

@@ -57,20 +57,19 @@ second covered peak answer or a compatibility area source.
 
 ### Original sampling support
 
-Fresh physical answers also check original sampling support before exposing
-numeric facts: Gaussian spread cannot create independent acquired evidence or
-turn disconnected original impulses into continuous acquisition support. The
-selected interval needs at least one adjacent pair of original XIC values above
-the owner baseline; a constant background is not acquired peak support.
-Repeated short fragments can still contain adjacent pairs, so fresh
-answers additionally reject intervals with at least three positive runs
-separated by zeros and severe original jaggedness. This conjunction detects
-raw interruptions hidden by a smooth envelope. Neither occasional gaps nor
-jaggedness alone rejects a peak. The fragmentation check does not require
-every positive sample to be consecutive. The check does not change the
-quantitative trace or peak boundaries.
-Baseline crossings do not count as missing acquired samples in this
-fragmentation check.
+Ordinary physical peaks require original sampling support before exposing
+numeric facts: Gaussian spread cannot create independent acquired evidence.
+The selected interval needs an adjacent pair of original XIC values above the
+owner baseline; constant background is not peak support.
+
+For left-censored signals, unsmoothed binary hit density must be enriched against
+both local flanks. The shared physical owner uses a fourfold enrichment and a
+trace-length-corrected one-sided exact test. It replaces fragmented segments only
+when the enriched cluster contains no ordinary continuous peak. Qualified
+clusters use observed-signal trapezoid area and carry `near_detection_limit`;
+adjacency and intensity shape cannot be additional requirements because
+censoring destroys them. No censored intensity is imputed. Ordinary peaks retain
+their morphology boundaries and canonical baseline-corrected area.
 
 ### Interior maxima
 
