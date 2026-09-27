@@ -840,6 +840,25 @@ def test_alignment_to_extraction_imports_are_exact_owner_edges(
 
 
 @pytest.mark.current_repository_census
+def test_discovery_to_extraction_imports_are_exact_owner_edges(
+    current_architecture_census: census.ArchitectureCensus,
+) -> None:
+    observed = {
+        (reference.source_module, reference.imported_module)
+        for reference in current_architecture_census.internal_static_imports
+        if reference.source_module.startswith("xic_extractor.discovery")
+        and reference.imported_module.startswith("xic_extractor.extraction")
+    }
+
+    assert observed == {
+        (
+            "xic_extractor.discovery.targeted_candidate_set",
+            "xic_extractor.extraction.cid_nl_evidence_projection",
+        ),
+    }
+
+
+@pytest.mark.current_repository_census
 def test_default_production_activation_loci_are_exact() -> None:
     production_calls: dict[str, set[Path]] = {
         "run_alignment": set(),
