@@ -69,7 +69,6 @@ from xic_extractor.peak_detection.physical_peak_models import (
     PreparedSignalResult,
 )
 from xic_extractor.peak_detection.scoring_metrics import (
-    noise_shape_severity,
     short_scale_noise_mad,
 )
 from xic_extractor.peak_detection.signal_processing_profile import (
@@ -546,20 +545,14 @@ def _physical_segment_support_failure(
         ),
         0.0,
     )
-    if sum(value > 0.0 for value in original) < 2:
+    positive_indices = np.flatnonzero(original > 0.0)
+    if positive_indices.size < 2:
         return "insufficient_original_xic_support"
-    if not any(
-        left > 0.0 and right > 0.0 for left, right in zip(original, original[1:])
-    ):
+    if not np.any(np.diff(positive_indices) == 1):
         return "insufficient_original_xic_continuity"
-    original_runs = sum(
-        value > 0.0 and (index == 0 or acquired[index - 1] <= 0.0)
-        for index, value in enumerate(acquired)
-    )
-    # Neither isolated gaps nor jaggedness alone rejects a peak. Baseline
-    # crossings are not missing acquired samples.
-    if original_runs >= 3 and noise_shape_severity(acquired)[0] == 2:
-        return "fragmented_original_xic_support"
+    # Scan-level jaggedness describes acquisition variability, not absence of
+    # a chromatographic envelope. Original support and contour contrast own
+    # availability; roughness remains review evidence.
     left, right, apex = (
         selected.start_index, selected.end_index, selected.apex_index
     )
@@ -572,8 +565,59 @@ def _physical_segment_support_failure(
     rt = np.asarray(prepared.rt[left:right], dtype=float)
     noise_mad = short_scale_noise_mad(rt, acquired)
     if prominence < _PHYSICAL_LOCAL_CONTRAST_MIN_MAD * noise_mad:
-        return "insufficient_local_peak_contrast"
+        # Only observed zero interruptions justify the dropout path. A
+        # continuously acquired background fluctuation keeps the raw-contrast
+        # requirement, even if its baseline-corrected smoother looks peaked.
+        if not np.any(acquired[positive_indices[0]:positive_indices[-1] + 1] == 0.0):
+            return "insufficient_local_peak_contrast"
+        # Dropout-dominated original differences can exceed a supported
+        # occupancy envelope. Require both trend contrast and the complete
+        # existing shape qualification; trend MAD alone admits sparse noise.
+        trend = np.asarray(prepared.smoothed[left:right], dtype=float)
+        trend_noise = short_scale_noise_mad(rt, trend)
+        if (
+            prominence < _PHYSICAL_LOCAL_CONTRAST_MIN_MAD * trend_noise
+            or _physical_segment_has_background_shape(prepared, selected)
+        ):
+            return "insufficient_local_peak_contrast"
     return ""
+
+
+def _physical_segment_has_background_shape(
+    prepared: PreparedSignal, selected: PhysicalSegment
+) -> bool:
+    """Qualify the prepared whole contour without reinterpreting raw dropout."""
+    left, right, apex = (
+        selected.start_index, selected.end_index, selected.apex_index
+    )
+    signal = np.asarray(prepared.positive_signal, dtype=float)
+    trend = np.asarray(prepared.smoothed[left:right], dtype=float)
+    rt = np.asarray(prepared.rt[left:right], dtype=float)
+    noise_mad = short_scale_noise_mad(rt, trend)
+    left_valley = float(np.min(signal[left : apex + 1]))
+    right_valley = float(np.min(signal[apex : right]))
+    apex_height = float(signal[apex])
+    return (
+        is_unresolved_shoulder_peak(
+            segment_class=selected.segment_class,
+            apex_height=apex_height,
+            left_valley=left_valley,
+            right_valley=right_valley,
+        )
+        or has_unresolved_valley_floors(
+            apex_height=apex_height,
+            left_valley=left_valley,
+            right_valley=right_valley,
+        )
+        or has_deficient_monotone_run(trend, apex_index=apex - left)
+        or is_background_like_peak(
+            rt,
+            trend,
+            np.asarray(prepared.baseline[left:right], dtype=float),
+            apex_index=apex - left,
+            raw_noise_mad=noise_mad,
+        )
+    )
 
 
 def answer_physical_peak_question(
@@ -614,41 +658,8 @@ def answer_physical_peak_question(
                 question.selection_policy_version
                 == DISCOVERY_PHYSICAL_PEAK_POINT_POLICY
             ):
-                left, right, apex = (
-                    selected.start_index, selected.end_index, selected.apex_index
-                )
-                signal = np.asarray(prepared.positive_signal, dtype=float)
-                raw = np.asarray(prepared.raw[left:right], dtype=float)
-                rt = np.asarray(prepared.rt[left:right], dtype=float)
-                noise_mad = short_scale_noise_mad(rt, raw)
                 background_qualified = True
-                left_valley = float(np.min(signal[left : apex + 1]))
-                right_valley = float(np.min(signal[apex : right]))
-                apex_height = float(signal[apex])
-                if (
-                    is_unresolved_shoulder_peak(
-                        segment_class=selected.segment_class,
-                        apex_height=apex_height,
-                        left_valley=left_valley,
-                        right_valley=right_valley,
-                    )
-                    or has_unresolved_valley_floors(
-                        apex_height=apex_height,
-                        left_valley=left_valley,
-                        right_valley=right_valley,
-                    )
-                    or has_deficient_monotone_run(
-                        raw,
-                        apex_index=apex - left,
-                    )
-                    or is_background_like_peak(
-                        rt,
-                        raw,
-                        np.asarray(prepared.baseline[left:right], dtype=float),
-                        apex_index=apex - left,
-                        raw_noise_mad=noise_mad,
-                    )
-                ):
+                if _physical_segment_has_background_shape(prepared, selected):
                     state, reason = (
                         "unavailable", "background_like_peak_shape"
                     )

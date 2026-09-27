@@ -73,7 +73,7 @@ class _OwnerBoundBatchRaw(_BatchRaw):
     (
         ("discovery_normal_single_peak", (18.45591733148333,), 14712),
         ("discovery_same_peak_seeds", (38.190113531483334,), None),
-        ("discovery_true_double_peak", (15.007716898666667, 15.25524139625), None),
+        ("discovery_true_double_peak", (15.25524139625,), None),
         ("discovery_non_peak_background", (), None),
     ),
 )
@@ -165,14 +165,9 @@ def test_discovery_retained_physical_peak_cardinality(
     )
     valid = [c for c in read_discovery_candidates_csv(path) if c.ms1_peak_found]
     if representative_scan is not None:
-        # A weaker connected shoulder is retained for review, while the clean
-        # peak still has one representative. Remote height cannot erase it.
-        shoulders = [c for c in valid if c.is_provisional]
-        assert [c.best_ms2_scan_id for c in shoulders] == [14067]
-        assert all(
-            c.ms1_trace_quality == "physical_shoulder_overlap" for c in shoulders
-        )
-        valid = [c for c in valid if not c.is_provisional]
+        # The complete main envelope has one representative. Earlier seeds
+        # have clipped whole contours, rather than independently closed peaks.
+        assert all(not c.is_provisional for c in valid)
     assert sorted(c.ms1_apex_rt for c in valid) == [
         round(apex, 4) for apex in expected_apices
     ]
@@ -193,12 +188,20 @@ def test_discovery_retained_physical_peak_cardinality(
             for candidate in valid
         )
         assert all(
-            "physical_shoulder_overlap" in candidate.reason for candidate in valid
+            candidate.ms1_area is not None and candidate.ms1_area > 0
+            for candidate in valid
         )
         ownership = build_sample_local_owners_from_discovery_bindings(
             result.physical_bindings, alignment_config=AlignmentConfig()
         )
-        assert len(ownership.owners) == 2
+        # The retained shallow valley is unresolved: preserve both seeds in
+        # one reviewed whole envelope, not two fabricated individual areas.
+        assert len(result.physical_bindings) == 1
+        assert len(result.physical_bindings[0].member_source_ordinals) == 2
+        assert len(ownership.owners) == 1
+        facts = result.physical_bindings[0].physical_fact_record.evaluation.facts
+        assert facts is not None
+        assert facts.left_rt_min < 15.0077 < 15.2552 < facts.right_rt_min
         assert all(not owner.quantification_eligible for owner in ownership.owners)
         assert all(owner.quantification_exclusion_reason == "physical_shoulder_overlap"
                    for owner in ownership.owners)
@@ -210,12 +213,12 @@ def test_discovery_retained_physical_peak_cardinality(
             record.work_item.best_ms2_scan_id
             for record in result.physical_evaluations
             if record.evaluation.facts is not None
-        } == {14067, 14712, 14922}
+        } == {14712, 14922}
         assert {
             record.work_item.best_ms2_scan_id: record.evaluation.reason
             for record in result.physical_evaluations
             if record.evaluation.facts is None
-        } == {14291: "background_like_peak_shape"}
+        } == {14067: "incomplete_peak_context", 14291: "incomplete_peak_context"}
 
 
 @pytest.mark.parametrize("combine_mode", ("union", "intersection"))
@@ -845,9 +848,9 @@ def test_qualification_survives_physical_fact_reuse(
         )
         amplitude = 30.0
     else:
-        # This original trace is clean once ripple no longer truncates its
-        # interval: its full-peak raw SNR exceeds the provisional threshold.
-        noise = 10.0 * np.random.default_rng(0).normal(size=raw.rt.size)
+        # A high-SNR single peak has no unresolved canonical lobes. The
+        # fixture tests qualification reuse, independently of shoulder review.
+        noise = np.random.default_rng(0).normal(size=raw.rt.size)
         amplitude = 50.0
     raw.intensity = (
         1000.0
@@ -1152,17 +1155,6 @@ def test_physical_fact_owner_rejects_cross_acquisition_reassembly(
             "insufficient_original_xic_continuity",
             15,
         ),
-        (
-            np.linspace(6.8, 8.8, 101),
-            np.where(
-                (np.arange(101) % 2 == 1) | (np.arange(101) == 50),
-                1000.0 * np.exp(-0.5 * ((np.arange(101) - 50) / 8.0) ** 2),
-                0.0,
-            ),
-            "unavailable",
-            "fragmented_original_xic_support",
-            15,
-        ),
     ],
 )
 def test_spec_bound_terminal_physical_truth_remains_distinct_hold_state(
@@ -1224,6 +1216,56 @@ def test_spec_bound_terminal_physical_truth_remains_distinct_hold_state(
         "ms1_feature_nl_rescued",
         "rejected_noise_or_outside_rt",
     }
+
+
+
+def test_discovery_scan_dropouts_keep_whole_physical_peak_and_csv_value(
+    tmp_path: Path,
+) -> None:
+    from xic_extractor.alignment.csv_io import read_discovery_candidates_csv
+    from xic_extractor.discovery.csv_writer import write_discovery_candidates_csv
+
+    raw_path = tmp_path / "sample.raw"
+    raw_path.write_bytes(b"known-peak-with-acquired-dropouts")
+    source = build_acquisition_source_identity(
+        raw_path,
+        acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
+        observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
+    )
+    raw = _OwnerBoundBatchRaw(source)
+    raw.rt = np.linspace(6.8, 8.8, 101)
+    raw.intensity = np.where(
+        (np.arange(101) % 2 == 1) | (np.arange(101) == 50),
+        1000.0 * np.exp(-0.5 * ((np.arange(101) - 50) / 8.0) ** 2),
+        0.0,
+    )
+    result = _backfill_ms1_candidates_with_acquisition(
+        raw,
+        (_group((_seed(scan_number=10, rt=7.80),)),),
+        acquisition_source=source,
+        run_spec_id=_TEST_RUN_SPEC_ID,
+        settings=_backfill_settings(),
+        peak_config=_backfill_peak_config(),
+        signal_processing_profile=SignalProcessingProfile(),
+    )
+    evaluation = result.physical_evaluations[0].evaluation
+    assert evaluation.state == "available"
+    facts = evaluation.facts
+    assert facts is not None
+    assert facts.left_rt_min < 7.32 < 8.28 < facts.right_rt_min
+    assert facts.apex_rt_min == pytest.approx(7.8, abs=0.02)
+    # The area follows observed scans, including their zeros; no missing
+    # intensity is synthesized from the known latent Gaussian.
+    assert facts.area_counts_seconds == pytest.approx(
+        float(np.trapezoid(raw.intensity, raw.rt)) * 60.0, rel=0.03
+    )
+    candidate, = result.candidates
+    assert candidate.ms1_peak_found
+    assert candidate.ms1_area == facts.area_counts_seconds
+    csv_path = write_discovery_candidates_csv(tmp_path / "candidates.csv", (candidate,))
+    restored, = read_discovery_candidates_csv(csv_path)
+    assert restored.ms1_peak_found
+    assert restored.ms1_area == pytest.approx(facts.area_counts_seconds, rel=1e-5)
 
 
 def test_discovery_recovers_near_baseline_peak_after_exterior_context_crop(

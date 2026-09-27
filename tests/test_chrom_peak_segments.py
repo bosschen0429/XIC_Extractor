@@ -182,7 +182,7 @@ def test_clear_separated_groups_restore_one_representative_per_lobe() -> None:
     assert central.interval.rt_end_min == pytest.approx(2.26)
 
 
-def test_envelope_support_preserves_doublet_and_weak_isolated_peak() -> None:
+def test_unresolved_doublet_keeps_whole_area_and_weak_isolated_peak() -> None:
     rt = np.linspace(0.0, 12.0, 3601)
     signal = (
         10000.0 * np.exp(-0.5 * ((rt - 3.0) / 0.6) ** 2)
@@ -201,15 +201,19 @@ def test_envelope_support_preserves_doublet_and_weak_isolated_peak() -> None:
         acquired_intensity_values=signal,
     )
 
-    assert len(result.segments) == 3
-    assert [peak.apex_rt_min for peak in result.segments] == pytest.approx(
-        [3.0, 4.8, 9.0], abs=0.04
+    assert len(result.segments) == 2
+    overlap, isolated = result.segments
+    assert "shoulder_overlap" in overlap.evidence_sources
+    assert overlap.interval.rt_start_min < 3.0 - 1.2
+    assert overlap.interval.rt_end_min > 4.8 + 1.2
+    # The connected doublet has one unresolved total, not invented individual
+    # areas divided at a shallow valley. The distant weak peak stays separate.
+    known_overlap_area = (10000.0 + 8000.0) * 0.6 * np.sqrt(2 * np.pi) * 60.0
+    assert overlap.area_baseline_corrected == pytest.approx(
+        known_overlap_area, rel=0.01
     )
-    assert all(
-        "shoulder_overlap" in peak.evidence_sources for peak in result.segments[:2]
-    )
-    assert result.segments[0].interval.rt_end_min < 4.2
-    assert result.segments[1].interval.rt_start_min > 3.6
+    assert isolated.apex_rt_min == pytest.approx(9.0, abs=0.04)
+    assert "shoulder_overlap" not in isolated.evidence_sources
 
 
 @pytest.mark.parametrize("reverse", (False, True))
@@ -246,12 +250,18 @@ def test_remote_small_pulses_preserve_supported_overlapping_doublet(
         acquired_intensity_values=signal,
     )
 
-    # The two analytical broad lobes remain resolvable. Remote pulses at 0.2%
-    # of their height cannot remove either lobe and merge their intervals.
+    # Remote pulses cannot erase either lobe of the unresolved envelope.
+    # Both lobes contribute to its total; their shallow valley is not an
+    # independently justified quantitative boundary.
     principal = [s for s in result.segments if 6.0 < s.apex_rt_min < 11.0]
-    expected = [6.9, 8.5] if reverse else [7.5, 9.1]
-    assert [s.apex_rt_min for s in principal] == pytest.approx(expected, abs=0.12)
-    assert principal[0].interval.rt_end_min <= principal[1].interval.rt_start_min
+    assert len(principal) == 1
+    envelope = principal[0]
+    assert "shoulder_overlap" in envelope.evidence_sources
+    centers = (6.9, 8.5) if reverse else (7.5, 9.1)
+    assert envelope.interval.rt_start_min < min(centers) - 1.2
+    assert envelope.interval.rt_end_min > max(centers) + 1.2
+    known_area = (10000.0 + 14000.0) * 0.6 * np.sqrt(2 * np.pi) * 60.0
+    assert envelope.area_baseline_corrected == pytest.approx(known_area, rel=0.01)
 
 
 def test_rt_envelope_peak_count_and_apex_are_stable_across_rt_density() -> None:

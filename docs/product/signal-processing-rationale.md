@@ -62,15 +62,12 @@ numeric facts: Gaussian spread cannot create independent acquired evidence or
 turn disconnected original impulses into continuous acquisition support. The
 selected interval needs at least one adjacent pair of original XIC values above
 the owner baseline; a constant background is not acquired peak support.
-Repeated short fragments can still contain adjacent pairs, so fresh
-answers additionally reject intervals with at least three positive runs
-separated by zeros and severe original jaggedness. This conjunction detects
-raw interruptions hidden by a smooth envelope. Neither occasional gaps nor
-jaggedness alone rejects a peak. The fragmentation check does not require
-every positive sample to be consecutive. The check does not change the
-quantitative trace or peak boundaries.
-Baseline crossings do not count as missing acquired samples in this
-fragmentation check.
+Zero-valued acquired scans and scan-to-scan jaggedness do not by themselves
+invalidate a supported whole envelope. They remain observed values: Gaussian
+preparation does not impute missing intensity, and integration preserves their
+effect on observed area. Impulse, continuity, context and contrast checks still
+apply. Shape qualification examines the prepared chromatographic trend rather
+than treating raw jaggedness as a second absence decision.
 
 ### Interior maxima
 
@@ -78,7 +75,9 @@ Low-contrast maxima inside a supported envelope must not first become artificial
 integration boundaries. The physical owner uses an RT envelope with a minimum
 Gaussian sigma of 0.08 minutes to identify supported lobes and valleys, while
 preserving supported clear valleys already visible on the canonical signal.
-A coarse envelope cannot merge those separated components. Only the
+To split a coarse envelope, the canonical valley must remain below 30% of the
+smaller lobe for at least one configured Gaussian support footprint. A short
+dropout notch cannot create separate quantitative peaks. Only the
 additional smoothing needed beyond the configured scan-point Gaussian is
 applied. This envelope is boundary evidence: it does not replace the canonical
 signal for apex intensity or integration. Boundary walks use the canonical
@@ -87,7 +86,9 @@ signal, and the final apex is its maximum within the supported interval.
 The physical owner measures each interior maximum's
 topographic prominence over the RT envelope, before adjacent
 maxima truncate its interval. It compares that prominence with twice the raw
-three-point noise MAD between the prominence bases. Within a group connected
+three-point noise MAD between the prominence bases. A subordinate lobe also
+uses the contour toward its adjacent higher lobe, so distant zero background
+cannot dilute its noise estimate. Within a group connected
 by shoulder valleys, maxima must also reach 4% of the group's maximum to remain
 independent seeds. There is no seed-height fraction relative to the maximum
 of the entire acquired context: a remote strong peak cannot erase a local
@@ -97,6 +98,12 @@ qualification gates, so weak neighboring peaks cannot be dropped merely to
 make a window question unique. Edge maxima also remain subject to the existing
 context-completeness rule. The interior-maxima rule removes measurement-noise
 ripple, not every periodic fluctuation or unresolved chemical shoulder.
+
+Shoulder-connected lobes form one complete quantitative envelope; only a
+supported clear valley separates its area. Canonical contour maxima reaching
+the same 4% prominence floor remain review evidence even when they do not
+qualify as independent seeds. The complete envelope does not establish one
+chemical component or individual component areas.
 
 An unresolved shoulder remains a review condition (`physical_shoulder_overlap`).
 Targeted carries it into the product review reasons; Untargeted retains it as
@@ -112,13 +119,21 @@ selection question.
 Sampling support alone also accepts shallow ripples on a background plateau.
 Fresh qualification therefore compares the selected canonical peak's relief
 above its two local valleys with fluctuations in the same original interval.
-The relief must be at least twice the unscaled MAD of normalized local
-three-point differences in the original signal. Each interior point is compared
+The ordinary contrast path requires at least twice the unscaled MAD of
+normalized local three-point differences in the original signal. Each interior point is compared
 with linear interpolation between its immediate neighbors, using actual RT
 spacing and the coefficient norm. This normalized difference removes constant
 and linear background. On a uniform grid the difference is
 `diff(raw, n=2) / sqrt(6)`. Comparing raw values with a wide smoother instead
 would confuse resolved neighboring peaks with noise.
+
+When the original contour contains a zero-valued acquired interruption
+between above-baseline observations, a complete envelope can instead qualify through the same contrast factor on the prepared
+Gaussian trend plus the existing full shape checks: resolved outer valley
+floors, sustained monotone support, and non-background shape. Trend contrast
+alone is insufficient; it admits some stationary sparse backgrounds. This
+shared fallback changes availability, never the observed quantitative signal.
+Discovery reuses this shape owner for its additional background qualification.
 
 The local-relief rule is a local contrast requirement, not the full residual
 height above an AsLS floor. The rule uses the existing prepared arrays without

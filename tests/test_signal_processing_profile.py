@@ -22,11 +22,11 @@ EXPECTED_DEFAULT_JSON = (
     b'"baseline_lam":1.0,"baseline_lam_unit":"minutes^4",'
     b'"baseline_p":0.01,"baseline_n_iter":10,'
     b'"physical_signal_formula":"gaussian_raw_minus_nonnegative_asls_rt_raw_positive",'
-    b'"boundary_basis":"chrom_peak_segment_rt_envelope_clear_valleys",'
+    b'"boundary_basis":"chrom_peak_envelope_sustained_valleys",'
     b'"boundary_min_sigma_rt":0.08,"segment_min_prominence_fraction":0.04,'
     b'"segment_universe_limit":64,'
     b'"segment_selection_behavior":'
-    b'"closed_segment_contains_query_complete_context",'
+    b'"complete_supported_envelope_contains_query",'
     b'"area_basis":"trapezoid_counts_seconds_on_canonical_signal",'
     b'"relative_shape_basis":"own_max_canonical_signal"}'
 )
@@ -63,7 +63,7 @@ def test_default_profile_has_exact_canonical_bytes_hash_and_id() -> None:
     assert profile == SignalProcessingProfile()
     assert canonical_signal_processing_profile_bytes(profile) == EXPECTED_DEFAULT_JSON
     assert serialize_signal_processing_profile(profile) == EXPECTED_DEFAULT_JSON
-    expected_hash = "e31e96dcd93a4edd90cfbd68d68a96427c2d18340f5d8fc3b3145473b787531b"
+    expected_hash = "821cee5247e3be4ec2ec62f4c76e4ca6feaf0e406c45165f7d8c266323274371"
     assert profile.profile_hash == expected_hash
     assert profile.profile_id == f"signal-profile:{expected_hash}"
     assert DEFAULT_SIGNAL_PROCESSING_PROFILE_ID == profile.profile_id
@@ -74,11 +74,20 @@ def test_profile_reader_rejects_unconstrained_and_clipped_peak_semantics() -> No
         b"gaussian_raw_minus_nonnegative_asls_rt_raw_positive",
         b"gaussian_raw_minus_asls_raw_positive",
     ).replace(
-        b"closed_segment_contains_query_complete_context",
+        b"complete_supported_envelope_contains_query",
         b"closed_segment_contains_query_unique_only",
     )
 
     with pytest.raises(ValueError, match="physical_signal_formula"):
+        deserialize_signal_processing_profile(old_profile)
+
+
+def test_profile_reader_rejects_old_local_split_boundaries() -> None:
+    old_profile = EXPECTED_DEFAULT_JSON.replace(
+        b"chrom_peak_envelope_sustained_valleys",
+        b"chrom_peak_segment_rt_envelope_clear_valleys",
+    )
+    with pytest.raises(ValueError, match="boundary_basis"):
         deserialize_signal_processing_profile(old_profile)
 
 

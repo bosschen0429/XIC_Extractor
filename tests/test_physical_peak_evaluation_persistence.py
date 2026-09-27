@@ -34,7 +34,10 @@ from xic_extractor.peak_detection.physical_peak_models import (
     PHYSICAL_PEAK_POINT_POLICY,
     PHYSICAL_PEAK_WINDOW_POLICY,
 )
-from xic_extractor.peak_detection.scoring_metrics import noise_shape_severity
+from xic_extractor.peak_detection.scoring_metrics import (
+    noise_shape_severity,
+    short_scale_noise_mad,
+)
 from xic_extractor.peak_detection.signal_processing_profile import (
     SignalProcessingProfile,
 )
@@ -206,30 +209,39 @@ def test_original_continuity_accepts_a_pair_despite_another_isolated_point(
     assert result.facts is not None and result.facts.area_counts_seconds > 0.0
 
 
+@pytest.mark.parametrize("point_count", [101, 301])
 @pytest.mark.parametrize(
     "policy,query_rt",
     [
         (PHYSICAL_PEAK_POINT_POLICY, 5.0),
         (PHYSICAL_PEAK_WINDOW_POLICY, 0.5),
+        (DISCOVERY_PHYSICAL_PEAK_POINT_POLICY, 5.0),
     ],
 )
-def test_fragmented_original_peak_is_not_backfilled_by_smoothed_envelope(
-    policy: str, query_rt: float,
+def test_scan_dropouts_preserve_known_peak_and_observed_area(
+    policy: str, query_rt: float, point_count: int,
 ) -> None:
-    rt = np.linspace(0.0, 10.0, 101)
+    rt = np.linspace(0.0, 10.0, point_count)
     raw = 1000.0 * np.exp(-0.5 * ((rt - 5.0) / 0.8) ** 2)
     raw[::2] = 0.0
-    raw[50] = 1000.0  # An adjacent pair does not repair repeated interruptions.
+    raw[point_count // 2] = 1000.0
     profile = SignalProcessingProfile()
     prepared = prepare_physical_signal(rt, raw, profile=profile)
     fresh = evaluate_physical_peak(
-        prepared, selection_subject_id="fragmented-envelope", query_rt_min=query_rt,
-        selection_policy_version=policy,
+        prepared, selection_subject_id="observed-sparse-envelope",
+        query_rt_min=query_rt, selection_policy_version=policy,
     )
-    assert fresh.state == "unavailable"
-    assert fresh.reason == "fragmented_original_xic_support"
-    assert fresh.facts is None and fresh.integration is None
-    assert fresh.answer.physical_segment_id is None
+    assert fresh.state == "available"
+    assert fresh.facts is not None and fresh.integration is not None
+    assert fresh.facts.apex_rt_min == pytest.approx(5.0, abs=0.05)
+    assert fresh.facts.left_rt_min <= 3.4
+    assert fresh.facts.right_rt_min >= 6.6
+    # The acquired zeros remain zeros. This protects measured mass, not an
+    # imputed full Gaussian; losing a local fragment loses far more than 3%.
+    observed_mass = float(np.trapezoid(raw, rt)) * 60.0
+    assert fresh.facts.area_counts_seconds == pytest.approx(observed_mass, rel=0.03)
+    assert prepared.prepared is not None
+    assert prepared.prepared.raw == tuple(raw)
     fresh_payload = serialize_physical_peak_evaluation(
         rt, raw, profile=profile, evaluation=fresh,
     )
@@ -238,6 +250,120 @@ def test_fragmented_original_peak_is_not_backfilled_by_smoothed_envelope(
     assert serialize_physical_peak_evaluation(
         rt, raw, profile=profile, evaluation=restored_fresh,
     ) == fresh_payload
+
+
+@pytest.mark.parametrize("point_count", [101, 301])
+@pytest.mark.parametrize("pattern", ["random", "periodic", "ripple"])
+def test_whole_trend_has_matching_target_and_discovery_facts(
+    point_count: int, pattern: str,
+) -> None:
+    rt = np.linspace(0.0, 10.0, point_count)
+    raw = 1000.0 * np.exp(-0.5 * ((rt - 5.0) / 0.8) ** 2)
+    if pattern == "ripple":
+        raw *= 1.0 + 0.08 * np.cos(rt * 12.0)
+    else:
+        mask = (
+            np.random.default_rng(492).random(point_count) < 0.5
+            if pattern == "random" else np.arange(point_count) % 4 == 1
+        )
+        mask[point_count // 2:point_count // 2 + 2] = True
+        raw *= mask
+    prepared = prepare_physical_signal(rt, raw)
+    answers = [evaluate_physical_peak(
+        prepared, selection_subject_id="shared-whole-trend", query_rt_min=5.0,
+        selection_policy_version=policy,
+    ) for policy in (PHYSICAL_PEAK_POINT_POLICY, DISCOVERY_PHYSICAL_PEAK_POINT_POLICY)]
+    for answer in answers:
+        assert answer.state == "available", answer.reason
+        assert answer.facts is not None
+        assert answer.facts.left_rt_min <= 3.4
+        assert answer.facts.right_rt_min >= 6.6
+        observed_area = float(np.trapezoid(raw, rt)) * 60
+        assert answer.facts.area_counts_seconds > 0.85 * observed_area
+    assert answers[0].integration == answers[1].integration
+    assert answers[0].answer.physical_segment_id == (
+        answers[1].answer.physical_segment_id
+    )
+
+
+
+@pytest.mark.parametrize(
+    "policy",
+    [PHYSICAL_PEAK_POINT_POLICY, PHYSICAL_PEAK_WINDOW_POLICY,
+     DISCOVERY_PHYSICAL_PEAK_POINT_POLICY],
+)
+def test_localized_scan_occupancy_keeps_observed_area(policy: str) -> None:
+    rt = np.linspace(0.0, 10.0, 301)
+    occupancy = 0.6 * np.exp(-0.5 * ((rt - 5.0) / 0.8) ** 2)
+    occupancy[np.abs(rt - 5.0) > 1.6] = 0.0
+    # Balanced occupancy is an independent constructed envelope, not a fit
+    # to the production answer or a model of instrument acquisition.
+    phase = np.random.default_rng(492).random()
+    raw = 1000.0 * np.diff(np.floor(np.r_[0.0, np.cumsum(occupancy)] + phase))
+    prepared = prepare_physical_signal(rt, raw)
+    result = evaluate_physical_peak(
+        prepared, selection_subject_id="localized-occupancy", query_rt_min=5.0,
+        selection_policy_version=policy,
+    )
+    assert result.state == "available"
+    assert result.facts is not None and result.integration is not None
+    assert result.facts.left_rt_min < 3.4 < 6.6 < result.facts.right_rt_min
+    assert result.facts.apex_rt_min == pytest.approx(5.0, abs=0.1)
+    observed_area = float(np.trapezoid(raw, rt)) * 60.0
+    assert observed_area == pytest.approx(70000.0)
+    assert result.facts.area_counts_seconds == pytest.approx(observed_area, rel=0.03)
+    selected, = result.segment_universe.segments
+    left, right = selected.start_index, selected.end_index
+    # This control specifically exercises the dropout-qualified contrast path.
+    assert result.facts.height < 2.0 * short_scale_noise_mad(
+        rt[left:right], raw[left:right]
+    )
+    payload = serialize_physical_peak_evaluation(
+        rt, raw, profile=SignalProcessingProfile(), evaluation=result,
+    )
+    *_, restored = deserialize_physical_peak_evaluation(payload)
+    assert restored == result
+
+    # The identical scan amplitude and phase without a localized occupancy
+    # envelope supply background, not a peak.
+    stationary = 1000.0 * np.diff(
+        np.floor(np.r_[0.0, np.cumsum(np.full(rt.size, 0.6))] + phase)
+    )
+    background = evaluate_physical_peak(
+        prepare_physical_signal(rt, stationary),
+        selection_subject_id="stationary-occupancy", query_rt_min=5.0,
+        selection_policy_version=policy,
+    )
+    assert background.state == "unavailable"
+    assert background.facts is None and background.integration is None
+
+
+@pytest.mark.parametrize("pattern", ["alternating", "random", "random_amplitude"])
+@pytest.mark.parametrize(
+    "policy",
+    [PHYSICAL_PEAK_POINT_POLICY, PHYSICAL_PEAK_WINDOW_POLICY,
+     DISCOVERY_PHYSICAL_PEAK_POINT_POLICY],
+)
+@pytest.mark.parametrize("points", [101, 301])
+def test_sparse_stationary_background_is_not_a_peak(
+    pattern: str, policy: str, points: int,
+) -> None:
+    rt = np.linspace(0.0, 10.0, points)
+    rng = np.random.default_rng(492)
+    mask = (
+        np.arange(len(rt)) % 2 == 1
+        if pattern == "alternating"
+        else rng.random(len(rt)) < 0.5
+    )
+    raw = 1000.0 * mask
+    if pattern == "random_amplitude":
+        raw = np.random.default_rng(493).uniform(100.0, 1000.0, len(rt)) * mask
+    result = evaluate_physical_peak(
+        prepare_physical_signal(rt, raw), selection_subject_id="stationary-background",
+        query_rt_min=5.0, selection_policy_version=policy,
+    )
+    assert result.state == "unavailable"
+    assert result.facts is None and result.integration is None
 
 
 @pytest.mark.parametrize("background_fragments", [False, True])
@@ -378,9 +504,9 @@ def test_current_discovery_qualification_persists_exactly(
         )
         assert answer.state == ("unavailable" if background else "available")
         if background:
-            # A noise-level return can close this background interval, but it
-            # still lacks peak contrast; neither policy may quantify it.
-            assert answer.reason == "insufficient_local_peak_contrast"
+            # The whole background contour reaches the acquired edge. Neither
+            # workflow may turn one local fluctuation into a measured peak.
+            assert answer.reason == "incomplete_peak_context"
         payload = serialize_physical_peak_evaluation(
             rt, raw, profile=profile, evaluation=answer,
         )

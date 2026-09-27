@@ -61,8 +61,12 @@ processing, see [`product/signal-processing-rationale.md`](product/signal-proces
 - Before constructing physical intervals, interior apex candidates use an RT
   envelope with minimum sigma 0.08 minutes. Supported clear valleys on the
   canonical signal preserve separated groups, each with one apex representative.
+  A canonical valley hidden by the coarser envelope must stay below 30% of
+  the smaller lobe for one configured Gaussian support footprint before it can
+  restore a split. A short dropout notch is insufficient.
   Candidate support uses topographic prominence and the original three-point
-  noise MAD over the prominence bases. A candidate with prominence below twice that MAD
+  noise MAD over the prominence bases and, for subordinate shoulder lobes,
+  the contour toward adjacent higher lobes. A candidate with prominence below twice that MAD
   is subordinate ripple only when its shoulder-connected group contains an
   independently supported apex. It cannot truncate that envelope. Clear valleys
   separate groups; entirely unsupported groups and edge maxima remain for the
@@ -72,7 +76,10 @@ processing, see [`product/signal-processing-rationale.md`](product/signal-proces
   Clear valleys separate groups before that comparison. Seed eligibility does
   not depend on a fraction of the entire acquired context maximum. The envelope only
   supplies lobe/valley evidence; boundary walks, final apex, and area use the
-  canonical signal. An unresolved shoulder carries `physical_shoulder_overlap`
+  canonical signal. Shoulder-connected lobes share one complete envelope and
+  area. Multiple canonical lobes above the 4% prominence floor retain review
+  evidence even when they cannot claim independent quantitative intervals.
+  An unresolved shoulder carries `physical_shoulder_overlap`
   into Targeted review reasons and Untargeted provisional evidence; it cannot
   claim independent Untargeted owner quantification.
 - Current physical selection then uses the complete positive peak interval
@@ -97,17 +104,10 @@ processing, see [`product/signal-processing-rationale.md`](product/signal-proces
   `insufficient_original_xic_continuity`. Gaussian spread cannot supply
   independent sampling support or join isolated impulses into acquired
   continuity, and a constant background cannot supply that support. Fresh
-  answers also reject `fragmented_original_xic_support` when
-  the selected original interval has at least three maximal positive runs
-  separated by zeros **and** severe original jaggedness. Jaggedness is the sum
-  of absolute second differences divided by the original intensity range and
-  selected point count; severe means greater than 0.5, the existing
-  `noise_shape_severity` hard level. This narrow conjunction belongs to the
-  versioned physical policy; changing that threshold requires policy review
-  and versioning. One interruption, smooth low-level fragments around a main
-  peak, or jaggedness without repeated zero interruptions does not trigger it.
-  Baseline crossings are not missing acquired samples and do not count as zero
-  interruptions for this fragmentation check.
+  answers do not reject a supported whole envelope solely for zero-valued
+  acquired scans combined with raw jaggedness. Zeros remain observed values;
+  no latent intensity is filled in. Discovery's additional shape qualification
+  uses the prepared Gaussian trend after shared original-support checks.
   A selected peak also needs local relief at least twice a local fluctuation
   scale. For each interior original point, subtract its value from the linear
   interpolation between its immediate neighbors and divide by the Euclidean
@@ -118,7 +118,12 @@ processing, see [`product/signal-processing-rationale.md`](product/signal-proces
   additional noise rejection; original-support requirements still apply.
   Relief is the canonical apex
   height minus the higher of the minima on its two sides, including the apex
-  and the recorded interval endpoints. Insufficient relief gives
+  and the recorded interval endpoints. If original differences defeat this
+  contrast check and there is a zero-valued acquired interruption between
+  above-baseline observations, the envelope may still qualify through the same factor on
+  the prepared Gaussian trend plus the existing full background-shape checks
+  (outer valley floors, monotone support and non-background shape). Trend MAD
+  alone is not sufficient. Failure of both paths gives
   `insufficient_local_peak_contrast`, without numeric facts or integration.
   This uses the already prepared arrays; it does not refit the baseline or
   smoothing or interpret smoothing bias as measurement noise. Background

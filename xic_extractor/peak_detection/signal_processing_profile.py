@@ -40,11 +40,11 @@ _FIXED_PROFILE_VALUES: dict[str, object] = {
     "baseline_p": 0.01,
     "baseline_n_iter": 10,
     "physical_signal_formula": "gaussian_raw_minus_nonnegative_asls_rt_raw_positive",
-    "boundary_basis": "chrom_peak_segment_rt_envelope_clear_valleys",
+    "boundary_basis": "chrom_peak_envelope_sustained_valleys",
     "boundary_min_sigma_rt": 0.08,
     "segment_min_prominence_fraction": 0.04,
     "segment_universe_limit": 64,
-    "segment_selection_behavior": "closed_segment_contains_query_complete_context",
+    "segment_selection_behavior": "complete_supported_envelope_contains_query",
     "area_basis": "trapezoid_counts_seconds_on_canonical_signal",
     "relative_shape_basis": "own_max_canonical_signal",
 }
@@ -66,12 +66,12 @@ class SignalProcessingProfile:
     baseline_p: float = 0.01
     baseline_n_iter: int = 10
     physical_signal_formula: str = "gaussian_raw_minus_nonnegative_asls_rt_raw_positive"
-    boundary_basis: str = "chrom_peak_segment_rt_envelope_clear_valleys"
+    boundary_basis: str = "chrom_peak_envelope_sustained_valleys"
     boundary_min_sigma_rt: float = 0.08
     segment_min_prominence_fraction: float = 0.04
     segment_universe_limit: int = 64
     segment_selection_behavior: str = (
-        "closed_segment_contains_query_complete_context"
+        "complete_supported_envelope_contains_query"
     )
     area_basis: str = "trapezoid_counts_seconds_on_canonical_signal"
     relative_shape_basis: str = "own_max_canonical_signal"
