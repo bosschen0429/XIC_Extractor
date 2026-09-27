@@ -18,11 +18,15 @@ from scripts.csv_to_excel import (
     run,
 )
 from xic_extractor.config import ExtractionConfig, Target
+from xic_extractor.extractor import ExtractionResult
+from xic_extractor.neutral_loss import NLResult
 from xic_extractor.output.detection import MissingTargetedProductProjectionError
+from xic_extractor.output.messages import build_diagnostic_records
 from xic_extractor.output.schema import (
     LONG_HEADERS,
     TARGETED_PRODUCT_PROJECTION_HEADERS,
 )
+from xic_extractor.signal_processing import PeakDetectionResult, PeakResult
 
 
 def test_build_data_sheet_uses_row_based_compact_view_with_hidden_advanced_columns(
@@ -1304,7 +1308,10 @@ def test_review_queue_evidence_uses_short_tags() -> None:
             "SampleName": "BenignfatBC1055_DNA",
             "Target": "8-oxodG",
             "Issue": "MULTI_PEAK",
-            "Reason": "4 prominent peaks detected in window [16.0, 18.0]",
+            "Reason": (
+                "4 qualified physical candidates in selection window; "
+                "selected RT 17.1770 min"
+            ),
         },
     ]
 
@@ -1335,6 +1342,58 @@ def test_diagnostics_sheet_uses_short_reason_text() -> None:
     _build_diagnostics_sheet(ws, rows)
 
     assert ws["D2"].value == "selected candidate lacks strict NL match"
+
+
+def test_csv_to_excel_retains_multi_peak_selection_and_candidate_count(
+    tmp_path: Path,
+) -> None:
+    config = _config(tmp_path)
+    target = _target("Analyte")
+    result = ExtractionResult(
+        peak_result=PeakDetectionResult(
+            status="OK",
+            peak=PeakResult(9.0, 200.0, 190.0, 123.0, 8.9, 9.1),
+            n_points=401,
+            max_smoothed=1000.0,
+            n_prominent_peaks=2,
+        ),
+        # Window evidence belongs to the higher neighbor, not the selected peak.
+        nl=NLResult("OK", 1.0, 8.5, 2, 0, 2),
+        reason="concerns: rt_prior (minor)",
+    )
+    records = build_diagnostic_records("S1", target, result, config)
+    assert len(records) == 1
+    assert "tallest" not in records[0].reason
+    assert "NL-confirmed" not in records[0].reason
+    assert "8.500" not in records[0].reason
+    config.output_csv.parent.mkdir(parents=True)
+    _write_csv(
+        config.output_csv.with_name("xic_results_long.csv"),
+        [_long_row(
+            "S1", target.label, "9.0", "123.0", "OK",
+            counted_detection="TRUE", product_state="detected_clean",
+        )],
+    )
+    _write_csv(config.diagnostics_csv, [{
+        "SampleName": record.sample_name,
+        "Target": record.target_label,
+        "Issue": record.issue,
+        "Reason": record.reason,
+    } for record in records])
+
+    workbook = load_workbook(run(config, [target]))
+
+    assert workbook["Diagnostics"]["D2"].value == records[0].reason
+    assert "2 qualified physical candidates in selection window" in records[0].reason
+    assert "selected RT 9.0000 min" in records[0].reason
+    assert "result reason: concerns: rt_prior (minor)" in records[0].reason
+    review = workbook["Review Queue"]
+    headers = {cell.value: cell.column for cell in review[1]}
+    assert review.cell(2, headers["Evidence"]).value == "multi_peak=2"
+    assert review.cell(2, headers["RT"]).value == 9.0
+    assert review.cell(2, headers["Area"]).value == 123.0
+    assert workbook["XIC Results"]["F2"].value == 9.0
+    assert workbook["XIC Results"]["G2"].value == 123.0
 
 
 def test_diagnostics_sheet_falls_back_to_issue_when_reason_is_empty() -> None:

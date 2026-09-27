@@ -44,6 +44,24 @@ class PeakBounds:
 
 
 @dataclass(frozen=True, slots=True)
+class CurveIntegration:
+    """Saved integration metadata; the Inspector never integrates the series."""
+
+    area_raw_counts_seconds: float
+    raw_apex_rt_min: float
+    integration_method: str
+
+
+@dataclass(frozen=True, slots=True)
+class SampleQuantification:
+    """One formal value per sample, independent of its displayed curve count."""
+
+    sample_id: str
+    value: float | None
+    unit: str
+
+
+@dataclass(frozen=True, slots=True)
 class CurveBundleTrace:
     trace_id: str
     sample_id: str
@@ -61,6 +79,8 @@ class CurveBundleTrace:
     peak_bounds: PeakBounds | None = None
     unavailable_reason: str | None = None
     quality_flags: dict[str, Any] = field(default_factory=dict)
+    positive_signal: ChromatogramCurve | None = None
+    integration: CurveIntegration | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -69,6 +89,7 @@ class TransitionCurves:
     review_rt_window: tuple[float, float]
     quality_flags: dict[str, Any]
     traces: tuple[CurveBundleTrace, ...]
+    quantifications: tuple[SampleQuantification, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -151,6 +172,50 @@ def _bounds(value: object, where: str) -> PeakBounds | None:
     return PeakBounds(start, apex, end)
 
 
+def _integration(value: object, where: str) -> CurveIntegration | None:
+    if value is None:
+        return None
+    obj = _mapping(
+        value,
+        where,
+        {"area_raw_counts_seconds", "raw_apex_rt_min", "integration_method"},
+    )
+    return CurveIntegration(
+        _number(obj.get("area_raw_counts_seconds"), f"{where}.area_raw_counts_seconds"),
+        _number(obj.get("raw_apex_rt_min"), f"{where}.raw_apex_rt_min"),
+        _text(obj.get("integration_method"), f"{where}.integration_method"),
+    )
+
+
+def _quantifications(
+    value: object,
+    where: str,
+    sample_ids: set[str],
+) -> tuple[SampleQuantification, ...]:
+    if not isinstance(value, (list, tuple)):
+        raise _fail(where, "expected array")
+    result = []
+    seen = set()
+    for index, entry in enumerate(value):
+        loc = f"{where}[{index}]"
+        obj = _mapping(entry, loc, {"sample_id", "value", "unit"})
+        sid = _text(obj.get("sample_id"), f"{loc}.sample_id")
+        if sid not in sample_ids or sid in seen:
+            raise _fail(loc, "quantification requires a unique represented sample")
+        if "value" not in obj:
+            raise _fail(loc, "value is required; use null for a saved empty result")
+        seen.add(sid)
+        number = obj["value"]
+        result.append(
+            SampleQuantification(
+                sid,
+                None if number is None else _number(number, f"{loc}.value"),
+                _text(obj.get("unit"), f"{loc}.unit"),
+            )
+        )
+    return tuple(result)
+
+
 def _flags(value: object, where: str) -> dict[str, Any]:
     if not isinstance(value, dict) or any(
         not isinstance(key, str) or not key for key in value
@@ -175,7 +240,9 @@ def _decode_bundle(value: object) -> CurveBundle:
     for index, entry in enumerate(entries):
         where = f"$.transitions[{index}]"
         obj = _mapping(
-            entry, where, {"key", "review_rt_window", "quality_flags", "traces"}
+            entry,
+            where,
+            {"key", "review_rt_window", "quality_flags", "traces", "quantifications"},
         )
         key = _text(obj.get("key"), f"{where}.key")
         if key in keys:
@@ -207,6 +274,8 @@ def _decode_bundle(value: object) -> CurveBundle:
                     "raw",
                     "gaussian15",
                     "baseline",
+                    "positive_signal",
+                    "integration",
                     "peak_bounds",
                     "unavailable_reason",
                     "quality_flags",
@@ -219,6 +288,9 @@ def _decode_bundle(value: object) -> CurveBundle:
             raw = _curve(trace_obj.get("raw"), f"{loc}.raw")
             gaussian15 = _curve(trace_obj.get("gaussian15"), f"{loc}.gaussian15")
             baseline = _curve(trace_obj.get("baseline"), f"{loc}.baseline")
+            positive = _curve(
+                trace_obj.get("positive_signal"), f"{loc}.positive_signal"
+            )
             unavailable_reason = trace_obj.get("unavailable_reason")
             if (raw is None) != (gaussian15 is None):
                 raise _fail(
@@ -226,13 +298,16 @@ def _decode_bundle(value: object) -> CurveBundle:
                 )
             if raw is None:
                 _text(unavailable_reason, f"{loc}.unavailable_reason")
-                if baseline is not None:
-                    raise _fail(loc, "unavailable trace cannot carry baseline")
+                if baseline is not None or positive is not None:
+                    raise _fail(loc, "unavailable trace cannot carry processed series")
             elif unavailable_reason is not None:
                 raise _fail(loc, "available trace cannot have unavailable_reason")
             if raw is not None:
                 assert gaussian15 is not None
-                if gaussian15.rt != raw.rt or (baseline and baseline.rt != raw.rt):
+                if any(
+                    curve is not None and curve.rt != raw.rt
+                    for curve in (gaussian15, baseline, positive)
+                ):
                     raise _fail(loc, "all series must share exact rt values")
             ppm = _number(trace_obj.get("ppm"), f"{loc}.ppm")
             if ppm <= 0:
@@ -261,6 +336,10 @@ def _decode_bundle(value: object) -> CurveBundle:
                     raw=raw,
                     gaussian15=gaussian15,
                     baseline=baseline,
+                    positive_signal=positive,
+                    integration=_integration(
+                        trace_obj.get("integration"), f"{loc}.integration"
+                    ),
                     peak_bounds=_bounds(
                         trace_obj.get("peak_bounds"), f"{loc}.peak_bounds"
                     ),
@@ -270,7 +349,14 @@ def _decode_bundle(value: object) -> CurveBundle:
                     ),
                 )
             )
-        transitions.append(TransitionCurves(key, window, flags, tuple(traces)))
+        quantifications = _quantifications(
+            obj.get("quantifications", ()),
+            f"{where}.quantifications",
+            {trace.sample_id for trace in traces},
+        )
+        transitions.append(
+            TransitionCurves(key, window, flags, tuple(traces), quantifications)
+        )
     return CurveBundle(tuple(transitions))
 
 
@@ -415,6 +501,7 @@ class CurveBundleSource:
                 for trace in transition.traces
                 if trace.sample_id in item.sample_ids
             ]
+            quantifications = {q.sample_id: q for q in transition.quantifications}
             projected_curves = []
             for trace in traces:
                 if trace.raw is None:
@@ -435,6 +522,14 @@ class CurveBundleSource:
                             "intensities": trace.baseline.intensity,
                         }
                     )
+                if trace.positive_signal is not None:
+                    processed.append(
+                        {
+                            "kind": "positive_signal",
+                            "rts": trace.positive_signal.rt,
+                            "intensities": trace.positive_signal.intensity,
+                        }
+                    )
                 projected_curves.append(
                     {
                         "sample_id": trace.sample_id,
@@ -446,6 +541,12 @@ class CurveBundleSource:
                         "raw_intensities": trace.raw.intensity,
                         "processed_curves": processed,
                         "quality_flags": trace.quality_flags,
+                        "area": trace.integration.area_raw_counts_seconds
+                        if trace.integration
+                        else None,
+                        "integration": asdict(trace.integration)
+                        if trace.integration
+                        else None,
                         "bound_left_rt": trace.peak_bounds.start
                         if trace.peak_bounds
                         else None,
@@ -502,6 +603,26 @@ class CurveBundleSource:
                                 "label": "producer version",
                                 "value": trace.producer_version,
                             },
+                            *(
+                                [
+                                    {
+                                        "label": "Integration method",
+                                        "value": trace.integration.integration_method,
+                                    },
+                                    {
+                                        "label": "Raw area (counts·s)",
+                                        "value": (
+                                            trace.integration.area_raw_counts_seconds
+                                        ),
+                                    },
+                                    {
+                                        "label": "Raw apex (min)",
+                                        "value": trace.integration.raw_apex_rt_min,
+                                    },
+                                ]
+                                if trace.integration
+                                else []
+                            ),
                             *[
                                 {
                                     "label": key,
@@ -514,6 +635,21 @@ class CurveBundleSource:
                         ],
                     }
                 )
+            for sid, quantification in quantifications.items():
+                if sid in item.sample_ids:
+                    records.append(
+                        {
+                            "ref": f"quantity:{transition.key}:{sid}",
+                            "title": "Saved formal result",
+                            "summary": next(
+                                t.sample_label for t in traces if t.sample_id == sid
+                            ),
+                            "fields": [
+                                {"label": "Value", "value": quantification.value},
+                                {"label": "Unit", "value": quantification.unit},
+                            ],
+                        }
+                    )
             samples = [
                 {
                     "sample_id": sid,
@@ -525,7 +661,20 @@ class CurveBundleSource:
                     if any(t.sample_id == sid and t.raw is not None for t in traces)
                     else "RAW 未提供",
                     "support_origin": {"kind": "unavailable"},
-                    "decision_refs": [flag_ref],
+                    "decision_refs": [flag_ref]
+                    + (
+                        [f"quantity:{transition.key}:{sid}"]
+                        if sid in quantifications
+                        else []
+                    ),
+                    **(
+                        {
+                            "quantitative_value": quantifications[sid].value,
+                            "quantity_unit": quantifications[sid].unit,
+                        }
+                        if sid in quantifications
+                        else {}
+                    ),
                     "evidence_status": "available"
                     if any(t.sample_id == sid and t.raw is not None for t in traces)
                     else "unavailable",

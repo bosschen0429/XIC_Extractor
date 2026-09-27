@@ -42,6 +42,12 @@ class ExtractionResultLike(Protocol):
     @property
     def candidate_ms2_evidence(self) -> CandidateMS2Evidence | None: ...
 
+    @property
+    def reported_rt(self) -> float | None: ...
+
+    @property
+    def reason(self) -> str: ...
+
 
 def build_diagnostic_records(
     sample_name: str,
@@ -87,7 +93,7 @@ def build_diagnostic_records(
                     sample_name=sample_name,
                     target_label=target.label,
                     issue="MULTI_PEAK",
-                    reason=_multi_peak_reason(target, result.peak_result, result.nl),
+                    reason=_multi_peak_reason(result),
                 )
             )
         left_half = peak.rt - peak.peak_start
@@ -244,16 +250,22 @@ def _candidate_product_probe_info(evidence: CandidateMS2Evidence) -> str:
     return "; " + "; ".join(parts)
 
 
-def _multi_peak_reason(
-    target: Target, peak_result: PeakDetectionResult, nl: NLResult | None
-) -> str:
+def _multi_peak_reason(result: ExtractionResultLike) -> str:
     base = (
-        f"{peak_result.n_prominent_peaks} prominent peaks detected in window "
-        f"[{target.rt_min}, {target.rt_max}]; tallest peak selected — "
-        f"verify integration window or split into separate targets"
+        f"{result.peak_result.n_prominent_peaks} qualified physical candidates "
+        "in selection window"
     )
-    if nl is not None and nl.best_scan_rt is not None:
-        base += f"; NL-confirmed MS2 at RT {nl.best_scan_rt:.3f} min"
+    if result.reported_rt is not None:
+        base += f"; selected RT {result.reported_rt:.4f} min"
+    reason = result.reason or result.peak_result.reason
+    if reason:
+        base += f"; result reason: {reason}"
+    evidence = result.candidate_ms2_evidence
+    if evidence is not None and evidence.nl_match and evidence.best_scan_rt is not None:
+        base += (
+            "; selected candidate NL-matched MS2 at RT "
+            f"{evidence.best_scan_rt:.3f} min"
+        )
     return base
 
 

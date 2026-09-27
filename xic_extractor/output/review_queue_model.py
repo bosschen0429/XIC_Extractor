@@ -119,7 +119,7 @@ def _diagnostic_tag(diagnostic: dict[str, str]) -> str:
         delta = _first_regex_group(reason, r"deviates ([0-9.]+) min")
         return f"anchor dRT={delta} min" if delta else "anchor_mismatch"
     if issue == "MULTI_PEAK":
-        count = _first_regex_group(reason, r"(\d+) prominent peaks")
+        count = _first_regex_group(reason, r"(\d+) qualified physical candidates")
         return f"multi_peak={count}" if count else "multi_peak"
     if issue in {"PEAK_NOT_FOUND", "NO_SIGNAL"}:
         return "peak_not_found"
