@@ -29,16 +29,21 @@ on demand, using the existing configuration reader and RAW acquisition owner.
 The JSON manifest explicitly names each method/group, target CSV, and optional
 RAW files. The reference RT is the target search-window midpoint.
 Multiple groups use leave-one-out monotonic interpolation of other shared
-targets, including ISTDs. Unsupported endpoints are not extrapolated.
+targets, including ISTDs. For each directed group pair, anchors with the
+largest supported own leave-one-out residual above the policy threshold are
+iteratively excluded while at least three anchors remain. Excluded targets
+still receive predictions and warnings; exclusion does not declare a reference
+wrong. Unsupported endpoints are not extrapolated.
 Single-group input skips mapping and checks only RAW peak-cluster positions.
 
 The diagnostic emits `reference_consistency.json` and `reference_review.tsv`.
-The JSON records pairwise predictions and the median/p90 absolute residual
-distribution over group/target median predictions. Mapping residuals above
-the policy threshold receive informational warnings. High warnings require
-RAW multi-cluster ordinal disagreement, a reference between clusters beyond
-the peak-match tolerance, or a mapping prediction matching a different RAW
-cluster. A matching single peak cannot produce a high warning.
+The JSON records screened anchors, pairwise predictions, and the median/p90
+absolute residual distribution over group/target median predictions. Mapping
+residuals above the policy threshold receive informational warnings. High
+warnings require RAW multi-cluster ordinal disagreement, a reference outside
+every detected cluster's half-prominence extent and beyond the apex-match
+tolerance, or a mapping prediction matching a different RAW cluster. A matching
+single peak cannot produce a high warning.
 Ordinals compare only equal cluster counts, with one vote per group and a
 majority of all peer groups; incomparable groups abstain. Gaussian smoothing,
 minimum prominence, and minimum half-prominence width reject narrow impulses

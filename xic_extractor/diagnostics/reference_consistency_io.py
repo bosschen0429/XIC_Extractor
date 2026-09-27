@@ -16,7 +16,7 @@ from xic_extractor.diagnostics.reference_consistency import (
     ReferencePolicy,
     ReferenceReport,
     check_reference_consistency,
-    trace_cluster_apices,
+    trace_clusters,
 )
 from xic_extractor.raw_reader import open_raw
 from xic_extractor.tabular_io import file_sha256
@@ -130,16 +130,18 @@ def run_reference_diagnostic(
             with open_raw(raw_path, dll_dir) as raw:
                 traces = raw.extract_xic_many(tuple(requests.values()))
             clusters = {
-                key: trace_cluster_apices(trace, policy)
+                key: trace_clusters(trace, policy)
                 for key, trace in zip(requests, traces, strict=True)
             }
             for target in group.targets:
+                peaks = clusters[target.mz, target.ppm_tol]
                 observations.append(
                     ClusterObservation(
                         group.name,
                         str(raw_path),
                         target.label,
-                        clusters[target.mz, target.ppm_tol],
+                        tuple(apex for apex, _, _ in peaks),
+                        tuple((left, right) for _, left, right in peaks),
                     )
                 )
     report = check_reference_consistency(

@@ -39,6 +39,7 @@ class ClusterObservation:
     sample: str
     label: str
     apex_rt_min: tuple[float, ...]
+    extent_rt_min: tuple[tuple[float, float], ...] = ()
 
 
 class ReferenceRow(TypedDict):
@@ -51,6 +52,7 @@ class ReferenceRow(TypedDict):
     residual_min: float | None
     prediction_count: int
     cluster_apices_min: list[float]
+    cluster_extents_min: list[list[float]]
     nearest_ordinal: int | None
     nearest_distance_min: float | None
     raw_status: str
@@ -79,10 +81,10 @@ def reference_rt(target: Target) -> float:
     return (target.rt_min + target.rt_max) / 2
 
 
-def trace_cluster_apices(
+def trace_clusters(
     trace: XICTrace, policy: ReferencePolicy = ReferencePolicy()
-) -> tuple[float, ...]:
-    """Diagnostic peak positions, never integration/selection candidates.
+) -> tuple[tuple[float, float, float], ...]:
+    """Diagnostic apex and half-prominence extents, never selected peaks.
 
     Smooth with a 15-point Gaussian (sigma=2), retain peaks with at least
     the policy fraction of full-trace maximum prominence and height, and
@@ -101,7 +103,7 @@ def trace_cluster_apices(
     maximum = float(np.max(smoothed))
     if maximum <= 0:
         return ()
-    peaks, _ = find_peaks(
+    peaks, properties = find_peaks(
         smoothed,
         prominence=maximum * policy.peak_prominence_ratio,
         height=maximum * policy.peak_prominence_ratio,
@@ -114,16 +116,54 @@ def trace_cluster_apices(
             for p in retained
         ):
             retained.append(int(index))
-    return tuple(float(rt[i]) for i in sorted(retained))
+    scan_index = np.arange(len(rt))
+    widths = {
+        int(peak): (
+            float(np.interp(left, scan_index, rt)),
+            float(np.interp(right, scan_index, rt)),
+        )
+        for peak, left, right in zip(
+            peaks, properties["left_ips"], properties["right_ips"], strict=True
+        )
+    }
+    return tuple((float(rt[i]), *widths[i]) for i in sorted(retained))
+
+
+def trace_cluster_apices(
+    trace: XICTrace, policy: ReferencePolicy = ReferencePolicy()
+) -> tuple[float, ...]:
+    """Return diagnostic apex positions for callers that need positions only."""
+    return tuple(apex for apex, _, _ in trace_clusters(trace, policy))
 
 
 def _same_target(left: Target, right: Target) -> bool:
     return abs(left.mz - right.mz) <= min(left.ppm_tol, right.ppm_tol) * left.mz / 1e6
 
 
-def _mapping_errors(groups: Mapping[str, Sequence[Target]]) -> list[MappingError]:
+def _mapping_prediction(
+    source: Mapping[str, Target],
+    destination: Mapping[str, Target],
+    anchors: set[str],
+    held: str,
+) -> float | None:
+    knots: dict[float, list[float]] = defaultdict(list)
+    for label in anchors - {held}:
+        knots[reference_rt(source[label])].append(reference_rt(destination[label]))
+    x = sorted(knots)
+    query = reference_rt(source[held])
+    if len(x) < 2 or not x[0] <= query <= x[-1]:
+        return None  # No extrapolation evidence at unsupported edges.
+    y = [float(np.median(knots[value])) for value in x]
+    fitted = isotonic_regression(y, increasing=True).x
+    return float(np.interp(query, x, fitted))
+
+
+def _mapping_errors(
+    groups: Mapping[str, Sequence[Target]], policy: ReferencePolicy
+) -> tuple[list[MappingError], list[dict[str, object]]]:
     tables = {group: {t.label: t for t in targets} for group, targets in groups.items()}
     errors: list[MappingError] = []
+    exclusions: list[dict[str, object]] = []
     for destination, targets in tables.items():
         for source, peers in tables.items():
             if source == destination:
@@ -133,22 +173,36 @@ def _mapping_errors(groups: Mapping[str, Sequence[Target]]) -> list[MappingError
                 for label in targets.keys() & peers.keys()
                 if _same_target(targets[label], peers[label])
             )
+            anchors = set(shared)
+            # Remove the largest self-inconsistent anchor, then reassess.
+            # Excluded labels remain held-out predictions and warning rows.
+            while len(anchors) > 3:
+                residuals = [
+                    (abs(reference_rt(targets[label]) - predicted), label)
+                    for label in sorted(anchors)
+                    if (
+                        predicted := _mapping_prediction(peers, targets, anchors, label)
+                    )
+                    is not None
+                ]
+                if not residuals:
+                    break
+                residual, label = max(residuals)
+                if residual <= policy.mapping_residual_min:
+                    break
+                anchors.remove(label)
+                exclusions.append(
+                    {
+                        "source_group": source,
+                        "group": destination,
+                        "label": label,
+                        "screening_residual_min": residual,
+                    }
+                )
             for held in shared:
-                # Exclude the held-out identity before fitting. Duplicate source
-                # RTs share a median destination knot, then PAVA enforces monotonicity.
-                knots: dict[float, list[float]] = defaultdict(list)
-                for label in shared:
-                    if label != held:
-                        knots[reference_rt(peers[label])].append(
-                            reference_rt(targets[label])
-                        )
-                x = sorted(knots)
-                query = reference_rt(peers[held])
-                if len(x) < 2 or not x[0] <= query <= x[-1]:
-                    continue  # No extrapolation evidence at unsupported edges.
-                y = [float(np.median(knots[value])) for value in x]
-                fitted = isotonic_regression(y, increasing=True).x
-                predicted = float(np.interp(query, x, fitted))
+                predicted = _mapping_prediction(peers, targets, anchors, held)
+                if predicted is None:
+                    continue
                 reference = reference_rt(targets[held])
                 errors.append(
                     MappingError(
@@ -158,10 +212,10 @@ def _mapping_errors(groups: Mapping[str, Sequence[Target]]) -> list[MappingError
                         reference_rt_min=reference,
                         predicted_rt_min=predicted,
                         residual_min=reference - predicted,
-                        anchor_count=len(shared) - 1,
+                        anchor_count=len(anchors - {held}),
                     )
                 )
-    return errors
+    return errors, exclusions
 
 
 def _majority(values: Sequence[int], electorate: int | None = None) -> int | None:
@@ -187,7 +241,9 @@ def check_reference_consistency(
     Ordinals are comparable only for equal peak counts; each group gets one
     vote, so replicate counts cannot dominate a cross-method comparison.
     """
-    errors = _mapping_errors(groups) if len(groups) > 1 else []
+    errors, exclusions = (
+        _mapping_errors(groups, policy) if len(groups) > 1 else ([], [])
+    )
     predictions: dict[tuple[str, str], list[float]] = defaultdict(list)
     for error in errors:
         predictions[error["group"], error["label"]].append(error["predicted_rt_min"])
@@ -208,7 +264,13 @@ def check_reference_consistency(
                 ClusterObservation(group, "", target.label, ())
             ]
             for sample in samples:
-                apices = sorted(sample.apex_rt_min)
+                clusters = (
+                    sorted(zip(sample.apex_rt_min, sample.extent_rt_min, strict=True))
+                    if sample.extent_rt_min
+                    else [(apex, (apex, apex)) for apex in sorted(sample.apex_rt_min)]
+                )
+                apices = [apex for apex, _ in clusters]
+                extents = [bounds for _, bounds in clusters]
                 nearest = (
                     min(range(len(apices)), key=lambda i: abs(apices[i] - reference))
                     if apices
@@ -234,6 +296,9 @@ def check_reference_consistency(
                         and apices[0] < reference < apices[-1]
                         and distance is not None
                         and distance > policy.peak_match_min
+                        and not any(
+                            left <= reference <= right for left, right in extents
+                        )
                     ):
                         warnings.append("reference_between_clusters")
                     if (
@@ -261,6 +326,7 @@ def check_reference_consistency(
                         residual_min=residual,
                         prediction_count=len(values),
                         cluster_apices_min=apices,
+                        cluster_extents_min=[list(bounds) for bounds in extents],
                         nearest_ordinal=nearest + 1 if nearest is not None else None,
                         nearest_distance_min=distance,
                         raw_status=raw_status,
@@ -322,6 +388,7 @@ def check_reference_consistency(
             "mapping_unavailable_count": sum(len(ts) for ts in groups.values())
             - len(residuals),
             "pairwise_prediction_count": len(errors),
+            "mapping_excluded_anchors": exclusions,
             "raw_unavailable_count": sum(
                 row["raw_status"] == "unavailable" for row in rows
             ),
@@ -337,8 +404,12 @@ def check_reference_consistency(
             "high_warning_count": sum(row["severity"] == "high" for row in rows),
             "info_warning_count": sum(row["severity"] == "info" for row in rows),
             "mapping_method": (
+                "per directed group pair, iteratively exclude the anchor with "
+                "largest supported own leave-one-out residual above "
+                "mapping_residual_min while at least three anchors remain; "
+                "predict every shared target from remaining anchors with "
                 "leave-one-out PAVA monotonic piecewise-linear interpolation; "
-                "no extrapolation"
+                "no extrapolation; exclusion is not an error adjudication"
             ),
         },
     )
