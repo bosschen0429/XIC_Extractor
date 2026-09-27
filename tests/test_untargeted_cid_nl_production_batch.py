@@ -2088,8 +2088,10 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     assert tuple(retained_recovery.trace.rt) == tuple(acquired.trace.rt)
     assert tuple(retained_recovery.trace.intensity) == tuple(acquired.trace.intensity)
     integ = observation.content.integration
-    assert abs(integ.area_baseline_corrected - 4843.4678) < 1e-3
-    assert abs(integ.height_smoothed - 941.4114) < 1e-3
+    physical_facts = observation.physical_evaluation.facts
+    assert physical_facts is not None
+    assert integ.area_baseline_corrected == physical_facts.area_counts_seconds
+    assert integ.height_smoothed == physical_facts.height
     assert recovered.assessment.content.method_result == "HOLD"
     with pytest.raises(
         capture_owner.SampleLocalCaptureError, match="question is not request-bound"

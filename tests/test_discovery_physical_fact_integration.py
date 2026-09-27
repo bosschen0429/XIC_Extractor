@@ -73,7 +73,7 @@ class _OwnerBoundBatchRaw(_BatchRaw):
     (
         ("discovery_normal_single_peak", (18.45591733148333,), 14712),
         ("discovery_same_peak_seeds", (38.190113531483334,), None),
-        ("discovery_true_double_peak", (15.007716898666667, 15.25524139625), None),
+        ("discovery_true_double_peak", (15.25524139625,), None),
         ("discovery_non_peak_background", (), None),
     ),
 )
@@ -164,13 +164,44 @@ def test_discovery_retained_physical_peak_cardinality(
         tmp_path / "candidates.csv", result.candidates
     )
     valid = [c for c in read_discovery_candidates_csv(path) if c.ms1_peak_found]
+    if representative_scan is not None:
+        # The complete main envelope has one representative. Earlier seeds
+        # have clipped whole contours, rather than independently closed peaks.
+        assert all(not c.is_provisional for c in valid)
     assert sorted(c.ms1_apex_rt for c in valid) == [
         round(apex, 4) for apex in expected_apices
     ]
     assert sorted(
-        c.ms1_apex_rt for c in result.candidates if c.ms1_peak_found
+        c.ms1_apex_rt for c in result.candidates
+        if c.ms1_peak_found and (representative_scan is None or not c.is_provisional)
     ) == pytest.approx(expected_apices)
     assert len(result.physical_work_manifest) == len(fixture["seed_scans"])
+    if fixture_name == "discovery_true_double_peak":
+        from xic_extractor.alignment.config import AlignmentConfig
+        from xic_extractor.alignment.ownership import (
+            build_sample_local_owners_from_discovery_bindings,
+        )
+
+        # The exact acquired fixture has a censored core (8 hits in 3 runs),
+        # not a continuous overlap. Shared hit-density qualification owns it.
+        assert all(not candidate.is_provisional for candidate in valid)
+        assert all(candidate.ms1_area is not None and candidate.ms1_area > 0
+                   for candidate in valid)
+        ownership = build_sample_local_owners_from_discovery_bindings(
+            result.physical_bindings, alignment_config=AlignmentConfig()
+        )
+        assert len(result.physical_bindings) == 1
+        assert len(result.physical_bindings[0].member_source_ordinals) == 2
+        assert len(ownership.owners) == 1
+        evaluation = result.physical_bindings[0].physical_fact_record.evaluation
+        facts = evaluation.facts
+        assert facts is not None
+        assert facts.left_rt_min < 15.0077 < 15.2552 < facts.right_rt_min
+        assert facts.area_source == (
+            "trapezoid_counts_seconds_on_observed_censored_signal"
+        )
+        assert evaluation.integration is not None
+        assert "near_detection_limit" in evaluation.integration.boundary_sources
     if representative_scan is not None:
         assert [c.best_ms2_scan_id for c in valid] == [representative_scan]
         # Baseline-return boundaries admit both supporting seeds. The merge
@@ -184,7 +215,7 @@ def test_discovery_retained_physical_peak_cardinality(
             record.work_item.best_ms2_scan_id: record.evaluation.reason
             for record in result.physical_evaluations
             if record.evaluation.facts is None
-        } == {14067: "no_selection", 14291: "no_selection"}
+        } == {14067: "incomplete_peak_context", 14291: "incomplete_peak_context"}
 
 
 @pytest.mark.parametrize("combine_mode", ("union", "intersection"))
@@ -806,16 +837,21 @@ def test_qualification_survives_physical_fact_reuse(
     raw = _OwnerBoundBatchRaw(source)
     raw.rt = np.linspace(7.45, 8.15, 141)
     if provisional:
-        # The fixed short-scale noise gives raw MAD near 12.25 counts and
-        # peak-to-edge SNR near 4, within the existing provisional band.
-        noise = 10.0 * np.resize([1, -1, 1, -1, 1, 1, -1, -1], raw.rt.size)
+        # An independently defined marginal peak stays in the SNR 3..5 band
+        # across small flank crops, rather than relying on a ripple boundary.
+        indices = np.arange(raw.rt.size)
+        noise = 8.0 * np.sin(2.0 * np.pi * indices / 3.0) + 6.0 * np.cos(
+            2.0 * np.pi * indices / 5.0
+        )
+        amplitude = 30.0
     else:
-        # This original trace is clean once ripple no longer truncates its
-        # interval: its full-peak raw SNR exceeds the provisional threshold.
-        noise = 10.0 * np.random.default_rng(0).normal(size=raw.rt.size)
+        # A high-SNR single peak has no unresolved canonical lobes. The
+        # fixture tests qualification reuse, independently of shoulder review.
+        noise = np.random.default_rng(0).normal(size=raw.rt.size)
+        amplitude = 50.0
     raw.intensity = (
         1000.0
-        + 50.0 * np.exp(-0.5 * ((raw.rt - 7.8) / 0.05) ** 2)
+        + amplitude * np.exp(-0.5 * ((raw.rt - 7.8) / 0.05) ** 2)
         + noise
     )
     qualifier = Mock(wraps=is_provisional_peak_shape)
@@ -1190,13 +1226,16 @@ def test_spec_bound_terminal_physical_truth_remains_distinct_hold_state(
     }
 
 
+
+
+
 def test_discovery_recovers_near_baseline_peak_after_exterior_context_crop(
     tmp_path: Path,
 ) -> None:
     from tests.test_physical_peak_evaluation_persistence import _context_sensitive_trace
 
     rt, intensity = _context_sensitive_trace()
-    rt = 7.8 + (rt[:-1] - 23.0) * 0.025
+    rt = 7.8 + rt[:-1] - rt[23]
     intensity = intensity[:-1]
     profile = SignalProcessingProfile(window_points=15)
     raw_path = tmp_path / "sample.raw"

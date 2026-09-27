@@ -1204,13 +1204,15 @@ def test_adapter_supports_adjacent_physical_peaks_with_interior_scans(
         tmp_path, sample_roles={"S1": "study_sample"}, thermo_raw_sources=True
     )
     source_raw = _FakeRaw((7.8, 8.2))
-    source_raw.rt = np.linspace(7.4, 8.7, 40)
+    # Resolve the valley at the configured Gaussian15 sampling footprint,
+    # while keeping both physical intervals adjacent at the shared return.
+    source_raw.rt = np.linspace(7.4, 8.7, 241)
     source_raw.scans = tuple(
         replace(scan, scan_number=int(np.argmin(np.abs(source_raw.rt - scan.rt))) + 1)
         for scan in source_raw.scans
     )
     source_raw.intensity = sum(
-        height * np.exp(-0.5 * ((source_raw.rt - center) / 0.06) ** 2)
+        height * np.exp(-0.5 * ((source_raw.rt - center) / 0.08) ** 2)
         for height, center in ((200.0, 7.8), (1000.0, 8.2))
     )
     settings = replace(_settings(), neutral_loss_profile=None)
