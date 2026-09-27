@@ -5,6 +5,7 @@ from pathlib import Path
 import numpy as np
 
 from xic_extractor.instrument_qc.pipeline import DEFAULT_DLL_DIR, run_sdolek_pipeline
+from xic_extractor.instrument_qc.pipeline_inputs import discover_sdolek_raws
 from xic_extractor.raw_reader import Ms2Scan, Ms2ScanEvent
 
 
@@ -190,11 +191,21 @@ def test_sdolek_pipeline_uses_xcalibur_default_dll_dir(
     assert calls["dll_dir"] == DEFAULT_DLL_DIR
 
 
-def test_sdolek_pipeline_fails_clearly_when_sdolek_folder_missing(
+def test_sdolek_discovery_finds_flat_folder_raw(tmp_path: Path) -> None:
+    raw_root = tmp_path / "raw"
+    sdolek = raw_root / "SDOLEK-pretest.raw"
+    _write_raw(sdolek)
+    _write_raw(raw_root / "Blank_1.raw")
+    _write_raw(raw_root / "TumorBC2257_DNA.raw")
+
+    assert discover_sdolek_raws(raw_root, []) == (sdolek,)
+
+
+def test_sdolek_pipeline_fails_clearly_when_no_sdolek_raw(
     tmp_path: Path,
 ) -> None:
     raw_root = tmp_path / "raw"
-    raw_root.mkdir()
+    _write_raw(raw_root / "TumorBC2257_DNA.raw")
 
     try:
         run_sdolek_pipeline(
@@ -205,7 +216,7 @@ def test_sdolek_pipeline_fails_clearly_when_sdolek_folder_missing(
     except FileNotFoundError as exc:
         assert "SDOLEK" in str(exc)
     else:
-        raise AssertionError("Expected missing SDOLEK folder to fail clearly")
+        raise AssertionError("Expected missing SDOLEK RAW to fail clearly")
 
 
 def test_pipeline_can_emit_mixstds_outputs_from_explicit_registry(

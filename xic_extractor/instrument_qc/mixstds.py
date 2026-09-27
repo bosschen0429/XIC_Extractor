@@ -5,6 +5,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+from xic_extractor.analysis_set import discover_raw_files
 from xic_extractor.instrument_qc.classification import (
     InstrumentQCClass,
     classify_instrument_qc_raw,
@@ -105,11 +106,10 @@ def discover_mixstds_raws(
     raw_dir: Path,
     diagnostics: list[InstrumentQCDiagnostic],
 ) -> tuple[Path, ...]:
-    """Discover Mix STDs RAW files, preferring /STDs over /Pairs duplicates."""
+    """Discover Mix STDs RAW below raw_dir, preferring /STDs over other copies."""
     candidates = [
         path
-        for folder in ("STDs", "Pairs")
-        for path in sorted((raw_dir / folder).glob("*.raw"))
+        for path in discover_raw_files(raw_dir)
         if classify_instrument_qc_raw(path, raw_dir) == InstrumentQCClass.MIX_STDS
     ]
     selected: list[Path] = []
@@ -190,7 +190,7 @@ def _hcd_group_mapping(
     return values
 
 
-def _mixstds_sort_key(path: Path) -> tuple[int, str]:
+def _mixstds_sort_key(path: Path) -> tuple[int, int, str]:
     folder = path.parent.name.casefold()
     priority = 0 if folder == "stds" else 1
-    return priority, path.stem.casefold()
+    return priority, len(path.parts), path.stem.casefold()

@@ -27,15 +27,13 @@ def classify_instrument_qc_raw(
         return InstrumentQCClass.SDOLEK
     if stem.startswith("sdolek") or stem.startswith("sdo"):
         return InstrumentQCClass.SDOLEK
-    if _is_mixstds_context(folder_parts, stem):
+    if _is_mixstds_name(stem):
         return InstrumentQCClass.MIX_STDS
     if stem.startswith("blank"):
         return InstrumentQCClass.BLANK
     return None
 
 
-def _is_mixstds_context(folder_parts: list[str], stem: str) -> bool:
-    if not any(part in {"stds", "pairs"} for part in folder_parts):
-        return False
+def _is_mixstds_name(stem: str) -> bool:
     normalized = stem.replace("_", " ").replace("-", " ")
     return "mix std" in normalized or "mixstd" in normalized
