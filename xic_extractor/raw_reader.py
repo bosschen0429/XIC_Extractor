@@ -5,7 +5,7 @@ from collections import defaultdict
 from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass, replace
 from datetime import datetime
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from types import SimpleNamespace
 from typing import Any, final
 
@@ -16,6 +16,7 @@ from xic_extractor.acquisition_contract import (
     RawAcquisitionSessionReceipt,
     _mint_raw_acquisition_session_receipt,
 )
+from xic_extractor.injection_timeline import InjectionHeader, ScheduledInjection
 from xic_extractor.ms2_scan_models import Ms2Scan, Ms2ScanEvent
 from xic_extractor.processing_identity import (
     AcquisitionSourceIdentity,
@@ -484,6 +485,51 @@ def read_raw_sample_header(path: Path, dll_dir: Path) -> RawSampleHeader:
                 sample_name=header.sample_name or path.stem,
             )
         return header
+
+
+def read_raw_injection_header(path: Path, dll_dir: Path) -> InjectionHeader:
+    """Read chronology facts only, without spectra or content hashing."""
+    with open_raw(path, dll_dir=dll_dir) as handle:
+        raw = handle._raw_file
+        creation = handle.sample_header.creation_date
+        if creation is None:
+            raise RawReaderError(f"RAW creation date is unavailable: {path}")
+        info = raw.SampleInformation
+        return InjectionHeader(
+            raw_path=str(path.resolve()),
+            acquisition_source=str(info.RawFileName or "").strip(),
+            creation_date=creation,
+            start_time_min=float(raw.RunHeaderEx.StartTime),
+            end_time_min=float(raw.RunHeaderEx.EndTime),
+            instrument_method=str(info.InstrumentMethodFile or "").strip(),
+        )
+
+
+def read_sld_injections(path: Path, dll_dir: Path) -> tuple[ScheduledInjection, ...]:
+    """Read an optional Xcalibur sequence; it supplies no acquisition clock."""
+    errors = preflight_raw_reader(dll_dir)
+    if errors:
+        raise RawReaderError("; ".join(errors))
+    _ensure_assemblies_loaded(dll_dir.resolve(), importlib.import_module)
+    business = importlib.import_module("ThermoFisher.CommonCore.Data.Business")
+    sequence = business.SequenceFileReaderFactory.ReadFile(str(path.resolve()))
+    if sequence is None or sequence.IsError or not sequence.IsOpen:
+        raise RawReaderError(f"Unable to read Xcalibur sequence: {path}")
+    entries = []
+    for index, sample in enumerate(sequence.Samples, start=1):
+        filename = str(sample.RawFileName or "").strip()
+        if filename and not filename.lower().endswith(".raw"):
+            filename += ".raw"
+        source = PureWindowsPath(str(sample.Path or "")) / filename
+        entries.append(
+            ScheduledInjection(
+                sequence_path=str(path.resolve()),
+                row_number=index,
+                acquisition_source=str(source) if filename else "",
+                instrument_method=str(sample.InstrumentMethodFile or "").strip(),
+            )
+        )
+    return tuple(entries)
 
 
 def derive_sample_metadata_from_raw_files(
