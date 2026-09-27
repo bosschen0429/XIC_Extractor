@@ -16,14 +16,28 @@ from xic_extractor.acquisition_contract import (
     RawAcquisitionSessionReceipt,
     _mint_raw_acquisition_session_receipt,
 )
-from xic_extractor.injection_timeline import InjectionHeader, ScheduledInjection
+from xic_extractor.analysis_set import (
+    AnalysisSet,
+    discover_raw_files,
+    select_analysis_set,
+)
+from xic_extractor.injection_timeline import (
+    InjectionHeader,
+    PerturbationPolicy,
+    ScheduledInjection,
+    build_injection_timeline,
+)
 from xic_extractor.ms2_scan_models import Ms2Scan, Ms2ScanEvent
 from xic_extractor.processing_identity import (
     AcquisitionSourceIdentity,
     IdentityContractError,
     fingerprint_file_content,
 )
-from xic_extractor.sample_metadata import SampleMetadata, infer_sample_role
+from xic_extractor.sample_metadata import (
+    SampleMetadata,
+    SampleRole,
+    infer_sample_role,
+)
 from xic_extractor.xic_models import XICRequest, XICTrace
 
 EXPECTED_THERMO_DLLS = (
@@ -490,19 +504,78 @@ def read_raw_sample_header(path: Path, dll_dir: Path) -> RawSampleHeader:
 def read_raw_injection_header(path: Path, dll_dir: Path) -> InjectionHeader:
     """Read chronology facts only, without spectra or content hashing."""
     with open_raw(path, dll_dir=dll_dir) as handle:
-        raw = handle._raw_file
-        creation = handle.sample_header.creation_date
-        if creation is None:
-            raise RawReaderError(f"RAW creation date is unavailable: {path}")
-        info = raw.SampleInformation
-        return InjectionHeader(
-            raw_path=str(path.resolve()),
-            acquisition_source=str(info.RawFileName or "").strip(),
-            creation_date=creation,
-            start_time_min=float(raw.RunHeaderEx.StartTime),
-            end_time_min=float(raw.RunHeaderEx.EndTime),
-            instrument_method=str(info.InstrumentMethodFile or "").strip(),
-        )
+        return _injection_header(handle, path)
+
+
+def _injection_header(handle: RawFileHandle, path: Path) -> InjectionHeader:
+    raw = handle._raw_file
+    creation = handle.sample_header.creation_date
+    if creation is None:
+        raise RawReaderError(f"RAW creation date is unavailable: {path}")
+    info = raw.SampleInformation
+    return InjectionHeader(
+        raw_path=str(path.resolve()),
+        acquisition_source=str(info.RawFileName or "").strip(),
+        creation_date=creation,
+        start_time_min=float(raw.RunHeaderEx.StartTime),
+        end_time_min=float(raw.RunHeaderEx.EndTime),
+        instrument_method=str(info.InstrumentMethodFile or "").strip(),
+    )
+
+
+def read_analysis_set(
+    raw_root: Path,
+    dll_dir: Path,
+    sample_metadata: Sequence[SampleMetadata] | None = None,
+) -> AnalysisSet:
+    """Resolve the analysis set from every RAW below root, one open per RAW."""
+    headers: list[InjectionHeader] = []
+    roles: dict[str, SampleRole] = {}
+    unread: list[str] = []
+    for path in discover_raw_files(raw_root):
+        try:
+            header, role = _analysis_header(path, dll_dir)
+        except (RawReaderError, ValueError):
+            key = str(path.resolve())
+            unread.append(key)
+            roles[key] = infer_sample_role(None, sample_name=path.stem)
+            continue
+        headers.append(header)
+        roles[header.raw_path] = role
+    timeline = build_injection_timeline(headers, PerturbationPolicy())
+    return select_analysis_set(timeline, roles, sample_metadata, unread_paths=unread)
+
+
+_ANALYSIS_HEADER_CACHE: dict[
+    tuple[str, int, int, str], tuple[InjectionHeader, SampleRole]
+] = {}
+
+
+def _analysis_header(path: Path, dll_dir: Path) -> tuple[InjectionHeader, SampleRole]:
+    """Header facts are immutable for an unchanged file; reuse across resolutions."""
+    stat = path.stat()
+    key = (str(path.resolve()), stat.st_size, stat.st_mtime_ns, str(dll_dir))
+    cached = _ANALYSIS_HEADER_CACHE.get(key)
+    if cached is not None:
+        return cached
+    with open_raw(path, dll_dir=dll_dir) as handle:
+        header = _injection_header(handle, path)
+        sample = handle.sample_header
+    # Header SampleName is free text; the RAW filename and method name
+    # carry the lab's role vocabulary (Blank, SDOLEK, STD, wash).
+    role = infer_sample_role(
+        sample.sample_type,
+        sample_name=path.stem,
+        comment=" ".join(
+            (
+                sample.sample_name,
+                PureWindowsPath(header.instrument_method).stem,
+                sample.comment,
+            )
+        ),
+    )
+    _ANALYSIS_HEADER_CACHE[key] = (header, role)
+    return header, role
 
 
 def read_sld_injections(path: Path, dll_dir: Path) -> tuple[ScheduledInjection, ...]:

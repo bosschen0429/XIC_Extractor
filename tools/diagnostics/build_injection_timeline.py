@@ -10,6 +10,7 @@ from datetime import datetime
 from pathlib import Path
 from time import perf_counter
 
+from xic_extractor.analysis_set import discover_raw_files
 from xic_extractor.injection_timeline import (
     PerturbationPolicy,
     build_injection_timeline,
@@ -20,14 +21,6 @@ from xic_extractor.raw_reader import (
     read_raw_injection_header,
     read_sld_injections,
 )
-
-
-def discover_raw_files(root: Path) -> tuple[Path, ...]:
-    if not root.is_dir():
-        raise ValueError(f"RAW root is not a directory: {root}")
-    return tuple(
-        sorted(p for p in root.rglob("*") if p.is_file() and p.suffix.lower() == ".raw")
-    )
 
 
 def _datetime_json(value: object) -> str:
