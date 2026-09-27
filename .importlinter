@@ -61,7 +61,7 @@ forbidden_modules =
 allow_indirect_imports = False
 
 [importlinter:contract:output-does-not-read-raw]
-name = Output does not read raw
+name = Output stays outside RAW and orchestration
 type = forbidden
 source_modules =
     xic_extractor.output
