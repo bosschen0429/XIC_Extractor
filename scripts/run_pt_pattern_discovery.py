@@ -14,11 +14,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from xic_extractor.discovery.delta_mass_pipeline import run_pt_pattern_discovery
-from xic_extractor.presets import (
-    PresetError,
-    load_preset,
-    resolve_pt_pattern_discovery,
-)
+from xic_extractor.presets import PresetError, resolve_pt_pattern_discovery
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -108,29 +104,16 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _preset_requires_cid_nl_csv(preset_name: str) -> bool:
-    """Return whether ``preset_name`` is a composite Pt pattern + CID-NL(dR) preset.
-
-    Mirrors ``resolve_pt_pattern_discovery()``'s composite check (a
-    ``neutral_loss`` tag alongside the ``delta_mass`` tag) so the CLI can
-    fail fast via ``parser.error()`` (argparse-level ``SystemExit(2)``)
-    before ever calling the pipeline. If the preset itself cannot be loaded
-    (unknown name, malformed file), this returns ``False`` and lets
-    ``resolve_pt_pattern_discovery()`` raise the real, more specific error.
-    """
-
-    try:
-        preset = load_preset(preset_name)
-    except PresetError:
-        return False
-    return any(tag.strategy == "neutral_loss" for tag in preset.tags)
-
-
 def main(argv: Sequence[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
 
-    if _preset_requires_cid_nl_csv(args.preset) and args.cid_nl_candidates_csv is None:
+    try:
+        strategy = resolve_pt_pattern_discovery(args.preset)
+    except (PresetError, ValueError) as exc:
+        print(f"pt_pattern_discovery failed: {exc}", file=sys.stderr)
+        return 2
+    if strategy.cid_nl_composite and args.cid_nl_candidates_csv is None:
         parser.error(
             "--cid-nl-candidates-csv is required when --preset is a "
             "composite Pt pattern + CID-NL(dR) preset"
@@ -264,7 +247,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             external_feature_table_tsv=external_feature_table_tsv,
             mzmine_feature_table_csv=mzmine_feature_table_csv,
             output_dir=output_dir,
-            strategy=resolve_pt_pattern_discovery(args.preset),
+            strategy=strategy,
             cid_nl_candidates_csv=cid_nl_candidates_csv,
             trace_summary_csv=trace_summary_csv,
             **trace_overrides,
