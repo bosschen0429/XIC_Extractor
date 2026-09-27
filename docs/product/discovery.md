@@ -173,10 +173,14 @@ the error relative to the configured loss mass; it is not the acceptance gate.
 - Candidates of one sample whose MS1 traces share the apex scan are one
   Discovery peak when their precursor m/z agree within
   `precursor_mz_tolerance_ppm`. A precursor inferred as product + loss carries
-  the MS2 product error, so two candidates of one ion can differ by more; when
-  they differ by at most twice the tolerance, the most intense MS1 centroid at
-  the apex scan within both windows decides, and they merge when it lies within
-  the tolerance of each (#469).
+  the MS2 product error, so two candidates of one ion can differ by more. A
+  window that clips the ion shows only part of its peak, such as the tail, and
+  reports that part with its own apex. When the two differ by at most twice the
+  tolerance, they are one Discovery peak if the other apex lies inside the
+  higher candidate's peak bounds (one peak on that trace) and the most intense
+  MS1 centroids read at the two apexes, each within its own window, agree within
+  the tolerance (one ion). The merged candidate keeps the higher candidate's
+  m/z, peak and area.
 - The peak-anchor schema migration intentionally removed legacy
   `family_context`, `feature_superfamily_id`, `feature_superfamily_size`,
   `feature_superfamily_role`, `feature_superfamily_confidence`, and
