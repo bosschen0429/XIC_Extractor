@@ -103,15 +103,15 @@ def test_measured_front_shift_decides_and_timeline_explains() -> None:
     detected = _batch({"S01": early, "S02": late, "S03": early, "S04": late})
     # S06 cannot be measured: it lacks the first knot.
     del detected["F0"]["S06"]
-    normal = PriorInjection(pre_flagged=False, after_short_run=False)
+    normal = PriorInjection(False, False, False)
     priors = {s: normal for s in SAMPLES}
     # Short method, short idle: the pre-flagged early shift.
-    priors["S01"] = PriorInjection(pre_flagged=True, after_short_run=True)
+    priors["S01"] = PriorInjection(True, True, False)
     # Short method, long idle: not pre-flagged, gradient still unsettled.
-    priors["S02"] = PriorInjection(pre_flagged=False, after_short_run=True)
+    priors["S02"] = PriorInjection(False, True, False)
     # S03 follows a full-length run; S04 has no timeline row.
     del priors["S04"]
-    priors["S05"] = PriorInjection(pre_flagged=True, after_short_run=True)
+    priors["S05"] = PriorInjection(True, True, False)
 
     calibration = _calibrate(detected, priors, anchor_min_sample_fraction=0.9)
 
@@ -124,6 +124,19 @@ def test_measured_front_shift_decides_and_timeline_explains() -> None:
     assert status["S06"] == "unmeasured"
     assert status["S07"] == "not_perturbed"
     assert calibration.perturbation_tolerance_min == pytest.approx(0.1)
+
+
+def test_first_run_after_method_change_explains_outlier() -> None:
+    early = (-0.8, -0.8, 0.0, 0.0, 0.0)
+    detected = _batch({"S01": early, "S02": early})
+    normal = PriorInjection(False, False, False)
+    priors = {s: normal for s in SAMPLES}
+    priors["S01"] = PriorInjection(False, False, True)
+
+    calibration = _calibrate(detected, priors)
+
+    assert calibration.samples["S01"].perturbation_status == "confirmed"
+    assert calibration.samples["S02"].perturbation_status == "unexplained_outlier"
 
 
 def test_cli_writes_calibration_and_heldout_evidence(tmp_path: Path) -> None:
@@ -151,7 +164,10 @@ def test_cli_writes_calibration_and_heldout_evidence(tmp_path: Path) -> None:
                 },
                 "injections": [
                     {
+                        "injection_order": n,
                         "raw_stem": s,
+                        # S03 is the first run after another method.
+                        "header": {"instrument_method": "PRM" if n < 2 else "DDA"},
                         "possibly_perturbed": s == "S01",
                         "previous_raw_stem": "SDOLEK" if s == "S01" else "prior",
                         # S02: within the length ratio, above the 20-min limit.
@@ -161,7 +177,20 @@ def test_cli_writes_calibration_and_heldout_evidence(tmp_path: Path) -> None:
                         "run_length_min": 70.0 if s == "S02" else 60.0,
                         "idle_min": 1.9,
                     }
-                    for s in SAMPLES
+                    for n, s in enumerate(SAMPLES)
+                ]
+                + [
+                    # A blank has its own method; S05 still compares with S04.
+                    {
+                        "injection_order": 3.5,
+                        "raw_stem": "Blank",
+                        "header": {"instrument_method": "Blank"},
+                        "possibly_perturbed": False,
+                        "previous_raw_stem": "S04",
+                        "previous_run_length_min": 60.0,
+                        "run_length_min": 15.0,
+                        "idle_min": 1.9,
+                    }
                 ],
             }
         ),
@@ -197,6 +226,10 @@ def test_cli_writes_calibration_and_heldout_evidence(tmp_path: Path) -> None:
     assert by_sample["S01"]["after_short_run"] is True
     assert by_sample["S01"]["previous_raw_stem"] == "SDOLEK"
     assert by_sample["S02"]["after_short_run"] is False
+    assert by_sample["S03"]["after_method_change"] is True
+    assert by_sample["S03"]["previous_full_run_raw_stem"] == "S02"
+    assert by_sample["S04"]["after_method_change"] is False
+    assert by_sample["S05"]["after_method_change"] is False
     assert by_sample["S11"]["status"] == "insufficient_anchors"
     heldout = payload["heldout_validation"]
     assert heldout["paired_feature_count"] == 1

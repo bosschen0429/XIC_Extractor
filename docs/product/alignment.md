@@ -771,14 +771,17 @@ model and has no RAW, file, or Matrix access.
   explains it. The front shift is the median shift at the batch's earliest
   knots. It is an outlier when it differs from the batch median, in either
   direction, by more than max(k × batch MAD, a minimum shift). An outlier is
-  `confirmed` when the sample is pre-flagged or follows a short method. A short
-  method uses the timeline's persisted run-length limits without the idle
-  limit, because a short method can leave the gradient unsettled after a long
-  idle. An outlier after a full-length run is `unexplained_outlier`, such as a
-  matrix effect, and one without a timeline row is `outlier_without_timeline`.
+  `confirmed` when the sample is pre-flagged, follows a short method, or is the
+  first full-length run after a method change. A short method uses the
+  timeline's persisted run-length limits without the idle limit, because a
+  short method can leave the gradient unsettled after a long idle. A method
+  change compares the instrument method with the latest earlier run longer than
+  the persisted length fraction, skipping blanks and SDO/LEK, whose own methods
+  always differ. Any other outlier is `unexplained_outlier`, such as a matrix
+  effect, and one without a timeline row is `outlier_without_timeline`.
   A pre-flagged sample within tolerance is `flagged_unconfirmed`; a missing
   front knot is `unmeasured`. Sample rows carry the previous injection, its run
-  length, and the idle time. Confirmation does not remove a sample's own
+  length, the idle time, and the compared full-length run. Confirmation does not remove a sample's own
   calibration; no current consumer reads the status.
 - Held-out validation compares non-anchor features before and after
   calibration on the same observations: those inside each sample's anchor span,

@@ -54,27 +54,46 @@ def read_prior_injections(
 
     ``after_short_run`` reuses the pre-flag run-length limits without the idle
     limit: a short method can leave the gradient unsettled after a long idle.
+    ``after_method_change`` compares the latest earlier run longer than the
+    pre-flag length fraction, skipping blanks and SDO/LEK, whose own methods
+    always differ from the sample method.
     """
     payload = json.loads(timeline_path.read_text(encoding="utf-8"))
     if payload.get("schema") != "injection_timeline":
         raise ValueError(f"{timeline_path} is not an injection_timeline sidecar")
     policy = payload["policy"]
+    fraction = policy["max_previous_run_fraction"]
+    rows = sorted(payload["injections"], key=lambda row: row["injection_order"])
     context: dict[str, tuple[PriorInjection, dict[str, object]]] = {}
-    for row in payload["injections"]:
+    for index, row in enumerate(rows):
         previous = row["previous_run_length_min"]
         after_short_run = previous is not None and (
             previous <= policy["max_previous_run_min"]
-            and previous <= row["run_length_min"] * policy["max_previous_run_fraction"]
+            and previous <= row["run_length_min"] * fraction
         )
+        full_run = next(
+            (
+                earlier
+                for earlier in reversed(rows[:index])
+                if earlier["run_length_min"] > row["run_length_min"] * fraction
+            ),
+            None,
+        )
+        method = row["header"]["instrument_method"]
         context[row["raw_stem"]] = (
             PriorInjection(
                 pre_flagged=bool(row["possibly_perturbed"]),
                 after_short_run=after_short_run,
+                after_method_change=full_run is not None
+                and full_run["header"]["instrument_method"] != method,
             ),
             {
                 "previous_raw_stem": row["previous_raw_stem"],
                 "previous_run_length_min": _round(previous),
                 "idle_min": _round(row["idle_min"]),
+                "previous_full_run_raw_stem": (
+                    full_run["raw_stem"] if full_run is not None else None
+                ),
             },
         )
     return context
@@ -191,6 +210,8 @@ def _sample_rows(
                 "previous_raw_stem": context.get("previous_raw_stem"),
                 "previous_run_length_min": context.get("previous_run_length_min"),
                 "idle_min": context.get("idle_min"),
+                "after_method_change": prior.after_method_change if prior else None,
+                "previous_full_run_raw_stem": context.get("previous_full_run_raw_stem"),
             }
         )
     return rows

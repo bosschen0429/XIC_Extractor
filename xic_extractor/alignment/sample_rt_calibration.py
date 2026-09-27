@@ -44,6 +44,8 @@ class PriorInjection:
     pre_flagged: bool
     # Previous run is a short method under the timeline policy, at any idle.
     after_short_run: bool
+    # The latest full-length run before this one used another method.
+    after_method_change: bool
 
 
 @dataclass(frozen=True)
@@ -233,7 +235,7 @@ def _perturbation_status(
     if abs(front_shift - center) > tolerance:
         if prior is None:
             return "outlier_without_timeline"
-        if prior.pre_flagged or prior.after_short_run:
+        if prior.pre_flagged or prior.after_short_run or prior.after_method_change:
             return "confirmed"
         return "unexplained_outlier"
     if prior is not None and prior.pre_flagged:
