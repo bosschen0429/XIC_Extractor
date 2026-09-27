@@ -480,7 +480,7 @@ def test_valid_canonical_hash_snapshots_match_current_profile(tmp_path: Path) ->
         "ac3cde8c5997d57e23192c2817ce218c01e4b942e12be297c8fa4dd614d38375"
     )
     assert spec.run_spec_hash == (
-        "5d38d23bfedcd8ba00349654d34b724749b87e425d1dfc1a9310ac44043b9128"
+        "26ce980496cafd51641d1f4170a2ec79aa364c9cc17ca3a0adcc20ba48ce8a1f"
     )
 
 
