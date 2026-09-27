@@ -376,7 +376,9 @@ def test_physical_question_containment_is_closed_complete_and_owner_derived() ->
     overlap_rt = np.linspace(0.0, 3.0, 15)
     overlap_raw = np.zeros(15)
     overlap_raw[6] = 100.0
-    overlap_raw[8] = 60.0
+    # The two Gaussian3 supports return to a shared observed valley. A
+    # shallower unresolved shoulder is one envelope, not two memberships.
+    overlap_raw[10] = 60.0
     overlap_prepared = prepare_physical_signal(
         overlap_rt,
         overlap_raw,

@@ -222,12 +222,11 @@ def test_formal_target_ranks_only_physically_supported_signal(
                 sigma = np.where(rt < 4.7, 0.07, 0.25)
                 raw = 1000.0 * np.exp(-0.5 * ((rt - 4.7) / sigma) ** 2)
                 raw[raw < 1e-4] = 0.0
-            fragmented = 1000.0 * np.exp(-0.5 * ((rt - 6.0) / 0.12) ** 2)
-            fragmented[fragmented < 1e-4] = 0.0
-            fragmented[::2] = 0.0
-            # One adjacent acquired pair cannot repair repeated interruptions.
-            fragmented[int(np.argmin(np.abs(rt - 6.0)))] = 1000.0
-            return rt, raw + fragmented
+            # A strong isolated acquired impulse is not a supported peak,
+            # even though Gaussian smoothing gives it a clean-looking lobe.
+            impulse = np.zeros_like(rt)
+            impulse[int(np.argmin(np.abs(rt - 6.0)))] = 10000.0
+            return rt, raw + impulse
 
     monkeypatch.setattr("xic_extractor.extractor.open_raw", lambda *_args: Raw())
     output = _run(config, [target])
@@ -245,7 +244,7 @@ def test_formal_target_ranks_only_physically_supported_signal(
 
     if with_supported_main:
         # The asymmetric analytic lobe is supported even though its canonical
-        # shape is less symmetric than the smoothed, interrupted tail.
+        # shape is less symmetric than the smoothed isolated impulse.
         assert result.reported_rt == pytest.approx(4.7, abs=0.04)
         assert evaluation.state == "available"
         assert evaluation.facts is not None
@@ -270,6 +269,43 @@ def test_formal_target_ranks_only_physically_supported_signal(
         assert projection.counted_detection is False
         assert rows[0]["Qualified_RT"] == rows[0]["Qualified_Area"] == "ND"
         assert long_rows[0]["Counted Detection"] == "FALSE"
+
+
+
+def test_formal_target_keeps_observed_area_of_scan_dropout_peak(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = _config(tmp_path)
+    (config.data_dir / "SampleA.raw").write_text("", encoding="utf-8")
+    target = replace(
+        _target("Sparse", neutral_loss_da=None), rt_min=5.5, rt_max=6.5,
+    )
+    acquired_areas: list[float] = []
+
+    class Raw(_FakeRaw):
+        def extract_xic(self, mz, rt_min, rt_max, ppm_tol):
+            rt = np.linspace(rt_min, rt_max, round((rt_max - rt_min) * 100) + 1)
+            raw = 1000.0 * np.exp(-0.5 * ((rt - 6.0) / 0.12) ** 2)
+            raw[raw < 1e-4] = 0.0
+            raw[::2] = 0.0
+            raw[int(np.argmin(np.abs(rt - 6.0)))] = 1000.0
+            acquired_areas.append(float(np.trapezoid(raw, rt)) * 60.0)
+            return rt, raw
+
+    monkeypatch.setattr("xic_extractor.extractor.open_raw", lambda *_args: Raw())
+    result = _run(config, [target]).file_results[0].results[target.label]
+    evaluation = result.physical_evaluation
+    assert evaluation is not None and evaluation.facts is not None
+    assert evaluation.state == "available"
+    assert evaluation.facts.left_rt_min < 5.64 < 6.36 < evaluation.facts.right_rt_min
+    assert result.reported_rt == pytest.approx(6.0, abs=0.01)
+    assert result.reported_peak_area == evaluation.facts.area_counts_seconds
+    assert result.reported_peak_area == pytest.approx(acquired_areas[0], rel=0.03)
+    rows = _read_csv(config.output_csv)
+    assert float(rows[0]["Sparse_RT"]) == pytest.approx(6.0)
+    assert float(rows[0]["Sparse_Area"]) == pytest.approx(
+        result.reported_peak_area, abs=0.01,
+    )
 
 
 def test_formal_target_drops_selection_when_final_physical_owner_is_unavailable(
