@@ -225,7 +225,7 @@ def test_formal_target_ranks_only_physically_supported_signal(
             fragmented = 1000.0 * np.exp(-0.5 * ((rt - 6.0) / 0.12) ** 2)
             fragmented[fragmented < 1e-4] = 0.0
             fragmented[::2] = 0.0
-            # One adjacent acquired pair cannot repair repeated interruptions.
+            # One dense censored cluster is qualified by local hit enrichment.
             fragmented[int(np.argmin(np.abs(rt - 6.0)))] = 1000.0
             return rt, raw + fragmented
 
@@ -260,16 +260,23 @@ def test_formal_target_ranks_only_physically_supported_signal(
         )
         assert long_rows[0]["Counted Detection"] == "FALSE"
     else:
-        assert result.reported_rt is None
-        assert result.reported_peak_area is None
-        assert result.peak is None
-        assert result.selected_hypothesis is None
-        assert result.selection_decision is None
-        assert evaluation.state == "unavailable"
-        assert evaluation.reason == "no_selection"
-        assert projection.counted_detection is False
-        assert rows[0]["Qualified_RT"] == rows[0]["Qualified_Area"] == "ND"
-        assert long_rows[0]["Counted Detection"] == "FALSE"
+        # A dense hit cluster with empty flanks is acquired censored support.
+        # Its intensity interruptions do not justify an unavailable answer.
+        assert result.reported_rt == pytest.approx(6.0, abs=0.04)
+        assert evaluation.state == "available"
+        assert evaluation.facts is not None
+        assert evaluation.integration is not None
+        assert evaluation.facts.area_source == (
+            "trapezoid_counts_seconds_on_observed_censored_signal"
+        )
+        assert "near_detection_limit" in evaluation.integration.boundary_sources
+        assert result.reported_peak_area == evaluation.facts.area_counts_seconds
+        assert result.reported_peak_area > 0
+        assert projection.counted_detection is True
+        assert rows[0]["Qualified_RT"] != "ND"
+        assert rows[0]["Qualified_Area"] != "ND"
+        assert long_rows[0]["Counted Detection"] == "TRUE"
+
 
 
 
