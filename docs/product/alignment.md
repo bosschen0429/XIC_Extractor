@@ -748,6 +748,40 @@ crossing, ambiguity, or typed-lineage review. If those consumers disappear,
 remove the entry point and workflow, retaining only primitives reused by the
 Alignment owner.
 
+## Sample RT Calibration Diagnostic
+
+`python -m tools.diagnostics.build_sample_rt_calibration` places every sample
+on a common RT coordinate. CLI help owns the arguments. Anchors are
+`alignment_cells.tsv` features with `detected` status in at least the
+configured fraction of the batch's samples, not only ISTDs; backfilled or
+inferred cells never become anchors. `alignment.sample_rt_calibration` owns the
+model and has no RAW, file, or Matrix access.
+
+- Anchors whose median RT lies within the merge tolerance collapse into one
+  knot. Isotope, adduct, and fragment families of one compound share its RT;
+  kept separate, their per-sample order inverts and the piecewise model fails.
+- Each sample's knots pair its observed RT with the knot's cross-sample median.
+  They must increase strictly on both axes and reuse the formal drift owner's
+  `interpolate_calibrated_rt_min`. A calibrated RT exists only inside that
+  sample's first and last knot; outside that span it is unavailable, never
+  extrapolated. Fewer than two knots, or crossing knots, leave the sample
+  uncalibrated.
+- Perturbation confirmation consumes the
+  [injection timeline](sample-metadata-qc.md#injection-timeline-diagnostic)
+  pre-flag. The front shift is the median shift at the batch's earliest knots.
+  A pre-flagged sample is `confirmed` only when its front shift differs from
+  the batch median by more than max(k × batch MAD, a minimum shift). Unflagged
+  samples are never confirmed, and a missing front knot is `flagged_unmeasured`.
+  Consumers exclude confirmed samples from trajectories and templates, but those
+  samples still use their own calibration.
+- Held-out validation compares non-anchor features detected in at least the
+  configured fraction, before and after calibration, on the same observations.
+
+Outputs are a JSON sidecar with the policy, knots, per-band knot counts, and
+per-sample knots, plus sample and held-out TSVs. Evidence is `diagnostic_only`.
+The diagnostic does not change grouping, peak selection, drift-corrected edge
+scoring, or values.
+
 ## Retained Validation Anchors
 
 - The 2026-05-28 Targeted GT alignment audit fixtures for `5-medC` are

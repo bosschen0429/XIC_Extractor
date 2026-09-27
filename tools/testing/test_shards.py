@@ -301,6 +301,7 @@ SHARD_PATTERNS: ShardPatterns = OrderedDict(
             "tests/test_run_instrument_qc.py",
             "tests/test_sample_metadata*.py",
             "tests/test_injection_timeline.py",
+            "tests/test_sample_rt_calibration.py",
             "tests/test_schema_*.py",
             "tests/test_shape.py",
             "tests/test_timing.py",

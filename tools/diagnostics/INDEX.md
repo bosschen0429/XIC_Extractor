@@ -315,6 +315,21 @@ authority.
 
 ---
 
+### `build_sample_rt_calibration.py`
+
+- **Role:** evidence producer; maintained operator interface.
+- **Owner:** `xic_extractor.alignment.sample_rt_calibration`; contract in
+  [`alignment.md`](../../docs/product/alignment.md#sample-rt-calibration-diagnostic).
+- **Use:** `python -m tools.diagnostics.build_sample_rt_calibration --help`.
+- **Outputs:** calibration JSON, sample TSV, and held-out TSV from
+  `alignment_cells.tsv` plus an optional injection timeline JSON. It does not
+  read RAW.
+- **Authority:** `diagnostic_only`; no grouping, selection, RT, or value
+  authority. Keep until a correspondence owner adopts the same model; the older
+  `analyze_rt_normalization_anchors.py` uses Targeted-workbook anchors instead.
+
+---
+
 ### `backfill_decision_ledger.py`
 
 **Purpose**: Build a deterministic, bounded, no-RAW decision ledger and summary
