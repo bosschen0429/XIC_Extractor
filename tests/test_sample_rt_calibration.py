@@ -1,3 +1,4 @@
+import csv
 import json
 from pathlib import Path
 
@@ -120,6 +121,7 @@ def test_cli_writes_calibration_and_heldout_evidence(tmp_path: Path) -> None:
     # Seen in 9 samples: below the anchor threshold, above the held-out one.
     detected["heldout"] = {s: 11.0 for s in SAMPLES[:9]}
     detected["heldout"]["S01"] = 10.4
+    detected["heldout"]["S09"] = 33.0  # outside S09's anchor span
     cells = tmp_path / "alignment_cells.tsv"
     lines = ["feature_family_id\tsample_stem\tstatus\tapex_rt"]
     for feature, rts in detected.items():
@@ -153,7 +155,7 @@ def test_cli_writes_calibration_and_heldout_evidence(tmp_path: Path) -> None:
                 "--anchor-min-sample-fraction",
                 "0.9",
                 "--heldout-min-sample-fraction",
-                "0.8",
+                "0.7",
             ]
         )
         == 0
@@ -170,5 +172,9 @@ def test_cli_writes_calibration_and_heldout_evidence(tmp_path: Path) -> None:
     heldout = payload["heldout_validation"]
     assert heldout["paired_feature_count"] == 1
     assert heldout["calibrated_median_feature_mad_min"] < 0.01
-    rows = (out / "sample_rt_calibration_heldout.tsv").read_text("utf-8")
-    assert "S01\t10-15\t1\t-0.6\t1\t" in rows
+    with (out / "sample_rt_calibration_heldout.tsv").open(encoding="utf-8") as f:
+        rows = {row["sample_stem"]: row for row in csv.DictReader(f, delimiter="\t")}
+    assert rows["S01"]["rt_band"] == "10-15"
+    assert float(rows["S01"]["raw_median_offset_min"]) == pytest.approx(-0.6)
+    assert abs(float(rows["S01"]["calibrated_median_offset_min"])) < 0.01
+    assert "S09" not in rows

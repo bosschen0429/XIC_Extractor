@@ -65,7 +65,8 @@ def heldout_band_offsets(
 ) -> tuple[list[dict[str, object]], dict[str, object]]:
     """Offsets of non-anchor features, before and after calibration.
 
-    Calibrated offsets use only observations inside the sample's anchor span.
+    Both sides use the same observations: those inside each sample's anchor
+    span, for features with at least ``min_samples`` such observations.
     """
     anchor_ids = {f for knot in calibration.knots for f in knot.feature_ids}
     raw_by_band: dict[tuple[str, str], list[float]] = {}
@@ -76,7 +77,6 @@ def heldout_band_offsets(
     for feature_id, rt_by_sample in detected.items():
         if feature_id in anchor_ids or len(rt_by_sample) < min_samples:
             continue
-        raw_center = median(rt_by_sample.values())
         calibrated: dict[str, float] = {}
         for sample, rt in rt_by_sample.items():
             sample_cal = calibration.samples.get(sample)
@@ -85,16 +85,17 @@ def heldout_band_offsets(
                 outside += 1
             else:
                 calibrated[sample] = value
-        band = _band_label(raw_center, band_edges)
-        for sample, rt in rt_by_sample.items():
-            raw_by_band.setdefault((sample, band), []).append(rt - raw_center)
         if len(calibrated) >= min_samples:
             # Paired comparison: the same observations before and after.
             paired_raw = [rt_by_sample[sample] for sample in calibrated]
             paired_center = median(paired_raw)
             raw_mads.append(median(abs(rt - paired_center) for rt in paired_raw))
             cal_center = median(calibrated.values())
+            band = _band_label(paired_center, band_edges)
             for sample, value in calibrated.items():
+                raw_by_band.setdefault((sample, band), []).append(
+                    rt_by_sample[sample] - paired_center
+                )
                 cal_by_band.setdefault((sample, band), []).append(value - cal_center)
             cal_mads.append(
                 median(abs(value - cal_center) for value in calibrated.values())
@@ -103,14 +104,9 @@ def heldout_band_offsets(
         {
             "sample_stem": sample,
             "rt_band": band,
-            "raw_feature_count": len(raw_values),
+            "paired_feature_count": len(raw_values),
             "raw_median_offset_min": _round(median(raw_values)),
-            "calibrated_feature_count": len(cal_by_band.get((sample, band), ())),
-            "calibrated_median_offset_min": _round(
-                median(cal_by_band[(sample, band)])
-                if (sample, band) in cal_by_band
-                else None
-            ),
+            "calibrated_median_offset_min": _round(median(cal_by_band[(sample, band)])),
         }
         for (sample, band), raw_values in sorted(raw_by_band.items())
     ]

@@ -772,10 +772,11 @@ model and has no RAW, file, or Matrix access.
   A pre-flagged sample is `confirmed` only when its front shift differs from
   the batch median by more than max(k × batch MAD, a minimum shift). Unflagged
   samples are never confirmed, and a missing front knot is `flagged_unmeasured`.
-  Consumers exclude confirmed samples from trajectories and templates, but those
-  samples still use their own calibration.
-- Held-out validation compares non-anchor features detected in at least the
-  configured fraction, before and after calibration, on the same observations.
+  Confirmation does not remove a sample's own calibration; no current consumer
+  reads the status.
+- Held-out validation compares non-anchor features before and after
+  calibration on the same observations: those inside each sample's anchor span,
+  for features with at least the configured fraction of such observations.
 
 Outputs are a JSON sidecar with the policy, knots, per-band knot counts, and
 per-sample knots, plus sample and held-out TSVs. Evidence is `diagnostic_only`.
