@@ -658,30 +658,39 @@ def _sustained_envelope_valley(
     """
     spacing = float(np.median(np.diff(rt[left.index:right.index + 1])))
     footprint = spacing * max(0, policy.morphology_trace_window_points - 1)
-    valley_height = float(signal[valley_index])
-    if additional_envelope_smoothing:
-        # A finer canonical notch cannot set the depth of a broader RT valley.
-        # When both signals already share one scale, retain the canonical depth
-        # rather than widening a shallow valley into an independent component.
-        support_left = max(
-            left.index,
-            int(np.searchsorted(rt, rt[valley_index] - 0.5 * footprint, side="left")),
-        )
-        support_right = min(
-            right.index + 1,
-            int(np.searchsorted(rt, rt[valley_index] + 0.5 * footprint, side="right")),
-        )
-        valley_height = float(np.max(signal[support_left:support_right]))
     weaker_height = min(float(signal[left.index]), float(signal[right.index]))
-    if weaker_height <= valley_height:
-        return False
-    threshold = valley_height + 0.5 * (weaker_height - valley_height)
-    start = end = valley_index
-    while start > left.index and signal[start - 1] <= threshold:
-        start -= 1
-    while end < right.index and signal[end + 1] <= threshold:
-        end += 1
-    return bool(rt[end] - rt[start] >= footprint)
+    valley_height = float(signal[valley_index])
+    # An accepted canonical valley already separates these components. A
+    # coarser-scale rescue may add separation evidence, never remove it.
+    for use_supported_floor in (False, True):
+        if use_supported_floor:
+            if not additional_envelope_smoothing:
+                return False
+            # A finer canonical notch cannot set the depth of a broader RT valley.
+            support_left = max(
+                left.index,
+                int(np.searchsorted(
+                    rt, rt[valley_index] - 0.5 * footprint, side="left"
+                )),
+            )
+            support_right = min(
+                right.index + 1,
+                int(np.searchsorted(
+                    rt, rt[valley_index] + 0.5 * footprint, side="right"
+                )),
+            )
+            valley_height = float(np.max(signal[support_left:support_right]))
+        if weaker_height <= valley_height:
+            continue
+        threshold = valley_height + 0.5 * (weaker_height - valley_height)
+        start = end = valley_index
+        while start > left.index and signal[start - 1] <= threshold:
+            start -= 1
+        while end < right.index and signal[end + 1] <= threshold:
+            end += 1
+        if rt[end] - rt[start] >= footprint:
+            return True
+    return False
 
 
 def _sustained_canonical_valley(

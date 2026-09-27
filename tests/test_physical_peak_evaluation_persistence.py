@@ -501,6 +501,36 @@ def test_supported_narrow_candidate_is_available_without_a_remote_seed(
     assert 0.85 * analytic_mass < peak.area < 1.01 * analytic_mass
 
 
+@pytest.mark.parametrize("additional_envelope_smoothing", [False, True])
+def test_supported_valley_cannot_be_revoked_by_a_higher_rescue_window_neighbor(
+    additional_envelope_smoothing: bool,
+) -> None:
+    from xic_extractor.peak_detection.chrom_peak_segments import (
+        ChromPeakSegmentPolicy,
+        _ApexSeed,
+        _sustained_envelope_valley,
+    )
+
+    rt = np.arange(201, dtype=float) / 200.0
+    signal = np.full(rt.size, 2.0)
+    signal[:10] = 0.0
+    signal[20] = 1000.0
+    signal[165] = 30.0
+    signal[196:] = 20.0
+    policy = ChromPeakSegmentPolicy(morphology_trace_window_points=15)
+    left = _ApexSeed(index=20, height=1000.0, threshold=0.0)
+    right = _ApexSeed(index=200, height=20.0, threshold=0.0)
+    # The canonical half-depth level is 11: the sampled interval 0.83..0.975
+    # is below it for 0.145 minutes, longer than the 0.07-minute footprint.
+    # A higher neighbor at 0.825 lies in the optional rescue window. It cannot
+    # erase that accepted separation and join a complete main component to
+    # the weaker component reaching the acquired edge at 1.0.
+    assert _sustained_envelope_valley(
+        signal, rt, left, right, 170, policy,
+        additional_envelope_smoothing=additional_envelope_smoothing,
+    )
+
+
 def test_short_apex_dropout_keeps_one_complete_quantitative_candidate() -> None:
     rt = np.linspace(0.0, 5.0, 1001)
     raw = 1000.0 * np.exp(-0.5 * ((rt - 2.27) / 0.40) ** 2)
