@@ -29,6 +29,7 @@ from xic_extractor.processing_identity import (
 )
 from xic_extractor.processing_run_spec import ProcessingRunSpec
 from xic_extractor.validation_primitives import (
+    is_lower_sha256,
     require_integer,
     require_lower_sha256,
     require_owner_normalized_text,
@@ -535,11 +536,7 @@ def validate_candidate_universe_payload(
             or any(not isinstance(item, str) or not item.strip() for item in ids)
         ):
             raise IdentityContractError("candidate universe IDs are invalid")
-        if (
-            not isinstance(digest, str)
-            or len(digest) != 64
-            or any(character not in "0123456789abcdef" for character in digest)
-        ):
+        if not is_lower_sha256(digest):
             raise IdentityContractError("candidate universe digest is invalid")
         if (
             not isinstance(entry.get("discovery_receipt_id"), str)
@@ -549,7 +546,7 @@ def validate_candidate_universe_payload(
             or not isinstance(entry.get("candidate_artifact_schema_version"), str)
             or entry["candidate_artifact_schema_version"]
             != DISCOVERY_CANDIDATE_ARTIFACT_SCHEMA_VERSION
-            or not _is_digest(entry.get("candidate_artifact_sha256"))
+            or not is_lower_sha256(entry.get("candidate_artifact_sha256"))
             or isinstance(entry.get("candidate_artifact_byte_size"), bool)
             or not isinstance(entry.get("candidate_artifact_byte_size"), int)
             or entry["candidate_artifact_byte_size"] < 0
@@ -578,14 +575,6 @@ def canonical_sample_stems(values: Sequence[str]) -> tuple[str, ...]:
     ):
         raise IdentityContractError("sample stems must be unique non-empty text")
     return stems
-
-
-def _is_digest(value: object) -> bool:
-    return (
-        isinstance(value, str)
-        and len(value) == 64
-        and all(character in "0123456789abcdef" for character in value)
-    )
 
 
 __all__ = (
