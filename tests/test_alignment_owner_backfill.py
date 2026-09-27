@@ -24,10 +24,10 @@ from xic_extractor.alignment.backfill_request_plan import (
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.owner_clustering import OwnerAlignedFeature
 from xic_extractor.config import ExtractionConfig
-from xic_extractor.peak_detection.region_audit import PeakRegionAuditSummary
-from xic_extractor.peak_detection.signal_processing_profile import (
+from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )
+from xic_extractor.peak_detection.region_audit import PeakRegionAuditSummary
 from xic_extractor.processing_identity import build_acquisition_source_identity
 
 _TEST_SIGNAL_PROCESSING_PROFILE = SignalProcessingProfile(window_points=3)

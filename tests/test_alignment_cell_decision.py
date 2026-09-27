@@ -66,6 +66,9 @@ from xic_extractor.alignment.projection.untarget import (
     GroupCellSubject,
     project_untarget_pre_cell,
 )
+from xic_extractor.configuration.signal_processing_profile import (
+    SignalProcessingProfile,
+)
 from xic_extractor.extraction.peak_hypothesis_adapter import (
     build_targeted_peak_hypotheses,
 )
@@ -81,9 +84,6 @@ from xic_extractor.peak_detection.observations import mint_peak_observation_ref
 from xic_extractor.peak_detection.physical_peak_evaluation import (
     evaluate_physical_peak,
     prepare_physical_signal,
-)
-from xic_extractor.peak_detection.signal_processing_profile import (
-    SignalProcessingProfile,
 )
 from xic_extractor.peak_detection.traces import Trace
 from xic_extractor.processing_identity import resolve_request_acquisition_source

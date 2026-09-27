@@ -9,6 +9,10 @@ from typing import Any
 
 import numpy as np
 
+from xic_extractor.configuration.signal_processing_profile import (
+    DEFAULT_SIGNAL_PROCESSING_PROFILE,
+    SignalProcessingProfile,
+)
 from xic_extractor.peak_detection.background_shape import (
     has_deficient_monotone_run,
     has_unresolved_valley_floors,
@@ -71,10 +75,6 @@ from xic_extractor.peak_detection.physical_peak_models import (
 from xic_extractor.peak_detection.scoring_metrics import (
     noise_shape_severity,
     short_scale_noise_mad,
-)
-from xic_extractor.peak_detection.signal_processing_profile import (
-    DEFAULT_SIGNAL_PROCESSING_PROFILE,
-    SignalProcessingProfile,
 )
 
 

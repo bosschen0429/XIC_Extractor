@@ -9,6 +9,10 @@ from pathlib import Path
 
 from xic_extractor.alignment.discovery_input_source import DiscoveryInputSource
 from xic_extractor.config import ExtractionConfig
+from xic_extractor.configuration.signal_processing_profile import (
+    SignalProcessingProfile,
+    canonical_signal_processing_profile_bytes,
+)
 from xic_extractor.discovery.models import (
     DiscoveryCandidate,
     DiscoverySettings,
@@ -27,10 +31,6 @@ from xic_extractor.extraction.untargeted_production_batch import (
     _physical_subject_units,
     cid_nl_composition,
     mint_subject_membership_from_physical_units,
-)
-from xic_extractor.peak_detection.signal_processing_profile import (
-    SignalProcessingProfile,
-    canonical_signal_processing_profile_bytes,
 )
 from xic_extractor.processing_identity import AcquisitionSourceExpectation
 from xic_extractor.sample_metadata import SampleMetadata

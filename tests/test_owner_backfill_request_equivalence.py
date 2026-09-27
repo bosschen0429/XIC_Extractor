@@ -38,7 +38,7 @@ from xic_extractor.alignment.backfill_scope import backfill_request_sample_stems
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.ms1_index_source import BackfillXicBackend
 from xic_extractor.alignment.raw_sources import timed_backfill_sources
-from xic_extractor.peak_detection.signal_processing_profile import (
+from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )
 from xic_extractor.processing_identity import (

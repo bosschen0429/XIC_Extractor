@@ -9,6 +9,9 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 
 from xic_extractor.config import ExtractionConfig, Target
+from xic_extractor.configuration.signal_processing_profile import (
+    resolve_signal_processing_profile,
+)
 from xic_extractor.extraction.anchors import (
     apply_anchor_mismatch_penalty,
     paired_anchor_mismatch_diagnostic,
@@ -67,9 +70,6 @@ from xic_extractor.peak_detection.physical_peak_models import (
 from xic_extractor.peak_detection.scoring_models import ScoringContext
 from xic_extractor.peak_detection.selection_decision import (
     selection_decision_from_hypothesis,
-)
-from xic_extractor.peak_detection.signal_processing_profile import (
-    resolve_signal_processing_profile,
 )
 from xic_extractor.processing_identity import AcquisitionSourceExpectation
 from xic_extractor.rt_prior_library import LibraryEntry

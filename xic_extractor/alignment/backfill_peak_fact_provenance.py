@@ -56,6 +56,9 @@ from xic_extractor.alignment.production_decisions import (
     build_production_decisions,
     production_cell_decision_projection,
 )
+from xic_extractor.configuration.signal_processing_profile import (
+    SignalProcessingProfile,
+)
 from xic_extractor.peak_detection.physical_peak_codec import (
     rehydrate_physical_peak_evaluation,
 )
@@ -66,9 +69,6 @@ from xic_extractor.peak_detection.physical_peak_evaluation import (
 )
 from xic_extractor.peak_detection.physical_peak_models import (
     PhysicalPeakEvaluation,
-)
-from xic_extractor.peak_detection.signal_processing_profile import (
-    SignalProcessingProfile,
 )
 
 if TYPE_CHECKING:

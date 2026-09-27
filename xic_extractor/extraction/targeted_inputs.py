@@ -7,6 +7,9 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from xic_extractor.config import ConfigError, ExtractionConfig
+from xic_extractor.configuration.signal_processing_profile import (
+    SignalProcessingProfile,
+)
 from xic_extractor.configuration.target_identity import (
     TargetListSnapshot,
     target_list_snapshot_payload,
@@ -23,9 +26,6 @@ from xic_extractor.peak_detection.physical_peak_models import PhysicalPeakEvalua
 from xic_extractor.peak_detection.search_scope import (
     PHYSICAL_CAPTURE_INPUT_KEY,
     physical_capture_input_payload,
-)
-from xic_extractor.peak_detection.signal_processing_profile import (
-    SignalProcessingProfile,
 )
 from xic_extractor.processing_identity import (
     AcquisitionInputBinding,

@@ -5,6 +5,9 @@ import numpy as np
 import pytest
 
 from xic_extractor.config import ExtractionConfig, Target
+from xic_extractor.configuration.signal_processing_profile import (
+    SignalProcessingProfile,
+)
 from xic_extractor.extraction.scoring_factory import (
     allow_prepass_anchor,
     build_scoring_context_factory,
@@ -22,9 +25,6 @@ from xic_extractor.peak_detection.physical_peak_evaluation import (
     prepare_physical_signal,
 )
 from xic_extractor.peak_detection.scoring_metrics import local_sn_severity
-from xic_extractor.peak_detection.signal_processing_profile import (
-    SignalProcessingProfile,
-)
 from xic_extractor.rt_prior_library import LibraryEntry
 from xic_extractor.signal_processing import (
     PeakCandidate,

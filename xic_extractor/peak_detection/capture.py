@@ -6,6 +6,9 @@ from typing import cast
 
 import numpy as np
 
+from xic_extractor.configuration.signal_processing_profile import (
+    SignalProcessingProfile,
+)
 from xic_extractor.peak_detection.baseline import BaselineMethod, asls_baseline
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     CidNlMethodSubject,
@@ -61,9 +64,6 @@ from xic_extractor.peak_detection.search_scope import (
     require_capture_binding,
     validate_scope_owner_binding,
     validate_scope_trace_coordinates,
-)
-from xic_extractor.peak_detection.signal_processing_profile import (
-    SignalProcessingProfile,
 )
 from xic_extractor.peak_detection.traces import Trace, TraceGroup
 from xic_extractor.processing_identity import ProcessingOwnerReferences

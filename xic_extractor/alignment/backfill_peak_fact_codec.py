@@ -38,12 +38,12 @@ from xic_extractor.alignment.production_decisions import (
     BACKFILL_AUTHORITY_CELL_ID_PREFIX,
     PRODUCTION_CELL_DECISION_ID_PREFIX,
 )
-from xic_extractor.peak_detection.physical_peak_models import (
-    PhysicalPeakState,
-)
-from xic_extractor.peak_detection.signal_processing_profile import (
+from xic_extractor.configuration.signal_processing_profile import (
     DEFAULT_SIGNAL_PROCESSING_PROFILE,
     SignalProcessingProfile,
+)
+from xic_extractor.peak_detection.physical_peak_models import (
+    PhysicalPeakState,
 )
 
 BACKFILL_PEAK_FACT_PROVENANCE_SCHEMA_VERSION = (

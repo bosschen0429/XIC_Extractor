@@ -51,6 +51,9 @@ from xic_extractor.alignment.untargeted_finalized_matrix import (
     project_completed_untarget_batch_writer_inputs,
 )
 from xic_extractor.alignment.workflow import CompletedUntargetBatchWorkflowResult
+from xic_extractor.configuration.signal_processing_profile import (
+    DEFAULT_SIGNAL_PROCESSING_PROFILE,
+)
 from xic_extractor.diagnostics.process_memory import (
     ProcessMemoryPeak,
     ProcessMemorySample,
@@ -86,9 +89,6 @@ from xic_extractor.extraction.untargeted_cid_nl_real_data_runtime import (
 from xic_extractor.peak_detection.physical_peak_evaluation import (
     evaluate_physical_peak,
     prepare_physical_signal,
-)
-from xic_extractor.peak_detection.signal_processing_profile import (
-    DEFAULT_SIGNAL_PROCESSING_PROFILE,
 )
 from xic_extractor.sample_metadata import SampleMetadata
 
@@ -832,6 +832,9 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     indexed_input,
 ) -> None:
     from xic_extractor.alignment.csv_io import read_owner_bound_discovery_candidates_csv
+    from xic_extractor.configuration.signal_processing_profile import (
+        SignalProcessingProfile,
+    )
     from xic_extractor.discovery.grouping import group_discovery_seeds
     from xic_extractor.discovery.ms1_backfill import (
         _backfill_ms1_candidates_with_acquisition,
@@ -842,9 +845,6 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     )
     from xic_extractor.discovery.processing_run_spec_adapter import (
         compile_discovery_processing_run_spec,
-    )
-    from xic_extractor.peak_detection.signal_processing_profile import (
-        SignalProcessingProfile,
     )
     from xic_extractor.processing_identity import IdentityContractError
 

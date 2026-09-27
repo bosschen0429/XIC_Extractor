@@ -15,6 +15,9 @@ from xic_extractor.acquisition_contract import (
     deserialize_acquired_trace,
     serialize_acquired_trace,
 )
+from xic_extractor.configuration.signal_processing_profile import (
+    SignalProcessingProfile,
+)
 from xic_extractor.discovery.models import DiscoveryPhysicalWorkItem
 from xic_extractor.discovery.physical_fact_record import (
     DiscoveryPhysicalCandidateLink,
@@ -33,9 +36,6 @@ from xic_extractor.peak_detection.physical_peak_codec import (
 from xic_extractor.peak_detection.physical_peak_models import (
     PhysicalPeakEvaluation,
     PreparedSignal,
-)
-from xic_extractor.peak_detection.signal_processing_profile import (
-    SignalProcessingProfile,
 )
 from xic_extractor.processing_run_spec import (
     ProcessingAcquisitionInput,

@@ -58,7 +58,7 @@ from xic_extractor.alignment.production_decisions import (
     build_production_decisions,
     production_cell_decision_projection,
 )
-from xic_extractor.peak_detection.signal_processing_profile import (
+from xic_extractor.configuration.signal_processing_profile import (
     DEFAULT_SIGNAL_PROCESSING_PROFILE,
     SignalProcessingProfile,
 )

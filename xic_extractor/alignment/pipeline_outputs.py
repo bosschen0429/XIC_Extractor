@@ -71,11 +71,11 @@ from xic_extractor.alignment.untargeted_finalized_matrix import (
     CompletedUntargetBatchWriterInputs,
 )
 from xic_extractor.config import ExtractionConfig
-from xic_extractor.diagnostics.timing import TimingRecorder
-from xic_extractor.peak_detection.signal_processing_profile import (
+from xic_extractor.configuration.signal_processing_profile import (
     DEFAULT_SIGNAL_PROCESSING_PROFILE,
     SignalProcessingProfile,
 )
+from xic_extractor.diagnostics.timing import TimingRecorder
 from xic_extractor.processing_identity import fingerprint_file_content
 
 

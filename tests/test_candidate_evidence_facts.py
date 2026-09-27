@@ -7,6 +7,9 @@ import pytest
 
 import xic_extractor.peak_detection.evidence_facts as evidence_facts_module
 from xic_extractor.config import ExtractionConfig
+from xic_extractor.configuration.signal_processing_profile import (
+    SignalProcessingProfile,
+)
 from xic_extractor.peak_detection.baseline import asls_baseline
 from xic_extractor.peak_detection.engine_scoring import (
     candidate_score_summary,
@@ -46,9 +49,6 @@ from xic_extractor.peak_detection.physical_peak_identity import (
 )
 from xic_extractor.peak_detection.physical_peak_models import PhysicalPeakQuestion
 from xic_extractor.peak_detection.scoring_models import ScoringContext
-from xic_extractor.peak_detection.signal_processing_profile import (
-    SignalProcessingProfile,
-)
 from xic_extractor.signal_processing import find_peak_and_area
 
 

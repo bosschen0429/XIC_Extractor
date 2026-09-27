@@ -34,6 +34,9 @@ from xic_extractor.alignment.workflow import (
     UntargetWorkflowCompositionRequest,
 )
 from xic_extractor.config import ExtractionConfig
+from xic_extractor.configuration.signal_processing_profile import (
+    SignalProcessingProfile,
+)
 from xic_extractor.discovery.batch_contract import (
     DiscoveryCandidateUniverseReceipt,
 )
@@ -85,9 +88,6 @@ from xic_extractor.peak_detection.search_scope import (
     PHYSICAL_CAPTURE_INPUT_KEY,
     UntargetedSearchScope,
     physical_capture_input_payload,
-)
-from xic_extractor.peak_detection.signal_processing_profile import (
-    SignalProcessingProfile,
 )
 from xic_extractor.processing_identity import (
     AcquisitionSourceExpectation,

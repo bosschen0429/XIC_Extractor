@@ -26,7 +26,7 @@ from xic_extractor.alignment.cross_sample_peak_groups import (
     CrossSampleGroupMemberSubject,
     mint_cross_sample_group_identity,
 )
-from xic_extractor.peak_detection.signal_processing_profile import (
+from xic_extractor.configuration.signal_processing_profile import (
     DEFAULT_SIGNAL_PROCESSING_PROFILE,
 )
 from xic_extractor.processing_identity import (
