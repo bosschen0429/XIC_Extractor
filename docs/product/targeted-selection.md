@@ -22,6 +22,32 @@ CrossSample, ModeTrack, Backfill, or selected-value implementation.
 
 ## Contract
 
+### Reference input diagnostics
+
+`tools.diagnostics.check_reference_consistency` checks target CSV references
+on demand, using the existing configuration reader and RAW acquisition owner.
+The JSON manifest explicitly names each method/group, target CSV, and optional
+RAW files. The reference RT is the target search-window midpoint.
+Multiple groups use leave-one-out monotonic interpolation of other shared
+targets, including ISTDs. Unsupported endpoints are not extrapolated.
+Single-group input skips mapping and checks only RAW peak-cluster positions.
+
+The diagnostic emits `reference_consistency.json` and `reference_review.tsv`.
+The JSON records pairwise predictions and the median/p90 absolute residual
+distribution over group/target median predictions. Mapping residuals above
+the policy threshold receive informational warnings. High warnings require
+RAW multi-cluster ordinal disagreement, a reference between clusters beyond
+the peak-match tolerance, or a mapping prediction matching a different RAW
+cluster. A matching single peak cannot produce a high warning.
+Ordinals compare only equal cluster counts, with one vote per group and a
+majority of all peer groups; incomparable groups abstain. Gaussian smoothing,
+minimum prominence, and minimum half-prominence width reject narrow impulses
+before assigning ordinals. These are diagnostic positions, not selected peaks.
+Missing RAW evidence remains unavailable. CLI help owns policy defaults and
+acquisition bounds; the JSON preserves the effective policy and input provenance.
+These outputs have `diagnostic_only` evidence status and no selected-peak,
+reference-editing, quantitation, or ProductWriter authority.
+
 ### Physical evaluation
 
 - Acquisition enumerates the shared physical segment universe for the

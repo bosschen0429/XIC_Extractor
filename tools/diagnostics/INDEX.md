@@ -757,6 +757,24 @@ until an explicit product-transfer decision and consolidation policy exist.
 
 ---
 
+### `check_reference_consistency.py`
+
+**Purpose**: Review Targeted input reference RT consistency across methods and
+within RAW peak-cluster positions, without changing inputs or selection.
+**Topic group**: `xic_extractor.diagnostics.reference_consistency` owns pure
+mapping and cluster checks; `reference_consistency_io` reuses target config and
+RAW acquisition owners.
+**Exposure / lifecycle**: maintained operator interface / diagnostic oracle.
+**Usage**: `python -m tools.diagnostics.check_reference_consistency --help`.
+An explicit JSON manifest contains `groups`, each with `name`, `targets_csv`,
+and optional `raw_files`. Relative paths resolve against the manifest directory.
+Use `--preflight-only` before RAW acquisition. Requests deduplicate m/z and ppm
+within each RAW; each RAW opens once. Outputs are `reference_consistency.json`
+(including leave-one-out errors, policy, input hashes and RAW identities) and
+`reference_review.tsv`. Mapping-only warnings are informational; RAW multi-cluster
+conflicts can be high. Single-group runs skip mapping. Retain while Targeted
+reference input review needs this oracle; no matrix or reference-writing authority.
+
 ### `build_targeted_ms1_shape_identity_supports.py`
 
 **Purpose**: Build generic `targeted_ms1_shape_identity` evidence rows from
