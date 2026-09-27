@@ -689,6 +689,7 @@ def execute_bounded_untargeted_cid_nl(
     retain_partition_memory: bool = False,
     retain_partition_spool: bool = False,
     retain_acquisition_cache: bool = False,
+    acquisition_cache_dir: Path | None = None,
     pipeline_overlap: bool = False,
 ) -> CompletedUntargetBatchWorkflowResult:
     """Spill complete subject results, then close the exact global population.
@@ -707,7 +708,12 @@ def execute_bounded_untargeted_cid_nl(
         raise ValueError("raw_worker_backend must be 'process' or 'thread'")
 
     requested_acquisition_workers = 2 if pipeline_overlap and raw_workers >= 2 else 1
-    acquisition_cache_dir = Path(output_dir) / ".cid_nl_acquisition_cache"
+    # A shared cache directory outlives the run; the default one is the run's own.
+    cache_dir = (
+        Path(acquisition_cache_dir)
+        if acquisition_cache_dir is not None
+        else Path(output_dir) / ".cid_nl_acquisition_cache"
+    )
     adapter = CidNlPartitionPipelineAdapter(
         plan,
         alignment_config=alignment_config,
@@ -716,7 +722,7 @@ def execute_bounded_untargeted_cid_nl(
         raw_workers=raw_workers,
         raw_worker_backend=raw_worker_backend,
         acquisition_workers=requested_acquisition_workers,
-        acquisition_cache_dir=acquisition_cache_dir,
+        acquisition_cache_dir=cache_dir,
         retain_partition_spool=retain_partition_spool,
     )
     completed_once = False
@@ -742,8 +748,12 @@ def execute_bounded_untargeted_cid_nl(
         # The cache only accelerates acquisition, which is finished. A failed
         # attempt keeps it because the recovery marker allows a retry that
         # would otherwise reread every RAW file.
-        if completed_once and not retain_acquisition_cache:
-            shutil.rmtree(acquisition_cache_dir, ignore_errors=True)
+        if (
+            completed_once
+            and acquisition_cache_dir is None
+            and not retain_acquisition_cache
+        ):
+            shutil.rmtree(cache_dir, ignore_errors=True)
 
 
 def _shared_objects(plan: UntargetedCidNlProductionPlan) -> tuple[object, ...]:

@@ -30,7 +30,11 @@ responses use work-unit keys to update those subjects while retaining the
 other subjects' initial results.
 
 The bounded Untargeted runtime keeps exact source-bound XIC and MS2 acquisition
-facts in the output directory's private `.cid_nl_acquisition_cache`. A retry
+facts in the output directory's private `.cid_nl_acquisition_cache`, or in the
+directory given by `--acquisition-cache-dir`. That directory belongs to no
+single run: runs into different output directories share it, and it is never
+removed. Entries are keyed by acquisition source and request and verified on
+read, so sharing cannot reuse another RAW file's or request's facts. A retry
 uses a new processing attempt and recomputes scientific decisions; matching
 queries reuse acquisition facts without repeating the vendor query. Source or
 query changes require acquisition for the affected entries. Sample batches with
