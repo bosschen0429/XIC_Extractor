@@ -6,7 +6,6 @@ import numpy as np
 
 from xic_extractor.config import ExtractionConfig, Target
 from xic_extractor.extraction.peak_candidate_table import (
-    PEAK_CANDIDATE_HEADERS,
     append_peak_candidate_rows,
     build_peak_candidate_rows,
     build_peak_candidate_rows_from_hypotheses,
@@ -17,7 +16,10 @@ from xic_extractor.extraction.peak_hypothesis_adapter import (
     build_targeted_peak_hypotheses as build_peak_hypotheses,
 )
 from xic_extractor.neutral_loss import CandidateMS2Evidence
-from xic_extractor.output.peak_candidates import write_peak_candidates_tsv
+from xic_extractor.output.peak_candidates import (
+    PEAK_CANDIDATE_HEADERS,
+    write_peak_candidates_tsv,
+)
 from xic_extractor.peak_detection.baseline import integrate_asls_baseline
 from xic_extractor.peak_detection.hypotheses import (
     AuditTrail,

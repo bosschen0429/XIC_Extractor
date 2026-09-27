@@ -5,7 +5,6 @@ import numpy as np
 
 import xic_extractor.extraction.peak_candidate_boundaries as boundary_rows
 from xic_extractor.extraction.peak_candidate_boundaries import (
-    PEAK_CANDIDATE_BOUNDARY_HEADERS,
     _apply_boundary_nonoverlap_selection,
     build_peak_candidate_boundary_rows,
     build_peak_candidate_boundary_rows_from_hypotheses,
@@ -14,6 +13,7 @@ from xic_extractor.extraction.peak_candidate_boundary_summary import (
     build_peak_candidate_boundary_summary_rows,
 )
 from xic_extractor.output.peak_candidate_boundaries import (
+    PEAK_CANDIDATE_BOUNDARY_HEADERS,
     write_peak_candidate_boundaries_tsv,
 )
 from xic_extractor.output.peak_candidate_boundary_summary import (

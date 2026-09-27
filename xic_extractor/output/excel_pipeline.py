@@ -1,19 +1,28 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from pathlib import Path
+from typing import Protocol
 
 from xic_extractor.config import ExtractionConfig, Target
-from xic_extractor.extractor import RunOutput
 from xic_extractor.output import csv_writers
 from xic_extractor.output.messages import DiagnosticRecord
 from xic_extractor.output.review_report import write_review_report
 from xic_extractor.output.workbook_builder import write_workbook_from_rows
 
 
+class RunOutputLike(Protocol):
+    @property
+    def file_results(self) -> Sequence[csv_writers.FileResultLike]: ...
+
+    @property
+    def diagnostics(self) -> Sequence[DiagnosticRecord]: ...
+
+
 def write_excel_from_run_output(
     config: ExtractionConfig,
     targets: list[Target],
-    run_output: RunOutput,
+    run_output: RunOutputLike,
     *,
     output_path: Path,
 ) -> Path:
@@ -38,7 +47,7 @@ def write_excel_from_run_output(
 
 
 def _run_output_to_long_rows(
-    run_output: RunOutput, targets: list[Target]
+    run_output: RunOutputLike, targets: list[Target]
 ) -> list[dict[str, str]]:
     rows: list[dict[str, str]] = []
     for file_result in run_output.file_results:
@@ -47,7 +56,7 @@ def _run_output_to_long_rows(
 
 
 def _diagnostics_to_rows(
-    diagnostics: list[DiagnosticRecord],
+    diagnostics: Sequence[DiagnosticRecord],
 ) -> list[dict[str, str]]:
     return [
         {
@@ -62,7 +71,7 @@ def _diagnostics_to_rows(
 
 def _run_output_to_score_breakdown_rows(
     config: ExtractionConfig,
-    run_output: RunOutput,
+    run_output: RunOutputLike,
 ) -> list[dict[str, str]]:
     rows: list[dict[str, str]] = []
     for file_result in run_output.file_results:

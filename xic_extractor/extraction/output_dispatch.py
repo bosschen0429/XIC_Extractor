@@ -3,6 +3,15 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from xic_extractor.config import ExtractionConfig, Target
+from xic_extractor.extraction.peak_candidate_boundary_summary import (
+    write_peak_candidate_boundary_summary_for_file_results,
+)
+from xic_extractor.extraction.peak_region_selection_shadow import (
+    write_peak_region_selection_shadow_for_file_results,
+)
+from xic_extractor.extraction.target_pair_rt_auto_reselection import (
+    write_target_pair_rt_auto_reselection_for_file_results,
+)
 from xic_extractor.output import csv_writers
 from xic_extractor.output.messages import DiagnosticRecord
 from xic_extractor.output.method_manifest import (
@@ -12,18 +21,9 @@ from xic_extractor.output.method_manifest import (
 from xic_extractor.output.peak_candidate_boundaries import (
     write_peak_candidate_boundaries_for_file_results,
 )
-from xic_extractor.output.peak_candidate_boundary_summary import (
-    write_peak_candidate_boundary_summary_for_file_results,
-)
 from xic_extractor.output.peak_candidates import write_peak_candidates_for_file_results
-from xic_extractor.output.peak_region_selection_shadow import (
-    write_peak_region_selection_shadow_for_file_results,
-)
 from xic_extractor.output.selected_envelope_diagnostics import (
     write_selected_envelope_diagnostics_for_file_results,
-)
-from xic_extractor.output.target_pair_rt_auto_reselection import (
-    write_target_pair_rt_auto_reselection_for_file_results,
 )
 
 if TYPE_CHECKING:
