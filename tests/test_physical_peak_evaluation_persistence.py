@@ -18,6 +18,10 @@ from xic_extractor.peak_detection.background_shape import (
     is_provisional_peak_shape,
     is_unresolved_shoulder_peak,
 )
+from xic_extractor.peak_detection.models import PeakCandidatesResult
+from xic_extractor.peak_detection.physical_peak_candidate_adapter import (
+    physical_candidates_result,
+)
 from xic_extractor.peak_detection.physical_peak_codec import (
     deserialize_physical_peak_evaluation,
     serialize_physical_peak_evaluation,
@@ -435,6 +439,80 @@ def test_tail_dropout_does_not_move_boundary_away_from_persistent_valley() -> No
         assert result.facts.apex_rt_min < 2.2
         results.append(result.facts)
     assert abs(results[0].right_rt_min - results[1].right_rt_min) < 0.1
+
+
+def _physical_candidates(rt: np.ndarray, raw: np.ndarray) -> PeakCandidatesResult:
+    prepared = prepare_physical_signal(rt, raw)
+    universe = enumerate_physical_segment_universe(
+        prepared,
+        request_context_rt_start_min=float(rt[0]),
+        request_context_rt_end_min=float(rt[-1]),
+    )
+    return physical_candidates_result(prepared, universe)
+
+
+@pytest.mark.parametrize("dropout", [False, True], ids=["intact", "three_dropouts"])
+def test_short_valley_dropout_preserves_two_quantitative_lobes(dropout: bool) -> None:
+    rt = np.linspace(0.0, 5.0, 1001)
+    height, sigma = 1000.0, 0.20
+    raw = height * (
+        np.exp(-0.5 * ((rt - 2.00) / sigma) ** 2)
+        + np.exp(-0.5 * ((rt - 2.54) / sigma) ** 2)
+    )
+    if dropout:
+        raw[453:456] = 0.0
+    result = _physical_candidates(rt, raw)
+    assert result.status == "OK"
+    assert len(result.candidates) == 2
+    peaks = sorted(
+        (candidate.peak for candidate in result.candidates), key=lambda peak: peak.rt
+    )
+    assert [peak.rt for peak in peaks] == pytest.approx([2.015, 2.525], abs=0.04)
+    # Equal Gaussian lobes have their analytical valley at the midpoint.
+    assert peaks[0].peak_end == pytest.approx(2.27, abs=0.01)
+    assert peaks[1].peak_start == pytest.approx(2.27, abs=0.01)
+    one_lobe_mass = height * sigma * np.sqrt(2.0 * np.pi) * 60.0
+    for peak in peaks:
+        # Baseline and missing scans remove mass; neither candidate may absorb
+        # the almost doubled mass of the complete two-lobe envelope.
+        assert 0.85 * one_lobe_mass < peak.area < 1.05 * one_lobe_mass
+
+
+@pytest.mark.parametrize("add_remote", [False, True], ids=["alone", "remote_strong"])
+def test_supported_narrow_candidate_is_available_without_a_remote_seed(
+    add_remote: bool,
+) -> None:
+    rt = np.linspace(0.0, 2.0, 2001)
+    height, sigma = 20.0, 0.01
+    raw = height * np.exp(-0.5 * ((rt - 1.00) / sigma) ** 2)
+    if add_remote:
+        raw += 1000.0 * np.exp(-0.5 * ((rt - 1.60) / 0.05) ** 2)
+    result = _physical_candidates(rt, raw)
+    assert result.status == "OK"
+    local = [
+        candidate for candidate in result.candidates
+        if abs(candidate.selection_apex_rt - 1.0) < 0.03
+    ]
+    assert len(local) == 1
+    peak = local[0].peak
+    assert peak.rt == pytest.approx(1.0, abs=0.003)
+    assert 0.95 < peak.peak_start < 1.0 < peak.peak_end < 1.05
+    analytic_mass = height * sigma * np.sqrt(2.0 * np.pi) * 60.0
+    assert 0.85 * analytic_mass < peak.area < 1.01 * analytic_mass
+
+
+def test_short_apex_dropout_keeps_one_complete_quantitative_candidate() -> None:
+    rt = np.linspace(0.0, 5.0, 1001)
+    raw = 1000.0 * np.exp(-0.5 * ((rt - 2.27) / 0.40) ** 2)
+    raw[452:457] = 0.0
+    result = _physical_candidates(rt, raw)
+    assert result.status == "OK"
+    assert len(result.candidates) == 1
+    peak = result.candidates[0].peak
+    assert peak.peak_start < 1.2
+    assert peak.peak_end > 3.3
+    analytic_mass = 1000.0 * 0.40 * np.sqrt(2.0 * np.pi) * 60.0
+    assert 0.90 * analytic_mass < peak.area < 1.01 * analytic_mass
 
 
 @pytest.mark.parametrize("point_count", [101, 301])

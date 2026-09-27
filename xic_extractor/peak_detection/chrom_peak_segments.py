@@ -573,6 +573,14 @@ def _restore_rt_envelope_clear_splits(
         group = []
     if not connected_groups:
         return envelope_seeds
+    if not envelope_seeds:
+        # Coarse smoothing can lower a supported narrow peak below the seed
+        # height floor. Its canonical group still reaches ordinary qualification,
+        # including when no unrelated coarse maximum exists in the context.
+        return tuple(
+            max(connected, key=lambda seed: (seed.height, -seed.index))
+            for connected in connected_groups
+        )
 
     group_boundaries = (
         context.start_index,
@@ -637,7 +645,20 @@ def _sustained_envelope_valley(
     returning to baseline. Requiring one canonical smoothing footprint rejects
     a brief acquired dropout that also creates two coarse-envelope maxima.
     """
-    valley_height = float(signal[valley_index])
+    spacing = float(np.median(np.diff(rt[left.index:right.index + 1])))
+    footprint = spacing * max(0, policy.morphology_trace_window_points - 1)
+    # The valley depth must itself persist over canonical smoothing support.
+    # A deeper short notch cannot lower the half-depth level for a broad valley,
+    # and a dropout within one lobe cannot supply a supported valley floor.
+    support_left = max(
+        left.index,
+        int(np.searchsorted(rt, rt[valley_index] - 0.5 * footprint, side="left")),
+    )
+    support_right = min(
+        right.index + 1,
+        int(np.searchsorted(rt, rt[valley_index] + 0.5 * footprint, side="right")),
+    )
+    valley_height = float(np.max(signal[support_left:support_right]))
     weaker_height = min(float(signal[left.index]), float(signal[right.index]))
     if weaker_height <= valley_height:
         return False
@@ -647,8 +668,6 @@ def _sustained_envelope_valley(
         start -= 1
     while end < right.index and signal[end + 1] <= threshold:
         end += 1
-    spacing = float(np.median(np.diff(rt[left.index:right.index + 1])))
-    footprint = spacing * max(0, policy.morphology_trace_window_points - 1)
     return bool(rt[end] - rt[start] >= footprint)
 
 
