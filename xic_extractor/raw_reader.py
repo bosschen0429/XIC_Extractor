@@ -609,22 +609,27 @@ def derive_sample_metadata_from_raw_files(
     raw_paths: Sequence[Path],
     dll_dir: Path,
     *,
-    batch_by_parent: bool = True,
+    batch_id: str | None = None,
 ) -> tuple[SampleMetadata, ...]:
-    """Derive canonical SampleMetadata rows directly from Thermo RAW file headers."""
+    """Derive canonical SampleMetadata rows directly from Thermo RAW file headers.
+
+    ``batch_id`` names one batch for every RAW; without it each parent folder
+    is a batch with its own injection order.
+    """
     if not raw_paths:
         return ()
 
     batches: dict[str, list[tuple[Path, Any]]] = {}
     for path in raw_paths:
-        batch_id = path.parent.name if batch_by_parent else ""
         header = read_raw_sample_header(path, dll_dir=dll_dir)
-        batches.setdefault(batch_id, []).append((path, header))
+        batches.setdefault(
+            path.parent.name if batch_id is None else batch_id, []
+        ).append((path, header))
 
     metadata_rows: list[SampleMetadata] = []
     seen_sample_names: set[str] = set()
 
-    for batch_id, items in batches.items():
+    for batch_key, items in batches.items():
         row_numbers = [h.row_number for _, h in items]
         has_valid_row_numbers = all(
             isinstance(rn, int) and rn > 0 for rn in row_numbers
@@ -676,7 +681,7 @@ def derive_sample_metadata_from_raw_files(
                     raw_stem=raw_stem,
                     injection_order=injection_order,
                     sample_role=role,
-                    batch_id=batch_id,
+                    batch_id=batch_key,
                     prep_batch_id="",
                     matrix_type="",
                     group="",
