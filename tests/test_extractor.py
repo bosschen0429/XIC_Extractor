@@ -128,8 +128,16 @@ def test_run_writes_success_rows_with_area_columns_and_optional_nl(
     assert len(output.file_results) == 1
     assert all(d.issue == "NL_ANCHOR_FALLBACK" for d in output.diagnostics)
     long_rows = _read_csv(config.output_csv.with_name("xic_results_long.csv"))
+    no_nl_projection = results["NoNL"].targeted_product_projection
+    assert no_nl_projection is not None
+    assert no_nl_projection.conflict_reasons == ("targeted_rt_conflict",)
     assert [_core_long_row(row) for row in long_rows] == [
-        _formatted_long_success_row("NoNL", results["NoNL"], nl=""),
+        {
+            **_formatted_long_success_row("NoNL", results["NoNL"], nl=""),
+            "Confidence": "VERY_LOW",
+            "Reason": "MS1 peak measured; review: peak position conflicts with "
+            "the RT reference/window.",
+        },
         _formatted_long_success_row(
             "WithNL",
             results["WithNL"],
@@ -137,14 +145,14 @@ def test_run_writes_success_rows_with_area_columns_and_optional_nl(
         ),
     ]
     assert [row["Projection Reason"] for row in long_rows] == [
-        "decision: detected_clean; support: ms1_peak_present, "
-        "ms1_coherent, role_aware_rt_support, "
-        "trace_coherent",
+        "decision: ambiguous; support: ms1_peak_present, "
+        "ms1_coherent, trace_coherent; review: targeted_rt_review; "
+        "conflict: targeted_rt_conflict",
         "decision: detected_clean; support: ms1_peak_present, "
         "ms1_coherent, candidate_aligned_ms2_nl, "
         "role_aware_rt_support, trace_coherent",
     ]
-    assert [row["Counted Detection"] for row in long_rows] == ["TRUE", "TRUE"]
+    assert [row["Counted Detection"] for row in long_rows] == ["FALSE", "TRUE"]
     assert all(row["Product State"] for row in long_rows)
 
 

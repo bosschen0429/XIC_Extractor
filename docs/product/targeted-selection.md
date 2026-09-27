@@ -74,6 +74,19 @@ reference-editing, quantitation, or ProductWriter authority.
 
 ### Target identity and search scope
 
+- For no-NL inputs, the configured RT-window center participates in component
+  identity while the complete acquisition context remains available to the
+  shared physical owner. The supplied group reference is encoded in that
+  center; missing reference rows remain excluded by the input owner.
+- A credible paired ISTD transfers observed drift while preserving the
+  configured analyte/ISTD RT offset. Missing or untrusted pairs fall back to the
+  analyte reference and existing sample drift. No-NL selection does not use
+  learned RT-library priors.
+- Among strongly supported no-NL physical candidates without other identity
+  blockers, selection first prefers an interval containing the reference, then
+  the closest apex. Shape concerns remain evidence for the existing product
+  policy; identity selection does not alter counted detection or physical
+  bounds and area. Equal references for different target rows are permitted.
 - Product Targeted output is a workflow-owned projection from evidence and
   selection decisions.
 - Shared evidence providers inform Targeted product state. Shared evidence
