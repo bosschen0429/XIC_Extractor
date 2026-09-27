@@ -748,6 +748,50 @@ crossing, ambiguity, or typed-lineage review. If those consumers disappear,
 remove the entry point and workflow, retaining only primitives reused by the
 Alignment owner.
 
+## Sample RT Calibration Diagnostic
+
+`python -m tools.diagnostics.build_sample_rt_calibration` places every sample
+on a common RT coordinate. CLI help owns the arguments. Anchors are
+`alignment_cells.tsv` features with `detected` status in at least the
+configured fraction of the batch's samples, not only ISTDs; backfilled or
+inferred cells never become anchors. `alignment.sample_rt_calibration` owns the
+model and has no RAW, file, or Matrix access.
+
+- Anchors whose median RT lies within the merge tolerance collapse into one
+  knot. Isotope, adduct, and fragment families of one compound share its RT;
+  kept separate, their per-sample order inverts and the piecewise model fails.
+- Each sample's knots pair its observed RT with the knot's cross-sample median.
+  They must increase strictly on both axes and reuse the formal drift owner's
+  `interpolate_calibrated_rt_min`. A calibrated RT exists only inside that
+  sample's first and last knot; outside that span it is unavailable, never
+  extrapolated. Fewer than two knots, or crossing knots, leave the sample
+  uncalibrated.
+- Measured data decides a perturbation; the
+  [injection timeline](sample-metadata-qc.md#injection-timeline-diagnostic)
+  explains it. The front shift is the median shift at the batch's earliest
+  knots. It is an outlier when it differs from the batch median, in either
+  direction, by more than max(k × batch MAD, a minimum shift). An outlier is
+  `confirmed` when the sample is pre-flagged, follows a short method, or is the
+  first full-length run after a method change. A short method uses the
+  timeline's persisted run-length limits without the idle limit, because a
+  short method can leave the gradient unsettled after a long idle. A method
+  change compares the instrument method with the latest earlier run longer than
+  the persisted length fraction, skipping blanks and SDO/LEK, whose own methods
+  always differ. Any other outlier is `unexplained_outlier`, such as a matrix
+  effect, and one without a timeline row is `outlier_without_timeline`.
+  A pre-flagged sample within tolerance is `flagged_unconfirmed`; a missing
+  front knot is `unmeasured`. Sample rows carry the previous injection, its run
+  length, the idle time, and the compared full-length run. Confirmation does not remove a sample's own
+  calibration; no current consumer reads the status.
+- Held-out validation compares non-anchor features before and after
+  calibration on the same observations: those inside each sample's anchor span,
+  for features with at least the configured fraction of such observations.
+
+Outputs are a JSON sidecar with the policy, knots, per-band knot counts, and
+per-sample knots, plus sample and held-out TSVs. Evidence is `diagnostic_only`.
+The diagnostic does not change grouping, peak selection, drift-corrected edge
+scoring, or values.
+
 ## Retained Validation Anchors
 
 - The 2026-05-28 Targeted GT alignment audit fixtures for `5-medC` are

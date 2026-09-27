@@ -73,8 +73,9 @@ read-only injection timeline JSON sidecar and a readable TSV. CLI help owns
 the arguments. `raw_reader` acquires header facts; `injection_timeline` owns
 deduplication, chronological previous-injection links, and the pre-flag policy.
 This producer does not change sample metadata identity, analysis-set membership,
-RT, selected peaks, or values. Evidence is `diagnostic_only`; confirmation of
-perturbation requires a separate data-based diagnostic.
+RT, selected peaks, or values. Evidence is `diagnostic_only`; the
+[sample RT calibration diagnostic](alignment.md#sample-rt-calibration-diagnostic)
+confirms a perturbation from the measured data.
 
 The producer recursively reads all RAW files under the supplied batch root,
 including blanks and subfolders. Creation date plus the original vendor
