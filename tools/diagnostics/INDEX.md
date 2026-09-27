@@ -843,6 +843,21 @@ not recompute candidate evidence.
 
 ## Instrument QC
 
+### `build_injection_timeline.py`
+
+- **Role:** evidence producer; maintained operator interface.
+- **Owner:** `xic_extractor.injection_timeline`, with RAW/SLD acquisition in
+  `xic_extractor.raw_reader`; contract in
+  [`sample-metadata-qc.md`](../../docs/product/sample-metadata-qc.md#injection-timeline-diagnostic).
+- **Use:** `python -m tools.diagnostics.build_injection_timeline --help`.
+- **Outputs:** injection timeline JSON and TSV with recursive chronology,
+  copy provenance, previous injection/idle, persisted perturbation policy, and
+  optional sequence comparisons. No spectra are acquired; each discovered RAW
+  is opened once for header facts, without content hashing or acquisition cache.
+- **Authority:** `diagnostic_only`; no selection, RT, value, or analysis-set
+  authority. Keep as the batch chronology producer for offline diagnostics;
+  retire if run metadata adopts the same producer and sidecar contract.
+
 The Instrument QC suite is a coherent product surface; six entry-points
 share the `instrument_qc_*` prefix. Per the lifecycle spec, several of
 these are candidates for "seasonal cadence" declarations (calibration runs
