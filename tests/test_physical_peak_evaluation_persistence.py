@@ -246,7 +246,8 @@ def test_fragmented_original_peak_is_not_backfilled_by_smoothed_envelope(
     "policy", [PHYSICAL_PEAK_POINT_POLICY, DISCOVERY_PHYSICAL_PEAK_POINT_POLICY]
 )
 @pytest.mark.parametrize(
-    "intensity_pattern", ["smooth", "irregular", "no_adjacent_hits", "sparse_hits"]
+    "intensity_pattern",
+    ["smooth", "irregular", "no_adjacent_hits", "sparse_hits", "brief_continuous_run"],
 )
 def test_censored_hit_cluster_uses_observed_area_and_persists_warning(
     policy: str, intensity_pattern: str,
@@ -268,6 +269,12 @@ def test_censored_hit_cluster_uses_observed_area_and_persists_warning(
         raw[:] = 0.0
         positions = np.arange(130, 271, 7)
         raw[positions] = 200.0
+    elif intensity_pattern == "brief_continuous_run":
+        # One fully acquired smoothing window inside an otherwise censored
+        # cluster does not establish ordinary support across the whole core.
+        raw[193:209] = 100.0 + 200.0 * np.exp(
+            -(((np.arange(193, 209) - 200) / 25.0) ** 2)
+        )
     profile = SignalProcessingProfile()
     result = evaluate_physical_peak(
         prepare_physical_signal(rt, raw),

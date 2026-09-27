@@ -61,10 +61,12 @@ Ordinary physical peaks require original sampling support before exposing
 numeric facts: Gaussian spread cannot create independent acquired evidence.
 The selected interval needs an adjacent pair of original XIC values above the
 owner baseline; constant background is not peak support.
-An acquired core run above baseline spanning the configured Gaussian window remains ordinary
-support even when isolated dropouts split the rest of the core into several
-binary runs. Those dropouts neither require density enrichment nor authorize
-replacement of morphology-owned boundaries or area.
+A core with isolated dropouts retains ordinary support when it has an acquired
+run above baseline spanning the configured Gaussian window and acquired scans
+outnumber missing scans in every core window. A short continuous patch alone
+cannot establish ordinary support for an otherwise censored core. Isolated
+dropouts neither require density enrichment nor authorize replacement of
+morphology-owned boundaries or area.
 
 For left-censored signals, unsmoothed binary hit density must be enriched against
 both local flanks. The shared physical owner uses a fourfold enrichment and a

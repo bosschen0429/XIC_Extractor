@@ -105,8 +105,10 @@ processing, see [`product/signal-processing-rationale.md`](product/signal-proces
   Missing support gives `insufficient_original_xic_support`; no adjacent pair
   gives `insufficient_original_xic_continuity`. Gaussian spread and constant
   background cannot supply independent acquired support.
-  An acquired core run above baseline spanning one configured Gaussian window retains
-  ordinary support despite isolated dropouts elsewhere in that core.
+  A core with isolated dropouts retains ordinary support when it has an acquired
+  run above baseline spanning one configured Gaussian window and acquired scans
+  outnumber missing scans in every core window. A short continuous patch alone
+  does not establish ordinary support for an otherwise censored core.
   Censored detection clusters use local hit-density enrichment instead: the
   observed hit rate must exceed both local flanks fourfold and pass a one-sided
   exact test corrected for trace length. A cluster containing an ordinary

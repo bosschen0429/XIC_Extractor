@@ -404,8 +404,9 @@ def _has_continuous_core_support(
     """Keep morphology when acquired support spans a smoothing footprint.
 
     Isolated dropouts can split a well-observed core into many binary runs.
-    A full acquired run above baseline still supports ordinary morphology;
-    sparse detections without that support require hit-density qualification.
+    A full acquired run above baseline supports ordinary morphology only when
+    acquired scans also outnumber missing scans in every core footprint. One
+    short continuous patch cannot make an otherwise censored core ordinary.
     """
     hit = observed_residual > 0.0
     if np.count_nonzero(hit) < window_points:
@@ -413,7 +414,14 @@ def _has_continuous_core_support(
     edges = np.diff(np.r_[False, hit, False].astype(int))
     starts = np.flatnonzero(edges == 1)
     stops = np.flatnonzero(edges == -1)
-    return len(starts) < 3 or bool(np.any(stops - starts >= window_points))
+    if len(starts) < 3:
+        return True
+    if not np.any(stops - starts >= window_points):
+        return False
+    acquired_per_window = np.convolve(
+        hit.astype(int), np.ones(window_points, dtype=int), mode="valid"
+    )
+    return bool(np.all(2 * acquired_per_window > window_points))
 
 
 def _censoring_aware_segments(
