@@ -13,6 +13,9 @@ from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
     canonical_signal_processing_profile_bytes,
 )
+from xic_extractor.discovery.batch_contract import (
+    CANDIDATE_UNIVERSE_SCHEMA_VERSION,
+)
 from xic_extractor.discovery.models import (
     DiscoveryCandidate,
     DiscoverySettings,
@@ -22,7 +25,6 @@ from xic_extractor.discovery.physical_fact_persistence import (
 )
 from xic_extractor.discovery.physical_fact_record import DiscoveryPhysicalFactRecord
 from xic_extractor.extraction.untargeted_cid_nl_real_data_inputs import (
-    CANDIDATE_UNIVERSE_SCHEMA_VERSION,
     compose_untargeted_real_data_context,
 )
 from xic_extractor.extraction.untargeted_production_batch import (

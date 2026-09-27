@@ -836,10 +836,6 @@ def test_alignment_to_extraction_imports_are_exact_owner_edges(
             "xic_extractor.alignment.pipeline",
             "xic_extractor.extraction.untargeted_production_batch",
         ),
-        (
-            "xic_extractor.alignment.result.application_result",
-            "xic_extractor.extraction.untargeted_cid_nl_real_data_inputs",
-        ),
     }
 
 

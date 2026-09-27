@@ -34,11 +34,11 @@ from xic_extractor.alignment.workflow import (
     compose_untarget_batch_after_runtime,
     execute_untarget_batch_workflow,
 )
-from xic_extractor.execution_runtime import AttemptTerminalOutcome
-from xic_extractor.extraction.untargeted_cid_nl_real_data_inputs import (
+from xic_extractor.discovery.batch_contract import (
     CANDIDATE_UNIVERSE_INPUT_KEY,
     CANDIDATE_UNIVERSE_SCHEMA_VERSION,
 )
+from xic_extractor.execution_runtime import AttemptTerminalOutcome
 from xic_extractor.immutable_sequence import ImmutableSequence
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     CID_NL_PROVIDER_ID,
