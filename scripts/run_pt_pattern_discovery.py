@@ -14,7 +14,11 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from xic_extractor.discovery.delta_mass_pipeline import run_pt_pattern_discovery
-from xic_extractor.presets import PresetError, load_preset
+from xic_extractor.presets import (
+    PresetError,
+    load_preset,
+    resolve_pt_pattern_discovery,
+)
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -107,12 +111,12 @@ def _build_parser() -> argparse.ArgumentParser:
 def _preset_requires_cid_nl_csv(preset_name: str) -> bool:
     """Return whether ``preset_name`` is a composite Pt pattern + CID-NL(dR) preset.
 
-    Mirrors ``run_pt_pattern_discovery()``'s own composite check (a
+    Mirrors ``resolve_pt_pattern_discovery()``'s composite check (a
     ``neutral_loss`` tag alongside the ``delta_mass`` tag) so the CLI can
     fail fast via ``parser.error()`` (argparse-level ``SystemExit(2)``)
     before ever calling the pipeline. If the preset itself cannot be loaded
     (unknown name, malformed file), this returns ``False`` and lets
-    ``run_pt_pattern_discovery()`` raise the real, more specific error.
+    ``resolve_pt_pattern_discovery()`` raise the real, more specific error.
     """
 
     try:
@@ -260,7 +264,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             external_feature_table_tsv=external_feature_table_tsv,
             mzmine_feature_table_csv=mzmine_feature_table_csv,
             output_dir=output_dir,
-            preset_name=args.preset,
+            strategy=resolve_pt_pattern_discovery(args.preset),
             cid_nl_candidates_csv=cid_nl_candidates_csv,
             trace_summary_csv=trace_summary_csv,
             **trace_overrides,

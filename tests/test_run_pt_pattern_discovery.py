@@ -256,7 +256,7 @@ def test_cli_accepts_pt_pattern_preset_with_no_raw_or_dll_requirement(
         external_feature_table_tsv,
         mzmine_feature_table_csv,
         output_dir,
-        preset_name,
+        strategy,
         cid_nl_candidates_csv,
         trace_summary_csv,
     ):
@@ -264,7 +264,7 @@ def test_cli_accepts_pt_pattern_preset_with_no_raw_or_dll_requirement(
         captured["external_feature_table_tsv"] = external_feature_table_tsv
         captured["mzmine_feature_table_csv"] = mzmine_feature_table_csv
         captured["output_dir"] = output_dir
-        captured["preset_name"] = preset_name
+        captured["strategy"] = strategy
         captured["cid_nl_candidates_csv"] = cid_nl_candidates_csv
         captured["trace_summary_csv"] = trace_summary_csv
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -301,7 +301,7 @@ def test_cli_accepts_pt_pattern_preset_with_no_raw_or_dll_requirement(
     )
 
     assert code == 0
-    assert captured["preset_name"] == "pt_pattern"
+    assert captured["strategy"].label == "pt_pattern"
     assert captured["external_feature_table_tsv"] is None
     assert captured["mzmine_feature_table_csv"] is None
     assert captured["cid_nl_candidates_csv"] is None
@@ -330,11 +330,11 @@ def test_cli_accepts_pt_pattern_cid_nl_dr_preset_with_composite_csv(
         external_feature_table_tsv,
         mzmine_feature_table_csv,
         output_dir,
-        preset_name,
+        strategy,
         cid_nl_candidates_csv,
         trace_summary_csv,
     ):
-        captured["preset_name"] = preset_name
+        captured["strategy"] = strategy
         captured["external_feature_table_tsv"] = external_feature_table_tsv
         captured["mzmine_feature_table_csv"] = mzmine_feature_table_csv
         captured["cid_nl_candidates_csv"] = cid_nl_candidates_csv
@@ -375,7 +375,7 @@ def test_cli_accepts_pt_pattern_cid_nl_dr_preset_with_composite_csv(
     )
 
     assert code == 0
-    assert captured["preset_name"] == "pt_pattern_cid_nl_dr"
+    assert captured["strategy"].label == "pt_pattern_cid_nl_dr"
     assert captured["external_feature_table_tsv"] is None
     assert captured["mzmine_feature_table_csv"] is None
     assert captured["cid_nl_candidates_csv"] == cid_nl_candidates_csv.resolve()
@@ -399,7 +399,7 @@ def test_cli_accepts_optional_trace_summary_csv(
         external_feature_table_tsv,
         mzmine_feature_table_csv,
         output_dir,
-        preset_name,
+        strategy,
         cid_nl_candidates_csv,
         trace_summary_csv,
     ):
@@ -462,7 +462,7 @@ def test_cli_accepts_external_feature_table_source(
         external_feature_table_tsv,
         mzmine_feature_table_csv,
         output_dir,
-        preset_name,
+        strategy,
         cid_nl_candidates_csv,
         trace_summary_csv,
     ):
@@ -523,7 +523,7 @@ def test_cli_accepts_mzmine_feature_table_source(
         external_feature_table_tsv,
         mzmine_feature_table_csv,
         output_dir,
-        preset_name,
+        strategy,
         cid_nl_candidates_csv,
         trace_summary_csv,
     ):
