@@ -131,6 +131,14 @@ def enumerate_chrom_peak_segments(
         return _empty_result("NO_SIGNAL", rt, active_policy)
 
     morphology_trace = _morphology_trace(rt, residual, active_policy)
+    # Match the RT envelope's scale decision once for the whole trace. When
+    # canonical smoothing already covers that scale, its valley needs no repair.
+    additional_envelope_smoothing = (
+        active_policy.morphology_trace_method == "rt_envelope"
+        and max(float(active_policy.morphology_min_sigma_rt), 0.0)
+        > float(np.median(np.diff(rt)))
+        * float(active_policy.morphology_trace_window_points) / 6.0
+    )
     morphology_effective_points = _morphology_trace_effective_points(
         len(rt),
         active_policy,
@@ -219,6 +227,7 @@ def enumerate_chrom_peak_segments(
                 and _sustained_envelope_valley(
                     relation_trace, rt, seeds[index], seeds[index + 1],
                     relations[index].valley_index, active_policy,
+                    additional_envelope_smoothing=additional_envelope_smoothing,
                 )
             )
         ):
@@ -638,6 +647,8 @@ def _sustained_envelope_valley(
     right: _ApexSeed,
     valley_index: int,
     policy: ChromPeakSegmentPolicy,
+    *,
+    additional_envelope_smoothing: bool,
 ) -> bool:
     """Measure a supported lobe pair's valley width at half its dip depth.
 
@@ -647,18 +658,20 @@ def _sustained_envelope_valley(
     """
     spacing = float(np.median(np.diff(rt[left.index:right.index + 1])))
     footprint = spacing * max(0, policy.morphology_trace_window_points - 1)
-    # The valley depth must itself persist over canonical smoothing support.
-    # A deeper short notch cannot lower the half-depth level for a broad valley,
-    # and a dropout within one lobe cannot supply a supported valley floor.
-    support_left = max(
-        left.index,
-        int(np.searchsorted(rt, rt[valley_index] - 0.5 * footprint, side="left")),
-    )
-    support_right = min(
-        right.index + 1,
-        int(np.searchsorted(rt, rt[valley_index] + 0.5 * footprint, side="right")),
-    )
-    valley_height = float(np.max(signal[support_left:support_right]))
+    valley_height = float(signal[valley_index])
+    if additional_envelope_smoothing:
+        # A finer canonical notch cannot set the depth of a broader RT valley.
+        # When both signals already share one scale, retain the canonical depth
+        # rather than widening a shallow valley into an independent component.
+        support_left = max(
+            left.index,
+            int(np.searchsorted(rt, rt[valley_index] - 0.5 * footprint, side="left")),
+        )
+        support_right = min(
+            right.index + 1,
+            int(np.searchsorted(rt, rt[valley_index] + 0.5 * footprint, side="right")),
+        )
+        valley_height = float(np.max(signal[support_left:support_right]))
     weaker_height = min(float(signal[left.index]), float(signal[right.index]))
     if weaker_height <= valley_height:
         return False
