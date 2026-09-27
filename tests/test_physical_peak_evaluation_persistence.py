@@ -363,6 +363,73 @@ def test_strong_continuous_peak_with_sparse_tail_keeps_original_segment(
     assert "near_detection_limit" not in result.integration.boundary_sources
 
 
+@pytest.mark.parametrize(
+    "policy", [PHYSICAL_PEAK_POINT_POLICY, DISCOVERY_PHYSICAL_PEAK_POINT_POLICY]
+)
+@pytest.mark.parametrize("background", [0.0, 20.0])
+def test_continuous_peak_with_isolated_dropouts_keeps_morphology_area(
+    policy: str, background: float,
+) -> None:
+    rt = np.arange(801, dtype=float) / 100.0
+    raw = background + 10000.0 * np.exp(-0.5 * ((rt - 4.0) / 0.35) ** 2)
+    raw[raw < 1.0] = 0.0
+    # Several isolated missing observations split the binary runs, while long
+    # acquired stretches still support the ordinary chromatographic envelope.
+    raw[[370, 389, 423, 439]] = 0.0
+    prepared = prepare_physical_signal(rt, raw)
+    result = evaluate_physical_peak(
+        prepared, selection_subject_id="ordinary-peak-with-dropouts",
+        query_rt_min=4.0, selection_policy_version=policy,
+    )
+    assert result.state == "available"
+    assert result.facts is not None and result.integration is not None
+    assert 3.8 < result.facts.apex_rt_min < 4.2
+    assert result.facts.area_source == "trapezoid_counts_seconds_on_canonical_signal"
+    assert "near_detection_limit" not in result.integration.boundary_sources
+    assert "local_hit_density_enrichment" not in result.integration.boundary_sources
+    assert prepared.prepared is not None
+    segment = next(
+        s for s in result.segment_universe.segments
+        if s.physical_segment_id == result.facts.physical_segment_id
+    )
+    interval = slice(segment.start_index, segment.end_index)
+    assert result.facts.area_counts_seconds == pytest.approx(
+        np.trapezoid(
+            np.asarray(prepared.prepared.positive_signal)[interval], rt[interval]
+        )
+        * 60.0
+    )
+    payload = serialize_physical_peak_evaluation(
+        rt, raw, profile=SignalProcessingProfile(), evaluation=result
+    )
+    *_, restored = deserialize_physical_peak_evaluation(payload)
+    assert restored == result
+
+
+def test_tail_dropout_does_not_move_boundary_away_from_persistent_valley() -> None:
+    rt = np.arange(1201, dtype=float) / 200.0
+    raw = (
+        10000.0 * np.exp(-0.5 * ((rt - 2.0) / 0.7) ** 2)
+        + 6000.0 * np.exp(-0.5 * ((rt - 4.0) / 0.45) ** 2)
+    )
+    results = []
+    for with_dropout in (False, True):
+        acquired = raw.copy()
+        if with_dropout:
+            acquired[568:573] = 0.0
+        result = evaluate_physical_peak(
+            prepare_physical_signal(rt, acquired),
+            selection_subject_id="two-lobes-with-tail-dropout", query_rt_min=2.0,
+        )
+        assert result.state == "available" and result.facts is not None
+        # The persistent valley is between the two analytical Gaussian lobes,
+        # after the narrow missing-scan notch on the first lobe's falling side.
+        assert 3.1 < result.facts.right_rt_min < 3.5
+        assert result.facts.apex_rt_min < 2.2
+        results.append(result.facts)
+    assert abs(results[0].right_rt_min - results[1].right_rt_min) < 0.1
+
+
 @pytest.mark.parametrize("point_count", [101, 301])
 def test_whole_trend_has_matching_target_and_discovery_facts(
     point_count: int,

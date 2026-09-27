@@ -79,7 +79,9 @@ processing, see [`product/signal-processing-rationale.md`](product/signal-proces
   canonical signal. Shoulder-connected lobes share one complete envelope and
   area unless independently supported coarse lobes have a persistent shallow
   valley across one configured smoothing footprint. Those lobes retain separate
-  intervals at the observed valley. Multiple canonical lobes above the 4% prominence floor retain review
+  intervals at the envelope valley, so a brief deeper notch on a descending
+  shoulder cannot move that boundary. Sustained canonical clear splits retain
+  their canonical valley. Multiple canonical lobes above the 4% prominence floor retain review
   evidence even when they cannot claim independent quantitative intervals.
   An unresolved shoulder carries `physical_shoulder_overlap`
   into Targeted review reasons and Untargeted provisional evidence; it cannot
@@ -103,14 +105,16 @@ processing, see [`product/signal-processing-rationale.md`](product/signal-proces
   Missing support gives `insufficient_original_xic_support`; no adjacent pair
   gives `insufficient_original_xic_continuity`. Gaussian spread and constant
   background cannot supply independent acquired support.
+  An acquired core run above baseline spanning one configured Gaussian window retains
+  ordinary support despite isolated dropouts elsewhere in that core.
   Censored detection clusters use local hit-density enrichment instead: the
   observed hit rate must exceed both local flanks fourfold and pass a one-sided
   exact test corrected for trace length. A cluster containing an ordinary
   continuous peak retains its morphology segmentation. A qualified censored
   cluster bypasses adjacency and intensity-shape checks, uses its observed
   trapezoid area, and carries `local_hit_density_enrichment` and
-  `near_detection_limit`. Censored values are not imputed. Fragmented ordinary
-  cores without enrichment give `insufficient_local_hit_enrichment`.
+  `near_detection_limit`. Censored values are not imputed. Sparse cores without
+  continuous support or enrichment give `insufficient_local_hit_enrichment`.
   A selected peak also needs local relief at least twice a local fluctuation
   scale. For each interior original point, subtract its value from the linear
   interpolation between its immediate neighbors and divide by the Euclidean

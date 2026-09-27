@@ -398,6 +398,24 @@ def _positive_runs(raw: np.ndarray) -> int:
     return int(np.count_nonzero(hit & ~np.r_[False, hit[:-1]]))
 
 
+def _has_continuous_core_support(
+    observed_residual: np.ndarray, window_points: int
+) -> bool:
+    """Keep morphology when acquired support spans a smoothing footprint.
+
+    Isolated dropouts can split a well-observed core into many binary runs.
+    A full acquired run above baseline still supports ordinary morphology;
+    sparse detections without that support require hit-density qualification.
+    """
+    hit = observed_residual > 0.0
+    if np.count_nonzero(hit) < window_points:
+        return False
+    edges = np.diff(np.r_[False, hit, False].astype(int))
+    starts = np.flatnonzero(edges == 1)
+    stops = np.flatnonzero(edges == -1)
+    return len(starts) < 3 or bool(np.any(stops - starts >= window_points))
+
+
 def _censoring_aware_segments(
     prepared: PreparedSignal,
     segments: tuple[PhysicalSegment, ...],
@@ -418,6 +436,7 @@ def _censoring_aware_segments(
     edges = np.diff(np.r_[False, dense, False].astype(int))
     rt = np.asarray(prepared.rt)
     signal = np.asarray(prepared.positive_signal)
+    baseline = np.asarray(prepared.baseline)
     replacements = []
     for start, stop in zip(np.flatnonzero(edges == 1), np.flatnonzero(edges == -1)):
         detected = np.flatnonzero(hits[start:stop]) + start
@@ -440,13 +459,11 @@ def _censoring_aware_segments(
                 continue
             values = signal[segment.start_index : segment.end_index]
             core = np.flatnonzero(values >= 0.2 * segment.height)
-            observed = raw[
-                segment.start_index + core[0] : segment.start_index + core[-1] + 1
-            ]
-            if (
-                np.count_nonzero(observed) >= prepared.profile.window_points
-                and _positive_runs(observed) < 3
-            ):
+            core_slice = slice(
+                segment.start_index + core[0], segment.start_index + core[-1] + 1
+            )
+            observed = raw[core_slice] - baseline[core_slice]
+            if _has_continuous_core_support(observed, prepared.profile.window_points):
                 continuous_peaks += 1
         if continuous_peaks:
             continue
@@ -680,8 +697,14 @@ def _physical_segment_support_failure(
     )
     core = np.flatnonzero(selected_signal >= 0.2 * selected.height)
     core_raw = acquired[core[0] : core[-1] + 1]
-    if _positive_runs(core_raw) >= 3 and not _hit_enrichment(
-        np.asarray(prepared.raw), selected.start_index, selected.end_index
+    if (
+        _positive_runs(core_raw) >= 3
+        and not _has_continuous_core_support(
+            original[core[0] : core[-1] + 1], prepared.profile.window_points
+        )
+        and not _hit_enrichment(
+            np.asarray(prepared.raw), selected.start_index, selected.end_index
+        )
     ):
         return "insufficient_local_hit_enrichment"
     left, right, apex = (

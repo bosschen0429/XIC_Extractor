@@ -178,6 +178,31 @@ def enumerate_chrom_peak_segments(
         else morphology_trace
     )
     relations = _adjacent_relations(relation_trace, seeds, active_policy)
+    if active_policy.morphology_trace_method == "rt_envelope":
+        # Coarse lobes own their separating valley as well as their seeds.
+        # A deeper canonical notch on a falling shoulder must not move that
+        # boundary away from the sustained valley between the lobes. Supported
+        # canonical clear splits, including restored narrow components, remain.
+        envelope_relations = _adjacent_relations(
+            morphology_trace, seeds, active_policy
+        )
+        relations = tuple(
+            envelope_relation
+            if (
+                left.index in envelope_seed_indices
+                and right.index in envelope_seed_indices
+                and not (
+                    relation.relation_class == "clear_split"
+                    and _sustained_canonical_valley(
+                        residual, rt, left, right, relation.valley_index, active_policy
+                    )
+                )
+            )
+            else relation
+            for left, right, relation, envelope_relation in zip(
+                seeds, seeds[1:], relations, envelope_relations
+            )
+        )
     # Supported lobes with a persistent valley remain separate components
     # even without baseline resolution. Their shoulder relation still
     # requires overlap review; short dropouts cannot supply that boundary.
@@ -641,7 +666,9 @@ def _sustained_canonical_valley(
     It cannot split a single RT envelope; a sustained low interval can recover
     two genuinely narrow peaks that the coarser envelope blurred together.
     """
-    threshold = policy.clear_valley_max_fraction * min(left.height, right.height)
+    threshold = policy.clear_valley_max_fraction * min(
+        float(signal[left.index]), float(signal[right.index])
+    )
     start = end = valley_index
     while start > left.index and signal[start - 1] <= threshold:
         start -= 1

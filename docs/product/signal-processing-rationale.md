@@ -61,6 +61,10 @@ Ordinary physical peaks require original sampling support before exposing
 numeric facts: Gaussian spread cannot create independent acquired evidence.
 The selected interval needs an adjacent pair of original XIC values above the
 owner baseline; constant background is not peak support.
+An acquired core run above baseline spanning the configured Gaussian window remains ordinary
+support even when isolated dropouts split the rest of the core into several
+binary runs. Those dropouts neither require density enrichment nor authorize
+replacement of morphology-owned boundaries or area.
 
 For left-censored signals, unsmoothed binary hit density must be enriched against
 both local flanks. The shared physical owner uses a fourfold enrichment and a
@@ -104,7 +108,9 @@ ripple, not every periodic fluctuation or unresolved chemical shoulder.
 Shoulder-connected lobes form one complete quantitative envelope unless a
 supported clear valley separates its area, or independently supported coarse
 lobes retain a shallow valley across one configured smoothing footprint. The
-latter remain separate intervals at the observed valley. Canonical contour maxima reaching
+latter remain separate intervals at the envelope valley. A brief canonical
+notch on a descending shoulder cannot move this boundary; sustained canonical
+clear splits retain their canonical valley. Canonical contour maxima reaching
 the same 4% prominence floor remain review evidence even when they do not
 qualify as independent seeds. The complete envelope does not establish one
 chemical component or individual component areas.
