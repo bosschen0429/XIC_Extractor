@@ -137,7 +137,10 @@ def test_run_no_nl_reference_selects_each_samples_component(
             return None
 
         def extract_xic(self, mz, rt_min, rt_max, ppm_tol):
-            rt = np.linspace(rt_min, rt_max, 1801)
+            # Acquired scan spacing is fixed; requesting more context must
+            # not resample the same resolved doublet onto a coarser grid.
+            acquired_rt = np.arange(0.0, 18.0025, 0.0025)
+            rt = acquired_rt[(acquired_rt >= rt_min) & (acquired_rt <= rt_max)]
             apex, height = expected[self.sample]
             if mz == 261.1:
                 if pair_state == "no_signal":
