@@ -8,6 +8,7 @@ from dataclasses import replace
 from typing import Any
 
 import numpy as np
+from scipy.stats import fisher_exact
 
 from xic_extractor.peak_detection.background_shape import (
     has_deficient_monotone_run,
@@ -68,10 +69,7 @@ from xic_extractor.peak_detection.physical_peak_models import (
     PreparedSignalProjection,
     PreparedSignalResult,
 )
-from xic_extractor.peak_detection.scoring_metrics import (
-    noise_shape_severity,
-    short_scale_noise_mad,
-)
+from xic_extractor.peak_detection.scoring_metrics import short_scale_noise_mad
 from xic_extractor.peak_detection.signal_processing_profile import (
     DEFAULT_SIGNAL_PROCESSING_PROFILE,
     SignalProcessingProfile,
@@ -322,9 +320,9 @@ def enumerate_physical_segment_universe(
                     recovered.append(segment)
                 segments = tuple(recovered)
             physical_segments = tuple(
-                _physical_segment_from_chrom(segment)
-                for segment in segments
+                _physical_segment_from_chrom(segment) for segment in segments
             )
+            physical_segments = _censoring_aware_segments(prepared, physical_segments)
             if len(physical_segments) > prepared.profile.segment_universe_limit:
                 state = "unavailable"
                 reason = "segment_universe_too_large"
@@ -358,6 +356,128 @@ def enumerate_physical_segment_universe(
             "segment-universe:", _canonical_physical_json_bytes(basis)
         ),
     )
+
+
+def _hit_enrichment(raw: np.ndarray, left: int, right: int) -> bool:
+    """Compare detections with both local flanks; zeros are left-censored.
+
+    A fourfold enrichment and a one-sided exact test are required. Correct
+    for every possible scan-centred window in this context (not just retained
+    peaks). This is a screening threshold, not an empirical blank FPR claim.
+    """
+    width = right - left
+    flank_width = max(30, width)
+    before = raw[max(0, left - flank_width) : left] > 0.0
+    after = raw[right : min(len(raw), right + flank_width)] > 0.0
+    if min(len(before), len(after)) < 15:
+        return False
+    hits = int(np.count_nonzero(raw[left:right] > 0.0))
+    if hits < 6:
+        return False
+    density = hits / width
+    # The denser flank prevents a background step from masquerading as a peak.
+    for flank in (before, after):
+        background_hits = int(np.count_nonzero(flank))
+        if density < 4.0 * max(background_hits / len(flank), 1.0 / len(flank)):
+            return False
+        probability = fisher_exact(
+            [[hits, width - hits], [background_hits, len(flank) - background_hits]],
+            alternative="greater",
+        ).pvalue
+        if probability * len(raw) >= 0.01:
+            return False
+    return True
+
+
+def _positive_runs(raw: np.ndarray) -> int:
+    hit = raw > 0.0
+    return int(np.count_nonzero(hit & ~np.r_[False, hit[:-1]]))
+
+
+def _censoring_aware_segments(
+    prepared: PreparedSignal,
+    segments: tuple[PhysicalSegment, ...],
+) -> tuple[PhysicalSegment, ...]:
+    """Replace intensity-valley fragments only inside enriched hit clusters.
+
+    Use a 31-scan detection window and >=3 hits to locate dense runs.
+    Qualification uses unsmoothed binary observations on independent exterior
+    flanks. Intensities never locate boundaries and censored values are not
+    imputed. Ordinary continuous peaks keep their existing segmentation.
+    """
+    raw = np.asarray(prepared.raw)
+    if _positive_runs(raw) < 3:
+        return segments
+    hits = raw > 0.0
+    counts = np.convolve(hits.astype(int), np.ones(31, dtype=int), mode="same")
+    dense = counts >= 3
+    edges = np.diff(np.r_[False, dense, False].astype(int))
+    rt = np.asarray(prepared.rt)
+    signal = np.asarray(prepared.positive_signal)
+    replacements = []
+    for start, stop in zip(np.flatnonzero(edges == 1), np.flatnonzero(edges == -1)):
+        detected = np.flatnonzero(hits[start:stop]) + start
+        if len(detected) < 6:
+            continue
+        first, last = int(detected[0]), int(detected[-1])
+        if _positive_runs(raw[first : last + 1]) < 3:
+            continue
+        # One observed exterior zero at each boundary retains the measured
+        # trapezoid shoulders, including the zeros, without inventing tails.
+        left, right = max(0, first - 1), min(len(raw), last + 2)
+        if not _hit_enrichment(raw, left, right):
+            continue
+        # A supported continuous core already has morphology-owned bounds and
+        # area. Sparse tail hits do not make it censored; binary density must
+        # neither widen that peak nor merge it with neighbouring detections.
+        continuous_peaks = 0
+        for segment in segments:
+            if not left <= segment.apex_index < right:
+                continue
+            values = signal[segment.start_index : segment.end_index]
+            core = np.flatnonzero(values >= 0.2 * segment.height)
+            observed = raw[
+                segment.start_index + core[0] : segment.start_index + core[-1] + 1
+            ]
+            if (
+                np.count_nonzero(observed) >= prepared.profile.window_points
+                and _positive_runs(observed) < 3
+            ):
+                continuous_peaks += 1
+        if continuous_peaks:
+            continue
+        apex = left + int(np.argmax(signal[left:right]))
+        provisional = PhysicalSegment(
+            physical_segment_id="",
+            start_index=left,
+            end_index=right,
+            apex_index=apex,
+            left_rt_min=float(rt[left]),
+            right_rt_min=float(rt[right - 1]),
+            apex_rt_min=float(rt[apex]),
+            height=float(signal[apex]),
+            scan_support_count=right - left,
+            area_counts_seconds=float(np.trapezoid(raw[left:right], rt[left:right]))
+            * 60.0,
+            segment_class="isolated_peak",
+            boundary_stop_reason="detection_density_return",
+            evidence_sources=("local_hit_density_enrichment", "near_detection_limit"),
+        )
+        replacements.append(
+            replace(
+                provisional,
+                physical_segment_id=_typed_physical_id(
+                    "physical-segment:",
+                    canonical_physical_segment_bytes(provisional),
+                ),
+            )
+        )
+    retained = [
+        s
+        for s in segments
+        if not any(r.start_index <= s.apex_index < r.end_index for r in replacements)
+    ]
+    return tuple(sorted((*retained, *replacements), key=lambda s: s.apex_index))
 
 
 def mint_physical_peak_question(
@@ -531,6 +651,14 @@ def answer_physical_peak_question(
             if selected.start_index == 0 or selected.end_index == len(prepared.rt):
                 state, reason = "unavailable", "incomplete_peak_context"
                 selected = None
+            elif "local_hit_density_enrichment" in selected.evidence_sources:
+                # This segment already passed the scan-hit enrichment test.
+                # Censoring destroys adjacency and intensity shape, so those
+                # cannot be additional qualifications of a detection cluster.
+                background_qualified = (
+                    question.selection_policy_version
+                    == DISCOVERY_PHYSICAL_PEAK_POINT_POLICY
+                )
             else:
                 # Smoothing may spread one acquired signal point into a peak.
                 # Support belongs to the selected interval's original XIC;
@@ -561,21 +689,23 @@ def answer_physical_peak_question(
                     )
                     selected = None
                 else:
-                    original_runs = sum(
-                        value > 0.0 and (index == 0 or acquired[index - 1] <= 0.0)
-                        for index, value in enumerate(acquired)
+                    # Tail detections outside the peak's central support do not
+                    # make an otherwise continuous peak a censored cluster.
+                    selected_signal = np.asarray(
+                        prepared.positive_signal[
+                            selected.start_index : selected.end_index
+                        ]
                     )
-                    # Repeated raw interruptions plus severe jaggedness cannot
-                    # acquire peak support from a smooth envelope. Keep this
-                    # conjunction in the physical policy: neither
-                    # isolated gaps nor jaggedness alone rejects a peak.
-                    # Baseline crossings are not missing acquired samples.
-                    if original_runs >= 3 and noise_shape_severity(
-                        np.asarray(acquired, dtype=float)
-                    )[0] == 2:
+                    core = np.flatnonzero(selected_signal >= 0.2 * selected.height)
+                    core_raw = np.asarray(acquired)[core[0] : core[-1] + 1]
+                    if _positive_runs(core_raw) >= 3 and not _hit_enrichment(
+                        np.asarray(prepared.raw),
+                        selected.start_index,
+                        selected.end_index,
+                    ):
                         state, reason = (
                             "unavailable",
-                            "fragmented_original_xic_support",
+                            "insufficient_local_hit_enrichment",
                         )
                         selected = None
                 if selected is not None:
@@ -584,19 +714,22 @@ def answer_physical_peak_question(
                     # relief above both local valleys and short-scale original
                     # fluctuations; smoothing bias is not measurement noise.
                     left, right, apex = (
-                        selected.start_index, selected.end_index, selected.apex_index
+                        selected.start_index,
+                        selected.end_index,
+                        selected.apex_index,
                     )
                     signal = np.asarray(prepared.positive_signal, dtype=float)
                     prominence = float(signal[apex]) - max(
                         float(np.min(signal[left : apex + 1])),
-                        float(np.min(signal[apex : right])),
+                        float(np.min(signal[apex:right])),
                     )
                     raw = np.asarray(prepared.raw[left:right], dtype=float)
                     rt = np.asarray(prepared.rt[left:right], dtype=float)
                     noise_mad = short_scale_noise_mad(rt, raw)
                     if prominence < _PHYSICAL_LOCAL_CONTRAST_MIN_MAD * noise_mad:
                         state, reason = (
-                            "unavailable", "insufficient_local_peak_contrast"
+                            "unavailable",
+                            "insufficient_local_peak_contrast",
                         )
                         selected = None
                     elif (
@@ -605,7 +738,7 @@ def answer_physical_peak_question(
                     ):
                         background_qualified = True
                         left_valley = float(np.min(signal[left : apex + 1]))
-                        right_valley = float(np.min(signal[apex : right]))
+                        right_valley = float(np.min(signal[apex:right]))
                         apex_height = float(signal[apex])
                         if (
                             is_unresolved_shoulder_peak(
@@ -632,7 +765,8 @@ def answer_physical_peak_question(
                             )
                         ):
                             state, reason = (
-                                "unavailable", "background_like_peak_shape"
+                                "unavailable",
+                                "background_like_peak_shape",
                             )
                             selected = None
     answer_basis = {
@@ -695,7 +829,11 @@ def answer_physical_peak_question(
             height=selected.height,
             scan_support_count=selected.scan_support_count,
             area_counts_seconds=selected.area_counts_seconds,
-            area_source="trapezoid_counts_seconds_on_canonical_signal",
+            area_source=(
+                "trapezoid_counts_seconds_on_observed_censored_signal"
+                if "near_detection_limit" in selected.evidence_sources
+                else "trapezoid_counts_seconds_on_canonical_signal"
+            ),
             relative_shape_schema_version="physical_relative_shape",
             relative_shape_point_count=len(normalized),
             relative_shape_content_hash=shape_hash,
@@ -786,7 +924,11 @@ def _physical_raw_descriptor_projection(
         height_smoothed=float(prepared.smoothed[selected.apex_index]),
         area_raw_counts_seconds=raw_area_counts_seconds,
         integration_method="canonical_physical_signal_trapezoid",
-        boundary_sources=("canonical_physical_segment",),
+        boundary_sources=(
+            ("canonical_physical_segment", "near_detection_limit")
+            if "near_detection_limit" in selected.evidence_sources
+            else ("canonical_physical_segment",)
+        ),
         area_baseline_corrected=facts.area_counts_seconds,
         baseline_type=prepared.profile.baseline_method,
         raw_scan_indices=(),
@@ -808,15 +950,21 @@ def validate_bounded_physical_peak_evaluation(
         == DISCOVERY_PHYSICAL_PEAK_POINT_POLICY
     )
     operation_order = tuple(
-        operation for operation in _PHYSICAL_PEAK_OPERATION_ORDER
+        operation
+        for operation in _PHYSICAL_PEAK_OPERATION_ORDER
         if qualified_policy or operation != "background_qualification"
     )
     terminal_prefix_length = 5 if qualified_policy else 4
     allowed_operation_sequences = tuple(
         operation_order[:count]
         for count in (
-            1, 2, 3, 4, terminal_prefix_length,
-            len(operation_order) - 1, len(operation_order),
+            1,
+            2,
+            3,
+            4,
+            terminal_prefix_length,
+            len(operation_order) - 1,
+            len(operation_order),
         )
     )
     if evaluation.operations not in allowed_operation_sequences:

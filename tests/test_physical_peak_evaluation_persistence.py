@@ -224,7 +224,7 @@ def test_fragmented_original_peak_is_not_backfilled_by_smoothed_envelope(
         selection_policy_version=policy,
     )
     assert fresh.state == "unavailable"
-    assert fresh.reason == "fragmented_original_xic_support"
+    assert fresh.reason == "insufficient_local_hit_enrichment"
     assert fresh.facts is None and fresh.integration is None
     assert fresh.answer.physical_segment_id is None
     fresh_payload = serialize_physical_peak_evaluation(
@@ -235,6 +235,124 @@ def test_fragmented_original_peak_is_not_backfilled_by_smoothed_envelope(
     assert serialize_physical_peak_evaluation(
         rt, raw, profile=profile, evaluation=restored_fresh,
     ) == fresh_payload
+
+
+@pytest.mark.parametrize(
+    "policy", [PHYSICAL_PEAK_POINT_POLICY, DISCOVERY_PHYSICAL_PEAK_POINT_POLICY]
+)
+@pytest.mark.parametrize(
+    "intensity_pattern", ["smooth", "irregular", "no_adjacent_hits", "sparse_hits"]
+)
+def test_censored_hit_cluster_uses_observed_area_and_persists_warning(
+    policy: str, intensity_pattern: str,
+) -> None:
+    rt = np.arange(401, dtype=float) / 100.0
+    raw = np.zeros(401)
+    # One dense detection cluster, with no detected background. Intensity
+    # valleys are censoring gaps, not evidence for separate chromatographic peaks.
+    positions = np.arange(160, 241)
+    positions = positions[(positions % 3 == 0) | (positions == 199)]
+    raw[positions] = 100.0 + 200.0 * np.exp(-(((positions - 200) / 25.0) ** 2))
+    if intensity_pattern == "irregular":
+        raw[positions] = np.random.default_rng(531).uniform(
+            100.0, 1000.0, len(positions)
+        )
+    elif intensity_pattern == "no_adjacent_hits":
+        raw[199] = 0.0
+    elif intensity_pattern == "sparse_hits":
+        raw[:] = 0.0
+        positions = np.arange(130, 271, 7)
+        raw[positions] = 200.0
+    profile = SignalProcessingProfile()
+    result = evaluate_physical_peak(
+        prepare_physical_signal(rt, raw),
+        selection_subject_id="censored-cluster",
+        query_rt_min=2.0,
+        selection_policy_version=policy,
+    )
+    assert result.state == "available"
+    assert result.facts is not None and result.integration is not None
+    assert result.facts.left_rt_min <= rt[positions[0]]
+    assert result.facts.right_rt_min >= rt[positions[-1]]
+    assert result.facts.area_counts_seconds == pytest.approx(np.trapezoid(raw, rt) * 60)
+    assert "near_detection_limit" in result.integration.boundary_sources
+    other = evaluate_physical_peak(
+        prepare_physical_signal(rt, raw),
+        selection_subject_id="censored-cluster",
+        query_rt_min=2.0,
+        selection_policy_version=(
+            DISCOVERY_PHYSICAL_PEAK_POINT_POLICY
+            if policy == PHYSICAL_PEAK_POINT_POLICY
+            else PHYSICAL_PEAK_POINT_POLICY
+        ),
+    )
+    assert other.state == result.state
+    assert other.answer.physical_segment_id == result.answer.physical_segment_id
+    assert other.integration == result.integration
+    payload = serialize_physical_peak_evaluation(
+        rt, raw, profile=profile, evaluation=result
+    )
+    *_, restored = deserialize_physical_peak_evaluation(payload)
+    assert restored == result
+
+
+@pytest.mark.parametrize(
+    "policy", [PHYSICAL_PEAK_POINT_POLICY, DISCOVERY_PHYSICAL_PEAK_POINT_POLICY]
+)
+def test_stationary_sparse_hits_do_not_establish_a_censored_peak(policy) -> None:
+    rt = np.arange(401, dtype=float) / 100.0
+    raw = np.zeros(401)
+    raw[::3] = 200.0
+    raw[199] = 200.0
+    result = evaluate_physical_peak(
+        prepare_physical_signal(rt, raw),
+        selection_subject_id="stationary-hits",
+        query_rt_min=2.0,
+        selection_policy_version=policy,
+    )
+    assert result.state == "unavailable"
+    assert result.facts is None
+
+
+@pytest.mark.parametrize(
+    "policy", [PHYSICAL_PEAK_POINT_POLICY, DISCOVERY_PHYSICAL_PEAK_POINT_POLICY]
+)
+def test_strong_continuous_peak_with_sparse_tail_keeps_original_segment(
+    policy: str,
+) -> None:
+    rt = np.arange(401, dtype=float) / 100.0
+    raw = 10000.0 * np.exp(-0.5 * ((rt - 2.0) / 0.1) ** 2)
+    raw[raw < 1.0] = 0.0
+    raw[[242, 249, 256, 263, 270]] = 20.0
+    prepared = prepare_physical_signal(rt, raw)
+    result = evaluate_physical_peak(
+        prepared, selection_subject_id="strong-peak-with-sparse-tail",
+        query_rt_min=2.0, request_context_rt_start_min=0.5,
+        request_context_rt_end_min=3.5, selection_policy_version=policy,
+    )
+    assert result.state == "available" and result.reason == ""
+    assert result.facts is not None and result.integration is not None
+    selected = next(
+        segment for segment in result.segment_universe.segments
+        if segment.physical_segment_id == result.facts.physical_segment_id
+    )
+    # The continuous Gaussian returns to baseline before the sparse tail.
+    # Keep the ordinary morphology interval and baseline-corrected area.
+    assert (selected.left_rt_min, selected.right_rt_min) == (1.69, 2.31)
+    assert selected.evidence_sources == (
+        "morphology_trace", "morphology_local_maximum", "baseline_return",
+        "raw_area_asls",
+    )
+    assert prepared.prepared is not None
+    ordinary_area = np.trapezoid(
+        np.asarray(prepared.prepared.positive_signal)[169:232],
+        rt[169:232],
+    ) * 60.0
+    assert result.facts.area_counts_seconds == pytest.approx(ordinary_area)
+    assert result.integration.area_raw_counts_seconds == pytest.approx(
+        np.trapezoid(raw[169:232], rt[169:232]) * 60.0
+    )
+    assert "near_detection_limit" not in result.integration.boundary_sources
 
 
 @pytest.mark.parametrize("background_fragments", [False, True])
