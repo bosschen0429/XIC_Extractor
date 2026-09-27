@@ -22,7 +22,8 @@ from xic_extractor.peak_detection.signal_processing_profile import (
     DEFAULT_SIGNAL_PROCESSING_PROFILE,
 )
 from xic_extractor.presets import bind_cid_nl_recipe, load_preset
-from xic_extractor.raw_reader import preflight_raw_reader
+from xic_extractor.raw_reader import preflight_raw_reader, read_analysis_set
+from xic_extractor.sample_metadata import load_sample_metadata
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _DEFAULT_TARGETS = _REPO_ROOT / "config" / "targets.example.csv"
@@ -82,6 +83,10 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument("--raw-dir", type=Path)
     parser.add_argument("--dll-dir", type=Path)
     parser.add_argument(
+        "--sample-metadata", type=Path,
+        help="Roles and excluded flags deciding the analysis set below --raw-dir.",
+    )
+    parser.add_argument(
         "--acquisition-cache-dir", type=Path,
         help=(
             "Shared RAW acquisition cache for Alignment "
@@ -130,24 +135,22 @@ def _build_plan(args: argparse.Namespace) -> dict[str, Any]:
     if output_dir.exists():
         raise ValueError(f"{output_dir}: output directory already exists")
 
-    raw_paths = tuple(
-        sorted(
-            (
-                path.resolve()
-                for path in raw_dir.iterdir()
-                if path.is_file() and path.suffix.lower() == ".raw"
-            ),
-            key=lambda path: path.name.casefold(),
-        )
-    )
-    if len(raw_paths) != dataset:
-        raise ValueError(
-            f"{raw_dir}: expected {dataset} nonrecursive .raw files, "
-            f"found {len(raw_paths)}"
-        )
     dll_errors = preflight_raw_reader(dll_dir)
     if dll_errors:
         raise ValueError("Thermo DLL preflight failed:\n- " + "\n- ".join(dll_errors))
+    sample_metadata = (
+        args.sample_metadata.resolve() if args.sample_metadata is not None else None
+    )
+    raw_paths = read_analysis_set(
+        raw_dir,
+        dll_dir,
+        load_sample_metadata(sample_metadata) if sample_metadata is not None else None,
+    ).raw_paths
+    if len(raw_paths) != dataset:
+        raise ValueError(
+            f"{raw_dir}: expected {dataset} analysis RAW files, "
+            f"found {len(raw_paths)}"
+        )
 
     blank_library = None
     if args.blank_library is not None:
@@ -203,6 +206,8 @@ def _build_plan(args: argparse.Namespace) -> dict[str, Any]:
         "--timing-live-output",
         str(timing_dir / "alignment.live.json"),
     ]
+    if sample_metadata is not None:
+        discovery_command.extend(["--sample-metadata", str(sample_metadata)])
     if blank_library is not None:
         discovery_command.extend(["--blank-library", str(blank_library)])
         alignment_command.extend(["--blank-library", str(blank_library)])
@@ -235,6 +240,9 @@ def _build_plan(args: argparse.Namespace) -> dict[str, Any]:
         "inputs": {
             "raw_dir": str(raw_dir),
             "raw_count": len(raw_paths),
+            "sample_metadata": (
+                str(sample_metadata) if sample_metadata is not None else None
+            ),
             "dll_dir": str(dll_dir),
             "blank_library": str(blank_library) if blank_library is not None else None,
             "targets_csv": str(targets_csv) if targets_csv is not None else None,

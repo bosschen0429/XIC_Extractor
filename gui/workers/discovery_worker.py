@@ -28,7 +28,7 @@ from xic_extractor.presets import (
     bind_cid_nl_recipe,
     load_preset,
 )
-from xic_extractor.raw_reader import RawReaderError
+from xic_extractor.raw_reader import RawReaderError, read_analysis_set
 from xic_extractor.sample_metadata import SampleMetadata
 from xic_extractor.settings_schema import (
     CANONICAL_SETTINGS_DEFAULTS,
@@ -115,7 +115,9 @@ class DiscoveryWorker(QThread):
         raw_dir = request.raw_dir
         if raw_dir is None:
             raise ValueError(f"RAW 資料夾中找不到 .raw 檔案：{request.raw_dir}")
-        raw_paths = _raw_paths_from_dir(raw_dir)
+        raw_paths = _raw_paths_from_dir(
+            raw_dir, request.dll_dir, request.sample_metadata
+        )
         if not raw_paths:
             raise ValueError(f"RAW 資料夾中找不到 .raw 檔案：{request.raw_dir}")
 
@@ -182,7 +184,9 @@ class DiscoveryWorker(QThread):
                 "gallery_html": None,
             }
 
-        raw_paths = _raw_paths_from_dir(request.raw_dir)
+        raw_paths = _raw_paths_from_dir(
+            request.raw_dir, request.dll_dir, request.sample_metadata
+        )
         if not raw_paths:
             raise ValueError(f"RAW 資料夾中找不到 .raw 檔案：{request.raw_dir}")
         self.progress.emit(0, 1, "Discovery...")
@@ -413,19 +417,15 @@ def _parked_gallery_summary() -> dict[str, Any]:
     }
 
 
-def _raw_paths_from_dir(raw_dir: Path | None) -> tuple[Path, ...]:
+def _raw_paths_from_dir(
+    raw_dir: Path | None,
+    dll_dir: Path,
+    sample_metadata: tuple[SampleMetadata, ...] | None,
+) -> tuple[Path, ...]:
     if raw_dir is None or not raw_dir.is_dir():
         return ()
-    return tuple(
-        sorted(
-            (
-                path
-                for path in raw_dir.iterdir()
-                if path.is_file() and path.suffix.lower() == ".raw"
-            ),
-            key=lambda path: path.name.lower(),
-        )
-    )
+    analysis_set = read_analysis_set(raw_dir, dll_dir, sample_metadata)
+    return tuple(sorted(analysis_set.raw_paths, key=lambda path: path.name.lower()))
 
 
 def _batch_discovery_workers(

@@ -25,6 +25,7 @@ from PyQt6.QtWidgets import (
 )
 
 from gui.ui import DropTableWidget, section_card
+from xic_extractor.analysis_set import discover_raw_files
 from xic_extractor.sample_metadata import (
     SAMPLE_METADATA_COLUMNS,
     SAMPLE_METADATA_SCHEMA_VERSION,
@@ -215,7 +216,14 @@ class DiscoverySamplesSection(QWidget):
             self._status_label.setText("尚未選取有效的 RAW 資料夾")
             return
 
-        raw_files = sorted(self._raw_dir.glob("*.raw"))
+        # One row per sample stem; the Discovery run drops copies by header.
+        shallowest: dict[str, Path] = {}
+        for path in sorted(
+            discover_raw_files(self._raw_dir),
+            key=lambda path: (len(path.parts), path.name.casefold()),
+        ):
+            shallowest.setdefault(path.stem.casefold(), path)
+        raw_files = sorted(shallowest.values(), key=lambda path: path.name.casefold())
 
         if not raw_files:
             self._table.setRowCount(0)

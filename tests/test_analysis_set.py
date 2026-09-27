@@ -154,3 +154,51 @@ def test_unchanged_raw_header_is_read_once(tmp_path: Path, monkeypatch) -> None:
     assert first == second
     assert first.analyzed[0].role_source == "raw_header"
     assert opens == [raw]
+
+
+def test_discovery_cli_excludes_metadata_flagged_nested_samples(
+    tmp_path: Path,
+) -> None:
+    from scripts.run_discovery import _raw_paths_from_dir
+    from xic_extractor.sample_metadata import SAMPLE_METADATA_COLUMNS
+
+    raws = tmp_path / "raws"
+    for rel in ("S1.raw", "Blank/Blank_1.raw", "except sample/S2.raw", "sub/S3.raw"):
+        (raws / rel).parent.mkdir(parents=True, exist_ok=True)
+        (raws / rel).write_bytes(b"not a raw")
+    metadata = tmp_path / "samples.tsv"
+    row = dict.fromkeys(SAMPLE_METADATA_COLUMNS, "")
+    row |= {
+        "schema_version": "sample_metadata",
+        "sample_name": "S2",
+        "raw_stem": "S2",
+        "excluded": "true",
+        "exclusion_reason": "injected but outside the design",
+    }
+    metadata.write_text(
+        "\t".join(SAMPLE_METADATA_COLUMNS)
+        + "\n"
+        + "\t".join(row[c] for c in SAMPLE_METADATA_COLUMNS)
+        + "\n",
+        encoding="utf-8",
+    )
+    paths = _raw_paths_from_dir(raws, tmp_path / "dll", metadata)
+    assert [p.relative_to(raws.resolve()).as_posix() for p in paths] == [
+        "S1.raw",
+        "sub/S3.raw",
+    ]
+
+
+def test_alignment_locates_nested_analysis_members(tmp_path: Path) -> None:
+    from xic_extractor.alignment.raw_sources import existing_raw_paths
+
+    nested = tmp_path / "sub" / "S3.raw"
+    nested.parent.mkdir()
+    nested.write_bytes(b"")
+    outside = tmp_path.parent / "elsewhere" / "S4.raw"
+    paths = existing_raw_paths(
+        sample_order=("S3", "S4"),
+        raw_files={"S3": nested, "S4": outside},
+        raw_dir=tmp_path,
+    )
+    assert paths == {"S3": nested}

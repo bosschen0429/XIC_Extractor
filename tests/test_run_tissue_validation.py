@@ -133,7 +133,7 @@ def test_preflight_rejects_wrong_raw_count_before_creating_output(
     )
 
     assert code == 2
-    assert "expected 8 nonrecursive .raw files, found 7" in capsys.readouterr().err
+    assert "expected 8 analysis RAW files, found 7" in capsys.readouterr().err
     assert not output_dir.exists()
 
 
