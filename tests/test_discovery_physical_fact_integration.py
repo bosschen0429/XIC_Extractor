@@ -1124,7 +1124,7 @@ def test_physical_fact_owner_rejects_cross_acquisition_reassembly(
                 0.0,
             ),
             "unavailable",
-            "fragmented_original_xic_support",
+            "insufficient_local_hit_enrichment",
             15,
         ),
     ],
