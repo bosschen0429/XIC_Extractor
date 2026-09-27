@@ -134,6 +134,8 @@ def main(argv: list[str] | None = None) -> int:
     columns = (
         "injection_order",
         "raw_stem",
+        "acquisition_stem",
+        "renamed_after_acquisition",
         "acquisition_start",
         "acquisition_end",
         "run_length_min",

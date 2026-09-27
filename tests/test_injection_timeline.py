@@ -48,6 +48,19 @@ def test_copies_do_not_create_extra_injections_or_negative_idle() -> None:
     assert rows[1].possibly_perturbed
     assert rows[0].idle_min is None
     assert not rows[0].possibly_perturbed
+    assert not any(r.renamed_after_acquisition for r in rows)
+
+
+def test_raw_stem_is_the_local_filename_after_rename() -> None:
+    renamed = replace(
+        header("TumorBC2302_DNAandRNA", 0, 60),
+        raw_path="/batch/TumorBC2304_DNAandRNA.raw",
+    )
+    nested_copy = replace(renamed, raw_path="/batch/validation/copy.raw")
+    [row] = build_injection_timeline([nested_copy, renamed], PerturbationPolicy())
+    assert row.raw_stem == "TumorBC2304_DNAandRNA"
+    assert row.acquisition_stem == "TumorBC2302_DNAandRNA"
+    assert row.renamed_after_acquisition
 
 
 def test_recursive_discovery_preserves_cross_folder_previous_injection(

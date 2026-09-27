@@ -81,6 +81,9 @@ including blanks and subfolders. Creation date plus the original vendor
 acquisition path identifies copies; all local copy paths remain in JSON.
 Conflicting duplicate headers fail rather than silently select a copy. A file's
 filesystem timestamps and local basename do not determine injection identity.
+`raw_stem` is the local filename stem, the identity used by the rest of the
+product; the original acquisition stem is kept as `acquisition_stem`, and
+`renamed_after_acquisition` marks files renamed after acquisition.
 Creation date is the clock origin; acquisition start/end add the respective
 `RunHeaderEx` minute offsets, and run length is end minus start. Idle is current
 acquisition start minus previous acquisition end. Genuine negative idle is

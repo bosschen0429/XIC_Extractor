@@ -55,6 +55,8 @@ class PerturbationPolicy:
 class Injection:
     injection_order: int
     raw_stem: str
+    acquisition_stem: str
+    renamed_after_acquisition: bool
     header: InjectionHeader
     copy_paths: tuple[str, ...]
     acquisition_start: datetime
@@ -66,6 +68,22 @@ class Injection:
     idle_min: float | None
     possibly_perturbed: bool
     timing_warning: str | None
+
+
+def local_raw_stem(copy_paths: Sequence[str], acquisition_stem: str) -> str:
+    """Sample identity uses the local filename, which may differ from acquisition.
+
+    Prefer a copy still named as acquired; otherwise the shallowest copy path.
+    """
+    stems = [PureWindowsPath(path).stem for path in copy_paths]
+    folded = {stem.casefold(): stem for stem in stems}
+    if acquisition_stem.casefold() in folded:
+        return folded[acquisition_stem.casefold()]
+    shallowest = min(
+        copy_paths,
+        key=lambda path: (len(PureWindowsPath(path).parts), path.casefold(), path),
+    )
+    return PureWindowsPath(shallowest).stem
 
 
 def acquisition_key(source: str) -> str:
@@ -117,12 +135,19 @@ def build_injection_timeline(
             and previous.run_length_min
             <= header.run_length_min * policy.max_previous_run_fraction
         )
+        copy_paths = tuple(sorted({h.raw_path for h in copies}))
+        acquisition_stem = PureWindowsPath(header.acquisition_source).stem
+        raw_stem = local_raw_stem(copy_paths, acquisition_stem)
         rows.append(
             Injection(
                 injection_order=len(rows) + 1,
-                raw_stem=PureWindowsPath(header.acquisition_source).stem,
+                raw_stem=raw_stem,
+                acquisition_stem=acquisition_stem,
+                renamed_after_acquisition=(
+                    raw_stem.casefold() != acquisition_stem.casefold()
+                ),
                 header=header,
-                copy_paths=tuple(sorted({h.raw_path for h in copies})),
+                copy_paths=copy_paths,
                 acquisition_start=start,
                 acquisition_end=end,
                 run_length_min=header.run_length_min,
