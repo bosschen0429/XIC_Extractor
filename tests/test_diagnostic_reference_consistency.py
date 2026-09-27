@@ -16,6 +16,7 @@ from xic_extractor.diagnostics.reference_consistency import (
     ReferencePolicy,
     check_reference_consistency,
     trace_cluster_apices,
+    trace_clusters,
 )
 from xic_extractor.xic_models import XICTrace
 
@@ -52,6 +53,67 @@ def test_cluster_ordinal_and_between_cluster_warnings() -> None:
     assert "cluster_ordinal_mismatch" in rows["c", "early"]["warnings"]
     assert "reference_between_clusters" in rows["a", "gap"]["warnings"]
     assert rows["a", "early"]["severity"] == "none"
+
+
+def test_broad_peak_containing_reference_is_not_between_clusters() -> None:
+    report = check_reference_consistency(
+        {"one": [target("m5C", 10.70)]},
+        [
+            ClusterObservation(
+                "one",
+                "sample",
+                "m5C",
+                (8.79, 11.05, 12.58),
+                extent_rt_min=((8.65, 8.95), (10.45, 11.55), (12.4, 12.8)),
+            )
+        ],
+    )
+    row = report["rows"][0]
+    assert row["nearest_distance_min"] == pytest.approx(0.35)
+    assert row["warnings"] == []
+    assert row["severity"] == "none"
+
+
+def test_half_prominence_extents_from_trace_protect_broad_peak() -> None:
+    rt = np.linspace(7, 14, 1401)
+    intensity = (
+        100 * np.exp(-(((rt - 8.79) / 0.12) ** 2))
+        + 100 * np.exp(-(((rt - 11.05) / 0.8) ** 2))
+        + 100 * np.exp(-(((rt - 12.58) / 0.12) ** 2))
+    )
+    clusters = trace_clusters(XICTrace.from_arrays(rt, intensity))
+    assert len(clusters) == 3
+    assert clusters[1][1] < 10.70 < clusters[1][2]
+    observation = ClusterObservation(
+        "one",
+        "sample",
+        "m5C",
+        tuple(apex for apex, _, _ in clusters),
+        tuple((left, right) for _, left, right in clusters),
+    )
+    row = check_reference_consistency(
+        {"one": [target("m5C", 10.70)]}, [observation]
+    )["rows"][0]
+    assert row["warnings"] == []
+
+
+def test_wrong_anchor_does_not_distort_neighbor_mapping() -> None:
+    groups = {
+        "a": [target(str(i), float(i)) for i in range(1, 8)],
+        "b": [target(str(i), 10.0 if i == 4 else float(i)) for i in range(1, 8)],
+    }
+    report = check_reference_consistency(groups)
+    rows = {(r["group"], r["label"]): r for r in report["rows"]}
+    assert rows["b", "5"]["predicted_rt_min"] == pytest.approx(5.0)
+    assert rows["b", "5"]["residual_min"] == pytest.approx(0.0)
+    assert rows["b", "4"]["predicted_rt_min"] == pytest.approx(4.0)
+    assert "mapping_residual" in rows["b", "4"]["warnings"]
+    excluded = report["summary"]["mapping_excluded_anchors"]
+    assert isinstance(excluded, list)
+    assert {
+        (item["source_group"], item["group"], item["label"])
+        for item in excluded
+    } >= {("a", "b", "4")}
 
 
 def test_single_method_checks_clusters_but_never_maps() -> None:
@@ -108,7 +170,9 @@ def test_monotonic_mapping_collapses_duplicate_knots_and_ignores_input_order() -
             target("s", 10),
         ],
     }
-    report = check_reference_consistency(groups)
+    # Keep the robust screen inactive here to isolate knot/PAVA behavior.
+    policy = ReferencePolicy(mapping_residual_min=100)
+    report = check_reference_consistency(groups, policy=policy)
     held = next(
         error
         for error in report["mapping_errors"]
@@ -119,7 +183,7 @@ def test_monotonic_mapping_collapses_duplicate_knots_and_ignores_input_order() -
     assert (
         report["mapping_errors"]
         == check_reference_consistency(
-            {g: list(reversed(ts)) for g, ts in groups.items()}
+            {g: list(reversed(ts)) for g, ts in groups.items()}, policy=policy
         )["mapping_errors"]
     )
 
