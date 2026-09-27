@@ -26,6 +26,14 @@ from xic_extractor.raw_reader import preflight_raw_reader, read_analysis_set
 from xic_extractor.sample_metadata import load_sample_metadata
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
+# The 85RAW root also holds injected samples outside the study design.
+_DATASET_SAMPLE_METADATA = {
+    85: _REPO_ROOT
+    / "docs"
+    / "superpowers"
+    / "validation"
+    / "tissue_85raw_sample_metadata.tsv",
+}
 _DEFAULT_TARGETS = _REPO_ROOT / "config" / "targets.example.csv"
 _LOCAL_ENV = _REPO_ROOT / ".env.xic-local"
 
@@ -84,7 +92,10 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument("--dll-dir", type=Path)
     parser.add_argument(
         "--sample-metadata", type=Path,
-        help="Roles and excluded flags deciding the analysis set below --raw-dir.",
+        help=(
+            "Roles and excluded flags deciding the analysis set below --raw-dir "
+            "(default for --dataset 85: the tracked 85RAW sample metadata)."
+        ),
     )
     parser.add_argument(
         "--acquisition-cache-dir", type=Path,
@@ -139,7 +150,9 @@ def _build_plan(args: argparse.Namespace) -> dict[str, Any]:
     if dll_errors:
         raise ValueError("Thermo DLL preflight failed:\n- " + "\n- ".join(dll_errors))
     sample_metadata = (
-        args.sample_metadata.resolve() if args.sample_metadata is not None else None
+        args.sample_metadata.resolve()
+        if args.sample_metadata is not None
+        else _DATASET_SAMPLE_METADATA.get(dataset)
     )
     raw_paths = read_analysis_set(
         raw_dir,
