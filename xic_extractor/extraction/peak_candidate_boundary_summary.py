@@ -1,40 +1,19 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from pathlib import Path
+from typing import Protocol
+
+from xic_extractor.output.peak_candidate_boundary_summary import (
+    write_peak_candidate_boundary_summary_tsv,
+)
 
 PeakCandidateBoundarySummaryRow = dict[str, str]
 
-PEAK_CANDIDATE_BOUNDARY_SUMMARY_HEADERS = (
-    "sample_name",
-    "group",
-    "target_label",
-    "target_mz",
-    "role",
-    "istd_pair",
-    "analysis_mode",
-    "resolver_mode",
-    "candidate_id",
-    "proposal_sources",
-    "selected_candidate",
-    "top_boundary_id",
-    "top_boundary_sources",
-    "top_boundary_audit_score",
-    "top_boundary_audit_rank",
-    "top_boundary_support_labels",
-    "top_boundary_concern_labels",
-    "nonoverlap_selected",
-    "nonoverlap_note",
-    "nonoverlap_blocker_id",
-    "rt_left_min",
-    "rt_apex_min",
-    "rt_right_min",
-    "rt_width_min",
-    "area_raw_counts_seconds",
-    "area_baseline_corrected",
-    "area_ratio_vs_candidate_interval",
-    "width_delta_vs_candidate_interval",
-    "is_candidate_interval",
-)
+
+class FileResultWithPeakCandidateBoundarySummary(Protocol):
+    @property
+    def peak_candidate_boundary_rows(self) -> Sequence[Mapping[str, str]]: ...
 
 
 def build_peak_candidate_boundary_summary_rows(
@@ -85,3 +64,19 @@ def _summary_row(row: Mapping[str, str]) -> PeakCandidateBoundarySummaryRow:
         ),
         "is_candidate_interval": row.get("is_candidate_interval", ""),
     }
+
+
+def write_peak_candidate_boundary_summary_for_file_results(
+    path: Path,
+    file_results: Sequence[FileResultWithPeakCandidateBoundarySummary],
+    *,
+    enabled: bool = True,
+) -> None:
+    boundary_rows: list[Mapping[str, str]] = []
+    for file_result in file_results:
+        boundary_rows.extend(file_result.peak_candidate_boundary_rows)
+    write_peak_candidate_boundary_summary_tsv(
+        path,
+        build_peak_candidate_boundary_summary_rows(boundary_rows),
+        enabled=enabled,
+    )
