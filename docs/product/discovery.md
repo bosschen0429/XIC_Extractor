@@ -138,12 +138,13 @@ the error relative to the configured loss mass; it is not the acceptance gate.
 - Candidate CSV preserves the full floating-point representation of
   `configured_neutral_loss_da`. Downstream replay compares this configured
   method value with the bound preset; display rounding must not change it.
-- After physical MS1 evaluation and evidence scoring, one sample/tag/best-scan
-  context may advance at most one pure `product_mz + neutral_loss` candidate as
-  feature-backed. The highest-evidence candidate remains eligible; competing
-  pure inferred candidates are classified as
-  `review_only_ambiguous_coisolation` and are not persisted. Direct or mixed-basis
-  candidates do not enter this inferred-only competition.
+- After physical MS1 evaluation, distinct MS1-feature-backed candidates may
+  share one sample/tag/best-scan context, including pure
+  `product_mz + neutral_loss` candidates. Sharing an MS2 scan does not make
+  distinct MS1 features duplicates; evidence scoring ranks them without
+  deleting either. Candidates that remain physically ambiguous still follow
+  the `review_only_ambiguous_coisolation` gate. Downstream cell-decision owners
+  enforce one final Matrix value per feature/sample cell.
 - Untargeted CID-NL carries eligible inferred evidence into the shared method
   assessment alongside direct evidence. Canonical evidence retains the precursor
   basis, actual scan precursor, and configured inference bound; an inferred
