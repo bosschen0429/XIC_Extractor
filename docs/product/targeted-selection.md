@@ -53,6 +53,28 @@ acquisition bounds; the JSON preserves the effective policy and input provenance
 These outputs have `diagnostic_only` evidence status and no selected-peak,
 reference-editing, quantitation, or ProductWriter authority.
 
+### Within-group selected-peak review
+
+Targeted groups the already selected owner hypotheses through CrossSample without
+ModeTrack. CID-NL support, observation-only selections, and MS1-only targets keep
+their sample-local identities and measurements; grouping does not reselect peaks.
+
+For each target in one method request, the Targeted post-cell owner compares all
+observed selected apex RTs within each sample metadata group, independently of
+CrossSample's RT partition. A range greater than 0.3 minutes routes every selected
+cell in that group to `targeted_group_rt_inconsistent` review. This repeatability
+tolerance is the one used to identify the within-method cohort disagreements;
+it is a review threshold, not a peak-identity or automatic correction rule.
+Empty/single-observation groups and groups within tolerance receive no such flag.
+Missing observations are not assigned an RT. Different method requests or sample
+groups are never pooled.
+
+The public `Projection Review Reasons` and review state render this owner result.
+Clean detections become flagged; existing stricter states remain. Selected peaks,
+bounds, areas, and counted-detection decisions are unchanged, including genuine
+retention shifts. A whole group selecting the same wrong peak is not detectable
+by this comparison; reference diagnostics remain a separate review surface.
+
 ### Physical evaluation
 
 - Acquisition enumerates the shared physical segment universe for the

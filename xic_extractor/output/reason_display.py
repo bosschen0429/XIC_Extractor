@@ -17,6 +17,9 @@ _REASON_TEXT = {
     "trace_coherent": "No major XIC quality flags",
     "role_aware_istd_expected_present": "ISTD expected in this sample",
     "targeted_rt_conflict": "peak position conflicts with the RT reference/window",
+    "targeted_group_rt_inconsistent": (
+        "Selected peaks differ within the sample group; review without reselection"
+    ),
     "targeted_rt_review": "RT position needs review",
     "anchor_conflict": "peak RT disagrees with the ISTD anchor",
     "candidate_aligned_ms2_nl_conflict": (

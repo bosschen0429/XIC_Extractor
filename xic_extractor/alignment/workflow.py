@@ -25,11 +25,11 @@ from xic_extractor.alignment.grouping_result import (
 )
 from xic_extractor.alignment.grouping_workflow import (
     apply_mode_track_refinement_run_for_workflow,
+    build_targeted_cross_sample_groups,
 )
 from xic_extractor.alignment.mode_track.assignment import ModeTrackTrajectoryPolicy
 from xic_extractor.alignment.mode_track.refinement import (
     bootstrap_mode_track_refinement_from_cid_nl_support,
-    bootstrap_mode_track_refinement_from_ms1_hypotheses,
 )
 from xic_extractor.alignment.projection.target.post_cell import (
     project_target_post_cell,
@@ -294,7 +294,6 @@ WorkflowRequest: TypeAlias = TargetWorkflowRequest | UntargetWorkflowRequest
 @dataclass(frozen=True, slots=True)
 class _WorkflowAdapterFields:
     capture_inputs: tuple[CaptureWorkflowArguments, ...]
-    mode_track: ModeTrackWorkflowArguments
     predecessor_cell_observations: tuple[CellObservationRef, ...]
     drift_lookup: DriftLookupProtocol | None = None
     backfill_cell_observations: tuple[CellObservationRef, ...] = ()
@@ -308,11 +307,6 @@ class _WorkflowAdapterFields:
             )
         for item in self.capture_inputs:
             item.__post_init__()
-        if type(self.mode_track) is not ModeTrackWorkflowArguments:
-            raise AlignmentWorkflowContractError(
-                "adapter requires exact ModeTrack arguments"
-            )
-        self.mode_track.__post_init__()
         if type(self.predecessor_cell_observations) is not tuple or any(
             type(item) is not CellObservationRef
             for item in self.predecessor_cell_observations
@@ -324,8 +318,10 @@ class _WorkflowAdapterFields:
 
 @dataclass(frozen=True)
 class TargetWorkflowAdapter(_WorkflowAdapterFields):
-    __slots__ = ("_completed_captures",)
-
+    sample_assessments: tuple[
+        tuple[ResolvedCanonicalSampleIdentity, CidNlMethodAssessmentRef], ...
+    ] = field(kw_only=True)
+    alignment_config: AlignmentConfig = field(kw_only=True)
     completed_capture_handoff: InitVar[tuple[SampleLocalCapture, ...] | None] = None
 
     def __post_init__(
@@ -333,8 +329,18 @@ class TargetWorkflowAdapter(_WorkflowAdapterFields):
         completed_capture_handoff: tuple[SampleLocalCapture, ...] | None = None,
     ) -> None:
         super(TargetWorkflowAdapter, self).__post_init__()
-        if self.mode_track.trajectory_policy is None:
-            raise AlignmentWorkflowContractError("Target requires ModeTrack policy")
+        if type(self.sample_assessments) is not tuple or any(
+            type(item) is not tuple
+            or len(item) != 2
+            or type(item[0]) is not ResolvedCanonicalSampleIdentity
+            or type(item[1]) is not CidNlMethodAssessmentRef
+            for item in self.sample_assessments
+        ):
+            raise AlignmentWorkflowContractError(
+                "Target assessments must be exact sample/assessment pairs"
+            )
+        if type(self.alignment_config) is not AlignmentConfig:
+            raise AlignmentWorkflowContractError("alignment_config must be exact")
         completed_captures = getattr(
             self,
             "_completed_captures",
@@ -354,11 +360,17 @@ class TargetWorkflowAdapter(_WorkflowAdapterFields):
 
 @dataclass(frozen=True, slots=True)
 class UntargetWorkflowAdapter(_WorkflowAdapterFields):
+    mode_track: ModeTrackWorkflowArguments = field(kw_only=True)
     completed_grouping: CrossSampleGroupingResult | None = None
     closed_cell_coverage: BackfillEvaluationCoverageBatch | None = None
 
     def __post_init__(self) -> None:
         super(UntargetWorkflowAdapter, self).__post_init__()
+        if type(self.mode_track) is not ModeTrackWorkflowArguments:
+            raise AlignmentWorkflowContractError(
+                "adapter requires exact ModeTrack arguments"
+            )
+        self.mode_track.__post_init__()
         if (
             self.completed_grouping is None
             and self.mode_track.trajectory_policy is None
@@ -837,72 +849,39 @@ def _compose_application_result(
                         "completed capture crossed its sealed selection"
                     )
             captures = completed_captures
-        stage = WorkflowStage.MODE_TRACK_BOOTSTRAP
-        ms1_only_target = (
-            type(request) is TargetWorkflowRequest
-            and type(request.scope) is TargetSearchScope
-            and request.scope.target.definition.target.neutral_loss_da is None
-        )
-        completed_grouping = (
-            adapter.completed_grouping
-            if type(adapter) is UntargetWorkflowAdapter
-            else None
-        )
-        if completed_grouping is not None:
-            context = completed_grouping
-        elif not ms1_only_target:
-            assert adapter.mode_track.trajectory_policy is not None
-            run = bootstrap_mode_track_refinement_from_cid_nl_support(
-                processing_owners=owners,
-                sample_assessments=adapter.mode_track.sample_assessments,
-                alignment_config=adapter.mode_track.alignment_config,
-                trajectory_policy=adapter.mode_track.trajectory_policy,
-                drift_lookup=adapter.drift_lookup,
-                retain_observation_only_candidates=(
-                    getattr(
-                        adapter.mode_track,
-                        "retain_observation_only_candidates",
-                        False,
-                    )
-                ),
-            )
-        else:
-            assert type(request) is TargetWorkflowRequest
-            assert adapter.mode_track.trajectory_policy is not None
-            target = request.scope.target.definition.target
-            mz_delta = target.mz * target.ppm_tol / 1_000_000.0
-            sample_by_id = {
-                sample.identity.sample_identity_id: sample
-                for sample in request.scope.samples
-            }
-            sample_hypotheses = tuple(
-                (
-                    sample_by_id[
-                        item.owner_observation.content.canonical_sample_identity_id
-                    ],
-                    item.owner_hypothesis,
-                )
-                for item in adapter.capture_inputs
-                if item.owner_observation is not None
-                and item.owner_hypothesis is not None
-            )
-            run = bootstrap_mode_track_refinement_from_ms1_hypotheses(
-                processing_owners=owners,
-                samples=request.scope.samples,
-                sample_hypotheses=sample_hypotheses,
-                scope_mz_interval=(target.mz - mz_delta, target.mz + mz_delta),
-                scope_rt_interval=(target.rt_min, target.rt_max),
-                alignment_config=adapter.mode_track.alignment_config,
-                trajectory_policy=adapter.mode_track.trajectory_policy,
-                drift_lookup=adapter.drift_lookup,
-            )
-        stage = WorkflowStage.CROSS_SAMPLE_GROUPING
-        if completed_grouping is None:
-            context = apply_mode_track_refinement_run_for_workflow(
+        if type(adapter) is TargetWorkflowAdapter:
+            stage = WorkflowStage.CROSS_SAMPLE_GROUPING
+            context = build_targeted_cross_sample_groups(
                 processing_owners=owners,
                 captures=captures,
-                run=run,
+                sample_assessments=adapter.sample_assessments,
+                alignment_config=adapter.alignment_config,
+                drift_lookup=adapter.drift_lookup,
             )
+        else:
+            untarget_adapter = cast(UntargetWorkflowAdapter, adapter)
+            stage = WorkflowStage.MODE_TRACK_BOOTSTRAP
+            completed_grouping = untarget_adapter.completed_grouping
+            if completed_grouping is not None:
+                context = completed_grouping
+            else:
+                assert untarget_adapter.mode_track.trajectory_policy is not None
+                run = bootstrap_mode_track_refinement_from_cid_nl_support(
+                    processing_owners=owners,
+                    sample_assessments=untarget_adapter.mode_track.sample_assessments,
+                    alignment_config=untarget_adapter.mode_track.alignment_config,
+                    trajectory_policy=untarget_adapter.mode_track.trajectory_policy,
+                    drift_lookup=untarget_adapter.drift_lookup,
+                    retain_observation_only_candidates=(
+                        untarget_adapter.mode_track.retain_observation_only_candidates
+                    ),
+                )
+                stage = WorkflowStage.CROSS_SAMPLE_GROUPING
+                context = apply_mode_track_refinement_run_for_workflow(
+                    processing_owners=owners,
+                    captures=captures,
+                    run=run,
+                )
         closed_coverage = (
             adapter.closed_cell_coverage
             if type(adapter) is UntargetWorkflowAdapter
@@ -1284,9 +1263,12 @@ def _validate_request_adapter(
         raise AlignmentWorkflowContractError(
             "capture inputs must exactly preserve declared candidate order"
         )
-    assessment_samples = tuple(
-        sample for sample, _ in adapter.mode_track.sample_assessments
+    assessments = (
+        adapter.sample_assessments
+        if isinstance(adapter, TargetWorkflowAdapter)
+        else adapter.mode_track.sample_assessments
     )
+    assessment_samples = tuple(sample for sample, _ in assessments)
     expected_samples = tuple(
         sorted(request.scope.samples, key=lambda item: item.identity.sample_identity_id)
     )
@@ -1315,7 +1297,7 @@ def _validate_request_adapter(
             )
         ):
             raise AlignmentWorkflowContractError(
-                "ModeTrack assessments do not close the exact scope samples"
+                "method assessments do not close the exact scope samples"
             )
     elif (
         type(request) is not TargetWorkflowRequest

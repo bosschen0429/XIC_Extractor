@@ -1530,3 +1530,57 @@ def test_cli_and_gui_route_through_acquisition_service_boundary() -> None:
     assert "extractor.acquire" in gui_source
     assert "write_excel_from_run_output" not in cli_source
     assert "write_excel_from_run_output" not in gui_source
+
+
+@pytest.mark.parametrize("spread, flagged", [(0.2, False), (0.4, True)])
+def test_group_rt_review_preserves_published_selected_values(
+    tmp_path: Path,
+    spread: float,
+    flagged: bool,
+) -> None:
+    centers = {"SampleA": 1.3, "SampleB": 1.3 + spread, "SampleC": 1.8}
+    config, target, output = production_case(
+        tmp_path,
+        sample_names=tuple(centers),
+        sample_peak_centers=centers,
+        sample_peak_scales={"SampleA": 1.0, "SampleB": 2.0, "SampleC": 3.0},
+    )
+    config = replace(config, keep_intermediate_csv=True)
+    output = replace(
+        output,
+        file_results=[
+            replace(item, group="other" if item.sample_name == "SampleC" else "same")
+            for item in output.file_results
+        ],
+    )
+    request = build_targeted_application_request(
+        config,
+        [target],
+        injection_order={name: i for i, name in enumerate(centers, 1)},
+    )
+    finalized = execute_targeted_production_workflow(request, output)
+    publish_targeted_outputs(request, finalized, output)
+    reason = "targeted_group_rt_inconsistent"
+    references = finalized[0].completed_projection.review_queue_references
+    flagged_samples = {
+        ref.subject.sample.metadata.raw_stem
+        for ref in references
+        if reason in ref.reasons
+    }
+    assert flagged_samples == ({"SampleA", "SampleB"} if flagged else set())
+    with config.output_csv.with_name("xic_results_long.csv").open(
+        encoding="utf-8-sig",
+        newline="",
+    ) as handle:
+        rows = {row["SampleName"]: row for row in csv.DictReader(handle)}
+    for item in output.file_results:
+        row = rows[item.sample_name]
+        original = item.results[target.label]
+        expected_flag = flagged and item.sample_name != "SampleC"
+        assert (reason in row["Projection Review Reasons"]) is expected_flag
+        assert float(row["RT"]) == pytest.approx(original.reported_rt, abs=0.00011)
+        assert float(row["Area"]) == pytest.approx(
+            original.reported_peak_area, rel=1e-5
+        )
+        assert row["Counted Detection"] == "TRUE"
+        assert row["Review State"] == ("flagged" if expected_flag else "none")

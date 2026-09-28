@@ -5,6 +5,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from xic_extractor.alignment import workflow as alignment_workflow
 from xic_extractor.alignment.result.application_result import (
     FinalizedTargetApplicationResult,
 )
@@ -128,6 +129,71 @@ def test_two_samples_reuse_exact_acquired_physical_evaluations(
     )
 
 
+@pytest.mark.parametrize("ms1_only", [False, True])
+def test_targeted_selected_values_close_without_mode_track(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    ms1_only: bool,
+) -> None:
+    config, target, output = production_case(
+        tmp_path,
+        sample_names=("SampleA", "SampleB"),
+        sample_peak_scales={"SampleA": 1.0, "SampleB": 2.0},
+    )
+    if ms1_only:
+        target = replace(
+            target,
+            neutral_loss_da=None,
+            nl_ppm_warn=None,
+            nl_ppm_max=None,
+        )
+
+    def mode_track_must_not_run(**_kwargs):
+        pytest.fail("Targeted grouping must not invoke ModeTrack")
+
+    monkeypatch.setattr(
+        alignment_workflow,
+        "bootstrap_mode_track_refinement_from_cid_nl_support",
+        mode_track_must_not_run,
+    )
+    monkeypatch.setattr(
+        alignment_workflow,
+        "bootstrap_mode_track_refinement_from_ms1_hypotheses",
+        mode_track_must_not_run,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        alignment_workflow,
+        "apply_mode_track_refinement_run_for_workflow",
+        mode_track_must_not_run,
+    )
+
+    finalized = execute_targeted_production_workflow(
+        build_targeted_application_request(
+            config,
+            [target],
+            injection_order={"SampleA": 1, "SampleB": 2},
+        ),
+        output,
+    )
+
+    result = finalized[0]
+    decision_values = tuple(
+        decision.value for decision in result.completed_projection.decisions
+    )
+    assert decision_values == (
+        output.file_results[0].results[target.label].reported_peak_area,
+        output.file_results[1].results[target.label].reported_peak_area,
+    )
+    groups = result.scientific_core.final_population
+    assert groups == result.scientific_core.grouping_result.initial_population
+    assert {
+        member.canonical_sample_identity_id
+        for group in groups
+        for member in group.member_subjects
+    } == {sample.identity.sample_identity_id for sample in result.canonical_samples}
+
+
 def test_nl_event_outside_exact_target_precursor_is_not_target_evidence(
     tmp_path: Path,
 ) -> None:
@@ -185,7 +251,9 @@ def test_nl_event_outside_retained_peak_finalizes_without_direct_support(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    config, target, output = production_case(tmp_path)
+    config, target, output = production_case(
+        tmp_path, sample_names=("SampleA", "SampleB")
+    )
     original = output.file_results[0].results[target.label]
     selected = original.selected_hypothesis
     evidence = original.candidate_ms2_evidence
@@ -220,16 +288,29 @@ def test_nl_event_outside_retained_peak_finalizes_without_direct_support(
         build_targeted_application_request(
             config,
             [target],
-            injection_order={"SampleA": 1},
+            injection_order={"SampleA": 1, "SampleB": 2},
         ),
         output,
     )
 
     assert len(finalized) == 1
-    # A local MS1 value is allowed; an outside event must not become direct support.
-    assert len(assessments) == 1
+    # SampleA's local MS1 value stays selected beside SampleB's direct support.
+    assert len(assessments) == 2
     assert assessments[0].individual_support_refs == ()
     assert assessments[0].content.method_result != "SUPPORT"
+    result = finalized[0]
+    decision_values = tuple(
+        decision.value for decision in result.completed_projection.decisions
+    )
+    assert decision_values == (
+        output.file_results[0].results[target.label].reported_peak_area,
+        output.file_results[1].results[target.label].reported_peak_area,
+    )
+    assert {
+        member.canonical_sample_identity_id
+        for group in result.scientific_core.final_population
+        for member in group.member_subjects
+    } == {sample.identity.sample_identity_id for sample in result.canonical_samples}
 
 
 def test_retained_peak_outside_target_rt_is_not_a_target_capture(
@@ -887,12 +968,14 @@ def production_case(
     *,
     sample_names: tuple[str, ...] = ("SampleA",),
     sample_peak_scales: dict[str, float] | None = None,
+    sample_peak_centers: dict[str, float] | None = None,
 ) -> tuple[ExtractionConfig, Target, RunOutput]:
     config = _config(tmp_path)
     target = _target()
     config.data_dir.mkdir()
     file_results = []
     scales = sample_peak_scales or {}
+    centers = sample_peak_centers or {}
     for sample_name in sample_names:
         raw_path = config.data_dir / f"{sample_name}.raw"
         raw_path.write_bytes(sample_name.encode())
@@ -902,8 +985,9 @@ def production_case(
             observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
         )
         scale = scales.get(sample_name, 1.0)
+        center = centers.get(sample_name, 1.5)
         rt = np.linspace(1.0, 2.0, 101)
-        intensity = (10.0 + 1000.0 * np.exp(-((rt - 1.5) ** 2) / 0.002)) * scale
+        intensity = (10.0 + 1000.0 * np.exp(-((rt - center) ** 2) / 0.002)) * scale
         trace = Trace.from_arrays(
             sample_name=sample_name,
             mz=target.mz,
@@ -913,7 +997,7 @@ def production_case(
             rt_max=target.rt_max,
             ppm_tol=target.ppm_tol,
         )
-        peak_result = find_peak_and_area(rt, intensity, config, preferred_rt=1.5)
+        peak_result = find_peak_and_area(rt, intensity, config, preferred_rt=center)
         hypotheses = build_peak_hypotheses(
             analysis_mode="targeted",
             common_evidence_source_id="test-retained-trace",
@@ -961,11 +1045,11 @@ def production_case(
                             trigger_scan_count=1,
                             strict_nl_scan_count=1,
                             best_loss_ppm=0.0,
-                            best_scan_rt=1.5,
+                            best_scan_rt=center,
                             best_product_base_ratio=0.5,
                             alignment_source="region",
                             best_product_evidence=MS2ProductEvidence(
-                                scan_rt=1.5,
+                                scan_rt=center,
                                 precursor_mz=250.0,
                                 product_mz=134.0,
                                 product_intensity=500.0,

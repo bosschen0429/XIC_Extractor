@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import defaultdict
 from dataclasses import InitVar, dataclass, field
 from typing import Literal, TypeAlias, cast
 
@@ -19,14 +20,19 @@ from xic_extractor.alignment.projection.target.pre_cell import (
     TargetProjectionContractError,
     TargetRowBinding,
 )
+from xic_extractor.alignment.result.scientific_alignment import ObservedSearchSubject
 
 TargetInclusionReason: TypeAlias = Literal["fixed_target_row"]
 TargetReviewQueueReason: TypeAlias = Literal[
     "unresolved_target_binding",
+    "targeted_group_rt_inconsistent",
     "searched_no_observation",
     "not_quantifiable",
 ]
 
+# Same-method repeatability review tolerance used by the Targeted cohort oracle.
+# This only routes review; it never changes peak selection or numerical decisions.
+_TARGET_GROUP_RT_TOLERANCE_MIN = 0.3
 _POST_CELL_MINT_TOKEN = object()
 _TARGET_NO_WRITE_REASONS = frozenset({"searched_no_observation", "not_quantifiable"})
 
@@ -335,11 +341,14 @@ def _build_review_queue_references(
     decisions: tuple[ProductionCellDecision, ...],
 ) -> tuple[TargetReviewQueueReference, ...]:
     references: list[TargetReviewQueueReference] = []
+    inconsistent_samples = _inconsistent_selected_rt_samples(decisions)
     for decision in decisions:
         reasons = _review_reasons(row_binding, decision)
+        subject = cast(TargetCellSubject, decision.subject)
+        if subject.sample.identity.sample_identity_id in inconsistent_samples:
+            reasons += ("targeted_group_rt_inconsistent",)
         if not reasons:
             continue
-        subject = cast(TargetCellSubject, decision.subject)
         references.append(
             TargetReviewQueueReference(
                 subject=subject,
@@ -349,6 +358,30 @@ def _build_review_queue_references(
             )
         )
     return tuple(references)
+
+
+def _inconsistent_selected_rt_samples(
+    decisions: tuple[ProductionCellDecision, ...],
+) -> frozenset[str]:
+    # Compare the complete selected population, independent of RT-split groups.
+    # Each projection already binds one exact target in one method request.
+    selected_by_group: dict[str, list[tuple[str, float]]] = defaultdict(list)
+    for decision in decisions:
+        subject = cast(TargetCellSubject, decision.subject)
+        terminal = subject.terminal_subject
+        if type(terminal) is ObservedSearchSubject:
+            selected_by_group[subject.sample.metadata.group].append(
+                (
+                    subject.sample.identity.sample_identity_id,
+                    terminal.hypothesis.integration.rt_apex_min,
+                )
+            )
+    inconsistent: set[str] = set()
+    for selected in selected_by_group.values():
+        rts = [rt for _, rt in selected]
+        if max(rts) - min(rts) > _TARGET_GROUP_RT_TOLERANCE_MIN:
+            inconsistent.update(sample_id for sample_id, _ in selected)
+    return frozenset(inconsistent)
 
 
 def _review_reasons(
@@ -385,7 +418,14 @@ def _validate_review_reference(reference: TargetReviewQueueReference) -> None:
             "Target Review Queue reference requires typed reasons"
         )
     expected = _review_reasons(reference.row_binding, reference.decision)
-    if reference.reasons != expected:
+    # Cohort-dependent reasons are checked against the full decision population
+    # by validate_target_post_cell_projection, not recomputed per sample.
+    local_reasons = tuple(
+        reason
+        for reason in reference.reasons
+        if reason != "targeted_group_rt_inconsistent"
+    )
+    if local_reasons != expected:
         raise TargetProjectionContractError(
             "Target Review Queue reasons do not match owner policy"
         )
