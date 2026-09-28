@@ -205,10 +205,7 @@ def _read_exact_seed(
         and (
             preserve_configured_losses
             or not representative
-            or (
-                _receipt_close(seed.precursor_mz, candidate.precursor_mz)
-                and _receipt_close(seed.product_mz, candidate.product_mz)
-            )
+            or _representative_receipt(seed, candidate)
         )
     )
     if not matches:
@@ -261,9 +258,7 @@ def _read_exact_seed(
     if preserve_configured_losses:
         # Reconstruct the representative's persisted facts as well.
         if representative and not any(
-            _receipt_close(seed.precursor_mz, candidate.precursor_mz)
-            and _receipt_close(seed.product_mz, candidate.product_mz)
-            for seed in matches
+            _representative_receipt(seed, candidate) for seed in matches
         ):
             raise StrictSeedReceiptError(
                 f"{candidate.candidate_id}: "
@@ -373,6 +368,19 @@ def _scan_receipts(
 
 
 _within_ppm = within_ppm
+
+
+def _representative_receipt(seed: DiscoverySeed, candidate: DiscoveryCandidate) -> bool:
+    """Whether a seed is the representative's persisted product and precursor.
+
+    Discovery replaces an inferred product + loss precursor with the MS1 ion
+    read at the peak, inside the extraction tolerance the caller already
+    checks, so only its product is the scan's exact receipt.
+    """
+    return _receipt_close(seed.product_mz, candidate.product_mz) and (
+        seed.precursor_mz_basis == "product_plus_neutral_loss"
+        or _receipt_close(seed.precursor_mz, candidate.precursor_mz)
+    )
 
 
 def _receipt_close(observed: float, receipt: float) -> bool:
