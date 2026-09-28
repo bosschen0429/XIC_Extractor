@@ -1584,3 +1584,7 @@ def test_group_rt_review_preserves_published_selected_values(
         )
         assert row["Counted Detection"] == "TRUE"
         assert row["Review State"] == ("flagged" if expected_flag else "none")
+        assert (
+            row["Projection Reason"].split(";", 1)[0]
+            == f"decision: {row['Product State']}"
+        )

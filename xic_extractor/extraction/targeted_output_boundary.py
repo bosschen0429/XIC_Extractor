@@ -34,6 +34,7 @@ from xic_extractor.output.review_report import review_report_path_for_excel
 from xic_extractor.peak_detection.models import PeakResult
 from xic_extractor.peak_detection.targeted_product_projection import (
     TargetedProductProjection,
+    add_targeted_review_reason,
 )
 
 if TYPE_CHECKING:
@@ -384,21 +385,9 @@ def _finalized_product_projection(
     if projection is None:
         return None
     if cohort_review:
-        reason = "targeted_group_rt_inconsistent"
-        projection = replace(
+        projection = add_targeted_review_reason(
             projection,
-            review_reasons=tuple(dict.fromkeys((*projection.review_reasons, reason))),
-            review_state=(
-                "flagged"
-                if projection.review_state == "none"
-                else projection.review_state
-            ),
-            product_state=(
-                "detected_flagged"
-                if projection.product_state == "detected_clean"
-                else projection.product_state
-            ),
-            projection_reason=f"{projection.projection_reason}; review: {reason}",
+            "targeted_group_rt_inconsistent",
         )
     if no_write_reason:
         return replace(
