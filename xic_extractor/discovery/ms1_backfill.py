@@ -70,6 +70,9 @@ _DISCOVERY_PHYSICAL_CONTEXT_HALF_WINDOW_MIN = 0.60
 # spread wider than a few ppm come from more than one ion.
 _APEX_ION_SCAN_RADIUS = 1
 _APEX_ION_SPREAD_PPM = 5.0
+# 13C spacing of a doubly charged ion. Product + loss assumes a singly charged
+# precursor, so an inferred ion read beside this isotope is not one.
+_DOUBLY_CHARGED_ISOTOPE_SPACING_MZ = 1.0033548 / 2
 
 
 
@@ -270,6 +273,7 @@ def _backfill_ms1_candidates_with_acquisition(
     initial_physical_facts: dict[int, DiscoveryPhysicalFactRecord] = {}
     physical_trace_qualities: dict[int, str] = {}
     apex_ion_mz_by_index: dict[int, float] = {}
+    doubly_charged_indexes: set[int] = set()
     if signal_processing_profile is not None:
         for physical_index, (plan, acquired) in enumerate(
             zip(physical_plans, acquired_traces, strict=True)
@@ -297,11 +301,13 @@ def _backfill_ms1_candidates_with_acquisition(
             zip(physical_plans, acquired_traces, strict=True)
         ):
             evaluation = initial_physical_facts[physical_index].evaluation
-            ion_mz = _apex_ion_mz(
+            ion_mz, doubly_charged = _apex_ion_reading(
                 plan, acquired, evaluation, ms1_centroid_mz=ms1_centroid_mz
             )
             if ion_mz is not None:
                 apex_ion_mz_by_index[physical_index] = ion_mz
+            if doubly_charged:
+                doubly_charged_indexes.add(physical_index)
             expanded = _expanded_physical_request_plan(
                 plan,
                 acquired,
@@ -414,6 +420,14 @@ def _backfill_ms1_candidates_with_acquisition(
         settings=settings,
         ms1_centroid_mz=ms1_centroid_mz,
     )
+    if doubly_charged_indexes:
+        merge_result = _hold_doubly_charged_candidates(
+            merge_result,
+            tuple(
+                physical_indices[source] in doubly_charged_indexes
+                for source in range(len(candidates))
+            ),
+        )
     physical_bindings: tuple[DiscoveryCandidatePhysicalBinding, ...] = ()
     if signal_processing_profile is not None:
         assert run_spec_id is not None
@@ -574,22 +588,23 @@ def _has_strong_inferred_precursor_support(
     )
 
 
-def _apex_ion_mz(
+def _apex_ion_reading(
     plan: _DiscoveryMs1RequestPlan,
     acquired: AcquiredTrace,
     evaluation: PhysicalPeakEvaluation,
     *,
     ms1_centroid_mz: MS1CentroidMz | None,
-) -> float | None:
-    """The MS1 ion m/z read at the resolved peak of an inferred precursor.
+) -> tuple[float | None, bool]:
+    """The MS1 ion read at the resolved peak of an inferred precursor.
 
     MS1 is the method's accurate-mass scan, while ddMS2 runs at a quarter of
     its resolution, so product + loss only points at the ion. The ion is read
     inside the request at the apex scans; readings spread wider than a few ppm
     come from two ions and report none. A selected precursor is not read,
     since a reading near it can belong to a neighbouring ion or isotope. The
-    value is reported only: the precursor, its trace and its MS2 evidence keep
-    product + loss.
+    m/z is reported only: the precursor, its trace and its MS2 evidence keep
+    product + loss. The flag is true when the ion's doubly charged isotope is
+    read in most of the scans where the ion is read.
     """
     facts = evaluation.facts
     if (
@@ -598,15 +613,16 @@ def _apex_ion_mz(
         or evaluation.state != "available"
         or facts is None
     ):
-        return None
+        return None, False
     rt = acquired.trace.rt
     intensity = acquired.trace.intensity
     if len(rt) == 0:
-        return None
+        return None, False
     apex = int(np.argmin(np.abs(rt - facts.apex_rt_min)))
     request = plan.request
     half_width = request.mz * request.ppm_tol * 1e-6
     readings = []
+    read_rts = []
     for index in range(
         max(0, apex - _APEX_ION_SCAN_RADIUS),
         min(len(rt), apex + _APEX_ION_SCAN_RADIUS + 1),
@@ -616,7 +632,60 @@ def _apex_ion_mz(
         )
         if mz is not None:
             readings.append((mz, float(intensity[index])))
-    return weighted_ion_mz(readings, max_spread_ppm=_APEX_ION_SPREAD_PPM)
+            read_rts.append(float(rt[index]))
+    measured = weighted_ion_mz(readings, max_spread_ppm=_APEX_ION_SPREAD_PPM)
+    if measured is None:
+        return None, False
+    return measured, _reads_doubly_charged_isotope(
+        measured, read_rts, ms1_centroid_mz=ms1_centroid_mz
+    )
+
+
+def _reads_doubly_charged_isotope(
+    ion_mz: float,
+    read_rts: Sequence[float],
+    *,
+    ms1_centroid_mz: MS1CentroidMz,
+) -> bool:
+    isotope_mz = ion_mz + _DOUBLY_CHARGED_ISOTOPE_SPACING_MZ
+    half_width = isotope_mz * _APEX_ION_SPREAD_PPM * 1e-6
+    isotope_reads = sum(
+        ms1_centroid_mz(rt, isotope_mz - half_width, isotope_mz + half_width)
+        is not None
+        for rt in read_rts
+    )
+    return 2 * isotope_reads > len(read_rts)
+
+
+def _hold_doubly_charged_candidates(
+    merge_result: DiscoveryCandidateMergeResult,
+    doubly_charged_by_source: tuple[bool, ...],
+) -> DiscoveryCandidateMergeResult:
+    """Hold for review a candidate whose every seed read a doubly charged ion.
+
+    Any singly charged member carries the candidate, so the hold is applied
+    after the merge, which reassigns the state.
+    """
+    return replace(
+        merge_result,
+        candidates=tuple(
+            replace(
+                candidate,
+                discovery_candidate_state="review_only_ambiguous_coisolation",
+                reason=(
+                    "inferred precursor reads a doubly charged isotope at the "
+                    "peak apex; retained for review"
+                ),
+            )
+            if all(
+                doubly_charged_by_source[s] for s in binding.member_source_ordinals
+            )
+            else candidate
+            for candidate, binding in zip(
+                merge_result.candidates, merge_result.bindings, strict=True
+            )
+        ),
+    )
 
 
 def _validate_acquired_plan_chunk(

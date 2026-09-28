@@ -1368,6 +1368,7 @@ def _inferred_apex_case(
     *,
     basis: str = "product_plus_neutral_loss",
     companion_basis: str | None = None,
+    isotope_offsets: tuple[float, ...] = (),
 ):
     raw_path = tmp_path / "TumorBC2312_DNA.raw"
     raw_path.write_bytes(b"owner-bound-discovery")
@@ -1403,7 +1404,8 @@ def _inferred_apex_case(
 
     def read_ion(rt: float, low: float, high: float) -> float | None:
         mz = centroid(group.precursor_mz, rt)
-        return mz if mz is not None and low <= mz <= high else None
+        ions = () if mz is None else (mz, *(mz + offset for offset in isotope_offsets))
+        return next((ion for ion in ions if low <= ion <= high), None)
 
     result = _backfill_ms1_candidates_with_acquisition(
         raw,
@@ -1464,6 +1466,49 @@ def test_selected_precursor_reports_no_ms1_ion(tmp_path: Path) -> None:
     (candidate,) = result.candidates
     assert candidate.precursor_mz == group.precursor_mz
     assert candidate.ms1_apex_mz is None
+
+
+def test_inferred_precursor_with_a_doubly_charged_isotope_is_held_for_review(
+    tmp_path: Path,
+) -> None:
+    group, _raw, result = _inferred_apex_case(
+        tmp_path,
+        lambda inferred, _rt: inferred * (1 + 1e-6),
+        isotope_offsets=(1.0033548 / 2,),
+    )
+
+    (candidate,) = result.candidates
+    assert candidate.precursor_mz == group.precursor_mz
+    assert candidate.discovery_candidate_state == "review_only_ambiguous_coisolation"
+    assert "doubly charged" in candidate.reason
+    (binding,) = result.physical_bindings
+    assert binding.candidate.discovery_candidate_state == (
+        "review_only_ambiguous_coisolation"
+    )
+
+
+@pytest.mark.parametrize(
+    ("basis", "offsets"),
+    [
+        ("product_plus_neutral_loss", (1.0033548,)),
+        ("scan_precursor", (1.0033548 / 2,)),
+    ],
+)
+def test_singly_charged_or_selected_precursor_keeps_its_feature(
+    tmp_path: Path, basis: str, offsets: tuple[float, ...]
+) -> None:
+    _group, _raw, result = _inferred_apex_case(
+        tmp_path,
+        lambda inferred, _rt: inferred * (1 + 1e-6),
+        basis=basis,
+        isotope_offsets=offsets,
+    )
+
+    (candidate,) = result.candidates
+    assert candidate.discovery_candidate_state in {
+        "ms1_feature_nl_supported",
+        "ms1_feature_nl_rescued",
+    }
 
 
 @pytest.mark.parametrize(
