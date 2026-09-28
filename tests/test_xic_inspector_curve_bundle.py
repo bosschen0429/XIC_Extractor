@@ -108,6 +108,7 @@ def test_bundle_round_trip_and_offline_report(tmp_path: Path) -> None:
         1
     ]
     payload = json.loads(embedded.split("</script>", 1)[0])
+    assert payload["items"][0]["relationship_availability"] == "unavailable"
     curves = {curve["sample_id"]: curve for curve in payload["items"][0]["curves"]}
     assert curves["sample-1"]["processed_curves"][0]["intensities"] == [1, 4, 7, 1]
     assert curves["sample-2"]["processed_curves"][0]["intensities"] == [1, 3, 9, 1]

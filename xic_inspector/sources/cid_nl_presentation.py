@@ -801,6 +801,7 @@ def build_render_item(
     readable_records: list[dict[str, Any]],
     relationship_members: list[dict[str, Any]],
     internal_pair_support: list[dict[str, Any]],
+    relationship_availability: str,
     related_groups: list[dict[str, Any]],
 ) -> dict[str, Any]:
     """Assemble presentation from selected evidence; never select or reload it."""
@@ -831,6 +832,7 @@ def build_render_item(
         },
         "review_summary": item.details["review_summary"],
         "relationship_members": relationship_members,
+        "relationship_availability": relationship_availability,
         **(
             {"internal_pair_support": internal_pair_support}
             if internal_pair_support
