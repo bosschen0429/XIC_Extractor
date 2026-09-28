@@ -7,6 +7,7 @@ Ordinary ppm errors use the expected/reference m/z as the denominator.
 from __future__ import annotations
 
 import math
+from collections.abc import Sequence
 
 PPM_BOUNDARY_EPSILON = 1e-9
 
@@ -131,6 +132,33 @@ def within_ppm(
     tolerance_da = max(reference_mz * tolerance_ppm * 1e-6, minimum_da)
     epsilon_da = reference_mz * boundary_epsilon_ppm * 1e-6
     return abs(observed_mz - reference_mz) <= tolerance_da + epsilon_da
+
+
+def weighted_ion_mz(
+    readings: Sequence[tuple[float, float]],
+    *,
+    max_spread_ppm: float,
+) -> float | None:
+    """Return one ion's m/z from ``(mz, intensity)`` readings at several scans.
+
+    The result is the intensity-weighted mean. Readings that spread beyond
+    ``max_spread_ppm`` come from more than one ion, so no single m/z is
+    returned; neither is one without positive intensity.
+    """
+    _require_non_negative_finite("max_spread_ppm", max_spread_ppm)
+    usable = [
+        (mz, weight)
+        for mz, weight in readings
+        if math.isfinite(mz) and mz > 0 and math.isfinite(weight) and weight > 0
+    ]
+    if not usable:
+        return None
+    low = min(mz for mz, _ in usable)
+    high = max(mz for mz, _ in usable)
+    if (high - low) / low * 1e6 > max_spread_ppm:
+        return None
+    total = sum(weight for _, weight in usable)
+    return sum(mz * weight for mz, weight in usable) / total
 
 
 def _require_finite_mz(name: str, value: float) -> None:
