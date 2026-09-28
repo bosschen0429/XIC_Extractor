@@ -120,13 +120,16 @@ the error relative to the configured loss mass; it is not the acceptance gate.
   high-intensity threshold. Reacquisition keeps the original MS2 query RT and
   m/z tolerance. It supplies enough points to answer the physical peak question;
   it does not upgrade inferred precursor identity or grant Matrix authority.
-- When the first acquisition resolves a peak, Discovery reads the ion at the
-  apex scan and one MS1 scan on each side, inside the request. A consistent
-  reading more than 5 ppm from the candidate precursor replaces it, and the
-  trace is re-extracted there; no reading keeps the precursor. MS1 is the
-  method's accurate-mass scan, while ddMS2 runs at a quarter of its resolution,
-  so a pure `product_mz + neutral_loss` precursor only points at the MS1 ion.
-  Readings from two ions keep a selected precursor. A pure inferred precursor
+- When the first acquisition of a pure `product_mz + neutral_loss` group
+  resolves a peak, Discovery reads the ion at the apex scan and one MS1 scan on
+  each side, inside the request. A consistent reading more than 5 ppm from the
+  inferred precursor replaces it, and the trace is re-extracted there; no
+  reading keeps the precursor. MS1 is the method's accurate-mass scan, while
+  ddMS2 runs at a quarter of its resolution, so an inferred precursor only
+  points at the MS1 ion. A selected (`scan_precursor` or `mixed`) precursor
+  keeps the scan's precursor m/z: in full85, about half of the selected
+  precursors a reading would move landed on a neighbouring ion present at the
+  selected m/z when the scan was triggered. A pure inferred precursor
   meeting two ions is attributed to neither: unless another seed on the same
   peak carries a single or measured ion, the candidate becomes
   `review_only_ambiguous_coisolation` and is not persisted.

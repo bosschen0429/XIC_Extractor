@@ -1450,6 +1450,18 @@ def test_small_or_ambiguous_apex_readings_keep_the_request(tmp_path: Path) -> No
         assert result.candidates[0].precursor_mz == group.precursor_mz
 
 
+def test_selected_precursor_keeps_its_scan_precursor_mz(tmp_path: Path) -> None:
+    group, _raw, result = _inferred_apex_case(
+        tmp_path,
+        lambda inferred, _rt: inferred * (1 - 18e-6),
+        basis="scan_precursor",
+    )
+
+    assert result.measurements.reacquisition_request_count == 0
+    (candidate,) = result.candidates
+    assert candidate.precursor_mz == group.precursor_mz
+
+
 def test_inferred_precursor_meeting_two_ions_at_the_apex_is_held_for_review(
     tmp_path: Path,
 ) -> None:

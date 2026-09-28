@@ -611,14 +611,21 @@ def _apex_ion_verdict(
 ) -> tuple[_ApexIonVerdict, float | None]:
     """What the MS1 ion read at the resolved peak means for the precursor.
 
-    The ion is read inside the request at the apex scans. A consistent reading
-    more than the MS1 reading spread away moves the precursor ("move", the
-    measured m/z); a smaller shift changes no trace, and no reading keeps it.
-    Readings from two ions keep a selected precursor, but leave one inferred
-    from product + loss unattributed ("ambiguous").
+    Only a precursor inferred from product + loss is read; a selected precursor
+    keeps the scan's precursor m/z, since a reading near it can belong to a
+    neighbouring ion or isotope. The ion is read inside the request at the apex
+    scans. A consistent reading more than the MS1 reading spread away moves
+    the precursor ("move", the measured m/z); a smaller shift changes no trace,
+    and no reading keeps it. Readings from two ions leave the precursor
+    unattributed ("ambiguous").
     """
     facts = evaluation.facts
-    if ms1_centroid_mz is None or evaluation.state != "available" or facts is None:
+    if (
+        plan.group.precursor_mz_basis != "product_plus_neutral_loss"
+        or ms1_centroid_mz is None
+        or evaluation.state != "available"
+        or facts is None
+    ):
         return "keep", None
     rt = acquired.trace.rt
     intensity = acquired.trace.intensity
@@ -639,8 +646,7 @@ def _apex_ion_verdict(
             readings.append((mz, float(intensity[index])))
     measured = weighted_ion_mz(readings, max_spread_ppm=_APEX_ION_SPREAD_PPM)
     if measured is None:
-        inferred = plan.group.precursor_mz_basis == "product_plus_neutral_loss"
-        if inferred and any(weight > 0 for _, weight in readings):
+        if any(weight > 0 for _, weight in readings):
             return "ambiguous", None
         return "keep", None
     if absolute_ppm_error(measured, request.mz) <= _APEX_ION_SPREAD_PPM:
