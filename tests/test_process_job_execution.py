@@ -194,6 +194,51 @@ def test_cancellation_drains_active_work_even_when_another_job_failed() -> None:
     assert report.unsubmitted_job_ordinals == (3,)
 
 
+def test_stop_during_wait_drains_active_work_when_a_job_fails(monkeypatch) -> None:
+    stop = Event()
+    futures = []
+    shutdown_calls = []
+
+    class Executor:
+        def submit(self, worker, job):
+            future = Future()
+            if job.index < 2:
+                future.set_running_or_notify_cancel()
+            futures.append(future)
+            return future
+
+        def shutdown(self, *, wait, cancel_futures):
+            shutdown_calls.append((wait, cancel_futures))
+            if wait:
+                futures[1].set_result(10)
+
+    def wait_with_stop(pending, **kwargs):
+        assert not stop.is_set()
+        stop.set()
+        futures[0].set_result(_Failure(0, "owner boom"))
+        return {futures[0]}, set(pending) - {futures[0]}
+
+    monkeypatch.setattr("xic_extractor.process_job_execution.wait", wait_with_stop)
+    report = execute_process_jobs(
+        tuple(_Job(index=index) for index in range(4)),
+        worker=lambda job: job,
+        error_factory=lambda job, exc: _Failure(job.index, str(exc)),
+        is_terminal_failure=lambda result: isinstance(result, _Failure),
+        max_workers=3,
+        executor_factory=lambda **kwargs: Executor(),
+        should_cancel=stop.is_set,
+    )
+
+    assert shutdown_calls == [(True, True)]
+    assert futures[1].done()
+    assert report.cancellation_requested
+    assert report.first_failure == _Failure(0, "owner boom")
+    assert report.completed_results == (10,)
+    assert report.in_flight_job_ordinals == ()
+    assert report.cancelled_job_ordinals == (2,)
+    assert report.unsubmitted_job_ordinals == (3,)
+
+
 def test_success_results_are_returned_in_input_order() -> None:
     class _ReverseCompletionExecutor:
         def __init__(self, *args, **kwargs) -> None:

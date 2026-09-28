@@ -150,6 +150,9 @@ def execute_process_jobs(
                 else:
                     in_flight_ordinals.add(ordinal)
     finally:
+        if first_failure is not None:
+            # Stop can arrive during wait(), after the loop's last observation.
+            _observe_cancellation()
         _shutdown_executor(
             executor,
             wait_for_workers=first_failure is None or cancellation_requested,
