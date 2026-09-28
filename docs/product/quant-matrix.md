@@ -17,6 +17,11 @@ delivery seam as if they were already final.
   sidecars unless an explicit public schema says otherwise.
 - LC-MS/MS evidence rules and morphology-aware area policy supersede the
   historical AsLS primary-matrix policy.
+- A finite positive observed censored physical area may supply the numeric
+  value. Preserve its observed censored source and the retained
+  `near_detection_limit` or truncation evidence; do not impute missing signal.
+  Numeric publication alone does not change counted-detection or physical
+  selection policy.
 
 ### Cell decision
 

@@ -780,6 +780,11 @@ def _projection_review_reasons(
         reasons.append("plausible_dda_nl_dropout")
     if result.confidence.upper() == "VERY_LOW" and not conflict_reasons:
         reasons.append("legacy_confidence_review")
+    if (
+        result.physical_evaluation is not None
+        and result.physical_evaluation.requires_overlap_review
+    ):
+        reasons.append("physical_shoulder_overlap")
     return _unique(reasons)
 
 

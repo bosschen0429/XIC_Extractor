@@ -13,6 +13,11 @@ integration bounds. The entire search window does not supply them.
   Targeted selection retains the selected evaluation through capture.
 - The shared physical owner determines whether the observed context supports
   complete peak bounds.
+- Supported lobes on the whole-trace envelope remain distinct when the valley
+  persists for one canonical smoothing footprint at half its dip depth.
+  Brief dropouts and unsupported ripple do not supply that separation.
+- A persistent shallow valley supplies a component boundary while retaining
+  overlap review. Its measured area is not deconvolved compound-specific area.
 - Missing or clipped support keeps its explicit unavailable reason. A
   downstream adapter must not invent flanks or integrate a replacement region.
 - If a focused query clips the peak, Targeted NL acquisition can restore the

@@ -23,7 +23,6 @@ from xic_extractor.extraction.drift import estimate_sample_drift
 from xic_extractor.extraction.handoff_spine_runtime import (
     selected_handoff_peak,
 )
-from xic_extractor.extraction.istd_anchor_retry import retry_istd_anchor_peak_if_needed
 from xic_extractor.extraction.peak_candidate_audit import append_peak_audit_rows
 from xic_extractor.extraction.result_assembly import build_extraction_result
 from xic_extractor.extraction.rt_windows import get_rt_window
@@ -39,8 +38,14 @@ from xic_extractor.output.messages import (
     build_diagnostic_records,
     istd_confidence_note,
 )
+from xic_extractor.peak_detection.candidate_selection import (
+    select_candidate_by_evidence,
+)
 from xic_extractor.peak_detection.engine import (
     find_peak_and_area as find_peak_and_area_from_candidates,
+)
+from xic_extractor.peak_detection.evidence_facts import (
+    decision_semantics_from_candidate_facts,
 )
 from xic_extractor.peak_detection.model_selection import ExpectedDiffApprovalRecords
 from xic_extractor.peak_detection.models import (
@@ -58,13 +63,16 @@ from xic_extractor.peak_detection.physical_peak_evaluation import (
     answer_physical_peak_question,
     enumerate_physical_segment_universe,
     mint_physical_peak_question,
+    physical_segment_has_incomplete_context,
     prepare_physical_signal,
 )
 from xic_extractor.peak_detection.physical_peak_models import (
+    PHYSICAL_PEAK_NO_SELECTION_POLICY,
+    PHYSICAL_PEAK_POINT_POLICY,
     PhysicalSegmentUniverse,
     PreparedSignalResult,
 )
-from xic_extractor.peak_detection.scoring_models import ScoringContext
+from xic_extractor.peak_detection.scoring_models import ScoredCandidate, ScoringContext
 from xic_extractor.peak_detection.selection_decision import (
     selection_decision_from_hypothesis,
 )
@@ -191,6 +199,9 @@ def process_file(
             else:
                 istd_anchor_rts = dict(precomputed_istd_anchor_rts)
             sample_drift = estimate_sample_drift(targets, istd_anchor_rts)
+            istd_targets = {
+                target.label: target for target in targets if target.is_istd
+            }
 
             for target in targets:
                 if target.is_istd:
@@ -209,6 +220,7 @@ def process_file(
                     sample_name,
                     target,
                     reference_rt=reference_rt,
+                    paired_target=istd_targets.get(target.istd_pair),
                     rt_prior_library=active_rt_prior_library,
                     sample_drift=sample_drift,
                     strict_preferred_rt=reference_rt is not None,
@@ -252,6 +264,7 @@ def extract_one_target(
     target: Target,
     *,
     reference_rt: float | None,
+    paired_target: Target | None = None,
     rt_prior_library: dict[tuple[str, str], LibraryEntry] | None = None,
     sample_drift: float = 0.0,
     strict_preferred_rt: bool = False,
@@ -276,8 +289,9 @@ def extract_one_target(
         target,
         reference_rt=reference_rt,
         rt_prior_library=rt_prior_library,
+        paired_target=paired_target,
     )
-    rt_min, rt_max, anchor_used, anchor_rt = get_rt_window(
+    selection_rt_min, selection_rt_max, anchor_used, anchor_rt = get_rt_window(
         raw,
         target,
         config,
@@ -285,7 +299,20 @@ def extract_one_target(
         target_reference_rt=target_reference_rt,
         sample_drift=sample_drift,
     )
-    rt, intensity = raw.extract_xic(target.mz, rt_min, rt_max, target.ppm_tol)
+    if target.neutral_loss_da is None:
+        strict_preferred_rt = True
+    configured_width = target.rt_max - target.rt_min
+    context_rt_min = max(
+        0.0,
+        min(target.rt_min, selection_rt_min) - configured_width,
+    )
+    context_rt_max = max(target.rt_max, selection_rt_max) + configured_width
+    rt, intensity = raw.extract_xic(
+        target.mz,
+        context_rt_min,
+        context_rt_max,
+        target.ppm_tol,
+    )
     nl_result = check_target_nl(raw, target, config)
     profile = resolve_signal_processing_profile(
         signal_processing_method=config.signal_processing_method,
@@ -311,18 +338,58 @@ def extract_one_target(
             intensity_array,
             profile=profile,
         )
+        acquired_context_rt_start = (
+            float(rt_array[0])
+            if rt_array.ndim == 1 and rt_array.size
+            else context_rt_min
+        )
+        acquired_context_rt_end = (
+            float(rt_array[-1])
+            if rt_array.ndim == 1 and rt_array.size
+            else context_rt_max
+        )
         segment_universe = enumerate_physical_segment_universe(
             prepared_result,
-            request_context_rt_start_min=rt_min,
-            request_context_rt_end_min=rt_max,
+            request_context_rt_start_min=acquired_context_rt_start,
+            request_context_rt_end_min=acquired_context_rt_end,
         )
-        cached = (
-            prepared_result,
-            segment_universe,
-            physical_candidates_result(prepared_result, segment_universe),
+        candidates_result = physical_candidates_result(
+            prepared_result, segment_universe
         )
+        if candidates_result.status == "OK":
+            selected_candidates = tuple(
+                candidate
+                for candidate in candidates_result.candidates
+                if selection_rt_min <= candidate.selection_apex_rt <= selection_rt_max
+            )
+            candidates_result = replace(
+                candidates_result,
+                status="OK" if selected_candidates else "PEAK_NOT_FOUND",
+                candidates=selected_candidates,
+                n_prominent_peaks=len(selected_candidates),
+            )
+        cached = (prepared_result, segment_universe, candidates_result)
         physical_trace_cache[cache_key] = cached
         return cached
+
+    initial_prepared, initial_universe, initial_candidates = _physical_trace_owners(
+        rt, intensity
+    )
+    if not initial_candidates.candidates and any(
+        selection_rt_min <= segment.apex_rt_min <= selection_rt_max
+        and physical_segment_has_incomplete_context(
+            initial_prepared.projection, segment
+        )
+        for segment in initial_universe.segments
+    ):
+        context_rt_min = max(0.0, context_rt_min - configured_width)
+        context_rt_max += configured_width
+        rt, intensity = raw.extract_xic(
+            target.mz,
+            context_rt_min,
+            context_rt_max,
+            target.ppm_tol,
+        )
 
     trace_scoring_context_factory: Callable[..., Any] | None = None
     if scoring_context_factory is not None:
@@ -353,13 +420,9 @@ def extract_one_target(
         istd_pair: str = "",
         paired_istd_anchor_rt: float | None = None,
     ) -> PeakDetectionResult:
-        _, _, candidates_result = _physical_trace_owners(
-            rt_values, intensity_values
-        )
+        _, _, candidates_result = _physical_trace_owners(rt_values, intensity_values)
 
-        def _find_candidates(
-            *_args: object, **_kwargs: object
-        ) -> PeakCandidatesResult:
+        def _find_candidates(*_args: object, **_kwargs: object) -> PeakCandidatesResult:
             return candidates_result
 
         return find_peak_and_area_from_candidates(
@@ -374,6 +437,11 @@ def extract_one_target(
             evidence_role=evidence_role,
             istd_pair=istd_pair,
             paired_istd_anchor_rt=paired_istd_anchor_rt,
+            evidence_selector=(
+                _select_no_nl_candidate_by_reference
+                if target.neutral_loss_da is None
+                else select_candidate_by_evidence
+            ),
         )
 
     scoring_context_builder = None
@@ -391,100 +459,20 @@ def extract_one_target(
             candidate_ms2_cache[candidate] = evidence
         return evidence
 
-    for allow_context_extension in (True, False):
-        scoring_context_builder = None
-        if trace_scoring_context_factory is not None:
-            scoring_context_builder = trace_scoring_context_factory(
-                target=target,
-                sample_name=sample_name,
-                rt=rt,
-                intensity=intensity,
-                istd_rt_in_this_sample=istd_rt_in_this_sample,
-                paired_istd_fwhm=paired_istd_fwhm,
-                nl_result=nl_result,
-                candidate_ms2_evidence_builder=_cached_candidate_ms2_builder,
-            )
-        if scoring_context_builder is not None:
-            peak_result = _find_physical_peak(
-                rt,
-                intensity,
-                selection_config,
-                preferred_rt=anchor_rt,
-                strict_preferred_rt=strict_preferred_rt,
-                scoring_context_builder=scoring_context_builder,
-                istd_confidence_note=istd_confidence_note,
-                evidence_role="ISTD" if target.is_istd else "Analyte",
-                istd_pair=target.istd_pair,
-                paired_istd_anchor_rt=istd_rt_in_this_sample,
-            )
-        else:
-            peak_result = _find_physical_peak(
-                rt,
-                intensity,
-                selection_config,
-                preferred_rt=anchor_rt,
-                strict_preferred_rt=strict_preferred_rt,
-                evidence_role="ISTD" if target.is_istd else "Analyte",
-                istd_pair=target.istd_pair,
-                paired_istd_anchor_rt=istd_rt_in_this_sample,
-            )
-        peak = peak_result.peak
-        if (
-            not allow_context_extension
-            or not anchor_used
-            or peak is None
-            or len(rt) == 0
-        ):
-            break
-        if not target.rt_min <= peak.rt <= target.rt_max:
-            break
-        clipped_left = peak.peak_start <= float(rt[0]) and target.rt_min < rt_min
-        clipped_right = peak.peak_end >= float(rt[-1]) and target.rt_max > rt_max
-        if not clipped_left and not clipped_right:
-            break
-        # An NL-focused query must not turn an unobserved peak return into an apex.
-        # Restore the configured context once and let the same owners select again.
-        rt_min = min(rt_min, target.rt_min)
-        rt_max = max(rt_max, target.rt_max)
-        rt, intensity = raw.extract_xic(target.mz, rt_min, rt_max, target.ppm_tol)
-    retry_decision = retry_istd_anchor_peak_if_needed(
-        peak_result,
-        raw=raw,
-        config=selection_config,
-        target=target,
-        anchor_used=anchor_used,
-        anchor_rt=anchor_rt,
-        scoring_context_factory=trace_scoring_context_factory,
-        candidate_ms2_evidence_builder=_cached_candidate_ms2_builder,
-        sample_name=sample_name,
-        nl_result=nl_result,
-        istd_confidence_note=istd_confidence_note,
-        istd_rt_in_this_sample=istd_rt_in_this_sample,
-        paired_istd_fwhm=paired_istd_fwhm,
-        peak_finder=_find_physical_peak,
-    )
-    peak_result = retry_decision.peak_result
-    audit_rt = retry_decision.rt if retry_decision.rt is not None else rt
-    audit_intensity = (
-        retry_decision.intensity
-        if retry_decision.intensity is not None
-        else intensity
-    )
-    if retry_decision.rt is not None and trace_scoring_context_factory is not None:
+    if trace_scoring_context_factory is not None:
         scoring_context_builder = trace_scoring_context_factory(
             target=target,
             sample_name=sample_name,
-            rt=audit_rt,
-            intensity=audit_intensity,
+            rt=rt,
+            intensity=intensity,
             istd_rt_in_this_sample=istd_rt_in_this_sample,
             paired_istd_fwhm=paired_istd_fwhm,
             nl_result=nl_result,
             candidate_ms2_evidence_builder=_cached_candidate_ms2_builder,
         )
-    prepared, universe, _ = _physical_trace_owners(audit_rt, audit_intensity)
     peak_result = _find_physical_peak(
-        audit_rt,
-        audit_intensity,
+        rt,
+        intensity,
         selection_config,
         preferred_rt=anchor_rt,
         strict_preferred_rt=strict_preferred_rt,
@@ -494,6 +482,9 @@ def extract_one_target(
         istd_pair=target.istd_pair,
         paired_istd_anchor_rt=istd_rt_in_this_sample,
     )
+    audit_rt = rt
+    audit_intensity = intensity
+    prepared, universe, _ = _physical_trace_owners(audit_rt, audit_intensity)
     paired_rejection = paired_anchor_mismatch_diagnostic(
         sample_name,
         target,
@@ -513,10 +504,7 @@ def extract_one_target(
             peak_result,
             paired_istd_anchor_rt=istd_rt_in_this_sample,
         )
-    shape_metrics = selected_shape_metrics(prepared, peak_result)
     candidate = selected_candidate(peak_result)
-    if shape_metrics_by_label is not None and shape_metrics is not None:
-        shape_metrics_by_label[target.label] = shape_metrics
     handoff_peak = selected_handoff_peak(
         config=selection_config,
         sample_name=sample_name,
@@ -527,8 +515,8 @@ def extract_one_target(
         candidate_ms2_builder=_cached_candidate_ms2_builder,
         rt=audit_rt,
         intensity=audit_intensity,
-        rt_min=rt_min,
-        rt_max=rt_max,
+        rt_min=context_rt_min,
+        rt_max=context_rt_max,
         expected_rt_min=anchor_rt,
         paired_istd_anchor_rt=istd_rt_in_this_sample,
         model_selection_expected_diff_approvals=model_selection_expected_diff_approvals,
@@ -544,43 +532,75 @@ def extract_one_target(
         if query_rt_min is None and universe.state != "available":
             acquisition_trace = handoff_peak.trace_group.primary_trace
             query_rt_min = (acquisition_trace.rt_min + acquisition_trace.rt_max) / 2
+        elif query_rt_min is None:
+            # The wide physical context can hold segments while the selection
+            # window holds none; the retained trace still needs its answer.
+            query_rt_min = (selection_rt_min + selection_rt_max) / 2
         if query_rt_min is not None:
             question = mint_physical_peak_question(
                 prepared.projection,
                 universe,
                 selection_subject_id=target.label,
                 query_rt_min=query_rt_min,
+                selection_policy_version=(
+                    PHYSICAL_PEAK_POINT_POLICY
+                    if selected_segment is not None
+                    else PHYSICAL_PEAK_NO_SELECTION_POLICY
+                ),
             )
             physical_evaluation = answer_physical_peak_question(
                 prepared,
                 universe,
                 question,
             )
-        physical_hypothesis = None
-        if (
+        if physical_evaluation is not None and physical_evaluation.state != "available":
+            # The final owner state withdraws the ranked value and selection
+            # authority; no legacy peak may restore unavailable physical facts.
+            peak_result = replace(
+                peak_result,
+                status=(
+                    "NO_SIGNAL"
+                    if physical_evaluation.reason == "no_signal_above_baseline"
+                    else "PEAK_NOT_FOUND"
+                ),
+                peak=None,
+                candidates=(),
+                n_prominent_peaks=0,
+                confidence=None,
+                reason=physical_evaluation.reason,
+                severities=(),
+                score_breakdown=(),
+                candidate_scores=(),
+            )
+            candidate = None
+            handoff_peak = replace(
+                handoff_peak,
+                candidate_ms2_evidence=None,
+                selected_hypothesis=None,
+                selection_decision=None,
+                model_selection_result=None,
+            )
+        elif (
             handoff_peak.selected_hypothesis is not None
             and physical_evaluation is not None
             and physical_evaluation.integration is not None
         ):
             physical_hypothesis = replace(
                 handoff_peak.selected_hypothesis,
-                integration=physical_peak_observation_integration(
-                    physical_evaluation
-                ),
+                integration=physical_peak_observation_integration(physical_evaluation),
             )
-        if handoff_peak.selected_hypothesis is not None:
             handoff_peak = replace(
                 handoff_peak,
                 selected_hypothesis=physical_hypothesis,
-                selection_decision=(
-                    handoff_peak.selection_decision
-                    if physical_hypothesis is None
-                    else selection_decision_from_hypothesis(
-                        physical_hypothesis,
-                        peak_result=peak_result,
-                    )
+                selection_decision=selection_decision_from_hypothesis(
+                    physical_hypothesis,
+                    peak_result=peak_result,
                 ),
             )
+
+    shape_metrics = selected_shape_metrics(prepared, peak_result)
+    if shape_metrics_by_label is not None and shape_metrics is not None:
+        shape_metrics_by_label[target.label] = shape_metrics
 
     result = build_extraction_result(
         peak_result=peak_result,
@@ -612,8 +632,8 @@ def extract_one_target(
         peak_result,
         anchor_used=anchor_used,
         anchor_rt=anchor_rt if anchor_used else None,
-        rt_min=rt_min,
-        rt_max=rt_max,
+        rt_min=selection_rt_min,
+        rt_max=selection_rt_max,
         nl_result=result.nl,
         paired_rejection=paired_rejection,
     )
@@ -639,14 +659,62 @@ def extract_one_target(
     return anchor_rt
 
 
+def _select_no_nl_candidate_by_reference(
+    scored: list[ScoredCandidate],
+    *,
+    selection_rt: float | None = None,
+    strict_selection_rt: bool = False,
+) -> ScoredCandidate:
+    """Rank supported physical components by reference without changing facts."""
+    supported = []
+    for item in scored:
+        facts = item.evidence_facts
+        evidence = item.evidence_score
+        if (
+            facts is not None
+            and not facts.chemical.neutral_loss_required
+            and not facts.trace.quality_flags
+            and not facts.trace.hard_quality_flags
+            and evidence is not None
+            and "local_sn_strong" in evidence.support_labels
+            and set(evidence.concern_labels) <= {"shape_poor", "shape_borderline"}
+            and not decision_semantics_from_candidate_facts(
+                facts, count_no_ms2_as_detected=False
+            ).ambiguity_reasons
+        ):
+            supported.append(item)
+    if supported and selection_rt is not None:
+
+        def reference_key(item: ScoredCandidate) -> tuple[bool, float]:
+            peak = item.candidate.peak
+            return (
+                not peak.peak_start <= selection_rt <= peak.peak_end,
+                abs(item.candidate.selection_apex_rt - selection_rt),
+            )
+
+        nearest = min(reference_key(item) for item in supported)
+        scored = [item for item in supported if reference_key(item) == nearest]
+    return select_candidate_by_evidence(
+        scored, selection_rt=selection_rt, strict_selection_rt=strict_selection_rt
+    )
+
+
 def paired_target_reference_rt(
     target: Target,
     *,
     reference_rt: float | None,
     rt_prior_library: dict[tuple[str, str], LibraryEntry] | None,
+    paired_target: Target | None = None,
 ) -> float | None:
     if target.is_istd or not target.istd_pair or reference_rt is None:
         return None
+    if target.neutral_loss_da is None:
+        if paired_target is None:
+            return None
+        # Transfer observed drift, preserving the configured analyte/ISTD offset.
+        target_center = (target.rt_min + target.rt_max) / 2.0
+        paired_center = (paired_target.rt_min + paired_target.rt_max) / 2.0
+        return target_center + reference_rt - paired_center
     library = rt_prior_library or {}
     entry = library.get((target.label, "analyte"))
     if (

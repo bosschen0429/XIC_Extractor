@@ -1,3 +1,5 @@
+from dataclasses import replace
+
 import numpy as np
 import pytest
 
@@ -30,9 +32,17 @@ from xic_extractor.peak_detection.models import (
     PeakDetectionResult,
     PeakResult,
 )
+from xic_extractor.peak_detection.physical_peak_evaluation import (
+    evaluate_physical_peak,
+    prepare_physical_signal,
+)
+from xic_extractor.peak_detection.physical_peak_models import PhysicalPeakEvaluation
 from xic_extractor.peak_detection.scoring_models import ScoringContext
 from xic_extractor.peak_detection.selection_decision import (
     PeakHypothesisSelectionDecision,
+)
+from xic_extractor.peak_detection.signal_processing_profile import (
+    SignalProcessingProfile,
 )
 
 
@@ -250,6 +260,85 @@ def test_extraction_result_reports_ms1_morphology_area_when_available() -> None:
     )
 
     assert result.reported_peak_area == pytest.approx(4321.0)
+
+
+def test_selected_physical_shoulder_adds_review_without_changing_values() -> None:
+    evaluation = _physical_evaluation()
+    selected_id = evaluation.answer.physical_segment_id
+    assert selected_id is not None
+    selected = next(
+        segment
+        for segment in evaluation.segment_universe.segments
+        if segment.physical_segment_id == selected_id
+    )
+    shoulder = replace(
+        selected,
+        segment_class="shoulder_candidate",
+        boundary_stop_reason="shoulder_overlap",
+        evidence_sources=(*selected.evidence_sources, "shoulder_overlap"),
+    )
+    evaluation = replace(
+        evaluation,
+        segment_universe=replace(
+            evaluation.segment_universe,
+            segments=(shoulder,),
+        ),
+    )
+
+    result = _result_with_targeted_projection_semantics(
+        target=_target(),
+        support_reasons=("ms1_coherent", "candidate_aligned_ms2_nl"),
+        conflict_reasons=(),
+        physical_evaluation=evaluation,
+    )
+
+    projection = result.targeted_product_projection
+    assert projection is not None
+    assert projection.product_state == "detected_flagged"
+    assert "physical_shoulder_overlap" in projection.review_reasons
+    assert "physical_shoulder_overlap" in projection.projection_reason
+    assert evaluation.facts is not None
+    assert result.reported_rt == evaluation.facts.apex_rt_min
+    assert result.reported_peak_start == evaluation.facts.left_rt_min
+    assert result.reported_peak_end == evaluation.facts.right_rt_min
+    assert result.reported_peak_area == evaluation.facts.area_counts_seconds
+
+
+def test_unselected_physical_shoulder_does_not_flag_clean_projection() -> None:
+    evaluation = _physical_evaluation()
+    selected_id = evaluation.answer.physical_segment_id
+    assert selected_id is not None
+    selected = next(
+        segment
+        for segment in evaluation.segment_universe.segments
+        if segment.physical_segment_id == selected_id
+    )
+    unselected_shoulder = replace(
+        selected,
+        physical_segment_id="physical-segment:unselected-shoulder",
+        segment_class="shoulder_candidate",
+        boundary_stop_reason="shoulder_overlap",
+        evidence_sources=(*selected.evidence_sources, "shoulder_overlap"),
+    )
+    evaluation = replace(
+        evaluation,
+        segment_universe=replace(
+            evaluation.segment_universe,
+            segments=(selected, unselected_shoulder),
+        ),
+    )
+
+    result = _result_with_targeted_projection_semantics(
+        target=_target(),
+        support_reasons=("ms1_coherent", "candidate_aligned_ms2_nl"),
+        conflict_reasons=(),
+        physical_evaluation=evaluation,
+    )
+
+    projection = result.targeted_product_projection
+    assert projection is not None
+    assert projection.product_state == "detected_clean"
+    assert "physical_shoulder_overlap" not in projection.review_reasons
 
 
 def test_extraction_result_projects_approved_expected_diff_successor_values() -> None:
@@ -1106,6 +1195,7 @@ def _result_with_targeted_projection_semantics(
     selection_reference_rt: float | None = None,
     paired_istd_anchor_rt: float | None = None,
     model_selection_result: PeakModelSelectionResult | None = None,
+    physical_evaluation: PhysicalPeakEvaluation | None = None,
 ) -> ExtractionResult:
     candidate = _candidate(quality_flags=())
     peak_result = PeakDetectionResult(
@@ -1137,15 +1227,20 @@ def _result_with_targeted_projection_semantics(
         istd_pair=target.istd_pair,
         analysis_mode="targeted",
         resolver_mode="region_first_safe_merge",
-        integration=IntegrationResult(
-            rt_left_min=8.4,
-            rt_apex_min=8.5,
-            rt_right_min=8.6,
-            raw_apex_rt_min=8.5,
-            rt_width_min=0.2,
-            height_raw=1200.0,
-            height_smoothed=1100.0,
-            area_raw_counts_seconds=1234.5,
+        integration=(
+            physical_evaluation.integration
+            if physical_evaluation is not None
+            and physical_evaluation.integration is not None
+            else IntegrationResult(
+                rt_left_min=8.4,
+                rt_apex_min=8.5,
+                rt_right_min=8.6,
+                raw_apex_rt_min=8.5,
+                rt_width_min=0.2,
+                height_raw=1200.0,
+                height_smoothed=1100.0,
+                area_raw_counts_seconds=1234.5,
+            )
         ),
         evidence=EvidenceVector(
             confidence=confidence,
@@ -1182,8 +1277,28 @@ def _result_with_targeted_projection_semantics(
         scoring_context_builder=None,
         selected_hypothesis=selected,
         model_selection_result=model_selection_result,
+        physical_evaluation=physical_evaluation,
         sample_name=sample_name,
     )
+
+
+def _physical_evaluation() -> PhysicalPeakEvaluation:
+    rt = np.linspace(8.0, 9.0, 201)
+    intensity = 10.0 + 1200.0 * np.exp(-0.5 * ((rt - 8.5) / 0.06) ** 2)
+    prepared = prepare_physical_signal(
+        rt,
+        intensity,
+        profile=SignalProcessingProfile(window_points=15),
+    )
+    evaluation = evaluate_physical_peak(
+        prepared,
+        selection_subject_id="Analyte",
+        query_rt_min=8.5,
+        request_context_rt_start_min=8.0,
+        request_context_rt_end_min=9.0,
+    )
+    assert evaluation.integration is not None
+    return evaluation
 
 
 def _selected_hypothesis_with_integration(

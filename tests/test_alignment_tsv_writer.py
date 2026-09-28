@@ -855,38 +855,57 @@ def test_write_alignment_matrix_tsv_prefers_ms1_morphology_area(
     assert rows[0]["sample-b"] == "2.00000e+01"
 
 
-def test_alignment_cells_tsv_renders_canonical_physical_owner_area_source(
+@pytest.mark.parametrize(
+    "area_source",
+    [
+        "trapezoid_counts_seconds_on_canonical_signal",
+        "trapezoid_counts_seconds_on_observed_censored_signal",
+    ],
+)
+def test_alignment_writers_preserve_physical_owner_area_source(
     tmp_path: Path,
+    area_source: str,
 ) -> None:
-    from xic_extractor.alignment.tsv_writer import write_alignment_cells_tsv
+    from xic_extractor.alignment.tsv_writer import (
+        write_alignment_cells_tsv,
+        write_alignment_matrix_tsv,
+    )
 
     integration = _integration(
         raw_area=66.6,
         asls_area=None,
         morphology_area=66.6,
-        morphology_area_source="trapezoid_counts_seconds_on_canonical_signal",
+        morphology_area_source=area_source,
     )
     matrix = AlignmentMatrix(
         clusters=(_cluster(fold_evidence="owner_complete_link;owner_count=2"),),
         cells=(
             _cell(
                 "sample-a",
-                "backfilled",
+                "detected",
                 area=66.6,
                 selected_integration=integration,
             ),
+            _cell("sample-b", "detected", area=77.7),
         ),
-        sample_order=("sample-a",),
+        sample_order=("sample-a", "sample-b"),
     )
 
     rows = _read_tsv(write_alignment_cells_tsv(tmp_path / "cells.tsv", matrix))
 
     assert rows[0]["area"] == "66.6"
     assert rows[0]["primary_matrix_area"] == "66.6"
-    assert rows[0]["primary_matrix_area_source"] == (
-        "trapezoid_counts_seconds_on_canonical_signal"
-    )
+    assert rows[0]["primary_matrix_area_source"] == area_source
     assert rows[0]["primary_matrix_area_reason"] == ""
+    values = _read_tsv(
+        write_alignment_matrix_tsv(
+            tmp_path / "matrix.tsv",
+            matrix,
+            production_decisions=_production_decisions(matrix),
+        )
+    )
+    assert values[0]["sample-a"] == "6.66000e+01"
+    assert values[0]["sample-b"] == "7.77000e+01"
 
 
 def test_write_alignment_matrix_tsv_blanks_duplicate_assigned_cells(tmp_path: Path):

@@ -64,12 +64,7 @@ def _diagnostic_reason_for_sheet(row: dict[str, str]) -> str:
         delta = _first_regex_group(row.get("Reason", ""), r"deviates ([0-9.]+) min")
         return f"anchor RT mismatch by {delta} min" if delta else "anchor RT mismatch"
     if issue == "MULTI_PEAK":
-        count = _first_regex_group(row.get("Reason", ""), r"(\d+) prominent peaks")
-        return (
-            f"{count} prominent peaks in window"
-            if count
-            else "multiple peaks in window"
-        )
+        return reason or "multiple qualified physical candidates in selection window"
     if issue in {"PEAK_NOT_FOUND", "NO_SIGNAL"}:
         return "peak not found"
     return reason or issue

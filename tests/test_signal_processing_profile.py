@@ -18,13 +18,15 @@ EXPECTED_DEFAULT_JSON = (
     b'{"schema_version":"signal_processing_profile","method":"gaussian",'
     b'"window_points":15,"gaussian_sigma_rule":"window_points_div_6",'
     b'"gaussian_kernel_normalization":"unit_sum",'
-    b'"gaussian_edge_policy":"zero_pad_same","baseline_method":"asls",'
-    b'"baseline_lam":100000,"baseline_p":0.01,"baseline_n_iter":10,'
-    b'"physical_signal_formula":"gaussian_raw_minus_nonnegative_asls_raw_positive",'
-    b'"boundary_basis":"chrom_peak_segment_closed_subject",'
+    b'"gaussian_edge_policy":"zero_pad_same","baseline_method":"asls_rt",'
+    b'"baseline_lam":1.0,"baseline_lam_unit":"minutes^4",'
+    b'"baseline_p":0.01,"baseline_n_iter":10,'
+    b'"physical_signal_formula":"gaussian_raw_minus_nonnegative_asls_rt_raw_positive",'
+    b'"boundary_basis":"chrom_peak_supported_lobes_sustained_valleys",'
+    b'"boundary_min_sigma_rt":0.08,"segment_min_prominence_fraction":0.04,'
     b'"segment_universe_limit":64,'
     b'"segment_selection_behavior":'
-    b'"closed_segment_contains_query_complete_context",'
+    b'"complete_supported_envelope_contains_query",'
     b'"area_basis":"trapezoid_counts_seconds_on_canonical_signal",'
     b'"relative_shape_basis":"own_max_canonical_signal"}'
 )
@@ -38,10 +40,13 @@ _PROFILE_FIELDS = (
     "gaussian_edge_policy",
     "baseline_method",
     "baseline_lam",
+    "baseline_lam_unit",
     "baseline_p",
     "baseline_n_iter",
     "physical_signal_formula",
     "boundary_basis",
+    "boundary_min_sigma_rt",
+    "segment_min_prominence_fraction",
     "segment_universe_limit",
     "segment_selection_behavior",
     "area_basis",
@@ -58,7 +63,7 @@ def test_default_profile_has_exact_canonical_bytes_hash_and_id() -> None:
     assert profile == SignalProcessingProfile()
     assert canonical_signal_processing_profile_bytes(profile) == EXPECTED_DEFAULT_JSON
     assert serialize_signal_processing_profile(profile) == EXPECTED_DEFAULT_JSON
-    expected_hash = "ce1cdcae6e4186e012dde1535fa412634f92e2b22377aeb83fdc00b5077b5818"
+    expected_hash = "9269b4c8fc6ed9fee09d9aa5059345a331a0e233dc3f30d6102011a7d0c330a0"
     assert profile.profile_hash == expected_hash
     assert profile.profile_id == f"signal-profile:{expected_hash}"
     assert DEFAULT_SIGNAL_PROCESSING_PROFILE_ID == profile.profile_id
@@ -66,14 +71,23 @@ def test_default_profile_has_exact_canonical_bytes_hash_and_id() -> None:
 
 def test_profile_reader_rejects_unconstrained_and_clipped_peak_semantics() -> None:
     old_profile = EXPECTED_DEFAULT_JSON.replace(
-        b"gaussian_raw_minus_nonnegative_asls_raw_positive",
+        b"gaussian_raw_minus_nonnegative_asls_rt_raw_positive",
         b"gaussian_raw_minus_asls_raw_positive",
     ).replace(
-        b"closed_segment_contains_query_complete_context",
+        b"complete_supported_envelope_contains_query",
         b"closed_segment_contains_query_unique_only",
     )
 
     with pytest.raises(ValueError, match="physical_signal_formula"):
+        deserialize_signal_processing_profile(old_profile)
+
+
+def test_profile_reader_rejects_old_local_split_boundaries() -> None:
+    old_profile = EXPECTED_DEFAULT_JSON.replace(
+        b"chrom_peak_supported_lobes_sustained_valleys",
+        b"chrom_peak_envelope_sustained_valleys",
+    )
+    with pytest.raises(ValueError, match="boundary_basis"):
         deserialize_signal_processing_profile(old_profile)
 
 
@@ -156,7 +170,7 @@ def test_strict_deserializer_rejects_noncanonical_unknown_duplicate_and_mismatch
     with pytest.raises(ValueError, match="baseline_lam"):
         deserialize_signal_processing_profile(
             EXPECTED_DEFAULT_JSON.replace(
-                b'"baseline_lam":100000',
-                b'"baseline_lam":100000.0',
+                b'"baseline_lam":1.0',
+                b'"baseline_lam":1',
             )
         )

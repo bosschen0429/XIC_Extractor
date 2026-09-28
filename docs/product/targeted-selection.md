@@ -63,17 +63,30 @@ reference-editing, quantitation, or ProductWriter authority.
   Profile-bound capture does not run a second boundary resolver or
   integration.
 - RT, bounds, and width are expressed in minutes.
-- An anchor-guided NL-focused acquisition can clip a selected peak at an
-  acquired trace edge within the configured target scope, while the apex stays
-  inside the configured target RT window. In that case the acquisition widens
-  its query once to the union of the current query RT range and the configured
-  target RT window (`rt_min`..`rt_max`). The same peak and evidence owners then
-  select from the observed context.
-- A complete selected peak keeps its original query. A manual RT does not
-  trigger this window restore and does not choose its result.
+- When identity selection chooses no component, the physical question retains
+  the acquired context and full segment universe with no admissible selection;
+  capture preserves the unavailable answer instead of selecting a broad tail.
+- If the selection window has no qualified physical candidate but contains a
+  clipped segment's apex, acquisition expands its context once by the configured
+  target-window width on each side, with a zero lower RT limit. Selection bounds
+  and reference RT stay unchanged. An existing qualified in-window candidate
+  keeps its original acquisition and quantitation.
 
 ### Target identity and search scope
 
+- For no-NL inputs, the configured RT-window center participates in component
+  identity while the complete acquisition context remains available to the
+  shared physical owner. The supplied group reference is encoded in that
+  center; missing reference rows remain excluded by the input owner.
+- A credible paired ISTD transfers observed drift while preserving the
+  configured analyte/ISTD RT offset. Missing or untrusted pairs fall back to the
+  analyte reference and existing sample drift. No-NL selection does not use
+  learned RT-library priors.
+- Among strongly supported no-NL physical candidates without other identity
+  blockers, selection first prefers an interval containing the reference, then
+  the closest apex. Shape concerns remain evidence for the existing product
+  policy; identity selection does not alter counted detection or physical
+  bounds and area. Equal references for different target rows are permitted.
 - Product Targeted output is a workflow-owned projection from evidence and
   selection decisions.
 - Shared evidence providers inform Targeted product state. Shared evidence

@@ -88,7 +88,21 @@ transition is the group query ID. Each trace ID is a candidate query ID.
 - An available trace carries paired `ChromatogramCurve(rt, intensity)` raw and
   **precomputed Gaussian15** series. An optional baseline uses the same RT
   coordinates.
-- Optional `PeakBounds(start, apex, end)` records the reviewed peak.
+- Optional `PeakBounds(start, apex, end)` records the reviewed peak in minutes.
+  `CurveIntegration` carries the saved raw area in counts·seconds, raw apex RT
+  in minutes, and integration method; it supplies the curve's numeric readout.
+  Optional `positive_signal` carries the owner's precomputed baseline-positive
+  signal on the same RT coordinates; the viewer does not derive it.
+- A transition's optional `quantifications` contains one `SampleQuantification`
+  per represented sample: its saved formal value and unit. Null is an explicitly
+  empty result; an absent entry means no single formal result was supplied.
+  This value is independent of the number or roles of displayed curves and of
+  count/review flags. An analyte/ISTD overlay therefore retains each curve's own
+  integration without replacing the analyte's formal value. Quality flags do
+  not supply or override numeric results.
+- Producers choose the display window from retained observation context so the
+  selected envelope and available flanks remain visible; reference RT windows
+  must not crop the retained integration interval.
 - A missing-RAW trace has both series absent and an explicit
   `unavailable_reason`.
 - Inspector displays the saved series. Inspector does not smooth, acquire RAW,
