@@ -1,5 +1,5 @@
 import math
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
@@ -559,20 +559,6 @@ def assign_discovery_candidate_state(
     if precursor_mz_basis in {"product_plus_neutral_loss", "mixed"}:
         return "ms1_feature_nl_rescued"
     return "ms1_feature_nl_supported"
-
-
-def orphan_nl_candidate(
-    candidate: DiscoveryCandidate, *, reason: str
-) -> DiscoveryCandidate:
-    """Keep the NL evidence for review without an MS1 feature to carry it."""
-    return replace(
-        candidate,
-        discovery_candidate_state="review_only_orphan_nl",
-        ms1_peak_found=False,
-        ms1_feature_row_id="",
-        review_priority="LOW",
-        reason=reason,
-    )
 
 
 def build_ms1_feature_row_id(

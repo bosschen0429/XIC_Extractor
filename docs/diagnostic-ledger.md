@@ -66,7 +66,7 @@ dated productization control-plane path is compatibility lookup only.
 
 ## Known Diagnostic Conclusions
 
-### 2026-09-28 Inferred Precursors Keep Their MS1 Ion Only Inside An m/z-Banded Window
+### 2026-09-28 Inferred Precursor MS1 Ion Offsets By m/z Band
 
 #546, decision A step 2. Evidence: `diagnostic_only`; two RAWs
 (`TumorBC2264_DNA`, `Breast_Cancer_Tissue_pooled_QC3`), default `DNA_dR`
@@ -83,24 +83,24 @@ settings; probes and outputs are under `output/i546/`.
   decoys lies within -10 to +10 ppm, and 10 to 20 ppm occurs at chance. From
   500 to 700 it spreads from -30 to +60 ppm. From 700 it concentrates between
   +15 and +35 ppm.
-- Candidate level, running Discovery with the windows and a decoy that adds
-  5 Da to every inferred seed: below m/z 500, 30 target and 29 decoy inferred
-  peaks read their ion only outside the window and lose their MS1 feature.
-  From 700, feature-backed inferred candidates rise from 73 to 99 while decoy
-  candidates move from 35 to 37. From 500 to 700, 93 target and 48 decoy
-  inferred peaks keep the unchanged +-20 ppm window.
-- Chance attributions remain inside the windows: below 500, 41 decoy peaks read
-  a consistent ion within 10 ppm. Readings from two ions are mostly chance
-  (12 target, 10 decoy peaks before the merge). Holding a candidate whose
-  every seed reads two ions for review removes 6 target and 7 decoy
-  feature-backed inferred candidates after the merge
+- Candidate level, running Discovery with m/z-banded windows (-10/+10 below
+  500, +-20 from 500 to 700, -10/+30 from 700) and a decoy that adds 5 Da to
+  every inferred seed: below 500, 30 target and 29 decoy peaks lose their
+  feature; from 700, target candidates rise from 73 to 99 and decoys from 35
+  to 37. From 500 to 700, 93 target and 48 decoy inferred peaks read an ion.
+- Readings from two ions are mostly chance (12 target, 10 decoy peaks before
+  the merge); with the banded windows, holding such candidates for review
+  removes 6 target and 7 decoy candidates after the merge
   (`output/i546/amb_compare.py`).
-- A single +-20 ppm window reproduces the previous outputs byte for byte.
+- Not adopted: the offsets follow from the method's ddMS2 resolution (15,000
+  against 60,000 for MS1), so Discovery treats product + loss only as a pointer
+  and reads the ion inside the request; the banded windows added a rule
+  without changing that source of truth.
 - Candidate CSV `precursor_mz` keeps six significant digits, so offsets
   computed from CSV values carry up to about 2 ppm of rounding.
 
-Rerun when the instrument, its MS2 resolution or calibration, the method, or
-the windows change.
+Rerun when the instrument, its MS2 resolution or calibration, or the method
+changes.
 
 ### 2026-09-28 Discovery MS1 Acquisition Shares Super-Window Reads With Identical Outputs
 

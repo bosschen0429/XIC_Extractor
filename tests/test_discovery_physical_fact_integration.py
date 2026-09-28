@@ -9,7 +9,6 @@ import numpy as np
 import pytest
 
 from tests.test_discovery_ms1_backfill import (
-    NEUTRAL_LOSS_DA,
     _group,
     _multi_tag_settings,
     _seed,
@@ -1369,7 +1368,6 @@ def _inferred_apex_case(
     tmp_path: Path,
     centroid,
     *,
-    precursor_mz: float = 500.0,
     basis: str = "product_plus_neutral_loss",
     companion_basis: str | None = None,
 ):
@@ -1386,13 +1384,7 @@ def _inferred_apex_case(
     group = _group(
         (
             replace(
-                _seed(
-                    scan_number=10,
-                    rt=12.063,
-                    precursor_mz=precursor_mz,
-                    product_mz=precursor_mz - NEUTRAL_LOSS_DA,
-                    product_intensity=1_000_000.0,
-                ),
+                _seed(scan_number=10, rt=12.063, product_intensity=1_000_000.0),
                 precursor_mz_basis=basis,
             ),
         )
@@ -1404,13 +1396,7 @@ def _inferred_apex_case(
             _group(
                 (
                     replace(
-                        _seed(
-                            scan_number=11,
-                            rt=12.083,
-                            precursor_mz=precursor_mz,
-                            product_mz=precursor_mz - NEUTRAL_LOSS_DA,
-                            product_intensity=900_000.0,
-                        ),
+                        _seed(scan_number=11, rt=12.083, product_intensity=900_000.0),
                         precursor_mz_basis=companion_basis,
                     ),
                 )
@@ -1466,7 +1452,7 @@ def test_small_or_ambiguous_apex_readings_keep_the_request(tmp_path: Path) -> No
         assert result.candidates[0].precursor_mz == group.precursor_mz
 
 
-def test_inferred_precursor_meeting_two_ions_in_its_window_is_held_for_review(
+def test_inferred_precursor_meeting_two_ions_at_the_apex_is_held_for_review(
     tmp_path: Path,
 ) -> None:
     group, _raw, result = _inferred_apex_case(tmp_path, _two_ions)
@@ -1502,70 +1488,3 @@ def test_a_selected_precursor_carries_a_peak_with_two_ions(
         "ms1_feature_nl_supported",
         "ms1_feature_nl_rescued",
     }
-
-
-def test_inferred_precursor_without_its_ion_in_the_window_keeps_no_ms1_feature(
-    tmp_path: Path,
-) -> None:
-    # Below m/z 500 an inferred precursor's ion lies within 10 ppm of
-    # product + loss; a peak whose ion sits 15 ppm away belongs to another one.
-    group, _raw, result = _inferred_apex_case(
-        tmp_path, lambda inferred, _rt: inferred * (1 + 15e-6), precursor_mz=400.0
-    )
-
-    assert result.measurements.reacquisition_request_count == 0
-    (candidate,) = result.candidates
-    assert candidate.precursor_mz == group.precursor_mz
-    assert candidate.ms1_peak_found is False
-    assert candidate.discovery_candidate_state == "review_only_orphan_nl"
-    assert candidate.ms1_feature_row_id == ""
-    assert "+15.0 ppm from product + loss" in candidate.reason
-
-
-@pytest.mark.parametrize(("precursor_mz", "ion_ppm"), [(400.0, 8.0), (800.0, 22.0)])
-def test_inferred_precursor_moves_to_its_ion_inside_the_window(
-    tmp_path: Path, precursor_mz: float, ion_ppm: float
-) -> None:
-    group, raw, result = _inferred_apex_case(
-        tmp_path,
-        lambda inferred, _rt: inferred * (1 + ion_ppm * 1e-6),
-        precursor_mz=precursor_mz,
-    )
-
-    measured = group.precursor_mz * (1 + ion_ppm * 1e-6)
-    assert result.measurements.reacquisition_request_count == 1
-    assert raw.request_batches[-1][0].mz == pytest.approx(measured)
-    (candidate,) = result.candidates
-    assert candidate.precursor_mz == pytest.approx(measured)
-    assert candidate.discovery_candidate_state == "ms1_feature_nl_rescued"
-
-
-def test_high_mz_inferred_precursor_is_first_read_above_product_plus_loss(
-    tmp_path: Path,
-) -> None:
-    # Above m/z 700 the MS2 product reads low, so the first XIC is centred
-    # 10 ppm above product + loss; a precursor that keeps its m/z is then
-    # extracted at product + loss.
-    group, raw, result = _inferred_apex_case(
-        tmp_path, lambda inferred, _rt: inferred * (1 + 2e-6), precursor_mz=800.0
-    )
-
-    assert raw.request_batches[0][0].mz == pytest.approx(800.0 * (1 + 10e-6))
-    assert result.measurements.reacquisition_request_count == 1
-    assert raw.request_batches[-1][0].mz == group.precursor_mz
-    (candidate,) = result.candidates
-    assert candidate.precursor_mz == group.precursor_mz
-    assert candidate.ms1_peak_found is True
-
-
-def test_selected_precursor_reads_its_ion_across_the_request(tmp_path: Path) -> None:
-    group, _raw, result = _inferred_apex_case(
-        tmp_path,
-        lambda inferred, _rt: inferred * (1 + 15e-6),
-        precursor_mz=400.0,
-        basis="scan_precursor",
-    )
-
-    (candidate,) = result.candidates
-    assert candidate.precursor_mz == pytest.approx(group.precursor_mz * (1 + 15e-6))
-    assert candidate.discovery_candidate_state == "ms1_feature_nl_supported"

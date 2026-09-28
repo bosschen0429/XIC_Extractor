@@ -11,7 +11,6 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-from xic_extractor.discovery.models import orphan_nl_candidate
 from xic_extractor.raw_reader import open_raw
 
 if TYPE_CHECKING:
@@ -490,7 +489,16 @@ def apply_blank_qualification_to_candidates(
                 f"delta {delta_ppm:+.1f} ppm, "
                 f"FC {fc:.2f}x < {fold_change_threshold:.1f}x"
             )
-            updated.append(orphan_nl_candidate(candidate, reason=reason_msg))
+            updated.append(
+                replace(
+                    candidate,
+                    discovery_candidate_state="review_only_orphan_nl",
+                    ms1_peak_found=False,
+                    ms1_feature_row_id="",
+                    review_priority="LOW",
+                    reason=reason_msg,
+                )
+            )
         else:
             # High abundance override: preserve feature-backed state, annotate reason
             override_msg = (

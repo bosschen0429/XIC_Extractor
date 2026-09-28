@@ -27,7 +27,6 @@ from xic_extractor.discovery.models import (
     assign_discovery_candidate_state,
     build_discovery_physical_selection_subject_id,
     build_ms1_feature_row_id,
-    orphan_nl_candidate,
 )
 from xic_extractor.discovery.physical_fact_record import (
     DiscoveryCandidatePhysicalBinding,
@@ -76,17 +75,8 @@ _DISCOVERY_PHYSICAL_CONTEXT_HALF_WINDOW_MIN = 0.60
 # spread wider than a few ppm come from more than one ion.
 _APEX_ION_SCAN_RADIUS = 1
 _APEX_ION_SPREAD_PPM = 5.0
-# A precursor inferred as product + loss carries the MS2 product error, which
-# widens and drifts upward with m/z. Per precursor m/z band (upper bound), the
-# signed window, in ppm of product + loss, that holds its MS1 ion: outside it,
-# product + loss meets an MS1 ion no more often than a shifted decoy does.
-_INFERRED_PRECURSOR_WINDOWS_PPM = (
-    (500.0, -10.0, 10.0),
-    (700.0, -20.0, 20.0),
-    (math.inf, -10.0, 30.0),
-)
 
-_ApexIonVerdict = Literal["keep", "move", "outside", "ambiguous"]
+_ApexIonVerdict = Literal["keep", "move", "ambiguous"]
 
 
 MS1CentroidMz = Callable[[float, float, float], float | None]
@@ -242,8 +232,6 @@ def _backfill_ms1_candidates_with_acquisition(
             else 0.0
         ),
     )
-    if signal_processing_profile is not None and ms1_centroid_mz is not None:
-        plans = tuple(_centred_on_inferred_window(plan) for plan in plans)
     capability = mint_trace_acquisition_capability(
         acquisition_source,
         adapter_namespace="xic_extractor.discovery.ms1_backfill",
@@ -288,7 +276,6 @@ def _backfill_ms1_candidates_with_acquisition(
     initial_physical_facts: dict[int, DiscoveryPhysicalFactRecord] = {}
     physical_trace_qualities: dict[int, str] = {}
     measured_precursor_by_index: dict[int, float] = {}
-    unattributed_reason_by_index: dict[int, str] = {}
     ambiguous_ion_indexes: set[int] = set()
     if signal_processing_profile is not None:
         for physical_index, (plan, acquired) in enumerate(
@@ -323,11 +310,6 @@ def _backfill_ms1_candidates_with_acquisition(
             )
             if verdict == "ambiguous":
                 ambiguous_ion_indexes.add(physical_index)
-            if verdict == "outside":
-                assert ion_mz is not None
-                unattributed_reason_by_index[physical_index] = _unattributed_reason(
-                    plan.group, ion_mz
-                )
             elif verdict == "move":
                 assert ion_mz is not None
                 revised = replace(
@@ -336,16 +318,6 @@ def _backfill_ms1_candidates_with_acquisition(
                     request=replace(revised.request, mz=ion_mz),
                 )
                 measured_precursor_by_index[physical_index] = ion_mz
-            elif (
-                evaluation.state == "available"
-                and revised.request.mz != revised.group.precursor_mz
-            ):
-                # The first XIC was centred on an inferred ion's window; the
-                # precursor stays, so its trace is taken there.
-                revised = replace(
-                    revised,
-                    request=replace(revised.request, mz=revised.group.precursor_mz),
-                )
             revised = (
                 _expanded_physical_request_plan(
                     revised,
@@ -450,10 +422,6 @@ def _backfill_ms1_candidates_with_acquisition(
             physical_work_observer=physical_work_manifest.append,
             physical_evaluation_observer=physical_evaluations.append,
         )
-        if physical_index in unattributed_reason_by_index:
-            candidate = orphan_nl_candidate(
-                candidate, reason=unattributed_reason_by_index[physical_index]
-            )
         candidates.append(candidate)
         if signal_processing_profile is not None:
             physical_trace_qualities[physical_index] = candidate.ms1_trace_quality
@@ -634,31 +602,6 @@ def _has_strong_inferred_precursor_support(
     )
 
 
-def _inferred_precursor_window_ppm(precursor_mz: float) -> tuple[float, float]:
-    return next(
-        (low_ppm, high_ppm)
-        for upper_mz, low_ppm, high_ppm in _INFERRED_PRECURSOR_WINDOWS_PPM
-        if precursor_mz < upper_mz
-    )
-
-
-def _centred_on_inferred_window(
-    plan: _DiscoveryMs1RequestPlan,
-) -> _DiscoveryMs1RequestPlan:
-    """Centre the first XIC of an inferred precursor on its ion's window."""
-    group = plan.group
-    if group.precursor_mz_basis != "product_plus_neutral_loss":
-        return plan
-    low_ppm, high_ppm = _inferred_precursor_window_ppm(group.precursor_mz)
-    centre_ppm = (low_ppm + high_ppm) / 2
-    if not centre_ppm:
-        return plan
-    return replace(
-        plan,
-        request=replace(plan.request, mz=group.precursor_mz * (1 + centre_ppm * 1e-6)),
-    )
-
-
 def _apex_ion_verdict(
     plan: _DiscoveryMs1RequestPlan,
     acquired: AcquiredTrace,
@@ -666,71 +609,43 @@ def _apex_ion_verdict(
     *,
     ms1_centroid_mz: MS1CentroidMz | None,
 ) -> tuple[_ApexIonVerdict, float | None]:
-    """What the ion read at the resolved peak means for the precursor.
+    """What the MS1 ion read at the resolved peak means for the precursor.
 
-    An inferred precursor's ion is read inside the window of its m/z band; an
-    ion found only elsewhere in the request belongs to another precursor
-    ("outside", its m/z), and readings from two ions inside the window leave
-    it unattributed ("ambiguous"). Other precursors read the ion inside the
-    request. A consistent reading more than the MS1 reading spread away moves
-    the precursor ("move", the measured m/z); a smaller shift changes no trace,
-    and no reading, or a selected precursor's two ions, keep it.
+    The ion is read inside the request at the apex scans. A consistent reading
+    more than the MS1 reading spread away moves the precursor ("move", the
+    measured m/z); a smaller shift changes no trace, and no reading keeps it.
+    Readings from two ions keep a selected precursor, but leave one inferred
+    from product + loss unattributed ("ambiguous").
     """
     facts = evaluation.facts
+    if ms1_centroid_mz is None or evaluation.state != "available" or facts is None:
+        return "keep", None
     rt = acquired.trace.rt
-    if (
-        ms1_centroid_mz is None
-        or evaluation.state != "available"
-        or facts is None
-        or len(rt) == 0
-    ):
+    intensity = acquired.trace.intensity
+    if len(rt) == 0:
         return "keep", None
     apex = int(np.argmin(np.abs(rt - facts.apex_rt_min)))
-    scans = range(
-        max(0, apex - _APEX_ION_SCAN_RADIUS),
-        min(len(rt), apex + _APEX_ION_SCAN_RADIUS + 1),
-    )
     request = plan.request
     half_width = request.mz * request.ppm_tol * 1e-6
-    request_range = (request.mz - half_width, request.mz + half_width)
-    group = plan.group
-    inferred = group.precursor_mz_basis == "product_plus_neutral_loss"
-    window = request_range
-    if inferred:
-        low_ppm, high_ppm = _inferred_precursor_window_ppm(group.precursor_mz)
-        window = (
-            group.precursor_mz * (1 + low_ppm * 1e-6),
-            group.precursor_mz * (1 + high_ppm * 1e-6),
-        )
-    readings = _apex_ion_readings(acquired, scans, window, ms1_centroid_mz)
-    if readings:
-        measured = weighted_ion_mz(readings, max_spread_ppm=_APEX_ION_SPREAD_PPM)
-        if measured is None and inferred and any(i > 0 for _, i in readings):
-            return "ambiguous", None
-        if measured is not None and (
-            absolute_ppm_error(measured, group.precursor_mz) > _APEX_ION_SPREAD_PPM
-        ):
-            return "move", measured
-        return "keep", None
-    if inferred and (
-        outside := _apex_ion_readings(acquired, scans, request_range, ms1_centroid_mz)
-    ):
-        return "outside", max(outside, key=lambda reading: reading[1])[0]
-    return "keep", None
-
-
-def _apex_ion_readings(
-    acquired: AcquiredTrace,
-    scans: range,
-    mz_range: tuple[float, float],
-    ms1_centroid_mz: MS1CentroidMz,
-) -> list[tuple[float, float]]:
     readings = []
-    for index in scans:
-        mz = ms1_centroid_mz(float(acquired.trace.rt[index]), *mz_range)
+    for index in range(
+        max(0, apex - _APEX_ION_SCAN_RADIUS),
+        min(len(rt), apex + _APEX_ION_SCAN_RADIUS + 1),
+    ):
+        mz = ms1_centroid_mz(
+            float(rt[index]), request.mz - half_width, request.mz + half_width
+        )
         if mz is not None:
-            readings.append((mz, float(acquired.trace.intensity[index])))
-    return readings
+            readings.append((mz, float(intensity[index])))
+    measured = weighted_ion_mz(readings, max_spread_ppm=_APEX_ION_SPREAD_PPM)
+    if measured is None:
+        inferred = plan.group.precursor_mz_basis == "product_plus_neutral_loss"
+        if inferred and any(weight > 0 for _, weight in readings):
+            return "ambiguous", None
+        return "keep", None
+    if absolute_ppm_error(measured, request.mz) <= _APEX_ION_SPREAD_PPM:
+        return "keep", None
+    return "move", measured
 
 
 def _flag_ambiguous_ion_candidates(
@@ -749,8 +664,8 @@ def _flag_ambiguous_ion_candidates(
                 candidate,
                 discovery_candidate_state="review_only_ambiguous_coisolation",
                 reason=(
-                    "inferred precursor meets two MS1 ions inside its window at "
-                    "the peak apex; retained for review"
+                    "inferred precursor meets two MS1 ions at the peak apex; "
+                    "retained for review"
                 ),
             )
             if all(ambiguous_by_source[s] for s in binding.member_source_ordinals)
@@ -759,16 +674,6 @@ def _flag_ambiguous_ion_candidates(
                 merge_result.candidates, merge_result.bindings, strict=True
             )
         ),
-    )
-
-
-def _unattributed_reason(group: DiscoverySeedGroup, ion_mz: float) -> str:
-    low_ppm, high_ppm = _inferred_precursor_window_ppm(group.precursor_mz)
-    offset_ppm = (ion_mz - group.precursor_mz) / group.precursor_mz * 1e6
-    return (
-        "inferred precursor without its MS1 ion: the peak's ion lies "
-        f"{offset_ppm:+.1f} ppm from product + loss, outside "
-        f"{low_ppm:+g} to {high_ppm:+g} ppm"
     )
 
 
