@@ -128,7 +128,7 @@ class PartitionPipelineScheduler:
             composition_outputs: list[
                 PartitionCompositionOutput[TCompositionResult]
             ] = []
-            runtime_inflight: set[str] = set()
+            inflight_resource_keys: set[str] = set()
             failed_work_unit_keys: set[str] = set()
             failed_stage: str = "partition-pipeline-completion"
             failed_exc: Exception | None = None
@@ -143,18 +143,7 @@ class PartitionPipelineScheduler:
                 nonlocal failed_stage, failed_exc
                 with thread_lock:
                     if not failed_work_unit_keys:
-                        pkey = partition.partition_key
-                        matching = {
-                            k
-                            for k in work_unit_keys
-                            if k == pkey
-                            or k.startswith(f"wu:{pkey}")
-                            or k.startswith(f"{pkey}:")
-                            or pkey in k
-                        }
-                        if not matching and partition.index < len(work_unit_keys):
-                            matching = {work_unit_keys[partition.index]}
-                        failed_work_unit_keys.update(matching)
+                        failed_work_unit_keys.update(partition.work_unit_keys)
                         failed_stage = stage
                         failed_exc = exc
 
@@ -227,9 +216,8 @@ class PartitionPipelineScheduler:
                 if not use_overlap:
                     for index, partition in enumerate(partitions):
                         check_cancellation()
-                        active_partition = partition.partition_key
                         progress("partition_start", index)
-                        runtime_inflight.add(active_partition)
+                        inflight_resource_keys.update(partition.resource_keys)
                         acq_start = time.perf_counter()
                         acq_out = adapter.execute_acquisition(
                             partition,
@@ -247,7 +235,7 @@ class PartitionPipelineScheduler:
                             compact_runtime_acquisition_receipt(receipt)
                             for receipt in acq_out.acquisitions
                         )
-                        runtime_inflight.discard(active_partition)
+                        inflight_resource_keys.difference_update(partition.resource_keys)
                         if not acq_out.succeeded:
                             timeline_records[index]["status"] = "failed"
                             failure_msg = (
@@ -344,7 +332,7 @@ class PartitionPipelineScheduler:
 
                                 progress("partition_start", index)
                                 with thread_lock:
-                                    runtime_inflight.add(partition.partition_key)
+                                    inflight_resource_keys.update(partition.resource_keys)
                                 acq_start = time.perf_counter()
                                 acq_out = adapter.execute_acquisition(
                                     partition,
@@ -353,7 +341,9 @@ class PartitionPipelineScheduler:
                                 )
                                 acq_end = time.perf_counter()
                                 with thread_lock:
-                                    runtime_inflight.discard(partition.partition_key)
+                                    inflight_resource_keys.difference_update(
+                                        partition.resource_keys
+                                    )
                                     timeline_records[index]["acquire_start"] = acq_start
                                     timeline_records[index]["acquire_end"] = acq_end
                                     resources.update(
@@ -683,13 +673,7 @@ class PartitionPipelineScheduler:
 
             for reservation in resource_reservations:
                 if reservation.resource_key not in resources:
-                    unknown = any(
-                        reservation.resource_key.startswith(
-                            f"acquisition-session:{inflight}:"
-                        )
-                        or f":{inflight}:" in reservation.resource_key
-                        for inflight in runtime_inflight
-                    )
+                    unknown = reservation.resource_key in inflight_resource_keys
                     resources[reservation.resource_key] = (
                         RuntimeResourceSettlementReceipt(
                             attempt=owners.attempt,
