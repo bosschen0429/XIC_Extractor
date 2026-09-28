@@ -16,8 +16,38 @@ from xic_extractor.alignment.pipeline_outputs import (
     AlignmentRunOutputs as _AlignmentRunOutputs,
 )
 from xic_extractor.config import ExtractionConfig
+from xic_extractor.discovery.pipeline import (
+    DiscoveryProcessExecutionError,
+    DiscoverySampleProcessError,
+)
 from xic_extractor.execution_settings import DEFAULT_ALIGNMENT_WORKERS
 from xic_extractor.sample_metadata import SampleMetadata
+
+
+def test_discovery_worker_emits_error_for_failed_batch(tmp_path, monkeypatch):
+    request = DiscoveryRequest(
+        mode="discovery_only", preset="dna_dr_product_ready", tuning_overrides={},
+        raw_dir=tmp_path, raw_file=None, dll_dir=tmp_path,
+        output_dir=tmp_path / "out", discovery_batch_index=None,
+    )
+    worker = DiscoveryWorker(request)
+    errors, finished, cancelled = [], [], []
+    worker.error.connect(errors.append)
+    worker.finished.connect(finished.append)
+    worker.cancelled.connect(lambda: cancelled.append(True))
+    failure = DiscoveryProcessExecutionError(
+        DiscoverySampleProcessError(0, "sample", "sample.raw", "read failed"),
+        completed_sample_stems=(), failed_sample_stems=("sample",),
+        cancelled_job_count=0, in_flight_job_count=0, unsubmitted_job_count=1,
+    )
+
+    def fail(_request):
+        raise failure
+
+    monkeypatch.setattr(worker, "_run_discovery_only", fail)
+    worker.run()
+    assert errors == [str(failure)]
+    assert not finished and not cancelled
 
 
 def _alignment_outputs(

@@ -20,6 +20,7 @@ class ProcessJobExecutionReport:
     cancelled_job_ordinals: tuple[int, ...]
     in_flight_job_ordinals: tuple[int, ...]
     unsubmitted_job_ordinals: tuple[int, ...]
+    cancellation_requested: bool = False
 
 
 def execute_process_jobs(
@@ -32,14 +33,19 @@ def execute_process_jobs(
     executor_factory: Callable[..., Any] | None = None,
     progress_callback: Callable[[Any], None] | None = None,
     success_result_delivery: Callable[[int, Any], Any] | None = None,
+    should_cancel: Callable[[], bool] | None = None,
 ) -> ProcessJobExecutionReport:
-    """Run a bounded process batch and stop submitting after owner failure."""
+    """Stop dispatch on failure/cancellation; drain active work on cancellation."""
 
     pending_jobs = tuple(jobs)
     if max_workers < 1:
         raise ValueError("max_workers must be >= 1")
     if not pending_jobs:
         return ProcessJobExecutionReport((), (), None, (), (), (), (), (), ())
+    if should_cancel is not None and should_cancel():
+        return ProcessJobExecutionReport(
+            (), (), None, (), (), (), (), (), tuple(range(len(pending_jobs))), True
+        )
 
     worker_count = min(max_workers, len(pending_jobs))
     factory = executor_factory or ProcessPoolExecutor
@@ -54,6 +60,13 @@ def execute_process_jobs(
     failed_ordinals: set[int] = set()
     first_failure: Any | None = None
     next_job_ordinal = 0
+    cancellation_requested = False
+
+    def _observe_cancellation() -> bool:
+        nonlocal cancellation_requested
+        if not cancellation_requested and should_cancel is not None:
+            cancellation_requested = should_cancel()
+        return cancellation_requested
 
     def _record_result(ordinal: int, result: Any) -> None:
         nonlocal first_failure
@@ -85,6 +98,7 @@ def execute_process_jobs(
         nonlocal first_failure
         while (
             first_failure is None
+            and not _observe_cancellation()
             and len(future_to_ordinal) < worker_count
             and next_job_ordinal < len(pending_jobs)
         ):
@@ -104,6 +118,13 @@ def execute_process_jobs(
     try:
         _submit_until_capacity()
         while future_to_ordinal and first_failure is None:
+            if _observe_cancellation():
+                for future, ordinal in tuple(future_to_ordinal.items()):
+                    if future.cancel():
+                        cancelled_ordinals.add(ordinal)
+                        del future_to_ordinal[future]
+                if not future_to_ordinal:
+                    break
             done, _not_done = wait(
                 future_to_ordinal,
                 timeout=0.1,
@@ -131,9 +152,17 @@ def execute_process_jobs(
     finally:
         _shutdown_executor(
             executor,
-            wait_for_workers=first_failure is None,
-            cancel_futures=first_failure is not None,
+            wait_for_workers=first_failure is None or cancellation_requested,
+            cancel_futures=first_failure is not None or cancellation_requested,
         )
+
+    if cancellation_requested:
+        # Failure still wins, but cancellation must not acknowledge shutdown
+        # while a sibling can still write sample outputs or hold RAW handles.
+        for future, ordinal in future_to_ordinal.items():
+            if ordinal in in_flight_ordinals:
+                _record_finished_future(future, ordinal)
+        in_flight_ordinals.clear()
 
     ordered_observed = tuple(
         results_by_ordinal[ordinal] for ordinal in sorted(results_by_ordinal)
@@ -151,6 +180,7 @@ def execute_process_jobs(
         cancelled_job_ordinals=tuple(sorted(cancelled_ordinals)),
         in_flight_job_ordinals=tuple(sorted(in_flight_ordinals)),
         unsubmitted_job_ordinals=tuple(range(next_job_ordinal, len(pending_jobs))),
+        cancellation_requested=cancellation_requested,
     )
 
 
