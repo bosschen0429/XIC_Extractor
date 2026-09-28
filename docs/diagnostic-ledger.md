@@ -66,6 +66,39 @@ dated productization control-plane path is compatibility lookup only.
 
 ## Known Diagnostic Conclusions
 
+### 2026-09-28 Inferred Precursors Keep Their MS1 Ion Only Inside An m/z-Banded Window
+
+#546, decision A step 2. Evidence: `diagnostic_only`; two RAWs
+(`TumorBC2264_DNA`, `Breast_Cancer_Tissue_pooled_QC3`), default `DNA_dR`
+settings; probes and outputs are under `output/i546/`.
+
+- MS2 is Orbitrap centroid (`FTMS + c ... cid40.00`), and Discovery reads the
+  instrument's centroids. Direct seeds, whose precursor is the selected ion,
+  have product errors with medians of +4.8, +1.8, +2.4 and +7.0 ppm below
+  m/z 300, from 300 to 500, from 500 to 700 and from 700; 85%, 82%, 76% and
+  42% lie within 10 ppm.
+- Seed-level target-decoy: for 7,799 inferred seeds, the nearest MS1 centroid
+  to product + loss (+-60 ppm, strongest scan within +-0.35 min) was counted
+  against the same query shifted by +-5 Da. Below m/z 500 the excess over the
+  decoys lies within -10 to +10 ppm, and 10 to 20 ppm occurs at chance. From
+  500 to 700 it spreads from -30 to +60 ppm. From 700 it concentrates between
+  +15 and +35 ppm.
+- Candidate level, running Discovery with the windows and a decoy that adds
+  5 Da to every inferred seed: below m/z 500, 30 target and 29 decoy inferred
+  peaks read their ion only outside the window and lose their MS1 feature.
+  From 700, feature-backed inferred candidates rise from 73 to 99 while decoy
+  candidates move from 35 to 37. From 500 to 700, 93 target and 48 decoy
+  inferred peaks keep the unchanged +-20 ppm window.
+- Chance attributions remain inside the windows: below 500, 41 decoy peaks read
+  a consistent ion within 10 ppm. Readings from two ions are mostly chance
+  (12 target, 10 decoy).
+- A single +-20 ppm window reproduces the previous outputs byte for byte.
+- Candidate CSV `precursor_mz` keeps six significant digits, so offsets
+  computed from CSV values carry up to about 2 ppm of rounding.
+
+Rerun when the instrument, its MS2 resolution or calibration, the method, or
+the windows change.
+
 ### 2026-09-28 Discovery MS1 Acquisition Shares Super-Window Reads With Identical Outputs
 
 #546, decision A step 1. Discovery `ms1_backfill` acquires through

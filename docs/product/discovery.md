@@ -120,6 +120,21 @@ the error relative to the configured loss mass; it is not the acceptance gate.
   high-intensity threshold. Reacquisition keeps the original MS2 query RT and
   m/z tolerance. It supplies enough points to answer the physical peak question;
   it does not upgrade inferred precursor identity or grant Matrix authority.
+- When the first acquisition resolves a peak, Discovery reads the ion at the
+  apex scan and one MS1 scan on each side. A consistent reading more than 5 ppm
+  from the candidate precursor replaces it, and the trace is re-extracted
+  there; readings from two ions, or none, keep the precursor. A pure
+  `product_mz + neutral_loss` precursor carries the MS2 product error, so its
+  ion is read only inside a signed window of product + loss set by precursor
+  m/z: -10 to +10 ppm below m/z 500, -20 to +20 ppm from 500 to 700, and -10
+  to +30 ppm from 700, where the first acquisition is centred 10 ppm above
+  product + loss. A peak whose ion lies only outside the window belongs to
+  another precursor: the candidate becomes `review_only_orphan_nl` without an
+  MS1 feature and is not persisted. The windows come from target-decoy
+  measurement on tissue RAWs of one DNA dR method (see
+  `docs/diagnostic-ledger.md`); another instrument or method needs its own
+  measurement. Direct and mixed-basis precursors read the ion anywhere inside
+  the request.
 - Direct and inferred rows from one MS2 scan may coexist. `candidate_id` must
   retain the sample/scan anchor plus precursor/product row identity so those
   rows cannot collide, and `tag_evidence_json` must retain precursor-basis,
