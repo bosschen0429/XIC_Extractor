@@ -968,14 +968,12 @@ def production_case(
     *,
     sample_names: tuple[str, ...] = ("SampleA",),
     sample_peak_scales: dict[str, float] | None = None,
-    sample_peak_centers: dict[str, float] | None = None,
 ) -> tuple[ExtractionConfig, Target, RunOutput]:
     config = _config(tmp_path)
     target = _target()
     config.data_dir.mkdir()
     file_results = []
     scales = sample_peak_scales or {}
-    centers = sample_peak_centers or {}
     for sample_name in sample_names:
         raw_path = config.data_dir / f"{sample_name}.raw"
         raw_path.write_bytes(sample_name.encode())
@@ -985,9 +983,8 @@ def production_case(
             observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
         )
         scale = scales.get(sample_name, 1.0)
-        center = centers.get(sample_name, 1.5)
         rt = np.linspace(1.0, 2.0, 101)
-        intensity = (10.0 + 1000.0 * np.exp(-((rt - center) ** 2) / 0.002)) * scale
+        intensity = (10.0 + 1000.0 * np.exp(-((rt - 1.5) ** 2) / 0.002)) * scale
         trace = Trace.from_arrays(
             sample_name=sample_name,
             mz=target.mz,
@@ -997,7 +994,7 @@ def production_case(
             rt_max=target.rt_max,
             ppm_tol=target.ppm_tol,
         )
-        peak_result = find_peak_and_area(rt, intensity, config, preferred_rt=center)
+        peak_result = find_peak_and_area(rt, intensity, config, preferred_rt=1.5)
         hypotheses = build_peak_hypotheses(
             analysis_mode="targeted",
             common_evidence_source_id="test-retained-trace",
@@ -1045,11 +1042,11 @@ def production_case(
                             trigger_scan_count=1,
                             strict_nl_scan_count=1,
                             best_loss_ppm=0.0,
-                            best_scan_rt=center,
+                            best_scan_rt=1.5,
                             best_product_base_ratio=0.5,
                             alignment_source="region",
                             best_product_evidence=MS2ProductEvidence(
-                                scan_rt=center,
+                                scan_rt=1.5,
                                 precursor_mz=250.0,
                                 product_mz=134.0,
                                 product_intensity=500.0,

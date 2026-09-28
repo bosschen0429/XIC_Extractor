@@ -34,7 +34,6 @@ from xic_extractor.output.review_report import review_report_path_for_excel
 from xic_extractor.peak_detection.models import PeakResult
 from xic_extractor.peak_detection.targeted_product_projection import (
     TargetedProductProjection,
-    add_targeted_review_reason,
 )
 
 if TYPE_CHECKING:
@@ -202,7 +201,6 @@ def _build_render_view(
 
     decisions: dict[tuple[str, str], Any] = {}
     target_ids_by_label: dict[str, str] = {}
-    cohort_reviews: set[tuple[str, str]] = set()
     for result in finalized_results:
         if (
             result.processing_request != expected_request
@@ -223,11 +221,6 @@ def _build_render_view(
                 "finalized Targeted result population contains duplicate Targets"
             )
         target_ids_by_label[target_label] = target_id
-        cohort_reviews.update(
-            (reference.subject.sample.identity.sample_identity_id, target_id)
-            for reference in result.completed_projection.review_queue_references
-            if "targeted_group_rt_inconsistent" in reference.reasons
-        )
         for projection_decision in result.completed_projection.decisions:
             subject = cast(Any, projection_decision.subject)
             sample_id = subject.sample.identity.sample_identity_id
@@ -291,7 +284,6 @@ def _build_render_view(
                 value=render_decision.value,
                 no_write_reason=no_write_reason,
                 evidence=getattr(render_decision, "evidence", None),
-                cohort_review=key in cohort_reviews,
             )
         files.append(replace(file_result, results=rendered))
     if consumed != set(decisions):
@@ -310,12 +302,10 @@ def _finalized_extraction_result(
     value: float | None,
     no_write_reason: str,
     evidence: object,
-    cohort_review: bool = False,
 ) -> ExtractionResult:
     projection = _finalized_product_projection(
         extraction.targeted_product_projection,
         no_write_reason=no_write_reason,
-        cohort_review=cohort_review,
     )
     if not no_write_reason:
         if (
@@ -380,15 +370,9 @@ def _finalized_product_projection(
     projection: TargetedProductProjection | None,
     *,
     no_write_reason: str,
-    cohort_review: bool = False,
 ) -> TargetedProductProjection | None:
     if projection is None:
         return None
-    if cohort_review:
-        projection = add_targeted_review_reason(
-            projection,
-            "targeted_group_rt_inconsistent",
-        )
     if no_write_reason:
         return replace(
             projection,

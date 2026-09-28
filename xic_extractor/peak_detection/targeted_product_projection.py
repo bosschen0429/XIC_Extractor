@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from typing import Literal
 
 ProductState = Literal[
@@ -41,35 +41,6 @@ class TargetedProductProjection:
     legacy_evidence: dict[str, str] = field(default_factory=dict)
     legacy_authority_status: LegacyAuthorityStatus = "evidence_only"
     benchmark_eligibility_state: str = ""
-
-
-def add_targeted_review_reason(
-    projection: TargetedProductProjection,
-    reason: str,
-) -> TargetedProductProjection:
-    """Render additional owner-issued review without changing counting policy."""
-    review = _stable_reasons((*projection.review_reasons, reason))
-    state: ProductState = (
-        "detected_flagged"
-        if projection.product_state == "detected_clean"
-        else projection.product_state
-    )
-    return replace(
-        projection,
-        product_state=state,
-        review_state="flagged"
-        if projection.review_state == "none"
-        else projection.review_state,
-        review_reasons=review,
-        projection_reason=_projection_reason(
-            state,
-            projection.support_reasons,
-            review,
-            projection.conflict_reasons,
-            projection.not_counted_reasons,
-            projection.exclusion_reasons,
-        ),
-    )
 
 
 def build_targeted_product_projection(
