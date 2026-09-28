@@ -17,7 +17,6 @@ from xic_extractor.discovery.pt_pattern_artifact_contract import (
     PT_PATTERN_EVIDENCE_SCHEMA_VERSION,
     PT_PATTERN_TRACE_FULL_CONTEXT_ROLE,
     PT_PATTERN_TRACE_SUMMARY_SCHEMA_VERSION,
-    format_pt_machine_float,
     pt_pattern_candidate_assignment_fingerprint,
     validate_pt_candidate_trace_summary_identity,
     validate_pt_pattern_evidence_row_contract,
@@ -40,7 +39,11 @@ from xic_extractor.evidence_artifacts import (
     _mint_artifact_semantic_contract_ref,
     _mint_evidence_artifact_ref,
 )
-from xic_extractor.tabular_io import escape_excel_formula, render_delimited_rows
+from xic_extractor.tabular_io import (
+    escape_excel_formula,
+    format_machine_float,
+    render_delimited_rows,
+)
 
 SCHEMA_VERSION = PT_PATTERN_EVIDENCE_SCHEMA_VERSION
 TRACE_EVIDENCE_NOT_EVALUATED = "not_evaluated"
@@ -201,7 +204,7 @@ def _format_pt_evidence_value(
     if isinstance(value, bool):
         return "TRUE" if value else "FALSE"
     if isinstance(value, float):
-        return format_pt_machine_float(value)
+        return format_machine_float(value)
     if isinstance(value, int):
         return str(value)
     text = str(value)

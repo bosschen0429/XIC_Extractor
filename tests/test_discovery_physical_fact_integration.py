@@ -168,9 +168,7 @@ def test_discovery_retained_physical_peak_cardinality(
         # The complete main envelope has one representative. Earlier seeds
         # have clipped whole contours, rather than independently closed peaks.
         assert all(not c.is_provisional for c in valid)
-    assert sorted(c.ms1_apex_rt for c in valid) == [
-        round(apex, 4) for apex in expected_apices
-    ]
+    assert sorted(c.ms1_apex_rt for c in valid) == list(expected_apices)
     assert sorted(
         c.ms1_apex_rt
         for c in result.candidates

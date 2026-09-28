@@ -244,8 +244,8 @@ def test_single_raw_pipeline_writes_inferred_and_direct_same_scan_rows(
     assert "TumorBC2312_DNA#19561@mz300.160635_p184.113235" in candidate_ids
     assert "TumorBC2312_DNA#19561@mz301.164978_p185.115845" in candidate_ids
     rows_by_product = {row["product_mz"]: row for row in rows}
-    inferred = rows_by_product["184.113"]
-    direct = rows_by_product["185.116"]
+    inferred = rows_by_product["184.113235"]
+    direct = rows_by_product["185.115845"]
     assert inferred["precursor_mz_basis"] == "product_plus_neutral_loss"
     assert inferred["neutral_loss_error_basis"] == (
         "configured_loss_inferred_precursor"

@@ -340,6 +340,20 @@ def escape_excel_formula(value: str) -> str:
     return value
 
 
+def format_machine_float(value: float) -> str:
+    """Format a machine-handoff float without losing binary precision.
+
+    Python's repr is the shortest decimal that round-trips to the same float;
+    display rounding such as ``.6g`` moves an m/z by up to ppm scale.
+    """
+
+    if not math.isfinite(value):
+        return ""
+    if value.is_integer():
+        return str(int(value))
+    return repr(value)
+
+
 def format_diagnostic_value(value: Any) -> str:
     if value is None:
         return ""

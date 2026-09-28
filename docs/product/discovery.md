@@ -170,7 +170,10 @@ the error relative to the configured loss mass; it is not the acceptance gate.
 ### Outputs, peak anchors, and batch handoff
 
 - Standard per-sample outputs: `discovery_candidates.csv` (archival/alignment
-  detail) and `discovery_review.csv` (compact human review).
+  detail) and `discovery_review.csv` (compact human review). Both write
+  floats at full precision (the shortest text that reads back to the same
+  value), because Alignment reads the candidate m/z and RT back; display
+  rounding belongs to the final Matrix.
 - Discovery `feature_family_id` remains a public output header and dataclass
   field, but its Discovery meaning is a per-sample peak anchor label for
   candidates sharing the same discovered MS1 peak. Members must share the

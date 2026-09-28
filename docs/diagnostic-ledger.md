@@ -96,7 +96,7 @@ settings; probes and outputs are under `output/i546/`.
   against 60,000 for MS1), so Discovery treats product + loss only as a pointer
   and reads the ion inside the request; the banded windows added a rule
   without changing that source of truth.
-- Candidate CSV `precursor_mz` keeps six significant digits, so offsets
+- Candidate CSV `precursor_mz` then kept six significant digits, so offsets
   computed from CSV values carry up to about 2 ppm of rounding.
 
 Rerun when the instrument, its MS2 resolution or calibration, or the method
