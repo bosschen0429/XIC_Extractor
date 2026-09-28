@@ -172,7 +172,8 @@ def test_discovery_retained_physical_peak_cardinality(
         round(apex, 4) for apex in expected_apices
     ]
     assert sorted(
-        c.ms1_apex_rt for c in result.candidates
+        c.ms1_apex_rt
+        for c in result.candidates
         if c.ms1_peak_found and (representative_scan is None or not c.is_provisional)
     ) == pytest.approx(expected_apices)
     assert len(result.physical_work_manifest) == len(fixture["seed_scans"])
@@ -185,8 +186,10 @@ def test_discovery_retained_physical_peak_cardinality(
         # The exact acquired fixture has a censored core (8 hits in 3 runs),
         # not a continuous overlap. Shared hit-density qualification owns it.
         assert all(not candidate.is_provisional for candidate in valid)
-        assert all(candidate.ms1_area is not None and candidate.ms1_area > 0
-                   for candidate in valid)
+        assert all(
+            candidate.ms1_area is not None and candidate.ms1_area > 0
+            for candidate in valid
+        )
         ownership = build_sample_local_owners_from_discovery_bindings(
             result.physical_bindings, alignment_config=AlignmentConfig()
         )
@@ -288,7 +291,8 @@ def test_merged_physical_candidate_persists_representative_search_window(
         selected.rt, selected.raw, profile=profile, evaluation=selected.evaluation
     )
     outputs = _write_dual_csvs(
-        tmp_path / "discovery", (candidate,),
+        tmp_path / "discovery",
+        (candidate,),
         timing_recorder=TimingRecorder.disabled("discovery"),
         sample_stem=raw_path.stem,
         run_spec=spec,
@@ -850,9 +854,7 @@ def test_qualification_survives_physical_fact_reuse(
         noise = np.random.default_rng(0).normal(size=raw.rt.size)
         amplitude = 50.0
     raw.intensity = (
-        1000.0
-        + amplitude * np.exp(-0.5 * ((raw.rt - 7.8) / 0.05) ** 2)
-        + noise
+        1000.0 + amplitude * np.exp(-0.5 * ((raw.rt - 7.8) / 0.05) ** 2) + noise
     )
     qualifier = Mock(wraps=is_provisional_peak_shape)
     monkeypatch.setattr(
@@ -882,7 +884,7 @@ def test_qualification_survives_physical_fact_reuse(
     edge = max(
         np.median(qualified_raw[:edge_count]), np.median(qualified_raw[-edge_count:])
     )
-    centre = np.median(qualified_raw[max(0, apex - 1):apex + 2])
+    centre = np.median(qualified_raw[max(0, apex - 1) : apex + 2])
     snr = (centre - edge) / qualifier.call_args.kwargs["raw_noise_mad"]
     if provisional:
         assert centre / edge < 1.5 and 3.0 < snr < 5.0
@@ -1198,7 +1200,8 @@ def test_spec_bound_terminal_physical_truth_remains_distinct_hold_state(
     evaluation = result.physical_evaluations[0].evaluation
     assert evaluation.question.selection_policy_version == (
         "background_qualified_peak_contains_query"
-        if window_points == 15 else "baseline_peak_contains_query"
+        if window_points == 15
+        else "baseline_peak_contains_query"
     )
     assert evaluation.state == physical_state
     assert evaluation.reason == physical_reason
@@ -1224,9 +1227,6 @@ def test_spec_bound_terminal_physical_truth_remains_distinct_hold_state(
         "ms1_feature_nl_rescued",
         "rejected_noise_or_outside_rt",
     }
-
-
-
 
 
 def test_discovery_recovers_near_baseline_peak_after_exterior_context_crop(
@@ -1362,3 +1362,68 @@ def test_physical_fact_sharing_uses_exact_owner_question(
             result.physical_work_manifest
         )
         assert raw.raw_chromatogram_call_count == 1
+
+
+def _inferred_apex_case(tmp_path: Path, centroid):
+    raw_path = tmp_path / "TumorBC2312_DNA.raw"
+    raw_path.write_bytes(b"owner-bound-discovery")
+    source = build_acquisition_source_identity(
+        raw_path,
+        acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
+        observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
+    )
+    full_rt = np.arange(11.50, 12.80, 0.04, dtype=float)
+    full_intensity = 100.0 + 10_000.0 * np.exp(-0.5 * ((full_rt - 12.15) / 0.15) ** 2)
+    raw = _CadenceBoundRaw(source, full_rt, full_intensity)
+    group = _group(
+        (
+            replace(
+                _seed(scan_number=10, rt=12.063, product_intensity=1_000_000.0),
+                precursor_mz_basis="product_plus_neutral_loss",
+            ),
+        )
+    )
+    result = _backfill_ms1_candidates_with_acquisition(
+        raw,
+        (group,),
+        acquisition_source=source,
+        run_spec_id=_TEST_RUN_SPEC_ID,
+        settings=_backfill_settings(),
+        peak_config=_backfill_peak_config(),
+        signal_processing_profile=SignalProcessingProfile(window_points=15),
+        ms1_centroid_mz=lambda rt, low, high: centroid(group.precursor_mz, rt),
+    )
+    return group, raw, result
+
+
+def test_inferred_precursor_moves_to_the_ms1_ion_read_at_the_apex(
+    tmp_path: Path,
+) -> None:
+    group, raw, result = _inferred_apex_case(
+        tmp_path, lambda inferred, _rt: inferred * (1 - 18e-6)
+    )
+
+    measured = group.precursor_mz * (1 - 18e-6)
+    assert result.measurements.reacquisition_request_count == 1
+    assert raw.request_batches[-1][0].mz == pytest.approx(measured)
+    (candidate,) = result.candidates
+    assert candidate.precursor_mz == pytest.approx(measured)
+    assert candidate.ms1_peak_found is True
+    (record,) = result.physical_evaluations
+    assert record.work_item.xic_mz == pytest.approx(measured)
+    assert record.work_item.precursor_mz == pytest.approx(measured)
+
+
+def test_small_or_ambiguous_apex_readings_keep_the_request(tmp_path: Path) -> None:
+    small = _inferred_apex_case(tmp_path, lambda inferred, _rt: inferred * (1 + 3e-6))
+    two_ions = _inferred_apex_case(
+        tmp_path,
+        # Alternating readings 12 ppm apart: two ions share the window.
+        lambda inferred, rt: (
+            inferred * (1 - 18e-6 if round(rt / 0.04) % 2 else 1 - 6e-6)
+        ),
+    )
+
+    for group, _raw, result in (small, two_ions):
+        assert result.measurements.reacquisition_request_count == 0
+        assert result.candidates[0].precursor_mz == group.precursor_mz

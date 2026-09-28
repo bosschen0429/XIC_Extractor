@@ -37,7 +37,12 @@ from xic_extractor.discovery.priority import (
     assign_review_priority,
     build_candidate_reason,
 )
-from xic_extractor.mass_accuracy import neutral_loss_match, within_ppm
+from xic_extractor.mass_accuracy import (
+    absolute_ppm_error,
+    neutral_loss_match,
+    weighted_ion_mz,
+    within_ppm,
+)
 from xic_extractor.peak_detection.background_shape import is_provisional_peak_shape
 from xic_extractor.peak_detection.ms1_morphology import DEFAULT_GAUSSIAN15_WINDOW_POINTS
 from xic_extractor.peak_detection.ms1_trace_detection import detect_ms1_trace_peak
@@ -65,6 +70,10 @@ _TagIntersectionStatus = Literal["not_required", "complete", "incomplete"]
 _DISCOVERY_MS1_BATCH_MAX_REQUESTS = 256
 _DISCOVERY_MS1_PREDICTION_MAX_REQUESTS = 256
 _DISCOVERY_PHYSICAL_CONTEXT_HALF_WINDOW_MIN = 0.60
+# The apex scan and one MS1 scan on each side read the ion's m/z; readings
+# spread wider than a few ppm come from more than one ion.
+_APEX_ION_SCAN_RADIUS = 1
+_APEX_ION_SPREAD_PPM = 5.0
 
 
 MS1CentroidMz = Callable[[float, float, float], float | None]
@@ -262,6 +271,7 @@ def _backfill_ms1_candidates_with_acquisition(
 
     initial_physical_facts: dict[int, DiscoveryPhysicalFactRecord] = {}
     physical_trace_qualities: dict[int, str] = {}
+    measured_precursor_by_index: dict[int, float] = {}
     if signal_processing_profile is not None:
         for physical_index, (plan, acquired) in enumerate(
             zip(physical_plans, acquired_traces, strict=True)
@@ -284,24 +294,35 @@ def _backfill_ms1_candidates_with_acquisition(
             physical_trace_qualities[physical_index] = (
                 initial_candidate.ms1_trace_quality
             )
-        reacquisition_plans = tuple(
-            (physical_index, expanded_plan)
-            for physical_index, (plan, acquired) in enumerate(
-                zip(physical_plans, acquired_traces, strict=True)
+        reacquisition: list[tuple[int, _DiscoveryMs1RequestPlan]] = []
+        for physical_index, (plan, acquired) in enumerate(
+            zip(physical_plans, acquired_traces, strict=True)
+        ):
+            evaluation = initial_physical_facts[physical_index].evaluation
+            revised = plan
+            measured_mz = _measured_apex_ion_mz(
+                plan, acquired, evaluation, ms1_centroid_mz=ms1_centroid_mz
             )
-            if (
-                expanded_plan := _expanded_physical_request_plan(
-                    plan,
+            if measured_mz is not None:
+                revised = replace(
+                    revised,
+                    group=replace(revised.group, precursor_mz=measured_mz),
+                    request=replace(revised.request, mz=measured_mz),
+                )
+                measured_precursor_by_index[physical_index] = measured_mz
+            revised = (
+                _expanded_physical_request_plan(
+                    revised,
                     acquired,
                     profile=signal_processing_profile,
                     settings=settings,
-                    physical_evaluation=initial_physical_facts[
-                        physical_index
-                    ].evaluation,
+                    physical_evaluation=evaluation,
                 )
+                or revised
             )
-            is not None
-        )
+            if revised is not plan:
+                reacquisition.append((physical_index, revised))
+        reacquisition_plans = tuple(reacquisition)
         for indexed_chunk in _chunks(
             reacquisition_plans,
             _DISCOVERY_MS1_BATCH_MAX_REQUESTS,
@@ -372,8 +393,13 @@ def _backfill_ms1_candidates_with_acquisition(
                 physical_fact_by_index[physical_index] = existing_fact
                 physical_work_manifest.append(existing_fact.work_item)
                 physical_evaluations.append(existing_fact)
+        group = plan.group
+        if physical_index in measured_precursor_by_index:
+            group = replace(
+                group, precursor_mz=measured_precursor_by_index[physical_index]
+            )
         candidate = _candidate_from_trace(
-            plan.group,
+            group,
             acquired.trace.rt,
             acquired.trace.intensity,
             settings=settings,
@@ -558,6 +584,49 @@ def _has_strong_inferred_precursor_support(
         and max(seed.product_intensity for seed in group.seeds)
         >= settings.evidence_profile.thresholds.product_intensity_high_min
     )
+
+
+def _measured_apex_ion_mz(
+    plan: _DiscoveryMs1RequestPlan,
+    acquired: AcquiredTrace,
+    evaluation: PhysicalPeakEvaluation,
+    *,
+    ms1_centroid_mz: MS1CentroidMz | None,
+) -> float | None:
+    """The MS1 m/z of the ion at the resolved peak, when it moves the request.
+
+    A precursor inferred as product + loss carries the MS2 product error, up to
+    the extraction tolerance. The ion read at the scans around the apex, inside
+    the current window, is the peak's own m/z. It replaces the request centre
+    only when it differs by more than the MS1 reading spread; a smaller shift
+    changes no trace.
+    """
+    facts = evaluation.facts
+    if ms1_centroid_mz is None or evaluation.state != "available" or facts is None:
+        return None
+    rt = acquired.trace.rt
+    intensity = acquired.trace.intensity
+    if len(rt) == 0:
+        return None
+    apex = int(np.argmin(np.abs(rt - facts.apex_rt_min)))
+    request = plan.request
+    half_width = request.mz * request.ppm_tol * 1e-6
+    readings = []
+    for index in range(
+        max(0, apex - _APEX_ION_SCAN_RADIUS),
+        min(len(rt), apex + _APEX_ION_SCAN_RADIUS + 1),
+    ):
+        mz = ms1_centroid_mz(
+            float(rt[index]), request.mz - half_width, request.mz + half_width
+        )
+        if mz is not None:
+            readings.append((mz, float(intensity[index])))
+    measured = weighted_ion_mz(readings, max_spread_ppm=_APEX_ION_SPREAD_PPM)
+    if measured is None or absolute_ppm_error(measured, request.mz) <= (
+        _APEX_ION_SPREAD_PPM
+    ):
+        return None
+    return measured
 
 
 def _validate_acquired_plan_chunk(
@@ -1615,7 +1684,8 @@ def _ms1_fields_from_physical_evaluation(
         peak_rt_end=facts.right_rt_min,
         trace_quality=(
             "physical_shoulder_overlap"
-            if evaluation.requires_overlap_review else "clean"
+            if evaluation.requires_overlap_review
+            else "clean"
         ),
         scan_support_score=scan_support_score,
     )
