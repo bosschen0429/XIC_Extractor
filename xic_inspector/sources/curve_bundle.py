@@ -463,8 +463,6 @@ class CurveBundleSource:
         items = []
         for transition in self.bundle.transitions:
             scoped = tuple(t for t in transition.traces if t.sample_id in sample_ids)
-            if not scoped:
-                continue
             _, ref = build_canonical_ref("group", "curve-bundle", "v1", transition.key)
             witnesses = tuple(
                 Witness(

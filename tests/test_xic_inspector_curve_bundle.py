@@ -263,6 +263,44 @@ def test_differential_accepts_numeric_display_facts(tmp_path: Path) -> None:
     )
 
 
+@pytest.mark.parametrize(
+    ("sample_ids", "eligible"),
+    [
+        ((), 2),
+        (("sample-1",), 1),
+        (("unknown-sample",), 0),
+    ],
+)
+def test_bundle_run_total_is_independent_of_sample_scope(
+    tmp_path: Path, sample_ids: tuple[str, ...], eligible: int
+) -> None:
+    transition = _fixture_bundle().transitions[0]
+    bundle = CurveBundle(
+        transitions=(
+            replace(transition, traces=(transition.traces[0],)),
+            replace(
+                transition,
+                key="transition-B",
+                traces=(transition.traces[1],),
+            ),
+        )
+    )
+    source = tmp_path / "curves.json"
+    write_curve_bundle(bundle, source)
+
+    result = generate_report(
+        source,
+        SelectionRequest(sample_ids=sample_ids),
+        tmp_path / "review.html",
+    )
+    assert (result.run_total, result.eligible_count, result.matched_count) == (
+        2,
+        eligible,
+        eligible,
+    )
+    assert result.selected_count == eligible
+
+
 @pytest.mark.parametrize("second_value", [0.0, None, 42.125])
 def test_saved_quantity_and_integration_reach_offline_readout(tmp_path, second_value):
     """Formal values survive multiple traces, count=false, and empty results."""
