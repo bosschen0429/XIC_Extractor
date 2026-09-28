@@ -63,6 +63,7 @@ from xic_extractor.peak_detection.signal_processing_profile import (
     SignalProcessingProfile,
 )
 from xic_extractor.processing_identity import AcquisitionSourceIdentity
+from xic_extractor.raw_superwindow_source import RawSuperWindowSource
 from xic_extractor.signal_processing import PeakResult, find_peak_and_area
 from xic_extractor.xic_models import XICRequest
 
@@ -256,6 +257,7 @@ def _backfill_ms1_candidates_with_acquisition(
             physical_plans.append(plan)
         physical_indices.append(physical_index)
 
+    superwindow_raw = RawSuperWindowSource(raw)
     batches: list[TraceAcquisitionBatch] = []
     acquired_traces: list[AcquiredTrace] = []
     prepared_signal_cache: dict[tuple[str, str], PreparedSignalResult] = {}
@@ -263,7 +265,7 @@ def _backfill_ms1_candidates_with_acquisition(
         batch = acquire_trace_batch(
             capability,
             tuple(plan.request for plan in plan_chunk),
-            raw,
+            superwindow_raw,
         )
         _validate_acquired_plan_chunk(plan_chunk, batch)
         batches.append(batch)
@@ -331,7 +333,7 @@ def _backfill_ms1_candidates_with_acquisition(
             batch = acquire_trace_batch(
                 capability,
                 tuple(plan.request for plan in plan_chunk),
-                raw,
+                superwindow_raw,
             )
             _validate_acquired_plan_chunk(plan_chunk, batch)
             batches.append(batch)

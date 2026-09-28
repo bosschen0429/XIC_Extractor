@@ -7,7 +7,7 @@ Repo owner: docs/diagnostic-ledger.md
 Doc exit rule: Keep active while expensive RAW rerun memory is needed; retire only after durable diagnostic memory moves to a replacement canonical owner.
 
 **Status:** maintained repo-local diagnostic memory
-**Last updated:** 2026-09-24
+**Last updated:** 2026-09-28
 
 This ledger records diagnostic conclusions that should survive branch and
 worktree changes. Use it before rerunning expensive RAW validation or treating a
@@ -65,6 +65,39 @@ dated productization control-plane path is compatibility lookup only.
 | Thermo DLL dir | `$env:THERMO_RAWFILE_READER_DLL_DIR` |
 
 ## Known Diagnostic Conclusions
+
+### 2026-09-28 Discovery MS1 Acquisition Shares Super-Window Reads With Identical Outputs
+
+#546, decision A step 1. Discovery `ms1_backfill` acquires through
+`RawSuperWindowSource`, now `xic_extractor/raw_superwindow_source.py` so that
+Discovery does not import Alignment. Requests and per-request traces are
+unchanged.
+
+- Two RAWs (`TumorBC2264_DNA`, `Breast_Cancer_Tissue_pooled_QC3`), default
+  `DNA_dR` settings: `discovery_candidates.csv`, `discovery_review.csv` and
+  `discovery_physical_facts.json` are byte-identical to master `f097894b`.
+  Vendor chromatogram calls fall from 3,082 to 53 and from 3,788 to 49.
+  `discover.ms1_backfill` takes 16.4 s against 28.6 s and 20.5 s against
+  36.9 s; the stage sum is 23.9 s against 38.9 s and 30.0 s against 48.6 s.
+  These are single runs with the baseline first. An alternating
+  exact/super-window/exact probe on one RAW gave 23.7, 15.1 and 25.6 s with
+  identical outputs.
+- After the change, vendor acquisition is 1.6 s of `ms1_backfill` on
+  `TumorBC2264_DNA` (unprofiled wrappers, one run, #546 branch code). Per-trace
+  physical evaluation takes 9.3 s over 5,726 calls, physical fact record
+  validation 6.0 s over 16,061 calls (partly inside that evaluation), and the
+  candidate merge 4.3 s. Under cProfile the merge makes 3.86 million pairwise
+  checks.
+- The ion-first prototype (`output/i546/ion_first_prototype.py`) evaluates
+  about 1,244 ion traces on the same RAW. Its remaining speed advantage comes
+  from that semantic change, not from acquisition.
+- `discovery_ms1_predicted_chunked_call_count` still reports the exact-window
+  call count; `adapter_chromatogram_call_count` reports actual calls.
+- Evidence: `diagnostic_only`; artifacts are under
+  `output/discovery-superwindow/` and `output/i546/sw-probe/`.
+
+Rerun only when Discovery request planning, super-window grouping or cropping,
+or the RAW reader changes.
 
 ### 2026-09-25 Process RAW Workers Halve Full85 Runtime With Identical Outputs
 

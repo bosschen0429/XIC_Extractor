@@ -243,6 +243,7 @@ SHARD_PATTERNS: ShardPatterns = OrderedDict(
             "tests/test_processing_run_spec_entrypoints.py",
             "tests/test_process_job_execution.py",
             "tests/test_quantitative_projection_authority.py",
+            "tests/test_raw_superwindow_source.py",
             "tests/test_run_alignment.py",
             "tests/test_run_discovery.py",
             "tests/test_run_discovery_run_spec_cli.py",
