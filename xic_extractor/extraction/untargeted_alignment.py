@@ -246,6 +246,7 @@ def complete_untargeted_cid_nl_alignment(
             retained_sample_metadata = derive_sample_metadata_from_raw_files(
                 ordered_raw_paths,
                 dll_dir=dll_dir,
+                batch_id=raw_dir.resolve().name,
             )
         except Exception:
             retained_sample_metadata = tuple(

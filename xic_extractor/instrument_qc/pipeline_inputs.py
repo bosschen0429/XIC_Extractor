@@ -4,6 +4,7 @@ import csv
 from pathlib import Path
 from typing import cast
 
+from xic_extractor.analysis_set import discover_raw_files
 from xic_extractor.injection_rolling import read_injection_order
 from xic_extractor.instrument_qc.classification import (
     InstrumentQCClass,
@@ -43,15 +44,16 @@ def discover_sdolek_raws(
     raw_dir: Path,
     diagnostics: list[InstrumentQCDiagnostic],
 ) -> tuple[Path, ...]:
-    sdolek_dir = raw_dir / "SDOLEK"
-    if not sdolek_dir.exists():
-        raise FileNotFoundError(f"Missing expected SDOLEK folder: {sdolek_dir}")
-    candidates = sorted(sdolek_dir.glob("*.raw"))
+    candidates = [
+        path
+        for path in discover_raw_files(raw_dir)
+        if classify_instrument_qc_raw(path, raw_dir) == InstrumentQCClass.SDOLEK
+    ]
+    if not candidates:
+        raise FileNotFoundError(f"No SDOLEK RAW files found below {raw_dir}")
     selected: list[Path] = []
     seen_stems: set[str] = set()
-    for path in candidates:
-        if classify_instrument_qc_raw(path, raw_dir) != InstrumentQCClass.SDOLEK:
-            continue
+    for path in sorted(candidates, key=lambda path: (len(path.parts), path)):
         normalized_stem = path.stem.casefold()
         if normalized_stem in seen_stems:
             diagnostics.append(

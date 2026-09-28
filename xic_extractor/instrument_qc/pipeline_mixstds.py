@@ -54,7 +54,7 @@ def run_mixstds_extraction(
                 sample_name="",
                 raw_path=raw_dir,
                 issue="MIXSTDS_RAW_MISSING",
-                detail="No Mix STDs RAW files found under STDs or Pairs.",
+                detail=f"No Mix STDs RAW files found below {raw_dir}.",
             )
         )
         return ()

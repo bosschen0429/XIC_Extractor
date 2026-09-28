@@ -13,6 +13,7 @@ from gui.sections.discovery_samples_section import (
     _COL_NAME,
     _COL_ORDER,
     _COL_ROLE,
+    _COL_STEM,
     DiscoverySamplesSection,
 )
 from xic_extractor.sample_metadata import SampleMetadata, load_sample_metadata
@@ -481,3 +482,55 @@ def test_sequence_source_restore_failure_is_non_modal_and_persisted(
     assert "1 個 RAW" in section._status_label.text()
     assert section._source_label.text() == "Word 來源：missing.docx"
     assert str(missing) in section._status_label.toolTip()
+
+
+def test_samples_section_lists_nested_raw_once_per_stem(qtbot, tmp_path: Path) -> None:
+    raw_dir = tmp_path / "Batch"
+    for rel in ("S1.raw", "validation/S1.raw", "Blank/Blank_1.raw"):
+        (raw_dir / rel).parent.mkdir(parents=True, exist_ok=True)
+        (raw_dir / rel).touch()
+
+    section = DiscoverySamplesSection()
+    qtbot.addWidget(section)
+    section.set_sources(raw_dir, None)
+
+    assert [
+        section._table.item(row, _COL_STEM).text()
+        for row in range(section._table.rowCount())
+    ] == ["Blank_1", "S1"]
+
+
+def test_imported_metadata_keeps_excluded_samples_for_discovery(
+    qtbot, tmp_path: Path
+) -> None:
+    from xic_extractor.sample_metadata import SAMPLE_METADATA_COLUMNS
+
+    raw_dir = tmp_path / "Batch"
+    for rel in ("S1.raw", "except sample/S2.raw"):
+        (raw_dir / rel).parent.mkdir(parents=True, exist_ok=True)
+        (raw_dir / rel).touch()
+    metadata = tmp_path / "samples.tsv"
+    row = dict.fromkeys(SAMPLE_METADATA_COLUMNS, "")
+    row |= {
+        "schema_version": "sample_metadata",
+        "sample_name": "S2",
+        "raw_stem": "S2",
+        "excluded": "true",
+        "exclusion_reason": "injected but outside the design",
+    }
+    metadata.write_text(
+        "\t".join(SAMPLE_METADATA_COLUMNS)
+        + "\n"
+        + "\t".join(row[c] for c in SAMPLE_METADATA_COLUMNS)
+        + "\n",
+        encoding="utf-8",
+    )
+
+    section = DiscoverySamplesSection()
+    qtbot.addWidget(section)
+    section.set_sources(raw_dir, None)
+    assert section.load_sequence_source(metadata)
+
+    rows = {r.raw_stem: r for r in section.get_sample_metadata() or ()}
+    assert rows["S2"].excluded
+    assert not rows["S1"].excluded

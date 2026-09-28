@@ -232,7 +232,7 @@ def infer_sample_role(
     if re.search(r"(?:^|[\W_])(?:BLANK|BLK)\d*(?:[\W_]|$)", combined):
         return "blank"
     if re.search(
-        r"(?:^|[\W_])(?:SDOLEK|SDO[_-]LEK|SST|SUITABILITY)(?:[\W_]|$)", combined
+        r"(?:^|[\W_])(?:SDOLEK|SDO(?:[_-]LEK)?|SST|SUITABILITY)(?:[\W_]|$)", combined
     ):
         return "system_suitability"
     if re.search(

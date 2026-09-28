@@ -38,6 +38,7 @@ from xic_extractor.processing_identity import (
 from xic_extractor.raw_reader import (
     THERMO_RAW_ACQUISITION_FORMAT,
     THERMO_RAW_OBSERVATION_NAMESPACE,
+    read_analysis_set,
 )
 from xic_extractor.rt_prior_library import LibraryEntry, load_library
 from xic_extractor.sample_metadata import (
@@ -116,7 +117,15 @@ def resolve_targeted_inputs(
 
 
 def resolve_targeted_raw_paths(config: ExtractionConfig) -> list[Path]:
-    return sorted(config.data_dir.glob("*.raw"))
+    source = config.injection_order_source
+    metadata = (
+        load_sample_metadata(source)
+        if source is not None and is_sample_metadata_source(source)
+        else None
+    )
+    return sorted(
+        read_analysis_set(config.data_dir, config.dll_dir, metadata).raw_paths
+    )
 
 
 def build_targeted_processing_request_identity(

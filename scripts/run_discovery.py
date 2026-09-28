@@ -27,7 +27,8 @@ from xic_extractor.discovery.tag_profiles import (
 )
 from xic_extractor.execution_settings import load_execution_profile
 from xic_extractor.presets import PresetError, bind_cid_nl_recipe, load_preset
-from xic_extractor.raw_reader import RawReaderError
+from xic_extractor.raw_reader import RawReaderError, read_analysis_set
+from xic_extractor.sample_metadata import SampleMetadataError, load_sample_metadata
 from xic_extractor.settings_schema import (
     ARBITRATED_RESOLVER_RETIRED_MESSAGE,
     CANONICAL_SETTINGS_DEFAULTS,
@@ -55,12 +56,20 @@ def main(argv: Sequence[str] | None = None) -> int:
     if raw_dir is not None and not raw_dir.is_dir():
         print(f"{raw_dir}: raw directory does not exist", file=sys.stderr)
         return 2
-    raw_paths = (raw_path,) if raw_path is not None else _raw_paths_from_dir(raw_dir)
-    if not raw_paths:
-        print(f"{raw_dir}: raw directory contains no .raw files", file=sys.stderr)
-        return 2
     if not dll_dir.is_dir():
         print(f"{dll_dir}: dll directory does not exist", file=sys.stderr)
+        return 2
+    try:
+        raw_paths = (
+            (raw_path,)
+            if raw_path is not None
+            else _raw_paths_from_dir(raw_dir, dll_dir, args.sample_metadata)
+        )
+    except (OSError, SampleMetadataError, ValueError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    if not raw_paths:
+        print(f"{raw_dir}: raw directory contains no .raw files", file=sys.stderr)
         return 2
     if args.blank_library is not None:
         blank_lib_path = args.blank_library.resolve()
@@ -205,7 +214,18 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     raw_input.add_argument(
         "--raw-dir",
         type=Path,
-        help="Directory containing .raw files.",
+        help=(
+            "Directory searched recursively for .raw files; sample roles decide "
+            "the analysis set."
+        ),
+    )
+    parser.add_argument(
+        "--sample-metadata",
+        type=Path,
+        help=(
+            "Sample metadata or sequence file; its roles and excluded flags "
+            "override roles inferred from RAW headers."
+        ),
     )
     parser.add_argument(
         "--dll-dir",
@@ -451,10 +471,20 @@ def _peak_config(
     )
 
 
-def _raw_paths_from_dir(raw_dir: Path | None) -> tuple[Path, ...]:
+def _raw_paths_from_dir(
+    raw_dir: Path | None,
+    dll_dir: Path,
+    sample_metadata: Path | None,
+) -> tuple[Path, ...]:
     if raw_dir is None:
         return ()
-    return tuple(sorted(raw_dir.glob("*.raw"), key=lambda path: path.name.lower()))
+    metadata = (
+        load_sample_metadata(sample_metadata.resolve())
+        if sample_metadata is not None
+        else None
+    )
+    analysis_set = read_analysis_set(raw_dir, dll_dir, metadata)
+    return tuple(sorted(analysis_set.raw_paths, key=lambda path: path.name.lower()))
 
 
 def _positive_int(value: str) -> int:
