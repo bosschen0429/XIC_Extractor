@@ -183,6 +183,86 @@ def test_invalid_bundle_fails_explicitly(tmp_path: Path, mutation) -> None:
     assert not (tmp_path / "review.html").exists()
 
 
+@pytest.mark.parametrize(
+    ("flags", "field"),
+    [
+        ({"review_kind": "cid_nl_differential"}, "source_rt_window"),
+        (
+            {
+                "review_kind": "cid_nl_differential",
+                "source_center_rt": 6.0,
+                "successor_center_rt": 6.0,
+                "source_rt_window": [7.0, 4.0],
+                "successor_rt_window": [4.0, 7.0],
+            },
+            "source_rt_window",
+        ),
+        (
+            {
+                "review_kind": "cid_nl_differential",
+                "source_rt_window": [4.0, 7.0],
+                "source_center_rt": "6.0",
+            },
+            "source_center_rt",
+        ),
+        (
+            {
+                "review_kind": "cid_nl_differential",
+                "source_rt_window": [4.0, 7.0],
+                "source_center_rt": 8.0,
+            },
+            "source_center_rt",
+        ),
+    ],
+)
+def test_incomplete_differential_rejected_before_report_replacement(
+    tmp_path: Path, flags: dict, field: str
+) -> None:
+    source = tmp_path / "curves.json"
+    output = tmp_path / "review.html"
+    write_curve_bundle(_fixture_bundle(), source)
+    body = json.loads(source.read_text(encoding="utf-8"))
+    body["transitions"][0]["quality_flags"] = flags
+    source.write_text(json.dumps(body), encoding="utf-8")
+    output.write_text("previous report", encoding="utf-8")
+
+    with pytest.raises(InspectorError, match=field) as exc:
+        generate_report(source, SelectionRequest(), output)
+    assert exc.value.code == 4
+    assert output.read_text(encoding="utf-8") == "previous report"
+
+
+def test_differential_accepts_numeric_display_facts(tmp_path: Path) -> None:
+    transition = _fixture_bundle().transitions[0]
+    flags = {
+        "review_kind": "cid_nl_differential",
+        "source_rt_window": [4.0, 7.0],
+        "successor_rt_window": [4.0, 7.0],
+        "source_center_rt": 6.0,
+        "successor_center_rt": 6.0,
+        "source_accepted_cell_count": 0,
+        "successor_accepted_cell_count": 2,
+        "median_gaussian15_successor_source_max_ratio": 1.25,
+    }
+    source = tmp_path / "curves.json"
+    output = tmp_path / "review.html"
+    write_curve_bundle(
+        CurveBundle((replace(transition, quality_flags=flags),)), source
+    )
+
+    result = generate_report(source, SelectionRequest(), output)
+    assert result.selected_count == 1
+    embedded = output.read_text(encoding="utf-8").split(
+        '<script id="inspector-data" type="application/json">', 1
+    )[1]
+    item = json.loads(embedded.split("</script>", 1)[0])["items"][0]
+    assert item["transition_review"]["source_accepted_cell_count"] == 0
+    assert (
+        item["transition_review"]["median_gaussian15_successor_source_max_ratio"]
+        == 1.25
+    )
+
+
 @pytest.mark.parametrize("second_value", [0.0, None, 42.125])
 def test_saved_quantity_and_integration_reach_offline_readout(tmp_path, second_value):
     """Formal values survive multiple traces, count=false, and empty results."""
