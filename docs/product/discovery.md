@@ -130,7 +130,10 @@ the error relative to the configured loss mass; it is not the acceptance gate.
   to +30 ppm from 700, where the first acquisition is centred 10 ppm above
   product + loss. A peak whose ion lies only outside the window belongs to
   another precursor: the candidate becomes `review_only_orphan_nl` without an
-  MS1 feature and is not persisted. The windows come from target-decoy
+  MS1 feature and is not persisted. A pure inferred precursor whose window
+  holds two ions is not attributed to either: unless another seed on the same
+  peak carries a single or measured ion, the candidate becomes
+  `review_only_ambiguous_coisolation`. The windows come from target-decoy
   measurement on tissue RAWs of one DNA dR method (see
   `docs/diagnostic-ledger.md`); another instrument or method needs its own
   measurement. Direct and mixed-basis precursors read the ion anywhere inside

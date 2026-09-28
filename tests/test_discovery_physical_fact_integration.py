@@ -1371,6 +1371,7 @@ def _inferred_apex_case(
     *,
     precursor_mz: float = 500.0,
     basis: str = "product_plus_neutral_loss",
+    companion_basis: str | None = None,
 ):
     raw_path = tmp_path / "TumorBC2312_DNA.raw"
     raw_path.write_bytes(b"owner-bound-discovery")
@@ -1396,6 +1397,25 @@ def _inferred_apex_case(
             ),
         )
     )
+    groups = (group,)
+    if companion_basis is not None:
+        # A second seed group on the same peak, from another MS2 scan.
+        groups += (
+            _group(
+                (
+                    replace(
+                        _seed(
+                            scan_number=11,
+                            rt=12.083,
+                            precursor_mz=precursor_mz,
+                            product_mz=precursor_mz - NEUTRAL_LOSS_DA,
+                            product_intensity=900_000.0,
+                        ),
+                        precursor_mz_basis=companion_basis,
+                    ),
+                )
+            ),
+        )
 
     def read_ion(rt: float, low: float, high: float) -> float | None:
         mz = centroid(group.precursor_mz, rt)
@@ -1403,7 +1423,7 @@ def _inferred_apex_case(
 
     result = _backfill_ms1_candidates_with_acquisition(
         raw,
-        (group,),
+        groups,
         acquisition_source=source,
         run_spec_id=_TEST_RUN_SPEC_ID,
         settings=_backfill_settings(),
@@ -1432,19 +1452,56 @@ def test_inferred_precursor_moves_to_the_ms1_ion_read_at_the_apex(
     assert record.work_item.precursor_mz == pytest.approx(measured)
 
 
+def _two_ions(inferred: float, rt: float) -> float:
+    # Alternating readings 12 ppm apart: two ions share the window.
+    return inferred * (1 - 18e-6 if round(rt / 0.04) % 2 else 1 - 6e-6)
+
+
 def test_small_or_ambiguous_apex_readings_keep_the_request(tmp_path: Path) -> None:
     small = _inferred_apex_case(tmp_path, lambda inferred, _rt: inferred * (1 + 3e-6))
-    two_ions = _inferred_apex_case(
-        tmp_path,
-        # Alternating readings 12 ppm apart: two ions share the window.
-        lambda inferred, rt: (
-            inferred * (1 - 18e-6 if round(rt / 0.04) % 2 else 1 - 6e-6)
-        ),
-    )
+    two_ions = _inferred_apex_case(tmp_path, _two_ions)
 
     for group, _raw, result in (small, two_ions):
         assert result.measurements.reacquisition_request_count == 0
         assert result.candidates[0].precursor_mz == group.precursor_mz
+
+
+def test_inferred_precursor_meeting_two_ions_in_its_window_is_held_for_review(
+    tmp_path: Path,
+) -> None:
+    group, _raw, result = _inferred_apex_case(tmp_path, _two_ions)
+
+    (candidate,) = result.candidates
+    assert candidate.precursor_mz == group.precursor_mz
+    assert candidate.ms1_peak_found is True
+    assert candidate.discovery_candidate_state == "review_only_ambiguous_coisolation"
+    assert "two MS1 ions" in candidate.reason
+    (binding,) = result.physical_bindings
+    assert binding.candidate.discovery_candidate_state == (
+        "review_only_ambiguous_coisolation"
+    )
+
+
+@pytest.mark.parametrize(
+    ("basis", "companion_basis"),
+    [
+        ("scan_precursor", None),
+        ("product_plus_neutral_loss", "scan_precursor"),
+    ],
+)
+def test_a_selected_precursor_carries_a_peak_with_two_ions(
+    tmp_path: Path, basis: str, companion_basis: str | None
+) -> None:
+    _group, _raw, result = _inferred_apex_case(
+        tmp_path, _two_ions, basis=basis, companion_basis=companion_basis
+    )
+
+    (candidate,) = result.candidates
+    assert candidate.ms1_peak_found is True
+    assert candidate.discovery_candidate_state in {
+        "ms1_feature_nl_supported",
+        "ms1_feature_nl_rescued",
+    }
 
 
 def test_inferred_precursor_without_its_ion_in_the_window_keeps_no_ms1_feature(

@@ -91,7 +91,10 @@ settings; probes and outputs are under `output/i546/`.
   inferred peaks keep the unchanged +-20 ppm window.
 - Chance attributions remain inside the windows: below 500, 41 decoy peaks read
   a consistent ion within 10 ppm. Readings from two ions are mostly chance
-  (12 target, 10 decoy).
+  (12 target, 10 decoy peaks before the merge). Holding a candidate whose
+  every seed reads two ions for review removes 6 target and 7 decoy
+  feature-backed inferred candidates after the merge
+  (`output/i546/amb_compare.py`).
 - A single +-20 ppm window reproduces the previous outputs byte for byte.
 - Candidate CSV `precursor_mz` keeps six significant digits, so offsets
   computed from CSV values carry up to about 2 ppm of rounding.

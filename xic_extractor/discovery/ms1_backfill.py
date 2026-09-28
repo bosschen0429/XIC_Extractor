@@ -86,7 +86,7 @@ _INFERRED_PRECURSOR_WINDOWS_PPM = (
     (math.inf, -10.0, 30.0),
 )
 
-_ApexIonVerdict = Literal["keep", "move", "outside"]
+_ApexIonVerdict = Literal["keep", "move", "outside", "ambiguous"]
 
 
 MS1CentroidMz = Callable[[float, float, float], float | None]
@@ -289,6 +289,7 @@ def _backfill_ms1_candidates_with_acquisition(
     physical_trace_qualities: dict[int, str] = {}
     measured_precursor_by_index: dict[int, float] = {}
     unattributed_reason_by_index: dict[int, str] = {}
+    ambiguous_ion_indexes: set[int] = set()
     if signal_processing_profile is not None:
         for physical_index, (plan, acquired) in enumerate(
             zip(physical_plans, acquired_traces, strict=True)
@@ -320,6 +321,8 @@ def _backfill_ms1_candidates_with_acquisition(
             verdict, ion_mz = _apex_ion_verdict(
                 plan, acquired, evaluation, ms1_centroid_mz=ms1_centroid_mz
             )
+            if verdict == "ambiguous":
+                ambiguous_ion_indexes.add(physical_index)
             if verdict == "outside":
                 assert ion_mz is not None
                 unattributed_reason_by_index[physical_index] = _unattributed_reason(
@@ -463,6 +466,14 @@ def _backfill_ms1_candidates_with_acquisition(
         settings=settings,
         ms1_centroid_mz=ms1_centroid_mz,
     )
+    if ambiguous_ion_indexes:
+        merge_result = _flag_ambiguous_ion_candidates(
+            merge_result,
+            tuple(
+                physical_indices[source] in ambiguous_ion_indexes
+                for source in range(len(candidates))
+            ),
+        )
     physical_bindings: tuple[DiscoveryCandidatePhysicalBinding, ...] = ()
     if signal_processing_profile is not None:
         assert run_spec_id is not None
@@ -659,10 +670,11 @@ def _apex_ion_verdict(
 
     An inferred precursor's ion is read inside the window of its m/z band; an
     ion found only elsewhere in the request belongs to another precursor
-    ("outside", its m/z). Other precursors read the ion inside the request. A
-    consistent reading more than the MS1 reading spread away moves the
-    precursor ("move", the measured m/z); a smaller shift changes no trace, and
-    readings from two ions, or none, keep it.
+    ("outside", its m/z), and readings from two ions inside the window leave
+    it unattributed ("ambiguous"). Other precursors read the ion inside the
+    request. A consistent reading more than the MS1 reading spread away moves
+    the precursor ("move", the measured m/z); a smaller shift changes no trace,
+    and no reading, or a selected precursor's two ions, keep it.
     """
     facts = evaluation.facts
     rt = acquired.trace.rt
@@ -693,6 +705,8 @@ def _apex_ion_verdict(
     readings = _apex_ion_readings(acquired, scans, window, ms1_centroid_mz)
     if readings:
         measured = weighted_ion_mz(readings, max_spread_ppm=_APEX_ION_SPREAD_PPM)
+        if measured is None and inferred and any(i > 0 for _, i in readings):
+            return "ambiguous", None
         if measured is not None and (
             absolute_ppm_error(measured, group.precursor_mz) > _APEX_ION_SPREAD_PPM
         ):
@@ -717,6 +731,35 @@ def _apex_ion_readings(
         if mz is not None:
             readings.append((mz, float(acquired.trace.intensity[index])))
     return readings
+
+
+def _flag_ambiguous_ion_candidates(
+    merge_result: DiscoveryCandidateMergeResult,
+    ambiguous_by_source: tuple[bool, ...],
+) -> DiscoveryCandidateMergeResult:
+    """Hold for review a candidate whose every seed met two ions at its peak.
+
+    Any member with a single or measured ion carries the candidate, so the flag
+    is applied after the merge, which reassigns the state.
+    """
+    return replace(
+        merge_result,
+        candidates=tuple(
+            replace(
+                candidate,
+                discovery_candidate_state="review_only_ambiguous_coisolation",
+                reason=(
+                    "inferred precursor meets two MS1 ions inside its window at "
+                    "the peak apex; retained for review"
+                ),
+            )
+            if all(ambiguous_by_source[s] for s in binding.member_source_ordinals)
+            else candidate
+            for candidate, binding in zip(
+                merge_result.candidates, merge_result.bindings, strict=True
+            )
+        ),
+    )
 
 
 def _unattributed_reason(group: DiscoverySeedGroup, ion_mz: float) -> str:
