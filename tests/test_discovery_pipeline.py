@@ -63,6 +63,76 @@ from xic_extractor.xic_models import XICRequest, XICTrace
 
 NEUTRAL_LOSS_DA = 116.0474
 
+
+@pytest.mark.parametrize("parallel", [False, True])
+def test_cancelled_batch_retains_completed_samples_without_publishing_index(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, parallel: bool
+) -> None:
+    raw_paths = tuple(tmp_path / f"sample-{index}.raw" for index in range(4))
+    for path in raw_paths:
+        path.write_bytes(path.name.encode())
+    handles = {path: _FakeRawHandle(events=[]) for path in raw_paths}
+    def opener(path, dll_dir):
+        return handles[path]
+
+    monkeypatch.setattr(
+        "xic_extractor.discovery.pipeline._owner_bound_raw_opener",
+        lambda *_args: opener,
+    )
+
+    class Executor:
+        def __init__(self, **kwargs):
+            pass
+
+        def submit(self, worker, job):
+            future = Future()
+            future.set_result(worker(job))
+            return future
+
+        def shutdown(self, **kwargs):
+            pass
+
+    progress = []
+    output_dir = tmp_path / "out"
+    with pytest.raises(InterruptedError, match="Discovery cancelled"):
+        run_discovery_batch(
+            raw_paths,
+            output_dir=output_dir,
+            settings=_settings(),
+            peak_config=_peak_config(tmp_path),
+            raw_opener=None if parallel else opener,
+            max_workers=2 if parallel else 1,
+            executor_factory=Executor if parallel else None,
+            progress_callback=lambda done, total, sample: progress.append(sample),
+            should_cancel=lambda: bool(progress),
+        )
+
+    completed = 2 if parallel else 1
+    assert progress == [path.stem for path in raw_paths[:completed]]
+    for path in raw_paths[:completed]:
+        assert handles[path].closed
+        assert (output_dir / path.stem / "discovery_candidates.csv").is_file()
+    assert all(not handles[path].entered for path in raw_paths[completed:])
+    assert not (output_dir / "discovery_batch_index.csv").exists()
+
+
+def test_single_discovery_cancelled_after_acquisition_closes_raw_without_output(
+    tmp_path: Path,
+) -> None:
+    raw = _FakeRawHandle(events=[])
+    output_dir = tmp_path / "out"
+    with pytest.raises(InterruptedError, match="Discovery cancelled"):
+        run_discovery(
+            tmp_path / "sample.raw",
+            output_dir=output_dir,
+            settings=_settings(),
+            peak_config=_peak_config(tmp_path),
+            raw_opener=lambda *_args: raw,
+            should_cancel=lambda: raw.closed,
+        )
+    assert raw.entered and raw.closed
+    assert not output_dir.exists()
+
 def _write_sample_background_library(directory: Path) -> None:
     from xic_extractor.discovery.blank_qualification import (
         BlankBackgroundIon,

@@ -299,6 +299,7 @@ class MockAdapter:
         acquisition_delay: float = 0.0,
         composition_delay: float = 0.0,
         declare_global_closure: bool = False,
+        opaque_partition_bindings: bool = False,
         on_acquisition: Any = None,
         on_composition: Any = None,
     ):
@@ -308,6 +309,16 @@ class MockAdapter:
                 index=i,
                 partition_key=f"partition-{i:05d}",
                 payload={"partition_idx": i},
+                work_unit_keys=(
+                    (f"task-{i}-initial", f"task-{i}-backfill")
+                    if opaque_partition_bindings
+                    else (f"wu:partition-{i:05d}",)
+                ),
+                resource_keys=(
+                    (f"raw-handle-{i}",)
+                    if opaque_partition_bindings
+                    else (f"acquisition-session:partition-{i:05d}:phase",)
+                ),
             )
             for i in range(num_partitions)
         )
@@ -317,7 +328,7 @@ class MockAdapter:
             else None
         )
         self._work_unit_keys = (
-            *(f"wu:{p.partition_key}" for p in self._partitions),
+            *(key for p in self._partitions for key in p.work_unit_keys),
             *(
                 (self._global_closure_work_unit_key,)
                 if self._global_closure_work_unit_key
@@ -328,7 +339,7 @@ class MockAdapter:
             RuntimeResourceReservation(
                 attempt=owners.attempt,
                 kind=RuntimeResourceKind.ACQUISITION_SESSION,
-                resource_key=f"acquisition-session:{p.partition_key}:phase",
+                resource_key=p.resource_keys[0],
                 worker_key=f"worker:{p.partition_key}",
                 source_reference="test-src",
                 compatibility_token="test",
@@ -394,7 +405,7 @@ class MockAdapter:
                     message="simulated acquisition failure",
                 ),
             )
-        res_key = f"acquisition-session:{partition.partition_key}:phase"
+        res_key = partition.resource_keys[0]
         resource_receipt = RuntimeResourceSettlementReceipt(
             attempt=self._owners.attempt,
             resource_key=res_key,
@@ -445,28 +456,32 @@ class MockAdapter:
         tuple[RuntimeArtifactRegistrationReceipt, ...],
         tuple[WorkUnitSettlement, ...],
     ]:
-        key = f"wu:{partition.partition_key}"
-        payload_bytes = json.dumps(
-            {
-                "work_unit_key": key,
-                "sha256": composition_output.sealed.sha256,
-            }
-        ).encode("utf-8")
-        artifact = _mint_evidence_artifact_ref(
-            producer_processing_request_id=self._owners.request.processing_request_id,
-            producer_processing_attempt_id=self._owners.attempt.processing_attempt_id,
-            semantic_contract=_TEST_CONTRACT,
-            payload_bytes=payload_bytes,
-            upstream_artifacts=(),
-        )
-        art_receipt = RuntimeArtifactRegistrationReceipt(key, artifact)
-        wu_settlement = mint_work_unit_settlement(
-            attempt=self._owners.attempt,
-            work_unit_key=key,
-            outcome=WorkUnitTerminalOutcome.SUCCEEDED,
-            owner_result_ref=artifact,
-        )
-        return (art_receipt,), (wu_settlement,)
+        artifacts = []
+        settlements = []
+        for key in partition.work_unit_keys:
+            payload_bytes = json.dumps(
+                {
+                    "work_unit_key": key,
+                    "sha256": composition_output.sealed.sha256,
+                }
+            ).encode("utf-8")
+            artifact = _mint_evidence_artifact_ref(
+                producer_processing_request_id=self._owners.request.processing_request_id,
+                producer_processing_attempt_id=self._owners.attempt.processing_attempt_id,
+                semantic_contract=_TEST_CONTRACT,
+                payload_bytes=payload_bytes,
+                upstream_artifacts=(),
+            )
+            artifacts.append(RuntimeArtifactRegistrationReceipt(key, artifact))
+            settlements.append(
+                mint_work_unit_settlement(
+                    attempt=self._owners.attempt,
+                    work_unit_key=key,
+                    outcome=WorkUnitTerminalOutcome.SUCCEEDED,
+                    owner_result_ref=artifact,
+                )
+            )
+        return tuple(artifacts), tuple(settlements)
 
     def create_global_closure_artifacts(
         self,
@@ -1310,12 +1325,91 @@ def test_r386_01_consumer_composition_failure_settled_failed(
     assert "simulated consumer composition failure" in p0["failure_detail"]["message"]
     assert p1["outcome"] == "cancelled"
     assert closure["outcome"] == "cancelled"
-
     timeline_events = [
         e for e in events if e.get("event") == "partition_timeline"
     ]
     assert len(timeline_events) == 1
 
+
+def test_scheduler_settles_all_declared_work_units_for_opaque_partition_keys(
+    tmp_path: Path,
+) -> None:
+    fixture = build_processing_identity_no_raw_fixture(
+        tmp_path, sample_stems=("sample-1",)
+    )
+    adapter = MockAdapter(
+        fixture.owners,
+        num_partitions=2,
+        fail_composition_index=1,
+        opaque_partition_bindings=True,
+    )
+    marker = OwnerPathRuntimeMarker(tmp_path / "opaque-work-units.json", "opaque")
+
+    with pytest.raises(RuntimeError, match="failed before batch publication"):
+        PartitionPipelineScheduler.execute(
+            adapter,
+            output_dir=tmp_path / "opaque-work-units",
+            telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+            recovery_marker=marker,
+        )
+
+    snapshot = marker.read()
+    assert snapshot.terminal_outcome is AttemptTerminalOutcome.FAILED
+    assert snapshot.coordinator_record_bytes is not None
+    record = json.loads(snapshot.coordinator_record_bytes)
+    outcomes = {
+        item["work_unit_key"]: item["outcome"]
+        for item in record["work_settlements"]
+    }
+    assert outcomes == {
+        "task-0-initial": "succeeded",
+        "task-0-backfill": "succeeded",
+        "task-1-initial": "failed",
+        "task-1-backfill": "failed",
+    }
+
+
+def test_scheduler_marks_declared_inflight_resource_unknown_after_acquisition_loss(
+    tmp_path: Path,
+) -> None:
+    fixture = build_processing_identity_no_raw_fixture(
+        tmp_path, sample_stems=("sample-1",)
+    )
+
+    def lose_acquisition(index: int) -> None:
+        if index == 1:
+            raise RuntimeError("worker vanished before returning a receipt")
+
+    adapter = MockAdapter(
+        fixture.owners,
+        num_partitions=2,
+        opaque_partition_bindings=True,
+        on_acquisition=lose_acquisition,
+    )
+    marker = OwnerPathRuntimeMarker(tmp_path / "opaque-resource.json", "opaque")
+
+    with pytest.raises(RuntimeError, match="failed before batch publication"):
+        PartitionPipelineScheduler.execute(
+            adapter,
+            output_dir=tmp_path / "opaque-resource",
+            telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+            recovery_marker=marker,
+        )
+
+    snapshot = marker.read()
+    assert snapshot.terminal_outcome is AttemptTerminalOutcome.FAILED
+    assert snapshot.coordinator_record_bytes is not None
+    record = json.loads(snapshot.coordinator_record_bytes)
+    resources = {item["resource_key"]: item for item in record["resources"]}
+    assert resources["raw-handle-0"]["open_outcome"] == "opened"
+    assert (
+        resources["raw-handle-1"]["open_outcome"]
+        == "open_state_unknown_after_worker_loss"
+    )
+    assert (
+        resources["raw-handle-1"]["cleanup_outcome"]
+        == "unknown_after_worker_loss"
+    )
 
 def test_r386_01_closure_boundary_cancellation_settled_cancelled(
     tmp_path: Path,

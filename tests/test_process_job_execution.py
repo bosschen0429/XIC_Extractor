@@ -1,8 +1,80 @@
-from concurrent.futures import Future
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
+from threading import Event
 from time import perf_counter, sleep
 
 from xic_extractor.process_job_execution import execute_process_jobs
+
+
+def test_cancellation_before_dispatch_does_not_create_workers() -> None:
+    def forbidden_executor(**kwargs):
+        raise AssertionError("cancelled batch must not create an executor")
+
+    report = execute_process_jobs(
+        (0, 1, 2),
+        worker=lambda job: job,
+        error_factory=lambda job, exc: exc,
+        is_terminal_failure=lambda result: isinstance(result, Exception),
+        max_workers=2,
+        executor_factory=forbidden_executor,
+        should_cancel=lambda: True,
+    )
+
+    assert report.cancellation_requested
+    assert report.first_failure is None
+    assert report.submitted_job_ordinals == ()
+    assert report.unsubmitted_job_ordinals == (0, 1, 2)
+
+
+def test_cancellation_cancels_queued_jobs_and_drains_running_work() -> None:
+    started = Event()
+    release = Event()
+    closed = Event()
+    futures = []
+
+    def worker(job):
+        assert job == 0, "queued and unsubmitted jobs must not start"
+        started.set()
+        try:
+            assert release.wait(5), "queued cancellation must release active work"
+            return 10
+        finally:
+            closed.set()
+
+    class Executor:
+        def __init__(self, **kwargs):
+            self.pool = ThreadPoolExecutor(max_workers=1)
+
+        def submit(self, fn, job):
+            future = self.pool.submit(fn, job)
+            futures.append(future)
+            if job == 0:
+                assert started.wait(5)
+            else:
+                future.add_done_callback(lambda _future: release.set())
+            return future
+
+        def shutdown(self, **kwargs):
+            self.pool.shutdown(**kwargs)
+
+    report = execute_process_jobs(
+        (0, 1, 2, 3),
+        worker=worker,
+        error_factory=lambda job, exc: exc,
+        is_terminal_failure=lambda result: isinstance(result, Exception),
+        max_workers=2,
+        executor_factory=Executor,
+        should_cancel=lambda: len(futures) == 2,
+    )
+
+    assert closed.is_set()
+    assert report.cancellation_requested
+    assert report.first_failure is None
+    assert report.completed_results == (10,)
+    assert report.completed_job_ordinals == (0,)
+    assert report.cancelled_job_ordinals == (1,)
+    assert report.in_flight_job_ordinals == ()
+    assert report.unsubmitted_job_ordinals == (2, 3)
 
 
 @dataclass(frozen=True)
@@ -67,6 +139,104 @@ def test_terminal_failure_cancels_pending_and_preserves_census() -> None:
     assert report.unsubmitted_job_ordinals == (3, 4)
     assert report.observed_results == (report.first_failure,)
     assert executor.shutdown_calls == [(False, True)]
+
+
+def test_worker_failure_remains_failure_when_cancellation_is_requested() -> None:
+    executor = _ImmediateFailureExecutor()
+    report = execute_process_jobs(
+        tuple(_Job(index=index) for index in range(4)),
+        worker=lambda job: job,
+        error_factory=lambda job, exc: _Failure(job.index, str(exc)),
+        is_terminal_failure=lambda result: isinstance(result, _Failure),
+        max_workers=2,
+        executor_factory=lambda **kwargs: executor,
+        should_cancel=lambda: len(executor.futures) == 2,
+    )
+    assert report.cancellation_requested
+    assert report.first_failure == _Failure(0, "owner boom")
+    assert report.failed_job_ordinals == (0,)
+    assert report.cancelled_job_ordinals == (1,)
+    assert report.unsubmitted_job_ordinals == (2, 3)
+
+
+def test_cancellation_drains_active_work_even_when_another_job_failed() -> None:
+    class Executor:
+        def __init__(self):
+            self.futures = []
+
+        def submit(self, worker, job):
+            future = Future()
+            self.futures.append(future)
+            if job.index == 0:
+                future.set_result(_Failure(0, "owner boom"))
+            elif job.index == 1:
+                future.set_running_or_notify_cancel()
+            return future
+
+        def shutdown(self, *, wait, cancel_futures):
+            if wait:
+                self.futures[1].set_result(10)
+
+    executor = Executor()
+    report = execute_process_jobs(
+        tuple(_Job(index=index) for index in range(4)),
+        worker=lambda job: job,
+        error_factory=lambda job, exc: _Failure(job.index, str(exc)),
+        is_terminal_failure=lambda result: isinstance(result, _Failure),
+        max_workers=3,
+        executor_factory=lambda **kwargs: executor,
+        should_cancel=lambda: len(executor.futures) == 3,
+    )
+    assert report.first_failure == _Failure(0, "owner boom")
+    assert report.completed_results == (10,)
+    assert report.in_flight_job_ordinals == ()
+    assert report.cancelled_job_ordinals == (2,)
+    assert report.unsubmitted_job_ordinals == (3,)
+
+
+def test_stop_during_wait_drains_active_work_when_a_job_fails(monkeypatch) -> None:
+    stop = Event()
+    futures = []
+    shutdown_calls = []
+
+    class Executor:
+        def submit(self, worker, job):
+            future = Future()
+            if job.index < 2:
+                future.set_running_or_notify_cancel()
+            futures.append(future)
+            return future
+
+        def shutdown(self, *, wait, cancel_futures):
+            shutdown_calls.append((wait, cancel_futures))
+            if wait:
+                futures[1].set_result(10)
+
+    def wait_with_stop(pending, **kwargs):
+        assert not stop.is_set()
+        stop.set()
+        futures[0].set_result(_Failure(0, "owner boom"))
+        return {futures[0]}, set(pending) - {futures[0]}
+
+    monkeypatch.setattr("xic_extractor.process_job_execution.wait", wait_with_stop)
+    report = execute_process_jobs(
+        tuple(_Job(index=index) for index in range(4)),
+        worker=lambda job: job,
+        error_factory=lambda job, exc: _Failure(job.index, str(exc)),
+        is_terminal_failure=lambda result: isinstance(result, _Failure),
+        max_workers=3,
+        executor_factory=lambda **kwargs: Executor(),
+        should_cancel=stop.is_set,
+    )
+
+    assert shutdown_calls == [(True, True)]
+    assert futures[1].done()
+    assert report.cancellation_requested
+    assert report.first_failure == _Failure(0, "owner boom")
+    assert report.completed_results == (10,)
+    assert report.in_flight_job_ordinals == ()
+    assert report.cancelled_job_ordinals == (2,)
+    assert report.unsubmitted_job_ordinals == (3,)
 
 
 def test_success_results_are_returned_in_input_order() -> None:

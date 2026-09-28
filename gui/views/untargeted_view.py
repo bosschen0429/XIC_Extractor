@@ -252,7 +252,8 @@ class UntargetedView(QWidget):
             if not worker.wait(1000):
                 self.status_message.emit("正在停止，等待目前階段結束...", 5000)
                 return
-            self._on_cancelled(worker)
+            # The queued worker signal owns the terminal outcome, even when
+            # shutdown completes here: a concurrent failure must stay a failure.
 
     def _on_progress(
         self,
