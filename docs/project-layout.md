@@ -68,8 +68,9 @@ XIC_Extractor/
 
 ### Permanent root document contract
 
-只有下列四個路徑是永久 root authority，路徑本身提供 placement、purpose 與
-self-ownership，因此不需要 generic lifecycle metadata：
+只有下列四個路徑是永久 root authority。Audit 確認路徑存在、文件有可見內容，
+並檢查下列 route、target 與 referrer；標題與說明文字可隨內容調整。路徑本身
+提供 placement、purpose 與 self-ownership，因此不需要 generic lifecycle metadata：
 
 | Path | Purpose / required route |
 | --- | --- |
