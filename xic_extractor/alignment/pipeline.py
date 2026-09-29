@@ -514,11 +514,23 @@ def _run_untargeted_alignment(
                     )
                 )
         stream_outputs = supports_streamed_untargeted_outputs(outputs)
+        ms1_apex_mz_by_candidate = (
+            candidates_by_sample.ms1_apex_mz_by_candidate
+            if isinstance(candidates_by_sample, DiscoveryInputSource)
+            else {
+                candidate.candidate_id: candidate.ms1_apex_mz
+                for candidates in candidates_by_sample.values()
+                for candidate in candidates
+                if candidate.ms1_apex_mz is not None
+            }
+        )
         writer_inputs = None
         if not stream_outputs:
             with timing_recorder.stage("alignment.project_outputs"):
                 writer_inputs = project_completed_untarget_batch_writer_inputs(
-                    completed, consume_child=_explanation_sink(explanation)
+                    completed,
+                    consume_child=_explanation_sink(explanation),
+                    ms1_apex_mz_by_candidate=ms1_apex_mz_by_candidate,
                 )
         if should_cancel is not None and should_cancel():
             raise InterruptedError("Alignment cancelled before output publication")
@@ -569,7 +581,9 @@ def _run_untargeted_alignment(
                     write_streamed_untargeted_outputs_atomic(
                         outputs,
                         iter_completed_untarget_batch_writer_inputs(
-                            completed, consume_child=_explanation_sink(explanation)
+                            completed,
+                            consume_child=_explanation_sink(explanation),
+                            ms1_apex_mz_by_candidate=ms1_apex_mz_by_candidate,
                         ),
                         sample_order=completed_untarget_batch_sample_order(completed),
                         metadata=metadata,

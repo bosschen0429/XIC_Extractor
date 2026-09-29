@@ -70,6 +70,8 @@ class DiscoveryInputSource(Mapping[str, tuple[DiscoveryCandidate, ...]]):
         self._stats: dict[str, tuple[int, int]] = {}
         self._feature_ids: dict[str, tuple[str, ...]] = {}
         self._review_mass_index: dict[str, tuple[list[float], list[str]]] = {}
+        # Discovery's apex MS1 readings; they only set the reported row m/z.
+        self.ms1_apex_mz_by_candidate: dict[str, float] = {}
         for stem in batch.sample_order:
             path = batch.candidate_csvs[stem]
             receipt = batch.candidate_receipts[stem]
@@ -113,6 +115,9 @@ class DiscoveryInputSource(Mapping[str, tuple[DiscoveryCandidate, ...]]):
                         stream.tell() - offset,
                         row_number,
                     )
+                    apex_mz = row.get("ms1_apex_mz", "").strip()
+                    if apex_mz:
+                        self.ms1_apex_mz_by_candidate[cid] = float(apex_mz)
                     ids.append(cid)
                     row_number += 1
             if len(ids) != receipt.candidate_count:

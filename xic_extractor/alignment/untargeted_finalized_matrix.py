@@ -44,6 +44,8 @@ if TYPE_CHECKING:
     )
 
 PRESENTATION_FORMULA_VERSION = "cross_sample_owner_arithmetic_mean"
+# Mean of Discovery's apex MS1 readings of the row's direct members.
+APEX_READING_CENTER_MZ_BASIS = "discovery_ms1_apex_mean"
 
 
 @dataclass(frozen=True, slots=True)
@@ -107,6 +109,7 @@ def project_completed_untarget_batch_writer_inputs(
     completed: CompletedUntargetBatchWorkflowResult,
     *,
     consume_child: Callable[[FinalizedUntargetApplicationResult], None] | None = None,
+    ms1_apex_mz_by_candidate: Mapping[str, float] | None = None,
 ) -> CompletedUntargetBatchWriterInputs:
     """Materialize writer inputs for consumers that require a complete matrix."""
 
@@ -115,7 +118,9 @@ def project_completed_untarget_batch_writer_inputs(
     cell_decisions = {}
     row_decisions = {}
     for projected in iter_completed_untarget_batch_writer_inputs(
-        completed, consume_child=consume_child
+        completed,
+        consume_child=consume_child,
+        ms1_apex_mz_by_candidate=ms1_apex_mz_by_candidate,
     ):
         rows.extend(projected.matrix.clusters)
         cells.extend(projected.matrix.cells)
@@ -168,8 +173,14 @@ def iter_completed_untarget_batch_writer_inputs(
     completed: CompletedUntargetBatchWorkflowResult,
     *,
     consume_child: Callable[[FinalizedUntargetApplicationResult], None] | None = None,
+    ms1_apex_mz_by_candidate: Mapping[str, float] | None = None,
 ) -> Iterator[CompletedUntargetBatchWriterInputs]:
-    """Project one finalized row at a time while retaining only identity census."""
+    """Project one finalized row at a time while retaining only identity census.
+
+    ``ms1_apex_mz_by_candidate`` holds Discovery's apex MS1 readings. A row
+    with a reading on any direct member reports their mean as its m/z; the
+    readings change no grouping, trace or cell value.
+    """
 
     sample_stems = completed_untarget_batch_sample_order(completed)
     sample_set = frozenset(sample_stems)
@@ -181,6 +192,11 @@ def iter_completed_untarget_batch_writer_inputs(
 
     for child in application.children:
         direct_candidate_ids = _direct_candidate_ids(child.scientific_core)
+        candidate_by_physical_id = (
+            _direct_candidate_ids_by_physical_id(child.scientific_core)
+            if ms1_apex_mz_by_candidate
+            else {}
+        )
         for projected in child.completed_projection.rows:
             row_id = projected.row_key.untarget_row_key_id
             group_id = projected.row_key.group_hypothesis_id
@@ -224,6 +240,13 @@ def iter_completed_untarget_batch_writer_inputs(
                 )
             seen_physical_ids.update(physical_ids)
             center_mz = sum(mz_values) / len(mz_values)
+            center_mz_basis = PRESENTATION_FORMULA_VERSION
+            readings = _apex_readings(
+                physical_ids, candidate_by_physical_id, ms1_apex_mz_by_candidate
+            )
+            if readings:
+                center_mz = sum(readings) / len(readings)
+                center_mz_basis = APEX_READING_CENTER_MZ_BASIS
             center_rt = sum(rt_values) / len(rt_values)
             if not math.isfinite(center_mz) or not math.isfinite(center_rt):
                 raise ValueError("writer projection produced non-finite coordinates")
@@ -241,6 +264,7 @@ def iter_completed_untarget_batch_writer_inputs(
                 destination=projected.route.destination,
                 family_center_mz=center_mz,
                 family_center_rt=center_rt,
+                center_mz_basis=center_mz_basis,
                 physical_observation_ids=physical_ids,
                 family_product_mz=family_product_mz,
                 family_observed_neutral_loss_da=family_observed_neutral_loss_da,
@@ -573,6 +597,40 @@ def _direct_candidate_ids(
             candidate_ids.get(key, subject.candidate_id), subject.candidate_id
         )
     return candidate_ids
+
+
+def _direct_candidate_ids_by_physical_id(
+    scientific_core: FinalizedScientificAlignment,
+) -> dict[str, str]:
+    candidate_ids: dict[str, str] = {}
+    for subject in scientific_core.terminal_subjects:
+        if type(subject) is not ObservedSearchSubject:
+            continue
+        for ref in subject.hypothesis.peak_observation_refs:
+            physical_id = ref.content.peak_observation_content_id
+            candidate_ids[physical_id] = min(
+                candidate_ids.get(physical_id, subject.candidate_id),
+                subject.candidate_id,
+            )
+    return candidate_ids
+
+
+def _apex_readings(
+    physical_ids: tuple[str, ...],
+    candidate_by_physical_id: Mapping[str, str],
+    ms1_apex_mz_by_candidate: Mapping[str, float] | None,
+) -> tuple[float, ...]:
+    if not ms1_apex_mz_by_candidate:
+        return ()
+    readings = []
+    for physical_id in physical_ids:
+        candidate_id = candidate_by_physical_id.get(physical_id)
+        reading = (
+            None if candidate_id is None else ms1_apex_mz_by_candidate.get(candidate_id)
+        )
+        if reading is not None and math.isfinite(reading):
+            readings.append(float(reading))
+    return tuple(readings)
 
 
 def _cell_status(
