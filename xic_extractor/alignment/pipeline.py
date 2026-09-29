@@ -40,7 +40,6 @@ from xic_extractor.alignment.owner_build_route_receipt import (
     _mint_retained_untargeted_cid_nl_route_receipt,
     _validate_owner_build_xic_backend,
 )
-from xic_extractor.alignment.ownership import OwnershipBuildResult
 from xic_extractor.alignment.pipeline_outputs import (
     AlignmentRunOutputs,
     alignment_metadata,
@@ -599,9 +598,6 @@ def _run_untargeted_alignment(
                     outputs,
                     writer_inputs.matrix,
                     metadata=metadata,
-                    ownership=OwnershipBuildResult(
-                        owners=(), assignments=(), ambiguous_records=()
-                    ),
                     alignment_config=alignment_config,
                     backfill_peak_fact_provenance=EMPTY_BACKFILL_PEAK_FACT_PROVENANCE_BATCH,
                     production_decisions=writer_inputs.production_decisions,

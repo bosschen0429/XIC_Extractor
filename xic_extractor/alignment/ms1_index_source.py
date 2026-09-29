@@ -23,7 +23,6 @@ from xic_extractor.ms1_scan_index import (
 from xic_extractor.ms1_scan_index import (
     write_ms1_scan_index_npz as write_ms1_scan_index_npz,
 )
-from xic_extractor.raw_superwindow_source import RawSuperWindowSource
 from xic_extractor.xic_models import XICRequest, XICTrace
 
 OwnerBuildXicBackend = Literal["raw", "raw_superwindow", "ms1_index"]
@@ -94,16 +93,3 @@ def source_for_backfill_backend(
     if backend in {"ms1_index", "ms1_index_hybrid"}:
         return MS1IndexedRawSource(source)
     raise ValueError(f"unsupported owner backfill XIC backend: {backend}")
-
-
-def source_for_owner_build_backend(
-    source: Any,
-    backend: OwnerBuildXicBackend,
-) -> Any:
-    if backend == "raw":
-        return source
-    if backend == "raw_superwindow":
-        return RawSuperWindowSource(source)
-    if backend == "ms1_index":
-        return MS1IndexedRawSource(source)
-    raise ValueError(f"unsupported owner build XIC backend: {backend}")

@@ -46,7 +46,6 @@ from xic_extractor.alignment.output_levels import (
     artifact_names_for_output_level,
 )
 from xic_extractor.alignment.owner_build_route_receipt import OwnerBuildRouteReceipt
-from xic_extractor.alignment.ownership import OwnershipBuildResult
 from xic_extractor.alignment.production_decisions import ProductionDecisionSet
 from xic_extractor.alignment.provisional_matrix import (
     build_provisional_matrix_projection,
@@ -328,7 +327,6 @@ def write_outputs_atomic(
     matrix: AlignmentMatrix,
     *,
     metadata: dict[str, str],
-    ownership: OwnershipBuildResult,
     alignment_config: AlignmentConfig,
     edge_evidence: Sequence[OwnerEdgeEvidence] = (),
     skipped_evidence: Sequence[SkippedEvidenceRecord] = (),
