@@ -8,9 +8,6 @@ from scripts.build_quant_matrix_default_activation_dry_run import (
     build_quant_matrix_default_activation_dry_run,
 )
 from scripts.build_quant_matrix_default_product_activation import (
-    CHECK_COLUMNS,
-    DEFAULT_PRODUCT_ACTIVATION_SCHEMA,
-    OUTPUT_COMPARISON_SCHEMA,
     build_quant_matrix_default_product_activation,
     validate_quant_matrix_default_product_activation,
 )
@@ -20,43 +17,6 @@ from scripts.build_quant_matrix_product_ready_closeout import (
 from tests.test_quant_matrix_default_activation_dry_run import (
     _build_synthetic_packet,
 )
-
-ROOT = Path(__file__).resolve().parents[1]
-SCHEMA_PATH = (
-    ROOT
-    / "docs/superpowers/schemas/"
-    / "quant_matrix_default_product_activation_schema.json"
-)
-
-
-def test_default_product_activation_schema_matches_builder_contract() -> None:
-    schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
-
-    assert schema["schema_version"] == "quant_matrix_default_product_activation_schema"
-    assert (
-        schema["default_product_activation_schema"] == DEFAULT_PRODUCT_ACTIVATION_SCHEMA
-    )
-    assert schema["output_comparison_schema"] == OUTPUT_COMPARISON_SCHEMA
-    assert schema["check_columns"] == list(CHECK_COLUMNS)
-    assert schema["binding_rules"]["product_ready_closeout_must_validate"] is True
-    assert (
-        schema["binding_rules"][
-            "product_ready_closeout_supplies_the_validated_real_bundle_predecessor_chain"
-        ]
-        is True
-    )
-    assert schema["binding_rules"]["expected_diff_summary_must_pass"] is True
-    assert (
-        schema["binding_rules"][
-            "default_outputs_must_match_expected_diff_bound_quant_matrix_version"
-        ]
-        is True
-    )
-    assert schema["authority_rules"]["write_authority"] is True
-    assert schema["authority_rules"]["product_writer_changed"] is True
-    assert schema["authority_rules"]["default_quant_matrix_changed"] is True
-    assert schema["authority_rules"]["default_matrix_files_written"] is True
-    assert schema["authority_rules"]["accepted_backfill_values_are_detection"] is False
 
 
 def test_default_product_activation_writes_default_outputs(

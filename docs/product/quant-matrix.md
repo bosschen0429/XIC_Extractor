@@ -74,6 +74,36 @@ delivery seam as if they were already final.
   evidence. These benchmarks do not change default matrix authority without a
   separate activation decision.
 
+### Activation formats
+
+The [version format owner](../../xic_extractor/alignment/quant_matrix_version.py)
+defines schema tokens, ordered sidecar columns, and row/count projection.
+The [version writer](../../scripts/build_quant_matrix_version.py) consumes the
+checked manifest and expected diff, then writes `quant_matrix.tsv`,
+`cell_provenance.tsv`, `row_summary.tsv`, `expected_diff_summary.tsv`, and
+`source_summary.tsv`. The matrix starts with `Mz` and `RT`, followed by sample
+columns. Existing detected values are preserved; unaccepted missing cells stay
+blank. Every non-empty cell has one provenance row. Accepted Backfill rows need
+write authority and an expected diff; detected rows retain `write_authority=false`.
+The available-value count is detected plus accepted Backfill, while the detection
+count excludes Backfill. Provenance can reconstruct the detected-only view.
+
+The [default activation owner](../../scripts/build_quant_matrix_default_product_activation.py)
+validates the Product Ready closeout and its predecessor bundle, source/scope/count
+bindings, input hashes, and passing expected diff before writing the bundle under
+`default_output/`. It owns the summary JSON, comparison TSV, their schema tokens,
+and the validator that checks those records against the output artifacts.
+Accepted Backfill values are quantification values, not detections or truth claims.
+The version writer alone does not activate default output. Neither activation
+command runs RAW acquisition or scoring, changes selected peaks/areas or counted
+detections, or changes workbook/GUI behavior. Current publication scope remains
+with the productization state and authority owners.
+
+Review output distinguishes accepted Backfill from detected cells, explains
+prevalence uncertainty, and exposes manifest/source hashes; the
+[review report contract](../superpowers/schemas/quant_matrix_review_report_schema.json)
+owns that separate review surface.
+
 ### Renderer input
 
 - Shared-peak explanation and PeakHypothesis selection sidecars are
