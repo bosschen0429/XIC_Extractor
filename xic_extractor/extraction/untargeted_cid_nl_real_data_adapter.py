@@ -1767,7 +1767,13 @@ def _untargeted_search_scope(
                     sample_identity_id=sample.identity.sample_identity_id,
                     sample_name=sample.metadata.sample_name,
                     acquisition_source_id=acquisition_source_id,
-                    query_mz=item.physical_mz,
+                    # A retained evaluation still belongs to its original XIC.
+                    # A new physical center must trigger capture re-evaluation.
+                    query_mz=(
+                        records[item.candidate_id].work_item.xic_mz
+                        if signal_processing_profile is not None
+                        else item.physical_mz
+                    ),
                     query_rt_min=item.ms1_search_rt_min,
                     query_rt_max=item.ms1_search_rt_max,
                     query_ppm_tol=method_subject.precursor_tolerance_ppm,

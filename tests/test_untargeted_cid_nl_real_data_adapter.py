@@ -391,6 +391,128 @@ def test_changed_physical_query_evaluates_once_and_preserves_support(
         )
 
 
+def test_physical_mass_change_reacquires_the_same_rt_window(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import json
+    from types import SimpleNamespace
+
+    from xic_extractor.discovery.grouping import group_discovery_seeds
+    from xic_extractor.discovery.ms1_backfill import (
+        _backfill_ms1_candidates_with_acquisition,
+    )
+    from xic_extractor.discovery.ms2_seeds import collect_strict_nl_seeds
+    from xic_extractor.peak_detection.search_scope import (
+        PHYSICAL_CAPTURE_INPUT_KEY,
+        physical_capture_input_payload,
+    )
+    from xic_extractor.peak_detection.signal_processing_profile import (
+        SignalProcessingProfile,
+    )
+    from xic_extractor.processing_identity import (
+        build_processing_request_identity,
+        compose_processing_owner_references,
+        issue_processing_attempt,
+    )
+
+    fixture = build_untargeted_cid_nl_no_raw_fixture(
+        tmp_path, sample_roles={"S1": "study_sample"}, thermo_raw_sources=True
+    )
+    source_raw = _FakeRaw((8.0,))
+    raw, vendor = _open_bound_raw(fixture, "S1", source_raw, tmp_path=tmp_path)
+
+    def mass_filtered_chromatogram(trace_settings, start_scan, end_scan):
+        rt = source_raw.rt[start_scan - 1 : end_scan]
+        signal = source_raw.intensity[start_scan - 1 : end_scan]
+        # The original 500.0 window includes both ions. Centering on the measured
+        # 500.008 ion excludes the weaker coeluting 499.992 interference.
+        return SimpleNamespace(
+            PositionsArray=[rt.tolist() for _ in trace_settings],
+            IntensitiesArray=[
+                (
+                    signal
+                    * sum(
+                        abundance
+                        for mz, abundance in ((500.008, 1.0), (499.992, 0.5))
+                        if setting.MassRanges[0][0] <= mz <= setting.MassRanges[0][1]
+                    )
+                ).tolist()
+                for setting in trace_settings
+            ],
+        )
+
+    monkeypatch.setattr(vendor, "GetChromatogramData", mass_filtered_chromatogram)
+    settings = replace(_settings(), neutral_loss_profile=None)
+    peak_config = _peak_config(tmp_path)
+    profile = SignalProcessingProfile(window_points=15)
+    discovery = _backfill_ms1_candidates_with_acquisition(
+        raw,
+        group_discovery_seeds(
+            collect_strict_nl_seeds(
+                raw, raw_file=fixture.source_paths["S1"], settings=settings
+            ),
+            settings=settings,
+        ),
+        acquisition_source=fixture.owners.request.acquisition_sources[0],
+        run_spec_id="processing-run:" + "0" * 64,
+        settings=settings,
+        peak_config=peak_config,
+        signal_processing_profile=profile,
+    )
+    (original,) = discovery.candidates
+    (record,) = discovery.physical_evaluations
+    candidate = replace(original, ms1_apex_mz=500.008)
+    old_request = fixture.owners.request
+    request = build_processing_request_identity(
+        acquisition_sources=old_request.acquisition_sources,
+        acquisition_bindings=old_request.acquisition_bindings,
+        scientific_input_schema_version=old_request.scientific_input_schema_version,
+        processing_algorithm_version=old_request.processing_algorithm_version,
+        processing_contract_version=old_request.processing_contract_version,
+        scientific_inputs=json.loads(old_request.normalized_scientific_inputs_json)
+        | {
+            PHYSICAL_CAPTURE_INPUT_KEY: physical_capture_input_payload(
+                profile, {record.candidate_id: record.evaluation}
+            )
+        },
+    )
+    owners = compose_processing_owner_references(
+        request=request,
+        attempt=issue_processing_attempt(request),
+        sample_snapshot=fixture.owners.sample_snapshot,
+        sample_resolutions=fixture.samples,
+    )
+    result = adapt_current_discovery_sample_subject(
+        processing_owners=owners,
+        sample=fixture.sample("S1"),
+        method_subject=fixture.method_subject,
+        candidates=(candidate,),
+        settings=settings,
+        peak_config=peak_config,
+        raw=raw,
+        signal_processing_profile=profile,
+        physical_records=(record,),
+    )
+    assert result.assessment_input.assessment.content.method_result == "SUPPORT"
+    (capture,) = result.captures
+    (binding,) = capture.scope.capture_bindings
+    assert capture.trace.mz == 500.008
+    assert capture.trace.rt_min == record.work_item.xic_rt_min
+    assert capture.trace.rt_max == record.work_item.xic_rt_max
+    assert binding.source_physical_evaluation == record.evaluation
+    assert capture.physical_evaluation is not None
+    assert capture.physical_evaluation.prepared.trace_content_id != (
+        record.evaluation.prepared.trace_content_id
+    )
+    assert capture.selected_hypothesis is not None
+    assert record.evaluation.facts is not None
+    assert capture.selected_hypothesis.integration.area_baseline_corrected == (
+        pytest.approx(record.evaluation.facts.area_counts_seconds * 2 / 3)
+    )
+    assert candidate.precursor_mz == record.work_item.xic_mz == 500.0
+
+
 def test_adapter_preserves_complete_multiscan_evidence_without_target_identity(
     tmp_path: Path,
 ) -> None:
