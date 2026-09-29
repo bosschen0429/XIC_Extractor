@@ -1459,6 +1459,10 @@ def _reacquire_peak_observations(
         )
         if binding.physical_evaluation is not None and (
             trace.mz != binding.query_mz
+            or (
+                binding.physical_evaluation_mz is not None
+                and trace.mz != binding.physical_evaluation_mz
+            )
             or trace.rt_min != binding.query_rt_min
             or trace.rt_max != binding.query_rt_max
             or trace.ppm_tol != binding.query_ppm_tol
@@ -1767,19 +1771,20 @@ def _untargeted_search_scope(
                     sample_identity_id=sample.identity.sample_identity_id,
                     sample_name=sample.metadata.sample_name,
                     acquisition_source_id=acquisition_source_id,
-                    # A retained evaluation still belongs to its original XIC.
-                    # A new physical center must trigger capture re-evaluation.
-                    query_mz=(
-                        records[item.candidate_id].work_item.xic_mz
-                        if signal_processing_profile is not None
-                        else item.physical_mz
-                    ),
+                    query_mz=item.physical_mz,
                     query_rt_min=item.ms1_search_rt_min,
                     query_rt_max=item.ms1_search_rt_max,
                     query_ppm_tol=method_subject.precursor_tolerance_ppm,
                     preferred_rt=item.best_seed_rt,
                     physical_evaluation=(
                         records[item.candidate_id].evaluation
+                        if signal_processing_profile is not None
+                        else None
+                    ),
+                    # The active query belongs to the physical subject; the
+                    # retained evaluation still belongs to its original XIC.
+                    physical_evaluation_mz=(
+                        records[item.candidate_id].work_item.xic_mz
                         if signal_processing_profile is not None
                         else None
                     ),

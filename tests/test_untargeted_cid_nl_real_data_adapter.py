@@ -301,6 +301,7 @@ def test_changed_physical_query_evaluates_once_and_preserves_support(
             query_ppm_tol=record.work_item.xic_ppm_tol,
             physical_evaluation=record.evaluation,
             source_physical_evaluation=None,
+            physical_evaluation_mz=record.work_item.xic_mz,
         )
         replay_scope = replace(
             capture.scope,
@@ -391,9 +392,17 @@ def test_changed_physical_query_evaluates_once_and_preserves_support(
         )
 
 
+@pytest.mark.parametrize(
+    ("subject_mz", "batch_subject"),
+    [(500.0, False), (500.015, False), (500.015, True)],
+)
+@pytest.mark.parametrize("interference_abundance", [0.0, 0.5])
 def test_physical_mass_change_reacquires_the_same_rt_window(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    subject_mz: float,
+    batch_subject: bool,
+    interference_abundance: float,
 ) -> None:
     import json
     from types import SimpleNamespace
@@ -403,8 +412,15 @@ def test_physical_mass_change_reacquires_the_same_rt_window(
         _backfill_ms1_candidates_with_acquisition,
     )
     from xic_extractor.discovery.ms2_seeds import collect_strict_nl_seeds
+    from xic_extractor.peak_detection import capture as capture_owner
+    from xic_extractor.peak_detection.cid_nl_method_subject import (
+        REQUEST_INPUT_KEY,
+        mint_untargeted_cid_nl_method_subject,
+        mint_untargeted_cid_nl_method_subject_batch,
+    )
     from xic_extractor.peak_detection.search_scope import (
         PHYSICAL_CAPTURE_INPUT_KEY,
+        SearchScopeContractError,
         physical_capture_input_payload,
     )
     from xic_extractor.peak_detection.signal_processing_profile import (
@@ -434,7 +450,9 @@ def test_physical_mass_change_reacquires_the_same_rt_window(
                     signal
                     * sum(
                         abundance
-                        for mz, abundance in ((500.008, 1.0), (499.992, 0.5))
+                        for mz, abundance in (
+                            (500.008, 1.0), (499.992, interference_abundance)
+                        )
                         if setting.MassRanges[0][0] <= mz <= setting.MassRanges[0][1]
                     )
                 ).tolist()
@@ -463,6 +481,21 @@ def test_physical_mass_change_reacquires_the_same_rt_window(
     (original,) = discovery.candidates
     (record,) = discovery.physical_evaluations
     candidate = replace(original, ms1_apex_mz=500.008)
+    method_subject = mint_untargeted_cid_nl_method_subject(
+        precursor_mz=subject_mz,
+        precursor_tolerance_ppm=20.0,
+        neutral_loss_da=116.0474,
+    )
+    pinned = (
+        mint_untargeted_cid_nl_method_subject_batch(
+            subjects=(method_subject,),
+            candidate_memberships=(
+                (candidate.candidate_id, method_subject.method_subject_id),
+            ),
+        )
+        if batch_subject
+        else method_subject
+    )
     old_request = fixture.owners.request
     request = build_processing_request_identity(
         acquisition_sources=old_request.acquisition_sources,
@@ -472,6 +505,7 @@ def test_physical_mass_change_reacquires_the_same_rt_window(
         processing_contract_version=old_request.processing_contract_version,
         scientific_inputs=json.loads(old_request.normalized_scientific_inputs_json)
         | {
+            REQUEST_INPUT_KEY: pinned.request_payload(),
             PHYSICAL_CAPTURE_INPUT_KEY: physical_capture_input_payload(
                 profile, {record.candidate_id: record.evaluation}
             )
@@ -486,7 +520,7 @@ def test_physical_mass_change_reacquires_the_same_rt_window(
     result = adapt_current_discovery_sample_subject(
         processing_owners=owners,
         sample=fixture.sample("S1"),
-        method_subject=fixture.method_subject,
+        method_subject=method_subject,
         candidates=(candidate,),
         settings=settings,
         peak_config=peak_config,
@@ -502,15 +536,43 @@ def test_physical_mass_change_reacquires_the_same_rt_window(
     assert capture.trace.rt_max == record.work_item.xic_rt_max
     assert binding.source_physical_evaluation == record.evaluation
     assert capture.physical_evaluation is not None
-    assert capture.physical_evaluation.prepared.trace_content_id != (
-        record.evaluation.prepared.trace_content_id
-    )
+    assert (
+        capture.physical_evaluation.prepared.trace_content_id
+        == record.evaluation.prepared.trace_content_id
+    ) == (interference_abundance == 0.0)
+    assert binding.query_mz == binding.physical_evaluation_mz == 500.008
     assert capture.selected_hypothesis is not None
     assert record.evaluation.facts is not None
     assert capture.selected_hypothesis.integration.area_baseline_corrected == (
-        pytest.approx(record.evaluation.facts.area_counts_seconds * 2 / 3)
+        pytest.approx(
+            record.evaluation.facts.area_counts_seconds / (1 + interference_abundance)
+        )
     )
     assert candidate.precursor_mz == record.work_item.xic_mz == 500.0
+    pending_scope = replace(
+        capture.scope,
+        capture_bindings=(
+            replace(
+                binding,
+                physical_evaluation=record.evaluation,
+                source_physical_evaluation=None,
+                physical_evaluation_mz=record.work_item.xic_mz,
+            ),
+        ),
+    )
+    with pytest.raises(
+        capture_owner.SampleLocalCaptureError, match="retained owner query"
+    ):
+        capture_owner.capture_peak_hypotheses(
+            scope=pending_scope,
+            candidate_id=candidate.candidate_id,
+            trace=capture.trace,
+        )
+    with pytest.raises(SearchScopeContractError, match="subject"):
+        replace(
+            capture.scope,
+            capture_bindings=(replace(binding, query_mz=600.0),),
+        )
 
 
 def test_adapter_preserves_complete_multiscan_evidence_without_target_identity(

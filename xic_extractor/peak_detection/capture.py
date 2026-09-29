@@ -294,6 +294,13 @@ def _capture_physical_peak(
         raise SampleLocalCaptureError(
             "physical capture requires its closed owner question"
         )
+    if (
+        binding.physical_evaluation_mz is not None
+        and binding.physical_evaluation_mz != trace.mz
+    ):
+        raise SampleLocalCaptureError(
+            "physical capture m/z differs from the retained owner query"
+        )
     if mint_physical_trace_content_id(trace.rt, trace.intensity) != (
         expected.prepared.trace_content_id
     ):
@@ -339,6 +346,10 @@ def capture_reacquired_physical_peak(
         raise SampleLocalCaptureError("capture trace must be an owner trace")
     if (
         trace.mz == binding.query_mz
+        and (
+            binding.physical_evaluation_mz is None
+            or trace.mz == binding.physical_evaluation_mz
+        )
         and trace.rt_min == binding.query_rt_min
         and trace.rt_max == binding.query_rt_max
         and trace.ppm_tol == binding.query_ppm_tol
@@ -373,6 +384,7 @@ def capture_reacquired_physical_peak(
         binding,
         source_physical_evaluation=source_evaluation,
         physical_evaluation=evaluation,
+        physical_evaluation_mz=trace.mz,
     )
     scope = replace(
         scope,

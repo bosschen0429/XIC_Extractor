@@ -568,7 +568,7 @@ def mint_subject_membership_from_physical_units(
     for requirement, unit_candidates in subject_units:
         key = key_by_requirement.get(requirement)
         # A proven physical unit is indivisible. Existing fixed centers may host
-        # it only when every original query remains inside the method window.
+        # it only when every physical query remains inside the method window.
         if key is None or any(
             abs(precursor_by_id[candidate] - key[0]) / key[0] * 1_000_000.0
             > settings.precursor_mz_tolerance_ppm

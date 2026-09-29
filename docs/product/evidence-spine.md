@@ -191,7 +191,7 @@ owners. The derived runtime value does not mint or change request identity.
 
 The Untargeted batch factory assigns each Discovery candidate to one bounded
 method-query subject. Within each scalar loss or full configured composition,
-candidates are ordered by exact precursor m/z and candidate ID. The first mass
+candidates are ordered by physical query m/z and candidate ID. The first mass
 fixes a subject center; later candidates join only within its configured ppm
 tolerance, without moving the center or chaining through another candidate.
 Before this assignment, source-bound records with the same selected apex and
@@ -199,7 +199,7 @@ identical raw RT/intensity throughout their shared peak interior may form one
 indivisible workset. Every contributor must share an extraction m/z interval
 and an admissible method-center interval; pairwise overlap cannot form a chain
 without an all-member intersection. A fixed center can accept the workset only
-when it covers every original precursor; otherwise the workset uses the midpoint
+when it covers every physical query; otherwise the workset uses the midpoint
 of its common admissible center interval. Candidates without this evidence keep
 the fixed-first behavior. This prevents one observed peak from being split into
 separate method subjects merely because its queries straddle a bucket boundary.
@@ -213,8 +213,10 @@ per-query physical facts and original MS2 evidence remain intact.
 This declared query membership lets nearby measured masses in different samples
 reach evaluation of the same method subject. Each physical query retains its own
 exact source m/z, RT bounds, trace and acquisition identity. Both single-subject
-and batch SearchScope apply the same method-center ppm compatibility while
-physical-record validation remains exact. Query membership grants no
+and batch SearchScope apply the same method-center ppm compatibility to the
+active query. A retained physical evaluation separately carries its original
+XIC center, so moving that center requires fresh evaluation without changing
+the original receipt. Query membership grants no
 cross-sample identity or Matrix eligibility; those decisions remain with the
 existing assessment and CrossSample owners.
 
