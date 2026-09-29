@@ -4,6 +4,9 @@ import numpy as np
 import pytest
 
 import xic_extractor.extraction.target_extraction as target_extraction
+from xic_extractor.applications.targeted.product_model import (
+    TargetedProductProjection,
+)
 from xic_extractor.config import ExtractionConfig, Target
 from xic_extractor.configuration.signal_processing_profile import (
     DEFAULT_SIGNAL_PROCESSING_PROFILE,
@@ -41,9 +44,6 @@ from xic_extractor.peak_detection.physical_peak_models import (
 )
 from xic_extractor.peak_detection.selection_decision import (
     PeakHypothesisSelectionDecision,
-)
-from xic_extractor.peak_detection.targeted_product_projection import (
-    TargetedProductProjection,
 )
 from xic_extractor.rt_prior_library import LibraryEntry
 

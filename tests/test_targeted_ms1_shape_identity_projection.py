@@ -4,13 +4,13 @@ from pathlib import Path
 
 import pytest
 
+from xic_extractor.applications.targeted.product_model import (
+    OWN_MAX_SAME_PEAK_SUPPORT_REASON,
+)
 from xic_extractor.extraction.targeted_ms1_shape_identity_projection import (
     TargetedMs1ShapeIdentitySupport,
     load_targeted_ms1_shape_identity_supports,
     targeted_ms1_shape_identity_supports_from_rows,
-)
-from xic_extractor.extraction.targeted_projection_reasons import (
-    OWN_MAX_SAME_PEAK_SUPPORT_REASON,
 )
 
 

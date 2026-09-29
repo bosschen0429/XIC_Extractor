@@ -43,6 +43,7 @@ feature-by-sample Matrix。兩者共用科學判斷，但保留不同搜尋政�
 | 想改什麼 | 先找哪裡 | 交接時要分清的責任 |
 | --- | --- | --- |
 | 峰選擇、邊界、面積 | `peak_detection/`、`signal_processing.py` | 單峰／單次觀察的答案；跨樣本群組在 Alignment |
+| Targeted 計數、角色例外與 review 原因 | `applications/targeted/product_projection.py` | 消費已完成的科學結果，決定產品狀態；純結果模型在同目錄 `product_model.py`，writer 只呈現它 |
 | 跨樣本配對、RT 漂移、群組 | `alignment/grouping_workflow.py`、`alignment/cross_sample/` | 群組決定先完成，Backfill 與格值決策消費同一結果 |
 | 缺格補證及格值 | `alignment/backfill/`、`alignment/cell_decision/` | 新觀察、科學決策與檔案 writer 各自有 owner |
 | RAW 讀取或 DLL | `raw_reader.py` 及使用它的 acquisition adapter | 讀入量測資料；不因此取得群組、格值或發布決定權 |
@@ -225,6 +226,7 @@ Use this map to choose the reason a package changes. File placement is owned by
 | Surface | Owns | Does not own |
 | --- | --- | --- |
 | `configuration/` | settings, target/config loading, validation, typed runtime settings | extraction or rendering |
+| `applications/targeted/` | Targeted product state, role/applicability policy, counted detection and reason overlays; pure product result model | scientific peak selection, numeric cell decisions, RAW acquisition or rendering |
 | `discovery/` | general candidate discovery, seed generation, workflow-neutral discovery facts | matrix decisions or target-list policy |
 | `execution_engine/` | generic partition scheduling, worker-pool admission/concurrency, streamed result store, and bounded spool lifecycle | method-specific science, subject splitting, or writer authority |
 | `extraction/` | Targeted orchestration, jobs, windowing, drift, backend coordination, and retained Untargeted batch execution (`untargeted_production_batch`, `untargeted_alignment`) | GUI, workbook rendering, or Alignment decisions |
@@ -268,7 +270,9 @@ architecture boundaries.
 
 `xic_extractor.evidence_semantics` is role-neutral and serves both candidate
 selection and product projection. Targeted role policy belongs in the Targeted
-projection builder, not in shared semantics. Because Alignment also consumes
+application's `product_projection` owner. `extraction.result_assembly` creates
+the extraction result and delegates to `project_targeted_result`; writers consume
+the pure `product_model` without importing orchestration. Because Alignment also consumes
 the shared layer, changes there have cross-path blast radius. The complete
 resolution order is in [`decision-policy.md`](product/decision-policy.md).
 

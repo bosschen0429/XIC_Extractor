@@ -8,6 +8,12 @@ import pytest
 from xic_extractor.alignment.result.application_result import (
     FinalizedTargetApplicationResult,
 )
+from xic_extractor.applications.targeted.product_model import (
+    TargetedProductContext,
+)
+from xic_extractor.applications.targeted.product_projection import (
+    build_targeted_product_projection,
+)
 from xic_extractor.config import ExtractionConfig, Target
 from xic_extractor.configuration.signal_processing_profile import (
     resolve_signal_processing_profile,
@@ -36,10 +42,6 @@ from xic_extractor.peak_detection.observations import (
 from xic_extractor.peak_detection.physical_peak_evaluation import (
     evaluate_physical_peak,
     prepare_physical_signal,
-)
-from xic_extractor.peak_detection.targeted_product_projection import (
-    TargetedPriorContext,
-    build_targeted_product_projection,
 )
 from xic_extractor.peak_detection.traces import Trace, targeted_trace_group
 from xic_extractor.processing_identity import (
@@ -983,7 +985,7 @@ def production_case(
                         acquisition_trace=trace,
                         physical_evaluation=physical_evaluation,
                         targeted_product_projection=build_targeted_product_projection(
-                            TargetedPriorContext(role="Analyte"),
+                            TargetedProductContext(role="Analyte"),
                             rt=selected.integration.rt_apex_min,
                             area=selected.integration.area_raw_counts_seconds,
                             confidence="HIGH",

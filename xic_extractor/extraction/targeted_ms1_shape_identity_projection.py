@@ -5,6 +5,9 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from xic_extractor.applications.targeted.product_model import (
+    OWN_MAX_SAME_PEAK_SUPPORT_REASON,
+)
 from xic_extractor.diagnostics.diagnostic_io import (
     bool_value,
     optional_float,
@@ -18,9 +21,6 @@ from xic_extractor.diagnostics.targeted_ms1_shape_identity import (
     VALIDATION_LABEL,
 )
 from xic_extractor.extraction.result_assembly import reproject_extraction_result
-from xic_extractor.extraction.targeted_projection_reasons import (
-    OWN_MAX_SAME_PEAK_SUPPORT_REASON,
-)
 from xic_extractor.targeted_ms1_shape_identity_policy import (
     EXPLICIT_SUPPORT_TSV_POLICY,
     require_supported_activation_policy,

@@ -1,12 +1,14 @@
-from xic_extractor.peak_detection.targeted_product_projection import (
-    TargetedPriorContext,
+from xic_extractor.applications.targeted.product_model import (
+    TargetedProductContext,
+)
+from xic_extractor.applications.targeted.product_projection import (
     build_targeted_product_projection,
 )
 
 
 def test_projection_counts_istd_dropout_without_legacy_nl_authority() -> None:
     projection = build_targeted_product_projection(
-        TargetedPriorContext(role="ISTD", expected_present=True),
+        TargetedProductContext(role="ISTD", expected_present=True),
         rt=11.9888,
         area=1.55e7,
         confidence="VERY_LOW",
@@ -35,11 +37,11 @@ def test_same_legacy_tokens_can_project_to_different_product_counts() -> None:
     }
 
     istd_projection = build_targeted_product_projection(
-        TargetedPriorContext(role="ISTD", expected_present=True),
+        TargetedProductContext(role="ISTD", expected_present=True),
         **shared,
     )
     analyte_projection = build_targeted_product_projection(
-        TargetedPriorContext(role="Analyte", expected_present=False),
+        TargetedProductContext(role="Analyte", expected_present=False),
         **shared,
         not_counted_reasons=("analyte_nl_fail_requires_policy",),
     )
@@ -53,7 +55,7 @@ def test_same_legacy_tokens_can_project_to_different_product_counts() -> None:
 
 def test_projection_blocks_when_ms1_peak_is_not_positive() -> None:
     projection = build_targeted_product_projection(
-        TargetedPriorContext(role="ISTD", expected_present=True),
+        TargetedProductContext(role="ISTD", expected_present=True),
         rt=11.9888,
         area=0.0,
         confidence="HIGH",

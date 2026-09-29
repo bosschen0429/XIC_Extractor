@@ -3,6 +3,9 @@ from dataclasses import replace
 import numpy as np
 import pytest
 
+from xic_extractor.applications.targeted.product_model import (
+    OWN_MAX_SAME_PEAK_SUPPORT_REASON,
+)
 from xic_extractor.config import Target
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
@@ -13,9 +16,6 @@ from xic_extractor.extraction.handoff_spine_runtime import (
     selected_peak_hypothesis,
 )
 from xic_extractor.extraction.result_assembly import build_extraction_result
-from xic_extractor.extraction.targeted_projection_reasons import (
-    OWN_MAX_SAME_PEAK_SUPPORT_REASON,
-)
 from xic_extractor.extractor import ExtractionResult
 from xic_extractor.neutral_loss import CandidateMS2Evidence, NLResult
 from xic_extractor.peak_detection.evidence_facts import (

@@ -5,6 +5,9 @@ from typing import Literal
 
 import pytest
 
+from xic_extractor.applications.targeted.product_model import (
+    TargetedProductProjection,
+)
 from xic_extractor.config import ExtractionConfig, Target
 from xic_extractor.extraction.handoff_spine_runtime import (
     build_production_peak_hypotheses,
@@ -28,9 +31,6 @@ from xic_extractor.peak_detection.hypotheses import (
     EvidenceVector,
     IntegrationResult,
     PeakHypothesis,
-)
-from xic_extractor.peak_detection.targeted_product_projection import (
-    TargetedProductProjection,
 )
 from xic_extractor.signal_processing import (
     PeakCandidate,
