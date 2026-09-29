@@ -75,8 +75,6 @@ class FinalizedUntargetMatrixRow:
     center_rt_basis: str = PRESENTATION_FORMULA_VERSION
     center_weight_basis: str = "unique_owner_observations_equal_weight"
     evidence_status: str = "finalized_untargeted_owner_complete"
-    parent_peak_hypothesis_id: str = ""
-    child_peak_hypothesis_ids: str = ""
 
     @property
     def source_feature_family_ids(self) -> tuple[str, ...]:
@@ -473,7 +471,6 @@ def _aligned_cell(
         trace_quality="finalized_owner_decision",
         scan_support_score=None,
         source_candidate_id=source_id,
-        source_raw_file=None,
         reason=owner_decision.source or owner_decision.variant,
         selected_integration=integration,
         backfill_seed_mz=(repaired.cell.backfill_seed_mz if repaired else None),

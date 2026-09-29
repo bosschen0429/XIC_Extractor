@@ -48,7 +48,6 @@ ALIGNMENT_BACKFILL_CELL_EVIDENCE_COLUMNS = (
     "gap_fill_reason",
     "backfill_evidence_reason",
     "source_candidate_id",
-    "source_raw_file",
     "neutral_loss_tag",
     "family_center_mz",
     "family_center_rt",
@@ -154,7 +153,6 @@ class BackfillEvidenceRecord:
     gap_fill_reason: str
     backfill_evidence_reason: str
     source_candidate_id: str
-    source_raw_file: str
     neutral_loss_tag: str
     family_center_mz: float
     family_center_rt: float

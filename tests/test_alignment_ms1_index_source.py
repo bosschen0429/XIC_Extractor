@@ -8,11 +8,9 @@ from xic_extractor.alignment.ms1_index_source import (
     build_ms1_scan_index,
     extract_index_xic,
     read_ms1_scan_index_npz,
-    source_for_owner_build_backend,
     write_ms1_scan_index_npz,
 )
 from xic_extractor.ms1_scan_index import MS1ScanReadError
-from xic_extractor.raw_superwindow_source import RawSuperWindowSource
 from xic_extractor.xic_models import XICRequest
 
 
@@ -104,17 +102,6 @@ def test_ms1_scan_index_npz_roundtrips_without_pickle(tmp_path) -> None:
     assert [scan.scan_number for scan in loaded] == [1, 3]
     assert [scan.rt for scan in loaded] == [1.0, 3.0]
     assert trace.intensity.tolist() == [35.0, 85.0]
-
-
-def test_source_for_owner_build_backend_is_opt_in() -> None:
-    raw = FakeRawHandle()
-
-    assert source_for_owner_build_backend(raw, "raw") is raw
-    superwindow = source_for_owner_build_backend(raw, "raw_superwindow")
-    assert isinstance(superwindow, RawSuperWindowSource)
-    indexed = source_for_owner_build_backend(raw, "ms1_index")
-
-    assert isinstance(indexed, MS1IndexedRawSource)
 
 
 class FakeRawHandle:

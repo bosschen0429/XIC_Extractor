@@ -832,7 +832,7 @@ def test_all_authority_projection_fields_change_their_owner_id(
         physical_answer_id=facts.physical_answer_id,
         physical_segment_id=facts.physical_segment_id,
     )
-    assert len(BACKFILL_AUTHORITY_CELL_FIELDS) == 48
+    assert len(BACKFILL_AUTHORITY_CELL_FIELDS) == 45
     for name in BACKFILL_AUTHORITY_CELL_FIELDS:
         changed = _changed_value(getattr(authority, name))
         assert (
@@ -1008,7 +1008,6 @@ def _detected_cell(
         trace_quality="clean",
         scan_support_score=0.9,
         source_candidate_id=f"{sample_stem}-candidate",
-        source_raw_file=None,
         reason="detected",
         selected_integration=integration,
         group_hypothesis_id=stage.group_hypothesis_id,

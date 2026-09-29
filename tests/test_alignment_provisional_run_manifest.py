@@ -392,7 +392,6 @@ def test_publication_accepts_complete_real_writer_batch_with_unbound_receipts(
             "require_discovery_owner_closure": "TRUE",
             "selected_family_count": "0",
         },
-        ownership=SimpleNamespace(assignments=(), ambiguous_records=()),
         alignment_config=AlignmentConfig(),
         production_decisions=build_production_decisions(
             writer_matrix,

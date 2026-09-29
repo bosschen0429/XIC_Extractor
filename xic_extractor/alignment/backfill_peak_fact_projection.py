@@ -111,9 +111,6 @@ BACKFILL_AUTHORITY_CELL_FIELDS = (
     "gap_fill_state",
     "gap_fill_reason",
     "missing_observation_state",
-    "peak_hypothesis_status",
-    "product_selection_blocker",
-    "rt_mode_status",
     "group_claim_state",
     "claim_winner_group_hypothesis_id",
     "claim_source_group_hypothesis_id",
@@ -477,9 +474,6 @@ class BackfillAuthorityCellProjection:
     gap_fill_state: str
     gap_fill_reason: str
     missing_observation_state: str
-    peak_hypothesis_status: str
-    product_selection_blocker: str
-    rt_mode_status: str
     group_claim_state: str
     claim_winner_group_hypothesis_id: str
     claim_source_group_hypothesis_id: str
@@ -710,9 +704,6 @@ def backfill_authority_cell_projection(
         gap_fill_state=cell.gap_fill_state,
         gap_fill_reason=cell.gap_fill_reason,
         missing_observation_state=cell.missing_observation_state,
-        peak_hypothesis_status=cell.peak_hypothesis_status,
-        product_selection_blocker=cell.product_selection_blocker,
-        rt_mode_status=cell.rt_mode_status,
         group_claim_state=cell.group_claim_state,
         claim_winner_group_hypothesis_id=(cell.claim_winner_group_hypothesis_id),
         claim_source_group_hypothesis_id=cell.claim_source_group_hypothesis_id,

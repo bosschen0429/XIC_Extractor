@@ -30,7 +30,6 @@ _ARTIFACTS: dict[AlignmentOutputLevel, tuple[str, ...]] = {
         "alignment_owner_backfill_peak_fact_provenance.tsv",
         "alignment_review.tsv",
         "alignment_cells.tsv",
-        "owner_edge_evidence.tsv",
         EXPLANATION_ARTIFACT_NAME,
     ),
     "validation": (
@@ -39,7 +38,6 @@ _ARTIFACTS: dict[AlignmentOutputLevel, tuple[str, ...]] = {
         "alignment_owner_backfill_peak_fact_provenance.tsv",
         "alignment_review.tsv",
         "alignment_cells.tsv",
-        "owner_edge_evidence.tsv",
         EXPLANATION_ARTIFACT_NAME,
     ),
     "validation-minimal": (

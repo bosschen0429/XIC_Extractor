@@ -275,7 +275,6 @@ def _cell_from_row(row: Mapping[str, str]) -> AlignedCell:
         trace_quality=row.get("trace_quality", ""),
         scan_support_score=_float(row.get("scan_support_score")),
         source_candidate_id=row.get("source_candidate_id") or None,
-        source_raw_file=None,
         reason=row.get("reason", ""),
         selected_integration=_integration_from_cell_row(
             row,

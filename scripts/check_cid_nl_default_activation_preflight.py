@@ -429,14 +429,6 @@ def _target_pair_summaries(
                     "accepted_sample_count": identity.get("accepted_sample_count", ""),
                     "evidence_status": identity.get("evidence_status", ""),
                     "projection_status": identity.get("projection_status", ""),
-                    "parent_peak_hypothesis_id": identity.get(
-                        "parent_peak_hypothesis_id",
-                        "",
-                    ),
-                    "child_peak_hypothesis_ids": identity.get(
-                        "child_peak_hypothesis_ids",
-                        "",
-                    ),
                 },
                 "review_hit_count": len(review_hits),
                 "review": _review_summary(review_hits[0]) if review_hits else {},

@@ -40,7 +40,6 @@ from xic_extractor.alignment.owner_build_route_receipt import (
     _mint_retained_untargeted_cid_nl_route_receipt,
     _validate_owner_build_xic_backend,
 )
-from xic_extractor.alignment.ownership import OwnershipBuildResult
 from xic_extractor.alignment.pipeline_outputs import (
     AlignmentRunOutputs,
     alignment_metadata,
@@ -153,9 +152,7 @@ def run_alignment(
     emit_cid_nl_explanation: bool = False,
     retain_acquisition_cache: bool = False,
     acquisition_cache_dir: Path | None = None,
-    emit_alignment_integration_audit: bool = False,
     emit_alignment_backfill_seed_audit: bool = False,
-    emit_alignment_backfill_candidate_audit: bool = False,
     raw_workers: int = DEFAULT_ALIGNMENT_WORKERS,
     raw_worker_backend: str = DEFAULT_ALIGNMENT_WORKER_BACKEND,
     raw_xic_batch_size: int = 1,
@@ -250,9 +247,7 @@ def run_alignment(
         output_level=output_level,
         emit_alignment_cells=emit_alignment_cells,
         emit_alignment_status_matrix=emit_alignment_status_matrix,
-        emit_alignment_integration_audit=emit_alignment_integration_audit,
         emit_alignment_backfill_seed_audit=emit_alignment_backfill_seed_audit,
-        emit_alignment_backfill_candidate_audit=emit_alignment_backfill_candidate_audit,
         emit_provisional_matrix=emit_provisional_matrix,
     )
     _reject_alignment_output_collisions(output_dir=output_dir, outputs=outputs)
@@ -599,18 +594,9 @@ def _run_untargeted_alignment(
                     outputs,
                     writer_inputs.matrix,
                     metadata=metadata,
-                    ownership=OwnershipBuildResult(
-                        owners=(), assignments=(), ambiguous_records=()
-                    ),
                     alignment_config=alignment_config,
                     backfill_peak_fact_provenance=EMPTY_BACKFILL_PEAK_FACT_PROVENANCE_BATCH,
                     production_decisions=writer_inputs.production_decisions,
-                    baseline_integration_method=getattr(
-                        peak_config, "baseline_integration_method", "asls"
-                    ),
-                    baseline_audit_method=getattr(
-                        peak_config, "baseline_audit_method", ""
-                    ),
                     timing_recorder=timing_recorder,
                     capture_artifact_fingerprints=capture_artifact_fingerprints,
                 )

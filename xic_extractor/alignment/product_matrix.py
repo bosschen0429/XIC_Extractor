@@ -233,12 +233,6 @@ def _identity_row(
     _validate_single_source_feature_family(cluster_id, source_ids)
     mz = _family_center_mz(cluster, fallback=fallback_cluster)
     rt, rt_basis = _center_rt(cluster, product_cells, fallback_cluster=fallback_cluster)
-    child_peak_hypothesis_ids = _child_peak_hypothesis_ids(cluster)
-    if child_peak_hypothesis_ids:
-        raise ValueError(
-            f"{cluster_id}: parent aggregate product row cannot write beside "
-            f"child hypotheses {child_peak_hypothesis_ids}"
-        )
     accepted_samples = {
         cell.sample_stem
         for cell, decision in product_cells
@@ -270,10 +264,6 @@ def _identity_row(
             if row_identity_basis == "split_peak_hypothesis"
             else "product_matrix_identity_complete"
         ),
-        "parent_peak_hypothesis_id": str(
-            getattr(cluster, "parent_peak_hypothesis_id", "")
-        ),
-        "child_peak_hypothesis_ids": child_peak_hypothesis_ids,
         MATRIX_ROW_BINDING_COLUMN: "",
     }
 
@@ -531,13 +521,6 @@ def _float_identity_value(value: object, *, name: str) -> float:
     if isinstance(value, (int, float)):
         return float(value)
     raise ValueError(f"{name} must be numeric")
-
-
-def _child_peak_hypothesis_ids(cluster: Any) -> str:
-    raw_value = getattr(cluster, "child_peak_hypothesis_ids", "")
-    if isinstance(raw_value, str):
-        return raw_value
-    return ";".join(str(part) for part in raw_value)
 
 
 def _family_center_mz(row: Any, *, fallback: Any | None = None) -> float:

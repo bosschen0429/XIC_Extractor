@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import math
-from pathlib import Path
 from typing import Callable
 
 import pytest
@@ -332,7 +331,6 @@ def _cell(
         trace_quality="clean",
         scan_support_score=scan_support_score,
         source_candidate_id=f"{sample_stem}#{cluster_id}",
-        source_raw_file=Path(f"{sample_stem}.raw"),
         reason=status,
         region_local_mixture_diagnostic=region_local_mixture_diagnostic,
         group_hypothesis_id=group_hypothesis_id,

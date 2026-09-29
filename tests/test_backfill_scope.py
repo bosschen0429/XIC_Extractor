@@ -1,17 +1,14 @@
 from __future__ import annotations
 
-import csv
 from pathlib import Path
 from types import SimpleNamespace
 
 from xic_extractor.alignment.backfill_scope import (
     PREDICATE_VERSION,
-    SKIPPED_EVIDENCE_LEDGER_COLUMNS,
     backfill_features_for_sample,
     backfill_request_sample_stems,
     read_family_allowlist_tsv,
     select_backfill_features,
-    write_skipped_evidence_ledger_tsv,
 )
 from xic_extractor.alignment.config import AlignmentConfig
 
@@ -128,7 +125,7 @@ def test_backfill_features_for_sample_matches_request_predicate() -> None:
     ) == ("FAM_B",)
 
 
-def test_allowlist_reader_and_ledger_writer(tmp_path: Path) -> None:
+def test_allowlist_reader(tmp_path: Path) -> None:
     allowlist = tmp_path / "families.tsv"
     allowlist.write_text("feature_family_id\nFAM001\nFAM002\n", encoding="utf-8")
     assert read_family_allowlist_tsv(
@@ -136,32 +133,6 @@ def test_allowlist_reader_and_ledger_writer(tmp_path: Path) -> None:
         family_id_column="feature_family_id",
     ) == frozenset({"FAM001", "FAM002"})
 
-    result = select_backfill_features(
-        (_feature("FAM001"),),
-        sample_order=("S1", "S2"),
-        raw_sample_stems=frozenset({"S1", "S2"}),
-        alignment_config=AlignmentConfig(),
-        scope="production-equivalent",
-    )
-    path = write_skipped_evidence_ledger_tsv(
-        tmp_path / "skipped_evidence_ledger.tsv",
-        (row for row in result.skipped),
-    )
-    raw = path.read_bytes()
-    assert b"\r\n" not in raw
-    assert b"\n" in raw
-    with path.open(newline="", encoding="utf-8") as handle:
-        header = handle.readline().rstrip("\n").split("\t")
-        assert header == list(SKIPPED_EVIDENCE_LEDGER_COLUMNS)
-        handle.seek(0)
-        rows = list(csv.DictReader(handle, delimiter="\t"))
-    assert rows[0]["feature_family_id"] == "FAM001"
-    assert rows[0]["family_center_mz"] == "500.0"
-    assert rows[0]["predicate_version"] == PREDICATE_VERSION
-    assert rows[0]["raw_xic_requests_skipped"] == "1"
-    assert rows[0]["would_emit_in_full_audit"] == str(
-        result.skipped[0].would_emit_in_full_audit
-    )
 
 
 def _feature(

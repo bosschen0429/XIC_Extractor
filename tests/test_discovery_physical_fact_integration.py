@@ -176,11 +176,6 @@ def test_discovery_retained_physical_peak_cardinality(
     ) == pytest.approx(expected_apices)
     assert len(result.physical_work_manifest) == len(fixture["seed_scans"])
     if fixture_name == "discovery_true_double_peak":
-        from xic_extractor.alignment.config import AlignmentConfig
-        from xic_extractor.alignment.ownership import (
-            build_sample_local_owners_from_discovery_bindings,
-        )
-
         # The exact acquired fixture has a censored core (8 hits in 3 runs),
         # not a continuous overlap. Shared hit-density qualification owns it.
         assert all(not candidate.is_provisional for candidate in valid)
@@ -188,12 +183,8 @@ def test_discovery_retained_physical_peak_cardinality(
             candidate.ms1_area is not None and candidate.ms1_area > 0
             for candidate in valid
         )
-        ownership = build_sample_local_owners_from_discovery_bindings(
-            result.physical_bindings, alignment_config=AlignmentConfig()
-        )
         assert len(result.physical_bindings) == 1
         assert len(result.physical_bindings[0].member_source_ordinals) == 2
-        assert len(ownership.owners) == 1
         evaluation = result.physical_bindings[0].physical_fact_record.evaluation
         facts = evaluation.facts
         assert facts is not None
@@ -823,10 +814,6 @@ def test_qualification_survives_physical_fact_reuse(
     shared_request_count: int,
     provisional: bool,
 ) -> None:
-    from xic_extractor.alignment.config import AlignmentConfig
-    from xic_extractor.alignment.ownership import (
-        build_sample_local_owners_from_discovery_bindings,
-    )
     from xic_extractor.peak_detection.background_shape import is_provisional_peak_shape
 
     raw_path = tmp_path / "sample.raw"
@@ -888,11 +875,6 @@ def test_qualification_survives_physical_fact_reuse(
         assert centre / edge < 1.5 and 3.0 < snr < 5.0
     else:
         assert snr >= 5.0
-    ownership = build_sample_local_owners_from_discovery_bindings(
-        result.physical_bindings, alignment_config=AlignmentConfig()
-    )
-    assert len(ownership.owners) == 1
-    assert ownership.owners[0].is_provisional is provisional
 
 
 def test_spec_bound_physical_owner_reuses_preparation_without_extra_acquisition(
@@ -953,108 +935,6 @@ def test_spec_bound_physical_owner_reuses_preparation_without_extra_acquisition(
     assert metrics.xic_batch_count == 1
     assert metrics.adapter_chromatogram_call_count == 1
     assert [len(batch) for batch in raw.request_batches] == [2]
-
-
-def test_alignment_builds_owner_from_discovery_binding_without_resolver(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from xic_extractor.alignment.config import AlignmentConfig
-    from xic_extractor.alignment.ownership import (
-        build_sample_local_owners_from_discovery_bindings,
-    )
-
-    raw_path = tmp_path / "sample.raw"
-    raw_path.write_bytes(b"owner-bound-discovery")
-    source = build_acquisition_source_identity(
-        raw_path,
-        acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
-        observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
-    )
-    raw = _OwnerBoundBatchRaw(source)
-    discovery = _backfill_ms1_candidates_with_acquisition(
-        raw,
-        (_group((_seed(scan_number=10, rt=7.80),)),),
-        acquisition_source=source,
-        run_spec_id=_TEST_RUN_SPEC_ID,
-        settings=_backfill_settings(),
-        peak_config=_backfill_peak_config(),
-        signal_processing_profile=SignalProcessingProfile(window_points=3),
-    )
-    discovery_xic_calls = raw.raw_chromatogram_call_count
-    monkeypatch.setattr(
-        "xic_extractor.alignment.ownership._default_peak_resolver",
-        lambda *args, **kwargs: (_ for _ in ()).throw(
-            AssertionError("canonical binding called the Alignment resolver")
-        ),
-    )
-
-    ownership = build_sample_local_owners_from_discovery_bindings(
-        discovery.physical_bindings,
-        alignment_config=AlignmentConfig(),
-    )
-
-    assert len(ownership.owners) == 1
-    assert ownership.owners[0].selected_integration is (
-        discovery.physical_bindings[0].physical_evaluation.integration
-    )
-    assert raw.raw_chromatogram_call_count == discovery_xic_calls
-
-    binding = discovery.physical_bindings[0]
-    with pytest.raises(ValueError, match="crosses terminal state"):
-        replace(
-            binding,
-            physical_fact_record=replace(
-                binding.physical_fact_record,
-                evaluation=replace(
-                    binding.physical_evaluation,
-                    reason="tampered_terminal_reason",
-                ),
-            ),
-        )
-
-
-def test_alignment_review_only_discovery_binding_does_not_build_owner(
-    tmp_path: Path,
-) -> None:
-    from xic_extractor.alignment.config import AlignmentConfig
-    from xic_extractor.alignment.ownership import (
-        build_sample_local_owners_from_discovery_bindings,
-    )
-
-    raw_path = tmp_path / "sample.raw"
-    raw_path.write_bytes(b"owner-bound-discovery")
-    source = build_acquisition_source_identity(
-        raw_path,
-        acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
-        observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
-    )
-    discovery = _backfill_ms1_candidates_with_acquisition(
-        _OwnerBoundBatchRaw(source),
-        (_group((_seed(scan_number=10, rt=7.80),)),),
-        acquisition_source=source,
-        run_spec_id=_TEST_RUN_SPEC_ID,
-        settings=_backfill_settings(),
-        peak_config=_backfill_peak_config(),
-        signal_processing_profile=SignalProcessingProfile(window_points=3),
-    )
-    binding = discovery.physical_bindings[0]
-    review_only_binding = replace(
-        binding,
-        candidate=replace(
-            binding.candidate,
-            discovery_candidate_state="review_only_ambiguous_coisolation",
-        ),
-    )
-
-    ownership = build_sample_local_owners_from_discovery_bindings(
-        (review_only_binding,),
-        alignment_config=AlignmentConfig(),
-    )
-
-    assert ownership.owners == ()
-    assert ownership.assignments == ()
-    assert ownership.ambiguous_records == ()
 
 
 def test_physical_fact_owner_rejects_cross_acquisition_reassembly(

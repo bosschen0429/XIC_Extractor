@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, Protocol
 
 from xic_extractor.alignment.models import AlignmentCluster
@@ -47,7 +46,6 @@ class AlignedCell:
     trace_quality: str
     scan_support_score: float | None
     source_candidate_id: str | None
-    source_raw_file: Path | None
     reason: str
     region_candidate_count: int | None = None
     region_selected_proposal_sources: tuple[str, ...] = ()
@@ -87,9 +85,6 @@ class AlignedCell:
     gap_fill_state: str = ""
     gap_fill_reason: str = ""
     missing_observation_state: str = ""
-    peak_hypothesis_status: str = ""
-    product_selection_blocker: str = ""
-    rt_mode_status: str = ""
     group_claim_state: str = ""
     claim_winner_group_hypothesis_id: str = ""
     claim_source_group_hypothesis_id: str = ""
