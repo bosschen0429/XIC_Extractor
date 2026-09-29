@@ -105,6 +105,35 @@ def test_dialog_maps_canonical_samples_and_query_fields(qtbot, tmp_path):
     assert query.open_after_export is True
 
 
+def test_query_id_lists_trim_comma_separated_whitespace_and_reject_empty(
+    qtbot, tmp_path,
+):
+    dialog = InspectorExportDialog(tmp_path / "query.html")
+    qtbot.addWidget(dialog)
+    dialog.set_samples({"samples": []})
+    dialog.strategy.setCurrentIndex(2)
+    dialog.candidates.setText(" C1, C2 ")
+    dialog.groups.setText(" G1, G2 ")
+
+    dialog._submit(False)
+
+    assert dialog.selection is not None
+    assert dialog.selection.candidate_ids == ("C1", "C2")
+    assert dialog.selection.group_ids == ("G1", "G2")
+    assert dialog.error.text() == ""
+
+    invalid = InspectorExportDialog(tmp_path / "invalid.html")
+    qtbot.addWidget(invalid)
+    invalid.set_samples({"samples": []})
+    invalid.strategy.setCurrentIndex(2)
+    invalid.groups.setText("A,,B")
+
+    invalid._submit(False)
+
+    assert invalid.selection is None
+    assert invalid.error.text() == "ID 清單包含空值，請輸入完整 canonical ID"
+
+
 def test_report_worker_calls_real_inspector_and_emits_result(qtbot, tmp_path):
     source = _source(tmp_path)
     job = InspectorJob(
