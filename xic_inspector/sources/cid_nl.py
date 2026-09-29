@@ -658,6 +658,14 @@ class CidNlSource:
                 )
                 for sid in item.sample_ids
             ]
+            pair_support = self._internal_pair_support(item)
+            relationship_availability = (
+                "recorded"
+                if pair_support
+                else self.summary.get("audit_availability", {}).get(
+                    "initial_edges", "unavailable"
+                )
+            )
             rendered.append(
                 presentation.build_render_item(
                     item,
@@ -665,7 +673,8 @@ class CidNlSource:
                     projected_curves=projected_curves,
                     readable_records=self._readable_records(item, projected_curves),
                     relationship_members=self._relationship_members(item),
-                    internal_pair_support=self._internal_pair_support(item),
+                    internal_pair_support=pair_support,
+                    relationship_availability=relationship_availability,
                     related_groups=[
                         presentation.related_group(
                             peer,

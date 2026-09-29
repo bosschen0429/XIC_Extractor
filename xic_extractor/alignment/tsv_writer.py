@@ -11,13 +11,6 @@ from xic_extractor.alignment.backfill_evidence_contract import (
     ALIGNMENT_BACKFILL_CELL_EVIDENCE_COLUMNS,
     ALIGNMENT_BACKFILL_CELL_EVIDENCE_SCHEMA_VERSION,
 )
-from xic_extractor.alignment.backfill_peak_fact import BackfillCandidateAuditRow
-from xic_extractor.alignment.backfill_peak_fact_provenance import (
-    BackfillPeakFactProvenanceBatch,
-)
-from xic_extractor.alignment.backfill_peak_fact_provenance import (
-    write_backfill_peak_fact_provenance_tsv as _write_peak_fact_provenance,
-)
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.matrix import AlignedCell, AlignmentMatrix
 from xic_extractor.alignment.matrix_output_contract import (
@@ -50,7 +43,6 @@ from xic_extractor.alignment.production_decisions import (
 from xic_extractor.alignment.untargeted_finalized_matrix import (
     CompletedUntargetBatchWriterInputs,
 )
-from xic_extractor.peak_detection.baseline import LINEAR_EDGE_RETIRED_MESSAGE
 
 ALIGNMENT_REVIEW_COLUMNS = (
     "feature_family_id",
@@ -81,11 +73,6 @@ ALIGNMENT_REVIEW_COLUMNS = (
     "review_backfill_count",
     "include_in_primary_matrix",
     "row_flags",
-    "artificial_adduct_role",
-    "artificial_adduct_name",
-    "artificial_adduct_related_family_id",
-    "artificial_adduct_mz_delta_error_ppm",
-    "artificial_adduct_rt_delta_min",
     "representative_samples",
     "family_evidence",
     "warning",
@@ -95,9 +82,6 @@ ALIGNMENT_REVIEW_COLUMNS = (
 ALIGNMENT_CELLS_COLUMNS = (
     "feature_family_id",
     *CROSS_SAMPLE_GROUP_CELL_COLUMNS,
-    "peak_hypothesis_status",
-    "product_selection_blocker",
-    "rt_mode_status",
     "sample_stem",
     "status",
     "area",
@@ -112,34 +96,10 @@ ALIGNMENT_CELLS_COLUMNS = (
     "trace_quality",
     "scan_support_score",
     "source_candidate_id",
-    "source_raw_file",
     "neutral_loss_tag",
     "family_center_mz",
     "family_center_rt",
     "reason",
-    "backfill_ms2_trigger_scan_count",
-    "backfill_strict_nl_scan_count",
-    "backfill_ms2_trace_strength",
-    "backfill_dda_missing_nl_policy_status",
-    "backfill_family_ms2_required_tag_status",
-    "backfill_evidence_reason",
-    "region_candidate_count",
-    "region_selected_proposal_sources",
-    "region_selected_merge_note",
-    "region_shadow_status",
-    "region_shadow_verdict",
-    "region_merge_suggestion_source",
-    "region_area_ratio",
-    "region_selected_interval_count",
-    "region_selected_interval_gap_max_min",
-    "region_local_mixture_diagnostic",
-    "region_local_mixture_reason",
-    "region_review_reason",
-    "region_decision_status",
-    "region_decision_class",
-    "region_product_action",
-    "region_promotion_reason",
-    "region_baseline_method",
 )
 
 BACKFILL_EVIDENCE_ROW_FLAGS = frozenset(
@@ -152,30 +112,6 @@ BACKFILL_EVIDENCE_ROW_FLAGS = frozenset(
     },
 )
 
-BASE_ALIGNMENT_CELL_INTEGRATION_AUDIT_COLUMNS = (
-    "feature_family_id",
-    "sample_stem",
-    "status",
-    "area",
-    "apex_rt",
-    "peak_start_rt",
-    "peak_end_rt",
-    "neutral_loss_tag",
-    "family_center_mz",
-    "family_center_rt",
-    "area_baseline_corrected",
-    "area_uncertainty",
-    "area_uncertainty_formula_version",
-    "baseline_residual_mad",
-    "area_uncertainty_noise_source",
-    "baseline_type",
-    "baseline_score",
-    "uncertainty_fraction",
-    "baseline_fraction",
-    "integration_scan_count",
-)
-
-ALIGNMENT_CELL_INTEGRATION_AUDIT_COLUMNS = BASE_ALIGNMENT_CELL_INTEGRATION_AUDIT_COLUMNS
 
 ALIGNMENT_BACKFILL_SEED_AUDIT_COLUMNS = (
     "feature_family_id",
@@ -197,31 +133,6 @@ ALIGNMENT_BACKFILL_SEED_AUDIT_COLUMNS = (
     "backfill_request_ppm",
     "backfill_apex_delta_sec",
     "reason",
-)
-
-ALIGNMENT_BACKFILL_CANDIDATE_AUDIT_COLUMNS = (
-    "feature_family_id",
-    "group_hypothesis_id",
-    "public_family_id",
-    "sample_stem",
-    "candidate_index",
-    "candidate_phase",
-    "selected_for_output",
-    "candidate_status",
-    "candidate_outcome",
-    "trace_quality",
-    "area",
-    "apex_rt",
-    "peak_start_rt",
-    "peak_end_rt",
-    "rt_delta_sec",
-    "backfill_seed_mz",
-    "backfill_seed_rt",
-    "backfill_request_rt_min",
-    "backfill_request_rt_max",
-    "backfill_request_ppm",
-    "reason",
-    "selection_note",
 )
 
 
@@ -249,7 +160,6 @@ def write_alignment_tsv_row_batches(
         "review": ALIGNMENT_REVIEW_COLUMNS,
         "backfill": ALIGNMENT_BACKFILL_CELL_EVIDENCE_COLUMNS,
         "cells": ALIGNMENT_CELLS_COLUMNS,
-        "integration": ALIGNMENT_CELL_INTEGRATION_AUDIT_COLUMNS,
     }
     source_candidate_owners: dict[str, str] = {}
     product_count = 0
@@ -320,8 +230,6 @@ def write_alignment_tsv_row_batches(
                     )
             if "cells" in writers:
                 emit("cells", _alignment_cell_rows(matrix))
-            if "integration" in writers:
-                emit("integration", _cell_integration_audit_rows(matrix))
     return writer_row_count
 
 
@@ -415,19 +323,6 @@ def _alignment_cell_rows(matrix: AlignmentMatrix) -> Iterable[dict[str, object]]
             "gap_fill_state": cell.gap_fill_state,
             "gap_fill_reason": cell.gap_fill_reason,
             "missing_observation_state": cell.missing_observation_state,
-            "peak_hypothesis_status": cell.peak_hypothesis_status,
-            "product_selection_blocker": cell.product_selection_blocker,
-            "rt_mode_status": cell.rt_mode_status,
-            "group_claim_state": cell.group_claim_state,
-            "claim_winner_group_hypothesis_id": (cell.claim_winner_group_hypothesis_id),
-            "claim_source_group_hypothesis_id": (cell.claim_source_group_hypothesis_id),
-            "consolidation_state": cell.consolidation_state,
-            "consolidation_winner_group_hypothesis_id": (
-                cell.consolidation_winner_group_hypothesis_id
-            ),
-            "consolidation_source_group_hypothesis_id": (
-                cell.consolidation_source_group_hypothesis_id
-            ),
             "sample_stem": cell.sample_stem,
             "status": cell.status,
             "area": format_value(cell.area),
@@ -442,48 +337,10 @@ def _alignment_cell_rows(matrix: AlignmentMatrix) -> Iterable[dict[str, object]]
             "trace_quality": cell.trace_quality,
             "scan_support_score": format_value(cell.scan_support_score),
             "source_candidate_id": cell.source_candidate_id or "",
-            "source_raw_file": str(cell.source_raw_file or ""),
             "neutral_loss_tag": cluster.neutral_loss_tag,
             "family_center_mz": format_value(_family_center_mz(cluster)),
             "family_center_rt": format_value(_family_center_rt(cluster)),
             "reason": cell.reason,
-            "backfill_ms2_trigger_scan_count": format_value(
-                cell.backfill_ms2_trigger_scan_count
-            ),
-            "backfill_strict_nl_scan_count": format_value(
-                cell.backfill_strict_nl_scan_count
-            ),
-            "backfill_ms2_trace_strength": cell.backfill_ms2_trace_strength,
-            "backfill_dda_missing_nl_policy_status": (
-                cell.backfill_dda_missing_nl_policy_status
-            ),
-            "backfill_family_ms2_required_tag_status": (
-                cell.backfill_family_ms2_required_tag_status
-            ),
-            "backfill_evidence_reason": cell.backfill_evidence_reason,
-            "region_candidate_count": format_value(cell.region_candidate_count),
-            "region_selected_proposal_sources": ";".join(
-                cell.region_selected_proposal_sources
-            ),
-            "region_selected_merge_note": cell.region_selected_merge_note,
-            "region_shadow_status": cell.region_shadow_status,
-            "region_shadow_verdict": cell.region_shadow_verdict,
-            "region_merge_suggestion_source": cell.region_merge_suggestion_source,
-            "region_area_ratio": format_value(cell.region_area_ratio),
-            "region_selected_interval_count": format_value(
-                cell.region_selected_interval_count
-            ),
-            "region_selected_interval_gap_max_min": format_value(
-                cell.region_selected_interval_gap_max_min
-            ),
-            "region_local_mixture_diagnostic": (cell.region_local_mixture_diagnostic),
-            "region_local_mixture_reason": cell.region_local_mixture_reason,
-            "region_review_reason": cell.region_review_reason,
-            "region_decision_status": cell.region_decision_status,
-            "region_decision_class": cell.region_decision_class,
-            "region_product_action": cell.region_product_action,
-            "region_promotion_reason": cell.region_promotion_reason,
-            "region_baseline_method": cell.region_baseline_method,
         }
 
 
@@ -545,80 +402,14 @@ def _backfill_cell_evidence_rows(
                 format_value(cell.scan_support_score),
                 cell.gap_fill_state,
                 cell.gap_fill_reason,
-                cell.backfill_evidence_reason,
                 cell.source_candidate_id or "",
-                str(cell.source_raw_file or ""),
                 cluster.neutral_loss_tag,
                 format_value(_family_center_mz(cluster)),
                 format_value(_family_center_rt(cluster)),
-                cell.region_shadow_verdict,
                 cell.reason,
             )
 
     return rows()
-
-
-def write_alignment_cell_integration_audit_tsv(
-    path: Path,
-    matrix: AlignmentMatrix,
-    *,
-    baseline_integration_method: str = "asls",
-    baseline_audit_method: str = "",
-) -> Path:
-    """Write the post-retirement AsLS-only integration audit TSV.
-
-    ``baseline_audit_method`` is retained as a compatibility input so older
-    callers that pass ``"asls"`` keep working. It no longer selects additional
-    comparison columns; the emitted schema is always
-    ``ALIGNMENT_CELL_INTEGRATION_AUDIT_COLUMNS``.
-    """
-    if baseline_integration_method == "linear_edge":
-        raise ValueError(LINEAR_EDGE_RETIRED_MESSAGE)
-    if baseline_integration_method != "asls":
-        raise ValueError("baseline_integration_method must be 'asls'")
-    if baseline_audit_method not in {"", "asls"}:
-        raise ValueError("baseline_audit_method must be empty or 'asls'")
-    return _write_tsv(
-        path,
-        ALIGNMENT_CELL_INTEGRATION_AUDIT_COLUMNS,
-        _cell_integration_audit_rows(matrix),
-    )
-
-
-def _cell_integration_audit_rows(
-    matrix: AlignmentMatrix,
-) -> Iterable[dict[str, object]]:
-    clusters_by_id = {row_id(cluster): cluster for cluster in matrix.clusters}
-    for cell in matrix.cells:
-        audit = cell.integration_audit
-        if audit is None or audit.is_empty:
-            continue
-        cluster = clusters_by_id[cell.cluster_id]
-        row: dict[str, object] = {
-            "feature_family_id": cell.cluster_id,
-            "sample_stem": cell.sample_stem,
-            "status": cell.status,
-            "area": format_value(cell.area),
-            "apex_rt": format_value(cell.apex_rt),
-            "peak_start_rt": format_value(cell.peak_start_rt),
-            "peak_end_rt": format_value(cell.peak_end_rt),
-            "neutral_loss_tag": cluster.neutral_loss_tag,
-            "family_center_mz": format_value(_family_center_mz(cluster)),
-            "family_center_rt": format_value(_family_center_rt(cluster)),
-            "area_baseline_corrected": format_value(audit.area_baseline_corrected),
-            "area_uncertainty": format_value(audit.area_uncertainty),
-            "area_uncertainty_formula_version": (
-                audit.area_uncertainty_formula_version
-            ),
-            "baseline_residual_mad": format_value(audit.baseline_residual_mad),
-            "area_uncertainty_noise_source": audit.area_uncertainty_noise_source,
-            "baseline_type": audit.baseline_type,
-            "baseline_score": format_value(audit.baseline_score),
-            "uncertainty_fraction": format_value(audit.uncertainty_fraction),
-            "baseline_fraction": format_value(audit.baseline_fraction),
-            "integration_scan_count": format_value(audit.integration_scan_count),
-        }
-        yield row
 
 
 def write_alignment_backfill_seed_audit_tsv(
@@ -665,54 +456,6 @@ def write_alignment_backfill_seed_audit_tsv(
             }
         )
     return _write_tsv(path, ALIGNMENT_BACKFILL_SEED_AUDIT_COLUMNS, rows)
-
-
-def write_alignment_backfill_candidate_audit_tsv(
-    path: Path,
-    rows: Sequence[BackfillCandidateAuditRow],
-) -> Path:
-    rendered: list[dict[str, object]] = []
-    for row in rows:
-        rendered.append(
-            {
-                "feature_family_id": row.feature_family_id,
-                "group_hypothesis_id": row.group_hypothesis_id,
-                "public_family_id": row.public_family_id,
-                "sample_stem": row.sample_stem,
-                "candidate_index": row.candidate_index,
-                "candidate_phase": row.candidate_phase,
-                "selected_for_output": row.selected_for_output,
-                "candidate_status": row.candidate_status,
-                "candidate_outcome": row.candidate_outcome,
-                "trace_quality": row.trace_quality,
-                "area": row.area,
-                "apex_rt": row.apex_rt,
-                "peak_start_rt": row.peak_start_rt,
-                "peak_end_rt": row.peak_end_rt,
-                "rt_delta_sec": row.rt_delta_sec,
-                "backfill_seed_mz": row.backfill_seed_mz,
-                "backfill_seed_rt": row.backfill_seed_rt,
-                "backfill_request_rt_min": row.backfill_request_rt_min,
-                "backfill_request_rt_max": row.backfill_request_rt_max,
-                "backfill_request_ppm": row.backfill_request_ppm,
-                "reason": row.reason,
-                "selection_note": row.selection_note,
-            }
-        )
-    return _write_tsv(
-        path,
-        ALIGNMENT_BACKFILL_CANDIDATE_AUDIT_COLUMNS,
-        rendered,
-    )
-
-
-def write_alignment_backfill_peak_fact_provenance_tsv(
-    path: Path,
-    batch: BackfillPeakFactProvenanceBatch,
-) -> Path:
-    """Render an already validated bounded physical-fact projection."""
-
-    return _write_peak_fact_provenance(path, batch)
 
 
 def write_alignment_status_matrix_tsv(path: Path, matrix: AlignmentMatrix) -> Path:
@@ -802,21 +545,6 @@ def _review_rows(
                 "review_backfill_count": row_decision.review_backfill_count,
                 "include_in_primary_matrix": row_decision.include_in_primary_matrix,
                 "row_flags": ";".join(row_decision.row_flags),
-                "artificial_adduct_role": _optional_attr(
-                    cluster, "artificial_adduct_role"
-                ),
-                "artificial_adduct_name": _optional_attr(
-                    cluster, "artificial_adduct_name"
-                ),
-                "artificial_adduct_related_family_id": _optional_attr(
-                    cluster, "artificial_adduct_related_family_id"
-                ),
-                "artificial_adduct_mz_delta_error_ppm": _optional_attr(
-                    cluster, "artificial_adduct_mz_delta_error_ppm"
-                ),
-                "artificial_adduct_rt_delta_min": _optional_attr(
-                    cluster, "artificial_adduct_rt_delta_min"
-                ),
                 "representative_samples": _representative_samples(cells, decisions),
                 "family_evidence": _family_evidence(cluster),
                 "warning": _warning(
@@ -878,7 +606,6 @@ def _cell_mentions_backfill(cell: AlignedCell) -> bool:
         cell.matrix_area_source,
         cell.matrix_area_missing_reason,
         cell.reason,
-        cell.backfill_evidence_reason,
     )
     return any("backfill" in str(value).lower() for value in values)
 

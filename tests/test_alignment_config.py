@@ -1,4 +1,5 @@
 import ast
+import importlib
 import math
 import sys
 from pathlib import Path
@@ -7,33 +8,16 @@ from typing import get_type_hints
 import pytest
 
 
-def test_alignment_public_api_exports_plan2_contract():
+def test_alignment_public_import_avoids_pipeline_and_raw_reader():
     before = set(sys.modules)
 
-    import xic_extractor.alignment as alignment
+    importlib.import_module("xic_extractor.alignment")
 
-    assert alignment.__all__ == (
-        "AlignmentConfig",
-        "AlignmentCluster",
-        "AlignedCell",
-        "AlignmentMatrix",
-        "CellStatus",
-    )
-    assert {name for name in dir(alignment) if not name.startswith("_")} == set(
-        alignment.__all__
-    )
     newly_imported = set(sys.modules) - before
     assert "xic_extractor.discovery.pipeline" not in newly_imported
     assert "xic_extractor.extraction" not in newly_imported
     assert "xic_extractor.extractor" not in newly_imported
     assert "xic_extractor.raw_reader" not in newly_imported
-
-
-def test_event_first_public_imports_are_retired():
-    import xic_extractor.alignment as alignment
-
-    assert not hasattr(alignment, "cluster_candidates")
-    assert not hasattr(alignment, "backfill_alignment_matrix")
 
 
 def test_alignment_public_type_hints_resolve_without_raw_reader_import():

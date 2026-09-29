@@ -61,22 +61,19 @@ forbidden_modules =
 allow_indirect_imports = False
 
 [importlinter:contract:output-does-not-read-raw]
-name = Output does not read raw
+name = Output stays outside RAW and orchestration
 type = forbidden
 source_modules =
     xic_extractor.output
 forbidden_modules =
+    xic_extractor.extraction
+    xic_extractor.extractor
     xic_extractor.raw_reader
 allow_indirect_imports = False
 ignore_imports =
     # Migration debt owner: #117 R6 / #122; exact current projection edges that reach RAW-coupled owners.
     xic_extractor.output.csv_writers -> xic_extractor.neutral_loss
     xic_extractor.output.csv_writers -> xic_extractor.signal_processing
-    xic_extractor.output.excel_pipeline -> xic_extractor.extractor
     xic_extractor.output.messages -> xic_extractor.neutral_loss
     xic_extractor.output.messages -> xic_extractor.signal_processing
-    xic_extractor.output.peak_candidate_boundaries -> xic_extractor.extraction.peak_candidate_boundaries
-    xic_extractor.output.peak_candidates -> xic_extractor.extraction.peak_candidate_table
-    xic_extractor.output.target_pair_rt_auto_reselection -> xic_extractor.extraction.paired_area_ratio_projection
-    xic_extractor.output.target_pair_rt_auto_reselection -> xic_extractor.peak_detection.model_selection
 unmatched_ignore_imports_alerting = error

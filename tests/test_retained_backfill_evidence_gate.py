@@ -563,7 +563,6 @@ def _cell_row(family_id: str, sample: str, status: str) -> dict[str, str]:
             "group_centered_query_detected" if status == "backfilled" else ""
         ),
         "trace_quality": "owner_backfill" if status == "backfilled" else "clean",
-        "backfill_evidence_reason": "",
         "reason": (
             "owner-centered MS1 backfill" if status == "backfilled" else "detected"
         ),

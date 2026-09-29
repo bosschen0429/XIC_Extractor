@@ -106,7 +106,6 @@ REQUIRED_REVIEW_COLUMNS = (
     "accepted_cell_count",
     "include_in_primary_matrix",
     "row_flags",
-    "consolidation_state",
 )
 REQUIRED_EVIDENCE_COLUMNS = (
     "feature_family_id",
@@ -429,14 +428,6 @@ def _target_pair_summaries(
                     "accepted_sample_count": identity.get("accepted_sample_count", ""),
                     "evidence_status": identity.get("evidence_status", ""),
                     "projection_status": identity.get("projection_status", ""),
-                    "parent_peak_hypothesis_id": identity.get(
-                        "parent_peak_hypothesis_id",
-                        "",
-                    ),
-                    "child_peak_hypothesis_ids": identity.get(
-                        "child_peak_hypothesis_ids",
-                        "",
-                    ),
                 },
                 "review_hit_count": len(review_hits),
                 "review": _review_summary(review_hits[0]) if review_hits else {},
@@ -755,7 +746,6 @@ def _review_summary(row: Mapping[str, str]) -> dict[str, str]:
         "identity_confidence": row.get("identity_confidence", ""),
         "accepted_cell_count": row.get("accepted_cell_count", ""),
         "row_flags": row.get("row_flags", ""),
-        "consolidation_state": row.get("consolidation_state", ""),
         "include_in_primary_matrix": row.get("include_in_primary_matrix", ""),
     }
 

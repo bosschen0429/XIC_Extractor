@@ -219,12 +219,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             "retain_acquisition_cache": args.retain_acquisition_cache,
             "acquisition_cache_dir": args.acquisition_cache_dir,
             "emit_alignment_status_matrix": args.emit_alignment_status_matrix,
-            "emit_alignment_integration_audit": args.emit_alignment_integration_audit,
             "emit_alignment_backfill_seed_audit": (
                 args.emit_alignment_backfill_seed_audit
-            ),
-            "emit_alignment_backfill_candidate_audit": (
-                args.emit_alignment_backfill_candidate_audit
             ),
             "owner_build_xic_backend": owner_build_xic_backend,
             "require_discovery_owner_closure": True,
@@ -275,21 +271,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"Alignment matrix TSV: {outputs.matrix_tsv}")
     if outputs.cells_tsv is not None:
         print(f"Alignment cells TSV: {outputs.cells_tsv}")
-    if outputs.integration_audit_tsv is not None:
-        print(f"Alignment integration audit TSV: {outputs.integration_audit_tsv}")
     if outputs.backfill_seed_audit_tsv is not None:
         print(f"Alignment backfill seed audit TSV: {outputs.backfill_seed_audit_tsv}")
-    if outputs.backfill_candidate_audit_tsv is not None:
-        print(
-            "Alignment backfill candidate audit TSV: "
-            f"{outputs.backfill_candidate_audit_tsv}"
-        )
     if outputs.status_matrix_tsv is not None:
         print(f"Alignment status matrix TSV: {outputs.status_matrix_tsv}")
-    if outputs.edge_evidence_tsv is not None:
-        print(f"Owner edge evidence TSV: {outputs.edge_evidence_tsv}")
-    if outputs.skipped_evidence_ledger_tsv is not None:
-        print(f"Skipped evidence ledger TSV: {outputs.skipped_evidence_ledger_tsv}")
     if outputs.run_metadata_json is not None:
         print(f"Alignment run metadata JSON: {outputs.run_metadata_json}")
     owner_build_route_receipt = outputs.owner_build_route_receipt
@@ -556,11 +541,12 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
             "include it already"
         ),
     )
-    parser.add_argument("--emit-alignment-integration-audit", action="store_true")
     parser.add_argument(
         "--emit-baseline-audit-asls",
         action="store_true",
-        help="Emit AsLS shadow columns in alignment_cell_integration_audit.tsv.",
+        help=(
+            "Set baseline_audit_method=asls in the run configuration and metadata."
+        ),
     )
     parser.add_argument(
         "--baseline-integration-method",
@@ -572,15 +558,6 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         help=(
             "Emit lightweight owner-backfill seed provenance needed by retained "
             "backfill evidence gates and seed-specific overlay galleries."
-        ),
-    )
-    parser.add_argument(
-        "--emit-alignment-backfill-candidate-audit",
-        action="store_true",
-        help=(
-            "Emit the exhaustive owner-backfill all-candidate audit sidecar. "
-            "This is a deep-debug output and is not required for normal "
-            "backfill gallery overlay generation."
         ),
     )
     parser.add_argument("--emit-alignment-status-matrix", action="store_true")

@@ -186,8 +186,8 @@ class InspectorExportDialog(QDialog):
 def _ids(text: str) -> tuple[str, ...]:
     if not text:
         return ()
-    parts = tuple(text.split(","))
-    if any(not part.strip() for part in parts):
+    parts = tuple(part.strip() for part in text.split(","))
+    if any(not part for part in parts):
         raise ValueError("ID 清單包含空值，請輸入完整 canonical ID")
     return parts
 

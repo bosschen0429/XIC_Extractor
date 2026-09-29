@@ -2244,27 +2244,121 @@ def test_ignored_local_handoff_is_not_a_docs_management_problem(
     assert not [msg for msg in result.messages if msg.severity == "warning"]
 
 
-def test_canonical_metadata_review_reports_root_authority_missing_metadata(
+def test_permanent_root_allows_reworded_headings_and_purpose(
     tmp_path: Path,
 ) -> None:
     root = tmp_path / "repo"
     vault = tmp_path / "vault"
     _clean_repo(root)
     _clean_vault(vault)
-    _write(root / "AGENTS.md", "# Agent Contract\n\nRepo rules.\n")
+
+    rewrites = {
+        "AGENTS.md": (
+            ("XIC Extractor Agent Contract", "Repository Guidance"),
+            ("Task Routes", "Where Responsibilities Live"),
+        ),
+        "README.md": (
+            ("XIC Extractor", "XIC Project"),
+            ("Documentation", "Reading Guide"),
+        ),
+        "docs/architecture-contract.md": (
+            ("Architecture Contract", "System Architecture"),
+            ("Dependency Direction", "Allowed Dependencies"),
+            ("Ownership Map", "Module Owners"),
+        ),
+        "docs/project-layout.md": (
+            ("Project Layout", "Repository Map"),
+            ("Permanent root document contract", "Root Documents"),
+            ("目錄收納規則單一可信來源", "檔案放置規則由此文件維護"),
+            ("source-of-truth 與歷程邊界", "正式文件與歷史記錄的界線"),
+        ),
+    }
+    for path, substitutions in rewrites.items():
+        text = (root / path).read_text(encoding="utf-8")
+        for old, new in substitutions:
+            text = text.replace(old, new)
+        _write(root / path, text + "\n正式文件的用途可在說明文字中重複提及。\n" * 2)
+
+    result = _run_audit(root, vault)
+
+    assert result.blockers == ()
+
+
+@pytest.mark.parametrize(
+    ("path", "replacement", "expected_problem"),
+    [
+        (
+            "AGENTS.md",
+            "# Agent Guide\n\n[README](README.md)\n",
+            "required route must resolve: docs/agent/parameter-settings.md",
+        ),
+        (
+            "README.md",
+            " \n\t\n",
+            "permanent root document has no visible text",
+        ),
+        (
+            "README.md",
+            "<!-- hidden -->\n```md\n# Hidden\n```\n",
+            "permanent root document has no visible text",
+        ),
+    ],
+)
+def test_permanent_root_rejects_missing_routes_and_empty_content(
+    tmp_path: Path,
+    path: str,
+    replacement: str,
+    expected_problem: str,
+) -> None:
+    root = tmp_path / "repo"
+    vault = tmp_path / "vault"
+    _clean_repo(root)
+    _clean_vault(vault)
+    _write(root / path, replacement)
 
     result = _run_audit(root, vault)
 
     review = result.summary["repo"]["canonical_metadata_review"]
     rows = review["top_missing_metadata"]
-    row = next(item for item in rows if item["path"] == "AGENTS.md")
-    assert row["path"] == "AGENTS.md"
+    row = next(item for item in rows if item["path"] == path)
     assert row["metadata_status"] == "invalid_permanent_root_contract"
-    assert "required heading must occur exactly once" in row["metadata_missing_fields"]
+    assert expected_problem in row["metadata_missing_fields"]
     assert any(
-        msg.severity == "blocker" and msg.path == "AGENTS.md"
+        msg.severity == "blocker" and msg.path == path
         for msg in result.messages
     )
+
+
+def test_permanent_root_rejects_missing_target_and_referrer(tmp_path: Path) -> None:
+    root = tmp_path / "repo"
+    vault = tmp_path / "vault"
+    _clean_repo(root)
+    _clean_vault(vault)
+    (root / "docs/agent/parameter-settings.md").unlink()
+    readme = root / "README.md"
+    _write(
+        readme,
+        readme.read_text(encoding="utf-8").replace(
+            "[Architecture](docs/architecture-contract.md)", "Architecture overview"
+        ),
+    )
+
+    result = _run_audit(root, vault)
+
+    rows = result.summary["repo"]["canonical_metadata_review"]["top_missing_metadata"]
+    problems_by_path = {row["path"]: row["metadata_missing_fields"] for row in rows}
+    assert "required route target is missing: docs/agent/parameter-settings.md" in (
+        problems_by_path["AGENTS.md"]
+    )
+    expected_referrer = (
+        "required referrer must route: README.md -> docs/architecture-contract.md"
+    )
+    assert expected_referrer in (
+        problems_by_path["docs/architecture-contract.md"]
+    )
+    assert {"AGENTS.md", "README.md", "docs/architecture-contract.md"} <= {
+        message.path for message in result.blockers
+    }
 
 
 def test_canonical_metadata_review_blocks_missing_permanent_root(

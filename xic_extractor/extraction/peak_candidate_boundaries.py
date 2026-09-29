@@ -31,48 +31,6 @@ from xic_extractor.sample_groups import classify_sample_group
 PeakCandidateBoundaryRow = dict[str, str]
 CWT_LEGACY_AUDIT_FILTER_REASON = "legacy_cwt_width_not_real_cwt"
 
-PEAK_CANDIDATE_BOUNDARY_HEADERS = (
-    "sample_name",
-    "group",
-    "target_label",
-    "target_mz",
-    "role",
-    "istd_pair",
-    "analysis_mode",
-    "resolver_mode",
-    "candidate_id",
-    "proposal_sources",
-    "selected_candidate",
-    "boundary_id",
-    "boundary_sources",
-    "cwt_audit_filter_reason",
-    "rt_left_min",
-    "rt_apex_min",
-    "rt_right_min",
-    "rt_width_min",
-    "area_raw_counts_seconds",
-    "area_baseline_corrected",
-    "area_uncertainty",
-    "area_uncertainty_formula_version",
-    "baseline_residual_mad",
-    "area_uncertainty_noise_source",
-    "baseline_type",
-    "baseline_score",
-    "boundary_audit_score",
-    "boundary_audit_rank",
-    "boundary_audit_top",
-    "boundary_nonoverlap_selected",
-    "boundary_nonoverlap_note",
-    "boundary_nonoverlap_blocker_id",
-    "boundary_support_labels",
-    "boundary_concern_labels",
-    "scan_count",
-    "area_delta_vs_candidate_interval",
-    "area_ratio_vs_candidate_interval",
-    "width_delta_vs_candidate_interval",
-    "is_candidate_interval",
-)
-
 
 def build_peak_candidate_boundary_rows(
     *,

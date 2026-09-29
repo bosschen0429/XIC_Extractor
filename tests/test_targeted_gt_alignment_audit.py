@@ -516,7 +516,6 @@ def _cell_row(
         "trace_quality": "test",
         "scan_support_score": "",
         "source_candidate_id": f"{sample}#{feature_id}",
-        "source_raw_file": "",
         "neutral_loss_tag": "DNA_dR",
         "family_center_mz": mz,
         "family_center_rt": rt,

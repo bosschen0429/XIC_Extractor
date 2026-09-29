@@ -47,11 +47,6 @@ REVIEW_COLUMNS = [
     "review_backfill_count",
     "include_in_primary_matrix",
     "row_flags",
-    "artificial_adduct_role",
-    "artificial_adduct_name",
-    "artificial_adduct_related_family_id",
-    "artificial_adduct_mz_delta_error_ppm",
-    "artificial_adduct_rt_delta_min",
     "representative_samples",
     "family_evidence",
     "warning",
@@ -88,9 +83,6 @@ def test_write_alignment_review_tsv_columns_counts_rates_and_reason(tmp_path: Pa
         "group_construction_role": "successor_constructor",
         "group_delivery_role": "owner_aligned_feature_compatibility_facade",
         "group_membership_source": "owner_aligned_feature_successor_projection",
-        "consolidation_state": "not_consolidated",
-        "consolidation_winner_group_hypothesis_id": "",
-        "consolidation_source_group_hypothesis_id": "",
         "neutral_loss_tag": "DNA_dR",
         "family_center_mz": "500.123",
         "family_center_rt": "8.49",
@@ -117,11 +109,6 @@ def test_write_alignment_review_tsv_columns_counts_rates_and_reason(tmp_path: Pa
         "review_backfill_count": "0",
         "include_in_primary_matrix": "TRUE",
         "row_flags": "",
-        "artificial_adduct_role": "",
-        "artificial_adduct_name": "",
-        "artificial_adduct_related_family_id": "",
-        "artificial_adduct_mz_delta_error_ppm": "",
-        "artificial_adduct_rt_delta_min": "",
         "representative_samples": "sample-a;sample-b;sample-d",
         "family_evidence": "",
         "warning": "",
@@ -697,9 +684,9 @@ def test_alignment_matrix_identity_rejects_malformed_serialized_row_shapes(
     if mutation == "identity_overflow":
         identity_row[None] = ["overflow"]
     elif mutation == "identity_missing_key":
-        identity_row.pop("child_peak_hypothesis_ids")
+        identity_row.pop("evidence_status")
     elif mutation == "identity_truncated":
-        identity_row["child_peak_hypothesis_ids"] = None
+        identity_row["evidence_status"] = None
     elif mutation == "matrix_overflow":
         matrix_row[None] = ["overflow"]
     elif mutation == "matrix_missing_key":
@@ -1075,8 +1062,6 @@ def test_write_alignment_matrix_identity_tsv_maps_product_rows(
         "accepted_cell_count": "2",
         "accepted_sample_count": "2",
         "evidence_status": "product_matrix_identity_complete",
-        "parent_peak_hypothesis_id": "",
-        "child_peak_hypothesis_ids": "",
     }
 
 
@@ -1141,7 +1126,6 @@ def test_write_alignment_matrix_identity_tsv_records_split_hypothesis(
                 split_evaluation_status="complete_product_ready_split",
                 projection_status="not_projection",
                 source_feature_family_ids=("FAM_PARENT",),
-                parent_peak_hypothesis_id="FAM_PARENT",
             ),
         ),
         cells=(
@@ -1163,8 +1147,6 @@ def test_write_alignment_matrix_identity_tsv_records_split_hypothesis(
     assert rows[0]["row_identity_basis"] == "split_peak_hypothesis"
     assert rows[0]["split_evaluation_status"] == "complete_product_ready_split"
     assert rows[0]["source_feature_family_ids"] == "FAM_PARENT"
-    assert rows[0]["parent_peak_hypothesis_id"] == "FAM_PARENT"
-    assert rows[0]["child_peak_hypothesis_ids"] == ""
 
 
 def test_write_alignment_matrix_uses_explicit_peak_hypotheses_as_rows(
@@ -1186,7 +1168,6 @@ def test_write_alignment_matrix_uses_explicit_peak_hypotheses_as_rows(
         event_cluster_ids=("FAM_PARENT",),
         event_member_count=2,
         evidence="owner_complete_link;owner_count=2",
-        child_peak_hypothesis_ids=("FAM_PARENT::early", "FAM_PARENT::late"),
         peak_hypotheses=(
             SimpleNamespace(
                 peak_hypothesis_id="FAM_PARENT::early",
@@ -1194,7 +1175,6 @@ def test_write_alignment_matrix_uses_explicit_peak_hypotheses_as_rows(
                 split_evaluation_status="complete_product_ready_split",
                 projection_status="not_projection",
                 source_feature_family_ids=("FAM_PARENT",),
-                parent_peak_hypothesis_id="FAM_PARENT",
                 sample_stems=("sample-a",),
                 center_mz_basis="peak_hypothesis_accepted_cells",
                 center_rt_basis="peak_hypothesis_accepted_cells",
@@ -1205,7 +1185,6 @@ def test_write_alignment_matrix_uses_explicit_peak_hypotheses_as_rows(
                 split_evaluation_status="complete_product_ready_split",
                 projection_status="not_projection",
                 source_feature_family_ids=("FAM_PARENT",),
-                parent_peak_hypothesis_id="FAM_PARENT",
                 sample_stems=("sample-b",),
                 center_mz_basis="peak_hypothesis_accepted_cells",
                 center_rt_basis="peak_hypothesis_accepted_cells",
@@ -1252,46 +1231,6 @@ def test_write_alignment_matrix_uses_explicit_peak_hypotheses_as_rows(
     assert {row["source_feature_family_ids"] for row in identity_rows} == {
         "FAM_PARENT",
     }
-    assert {row["parent_peak_hypothesis_id"] for row in identity_rows} == {
-        "FAM_PARENT",
-    }
-    assert all(row["child_peak_hypothesis_ids"] == "" for row in identity_rows)
-
-
-def test_write_alignment_matrix_rejects_parent_aggregate_product_row(
-    tmp_path: Path,
-) -> None:
-    from xic_extractor.alignment.tsv_writer import write_alignment_matrix_tsv
-
-    matrix = AlignmentMatrix(
-        clusters=(
-            SimpleNamespace(
-                feature_family_id="FAM_PARENT",
-                neutral_loss_tag="DNA_dR",
-                family_center_mz=500.123,
-                family_center_rt=8.49,
-                family_product_mz=384.076,
-                family_observed_neutral_loss_da=116.047,
-                has_anchor=True,
-                event_cluster_ids=("FAM_PARENT",),
-                event_member_count=1,
-                evidence="owner_complete_link;owner_count=2",
-                child_peak_hypothesis_ids=("PH_SPLIT_A", "PH_SPLIT_B"),
-            ),
-        ),
-        cells=(
-            _cell("sample-a", "detected", cluster_id="FAM_PARENT", area=100.0),
-            _cell("sample-b", "detected", cluster_id="FAM_PARENT", area=110.0),
-        ),
-        sample_order=("sample-a", "sample-b"),
-    )
-
-    with pytest.raises(ValueError, match="parent aggregate"):
-        write_alignment_matrix_tsv(
-            tmp_path / "matrix.tsv",
-            matrix,
-            production_decisions=_production_decisions(matrix),
-        )
 
 
 def test_write_alignment_matrix_rejects_split_hypothesis_without_identity(
@@ -1310,7 +1249,6 @@ def test_write_alignment_matrix_rejects_split_hypothesis_without_identity(
         event_cluster_ids=("FAM_PARENT",),
         event_member_count=2,
         evidence="owner_complete_link;owner_count=2",
-        child_peak_hypothesis_ids=("FAM_PARENT::early",),
         peak_hypotheses=(
             SimpleNamespace(
                 peak_hypothesis_id="",
@@ -1318,7 +1256,6 @@ def test_write_alignment_matrix_rejects_split_hypothesis_without_identity(
                 split_evaluation_status="complete_product_ready_split",
                 projection_status="not_projection",
                 source_feature_family_ids=("FAM_PARENT",),
-                parent_peak_hypothesis_id="FAM_PARENT",
                 sample_stems=("sample-a",),
             ),
         ),
@@ -1707,16 +1644,17 @@ def test_debug_tsvs_write_cells_and_status_matrix(tmp_path: Path):
     assert cells[0]["primary_matrix_area_source"] == "gaussian15_positive_asls_residual"
     assert cells[0]["primary_matrix_area_reason"] == ""
     assert cells[0]["source_candidate_id"] == "sample-a#1"
-    assert cells[0]["region_candidate_count"] == "2"
-    assert cells[0]["region_selected_proposal_sources"] == (
-        "local_minimum;centwave_cwt"
+    assert not any(column.startswith("region_") for column in cells[0])
+    assert set(cells[0]).isdisjoint(
+        {
+            "backfill_ms2_trigger_scan_count",
+            "backfill_strict_nl_scan_count",
+            "backfill_ms2_trace_strength",
+            "backfill_dda_missing_nl_policy_status",
+            "backfill_family_ms2_required_tag_status",
+            "backfill_evidence_reason",
+        }
     )
-    assert cells[0]["region_local_mixture_diagnostic"] == "one_envelope_supported"
-    assert cells[0]["region_decision_status"] == "evaluated"
-    assert cells[0]["region_decision_class"] == "merge_suggested"
-    assert cells[0]["region_product_action"] == "safe_merge_eligible"
-    assert cells[0]["region_promotion_reason"] == ("adjacent_wis_local_minimum_merge")
-    assert cells[0]["region_baseline_method"] == "asls"
     assert status[0]["sample-a"] == "detected"
     assert status[0]["sample-b"] == "unchecked"
 
@@ -1781,6 +1719,8 @@ def test_backfill_cell_evidence_tsv_is_compact_and_backfill_scoped(
     }
     assert backfilled["primary_matrix_area"] == "8"
     assert "region_candidate_count" not in rows[0]
+    assert "region_shadow_verdict" not in rows[0]
+    assert "backfill_evidence_reason" not in rows[0]
 
     result = lookup_backfill_evidence_tsv(
         evidence_path,
@@ -1801,7 +1741,7 @@ def test_backfill_cell_evidence_tsv_is_compact_and_backfill_scoped(
     )
 
 
-def test_alignment_cells_tsv_can_emit_without_region_audit(tmp_path: Path) -> None:
+def test_alignment_cells_tsv_has_no_region_audit_columns(tmp_path: Path) -> None:
     from xic_extractor.alignment.tsv_writer import write_alignment_cells_tsv
 
     matrix = AlignmentMatrix(
@@ -1821,129 +1761,7 @@ def test_alignment_cells_tsv_can_emit_without_region_audit(tmp_path: Path) -> No
     region_columns = [column for column in cells[0] if column.startswith("region_")]
 
     assert cells[0]["status"] == "detected"
-    assert region_columns
-    assert all(cells[0][column] == "" for column in region_columns)
-
-
-def test_write_alignment_cell_integration_audit_tsv_is_sidecar(
-    tmp_path: Path,
-) -> None:
-    from xic_extractor.alignment.tsv_writer import (
-        ALIGNMENT_CELLS_COLUMNS,
-        write_alignment_cell_integration_audit_tsv,
-        write_alignment_cells_tsv,
-    )
-
-    matrix = AlignmentMatrix(
-        clusters=(_cluster(),),
-        cells=(
-            _cell(
-                "sample-a",
-                "detected",
-                area=10.0,
-                candidate_id="sample-a#1",
-                integration=True,
-            ),
-            _cell("sample-b", "absent"),
-        ),
-        sample_order=("sample-a", "sample-b"),
-    )
-
-    cells = _read_tsv(write_alignment_cells_tsv(tmp_path / "cells.tsv", matrix))
-    audit = _read_tsv(
-        write_alignment_cell_integration_audit_tsv(
-            tmp_path / "alignment_cell_integration_audit.tsv",
-            matrix,
-        )
-    )
-
-    assert list(cells[0]) == list(ALIGNMENT_CELLS_COLUMNS)
-    assert len(audit) == 1
-    assert audit[0]["feature_family_id"] == "ALN000001"
-    assert audit[0]["sample_stem"] == "sample-a"
-    assert audit[0]["status"] == "detected"
-    assert audit[0]["neutral_loss_tag"] == "DNA_dR"
-    assert audit[0]["area_baseline_corrected"] == "8"
-    assert audit[0]["area_uncertainty"] == "2"
-    assert audit[0]["area_uncertainty_formula_version"] == "baseline_residual_mad"
-    assert audit[0]["baseline_residual_mad"] == "0.5"
-    assert audit[0]["area_uncertainty_noise_source"] == "asls_residual"
-    assert audit[0]["baseline_type"] == "asls"
-    assert audit[0]["uncertainty_fraction"] == "0.2"
-    assert audit[0]["baseline_fraction"] == "0.8"
-    assert audit[0]["integration_scan_count"] == "5"
-    assert "area_baseline_corrected_linear_edge" not in audit[0]
-    assert "baseline_score_linear_edge" not in audit[0]
-
-
-def test_cell_integration_audit_default_schema_uses_current_asls_only(
-    tmp_path: Path,
-) -> None:
-    from xic_extractor.alignment.tsv_writer import (
-        ALIGNMENT_CELL_INTEGRATION_AUDIT_COLUMNS,
-        write_alignment_cell_integration_audit_tsv,
-    )
-
-    matrix = AlignmentMatrix(
-        clusters=(_cluster(),),
-        cells=(_cell("sample-a", "detected", area=10.0, integration=True),),
-        sample_order=("sample-a",),
-    )
-
-    rows = _read_tsv(
-        write_alignment_cell_integration_audit_tsv(
-            tmp_path / "alignment_cell_integration_audit.tsv",
-            matrix,
-        )
-    )
-
-    assert list(rows[0]) == list(ALIGNMENT_CELL_INTEGRATION_AUDIT_COLUMNS)
-    assert rows[0]["baseline_type"] == "asls"
-    assert rows[0]["area_baseline_corrected"] == "8"
-    assert rows[0]["baseline_score"] == "0.8"
-    assert "area_baseline_corrected_linear_edge" not in rows[0]
-    assert "baseline_score_linear_edge" not in rows[0]
-    assert "area_baseline_corrected_asls" not in rows[0]
-    assert "baseline_score_asls" not in rows[0]
-
-
-def test_cell_integration_audit_current_asls_schema_fixture_matches_writer() -> None:
-    from xic_extractor.alignment.tsv_writer import (
-        ALIGNMENT_CELL_INTEGRATION_AUDIT_COLUMNS,
-    )
-
-    schema_path = Path(
-        "docs/superpowers/fixtures/"
-        "alignment_cell_integration_audit_current_asls_schema.tsv"
-    )
-    header = schema_path.read_text(encoding="utf-8").splitlines()[0]
-    columns = tuple(header.split("\t"))
-
-    assert columns == ALIGNMENT_CELL_INTEGRATION_AUDIT_COLUMNS
-    assert "area_baseline_corrected_linear_edge" not in columns
-    assert "baseline_score_linear_edge" not in columns
-
-
-def test_cell_integration_audit_rejects_retired_linear_edge_writer_method(
-    tmp_path: Path,
-) -> None:
-    from xic_extractor.alignment.tsv_writer import (
-        write_alignment_cell_integration_audit_tsv,
-    )
-
-    matrix = AlignmentMatrix(
-        clusters=(_cluster(),),
-        cells=(_cell("sample-a", "detected", area=10.0, integration=True),),
-        sample_order=("sample-a",),
-    )
-
-    with pytest.raises(ValueError, match="retired; use asls"):
-        write_alignment_cell_integration_audit_tsv(
-            tmp_path / "alignment_cell_integration_audit.tsv",
-            matrix,
-            baseline_integration_method="linear_edge",
-            baseline_audit_method="asls",
-        )
+    assert region_columns == []
 
 
 def test_write_alignment_owner_backfill_seed_audit_tsv_is_sidecar(
@@ -1992,57 +1810,6 @@ def test_write_alignment_owner_backfill_seed_audit_tsv_is_sidecar(
     assert audit[0]["backfill_request_rt_max"] == "11.55"
     assert audit[0]["backfill_request_ppm"] == "20"
     assert audit[0]["backfill_apex_delta_sec"] == "-3.6"
-
-
-def test_write_alignment_owner_backfill_candidate_audit_tsv_is_sidecar(
-    tmp_path: Path,
-) -> None:
-    from xic_extractor.alignment.backfill_peak_fact import (
-        BackfillCandidateAuditRow,
-    )
-    from xic_extractor.alignment.tsv_writer import (
-        ALIGNMENT_BACKFILL_CANDIDATE_AUDIT_COLUMNS,
-        write_alignment_backfill_candidate_audit_tsv,
-    )
-
-    audit = _read_tsv(
-        write_alignment_backfill_candidate_audit_tsv(
-            tmp_path / "alignment_owner_backfill_candidate_audit.tsv",
-            (
-                BackfillCandidateAuditRow(
-                    feature_family_id="FAM000001",
-                    group_hypothesis_id="HYP000001",
-                    public_family_id="FAM000001",
-                    sample_stem="sample-b",
-                    candidate_index=1,
-                    candidate_phase="primary_query",
-                    selected_for_output=False,
-                    candidate_status="unchecked",
-                    candidate_outcome="not_detected",
-                    trace_quality="owner_backfill_not_detected",
-                    area=None,
-                    apex_rt=None,
-                    peak_start_rt=None,
-                    peak_end_rt=None,
-                    rt_delta_sec=None,
-                    backfill_seed_mz=500.0,
-                    backfill_seed_rt=8.5,
-                    backfill_request_rt_min=7.5,
-                    backfill_request_rt_max=9.5,
-                    backfill_request_ppm=20.0,
-                    reason=("owner-centered MS1 backfill query found no accepted peak"),
-                    selection_note="not_selected",
-                ),
-            ),
-        )
-    )
-
-    assert list(audit[0]) == list(ALIGNMENT_BACKFILL_CANDIDATE_AUDIT_COLUMNS)
-    assert audit[0]["feature_family_id"] == "FAM000001"
-    assert audit[0]["candidate_phase"] == "primary_query"
-    assert audit[0]["selected_for_output"] == "FALSE"
-    assert audit[0]["candidate_outcome"] == "not_detected"
-    assert audit[0]["backfill_seed_mz"] == "500"
 
 
 def test_tsv_writers_escape_formula_like_text(tmp_path: Path):
@@ -2217,11 +1984,6 @@ def _split_writer_matrix(
         event_cluster_ids=("FAM_PARENT",),
         event_member_count=2,
         evidence="owner_complete_link;owner_count=2",
-        child_peak_hypothesis_ids=tuple(
-            hypothesis.peak_hypothesis_id
-            for hypothesis in peak_hypotheses
-            if getattr(hypothesis, "peak_hypothesis_id", "")
-        ),
         peak_hypotheses=peak_hypotheses,
     )
     return AlignmentMatrix(
@@ -2245,7 +2007,6 @@ def _split_hypothesis(
         "row_identity_basis": "split_peak_hypothesis",
         "split_evaluation_status": "complete_product_ready_split",
         "projection_status": "not_projection",
-        "parent_peak_hypothesis_id": "FAM_PARENT",
         "sample_stems": sample_stems,
     }
     if source_feature_family_ids is not None:
@@ -2294,7 +2055,6 @@ def _cell(
         ),
         scan_support_score=0.8 if area is not None else None,
         source_candidate_id=candidate_id,
-        source_raw_file=Path(f"{sample_stem}.raw") if candidate_id else None,
         reason="cell reason",
         region_candidate_count=2 if region else None,
         region_selected_proposal_sources=(

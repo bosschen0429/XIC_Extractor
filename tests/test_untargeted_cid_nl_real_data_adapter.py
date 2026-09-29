@@ -629,6 +629,54 @@ def test_inferred_precursor_support_requires_a_physical_ms1_peak(
         assert result.acquisition is None
 
 
+@pytest.mark.parametrize("moved_field", ["precursor_mz", "product_mz"])
+def test_inferred_precursor_off_its_scan_receipt_is_rejected(
+    tmp_path: Path, moved_field: str
+) -> None:
+    # An inferred precursor stays product + loss; its apex MS1 reading is only
+    # reported. A persisted precursor or product off the scan's receipt breaks
+    # the strict seed reconstruction.
+    fixture = build_untargeted_cid_nl_no_raw_fixture(
+        tmp_path,
+        sample_roles={"S1": "study_sample"},
+        thermo_raw_sources=True,
+    )
+    source_raw = _FakeRaw((7.98, 8.0, 8.02))
+    source_raw.scans = tuple(
+        replace(scan, precursor_mz=scan.precursor_mz + 0.5) for scan in source_raw.scans
+    )
+    settings = _settings()
+    peak_config = _peak_config(tmp_path)
+    candidates = tuple(
+        replace(
+            candidate,
+            **{moved_field: getattr(candidate, moved_field) * (1 + 7e-6)},
+        )
+        for candidate in _current_candidates(
+            source_raw,
+            raw_file=fixture.source_paths["S1"],
+            settings=settings,
+            peak_config=peak_config,
+        )
+    )
+    assert all(c.precursor_mz_basis == "product_plus_neutral_loss" for c in candidates)
+    raw, _vendor = _open_bound_raw(fixture, "S1", source_raw, tmp_path=tmp_path)
+
+    def adapt():
+        return adapt_current_discovery_sample_subject(
+            processing_owners=fixture.owners,
+            sample=fixture.sample("S1"),
+            method_subject=fixture.method_subject,
+            candidates=candidates,
+            settings=settings,
+            peak_config=peak_config,
+            raw=raw,
+        )
+
+    with pytest.raises(UntargetedCidNlRealDataAdapterError, match="seed is not unique"):
+        adapt()
+
+
 def test_merged_inferred_member_outside_final_mass_window_is_not_support(
     tmp_path: Path,
 ) -> None:

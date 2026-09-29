@@ -330,30 +330,6 @@ authority.
 
 ---
 
-### `backfill_decision_ledger.py`
-
-**Purpose**: Build a deterministic, bounded, no-RAW decision ledger and summary
-from a retained full-universe artifact. Discovery candidate rows are rehydrated
-through their owner receipts; incomplete owner/group/request projections are
-reported as unavailable instead of being promoted to semantic proof.
-**Topic group**: `backfill_decision_ledger.py` +
-`xic_extractor/diagnostics/backfill_decision_ledger.py`
-**Originating issue**: [#195](https://github.com/Chao-hu-Lab/XIC_Extractor/issues/195)
-**Status note**: The output remains `diagnostic_only`. Displayed seed m/z/RT
-duplicates are labeled as a projection-only request proxy, never as exact
-request equivalence or optimization savings. Ranking requires a complete
-`full-audit` Backfill scope with zero skipped features, closed feature counts,
-and exact equality with the review-group universe. Candidate/group projection
-links bind both sample and candidate identity; request-proxy rendering is
-row-order neutral. Candidate-layer uniqueness is limited to feature-backed
-states and reported as acceptance of the Discovery owner's parser invariant,
-not as an independently variable post-owner duplicate counter. Populated IDs
-outside that invariant domain are counted separately. The tool neither accepts
-RAW paths nor changes scientific
-selection, Backfill eligibility, Matrix, writer, or activation behavior.
-
----
-
 ### `run_alignment` owner-minted exact Backfill request reuse
 
 **Purpose**: Partition the live hypothesis-bound Backfill request population by

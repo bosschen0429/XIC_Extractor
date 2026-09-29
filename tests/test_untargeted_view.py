@@ -1,10 +1,99 @@
 from __future__ import annotations
 
 import zipfile
+from threading import Event
+from types import SimpleNamespace
 
 import pytest
 
 from gui.sections.discovery_method_section import POSITIVE_DISCOVERY_OVERRIDE_FIELDS
+
+
+@pytest.mark.parametrize("outcome", ["failed", "cancelled", "succeeded"])
+def test_discovery_stop_preserves_worker_terminal_outcome(
+    outcome, tmp_path, monkeypatch, qtbot
+) -> None:
+    import gui.views.untargeted_view as view_module
+    import gui.workers.discovery_worker as worker_module
+    from gui.workers.discovery_worker import DiscoveryRequest
+    from xic_extractor.discovery.pipeline import (
+        DiscoveryProcessExecutionError,
+        DiscoverySampleProcessError,
+    )
+
+    started, release = Event(), Event()
+    raw_path = tmp_path / "sample.raw"
+    raw_path.write_bytes(b"synthetic input")
+    request = DiscoveryRequest(
+        mode="discovery_only", preset="dna_dr", tuning_overrides={},
+        raw_dir=tmp_path, raw_file=None, dll_dir=tmp_path,
+        output_dir=tmp_path / "out", discovery_batch_index=None,
+    )
+    monkeypatch.setattr(view_module, "read_discovery_config", lambda: {})
+    monkeypatch.setattr(view_module, "write_discovery_config", lambda config: None)
+    monkeypatch.setattr(worker_module, "_raw_paths_from_dir", lambda *args: (raw_path,))
+    index_path = request.output_dir / "discovery_batch_index.csv"
+
+    def batch(*args, should_cancel, progress_callback, **kwargs):
+        if outcome == "succeeded":
+            # Publication has committed before the user requests cancellation.
+            index_path.parent.mkdir()
+            index_path.write_text(
+                "sample,high_count,medium_count,low_count,candidate_count\n"
+                "sample.raw,0,0,0,0\n", encoding="utf-8"
+            )
+        progress_callback(1, 1, raw_path.stem)
+        started.set()
+        assert release.wait(5)
+        assert should_cancel()
+        if outcome == "failed":
+            raise DiscoveryProcessExecutionError(
+                DiscoverySampleProcessError(0, "sample", "sample.raw", "read failed"),
+                completed_sample_stems=(), failed_sample_stems=("sample",),
+                cancelled_job_count=0, in_flight_job_count=0, unsubmitted_job_count=0,
+            )
+        if outcome == "succeeded":
+            return SimpleNamespace(batch_index_csv=index_path)
+        raise InterruptedError("Discovery cancelled before batch index publication")
+
+    monkeypatch.setattr(worker_module, "run_discovery_batch", batch)
+    view = view_module.UntargetedView()
+    qtbot.addWidget(view)
+    monkeypatch.setattr(view._source, "is_valid", lambda: True)
+    monkeypatch.setattr(view._method, "is_valid", lambda: True)
+    monkeypatch.setattr(view, "_build_request", lambda config: request)
+    view.trigger_run()
+    worker = view._worker
+    assert worker is not None
+    stop = worker.stop
+
+    def release_after_stop():
+        stop()
+        release.set()
+
+    monkeypatch.setattr(worker, "stop", release_after_stop)
+    try:
+        assert started.wait(5)
+        qtbot.wait(1)
+        assert "sample" in view._run._status_label.text()
+        view.trigger_stop(confirm=False)
+        assert worker.wait(5000)
+        qtbot.wait(1)
+        assert not view.is_busy()
+        assert view._source.isEnabled()
+        assert view._method.isEnabled()
+        assert view._run._button.text() == "開始執行"
+        if outcome == "failed":
+            assert "read failed" in view._run._status_label.text()
+            assert view._terminal_state == "執行失敗"
+        elif outcome == "cancelled":
+            assert view._terminal_state == "已停止"
+        else:
+            assert view._terminal_state == "完成"
+            assert index_path.is_file()
+    finally:
+        release.set()
+        worker.wait(5000)
 
 
 class _SlowStoppingWorker:

@@ -24,7 +24,6 @@ from xic_extractor.acquisition_contract import (
     deserialize_acquired_trace,
     serialize_acquired_trace,
 )
-from xic_extractor.alignment.ms1_index_source import RawSuperWindowSource
 from xic_extractor.processing_identity import AcquisitionSourceIdentity
 from xic_extractor.raw_reader import (
     Ms2Scan,
@@ -32,6 +31,7 @@ from xic_extractor.raw_reader import (
     RawFileHandle,
     require_owner_bound_raw_handle,
 )
+from xic_extractor.raw_superwindow_source import RawSuperWindowSource
 from xic_extractor.xic_models import XICRequest
 
 _CACHE_SCHEMA = "untargeted_raw_fact_cache"

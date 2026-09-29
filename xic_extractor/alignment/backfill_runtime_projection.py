@@ -65,15 +65,6 @@ class BackfillRuntimeFeature(Protocol):
     @property
     def group_membership_source(self) -> str: ...
 
-    @property
-    def consolidation_state(self) -> str: ...
-
-    @property
-    def consolidation_winner_group_hypothesis_id(self) -> str: ...
-
-    @property
-    def consolidation_source_group_hypothesis_id(self) -> str: ...
-
 
 @dataclass(frozen=True, slots=True)
 class BackfillOwnerEligibility:
@@ -117,9 +108,6 @@ class BackfillRuntimeFeatureProjection:
     group_construction_role: str
     group_delivery_role: str
     group_membership_source: str
-    consolidation_state: str
-    consolidation_winner_group_hypothesis_id: str
-    consolidation_source_group_hypothesis_id: str
     input_group_identity: CrossSampleGroupIdentity | None = None
 
     def __post_init__(self) -> None:
@@ -195,18 +183,6 @@ def mint_backfill_runtime_feature(
             feature.group_membership_source,
             "group_membership_source",
         ),
-        consolidation_state=_required_text(
-            feature.consolidation_state,
-            "consolidation_state",
-        ),
-        consolidation_winner_group_hypothesis_id=_optional_text(
-            feature.consolidation_winner_group_hypothesis_id,
-            "consolidation_winner_group_hypothesis_id",
-        ),
-        consolidation_source_group_hypothesis_id=_optional_text(
-            feature.consolidation_source_group_hypothesis_id,
-            "consolidation_source_group_hypothesis_id",
-        ),
         input_group_identity=input_group_identity,
     )
 
@@ -281,15 +257,6 @@ def _validate_runtime_feature_projection(
     _required_text(feature.group_construction_role, "group_construction_role")
     _required_text(feature.group_delivery_role, "group_delivery_role")
     _required_text(feature.group_membership_source, "group_membership_source")
-    _required_text(feature.consolidation_state, "consolidation_state")
-    _optional_text(
-        feature.consolidation_winner_group_hypothesis_id,
-        "consolidation_winner_group_hypothesis_id",
-    )
-    _optional_text(
-        feature.consolidation_source_group_hypothesis_id,
-        "consolidation_source_group_hypothesis_id",
-    )
     if feature.input_group_identity is not None:
         if not isinstance(feature.input_group_identity, CrossSampleGroupIdentity):
             raise TypeError("input_group_identity must be CrossSample-owned")
@@ -379,18 +346,6 @@ def _runtime_feature_basis(
             feature.group_membership_source,
             "group_membership_source",
         ),
-        "consolidation_state": _required_text(
-            feature.consolidation_state,
-            "consolidation_state",
-        ),
-        "consolidation_winner_group_hypothesis_id": _optional_text(
-            feature.consolidation_winner_group_hypothesis_id,
-            "consolidation_winner_group_hypothesis_id",
-        ),
-        "consolidation_source_group_hypothesis_id": _optional_text(
-            feature.consolidation_source_group_hypothesis_id,
-            "consolidation_source_group_hypothesis_id",
-        ),
         "input_group_identity": (
             {
                 "group_hypothesis_id": input_group_identity.group_hypothesis_id,
@@ -464,12 +419,6 @@ def _seed_centers(value: object) -> tuple[tuple[float, float], ...]:
 def _required_text(value: object, field: str) -> str:
     if not isinstance(value, str) or not value or value != value.strip():
         raise ValueError(f"{field} must be non-empty owner-normalized text")
-    return value
-
-
-def _optional_text(value: object, field: str) -> str:
-    if not isinstance(value, str) or value != value.strip():
-        raise ValueError(f"{field} must be owner-normalized text")
     return value
 
 

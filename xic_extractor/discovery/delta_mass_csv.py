@@ -29,13 +29,13 @@ from xic_extractor.discovery.detected_features import (
 )
 from xic_extractor.discovery.pt_pattern_artifact_contract import (
     PT_PATTERN_EVIDENCE_CONTRACT_COLUMNS,
-    format_pt_machine_float,
 )
 from xic_extractor.discovery.pt_pattern_discovery_evidence import (
     canonical_pt_pattern_evidence_csv_bytes,
 )
 from xic_extractor.tabular_io import (
     escape_excel_formula,
+    format_machine_float,
     write_delimited_rows,
 )
 
@@ -407,7 +407,7 @@ def _format_pt_value(value: object, *, escape_formula: bool) -> str:
         # These CSVs are machine handoffs, not display-only reports. Python's
         # repr is the shortest decimal that round-trips to the same binary
         # float, avoiding ppm-scale center drift from the old ``.6g`` format.
-        return format_pt_machine_float(value)
+        return format_machine_float(value)
     if isinstance(value, int):
         return str(value)
     text = str(value)

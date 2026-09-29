@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import math
-from pathlib import Path
 from typing import Callable
 
 import pytest
@@ -13,7 +12,6 @@ from xic_extractor.alignment.cell_quality import (
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.matrix import AlignedCell
 from xic_extractor.alignment.promotion_policy import (
-    BACKFILL_HYPOTHESIS_BLOCKED_REASON,
     LOW_MS1_COVERAGE_BLOCKED_REASON,
     NEIGHBOR_INTERFERENCE_BLOCKED_REASON,
 )
@@ -114,18 +112,6 @@ def test_backfill_requires_complete_peak_and_rt_inside_alignment_window() -> Non
                 "FAM001",
                 "backfilled",
                 100.0,
-                group_hypothesis_id="HYP001",
-                group_claim_state="duplicate_loser",
-                claim_winner_group_hypothesis_id="HYP002",
-            ),
-            BACKFILL_HYPOTHESIS_BLOCKED_REASON,
-        ),
-        (
-            lambda: _cell(
-                "hard_negative",
-                "FAM001",
-                "backfilled",
-                100.0,
                 region_local_mixture_diagnostic="ambiguous_adjacent_split",
             ),
             NEIGHBOR_INTERFERENCE_BLOCKED_REASON,
@@ -172,7 +158,6 @@ def test_backfill_requires_complete_peak_and_rt_inside_alignment_window() -> Non
         ),
     ),
     ids=(
-        "conflicting-claim",
         "ambiguous-adjacent-split",
         "insufficient-local-mixture-evidence",
         "two-peaks-supported",
@@ -245,25 +230,6 @@ def test_nonblocking_owner_facts_keep_backfill_quantifiable(
     assert decision.matrix_area == 100.0
 
 
-def test_current_claim_winner_resolves_historical_duplicate_loser() -> None:
-    decision = decide_cell_quality(
-        _cell(
-            "resolved_claim",
-            "FAM001",
-            "backfilled",
-            100.0,
-            group_hypothesis_id="HYP001",
-            group_claim_state="duplicate_loser",
-            claim_winner_group_hypothesis_id="HYP001",
-            consolidation_state="moved_to_primary_winner",
-        ),
-        AlignmentConfig(preferred_rt_sec=10.0, max_rt_sec=30.0),
-    )
-
-    assert decision.quality_status == "rescue_quantifiable"
-    assert decision.matrix_area == 100.0
-
-
 def test_backfill_rt_outside_preferred_is_review_only() -> None:
     decision = decide_cell_quality(
         _cell("s1", "FAM001", "backfilled", 100.0, rt_delta_sec=20.0),
@@ -305,9 +271,6 @@ def _cell(
     scan_support_score: float | None = 0.8,
     region_local_mixture_diagnostic: str = "",
     group_hypothesis_id: str = "",
-    group_claim_state: str = "",
-    claim_winner_group_hypothesis_id: str = "",
-    consolidation_state: str = "",
 ) -> AlignedCell:
     if (
         selected_integration is None
@@ -332,13 +295,9 @@ def _cell(
         trace_quality="clean",
         scan_support_score=scan_support_score,
         source_candidate_id=f"{sample_stem}#{cluster_id}",
-        source_raw_file=Path(f"{sample_stem}.raw"),
         reason=status,
         region_local_mixture_diagnostic=region_local_mixture_diagnostic,
         group_hypothesis_id=group_hypothesis_id,
-        group_claim_state=group_claim_state,
-        claim_winner_group_hypothesis_id=claim_winner_group_hypothesis_id,
-        consolidation_state=consolidation_state,
         selected_integration=selected_integration,
     )
 

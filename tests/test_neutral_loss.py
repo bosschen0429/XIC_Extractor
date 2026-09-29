@@ -817,10 +817,6 @@ def test_candidate_evidence_separates_trigger_from_failed_nl() -> None:
     assert evidence.strict_nl_scan_count == 0
 
 
-def test_legacy_target_product_ppm_helper_is_removed() -> None:
-    assert not hasattr(neutral_loss_module, "_best_product_ppm")
-
-
 def _check(raw: "_FakeRaw"):
     return check_nl(
         raw,

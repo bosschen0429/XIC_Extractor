@@ -228,6 +228,17 @@ def _flags(value: object, where: str) -> dict[str, Any]:
     return value
 
 
+def _validate_differential_flags(flags: dict[str, Any], where: str) -> None:
+    if flags.get("review_kind") != "cid_nl_differential":
+        return
+    for side in ("source", "successor"):
+        loc = f"{where}.{side}"
+        start, end = _window(flags.get(f"{side}_rt_window"), f"{loc}_rt_window")
+        center = _number(flags.get(f"{side}_center_rt"), f"{loc}_center_rt")
+        if not start <= center <= end:
+            raise _fail(f"{loc}_center_rt", "must be inside its RT window")
+
+
 def _decode_bundle(value: object) -> CurveBundle:
     root = _mapping(value, "$", {"schema_version", "transitions"})
     if root.get("schema_version") != BUNDLE_SCHEMA_VERSION:
@@ -250,6 +261,7 @@ def _decode_bundle(value: object) -> CurveBundle:
         keys.add(key)
         window = _window(obj.get("review_rt_window"), f"{where}.review_rt_window")
         flags = _flags(obj.get("quality_flags"), f"{where}.quality_flags")
+        _validate_differential_flags(flags, f"{where}.quality_flags")
         traces_raw = obj.get("traces")
         if not isinstance(traces_raw, (list, tuple)) or not traces_raw:
             raise _fail(f"{where}.traces", "expected nonempty array")
@@ -451,8 +463,6 @@ class CurveBundleSource:
         items = []
         for transition in self.bundle.transitions:
             scoped = tuple(t for t in transition.traces if t.sample_id in sample_ids)
-            if not scoped:
-                continue
             _, ref = build_canonical_ref("group", "curve-bundle", "v1", transition.key)
             witnesses = tuple(
                 Witness(
@@ -702,6 +712,7 @@ class CurveBundleSource:
                         == "cid_nl_differential"
                         else None
                     ),
+                    "relationship_availability": "unavailable",
                     "samples": samples,
                     "witnesses": [asdict(w) for w in item.witnesses],
                     "details": {"readable_records": records},

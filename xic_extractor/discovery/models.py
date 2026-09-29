@@ -87,6 +87,7 @@ DISCOVERY_PROVENANCE_COLUMNS = (
     "ms1_peak_rt_start",
     "ms1_peak_rt_end",
     "ms1_height",
+    "ms1_apex_mz",
     "ms1_trace_quality",
     "ms1_scan_support_score",
     "selected_tag_count",
@@ -370,6 +371,8 @@ class DiscoveryCandidate:
     discovery_candidate_state: DiscoveryCandidateState = "review_only_orphan_nl"
     ms1_feature_row_id: str = ""
     is_provisional: bool = False
+    # MS1 ion m/z read at the peak apex for an inferred precursor; report only.
+    ms1_apex_mz: float | None = None
 
     @classmethod
     def from_values(

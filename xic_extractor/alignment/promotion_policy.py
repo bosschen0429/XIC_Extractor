@@ -90,14 +90,6 @@ _MIN_SCAN_SUPPORT = 0.5
 _LOW_SCAN_SUPPORT_MAX = 0.2
 _PREFERRED_RT_DELTA_SEC = 60.0
 _MAX_RT_DELTA_SEC = 180.0
-_HYPOTHESIS_BLOCKING_CLAIM_STATES = {
-    "duplicate_loser",
-    "review_only_duplicate_loser",
-}
-_HYPOTHESIS_BLOCKING_CONSOLIDATION_STATES = {
-    "primary_loser",
-    "consolidation_no_go",
-}
 _HYPOTHESIS_BLOCKING_MARKERS = (
     "wrong_peak_conflict",
     "wrong_peak",
@@ -142,21 +134,6 @@ class BackfillCellEvidence:
     region_shadow_status: str = ""
     region_shadow_verdict: str = ""
     group_hypothesis_id: str = ""
-    group_claim_state: str = ""
-    claim_winner_group_hypothesis_id: str = ""
-    claim_source_group_hypothesis_id: str = ""
-    consolidation_state: str = ""
-    consolidation_winner_group_hypothesis_id: str = ""
-    consolidation_source_group_hypothesis_id: str = ""
-    peak_hypothesis_status: str = ""
-    product_selection_blocker: str = ""
-    rt_mode_status: str = ""
-    backfill_ms2_trigger_scan_count: int | None = None
-    backfill_strict_nl_scan_count: int | None = None
-    backfill_ms2_trace_strength: str = ""
-    backfill_dda_missing_nl_policy_status: str = ""
-    backfill_family_ms2_required_tag_status: str = ""
-    backfill_evidence_reason: str = ""
 
     @property
     def is_backfilled_quantifiable(self) -> bool:
@@ -287,37 +264,15 @@ class BackfillCellEvidence:
 
     @property
     def hypothesis_or_claim_blocked(self) -> bool:
-        if (
-            _normalize(self.group_claim_state) in _HYPOTHESIS_BLOCKING_CLAIM_STATES
-            and not self.claim_resolved_by_current_winner
-        ):
-            return True
-        if (
-            _normalize(self.consolidation_state)
-            in _HYPOTHESIS_BLOCKING_CONSOLIDATION_STATES
-        ):
-            return True
         text = " ".join(
             (
                 self.reason,
                 self.region_review_reason,
                 self.region_shadow_status,
                 self.region_shadow_verdict,
-                self.backfill_evidence_reason,
-                self.peak_hypothesis_status,
-                self.product_selection_blocker,
-                self.rt_mode_status,
             ),
         ).lower()
         return any(marker in text for marker in _HYPOTHESIS_BLOCKING_MARKERS)
-
-    @property
-    def claim_resolved_by_current_winner(self) -> bool:
-        current = _normalize(self.group_hypothesis_id)
-        winner = _normalize(self.claim_winner_group_hypothesis_id)
-        if not current or not winner or current != winner:
-            return False
-        return _normalize(self.consolidation_state) == "moved_to_primary_winner"
 
     @property
     def additional_ms1_support(self) -> bool:
@@ -705,29 +660,6 @@ def _cell_from_aligned(
         region_shadow_status=cell.region_shadow_status,
         region_shadow_verdict=cell.region_shadow_verdict,
         group_hypothesis_id=cell.group_hypothesis_id,
-        group_claim_state=cell.group_claim_state,
-        claim_winner_group_hypothesis_id=cell.claim_winner_group_hypothesis_id,
-        claim_source_group_hypothesis_id=cell.claim_source_group_hypothesis_id,
-        consolidation_state=cell.consolidation_state,
-        consolidation_winner_group_hypothesis_id=(
-            cell.consolidation_winner_group_hypothesis_id
-        ),
-        consolidation_source_group_hypothesis_id=(
-            cell.consolidation_source_group_hypothesis_id
-        ),
-        peak_hypothesis_status=cell.peak_hypothesis_status,
-        product_selection_blocker=cell.product_selection_blocker,
-        rt_mode_status=cell.rt_mode_status,
-        backfill_ms2_trigger_scan_count=cell.backfill_ms2_trigger_scan_count,
-        backfill_strict_nl_scan_count=cell.backfill_strict_nl_scan_count,
-        backfill_ms2_trace_strength=cell.backfill_ms2_trace_strength,
-        backfill_dda_missing_nl_policy_status=(
-            cell.backfill_dda_missing_nl_policy_status
-        ),
-        backfill_family_ms2_required_tag_status=(
-            cell.backfill_family_ms2_required_tag_status
-        ),
-        backfill_evidence_reason=cell.backfill_evidence_reason,
     )
 
 
@@ -746,49 +678,7 @@ def _cell_from_tsv(row: Mapping[str, str]) -> BackfillCellEvidence:
         scan_support_score=_float_value(row.get("scan_support_score", "")),
         source_candidate_id=row.get("source_candidate_id", ""),
         reason=row.get("reason", ""),
-        region_local_mixture_diagnostic=row.get("region_local_mixture_diagnostic", ""),
-        region_local_mixture_reason=row.get("region_local_mixture_reason", ""),
-        region_review_reason=row.get("region_review_reason", ""),
-        region_shadow_status=row.get("region_shadow_status", ""),
-        region_shadow_verdict=row.get("region_shadow_verdict", ""),
         group_hypothesis_id=row.get("group_hypothesis_id", ""),
-        group_claim_state=row.get("group_claim_state", ""),
-        claim_winner_group_hypothesis_id=row.get(
-            "claim_winner_group_hypothesis_id",
-            "",
-        ),
-        claim_source_group_hypothesis_id=row.get(
-            "claim_source_group_hypothesis_id",
-            "",
-        ),
-        consolidation_state=row.get("consolidation_state", ""),
-        consolidation_winner_group_hypothesis_id=row.get(
-            "consolidation_winner_group_hypothesis_id",
-            "",
-        ),
-        consolidation_source_group_hypothesis_id=row.get(
-            "consolidation_source_group_hypothesis_id",
-            "",
-        ),
-        peak_hypothesis_status=row.get("peak_hypothesis_status", ""),
-        product_selection_blocker=row.get("product_selection_blocker", ""),
-        rt_mode_status=row.get("rt_mode_status", ""),
-        backfill_ms2_trigger_scan_count=_int_optional(
-            row.get("backfill_ms2_trigger_scan_count", ""),
-        ),
-        backfill_strict_nl_scan_count=_int_optional(
-            row.get("backfill_strict_nl_scan_count", ""),
-        ),
-        backfill_ms2_trace_strength=row.get("backfill_ms2_trace_strength", ""),
-        backfill_dda_missing_nl_policy_status=row.get(
-            "backfill_dda_missing_nl_policy_status",
-            "",
-        ),
-        backfill_family_ms2_required_tag_status=row.get(
-            "backfill_family_ms2_required_tag_status",
-            "",
-        ),
-        backfill_evidence_reason=row.get("backfill_evidence_reason", ""),
     )
 
 
@@ -847,8 +737,3 @@ def _nonnegative_int_value(value: object) -> int | None:
         return int(text)
     except ValueError:
         return None
-
-
-def _int_optional(value: object) -> int | None:
-    number = _float_value(value)
-    return None if number is None else int(number)

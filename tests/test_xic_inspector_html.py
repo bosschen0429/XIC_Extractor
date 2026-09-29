@@ -348,3 +348,100 @@ def test_cancellation_at_commit_keeps_existing_report(tmp_path: Path) -> None:
         write_report_atomically("new", out, check_cancel=cancel)
     assert out.read_text(encoding="utf-8") == "previous"
     assert list(tmp_path.glob("report.html.tmp.*")) == []
+
+
+def _relationship_render(payload, expression):
+    report = build_report_html(
+        title="Relationships", evidence_capability="retained_curves",
+        strategy="sample", request_id="relationships", run_total=1,
+        eligible_count=1, selected_count=1, source_db_name="source.json",
+        payload_data=payload,
+    )
+    script = re.search(r"<script>(.*?)</script>", report, re.S)
+    assert script is not None
+    prefix = script[1].split("  $('record-list').addEventListener", 1)[0]
+    assert prefix != script[1]
+    data = json.dumps(payload, ensure_ascii=False)
+    document = (
+        "var document={getElementById:id=>id==='inspector-data'"
+        f"?{{textContent:{json.dumps(data)}}}:{{dataset:{{strategy:'sample'}}}}}};"
+    )
+    node = shutil.which("node")
+    assert node is not None, "Node.js is required to test the embedded JavaScript"
+    result = subprocess.run(
+        [node], input=document + "console.log(" + prefix + expression + "})());",
+        capture_output=True, text=True, encoding="utf-8", check=True,
+    )
+    return json.loads(result.stdout)
+
+
+@pytest.mark.parametrize(
+    ("availability", "explicit_empty", "expected"),
+    [
+        (None, False, "來源未提供樣本關係資料"),
+        (None, True, "來源未提供樣本關係資料"),
+        ("unavailable", False, "來源未提供樣本關係資料"),
+        ("not_retained", True, "來源未保存樣本配對圖"),
+        ("recorded", True, "本群組沒有保存的配對紀錄"),
+    ],
+)
+def test_missing_relationships_do_not_become_zero_support(
+    origin_curve_payload, availability, explicit_empty, expected,
+):
+    item = origin_curve_payload["items"][0]
+    if availability is not None:
+        item["relationship_availability"] = availability
+    if explicit_empty:
+        item["internal_pair_support"] = []
+    for row in item["samples"]:
+        row["support_origin"] = {"kind": "unavailable"}
+    rendered = _relationship_render(
+        origin_curve_payload,
+        "return JSON.stringify({panel:internalPairSupportPanel(items[0]),"
+        "plot:plot(items[0],'raw')});",
+    )
+    assert expected in rendered["panel"]
+    assert "不能據此判定沒有配對支持" in rendered["panel"]
+    assert "0 對直接支持" not in rendered["panel"]
+    assert "relationship-network" not in rendered["panel"]
+    assert "來源未提供此樣本的精確支持曲線" not in rendered["panel"]
+    assert rendered["plot"].count("data-curve-ref=") == 3
+
+
+def test_recorded_relationships_keep_pair_and_exact_capture_scope(origin_curve_payload):
+    item = origin_curve_payload["items"][0]
+    item["relationship_availability"] = "recorded"
+    item["relationship_members"] = [
+        {"member_subject_id": f"M{i}", "sample_id": f"S{i}",
+         "sample_label": f"Sample {i}"} for i in range(3)
+    ]
+    item["internal_pair_support"] = [{
+        "edge_ref": "edge-01", "left_member_subject_id": "M0",
+        "right_member_subject_id": "M1", "support_kind": "direct",
+    }]
+    item["curves"].append({**item["curves"][0], "evidence_ref": "unbound-curve"})
+    rendered = _relationship_render(
+        origin_curve_payload,
+        "const model=relationshipModel(items[0]);"
+        "const overview=internalPairSupportPanel(items[0]);rel.pair='edge-01';"
+        "return JSON.stringify({overview,lanes:relationshipLanes(items[0],model),"
+        "refs:model.byId.get('M0').curves.map(c=>c.evidence_ref)});",
+    )
+    assert "1 對直接支持，0 對僅供檢閱" in rendered["overview"]
+    assert 'data-relation-pair="edge-01"' in rendered["overview"]
+    assert 'data-lane-member="M0"' in rendered["lanes"]
+    assert 'data-lane-member="M1"' in rendered["lanes"]
+    assert 'data-lane-member="M2"' not in rendered["lanes"]
+    assert rendered["refs"] == ["curve-0"]
+
+
+def test_unretained_pair_graph_keeps_saved_support_curves(origin_curve_payload):
+    origin_curve_payload["items"][0]["relationship_availability"] = "not_retained"
+    panel = _relationship_render(
+        origin_curve_payload,
+        "return JSON.stringify(internalPairSupportPanel(items[0]));",
+    )
+    assert "來源未保存樣本配對圖" in panel
+    assert "0 對直接支持" not in panel
+    assert panel.count('data-lane-member=') == 3
+    assert panel.count('class="lane-raw"') == 3

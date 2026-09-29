@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
 from types import SimpleNamespace
 
 from xic_extractor.alignment.matrix import AlignedCell
@@ -111,7 +110,6 @@ def test_alignment_cell_projects_backfill_provenance_without_identity_policy() -
         trace_quality="owner_backfill",
         scan_support_score=0.7,
         source_candidate_id=None,
-        source_raw_file=Path("sample.raw"),
         reason="owner-centered MS1 backfill",
     )
 

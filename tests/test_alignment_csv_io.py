@@ -299,7 +299,7 @@ def test_read_discovery_candidates_accepts_writer_rounded_row_identity_mz(
     assert candidate.product_mz == pytest.approx(884.33)
 
 
-def test_discovery_writer_to_alignment_reader_roundtrips_rounded_row_identity(
+def test_discovery_writer_to_alignment_reader_roundtrips_row_identity(
     tmp_path: Path,
 ) -> None:
     from xic_extractor.alignment.csv_io import read_discovery_candidates_csv
@@ -362,12 +362,13 @@ def test_discovery_writer_to_alignment_reader_roundtrips_rounded_row_identity(
     assert written_row["candidate_id"] == "Sample_1#6095@mz1000.377783_p884.330383"
     assert written_row["discovery_candidate_state"] == "ms1_feature_nl_rescued"
     assert written_row["ms1_feature_row_id"] == "Sample_1|DNA_dR|1000.377783|23.41"
-    assert written_row["precursor_mz"] == "1000.38"
-    assert written_row["product_mz"] == "884.33"
+    assert written_row["precursor_mz"] == "1000.377783"
+    assert written_row["product_mz"] == "884.330383"
     assert parsed.candidate_id == "Sample_1#6095@mz1000.377783_p884.330383"
     assert parsed.discovery_candidate_state == "ms1_feature_nl_rescued"
     assert parsed.ms1_feature_row_id == "Sample_1|DNA_dR|1000.377783|23.41"
     assert parsed.configured_neutral_loss_da == candidate.configured_neutral_loss_da
+    assert parsed.precursor_mz == candidate.precursor_mz
 
 
 def test_read_discovery_candidates_rejects_mz_just_outside_display_tolerance(

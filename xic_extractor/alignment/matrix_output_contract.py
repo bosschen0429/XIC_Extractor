@@ -33,8 +33,6 @@ ALIGNMENT_MATRIX_IDENTITY_COLUMNS = (
     "accepted_cell_count",
     "accepted_sample_count",
     "evidence_status",
-    "parent_peak_hypothesis_id",
-    "child_peak_hypothesis_ids",
     MATRIX_ROW_BINDING_COLUMN,
 )
 

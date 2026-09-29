@@ -3,13 +3,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from xic_extractor.extraction.peak_region_selection_shadow import (
-    PEAK_REGION_SELECTION_SHADOW_HEADERS,
     build_peak_region_selection_blast_radius_rows,
     build_peak_region_selection_shadow_rows,
     build_peak_region_selection_shadow_summary_rows,
+    write_peak_region_selection_shadow_for_file_results,
 )
 from xic_extractor.output.peak_region_selection_shadow import (
-    write_peak_region_selection_shadow_for_file_results,
+    PEAK_REGION_SELECTION_SHADOW_HEADERS,
     write_peak_region_selection_shadow_tsv,
 )
 

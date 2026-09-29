@@ -108,6 +108,7 @@ def test_bundle_round_trip_and_offline_report(tmp_path: Path) -> None:
         1
     ]
     payload = json.loads(embedded.split("</script>", 1)[0])
+    assert payload["items"][0]["relationship_availability"] == "unavailable"
     curves = {curve["sample_id"]: curve for curve in payload["items"][0]["curves"]}
     assert curves["sample-1"]["processed_curves"][0]["intensities"] == [1, 4, 7, 1]
     assert curves["sample-2"]["processed_curves"][0]["intensities"] == [1, 3, 9, 1]
@@ -180,6 +181,124 @@ def test_invalid_bundle_fails_explicitly(tmp_path: Path, mutation) -> None:
         generate_report(source, SelectionRequest(), tmp_path / "review.html")
     assert exc.value.code == 4
     assert not (tmp_path / "review.html").exists()
+
+
+@pytest.mark.parametrize(
+    ("flags", "field"),
+    [
+        ({"review_kind": "cid_nl_differential"}, "source_rt_window"),
+        (
+            {
+                "review_kind": "cid_nl_differential",
+                "source_center_rt": 6.0,
+                "successor_center_rt": 6.0,
+                "source_rt_window": [7.0, 4.0],
+                "successor_rt_window": [4.0, 7.0],
+            },
+            "source_rt_window",
+        ),
+        (
+            {
+                "review_kind": "cid_nl_differential",
+                "source_rt_window": [4.0, 7.0],
+                "source_center_rt": "6.0",
+            },
+            "source_center_rt",
+        ),
+        (
+            {
+                "review_kind": "cid_nl_differential",
+                "source_rt_window": [4.0, 7.0],
+                "source_center_rt": 8.0,
+            },
+            "source_center_rt",
+        ),
+    ],
+)
+def test_incomplete_differential_rejected_before_report_replacement(
+    tmp_path: Path, flags: dict, field: str
+) -> None:
+    source = tmp_path / "curves.json"
+    output = tmp_path / "review.html"
+    write_curve_bundle(_fixture_bundle(), source)
+    body = json.loads(source.read_text(encoding="utf-8"))
+    body["transitions"][0]["quality_flags"] = flags
+    source.write_text(json.dumps(body), encoding="utf-8")
+    output.write_text("previous report", encoding="utf-8")
+
+    with pytest.raises(InspectorError, match=field) as exc:
+        generate_report(source, SelectionRequest(), output)
+    assert exc.value.code == 4
+    assert output.read_text(encoding="utf-8") == "previous report"
+
+
+def test_differential_accepts_numeric_display_facts(tmp_path: Path) -> None:
+    transition = _fixture_bundle().transitions[0]
+    flags = {
+        "review_kind": "cid_nl_differential",
+        "source_rt_window": [4.0, 7.0],
+        "successor_rt_window": [4.0, 7.0],
+        "source_center_rt": 6.0,
+        "successor_center_rt": 6.0,
+        "source_accepted_cell_count": 0,
+        "successor_accepted_cell_count": 2,
+        "median_gaussian15_successor_source_max_ratio": 1.25,
+    }
+    source = tmp_path / "curves.json"
+    output = tmp_path / "review.html"
+    write_curve_bundle(
+        CurveBundle((replace(transition, quality_flags=flags),)), source
+    )
+
+    result = generate_report(source, SelectionRequest(), output)
+    assert result.selected_count == 1
+    embedded = output.read_text(encoding="utf-8").split(
+        '<script id="inspector-data" type="application/json">', 1
+    )[1]
+    item = json.loads(embedded.split("</script>", 1)[0])["items"][0]
+    assert item["transition_review"]["source_accepted_cell_count"] == 0
+    assert (
+        item["transition_review"]["median_gaussian15_successor_source_max_ratio"]
+        == 1.25
+    )
+
+
+@pytest.mark.parametrize(
+    ("sample_ids", "eligible"),
+    [
+        ((), 2),
+        (("sample-1",), 1),
+        (("unknown-sample",), 0),
+    ],
+)
+def test_bundle_run_total_is_independent_of_sample_scope(
+    tmp_path: Path, sample_ids: tuple[str, ...], eligible: int
+) -> None:
+    transition = _fixture_bundle().transitions[0]
+    bundle = CurveBundle(
+        transitions=(
+            replace(transition, traces=(transition.traces[0],)),
+            replace(
+                transition,
+                key="transition-B",
+                traces=(transition.traces[1],),
+            ),
+        )
+    )
+    source = tmp_path / "curves.json"
+    write_curve_bundle(bundle, source)
+
+    result = generate_report(
+        source,
+        SelectionRequest(sample_ids=sample_ids),
+        tmp_path / "review.html",
+    )
+    assert (result.run_total, result.eligible_count, result.matched_count) == (
+        2,
+        eligible,
+        eligible,
+    )
+    assert result.selected_count == eligible
 
 
 @pytest.mark.parametrize("second_value", [0.0, None, 42.125])

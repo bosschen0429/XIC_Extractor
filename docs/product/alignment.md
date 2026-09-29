@@ -141,6 +141,10 @@ Initial grouping uses the sparse feature index described below. It scores only
 compatible feature candidates and retains the evaluated evidence. Missing pair
 records mean `not_evaluated`; they do not prove incompatibility. Backfill checks
 its observation against the fixed destination group before admission.
+Window grouping scores the full precursor and product mass separation of each
+pair. A near-equal pairing to one sample cannot erase independent reciprocal
+support from another sample. Contested pairs do not grow bands; ambiguous
+owners without independent support remain unresolved.
 After local ordinary bands settle, a prepared batch warp and complete injection
 order allow bands separated by unobserved injections to join when their
 corrected RT trends and mass centres support one band, each is the other's
@@ -344,6 +348,14 @@ unresolved and rejected groups remain AuditTrail facts.
   support from another subject is admissible only through the group's exact
   owner-backed support binding. Matrix rows consume these completed groups and
   cells; writers do not merge subjects or invent cross-subject values.
+- A Matrix row's m/z is the mean of its members' observed m/z
+  (`center_mz_basis = cross_sample_owner_arithmetic_mean`). When any direct
+  member's Discovery candidate carries an apex MS1 reading (`ms1_apex_mz`), the
+  row reports the mean of those readings instead
+  (`center_mz_basis = discovery_ms1_apex_mean`). An inferred precursor's
+  observed m/z is product + loss and can sit 15–20 ppm from the MS1 ion; the
+  reading changes only the reported value, not grouping, traces, Backfill or
+  cell values.
 
 ### Cross-sample grouping and batch finalization
 

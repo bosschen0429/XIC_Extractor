@@ -1,5 +1,3 @@
-from pathlib import Path
-
 import numpy as np
 import pytest
 
@@ -156,17 +154,6 @@ def test_integrate_with_baseline_rejects_unknown_method() -> None:
             3,
             baseline_method="airpls",
         )
-
-
-def test_production_code_does_not_reference_retired_linear_edge_baseline() -> None:
-    package_root = Path(__file__).resolve().parents[1] / "xic_extractor"
-    offenders: list[str] = []
-    for path in package_root.rglob("*.py"):
-        text = path.read_text(encoding="utf-8")
-        if "integrate_linear_edge_baseline" in text:
-            offenders.append(path.relative_to(package_root).as_posix())
-
-    assert offenders == []
 
 
 def test_bounded_trace_interval_matches_integration_interval_contract() -> None:

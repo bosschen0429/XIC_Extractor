@@ -1231,6 +1231,31 @@ def test_initial_edge_adds_one_exact_peer_without_expanding_selection(
     assert peer["curves"][0]["candidate_ids"] == ["C2"]
 
 
+@pytest.mark.parametrize(
+    "availability", [None, "unavailable", "not_retained", "recorded"]
+)
+def test_report_preserves_relationship_availability_without_edges(
+    tmp_path, availability,
+):
+    report, _, _ = _create_mock_db(tmp_path)
+    if availability is not None:
+        with sqlite3.connect(report) as connection:
+            summary = json.loads(connection.execute(
+                "SELECT payload FROM metadata WHERE key='summary'"
+            ).fetchone()[0])
+            summary["audit_availability"] = {"initial_edges": availability}
+            connection.execute(
+                "UPDATE metadata SET payload=? WHERE key='summary'",
+                (json.dumps(summary),),
+            )
+    output = tmp_path / "relationship-availability.html"
+    generate_report(report, SelectionRequest(), output)
+    item = _report_data(output)["items"][0]
+    assert item["relationship_availability"] == (availability or "unavailable")
+    assert not item.get("internal_pair_support")
+    assert item["samples"][0]["quantitative_value"] == 1000.0
+
+
 def test_internal_pair_support_preserves_edge_identity_and_disposition(tmp_path):
     report, _, _ = _create_mock_db(
         tmp_path,
@@ -1380,6 +1405,7 @@ def test_internal_pair_support_preserves_edge_identity_and_disposition(tmp_path)
     )
     item = _report_data(output)["items"][0]
 
+    assert item["relationship_availability"] == "recorded"
     assert item["internal_pair_support"] == [
         {
             "edge_ref": "edge-direct-three-links",

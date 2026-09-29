@@ -48,17 +48,19 @@ _ALIGNMENT_CORE_EXCLUDED_PATHS = frozenset(
 #   3. the register's owning milestone is retired.
 SNAPSHOT_MARKER = "ledger_snapshot"
 
-# Markers whose tests are expensive and guard a narrow set of files. A change
+# Markers whose tests are expensive and guard a known set of inputs. A change
 # that touches none of a marker's paths skips that marker's tests. CI
 # (.github/workflows/ci.yml) and local shard runs both read this table, so the
 # two select the same tests for the same change.
 RELEVANCE_RULES: dict[str, re.Pattern[str]] = {
+    # Include whole shipped package roots: an installed/frozen import can depend
+    # on any of their code or data. A shortlist of entry points misses native
+    # build inputs and resources, while ordinary documentation can still skip.
     "packaging_build": re.compile(
-        r"^(pyproject\.toml|uv\.lock|xic_extractor\.spec|tests/test_pyinstaller_spec\.py"
-        r"|assets/|config/(settings|targets)\.example\.csv|gui/main\.py"
-        r"|scripts/(csv_to_excel|xlsx_to_targets)\.py|xic_extractor/presets/data/"
-        r"|xic_extractor/alignment/(__init__\.py|quantitative_projection_authority\.py"
-        r"|data/quantitative_projection_authority\.json))"
+        r"^((pyproject\.toml|setup\.py|uv\.lock|xic_extractor\.spec)$"
+        r"|\.github/workflows/(build|ci)\.yml$"
+        r"|tests/test_(pyinstaller_spec|test_shards)\.py$"
+        r"|(xic_extractor|xic_inspector|gui|scripts|tools|assets|config)/)"
     ),
     "agent_hooks": re.compile(
         r"^(\.codex/(hooks/|hooks\.json$|rules/)|tests/test_config_codex_hooks\.py$"
@@ -243,6 +245,7 @@ SHARD_PATTERNS: ShardPatterns = OrderedDict(
             "tests/test_processing_run_spec_entrypoints.py",
             "tests/test_process_job_execution.py",
             "tests/test_quantitative_projection_authority.py",
+            "tests/test_raw_superwindow_source.py",
             "tests/test_run_alignment.py",
             "tests/test_run_discovery.py",
             "tests/test_run_discovery_run_spec_cli.py",
@@ -300,6 +303,7 @@ SHARD_PATTERNS: ShardPatterns = OrderedDict(
             "tests/test_parallel*.py",
             "tests/test_run_instrument_qc.py",
             "tests/test_sample_metadata*.py",
+            "tests/test_feature_quality.py",
             "tests/test_analysis_set.py",
             "tests/test_injection_timeline.py",
             "tests/test_sample_rt_calibration.py",
