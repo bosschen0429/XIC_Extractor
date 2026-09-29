@@ -5,6 +5,55 @@
 保存，不以 dated Markdown 留在 repo。
 本節也定義 documentation source-of-truth 與歷程邊界。
 
+## Repository Tree
+
+這是閱讀用的主要結構，省略個別實作檔案。先分清「程式放哪裡」；
+再用[架構導覽](architecture-contract.md#reading-the-code)找執行入口與責任。
+
+```text
+XIC_Extractor/
+├── gui/                         桌面互動；views/、sections/ 組畫面，workers/ 啟動工作
+├── scripts/                     已宣告 CLI、操作與驗證入口
+├── xic_extractor/               分析產品的實作
+│   ├── configuration/          載入設定與 target；驗證設定值
+│   ├── presets/                方法配方與綁定
+│   ├── discovery/              從量測資料找候選及其證據
+│   ├── extraction/             Targeted 流程、擷取工作與保留的 Untargeted 執行 adapter
+│   ├── peak_detection/         單次觀察、峰假設、選擇與積分
+│   ├── alignment/              跨樣本組合、Backfill、格值決策及其交付 adapter
+│   │   ├── cross_sample/       跨樣本關聯
+│   │   ├── mode_track/         RT 模式與指定／refinement
+│   │   ├── backfill/           有限度的 observation revisit
+│   │   ├── cell_decision/      每個樣本格的科學決策
+│   │   ├── projection/         Targeted／Untargeted 的前後投影
+│   │   └── result/             科學結果與 application 結果
+│   ├── execution_engine/      工作分區、worker pool、結果暫存
+│   ├── output/                CSV／workbook／HTML 等輸出程式
+│   ├── instrument_qc/         儀器 QC、校正與其報告流程
+│   ├── diagnostics/           可重用的診斷與說明工具
+│   └── *.py                   RAW adapter、共享模型／規則、runtime owner 與公開入口
+├── xic_inspector/              完成證據的只讀檢視
+│   ├── sources/               解讀來源證據
+│   ├── selection/             選擇要呈現的記錄
+│   └── rendering/             離線 HTML
+├── tools/                     維護工具；diagnostics/ 為診斷，testing/ 管測試分片
+├── tests/                     行為測試與小型 fixtures
+├── docs/                      正式文件；各子目錄用途見下表
+├── config/                    公開設定與範例
+├── assets/                    圖示與截圖
+├── .github/                   CI 與 GitHub 設定
+├── .codex/                    Repo 的 agent 執行規則
+├── pyproject.toml             套件、依賴、已安裝 CLI 與測試設定
+├── .importlinter              可執行的靜態依賴限制
+├── xic_extractor.spec          Windows 打包輸入
+└── output/                    本機執行產物，不追蹤
+```
+
+`xic_extractor/output/` 是受版本控制的**輸出程式**；根目錄 `output/` 是不追蹤的
+**執行產物**。`alignment/` 現在同時容納演算法、流程、I/O 與交付 adapter，
+不能把整個目錄當成純計算層。`xic_extractor/` 根層也不全是 facade；
+應依[責任表](architecture-contract.md#ownership-map)辨認正式 owner。
+
 ## § 1 主要規則文件的職責分工
 
 | 文件 | 職責 |
