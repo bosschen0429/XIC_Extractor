@@ -184,9 +184,6 @@ class CrossSamplePeakGroupHypothesis:
     construction_role: CrossSamplePeakGroupConstructionRole = (
         "owner_aligned_feature_shadow"
     )
-    consolidation_state: str = "not_consolidated"
-    consolidation_winner_group_hypothesis_id: str = ""
-    consolidation_source_group_hypothesis_id: str = ""
     edge_facts: tuple[CrossSamplePeakGroupEdgeFact, ...] = ()
     review_facts: tuple[CrossSamplePeakGroupReviewFact, ...] = ()
     hard_gate_challenge_facts: tuple[
@@ -549,9 +546,6 @@ def _hypothesis_from_owner_group(
     evidence: str,
     identity_conflict: bool = False,
     review_only: bool = False,
-    consolidation_state: str = "not_consolidated",
-    consolidation_winner_group_hypothesis_id: str = "",
-    consolidation_source_group_hypothesis_id: str = "",
 ) -> CrossSamplePeakGroupHypothesis:
     center_mz = sum(owner.precursor_mz for owner in group) / len(group)
     center_rt = sum(owner.owner_apex_rt for owner in group) / len(group)
@@ -603,13 +597,6 @@ def _hypothesis_from_owner_group(
         identity_conflict=identity_conflict,
         review_only=effective_review_only,
         construction_role="successor_constructor",
-        consolidation_state=consolidation_state,
-        consolidation_winner_group_hypothesis_id=(
-            consolidation_winner_group_hypothesis_id
-        ),
-        consolidation_source_group_hypothesis_id=(
-            consolidation_source_group_hypothesis_id
-        ),
     )
 
 

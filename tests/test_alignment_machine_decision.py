@@ -28,7 +28,7 @@ def test_generic_review_backfill_is_unavailable_not_primary_use() -> None:
     assert "rt_coherent" not in vector.support_reasons
 
 
-def test_wrong_hypothesis_cell_blocker_is_exposed_in_machine_decision() -> None:
+def test_wrong_peak_cell_blocker_is_exposed_in_machine_decision() -> None:
     vector = project_machine_decision(
         _review_row(
             include="FALSE",
@@ -43,7 +43,7 @@ def test_wrong_hypothesis_cell_blocker_is_exposed_in_machine_decision() -> None:
         _cell_rows(
             detected=2,
             backfilled=1,
-            backfill_group_claim_state="duplicate_loser",
+            backfill_reason="wrong_peak_conflict",
         ),
     )
 
@@ -236,7 +236,6 @@ def _cell_rows(
     backfill_reason: str = "backfilled",
     backfill_region_review_reason: str = "",
     backfill_rt_delta_sec: str = "0.0",
-    backfill_group_claim_state: str = "",
 ) -> tuple[dict[str, str], ...]:
     rows: list[dict[str, str]] = []
     for index in range(detected):
@@ -252,7 +251,6 @@ def _cell_rows(
                 reason=backfill_reason,
                 region_review_reason=backfill_region_review_reason,
                 rt_delta_sec=backfill_rt_delta_sec,
-                group_claim_state=backfill_group_claim_state,
             ),
         )
     for index in range(detected + backfilled, detected + backfilled + duplicate):
@@ -275,7 +273,6 @@ def _cell_row(
     reason: str | None = None,
     region_review_reason: str = "",
     rt_delta_sec: str = "0.0",
-    group_claim_state: str = "",
 ) -> dict[str, str]:
     row = {
         "feature_family_id": "FAM001",
@@ -299,6 +296,5 @@ def _cell_row(
         ),
         "reason": reason if reason is not None else status,
         "region_review_reason": region_review_reason,
-        "group_claim_state": group_claim_state,
     }
     return row

@@ -703,10 +703,6 @@ def _cell(
     selected_integration: IntegrationResult | None = None,
     backfill_evidence: bool = True,
     group_hypothesis_id: str = "",
-    group_claim_state: str = "",
-    claim_winner_group_hypothesis_id: str = "",
-    claim_source_group_hypothesis_id: str = "",
-    consolidation_state: str = "",
 ) -> AlignedCell:
     has_area = area is not None
     positive_area = _positive_area_value(area)
@@ -744,10 +740,6 @@ def _cell(
             else status
         ),
         group_hypothesis_id=group_hypothesis_id,
-        group_claim_state=group_claim_state,
-        claim_winner_group_hypothesis_id=claim_winner_group_hypothesis_id,
-        claim_source_group_hypothesis_id=claim_source_group_hypothesis_id,
-        consolidation_state=consolidation_state,
         selected_integration=selected_integration,
         **cast(
             Any,

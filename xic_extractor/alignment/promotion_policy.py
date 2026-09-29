@@ -90,14 +90,6 @@ _MIN_SCAN_SUPPORT = 0.5
 _LOW_SCAN_SUPPORT_MAX = 0.2
 _PREFERRED_RT_DELTA_SEC = 60.0
 _MAX_RT_DELTA_SEC = 180.0
-_HYPOTHESIS_BLOCKING_CLAIM_STATES = {
-    "duplicate_loser",
-    "review_only_duplicate_loser",
-}
-_HYPOTHESIS_BLOCKING_CONSOLIDATION_STATES = {
-    "primary_loser",
-    "consolidation_no_go",
-}
 _HYPOTHESIS_BLOCKING_MARKERS = (
     "wrong_peak_conflict",
     "wrong_peak",
@@ -142,12 +134,6 @@ class BackfillCellEvidence:
     region_shadow_status: str = ""
     region_shadow_verdict: str = ""
     group_hypothesis_id: str = ""
-    group_claim_state: str = ""
-    claim_winner_group_hypothesis_id: str = ""
-    claim_source_group_hypothesis_id: str = ""
-    consolidation_state: str = ""
-    consolidation_winner_group_hypothesis_id: str = ""
-    consolidation_source_group_hypothesis_id: str = ""
     backfill_ms2_trigger_scan_count: int | None = None
     backfill_strict_nl_scan_count: int | None = None
     backfill_ms2_trace_strength: str = ""
@@ -284,16 +270,6 @@ class BackfillCellEvidence:
 
     @property
     def hypothesis_or_claim_blocked(self) -> bool:
-        if (
-            _normalize(self.group_claim_state) in _HYPOTHESIS_BLOCKING_CLAIM_STATES
-            and not self.claim_resolved_by_current_winner
-        ):
-            return True
-        if (
-            _normalize(self.consolidation_state)
-            in _HYPOTHESIS_BLOCKING_CONSOLIDATION_STATES
-        ):
-            return True
         text = " ".join(
             (
                 self.reason,
@@ -304,14 +280,6 @@ class BackfillCellEvidence:
             ),
         ).lower()
         return any(marker in text for marker in _HYPOTHESIS_BLOCKING_MARKERS)
-
-    @property
-    def claim_resolved_by_current_winner(self) -> bool:
-        current = _normalize(self.group_hypothesis_id)
-        winner = _normalize(self.claim_winner_group_hypothesis_id)
-        if not current or not winner or current != winner:
-            return False
-        return _normalize(self.consolidation_state) == "moved_to_primary_winner"
 
     @property
     def additional_ms1_support(self) -> bool:
@@ -699,16 +667,6 @@ def _cell_from_aligned(
         region_shadow_status=cell.region_shadow_status,
         region_shadow_verdict=cell.region_shadow_verdict,
         group_hypothesis_id=cell.group_hypothesis_id,
-        group_claim_state=cell.group_claim_state,
-        claim_winner_group_hypothesis_id=cell.claim_winner_group_hypothesis_id,
-        claim_source_group_hypothesis_id=cell.claim_source_group_hypothesis_id,
-        consolidation_state=cell.consolidation_state,
-        consolidation_winner_group_hypothesis_id=(
-            cell.consolidation_winner_group_hypothesis_id
-        ),
-        consolidation_source_group_hypothesis_id=(
-            cell.consolidation_source_group_hypothesis_id
-        ),
         backfill_ms2_trigger_scan_count=cell.backfill_ms2_trigger_scan_count,
         backfill_strict_nl_scan_count=cell.backfill_strict_nl_scan_count,
         backfill_ms2_trace_strength=cell.backfill_ms2_trace_strength,
@@ -743,24 +701,6 @@ def _cell_from_tsv(row: Mapping[str, str]) -> BackfillCellEvidence:
         region_shadow_status=row.get("region_shadow_status", ""),
         region_shadow_verdict=row.get("region_shadow_verdict", ""),
         group_hypothesis_id=row.get("group_hypothesis_id", ""),
-        group_claim_state=row.get("group_claim_state", ""),
-        claim_winner_group_hypothesis_id=row.get(
-            "claim_winner_group_hypothesis_id",
-            "",
-        ),
-        claim_source_group_hypothesis_id=row.get(
-            "claim_source_group_hypothesis_id",
-            "",
-        ),
-        consolidation_state=row.get("consolidation_state", ""),
-        consolidation_winner_group_hypothesis_id=row.get(
-            "consolidation_winner_group_hypothesis_id",
-            "",
-        ),
-        consolidation_source_group_hypothesis_id=row.get(
-            "consolidation_source_group_hypothesis_id",
-            "",
-        ),
         backfill_ms2_trigger_scan_count=_int_optional(
             row.get("backfill_ms2_trigger_scan_count", ""),
         ),

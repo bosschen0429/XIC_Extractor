@@ -346,16 +346,6 @@ def _alignment_cell_rows(matrix: AlignmentMatrix) -> Iterable[dict[str, object]]
             "gap_fill_state": cell.gap_fill_state,
             "gap_fill_reason": cell.gap_fill_reason,
             "missing_observation_state": cell.missing_observation_state,
-            "group_claim_state": cell.group_claim_state,
-            "claim_winner_group_hypothesis_id": (cell.claim_winner_group_hypothesis_id),
-            "claim_source_group_hypothesis_id": (cell.claim_source_group_hypothesis_id),
-            "consolidation_state": cell.consolidation_state,
-            "consolidation_winner_group_hypothesis_id": (
-                cell.consolidation_winner_group_hypothesis_id
-            ),
-            "consolidation_source_group_hypothesis_id": (
-                cell.consolidation_source_group_hypothesis_id
-            ),
             "sample_stem": cell.sample_stem,
             "status": cell.status,
             "area": format_value(cell.area),

@@ -85,12 +85,6 @@ class AlignedCell:
     gap_fill_state: str = ""
     gap_fill_reason: str = ""
     missing_observation_state: str = ""
-    group_claim_state: str = ""
-    claim_winner_group_hypothesis_id: str = ""
-    claim_source_group_hypothesis_id: str = ""
-    consolidation_state: str = ""
-    consolidation_winner_group_hypothesis_id: str = ""
-    consolidation_source_group_hypothesis_id: str = ""
 
     @property
     def matrix_area(self) -> float | None:

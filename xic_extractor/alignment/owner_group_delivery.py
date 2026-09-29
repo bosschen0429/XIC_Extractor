@@ -78,15 +78,6 @@ class OwnerGroupDeliveryFeature(Protocol):
     @property
     def group_membership_source(self) -> str: ...
 
-    @property
-    def consolidation_state(self) -> str: ...
-
-    @property
-    def consolidation_winner_group_hypothesis_id(self) -> str: ...
-
-    @property
-    def consolidation_source_group_hypothesis_id(self) -> str: ...
-
 
 OwnerGroupDeliveryFeatures: TypeAlias = tuple[OwnerGroupDeliveryFeature, ...]
 
@@ -97,18 +88,12 @@ class GroupProjection(TypedDict):
     group_construction_role: str
     group_delivery_role: str
     group_membership_source: str
-    consolidation_state: str
-    consolidation_winner_group_hypothesis_id: str
-    consolidation_source_group_hypothesis_id: str
 
 
 class CellGroupProjection(GroupProjection):
     gap_fill_state: str
     gap_fill_reason: str
     missing_observation_state: str
-    group_claim_state: str
-    claim_winner_group_hypothesis_id: str
-    claim_source_group_hypothesis_id: str
 
 GROUP_REVIEW_PROJECTION_COLUMNS = (
     "group_hypothesis_id",
@@ -116,9 +101,6 @@ GROUP_REVIEW_PROJECTION_COLUMNS = (
     "group_construction_role",
     "group_delivery_role",
     "group_membership_source",
-    "consolidation_state",
-    "consolidation_winner_group_hypothesis_id",
-    "consolidation_source_group_hypothesis_id",
 )
 
 CROSS_SAMPLE_GROUP_CELL_COLUMNS = (
@@ -130,12 +112,6 @@ CROSS_SAMPLE_GROUP_CELL_COLUMNS = (
     "gap_fill_state",
     "gap_fill_reason",
     "missing_observation_state",
-    "group_claim_state",
-    "claim_winner_group_hypothesis_id",
-    "claim_source_group_hypothesis_id",
-    "consolidation_state",
-    "consolidation_winner_group_hypothesis_id",
-    "consolidation_source_group_hypothesis_id",
 )
 
 GROUP_BACKFILL_SEED_AUDIT_COLUMNS = (
@@ -182,18 +158,6 @@ def delivery_group_membership_source(feature: object) -> str:
     )
 
 
-def delivery_consolidation_state(feature: object) -> str:
-    return _string_attr(feature, "consolidation_state") or "not_consolidated"
-
-
-def delivery_consolidation_winner_group_hypothesis_id(feature: object) -> str:
-    return _string_attr(feature, "consolidation_winner_group_hypothesis_id")
-
-
-def delivery_consolidation_source_group_hypothesis_id(feature: object) -> str:
-    return _string_attr(feature, "consolidation_source_group_hypothesis_id")
-
-
 def delivery_group_projection(feature: object) -> GroupProjection:
     return {
         "group_hypothesis_id": delivery_group_hypothesis_id(feature),
@@ -201,13 +165,6 @@ def delivery_group_projection(feature: object) -> GroupProjection:
         "group_construction_role": delivery_group_construction_role(feature),
         "group_delivery_role": delivery_group_delivery_role(feature),
         "group_membership_source": delivery_group_membership_source(feature),
-        "consolidation_state": delivery_consolidation_state(feature),
-        "consolidation_winner_group_hypothesis_id": (
-            delivery_consolidation_winner_group_hypothesis_id(feature)
-        ),
-        "consolidation_source_group_hypothesis_id": (
-            delivery_consolidation_source_group_hypothesis_id(feature)
-        ),
     }
 
 
@@ -217,14 +174,12 @@ def delivery_cell_projection(
     gap_fill_state: str,
     gap_fill_reason: str,
     missing_observation_state: str,
-    group_claim_state: str = "unclaimed_or_winner",
 ) -> CellGroupProjection:
     return delivery_cell_projection_from_group(
         delivery_group_projection(feature),
         gap_fill_state=gap_fill_state,
         gap_fill_reason=gap_fill_reason,
         missing_observation_state=missing_observation_state,
-        group_claim_state=group_claim_state,
     )
 
 
@@ -234,16 +189,12 @@ def delivery_cell_projection_from_group(
     gap_fill_state: str,
     gap_fill_reason: str,
     missing_observation_state: str,
-    group_claim_state: str = "unclaimed_or_winner",
 ) -> CellGroupProjection:
     return {
         **group_projection,
         "gap_fill_state": gap_fill_state,
         "gap_fill_reason": gap_fill_reason,
         "missing_observation_state": missing_observation_state,
-        "group_claim_state": group_claim_state,
-        "claim_winner_group_hypothesis_id": "",
-        "claim_source_group_hypothesis_id": "",
     }
 
 
