@@ -389,7 +389,7 @@ def test_summary_renders_engineering_go_no_go_rows():
         context=IdentityCoherenceOutputContext(
             command="pytest",
             mode="inline_pre_backfill",
-            input_source="pre_backfill_owner_state.jsonl",
+            input_source="synthetic",
             firewall_fixture_status="pass",
             spawn_payload_smoke_status="pass",
             max_infrastructure_blocked_fraction=0.05,
@@ -413,7 +413,7 @@ def test_summary_marks_engineering_no_go_when_full_cohort_budget_missing():
         context=IdentityCoherenceOutputContext(
             command="pytest",
             mode="inline_pre_backfill",
-            input_source="pre_backfill_owner_state.jsonl",
+            input_source="synthetic",
             firewall_fixture_status="pass",
             spawn_payload_smoke_status="pass",
             projected_full_cohort_identity_request_count=10,
@@ -443,7 +443,7 @@ def test_summary_marks_infrastructure_pivot_when_blocked_fraction_exceeds_limit(
         context=IdentityCoherenceOutputContext(
             command="pytest",
             mode="inline_pre_backfill",
-            input_source="pre_backfill_owner_state.jsonl",
+            input_source="synthetic",
             max_infrastructure_blocked_fraction=0.05,
         ),
     )
@@ -505,7 +505,7 @@ def test_summary_uses_row_level_denominator_for_blocked_fraction():
         context=IdentityCoherenceOutputContext(
             command="pytest",
             mode="inline_pre_backfill",
-            input_source="pre_backfill_owner_state.jsonl",
+            input_source="synthetic",
             max_infrastructure_blocked_fraction=0.2,
         ),
     )
@@ -537,7 +537,7 @@ def test_summary_marks_blocked_fraction_not_assessed_without_denominator():
         context=IdentityCoherenceOutputContext(
             command="pytest",
             mode="inline_pre_backfill",
-            input_source="pre_backfill_owner_state.jsonl",
+            input_source="synthetic",
         ),
     )
 
@@ -564,7 +564,7 @@ def test_summary_rejects_forbidden_evidence_used_before_go_no_go_render():
             context=IdentityCoherenceOutputContext(
                 command="pytest",
                 mode="inline_pre_backfill",
-                input_source="pre_backfill_owner_state.jsonl",
+                input_source="synthetic",
             ),
         )
 
@@ -621,7 +621,7 @@ def test_summary_can_record_passed_firewall_fixture_status():
         context=IdentityCoherenceOutputContext(
             command="pytest",
             mode="inline_pre_backfill",
-            input_source="tests/fixtures/identity_coherence/firewall_spoof",
+            input_source="synthetic",
             firewall_fixture_status="pass",
         ),
     )

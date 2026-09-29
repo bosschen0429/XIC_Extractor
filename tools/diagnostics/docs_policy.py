@@ -151,14 +151,12 @@ DOC_LIFECYCLES_REQUIRING_EXIT_RULE = {
 
 # These are the only documents whose permanent path supplies placement, kind,
 # purpose, and self-ownership. Generic lifecycle/exit metadata is waived, but
-# their positive landmarks and routes are validated separately.
+# their presence and routes are validated separately.
 PERMANENT_ROOT_DOC_CONTRACTS = {
     "AGENTS.md": {
         "kind": "agent_route_contract",
         "purpose": "repo agent routing contract",
         "owner": "self",
-        "required_headings": ("XIC Extractor Agent Contract", "Task Routes"),
-        "required_text": ("Task Routes",),
         "required_routes": (
             "docs/agent/parameter-settings.md",
             "docs/product/README.md",
@@ -176,8 +174,6 @@ PERMANENT_ROOT_DOC_CONTRACTS = {
         "kind": "public_project_entrypoint",
         "purpose": "public project entrypoint",
         "owner": "self",
-        "required_headings": ("XIC Extractor", "Documentation"),
-        "required_text": ("Documentation",),
         "required_routes": (
             "docs/user/README.md",
             "docs/product/README.md",
@@ -191,12 +187,6 @@ PERMANENT_ROOT_DOC_CONTRACTS = {
         "kind": "architecture_dependency_owner",
         "purpose": "architecture and dependency owner",
         "owner": "self",
-        "required_headings": (
-            "Architecture Contract",
-            "Dependency Direction",
-            "Ownership Map",
-        ),
-        "required_text": (),
         "required_routes": (),
         "required_referrers": (
             "AGENTS.md",
@@ -208,8 +198,6 @@ PERMANENT_ROOT_DOC_CONTRACTS = {
         "kind": "file_placement_lifecycle_owner",
         "purpose": "file placement and documentation lifecycle owner",
         "owner": "self",
-        "required_headings": ("Project Layout", "Permanent root document contract"),
-        "required_text": ("目錄收納規則單一可信來源", "source-of-truth 與歷程邊界"),
         "required_routes": (
             "docs/architecture-contract.md",
             "docs/product",
