@@ -1,3 +1,0 @@
-decision_id	production_status	include_in_primary_matrix	backfill_status	workbook_area	spoof_note
-DEC-FW-PASS	rescued	true	backfill_rescued	999999.0	Forbidden values must be seen but not used
-DEC-FW-REVIEW	detected	true	backfill_rescued	888888.0	Review-only row must remain review-only
