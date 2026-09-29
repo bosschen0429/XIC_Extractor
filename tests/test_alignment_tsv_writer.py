@@ -687,9 +687,9 @@ def test_alignment_matrix_identity_rejects_malformed_serialized_row_shapes(
     if mutation == "identity_overflow":
         identity_row[None] = ["overflow"]
     elif mutation == "identity_missing_key":
-        identity_row.pop("child_peak_hypothesis_ids")
+        identity_row.pop("evidence_status")
     elif mutation == "identity_truncated":
-        identity_row["child_peak_hypothesis_ids"] = None
+        identity_row["evidence_status"] = None
     elif mutation == "matrix_overflow":
         matrix_row[None] = ["overflow"]
     elif mutation == "matrix_missing_key":
@@ -1065,8 +1065,6 @@ def test_write_alignment_matrix_identity_tsv_maps_product_rows(
         "accepted_cell_count": "2",
         "accepted_sample_count": "2",
         "evidence_status": "product_matrix_identity_complete",
-        "parent_peak_hypothesis_id": "",
-        "child_peak_hypothesis_ids": "",
     }
 
 
@@ -1131,7 +1129,6 @@ def test_write_alignment_matrix_identity_tsv_records_split_hypothesis(
                 split_evaluation_status="complete_product_ready_split",
                 projection_status="not_projection",
                 source_feature_family_ids=("FAM_PARENT",),
-                parent_peak_hypothesis_id="FAM_PARENT",
             ),
         ),
         cells=(
@@ -1153,8 +1150,6 @@ def test_write_alignment_matrix_identity_tsv_records_split_hypothesis(
     assert rows[0]["row_identity_basis"] == "split_peak_hypothesis"
     assert rows[0]["split_evaluation_status"] == "complete_product_ready_split"
     assert rows[0]["source_feature_family_ids"] == "FAM_PARENT"
-    assert rows[0]["parent_peak_hypothesis_id"] == "FAM_PARENT"
-    assert rows[0]["child_peak_hypothesis_ids"] == ""
 
 
 def test_write_alignment_matrix_uses_explicit_peak_hypotheses_as_rows(
@@ -1176,7 +1171,6 @@ def test_write_alignment_matrix_uses_explicit_peak_hypotheses_as_rows(
         event_cluster_ids=("FAM_PARENT",),
         event_member_count=2,
         evidence="owner_complete_link;owner_count=2",
-        child_peak_hypothesis_ids=("FAM_PARENT::early", "FAM_PARENT::late"),
         peak_hypotheses=(
             SimpleNamespace(
                 peak_hypothesis_id="FAM_PARENT::early",
@@ -1184,7 +1178,6 @@ def test_write_alignment_matrix_uses_explicit_peak_hypotheses_as_rows(
                 split_evaluation_status="complete_product_ready_split",
                 projection_status="not_projection",
                 source_feature_family_ids=("FAM_PARENT",),
-                parent_peak_hypothesis_id="FAM_PARENT",
                 sample_stems=("sample-a",),
                 center_mz_basis="peak_hypothesis_accepted_cells",
                 center_rt_basis="peak_hypothesis_accepted_cells",
@@ -1195,7 +1188,6 @@ def test_write_alignment_matrix_uses_explicit_peak_hypotheses_as_rows(
                 split_evaluation_status="complete_product_ready_split",
                 projection_status="not_projection",
                 source_feature_family_ids=("FAM_PARENT",),
-                parent_peak_hypothesis_id="FAM_PARENT",
                 sample_stems=("sample-b",),
                 center_mz_basis="peak_hypothesis_accepted_cells",
                 center_rt_basis="peak_hypothesis_accepted_cells",
@@ -1242,46 +1234,6 @@ def test_write_alignment_matrix_uses_explicit_peak_hypotheses_as_rows(
     assert {row["source_feature_family_ids"] for row in identity_rows} == {
         "FAM_PARENT",
     }
-    assert {row["parent_peak_hypothesis_id"] for row in identity_rows} == {
-        "FAM_PARENT",
-    }
-    assert all(row["child_peak_hypothesis_ids"] == "" for row in identity_rows)
-
-
-def test_write_alignment_matrix_rejects_parent_aggregate_product_row(
-    tmp_path: Path,
-) -> None:
-    from xic_extractor.alignment.tsv_writer import write_alignment_matrix_tsv
-
-    matrix = AlignmentMatrix(
-        clusters=(
-            SimpleNamespace(
-                feature_family_id="FAM_PARENT",
-                neutral_loss_tag="DNA_dR",
-                family_center_mz=500.123,
-                family_center_rt=8.49,
-                family_product_mz=384.076,
-                family_observed_neutral_loss_da=116.047,
-                has_anchor=True,
-                event_cluster_ids=("FAM_PARENT",),
-                event_member_count=1,
-                evidence="owner_complete_link;owner_count=2",
-                child_peak_hypothesis_ids=("PH_SPLIT_A", "PH_SPLIT_B"),
-            ),
-        ),
-        cells=(
-            _cell("sample-a", "detected", cluster_id="FAM_PARENT", area=100.0),
-            _cell("sample-b", "detected", cluster_id="FAM_PARENT", area=110.0),
-        ),
-        sample_order=("sample-a", "sample-b"),
-    )
-
-    with pytest.raises(ValueError, match="parent aggregate"):
-        write_alignment_matrix_tsv(
-            tmp_path / "matrix.tsv",
-            matrix,
-            production_decisions=_production_decisions(matrix),
-        )
 
 
 def test_write_alignment_matrix_rejects_split_hypothesis_without_identity(
@@ -1300,7 +1252,6 @@ def test_write_alignment_matrix_rejects_split_hypothesis_without_identity(
         event_cluster_ids=("FAM_PARENT",),
         event_member_count=2,
         evidence="owner_complete_link;owner_count=2",
-        child_peak_hypothesis_ids=("FAM_PARENT::early",),
         peak_hypotheses=(
             SimpleNamespace(
                 peak_hypothesis_id="",
@@ -1308,7 +1259,6 @@ def test_write_alignment_matrix_rejects_split_hypothesis_without_identity(
                 split_evaluation_status="complete_product_ready_split",
                 projection_status="not_projection",
                 source_feature_family_ids=("FAM_PARENT",),
-                parent_peak_hypothesis_id="FAM_PARENT",
                 sample_stems=("sample-a",),
             ),
         ),
@@ -2207,11 +2157,6 @@ def _split_writer_matrix(
         event_cluster_ids=("FAM_PARENT",),
         event_member_count=2,
         evidence="owner_complete_link;owner_count=2",
-        child_peak_hypothesis_ids=tuple(
-            hypothesis.peak_hypothesis_id
-            for hypothesis in peak_hypotheses
-            if getattr(hypothesis, "peak_hypothesis_id", "")
-        ),
         peak_hypotheses=peak_hypotheses,
     )
     return AlignmentMatrix(
@@ -2235,7 +2180,6 @@ def _split_hypothesis(
         "row_identity_basis": "split_peak_hypothesis",
         "split_evaluation_status": "complete_product_ready_split",
         "projection_status": "not_projection",
-        "parent_peak_hypothesis_id": "FAM_PARENT",
         "sample_stems": sample_stems,
     }
     if source_feature_family_ids is not None:

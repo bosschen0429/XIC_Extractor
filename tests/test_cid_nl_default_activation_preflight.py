@@ -234,8 +234,6 @@ def _write_preflight_fixture(
             "accepted_cell_count",
             "accepted_sample_count",
             "evidence_status",
-            "parent_peak_hypothesis_id",
-            "child_peak_hypothesis_ids",
         ),
         [
             _identity_row(1, "250.0", "10.0", "FAM_BACKFILL", "0"),
@@ -414,8 +412,6 @@ def _identity_row(
         "accepted_cell_count": accepted_count,
         "accepted_sample_count": accepted_count,
         "evidence_status": "product_matrix_identity_complete",
-        "parent_peak_hypothesis_id": "",
-        "child_peak_hypothesis_ids": "",
     }
 
 

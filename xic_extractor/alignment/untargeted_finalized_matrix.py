@@ -75,8 +75,6 @@ class FinalizedUntargetMatrixRow:
     center_rt_basis: str = PRESENTATION_FORMULA_VERSION
     center_weight_basis: str = "unique_owner_observations_equal_weight"
     evidence_status: str = "finalized_untargeted_owner_complete"
-    parent_peak_hypothesis_id: str = ""
-    child_peak_hypothesis_ids: str = ""
 
     @property
     def source_feature_family_ids(self) -> tuple[str, ...]:

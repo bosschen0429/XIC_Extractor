@@ -898,8 +898,6 @@ IDENTITY_COLUMNS = (
     "accepted_cell_count",
     "accepted_sample_count",
     "evidence_status",
-    "parent_peak_hypothesis_id",
-    "child_peak_hypothesis_ids",
 )
 
 
@@ -947,8 +945,6 @@ def _identity_row(
         "accepted_cell_count": 4,
         "accepted_sample_count": 4,
         "evidence_status": "product_matrix_identity_complete",
-        "parent_peak_hypothesis_id": "",
-        "child_peak_hypothesis_ids": "",
     }
 
 
