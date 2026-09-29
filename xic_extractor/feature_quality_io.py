@@ -125,7 +125,7 @@ def export_feature_quality(
                 "peak_hypothesis_id": identity["peak_hypothesis_id"],
                 "finite_count": result.finite_count,
                 "eligible_sample_count": result.eligible_sample_count,
-                "finite_fraction": result.finite_fraction,
+                "finite_fraction": repr(result.finite_fraction),
                 "decision": "keep" if result.keep else "drop",
                 "reason": result.reason,
             }

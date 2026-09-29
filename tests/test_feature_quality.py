@@ -107,9 +107,7 @@ def test_cli_selects_original_rows_and_preserves_zero_and_sample_identity(tmp_pa
     assert [row["decision"] for row in quality] == ["keep", "drop", "keep", "drop"]
     assert [row["finite_count"] for row in quality] == ["2", "1", "3", "0"]
     assert {row["eligible_sample_count"] for row in quality} == {"3"}
-    assert [float(row["finite_fraction"]) for row in quality] == pytest.approx(
-        [2 / 3, 1 / 3, 1, 0]
-    )
+    assert [float(row["finite_fraction"]) for row in quality] == [2 / 3, 1 / 3, 1, 0]
     assert [row["reason"] for row in quality] == [
         "finite_fraction_at_or_above_minimum",
         "finite_fraction_below_minimum",
