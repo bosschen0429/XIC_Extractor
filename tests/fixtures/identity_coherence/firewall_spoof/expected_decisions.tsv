@@ -1,3 +1,0 @@
-decision_id	decision	total_coherent_sample_count	non_seed_coherent_sample_count	tier12_non_seed_identity_sample_count	seed_gate_class	cell_identity_basis	forbidden_evidence_seen
-DEC-FW-PASS	would_primary_provisional_identity_family_support	3	2	2	coherent_seed	rt_fragment_support	true
-DEC-FW-REVIEW	review_only_seed_gate_failed	1	0	0	review_only_seed_gate_failed	none	true
