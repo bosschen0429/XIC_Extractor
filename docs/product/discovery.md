@@ -132,6 +132,12 @@ the error relative to the configured loss mass; it is not the acceptance gate.
   precursor reports none: in full85, about half of the selected precursors a
   reading would have moved landed on a neighbouring ion present at the selected
   m/z when the scan was triggered.
+- Product + loss assumes a singly charged precursor. A pure inferred precursor
+  whose MS1 ion is read with a centroid one doubly charged 13C spacing
+  (0.50168 m/z, within the 5 ppm reading spread) above it, in most of the
+  scans where the ion is read, becomes `review_only_ambiguous_coisolation` with
+  a reason naming the doubly charged isotope, unless a singly charged seed on
+  the same peak carries it. Selected precursors are not tested.
 - Direct and inferred rows from one MS2 scan may coexist. `candidate_id` must
   retain the sample/scan anchor plus precursor/product row identity so those
   rows cannot collide, and `tag_evidence_json` must retain precursor-basis,
