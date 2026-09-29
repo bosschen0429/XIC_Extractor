@@ -71,17 +71,26 @@ def test_workflow_forwards_exact_owner_objects_once(
             persister=object(),
         ),
     )
-    adapter = _exact_uninitialized(
-        TargetWorkflowAdapter if variant == "target" else UntargetWorkflowAdapter,
-        capture_inputs=(SimpleNamespace(candidate_id="candidate:a", trace=object()),),
-        mode_track=SimpleNamespace(
+    adapter_fields = {
+        "capture_inputs": (
+            SimpleNamespace(candidate_id="candidate:a", trace=object()),
+        ),
+        "predecessor_cell_observations": (),
+        "backfill_cell_observations": (),
+        "drift_lookup": object(),
+    }
+    if variant == "target":
+        adapter_fields.update(sample_assessments=(), alignment_config=object())
+    else:
+        adapter_fields["mode_track"] = SimpleNamespace(
             sample_assessments=(),
             alignment_config=object(),
             trajectory_policy=object(),
-        ),
-        predecessor_cell_observations=(),
-        backfill_cell_observations=(),
-        drift_lookup=object(),
+            retain_observation_only_candidates=False,
+        )
+    adapter = _exact_uninitialized(
+        TargetWorkflowAdapter if variant == "target" else UntargetWorkflowAdapter,
+        **adapter_fields,
     )
     closed_coverage = SimpleNamespace(epoch=SimpleNamespace(processing_owners=owners))
     if variant != "target":
@@ -145,6 +154,11 @@ def test_workflow_forwards_exact_owner_objects_once(
         workflow_owner,
         "apply_mode_track_refinement_run_for_workflow",
         lambda **kwargs: calls.append(("cross_mt0", kwargs)) or context,
+    )
+    monkeypatch.setattr(
+        workflow_owner,
+        "build_targeted_cross_sample_groups",
+        lambda **kwargs: calls.append(("target_grouping", kwargs)) or context,
     )
 
     monkeypatch.setattr(
@@ -216,7 +230,9 @@ def test_workflow_forwards_exact_owner_objects_once(
         "runtime",
         "capture",
     ]
-    expected_calls.extend(("mt0", "cross_mt0"))
+    expected_calls.extend(
+        ("target_grouping",) if variant == "target" else ("mt0", "cross_mt0")
+    )
     if variant != "target":
         expected_calls.append("association")
     expected_calls.append("scientific")
