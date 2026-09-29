@@ -1506,8 +1506,10 @@ def _truth_table_fixture(tmp_path: Path):
     return fixture, (s1, s2, s3, s4, s5)
 
 
+@pytest.mark.parametrize("physical_mz", [500.008, 500.012])
 def test_declared_scan_scope_preserves_evidence_outside_shared_mass_center(
     tmp_path: Path,
+    physical_mz: float,
 ) -> None:
     from tests.untargeted_cid_nl_no_raw_fixture import (
         build_untargeted_cid_nl_no_raw_fixture,
@@ -1516,7 +1518,7 @@ def test_declared_scan_scope_preserves_evidence_outside_shared_mass_center(
     fixture = build_untargeted_cid_nl_no_raw_fixture(
         tmp_path, sample_roles={"sample": "study_sample"}
     )
-    peak = cid_nl_peak(fixture, "sample", mz=500.008)
+    peak = cid_nl_peak(fixture, "sample", mz=physical_mz)
     precursor = 500.016
     loss = fixture.method_subject.neutral_loss_da
     assert loss is not None
@@ -1547,7 +1549,10 @@ def test_declared_scan_scope_preserves_evidence_outside_shared_mass_center(
         evidence_refs=(evidence,),
         individual_support_refs=(support,),
     )
-    receipt = _completed_receipt(scanned_event_count=1)
+    receipt = replace(
+        _completed_receipt(scanned_event_count=1),
+        physical_query_mz=physical_mz if physical_mz > 500.01 else None,
+    )
     with pytest.raises(CidNlMethodAssessmentContractError, match="CID-NL evidence"):
         mint_cid_nl_method_assessment_ref(evaluation_receipt=receipt, **kwargs)
     linked = mint_cid_nl_method_assessment_ref(
@@ -1556,7 +1561,7 @@ def test_declared_scan_scope_preserves_evidence_outside_shared_mass_center(
     )
     assert linked.content.method_result == "SUPPORT"
     assert linked.evidence_refs == (evidence,)
-    assert linked.candidate_peaks[0].content.mz == 500.008
+    assert linked.candidate_peaks[0].content.mz == physical_mz
     validate_cid_nl_method_assessment_binding(
         linked,
         processing_owners=fixture.owners,
@@ -1565,7 +1570,51 @@ def test_declared_scan_scope_preserves_evidence_outside_shared_mass_center(
     )
 
 
-def test_targeted_assessment_retains_its_subject_mass_window(tmp_path: Path) -> None:
+def test_backfill_assessment_binds_peaks_to_the_physical_query(tmp_path: Path) -> None:
+    from tests.untargeted_cid_nl_no_raw_fixture import (
+        build_untargeted_cid_nl_no_raw_fixture,
+    )
+
+    fixture = build_untargeted_cid_nl_no_raw_fixture(
+        tmp_path, sample_roles={"sample": "study_sample"}
+    )
+    physical_mz = 500.012
+    peak = cid_nl_peak(fixture, "sample", mz=physical_mz)
+    kwargs = dict(
+        processing_owners=fixture.owners,
+        sample=fixture.sample("sample"),
+        method_subject=fixture.method_subject,
+        detector_invocation_id="physical-backfill",
+    )
+    receipt = _completed_receipt(scanned_event_count=0)
+    with pytest.raises(CidNlMethodAssessmentContractError, match="candidate peak"):
+        mint_cid_nl_method_assessment_ref(
+            evaluation_receipt=receipt, candidate_peaks=(peak,), **kwargs
+        )
+    receipt = replace(receipt, physical_query_mz=physical_mz)
+    assessment = mint_cid_nl_method_assessment_ref(
+        evaluation_receipt=receipt, candidate_peaks=(peak,), **kwargs
+    )
+    assert assessment.content.method_result == "HOLD"
+    assert assessment.content.method_subject == fixture.method_subject
+    payload = json.loads(
+        assessment_module.canonical_cid_nl_method_assessment_bytes(assessment.content)
+    )
+    assert payload["content"]["evaluation_receipt"]["physical_query_mz"] == physical_mz
+    original_center_peak = cid_nl_peak(fixture, "sample")
+    with pytest.raises(CidNlMethodAssessmentContractError, match="candidate peak"):
+        mint_cid_nl_method_assessment_ref(
+            evaluation_receipt=receipt,
+            candidate_peaks=(original_center_peak,),
+            **kwargs,
+        )
+
+
+@pytest.mark.parametrize("scope_override", ["declared_scans", "physical_query_mz"])
+def test_targeted_assessment_retains_its_subject_mass_window(
+    tmp_path: Path,
+    scope_override: str,
+) -> None:
     fixture = build_processing_identity_no_raw_fixture(tmp_path, sample_stems=("s1",))
     with pytest.raises(CidNlMethodAssessmentContractError, match="Untargeted"):
         mint_cid_nl_method_assessment_ref(
@@ -1575,7 +1624,14 @@ def test_targeted_assessment_retains_its_subject_mass_window(tmp_path: Path) -> 
             detector_invocation_id="targeted-scope",
             evaluation_receipt=replace(
                 _completed_receipt(scanned_event_count=0),
-                evidence_scope="declared_scans",
+                evidence_scope=(
+                    "declared_scans"
+                    if scope_override == "declared_scans"
+                    else "subject_window"
+                ),
+                physical_query_mz=(
+                    500.012 if scope_override == "physical_query_mz" else None
+                ),
             ),
         )
 

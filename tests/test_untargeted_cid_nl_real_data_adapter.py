@@ -1716,8 +1716,10 @@ def test_adapter_rejects_discovery_candidate_receipt_drift(tmp_path: Path) -> No
         )
 
 
+@pytest.mark.parametrize("physical_mz_offset", [0.005, 0.012])
 def test_recovery_revisits_one_hold_cell_without_minting_support(
     tmp_path: Path,
+    physical_mz_offset: float,
 ) -> None:
     fixture = build_untargeted_cid_nl_no_raw_fixture(
         tmp_path,
@@ -1737,7 +1739,7 @@ def test_recovery_revisits_one_hold_cell_without_minting_support(
         sample=fixture.sample("S1"),
         method_subject=fixture.method_subject,
         group_center_rt=8.0,
-        group_center_mz=fixture.method_subject.precursor_mz + 0.005,
+        group_center_mz=fixture.method_subject.precursor_mz + physical_mz_offset,
         group_hypothesis_id="group-physical",
         support_policy=DdaCidNlPeakSupportPolicy(
             precursor_tolerance_da=0.01,
@@ -1750,11 +1752,14 @@ def test_recovery_revisits_one_hold_cell_without_minting_support(
     assert result.assessment.content.technical_state == "evaluated"
     assert result.group_hypothesis_id == "group-physical"
     assert result.assessment.content.method_subject is fixture.method_subject
+    assert result.assessment.content.evaluation_receipt.physical_query_mz == (
+        fixture.method_subject.precursor_mz + physical_mz_offset
+    )
     assert result.acquisition.traces[0].coordinate.request.mz == pytest.approx(
-        fixture.method_subject.precursor_mz + 0.005
+        fixture.method_subject.precursor_mz + physical_mz_offset
     )
     assert result.assessment.candidate_peaks[0].content.mz == pytest.approx(
-        fixture.method_subject.precursor_mz + 0.005
+        fixture.method_subject.precursor_mz + physical_mz_offset
     )
     assert result.assessment.content.method_result == "HOLD"
     assert result.assessment.content.evaluation_receipt.search_completed is True

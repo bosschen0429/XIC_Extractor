@@ -1244,6 +1244,7 @@ def backfill_untargeted_cid_nl_sample_subject(
                     if initial_assessment is not None and backfill_evidence
                     else "subject_window"
                 ),
+                physical_query_mz=request.mz,
             ),
             candidate_peaks=observations,
             evidence_refs=backfill_evidence,

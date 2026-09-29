@@ -59,7 +59,7 @@ from xic_extractor.processing_identity import (
 )
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 
-SCHEMA_VERSION = "cid_nl_method_assessment_evidence_scope"
+SCHEMA_VERSION = "cid_nl_method_assessment_physical_query"
 ARTIFACT_SEMANTIC_ROLE = "cid_nl_method_assessment"
 VALIDATION_STATUS = "diagnostic_only"
 MEDIA_TYPE = "application/json"
@@ -107,6 +107,8 @@ class CidNlEvaluationReceipt:
     scanned_event_count: int
     reason_code: str | None
     evidence_scope: Literal["subject_window", "declared_scans"] = "subject_window"
+    # Untargeted Backfill queries the frozen group while retaining subject lineage.
+    physical_query_mz: float | None = None
 
     def __post_init__(self) -> None:
         query_min = _finite_float(self.query_rt_min, field="query_rt_min")
@@ -141,6 +143,15 @@ class CidNlEvaluationReceipt:
             raise CidNlMethodAssessmentContractError(
                 "unsupported CID-NL evidence scope"
             )
+        if self.physical_query_mz is not None:
+            physical_mz = _finite_float(
+                self.physical_query_mz, field="physical_query_mz"
+            )
+            if physical_mz <= 0.0:
+                raise CidNlMethodAssessmentContractError(
+                    "physical_query_mz must be positive"
+                )
+            object.__setattr__(self, "physical_query_mz", physical_mz)
         object.__setattr__(self, "query_rt_min", query_min)
         object.__setattr__(self, "query_rt_max", query_max)
 
@@ -212,6 +223,13 @@ class CidNlMethodAssessmentContent:
         ):
             raise CidNlMethodAssessmentContractError(
                 "declared scan evidence requires an Untargeted method subject"
+            )
+        if (
+            self.evaluation_receipt.physical_query_mz is not None
+            and self.method_subject.subject_kind != "untargeted_precursor"
+        ):
+            raise CidNlMethodAssessmentContractError(
+                "a physical query center requires an Untargeted method subject"
             )
         for values, field in (
             (self.evidence_artifact_content_ids, "evidence_artifact_content_ids"),
@@ -702,6 +720,11 @@ def _validate_upstream_bindings(
     individual_support_refs: tuple[DdaCidNlPeakSupportRef, ...],
     set_relation_refs: tuple[DdaCidNlCandidateSetRelationRef, ...],
 ) -> None:
+    candidate_query_mz = (
+        method_subject.precursor_mz
+        if evaluation_receipt.physical_query_mz is None
+        else evaluation_receipt.physical_query_mz
+    )
     for peak in candidate_peaks:
         try:
             validate_peak_observation_binding(
@@ -713,7 +736,7 @@ def _validate_upstream_bindings(
             raise CidNlMethodAssessmentContractError(str(exc)) from exc
         _validate_target_precursor(
             observed_mz=peak.content.mz,
-            target_mz=method_subject.precursor_mz,
+            target_mz=candidate_query_mz,
             target_tolerance_ppm=method_subject.precursor_tolerance_ppm,
             subject="candidate peak",
         )

@@ -138,7 +138,7 @@ def test_configured_composition_runs_discovery_to_owner_matrix(
     assert {
         assessment.artifact.semantic_contract.schema_version
         for assessment in by_sample.values()
-    } == {"cid_nl_method_assessment_evidence_scope"}
+    } == {"cid_nl_method_assessment_physical_query"}
     if recovery:
         recovered = next(
             result
