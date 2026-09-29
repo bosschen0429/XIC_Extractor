@@ -1,7 +1,6 @@
 from dataclasses import replace
 from pathlib import Path
 
-from xic_extractor.discovery.csv_writer import build_discovery_review_note
 from xic_extractor.discovery.evidence_config import (
     DEFAULT_EVIDENCE_PROFILE,
     DiscoveryEvidenceProfile,
@@ -248,7 +247,7 @@ def test_assign_peak_anchors_threads_custom_evidence_settings() -> None:
     assert custom_assigned[0].evidence_score == default_assigned[0].evidence_score + 5
 
 
-def test_assign_peak_anchors_bounds_competing_feature_backed_inferred_hypotheses(
+def test_assign_peak_anchors_preserves_distinct_feature_backed_inferred_candidates(
 ) -> None:
     weaker = replace(
         _candidate(
@@ -264,15 +263,15 @@ def test_assign_peak_anchors_bounds_competing_feature_backed_inferred_hypotheses
     stronger = replace(
         _candidate(
             candidate_id="Sample#10-stronger",
-            precursor_mz=300.1606,
-            product_mz=184.1132,
+            precursor_mz=258.6085,
+            product_mz=142.5611,
             seed_event_count=3,
             ms2_product_max_intensity=150_000.0,
             ms1_area=20_000_000.0,
         ),
         precursor_mz_basis="product_plus_neutral_loss",
         discovery_candidate_state="ms1_feature_nl_rescued",
-        ms1_feature_row_id="Sample|DNA_dR|300.1606|7.84",
+        ms1_feature_row_id="Sample|DNA_dR|258.6085|7.84",
     )
     direct = replace(
         _candidate(
@@ -306,21 +305,20 @@ def test_assign_peak_anchors_bounds_competing_feature_backed_inferred_hypotheses
         candidate.candidate_id: candidate for candidate in reversed_assigned
     }
 
-    assert by_id[stronger.candidate_id].discovery_candidate_state == (
-        "ms1_feature_nl_rescued"
+    assert set(by_id) == {
+        candidate.candidate_id for candidate in (weaker, stronger, direct, other_scan)
+    }
+    for original in (weaker, stronger):
+        candidate = by_id[original.candidate_id]
+        assert candidate.discovery_candidate_state == "ms1_feature_nl_rescued"
+        assert candidate.ms1_feature_row_id == original.ms1_feature_row_id
+        assert candidate.ms1_area == original.ms1_area
+        assert candidate.best_ms2_scan_id == original.best_ms2_scan_id
+    assert by_id[weaker.candidate_id].feature_family_id != (
+        by_id[stronger.candidate_id].feature_family_id
     )
-    assert by_id[weaker.candidate_id].discovery_candidate_state == (
-        "review_only_ambiguous_coisolation"
-    )
-    assert by_id[weaker.candidate_id].reason == (
-        "competing feature-backed inferred precursor hypotheses share the best "
-        "MS2 scan; retained for review; preferred_candidate_id=Sample#10-stronger"
-    )
-    assert by_id[weaker.candidate_id].ms1_feature_row_id == (
-        "Sample|DNA_dR|258.1085|7.84"
-    )
-    assert build_discovery_review_note(by_id[weaker.candidate_id]).startswith(
-        "review-only ambiguous inferred precursor; "
+    assert by_id[stronger.candidate_id].evidence_score > (
+        by_id[weaker.candidate_id].evidence_score
     )
     assert by_id[direct.candidate_id].discovery_candidate_state == (
         "ms1_feature_nl_supported"
@@ -329,10 +327,22 @@ def test_assign_peak_anchors_bounds_competing_feature_backed_inferred_hypotheses
         "ms1_feature_nl_rescued"
     )
     assert {
-        candidate_id: candidate.discovery_candidate_state
+        candidate_id: (
+            candidate.discovery_candidate_state,
+            candidate.ms1_feature_row_id,
+            candidate.ms1_area,
+            candidate.feature_family_id,
+            candidate.evidence_score,
+        )
         for candidate_id, candidate in by_id.items()
     } == {
-        candidate_id: candidate.discovery_candidate_state
+        candidate_id: (
+            candidate.discovery_candidate_state,
+            candidate.ms1_feature_row_id,
+            candidate.ms1_area,
+            candidate.feature_family_id,
+            candidate.evidence_score,
+        )
         for candidate_id, candidate in reversed_by_id.items()
     }
 

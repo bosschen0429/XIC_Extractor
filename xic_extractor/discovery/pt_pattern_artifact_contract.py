@@ -21,7 +21,7 @@ from xic_extractor.discovery.pt_pattern_evidence_rule import (
     pt_pattern_rule_id,
 )
 from xic_extractor.mass_accuracy import is_within_mz_tolerance
-from xic_extractor.tabular_io import optional_float
+from xic_extractor.tabular_io import format_machine_float, optional_float
 
 PT_PATTERN_RAW_TRACE_BASIS = "raw_vendor_trace"
 
@@ -324,19 +324,9 @@ def prepare_pt_trace_summary_rows_for_csv(
         prepared = dict(row)
         for field in _NUMERIC_IDENTITY_FIELDS:
             value = _required_finite_number(row, field=field, side="trace summary")
-            prepared[field] = format_pt_machine_float(value)
+            prepared[field] = format_machine_float(value)
         prepared_rows.append(prepared)
     return tuple(prepared_rows)
-
-
-def format_pt_machine_float(value: float) -> str:
-    """Format a Pt machine-handoff float without losing binary precision."""
-
-    if not math.isfinite(value):
-        return ""
-    if value.is_integer():
-        return str(int(value))
-    return repr(value)
 
 
 def pt_pattern_candidate_assignment_fingerprint(
@@ -380,7 +370,7 @@ def pt_pattern_candidate_assignment_fingerprint(
         elif value <= 0.0:
             raise ValueError(f"candidate {field} must be > 0")
         candidate_numeric[field] = value
-        payload.append((field, format_pt_machine_float(value)))
+        payload.append((field, format_machine_float(value)))
     _validate_pt_assignment_geometry(
         candidate_row,
         candidate_numeric=candidate_numeric,
@@ -453,7 +443,7 @@ def pt_pattern_trace_extraction_fingerprint(
         "max_apex_delta_sec": max_apex_delta_sec,
     }
     normalized_numeric = {
-        field: format_pt_machine_float(
+        field: format_machine_float(
             _required_finite_number(
                 numeric_payload,
                 field=field,

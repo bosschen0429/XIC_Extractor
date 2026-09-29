@@ -9,7 +9,11 @@ from xic_extractor.discovery.models import (
     DiscoveryCandidate,
     discovery_candidate_output_sort_key,
 )
-from xic_extractor.tabular_io import escape_excel_formula, write_delimited_rows
+from xic_extractor.tabular_io import (
+    escape_excel_formula,
+    format_machine_float,
+    write_delimited_rows,
+)
 
 
 def write_discovery_candidates_csv(
@@ -108,10 +112,8 @@ def format_discovery_csv_value(column: str, value: object) -> str:
     if isinstance(value, Path):
         return escape_excel_formula(_stable_path_text(value))
     if isinstance(value, float):
-        # Alignment binds this method value exactly; display rounding changes it.
-        if column == "configured_neutral_loss_da":
-            return repr(value)
-        return f"{value:.6g}"
+        # Alignment reads these values back; display rounding would move them.
+        return format_machine_float(value)
     return escape_excel_formula(str(value))
 
 

@@ -1008,6 +1008,62 @@ def test_owner_acquisition_preserves_scalar_candidate_parity(
     assert acquired.candidates == scalar
 
 
+def test_owner_acquisition_reads_overlapping_windows_once_with_exact_traces(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    raw_path = tmp_path / "sample.raw"
+    raw_path.write_bytes(b"owner-bound-discovery")
+    source = build_acquisition_source_identity(
+        raw_path,
+        acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
+        observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
+    )
+    groups = (
+        _group((_seed(scan_number=10, rt=7.80),)),
+        _group(
+            (
+                _seed(
+                    scan_number=20,
+                    rt=7.90,
+                    precursor_mz=600.0,
+                    product_mz=483.9526,
+                ),
+            )
+        ),
+    )
+    raw = _ScanGridRaw(source)
+    monkeypatch.setattr(
+        "xic_extractor.discovery.ms1_backfill.find_peak_and_area",
+        lambda *args, **kwargs: _ok_peak(
+            rt=7.8,
+            intensity=100.0,
+            area=10.0,
+            start=7.7,
+            end=7.9,
+        ),
+    )
+
+    result = _backfill_ms1_candidates_with_acquisition(
+        raw,
+        groups,
+        acquisition_source=source,
+        settings=_settings(),
+        peak_config=_peak_config(),
+    )
+
+    batches = result.measurements.acquisition_batches
+    runtime_metrics = derive_runtime_acquisition_metrics(batches)
+    acquired = [trace for batch in batches for trace in batch.traces]
+    assert runtime_metrics.logical_xic_request_count == 2
+    assert result.measurements.exact_scan_window_count == 2
+    assert runtime_metrics.adapter_chromatogram_call_count == 1
+    for item in acquired:
+        exact = raw.exact_trace(item.coordinate.request)
+        assert item.trace.rt.tolist() == exact.rt.tolist()
+        assert item.trace.intensity.tolist() == exact.intensity.tolist()
+
+
 def test_owner_acquisition_fails_closed_on_wrong_trace_cardinality(
     tmp_path: Path,
 ) -> None:
@@ -1234,6 +1290,34 @@ class _OwnerBoundBatchRaw:
         if request.rt_min < 8.5:
             return 100, 200
         return 300, 400
+
+
+class _ScanGridRaw:
+    """Owner-bound RAW with one scan per 0.01 min whose readings never change."""
+
+    def __init__(self, source: AcquisitionSourceIdentity) -> None:
+        self.acquisition_source = source
+        self.raw_chromatogram_call_count = 0
+
+    def extract_xic_many(
+        self,
+        requests: Sequence[XICRequest],
+    ) -> tuple[XICTrace, ...]:
+        self.raw_chromatogram_call_count += len(
+            {self.scan_window_for_request(request) for request in requests}
+        )
+        return tuple(self.exact_trace(request) for request in requests)
+
+    def exact_trace(self, request: XICRequest) -> XICTrace:
+        start, end = self.scan_window_for_request(request)
+        scans = np.arange(start, end + 1)
+        return XICTrace.from_arrays(scans / 100, request.mz + scans)
+
+    def scan_window_for_request(self, request: XICRequest) -> tuple[int, int]:
+        return round(request.rt_min * 100), round(request.rt_max * 100)
+
+    def retention_time_for_scan(self, scan_number: int) -> float:
+        return scan_number / 100
 
 
 class _FakeRaw:

@@ -399,6 +399,7 @@ def _parse_candidate_row(
         ms1_peak_rt_start=ms1_peak_rt_start,
         ms1_peak_rt_end=ms1_peak_rt_end,
         ms1_height=_parse_optional_float(path, row_number, row, "ms1_height"),
+        ms1_apex_mz=_parse_optional_float(path, row_number, row, "ms1_apex_mz"),
         ms1_trace_quality=_required_text(path, row_number, row, "ms1_trace_quality"),
         is_provisional=_parse_provisional_decision(path, row_number, row),
         ms1_scan_support_score=_parse_optional_float(

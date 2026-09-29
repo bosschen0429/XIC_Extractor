@@ -244,14 +244,82 @@ def test_single_raw_pipeline_writes_inferred_and_direct_same_scan_rows(
     assert "TumorBC2312_DNA#19561@mz300.160635_p184.113235" in candidate_ids
     assert "TumorBC2312_DNA#19561@mz301.164978_p185.115845" in candidate_ids
     rows_by_product = {row["product_mz"]: row for row in rows}
-    inferred = rows_by_product["184.113"]
-    direct = rows_by_product["185.116"]
+    inferred = rows_by_product["184.113235"]
+    direct = rows_by_product["185.115845"]
     assert inferred["precursor_mz_basis"] == "product_plus_neutral_loss"
     assert inferred["neutral_loss_error_basis"] == (
         "configured_loss_inferred_precursor"
     )
     assert direct["precursor_mz_basis"] == "scan_precursor"
     assert direct["neutral_loss_error_basis"] == "measured_scan_precursor_product"
+
+
+@pytest.mark.parametrize("reverse_products", [False, True])
+def test_pipeline_retains_distinct_inferred_features_from_one_ms2_in_both_csvs(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    reverse_products: bool,
+) -> None:
+    # Both inferred ions fit one 1.6 m/z isolation around 258.3. Repeating a
+    # product is duplicate evidence; the second MS1 feature is not a duplicate.
+    products = [(142.0611, 5_000.0), (142.0611, 5_000.0), (142.5611, 150_000.0)]
+    if reverse_products:
+        products.reverse()
+    raw = _FakeRawHandle(
+        [
+            _scan_event(
+                scan_number=19561,
+                rt=7.8,
+                precursor_mz=258.3,
+                masses=[mz for mz, _ in products],
+                intensities=[intensity for _, intensity in products],
+            )
+        ]
+    )
+    areas = {258.1085: 2_000.0, 258.6085: 8_000.0}
+    monkeypatch.setattr(
+        raw,
+        "extract_xic",
+        lambda mz, rt_min, rt_max, ppm_tol: (
+            np.array([7.7, 7.8, 7.9]),
+            np.array([10.0, areas[round(mz, 4)] / 2, 10.0]),
+        ),
+    )
+    monkeypatch.setattr(
+        "xic_extractor.discovery.ms1_backfill.find_peak_and_area",
+        lambda rt, intensity, peak_config, **kwargs: _ok_peak(
+            rt=7.8,
+            intensity=float(intensity[1]),
+            area=float(intensity[1] * 2),
+            start=7.7,
+            end=7.9,
+        ),
+    )
+
+    outputs = run_discovery(
+        tmp_path / "Sample.raw",
+        output_dir=tmp_path / "out",
+        settings=_settings(),
+        peak_config=_peak_config(tmp_path),
+        raw_opener=lambda path, dll_dir: raw,
+    )
+
+    rows = _read_csv(outputs.candidates_csv)
+    assert len(rows) == 2
+    assert {
+        round(float(row["precursor_mz"]), 4): float(row["ms1_area"]) for row in rows
+    } == areas
+    assert len({row["candidate_id"] for row in rows}) == 2
+    assert len({row["ms1_feature_row_id"] for row in rows}) == 2
+    assert {row["best_ms2_scan_id"] for row in rows} == {"19561"}
+    assert {row["seed_event_count"] for row in rows} == {"1"}
+    assert {row["discovery_candidate_state"] for row in rows} == {
+        "ms1_feature_nl_rescued"
+    }
+    assert {row["candidate_id"] for row in _read_csv(outputs.review_csv)} == {
+        row["candidate_id"] for row in rows
+    }
+
 
 def test_pipeline_writes_header_only_csv_when_no_strict_seeds(tmp_path: Path) -> None:
     raw = _FakeRawHandle(events=[])

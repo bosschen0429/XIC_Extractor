@@ -4828,6 +4828,26 @@ def test_production_composition_closes_recovered_observation_without_candidate(
     assert row.center_mz_basis == "cross_sample_owner_arithmetic_mean"
     assert row.center_rt_basis == "cross_sample_owner_arithmetic_mean"
 
+    # Discovery's apex MS1 readings replace the reported center only; members
+    # without a reading and the repaired cell do not dilute it.
+    direct_candidates = [
+        candidate for values in candidates_by_sample.values() for candidate in values
+    ]
+    readings = {
+        candidate.candidate_id: candidate.precursor_mz * (1 - (12 + index) * 1e-6)
+        for index, candidate in enumerate(direct_candidates[:-1])
+    }
+    reported = project_completed_untarget_batch_writer_inputs(
+        completed, ms1_apex_mz_by_candidate=readings
+    )
+    (reported_row,) = reported.matrix.clusters
+    assert reported_row.family_center_mz == pytest.approx(
+        sum(readings.values()) / len(readings)
+    )
+    assert reported_row.center_mz_basis == "discovery_ms1_apex_mean"
+    assert reported_row.family_center_rt == row.family_center_rt
+    assert reported.matrix.cells == writer_inputs.matrix.cells
+
     base_cells = writer_inputs.production_decisions.cells
     weighted_values = dict(zip(sample_stems, (1.0, 9.0, 2.0, 9.0), strict=True))
     for variant, no_write_sample in (("unequal", None), ("no-write", "Hold")):
