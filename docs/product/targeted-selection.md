@@ -53,6 +53,13 @@ acquisition bounds; the JSON preserves the effective policy and input provenance
 These outputs have `diagnostic_only` evidence status and no selected-peak,
 reference-editing, quantitation, or ProductWriter authority.
 
+### Selected-hypothesis grouping
+
+Targeted groups its already selected hypotheses through the existing CrossSample
+owner without fitting or applying ModeTrack. CID-NL support, observation-only
+selections, and MS1-only targets retain their sample-local identities and values.
+Grouping does not reselect peaks or add a cohort RT review policy.
+
 ### Physical evaluation
 
 - Acquisition enumerates the shared physical segment universe for the
