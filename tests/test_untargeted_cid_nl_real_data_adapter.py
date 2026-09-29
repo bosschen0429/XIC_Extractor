@@ -630,12 +630,12 @@ def test_inferred_precursor_support_requires_a_physical_ms1_peak(
 
 
 @pytest.mark.parametrize("moved_field", ["precursor_mz", "product_mz"])
-def test_inferred_precursor_moved_to_its_ms1_ion_keeps_its_strict_receipt(
+def test_inferred_precursor_off_its_scan_receipt_is_rejected(
     tmp_path: Path, moved_field: str
 ) -> None:
-    # Discovery replaces product + loss with the MS1 ion read at the apex; the
-    # scan still reconstructs its inferred seed from the same product, so only
-    # a drifted product breaks the receipt.
+    # An inferred precursor stays product + loss; its apex MS1 reading is only
+    # reported. A persisted precursor or product off the scan's receipt breaks
+    # the strict seed reconstruction.
     fixture = build_untargeted_cid_nl_no_raw_fixture(
         tmp_path,
         sample_roles={"S1": "study_sample"},
@@ -673,13 +673,8 @@ def test_inferred_precursor_moved_to_its_ms1_ion_keeps_its_strict_receipt(
             raw=raw,
         )
 
-    if moved_field == "product_mz":
-        with pytest.raises(
-            UntargetedCidNlRealDataAdapterError, match="seed is not unique"
-        ):
-            adapt()
-        return
-    assert adapt().assessment_input.assessment.content.method_result == "SUPPORT"
+    with pytest.raises(UntargetedCidNlRealDataAdapterError, match="seed is not unique"):
+        adapt()
 
 
 def test_merged_inferred_member_outside_final_mass_window_is_not_support(
