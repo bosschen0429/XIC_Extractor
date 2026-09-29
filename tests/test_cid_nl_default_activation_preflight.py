@@ -253,7 +253,6 @@ def _write_preflight_fixture(
             "accepted_cell_count",
             "include_in_primary_matrix",
             "row_flags",
-            "consolidation_state",
         ),
         [
             _review_row(
@@ -432,7 +431,6 @@ def _review_row(
         "accepted_cell_count": "1",
         "include_in_primary_matrix": "TRUE",
         "row_flags": row_flags,
-        "consolidation_state": "primary_winner",
     }
 
 

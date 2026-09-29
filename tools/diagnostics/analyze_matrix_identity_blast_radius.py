@@ -283,15 +283,6 @@ def _cell_from_row(row: Mapping[str, str]) -> AlignedCell:
             start=start,
             end=end,
         ),
-        backfill_dda_missing_nl_policy_status=row.get(
-            "backfill_dda_missing_nl_policy_status",
-            "",
-        ),
-        backfill_family_ms2_required_tag_status=row.get(
-            "backfill_family_ms2_required_tag_status",
-            "",
-        ),
-        backfill_evidence_reason=row.get("backfill_evidence_reason", ""),
     )
 
 

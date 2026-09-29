@@ -83,9 +83,6 @@ def test_write_alignment_review_tsv_columns_counts_rates_and_reason(tmp_path: Pa
         "group_construction_role": "successor_constructor",
         "group_delivery_role": "owner_aligned_feature_compatibility_facade",
         "group_membership_source": "owner_aligned_feature_successor_projection",
-        "consolidation_state": "not_consolidated",
-        "consolidation_winner_group_hypothesis_id": "",
-        "consolidation_source_group_hypothesis_id": "",
         "neutral_loss_tag": "DNA_dR",
         "family_center_mz": "500.123",
         "family_center_rt": "8.49",
@@ -1647,16 +1644,17 @@ def test_debug_tsvs_write_cells_and_status_matrix(tmp_path: Path):
     assert cells[0]["primary_matrix_area_source"] == "gaussian15_positive_asls_residual"
     assert cells[0]["primary_matrix_area_reason"] == ""
     assert cells[0]["source_candidate_id"] == "sample-a#1"
-    assert cells[0]["region_candidate_count"] == "2"
-    assert cells[0]["region_selected_proposal_sources"] == (
-        "local_minimum;centwave_cwt"
+    assert not any(column.startswith("region_") for column in cells[0])
+    assert set(cells[0]).isdisjoint(
+        {
+            "backfill_ms2_trigger_scan_count",
+            "backfill_strict_nl_scan_count",
+            "backfill_ms2_trace_strength",
+            "backfill_dda_missing_nl_policy_status",
+            "backfill_family_ms2_required_tag_status",
+            "backfill_evidence_reason",
+        }
     )
-    assert cells[0]["region_local_mixture_diagnostic"] == "one_envelope_supported"
-    assert cells[0]["region_decision_status"] == "evaluated"
-    assert cells[0]["region_decision_class"] == "merge_suggested"
-    assert cells[0]["region_product_action"] == "safe_merge_eligible"
-    assert cells[0]["region_promotion_reason"] == ("adjacent_wis_local_minimum_merge")
-    assert cells[0]["region_baseline_method"] == "asls"
     assert status[0]["sample-a"] == "detected"
     assert status[0]["sample-b"] == "unchecked"
 
@@ -1721,6 +1719,8 @@ def test_backfill_cell_evidence_tsv_is_compact_and_backfill_scoped(
     }
     assert backfilled["primary_matrix_area"] == "8"
     assert "region_candidate_count" not in rows[0]
+    assert "region_shadow_verdict" not in rows[0]
+    assert "backfill_evidence_reason" not in rows[0]
 
     result = lookup_backfill_evidence_tsv(
         evidence_path,
@@ -1741,7 +1741,7 @@ def test_backfill_cell_evidence_tsv_is_compact_and_backfill_scoped(
     )
 
 
-def test_alignment_cells_tsv_can_emit_without_region_audit(tmp_path: Path) -> None:
+def test_alignment_cells_tsv_has_no_region_audit_columns(tmp_path: Path) -> None:
     from xic_extractor.alignment.tsv_writer import write_alignment_cells_tsv
 
     matrix = AlignmentMatrix(
@@ -1761,8 +1761,7 @@ def test_alignment_cells_tsv_can_emit_without_region_audit(tmp_path: Path) -> No
     region_columns = [column for column in cells[0] if column.startswith("region_")]
 
     assert cells[0]["status"] == "detected"
-    assert region_columns
-    assert all(cells[0][column] == "" for column in region_columns)
+    assert region_columns == []
 
 
 def test_write_alignment_owner_backfill_seed_audit_tsv_is_sidecar(

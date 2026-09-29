@@ -743,17 +743,7 @@ def _low_assessable_coverage(row: Mapping[str, str]) -> bool:
 
 
 def _has_marker(row: Mapping[str, str], markers: Sequence[str]) -> bool:
-    text = " ".join(
-        str(row.get(field, ""))
-        for field in (
-            "reason",
-            "region_local_mixture_diagnostic",
-            "region_local_mixture_reason",
-            "region_review_reason",
-            "region_shadow_status",
-            "region_shadow_verdict",
-        )
-    ).lower()
+    text = str(row.get("reason", "")).lower()
     return any(marker in text for marker in markers)
 
 

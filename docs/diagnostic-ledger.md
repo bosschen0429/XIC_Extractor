@@ -3429,16 +3429,11 @@ benchmark mismatches stay in the quantitative follow-up lane.
 
 The retained 85RAW artifact whose legacy manifest asserts revision
 `7eef01e273ee62b91bd6c07e4a455994f76ca37b` was read without opening RAW files.
-`tools/diagnostics/backfill_decision_ledger.py` rehydrated every Discovery CSV
-through its owner receipt and streamed each large alignment projection once.
-The bounded output is reproducible with:
-
-```powershell
-.venv\Scripts\python.exe -m tools.diagnostics.backfill_decision_ledger `
-  --artifact-root <retained-artifact-root> `
-  --output-dir output/issue195_backfill_decision_ledger `
-  --expected-code-revision 7eef01e273ee62b91bd6c07e4a455994f76ca37b
-```
+The retired `tools/diagnostics/backfill_decision_ledger.py` rehydrated every
+Discovery CSV through its owner receipt and streamed each large alignment
+projection once. It was retired in #490 because current Alignment no longer
+produces `consolidation_state`, so its winner/loser settlement layer cannot be
+observed in a current artifact.
 
 The complete owner rehydration accepted `317,036` rows. Its parser requires a
 unique `sample + neutral_loss_tag + ms1_feature_row_id` for every feature-backed

@@ -65,12 +65,10 @@ def _backfill_row(**overrides: str) -> dict[str, str]:
         "scan_support_score": "1",
         "gap_fill_state": "gap_fill_detected",
         "gap_fill_reason": "group_centered_query_detected",
-        "backfill_evidence_reason": "owner_backfill_supported",
         "source_candidate_id": "sample-a#candidate-1",
         "neutral_loss_tag": "DNA_dR",
         "family_center_mz": "242.1",
         "family_center_rt": "1.25",
-        "region_shadow_verdict": "",
         "reason": "owner-centered MS1 backfill",
     }
     row.update(overrides)

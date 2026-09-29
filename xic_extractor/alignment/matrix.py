@@ -71,12 +71,6 @@ class AlignedCell:
     backfill_request_rt_min: float | None = None
     backfill_request_rt_max: float | None = None
     backfill_request_ppm: float | None = None
-    backfill_ms2_trigger_scan_count: int | None = None
-    backfill_strict_nl_scan_count: int | None = None
-    backfill_ms2_trace_strength: str = ""
-    backfill_dda_missing_nl_policy_status: str = ""
-    backfill_family_ms2_required_tag_status: str = ""
-    backfill_evidence_reason: str = ""
     group_hypothesis_id: str = ""
     public_family_id: str = ""
     group_construction_role: str = ""
@@ -85,12 +79,6 @@ class AlignedCell:
     gap_fill_state: str = ""
     gap_fill_reason: str = ""
     missing_observation_state: str = ""
-    group_claim_state: str = ""
-    claim_winner_group_hypothesis_id: str = ""
-    claim_source_group_hypothesis_id: str = ""
-    consolidation_state: str = ""
-    consolidation_winner_group_hypothesis_id: str = ""
-    consolidation_source_group_hypothesis_id: str = ""
 
     @property
     def matrix_area(self) -> float | None:

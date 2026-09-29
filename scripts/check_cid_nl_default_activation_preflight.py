@@ -106,7 +106,6 @@ REQUIRED_REVIEW_COLUMNS = (
     "accepted_cell_count",
     "include_in_primary_matrix",
     "row_flags",
-    "consolidation_state",
 )
 REQUIRED_EVIDENCE_COLUMNS = (
     "feature_family_id",
@@ -747,7 +746,6 @@ def _review_summary(row: Mapping[str, str]) -> dict[str, str]:
         "identity_confidence": row.get("identity_confidence", ""),
         "accepted_cell_count": row.get("accepted_cell_count", ""),
         "row_flags": row.get("row_flags", ""),
-        "consolidation_state": row.get("consolidation_state", ""),
         "include_in_primary_matrix": row.get("include_in_primary_matrix", ""),
     }
 

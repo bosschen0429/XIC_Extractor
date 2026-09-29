@@ -11,12 +11,6 @@ from xic_extractor.alignment.backfill_evidence_contract import (
     ALIGNMENT_BACKFILL_CELL_EVIDENCE_COLUMNS,
     ALIGNMENT_BACKFILL_CELL_EVIDENCE_SCHEMA_VERSION,
 )
-from xic_extractor.alignment.backfill_peak_fact_provenance import (
-    BackfillPeakFactProvenanceBatch,
-)
-from xic_extractor.alignment.backfill_peak_fact_provenance import (
-    write_backfill_peak_fact_provenance_tsv as _write_peak_fact_provenance,
-)
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.matrix import AlignedCell, AlignmentMatrix
 from xic_extractor.alignment.matrix_output_contract import (
@@ -106,29 +100,6 @@ ALIGNMENT_CELLS_COLUMNS = (
     "family_center_mz",
     "family_center_rt",
     "reason",
-    "backfill_ms2_trigger_scan_count",
-    "backfill_strict_nl_scan_count",
-    "backfill_ms2_trace_strength",
-    "backfill_dda_missing_nl_policy_status",
-    "backfill_family_ms2_required_tag_status",
-    "backfill_evidence_reason",
-    "region_candidate_count",
-    "region_selected_proposal_sources",
-    "region_selected_merge_note",
-    "region_shadow_status",
-    "region_shadow_verdict",
-    "region_merge_suggestion_source",
-    "region_area_ratio",
-    "region_selected_interval_count",
-    "region_selected_interval_gap_max_min",
-    "region_local_mixture_diagnostic",
-    "region_local_mixture_reason",
-    "region_review_reason",
-    "region_decision_status",
-    "region_decision_class",
-    "region_product_action",
-    "region_promotion_reason",
-    "region_baseline_method",
 )
 
 BACKFILL_EVIDENCE_ROW_FLAGS = frozenset(
@@ -352,16 +323,6 @@ def _alignment_cell_rows(matrix: AlignmentMatrix) -> Iterable[dict[str, object]]
             "gap_fill_state": cell.gap_fill_state,
             "gap_fill_reason": cell.gap_fill_reason,
             "missing_observation_state": cell.missing_observation_state,
-            "group_claim_state": cell.group_claim_state,
-            "claim_winner_group_hypothesis_id": (cell.claim_winner_group_hypothesis_id),
-            "claim_source_group_hypothesis_id": (cell.claim_source_group_hypothesis_id),
-            "consolidation_state": cell.consolidation_state,
-            "consolidation_winner_group_hypothesis_id": (
-                cell.consolidation_winner_group_hypothesis_id
-            ),
-            "consolidation_source_group_hypothesis_id": (
-                cell.consolidation_source_group_hypothesis_id
-            ),
             "sample_stem": cell.sample_stem,
             "status": cell.status,
             "area": format_value(cell.area),
@@ -380,43 +341,6 @@ def _alignment_cell_rows(matrix: AlignmentMatrix) -> Iterable[dict[str, object]]
             "family_center_mz": format_value(_family_center_mz(cluster)),
             "family_center_rt": format_value(_family_center_rt(cluster)),
             "reason": cell.reason,
-            "backfill_ms2_trigger_scan_count": format_value(
-                cell.backfill_ms2_trigger_scan_count
-            ),
-            "backfill_strict_nl_scan_count": format_value(
-                cell.backfill_strict_nl_scan_count
-            ),
-            "backfill_ms2_trace_strength": cell.backfill_ms2_trace_strength,
-            "backfill_dda_missing_nl_policy_status": (
-                cell.backfill_dda_missing_nl_policy_status
-            ),
-            "backfill_family_ms2_required_tag_status": (
-                cell.backfill_family_ms2_required_tag_status
-            ),
-            "backfill_evidence_reason": cell.backfill_evidence_reason,
-            "region_candidate_count": format_value(cell.region_candidate_count),
-            "region_selected_proposal_sources": ";".join(
-                cell.region_selected_proposal_sources
-            ),
-            "region_selected_merge_note": cell.region_selected_merge_note,
-            "region_shadow_status": cell.region_shadow_status,
-            "region_shadow_verdict": cell.region_shadow_verdict,
-            "region_merge_suggestion_source": cell.region_merge_suggestion_source,
-            "region_area_ratio": format_value(cell.region_area_ratio),
-            "region_selected_interval_count": format_value(
-                cell.region_selected_interval_count
-            ),
-            "region_selected_interval_gap_max_min": format_value(
-                cell.region_selected_interval_gap_max_min
-            ),
-            "region_local_mixture_diagnostic": (cell.region_local_mixture_diagnostic),
-            "region_local_mixture_reason": cell.region_local_mixture_reason,
-            "region_review_reason": cell.region_review_reason,
-            "region_decision_status": cell.region_decision_status,
-            "region_decision_class": cell.region_decision_class,
-            "region_product_action": cell.region_product_action,
-            "region_promotion_reason": cell.region_promotion_reason,
-            "region_baseline_method": cell.region_baseline_method,
         }
 
 
@@ -478,12 +402,10 @@ def _backfill_cell_evidence_rows(
                 format_value(cell.scan_support_score),
                 cell.gap_fill_state,
                 cell.gap_fill_reason,
-                cell.backfill_evidence_reason,
                 cell.source_candidate_id or "",
                 cluster.neutral_loss_tag,
                 format_value(_family_center_mz(cluster)),
                 format_value(_family_center_rt(cluster)),
-                cell.region_shadow_verdict,
                 cell.reason,
             )
 
@@ -534,15 +456,6 @@ def write_alignment_backfill_seed_audit_tsv(
             }
         )
     return _write_tsv(path, ALIGNMENT_BACKFILL_SEED_AUDIT_COLUMNS, rows)
-
-
-def write_alignment_backfill_peak_fact_provenance_tsv(
-    path: Path,
-    batch: BackfillPeakFactProvenanceBatch,
-) -> Path:
-    """Render an already validated bounded physical-fact projection."""
-
-    return _write_peak_fact_provenance(path, batch)
 
 
 def write_alignment_status_matrix_tsv(path: Path, matrix: AlignmentMatrix) -> Path:
@@ -693,7 +606,6 @@ def _cell_mentions_backfill(cell: AlignedCell) -> bool:
         cell.matrix_area_source,
         cell.matrix_area_missing_reason,
         cell.reason,
-        cell.backfill_evidence_reason,
     )
     return any("backfill" in str(value).lower() for value in values)
 
