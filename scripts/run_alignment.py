@@ -544,7 +544,9 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument(
         "--emit-baseline-audit-asls",
         action="store_true",
-        help="Emit AsLS shadow columns in alignment_cell_integration_audit.tsv.",
+        help=(
+            "Set baseline_audit_method=asls in the run configuration and metadata."
+        ),
     )
     parser.add_argument(
         "--baseline-integration-method",
