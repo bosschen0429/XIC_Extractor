@@ -148,9 +148,6 @@ class BackfillCellEvidence:
     consolidation_state: str = ""
     consolidation_winner_group_hypothesis_id: str = ""
     consolidation_source_group_hypothesis_id: str = ""
-    peak_hypothesis_status: str = ""
-    product_selection_blocker: str = ""
-    rt_mode_status: str = ""
     backfill_ms2_trigger_scan_count: int | None = None
     backfill_strict_nl_scan_count: int | None = None
     backfill_ms2_trace_strength: str = ""
@@ -304,9 +301,6 @@ class BackfillCellEvidence:
                 self.region_shadow_status,
                 self.region_shadow_verdict,
                 self.backfill_evidence_reason,
-                self.peak_hypothesis_status,
-                self.product_selection_blocker,
-                self.rt_mode_status,
             ),
         ).lower()
         return any(marker in text for marker in _HYPOTHESIS_BLOCKING_MARKERS)
@@ -715,9 +709,6 @@ def _cell_from_aligned(
         consolidation_source_group_hypothesis_id=(
             cell.consolidation_source_group_hypothesis_id
         ),
-        peak_hypothesis_status=cell.peak_hypothesis_status,
-        product_selection_blocker=cell.product_selection_blocker,
-        rt_mode_status=cell.rt_mode_status,
         backfill_ms2_trigger_scan_count=cell.backfill_ms2_trigger_scan_count,
         backfill_strict_nl_scan_count=cell.backfill_strict_nl_scan_count,
         backfill_ms2_trace_strength=cell.backfill_ms2_trace_strength,
@@ -770,9 +761,6 @@ def _cell_from_tsv(row: Mapping[str, str]) -> BackfillCellEvidence:
             "consolidation_source_group_hypothesis_id",
             "",
         ),
-        peak_hypothesis_status=row.get("peak_hypothesis_status", ""),
-        product_selection_blocker=row.get("product_selection_blocker", ""),
-        rt_mode_status=row.get("rt_mode_status", ""),
         backfill_ms2_trigger_scan_count=_int_optional(
             row.get("backfill_ms2_trigger_scan_count", ""),
         ),

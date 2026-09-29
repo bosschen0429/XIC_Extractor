@@ -762,9 +762,6 @@ def _cell(
     claim_winner_group_hypothesis_id: str = "",
     claim_source_group_hypothesis_id: str = "",
     consolidation_state: str = "",
-    peak_hypothesis_status: str = "",
-    product_selection_blocker: str = "",
-    rt_mode_status: str = "",
 ) -> AlignedCell:
     has_area = area is not None
     positive_area = _positive_area_value(area)
@@ -806,9 +803,6 @@ def _cell(
         claim_winner_group_hypothesis_id=claim_winner_group_hypothesis_id,
         claim_source_group_hypothesis_id=claim_source_group_hypothesis_id,
         consolidation_state=consolidation_state,
-        peak_hypothesis_status=peak_hypothesis_status,
-        product_selection_blocker=product_selection_blocker,
-        rt_mode_status=rt_mode_status,
         selected_integration=selected_integration,
         **cast(
             Any,
