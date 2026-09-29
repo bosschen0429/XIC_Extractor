@@ -193,6 +193,7 @@ Cross-cutting owners remain focused:
 | Owner | Responsibility |
 | --- | --- |
 | `sample_metadata.py` | canonical sample identity and immutable metadata snapshots |
+| `feature_quality.py` / `feature_quality_io.py` | post-finalization feature availability/selection and its bound analysis-set export; never Alignment decisions or normalization |
 | `review_records.py` | review subject/action identity and supersession |
 | `evidence_artifacts.py` / `artifact_lineage.py` | exact-byte artifact identity and supplied-lineage validation |
 | `processing_identity.py` | request, attempt, source, and retry-predecessor identity |

@@ -28,6 +28,7 @@ product-topic source-of-truth documents under
 | [`targeted-output-reference.md`](targeted-output-reference.md) | Column reference for every sheet in the Targeted Excel workbook |
 | [`untargeted-output-reference.md`](untargeted-output-reference.md) | Column reference for discovery CSVs and alignment TSVs |
 | [`untargeted-preset-guide.md`](untargeted-preset-guide.md) | Preset TOML structure, available presets, discovery/alignment defaults |
+| [`Feature quality and selection`](../product/feature-quality.md) | Post-Matrix CLI, explicit quality threshold, and traceable analysis-set output |
 
 ## Operator Validation
 
