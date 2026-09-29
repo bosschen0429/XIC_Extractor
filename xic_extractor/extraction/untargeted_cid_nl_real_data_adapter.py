@@ -30,6 +30,9 @@ from xic_extractor.alignment.untargeted_cid_nl_golden_path import (
     UntargetedCidNlBackfillInput,
 )
 from xic_extractor.config import ExtractionConfig
+from xic_extractor.configuration.signal_processing_profile import (
+    SignalProcessingProfile,
+)
 from xic_extractor.discovery.cid_nl_evidence_projection import (
     UntargetedCidNlProjectionRef,
     mint_untargeted_cid_nl_projection_ref,
@@ -100,9 +103,6 @@ from xic_extractor.peak_detection.search_scope import (
     EvidenceProviderBinding,
     SearchScopeContractError,
     UntargetedSearchScope,
-)
-from xic_extractor.peak_detection.signal_processing_profile import (
-    SignalProcessingProfile,
 )
 from xic_extractor.peak_detection.traces import Trace, trace_from_xic_request
 from xic_extractor.processing_identity import (

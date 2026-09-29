@@ -57,6 +57,7 @@ forbidden_modules =
     xic_extractor.discovery
     xic_extractor.extraction
     xic_extractor.output
+    xic_extractor.peak_detection
     xic_extractor.raw_reader
 allow_indirect_imports = False
 

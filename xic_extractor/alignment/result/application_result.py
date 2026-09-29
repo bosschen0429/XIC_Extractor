@@ -14,15 +14,15 @@ from xic_extractor.alignment.result.scientific_alignment import (
     FinalizedScientificAlignmentContractError,
     _validate_finalized_scientific_alignment_completion_receipt,
 )
+from xic_extractor.discovery.batch_contract import (
+    ALIGNMENT_FEATURE_INPUT_KEY,
+    CANDIDATE_UNIVERSE_INPUT_KEY,
+    validate_candidate_universe_payload,
+)
 from xic_extractor.discovery.models import (
     DISCOVERY_CANDIDATE_STATE_VALUES,
     MS1_FEATURE_BACKED_STATES,
     DiscoveryCandidateState,
-)
-from xic_extractor.extraction.untargeted_cid_nl_real_data_inputs import (
-    ALIGNMENT_FEATURE_INPUT_KEY,
-    CANDIDATE_UNIVERSE_INPUT_KEY,
-    validate_candidate_universe_payload,
 )
 from xic_extractor.immutable_sequence import ImmutableSequence
 from xic_extractor.peak_detection.cid_nl_method_assessment import (

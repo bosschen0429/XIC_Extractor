@@ -35,6 +35,7 @@ from xic_extractor.alignment.untargeted_cid_nl_golden_path import (
     build_untargeted_cid_nl_golden_path,
 )
 from xic_extractor.discovery.batch_contract import (
+    ALIGNMENT_FEATURE_INPUT_KEY,
     DiscoveryCandidateUniverseReceipt,
     mint_discovery_candidate_universe_receipt,
 )
@@ -52,7 +53,6 @@ from xic_extractor.extraction.untargeted_acquisition_cache import (
     bind_untargeted_acquisition_cache,
 )
 from xic_extractor.extraction.untargeted_cid_nl_real_data_inputs import (
-    ALIGNMENT_FEATURE_INPUT_KEY,
     build_untargeted_cid_nl_real_data_context,
 )
 from xic_extractor.extraction.untargeted_cid_nl_real_data_runtime import (

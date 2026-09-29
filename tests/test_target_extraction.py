@@ -5,6 +5,9 @@ import pytest
 
 import xic_extractor.extraction.target_extraction as target_extraction
 from xic_extractor.config import ExtractionConfig, Target
+from xic_extractor.configuration.signal_processing_profile import (
+    DEFAULT_SIGNAL_PROCESSING_PROFILE,
+)
 from xic_extractor.extraction.istd_prepass import extract_istd_anchors_only
 from xic_extractor.extraction.ms2_selection import selected_candidate_ms2_evidence
 from xic_extractor.extraction.rt_windows import get_rt_window
@@ -38,9 +41,6 @@ from xic_extractor.peak_detection.physical_peak_models import (
 )
 from xic_extractor.peak_detection.selection_decision import (
     PeakHypothesisSelectionDecision,
-)
-from xic_extractor.peak_detection.signal_processing_profile import (
-    DEFAULT_SIGNAL_PROCESSING_PROFILE,
 )
 from xic_extractor.peak_detection.targeted_product_projection import (
     TargetedProductProjection,

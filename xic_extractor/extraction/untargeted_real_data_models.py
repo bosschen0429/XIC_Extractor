@@ -34,8 +34,14 @@ from xic_extractor.alignment.workflow import (
     UntargetWorkflowCompositionRequest,
 )
 from xic_extractor.config import ExtractionConfig
+from xic_extractor.configuration.signal_processing_profile import (
+    SignalProcessingProfile,
+)
 from xic_extractor.discovery.batch_contract import (
+    ALIGNMENT_FEATURE_INPUT_KEY,
+    CANDIDATE_UNIVERSE_INPUT_KEY,
     DiscoveryCandidateUniverseReceipt,
+    validate_candidate_universe_payload,
 )
 from xic_extractor.discovery.models import DiscoveryCandidate, DiscoverySettings
 from xic_extractor.discovery.physical_fact_record import DiscoveryPhysicalFactRecord
@@ -59,8 +65,6 @@ from xic_extractor.extraction.untargeted_cid_nl_real_data_adapter import (
     _bounded_subject_candidates,
 )
 from xic_extractor.extraction.untargeted_cid_nl_real_data_inputs import (
-    ALIGNMENT_FEATURE_INPUT_KEY,
-    CANDIDATE_UNIVERSE_INPUT_KEY,
     DISCOVERY_SETTINGS_INPUT_KEY,
     PEAK_SETTINGS_INPUT_KEY,
     UNTARGETED_CID_NL_PROCESSING_ALGORITHM_VERSION,
@@ -68,7 +72,6 @@ from xic_extractor.extraction.untargeted_cid_nl_real_data_inputs import (
     UNTARGETED_CID_NL_PROCESSING_INPUT_SCHEMA_VERSION,
     candidate_universe_payload,
     discovery_settings_payload,
-    validate_candidate_universe_payload,
 )
 from xic_extractor.peak_detection.capture import SampleLocalCapture
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
@@ -85,9 +88,6 @@ from xic_extractor.peak_detection.search_scope import (
     PHYSICAL_CAPTURE_INPUT_KEY,
     UntargetedSearchScope,
     physical_capture_input_payload,
-)
-from xic_extractor.peak_detection.signal_processing_profile import (
-    SignalProcessingProfile,
 )
 from xic_extractor.processing_identity import (
     AcquisitionSourceExpectation,

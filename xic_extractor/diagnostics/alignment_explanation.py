@@ -13,10 +13,10 @@ from dataclasses import dataclass, fields
 from pathlib import Path
 from typing import Any
 
-from xic_extractor.peak_detection.integration_result import IntegrationResult
-from xic_extractor.peak_detection.signal_processing_profile import (
+from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )
+from xic_extractor.peak_detection.integration_result import IntegrationResult
 
 REPORT_FILENAME = "cid_nl_explanation.sqlite"
 GENERIC_REPORT_FILENAME = "alignment_explanation.sqlite"

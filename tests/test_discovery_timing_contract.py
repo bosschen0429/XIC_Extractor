@@ -15,6 +15,9 @@ from tests.test_discovery_ms1_backfill import (
 )
 from tests.test_discovery_physical_fact_integration import _OwnerBoundBatchRaw
 from tests.test_discovery_pipeline import _settings
+from xic_extractor.configuration.signal_processing_profile import (
+    SignalProcessingProfile,
+)
 from xic_extractor.diagnostics.timing import TimingRecorder
 from xic_extractor.discovery.models import DiscoverySettings
 from xic_extractor.discovery.ms1_backfill import (
@@ -26,9 +29,6 @@ from xic_extractor.discovery.physical_fact_persistence import (
 from xic_extractor.discovery.pipeline import _write_dual_csvs
 from xic_extractor.discovery.processing_run_spec_adapter import (
     compile_discovery_processing_run_spec,
-)
-from xic_extractor.peak_detection.signal_processing_profile import (
-    SignalProcessingProfile,
 )
 
 

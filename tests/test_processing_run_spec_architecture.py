@@ -12,7 +12,7 @@ def test_fresh_run_spec_import_adds_only_the_owner_module() -> None:
         import sys
 
         import xic_extractor.processing_identity
-        import xic_extractor.peak_detection.signal_processing_profile
+        import xic_extractor.configuration.signal_processing_profile
         import xic_extractor.validation_primitives
         baseline = {
             name for name in sys.modules if name.startswith("xic_extractor")
@@ -53,7 +53,7 @@ def test_run_spec_runtime_local_imports_keep_forbidden_modules_absent() -> None:
         from pathlib import Path
 
         import xic_extractor.processing_identity as identity
-        import xic_extractor.peak_detection.signal_processing_profile
+        import xic_extractor.configuration.signal_processing_profile
         import xic_extractor.processing_run_spec as owner
         from xic_extractor.discovery.models import DiscoverySettings, NeutralLossProfile
 

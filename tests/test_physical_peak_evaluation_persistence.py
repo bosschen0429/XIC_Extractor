@@ -7,6 +7,9 @@ import numpy as np
 import pytest
 
 from tests.test_discovery_physical_fact_persistence import _population, _spec
+from xic_extractor.configuration.signal_processing_profile import (
+    SignalProcessingProfile,
+)
 from xic_extractor.discovery.physical_fact_persistence import (
     read_discovery_physical_fact_sidecar,
     write_discovery_physical_fact_sidecar,
@@ -38,12 +41,7 @@ from xic_extractor.peak_detection.physical_peak_models import (
     PHYSICAL_PEAK_POINT_POLICY,
     PHYSICAL_PEAK_WINDOW_POLICY,
 )
-from xic_extractor.peak_detection.scoring_metrics import (
-    noise_shape_severity,
-)
-from xic_extractor.peak_detection.signal_processing_profile import (
-    SignalProcessingProfile,
-)
+from xic_extractor.peak_detection.scoring_metrics import noise_shape_severity
 
 
 def test_unavailable_prepared_signal_keeps_live_asls_intermediate(monkeypatch) -> None:

@@ -54,6 +54,9 @@ def test_changed_physical_query_evaluates_once_and_preserves_support(
     from types import SimpleNamespace
     from unittest.mock import Mock
 
+    from xic_extractor.configuration.signal_processing_profile import (
+        SignalProcessingProfile,
+    )
     from xic_extractor.discovery.grouping import group_discovery_seeds
     from xic_extractor.discovery.ms1_backfill import (
         _backfill_ms1_candidates_with_acquisition,
@@ -72,9 +75,6 @@ def test_changed_physical_query_evaluates_once_and_preserves_support(
     from xic_extractor.peak_detection.search_scope import (
         PHYSICAL_CAPTURE_INPUT_KEY,
         physical_capture_input_payload,
-    )
-    from xic_extractor.peak_detection.signal_processing_profile import (
-        SignalProcessingProfile,
     )
     from xic_extractor.peak_detection.traces import trace_from_xic_request
     from xic_extractor.processing_identity import (
@@ -1230,6 +1230,9 @@ def test_adapter_supports_adjacent_physical_peaks_with_interior_scans(
 ) -> None:
     import json
 
+    from xic_extractor.configuration.signal_processing_profile import (
+        SignalProcessingProfile,
+    )
     from xic_extractor.discovery.grouping import group_discovery_seeds
     from xic_extractor.discovery.ms1_backfill import (
         _backfill_ms1_candidates_with_acquisition,
@@ -1238,9 +1241,6 @@ def test_adapter_supports_adjacent_physical_peaks_with_interior_scans(
     from xic_extractor.peak_detection.search_scope import (
         PHYSICAL_CAPTURE_INPUT_KEY,
         physical_capture_input_payload,
-    )
-    from xic_extractor.peak_detection.signal_processing_profile import (
-        SignalProcessingProfile,
     )
     from xic_extractor.processing_identity import (
         build_processing_request_identity,
