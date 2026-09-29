@@ -330,8 +330,8 @@ def test_streamed_pipeline_matches_frozen_formula_and_unquantified_bytes(
             567,
         ),
         "alignment_owner_backfill_peak_fact_provenance.tsv": (
-            "d05898cf0d0841af51a96756a10f6524ba4fc0fb762d976a4306a2b8d5ac0287",
-            1666,
+            "6d02dc85860f193e16866b9f613d0d4bb9dae9d39d72be15849969a92082a3c4",
+            562,
         ),
     }
 

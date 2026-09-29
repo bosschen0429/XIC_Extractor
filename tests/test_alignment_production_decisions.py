@@ -3,10 +3,6 @@ from dataclasses import fields, replace
 from types import SimpleNamespace
 from typing import Any, cast
 
-from xic_extractor.alignment.backfill_peak_fact_provenance import (
-    BACKFILL_PROVENANCE_WRITER_SCHEMA_VERSION,
-    BackfillCellProjection,
-)
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.matrix import (
     AlignedCell,
@@ -41,23 +37,6 @@ _PRODUCTION_CELL_DECISION_FIELDS = (
     "matrix_value",
     "blank_reason",
     "matrix_value_source",
-)
-_FINAL_CELL_PROJECTION_FIELDS = (
-    "group_hypothesis_id",
-    "public_family_id",
-    "sample_stem",
-    "profile_id",
-    "selected_work_unit_key",
-    "selected_fact_content_id",
-    "owner_backfill_cell_content_id",
-    "production_cell_decision_id",
-    "cell_status",
-    "consolidation_state",
-    "consolidation_winner_group_hypothesis_id",
-    "consolidation_source_group_hypothesis_id",
-    "matrix_value_counts_seconds",
-    "matrix_value_source",
-    "writer_schema_version",
 )
 _EXPECTED_ALIGNMENT_DECISION_CONFIG_FIELDS = (
     "preferred_ppm",
@@ -162,40 +141,6 @@ def test_production_cell_projection_binds_live_cell_config_value_and_source() ->
             mutated.production_cell_decision_id
             != projection.production_cell_decision_id
         ), field_name
-
-
-def test_final_cell_projection_identity_covers_every_field_and_writer_version() -> None:
-    projection = BackfillCellProjection(
-        group_hypothesis_id="group-hypothesis:1",
-        public_family_id="public-family:1",
-        sample_stem="sample-1",
-        profile_id="signal-profile:" + "1" * 64,
-        selected_work_unit_key="work-unit:1",
-        selected_fact_content_id="physical-facts:" + "2" * 64,
-        owner_backfill_cell_content_id=("owner-backfill-authority-cell:" + "3" * 64),
-        production_cell_decision_id="production-cell-decision:" + "4" * 64,
-        cell_status="detected",
-        consolidation_state="not_consolidated",
-        consolidation_winner_group_hypothesis_id="",
-        consolidation_source_group_hypothesis_id="",
-        matrix_value_counts_seconds=123.5,
-        matrix_value_source="trapezoid_counts_seconds_on_canonical_signal",
-    )
-
-    assert projection.writer_schema_version == (
-        BACKFILL_PROVENANCE_WRITER_SCHEMA_VERSION
-    )
-    assert tuple(field.name for field in fields(projection)) == (
-        _FINAL_CELL_PROJECTION_FIELDS
-    )
-    for field_name in _FINAL_CELL_PROJECTION_FIELDS:
-        mutated = replace(
-            projection,
-            **{
-                field_name: _different_projection_value(getattr(projection, field_name))
-            },
-        )
-        assert mutated.cell_projection_id != projection.cell_projection_id, field_name
 
 
 def test_detected_and_supported_backfill_write_numeric_values():

@@ -11,12 +11,6 @@ from xic_extractor.alignment.backfill_evidence_contract import (
     ALIGNMENT_BACKFILL_CELL_EVIDENCE_COLUMNS,
     ALIGNMENT_BACKFILL_CELL_EVIDENCE_SCHEMA_VERSION,
 )
-from xic_extractor.alignment.backfill_peak_fact_provenance import (
-    BackfillPeakFactProvenanceBatch,
-)
-from xic_extractor.alignment.backfill_peak_fact_provenance import (
-    write_backfill_peak_fact_provenance_tsv as _write_peak_fact_provenance,
-)
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.matrix import AlignedCell, AlignmentMatrix
 from xic_extractor.alignment.matrix_output_contract import (
@@ -534,15 +528,6 @@ def write_alignment_backfill_seed_audit_tsv(
             }
         )
     return _write_tsv(path, ALIGNMENT_BACKFILL_SEED_AUDIT_COLUMNS, rows)
-
-
-def write_alignment_backfill_peak_fact_provenance_tsv(
-    path: Path,
-    batch: BackfillPeakFactProvenanceBatch,
-) -> Path:
-    """Render an already validated bounded physical-fact projection."""
-
-    return _write_peak_fact_provenance(path, batch)
 
 
 def write_alignment_status_matrix_tsv(path: Path, matrix: AlignmentMatrix) -> Path:
