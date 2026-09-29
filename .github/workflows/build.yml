@@ -18,17 +18,27 @@ jobs:
     runs-on: windows-latest
 
     steps:
-      - name: Setup Python and dependencies
-        uses: Chao-hu-Lab/shared-workflows/.github/actions/setup-python@c5276382aafc2ee6c0f14b3651cad8aca9f74758
+      - uses: actions/checkout@v6
         with:
+          submodules: false
+
+      - uses: astral-sh/setup-uv@v8.2.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            pyproject.toml
+            uv.lock
           python-version: "3.12"
-          install-args: "-e . pyinstaller"
+
+      - name: Install locked dependencies
+        shell: pwsh
+        run: uv sync --locked --extra dev --group dev --python 3.12
 
       - name: Determine package metadata
         id: meta
         shell: pwsh
         run: |
-          $projectVersion = uv run python -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])"
+          $projectVersion = & .\.venv\Scripts\python.exe -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])"
           if ("${{ github.ref }}".StartsWith("refs/tags/")) {
             $packageVersion = "${{ github.ref_name }}"
             if ($packageVersion -ne "v$projectVersion") {
@@ -44,7 +54,8 @@ jobs:
 
       - name: Build executable
         shell: pwsh
-        run: uv run pyinstaller xic_extractor.spec --clean --noconfirm
+        run: |
+          & .\.venv\Scripts\python.exe -m PyInstaller xic_extractor.spec --clean --noconfirm
 
       - name: Package distribution
         shell: pwsh
