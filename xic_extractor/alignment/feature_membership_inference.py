@@ -64,6 +64,7 @@ _TERMINATION = "completed_two_finite_directional_passes"
 _UNASSIGNED_COST = 1.0
 _INFEASIBLE_COST = 1_000_000.0
 _AMBIGUITY_EPSILON = 1e-9
+_WINDOW_AMBIGUITY_MARGIN = 0.05
 _FEATURE_TREND_NEIGHBORS = 6
 _WARP_ANCHOR_MIN_MEMBERS = 20
 _WARP_GRID_RT_MIN = (7.0, 11.0, 15.0, 20.0, 27.0, 38.0)
@@ -970,18 +971,24 @@ def _window_inference(
                     if rt_delta_sec > rt_limit_sec:
                         continue
                     counts["owner_edge_evaluations"] += 1
-                    precursor_median = (left.precursor_mz + right.precursor_mz) / 2.0
+                    # The tolerance describes the full separation of the
+                    # endpoints, as it does for owner-to-band costs. Measuring
+                    # only to their midpoint halves the mass evidence and can
+                    # turn distinct coeluting bands into near-equal alternatives.
                     precursor_fraction = (
-                        absolute_ppm_error(left.precursor_mz, precursor_median)
+                        absolute_ppm_error(
+                            max(left.precursor_mz, right.precursor_mz),
+                            min(left.precursor_mz, right.precursor_mz),
+                        )
                         / config.max_ppm
                     )
                     product_fraction = 0.0
                     if left_event is not None and right_event is not None:
-                        product_median = (
-                            left_event.product_mz + right_event.product_mz
-                        ) / 2.0
                         product_fraction = (
-                            absolute_ppm_error(left_event.product_mz, product_median)
+                            absolute_ppm_error(
+                                max(left_event.product_mz, right_event.product_mz),
+                                min(left_event.product_mz, right_event.product_mz),
+                            )
                             / config.product_mz_tolerance_ppm
                         )
                     cost = (
@@ -1012,15 +1019,22 @@ def _window_inference(
                 neighbors[left_id].add(right_id)
                 neighbors[right_id].add(left_id)
             ambiguous_window: set[str] = set()
+            preferred_arcs: set[tuple[str, str]] = set()
+            ambiguous_arcs: set[tuple[str, str]] = set()
             for (owner_id, _sample), options in competing.items():
                 ranked = sorted(options)
-                if len(ranked) < 2 or ranked[1][0] > ranked[0][0] + 0.05:
+                if (
+                    len(ranked) < 2
+                    or ranked[1][0] > ranked[0][0] + _WINDOW_AMBIGUITY_MARGIN
+                ):
+                    preferred_arcs.add((owner_id, ranked[0][1]))
                     continue
                 alternatives = tuple(
                     candidate_id
                     for cost, candidate_id in ranked
-                    if cost <= ranked[0][0] + 0.05
+                    if cost <= ranked[0][0] + _WINDOW_AMBIGUITY_MARGIN
                 )
+                ambiguous_arcs.update((owner_id, item) for item in alternatives)
                 shared_neighbors = set.intersection(
                     *(neighbors[candidate_id] for candidate_id in alternatives)
                 ) - {owner_id}
@@ -1033,11 +1047,25 @@ def _window_inference(
                     ambiguous_window.update(alternatives)
                 else:
                     ambiguous_window.add(owner_id)
+            # A contested pairing to one sample does not invalidate independent
+            # reciprocal support from another. Keep that support, but do not use
+            # the contested arcs to grow a band. Unsupported doublets stay weak.
+            independently_supported = {
+                owner_id
+                for owner_id, neighbor_id in preferred_arcs
+                if (neighbor_id, owner_id) in preferred_arcs
+            }
+            ambiguous_window.difference_update(independently_supported)
             for owner_id in ambiguous_window:
                 weak[owner_id] = "alternative_bands_have_near_equal_cost"
             counts["ambiguous_assignments"] += len(ambiguous_window)
             for _, left_id, right_id in sorted(arcs):
                 if left_id in ambiguous_window or right_id in ambiguous_window:
+                    continue
+                if (left_id, right_id) in ambiguous_arcs or (
+                    right_id,
+                    left_id,
+                ) in ambiguous_arcs:
                     continue
                 left_root, right_root = root(left_id), root(right_id)
                 if left_root == right_root:
@@ -1277,7 +1305,10 @@ def _bridge_separated_window_bands(
         best: dict[str, tuple[float, str]] = {}
         for key, options in offers.items():
             ranked = sorted(options)
-            if len(ranked) == 1 or ranked[1][0] > ranked[0][0] + 0.05:
+            if (
+                len(ranked) == 1
+                or ranked[1][0] > ranked[0][0] + _WINDOW_AMBIGUITY_MARGIN
+            ):
                 best[key] = ranked[0]
         mutual = sorted(
             (cost, left, right)
@@ -1389,7 +1420,7 @@ def _assign_window_singletons(
         if (
             len(row_candidates) >= 2
             and cast(float, row_candidates[1].cost)
-            <= cast(float, row_candidates[0].cost) + 0.05
+            <= cast(float, row_candidates[0].cost) + _WINDOW_AMBIGUITY_MARGIN
         ):
             weak[owner.owner_id] = "alternative_bands_have_near_equal_cost"
             continue
@@ -1398,7 +1429,10 @@ def _assign_window_singletons(
             candidates_by_owner[owner.owner_id] = tuple(row_candidates)
     for sample in sorted(by_sample, key=lambda stem: (orders[stem], stem)):
         assignments, ambiguous = _solve_sample_assignment(
-            by_sample[sample], candidates_by_owner, counts
+            by_sample[sample],
+            candidates_by_owner,
+            counts,
+            ambiguity_margin=_WINDOW_AMBIGUITY_MARGIN,
         )
         for owner in by_sample[sample]:
             selected = assignments.get(owner.owner_id)
@@ -1604,6 +1638,8 @@ def _solve_sample_assignment(
     owners: Sequence[SampleLocalMS1Owner],
     candidates_by_owner: Mapping[str, tuple[_Candidate, ...]],
     counts: Counter[str],
+    *,
+    ambiguity_margin: float = _AMBIGUITY_EPSILON,
 ) -> tuple[dict[str, str], frozenset[str]]:
     arcs = {
         owner.owner_id: {
@@ -1649,6 +1685,8 @@ def _solve_sample_assignment(
         )
         if len(rows) == len(columns) == 1:
             assignments[rows[0]] = columns[0]
+            if _UNASSIGNED_COST <= arcs[rows[0]][columns[0]] + ambiguity_margin:
+                ambiguous.add(rows[0])
             continue
         counts["competition_components"] += 1
         if len(rows) == 1:
@@ -1659,7 +1697,7 @@ def _solve_sample_assignment(
                 _UNASSIGNED_COST,
                 min(arcs[owner_id][key] for key in columns if key != feature_key),
             )
-            if alternative <= arcs[owner_id][feature_key] + _AMBIGUITY_EPSILON:
+            if alternative <= arcs[owner_id][feature_key] + ambiguity_margin:
                 ambiguous.add(owner_id)
             counts["trivial_assignment_components"] += 1
             continue
@@ -1674,7 +1712,7 @@ def _solve_sample_assignment(
             # The stable ID breaks only the diagnostic representation tie.
             # Equal/near-equal optima remain ambiguous and cannot add membership.
             assignments[owner_id] = feature_key
-            if alternative <= best + _AMBIGUITY_EPSILON:
+            if alternative <= best + ambiguity_margin:
                 ambiguous.add(owner_id)
             counts["trivial_assignment_components"] += 1
             continue
@@ -1700,7 +1738,7 @@ def _solve_sample_assignment(
             alternative = float(matrix[alternative_rows, alternative_columns].sum())
             matrix[row_index, column_index] = saved
             assignments[owner_id] = feature_key
-            if alternative <= optimum + _AMBIGUITY_EPSILON:
+            if alternative <= optimum + ambiguity_margin:
                 ambiguous.add(owner_id)
     counts["ambiguous_assignments"] += len(ambiguous)
     return assignments, frozenset(ambiguous)
