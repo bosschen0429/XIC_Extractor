@@ -72,12 +72,6 @@ these authority instances are not schemas.
 - `productization_control_plane_schema.json`: current control-plane schema
   for productization lane state, maturity, authority rules, the stable
   compatibility-anchor registry, and dependent-effect lane authority.
-- `quant_matrix_version_schema.json`: explicit
-  `QuantMatrixVersion v1` activation output contract. It defines
-  `quant_matrix`, `cell_provenance`, `row_summary`, expected-diff, and source
-  summary invariants for manifest-authorized Backfill values; it does not
-  change ProductWriter default extraction, workbook, GUI, selected peak/area,
-  or counted-detection behavior.
 - `quant_matrix_review_report_schema.json`: review-only
   `QuantMatrixVersion` report contract. It defines review rows, summary JSON,
   and HTML report outputs for accepted Backfill versus detected cells,
@@ -123,12 +117,10 @@ these authority instances are not schemas.
   dry-run evidence into a `product_ready_default_matrix_candidate` statement,
   while still requiring a separate explicit ProductWriter activation commit
   before default outputs or matrix authority can change.
-- `quant_matrix_default_product_activation_schema.json`: explicit
-  ProductWriter/default output activation schema. It writes
-  `default_output/quant_matrix.tsv` plus `cell_provenance`, `row_summary`,
-  `expected_diff_summary`, and `source_summary` from the validated current
-  rule-selected Backfill membership; accepted Backfill values enter the default
-  numeric matrix as quantification values, not detections or truth claims.
+
+The [Quant Matrix activation formats](../../product/quant-matrix.md#activation-formats)
+describe explicit versioned and default activation outputs and link to their
+executable field, writer, and validation owners.
 
 ## Rule
 

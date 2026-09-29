@@ -622,17 +622,6 @@ def test_checker_rejects_compatibility_owner_route_drift(tmp_path: Path) -> None
     assert any("closed metadata" in problem for problem in problems)
 
 
-def test_schemas_readme_lists_quant_matrix_version_schema() -> None:
-    text = (Path(__file__).parents[1] / "docs/superpowers/schemas/README.md").read_text(
-        encoding="utf-8",
-    )
-
-    assert "quant_matrix_version_schema.json" in text
-    assert "cell_provenance" in text
-    assert "row_summary" in text
-    assert "expected-diff" in text
-
-
 def test_schemas_readme_lists_quant_matrix_review_report_schema() -> None:
     text = (Path(__file__).parents[1] / "docs/superpowers/schemas/README.md").read_text(
         encoding="utf-8",
@@ -703,17 +692,6 @@ def test_schemas_readme_lists_quant_matrix_product_ready_closeout_schema() -> No
     assert "`product_ready_default_matrix_candidate`" in text
     assert "separate explicit ProductWriter activation commit" in text
     assert "default outputs or matrix authority" in text
-
-
-def test_schemas_readme_lists_quant_matrix_default_product_activation_schema() -> None:
-    text = (Path(__file__).parents[1] / "docs/superpowers/schemas/README.md").read_text(
-        encoding="utf-8",
-    )
-
-    assert "quant_matrix_default_product_activation_schema.json" in text
-    assert "`default_output/quant_matrix.tsv`" in text
-    assert "current\n  rule-selected Backfill membership" in text
-    assert "quantification values, not detections or truth claims" in text
 
 
 def test_checker_rejects_parked_broad_backfill_authority(tmp_path: Path) -> None:
