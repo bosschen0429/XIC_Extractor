@@ -27,6 +27,11 @@ or the relevant structured productization owner.
 
 ## Current Public Schemas
 
+Current ProductWriter and dependent-effect state lives in the
+[writer manifest](../productization/status/productization_authority_manifest.json)
+and [dependent-effect manifest](../productization/status/quantitative_projection_authority_manifest.json);
+these authority instances are not schemas.
+
 - `bounded_non_broad_product_lanes.json`: bounded product-lane contract for
   non-broad activation lanes and review scope.
 - `cid_nl_tested_tracer_proposal_manifest_schema.json`: diagnostic-only
@@ -64,20 +69,9 @@ or the relevant structured productization owner.
   `ProductionAcceptanceManifest v1` contract. This defines/checks the only
   future Backfill row artifact that may grant `write_authority=true`; it does
   not activate ProductWriter or the default quant matrix.
-- `productization_authority_manifest.json`: current ProductWriter authority
-  manifest. Its registered writer scopes remain the exclusive write lanes.
-
-
 - `productization_control_plane_schema.json`: current control-plane schema
   for productization lane state, maturity, authority rules, the stable
   compatibility-anchor registry, and dependent-effect lane authority.
-- `quantitative_projection_authority_manifest_schema.json`: schema contract
-  for the dependent canonical quantitative projection manifest. It requires
-  exact package and activation bindings while granting no ProductWriter scope.
-- `quantitative_projection_authority_manifest.json`: structured authority
-  owner for canonical Owner Backfill dependent quantitative-projection package
-  and activation bindings. Read current state from this manifest, not narrative
-  documentation.
 - `quant_matrix_version_schema.json`: explicit
   `QuantMatrixVersion v1` activation output contract. It defines
   `quant_matrix`, `cell_provenance`, `row_summary`, expected-diff, and source

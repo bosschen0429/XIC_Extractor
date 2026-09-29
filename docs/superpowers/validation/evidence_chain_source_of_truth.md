@@ -51,7 +51,7 @@ different questions:
 | `docs/lc-msms-evidence-rules.md` | Domain interpretation of MS1/MS2/RT/Backfill evidence and promotion constraints. | Current product lane state. |
 | `docs/superpowers/plans/2026-06-15-productization-control-plane.md` | Compatibility lookup for retired control-plane lane keys and historical anchors. | Current tier, lane, writer scope, or promotion state. |
 | `docs/superpowers/validation/productization_status_index.tsv` | Machine-checkable current lane status and public-surface flags. | Domain meaning of each evidence field. |
-| `docs/superpowers/schemas/productization_authority_manifest.json` | Allowed and forbidden writer scopes. Unknown scopes fail closed. | Scientific sufficiency of evidence providers. |
+| `docs/superpowers/productization/status/productization_authority_manifest.json` | Allowed and forbidden writer scopes. Unknown scopes fail closed. | Scientific sufficiency of evidence providers. |
 | This file | Human-maintained evidence-chain map across code, diagnostics, and promotion boundaries. | Machine enforcement, counts, tier changes, or writer authority. |
 
 Rule: if a durable evidence provider, evidence state, gate, or authority
@@ -354,7 +354,7 @@ a separate activation contract consumes it.
 
 The authoritative machine-readable registry state is
 `docs/superpowers/validation/productization_status_index.tsv` plus
-`docs/superpowers/schemas/productization_authority_manifest.json`. This table
+`docs/superpowers/productization/status/productization_authority_manifest.json`. This table
 describes stable lane roles, not current counts. Counts, hashes, pass/fail
 numbers, and active scope sizes belong in the machine-readable artifacts.
 The exact Backfill writer membership remains in the retained production-

@@ -139,7 +139,8 @@ audit/evidence 寫到 ignored `output/`。方法變更直接更新現行文件�
 | Product semantics | `docs/product/<topic>.md` |
 | Product maturity and promotion vocabulary | `docs/agent/product-validation-contract.md` |
 | Current productization lane state | `docs/superpowers/validation/productization_status_index.tsv` |
-| Writer scope and authority | `docs/superpowers/schemas/productization_authority_manifest.json` |
+| Writer scope and authority | `docs/superpowers/productization/status/productization_authority_manifest.json` |
+| Dependent quantitative-effect authority | `docs/superpowers/productization/status/quantitative_projection_authority_manifest.json` |
 | LC-MS/MS evidence semantics | `docs/lc-msms-evidence-rules.md` |
 | Validation verdict and rerun policy | `docs/diagnostic-ledger.md` or current checker-consumed artifact |
 | Architecture/dependency ownership | `docs/architecture-contract.md` |
