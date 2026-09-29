@@ -1418,22 +1418,21 @@ def _inferred_apex_case(
     return group, raw, result
 
 
-def test_inferred_precursor_moves_to_the_ms1_ion_read_at_the_apex(
+def test_inferred_precursor_reports_the_ms1_ion_read_at_the_apex(
     tmp_path: Path,
 ) -> None:
     group, raw, result = _inferred_apex_case(
         tmp_path, lambda inferred, _rt: inferred * (1 - 18e-6)
     )
 
-    measured = group.precursor_mz * (1 - 18e-6)
-    assert result.measurements.reacquisition_request_count == 1
-    assert raw.request_batches[-1][0].mz == pytest.approx(measured)
+    assert result.measurements.reacquisition_request_count == 0
+    assert raw.request_batches[-1][0].mz == pytest.approx(group.precursor_mz)
     (candidate,) = result.candidates
-    assert candidate.precursor_mz == pytest.approx(measured)
+    assert candidate.precursor_mz == group.precursor_mz
+    assert candidate.ms1_apex_mz == pytest.approx(group.precursor_mz * (1 - 18e-6))
     assert candidate.ms1_peak_found is True
     (record,) = result.physical_evaluations
-    assert record.work_item.xic_mz == pytest.approx(measured)
-    assert record.work_item.precursor_mz == pytest.approx(measured)
+    assert record.work_item.xic_mz == pytest.approx(group.precursor_mz)
 
 
 def _two_ions(inferred: float, rt: float) -> float:
@@ -1441,41 +1440,30 @@ def _two_ions(inferred: float, rt: float) -> float:
     return inferred * (1 - 18e-6 if round(rt / 0.04) % 2 else 1 - 6e-6)
 
 
-def test_small_or_ambiguous_apex_readings_keep_the_request(tmp_path: Path) -> None:
-    small = _inferred_apex_case(tmp_path, lambda inferred, _rt: inferred * (1 + 3e-6))
-    two_ions = _inferred_apex_case(tmp_path, _two_ions)
-
-    for group, _raw, result in (small, two_ions):
-        assert result.measurements.reacquisition_request_count == 0
-        assert result.candidates[0].precursor_mz == group.precursor_mz
-
-
-def test_selected_precursor_keeps_its_scan_precursor_mz(tmp_path: Path) -> None:
-    group, _raw, result = _inferred_apex_case(
-        tmp_path,
-        lambda inferred, _rt: inferred * (1 - 18e-6),
-        basis="scan_precursor",
-    )
-
-    assert result.measurements.reacquisition_request_count == 0
-    (candidate,) = result.candidates
-    assert candidate.precursor_mz == group.precursor_mz
-
-
-def test_inferred_precursor_meeting_two_ions_at_the_apex_is_held_for_review(
+def test_inferred_precursor_meeting_two_ions_reports_no_ms1_ion(
     tmp_path: Path,
 ) -> None:
     group, _raw, result = _inferred_apex_case(tmp_path, _two_ions)
 
     (candidate,) = result.candidates
     assert candidate.precursor_mz == group.precursor_mz
-    assert candidate.ms1_peak_found is True
-    assert candidate.discovery_candidate_state == "review_only_ambiguous_coisolation"
-    assert "two MS1 ions" in candidate.reason
-    (binding,) = result.physical_bindings
-    assert binding.candidate.discovery_candidate_state == (
-        "review_only_ambiguous_coisolation"
+    assert candidate.ms1_apex_mz is None
+    assert candidate.discovery_candidate_state in {
+        "ms1_feature_nl_supported",
+        "ms1_feature_nl_rescued",
+    }
+
+
+def test_selected_precursor_reports_no_ms1_ion(tmp_path: Path) -> None:
+    group, _raw, result = _inferred_apex_case(
+        tmp_path,
+        lambda inferred, _rt: inferred * (1 - 18e-6),
+        basis="scan_precursor",
     )
+
+    (candidate,) = result.candidates
+    assert candidate.precursor_mz == group.precursor_mz
+    assert candidate.ms1_apex_mz is None
 
 
 @pytest.mark.parametrize(

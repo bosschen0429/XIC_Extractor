@@ -122,17 +122,16 @@ the error relative to the configured loss mass; it is not the acceptance gate.
   it does not upgrade inferred precursor identity or grant Matrix authority.
 - When the first acquisition of a pure `product_mz + neutral_loss` group
   resolves a peak, Discovery reads the ion at the apex scan and one MS1 scan on
-  each side, inside the request. A consistent reading more than 5 ppm from the
-  inferred precursor replaces it, and the trace is re-extracted there; no
-  reading keeps the precursor. MS1 is the method's accurate-mass scan, while
-  ddMS2 runs at a quarter of its resolution, so an inferred precursor only
-  points at the MS1 ion. A selected (`scan_precursor` or `mixed`) precursor
-  keeps the scan's precursor m/z: in full85, about half of the selected
-  precursors a reading would move landed on a neighbouring ion present at the
-  selected m/z when the scan was triggered. A pure inferred precursor
-  meeting two ions is attributed to neither: unless another seed on the same
-  peak carries a single or measured ion, the candidate becomes
-  `review_only_ambiguous_coisolation` and is not persisted.
+  each side, inside the request, and reports the intensity-weighted reading as
+  `ms1_apex_mz`. MS1 is the method's accurate-mass scan, while ddMS2 runs at a
+  quarter of its resolution, so product + loss only points at the ion. The
+  reading is reported only: the candidate's precursor, trace, identity and MS2
+  evidence keep product + loss, because Alignment matches MS2 evidence and
+  shares search centers by that m/z (#551). Readings spread wider than 5 ppm
+  come from two ions and report none. A selected (`scan_precursor` or `mixed`)
+  precursor reports none: in full85, about half of the selected precursors a
+  reading would have moved landed on a neighbouring ion present at the selected
+  m/z when the scan was triggered.
 - Direct and inferred rows from one MS2 scan may coexist. `candidate_id` must
   retain the sample/scan anchor plus precursor/product row identity so those
   rows cannot collide, and `tag_evidence_json` must retain precursor-basis,

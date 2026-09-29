@@ -92,6 +92,7 @@ independently enter Alignment RAW owner build.
 | ms1_peak_rt_start | float | MS1 peak start RT |
 | ms1_peak_rt_end | float | MS1 peak end RT |
 | ms1_height | float | MS1 peak height |
+| ms1_apex_mz | float | MS1 ion m/z read at the peak apex for an inferred precursor (blank for selected precursors, two ions, or no reading); reported only |
 | ms1_trace_quality | string | `good`, `fair`, or `poor` |
 | ms1_scan_support_score | float | Scan matching score |
 | selected_tag_count | int | Selected NL tag count |

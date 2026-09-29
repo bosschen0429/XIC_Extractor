@@ -67,6 +67,7 @@ EXPECTED_PROVENANCE_COLUMNS = (
     "ms1_peak_rt_start",
     "ms1_peak_rt_end",
     "ms1_height",
+    "ms1_apex_mz",
     "ms1_trace_quality",
     "ms1_scan_support_score",
     "selected_tag_count",

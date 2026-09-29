@@ -37,12 +37,7 @@ from xic_extractor.discovery.priority import (
     assign_review_priority,
     build_candidate_reason,
 )
-from xic_extractor.mass_accuracy import (
-    absolute_ppm_error,
-    neutral_loss_match,
-    weighted_ion_mz,
-    within_ppm,
-)
+from xic_extractor.mass_accuracy import neutral_loss_match, weighted_ion_mz, within_ppm
 from xic_extractor.peak_detection.background_shape import is_provisional_peak_shape
 from xic_extractor.peak_detection.ms1_morphology import DEFAULT_GAUSSIAN15_WINDOW_POINTS
 from xic_extractor.peak_detection.ms1_trace_detection import detect_ms1_trace_peak
@@ -76,7 +71,6 @@ _DISCOVERY_PHYSICAL_CONTEXT_HALF_WINDOW_MIN = 0.60
 _APEX_ION_SCAN_RADIUS = 1
 _APEX_ION_SPREAD_PPM = 5.0
 
-_ApexIonVerdict = Literal["keep", "move", "ambiguous"]
 
 
 MS1CentroidMz = Callable[[float, float, float], float | None]
@@ -275,8 +269,7 @@ def _backfill_ms1_candidates_with_acquisition(
 
     initial_physical_facts: dict[int, DiscoveryPhysicalFactRecord] = {}
     physical_trace_qualities: dict[int, str] = {}
-    measured_precursor_by_index: dict[int, float] = {}
-    ambiguous_ion_indexes: set[int] = set()
+    apex_ion_mz_by_index: dict[int, float] = {}
     if signal_processing_profile is not None:
         for physical_index, (plan, acquired) in enumerate(
             zip(physical_plans, acquired_traces, strict=True)
@@ -304,32 +297,20 @@ def _backfill_ms1_candidates_with_acquisition(
             zip(physical_plans, acquired_traces, strict=True)
         ):
             evaluation = initial_physical_facts[physical_index].evaluation
-            revised = plan
-            verdict, ion_mz = _apex_ion_verdict(
+            ion_mz = _apex_ion_mz(
                 plan, acquired, evaluation, ms1_centroid_mz=ms1_centroid_mz
             )
-            if verdict == "ambiguous":
-                ambiguous_ion_indexes.add(physical_index)
-            elif verdict == "move":
-                assert ion_mz is not None
-                revised = replace(
-                    revised,
-                    group=replace(revised.group, precursor_mz=ion_mz),
-                    request=replace(revised.request, mz=ion_mz),
-                )
-                measured_precursor_by_index[physical_index] = ion_mz
-            revised = (
-                _expanded_physical_request_plan(
-                    revised,
-                    acquired,
-                    profile=signal_processing_profile,
-                    settings=settings,
-                    physical_evaluation=evaluation,
-                )
-                or revised
+            if ion_mz is not None:
+                apex_ion_mz_by_index[physical_index] = ion_mz
+            expanded = _expanded_physical_request_plan(
+                plan,
+                acquired,
+                profile=signal_processing_profile,
+                settings=settings,
+                physical_evaluation=evaluation,
             )
-            if revised is not plan:
-                reacquisition.append((physical_index, revised))
+            if expanded is not None:
+                reacquisition.append((physical_index, expanded))
         reacquisition_plans = tuple(reacquisition)
         for indexed_chunk in _chunks(
             reacquisition_plans,
@@ -401,13 +382,8 @@ def _backfill_ms1_candidates_with_acquisition(
                 physical_fact_by_index[physical_index] = existing_fact
                 physical_work_manifest.append(existing_fact.work_item)
                 physical_evaluations.append(existing_fact)
-        group = plan.group
-        if physical_index in measured_precursor_by_index:
-            group = replace(
-                group, precursor_mz=measured_precursor_by_index[physical_index]
-            )
         candidate = _candidate_from_trace(
-            group,
+            plan.group,
             acquired.trace.rt,
             acquired.trace.intensity,
             settings=settings,
@@ -422,6 +398,10 @@ def _backfill_ms1_candidates_with_acquisition(
             physical_work_observer=physical_work_manifest.append,
             physical_evaluation_observer=physical_evaluations.append,
         )
+        if physical_index in apex_ion_mz_by_index:
+            candidate = replace(
+                candidate, ms1_apex_mz=apex_ion_mz_by_index[physical_index]
+            )
         candidates.append(candidate)
         if signal_processing_profile is not None:
             physical_trace_qualities[physical_index] = candidate.ms1_trace_quality
@@ -434,14 +414,6 @@ def _backfill_ms1_candidates_with_acquisition(
         settings=settings,
         ms1_centroid_mz=ms1_centroid_mz,
     )
-    if ambiguous_ion_indexes:
-        merge_result = _flag_ambiguous_ion_candidates(
-            merge_result,
-            tuple(
-                physical_indices[source] in ambiguous_ion_indexes
-                for source in range(len(candidates))
-            ),
-        )
     physical_bindings: tuple[DiscoveryCandidatePhysicalBinding, ...] = ()
     if signal_processing_profile is not None:
         assert run_spec_id is not None
@@ -602,22 +574,22 @@ def _has_strong_inferred_precursor_support(
     )
 
 
-def _apex_ion_verdict(
+def _apex_ion_mz(
     plan: _DiscoveryMs1RequestPlan,
     acquired: AcquiredTrace,
     evaluation: PhysicalPeakEvaluation,
     *,
     ms1_centroid_mz: MS1CentroidMz | None,
-) -> tuple[_ApexIonVerdict, float | None]:
-    """What the MS1 ion read at the resolved peak means for the precursor.
+) -> float | None:
+    """The MS1 ion m/z read at the resolved peak of an inferred precursor.
 
-    Only a precursor inferred from product + loss is read; a selected precursor
-    keeps the scan's precursor m/z, since a reading near it can belong to a
-    neighbouring ion or isotope. The ion is read inside the request at the apex
-    scans. A consistent reading more than the MS1 reading spread away moves
-    the precursor ("move", the measured m/z); a smaller shift changes no trace,
-    and no reading keeps it. Readings from two ions leave the precursor
-    unattributed ("ambiguous").
+    MS1 is the method's accurate-mass scan, while ddMS2 runs at a quarter of
+    its resolution, so product + loss only points at the ion. The ion is read
+    inside the request at the apex scans; readings spread wider than a few ppm
+    come from two ions and report none. A selected precursor is not read,
+    since a reading near it can belong to a neighbouring ion or isotope. The
+    value is reported only: the precursor, its trace and its MS2 evidence keep
+    product + loss.
     """
     facts = evaluation.facts
     if (
@@ -626,11 +598,11 @@ def _apex_ion_verdict(
         or evaluation.state != "available"
         or facts is None
     ):
-        return "keep", None
+        return None
     rt = acquired.trace.rt
     intensity = acquired.trace.intensity
     if len(rt) == 0:
-        return "keep", None
+        return None
     apex = int(np.argmin(np.abs(rt - facts.apex_rt_min)))
     request = plan.request
     half_width = request.mz * request.ppm_tol * 1e-6
@@ -644,43 +616,7 @@ def _apex_ion_verdict(
         )
         if mz is not None:
             readings.append((mz, float(intensity[index])))
-    measured = weighted_ion_mz(readings, max_spread_ppm=_APEX_ION_SPREAD_PPM)
-    if measured is None:
-        if any(weight > 0 for _, weight in readings):
-            return "ambiguous", None
-        return "keep", None
-    if absolute_ppm_error(measured, request.mz) <= _APEX_ION_SPREAD_PPM:
-        return "keep", None
-    return "move", measured
-
-
-def _flag_ambiguous_ion_candidates(
-    merge_result: DiscoveryCandidateMergeResult,
-    ambiguous_by_source: tuple[bool, ...],
-) -> DiscoveryCandidateMergeResult:
-    """Hold for review a candidate whose every seed met two ions at its peak.
-
-    Any member with a single or measured ion carries the candidate, so the flag
-    is applied after the merge, which reassigns the state.
-    """
-    return replace(
-        merge_result,
-        candidates=tuple(
-            replace(
-                candidate,
-                discovery_candidate_state="review_only_ambiguous_coisolation",
-                reason=(
-                    "inferred precursor meets two MS1 ions at the peak apex; "
-                    "retained for review"
-                ),
-            )
-            if all(ambiguous_by_source[s] for s in binding.member_source_ordinals)
-            else candidate
-            for candidate, binding in zip(
-                merge_result.candidates, merge_result.bindings, strict=True
-            )
-        ),
-    )
+    return weighted_ion_mz(readings, max_spread_ppm=_APEX_ION_SPREAD_PPM)
 
 
 def _validate_acquired_plan_chunk(
@@ -1183,6 +1119,20 @@ def _merge_candidate_pair(
         ),
         tag_evidence_json=_merge_tag_evidence_json(first, second),
         is_provisional=(first.is_provisional and second.is_provisional),
+        # A selected member supplies the precursor; only a purely inferred
+        # candidate reports the ion read at its apex.
+        ms1_apex_mz=(
+            next(
+                (
+                    member.ms1_apex_mz
+                    for member in (representative, first, second)
+                    if member.ms1_apex_mz is not None
+                ),
+                None,
+            )
+            if precursor_mz_basis == "product_plus_neutral_loss"
+            else None
+        ),
     )
 
 
