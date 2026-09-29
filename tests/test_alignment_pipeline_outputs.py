@@ -206,7 +206,6 @@ def test_validation_minimal_outputs_keep_gate_artifacts_without_debug_surfaces(
         output_level="validation-minimal",
         emit_alignment_cells=False,
         emit_alignment_status_matrix=False,
-        emit_skipped_evidence_ledger=True,
     )
 
     assert outputs.matrix_tsv == tmp_path / "alignment_matrix.tsv"
@@ -219,12 +218,8 @@ def test_validation_minimal_outputs_keep_gate_artifacts_without_debug_surfaces(
         tmp_path / "alignment_owner_backfill_peak_fact_provenance.tsv"
     )
     assert outputs.cells_tsv is None
-    assert outputs.edge_evidence_tsv is None
     assert outputs.status_matrix_tsv is None
-    assert (
-        outputs.skipped_evidence_ledger_tsv == tmp_path / "skipped_evidence_ledger.tsv"
-    )
-    assert outputs.run_metadata_json == tmp_path / "alignment_run_metadata.json"
+    assert outputs.run_metadata_json is None
 
 
 def test_target_snapshot_binding_requests_existing_run_metadata_sidecar(

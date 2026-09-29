@@ -2,14 +2,13 @@ from __future__ import annotations
 
 import csv
 from collections import defaultdict
-from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import asdict, dataclass
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
 from xic_extractor.alignment.backfill_evidence_contract import (
     PREDICATE_VERSION,
-    SKIPPED_EVIDENCE_LEDGER_COLUMNS,
     SkippedEvidenceRecord,
 )
 from xic_extractor.alignment.backfill_runtime_projection import (
@@ -28,7 +27,6 @@ from xic_extractor.alignment.owner_group_delivery import (
     OwnerGroupDeliveryFeature,
     OwnerGroupDeliveryFeatures,
 )
-from xic_extractor.tabular_io import write_tsv
 
 BackfillScope = Literal["full-audit", "production-equivalent", "selected-families"]
 BackfillScopeExclusionReason = Literal[
@@ -353,28 +351,6 @@ def read_family_allowlist_tsv(
     if not family_ids:
         raise ValueError(f"{path}: no selected family ids found")
     return family_ids
-
-
-def write_skipped_evidence_ledger_tsv(
-    path: Path,
-    rows: Iterable[SkippedEvidenceRecord],
-) -> Path:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_tsv(
-        path,
-        (asdict(row) for row in rows),
-        SKIPPED_EVIDENCE_LEDGER_COLUMNS,
-        extrasaction="raise",
-        formatter=_format_skipped_evidence_ledger_value,
-        lineterminator="\n",
-    )
-    return path
-
-
-def _format_skipped_evidence_ledger_value(value: object) -> str:
-    if value is None:
-        return ""
-    return str(value)
 
 
 def skipped_evidence_summary(rows: Sequence[SkippedEvidenceRecord]) -> dict[str, int]:

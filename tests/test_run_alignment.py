@@ -149,10 +149,8 @@ def test_run_alignment_accepts_asls_baseline_integration_method_override(
             review_tsv=review,
             matrix_tsv=matrix,
             cells_tsv=None,
-            integration_audit_tsv=None,
             backfill_seed_audit_tsv=None,
             status_matrix_tsv=None,
-            edge_evidence_tsv=None,
         )
 
     monkeypatch.setattr(run_alignment, "run_alignment", fake_run_alignment)

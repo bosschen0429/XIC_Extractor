@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from tests.skipped_evidence_ledger_fixture import write_skipped_evidence_ledger_fixture
 from xic_extractor.alignment.backfill_evidence_contract import (
     ALIGNMENT_BACKFILL_CELL_EVIDENCE_COLUMNS,
     ALIGNMENT_BACKFILL_CELL_EVIDENCE_SCHEMA_VERSION,
@@ -22,7 +23,6 @@ from xic_extractor.alignment.backfill_evidence_tsv import (
 )
 from xic_extractor.alignment.backfill_scope import (
     SkippedEvidenceRecord,
-    write_skipped_evidence_ledger_tsv,
 )
 
 
@@ -344,7 +344,7 @@ def test_skipped_lookup_roundtrips_writer_record_and_claims(tmp_path: Path) -> N
         full_audit_available=True,
         source_artifact="owner_backfill",
     )
-    path = write_skipped_evidence_ledger_tsv(tmp_path / "skipped.tsv", (source,))
+    path = write_skipped_evidence_ledger_fixture(tmp_path / "skipped.tsv", (source,))
 
     result = lookup_skipped_evidence_tsv(
         path,
