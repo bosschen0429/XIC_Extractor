@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import inspect
 import time
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from dataclasses import dataclass, replace
 from multiprocessing import get_context
 from pathlib import Path
@@ -531,7 +531,7 @@ def test_batch_production_rejects_selection_trace_length_mismatch(
         )
 
 
-def test_runtime_consumers_coalesce_identical_spawned_result_replay(
+def test_runtime_consumers_coalesce_identical_completed_result_replay(
     tmp_path: Path,
 ) -> None:
     owners, sample = _identity_fixture(tmp_path)
@@ -539,21 +539,40 @@ def test_runtime_consumers_coalesce_identical_spawned_result_replay(
     runtime = _runtime(owners.attempt, (job.work_unit_key,))
     reservations = _reservations(owners.attempt, (job,))
 
-    targeted = _run_targeted_service(
-        runtime,
-        (job, job),
-        reservations,
-        max_workers=2,
-        marker_path=tmp_path / "targeted-replay.runtime.json",
+    targeted_envelope, targeted_report = _run_targeted_job(job)
+    targeted_ref = targeted_envelope.owner_result_ref
+    assert targeted_ref is not None
+    targeted_batch = TargetedRuntimeWorkerBatch(
+        result_envelopes=(targeted_envelope, targeted_envelope),
+        resource_reports=(targeted_report, targeted_report),
+        runtime_artifact_refs=(targeted_ref, targeted_ref),
     )
+    service = TargetedApplicationService(
+        lambda *_args, **_kwargs: pytest.fail("runtime must not call the writer"),
+        runtime_lifecycle_runner=lambda _request, _state: targeted_batch,
+        runtime_recovery_marker=OwnerPathRuntimeMarker(
+            tmp_path / "targeted-replay.runtime.json",
+            "targeted-observation-runtime:test",
+        ),
+    )
+    targeted = service.execute_runtime_lifecycle(
+        build_targeted_application_request(_config(), [_target()]),
+        runtime,
+        resource_reservations=reservations,
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+    )
+    alignment_result = _run_alignment_job(job)
     alignment = execute_alignment_process_runtime(
         runtime,
         (job, job),
-        worker=_run_alignment_job,
+        worker=lambda _job: alignment_result,
         error_factory=_alignment_error,
         max_workers=2,
         resource_reservations=reservations,
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+        executor_factory=lambda *, max_workers, mp_context: ThreadPoolExecutor(
+            max_workers=max_workers
+        ),
         recovery_marker=OwnerPathRuntimeMarker(
             tmp_path / "alignment-replay.runtime.json",
             "alignment-observation-replay:test",
