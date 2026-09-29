@@ -1138,11 +1138,10 @@ def test_recovery_batch_canonicalizes_shared_group_queries_without_merging_cente
         raw=raw,
     )
 
-    assert batch.group_center_rts == (7.8, 8.2, 8.2)
-    assert batch.method_subject_ids == (
-        fixture.method_subject.method_subject_id,
-        fixture.method_subject.method_subject_id,
-        fixture.method_subject.method_subject_id,
+    assert batch.targets == (
+        UntargetedCidNlBackfillTarget("group-a", fixture.method_subject, 500.0, 7.8),
+        UntargetedCidNlBackfillTarget("group-b", fixture.method_subject, 500.0, 8.2),
+        UntargetedCidNlBackfillTarget("group-c", fixture.method_subject, 500.0, 8.2),
     )
     assert batch.acquisition.logical_xic_request_count == 2
     assert vendor_raw.chromatogram_request_counts == [2]

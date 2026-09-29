@@ -242,6 +242,7 @@ def test_rejected_initial_evidence_gets_one_independent_bounded_assessment(
                 sample=batch.context.sample("S1"),
                 method_subject=initial.content.method_subject,
                 group_center_rt=8.0,
+                group_center_mz=initial.content.method_subject.precursor_mz,
                 support_policy=initial.content.evaluation_receipt.support_policy,
                 peak_config=peak_config,
                 raw=None,
@@ -253,6 +254,7 @@ def test_rejected_initial_evidence_gets_one_independent_bounded_assessment(
                 sample=rejected.job.sample,
                 method_subject=initial.content.method_subject,
                 group_center_rt=8.0,
+                group_center_mz=initial.content.method_subject.precursor_mz,
                 support_policy=replace(
                     initial.content.evaluation_receipt.support_policy,
                     precursor_tolerance_da=0.25,

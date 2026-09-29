@@ -263,14 +263,6 @@ class UntargetedCidNlBackfillTraceBatch:
     acquisition: TraceAcquisitionBatch
 
     @property
-    def method_subject_ids(self) -> tuple[str, ...]:
-        return tuple(target.method_subject.method_subject_id for target in self.targets)
-
-    @property
-    def group_center_rts(self) -> tuple[float, ...]:
-        return tuple(float(target.center_rt) for target in self.targets)
-
-    @property
     def group_hypothesis_ids(self) -> tuple[str, ...]:
         return tuple(target.group_hypothesis_id for target in self.targets)
 
@@ -925,7 +917,7 @@ def backfill_untargeted_cid_nl_sample_subject(
     sample: ResolvedCanonicalSampleIdentity,
     method_subject: CidNlMethodSubject,
     group_center_rt: float,
-    group_center_mz: float | None = None,
+    group_center_mz: float,
     group_hypothesis_id: str | None = None,
     support_policy: DdaCidNlPeakSupportPolicy,
     peak_config: ExtractionConfig,
@@ -984,9 +976,7 @@ def backfill_untargeted_cid_nl_sample_subject(
         raise UntargetedCidNlRealDataAdapterError(
             "group_center_rt must be finite and non-negative"
         )
-    physical_mz = (
-        method_subject.precursor_mz if group_center_mz is None else group_center_mz
-    )
+    physical_mz = group_center_mz
     if (
         isinstance(physical_mz, bool)
         or not isinstance(physical_mz, (int, float))

@@ -2061,6 +2061,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         sample=job.sample,
         method_subject=job.method_subject,
         group_center_rt=center_rt,
+        group_center_mz=job.method_subject.precursor_mz,
         support_policy=DdaCidNlPeakSupportPolicy(
             precursor_tolerance_da=0.01, neutral_loss_tolerance_ppm=10.0
         ),
