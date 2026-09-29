@@ -44,6 +44,7 @@ owner for product documentation.
 | XIC Inspector | [`xic-inspector.md`](xic-inspector.md) | Installed read-only review CLI/API, method-neutral selection and rendering, and portable offline evidence workbench |
 | Review Roundtrip | [`review-roundtrip.md`](review-roundtrip.md) | Review action import, lockbox evidence, expected-diff gates |
 | Sample Metadata And QC | [`sample-metadata-qc.md`](sample-metadata-qc.md) | Sample identity/order/role/QC, activation gates |
+| Feature Quality And Selection | [`feature-quality.md`](feature-quality.md) | Finalized-matrix availability, explicit selection and traceable analysis sets |
 | Instrument QC And Calibration | [`instrument-qc-calibration.md`](instrument-qc-calibration.md) | Clean-vs-biological QC, HCD audit, calibration readiness |
 
 ### System
