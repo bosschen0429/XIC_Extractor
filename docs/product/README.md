@@ -68,7 +68,7 @@ If a topic file conflicts with an owner listed below, the owner wins.
 - [LC-MS/MS evidence rules](../lc-msms-evidence-rules.md)
 - [Architecture contract](../architecture-contract.md)
 - [Productization status index](../superpowers/validation/productization_status_index.tsv)
-- [Productization authority manifest](../superpowers/schemas/productization_authority_manifest.json)
+- [Productization authority manifest](../superpowers/productization/status/productization_authority_manifest.json)
 - [Product validation contract](../agent/product-validation-contract.md)
 
 ## Contributor Rules

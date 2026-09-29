@@ -939,6 +939,6 @@ Before changing alignment behavior, require the relevant subset of:
 - [Product validation contract](../agent/product-validation-contract.md)
 - [Diagnostic ledger](../diagnostic-ledger.md)
 - [Peak anchor and group boundary](family-hypothesis-boundary.md)
-- [Authority manifest](../superpowers/schemas/productization_authority_manifest.json)
+- [Authority manifest](../superpowers/productization/status/productization_authority_manifest.json)
 - [Discovery](discovery.md)
 - [Evidence spine](evidence-spine.md)

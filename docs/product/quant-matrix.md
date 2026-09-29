@@ -184,6 +184,6 @@ validation notes are not matrix authority by themselves.
 
 - [Backfill](backfill.md) | [Alignment](alignment.md) | [Productization](productization.md)
 - [Historical compatibility index](../superpowers/plans/2026-06-15-productization-control-plane.md)
-- [Status index](../superpowers/validation/productization_status_index.tsv) | [Authority manifest](../superpowers/schemas/productization_authority_manifest.json)
+- [Status index](../superpowers/validation/productization_status_index.tsv) | [Authority manifest](../superpowers/productization/status/productization_authority_manifest.json)
 - [Peak model selection](peak-model-selection.md)
 - [Run provenance](run-provenance.md)
