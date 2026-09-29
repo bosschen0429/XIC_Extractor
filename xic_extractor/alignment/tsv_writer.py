@@ -81,11 +81,6 @@ ALIGNMENT_REVIEW_COLUMNS = (
     "review_backfill_count",
     "include_in_primary_matrix",
     "row_flags",
-    "artificial_adduct_role",
-    "artificial_adduct_name",
-    "artificial_adduct_related_family_id",
-    "artificial_adduct_mz_delta_error_ppm",
-    "artificial_adduct_rt_delta_min",
     "representative_samples",
     "family_evidence",
     "warning",
@@ -802,21 +797,6 @@ def _review_rows(
                 "review_backfill_count": row_decision.review_backfill_count,
                 "include_in_primary_matrix": row_decision.include_in_primary_matrix,
                 "row_flags": ";".join(row_decision.row_flags),
-                "artificial_adduct_role": _optional_attr(
-                    cluster, "artificial_adduct_role"
-                ),
-                "artificial_adduct_name": _optional_attr(
-                    cluster, "artificial_adduct_name"
-                ),
-                "artificial_adduct_related_family_id": _optional_attr(
-                    cluster, "artificial_adduct_related_family_id"
-                ),
-                "artificial_adduct_mz_delta_error_ppm": _optional_attr(
-                    cluster, "artificial_adduct_mz_delta_error_ppm"
-                ),
-                "artificial_adduct_rt_delta_min": _optional_attr(
-                    cluster, "artificial_adduct_rt_delta_min"
-                ),
                 "representative_samples": _representative_samples(cells, decisions),
                 "family_evidence": _family_evidence(cluster),
                 "warning": _warning(

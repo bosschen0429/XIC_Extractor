@@ -258,11 +258,6 @@ where that internal or sidecar identity is available.
 
 | Column | Type | Description |
 | --- | --- | --- |
-| artificial_adduct_role | string | Adduct role (if applicable) |
-| artificial_adduct_name | string | Adduct name |
-| artificial_adduct_related_family_id | string | Parent family ID |
-| artificial_adduct_mz_delta_error_ppm | float | Adduct m/z error (PPM) |
-| artificial_adduct_rt_delta_min | float | Adduct RT delta (min) |
 
 #### Context
 

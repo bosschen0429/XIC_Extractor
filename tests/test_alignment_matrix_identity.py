@@ -835,25 +835,6 @@ def test_multi_tag_support_does_not_promote_single_sample_family() -> None:
     assert decision.include_in_primary_matrix is False
 
 
-def test_artificial_adduct_annotation_does_not_demote_supported_family() -> None:
-    matrix = _matrix(
-        _feature(
-            "FAM001",
-            evidence="owner_complete_link;owner_count=5",
-            artificial_adduct_role="related_annotation",
-        ),
-        (
-            _cell("s1", "FAM001", "detected", 100.0),
-            _cell("s2", "FAM001", "detected", 90.0),
-        ),
-    )
-
-    decision = build_matrix_identity_decisions(matrix, AlignmentConfig()).row("FAM001")
-
-    assert decision.identity_decision == "production_family"
-    assert decision.include_in_primary_matrix is True
-
-
 def _matrix(feature: object, cells: tuple[AlignedCell, ...]) -> AlignmentMatrix:
     return AlignmentMatrix(
         clusters=(feature,),
