@@ -36,7 +36,9 @@ from xic_extractor.alignment.grouping_result import (
 )
 from xic_extractor.alignment.hypothesis_owner_adapter import (
     compose_peak_hypotheses_from_assessment_universe,
+    owner_from_cid_nl_assessment_observation,
     owner_from_cid_nl_assessment_support,
+    owner_from_ms1_observation_hypothesis,
 )
 from xic_extractor.alignment.mode_track.assignment import (
     ModeTrackCandidateObservation,
@@ -53,6 +55,10 @@ from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessmentRef,
 )
 from xic_extractor.peak_detection.hypotheses import PeakHypothesis
+from xic_extractor.peak_detection.peak_hypothesis_identity import (
+    HYPOTHESIS_METHOD_DDA_CID_NL,
+    HYPOTHESIS_METHOD_MS1_OBSERVATION,
+)
 from xic_extractor.peak_detection.search_scope import (
     TargetSearchScope,
     UntargetedSearchScope,
@@ -62,6 +68,117 @@ from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 
 if TYPE_CHECKING:
     from xic_extractor.alignment.mode_track.refinement import ModeTrackRefinementRun
+
+
+def build_targeted_cross_sample_groups(
+    *,
+    processing_owners: ProcessingOwnerReferences,
+    captures: Sequence[SampleLocalCapture],
+    sample_assessments: tuple[
+        tuple[ResolvedCanonicalSampleIdentity, CidNlMethodAssessmentRef], ...
+    ],
+    alignment_config: AlignmentConfig,
+    drift_lookup: DriftLookupProtocol | None = None,
+) -> CrossSampleGroupingResult:
+    """Close Targeted membership from the exact selected capture in each cell."""
+
+    sample_by_id = {
+        sample.identity.sample_identity_id: sample
+        for sample in processing_owners.sample_resolutions
+    }
+    assessment_by_id = {
+        sample.identity.sample_identity_id: assessment
+        for sample, assessment in sample_assessments
+    }
+    owners: list[SampleLocalMS1Owner] = []
+    selected_by_id: dict[str, PeakHypothesis] = {}
+    for capture in captures:
+        selected = capture.selected_hypothesis
+        if selected is None:
+            continue
+        observation = selected.peak_observation_refs[0]
+        sample_id = observation.content.canonical_sample_identity_id
+        sample = sample_by_id.get(sample_id)
+        if sample is None or sample_id in selected_by_id:
+            raise CrossSampleGroupingContractError(
+                "Targeted selection crossed or duplicated its canonical sample"
+            )
+        assessment = assessment_by_id.get(sample_id)
+        if selected.hypothesis_method == HYPOTHESIS_METHOD_DDA_CID_NL:
+            if assessment is None:
+                raise CrossSampleGroupingContractError(
+                    "Targeted CID-NL selection lacks its method assessment"
+                )
+            owner = owner_from_cid_nl_assessment_support(
+                sample=sample, assessment=assessment, hypothesis=selected
+            )
+        elif selected.hypothesis_method == HYPOTHESIS_METHOD_MS1_OBSERVATION:
+            owner = (
+                owner_from_cid_nl_assessment_observation(
+                    processing_owners=processing_owners,
+                    sample=sample,
+                    assessment=assessment,
+                    hypothesis=selected,
+                )
+                if assessment is not None
+                else owner_from_ms1_observation_hypothesis(
+                    processing_owners=processing_owners,
+                    sample=sample,
+                    hypothesis=selected,
+                )
+            )
+        else:
+            raise CrossSampleGroupingContractError(
+                "Targeted selection has an unsupported hypothesis method"
+            )
+        owners.append(owner)
+        selected_by_id[sample_id] = selected
+
+    if captures:
+        _validate_capture_owner_hypotheses(
+            captures=captures,
+            owners=owners,
+            source_by_id={
+                selected.hypothesis_id: selected for selected in selected_by_id.values()
+            },
+        )
+    groups = construct_cross_sample_peak_group_hypotheses(
+        tuple(owners),
+        config=alignment_config,
+        sample_universe=frozenset(
+            sample.metadata.raw_stem for sample in processing_owners.sample_resolutions
+        ),
+        injection_order={
+            sample.metadata.raw_stem: sample.metadata.injection_order
+            for sample in processing_owners.sample_resolutions
+            if sample.metadata.injection_order is not None
+        },
+        drift_lookup=drift_lookup,
+    )
+    identities = tuple(
+        validate_cross_sample_peak_group_identity(group, require_canonical=True)
+        for group in groups
+    )
+    population = tuple(
+        sorted(
+            (identity for identity in identities if identity is not None),
+            key=lambda group: group.group_hypothesis_id,
+        )
+    )
+    if tuple(sorted(owner.owner_id for owner in owners)) != tuple(
+        sorted(owner_id for group in groups for owner_id in group.owner_ids)
+    ):
+        raise CrossSampleGroupingContractError(
+            "Targeted grouping lost or invented selected hypothesis identity"
+        )
+    return CrossSampleGroupingResult(
+        processing_owners=processing_owners,
+        partition_transition=_partition_transition(
+            predecessors=population,
+            successors=population,
+        ),
+        drift_lookup=drift_lookup,
+    )
 
 
 def apply_mode_track_refinement_run_for_workflow(

@@ -164,8 +164,9 @@ downstream decision core.
 Alignment's grouping lifecycle is linear: candidate and exact-owner evidence
 enters constrained grouping. Untarget uses the directional bootstrap only to
 estimate a batch RT warp, then `grouping_workflow` closes its ordinary window
-bands; bootstrap membership has no downstream authority. Target workflows that
-use ModeTrack may apply one initial complete-partition refinement. The final
+bands; bootstrap membership has no downstream authority. Target workflows group
+their selected hypotheses directly through CrossSample; they do not fit or apply
+ModeTrack. The final
 immutable `CrossSampleGroupingResult(processing_owners,
 partition_transition, drift_lookup)` reaches bounded Backfill,
 ObservationRevisit, cell decisions, and finalization. A revisit does not reopen

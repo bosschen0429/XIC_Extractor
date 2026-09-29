@@ -16,6 +16,7 @@ from tests.processing_identity_no_raw_fixture import (
     build_processing_identity_no_raw_fixture,
 )
 from tests.test_search_scope_capture import _capture_binding, _peak_config
+from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.workflow import (
     CancelledWorkflowResult,
     CaptureWorkflowArguments,
@@ -153,16 +154,18 @@ def test_public_workflow_surface_is_closed_and_variant_specific() -> None:
     )
     common_adapter_fields = (
         "capture_inputs",
-        "mode_track",
         "predecessor_cell_observations",
         "drift_lookup",
         "backfill_cell_observations",
     )
     assert tuple(field.name for field in fields(TargetWorkflowAdapter)) == (
-        common_adapter_fields
+        *common_adapter_fields,
+        "sample_assessments",
+        "alignment_config",
     )
     assert tuple(field.name for field in fields(UntargetWorkflowAdapter)) == (
         *common_adapter_fields,
+        "mode_track",
         "completed_grouping",
         "closed_cell_coverage",
     )
@@ -210,7 +213,12 @@ def test_public_workflow_carriers_reject_non_exact_mutable_inputs() -> None:
         workflow_owner.AlignmentWorkflowContractError,
         match="capture inputs must be an immutable typed tuple",
     ):
-        TargetWorkflowAdapter([], object(), (), None)
+        TargetWorkflowAdapter(
+            capture_inputs=[],
+            predecessor_cell_observations=(),
+            sample_assessments=(),
+            alignment_config=AlignmentConfig(),
+        )
 
     with pytest.raises(
         workflow_owner.AlignmentWorkflowContractError,
@@ -305,17 +313,8 @@ def test_workflow_rejects_incomplete_or_crossed_owner_population(
             CaptureWorkflowArguments(capture.candidate_id, capture.trace)
             for capture in captures
         ),
-        mode_track=ModeTrackWorkflowArguments(
-            sample_assessments=assessments,
-            alignment_config=coverage.epoch.alignment_config,
-            trajectory_policy=workflow_owner.ModeTrackTrajectoryPolicy(
-                trajectory_policy_version="anchor-trajectory",
-                band_policy_version="fixed-band",
-                prediction_half_width_min=0.1,
-                max_interpolation_gap=10,
-                max_extrapolation_gap=10,
-            ),
-        ),
+        sample_assessments=assessments,
+        alignment_config=coverage.epoch.alignment_config,
         predecessor_cell_observations=spine.cells,
         drift_lookup=None,
     )
