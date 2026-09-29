@@ -2,6 +2,9 @@ import csv
 from collections.abc import Mapping, Sequence
 from typing import Protocol
 
+from xic_extractor.applications.targeted.product_model import (
+    TargetedProductProjection,
+)
 from xic_extractor.config import ExtractionConfig, Target
 from xic_extractor.neutral_loss import CandidateMS2Evidence, NLResult
 from xic_extractor.output.detection import is_accepted_result_detection
@@ -15,9 +18,6 @@ from xic_extractor.output.schema import (
     MS1_SUFFIXES,
     SCORE_BREAKDOWN_HEADERS,
     TARGETED_PRODUCT_PROJECTION_HEADERS,
-)
-from xic_extractor.peak_detection.targeted_product_projection import (
-    TargetedProductProjection,
 )
 from xic_extractor.sample_groups import classify_sample_group
 from xic_extractor.signal_processing import PeakDetectionResult

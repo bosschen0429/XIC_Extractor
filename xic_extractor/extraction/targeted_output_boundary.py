@@ -13,6 +13,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Iterator, cast
 
 from xic_extractor.alignment.result.scientific_alignment import ObservedSearchSubject
+from xic_extractor.applications.targeted.product_model import (
+    TargetedProductProjection,
+)
 from xic_extractor.extraction.output_dispatch import write_outputs
 from xic_extractor.extraction.targeted_production_workflow import (
     acquisition_snapshot_for_publication,
@@ -32,9 +35,6 @@ from xic_extractor.output.method_manifest import (
 )
 from xic_extractor.output.review_report import review_report_path_for_excel
 from xic_extractor.peak_detection.models import PeakResult
-from xic_extractor.peak_detection.targeted_product_projection import (
-    TargetedProductProjection,
-)
 
 if TYPE_CHECKING:
     from xic_extractor.extraction.targeted_production_workflow import (

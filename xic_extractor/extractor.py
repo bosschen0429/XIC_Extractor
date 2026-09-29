@@ -5,6 +5,9 @@ from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from xic_extractor import neutral_loss, raw_reader, signal_processing
+from xic_extractor.applications.targeted.product_model import (
+    TargetedProductProjection,
+)
 from xic_extractor.config import ExtractionConfig, Target
 from xic_extractor.extraction.scoring_factory import selected_candidate
 from xic_extractor.output.messages import (
@@ -23,9 +26,6 @@ from xic_extractor.peak_detection.model_selection import (
 from xic_extractor.peak_detection.physical_peak_models import PhysicalPeakEvaluation
 from xic_extractor.peak_detection.selection_decision import (
     PeakHypothesisSelectionDecision,
-)
-from xic_extractor.peak_detection.targeted_product_projection import (
-    TargetedProductProjection,
 )
 from xic_extractor.peak_detection.traces import Trace
 from xic_extractor.rt_prior_library import LibraryEntry
