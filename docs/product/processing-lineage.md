@@ -6,20 +6,21 @@ defines the identities and rules that make that answer durable.
 
 ## Current Status
 
-This table records which parts of this contract exist in code. The rest of
-this page is the target design.
+This table separates implemented identities and diagnostic candidates from
+the planned delivery contract below. Neither a diagnostic candidate nor a
+planned seal changes the current product writer.
 
 | Part | Plain meaning | Status |
 | --- | --- | --- |
 | Processing identity (`xic_extractor/processing_identity.py`) | Which request and attempt ran, over which RAW sources | Implemented; production Alignment, Backfill, and Discovery modules use it |
 | Target identity (`TargetKey`, `TargetListSnapshot` in `xic_extractor/configuration/target_identity.py`) | Which exact target list a run used | Implemented; production Targeted modules use it |
-| Targeted delivery lineage (`TargetedDeliveryCellKey`, `DeliveryRevision`, `DeliverySeal` in `xic_extractor/delivery_lineage.py`) | A sealed record for each delivered Targeted cell | Implemented for Targeted; reached through `extraction.targeted_service` |
+| Targeted delivery lineage (`TargetedDeliveryCellKey`, revision/stage/seal candidates in `xic_extractor/delivery_lineage.py`) | Per-cell Targeted lineage candidates | Diagnostic-only; reached through `extraction.targeted_service`, with no product seal or publication authority |
 | Untargeted row identity (`UntargetRowKey`) | A stable identity for one Untargeted Matrix row | Implemented in `alignment/projection/untarget/pre_cell.py` |
-| Untargeted per-cell delivery lineage (`UntargetedDeliveryCellKey`, per-cell `DeliveryRevision`) | A sealed record for each delivered Untargeted Matrix cell | Not planned; see [Untargeted delivery decision](#untargeted-delivery-decision) |
+| Untargeted per-cell delivery lineage | A retained revision/evidence bundle for each Matrix cell | Not planned; see [Untargeted delivery decision](#untargeted-delivery-decision) |
 | Untargeted output-level seal | One sealed manifest for one complete Untargeted Matrix delivery | Planned; not implemented |
 
 Status source: module definitions and production import paths, checked on
-2026-09-26. A status row is not validation evidence.
+2026-09-30. A status row is not validation evidence.
 
 ### Untargeted Delivery Decision
 
@@ -39,9 +40,7 @@ ledger. Per-cell evidence retention would add trace or plot payloads on top of
 that ledger. An output-level seal adds a manifest of a few kilobytes and closes
 the missing link between the ledger and one sealed attempt.
 
-This decision narrows the frozen workflow-neutral design below for
-Untargeted. Where the design text describes Untargeted per-cell delivery
-revisions, this decision wins.
+The workflow rules below apply this decision throughout the contract.
 
 ## Scope
 
@@ -73,8 +72,9 @@ The product rule is:
 > retained cell ledger, and its output artifact hashes.
 
 Retries and recomputation create new attempts. They never overwrite the
-identity or evidence of an earlier attempt. A new result can supersede an old
-delivery revision only through the owning projection and writer authority.
+identity or evidence of an earlier attempt. Targeted revision supersession and
+Untargeted output-seal supersession each require the owning projection and
+writer authority.
 
 This is a lineage and retention contract, not another scientific decision
 core. `PeakHypothesis`, selection, Alignment, `CellObservation`, and Backfill
@@ -132,10 +132,10 @@ These are internal lineage concepts, not additional user-visible review tags.
 | `ProcessingRequest` | One normalized scientific computation request over identified sources, effective method/evidence settings, workflow constraints, and contract versions | An execution, output folder, timestamp, or GUI session |
 | `ProcessingAttempt` | One execution of a `ProcessingRequest`; every retry receives a new identity | The logical request or the product delivery |
 | `EvidenceArtifact` | One immutable artifact instance identified by producer attempt, content digest, schema, semantic role, and lineage references | A mutable path, cache entry, or authority decision |
-| `DeliveryCellKey` | A projection-owned stable product position: canonical sample identity plus Targeted target identity, or canonical sample identity plus Untargeted matrix-row identity | An acquisition-source identity, kernel `CellObservation`, or ordinal group ID |
+| `DeliveryCellKey` | Targeted projection-owned product position: canonical sample identity plus target identity | An acquisition-source identity, kernel `CellObservation`, or ordinal group ID |
 | `UntargetRowKey` | Untargeted projection-owned row identity derived from one finalized canonical group | `group_hypothesis_id`, `FAM...`, m/z/RT display text, or row order |
-| `DeliveryRevision` | One immutable proposed or sealed value/null for a `DeliveryCellKey`, linked to its producing attempt and kernel decision | The current-value pointer or permission to publish |
-| `DeliverySeal` | An immutable manifest proving a complete, authority-approved set of delivery revisions and output artifact hashes | A staging directory, successful process exit, or diagnostic report |
+| `DeliveryRevision` | Targeted-only immutable proposed or sealed value/null for a `DeliveryCellKey`, linked to its producing attempt and kernel decision | An Untargeted cell record, current-value pointer, or permission to publish |
+| `DeliverySeal` | Planned immutable manifest for an authority-approved output and its artifact hashes: Targeted revisions or one complete Untargeted Matrix and retained ledger | A staging directory, successful process exit, or diagnostic seal candidate |
 
 Do not introduce a generic `run_id` as a substitute for these identities.
 Existing diagnostic `run_id` / `source_run_id` fields remain local compatibility
@@ -158,12 +158,12 @@ labels until an adapter binds them to the contract above.
 | kernel object reference | Request identity plus the normalized sample-local or cross-sample scientific identity | A bare ID whose meaning can change across requests |
 | `group_hypothesis_id` | Group identity schema + exact processing request + canonical-sorted identity-bearing members, each binding canonical sample to a tagged union of owner-backed hypothesis or physical-observation identity | `FAM...`, group ordinal, sample stem, area, display RT/m/z, ModeTrack anchor ID, or an untagged wrapper identity |
 | `untarget_row_key` | Untarget projection schema + finalized canonical group identity | Group/display label alone, center coordinates, current Matrix row number, or cross-request inference |
-| `delivery_cell_key` | Projection kind + `sample_metadata`-owned stable sample identity + projection-owned target/row identity | Acquisition-source identity, display name alone, current row number, column position, `FAM000...` ordinal, or output path |
-| `delivery_revision_id` | Cell key + producer attempt + selected decision/null payload + projection policy/contract version | Mutable “latest” state |
-| `delivery_seal_id` | Canonical sealed manifest content, including revision and output-artifact identities | Directory existence or writer exit code |
+| `delivery_cell_key` (Targeted) | `sample_metadata`-owned stable sample identity + target-list-owner identity | Acquisition-source identity, display name alone, column position, or output path |
+| `delivery_revision_id` (Targeted) | Cell key + producer attempt + selected decision/null payload + projection policy/contract version | Mutable “latest” state or Untargeted cell identity |
+| `delivery_seal_id` (planned) | Canonical sealed manifest content: Targeted revision and output-artifact identities, or Untargeted attempt, source, retained-ledger, and complete Matrix artifact identities | Directory existence, writer exit code, or a diagnostic candidate |
 
-The first executable identity slice uses `processing_identity`: typed IDs
-are SHA-256 digests over compact canonical JSON (`sort_keys`, UTF-8, finite JSON
+The `processing_identity` owner defines typed IDs
+as SHA-256 digests over compact canonical JSON (`sort_keys`, UTF-8, finite JSON
 numbers), with a type/version prefix. Its current content boundary is:
 
 - an acquisition source binds the full-file SHA-256, byte size, acquisition
@@ -201,7 +201,7 @@ numbers), with a type/version prefix. Its current content boundary is:
   contract, that content identity, and a canonical set of upstream artifact
   references. Equal bytes across attempts preserve content equality but never
   collapse artifact-instance identity;
-- the first two producer adapters are deliberately diagnostic-only. The
+- the two artifact-envelope adapters are deliberately diagnostic-only. The
   Targeted MS1-shape owner fixes the
   `targeted_ms1_shape_identity` UTF-8 TSV bytes and role; the Pt Discovery
   evidence CSV owner fixes the `pt_pattern_discovery_evidence` UTF-8 CSV
@@ -227,8 +227,11 @@ namespace explicitly. A different controller, acquisition adapter, or
 observation namespace therefore creates a different source identity rather
 than silently reusing a bare scan number. The resolver performs one sequential
 full-file read per source, but opens no vendor RAW handle and makes no XIC call.
-This slice is not wired into the production execution path until that I/O cost
-and persisted-identifier surface receive an explicit promotion decision.
+Production Targeted execution already uses this resolver:
+`TargetedApplicationService.execute_application` snapshots its inputs through
+`snapshot_targeted_production_inputs` and
+`build_targeted_processing_request_identity` before acquisition. This source
+fingerprinting does not imply that product delivery sealing is implemented.
 
 This freezes the acquisition-source -> processing-request ->
 processing-attempt boundary plus the sample, target-list, and review owner APIs.
@@ -244,8 +247,9 @@ sample/target/artifact/review IDs and it
 rejects mixed sample snapshots, target/request substitution, unresolved review
 records, superseded review records, artifact content/role/schema substitution,
 missing dependencies, cross-attempt mixing, and review-snapshot substitution.
-This is a bounded diagnostic artifact-envelope tracer, not a production
-artifact registry. The Targeted delivery owner makes delivery-cell, revision,
+Production workflows and diagnostic tracers consume this owner-reference
+closure; it is not a production artifact registry. The Targeted delivery owner
+makes delivery-cell, revision,
 stage, and seal-candidate identities executable by composing these existing
 owner refs in memory. Those candidates grant no product seal, current pointer,
 storage, publication, supersession, selected-value, Matrix, or writer authority.
@@ -318,9 +322,12 @@ flowchart LR
     A1 --> F1["failed/unsealed artifacts"]
     A2 --> E["immutable EvidenceArtifacts"]
     E --> K["kernel decisions:<br/>PeakHypothesis / CellObservation"]
-    K --> D["staged DeliveryRevision"]
-    D --> L["DeliverySeal"]
-    L --> O["Targeted or Untargeted output"]
+    K --> T["Targeted staged DeliveryRevision"]
+    T --> TL["planned Targeted DeliverySeal"]
+    TL --> TO["Targeted output"]
+    K --> C["Untargeted retained cell ledger"]
+    C --> UL["planned Untargeted output-level seal"]
+    UL --> UO["complete Untargeted Matrix"]
 ```
 
 Required invariants:
@@ -336,31 +343,37 @@ Required invariants:
    explicit immutable dependency reference. It must not copy or relabel that
    artifact as though the later attempt produced it.
 5. Every selected hypothesis, integration, group observation, review action,
-   and delivery revision can identify the attempt and artifacts it used. A
+   Targeted delivery revision, and retained Untargeted cell-ledger decision can
+   identify the attempt and artifacts it used. A
    retained human-review conclusion additionally references one immutable,
    typed review record owned by the review-roundtrip contract. That reference
    is lineage-valid only when the record has a stable identity, schema/version,
    content digest, exact artifact bindings, and any predecessor/supersession
    reference plus reason. This does not transfer review authority or private
    rationale ownership into the lineage layer.
-6. A delivery revision references exactly one delivery cell and exactly one
-   producing attempt. Its upstream evidence may come from other producer
-   attempts through the declared artifact-dependency edges.
-7. An observed numeric revision references the selected hypothesis or
-   `CellObservation`, its `IntegrationResult`, selection/audit record, and the
-   evidence needed to explain and plot it.
-8. A null revision records the underlying non-observation state and reason.
+6. A Targeted delivery revision references exactly one Targeted delivery cell
+   and producing attempt. Its upstream evidence may come from other producer
+   attempts through declared artifact-dependency edges.
+7. An observed numeric Targeted revision references its selected hypothesis or
+   `CellObservation`, `IntegrationResult`, selection/audit record, and the
+   evidence needed to explain and plot it. An Untargeted Matrix cell is traced
+   through the sealed attempt's retained cell ledger or replay, without a
+   retained per-cell revision or plot bundle.
+8. A Targeted null revision records the underlying non-observation state and
+   reason. Untargeted cell-ledger decisions preserve the corresponding state.
    Missing evidence, a failed attempt, or a missing artifact cannot silently
    become scientific `absent` or numeric zero.
-9. A seal is valid only when every referenced artifact exists, its content
-   identity matches, and all delivery revisions pass the owning projection's
-   authority gate.
+9. A planned seal is valid only when referenced artifacts exist and match
+   their content identities and the owning projection's authority gate passes.
+   Targeted validates its revision set; Untargeted validates the complete
+   Matrix, retained cell ledger, attempt, and source bindings.
 10. Sealing a successor does not mutate the prior seal. It records an explicit
    supersession edge and changes the current delivery only through the
    authorized writer.
-11. Targeted uses a per-cell `DeliveryCellKey`. Untargeted uses one
-    output-level seal (see [Untargeted delivery decision](#untargeted-delivery-decision)).
-    Both can still reference the same kernel decision and evidence artifacts.
+11. Targeted uses per-cell `DeliveryCellKey` and `DeliveryRevision` values.
+    Untargeted uses `UntargetRowKey` and a planned output-level seal (see
+    [Untargeted delivery decision](#untargeted-delivery-decision)). Both can
+    still reference the same kernel decision and evidence artifacts.
 
 ## Source-Observation And Plot-Ready Evidence
 
@@ -378,10 +391,14 @@ An evidence artifact that depends on source data records:
 - related sample, trace-group, hypothesis, integration, group, and cell
   references as applicable.
 
-For selected, delivered, reintegrated, or manual-review candidates, the
-retained bundle must be sufficient to render the evidence view without
+For Targeted selected, delivered, reintegrated, or manual-review candidates,
+the retained bundle must be sufficient to render the evidence view without
 reopening the acquisition source. Source references remain necessary for
 audit, but they are not a substitute for retained plot-ready evidence.
+Untargeted delivery retains the cell ledger for per-cell tracing or replays the
+sealed attempt; it does not retain per-cell plot evidence or require zero-RAW
+rendering for each Matrix cell. An explicit Untargeted review that promises an
+offline plot must separately retain the exact evidence needed for that review.
 
 This requirement does not select Thermo RAW, mzML, JSON, NPZ, Arrow, a
 database, or another physical representation. Issue #124 must first measure
@@ -403,27 +420,31 @@ Every retained record also belongs to one lifecycle class:
 
 | Class | Logical rule |
 | --- | --- |
-| Sealed delivery lineage | The seal, revision records, output hashes, decision/audit references, and source identities remain immutable for as long as that delivery can be cited |
-| Current delivered plot-ready evidence | Pinned; it cannot depend on a future source reopen |
-| Superseded delivered evidence | The immutable seal/revision/decision lineage remains audit-addressable; plot-ready evidence stays pinned while the old delivery remains a supported claim or is referenced by an active review, lockbox, expected diff, or retained audit claim |
+| Sealed Targeted delivery lineage | The seal, per-cell revision records, output hashes, decision/audit references, and source identities remain immutable for as long as that delivery can be cited |
+| Sealed Untargeted delivery lineage (planned) | The output-level seal, complete Matrix artifact hashes, attempt and source bindings, and retained `alignment_cells.tsv` remain addressable for as long as that delivery can be cited; individual cell traces use that ledger or replay |
+| Current delivered Targeted plot-ready evidence | Pinned; it cannot depend on a future source reopen |
+| Superseded delivered Targeted evidence | The immutable seal/revision/decision lineage remains audit-addressable; plot-ready evidence stays pinned while the old delivery remains a supported claim or is referenced by an active review, lockbox, expected diff, or retained audit claim |
 | Active manual-review evidence | Pinned while waiting for a conclusion; the review binds to exact artifact identities and then moves to the completed-review class |
-| Completed human-review evidence | The typed review record and exact plot-ready evidence stay pinned until the conclusion is explicitly superseded or retired and no active dependency still references it |
-| Selected or reintegrated but not delivered evidence | The selection/reintegration audit and exact plot-ready evidence stay pinned until the decision is explicitly superseded or retired and no active dependency still references it |
+| Completed human-review evidence | The typed review record and exact evidence promised to that review stay pinned until the conclusion is explicitly superseded or retired and no active dependency still references it |
+| Targeted selected or reintegrated but not delivered evidence | The selection/reintegration audit and exact plot-ready evidence stay pinned until the decision is explicitly superseded or retired and no active dependency still references it |
 | Unselected and unreviewed evidence | May be evictable if it is not referenced by a seal, active review, lockbox, expected diff, or retained audit claim |
 | Failed/cancelled-attempt artifacts | Never become delivery evidence by process success alone; cleanup and optional forensic retention belong to #128 |
 | Rebuildable cache | May be evicted only when the source identity, deterministic request/transform contract, and rebuild capability remain valid |
 
 Previously delivered or human-reviewed decisions are comparators, not
 immutable scientific truth. New evidence may explicitly supersede them, but a
-refactor or rerun must not silently overwrite them. Their exact review evidence
-must remain reproducible with zero acquisition-source reopens until the
-decision is explicitly superseded or retired; completion of a refactor alone
-is not retirement.
+refactor or rerun must not silently overwrite them. Targeted and any explicitly
+retained offline-review evidence must remain reproducible with zero
+acquisition-source reopens until the decision is explicitly superseded or
+retired; Untargeted Matrix cell tracing uses the retained ledger or replay,
+without per-cell evidence retention. Completion of a refactor alone is not
+retirement.
 
-Here, `audit-addressable` always includes the immutable seal, revision,
-decision/review record, source references, and artifact identities. It includes
-the plot-ready inputs whenever the historical decision is still a supported
-claim or has another active dependency. Retirement requires a durable record
+Here, `audit-addressable` includes the immutable seal, source references, and
+artifact identities; Targeted also includes revisions and decision/review
+records, while Untargeted includes the retained cell ledger. Targeted plot-ready
+inputs remain available whenever the historical decision is a supported claim
+or has another active dependency. Retirement requires a durable record
 of the subject, owning policy or actor, reason, and time; it is invalid while a
 seal, active review, lockbox, expected diff, or supported audit claim still
 depends on that evidence.
@@ -457,12 +478,15 @@ adapter, method contract, or fidelity is unavailable.
 
 ## Two-Phase Delivery Seal
 
-Delivery uses two phases:
+The planned delivery contract uses two phases; current diagnostic Targeted
+stage/seal candidates are not published product seals, and the Untargeted
+output-level seal is not implemented:
 
 1. **Stage** — write proposed output artifacts and a lineage manifest outside
-   the final delivery location. Validate schemas, hashes, delivery-cell
-   uniqueness, kernel-decision references, artifact closure, and the owning
-   projection's authority.
+   the final delivery location. Validate schemas, hashes, artifact closure,
+   and the owning projection's authority. Targeted also validates delivery-cell
+   uniqueness and revision-to-kernel-decision references. Untargeted validates
+   the complete Matrix, retained ledger, attempt, and source bindings.
 2. **Seal and publish** — create the immutable `DeliverySeal`, then atomically
    expose that sealed bundle or current-delivery pointer. Only sealed content
    is deliverable.
@@ -475,10 +499,11 @@ If staging, validation, sealing, or publication fails:
 - no null becomes zero;
 - the failed attempt and stage can be diagnosed and cleaned through #128.
 
-When an already sealed revision remains authoritative, an exact duplicate
-retry does not require a new delivery revision. If a new revision is sealed,
-it still references its own producing attempt and records whether it
-supersedes an earlier revision.
+For Targeted, an exact duplicate retry does not require a new revision when
+the existing sealed revision remains authoritative. A new sealed revision
+references its producing attempt and any superseded revision. For Untargeted,
+an authorized successor seals a complete output; it does not create per-cell
+delivery revisions.
 
 ## Failure, Null, Stale, And Supersession
 
@@ -504,8 +529,9 @@ Rules:
 - Staleness is a relationship between an immutable artifact and the request,
   contract, or input identity now being evaluated. Do not mutate the artifact
   to call it fresh again.
-- Supersession changes which sealed revision is current; it does not erase or
-  rewrite the superseded revision.
+- Targeted supersession changes which sealed revision is current; Untargeted
+  supersession changes which complete output-level seal is current. Neither
+  erases or rewrites the prior delivery.
 
 ## No-RAW Lifecycle Probe
 
@@ -515,13 +541,13 @@ checks same-request and changed-request recomputation:
 | Step | Expected result |
 | --- | --- |
 | Create request `R1` | Identity depends on sources, scientific query/settings, and contract versions; not output path or time |
-| Attempt `A1` fails after partial artifacts | `A1` and any forensic artifacts remain identifiable; no delivery revision can seal |
+| Attempt `A1` fails after partial artifacts | `A1` and any forensic artifacts remain identifiable; no Targeted revision or Untargeted output can seal |
 | Retry as `A2` | `A2 != A1`, both reference `R1`, and `A2.retry_of = A1` |
 | Produce trace/evidence artifacts | Artifacts are immutable, role/schema/content identified, and linked to `A2` and source observations |
 | Select hypothesis/integration | Decision and audit reference the exact artifact identities |
-| Stage Targeted and Untargeted revisions | Each projection keeps its own delivery-cell key and authority while referencing shared kernel evidence where applicable |
-| Validate a synthetic seal candidate | All referenced hashes and lineage close; plot rendering uses retained evidence and performs zero source reopens; no product seal or authority is created |
-| Render a review plot | A fail-on-open acquisition adapter and call counter prove that rendering uses retained plot-ready evidence and makes exactly zero source opens |
+| Stage Targeted revisions and an Untargeted output candidate | Targeted keeps per-cell revision keys; Untargeted binds the complete Matrix and retained cell ledger to the attempt and sources, without per-cell revisions |
+| Validate synthetic seal candidates | Each workflow's referenced hashes, lineage, and authority close under its own rules; no product seal or authority is created |
+| Render a Targeted or explicitly retained offline-review plot | A fail-on-open acquisition adapter and call counter prove that retained plot-ready evidence makes exactly zero source opens; Untargeted Matrix cell tracing instead uses its ledger or replay |
 | Recompute the same request | A new attempt is created; prior attempt/artifact identities remain unchanged |
 | Recompute under changed normalized inputs or contract | A new request and attempt are created; the prior seal remains current until a separately authorized successor seals |
 
@@ -529,59 +555,45 @@ The model fails and must be narrowed or redrawn if:
 
 - two retries can overwrite the same attempt or artifact identity;
 - a path/timestamp collision changes scientific meaning;
-- a delivery value cannot identify one selected integration and its evidence;
+- a Targeted delivery value cannot identify its selected integration and
+  evidence, or an Untargeted Matrix cell cannot be traced through the sealed
+  attempt's retained ledger or replay;
 - a null cannot distinguish scientific absence from execution/artifact failure;
-- a selected/delivered/review plot requires reopening the source;
+- a Targeted selected/delivered/review plot, or another explicitly retained
+  offline-review plot, requires reopening the source;
 - Targeted policy leaks into Untargeted delivery authority;
 - the design requires choosing a storage engine before the logical contract can
   be stated.
 
 ## Current Implementation Gaps And Reuse
 
-1. `method_manifest.json` records useful config fragments, input/output paths,
-   hashes, runtime, and replay blockers, but it has no canonical
-   processing-request, attempt, delivery-revision, or delivery-seal identity.
-2. `TraceGroup` and legacy `PeakHypothesis` values carry useful working IDs in
-   memory but do not close a durable artifact chain. The bounded owner-backed
-   CID-NL hypothesis now closes its observation/evidence attempt artifact only;
-   it is not a cross-attempt group or delivery reference.
-3. `CrossSamplePeakGroupHypothesis.group_hypothesis_id` is the pipeline
-   identity, while current `FAM000...` construction is ordinal. It is not yet a
-   request-stable canonical group identity, and a distinct projection-owned
-   `UntargetRowKey` does not yet exist.
-4. `AlignedCell` mixes observation, evidence sidecars, gap-fill, group,
-   selection-blocker, consolidation, and Matrix projection fields. Its
-   `source_candidate_id` / `source_raw_file` fields are not a lineage seal.
-5. Pt trace manifests already bind candidate assignments, RAW identity,
-   extraction settings, roles, schemas, and output hashes and make consumers
-   fail closed. Reuse this content-bound pattern, not the Pt-specific schema or
-   diagnostic authority.
-6. Trace JSON/CSV sidecars and `source_run_id` fields exist across diagnostics,
-   but most have no owner adapter, shared retention class, or canonical attempt
-   binding. The two diagnostic artifact adapters above are tracer coverage, not
-   automatic promotion of other sidecars.
-7. Current writers can emit method manifests and output metadata, but no
-   workflow-neutral two-phase delivery seal owns the complete output lineage.
-8. `review_action` and current review artifacts provide typed actions,
-   stable-row checks, and source hashes. The review owner can now mint and
-   resolve a workflow-neutral immutable review-conclusion/supersession
-   reference, but no production registry or persisted lineage integration has
-   been selected.
-9. Current Parquet support shadows canonical string TSV rows rather than
-   accepting native typed owner batches, and output-level flags combine
-   scientific projection, retention, compatibility, and delivery intent.
-10. `xic_extractor/configuration/target_identity.py` already owns `TargetKey`,
-    exact Target definition identity, and ordered `TargetListSnapshot`. The
-    Target projection must consume that owner; it must not absorb, duplicate, or
-    remint Target identity.
-11. `xic_extractor/delivery_lineage.py` already owns Targeted delivery-cell,
-    revision, stage, and seal candidate identities used by
-    `extraction/targeted_diagnostic_delivery.py`. Delivery migration reuses and
-    deepens that leaf. It generalizes only when a current Untarget consumer
-    exists, and it must not introduce parallel Targeted delivery identities.
+- `method_manifest.json` and current output metadata retain useful settings,
+  paths, hashes, and replay context, but do not provide a product delivery seal.
+  Diagnostic `run_id` / `source_run_id` labels are not processing identities.
+- `processing_identity.py` implements request, attempt, retry-predecessor, and
+  artifact-closure identities. Its full-file source fingerprint and diagnostic
+  owner references are not a production artifact registry or writer authority.
+- `configuration/target_identity.py` owns Targeted keys, exact definitions, and
+  ordered snapshots. `delivery_lineage.py` owns Targeted per-cell revision,
+  stage, and seal **candidates**; `extraction/targeted_diagnostic_delivery.py`
+  and `extraction/targeted_service.py` reach them without publishing a product
+  seal. A migration must reuse these owners, not mint parallel Targeted IDs.
+- Alignment already mints request-scoped `UntargetRowKey` values from finalized
+  canonical groups in `alignment/projection/untarget/pre_cell.py`. The ordinal
+  `FAM000...` label is not that key. Untargeted output-level sealing remains
+  planned; the existing `alignment_cells.tsv` ledger is the per-cell tracing
+  source, not a set of retained delivery revisions or plots.
+- Pt manifests and selected diagnostic sidecars show content-bound, fail-closed
+  patterns. Other trace sidecars have no automatic owner adapter or promotion.
+  Current writers keep their own output schemas and authority; no shared
+  two-phase product seal owns both workflows yet.
+- `review_records.py` can mint and resolve immutable typed review references.
+  A production registry and persisted delivery binding have not been selected.
+  Optional Backfill Parquet shadows canonical TSV rows for diagnostic
+  compatibility; it is not a typed archive or a delivery seal.
 
-These are migration facts. This ticket does not authorize a repository-wide
-manifest rewrite or a new persistence framework.
+These are current reuse boundaries. They do not authorize a repository-wide
+manifest rewrite, new persistence framework, or change to either writer.
 
 ## Alternatives And Trade-Offs
 
@@ -594,151 +606,54 @@ manifest rewrite or a new persistence framework.
 
 ## Implementation Route And Stop Rule
 
-The first bounded implementation is a no-write, no-RAW diagnostic artifact
-envelope tracer over the existing Targeted MS1-shape and Pt Discovery evidence
-owners. It closes exact bytes, fixed owner role/schema, attempt-scoped identity,
-typed review binding, upstream completeness, mutation/substitution, and
-same-content cross-attempt distinction without introducing storage or writer
-authority.
+The existing modules have distinct responsibilities:
 
-The second bounded implementation now uses that value-object contract for one
-canonical direct measured CID-NL / NL116 observation. `peak_detection` owns the
-observed content, including the request-bound acquisition source; Targeted and
-Untargeted adapters validate their existing typed evidence and mint separate
-diagnostic projection artifacts that depend on the
-same canonical evidence artifact. The no-RAW fixture proves exact bytes,
-sample/target/request/attempt binding, including exact Targeted scan-precursor
-binding under the owner-defined target ppm tolerance, mutation/substitution,
-order-neutral closure, missing-upstream rejection, immutable review supersession, zero source
-reopens, and zero product writes. It deliberately rejects inferred
-`product_plus_neutral_loss` Discovery evidence until that evidence basis has its
-own owner-backed contract.
+| Owner | Current responsibility and limit |
+| --- | --- |
+| `processing_identity`, `evidence_artifacts`, and `artifact_lineage` | Mint request/attempt and exact artifact identities; validate bounded owner-reference and retry-predecessor closure. Targeted production snapshots already fingerprint source content; this is separate from the planned product delivery seal. |
+| Target-list, sample-metadata, and review-record owners | Mint exact target-list snapshots, canonical sample identities, and typed immutable review references. Lineage composes their references; it does not remint them or take review authority. |
+| Targeted MS1-shape and Pt Discovery evidence adapters | Mint owner-fixed diagnostic artifact envelopes over exact TSV/CSV bytes, role, and schema. They do not grant product output authority. |
+| `peak_detection` CID-NL owners | Mint owner-backed physical `PeakObservationRef`, DDA/ddMS2 scan support, chromatographic support event, and one bounded CID-NL `PeakHypothesis` from exact evidence. The hypothesis grants no Targeted label, role, pairing, selection, group, count, or output authority. |
+| Discovery batch contract and Untargeted CID-NL adapter | Bind a self-validating candidate-universe receipt to the exact acquisition source and request, rejecting changed candidate bytes or source content before vendor allocation. This closes the caller-completeness premise for that explicit input contract only. |
+| Alignment group, cell, and Untargeted projection owners | Keep scientific group and `CellObservationRef` authority; mint `UntargetRowKey` from finalized canonical groups and preserve row × sample subjects, including explicit absence. They do not mint Untargeted per-cell delivery revisions. |
+| `delivery_lineage` and Targeted diagnostic delivery | Mint and validate Targeted cell/revision/stage/seal candidates in memory. Existing writers remain authoritative; these candidates are not product seals or current-delivery pointers. |
 
-An earlier sequencing proposal said to carry this same reference directly into
-one sample-local `PeakHypothesis` and then through group/cell decisions. The
-no-RAW identity-decomposition characterization has superseded that imperative:
-the legacy `PeakHypothesis` path is a Targeted-shaped working identity, CID-NL
-can participate in candidate generation before MS1 evaluation, and Pt
-hypotheses compose several MS1 feature observations. Directly wiring the raw
-CID-NL reference into legacy evidence fields would collapse provider evidence,
-physical observation, and method interpretation. The bounded successor branch
-therefore composes separate owner-backed observation and chromatographic-event
-refs into the same model while prohibiting legacy Targeted/selection fields.
+The physical peak owner verifies the supplied raw and selection traces against
+integration bounds, apex, height, area, baseline, and declared smoothing facts
+before minting identity. Physical content excludes Targeted/provider labels and
+method interpretation; the exact artifact also binds request, attempt, source,
+and upstream artifacts. DDA scan support binds one physical peak, the exact
+candidate universe, source, scan RT, and precursor tolerance. Repeated in-peak
+scans compose one chromatographic support event while retaining each exact scan
+reference; one scan is not a separate method vote. The CID-NL hypothesis binds
+that event to its physical peak, preserving content identity across equal
+retries while minting a new attempt artifact. Missing, mixed, substituted, or
+mutated bindings fail closed. These owner contracts are reusable evidence,
+not permission to publish a selected value.
 
-The operator selected the existing-owner alternative. A third bounded
-implementation deepens `peak_detection` with `PeakObservationRef` rather than
-creating a lineage-local or provider-local owner. The owner mints physical
-content identity from canonical sample, m/z, one contiguous selected MS1
-subtrace, and signal-validated integration facts. A freely constructed
-`IntegrationResult` is not owner evidence: before any identity is minted, raw
-apex/height/area must agree with the exact raw trace, smoothed height must agree
-with the exact selection trace, and declared AsLS/Gaussian15 values must match
-the existing deterministic helpers. Semantically equal present numeric inputs
-are canonicalized when `IntegrationResult` is constructed, before any content
-or artifact identity is hashed; existing nulls remain null. The request-bound
-acquisition source, full raw/selection-trace digests, query/source indices, and
-resolver/proposal facts form generation provenance; the exact artifact also
-binds request and attempt.
-Target/provider labels and method interpretation do not enter physical content.
+The explicit DDA/ddMS2 relation does not interpret DIA or claim co-isolation
+fidelity without isolation metadata. Pt/Delta Mass multi-observation
+composition still needs owner-backed position roles; tuple order cannot become
+method semantics. A Discovery `DetectedFeature` lacking a complete owner
+`Trace` and `IntegrationResult` cannot mint a substitute physical observation.
+Cross-attempt dependencies beyond the validated retry-predecessor chain,
+production artifact storage, product writer integration, and retention-period
+selection still need current consumers and explicit contracts.
 
-The no-RAW tests prove content stability across query/resolver provenance and
-retry, distinct exact artifacts where provenance or attempt differs, mutation
-invalidation, canonical source-order handling, and fail-closed missing/gapped/
-reordered/duplicate indices plus sample/request/attempt substitution. Minting
-requires an existing validated `ProcessingOwnerReferences` closure, the sample
-must belong to that request, the trace name and acquisition-source ID must
-resolve to that sample's exact request binding, and integration RT bounds must
-remain inside the supplied trace before mapping to the selected contiguous
-subtrace under the existing nearest-index/bounded-interval semantics. Stale or
-forged apex, height, area, baseline, and morphology values fail closed rather
-than merely producing a different hash. Issue #113's `PeakObservation` /
-`FeatureObservation` names did not grant authority; the implementation
-authority comes from the existing `peak_detection` owner and its explicit input
-contract.
-
-A fourth bounded implementation closes the first provider-specific
-evidence-to-observation relation for the lab's DDA/ddMS2 method. CID-NL evidence
-schema binds the exact request acquisition source, positive scan number, and
-explicit `dda_ddms2` acquisition mode. `DdaCidNlPeakSupportRef` then composes that
-immutable evidence ref with exactly one `PeakObservationRef` whose physical
-integration RT bounds contain the scan RT and whose m/z satisfies the explicit
-precursor tolerance; padded selected-trace points are not peak scope. The
-relation binds the canonical content IDs of the exact supplied
-candidate universe and includes every candidate artifact as an upstream, while
-request, attempt, sample, evidence, candidate, and retry substitutions remain
-fail-closed. Candidate reorder is identity-neutral.
-
-This is still diagnostic-only. It does not prove that a runtime caller supplied
-the complete candidate universe, does not interpret DIA, and does not claim
-co-isolation fidelity because the current reader contract lacks the required
-isolation metadata. It also does not allow a Discovery `DetectedFeature`
-without a complete owner `Trace` and `IntegrationResult` to mint a substitute,
-and one scan-level relation is not yet a method hypothesis. Before the existing
-`PeakHypothesis` owner can consume the evidence, repeated in-peak DDA scans must
-collapse into one chromatographic support event without losing their exact
-lineage. That intermediate composition must retain zero source reopens and
-hard-zero public-output diff with both legacy writers authoritative.
-
-The Untargeted CID-NL real-data bridge closes that previously external
-caller-completeness premise only for its explicit input contract. Discovery
-batch index carries one self-validating candidate-universe receipt per
-sample: exact candidate artifact bytes/size, parsed candidate payload/count,
-and the content-bound acquisition source. The runtime validates the artifact before and
-after parsing, binds the receipt into its processing request, and rejects a
-truncated candidate file or same-stem/different-content RAW before vendor
-allocation. This closure does not upgrade the scan-level relation, authorize
-legacy batch indexes, interpret DIA, or grant selected-value, Matrix, writer,
-or product authority.
-
-A fifth bounded implementation closes repeated-scan composition without
-inventing a second hypothesis owner. `CidNlChromatographicSupportRef` consumes
-one or more owner-backed `DdaCidNlPeakSupportRef` values for the same request,
-attempt, sample, physical peak, exact candidate universe, and support policy.
-It retains each exact scan/evidence/support content reference in canonical scan
-order but fixes one chromatographic support event. Duplicate scan refs, missing
-members, mixed owner bindings, mixed peaks, mixed universes, or mixed policies
-fail closed; retry preserves content identity and receives a new artifact
-identity. Its artifact depends on every scan-level support artifact, so lineage
-closure remains transitive and exact.
-
-This event is provider evidence, not a method-hypothesis selection or an
-independent vote per scan.
-
-A sixth bounded implementation deepens the existing `PeakHypothesis` rather
-than creating a second model. `compose_cid_nl_peak_hypothesis` consumes exactly
-one owner-backed physical peak and one chromatographic support event bound to
-the same request, attempt, sample, and physical content. Its content ID is
-stable across identical retries while its exact artifact closes the new
-attempt's observation and event artifacts. The owner-backed branch prohibits
-Targeted labels, roles, pairing, trace-group identity, selection semantics,
-selected audit, counting, and product projection. Existing selection,
-model-selection, `ExtractionResult`, and Targeted result-assembly boundaries
-reject it explicitly. Missing, substituted, mutated, stale, or tampered
-bindings fail closed.
-
-The current method tracer proceeds from this diagnostic CID-NL hypothesis to an
-explicit selection/externalization boundary and then shared group/cell
-decisions. Pt/Delta Mass multi-observation composition is deferred until its
-Discovery method can supply explicit owner-backed position roles; tuple order
-must not silently become method semantics. If either route needs a second
-hypothesis model or workflow-selection flags, stop and redraw the seam.
-
-The tracer must consume the sample identity owner and review-record owner
-through explicit references. If either owner cannot provide an unambiguous
-identity for the fixture, stop and record the missing prerequisite rather than
-creating a lineage-local substitute.
-
-Do not add a registry, storage package, or persisted production schema until at
-least the canonical Targeted and Untargeted scientific tracer consumers prove
-the same contract. Stop and
-route unanswered physical capability questions to #124 and runtime lifecycle
-questions to #128. Promotion, writer integration, and retention-period
-selection require later explicit contracts.
+Keep Targeted per-cell revisions and the planned Untargeted output-level seal
+separate. Do not add a registry, storage package, persisted schema, generic
+archive, or second hypothesis owner without a present consumer and its oracle.
+Route physical source-fidelity and cost questions to #124 and runtime lifecycle
+questions to #128. Neither diagnostic candidates nor no-RAW probes authorize
+selected values, Matrix writes, or publication. If a shared reference cannot
+preserve owner identity and authority in both workflows, stop and redraw that
+seam rather than adding workflow flags to the shared identities.
 
 ## Acceptance Mapping
 
-- Stable request, attempt, artifact, delivery-cell, revision, and seal
-  identities are distinguished.
+- Stable request and attempt identities are distinguished from artifact
+  identities, Targeted delivery-cell/revision candidates, Untargeted row keys,
+  and the planned workflow-specific seals.
 - Cross-attempt artifact dependencies remain explicit and preserve the original
   producer-attempt lineage.
 - Immutable versus rebuildable and selected/pinned versus evictable evidence
@@ -748,13 +663,16 @@ selection require later explicit contracts.
 - Existing delivered or human-reviewed decisions remain reproducible
   comparators until explicit supersession or retirement; refactoring alone
   cannot overwrite or retire them.
-- Two-phase delivery sealing protects existing Targeted and Untargeted output
-  authority.
-- Selected, delivered, reintegrated, and manual-review plots require zero
-  source reopens, proven with a fail-on-open adapter and call counter.
-- Delivery cells consume sample identity from the sample-metadata owner, and
-  retained human-review conclusions consume immutable typed records from the
-  review-roundtrip owner.
+- Planned two-phase sealing preserves existing Targeted and Untargeted writer
+  authority: Targeted seals revisions; Untargeted seals one complete Matrix
+  with its retained ledger and attempt/source bindings.
+- Targeted selected, delivered, reintegrated, and manual-review plots require
+  zero source reopens, proven with a fail-on-open adapter and call counter.
+  Untargeted Matrix cell tracing uses the retained ledger or replay; no
+  per-cell plot retention or zero-RAW cell rendering is required.
+- Targeted delivery cells and Untargeted row × sample subjects consume sample
+  identity from the sample-metadata owner. Retained human-review conclusions
+  consume immutable typed records from the review-roundtrip owner.
 - Existing method-manifest and Pt lineage mechanics are reusable evidence, not
   a second universal framework.
 - No output, value, count, Matrix, workbook, Backfill-write, activation,
