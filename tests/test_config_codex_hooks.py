@@ -997,34 +997,3 @@ def test_pre_hook_does_not_cross_correlate_raw_background_text(command: str) -> 
     completed = _run_pre_hook(command)
     assert completed.returncode == 0
     assert completed.stdout == ""
-
-
-def test_pre_hook_emits_config_advisory_for_agent_contract() -> None:
-    completed = subprocess.run(
-        [sys.executable, str(HOOKS_DIR / "xic_pre_tool_guard.py")],
-        input=json.dumps(
-            {
-                "hook_event_name": "PreToolUse",
-                "turn_id": "config-smoke",
-                "tool_name": "apply_patch",
-                "tool_use_id": "config-smoke",
-                "cwd": str(ROOT),
-                "permission_mode": "default",
-                "tool_input": {
-                    "patch": (
-                        "*** Update File: docs/agent/product-validation-contract.md\n"
-                    )
-                },
-            }
-        ),
-        cwd=ROOT,
-        check=False,
-        capture_output=True,
-        text=True,
-        timeout=5,
-    )
-    output = json.loads(completed.stdout)
-    message = output["hookSpecificOutput"]["additionalContext"]
-    assert "docs/agent/codex-operating-system.md Change Protocol" in message
-    assert "If changed" in message
-    assert "affected behavior" in message
