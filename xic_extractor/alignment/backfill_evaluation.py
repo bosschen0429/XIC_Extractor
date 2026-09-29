@@ -266,7 +266,6 @@ def _backfill_feature_sample_trace_legacy_audit(
             scans_target=peak_config.resolver_min_scans,
         ),
         source_candidate_id=None,
-        source_raw_file=None,
         reason="owner-centered MS1 backfill",
         selected_integration=(
             peak_facts.integration if peak_facts is not None else base_integration
@@ -418,7 +417,6 @@ def _backfill_feature_sample_trace_canonical(
         trace_quality="owner_backfill",
         scan_support_score=scan_support_score,
         source_candidate_id=None,
-        source_raw_file=None,
         reason="owner-centered MS1 backfill",
         selected_integration=integration,
         backfill_seed_mz=request.mz,
@@ -502,7 +500,6 @@ def _backfill_unchecked_cell(
         trace_quality=trace_quality,
         scan_support_score=None,
         source_candidate_id=None,
-        source_raw_file=None,
         reason=reason,
         backfill_seed_mz=request.mz,
         backfill_seed_rt=preferred_rt,

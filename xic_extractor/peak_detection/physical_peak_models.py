@@ -13,6 +13,7 @@ from xic_extractor.peak_detection.integration_result import IntegrationResult
 PhysicalPeakState = Literal["available", "unavailable", "failed"]
 PHYSICAL_SEGMENT_UNIVERSE_SCHEMA = "physical_segment_universe"
 PHYSICAL_PEAK_POINT_POLICY = "baseline_peak_contains_query"
+PHYSICAL_PEAK_NO_SELECTION_POLICY = "no_selected_physical_segment"
 PHYSICAL_PEAK_WINDOW_POLICY = "unique_baseline_peak_in_context"
 # The group RT resolves several peaks in the context, and a tail that settles
 # near the baseline closes the peak before the acquired edge.
@@ -21,13 +22,13 @@ DISCOVERY_PHYSICAL_PEAK_POINT_POLICY = "background_qualified_peak_contains_query
 _PHYSICAL_PEAK_SELECTION_POLICIES = frozenset(
     {
         PHYSICAL_PEAK_POINT_POLICY,
+        PHYSICAL_PEAK_NO_SELECTION_POLICY,
         PHYSICAL_PEAK_WINDOW_POLICY,
         PHYSICAL_PEAK_GROUP_WINDOW_POLICY,
         DISCOVERY_PHYSICAL_PEAK_POINT_POLICY,
     }
 )
 _PHYSICAL_EDGE_RETURN_FRACTION = 0.001
-_PHYSICAL_GROUP_WINDOW_EDGE_RETURN_FRACTION = 0.02
 _PHYSICAL_LOCAL_CONTRAST_MIN_MAD = 2.0
 PhysicalPeakOperation = Literal[
     "trace_evaluation",
@@ -179,3 +180,16 @@ class PhysicalPeakEvaluation:
     operations: tuple[PhysicalPeakOperation, ...]
     # Diagnostic evidence only: never part of scientific equality or identity.
     retained_prepared_signal: PreparedSignal | None = field(default=None, compare=False)
+
+    @property
+    def requires_overlap_review(self) -> bool:
+        selected_id = self.answer.physical_segment_id
+        return selected_id is not None and any(
+            segment.physical_segment_id == selected_id
+            and (
+                segment.segment_class == "shoulder_candidate"
+                or segment.boundary_stop_reason == "shoulder_overlap_review"
+                or "shoulder_overlap" in segment.evidence_sources
+            )
+            for segment in self.segment_universe.segments
+        )

@@ -73,7 +73,7 @@ class _OwnerBoundBatchRaw(_BatchRaw):
     (
         ("discovery_normal_single_peak", (18.45591733148333,), 14712),
         ("discovery_same_peak_seeds", (38.190113531483334,), None),
-        ("discovery_true_double_peak", (15.007716898666667, 15.25524139625), None),
+        ("discovery_true_double_peak", (15.25524139625,), None),
         ("discovery_non_peak_background", (), None),
     ),
 )
@@ -164,13 +164,36 @@ def test_discovery_retained_physical_peak_cardinality(
         tmp_path / "candidates.csv", result.candidates
     )
     valid = [c for c in read_discovery_candidates_csv(path) if c.ms1_peak_found]
-    assert sorted(c.ms1_apex_rt for c in valid) == [
-        round(apex, 4) for apex in expected_apices
-    ]
+    if representative_scan is not None:
+        # The complete main envelope has one representative. Earlier seeds
+        # have clipped whole contours, rather than independently closed peaks.
+        assert all(not c.is_provisional for c in valid)
+    assert sorted(c.ms1_apex_rt for c in valid) == list(expected_apices)
     assert sorted(
-        c.ms1_apex_rt for c in result.candidates if c.ms1_peak_found
+        c.ms1_apex_rt
+        for c in result.candidates
+        if c.ms1_peak_found and (representative_scan is None or not c.is_provisional)
     ) == pytest.approx(expected_apices)
     assert len(result.physical_work_manifest) == len(fixture["seed_scans"])
+    if fixture_name == "discovery_true_double_peak":
+        # The exact acquired fixture has a censored core (8 hits in 3 runs),
+        # not a continuous overlap. Shared hit-density qualification owns it.
+        assert all(not candidate.is_provisional for candidate in valid)
+        assert all(
+            candidate.ms1_area is not None and candidate.ms1_area > 0
+            for candidate in valid
+        )
+        assert len(result.physical_bindings) == 1
+        assert len(result.physical_bindings[0].member_source_ordinals) == 2
+        evaluation = result.physical_bindings[0].physical_fact_record.evaluation
+        facts = evaluation.facts
+        assert facts is not None
+        assert facts.left_rt_min < 15.0077 < 15.2552 < facts.right_rt_min
+        assert facts.area_source == (
+            "trapezoid_counts_seconds_on_observed_censored_signal"
+        )
+        assert evaluation.integration is not None
+        assert "near_detection_limit" in evaluation.integration.boundary_sources
     if representative_scan is not None:
         assert [c.best_ms2_scan_id for c in valid] == [representative_scan]
         # Baseline-return boundaries admit both supporting seeds. The merge
@@ -184,7 +207,7 @@ def test_discovery_retained_physical_peak_cardinality(
             record.work_item.best_ms2_scan_id: record.evaluation.reason
             for record in result.physical_evaluations
             if record.evaluation.facts is None
-        } == {14067: "no_selection", 14291: "no_selection"}
+        } == {14067: "incomplete_peak_context", 14291: "incomplete_peak_context"}
 
 
 @pytest.mark.parametrize("combine_mode", ("union", "intersection"))
@@ -257,7 +280,8 @@ def test_merged_physical_candidate_persists_representative_search_window(
         selected.rt, selected.raw, profile=profile, evaluation=selected.evaluation
     )
     outputs = _write_dual_csvs(
-        tmp_path / "discovery", (candidate,),
+        tmp_path / "discovery",
+        (candidate,),
         timing_recorder=TimingRecorder.disabled("discovery"),
         sample_stem=raw_path.stem,
         run_spec=spec,
@@ -790,10 +814,6 @@ def test_qualification_survives_physical_fact_reuse(
     shared_request_count: int,
     provisional: bool,
 ) -> None:
-    from xic_extractor.alignment.config import AlignmentConfig
-    from xic_extractor.alignment.ownership import (
-        build_sample_local_owners_from_discovery_bindings,
-    )
     from xic_extractor.peak_detection.background_shape import is_provisional_peak_shape
 
     raw_path = tmp_path / "sample.raw"
@@ -806,17 +826,20 @@ def test_qualification_survives_physical_fact_reuse(
     raw = _OwnerBoundBatchRaw(source)
     raw.rt = np.linspace(7.45, 8.15, 141)
     if provisional:
-        # The fixed short-scale noise gives raw MAD near 12.25 counts and
-        # peak-to-edge SNR near 4, within the existing provisional band.
-        noise = 10.0 * np.resize([1, -1, 1, -1, 1, 1, -1, -1], raw.rt.size)
+        # An independently defined marginal peak stays in the SNR 3..5 band
+        # across small flank crops, rather than relying on a ripple boundary.
+        indices = np.arange(raw.rt.size)
+        noise = 8.0 * np.sin(2.0 * np.pi * indices / 3.0) + 6.0 * np.cos(
+            2.0 * np.pi * indices / 5.0
+        )
+        amplitude = 30.0
     else:
-        # This original trace is clean once ripple no longer truncates its
-        # interval: its full-peak raw SNR exceeds the provisional threshold.
-        noise = 10.0 * np.random.default_rng(0).normal(size=raw.rt.size)
+        # A high-SNR single peak has no unresolved canonical lobes. The
+        # fixture tests qualification reuse, independently of shoulder review.
+        noise = np.random.default_rng(0).normal(size=raw.rt.size)
+        amplitude = 50.0
     raw.intensity = (
-        1000.0
-        + 50.0 * np.exp(-0.5 * ((raw.rt - 7.8) / 0.05) ** 2)
-        + noise
+        1000.0 + amplitude * np.exp(-0.5 * ((raw.rt - 7.8) / 0.05) ** 2) + noise
     )
     qualifier = Mock(wraps=is_provisional_peak_shape)
     monkeypatch.setattr(
@@ -846,17 +869,12 @@ def test_qualification_survives_physical_fact_reuse(
     edge = max(
         np.median(qualified_raw[:edge_count]), np.median(qualified_raw[-edge_count:])
     )
-    centre = np.median(qualified_raw[max(0, apex - 1):apex + 2])
+    centre = np.median(qualified_raw[max(0, apex - 1) : apex + 2])
     snr = (centre - edge) / qualifier.call_args.kwargs["raw_noise_mad"]
     if provisional:
         assert centre / edge < 1.5 and 3.0 < snr < 5.0
     else:
         assert snr >= 5.0
-    ownership = build_sample_local_owners_from_discovery_bindings(
-        result.physical_bindings, alignment_config=AlignmentConfig()
-    )
-    assert len(ownership.owners) == 1
-    assert ownership.owners[0].is_provisional is provisional
 
 
 def test_spec_bound_physical_owner_reuses_preparation_without_extra_acquisition(
@@ -917,108 +935,6 @@ def test_spec_bound_physical_owner_reuses_preparation_without_extra_acquisition(
     assert metrics.xic_batch_count == 1
     assert metrics.adapter_chromatogram_call_count == 1
     assert [len(batch) for batch in raw.request_batches] == [2]
-
-
-def test_alignment_builds_owner_from_discovery_binding_without_resolver(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from xic_extractor.alignment.config import AlignmentConfig
-    from xic_extractor.alignment.ownership import (
-        build_sample_local_owners_from_discovery_bindings,
-    )
-
-    raw_path = tmp_path / "sample.raw"
-    raw_path.write_bytes(b"owner-bound-discovery")
-    source = build_acquisition_source_identity(
-        raw_path,
-        acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
-        observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
-    )
-    raw = _OwnerBoundBatchRaw(source)
-    discovery = _backfill_ms1_candidates_with_acquisition(
-        raw,
-        (_group((_seed(scan_number=10, rt=7.80),)),),
-        acquisition_source=source,
-        run_spec_id=_TEST_RUN_SPEC_ID,
-        settings=_backfill_settings(),
-        peak_config=_backfill_peak_config(),
-        signal_processing_profile=SignalProcessingProfile(window_points=3),
-    )
-    discovery_xic_calls = raw.raw_chromatogram_call_count
-    monkeypatch.setattr(
-        "xic_extractor.alignment.ownership._default_peak_resolver",
-        lambda *args, **kwargs: (_ for _ in ()).throw(
-            AssertionError("canonical binding called the Alignment resolver")
-        ),
-    )
-
-    ownership = build_sample_local_owners_from_discovery_bindings(
-        discovery.physical_bindings,
-        alignment_config=AlignmentConfig(),
-    )
-
-    assert len(ownership.owners) == 1
-    assert ownership.owners[0].selected_integration is (
-        discovery.physical_bindings[0].physical_evaluation.integration
-    )
-    assert raw.raw_chromatogram_call_count == discovery_xic_calls
-
-    binding = discovery.physical_bindings[0]
-    with pytest.raises(ValueError, match="crosses terminal state"):
-        replace(
-            binding,
-            physical_fact_record=replace(
-                binding.physical_fact_record,
-                evaluation=replace(
-                    binding.physical_evaluation,
-                    reason="tampered_terminal_reason",
-                ),
-            ),
-        )
-
-
-def test_alignment_review_only_discovery_binding_does_not_build_owner(
-    tmp_path: Path,
-) -> None:
-    from xic_extractor.alignment.config import AlignmentConfig
-    from xic_extractor.alignment.ownership import (
-        build_sample_local_owners_from_discovery_bindings,
-    )
-
-    raw_path = tmp_path / "sample.raw"
-    raw_path.write_bytes(b"owner-bound-discovery")
-    source = build_acquisition_source_identity(
-        raw_path,
-        acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
-        observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
-    )
-    discovery = _backfill_ms1_candidates_with_acquisition(
-        _OwnerBoundBatchRaw(source),
-        (_group((_seed(scan_number=10, rt=7.80),)),),
-        acquisition_source=source,
-        run_spec_id=_TEST_RUN_SPEC_ID,
-        settings=_backfill_settings(),
-        peak_config=_backfill_peak_config(),
-        signal_processing_profile=SignalProcessingProfile(window_points=3),
-    )
-    binding = discovery.physical_bindings[0]
-    review_only_binding = replace(
-        binding,
-        candidate=replace(
-            binding.candidate,
-            discovery_candidate_state="review_only_ambiguous_coisolation",
-        ),
-    )
-
-    ownership = build_sample_local_owners_from_discovery_bindings(
-        (review_only_binding,),
-        alignment_config=AlignmentConfig(),
-    )
-
-    assert ownership.owners == ()
-    assert ownership.assignments == ()
-    assert ownership.ambiguous_records == ()
 
 
 def test_physical_fact_owner_rejects_cross_acquisition_reassembly(
@@ -1124,7 +1040,7 @@ def test_physical_fact_owner_rejects_cross_acquisition_reassembly(
                 0.0,
             ),
             "unavailable",
-            "fragmented_original_xic_support",
+            "insufficient_local_hit_enrichment",
             15,
         ),
     ],
@@ -1162,7 +1078,8 @@ def test_spec_bound_terminal_physical_truth_remains_distinct_hold_state(
     evaluation = result.physical_evaluations[0].evaluation
     assert evaluation.question.selection_policy_version == (
         "background_qualified_peak_contains_query"
-        if window_points == 15 else "baseline_peak_contains_query"
+        if window_points == 15
+        else "baseline_peak_contains_query"
     )
     assert evaluation.state == physical_state
     assert evaluation.reason == physical_reason
@@ -1196,7 +1113,7 @@ def test_discovery_recovers_near_baseline_peak_after_exterior_context_crop(
     from tests.test_physical_peak_evaluation_persistence import _context_sensitive_trace
 
     rt, intensity = _context_sensitive_trace()
-    rt = 7.8 + (rt[:-1] - 23.0) * 0.025
+    rt = 7.8 + rt[:-1] - rt[23]
     intensity = intensity[:-1]
     profile = SignalProcessingProfile(window_points=15)
     raw_path = tmp_path / "sample.raw"
@@ -1323,3 +1240,174 @@ def test_physical_fact_sharing_uses_exact_owner_question(
             result.physical_work_manifest
         )
         assert raw.raw_chromatogram_call_count == 1
+
+
+def _inferred_apex_case(
+    tmp_path: Path,
+    centroid,
+    *,
+    basis: str = "product_plus_neutral_loss",
+    companion_basis: str | None = None,
+    isotope_offsets: tuple[float, ...] = (),
+):
+    raw_path = tmp_path / "TumorBC2312_DNA.raw"
+    raw_path.write_bytes(b"owner-bound-discovery")
+    source = build_acquisition_source_identity(
+        raw_path,
+        acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
+        observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
+    )
+    full_rt = np.arange(11.50, 12.80, 0.04, dtype=float)
+    full_intensity = 100.0 + 10_000.0 * np.exp(-0.5 * ((full_rt - 12.15) / 0.15) ** 2)
+    raw = _CadenceBoundRaw(source, full_rt, full_intensity)
+    group = _group(
+        (
+            replace(
+                _seed(scan_number=10, rt=12.063, product_intensity=1_000_000.0),
+                precursor_mz_basis=basis,
+            ),
+        )
+    )
+    groups = (group,)
+    if companion_basis is not None:
+        # A second seed group on the same peak, from another MS2 scan.
+        groups += (
+            _group(
+                (
+                    replace(
+                        _seed(scan_number=11, rt=12.083, product_intensity=900_000.0),
+                        precursor_mz_basis=companion_basis,
+                    ),
+                )
+            ),
+        )
+
+    def read_ion(rt: float, low: float, high: float) -> float | None:
+        mz = centroid(group.precursor_mz, rt)
+        ions = () if mz is None else (mz, *(mz + offset for offset in isotope_offsets))
+        return next((ion for ion in ions if low <= ion <= high), None)
+
+    result = _backfill_ms1_candidates_with_acquisition(
+        raw,
+        groups,
+        acquisition_source=source,
+        run_spec_id=_TEST_RUN_SPEC_ID,
+        settings=_backfill_settings(),
+        peak_config=_backfill_peak_config(),
+        signal_processing_profile=SignalProcessingProfile(window_points=15),
+        ms1_centroid_mz=read_ion,
+    )
+    return group, raw, result
+
+
+def test_inferred_precursor_reports_the_ms1_ion_read_at_the_apex(
+    tmp_path: Path,
+) -> None:
+    group, raw, result = _inferred_apex_case(
+        tmp_path, lambda inferred, _rt: inferred * (1 - 18e-6)
+    )
+
+    assert result.measurements.reacquisition_request_count == 0
+    assert raw.request_batches[-1][0].mz == pytest.approx(group.precursor_mz)
+    (candidate,) = result.candidates
+    assert candidate.precursor_mz == group.precursor_mz
+    assert candidate.ms1_apex_mz == pytest.approx(group.precursor_mz * (1 - 18e-6))
+    assert candidate.ms1_peak_found is True
+    (record,) = result.physical_evaluations
+    assert record.work_item.xic_mz == pytest.approx(group.precursor_mz)
+
+
+def _two_ions(inferred: float, rt: float) -> float:
+    # Alternating readings 12 ppm apart: two ions share the window.
+    return inferred * (1 - 18e-6 if round(rt / 0.04) % 2 else 1 - 6e-6)
+
+
+def test_inferred_precursor_meeting_two_ions_reports_no_ms1_ion(
+    tmp_path: Path,
+) -> None:
+    group, _raw, result = _inferred_apex_case(tmp_path, _two_ions)
+
+    (candidate,) = result.candidates
+    assert candidate.precursor_mz == group.precursor_mz
+    assert candidate.ms1_apex_mz is None
+    assert candidate.discovery_candidate_state in {
+        "ms1_feature_nl_supported",
+        "ms1_feature_nl_rescued",
+    }
+
+
+def test_selected_precursor_reports_no_ms1_ion(tmp_path: Path) -> None:
+    group, _raw, result = _inferred_apex_case(
+        tmp_path,
+        lambda inferred, _rt: inferred * (1 - 18e-6),
+        basis="scan_precursor",
+    )
+
+    (candidate,) = result.candidates
+    assert candidate.precursor_mz == group.precursor_mz
+    assert candidate.ms1_apex_mz is None
+
+
+def test_inferred_precursor_with_a_doubly_charged_isotope_is_held_for_review(
+    tmp_path: Path,
+) -> None:
+    group, _raw, result = _inferred_apex_case(
+        tmp_path,
+        lambda inferred, _rt: inferred * (1 + 1e-6),
+        isotope_offsets=(1.0033548 / 2,),
+    )
+
+    (candidate,) = result.candidates
+    assert candidate.precursor_mz == group.precursor_mz
+    assert candidate.discovery_candidate_state == "review_only_ambiguous_coisolation"
+    assert "doubly charged" in candidate.reason
+    (binding,) = result.physical_bindings
+    assert binding.candidate.discovery_candidate_state == (
+        "review_only_ambiguous_coisolation"
+    )
+
+
+@pytest.mark.parametrize(
+    ("basis", "offsets"),
+    [
+        ("product_plus_neutral_loss", (1.0033548,)),
+        ("scan_precursor", (1.0033548 / 2,)),
+    ],
+)
+def test_singly_charged_or_selected_precursor_keeps_its_feature(
+    tmp_path: Path, basis: str, offsets: tuple[float, ...]
+) -> None:
+    _group, _raw, result = _inferred_apex_case(
+        tmp_path,
+        lambda inferred, _rt: inferred * (1 + 1e-6),
+        basis=basis,
+        isotope_offsets=offsets,
+    )
+
+    (candidate,) = result.candidates
+    assert candidate.discovery_candidate_state in {
+        "ms1_feature_nl_supported",
+        "ms1_feature_nl_rescued",
+    }
+
+
+@pytest.mark.parametrize(
+    ("basis", "companion_basis"),
+    [
+        ("scan_precursor", None),
+        ("product_plus_neutral_loss", "scan_precursor"),
+    ],
+)
+def test_a_selected_precursor_carries_a_peak_with_two_ions(
+    tmp_path: Path, basis: str, companion_basis: str | None
+) -> None:
+    _group, _raw, result = _inferred_apex_case(
+        tmp_path, _two_ions, basis=basis, companion_basis=companion_basis
+    )
+
+    (candidate,) = result.candidates
+    assert candidate.ms1_peak_found is True
+    assert candidate.discovery_candidate_state in {
+        "ms1_feature_nl_supported",
+        "ms1_feature_nl_rescued",
+    }

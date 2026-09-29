@@ -93,10 +93,9 @@ def _write_alignment_output(
         "row_identity_basis\tsplit_evaluation_status\tprojection_status\t"
         "source_feature_family_ids\tsource_feature_family_count\tcenter_mz_basis\t"
         "center_rt_basis\tcenter_weight_basis\taccepted_cell_count\t"
-        "accepted_sample_count\tevidence_status\tparent_peak_hypothesis_id\t"
-        "child_peak_hypothesis_ids\n"
+        "accepted_sample_count\tevidence_status\n"
         "v1\t1\t100.0\t5.0\tP1\tbasis\tcomplete\tnot_projection\tF1\t1\t"
-        "mz\trt\tweight\t1\t1\tcomplete\t\t\n",
+        "mz\trt\tweight\t1\t1\tcomplete\n",
         encoding="utf-8",
     )
     (directory / "alignment_review.tsv").write_text(

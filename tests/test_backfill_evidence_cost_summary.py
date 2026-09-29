@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from tests.skipped_evidence_ledger_fixture import write_skipped_evidence_ledger_fixture
 from tools.diagnostics import backfill_evidence_cost_summary
 from tools.diagnostics.backfill_evidence_cost_summary import (
     run_backfill_evidence_cost_summary,
@@ -11,7 +12,6 @@ from tools.diagnostics.backfill_evidence_cost_summary import (
 from xic_extractor.alignment.backfill_scope import (
     PREDICATE_VERSION,
     SkippedEvidenceRecord,
-    write_skipped_evidence_ledger_tsv,
 )
 
 
@@ -487,4 +487,4 @@ def _write_ledger(
             raw_xic_requests_skipped,
         ) in enumerate(rows)
     )
-    write_skipped_evidence_ledger_tsv(path, records)
+    write_skipped_evidence_ledger_fixture(path, records)

@@ -1,4 +1,6 @@
+import csv
 import pickle
+from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
@@ -86,6 +88,150 @@ def test_acquire_uses_serial_backend_by_default(
 
     assert output is returned
     assert calls == [(config, targets, ["A.raw", "B.raw"])]
+
+
+@pytest.mark.parametrize(
+    "pair_state",
+    [
+        "unpaired", "no_signal", "untrusted", "credible", "reference_impulse",
+        "credible_library", "shape_review",
+        "same_reference",
+    ],
+)
+def test_run_no_nl_reference_selects_each_samples_component(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, pair_state: str
+) -> None:
+    from xic_extractor import extractor
+
+    config = _config(tmp_path, keep_intermediate_csv=True)
+    target = replace(_target("Analyte"), rt_min=7.5, rt_max=10.5)
+    expected = {"SampleA": (9.0, 1000.0), "SampleB": (9.1, 2500.0)}
+    targets = [target]
+    if pair_state == "reference_impulse":
+        target = replace(target, rt_min=7.9, rt_max=10.9)
+        targets = [target]
+    if pair_state == "same_reference":
+        targets.append(replace(target, label="SameReference"))
+    if pair_state in {"no_signal", "untrusted", "credible", "credible_library"}:
+        target = replace(target, istd_pair="ISTD")
+        targets = [target]
+        targets.append(
+            replace(
+                target, label="ISTD", mz=261.1, rt_min=6.5, rt_max=9.5,
+                is_istd=True, istd_pair="",
+            )
+        )
+    if pair_state in {"credible", "credible_library"}:
+        expected = {"SampleA": (9.3, 1000.0), "SampleB": (9.4, 2500.0)}
+    for sample in expected:
+        (config.data_dir / f"{sample}.raw").write_bytes(sample.encode())
+
+    class Raw:
+        def __init__(self, sample: str) -> None:
+            self.sample = sample
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def extract_xic(self, mz, rt_min, rt_max, ppm_tol):
+            # Acquired scan spacing is fixed; requesting more context must
+            # not resample the same resolved doublet onto a coarser grid.
+            acquired_rt = np.arange(0.0, 18.0025, 0.0025)
+            rt = acquired_rt[(acquired_rt >= rt_min) & (acquired_rt <= rt_max)]
+            apex, height = expected[self.sample]
+            if mz == 261.1:
+                if pair_state == "no_signal":
+                    return rt, np.zeros_like(rt)
+                if pair_state == "untrusted":
+                    signal = np.zeros_like(rt)
+                    signal[np.argmin(np.abs(rt - 8.3))] = height * 10
+                    return rt, signal
+                istd_peak = height * np.exp(-0.5 * ((rt - (apex - 1.0)) / 0.06) ** 2)
+                return rt, 1.0 + istd_peak
+            width = (
+                np.where(rt < apex, 0.04, 0.2)
+                if pair_state == "shape_review" else 0.06
+            )
+            signal = height * np.exp(-0.5 * ((rt - apex) / width) ** 2)
+            if pair_state == "reference_impulse":
+                signal[np.abs(rt - apex) > 0.2] = 0.0
+                signal[np.argmin(np.abs(rt - (apex + 0.4)))] = height * 10
+                return rt, signal
+            other_apex = (
+                apex - 0.3
+                if pair_state in {"credible", "credible_library"}
+                else apex + 1.0
+            )
+            interferent = height * 4 * np.exp(-0.5 * ((rt - other_apex) / 0.06) ** 2)
+            return rt, 1.0 + signal + interferent
+
+        def iter_ms2_scans(self, rt_min, rt_max):
+            pytest.fail("no-NL must not query MS2")
+
+    monkeypatch.setattr(
+        extractor, "open_raw", lambda path, _dll, **_kwargs: Raw(path.stem)
+    )
+    monkeypatch.setattr(
+        "xic_extractor.extraction.istd_prepass.open_raw",
+        lambda path, _dll, **_kwargs: Raw(path.stem),
+    )
+    library = {}
+    if pair_state == "credible_library":
+        library[(target.label, "analyte")] = LibraryEntry(
+            config_hash="fixture", target_label=target.label, role="analyte",
+            istd_pair="ISTD", median_delta_rt=0.7, sigma_delta_rt=0.01,
+            median_abs_rt=None, sigma_abs_rt=None, n_samples=10,
+            updated_at="fixture",
+        )
+    output = extractor.run(config, targets, rt_prior_library=library)
+
+    assert {file.sample_name for file in output.file_results} == set(expected)
+    assert all(file.error is None for file in output.file_results)
+    with config.output_csv.open(encoding="utf-8-sig", newline="") as handle:
+        published = {row["SampleName"]: row for row in csv.DictReader(handle)}
+    areas = {}
+    for file in output.file_results:
+        result = file.results[target.label]
+        assert result.reported_rt == pytest.approx(
+            expected[file.sample_name][0], abs=0.03
+        )
+        if pair_state == "shape_review":
+            projection = result.targeted_product_projection
+            assert projection is not None and not projection.counted_detection
+        if pair_state == "same_reference":
+            other = file.results["SameReference"]
+            assert other.reported_rt == result.reported_rt
+            assert other.reported_peak_area == result.reported_peak_area
+            assert float(published[file.sample_name]["SameReference_RT"]) == (
+                pytest.approx(result.reported_rt, abs=0.0001)
+            )
+        if pair_state == "credible_library":
+            assert result.prior_rt is None
+            assert result.peak_result.selection_reference_rt == pytest.approx(
+                expected[file.sample_name][0], abs=0.01
+            )
+        if pair_state in {"no_signal", "untrusted"}:
+            assert result.peak_result.paired_istd_anchor_rt is None
+            assert result.peak_result.selection_reference_rt == pytest.approx(9.0)
+        physical = result.physical_evaluation
+        assert physical is not None and physical.facts is not None
+        assert result.reported_peak_area == pytest.approx(
+            physical.facts.area_counts_seconds
+        )
+        assert result.reported_peak_start == physical.facts.left_rt_min
+        assert result.reported_peak_end == physical.facts.right_rt_min
+        row = published[file.sample_name]
+        assert float(row[f"{target.label}_RT"]) == pytest.approx(
+            result.reported_rt, abs=0.0001
+        )
+        assert float(row[f"{target.label}_Area"]) == pytest.approx(
+            result.reported_peak_area, abs=0.01
+        )
+        areas[file.sample_name] = result.reported_peak_area
+    assert areas["SampleB"] == pytest.approx(areas["SampleA"] * 2.5, rel=0.01)
 
 
 def test_process_file_opens_raw_with_expected_acquisition_source(

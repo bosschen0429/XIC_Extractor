@@ -18,10 +18,13 @@ _PROFILE_KEYS = (
     "gaussian_edge_policy",
     "baseline_method",
     "baseline_lam",
+    "baseline_lam_unit",
     "baseline_p",
     "baseline_n_iter",
     "physical_signal_formula",
     "boundary_basis",
+    "boundary_min_sigma_rt",
+    "segment_min_prominence_fraction",
     "segment_universe_limit",
     "segment_selection_behavior",
     "area_basis",
@@ -31,14 +34,17 @@ _FIXED_PROFILE_VALUES: dict[str, object] = {
     "gaussian_sigma_rule": "window_points_div_6",
     "gaussian_kernel_normalization": "unit_sum",
     "gaussian_edge_policy": "zero_pad_same",
-    "baseline_method": "asls",
-    "baseline_lam": 100000,
+    "baseline_method": "asls_rt",
+    "baseline_lam": 1.0,
+    "baseline_lam_unit": "minutes^4",
     "baseline_p": 0.01,
     "baseline_n_iter": 10,
-    "physical_signal_formula": "gaussian_raw_minus_nonnegative_asls_raw_positive",
-    "boundary_basis": "chrom_peak_segment_closed_subject",
+    "physical_signal_formula": "gaussian_raw_minus_nonnegative_asls_rt_raw_positive",
+    "boundary_basis": "chrom_peak_supported_lobes_sustained_valleys",
+    "boundary_min_sigma_rt": 0.08,
+    "segment_min_prominence_fraction": 0.04,
     "segment_universe_limit": 64,
-    "segment_selection_behavior": "closed_segment_contains_query_complete_context",
+    "segment_selection_behavior": "complete_supported_envelope_contains_query",
     "area_basis": "trapezoid_counts_seconds_on_canonical_signal",
     "relative_shape_basis": "own_max_canonical_signal",
 }
@@ -54,15 +60,18 @@ class SignalProcessingProfile:
     gaussian_sigma_rule: str = "window_points_div_6"
     gaussian_kernel_normalization: str = "unit_sum"
     gaussian_edge_policy: str = "zero_pad_same"
-    baseline_method: str = "asls"
-    baseline_lam: int = 100000
+    baseline_method: str = "asls_rt"
+    baseline_lam: float = 1.0
+    baseline_lam_unit: str = "minutes^4"
     baseline_p: float = 0.01
     baseline_n_iter: int = 10
-    physical_signal_formula: str = "gaussian_raw_minus_nonnegative_asls_raw_positive"
-    boundary_basis: str = "chrom_peak_segment_closed_subject"
+    physical_signal_formula: str = "gaussian_raw_minus_nonnegative_asls_rt_raw_positive"
+    boundary_basis: str = "chrom_peak_supported_lobes_sustained_valleys"
+    boundary_min_sigma_rt: float = 0.08
+    segment_min_prominence_fraction: float = 0.04
     segment_universe_limit: int = 64
     segment_selection_behavior: str = (
-        "closed_segment_contains_query_complete_context"
+        "complete_supported_envelope_contains_query"
     )
     area_basis: str = "trapezoid_counts_seconds_on_canonical_signal"
     relative_shape_basis: str = "own_max_canonical_signal"

@@ -87,9 +87,7 @@ class TimedRawSource:
                 self._stats.extract_xic_count += len(requests)
                 self._stats.extract_xic_batch_count += 1 if requests else 0
                 self._stats.raw_chromatogram_call_count += raw_call_delta
-                self._stats.point_count += sum(
-                    len(trace.intensity) for trace in traces
-                )
+                self._stats.point_count += sum(len(trace.intensity) for trace in traces)
             return traces
 
         traces: list[XICTrace] = []
@@ -121,6 +119,11 @@ def existing_raw_paths(
         raw_file = raw_files.get(sample_stem)
         candidates: list[Path] = []
         if raw_file is not None and str(raw_file):
+            # Analysis members may sit in subfolders of raw_dir.
+            if raw_file.is_absolute() and raw_file.resolve().is_relative_to(
+                raw_dir.resolve()
+            ):
+                candidates.append(raw_file)
             candidates.append(raw_dir / raw_file.name)
         candidates.append(raw_dir / f"{sample_stem}.raw")
         for candidate in candidates:

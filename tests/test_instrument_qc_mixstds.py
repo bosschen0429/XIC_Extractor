@@ -15,18 +15,26 @@ def _write_raw(path: Path) -> None:
     path.write_text("", encoding="utf-8")
 
 
-def test_mixstds_classification_requires_instrument_qc_context() -> None:
+def test_mixstds_classification_uses_name_not_folder() -> None:
     root = Path("C:/data/batch")
 
-    assert (
-        classify_instrument_qc_raw(root / "STDs" / "Mix_STDs_01.raw", root)
-        == InstrumentQCClass.MIX_STDS
-    )
-    assert (
-        classify_instrument_qc_raw(root / "Pairs" / "Mix STDs 01.raw", root)
-        == InstrumentQCClass.MIX_STDS
-    )
-    assert classify_instrument_qc_raw(root / "Mix_STDs_01.raw", root) is None
+    for raw in (
+        root / "STDs" / "Mix_STDs_01.raw",
+        root / "Pairs" / "Mix STDs 01.raw",
+        root / "250ppb_Mix_STDs.raw",
+    ):
+        assert classify_instrument_qc_raw(raw, root) == InstrumentQCClass.MIX_STDS
+    assert classify_instrument_qc_raw(root / "STDs" / "TumorBC_DNA.raw", root) is None
+
+
+def test_discover_mixstds_finds_flat_folder_raw(tmp_path: Path) -> None:
+    root = tmp_path / "raw"
+    mix = root / "250ppb_Mix_STDs.raw"
+    _write_raw(mix)
+    _write_raw(root / "Blank_1.raw")
+    _write_raw(root / "SDOLEK-1.raw")
+
+    assert discover_mixstds_raws(root, []) == (mix,)
 
 
 def test_discover_mixstds_prefers_stds_over_pairs_duplicate(

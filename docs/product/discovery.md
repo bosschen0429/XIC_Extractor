@@ -120,6 +120,24 @@ the error relative to the configured loss mass; it is not the acceptance gate.
   high-intensity threshold. Reacquisition keeps the original MS2 query RT and
   m/z tolerance. It supplies enough points to answer the physical peak question;
   it does not upgrade inferred precursor identity or grant Matrix authority.
+- When the first acquisition of a pure `product_mz + neutral_loss` group
+  resolves a peak, Discovery reads the ion at the apex scan and one MS1 scan on
+  each side, inside the request, and reports the intensity-weighted reading as
+  `ms1_apex_mz`. MS1 is the method's accurate-mass scan, while ddMS2 runs at a
+  quarter of its resolution, so product + loss only points at the ion. The
+  reading is reported only: the candidate's precursor, trace, identity and MS2
+  evidence keep product + loss, because Alignment matches MS2 evidence and
+  shares search centers by that m/z (#551). Readings spread wider than 5 ppm
+  come from two ions and report none. A selected (`scan_precursor` or `mixed`)
+  precursor reports none: in full85, about half of the selected precursors a
+  reading would have moved landed on a neighbouring ion present at the selected
+  m/z when the scan was triggered.
+- Product + loss assumes a singly charged precursor. A pure inferred precursor
+  whose MS1 ion is read with a centroid one doubly charged 13C spacing
+  (0.50168 m/z, within the 5 ppm reading spread) above it, in most of the
+  scans where the ion is read, becomes `review_only_ambiguous_coisolation` with
+  a reason naming the doubly charged isotope, unless a singly charged seed on
+  the same peak carries it. Selected precursors are not tested.
 - Direct and inferred rows from one MS2 scan may coexist. `candidate_id` must
   retain the sample/scan anchor plus precursor/product row identity so those
   rows cannot collide, and `tag_evidence_json` must retain precursor-basis,
@@ -128,12 +146,13 @@ the error relative to the configured loss mass; it is not the acceptance gate.
 - Candidate CSV preserves the full floating-point representation of
   `configured_neutral_loss_da`. Downstream replay compares this configured
   method value with the bound preset; display rounding must not change it.
-- After physical MS1 evaluation and evidence scoring, one sample/tag/best-scan
-  context may advance at most one pure `product_mz + neutral_loss` candidate as
-  feature-backed. The highest-evidence candidate remains eligible; competing
-  pure inferred candidates are classified as
-  `review_only_ambiguous_coisolation` and are not persisted. Direct or mixed-basis
-  candidates do not enter this inferred-only competition.
+- After physical MS1 evaluation, distinct MS1-feature-backed candidates may
+  share one sample/tag/best-scan context, including pure
+  `product_mz + neutral_loss` candidates. Sharing an MS2 scan does not make
+  distinct MS1 features duplicates; evidence scoring ranks them without
+  deleting either. Candidates that remain physically ambiguous still follow
+  the `review_only_ambiguous_coisolation` gate. Downstream cell-decision owners
+  enforce one final Matrix value per feature/sample cell.
 - Untargeted CID-NL carries eligible inferred evidence into the shared method
   assessment alongside direct evidence. Canonical evidence retains the precursor
   basis, actual scan precursor, and configured inference bound; an inferred
@@ -160,7 +179,10 @@ the error relative to the configured loss mass; it is not the acceptance gate.
 ### Outputs, peak anchors, and batch handoff
 
 - Standard per-sample outputs: `discovery_candidates.csv` (archival/alignment
-  detail) and `discovery_review.csv` (compact human review).
+  detail) and `discovery_review.csv` (compact human review). Both write
+  floats at full precision (the shortest text that reads back to the same
+  value), because Alignment reads the candidate m/z and RT back; display
+  rounding belongs to the final Matrix.
 - Discovery `feature_family_id` remains a public output header and dataclass
   field, but its Discovery meaning is a per-sample peak anchor label for
   candidates sharing the same discovered MS1 peak. Members must share the
@@ -173,10 +195,14 @@ the error relative to the configured loss mass; it is not the acceptance gate.
 - Candidates of one sample whose MS1 traces share the apex scan are one
   Discovery peak when their precursor m/z agree within
   `precursor_mz_tolerance_ppm`. A precursor inferred as product + loss carries
-  the MS2 product error, so two candidates of one ion can differ by more; when
-  they differ by at most twice the tolerance, the most intense MS1 centroid at
-  the apex scan within both windows decides, and they merge when it lies within
-  the tolerance of each (#469).
+  the MS2 product error, so two candidates of one ion can differ by more. A
+  window that clips the ion shows only part of its peak, such as the tail, and
+  reports that part with its own apex. When the two differ by at most twice the
+  tolerance, they are one Discovery peak if the other apex lies inside the
+  higher candidate's peak bounds (one peak on that trace) and the most intense
+  MS1 centroids read at the two apexes, each within its own window, agree within
+  the tolerance (one ion). The merged candidate keeps the higher candidate's
+  m/z, peak and area.
 - The peak-anchor schema migration intentionally removed legacy
   `family_context`, `feature_superfamily_id`, `feature_superfamily_size`,
   `feature_superfamily_role`, `feature_superfamily_confidence`, and

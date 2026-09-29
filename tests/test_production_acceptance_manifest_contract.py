@@ -264,20 +264,17 @@ def test_checker_classifies_resolved_authority_source_path(
     manifest = tmp_path / "production_acceptance.tsv"
     row = _valid_accept_row()
     row["source_artifact_relpath"] = "validation/approved/source.tsv"
-    _write_manifest(manifest, [row])
 
     approved_dir = tmp_path / "validation/approved"
     forbidden_dir = tmp_path / "validation/lockbox_shadow_automation"
-    forbidden_dir.parent.mkdir(parents=True, exist_ok=True)
+    forbidden_dir.mkdir(parents=True)
     try:
         if alias_kind == "leaf":
-            forbidden_dir.mkdir()
-            (approved_dir / "source.tsv").rename(forbidden_dir / "source.tsv")
+            approved_dir.mkdir()
             (approved_dir / "source.tsv").symlink_to(
                 Path("../lockbox_shadow_automation/source.tsv")
             )
         else:
-            approved_dir.rename(forbidden_dir)
             approved_dir.symlink_to(
                 Path("lockbox_shadow_automation"),
                 target_is_directory=True,
@@ -287,6 +284,7 @@ def test_checker_classifies_resolved_authority_source_path(
             pytest.skip("Windows runner lacks symbolic-link privilege")
         raise
 
+    _write_manifest(manifest, [row])
     problems = _check_manifest(manifest)
 
     assert any(

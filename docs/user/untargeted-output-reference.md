@@ -92,6 +92,7 @@ independently enter Alignment RAW owner build.
 | ms1_peak_rt_start | float | MS1 peak start RT |
 | ms1_peak_rt_end | float | MS1 peak end RT |
 | ms1_height | float | MS1 peak height |
+| ms1_apex_mz | float | MS1 ion m/z read at the peak apex for an inferred precursor (blank for selected precursors, two ions, or no reading); reported only |
 | ms1_trace_quality | string | `good`, `fair`, or `poor` |
 | ms1_scan_support_score | float | Scan matching score |
 | selected_tag_count | int | Selected NL tag count |
@@ -209,7 +210,7 @@ where that internal or sidecar identity is available.
 | --- | --- | --- |
 | feature_family_id | string | Stable public row/display label for the cross-sample group |
 | neutral_loss_tag | string | NL identifier |
-| family_center_mz | float | Center m/z |
+| family_center_mz | float | Center m/z: mean of direct members' Discovery `ms1_apex_mz` when any member has one (`center_mz_basis = discovery_ms1_apex_mean`), otherwise the mean of observed m/z |
 | family_center_rt | float | Center RT (min) |
 | family_product_mz | float | Product m/z |
 | family_observed_neutral_loss_da | float | Observed NL (Da) |
@@ -257,11 +258,6 @@ where that internal or sidecar identity is available.
 
 | Column | Type | Description |
 | --- | --- | --- |
-| artificial_adduct_role | string | Adduct role (if applicable) |
-| artificial_adduct_name | string | Adduct name |
-| artificial_adduct_related_family_id | string | Parent family ID |
-| artificial_adduct_mz_delta_error_ppm | float | Adduct m/z error (PPM) |
-| artificial_adduct_rt_delta_min | float | Adduct RT delta (min) |
 
 #### Context
 

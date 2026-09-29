@@ -60,7 +60,6 @@ PROVISIONAL_IDENTITY_COLUMNS = (
     "matrix_blank_cell_count",
     "review_only",
     "identity_conflict",
-    "consolidation_state",
     "group_construction_role",
     "group_membership_source",
     "validation_status",
@@ -371,9 +370,6 @@ def _identity_row(
         "review_only": _format_bool(bool(getattr(cluster, "review_only", False))),
         "identity_conflict": _format_bool(
             bool(getattr(cluster, "identity_conflict", False))
-        ),
-        "consolidation_state": str(
-            getattr(cluster, "consolidation_state", "not_consolidated")
         ),
         "group_construction_role": str(
             getattr(cluster, "group_construction_role", "")

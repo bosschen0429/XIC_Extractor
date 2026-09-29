@@ -230,14 +230,31 @@ class CidNlPartitionPipelineAdapter:
             if raw_worker_backend == "process"
             else raw_workers // self._acquisition_workers
         )
-        self._partitions = tuple(
-            WorkPartition(
-                index=index,
-                partition_key=f"partition-{index:05d}",
-                payload=subjects,
-            )
-            for index, subjects in enumerate(subject_partitions)
+        self._sample_phases = tuple(
+            (sample, phase)
+            for sample in context.samples
+            for phase in ("initial", "backfill")
         )
+        partitions = []
+        for index, subjects in enumerate(subject_partitions):
+            partition_key = f"partition-{index:05d}"
+            partitions.append(
+                WorkPartition(
+                    index=index,
+                    partition_key=partition_key,
+                    payload=subjects,
+                    work_unit_keys=tuple(
+                        f"{partition_key}:{sample.identity.sample_identity_id}:{phase}"
+                        for sample, phase in self._sample_phases
+                    ),
+                    resource_keys=tuple(
+                        "acquisition-session:"
+                        f"{partition_key}:{sample.identity.sample_identity_id}:{phase}"
+                        for sample, phase in self._sample_phases
+                    ),
+                )
+            )
+        self._partitions = tuple(partitions)
         self._partition_subject_batches = {
             partition.partition_key: self._prepared_worksets.subject_batch(
                 partition.payload
@@ -275,10 +292,9 @@ class CidNlPartitionPipelineAdapter:
         )
         self._work_unit_keys = (
             *(
-                f"{partition.partition_key}:{sample.identity.sample_identity_id}:{phase}"
+                key
                 for partition in self._partitions
-                for sample in context.samples
-                for phase in ("initial", "backfill")
+                for key in partition.work_unit_keys
             ),
             self._global_closure_work_unit_key,
         )
@@ -286,10 +302,7 @@ class CidNlPartitionPipelineAdapter:
             RuntimeResourceReservation(
                 attempt=self._owners.attempt,
                 kind=RuntimeResourceKind.ACQUISITION_SESSION,
-                resource_key=(
-                    f"acquisition-session:{partition.partition_key}:"
-                    f"{sample.identity.sample_identity_id}:{phase}"
-                ),
+                resource_key=resource_key,
                 worker_key=(
                     f"inline-acquisition:{partition.partition_key}:"
                     f"{sample.identity.sample_identity_id}:{phase}"
@@ -301,8 +314,9 @@ class CidNlPartitionPipelineAdapter:
                 owner_conditional=True,
             )
             for partition in self._partitions
-            for sample in context.samples
-            for phase in ("initial", "backfill")
+            for (sample, phase), resource_key in zip(
+                self._sample_phases, partition.resource_keys, strict=True
+            )
         )
         self._owner_completeness_attestation = (
             f"{self._owners.request.processing_request_id}:cid-nl-partitioned"
@@ -492,46 +506,40 @@ class CidNlPartitionPipelineAdapter:
         Sequence[WorkUnitSettlement],
     ]:
         sealed = composition_output.sealed
-        context = self._plan.context
         artifacts: list[RuntimeArtifactRegistrationReceipt] = []
         settlements: list[WorkUnitSettlement] = []
-        for sample in context.samples:
-            for phase in ("initial", "backfill"):
-                key = (
-                    f"{partition.partition_key}:"
-                    f"{sample.identity.sample_identity_id}:{phase}"
-                )
-                artifact = _mint_evidence_artifact_ref(
-                    producer_processing_request_id=(
-                        self._owners.request.processing_request_id
-                    ),
-                    producer_processing_attempt_id=(
-                        self._owners.attempt.processing_attempt_id
-                    ),
-                    semantic_contract=_PARTITION_CONTRACT,
-                    payload_bytes=(
-                        json.dumps(
-                            {
-                                "work_unit_key": key,
-                                "partition_sha256": sealed.sha256,
-                                "partition_bytes": sealed.size_bytes,
-                            },
-                            sort_keys=True,
-                            separators=(",", ":"),
-                        )
-                        + "\n"
-                    ).encode("utf-8"),
-                    upstream_artifacts=(),
-                )
-                artifacts.append(RuntimeArtifactRegistrationReceipt(key, artifact))
-                settlements.append(
-                    mint_work_unit_settlement(
-                        attempt=self._owners.attempt,
-                        work_unit_key=key,
-                        outcome=WorkUnitTerminalOutcome.SUCCEEDED,
-                        owner_result_ref=artifact,
+        for key in partition.work_unit_keys:
+            artifact = _mint_evidence_artifact_ref(
+                producer_processing_request_id=(
+                    self._owners.request.processing_request_id
+                ),
+                producer_processing_attempt_id=(
+                    self._owners.attempt.processing_attempt_id
+                ),
+                semantic_contract=_PARTITION_CONTRACT,
+                payload_bytes=(
+                    json.dumps(
+                        {
+                            "work_unit_key": key,
+                            "partition_sha256": sealed.sha256,
+                            "partition_bytes": sealed.size_bytes,
+                        },
+                        sort_keys=True,
+                        separators=(",", ":"),
                     )
+                    + "\n"
+                ).encode("utf-8"),
+                upstream_artifacts=(),
+            )
+            artifacts.append(RuntimeArtifactRegistrationReceipt(key, artifact))
+            settlements.append(
+                mint_work_unit_settlement(
+                    attempt=self._owners.attempt,
+                    work_unit_key=key,
+                    outcome=WorkUnitTerminalOutcome.SUCCEEDED,
+                    owner_result_ref=artifact,
                 )
+            )
         return tuple(artifacts), tuple(settlements)
 
     def finalize_application(
@@ -689,6 +697,7 @@ def execute_bounded_untargeted_cid_nl(
     retain_partition_memory: bool = False,
     retain_partition_spool: bool = False,
     retain_acquisition_cache: bool = False,
+    acquisition_cache_dir: Path | None = None,
     pipeline_overlap: bool = False,
 ) -> CompletedUntargetBatchWorkflowResult:
     """Spill complete subject results, then close the exact global population.
@@ -707,7 +716,12 @@ def execute_bounded_untargeted_cid_nl(
         raise ValueError("raw_worker_backend must be 'process' or 'thread'")
 
     requested_acquisition_workers = 2 if pipeline_overlap and raw_workers >= 2 else 1
-    acquisition_cache_dir = Path(output_dir) / ".cid_nl_acquisition_cache"
+    # A shared cache directory outlives the run; the default one is the run's own.
+    cache_dir = (
+        Path(acquisition_cache_dir)
+        if acquisition_cache_dir is not None
+        else Path(output_dir) / ".cid_nl_acquisition_cache"
+    )
     adapter = CidNlPartitionPipelineAdapter(
         plan,
         alignment_config=alignment_config,
@@ -716,7 +730,7 @@ def execute_bounded_untargeted_cid_nl(
         raw_workers=raw_workers,
         raw_worker_backend=raw_worker_backend,
         acquisition_workers=requested_acquisition_workers,
-        acquisition_cache_dir=acquisition_cache_dir,
+        acquisition_cache_dir=cache_dir,
         retain_partition_spool=retain_partition_spool,
     )
     completed_once = False
@@ -742,8 +756,12 @@ def execute_bounded_untargeted_cid_nl(
         # The cache only accelerates acquisition, which is finished. A failed
         # attempt keeps it because the recovery marker allows a retry that
         # would otherwise reread every RAW file.
-        if completed_once and not retain_acquisition_cache:
-            shutil.rmtree(acquisition_cache_dir, ignore_errors=True)
+        if (
+            completed_once
+            and acquisition_cache_dir is None
+            and not retain_acquisition_cache
+        ):
+            shutil.rmtree(cache_dir, ignore_errors=True)
 
 
 def _shared_objects(plan: UntargetedCidNlProductionPlan) -> tuple[object, ...]:

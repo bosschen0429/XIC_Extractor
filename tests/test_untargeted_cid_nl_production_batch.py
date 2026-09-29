@@ -37,7 +37,6 @@ from tests.test_untargeted_cid_nl_real_data_runtime import (
 )
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.csv_io import DiscoveryBatchInput
-from xic_extractor.alignment.ownership import OwnershipBuildResult
 from xic_extractor.alignment.pipeline_outputs import (
     alignment_metadata,
     output_paths,
@@ -2088,8 +2087,10 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     assert tuple(retained_recovery.trace.rt) == tuple(acquired.trace.rt)
     assert tuple(retained_recovery.trace.intensity) == tuple(acquired.trace.intensity)
     integ = observation.content.integration
-    assert abs(integ.area_baseline_corrected - 4843.4678) < 1e-3
-    assert abs(integ.height_smoothed - 941.4114) < 1e-3
+    physical_facts = observation.physical_evaluation.facts
+    assert physical_facts is not None
+    assert integ.area_baseline_corrected == physical_facts.area_counts_seconds
+    assert integ.height_smoothed == physical_facts.height
     assert recovered.assessment.content.method_result == "HOLD"
     with pytest.raises(
         capture_owner.SampleLocalCaptureError, match="question is not request-bound"
@@ -3524,11 +3525,6 @@ def test_production_batch_executes_one_atomic_sample_phase(
             require_discovery_owner_closure=True,
             owner_backfill_peak_fact_provenance_row_count=1,
         ),
-        ownership=OwnershipBuildResult(
-            owners=(),
-            assignments=(),
-            ambiguous_records=(),
-        ),
         alignment_config=alignment_config,
         production_decisions=writer_inputs.production_decisions,
     )
@@ -4826,6 +4822,26 @@ def test_production_composition_closes_recovered_observation_without_candidate(
     assert row.center_mz_basis == "cross_sample_owner_arithmetic_mean"
     assert row.center_rt_basis == "cross_sample_owner_arithmetic_mean"
 
+    # Discovery's apex MS1 readings replace the reported center only; members
+    # without a reading and the repaired cell do not dilute it.
+    direct_candidates = [
+        candidate for values in candidates_by_sample.values() for candidate in values
+    ]
+    readings = {
+        candidate.candidate_id: candidate.precursor_mz * (1 - (12 + index) * 1e-6)
+        for index, candidate in enumerate(direct_candidates[:-1])
+    }
+    reported = project_completed_untarget_batch_writer_inputs(
+        completed, ms1_apex_mz_by_candidate=readings
+    )
+    (reported_row,) = reported.matrix.clusters
+    assert reported_row.family_center_mz == pytest.approx(
+        sum(readings.values()) / len(readings)
+    )
+    assert reported_row.center_mz_basis == "discovery_ms1_apex_mean"
+    assert reported_row.family_center_rt == row.family_center_rt
+    assert reported.matrix.cells == writer_inputs.matrix.cells
+
     base_cells = writer_inputs.production_decisions.cells
     weighted_values = dict(zip(sample_stems, (1.0, 9.0, 2.0, 9.0), strict=True))
     for variant, no_write_sample in (("unequal", None), ("no-write", "Hold")):
@@ -4900,11 +4916,6 @@ def test_production_composition_closes_recovered_observation_without_candidate(
                 heavy_audit_enabled=False,
                 require_discovery_owner_closure=True,
                 owner_backfill_peak_fact_provenance_row_count=1,
-            ),
-            ownership=OwnershipBuildResult(
-                owners=(),
-                assignments=(),
-                ambiguous_records=(),
             ),
             alignment_config=AlignmentConfig(anchor_min_seed_events=1),
             production_decisions=decisions,
@@ -5049,7 +5060,6 @@ def test_atomic_publication_preserves_ms1_only_backfill_and_no_peak(
             require_discovery_owner_closure=True,
             owner_backfill_peak_fact_provenance_row_count=1,
         ),
-        ownership=OwnershipBuildResult(owners=(), assignments=(), ambiguous_records=()),
         alignment_config=alignment_config,
         production_decisions=writer_inputs.production_decisions,
     )

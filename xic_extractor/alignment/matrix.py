@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, Protocol
 
 from xic_extractor.alignment.models import AlignmentCluster
@@ -47,7 +46,6 @@ class AlignedCell:
     trace_quality: str
     scan_support_score: float | None
     source_candidate_id: str | None
-    source_raw_file: Path | None
     reason: str
     region_candidate_count: int | None = None
     region_selected_proposal_sources: tuple[str, ...] = ()
@@ -73,12 +71,6 @@ class AlignedCell:
     backfill_request_rt_min: float | None = None
     backfill_request_rt_max: float | None = None
     backfill_request_ppm: float | None = None
-    backfill_ms2_trigger_scan_count: int | None = None
-    backfill_strict_nl_scan_count: int | None = None
-    backfill_ms2_trace_strength: str = ""
-    backfill_dda_missing_nl_policy_status: str = ""
-    backfill_family_ms2_required_tag_status: str = ""
-    backfill_evidence_reason: str = ""
     group_hypothesis_id: str = ""
     public_family_id: str = ""
     group_construction_role: str = ""
@@ -87,15 +79,6 @@ class AlignedCell:
     gap_fill_state: str = ""
     gap_fill_reason: str = ""
     missing_observation_state: str = ""
-    peak_hypothesis_status: str = ""
-    product_selection_blocker: str = ""
-    rt_mode_status: str = ""
-    group_claim_state: str = ""
-    claim_winner_group_hypothesis_id: str = ""
-    claim_source_group_hypothesis_id: str = ""
-    consolidation_state: str = ""
-    consolidation_winner_group_hypothesis_id: str = ""
-    consolidation_source_group_hypothesis_id: str = ""
 
     @property
     def matrix_area(self) -> float | None:

@@ -268,6 +268,11 @@ def _apply_blank_qualification_if_enabled(
         return qualified
 
 
+def _raise_if_discovery_cancelled(should_cancel: Callable[[], bool] | None) -> None:
+    if should_cancel is not None and should_cancel():
+        raise InterruptedError("Discovery cancelled before output publication")
+
+
 def run_discovery(
     raw_path: Path,
     *,
@@ -277,7 +282,9 @@ def run_discovery(
     raw_opener: RawOpener | None = None,
     timing_recorder: TimingRecorder | None = None,
     run_spec: ProcessingRunSpec | None = None,
+    should_cancel: Callable[[], bool] | None = None,
 ) -> DiscoveryRunOutputs:
+    _raise_if_discovery_cancelled(should_cancel)
     recorder = timing_recorder or TimingRecorder.disabled("discovery")
     sample_stem = raw_path.stem
     acquisition_input: ProcessingAcquisitionInput | None = None
@@ -336,6 +343,7 @@ def run_discovery(
         sample_stem=sample_stem,
         acquisition_input=acquisition_input,
     )
+    _raise_if_discovery_cancelled(should_cancel)
     return _write_dual_csvs(
         output_dir,
         candidates,
@@ -365,9 +373,11 @@ def run_discovery_batch(
     executor_factory: Callable[..., Any] | None = None,
     progress_callback: Callable[[int, int, str], None] | None = None,
     run_spec: ProcessingRunSpec | None = None,
+    should_cancel: Callable[[], bool] | None = None,
 ) -> DiscoveryBatchOutputs:
     if max_workers < 1:
         raise ValueError("max_workers must be >= 1")
+    _raise_if_discovery_cancelled(should_cancel)
     recorder = timing_recorder or TimingRecorder.disabled("discovery")
     run_inputs = (
         None
@@ -396,11 +406,13 @@ def run_discovery_batch(
             progress_callback=progress_callback,
             run_spec=run_spec,
             run_inputs=run_inputs,
+            should_cancel=should_cancel,
         )
 
     index_rows: list[dict[str, str]] = []
     per_sample: list[DiscoveryRunOutputs] = []
     for sample_index, raw_path in enumerate(raw_paths):
+        _raise_if_discovery_cancelled(should_cancel)
         sample_stem = raw_path.stem
         acquisition_input = None if run_inputs is None else run_inputs[sample_index]
         acquisition_source = (
@@ -486,6 +498,7 @@ def run_discovery_batch(
         if progress_callback is not None:
             progress_callback(sample_index + 1, len(raw_paths), sample_stem)
 
+    _raise_if_discovery_cancelled(should_cancel)
     return DiscoveryBatchOutputs(
         batch_index_csv=_write_batch_index(
             output_dir / "discovery_batch_index.csv",
@@ -508,9 +521,11 @@ def _run_discovery_batch_process(
     progress_callback: Callable[[int, int, str], None] | None,
     run_spec: ProcessingRunSpec | None,
     run_inputs: tuple[ProcessingAcquisitionInput, ...] | None,
+    should_cancel: Callable[[], bool] | None,
 ) -> DiscoveryBatchOutputs:
     pending_jobs: list[DiscoverySampleProcessJob] = []
     for sample_index, raw_path in enumerate(raw_paths):
+        _raise_if_discovery_cancelled(should_cancel)
         acquisition_input = None if run_inputs is None else run_inputs[sample_index]
         acquisition_source = (
             _acquisition_source(raw_path)
@@ -556,6 +571,7 @@ def _run_discovery_batch_process(
         max_workers=max_workers,
         executor_factory=executor_factory,
         progress_callback=_progress,
+        should_cancel=should_cancel,
     )
     for ordinal in report.submitted_job_ordinals:
         job = jobs[ordinal]
@@ -653,6 +669,10 @@ def _run_discovery_batch_process(
             in_flight_job_count=len(report.in_flight_job_ordinals),
             unsubmitted_job_count=len(report.unsubmitted_job_ordinals),
         )
+
+    if report.cancellation_requested:
+        raise InterruptedError("Discovery cancelled before batch index publication")
+    _raise_if_discovery_cancelled(should_cancel)
 
     results = tuple(
         cast(DiscoverySampleProcessResult, result)

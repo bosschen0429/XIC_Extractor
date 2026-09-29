@@ -22,9 +22,18 @@ from xic_extractor.configuration.targets import read_istd_targets
 from xic_extractor.discovery.blank_qualification import BlankBackgroundLibrary
 from xic_extractor.execution_settings import load_execution_profile
 from xic_extractor.presets import bind_cid_nl_recipe, load_preset
-from xic_extractor.raw_reader import preflight_raw_reader
+from xic_extractor.raw_reader import preflight_raw_reader, read_analysis_set
+from xic_extractor.sample_metadata import load_sample_metadata
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
+# The 85RAW root also holds injected samples outside the study design.
+_DATASET_SAMPLE_METADATA = {
+    85: _REPO_ROOT
+    / "docs"
+    / "superpowers"
+    / "validation"
+    / "tissue_85raw_sample_metadata.tsv",
+}
 _DEFAULT_TARGETS = _REPO_ROOT / "config" / "targets.example.csv"
 _LOCAL_ENV = _REPO_ROOT / ".env.xic-local"
 
@@ -82,6 +91,20 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument("--raw-dir", type=Path)
     parser.add_argument("--dll-dir", type=Path)
     parser.add_argument(
+        "--sample-metadata", type=Path,
+        help=(
+            "Roles and excluded flags deciding the analysis set below --raw-dir "
+            "(default for --dataset 85: the tracked 85RAW sample metadata)."
+        ),
+    )
+    parser.add_argument(
+        "--acquisition-cache-dir", type=Path,
+        help=(
+            "Shared RAW acquisition cache for Alignment "
+            "(default: XIC_ACQUISITION_CACHE_DIR, else the run's own output)."
+        ),
+    )
+    parser.add_argument(
         "--blank-library", type=Path,
         help="Explicitly opt in to blank filtering with this library (default: off).",
     )
@@ -123,30 +146,33 @@ def _build_plan(args: argparse.Namespace) -> dict[str, Any]:
     if output_dir.exists():
         raise ValueError(f"{output_dir}: output directory already exists")
 
-    raw_paths = tuple(
-        sorted(
-            (
-                path.resolve()
-                for path in raw_dir.iterdir()
-                if path.is_file() and path.suffix.lower() == ".raw"
-            ),
-            key=lambda path: path.name.casefold(),
-        )
-    )
-    if len(raw_paths) != dataset:
-        raise ValueError(
-            f"{raw_dir}: expected {dataset} nonrecursive .raw files, "
-            f"found {len(raw_paths)}"
-        )
     dll_errors = preflight_raw_reader(dll_dir)
     if dll_errors:
         raise ValueError("Thermo DLL preflight failed:\n- " + "\n- ".join(dll_errors))
+    sample_metadata = (
+        args.sample_metadata.resolve()
+        if args.sample_metadata is not None
+        else _DATASET_SAMPLE_METADATA.get(dataset)
+    )
+    raw_paths = read_analysis_set(
+        raw_dir,
+        dll_dir,
+        load_sample_metadata(sample_metadata) if sample_metadata is not None else None,
+    ).raw_paths
+    if len(raw_paths) != dataset:
+        raise ValueError(
+            f"{raw_dir}: expected {dataset} analysis RAW files, "
+            f"found {len(raw_paths)}"
+        )
 
     blank_library = None
     if args.blank_library is not None:
         blank_library = args.blank_library.resolve()
         BlankBackgroundLibrary.load_json(blank_library)
     targets_csv, workbook = _validate_istd_input(args)
+    acquisition_cache_dir = _acquisition_cache_dir(
+        args.acquisition_cache_dir, environment
+    )
 
     discovery_dir = output_dir / "discovery"
     alignment_dir = output_dir / "alignment"
@@ -193,9 +219,15 @@ def _build_plan(args: argparse.Namespace) -> dict[str, Any]:
         "--timing-live-output",
         str(timing_dir / "alignment.live.json"),
     ]
+    if sample_metadata is not None:
+        discovery_command.extend(["--sample-metadata", str(sample_metadata)])
     if blank_library is not None:
         discovery_command.extend(["--blank-library", str(blank_library)])
         alignment_command.extend(["--blank-library", str(blank_library)])
+    if acquisition_cache_dir is not None:
+        alignment_command.extend(
+            ["--acquisition-cache-dir", str(acquisition_cache_dir)]
+        )
     if workbook is not None:
         alignment_command.extend(
             ["--known-istd-reference-workbook", str(workbook)]
@@ -221,11 +253,19 @@ def _build_plan(args: argparse.Namespace) -> dict[str, Any]:
         "inputs": {
             "raw_dir": str(raw_dir),
             "raw_count": len(raw_paths),
+            "sample_metadata": (
+                str(sample_metadata) if sample_metadata is not None else None
+            ),
             "dll_dir": str(dll_dir),
             "blank_library": str(blank_library) if blank_library is not None else None,
             "targets_csv": str(targets_csv) if targets_csv is not None else None,
             "known_istd_reference_workbook": (
                 str(workbook) if workbook is not None else None
+            ),
+            "acquisition_cache_dir": (
+                str(acquisition_cache_dir)
+                if acquisition_cache_dir is not None
+                else None
             ),
         },
         "execution": {
@@ -262,9 +302,19 @@ def _read_local_environment(path: Path) -> dict[str, str]:
             "XIC_RAW_VALIDATION_DIR",
             "XIC_RAW_ROOT",
             "THERMO_RAWFILE_READER_DLL_DIR",
+            "XIC_ACQUISITION_CACHE_DIR",
         }:
             values[key] = value.strip().strip('"').strip("'")
     return values
+
+
+def _acquisition_cache_dir(
+    explicit: Path | None, environment: Mapping[str, str]
+) -> Path | None:
+    if explicit is not None:
+        return explicit.resolve()
+    configured = environment.get("XIC_ACQUISITION_CACHE_DIR", "").strip()
+    return Path(configured).resolve() if configured else None
 
 
 def _resolve_input_dir(

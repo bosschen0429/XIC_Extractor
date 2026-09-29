@@ -207,6 +207,7 @@ def complete_untargeted_cid_nl_alignment(
     should_cancel: Callable[[], bool] | None = None,
     retain_partition_memory: bool = False,
     retain_acquisition_cache: bool = False,
+    acquisition_cache_dir: Path | None = None,
     max_partition_jobs: int = 100_000,
 ) -> CompletedUntargetBatchWorkflowResult:
     """Execute and compose one owner-closed CID-NL batch exactly once."""
@@ -245,6 +246,7 @@ def complete_untargeted_cid_nl_alignment(
             retained_sample_metadata = derive_sample_metadata_from_raw_files(
                 ordered_raw_paths,
                 dll_dir=dll_dir,
+                batch_id=raw_dir.resolve().name,
             )
         except Exception:
             retained_sample_metadata = tuple(
@@ -434,6 +436,7 @@ def complete_untargeted_cid_nl_alignment(
                 should_cancel=should_cancel,
                 retain_partition_memory=retain_partition_memory,
                 retain_acquisition_cache=retain_acquisition_cache,
+                acquisition_cache_dir=acquisition_cache_dir,
                 pipeline_overlap=True,
                 max_partition_jobs=max_partition_jobs,
             )

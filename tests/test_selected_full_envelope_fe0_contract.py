@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import inspect
 from dataclasses import fields
+from types import SimpleNamespace
 
 import pytest
 
@@ -9,7 +10,6 @@ import xic_extractor.extraction.peak_candidate_boundaries as boundary_rows
 from xic_extractor.alignment.primary_matrix_area import (
     ASLS_PRIMARY_MATRIX_AREA_SOURCE,
     MISSING_MS1_MORPHOLOGY_AREA,
-    MS1_MORPHOLOGY_PRIMARY_MATRIX_AREA_SOURCE,
     primary_matrix_area_from_integration,
 )
 from xic_extractor.extractor import ExtractionResult
@@ -59,7 +59,17 @@ def test_targeted_area_column_and_reported_peak_area_use_ms1_morphology_area() -
     assert result.reported_peak_area == pytest.approx(900.0)
 
 
-def test_alignment_primary_matrix_area_prefers_ms1_morphology_area() -> None:
+@pytest.mark.parametrize(
+    "area_source",
+    [
+        "gaussian15_positive_asls_residual",
+        "trapezoid_counts_seconds_on_canonical_signal",
+        "trapezoid_counts_seconds_on_observed_censored_signal",
+    ],
+)
+def test_alignment_primary_matrix_area_preserves_accepted_area_source(
+    area_source: str,
+) -> None:
     integration = IntegrationResult(
         rt_left_min=1.0,
         rt_apex_min=1.2,
@@ -72,14 +82,47 @@ def test_alignment_primary_matrix_area_prefers_ms1_morphology_area() -> None:
         area_baseline_corrected=800.0,
         baseline_type="asls",
         area_ms1_morphology=900.0,
-        ms1_morphology_area_source="gaussian15_positive_asls_residual",
+        ms1_morphology_area_source=area_source,
     )
 
     decision = primary_matrix_area_from_integration(integration)
 
     assert decision.value == pytest.approx(900.0)
-    assert decision.source == MS1_MORPHOLOGY_PRIMARY_MATRIX_AREA_SOURCE
+    assert decision.source == area_source
     assert decision.reason == ""
+
+
+@pytest.mark.parametrize(
+    "area", [None, 0.0, -1.0, float("nan"), float("inf"), True, "900"]
+)
+def test_alignment_primary_matrix_area_rejects_invalid_observed_censored_area(
+    area: object,
+) -> None:
+    decision = primary_matrix_area_from_integration(
+        SimpleNamespace(
+            area_ms1_morphology=area,
+            ms1_morphology_area_source=(
+                "trapezoid_counts_seconds_on_observed_censored_signal"
+            ),
+        )
+    )
+
+    assert decision.value is None
+    assert decision.source == ""
+    assert decision.reason == MISSING_MS1_MORPHOLOGY_AREA
+
+
+def test_alignment_primary_matrix_area_rejects_unknown_positive_area_source() -> None:
+    decision = primary_matrix_area_from_integration(
+        SimpleNamespace(
+            area_ms1_morphology=900.0,
+            ms1_morphology_area_source="unknown_signal",
+        )
+    )
+
+    assert decision.value is None
+    assert decision.source == ""
+    assert decision.reason == MISSING_MS1_MORPHOLOGY_AREA
 
 
 def test_alignment_primary_matrix_area_retires_asls_legacy_fallback() -> None:

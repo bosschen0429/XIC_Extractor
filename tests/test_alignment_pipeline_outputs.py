@@ -1,7 +1,6 @@
 import json
 from dataclasses import replace
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 
@@ -73,7 +72,7 @@ def test_alignment_metadata_records_baseline_audit_method() -> None:
     assert metadata["signal_processing_method"] == "gaussian"
     assert metadata["signal_processing_window_points"] == "15"
     assert metadata["physical_signal_formula"] == (
-        "gaussian_raw_minus_nonnegative_asls_raw_positive"
+        "gaussian_raw_minus_nonnegative_asls_rt_raw_positive"
     )
     assert metadata["owner_backfill_peak_fact_provenance_schema_version"] == (
         "alignment_owner_backfill_peak_fact_provenance"
@@ -207,7 +206,6 @@ def test_validation_minimal_outputs_keep_gate_artifacts_without_debug_surfaces(
         output_level="validation-minimal",
         emit_alignment_cells=False,
         emit_alignment_status_matrix=False,
-        emit_skipped_evidence_ledger=True,
     )
 
     assert outputs.matrix_tsv == tmp_path / "alignment_matrix.tsv"
@@ -220,12 +218,8 @@ def test_validation_minimal_outputs_keep_gate_artifacts_without_debug_surfaces(
         tmp_path / "alignment_owner_backfill_peak_fact_provenance.tsv"
     )
     assert outputs.cells_tsv is None
-    assert outputs.edge_evidence_tsv is None
     assert outputs.status_matrix_tsv is None
-    assert (
-        outputs.skipped_evidence_ledger_tsv == tmp_path / "skipped_evidence_ledger.tsv"
-    )
-    assert outputs.run_metadata_json == tmp_path / "alignment_run_metadata.json"
+    assert outputs.run_metadata_json is None
 
 
 def test_target_snapshot_binding_requests_existing_run_metadata_sidecar(
@@ -265,7 +259,6 @@ def test_writer_timing_observations_are_truthful_with_live_output(
         outputs,
         matrix,
         metadata={},
-        ownership=SimpleNamespace(assignments=(), ambiguous_records=()),
         alignment_config=config,
         production_decisions=build_production_decisions(matrix, config),
         timing_recorder=recorder,
@@ -324,7 +317,6 @@ def test_writer_hashing_requires_instrumentation_opt_in(
         outputs,
         matrix,
         metadata={},
-        ownership=SimpleNamespace(assignments=(), ambiguous_records=()),
         alignment_config=config,
         production_decisions=build_production_decisions(matrix, config),
         timing_recorder=timing_recorder,
@@ -348,7 +340,6 @@ def test_writer_mints_exact_fingerprint_receipts_without_timing_instrumentation(
         outputs,
         matrix,
         metadata={},
-        ownership=SimpleNamespace(assignments=(), ambiguous_records=()),
         alignment_config=config,
         production_decisions=build_production_decisions(matrix, config),
         capture_artifact_fingerprints=True,
@@ -386,7 +377,6 @@ def test_writer_fingerprint_batch_rejects_missing_duplicate_or_foreign_receipts(
     config = AlignmentConfig()
     writer_kwargs = {
         "metadata": {},
-        "ownership": SimpleNamespace(assignments=(), ambiguous_records=()),
         "alignment_config": config,
         "production_decisions": build_production_decisions(matrix, config),
         "capture_artifact_fingerprints": True,
@@ -442,7 +432,6 @@ def test_writer_receipt_capture_reuses_instrumented_hashes_without_output_change
     writer_args = (matrix,)
     writer_kwargs = {
         "metadata": {},
-        "ownership": SimpleNamespace(assignments=(), ambiguous_records=()),
         "alignment_config": config,
         "production_decisions": build_production_decisions(matrix, config),
     }
@@ -525,7 +514,6 @@ def test_production_and_machine_plans_write_identical_matrix_bytes(
     decisions = build_production_decisions(matrix, config)
     writer_kwargs = {
         "metadata": {},
-        "ownership": SimpleNamespace(assignments=(), ambiguous_records=()),
         "alignment_config": config,
         "production_decisions": replace(
             decisions,
@@ -594,7 +582,6 @@ def test_writer_fingerprint_failure_rolls_back_without_returning_receipts(
             outputs,
             matrix,
             metadata={},
-            ownership=SimpleNamespace(assignments=(), ambiguous_records=()),
             alignment_config=config,
             production_decisions=build_production_decisions(matrix, config),
             capture_artifact_fingerprints=True,
@@ -623,7 +610,6 @@ def test_writer_binds_provenance_row_count_into_persisted_metadata(
         outputs,
         matrix,
         metadata={},
-        ownership=SimpleNamespace(assignments=(), ambiguous_records=()),
         alignment_config=config,
         production_decisions=build_production_decisions(matrix, config),
     )
@@ -668,7 +654,6 @@ def test_writer_rejects_provenance_row_count_mismatch_before_final_writes(
             outputs,
             matrix,
             metadata={"owner_backfill_peak_fact_provenance_row_count": "0"},
-            ownership=SimpleNamespace(assignments=(), ambiguous_records=()),
             alignment_config=config,
             production_decisions=build_production_decisions(matrix, config),
         )
@@ -722,7 +707,6 @@ def test_provenance_outer_transaction_never_nests_or_leaks_temp_files(
             outputs,
             matrix,
             metadata={},
-            ownership=SimpleNamespace(assignments=(), ambiguous_records=()),
             alignment_config=config,
             production_decisions=build_production_decisions(matrix, config),
         )

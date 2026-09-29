@@ -19,7 +19,7 @@ WORKBENCH_JS = r"""(() => {
   const itemName=item=>`項目 ${String(items.indexOf(item)+1).padStart(2,'0')}`;
   const itemTitle=item=>item.title||'已記錄的結果';
   const badge=item=>item.badge_label||({attention:'需留意',excluded:'已排除',rest:'已記錄'}[item.stratum]||'既有結果');
-  const result=row=>!has(row,'quantitative_value')?'<span class="result-missing">無單一結果</span>':row.quantitative_value===null?'<span class="result-null">空值</span>':row.quantitative_value===0?'<span class="result-zero">0</span>':`<span class="result-number">${num(row.quantitative_value)}</span>`;
+  const result=row=>!has(row,'quantitative_value')?'<span class="result-missing">無單一結果</span>':row.quantitative_value===null?'<span class="result-null">空值</span>':`<span class="${row.quantitative_value===0?'result-zero':'result-number'}">${num(row.quantitative_value)}</span>${row.quantity_unit?` <span class="result-unit">${esc(row.quantity_unit)}</span>`:''}`;
   const isCollapsedExcluded=item=>item.kind==='candidate'&&item.stratum==='excluded', queryReport=data.selection?.strategy==='query'||$('report-info-source')?.dataset.strategy==='query';
   const primaryItems=items.filter(item=>['group','row'].includes(item.kind)&&!isCollapsedExcluded(item));
   const initialItem=queryReport?items[0]:primaryItems.reduce((best,item)=>(item.review_summary?.observed_sample_count??-1)>(best?.review_summary?.observed_sample_count??-1)?item:best,null)||items.find(item=>!isCollapsedExcluded(item));
@@ -68,7 +68,7 @@ WORKBENCH_JS = r"""(() => {
     pairs.forEach(p=>['left','right'].forEach(side=>{const label=p[`${side}_sample_label`],matches=rows.filter(r=>r.sample_stem===label||sampleName(r.sample_id)===label);add(p[`${side}_member_subject_id`],matches.length===1?matches[0].sample_id:null,label);}));
     if(!byId.size)rows.forEach(r=>add(r.sample_id,r.sample_id,r.sample_stem||sampleName(r.sample_id)));
     const nodes=[...byId.values()].sort((a,b)=>(a.order===null)-(b.order===null)||(a.order??0)-(b.order??0));
-    return {nodes,pairs:pairs.filter(p=>byId.has(p.left_member_subject_id)&&byId.has(p.right_member_subject_id)),byId};
+    return {nodes,pairs:pairs.filter(p=>byId.has(p.left_member_subject_id)&&byId.has(p.right_member_subject_id)),byId,availability:item.relationship_availability||'unavailable'};
   }
   const pairIds=p=>[p.left_member_subject_id,p.right_member_subject_id];
   function relationshipSelection(model){
@@ -87,6 +87,7 @@ WORKBENCH_JS = r"""(() => {
     return `<svg id="relationship-network" viewBox="0 0 ${width} ${height}" aria-label="樣本配對支持關係圖">${markup}</svg>`;
   }
   function relationshipDetail(item,model){
+    if(!model.pairs.length){const label=model.availability==='recorded'?'本群組沒有保存的配對紀錄':model.availability==='not_retained'?'來源未保存樣本配對圖':'來源未提供樣本關係資料';return `<span class="eyebrow">關係資料保存狀態</span><h3>${label}</h3><p class="reading-hint">不能據此判定沒有配對支持。可在其他區塊檢閱來源提供的曲線與正式結果。</p>`;}
     const pair=model.pairs.find(p=>p.edge_ref===rel.pair),node=model.byId.get(rel.node);
     if(pair){const a=model.byId.get(pair.left_member_subject_id),b=model.byId.get(pair.right_member_subject_id),basis=pair.rt_basis==='drift_corrected'?'校正 RT':pair.rt_basis==='raw'?'原始 RT':'來源未提供';return `<span class="eyebrow">目前比較</span><h3>${esc(shortName(a.label))}<br>↔ ${esc(shortName(b.label))}</h3><span class="badge badge-${pair.support_kind==='direct'?'ok':'attention'}">${pair.support_kind==='direct'?'直接支持':'僅供檢閱'}</span><dl class="relation-metrics"><div><dt>原始 RT 差</dt><dd>${drt(pair.rt_raw_delta_sec)} s</dd></div><div><dt>校正 RT 差</dt><dd>${drt(pair.rt_drift_corrected_delta_sec)} s</dd></div></dl><p class="reading-hint">判定採用：${basis}。下方只比較這兩個樣本。</p><details><summary>配對判斷與來源</summary><p>分數 ${num(pair.score)} · ${esc(pair.decision||'未提供')}<br>${esc(pair.reason||'未提供')}</p>${evidenceButtons([pair.edge_ref],'目前配對的支持紀錄','查看配對紀錄')}</details>`;}
     if(node){const pairs=model.pairs.filter(p=>pairIds(p).includes(node.id));return `<span class="eyebrow">目前樣本</span><h3>${esc(shortName(node.label))}</h3><p class="reading-hint">${esc(node.row?.status_label||'來源未提供狀態')} · ${node.curves.length} 份來源綁定曲線</p><div class="relation-neighbors">${pairs.map(p=>{const other=model.byId.get(pairIds(p).find(id=>id!==node.id));return `<button type="button" data-relation-pair="${esc(p.edge_ref)}"><span>${esc(shortName(other.label))}</span><span>${p.support_kind==='direct'?'直接支持':'僅供檢閱'} →</span></button>`;}).join('')||'<p class="reading-hint">沒有保存的成員配對紀錄。</p>'}</div>${evidenceButtons(node.row?.decision_refs,`${node.label} 的正式結果`)}${evidenceButtons(originRefs(node.row?.support_origin),`${node.label} 的支持來源`,'查看支持記錄')}`;}
@@ -113,6 +114,7 @@ WORKBENCH_JS = r"""(() => {
   }
   function internalPairSupportPanel(item){
     const model=relationshipModel(item);
+    if(!model.pairs.length)return `<section class="relationship-workbench" aria-label="樣本配對支持"><div class="relation-section-heading"><h3>樣本關係</h3></div><div class="relationship-detail" aria-live="polite">${relationshipDetail(item,model)}</div>${model.nodes.some(n=>n.curves.length)?relationshipLanes(item,model):''}</section>`;
     return `<section class="relationship-workbench" aria-label="樣本配對支持"><div class="relation-section-heading"><h3>樣本關係</h3><div class="relation-options"><label><input type="checkbox" id="relationship-reviews" ${rel.reviews?'checked':''}>顯示僅供檢閱連線</label><button type="button" data-relation-reset>顯示全部樣本</button></div></div><div class="relationship-top"><div class="relationship-graph">${relationshipNetwork(model)}<p class="reading-hint">實線：直接支持　虛線：僅供檢閱 · 節點編號為原始進樣順序</p></div><aside class="relationship-detail" aria-live="polite">${relationshipDetail(item,model)}</aside></div>${relationshipLanes(item,model)}</section>`;
   }
 

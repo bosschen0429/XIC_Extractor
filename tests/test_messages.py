@@ -1,8 +1,11 @@
+from dataclasses import replace
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 from xic_extractor.config import ExtractionConfig, Target
+from xic_extractor.extraction.target_extraction import extract_one_target
 from xic_extractor.extractor import ExtractionResult
 from xic_extractor.neutral_loss import CandidateMS2Evidence, NLResult
 from xic_extractor.output.messages import (
@@ -81,6 +84,39 @@ def test_build_diagnostic_records_reports_peak_and_nl_failures() -> None:
     assert "max=1234" in records[0].reason
     assert "best observed-loss error 80.0 ppm" in records[1].reason
     assert "quadrature window at 50 ppm per ion" in records[1].reason
+
+
+def test_multi_peak_diagnostic_reports_formally_selected_lower_peak() -> None:
+    target = replace(
+        _target("NoNL"), neutral_loss_da=None, nl_ppm_warn=None, nl_ppm_max=None
+    )
+    rt = np.linspace(6.0, 12.0, 1201)
+    intensity = (
+        1000.0 * np.exp(-0.5 * ((rt - 8.5) / 0.05) ** 2)
+        + 200.0 * np.exp(-0.5 * ((rt - 9.0) / 0.05) ** 2)
+        + 1500.0 * np.exp(-0.5 * ((rt - 11.0) / 0.05) ** 2)
+    )
+
+    class Raw:
+        def extract_xic(self, _mz, rt_min, rt_max, _ppm_tol):
+            mask = (rt >= rt_min) & (rt <= rt_max)
+            return rt[mask], intensity[mask]
+
+    results = {}
+    diagnostics = []
+    extract_one_target(
+        Raw(), _config(), "SampleA", target,
+        reference_rt=None,
+        results=results, diagnostics=diagnostics,
+    )
+    result = results[target.label]
+    assert result.reported_rt == pytest.approx(9.0, abs=0.01)
+    assert result.reported_peak_intensity < 300.0
+    assert result.peak_result.n_prominent_peaks == 2
+    record = next(record for record in diagnostics if record.issue == "MULTI_PEAK")
+    assert "2 qualified physical candidates in selection window" in record.reason
+    assert f"selected RT {result.reported_rt:.4f} min" in record.reason
+    assert "tallest" not in record.reason
 
 
 def test_build_diagnostic_records_reports_selected_candidate_observed_loss() -> None:

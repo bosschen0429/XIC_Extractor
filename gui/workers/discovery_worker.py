@@ -13,7 +13,11 @@ from xic_extractor.alignment.pipeline_outputs import AlignmentRunOutputs
 from xic_extractor.alignment.process_backend import AlignmentProcessExecutionError
 from xic_extractor.config import ExtractionConfig
 from xic_extractor.discovery.models import DiscoverySettings
-from xic_extractor.discovery.pipeline import run_discovery, run_discovery_batch
+from xic_extractor.discovery.pipeline import (
+    DiscoveryProcessExecutionError,
+    run_discovery,
+    run_discovery_batch,
+)
 from xic_extractor.discovery.processing_run_spec_adapter import (
     compile_discovery_processing_run_spec_from_config as _compile_processing_run_spec,
 )
@@ -28,7 +32,7 @@ from xic_extractor.presets import (
     bind_cid_nl_recipe,
     load_preset,
 )
-from xic_extractor.raw_reader import RawReaderError
+from xic_extractor.raw_reader import RawReaderError, read_analysis_set
 from xic_extractor.sample_metadata import SampleMetadata
 from xic_extractor.settings_schema import (
     CANONICAL_SETTINGS_DEFAULTS,
@@ -98,7 +102,7 @@ class DiscoveryWorker(QThread):
                 summary = self._run_align_only(request)
             else:
                 raise ValueError(f"unknown discovery mode: {request.mode}")
-            if summary is None or self.isInterruptionRequested():
+            if summary is None:
                 self.cancelled.emit()
                 return
             self.finished.emit(summary)
@@ -108,18 +112,27 @@ class DiscoveryWorker(QThread):
             self.error.emit(f"Preset 錯誤：{exc}")
         except RawReaderError as exc:
             self.error.emit(f"Raw file 讀取失敗：{exc}")
-        except (AlignmentProcessExecutionError, ValueError, OSError, KeyError) as exc:
+        except (
+            AlignmentProcessExecutionError,
+            DiscoveryProcessExecutionError,
+            ValueError,
+            OSError,
+            KeyError,
+        ) as exc:
             self.error.emit(str(exc))
 
     def _run_full(self, request: DiscoveryRequest) -> dict[str, Any] | None:
         raw_dir = request.raw_dir
         if raw_dir is None:
             raise ValueError(f"RAW 資料夾中找不到 .raw 檔案：{request.raw_dir}")
-        raw_paths = _raw_paths_from_dir(raw_dir)
+        raw_paths = _raw_paths_from_dir(
+            raw_dir, request.dll_dir, request.sample_metadata
+        )
         if not raw_paths:
             raise ValueError(f"RAW 資料夾中找不到 .raw 檔案：{request.raw_dir}")
 
-        self.progress.emit(0, 2, "Discovery...")
+        total_steps = len(raw_paths) + 1
+        self.progress.emit(0, total_steps, "Discovery...")
         settings = self._build_settings(request)
         peak_config = self._discovery_peak_config(request, settings)
         run_spec = _compile_processing_run_spec(raw_paths, settings, peak_config)
@@ -130,21 +143,23 @@ class DiscoveryWorker(QThread):
             peak_config=peak_config,
             run_spec=run_spec,
             max_workers=_batch_discovery_workers(raw_paths, request.execution_profile),
+            should_cancel=self.isInterruptionRequested,
+            progress_callback=lambda done, total, sample: self.progress.emit(
+                done, total + 1, f"Discovery: {sample}"
+            ),
         )
         index_path = _batch_index_path(batch_outputs, request.output_dir)
         if self.isInterruptionRequested():
             return None
 
-        self.progress.emit(1, 2, "Alignment...")
+        self.progress.emit(len(raw_paths), total_steps, "Alignment...")
         outputs, owner_build_route = self._run_alignment(
             request,
             index_path=index_path,
             raw_dir=raw_dir,
         )
-        if self.isInterruptionRequested():
-            return None
 
-        self.progress.emit(2, 2, "完成")
+        self.progress.emit(total_steps, total_steps, "完成")
 
         summary = self._discovery_summary(request, index_path=index_path)
         summary.update(_alignment_summary(outputs, owner_build_route))
@@ -165,9 +180,8 @@ class DiscoveryWorker(QThread):
                 settings=settings,
                 peak_config=peak_config,
                 run_spec=run_spec,
+                should_cancel=self.isInterruptionRequested,
             )
-            if self.isInterruptionRequested():
-                return None
             self.progress.emit(1, 1, "完成")
             return {
                 "mode": "discovery_only",
@@ -182,10 +196,12 @@ class DiscoveryWorker(QThread):
                 "gallery_html": None,
             }
 
-        raw_paths = _raw_paths_from_dir(request.raw_dir)
+        raw_paths = _raw_paths_from_dir(
+            request.raw_dir, request.dll_dir, request.sample_metadata
+        )
         if not raw_paths:
             raise ValueError(f"RAW 資料夾中找不到 .raw 檔案：{request.raw_dir}")
-        self.progress.emit(0, 1, "Discovery...")
+        self.progress.emit(0, len(raw_paths), "Discovery...")
         settings = self._build_settings(request)
         peak_config = self._discovery_peak_config(request, settings)
         run_spec = _compile_processing_run_spec(raw_paths, settings, peak_config)
@@ -196,10 +212,10 @@ class DiscoveryWorker(QThread):
             peak_config=peak_config,
             run_spec=run_spec,
             max_workers=_batch_discovery_workers(raw_paths, request.execution_profile),
+            should_cancel=self.isInterruptionRequested,
+            progress_callback=self.progress.emit,
         )
-        if self.isInterruptionRequested():
-            return None
-        self.progress.emit(1, 1, "完成")
+        self.progress.emit(len(raw_paths), len(raw_paths), "完成")
         return self._discovery_summary(
             request,
             index_path=_batch_index_path(batch_outputs, request.output_dir),
@@ -219,8 +235,6 @@ class DiscoveryWorker(QThread):
             index_path=index_path,
             raw_dir=request.raw_dir,
         )
-        if self.isInterruptionRequested():
-            return None
 
         self.progress.emit(1, 1, "完成")
 
@@ -413,19 +427,15 @@ def _parked_gallery_summary() -> dict[str, Any]:
     }
 
 
-def _raw_paths_from_dir(raw_dir: Path | None) -> tuple[Path, ...]:
+def _raw_paths_from_dir(
+    raw_dir: Path | None,
+    dll_dir: Path,
+    sample_metadata: tuple[SampleMetadata, ...] | None,
+) -> tuple[Path, ...]:
     if raw_dir is None or not raw_dir.is_dir():
         return ()
-    return tuple(
-        sorted(
-            (
-                path
-                for path in raw_dir.iterdir()
-                if path.is_file() and path.suffix.lower() == ".raw"
-            ),
-            key=lambda path: path.name.lower(),
-        )
-    )
+    analysis_set = read_analysis_set(raw_dir, dll_dir, sample_metadata)
+    return tuple(sorted(analysis_set.raw_paths, key=lambda path: path.name.lower()))
 
 
 def _batch_discovery_workers(

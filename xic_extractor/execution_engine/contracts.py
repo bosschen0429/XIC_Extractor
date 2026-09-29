@@ -40,6 +40,8 @@ class WorkPartition(Generic[TPayload]):
     index: int
     partition_key: str
     payload: TPayload
+    work_unit_keys: tuple[str, ...]
+    resource_keys: tuple[str, ...]
 
 
 @dataclass(frozen=True, slots=True)

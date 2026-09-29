@@ -412,12 +412,7 @@ def _canonical_backfill_cell(cell: TargetedHypothesisCell) -> dict[str, object] 
 
     if cell.backfill_cell is None:
         return None
-    payload = asdict(cell.backfill_cell)
-    source_raw_file = cell.backfill_cell.source_raw_file
-    payload["source_raw_file"] = (
-        None if source_raw_file is None else source_raw_file.as_posix()
-    )
-    return payload
+    return asdict(cell.backfill_cell)
 
 
 def _validate_request_attempt(

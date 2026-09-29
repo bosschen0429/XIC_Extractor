@@ -1,0 +1,7 @@
+schema_version	sample_name	raw_stem	injection_order	sample_role	batch_id	prep_batch_id	matrix_type	group	excluded	exclusion_reason
+sample_metadata	NormalBC2052_DNA	NormalBC2052_DNA							true	實驗設計缺失：有進樣但不納入分析
+sample_metadata	NormalBC2163_DNA	NormalBC2163_DNA							true	實驗設計缺失：有進樣但不納入分析
+sample_metadata	NormalBC2179_DNA	NormalBC2179_DNA							true	實驗設計缺失：有進樣但不納入分析
+sample_metadata	NormalBC2208_DNA	NormalBC2208_DNA							true	實驗設計缺失：有進樣但不納入分析
+sample_metadata	TumorBC2286_RNA	TumorBC2286_RNA							true	實驗設計缺失：有進樣但不納入分析
+sample_metadata	TumorBC2304_RNA	TumorBC2304_RNA							true	實驗設計缺失：有進樣但不納入分析

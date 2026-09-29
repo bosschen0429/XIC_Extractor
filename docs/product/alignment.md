@@ -30,7 +30,11 @@ responses use work-unit keys to update those subjects while retaining the
 other subjects' initial results.
 
 The bounded Untargeted runtime keeps exact source-bound XIC and MS2 acquisition
-facts in the output directory's private `.cid_nl_acquisition_cache`. A retry
+facts in the output directory's private `.cid_nl_acquisition_cache`, or in the
+directory given by `--acquisition-cache-dir`. That directory belongs to no
+single run: runs into different output directories share it, and it is never
+removed. Entries are keyed by acquisition source and request and verified on
+read, so sharing cannot reuse another RAW file's or request's facts. A retry
 uses a new processing attempt and recomputes scientific decisions; matching
 queries reuse acquisition facts without repeating the vendor query. Source or
 query changes require acquisition for the affected entries. Sample batches with
@@ -137,6 +141,10 @@ Initial grouping uses the sparse feature index described below. It scores only
 compatible feature candidates and retains the evaluated evidence. Missing pair
 records mean `not_evaluated`; they do not prove incompatibility. Backfill checks
 its observation against the fixed destination group before admission.
+Window grouping scores the full precursor and product mass separation of each
+pair. A near-equal pairing to one sample cannot erase independent reciprocal
+support from another sample. Contested pairs do not grow bands; ambiguous
+owners without independent support remain unresolved.
 After local ordinary bands settle, a prepared batch warp and complete injection
 order allow bands separated by unobserved injections to join when their
 corrected RT trends and mass centres support one band, each is the other's
@@ -340,6 +348,14 @@ unresolved and rejected groups remain AuditTrail facts.
   support from another subject is admissible only through the group's exact
   owner-backed support binding. Matrix rows consume these completed groups and
   cells; writers do not merge subjects or invent cross-subject values.
+- A Matrix row's m/z is the mean of its members' observed m/z
+  (`center_mz_basis = cross_sample_owner_arithmetic_mean`). When any direct
+  member's Discovery candidate carries an apex MS1 reading (`ms1_apex_mz`), the
+  row reports the mean of those readings instead
+  (`center_mz_basis = discovery_ms1_apex_mean`). An inferred precursor's
+  observed m/z is product + loss and can sit 15–20 ppm from the MS1 ion; the
+  reading changes only the reported value, not grouping, traces, Backfill or
+  cell values.
 
 ### Cross-sample grouping and batch finalization
 
@@ -743,6 +759,50 @@ Retain this diagnostic only while an operator or validation gate consumes its
 crossing, ambiguity, or typed-lineage review. If those consumers disappear,
 remove the entry point and workflow, retaining only primitives reused by the
 Alignment owner.
+
+## Sample RT Calibration Diagnostic
+
+`python -m tools.diagnostics.build_sample_rt_calibration` places every sample
+on a common RT coordinate. CLI help owns the arguments. Anchors are
+`alignment_cells.tsv` features with `detected` status in at least the
+configured fraction of the batch's samples, not only ISTDs; backfilled or
+inferred cells never become anchors. `alignment.sample_rt_calibration` owns the
+model and has no RAW, file, or Matrix access.
+
+- Anchors whose median RT lies within the merge tolerance collapse into one
+  knot. Isotope, adduct, and fragment families of one compound share its RT;
+  kept separate, their per-sample order inverts and the piecewise model fails.
+- Each sample's knots pair its observed RT with the knot's cross-sample median.
+  They must increase strictly on both axes and reuse the formal drift owner's
+  `interpolate_calibrated_rt_min`. A calibrated RT exists only inside that
+  sample's first and last knot; outside that span it is unavailable, never
+  extrapolated. Fewer than two knots, or crossing knots, leave the sample
+  uncalibrated.
+- Measured data decides a perturbation; the
+  [injection timeline](sample-metadata-qc.md#injection-timeline-diagnostic)
+  explains it. The front shift is the median shift at the batch's earliest
+  knots. It is an outlier when it differs from the batch median, in either
+  direction, by more than max(k × batch MAD, a minimum shift). An outlier is
+  `confirmed` when the sample is pre-flagged, follows a short method, or is the
+  first full-length run after a method change. A short method uses the
+  timeline's persisted run-length limits without the idle limit, because a
+  short method can leave the gradient unsettled after a long idle. A method
+  change compares the instrument method with the latest earlier run longer than
+  the persisted length fraction, skipping blanks and SDO/LEK, whose own methods
+  always differ. Any other outlier is `unexplained_outlier`, such as a matrix
+  effect, and one without a timeline row is `outlier_without_timeline`.
+  A pre-flagged sample within tolerance is `flagged_unconfirmed`; a missing
+  front knot is `unmeasured`. Sample rows carry the previous injection, its run
+  length, the idle time, and the compared full-length run. Confirmation does not remove a sample's own
+  calibration; no current consumer reads the status.
+- Held-out validation compares non-anchor features before and after
+  calibration on the same observations: those inside each sample's anchor span,
+  for features with at least the configured fraction of such observations.
+
+Outputs are a JSON sidecar with the policy, knots, per-band knot counts, and
+per-sample knots, plus sample and held-out TSVs. Evidence is `diagnostic_only`.
+The diagnostic does not change grouping, peak selection, drift-corrected edge
+scoring, or values.
 
 ## Retained Validation Anchors
 

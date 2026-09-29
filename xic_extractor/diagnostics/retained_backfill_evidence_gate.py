@@ -137,7 +137,6 @@ CELL_REQUIRED_COLUMNS = (
     "gap_fill_state",
     "gap_fill_reason",
     "trace_quality",
-    "backfill_evidence_reason",
     "reason",
 )
 SEED_AUDIT_REQUIRED_COLUMNS = (
@@ -424,8 +423,6 @@ def _evaluate_group(
         missing_evidence.append("missing_seed_provenance")
     if _has_product_cell_backfill_context(family_cells):
         dependent_context.append("product_cell_backfill_context")
-    if _has_cell_evidence_reason(family_cells):
-        dependent_context.append("cell_backfill_evidence_reason_present")
     dependent_context.extend(_review_context_labels(review))
 
     if not selected_overlay:
@@ -633,15 +630,6 @@ def _has_product_cell_backfill_context(
         if text_value(cell.get("status")) == "backfilled":
             return True
     return False
-
-
-def _has_cell_evidence_reason(
-    family_cells: Sequence[Mapping[str, str]],
-) -> bool:
-    return any(
-        text_value(cell.get("backfill_evidence_reason"))
-        for cell in family_cells
-    )
 
 
 def _seed_groups_by_family(

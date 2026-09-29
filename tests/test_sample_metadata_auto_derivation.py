@@ -242,6 +242,40 @@ def test_derive_sample_metadata_creation_date_fallback() -> None:
 
 def test_infer_sample_role_extensions() -> None:
     assert infer_sample_role(None, sample_name="SDOLEK-1") == "system_suitability"
+    assert infer_sample_role(None, sample_name="SDO-posttest") == "system_suitability"
+    assert infer_sample_role(None, sample_name="SDOS_Tumor_1") == "study_sample"
     assert infer_sample_role(None, sample_name="ColumnWash") == "solvent"
     assert infer_sample_role(None, sample_name="StopFlow") == "solvent"
     assert infer_sample_role(None, sample_name="250ppb_Mix_STDs") == "calibrator"
+
+
+def test_derive_metadata_with_batch_id_ignores_subfolders() -> None:
+    top = Path("/data/run/Sample1.raw")
+    nested = Path("/data/run/except sample/Sample2.raw")
+    headers = {
+        path: RawSampleHeader(
+            raw_path=str(path),
+            raw_stem=path.stem,
+            sample_name=path.stem,
+            sample_id="1",
+            row_number=None,
+            sample_type="Unknown",
+            creation_date=datetime(2026, 1, 1, 10 + index),
+            vial="",
+            comment="",
+        )
+        for index, path in enumerate((top, nested))
+    }
+
+    with patch(
+        "xic_extractor.raw_reader.read_raw_sample_header",
+        side_effect=lambda p, dll_dir: headers[p],
+    ):
+        rows = derive_sample_metadata_from_raw_files(
+            [nested, top], dll_dir=Path("/dummy/dll"), batch_id="run"
+        )
+
+    assert [(r.raw_stem, r.batch_id, r.injection_order) for r in rows] == [
+        ("Sample1", "run", 1),
+        ("Sample2", "run", 2),
+    ]

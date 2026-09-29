@@ -9,6 +9,7 @@ from xic_extractor.mass_accuracy import (
     mz_window,
     neutral_loss_match,
     signed_ppm_error,
+    weighted_ion_mz,
     within_ppm,
 )
 
@@ -111,3 +112,18 @@ def test_within_ppm_evaluates_accuracy_and_safely_handles_invalid_inputs() -> No
     assert within_ppm(500.0, 500.0, -1.0) is False
     assert within_ppm(float("nan"), 500.0, 20.0) is False
     assert within_ppm(500.0, float("inf"), 20.0) is False
+
+
+def test_weighted_ion_mz_averages_one_ion_by_intensity() -> None:
+    readings = [(359.2410, 1.0e6), (359.2414, 3.0e6), (359.2412, 0.0)]
+
+    assert weighted_ion_mz(readings, max_spread_ppm=5.0) == pytest.approx(359.2413)
+
+
+def test_weighted_ion_mz_refuses_readings_from_two_ions() -> None:
+    # 359.2413 and 359.2440 are 7.5 ppm apart: two ions share the window.
+    readings = [(359.2413, 1.0e6), (359.2440, 1.0e6)]
+
+    assert weighted_ion_mz(readings, max_spread_ppm=5.0) is None
+    assert weighted_ion_mz([], max_spread_ppm=5.0) is None
+    assert weighted_ion_mz([(float("nan"), 1.0)], max_spread_ppm=5.0) is None

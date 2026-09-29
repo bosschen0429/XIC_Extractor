@@ -169,8 +169,8 @@ def test_streamed_provisional_artifacts_match_frozen_materializing_hashes(
             143,
         ),
         "identity.tsv": (
-            "3b1ed4c241b07fac957abc8152f03825e9736d93077ad125ee236b5c0295239c",
-            918,
+            "579991fa8be54f06134845790a72c423f99147e26ba9e548a548563558520761",
+            864,
         ),
         "provenance.tsv": (
             "b1d1b7234d76937b7f3080be10d4d7db97bd26b41f0f25d828777311a66ae3bf",
@@ -195,7 +195,6 @@ def test_provisional_writer_timing_reports_only_owner_supported_phases(
         outputs,
         matrix,
         metadata=_provisional_metadata(),
-        ownership=SimpleNamespace(assignments=(), ambiguous_records=()),
         alignment_config=config,
         production_decisions=build_production_decisions(matrix, config),
         timing_recorder=recorder,
@@ -304,7 +303,6 @@ def test_streamed_pipeline_matches_frozen_formula_and_unquantified_bytes(
         streamed_outputs,
         matrix,
         metadata=_provisional_metadata(),
-        ownership=SimpleNamespace(assignments=(), ambiguous_records=()),
         alignment_config=config,
         production_decisions=build_production_decisions(matrix, config),
         timing_recorder=TimingRecorder("alignment", instrument_writers=True),
@@ -320,8 +318,8 @@ def test_streamed_pipeline_matches_frozen_formula_and_unquantified_bytes(
             123,
         ),
         "provisional_row_identity.tsv": (
-            "842113b31fa92ad431fdf50fc410647712a19d147c65658f8d9f955ca5dfaa4f",
-            903,
+            "5f809444a041c4f5535b038ab3847cc9a626b0e915f413be0c43eb00694396cd",
+            849,
         ),
         "provisional_cell_provenance.tsv": (
             "211cbf94e4c30476383888a9f44960d4b2ba4a6ed3fc21493703004893815a92",
@@ -332,8 +330,8 @@ def test_streamed_pipeline_matches_frozen_formula_and_unquantified_bytes(
             567,
         ),
         "alignment_owner_backfill_peak_fact_provenance.tsv": (
-            "96b42a4ad44cc07fa70aeb853e2e440c9e9fb0059e2a80210caf741f55bf3f69",
-            1663,
+            "6d02dc85860f193e16866b9f613d0d4bb9dae9d39d72be15849969a92082a3c4",
+            562,
         ),
     }
 
@@ -497,7 +495,6 @@ def test_provisional_outputs_publish_as_one_atomic_set(tmp_path: Path) -> None:
         outputs,
         matrix,
         metadata=_provisional_metadata(),
-        ownership=SimpleNamespace(assignments=(), ambiguous_records=()),
         alignment_config=config,
         production_decisions=build_production_decisions(matrix, config),
     )
@@ -527,7 +524,6 @@ def test_provisional_outputs_reject_any_incomplete_bundle(tmp_path: Path) -> Non
             outputs,
             matrix,
             metadata=_provisional_metadata(),
-            ownership=SimpleNamespace(assignments=(), ambiguous_records=()),
             alignment_config=config,
             production_decisions=build_production_decisions(matrix, config),
         )
@@ -568,7 +564,6 @@ def test_provisional_output_failure_leaves_no_partial_final_set(
             outputs,
             matrix,
             metadata=_provisional_metadata(),
-            ownership=SimpleNamespace(assignments=(), ambiguous_records=()),
             alignment_config=config,
             production_decisions=build_production_decisions(matrix, config),
         )
@@ -660,7 +655,6 @@ def _group(group_id: str, family_id: str, *, mz: float, rt: float) -> object:
         members=(SimpleNamespace(owner_id=f"owner:{group_id}"),),
         review_only=False,
         identity_conflict=False,
-        consolidation_state="not_consolidated",
         group_construction_role="successor_constructor",
         group_membership_source="cross_sample_peak_group_hypothesis",
     )
@@ -689,9 +683,6 @@ def _cell(
         trace_quality="clean" if status == "detected" else "owner_backfill",
         scan_support_score=0.8 if status == "detected" else None,
         source_candidate_id=source_candidate_id,
-        source_raw_file=(
-            Path(f"{sample_stem}.raw") if source_candidate_id is not None else None
-        ),
         reason=status,
         selected_integration=_integration(area),
         group_hypothesis_id=cell_group_hypothesis_id or group_id,

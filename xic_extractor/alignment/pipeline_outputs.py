@@ -21,7 +21,6 @@ from xic_extractor.alignment.artifact_write_receipts import (
 from xic_extractor.alignment.backfill.evaluation_coverage import (
     BackfillEvaluationCoverageBatch,
 )
-from xic_extractor.alignment.backfill_peak_fact import BackfillCandidateAuditRow
 from xic_extractor.alignment.backfill_peak_fact_provenance import (
     BACKFILL_PEAK_FACT_PROVENANCE_SCHEMA_VERSION,
     EMPTY_BACKFILL_PEAK_FACT_PROVENANCE_BATCH,
@@ -30,12 +29,8 @@ from xic_extractor.alignment.backfill_peak_fact_provenance import (
 )
 from xic_extractor.alignment.backfill_scope import (
     REQUEST_PLAN_VERSION,
-    SkippedEvidenceRecord,
-    write_skipped_evidence_ledger_tsv,
 )
 from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.alignment.debug_writer import write_owner_edge_evidence_tsv
-from xic_extractor.alignment.edge_scoring import OwnerEdgeEvidence
 from xic_extractor.alignment.matrix import AlignmentMatrix
 from xic_extractor.alignment.ms1_index_source import (
     BackfillXicBackend,
@@ -46,7 +41,6 @@ from xic_extractor.alignment.output_levels import (
     artifact_names_for_output_level,
 )
 from xic_extractor.alignment.owner_build_route_receipt import OwnerBuildRouteReceipt
-from xic_extractor.alignment.ownership import OwnershipBuildResult
 from xic_extractor.alignment.production_decisions import ProductionDecisionSet
 from xic_extractor.alignment.provisional_matrix import (
     build_provisional_matrix_projection,
@@ -56,10 +50,8 @@ from xic_extractor.alignment.provisional_matrix import (
     write_provisional_summary_json,
 )
 from xic_extractor.alignment.tsv_writer import (
-    write_alignment_backfill_candidate_audit_tsv,
     write_alignment_backfill_cell_evidence_tsv,
     write_alignment_backfill_seed_audit_tsv,
-    write_alignment_cell_integration_audit_tsv,
     write_alignment_cells_tsv,
     write_alignment_matrix_identity_tsv,
     write_alignment_matrix_tsv,
@@ -87,12 +79,8 @@ class AlignmentRunOutputs:
     owner_backfill_peak_fact_provenance_tsv: Path | None = None
     backfill_cell_evidence_tsv: Path | None = None
     cells_tsv: Path | None = None
-    integration_audit_tsv: Path | None = None
     backfill_seed_audit_tsv: Path | None = None
-    backfill_candidate_audit_tsv: Path | None = None
     status_matrix_tsv: Path | None = None
-    edge_evidence_tsv: Path | None = None
-    skipped_evidence_ledger_tsv: Path | None = None
     run_metadata_json: Path | None = None
     identity_coherence_output_dir: Path | None = None
     provisional_matrix_tsv: Path | None = None
@@ -117,10 +105,7 @@ def output_paths(
     output_level: AlignmentOutputLevel,
     emit_alignment_cells: bool,
     emit_alignment_status_matrix: bool,
-    emit_alignment_integration_audit: bool = False,
     emit_alignment_backfill_seed_audit: bool = False,
-    emit_alignment_backfill_candidate_audit: bool = False,
-    emit_skipped_evidence_ledger: bool = False,
     emit_target_snapshot_metadata: bool = False,
     emit_provisional_matrix: bool = False,
 ) -> AlignmentRunOutputs:
@@ -160,19 +145,9 @@ def output_paths(
             if "alignment_backfill_cell_evidence.tsv" in artifacts
             else None
         ),
-        integration_audit_tsv=(
-            output_dir / "alignment_cell_integration_audit.tsv"
-            if emit_alignment_integration_audit
-            else None
-        ),
         backfill_seed_audit_tsv=(
             output_dir / "alignment_owner_backfill_seed_audit.tsv"
             if emit_alignment_backfill_seed_audit
-            else None
-        ),
-        backfill_candidate_audit_tsv=(
-            output_dir / "alignment_owner_backfill_candidate_audit.tsv"
-            if emit_alignment_backfill_candidate_audit
             else None
         ),
         status_matrix_tsv=(
@@ -180,19 +155,9 @@ def output_paths(
             if "alignment_matrix_status.tsv" in artifacts
             else None
         ),
-        edge_evidence_tsv=(
-            output_dir / "owner_edge_evidence.tsv"
-            if "owner_edge_evidence.tsv" in artifacts
-            else None
-        ),
-        skipped_evidence_ledger_tsv=(
-            output_dir / "skipped_evidence_ledger.tsv"
-            if emit_skipped_evidence_ledger
-            else None
-        ),
         run_metadata_json=(
             output_dir / "alignment_run_metadata.json"
-            if emit_skipped_evidence_ledger or emit_target_snapshot_metadata
+            if emit_target_snapshot_metadata
             else None
         ),
         provisional_matrix_tsv=(
@@ -328,17 +293,11 @@ def write_outputs_atomic(
     matrix: AlignmentMatrix,
     *,
     metadata: dict[str, str],
-    ownership: OwnershipBuildResult,
     alignment_config: AlignmentConfig,
-    edge_evidence: Sequence[OwnerEdgeEvidence] = (),
-    skipped_evidence: Sequence[SkippedEvidenceRecord] = (),
-    owner_backfill_candidate_audit_rows: Sequence[BackfillCandidateAuditRow] = (),
     backfill_peak_fact_provenance: BackfillPeakFactProvenanceBatch = (
         EMPTY_BACKFILL_PEAK_FACT_PROVENANCE_BATCH
     ),
     production_decisions: ProductionDecisionSet,
-    baseline_integration_method: str = "asls",
-    baseline_audit_method: str = "",
     timing_recorder: TimingRecorder | None = None,
     capture_artifact_fingerprints: bool = False,
 ) -> AlignmentArtifactFingerprintBatch | None:
@@ -465,18 +424,6 @@ def write_outputs_atomic(
                 ),
             ),
         )
-    if outputs.integration_audit_tsv is not None:
-        output_paths_and_writers.append(
-            (
-                outputs.integration_audit_tsv,
-                lambda path: write_alignment_cell_integration_audit_tsv(
-                    path,
-                    matrix,
-                    baseline_integration_method=baseline_integration_method,
-                    baseline_audit_method=baseline_audit_method,
-                ),
-            ),
-        )
     if outputs.backfill_seed_audit_tsv is not None:
         output_paths_and_writers.append(
             (
@@ -484,16 +431,6 @@ def write_outputs_atomic(
                 lambda path: write_alignment_backfill_seed_audit_tsv(
                     path,
                     matrix,
-                ),
-            ),
-        )
-    if outputs.backfill_candidate_audit_tsv is not None:
-        output_paths_and_writers.append(
-            (
-                outputs.backfill_candidate_audit_tsv,
-                lambda path: write_alignment_backfill_candidate_audit_tsv(
-                    path,
-                    owner_backfill_candidate_audit_rows,
                 ),
             ),
         )
@@ -513,20 +450,6 @@ def write_outputs_atomic(
                 outputs.status_matrix_tsv,
                 lambda path: write_alignment_status_matrix_tsv(path, matrix),
             )
-        )
-    if outputs.edge_evidence_tsv is not None:
-        output_paths_and_writers.append(
-            (
-                outputs.edge_evidence_tsv,
-                lambda path: write_owner_edge_evidence_tsv(path, edge_evidence),
-            ),
-        )
-    if outputs.skipped_evidence_ledger_tsv is not None:
-        output_paths_and_writers.append(
-            (
-                outputs.skipped_evidence_ledger_tsv,
-                lambda path: write_skipped_evidence_ledger_tsv(path, skipped_evidence),
-            ),
         )
     if outputs.run_metadata_json is not None:
         output_paths_and_writers.append(
@@ -586,9 +509,6 @@ def supports_streamed_untargeted_outputs(outputs: AlignmentRunOutputs) -> bool:
         (
             outputs.status_matrix_tsv,
             outputs.backfill_seed_audit_tsv,
-            outputs.backfill_candidate_audit_tsv,
-            outputs.edge_evidence_tsv,
-            outputs.skipped_evidence_ledger_tsv,
             outputs.provisional_matrix_tsv,
             outputs.provisional_identity_tsv,
             outputs.provisional_cell_provenance_tsv,
@@ -619,7 +539,6 @@ def write_streamed_untargeted_outputs_atomic(
             ("review", outputs.review_tsv),
             ("backfill", outputs.backfill_cell_evidence_tsv),
             ("cells", outputs.cells_tsv),
-            ("integration", outputs.integration_audit_tsv),
         )
         if path is not None
     }

@@ -7,7 +7,7 @@ Repo owner: docs/diagnostic-ledger.md
 Doc exit rule: Keep active while expensive RAW rerun memory is needed; retire only after durable diagnostic memory moves to a replacement canonical owner.
 
 **Status:** maintained repo-local diagnostic memory
-**Last updated:** 2026-09-24
+**Last updated:** 2026-09-28
 
 This ledger records diagnostic conclusions that should survive branch and
 worktree changes. Use it before rerunning expensive RAW validation or treating a
@@ -65,6 +65,75 @@ dated productization control-plane path is compatibility lookup only.
 | Thermo DLL dir | `$env:THERMO_RAWFILE_READER_DLL_DIR` |
 
 ## Known Diagnostic Conclusions
+
+### 2026-09-28 Inferred Precursor MS1 Ion Offsets By m/z Band
+
+#546, decision A step 2. Evidence: `diagnostic_only`; two RAWs
+(`TumorBC2264_DNA`, `Breast_Cancer_Tissue_pooled_QC3`), default `DNA_dR`
+settings; probes and outputs are under `output/i546/`.
+
+- MS2 is Orbitrap centroid (`FTMS + c ... cid40.00`), and Discovery reads the
+  instrument's centroids. Direct seeds, whose precursor is the selected ion,
+  have product errors with medians of +4.8, +1.8, +2.4 and +7.0 ppm below
+  m/z 300, from 300 to 500, from 500 to 700 and from 700; 85%, 82%, 76% and
+  42% lie within 10 ppm.
+- Seed-level target-decoy: for 7,799 inferred seeds, the nearest MS1 centroid
+  to product + loss (+-60 ppm, strongest scan within +-0.35 min) was counted
+  against the same query shifted by +-5 Da. Below m/z 500 the excess over the
+  decoys lies within -10 to +10 ppm, and 10 to 20 ppm occurs at chance. From
+  500 to 700 it spreads from -30 to +60 ppm. From 700 it concentrates between
+  +15 and +35 ppm.
+- Candidate level, running Discovery with m/z-banded windows (-10/+10 below
+  500, +-20 from 500 to 700, -10/+30 from 700) and a decoy that adds 5 Da to
+  every inferred seed: below 500, 30 target and 29 decoy peaks lose their
+  feature; from 700, target candidates rise from 73 to 99 and decoys from 35
+  to 37. From 500 to 700, 93 target and 48 decoy inferred peaks read an ion.
+- Readings from two ions are mostly chance (12 target, 10 decoy peaks before
+  the merge); with the banded windows, holding such candidates for review
+  removes 6 target and 7 decoy candidates after the merge
+  (`output/i546/amb_compare.py`).
+- Not adopted: the offsets follow from the method's ddMS2 resolution (15,000
+  against 60,000 for MS1), so Discovery treats product + loss only as a pointer
+  and reads the ion inside the request; the banded windows added a rule
+  without changing that source of truth.
+- Candidate CSV `precursor_mz` then kept six significant digits, so offsets
+  computed from CSV values carry up to about 2 ppm of rounding.
+
+Rerun when the instrument, its MS2 resolution or calibration, or the method
+changes.
+
+### 2026-09-28 Discovery MS1 Acquisition Shares Super-Window Reads With Identical Outputs
+
+#546, decision A step 1. Discovery `ms1_backfill` acquires through
+`RawSuperWindowSource`, now `xic_extractor/raw_superwindow_source.py` so that
+Discovery does not import Alignment. Requests and per-request traces are
+unchanged.
+
+- Two RAWs (`TumorBC2264_DNA`, `Breast_Cancer_Tissue_pooled_QC3`), default
+  `DNA_dR` settings: `discovery_candidates.csv`, `discovery_review.csv` and
+  `discovery_physical_facts.json` are byte-identical to master `f097894b`.
+  Vendor chromatogram calls fall from 3,082 to 53 and from 3,788 to 49.
+  `discover.ms1_backfill` takes 16.4 s against 28.6 s and 20.5 s against
+  36.9 s; the stage sum is 23.9 s against 38.9 s and 30.0 s against 48.6 s.
+  These are single runs with the baseline first. An alternating
+  exact/super-window/exact probe on one RAW gave 23.7, 15.1 and 25.6 s with
+  identical outputs.
+- After the change, vendor acquisition is 1.6 s of `ms1_backfill` on
+  `TumorBC2264_DNA` (unprofiled wrappers, one run, #546 branch code). Per-trace
+  physical evaluation takes 9.3 s over 5,726 calls, physical fact record
+  validation 6.0 s over 16,061 calls (partly inside that evaluation), and the
+  candidate merge 4.3 s. Under cProfile the merge makes 3.86 million pairwise
+  checks.
+- The ion-first prototype (`output/i546/ion_first_prototype.py`) evaluates
+  about 1,244 ion traces on the same RAW. Its remaining speed advantage comes
+  from that semantic change, not from acquisition.
+- `discovery_ms1_predicted_chunked_call_count` still reports the exact-window
+  call count; `adapter_chromatogram_call_count` reports actual calls.
+- Evidence: `diagnostic_only`; artifacts are under
+  `output/discovery-superwindow/` and `output/i546/sw-probe/`.
+
+Rerun only when Discovery request planning, super-window grouping or cropping,
+or the RAW reader changes.
 
 ### 2026-09-25 Process RAW Workers Halve Full85 Runtime With Identical Outputs
 
@@ -3360,16 +3429,11 @@ benchmark mismatches stay in the quantitative follow-up lane.
 
 The retained 85RAW artifact whose legacy manifest asserts revision
 `7eef01e273ee62b91bd6c07e4a455994f76ca37b` was read without opening RAW files.
-`tools/diagnostics/backfill_decision_ledger.py` rehydrated every Discovery CSV
-through its owner receipt and streamed each large alignment projection once.
-The bounded output is reproducible with:
-
-```powershell
-.venv\Scripts\python.exe -m tools.diagnostics.backfill_decision_ledger `
-  --artifact-root <retained-artifact-root> `
-  --output-dir output/issue195_backfill_decision_ledger `
-  --expected-code-revision 7eef01e273ee62b91bd6c07e4a455994f76ca37b
-```
+The retired `tools/diagnostics/backfill_decision_ledger.py` rehydrated every
+Discovery CSV through its owner receipt and streamed each large alignment
+projection once. It was retired in #490 because current Alignment no longer
+produces `consolidation_state`, so its winner/loser settlement layer cannot be
+observed in a current artifact.
 
 The complete owner rehydration accepted `317,036` rows. Its parser requires a
 unique `sample + neutral_loss_tag + ms1_feature_row_id` for every feature-backed

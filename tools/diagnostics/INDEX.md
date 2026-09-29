@@ -315,27 +315,18 @@ authority.
 
 ---
 
-### `backfill_decision_ledger.py`
+### `build_sample_rt_calibration.py`
 
-**Purpose**: Build a deterministic, bounded, no-RAW decision ledger and summary
-from a retained full-universe artifact. Discovery candidate rows are rehydrated
-through their owner receipts; incomplete owner/group/request projections are
-reported as unavailable instead of being promoted to semantic proof.
-**Topic group**: `backfill_decision_ledger.py` +
-`xic_extractor/diagnostics/backfill_decision_ledger.py`
-**Originating issue**: [#195](https://github.com/Chao-hu-Lab/XIC_Extractor/issues/195)
-**Status note**: The output remains `diagnostic_only`. Displayed seed m/z/RT
-duplicates are labeled as a projection-only request proxy, never as exact
-request equivalence or optimization savings. Ranking requires a complete
-`full-audit` Backfill scope with zero skipped features, closed feature counts,
-and exact equality with the review-group universe. Candidate/group projection
-links bind both sample and candidate identity; request-proxy rendering is
-row-order neutral. Candidate-layer uniqueness is limited to feature-backed
-states and reported as acceptance of the Discovery owner's parser invariant,
-not as an independently variable post-owner duplicate counter. Populated IDs
-outside that invariant domain are counted separately. The tool neither accepts
-RAW paths nor changes scientific
-selection, Backfill eligibility, Matrix, writer, or activation behavior.
+- **Role:** evidence producer; maintained operator interface.
+- **Owner:** `xic_extractor.alignment.sample_rt_calibration`; contract in
+  [`alignment.md`](../../docs/product/alignment.md#sample-rt-calibration-diagnostic).
+- **Use:** `python -m tools.diagnostics.build_sample_rt_calibration --help`.
+- **Outputs:** calibration JSON, sample TSV, and held-out TSV from
+  `alignment_cells.tsv` plus an optional injection timeline JSON. It does not
+  read RAW.
+- **Authority:** `diagnostic_only`; no grouping, selection, RT, or value
+  authority. Keep until a correspondence owner adopts the same model; the older
+  `analyze_rt_normalization_anchors.py` uses Targeted-workbook anchors instead.
 
 ---
 
@@ -757,6 +748,24 @@ until an explicit product-transfer decision and consolidation policy exist.
 
 ---
 
+### `check_reference_consistency.py`
+
+**Purpose**: Review Targeted input reference RT consistency across methods and
+within RAW peak-cluster positions, without changing inputs or selection.
+**Topic group**: `xic_extractor.diagnostics.reference_consistency` owns pure
+mapping and cluster checks; `reference_consistency_io` reuses target config and
+RAW acquisition owners.
+**Exposure / lifecycle**: maintained operator interface / diagnostic oracle.
+**Usage**: `python -m tools.diagnostics.check_reference_consistency --help`.
+An explicit JSON manifest contains `groups`, each with `name`, `targets_csv`,
+and optional `raw_files`. Relative paths resolve against the manifest directory.
+Use `--preflight-only` before RAW acquisition. Requests deduplicate m/z and ppm
+within each RAW; each RAW opens once. Outputs are `reference_consistency.json`
+(including leave-one-out errors, policy, input hashes and RAW identities) and
+`reference_review.tsv`. Mapping-only warnings are informational; RAW multi-cluster
+conflicts can be high. Single-group runs skip mapping. Retain while Targeted
+reference input review needs this oracle; no matrix or reference-writing authority.
+
 ### `build_targeted_ms1_shape_identity_supports.py`
 
 **Purpose**: Build generic `targeted_ms1_shape_identity` evidence rows from
@@ -824,6 +833,21 @@ not recompute candidate evidence.
 ---
 
 ## Instrument QC
+
+### `build_injection_timeline.py`
+
+- **Role:** evidence producer; maintained operator interface.
+- **Owner:** `xic_extractor.injection_timeline`, with RAW/SLD acquisition in
+  `xic_extractor.raw_reader`; contract in
+  [`sample-metadata-qc.md`](../../docs/product/sample-metadata-qc.md#injection-timeline-diagnostic).
+- **Use:** `python -m tools.diagnostics.build_injection_timeline --help`.
+- **Outputs:** injection timeline JSON and TSV with recursive chronology,
+  copy provenance, previous injection/idle, persisted perturbation policy, and
+  optional sequence comparisons. No spectra are acquired; each discovered RAW
+  is opened once for header facts, without content hashing or acquisition cache.
+- **Authority:** `diagnostic_only`; no selection, RT, value, or analysis-set
+  authority. Keep as the batch chronology producer for offline diagnostics;
+  retire if run metadata adopts the same producer and sidecar contract.
 
 The Instrument QC suite is a coherent product surface; six entry-points
 share the `instrument_qc_*` prefix. Per the lifecycle spec, several of

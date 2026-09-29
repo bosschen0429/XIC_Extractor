@@ -51,8 +51,6 @@ FULL_COHORT_ACCEPTANCE_GATE_COLUMNS = (
     "full_cohort_trace_quality",
     "full_cohort_review_identity_decision",
     "full_cohort_include_in_primary_matrix",
-    "full_cohort_consolidation_state",
-    "full_cohort_consolidation_winner_group_hypothesis_id",
     "full_cohort_row_flags",
     "full_cohort_acceptance_gate_status",
     "full_cohort_slice_blockers",
@@ -162,12 +160,6 @@ def _build_gate_row(
     gate_status = _gate_status(blockers, candidate_match)
     review = candidate_match.review_row or {}
     cell = candidate_match.cell_row or {}
-    consolidation_state = _value(review, "consolidation_state") or _value(
-        cell, "consolidation_state"
-    )
-    consolidation_winner = _value(
-        review, "consolidation_winner_group_hypothesis_id"
-    ) or _value(cell, "consolidation_winner_group_hypothesis_id")
     return {
         "schema_version": SCHEMA_VERSION,
         "source_run_id": source_run_id,
@@ -208,8 +200,6 @@ def _build_gate_row(
             review,
             "include_in_primary_matrix",
         ),
-        "full_cohort_consolidation_state": consolidation_state,
-        "full_cohort_consolidation_winner_group_hypothesis_id": consolidation_winner,
         "full_cohort_row_flags": _value(review, "row_flags"),
         "full_cohort_acceptance_gate_status": gate_status,
         "full_cohort_slice_blockers": ";".join(blockers),
@@ -231,15 +221,6 @@ def _blockers(
     blockers: list[str] = []
     if _value(review, "include_in_primary_matrix") != "TRUE":
         blockers.append("full_cohort_candidate_not_primary_matrix_row")
-
-    consolidation_state = _value(review, "consolidation_state") or _value(
-        cell, "consolidation_state"
-    )
-    consolidation_winner = _value(
-        review, "consolidation_winner_group_hypothesis_id"
-    ) or _value(cell, "consolidation_winner_group_hypothesis_id")
-    if consolidation_state == "primary_loser" or consolidation_winner:
-        blockers.append("full_cohort_candidate_family_consolidation_review_required")
 
     status = _value(cell, "status")
     if status not in _ACCEPTABLE_DIRECT_CELL_STATUSES:
@@ -334,15 +315,6 @@ def _summary(
         ),
         "not_primary_matrix_row_count": blocker_counts.get(
             "full_cohort_candidate_not_primary_matrix_row",
-            0,
-        ),
-        "primary_loser_count": sum(
-            1
-            for row in rows
-            if _value(row, "full_cohort_consolidation_state") == "primary_loser"
-        ),
-        "family_consolidation_review_count": blocker_counts.get(
-            "full_cohort_candidate_family_consolidation_review_required",
             0,
         ),
         "duplicate_assigned_count": blocker_counts.get(

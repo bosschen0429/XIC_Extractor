@@ -80,7 +80,7 @@ def test_alignment_process_backend_delegates_execution_mechanics():
 
 def test_alignment_import_normalization_resolves_relative_process_backend():
     tree = ast.parse(
-        "from .process_backend import OwnerBuildSampleResult\n"
+        "from .process_backend import AlignmentProcessExecutionError\n"
         "from . import process_backend\n"
     )
 

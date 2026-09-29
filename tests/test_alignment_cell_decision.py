@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import math
+import pickle
 from copy import copy
 from dataclasses import FrozenInstanceError
 from pathlib import Path
 from typing import Any, cast
 
+import numpy as np
 import pytest
 
 import xic_extractor.alignment.projection.untarget.pre_cell as untarget_owner
@@ -80,7 +82,10 @@ from xic_extractor.peak_detection.models import (
     PeakDetectionResult,
     PeakResult,
 )
-from xic_extractor.peak_detection.observations import mint_peak_observation_ref
+from xic_extractor.peak_detection.observations import (
+    mint_peak_observation_ref,
+    physical_peak_observation_integration,
+)
 from xic_extractor.peak_detection.physical_peak_evaluation import (
     evaluate_physical_peak,
     prepare_physical_signal,
@@ -147,6 +152,41 @@ def test_target_population_emits_one_numeric_or_no_write_per_exact_subject(
     )
     for item in decisions:
         validate_production_cell_decision(item)
+
+
+def test_target_censored_observed_area_survives_public_decision_and_pickle(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "tests.test_cell_observations.cid_nl_peak",
+        _censored_peak,
+    )
+    _fixture, _scope, alignment, _hypotheses = _finalized_case(
+        tmp_path,
+        sample_stems=("sample-a", "sample-b"),
+        observed_stems=("sample-a",),
+        group_specs=((("sample-a", "sample-b"), "provisional"),),
+    )
+    projection = project_target_pre_cell(alignment)
+    decision = next(
+        item
+        for item in decide_target_cell_population(projection)
+        if item.variant != "searched_no_observation"
+    )
+    integration = decision.subject.terminal_subject.hypothesis.integration
+    expected_area = integration.area_raw_counts_seconds
+
+    assert expected_area > 0
+    assert decision.variant == "numeric"
+    assert decision.value == expected_area
+    assert decision.source == "trapezoid_counts_seconds_on_observed_censored_signal"
+    assert "near_detection_limit" in integration.boundary_sources
+    restored = pickle.loads(pickle.dumps(decision))
+    validate_production_cell_decision(restored)
+    assert restored.value == expected_area
+    assert restored.source == decision.source
+    assert restored.subject.terminal_subject.hypothesis.integration == integration
 
 
 @pytest.mark.parametrize("variant", ["missing", "duplicate", "substituted"])
@@ -969,4 +1009,54 @@ def _numeric_peak(
         integration=integration,
         resolver_mode="local_minimum",
         proposal_sources=("local_minimum",),
+    )
+
+
+def _censored_peak(
+    fixture: Any,
+    sample_stem: str,
+    *,
+    mz: float = PRECURSOR_MZ,
+    apex_rt: float = 8.0,
+    **_kwargs: Any,
+) -> Any:
+    sample = fixture.sample(sample_stem)
+    source = resolve_request_acquisition_source(
+        processing_owners=fixture.owners,
+        sample=sample,
+    )
+    rt = np.arange(401, dtype=float) / 100.0 + apex_rt - 2.0
+    intensity = np.zeros(401)
+    positions = np.arange(160, 241)
+    positions = positions[(positions % 3 == 0) | (positions == 199)]
+    intensity[positions] = 100.0 + 200.0 * np.exp(-(((positions - 200) / 25.0) ** 2))
+    profile = SignalProcessingProfile()
+    prepared = prepare_physical_signal(rt, intensity, profile=profile)
+    assert prepared.prepared is not None
+    evaluation = evaluate_physical_peak(
+        prepared,
+        selection_subject_id=f"censored-cluster-{sample_stem}",
+        query_rt_min=apex_rt,
+    )
+    trace = Trace.from_arrays(
+        sample_name=sample_stem,
+        mz=mz,
+        rt=rt,
+        intensity=intensity,
+        rt_min=float(rt[0]),
+        rt_max=float(rt[-1]),
+        ppm_tol=10.0,
+        source="cell_decision_no_raw_fixture",
+        acquisition_source_id=source.acquisition_source_id,
+    )
+    return mint_peak_observation_ref(
+        processing_owners=fixture.owners,
+        sample=sample,
+        trace=trace,
+        integration=physical_peak_observation_integration(evaluation),
+        selection_intensity=prepared.prepared.positive_signal,
+        resolver_mode="canonical_physical_signal",
+        proposal_sources=("canonical_physical_segment",),
+        physical_evaluation=evaluation,
+        signal_processing_profile=profile,
     )

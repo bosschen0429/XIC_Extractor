@@ -195,7 +195,6 @@ def matrix(sample_order: tuple[str, ...]) -> AlignmentMatrix:
                 trace_quality="clean",
                 scan_support_score=0.8,
                 source_candidate_id=candidate_id(sample_stem),
-                source_raw_file=Path(f"{sample_stem}.raw"),
                 reason="detected",
             )
             for sample_stem in sample_order
@@ -218,7 +217,6 @@ def cell(sample_stem: str, *, cluster_id: str) -> AlignedCell:
         trace_quality="owner_backfill",
         scan_support_score=None,
         source_candidate_id=None,
-        source_raw_file=None,
         reason="owner-centered MS1 backfill",
     )
 

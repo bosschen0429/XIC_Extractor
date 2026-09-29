@@ -72,7 +72,6 @@ def test_owner_backfill_backfills_missing_sample_from_feature_center() -> None:
     assert cell.gap_fill_state == "gap_fill_rescued"
     assert cell.gap_fill_reason == "group_centered_query_detected"
     assert cell.missing_observation_state == "queried_and_detected"
-    assert cell.group_claim_state == "unclaimed_or_winner"
     assert cell.scan_support_score == 0.9
     assert cell.region_candidate_count is not None
     assert cell.region_shadow_status == "evaluated"
@@ -350,9 +349,6 @@ def test_owner_backfill_accepts_delivery_contract_feature_without_legacy_dto() -
         group_construction_role="successor_projection_adapter",
         group_delivery_role="successor_delivery_protocol",
         group_membership_source="cross_sample_peak_group_hypothesis",
-        consolidation_state="not_consolidated",
-        consolidation_winner_group_hypothesis_id="",
-        consolidation_source_group_hypothesis_id="",
     )
 
     cells = _backfill_cells(

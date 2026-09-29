@@ -2145,7 +2145,7 @@ def test_retained_spool_keeps_its_partitions_and_publishes_a_readable_index(
     )
 
 
-def _run_for_cache(tmp_path, monkeypatch, *, retain, tag):
+def _run_for_cache(tmp_path, monkeypatch, *, retain, tag, shared=None):
     from xic_extractor.extraction.untargeted_cid_nl_bounded_runtime import (
         execute_bounded_untargeted_cid_nl,
     )
@@ -2161,6 +2161,7 @@ def _run_for_cache(tmp_path, monkeypatch, *, retain, tag):
         known_istd_reference=reference,
         max_partition_jobs=len(plan.context.samples),
         retain_acquisition_cache=retain,
+        acquisition_cache_dir=shared,
     )
     result.close()
     return output_dir / ".cid_nl_acquisition_cache"
@@ -2178,6 +2179,17 @@ def test_acquisition_cache_is_kept_when_asked(tmp_path, monkeypatch):
     """Repeated development runs can keep it and skip rereading every RAW."""
     cache = _run_for_cache(tmp_path, monkeypatch, retain=True, tag="retained")
     assert cache.is_dir()
+
+
+def test_a_shared_acquisition_cache_outlives_the_run(tmp_path, monkeypatch):
+    """Runs into new output directories reuse one cache, e.g. on a fast disk."""
+    shared = tmp_path / "ssd-cache"
+    own = _run_for_cache(
+        tmp_path, monkeypatch, retain=False, tag="shared", shared=shared
+    )
+    entries = sorted(path for path in shared.rglob("*.json"))
+    assert entries
+    assert not own.exists()
 
 
 def test_acquisition_cache_survives_a_failed_attempt(tmp_path, monkeypatch):

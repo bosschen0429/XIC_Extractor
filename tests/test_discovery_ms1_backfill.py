@@ -602,18 +602,33 @@ def test_shared_ms1_apex_merges_whatever_the_fragment_or_loss(
     assert merged[0].seed_event_count == 2
 
 
+def _ms1_scans(
+    ions: dict[float, tuple[float, ...]],
+    reads: list[tuple[float, float, float]] | None = None,
+):
+    """MS1 centroids by scan RT; a read returns the ion inside its m/z window."""
+
+    def centroid(rt: float, mz_min: float, mz_max: float) -> float | None:
+        if reads is not None:
+            reads.append((rt, mz_min, mz_max))
+        inside = [mz for mz in ions.get(rt, ()) if mz_min <= mz <= mz_max]
+        return inside[0] if inside else None
+
+    return centroid
+
+
 @pytest.mark.parametrize(
-    ("ms1_centroid", "offset_ppm", "merged_count"),
+    ("ions", "offset_ppm", "merged_count"),
     [
-        (400.005, 25.0, 1),  # one ion 12.5 ppm from each MS2-derived m/z
-        (400.0, 25.0, 2),  # the ion is the first candidate's alone
-        (None, 25.0, 2),  # no MS1 centroid at the apex scan
-        (400.01, 45.0, 2),  # windows share no ion, so no scan is read
+        ((400.005,), 25.0, 1),  # one ion 12.5 ppm from each MS2-derived m/z
+        ((400.0,), 25.0, 2),  # the ion is the first candidate's alone
+        ((), 25.0, 2),  # no MS1 centroid at the apex scan
+        ((400.01,), 45.0, 2),  # windows share no ion, so no scan is read
     ],
     ids=["one-ion", "first-ion", "no-centroid", "disjoint-windows"],
 )
 def test_shared_ms1_apex_beyond_tolerance_merges_on_the_measured_ms1_ion(
-    ms1_centroid: float | None, offset_ppm: float, merged_count: int
+    ions: tuple[float, ...], offset_ppm: float, merged_count: int
 ) -> None:
     """Two MS2-derived precursors of one ion can differ by more than 20 ppm."""
 
@@ -621,10 +636,7 @@ def test_shared_ms1_apex_beyond_tolerance_merges_on_the_measured_ms1_ion(
     first = _candidate("dR")
     second = replace(_candidate("dR"), precursor_mz=400.0 * (1 + offset_ppm * 1e-6))
     reads: list[tuple[float, float, float]] = []
-
-    def centroid(rt: float, mz_min: float, mz_max: float) -> float | None:
-        reads.append((rt, mz_min, mz_max))
-        return ms1_centroid
+    centroid = _ms1_scans({first.ms1_apex_rt: ions}, reads)
 
     merged = merge_candidates_by_ms1_peak(
         [first, second], settings=settings, ms1_centroid_mz=centroid
@@ -633,15 +645,69 @@ def test_shared_ms1_apex_beyond_tolerance_merges_on_the_measured_ms1_ion(
     assert len(merged) == merged_count
     if offset_ppm > 2 * settings.precursor_mz_tolerance_ppm:
         assert reads == []
-    else:
-        assert reads == [
-            (
-                first.ms1_apex_rt,
-                pytest.approx(400.0 * (1 - 20e-6)),
-                pytest.approx(400.0 * (1 + offset_ppm * 1e-6) * (1 + 20e-6)),
-            )
-        ]
     assert len(merge_candidates_by_ms1_peak([first, second], settings=settings)) == 2
+
+
+def _tail_of(anchor: DiscoveryCandidate, *, offset_ppm: float, apex: float):
+    """A candidate whose m/z window clips ``anchor``'s ion and sees its tail."""
+
+    return replace(
+        anchor,
+        precursor_mz=anchor.precursor_mz * (1 + offset_ppm * 1e-6),
+        ms1_apex_rt=apex,
+        ms1_peak_rt_start=apex - 0.03,
+        ms1_peak_rt_end=max(apex, anchor.ms1_peak_rt_end) + 0.02,
+        ms1_height=200.0,
+        ms1_area=1500.0,
+        ms2_product_max_intensity=90000.0,
+    )
+
+
+def test_a_window_that_clips_the_ion_merges_into_the_peak_it_sees_the_tail_of() -> None:
+    """An MS2-derived m/z 25 ppm off the ion reports the tail as its own apex.
+
+    On the anchor's XIC it is one peak, and both windows read the same ion at
+    their apexes. The merged candidate keeps the anchor's m/z, peak and area,
+    whichever seed had the stronger product ion.
+    """
+
+    settings = _multi_tag_settings()
+    anchor = _candidate("dR")
+    tail = _tail_of(anchor, offset_ppm=-25.0, apex=5.08)
+    centroid = _ms1_scans({anchor.ms1_apex_rt: (400.001,), 5.08: (399.995,)})
+
+    merged = merge_candidates_by_ms1_peak(
+        [tail, anchor], settings=settings, ms1_centroid_mz=centroid
+    )
+
+    assert len(merged) == 1
+    assert merged[0].precursor_mz == anchor.precursor_mz
+    assert merged[0].ms1_apex_rt == anchor.ms1_apex_rt
+    assert merged[0].ms1_area == anchor.ms1_area
+    assert merged[0].seed_event_count == 2
+
+
+@pytest.mark.parametrize(
+    ("tail_ion", "tail_apex"),
+    [
+        (399.985, 5.08),  # its window reads another ion, 40 ppm from the anchor's
+        (399.995, 5.15),  # the same ion's next peak, outside the anchor's bounds
+    ],
+    ids=["another-ion", "neighbouring-peak"],
+)
+def test_a_nearby_candidate_stays_separate_unless_it_is_the_same_ion_and_peak(
+    tail_ion: float, tail_apex: float
+) -> None:
+    settings = _multi_tag_settings()
+    anchor = _candidate("dR")
+    other = _tail_of(anchor, offset_ppm=-25.0, apex=tail_apex)
+    centroid = _ms1_scans({anchor.ms1_apex_rt: (400.001,), tail_apex: (tail_ion,)})
+
+    merged = merge_candidates_by_ms1_peak(
+        [other, anchor], settings=settings, ms1_centroid_mz=centroid
+    )
+
+    assert len(merged) == 2
 
 
 def test_cross_tag_candidates_do_not_merge_without_ms1_overlap() -> None:
@@ -942,6 +1008,62 @@ def test_owner_acquisition_preserves_scalar_candidate_parity(
     assert acquired.candidates == scalar
 
 
+def test_owner_acquisition_reads_overlapping_windows_once_with_exact_traces(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    raw_path = tmp_path / "sample.raw"
+    raw_path.write_bytes(b"owner-bound-discovery")
+    source = build_acquisition_source_identity(
+        raw_path,
+        acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
+        observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
+    )
+    groups = (
+        _group((_seed(scan_number=10, rt=7.80),)),
+        _group(
+            (
+                _seed(
+                    scan_number=20,
+                    rt=7.90,
+                    precursor_mz=600.0,
+                    product_mz=483.9526,
+                ),
+            )
+        ),
+    )
+    raw = _ScanGridRaw(source)
+    monkeypatch.setattr(
+        "xic_extractor.discovery.ms1_backfill.find_peak_and_area",
+        lambda *args, **kwargs: _ok_peak(
+            rt=7.8,
+            intensity=100.0,
+            area=10.0,
+            start=7.7,
+            end=7.9,
+        ),
+    )
+
+    result = _backfill_ms1_candidates_with_acquisition(
+        raw,
+        groups,
+        acquisition_source=source,
+        settings=_settings(),
+        peak_config=_peak_config(),
+    )
+
+    batches = result.measurements.acquisition_batches
+    runtime_metrics = derive_runtime_acquisition_metrics(batches)
+    acquired = [trace for batch in batches for trace in batch.traces]
+    assert runtime_metrics.logical_xic_request_count == 2
+    assert result.measurements.exact_scan_window_count == 2
+    assert runtime_metrics.adapter_chromatogram_call_count == 1
+    for item in acquired:
+        exact = raw.exact_trace(item.coordinate.request)
+        assert item.trace.rt.tolist() == exact.rt.tolist()
+        assert item.trace.intensity.tolist() == exact.intensity.tolist()
+
+
 def test_owner_acquisition_fails_closed_on_wrong_trace_cardinality(
     tmp_path: Path,
 ) -> None:
@@ -1168,6 +1290,34 @@ class _OwnerBoundBatchRaw:
         if request.rt_min < 8.5:
             return 100, 200
         return 300, 400
+
+
+class _ScanGridRaw:
+    """Owner-bound RAW with one scan per 0.01 min whose readings never change."""
+
+    def __init__(self, source: AcquisitionSourceIdentity) -> None:
+        self.acquisition_source = source
+        self.raw_chromatogram_call_count = 0
+
+    def extract_xic_many(
+        self,
+        requests: Sequence[XICRequest],
+    ) -> tuple[XICTrace, ...]:
+        self.raw_chromatogram_call_count += len(
+            {self.scan_window_for_request(request) for request in requests}
+        )
+        return tuple(self.exact_trace(request) for request in requests)
+
+    def exact_trace(self, request: XICRequest) -> XICTrace:
+        start, end = self.scan_window_for_request(request)
+        scans = np.arange(start, end + 1)
+        return XICTrace.from_arrays(scans / 100, request.mz + scans)
+
+    def scan_window_for_request(self, request: XICRequest) -> tuple[int, int]:
+        return round(request.rt_min * 100), round(request.rt_max * 100)
+
+    def retention_time_for_scan(self, scan_number: int) -> float:
+        return scan_number / 100
 
 
 class _FakeRaw:

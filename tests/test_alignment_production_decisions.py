@@ -1,13 +1,8 @@
 import math
 from dataclasses import fields, replace
-from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, cast
+from typing import cast
 
-from xic_extractor.alignment.backfill_peak_fact_provenance import (
-    BACKFILL_PROVENANCE_WRITER_SCHEMA_VERSION,
-    BackfillCellProjection,
-)
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.matrix import (
     AlignedCell,
@@ -42,23 +37,6 @@ _PRODUCTION_CELL_DECISION_FIELDS = (
     "matrix_value",
     "blank_reason",
     "matrix_value_source",
-)
-_FINAL_CELL_PROJECTION_FIELDS = (
-    "group_hypothesis_id",
-    "public_family_id",
-    "sample_stem",
-    "profile_id",
-    "selected_work_unit_key",
-    "selected_fact_content_id",
-    "owner_backfill_cell_content_id",
-    "production_cell_decision_id",
-    "cell_status",
-    "consolidation_state",
-    "consolidation_winner_group_hypothesis_id",
-    "consolidation_source_group_hypothesis_id",
-    "matrix_value_counts_seconds",
-    "matrix_value_source",
-    "writer_schema_version",
 )
 _EXPECTED_ALIGNMENT_DECISION_CONFIG_FIELDS = (
     "preferred_ppm",
@@ -163,40 +141,6 @@ def test_production_cell_projection_binds_live_cell_config_value_and_source() ->
             mutated.production_cell_decision_id
             != projection.production_cell_decision_id
         ), field_name
-
-
-def test_final_cell_projection_identity_covers_every_field_and_writer_version() -> None:
-    projection = BackfillCellProjection(
-        group_hypothesis_id="group-hypothesis:1",
-        public_family_id="public-family:1",
-        sample_stem="sample-1",
-        profile_id="signal-profile:" + "1" * 64,
-        selected_work_unit_key="work-unit:1",
-        selected_fact_content_id="physical-facts:" + "2" * 64,
-        owner_backfill_cell_content_id=("owner-backfill-authority-cell:" + "3" * 64),
-        production_cell_decision_id="production-cell-decision:" + "4" * 64,
-        cell_status="detected",
-        consolidation_state="not_consolidated",
-        consolidation_winner_group_hypothesis_id="",
-        consolidation_source_group_hypothesis_id="",
-        matrix_value_counts_seconds=123.5,
-        matrix_value_source="trapezoid_counts_seconds_on_canonical_signal",
-    )
-
-    assert projection.writer_schema_version == (
-        BACKFILL_PROVENANCE_WRITER_SCHEMA_VERSION
-    )
-    assert tuple(field.name for field in fields(projection)) == (
-        _FINAL_CELL_PROJECTION_FIELDS
-    )
-    for field_name in _FINAL_CELL_PROJECTION_FIELDS:
-        mutated = replace(
-            projection,
-            **{
-                field_name: _different_projection_value(getattr(projection, field_name))
-            },
-        )
-        assert mutated.cell_projection_id != projection.cell_projection_id, field_name
 
 
 def test_detected_and_supported_backfill_write_numeric_values():
@@ -395,8 +339,8 @@ def test_backfill_heavy_row_needs_multiple_detected_owners_for_primary_promotion
         clusters=(_feature("FAM001", evidence="owner_complete_link;owner_count=2"),),
         cells=(
             _cell("s1", "FAM001", "detected", 100.0),
-            _cell("s2", "FAM001", "backfilled", 90.0, backfill_evidence=False),
-            _cell("s3", "FAM001", "backfilled", 80.0, backfill_evidence=False),
+            _cell("s2", "FAM001", "backfilled", 90.0),
+            _cell("s3", "FAM001", "backfilled", 80.0),
         ),
         sample_order=("s1", "s2", "s3"),
     )
@@ -426,7 +370,6 @@ def test_scan_support_only_backfill_keeps_seeds_and_reviews_backfills():
                     "FAM001",
                     "backfilled",
                     80.0 + i,
-                    backfill_evidence=False,
                 )
                 for i in range(1, 84)
             ),
@@ -470,7 +413,6 @@ def test_production_cell_decision_record_keeps_review_backfill_out_of_matrix() -
                     "FAM001",
                     "backfilled",
                     80.0 + i,
-                    backfill_evidence=False,
                 )
                 for i in range(1, 84)
             ),
@@ -631,7 +573,6 @@ def test_backfilled_outside_max_rt_is_review_only():
                 "backfilled",
                 90.0,
                 rt_delta_sec=config.max_rt_sec + 0.1,
-                backfill_evidence=False,
             ),
         ),
         sample_order=("s1",),
@@ -659,7 +600,6 @@ def test_backfilled_outside_preferred_without_drift_is_review_only():
                 "backfilled",
                 80.0,
                 rt_delta_sec=20.0,
-                backfill_evidence=False,
             ),
         ),
         sample_order=("d1", "d2", "d3", "rescued_same_peak"),
@@ -757,15 +697,7 @@ def _cell(
     rt_delta_sec: float | None = 0.0,
     source_candidate_id: str | None = None,
     selected_integration: IntegrationResult | None = None,
-    backfill_evidence: bool = True,
     group_hypothesis_id: str = "",
-    group_claim_state: str = "",
-    claim_winner_group_hypothesis_id: str = "",
-    claim_source_group_hypothesis_id: str = "",
-    consolidation_state: str = "",
-    peak_hypothesis_status: str = "",
-    product_selection_blocker: str = "",
-    rt_mode_status: str = "",
 ) -> AlignedCell:
     has_area = area is not None
     positive_area = _positive_area_value(area)
@@ -797,28 +729,13 @@ def _cell(
             if status == "detected"
             else None
         ),
-        source_raw_file=Path(f"{sample_stem}.raw") if status == "detected" else None,
         reason=(
             "duplicate MS1 peak claim; winner=FAM000000; original_status=detected"
             if status == "duplicate_assigned"
             else status
         ),
         group_hypothesis_id=group_hypothesis_id,
-        group_claim_state=group_claim_state,
-        claim_winner_group_hypothesis_id=claim_winner_group_hypothesis_id,
-        claim_source_group_hypothesis_id=claim_source_group_hypothesis_id,
-        consolidation_state=consolidation_state,
-        peak_hypothesis_status=peak_hypothesis_status,
-        product_selection_blocker=product_selection_blocker,
-        rt_mode_status=rt_mode_status,
         selected_integration=selected_integration,
-        **cast(
-            Any,
-            _backfill_evidence_fields(
-                status=status,
-                enabled=backfill_evidence,
-            ),
-        ),
     )
 
 
@@ -862,16 +779,6 @@ def _integration(
             "gaussian15_positive_asls_residual" if asls_area is not None else ""
         ),
     )
-
-
-def _backfill_evidence_fields(*, status: str, enabled: bool) -> dict[str, object]:
-    if status != "backfilled" or not enabled:
-        return {}
-    return {
-        "backfill_ms2_trigger_scan_count": 3,
-        "backfill_strict_nl_scan_count": 1,
-        "backfill_ms2_trace_strength": "moderate",
-    }
 
 
 def _positive_area_value(value: float | bool | None) -> float | None:

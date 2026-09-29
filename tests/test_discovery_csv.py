@@ -67,6 +67,7 @@ EXPECTED_PROVENANCE_COLUMNS = (
     "ms1_peak_rt_start",
     "ms1_peak_rt_end",
     "ms1_height",
+    "ms1_apex_mz",
     "ms1_trace_quality",
     "ms1_scan_support_score",
     "selected_tag_count",
@@ -395,7 +396,7 @@ def test_write_discovery_candidates_csv_formats_review_values_stably(
     write_discovery_candidates_csv(output_path, [candidate])
 
     row = _read_csv(output_path)[0]
-    assert row["precursor_mz"] == "258.109"
+    assert row["precursor_mz"] == "258.108512345"
     assert row["evidence_score"] == "50"
     assert row["evidence_tier"] == "C"
     assert row["ms2_support"] == "moderate"
@@ -405,19 +406,19 @@ def test_write_discovery_candidates_csv_formats_review_values_stably(
     assert row["ms1_feature_row_id"] == "Sample_1|DNA_dR|258.108512|7.841234"
     assert row["feature_family_id"] == "Sample_1@F0001"
     assert row["feature_family_size"] == "1"
-    assert row["product_mz"] == "142.061"
-    assert row["observed_neutral_loss_da"] == "116.047"
+    assert row["product_mz"] == "142.061112345"
+    assert row["observed_neutral_loss_da"] == "116.0474"
     assert row["best_seed_rt"] == "7.83"
-    assert row["neutral_loss_mass_error_ppm"] == "2.58432"
+    assert row["neutral_loss_mass_error_ppm"] == "2.584321"
     assert row["neutral_loss_error_basis"] == "measured_scan_precursor_product"
     assert row["precursor_mz_basis"] == "scan_precursor"
-    assert row["scan_precursor_mz"] == "258.109"
+    assert row["scan_precursor_mz"] == "258.108512345"
     assert row["scan_precursor_delta_da"] == "0"
     assert row["max_scan_precursor_abs_delta_da"] == "0"
     assert row["ms1_area"] == ""
     assert row["ms2_product_max_intensity"] == "12000"
     assert row["ms1_peak_found"] == "FALSE"
-    assert row["ms1_apex_rt"] == "7.84123"
+    assert row["ms1_apex_rt"] == "7.841234"
     assert row["raw_file"] == "C:\\data\\Sample_1.raw"
 
 def test_write_discovery_candidates_csv_serializes_seed_scan_ids(

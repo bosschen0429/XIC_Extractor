@@ -40,7 +40,7 @@ from xic_extractor.discovery.priority import (
     assign_review_priority,
     build_candidate_reason,
 )
-from xic_extractor.mass_accuracy import neutral_loss_match, within_ppm
+from xic_extractor.mass_accuracy import neutral_loss_match, weighted_ion_mz, within_ppm
 from xic_extractor.peak_detection.background_shape import is_provisional_peak_shape
 from xic_extractor.peak_detection.ms1_morphology import DEFAULT_GAUSSIAN15_WINDOW_POINTS
 from xic_extractor.peak_detection.ms1_trace_detection import detect_ms1_trace_peak
@@ -58,6 +58,7 @@ from xic_extractor.peak_detection.physical_peak_models import (
     PreparedSignalResult,
 )
 from xic_extractor.processing_identity import AcquisitionSourceIdentity
+from xic_extractor.raw_superwindow_source import RawSuperWindowSource
 from xic_extractor.signal_processing import PeakResult, find_peak_and_area
 from xic_extractor.xic_models import XICRequest
 
@@ -65,6 +66,14 @@ _TagIntersectionStatus = Literal["not_required", "complete", "incomplete"]
 _DISCOVERY_MS1_BATCH_MAX_REQUESTS = 256
 _DISCOVERY_MS1_PREDICTION_MAX_REQUESTS = 256
 _DISCOVERY_PHYSICAL_CONTEXT_HALF_WINDOW_MIN = 0.60
+# The apex scan and one MS1 scan on each side read the ion's m/z; readings
+# spread wider than a few ppm come from more than one ion.
+_APEX_ION_SCAN_RADIUS = 1
+_APEX_ION_SPREAD_PPM = 5.0
+# 13C spacing of a doubly charged ion. Product + loss assumes a singly charged
+# precursor, so an inferred ion read beside this isotope is not one.
+_DOUBLY_CHARGED_ISOTOPE_SPACING_MZ = 1.0033548 / 2
+
 
 
 MS1CentroidMz = Callable[[float, float, float], float | None]
@@ -247,6 +256,7 @@ def _backfill_ms1_candidates_with_acquisition(
             physical_plans.append(plan)
         physical_indices.append(physical_index)
 
+    superwindow_raw = RawSuperWindowSource(raw)
     batches: list[TraceAcquisitionBatch] = []
     acquired_traces: list[AcquiredTrace] = []
     prepared_signal_cache: dict[tuple[str, str], PreparedSignalResult] = {}
@@ -254,7 +264,7 @@ def _backfill_ms1_candidates_with_acquisition(
         batch = acquire_trace_batch(
             capability,
             tuple(plan.request for plan in plan_chunk),
-            raw,
+            superwindow_raw,
         )
         _validate_acquired_plan_chunk(plan_chunk, batch)
         batches.append(batch)
@@ -262,6 +272,8 @@ def _backfill_ms1_candidates_with_acquisition(
 
     initial_physical_facts: dict[int, DiscoveryPhysicalFactRecord] = {}
     physical_trace_qualities: dict[int, str] = {}
+    apex_ion_mz_by_index: dict[int, float] = {}
+    doubly_charged_indexes: set[int] = set()
     if signal_processing_profile is not None:
         for physical_index, (plan, acquired) in enumerate(
             zip(physical_plans, acquired_traces, strict=True)
@@ -284,24 +296,28 @@ def _backfill_ms1_candidates_with_acquisition(
             physical_trace_qualities[physical_index] = (
                 initial_candidate.ms1_trace_quality
             )
-        reacquisition_plans = tuple(
-            (physical_index, expanded_plan)
-            for physical_index, (plan, acquired) in enumerate(
-                zip(physical_plans, acquired_traces, strict=True)
+        reacquisition: list[tuple[int, _DiscoveryMs1RequestPlan]] = []
+        for physical_index, (plan, acquired) in enumerate(
+            zip(physical_plans, acquired_traces, strict=True)
+        ):
+            evaluation = initial_physical_facts[physical_index].evaluation
+            ion_mz, doubly_charged = _apex_ion_reading(
+                plan, acquired, evaluation, ms1_centroid_mz=ms1_centroid_mz
             )
-            if (
-                expanded_plan := _expanded_physical_request_plan(
-                    plan,
-                    acquired,
-                    profile=signal_processing_profile,
-                    settings=settings,
-                    physical_evaluation=initial_physical_facts[
-                        physical_index
-                    ].evaluation,
-                )
+            if ion_mz is not None:
+                apex_ion_mz_by_index[physical_index] = ion_mz
+            if doubly_charged:
+                doubly_charged_indexes.add(physical_index)
+            expanded = _expanded_physical_request_plan(
+                plan,
+                acquired,
+                profile=signal_processing_profile,
+                settings=settings,
+                physical_evaluation=evaluation,
             )
-            is not None
-        )
+            if expanded is not None:
+                reacquisition.append((physical_index, expanded))
+        reacquisition_plans = tuple(reacquisition)
         for indexed_chunk in _chunks(
             reacquisition_plans,
             _DISCOVERY_MS1_BATCH_MAX_REQUESTS,
@@ -310,7 +326,7 @@ def _backfill_ms1_candidates_with_acquisition(
             batch = acquire_trace_batch(
                 capability,
                 tuple(plan.request for plan in plan_chunk),
-                raw,
+                superwindow_raw,
             )
             _validate_acquired_plan_chunk(plan_chunk, batch)
             batches.append(batch)
@@ -388,6 +404,10 @@ def _backfill_ms1_candidates_with_acquisition(
             physical_work_observer=physical_work_manifest.append,
             physical_evaluation_observer=physical_evaluations.append,
         )
+        if physical_index in apex_ion_mz_by_index:
+            candidate = replace(
+                candidate, ms1_apex_mz=apex_ion_mz_by_index[physical_index]
+            )
         candidates.append(candidate)
         if signal_processing_profile is not None:
             physical_trace_qualities[physical_index] = candidate.ms1_trace_quality
@@ -400,6 +420,14 @@ def _backfill_ms1_candidates_with_acquisition(
         settings=settings,
         ms1_centroid_mz=ms1_centroid_mz,
     )
+    if doubly_charged_indexes:
+        merge_result = _hold_doubly_charged_candidates(
+            merge_result,
+            tuple(
+                physical_indices[source] in doubly_charged_indexes
+                for source in range(len(candidates))
+            ),
+        )
     physical_bindings: tuple[DiscoveryCandidatePhysicalBinding, ...] = ()
     if signal_processing_profile is not None:
         assert run_spec_id is not None
@@ -557,6 +585,106 @@ def _has_strong_inferred_precursor_support(
         len(group.seeds) >= 2
         and max(seed.product_intensity for seed in group.seeds)
         >= settings.evidence_profile.thresholds.product_intensity_high_min
+    )
+
+
+def _apex_ion_reading(
+    plan: _DiscoveryMs1RequestPlan,
+    acquired: AcquiredTrace,
+    evaluation: PhysicalPeakEvaluation,
+    *,
+    ms1_centroid_mz: MS1CentroidMz | None,
+) -> tuple[float | None, bool]:
+    """The MS1 ion read at the resolved peak of an inferred precursor.
+
+    MS1 is the method's accurate-mass scan, while ddMS2 runs at a quarter of
+    its resolution, so product + loss only points at the ion. The ion is read
+    inside the request at the apex scans; readings spread wider than a few ppm
+    come from two ions and report none. A selected precursor is not read,
+    since a reading near it can belong to a neighbouring ion or isotope. The
+    m/z is reported only: the precursor, its trace and its MS2 evidence keep
+    product + loss. The flag is true when the ion's doubly charged isotope is
+    read in most of the scans where the ion is read.
+    """
+    facts = evaluation.facts
+    if (
+        plan.group.precursor_mz_basis != "product_plus_neutral_loss"
+        or ms1_centroid_mz is None
+        or evaluation.state != "available"
+        or facts is None
+    ):
+        return None, False
+    rt = acquired.trace.rt
+    intensity = acquired.trace.intensity
+    if len(rt) == 0:
+        return None, False
+    apex = int(np.argmin(np.abs(rt - facts.apex_rt_min)))
+    request = plan.request
+    half_width = request.mz * request.ppm_tol * 1e-6
+    readings = []
+    read_rts = []
+    for index in range(
+        max(0, apex - _APEX_ION_SCAN_RADIUS),
+        min(len(rt), apex + _APEX_ION_SCAN_RADIUS + 1),
+    ):
+        mz = ms1_centroid_mz(
+            float(rt[index]), request.mz - half_width, request.mz + half_width
+        )
+        if mz is not None:
+            readings.append((mz, float(intensity[index])))
+            read_rts.append(float(rt[index]))
+    measured = weighted_ion_mz(readings, max_spread_ppm=_APEX_ION_SPREAD_PPM)
+    if measured is None:
+        return None, False
+    return measured, _reads_doubly_charged_isotope(
+        measured, read_rts, ms1_centroid_mz=ms1_centroid_mz
+    )
+
+
+def _reads_doubly_charged_isotope(
+    ion_mz: float,
+    read_rts: Sequence[float],
+    *,
+    ms1_centroid_mz: MS1CentroidMz,
+) -> bool:
+    isotope_mz = ion_mz + _DOUBLY_CHARGED_ISOTOPE_SPACING_MZ
+    half_width = isotope_mz * _APEX_ION_SPREAD_PPM * 1e-6
+    isotope_reads = sum(
+        ms1_centroid_mz(rt, isotope_mz - half_width, isotope_mz + half_width)
+        is not None
+        for rt in read_rts
+    )
+    return 2 * isotope_reads > len(read_rts)
+
+
+def _hold_doubly_charged_candidates(
+    merge_result: DiscoveryCandidateMergeResult,
+    doubly_charged_by_source: tuple[bool, ...],
+) -> DiscoveryCandidateMergeResult:
+    """Hold for review a candidate whose every seed read a doubly charged ion.
+
+    Any singly charged member carries the candidate, so the hold is applied
+    after the merge, which reassigns the state.
+    """
+    return replace(
+        merge_result,
+        candidates=tuple(
+            replace(
+                candidate,
+                discovery_candidate_state="review_only_ambiguous_coisolation",
+                reason=(
+                    "inferred precursor reads a doubly charged isotope at the "
+                    "peak apex; retained for review"
+                ),
+            )
+            if all(
+                doubly_charged_by_source[s] for s in binding.member_source_ordinals
+            )
+            else candidate
+            for candidate, binding in zip(
+                merge_result.candidates, merge_result.bindings, strict=True
+            )
+        ),
     )
 
 
@@ -737,6 +865,10 @@ def _candidate_from_trace(
             settings=settings,
         )
     )
+    physical_overlap = ms1_fields.trace_quality == "physical_shoulder_overlap"
+    if physical_overlap:
+        priority = "MEDIUM"
+        reason += "; physical_shoulder_overlap"
     candidate = DiscoveryCandidate.from_values(
         raw_file=group.raw_file,
         sample_stem=group.sample_stem,
@@ -771,7 +903,8 @@ def _candidate_from_trace(
         review_priority=priority,
         reason=reason,
         is_provisional=(
-            len(group.seeds) < 2 and ms1_fields.trace_quality == "provisional"
+            physical_overlap
+            or (len(group.seeds) < 2 and ms1_fields.trace_quality == "provisional")
         ),
     )
     candidate = _with_tag_fields(candidate, group=group, settings=settings)
@@ -836,16 +969,17 @@ def merge_candidates_by_ms1_peak_with_lineage(
     member_source_ordinals: list[list[int]] = []
     representative_source_ordinals: list[int] = []
     for source_ordinal, candidate in enumerate(candidates):
-        merge_index = _matching_ms1_peak_candidate_index(
+        match = _matching_ms1_peak_candidate(
             candidate, merged, settings=settings, ms1_centroid_mz=ms1_centroid_mz
         )
-        if merge_index is None:
+        if match is None:
             merged.append(candidate)
             member_source_ordinals.append([source_ordinal])
             representative_source_ordinals.append(source_ordinal)
             continue
+        merge_index, anchor = match
         current = merged[merge_index]
-        representative = _representative_candidate(
+        representative = anchor or _representative_candidate(
             current,
             candidate,
             settings=settings,
@@ -854,6 +988,7 @@ def merge_candidates_by_ms1_peak_with_lineage(
             current,
             candidate,
             settings=settings,
+            representative=representative,
         )
         member_source_ordinals[merge_index].append(source_ordinal)
         if representative is candidate:
@@ -876,19 +1011,38 @@ def merge_candidates_by_ms1_peak_with_lineage(
 _merge_candidates_by_ms1_peak = merge_candidates_by_ms1_peak
 
 
-def _matching_ms1_peak_candidate_index(
+def _matching_ms1_peak_candidate(
     candidate: DiscoveryCandidate,
     merged: list[DiscoveryCandidate],
     *,
     settings: DiscoverySettings,
     ms1_centroid_mz: MS1CentroidMz | None = None,
-) -> int | None:
+) -> tuple[int, DiscoveryCandidate | None] | None:
+    """The merge target and, for one measured ion, the candidate that holds it."""
+
     for index, existing in enumerate(merged):
-        if _can_merge_by_ms1_peak(
+        if _can_merge_by_ms1_peak(existing, candidate, settings=settings):
+            return index, None
+        if not _tags_can_merge(existing, candidate, settings=settings):
+            continue
+        anchor = _same_ms1_peak_on_one_measured_ion(
             existing, candidate, settings=settings, ms1_centroid_mz=ms1_centroid_mz
-        ):
-            return index
+        )
+        if anchor is not None:
+            return index, anchor
     return None
+
+
+def _tags_can_merge(
+    first: DiscoveryCandidate,
+    second: DiscoveryCandidate,
+    *,
+    settings: DiscoverySettings,
+) -> bool:
+    return (
+        first.neutral_loss_tag == second.neutral_loss_tag
+        or settings.tag_combine_mode in {"union", "intersection"}
+    )
 
 
 def _can_merge_by_ms1_peak(
@@ -896,17 +1050,9 @@ def _can_merge_by_ms1_peak(
     second: DiscoveryCandidate,
     *,
     settings: DiscoverySettings,
-    ms1_centroid_mz: MS1CentroidMz | None = None,
 ) -> bool:
-    if _same_ms1_apex_within_extraction_tolerance(
-        first, second, settings=settings
-    ) or _same_ms1_apex_on_one_measured_ion(
-        first, second, settings=settings, ms1_centroid_mz=ms1_centroid_mz
-    ):
-        return (
-            first.neutral_loss_tag == second.neutral_loss_tag
-            or settings.tag_combine_mode in {"union", "intersection"}
-        )
+    if _same_ms1_apex_within_extraction_tolerance(first, second, settings=settings):
+        return _tags_can_merge(first, second, settings=settings)
     same_ms1_feature_row = _same_ms1_feature_row_identity(first, second)
     if not (
         first.raw_file == second.raw_file
@@ -973,8 +1119,8 @@ def _merge_candidate_pair(
     second: DiscoveryCandidate,
     *,
     settings: DiscoverySettings,
+    representative: DiscoveryCandidate,
 ) -> DiscoveryCandidate:
-    representative = _representative_candidate(first, second, settings=settings)
     seed_scan_ids = tuple(sorted(set(first.seed_scan_ids + second.seed_scan_ids)))
     seed_event_count = first.seed_event_count + second.seed_event_count
     rt_seed_min = min(first.rt_seed_min, second.rt_seed_min)
@@ -1042,6 +1188,20 @@ def _merge_candidate_pair(
         ),
         tag_evidence_json=_merge_tag_evidence_json(first, second),
         is_provisional=(first.is_provisional and second.is_provisional),
+        # A selected member supplies the precursor; only a purely inferred
+        # candidate reports the ion read at its apex.
+        ms1_apex_mz=(
+            next(
+                (
+                    member.ms1_apex_mz
+                    for member in (representative, first, second)
+                    if member.ms1_apex_mz is not None
+                ),
+                None,
+            )
+            if precursor_mz_basis == "product_plus_neutral_loss"
+            else None
+        ),
     )
 
 
@@ -1076,18 +1236,23 @@ def _same_ms1_apex_within_extraction_tolerance(
     )
 
 
-def _same_ms1_apex_on_one_measured_ion(
+def _same_ms1_peak_on_one_measured_ion(
     first: DiscoveryCandidate,
     second: DiscoveryCandidate,
     *,
     settings: DiscoverySettings,
     ms1_centroid_mz: MS1CentroidMz | None,
-) -> bool:
-    """Whether one MS1 ion at a shared apex lies within both extraction windows.
+) -> DiscoveryCandidate | None:
+    """The candidate whose trace holds the whole peak of one ion both traced.
 
     A precursor inferred as product + loss carries the MS2 product error, so two
-    candidates of one ion can differ by more than the MS1 tolerance. When their
-    windows still overlap, the apex scan's measured centroid decides.
+    candidates of one ion can differ by more than the MS1 tolerance. A window
+    that clips the ion shows only part of its peak, such as the tail, and the
+    resolver reports that part with its own apex. The higher candidate (the
+    anchor) traced the peak itself: the other apex inside the anchor's bounds is
+    one peak on the anchor's trace, and the ions read at the two apexes, each
+    inside its own window, agreeing within tolerance show that both traces came
+    from one ion. Returns the anchor, or None when either condition fails.
     """
 
     tolerance = settings.precursor_mz_tolerance_ppm
@@ -1095,21 +1260,49 @@ def _same_ms1_apex_on_one_measured_ion(
         ms1_centroid_mz is not None
         and first.raw_file == second.raw_file
         and first.sample_stem == second.sample_stem
-        and first.ms1_peak_found
-        and second.ms1_peak_found
-        and first.ms1_apex_rt is not None
-        and first.ms1_apex_rt == second.ms1_apex_rt
+        and _has_resolved_ms1_peak(first)
+        and _has_resolved_ms1_peak(second)
         and _within_ppm(first.precursor_mz, second.precursor_mz, 2 * tolerance)
     ):
-        return False
-    low, high = sorted((first.precursor_mz, second.precursor_mz))
-    measured = ms1_centroid_mz(
-        first.ms1_apex_rt, low * (1 - tolerance * 1e-6), high * (1 + tolerance * 1e-6)
-    )
+        return None
+    anchor, other = sorted((first, second), key=lambda c: -cast(float, c.ms1_height))
+    if not (
+        cast(float, anchor.ms1_peak_rt_start)
+        <= cast(float, other.ms1_apex_rt)
+        <= cast(float, anchor.ms1_peak_rt_end)
+    ):
+        return None
+    anchor_ion = _ion_in_window(anchor, ms1_centroid_mz, tolerance)
+    other_ion = _ion_in_window(other, ms1_centroid_mz, tolerance)
+    if (
+        anchor_ion is None
+        or other_ion is None
+        or not _within_ppm(anchor_ion, other_ion, tolerance)
+    ):
+        return None
+    return anchor
+
+
+def _has_resolved_ms1_peak(candidate: DiscoveryCandidate) -> bool:
     return (
-        measured is not None
-        and _within_ppm(measured, first.precursor_mz, tolerance)
-        and _within_ppm(measured, second.precursor_mz, tolerance)
+        candidate.ms1_peak_found
+        and candidate.ms1_apex_rt is not None
+        and candidate.ms1_height is not None
+        and _candidate_peak_bounds_present(candidate)
+    )
+
+
+def _ion_in_window(
+    candidate: DiscoveryCandidate,
+    ms1_centroid_mz: MS1CentroidMz,
+    tolerance_ppm: float,
+) -> float | None:
+    """The MS1 ion at the candidate's apex inside its own extraction window."""
+
+    return ms1_centroid_mz(
+        cast(float, candidate.ms1_apex_rt),
+        candidate.precursor_mz * (1 - tolerance_ppm * 1e-6),
+        candidate.precursor_mz * (1 + tolerance_ppm * 1e-6),
     )
 
 
@@ -1527,7 +1720,7 @@ def _physical_ms1_peak_fields(
                     mad = float(np.median(np.abs(res - np.median(res))))
                 else:
                     mad = 0.0
-                if is_provisional_peak_shape(
+                if fields.trace_quality == "clean" and is_provisional_peak_shape(
                     rt_seg,
                     raw_seg,
                     apex_index=seg.apex_index - seg.start_index,
@@ -1562,7 +1755,11 @@ def _ms1_fields_from_physical_evaluation(
         seed_delta_min=facts.apex_rt_min - work_item.query_rt_min,
         peak_rt_start=facts.left_rt_min,
         peak_rt_end=facts.right_rt_min,
-        trace_quality="clean",
+        trace_quality=(
+            "physical_shoulder_overlap"
+            if evaluation.requires_overlap_review
+            else "clean"
+        ),
         scan_support_score=scan_support_score,
     )
 

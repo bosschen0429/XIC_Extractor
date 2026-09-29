@@ -48,7 +48,7 @@ processing, see [`product/signal-processing-rationale.md`](product/signal-proces
 
 - For profile-covered physical work, the canonical signal is exactly
   `max(Gaussian(raw; window_points, sigma=window_points/6, unit_sum,
-  zero_pad_same) - max(AsLS(raw; lam=100000, p=0.01, n_iter=10), 0), 0)`. Gaussian and
+  zero_pad_same) - max(AsLS_RT(rt_minutes, raw; lam=1 minute^4, p=0.01, n_iter=10), 0), 0)`. Gaussian and
   AsLS are both computed from raw independently. AsLS is fixed baseline
   estimation, not a second smoothing method. Its physical baseline is bounded
   below by zero so a negative fitted baseline cannot manufacture peak signal.
@@ -58,18 +58,39 @@ processing, see [`product/signal-processing-rationale.md`](product/signal-proces
   unresolved clipped segments remain unavailable. The profile binds the formula;
   the physical question and segment universe bind the selection policy. Persisted
   evaluations replay their recorded policy and retain their exact identity.
-- Before constructing physical intervals, interior apex candidates use their
-  full-context topographic prominence and the original three-point noise MAD
-  over the prominence bases. A candidate with prominence below twice that MAD
+- Before constructing physical intervals, interior apex candidates use an RT
+  envelope with minimum sigma 0.08 minutes. Supported clear valleys on the
+  canonical signal preserve separated groups, each with one apex representative.
+  A canonical valley hidden by the coarser envelope must stay below 30% of
+  the smaller lobe for one configured Gaussian support footprint before it can
+  restore a split. A short dropout notch is insufficient.
+  Candidate support uses topographic prominence and the original three-point
+  noise MAD over the prominence bases and, for subordinate shoulder lobes,
+  the contour toward adjacent higher lobes. A candidate with prominence below twice that MAD
   is subordinate ripple only when its shoulder-connected group contains an
   independently supported apex. It cannot truncate that envelope. Clear valleys
   separate groups; entirely unsupported groups and edge maxima remain for the
   normal qualification gates. This does not discard a separate weak component
   to resolve a window's ambiguity or alter the canonical quantitative signal.
+  Supported seeds also need 4% of their shoulder-connected group's maximum.
+  Clear valleys separate groups before that comparison. Seed eligibility does
+  not depend on a fraction of the entire acquired context maximum. The envelope only
+  supplies lobe/valley evidence; boundary walks, final apex, and area use the
+  canonical signal. Shoulder-connected lobes share one complete envelope and
+  area unless independently supported coarse lobes have a persistent shallow
+  valley across one configured smoothing footprint. Those lobes retain separate
+  intervals at the envelope valley, so a brief deeper notch on a descending
+  shoulder cannot move that boundary. Sustained canonical clear splits retain
+  their canonical valley. Multiple canonical lobes above the 4% prominence floor retain review
+  evidence even when they cannot claim independent quantitative intervals.
+  An unresolved shoulder carries `physical_shoulder_overlap`
+  into Targeted review reasons and Untargeted provisional evidence; it cannot
+  claim independent Untargeted owner quantification.
 - Current physical selection then uses the complete positive peak interval
   through the first baseline-return samples, bounded by adjacent valleys.
   Only an interval reaching an acquired edge may use an observed return at
-  0.1% of its apex residual. This alternative must have the same apex, be fully
+  the greater of 0.1% of its apex residual and original-signal noise MAD.
+  This alternative must have the same apex, be fully
   interior, and lie within the original interval. Already complete intervals
   retain their exact boundaries and values; every original candidate remains
   in the universe. A still-clipped or unmatched alternative supplies no recovery.
@@ -79,25 +100,23 @@ processing, see [`product/signal-processing-rationale.md`](product/signal-proces
   share the selected bounds, including inter-scan peak tails. Group-guided
   recovery uses `unique_baseline_peak_in_context`: its center locates the bounded search
   context and need not fall inside the peak, but multiple local peaks remain
-  ambiguous and nonnumeric. Both current policies require at least two original
-  XIC values strictly greater than the owner baseline within the uniquely selected, complete
-  interval. Fewer points give `insufficient_original_xic_support` with no numeric
-  physical facts. Those original values must also include at least one adjacent
-  pair strictly greater than that baseline; otherwise the answer is unavailable with
-  `insufficient_original_xic_continuity`. Gaussian spread cannot supply
-  independent sampling support or join isolated impulses into acquired
-  continuity, and a constant background cannot supply that support. Fresh
-  answers also reject `fragmented_original_xic_support` when
-  the selected original interval has at least three maximal positive runs
-  separated by zeros **and** severe original jaggedness. Jaggedness is the sum
-  of absolute second differences divided by the original intensity range and
-  selected point count; severe means greater than 0.5, the existing
-  `noise_shape_severity` hard level. This narrow conjunction belongs to the
-  versioned physical policy; changing that threshold requires policy review
-  and versioning. One interruption, smooth low-level fragments around a main
-  peak, or jaggedness without repeated zero interruptions does not trigger it.
-  Baseline crossings are not missing acquired samples and do not count as zero
-  interruptions for this fragmentation check.
+  ambiguous and nonnumeric. Ordinary continuous peaks require at least two
+  original XIC values above the owner baseline, including an adjacent pair.
+  Missing support gives `insufficient_original_xic_support`; no adjacent pair
+  gives `insufficient_original_xic_continuity`. Gaussian spread and constant
+  background cannot supply independent acquired support.
+  A core with isolated dropouts retains ordinary support when it has an acquired
+  run above baseline spanning one configured Gaussian window and acquired scans
+  outnumber missing scans in every core window. A short continuous patch alone
+  does not establish ordinary support for an otherwise censored core.
+  Censored detection clusters use local hit-density enrichment instead: the
+  observed hit rate must exceed both local flanks fourfold and pass a one-sided
+  exact test corrected for trace length. A cluster containing an ordinary
+  continuous peak retains its morphology segmentation. A qualified censored
+  cluster bypasses adjacency and intensity-shape checks, uses its observed
+  trapezoid area, and carries `local_hit_density_enrichment` and
+  `near_detection_limit`. Censored values are not imputed. Sparse cores without
+  continuous support or enrichment give `insufficient_local_hit_enrichment`.
   A selected peak also needs local relief at least twice a local fluctuation
   scale. For each interior original point, subtract its value from the linear
   interpolation between its immediate neighbors and divide by the Euclidean
@@ -119,15 +138,7 @@ processing, see [`product/signal-processing-rationale.md`](product/signal-proces
   identity or quantification readiness. Qualification neither
   changes integration nor removes weak segments to resolve ambiguity. Fresh
   policies use segment-universe-v3; questions cannot cross boundary-policy
-  families. Recorded point/window receipts retain above-zero acquired
-  support and fragmentation checks, without baseline-relative support or local
-  contrast qualification. Recorded point/window receipts retain the adjacency-only
-  requirement and edge recovery with segment-universe, without the fragmented
-  support check. Recorded point/window receipts retain exact-zero returns and
-  the adjacency requirement with segment-universe. Recorded point/window
-  receipts retain the minimum-two-positive-points rule without the adjacency
-  requirement. Recorded point/window receipts replay without either
-  original-support rule. Legacy
+  families. Legacy
   `closed_segment_contains_query` receipts retain their original 2%-height
   bounds. Explicit fresh evaluation uses the current policy and new answer
   identity; replay never rewrites a saved answer.

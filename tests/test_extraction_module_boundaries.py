@@ -50,11 +50,12 @@ def test_targeted_inputs_owns_raw_path_resolution() -> None:
     targeted_inputs_source = (extraction_dir / "targeted_inputs.py").read_text(
         encoding="utf-8"
     )
-    assert 'glob("*.raw")' in targeted_inputs_source
+    assert "read_analysis_set(" in targeted_inputs_source
 
     for module_name in ("pipeline.py", "serial_backend.py", "process_backend.py"):
         source = (extraction_dir / module_name).read_text(encoding="utf-8")
         assert 'glob("*.raw")' not in source
+        assert "read_analysis_set" not in source
 
 
 def test_backends_do_not_depend_on_pipeline() -> None:

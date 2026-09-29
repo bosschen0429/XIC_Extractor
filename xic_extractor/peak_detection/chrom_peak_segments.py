@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Literal, Sequence
 
 import numpy as np
+from scipy.ndimage import gaussian_filter1d
 from scipy.signal import find_peaks, peak_prominences
 
 from xic_extractor.peak_detection.baseline import integrate_with_baseline
@@ -40,7 +41,9 @@ class ChromPeakSegmentPolicy:
     clear_valley_max_fraction: float = 0.30
     morphology_trace_method: str = "gaussian_15"
     morphology_trace_window_points: int = DEFAULT_GAUSSIAN15_WINDOW_POINTS
+    morphology_min_sigma_rt: float = 0.0
     min_prominence_noise_mad: float = 0.0
+    min_prominence_fraction_of_envelope: float = 0.04
 
     def baseline_return_threshold(self, apex_residual: float) -> float:
         return max(
@@ -127,10 +130,21 @@ def enumerate_chrom_peak_segments(
     if context_residual.size == 0 or float(np.max(context_residual)) <= 0.0:
         return _empty_result("NO_SIGNAL", rt, active_policy)
 
-    morphology_trace = _morphology_trace(residual, active_policy)
+    morphology_trace = _morphology_trace(rt, residual, active_policy)
+    # Match the RT envelope's scale decision once for the whole trace. When
+    # canonical smoothing already covers that scale, its valley needs no repair.
+    additional_envelope_smoothing = (
+        active_policy.morphology_trace_method == "rt_envelope"
+        and max(float(active_policy.morphology_min_sigma_rt), 0.0)
+        > float(np.median(np.diff(rt)))
+        * float(active_policy.morphology_trace_window_points) / 6.0
+    )
     morphology_effective_points = _morphology_trace_effective_points(
         len(rt),
         active_policy,
+    )
+    acquired = (
+        intensity if acquired_intensity_values is None else acquired_intensity_values
     )
     seeds = _apex_seeds(morphology_trace, context_interval, active_policy)
     if active_policy.min_prominence_noise_mad > 0.0:
@@ -138,11 +152,18 @@ def enumerate_chrom_peak_segments(
             seeds,
             morphology_trace,
             rt,
-            (
-                intensity
-                if acquired_intensity_values is None
-                else acquired_intensity_values
-            ),
+            acquired,
+            context_interval,
+            active_policy,
+        )
+    envelope_seed_indices = {seed.index for seed in seeds}
+    if active_policy.morphology_trace_method == "rt_envelope":
+        seeds = _restore_rt_envelope_clear_splits(
+            seeds,
+            morphology_trace,
+            residual,
+            rt,
+            acquired,
             context_interval,
             active_policy,
         )
@@ -159,7 +180,59 @@ def enumerate_chrom_peak_segments(
             morphology_trace_values=tuple(float(value) for value in morphology_trace),
         )
 
-    relations = _adjacent_relations(morphology_trace, seeds, active_policy)
+    relation_trace = (
+        residual
+        if active_policy.morphology_trace_method == "rt_envelope"
+        else morphology_trace
+    )
+    relations = _adjacent_relations(relation_trace, seeds, active_policy)
+    if active_policy.morphology_trace_method == "rt_envelope":
+        # Coarse lobes own their separating valley as well as their seeds.
+        # A deeper canonical notch on a falling shoulder must not move that
+        # boundary away from the sustained valley between the lobes. Supported
+        # canonical clear splits, including restored narrow components, remain.
+        envelope_relations = _adjacent_relations(
+            morphology_trace, seeds, active_policy
+        )
+        relations = tuple(
+            envelope_relation
+            if (
+                left.index in envelope_seed_indices
+                and right.index in envelope_seed_indices
+                and not (
+                    relation.relation_class == "clear_split"
+                    and _sustained_canonical_valley(
+                        residual, rt, left, right, relation.valley_index, active_policy
+                    )
+                )
+            )
+            else relation
+            for left, right, relation, envelope_relation in zip(
+                seeds, seeds[1:], relations, envelope_relations
+            )
+        )
+    # Supported lobes with a persistent valley remain separate components
+    # even without baseline resolution. Their shoulder relation still
+    # requires overlap review; short dropouts cannot supply that boundary.
+    seed_groups: list[tuple[int, int]] = []
+    group_start = 0
+    for index in range(len(seeds)):
+        if (
+            active_policy.morphology_trace_method != "rt_envelope"
+            or index == len(seeds) - 1
+            or relations[index].relation_class == "clear_split"
+            or (
+                seeds[index].index in envelope_seed_indices
+                and seeds[index + 1].index in envelope_seed_indices
+                and _sustained_envelope_valley(
+                    relation_trace, rt, seeds[index], seeds[index + 1],
+                    relations[index].valley_index, active_policy,
+                    additional_envelope_smoothing=additional_envelope_smoothing,
+                )
+            )
+        ):
+            seed_groups.append((group_start, index))
+            group_start = index + 1
     segments = tuple(
         _segment_from_seed(
             rt,
@@ -167,13 +240,14 @@ def enumerate_chrom_peak_segments(
             baseline,
             morphology_trace,
             context_interval,
-            seed=seed,
-            seed_index=index,
-            left_relation=relations[index - 1] if index > 0 else None,
-            right_relation=relations[index] if index < len(relations) else None,
+            seed=max(seeds[start:end + 1], key=lambda item: (item.height, -item.index)),
+            seed_index=group_index,
+            left_relation=relations[start - 1] if start > 0 else None,
+            right_relation=relations[end] if end < len(relations) else None,
             policy=active_policy,
+            envelope_seeds=seeds[start:end + 1],
         )
-        for index, seed in enumerate(seeds)
+        for group_index, (start, end) in enumerate(seed_groups)
     )
     return ChromPeakSegmentEnumeration(
         status="OK",
@@ -277,18 +351,55 @@ def _context_interval(
 
 
 def _morphology_trace(
+    rt: np.ndarray,
     residual: np.ndarray,
     policy: ChromPeakSegmentPolicy,
 ) -> np.ndarray:
     window = _morphology_trace_effective_points(len(residual), policy)
-    if window <= 1:
-        return residual.copy()
     if policy.morphology_trace_method == "gaussian_15":
+        if window <= 1:
+            return residual.copy()
         return gaussian15_morphology_trace(residual, window_points=window)
     if policy.morphology_trace_method == "smooth_15":
+        if window <= 1:
+            return residual.copy()
         kernel = np.ones(window, dtype=float) / float(window)
         return np.convolve(residual, kernel, mode="same")
+    if policy.morphology_trace_method == "rt_envelope":
+        return _rt_envelope_trace(rt, residual, policy)
     return residual.copy()
+
+
+def _rt_envelope_trace(
+    rt: np.ndarray,
+    residual: np.ndarray,
+    policy: ChromPeakSegmentPolicy,
+) -> np.ndarray:
+    min_sigma_rt = max(float(policy.morphology_min_sigma_rt), 0.0)
+    if min_sigma_rt == 0.0:
+        return residual.copy()
+
+    median_spacing = float(np.median(np.diff(rt)))
+    existing_sigma_rt = (
+        median_spacing * float(policy.morphology_trace_window_points) / 6.0
+    )
+    if existing_sigma_rt >= min_sigma_rt:
+        return residual.copy()
+
+    additional_sigma_rt = float(np.sqrt(min_sigma_rt**2 - existing_sigma_rt**2))
+    uniform_rt = np.arange(
+        float(rt[0]),
+        float(rt[-1]) + median_spacing,
+        median_spacing,
+        dtype=float,
+    )
+    uniform_residual = np.interp(uniform_rt, rt, residual)
+    uniform_envelope = gaussian_filter1d(
+        uniform_residual,
+        sigma=additional_sigma_rt / median_spacing,
+        mode="nearest",
+    )
+    return np.interp(rt, uniform_rt, uniform_envelope)
 
 
 def _morphology_trace_effective_points(
@@ -297,7 +408,11 @@ def _morphology_trace_effective_points(
 ) -> int:
     if trace_length <= 0:
         return 0
-    if policy.morphology_trace_method not in {"gaussian_15", "smooth_15"}:
+    if policy.morphology_trace_method not in {
+        "gaussian_15",
+        "smooth_15",
+        "rt_envelope",
+    }:
         return 1
     if policy.morphology_trace_window_points <= 1:
         return 1
@@ -369,28 +484,240 @@ def _supported_apex_seeds(
     relations = _adjacent_relations(signal, seeds, policy)
     retained = {seed.index for seed in seeds if seed.index in (start, end - 1)}
     supported: set[int] = set()
+    prominence_by_index: dict[int, float] = {}
+    seed_positions = {seed.index: index for index, seed in enumerate(seeds)}
     for seed, prominence, left, right in zip(
         interior, prominences, left_bases, right_bases
     ):
         left, right = start + int(left), start + int(right) + 1
+        prominence_by_index[seed.index] = float(prominence)
         noise = short_scale_noise_mad(rt[left:right], acquired[left:right])
+        # A subordinate bump cannot dilute its noise estimate with distant
+        # zero background. Include the acquired contour toward an adjacent
+        # higher lobe when both belong to the same connected envelope.
+        position = seed_positions[seed.index]
+        for neighbor_position in (position - 1, position + 1):
+            if not 0 <= neighbor_position < len(seeds):
+                continue
+            neighbor = seeds[neighbor_position]
+            relation = relations[min(position, neighbor_position)]
+            if (
+                neighbor.height <= seed.height
+                or relation.relation_class == "clear_split"
+            ):
+                continue
+            contour_left, contour_right = sorted((seed.index, neighbor.index))
+            noise = max(noise, short_scale_noise_mad(
+                rt[contour_left:contour_right + 1],
+                acquired[contour_left:contour_right + 1],
+            ))
         if prominence >= policy.min_prominence_noise_mad * noise:
             supported.add(seed.index)
-    # Suppress subordinate ripple only inside an independently supported
-    # envelope. A clear valley starts another group. An unsupported group is
-    # retained for the ordinary support/contrast gates, not removed to make a
-    # window question artificially unique.
+    # Noise significance does not make a bump a separate chromatographic peak.
+    # Compare its prominence with the whole connected envelope before using a
+    # neighboring valley as a quantitative boundary. Baseline-separated weak
+    # peaks form their own groups, so a strong remote peak cannot erase them.
+    # Unsupported groups still reach the ordinary support/contrast gates.
     group: list[_ApexSeed] = []
     for index, seed in enumerate(seeds):
         group.append(seed)
         if index < len(relations) and relations[index].relation_class != "clear_split":
             continue
         if any(item.index in supported for item in group):
-            retained.update(item.index for item in group if item.index in supported)
+            envelope_height = max(item.height for item in group)
+            retained.update(
+                item.index
+                for item in group
+                if item.index in supported
+                and prominence_by_index[item.index]
+                >= policy.min_prominence_fraction_of_envelope * envelope_height
+            )
         else:
             retained.update(item.index for item in group)
         group = []
     return tuple(seed for seed in seeds if seed.index in retained)
+
+
+def _restore_rt_envelope_clear_splits(
+    envelope_seeds: tuple[_ApexSeed, ...],
+    envelope_trace: np.ndarray,
+    canonical_residual: np.ndarray,
+    rt: np.ndarray,
+    acquired: np.ndarray,
+    context: TraceInterval,
+    policy: ChromPeakSegmentPolicy,
+) -> tuple[_ApexSeed, ...]:
+    canonical_seeds = _apex_seeds(canonical_residual, context, policy)
+    if policy.min_prominence_noise_mad > 0.0:
+        canonical_seeds = _supported_apex_seeds(
+            canonical_seeds,
+            canonical_residual,
+            rt,
+            acquired,
+            context,
+            policy,
+        )
+    canonical_relations = tuple(
+        relation if (
+            relation.relation_class != "clear_split"
+            or _sustained_canonical_valley(
+                canonical_residual, rt, left, right, relation.valley_index, policy
+            )
+        ) else _AdjacentPeakRelation(relation.valley_index, "shoulder_overlap")
+        for left, right, relation in zip(
+            canonical_seeds, canonical_seeds[1:],
+            _adjacent_relations(canonical_residual, canonical_seeds, policy),
+        )
+    )
+    connected_groups: list[list[_ApexSeed]] = []
+    group: list[_ApexSeed] = []
+    for index, seed in enumerate(canonical_seeds):
+        group.append(seed)
+        if (
+            index < len(canonical_relations)
+            and canonical_relations[index].relation_class != "clear_split"
+        ):
+            continue
+        connected_groups.append(group)
+        group = []
+    if not connected_groups:
+        return envelope_seeds
+    if not envelope_seeds:
+        # Coarse smoothing can lower a supported narrow peak below the seed
+        # height floor. Its canonical group still reaches ordinary qualification,
+        # including when no unrelated coarse maximum exists in the context.
+        return tuple(
+            max(connected, key=lambda seed: (seed.height, -seed.index))
+            for connected in connected_groups
+        )
+
+    group_boundaries = (
+        context.start_index,
+        *(
+            _valley_index(canonical_residual, left[-1].index, right[0].index)
+            for left, right in zip(connected_groups, connected_groups[1:])
+        ),
+        context.end_index,
+    )
+    if len(connected_groups) < 2:
+        return envelope_seeds
+    restored = {seed.index: seed for seed in envelope_seeds}
+    envelope_relations = _adjacent_relations(envelope_trace, envelope_seeds, policy)
+    for index, envelope_seed in enumerate(envelope_seeds):
+        left = (
+            context.start_index
+            if index == 0
+            else envelope_relations[index - 1].valley_index
+        )
+        right = (
+            context.end_index
+            if index == len(envelope_seeds) - 1
+            else envelope_relations[index].valley_index + 1
+        )
+        enclosed = tuple(
+            (group_index, connected)
+            for group_index, connected in enumerate(connected_groups)
+            if left <= connected[0].index <= connected[-1].index < right
+        )
+        if len(enclosed) < 2:
+            continue
+        # Replacement groups must cover this maximum's canonical basin. Use
+        # separating valleys: smoothing can move an asymmetric maximum outside
+        # the canonical apex span. Distant flank groups cannot replace it.
+        if not (
+            group_boundaries[enclosed[0][0]]
+            <= envelope_seed.index
+            <= group_boundaries[enclosed[-1][0] + 1]
+        ):
+            continue
+        restored.pop(envelope_seed.index)
+        for _, connected in enclosed:
+            representative = max(
+                connected,
+                key=lambda seed: (seed.height, -seed.index),
+            )
+            restored[representative.index] = representative
+    return tuple(restored[index] for index in sorted(restored))
+
+
+def _sustained_envelope_valley(
+    signal: np.ndarray,
+    rt: np.ndarray,
+    left: _ApexSeed,
+    right: _ApexSeed,
+    valley_index: int,
+    policy: ChromPeakSegmentPolicy,
+    *,
+    additional_envelope_smoothing: bool,
+) -> bool:
+    """Measure a supported lobe pair's valley width at half its dip depth.
+
+    A broad decrease and recovery can separate overlapping components without
+    returning to baseline. Requiring one canonical smoothing footprint rejects
+    a brief acquired dropout that also creates two coarse-envelope maxima.
+    """
+    spacing = float(np.median(np.diff(rt[left.index:right.index + 1])))
+    footprint = spacing * max(0, policy.morphology_trace_window_points - 1)
+    weaker_height = min(float(signal[left.index]), float(signal[right.index]))
+    valley_height = float(signal[valley_index])
+    # An accepted canonical valley already separates these components. A
+    # coarser-scale rescue may add separation evidence, never remove it.
+    for use_supported_floor in (False, True):
+        if use_supported_floor:
+            if not additional_envelope_smoothing:
+                return False
+            # A finer canonical notch cannot set the depth of a broader RT valley.
+            support_left = max(
+                left.index,
+                int(np.searchsorted(
+                    rt, rt[valley_index] - 0.5 * footprint, side="left"
+                )),
+            )
+            support_right = min(
+                right.index + 1,
+                int(np.searchsorted(
+                    rt, rt[valley_index] + 0.5 * footprint, side="right"
+                )),
+            )
+            valley_height = float(np.max(signal[support_left:support_right]))
+        if weaker_height <= valley_height:
+            continue
+        threshold = valley_height + 0.5 * (weaker_height - valley_height)
+        start = end = valley_index
+        while start > left.index and signal[start - 1] <= threshold:
+            start -= 1
+        while end < right.index and signal[end + 1] <= threshold:
+            end += 1
+        if rt[end] - rt[start] >= footprint:
+            return True
+    return False
+
+
+def _sustained_canonical_valley(
+    signal: np.ndarray,
+    rt: np.ndarray,
+    left: _ApexSeed,
+    right: _ApexSeed,
+    valley_index: int,
+    policy: ChromPeakSegmentPolicy,
+) -> bool:
+    """A fine-scale trough must outlast one canonical smoothing footprint.
+
+    A brief dropout can survive Gaussian smoothing as a deep local notch.
+    It cannot split a single RT envelope; a sustained low interval can recover
+    two genuinely narrow peaks that the coarser envelope blurred together.
+    """
+    threshold = policy.clear_valley_max_fraction * min(
+        float(signal[left.index]), float(signal[right.index])
+    )
+    start = end = valley_index
+    while start > left.index and signal[start - 1] <= threshold:
+        start -= 1
+    while end < right.index and signal[end + 1] <= threshold:
+        end += 1
+    spacing = float(np.median(np.diff(rt[left.index:right.index + 1])))
+    footprint = spacing * max(0, policy.morphology_trace_window_points - 1)
+    return bool(rt[end] - rt[start] >= footprint)
 
 
 def _adjacent_relations(
@@ -407,7 +734,10 @@ def _adjacent_relations(
         )
         valley_fraction = _safe_ratio(
             float(morphology_trace[valley_index]),
-            min(left_seed.height, right_seed.height),
+            min(
+                float(morphology_trace[left_seed.index]),
+                float(morphology_trace[right_seed.index]),
+            ),
         )
         relation_class: Literal["clear_split", "shoulder_overlap"] = (
             "clear_split"
@@ -441,11 +771,38 @@ def _segment_from_seed(
     left_relation: _AdjacentPeakRelation | None,
     right_relation: _AdjacentPeakRelation | None,
     policy: ChromPeakSegmentPolicy,
+    envelope_seeds: tuple[_ApexSeed, ...],
 ) -> ChromPeakSegment:
-    left, right = _seed_interval_indices(
-        morphology_trace, context_interval, seed, left_relation, right_relation, policy
+    # The RT envelope establishes supported lobes and separating valleys.
+    # Its convolution tails are not acquired quantitative support: close the
+    # interval on the unchanged canonical signal used for area and apex.
+    boundary_signal = (
+        np.maximum(intensity - baseline, 0.0)
+        if policy.morphology_trace_method == "rt_envelope"
+        else morphology_trace
+    )
+    left, _ = _seed_interval_indices(
+        boundary_signal, context_interval, envelope_seeds[0],
+        left_relation, right_relation, policy,
+    )
+    _, right = _seed_interval_indices(
+        boundary_signal, context_interval, envelope_seeds[-1],
+        left_relation, right_relation, policy,
     )
     relation_labels = _relation_labels(left_relation, right_relation)
+    if policy.morphology_trace_method == "rt_envelope":
+        # Qualification may discard a lobe as an independent candidate, but
+        # that is not evidence that its parent envelope is a clean component.
+        # Keep canonical contour complexity as review evidence, separately
+        # from the coarser envelope's quantitative boundaries.
+        contour = boundary_signal[left:right]
+        peaks = find_peaks(contour)[0]
+        prominences = peak_prominences(contour, peaks)[0]
+        review_lobes = sum(
+            prominences >= policy.min_prominence_fraction_of_envelope * np.max(contour)
+        )
+        if len(envelope_seeds) > 1 or review_lobes > 1:
+            relation_labels = (*relation_labels, "shoulder_overlap")
     interval = _trace_interval(rt, left, right)
     segment_class = _segment_class(interval, relation_labels, policy)
     stop_reason = _boundary_stop_reason(segment_class, relation_labels)
@@ -462,16 +819,29 @@ def _segment_from_seed(
         interval.start_index,
         interval.end_index,
     )
+    apex_index = seed.index
+    if policy.morphology_trace_method == "rt_envelope":
+        segment_residual = np.maximum(
+            intensity[interval.start_index : interval.end_index]
+            - baseline[interval.start_index : interval.end_index],
+            0.0,
+        )
+        apex_index = interval.start_index + int(np.argmax(segment_residual))
+    apex_residual = (
+        float(boundary_signal[apex_index])
+        if policy.morphology_trace_method == "rt_envelope"
+        else float(morphology_trace[apex_index])
+    )
     return ChromPeakSegment(
         segment_id=f"chrom_peak_segment_{seed_index + 1:03d}",
         interval=interval,
-        apex_index=seed.index,
-        apex_rt_min=float(rt[seed.index]),
+        apex_index=apex_index,
+        apex_rt_min=float(rt[apex_index]),
         raw_apex_residual=max(
             0.0,
-            float(intensity[seed.index] - baseline[seed.index]),
+            float(intensity[apex_index] - baseline[apex_index]),
         ),
-        morphology_apex_residual=seed.height,
+        morphology_apex_residual=apex_residual,
         area_baseline_corrected=area,
         morphology_area_shadow=morphology_area,
         segment_class=segment_class,
@@ -520,8 +890,7 @@ def _left_baseline_boundary(
 ) -> int:
     left = apex_index
     while (
-        left > context_interval.start_index
-        and morphology_trace[left - 1] > threshold
+        left > context_interval.start_index and morphology_trace[left - 1] > threshold
     ):
         left -= 1
     return left
@@ -534,10 +903,7 @@ def _right_baseline_boundary(
     context_interval: TraceInterval,
 ) -> int:
     right = apex_index + 1
-    while (
-        right < context_interval.end_index
-        and morphology_trace[right] > threshold
-    ):
+    while right < context_interval.end_index and morphology_trace[right] > threshold:
         right += 1
     return right
 

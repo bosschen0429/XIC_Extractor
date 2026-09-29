@@ -122,3 +122,307 @@ def test_segment_area_uses_raw_trace_not_morphology_area() -> None:
     expected_raw_area = float(np.trapezoid(raw_segment, raw_rt)) * 60.0
     assert segment.area_baseline_corrected == pytest.approx(expected_raw_area)
     assert segment.morphology_area_shadow != pytest.approx(expected_raw_area)
+
+
+def test_supported_broad_peak_does_not_quantify_each_surface_ripple() -> None:
+    rt = np.linspace(0.0, 8.0, 2401)
+    envelope = 10000.0 * np.exp(-0.5 * ((rt - 4.0) / 0.7) ** 2)
+    signal = envelope * (1.0 + 0.055 * np.cos(2 * np.pi * (rt - 4.0) / 0.12))
+    result = enumerate_chrom_peak_segments(
+        rt,
+        signal,
+        np.zeros_like(signal),
+        policy=ChromPeakSegmentPolicy(
+            morphology_trace_method="rt_envelope",
+            morphology_min_sigma_rt=0.08,
+            min_prominence_noise_mad=2.0,
+        ),
+        acquired_intensity_values=signal,
+    )
+
+    assert len(result.segments) == 1
+    peak = result.segments[0]
+    assert peak.apex_rt_min == pytest.approx(4.0, abs=0.01)
+    assert peak.interval.rt_start_min < 2.1
+    assert peak.interval.rt_end_min > 5.9
+    known_area = 10000.0 * 0.7 * np.sqrt(2 * np.pi) * 60.0
+    assert peak.area_baseline_corrected == pytest.approx(known_area, rel=0.015)
+
+
+def test_clear_separated_groups_restore_one_representative_per_lobe() -> None:
+    rt = np.linspace(0.0, 4.0, 2001)
+    central_lobe = sum(
+        amplitude * np.exp(-0.5 * ((rt - center) / 0.055) ** 2)
+        for amplitude, center in ((100.0, 1.88), (105.0, 2.0), (65.0, 2.12))
+    )
+    signal = (
+        central_lobe
+        + 25.0 * np.exp(-0.5 * ((rt - 1.4) / 0.015) ** 2)
+        + 25.0 * np.exp(-0.5 * ((rt - 2.7) / 0.015) ** 2)
+    )
+
+    result = enumerate_chrom_peak_segments(
+        rt,
+        signal,
+        np.zeros_like(signal),
+        policy=ChromPeakSegmentPolicy(
+            min_apex_fraction_of_context=0.0,
+            morphology_trace_method="rt_envelope",
+            morphology_min_sigma_rt=0.08,
+            min_prominence_noise_mad=2.0,
+        ),
+        acquired_intensity_values=signal,
+    )
+
+    assert [segment.apex_rt_min for segment in result.segments] == pytest.approx(
+        [1.4, 1.992, 2.7]
+    )
+    central = result.segments[1]
+    assert central.interval.rt_start_min == pytest.approx(1.73)
+    assert central.interval.rt_end_min == pytest.approx(2.26)
+
+
+def test_overlapping_lobes_preserve_partitioned_mass_and_weak_isolated_peak() -> None:
+    rt = np.linspace(0.0, 12.0, 3601)
+    signal = (
+        10000.0 * np.exp(-0.5 * ((rt - 3.0) / 0.6) ** 2)
+        + 8000.0 * np.exp(-0.5 * ((rt - 4.8) / 0.6) ** 2)
+        + 800.0 * np.exp(-0.5 * ((rt - 9.0) / 0.25) ** 2)
+    )
+    result = enumerate_chrom_peak_segments(
+        rt,
+        signal,
+        np.zeros_like(signal),
+        policy=ChromPeakSegmentPolicy(
+            morphology_trace_method="rt_envelope",
+            morphology_min_sigma_rt=0.08,
+            min_prominence_noise_mad=2.0,
+        ),
+        acquired_intensity_values=signal,
+    )
+
+    assert len(result.segments) == 3
+    left, right, isolated = result.segments
+    assert all("shoulder_overlap" in s.evidence_sources for s in (left, right))
+    assert [left.apex_rt_min, right.apex_rt_min] == pytest.approx([3.0, 4.8], abs=0.08)
+    assert left.interval.rt_start_min < 3.0 - 1.2
+    assert right.interval.rt_end_min > 4.8 + 1.2
+    assert left.interval.rt_end_min == right.interval.rt_start_min
+    # Valley partitioning preserves the observed sum. Neither portion is
+    # claimed to be a deconvolved, compound-specific Gaussian area.
+    known_overlap_area = (10000.0 + 8000.0) * 0.6 * np.sqrt(2 * np.pi) * 60.0
+    assert left.area_baseline_corrected + right.area_baseline_corrected == (
+        pytest.approx(known_overlap_area, rel=0.01)
+    )
+    assert isolated.apex_rt_min == pytest.approx(9.0, abs=0.04)
+    assert "shoulder_overlap" not in isolated.evidence_sources
+
+
+
+@pytest.mark.parametrize("reverse", (False, True))
+def test_remote_small_pulses_preserve_supported_overlapping_doublet(
+    reverse: bool,
+) -> None:
+    from xic_extractor.peak_detection.ms1_morphology import (
+        gaussian15_morphology_trace,
+    )
+
+    rt = np.linspace(0.0, 16.0, 8001)
+    signal = (
+        10000.0 * np.exp(-0.5 * ((rt - 7.5) / 0.6) ** 2)
+        + 14000.0 * np.exp(-0.5 * ((rt - 9.1) / 0.6) ** 2)
+    )
+    for center in (12.5, 13.5):
+        signal += 20.0 * np.exp(-0.5 * ((rt - center) / 0.003) ** 2)
+    if reverse:
+        signal = signal[::-1]
+    canonical = gaussian15_morphology_trace(signal, window_points=15)
+    result = enumerate_chrom_peak_segments(
+        rt,
+        canonical,
+        np.zeros_like(signal),
+        policy=ChromPeakSegmentPolicy(
+            morphology_trace_method="rt_envelope",
+            morphology_min_sigma_rt=0.08,
+            min_apex_fraction_of_context=0.0,
+            min_prominence_noise_mad=2.0,
+            baseline_return_fraction=0.0,
+            baseline_return_min_residual=0.0,
+            include_baseline_return_samples=True,
+        ),
+        acquired_intensity_values=signal,
+    )
+
+    # Remote pulses cannot erase either supported lobe or the persistent
+    # valley between them. Overlap remains review evidence on both portions.
+    principal = [s for s in result.segments if 6.0 < s.apex_rt_min < 11.0]
+    assert len(principal) == 2
+    assert all("shoulder_overlap" in s.evidence_sources for s in principal)
+    centers = (6.9, 8.5) if reverse else (7.5, 9.1)
+    assert [s.apex_rt_min for s in principal] == pytest.approx(centers, abs=0.12)
+    assert principal[0].interval.rt_start_min < min(centers) - 1.2
+    assert principal[-1].interval.rt_end_min > max(centers) + 1.2
+    assert principal[0].interval.rt_end_min == principal[1].interval.rt_start_min
+    known_area = (10000.0 + 14000.0) * 0.6 * np.sqrt(2 * np.pi) * 60.0
+    assert sum(s.area_baseline_corrected for s in principal) == pytest.approx(
+        known_area, rel=0.01
+    )
+
+
+
+def test_rt_envelope_peak_count_and_apex_are_stable_across_rt_density() -> None:
+    observations: list[tuple[int, float]] = []
+    for point_count in (1201, 2401):
+        rt = np.linspace(0.0, 8.0, point_count)
+        envelope = 10000.0 * np.exp(-0.5 * ((rt - 4.0) / 0.7) ** 2)
+        signal = envelope * (1.0 + 0.055 * np.cos(2 * np.pi * (rt - 4.0) / 0.12))
+        result = enumerate_chrom_peak_segments(
+            rt,
+            signal,
+            np.zeros_like(signal),
+            policy=ChromPeakSegmentPolicy(
+                morphology_trace_method="rt_envelope",
+                morphology_min_sigma_rt=0.08,
+                min_prominence_noise_mad=2.0,
+            ),
+            acquired_intensity_values=signal,
+        )
+        observations.append((len(result.segments), result.segments[0].apex_rt_min))
+
+    assert [count for count, _ in observations] == [1, 1]
+    assert [apex for _, apex in observations] == pytest.approx([4.0, 4.0], abs=0.01)
+
+
+def test_rt_envelope_reports_original_signal_apex_within_smoothed_bounds() -> None:
+    rt = np.linspace(0.0, 8.0, 2401)
+    broad_peak = 100.0 * np.exp(-0.5 * ((rt - 4.0) / 0.5) ** 2)
+    narrow_apex = 75.0 * np.exp(-0.5 * ((rt - 4.18) / 0.004) ** 2)
+    signal = broad_peak + narrow_apex
+
+    result = enumerate_chrom_peak_segments(
+        rt,
+        signal,
+        np.zeros_like(signal),
+        policy=ChromPeakSegmentPolicy(
+            morphology_trace_method="rt_envelope",
+            morphology_min_sigma_rt=0.08,
+        ),
+    )
+
+    assert len(result.segments) == 1
+    segment = result.segments[0]
+    assert segment.apex_index == int(np.argmax(signal))
+    assert segment.apex_rt_min == pytest.approx(4.18, abs=0.005)
+    assert int(np.argmax(result.morphology_trace_values)) != segment.apex_index
+    assert segment.morphology_apex_residual == pytest.approx(
+        signal[segment.apex_index]
+    )
+
+
+@pytest.mark.parametrize("sigma", (0.01, 0.02))
+def test_rt_envelope_preserves_canonical_clear_valley_between_supported_peaks(
+    sigma: float,
+) -> None:
+    from xic_extractor.configuration.signal_processing_profile import (
+        SignalProcessingProfile,
+    )
+    from xic_extractor.peak_detection.physical_peak_evaluation import (
+        enumerate_physical_segment_universe,
+        evaluate_physical_peak,
+        prepare_physical_signal,
+    )
+
+    rt = np.linspace(0.0, 2.0, 1001)
+    raw = (
+        10.0
+        + 1000.0 * np.exp(-0.5 * ((rt - 0.94) / sigma) ** 2)
+        + 1000.0 * np.exp(-0.5 * ((rt - 1.06) / sigma) ** 2)
+    )
+    profile = SignalProcessingProfile()
+    prepared = prepare_physical_signal(rt, raw, profile=profile)
+    universe = enumerate_physical_segment_universe(
+        prepared,
+        request_context_rt_start_min=0.0,
+        request_context_rt_end_min=2.0,
+    )
+
+    assert len(universe.segments) == 2
+    left, right = universe.segments
+    assert left.right_rt_min <= right.left_rt_min
+    assert [left.apex_rt_min, right.apex_rt_min] == pytest.approx([0.94, 1.06])
+    analytic_area = 1000.0 * sigma * np.sqrt(2.0 * np.pi) * 60.0
+    assert [left.area_counts_seconds, right.area_counts_seconds] == pytest.approx(
+        [analytic_area, analytic_area], rel=0.01
+    )
+
+    evaluations = tuple(
+        evaluate_physical_peak(
+            prepared,
+            selection_subject_id=f"peak-{query_rt}",
+            query_rt_min=query_rt,
+            request_context_rt_start_min=0.0,
+            request_context_rt_end_min=2.0,
+        )
+        for query_rt in (0.94, 1.06)
+    )
+    assert all(evaluation.state == "available" for evaluation in evaluations)
+    assert len(
+        {
+            evaluation.facts.physical_segment_id
+            for evaluation in evaluations
+            if evaluation.facts is not None
+        }
+    ) == 2
+
+
+def test_clear_valley_classification_uses_one_signal_scale() -> None:
+    from xic_extractor.peak_detection.physical_peak_evaluation import (
+        evaluate_physical_peak,
+        prepare_physical_signal,
+    )
+
+    rt = np.linspace(0.0, 2.0, 1001)
+    raw = 10.0 + sum(
+        1000.0 * np.exp(-0.5 * ((rt - center) / 0.055) ** 2)
+        for center in (0.885, 1.115)
+    )
+    prepared = prepare_physical_signal(rt, raw)
+    for center in (0.885, 1.115):
+        answer = evaluate_physical_peak(
+            prepared, selection_subject_id="resolved-doublet", query_rt_min=center
+        )
+        assert answer.state == "available"
+        assert len(answer.segment_universe.segments) == 2
+        # The analytical valley is ~22% of either apex, below the 30%
+        # clear-valley limit, even though envelope smoothing lowers the apex.
+        assert not answer.requires_overlap_review
+
+
+@pytest.mark.parametrize("reverse", (False, True))
+def test_clear_split_survives_asymmetric_envelope_apex_shift(reverse: bool) -> None:
+    from xic_extractor.peak_detection.physical_peak_evaluation import (
+        evaluate_physical_peak,
+        prepare_physical_signal,
+    )
+
+    rt = np.linspace(0.0, 2.0, 1001)
+    width = np.where(rt < 1.0, 0.08, 0.005)
+    raw = (
+        10.0
+        + 1000.0 * np.exp(-0.5 * ((rt - 1.0) / width) ** 2)
+        + 1000.0 * np.exp(-0.5 * ((rt - 1.1) / 0.005) ** 2)
+    )
+    if reverse:
+        raw = raw[::-1]
+    query = 0.9 if reverse else 1.1
+    answer = evaluate_physical_peak(
+        prepare_physical_signal(rt, raw),
+        selection_subject_id="asymmetric-separated-doublet",
+        query_rt_min=query,
+    )
+
+    assert answer.state == "available"
+    assert answer.facts is not None
+    assert answer.facts.apex_rt_min == pytest.approx(query, abs=0.002)
+    assert len(answer.segment_universe.segments) == 2
+    assert not answer.requires_overlap_review

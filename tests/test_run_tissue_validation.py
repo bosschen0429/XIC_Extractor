@@ -133,7 +133,7 @@ def test_preflight_rejects_wrong_raw_count_before_creating_output(
     )
 
     assert code == 2
-    assert "expected 8 nonrecursive .raw files, found 7" in capsys.readouterr().err
+    assert "expected 8 analysis RAW files, found 7" in capsys.readouterr().err
     assert not output_dir.exists()
 
 
@@ -231,3 +231,82 @@ def test_execution_persists_plan_and_stops_after_failed_discovery(
         (output_dir / "stage_timings.json").read_text(encoding="utf-8")
     )
     assert timings["discovery"]["returncode"] == 9
+
+
+@pytest.mark.parametrize(
+    ("explicit", "configured", "expected"),
+    [
+        (None, None, None),
+        (None, "env-cache", "env-cache"),
+        ("cli-cache", "env-cache", "cli-cache"),
+    ],
+    ids=["run-own", "from-environment", "explicit-wins"],
+)
+def test_preflight_passes_a_shared_acquisition_cache_to_alignment(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    explicit: str | None,
+    configured: str | None,
+    expected: str | None,
+) -> None:
+    raw_dir, dll_dir, _ = _inputs(tmp_path, count=8)
+    monkeypatch.setattr(run_tissue_validation, "preflight_raw_reader", lambda _path: [])
+    monkeypatch.setattr(run_tissue_validation, "_LOCAL_ENV", tmp_path / "absent.env")
+    monkeypatch.delenv("XIC_ACQUISITION_CACHE_DIR", raising=False)
+    if configured is not None:
+        monkeypatch.setenv("XIC_ACQUISITION_CACHE_DIR", str(tmp_path / configured))
+    argv = [
+        "--dataset", "8", "--raw-dir", str(raw_dir), "--dll-dir", str(dll_dir),
+        "--output-dir", str(tmp_path / "out"), "--preflight-only",
+    ]
+    if explicit is not None:
+        argv += ["--acquisition-cache-dir", str(tmp_path / explicit)]
+
+    assert run_tissue_validation.main(argv) == 0
+    plan = json.loads(capsys.readouterr().out)
+    command = plan["commands"]["alignment"]
+
+    if expected is None:
+        assert "--acquisition-cache-dir" not in command
+        assert plan["inputs"]["acquisition_cache_dir"] is None
+    else:
+        want = str((tmp_path / expected).resolve())
+        assert command[command.index("--acquisition-cache-dir") + 1] == want
+        assert plan["inputs"]["acquisition_cache_dir"] == want
+        from scripts import run_alignment
+
+        parsed = run_alignment._parse_args(command[3:])
+        assert parsed.acquisition_cache_dir == Path(want)
+
+
+def test_85raw_preflight_applies_tracked_sample_metadata_by_default(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(run_tissue_validation, "preflight_raw_reader", lambda _path: [])
+    raw_dir, dll_dir, _ = _inputs(tmp_path, count=85)
+    tracked = run_tissue_validation._DATASET_SAMPLE_METADATA[85]
+    excluded = [
+        line.split("\t")[2]
+        for line in tracked.read_text(encoding="utf-8").splitlines()[1:]
+    ]
+    assert len(excluded) == 6
+    for stem in excluded:
+        (raw_dir / "except sample").mkdir(exist_ok=True)
+        (raw_dir / "except sample" / f"{stem}.raw").write_bytes(b"")
+
+    code = run_tissue_validation.main(
+        [
+            "--dataset", "85", "--raw-dir", str(raw_dir), "--dll-dir", str(dll_dir),
+            "--output-dir", str(tmp_path / "out"), "--preflight-only",
+        ]
+    )
+
+    assert code == 0
+    plan = json.loads(capsys.readouterr().out)
+    assert plan["inputs"]["raw_count"] == 85
+    assert plan["inputs"]["sample_metadata"] == str(tracked)
+    discovery = plan["commands"]["discovery"]
+    assert discovery[discovery.index("--sample-metadata") + 1] == str(tracked)

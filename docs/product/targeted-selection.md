@@ -22,6 +22,37 @@ CrossSample, ModeTrack, Backfill, or selected-value implementation.
 
 ## Contract
 
+### Reference input diagnostics
+
+`tools.diagnostics.check_reference_consistency` checks target CSV references
+on demand, using the existing configuration reader and RAW acquisition owner.
+The JSON manifest explicitly names each method/group, target CSV, and optional
+RAW files. The reference RT is the target search-window midpoint.
+Multiple groups use leave-one-out monotonic interpolation of other shared
+targets, including ISTDs. For each directed group pair, anchors with the
+largest supported own leave-one-out residual above the policy threshold are
+iteratively excluded while at least three anchors remain. Excluded targets
+still receive predictions and warnings; exclusion does not declare a reference
+wrong. Unsupported endpoints are not extrapolated.
+Single-group input skips mapping and checks only RAW peak-cluster positions.
+
+The diagnostic emits `reference_consistency.json` and `reference_review.tsv`.
+The JSON records screened anchors, pairwise predictions, and the median/p90
+absolute residual distribution over group/target median predictions. Mapping
+residuals above the policy threshold receive informational warnings. High
+warnings require RAW multi-cluster ordinal disagreement, a reference outside
+every detected cluster's half-prominence extent and beyond the apex-match
+tolerance, or a mapping prediction matching a different RAW cluster. A matching
+single peak cannot produce a high warning.
+Ordinals compare only equal cluster counts, with one vote per group and a
+majority of all peer groups; incomparable groups abstain. Gaussian smoothing,
+minimum prominence, and minimum half-prominence width reject narrow impulses
+before assigning ordinals. These are diagnostic positions, not selected peaks.
+Missing RAW evidence remains unavailable. CLI help owns policy defaults and
+acquisition bounds; the JSON preserves the effective policy and input provenance.
+These outputs have `diagnostic_only` evidence status and no selected-peak,
+reference-editing, quantitation, or ProductWriter authority.
+
 ### Physical evaluation
 
 - Acquisition enumerates the shared physical segment universe for the
@@ -32,17 +63,30 @@ CrossSample, ModeTrack, Backfill, or selected-value implementation.
   Profile-bound capture does not run a second boundary resolver or
   integration.
 - RT, bounds, and width are expressed in minutes.
-- An anchor-guided NL-focused acquisition can clip a selected peak at an
-  acquired trace edge within the configured target scope, while the apex stays
-  inside the configured target RT window. In that case the acquisition widens
-  its query once to the union of the current query RT range and the configured
-  target RT window (`rt_min`..`rt_max`). The same peak and evidence owners then
-  select from the observed context.
-- A complete selected peak keeps its original query. A manual RT does not
-  trigger this window restore and does not choose its result.
+- When identity selection chooses no component, the physical question retains
+  the acquired context and full segment universe with no admissible selection;
+  capture preserves the unavailable answer instead of selecting a broad tail.
+- If the selection window has no qualified physical candidate but contains a
+  clipped segment's apex, acquisition expands its context once by the configured
+  target-window width on each side, with a zero lower RT limit. Selection bounds
+  and reference RT stay unchanged. An existing qualified in-window candidate
+  keeps its original acquisition and quantitation.
 
 ### Target identity and search scope
 
+- For no-NL inputs, the configured RT-window center participates in component
+  identity while the complete acquisition context remains available to the
+  shared physical owner. The supplied group reference is encoded in that
+  center; missing reference rows remain excluded by the input owner.
+- A credible paired ISTD transfers observed drift while preserving the
+  configured analyte/ISTD RT offset. Missing or untrusted pairs fall back to the
+  analyte reference and existing sample drift. No-NL selection does not use
+  learned RT-library priors.
+- Among strongly supported no-NL physical candidates without other identity
+  blockers, selection first prefers an interval containing the reference, then
+  the closest apex. Shape concerns remain evidence for the existing product
+  policy; identity selection does not alter counted detection or physical
+  bounds and area. Equal references for different target rows are permitted.
 - Product Targeted output is a workflow-owned projection from evidence and
   selection decisions.
 - Shared evidence providers inform Targeted product state. Shared evidence
