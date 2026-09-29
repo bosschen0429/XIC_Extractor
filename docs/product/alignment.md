@@ -141,6 +141,10 @@ Initial grouping uses the sparse feature index described below. It scores only
 compatible feature candidates and retains the evaluated evidence. Missing pair
 records mean `not_evaluated`; they do not prove incompatibility. Backfill checks
 its observation against the fixed destination group before admission.
+Window grouping scores the full precursor and product mass separation of each
+pair. A near-equal pairing to one sample cannot erase independent reciprocal
+support from another sample. Contested pairs do not grow bands; ambiguous
+owners without independent support remain unresolved.
 After local ordinary bands settle, a prepared batch warp and complete injection
 order allow bands separated by unobserved injections to join when their
 corrected RT trends and mass centres support one band, each is the other's

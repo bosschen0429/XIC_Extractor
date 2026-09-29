@@ -388,6 +388,81 @@ def test_one_sample_doublet_does_not_split_the_other_seventy_nine() -> None:
     )
 
 
+@pytest.mark.parametrize("reverse", (False, True))
+def test_mass_resolved_coeluting_bands_survive_smooth_rt_drift(reverse: bool) -> None:
+    # Distinct measured inputs remain distinct; this does not decide whether
+    # two method subjects describe the same chemical compound.
+    bands = tuple(
+        tuple(
+            _synthetic_owner(
+                f"s{order:02d}",
+                f"{label}-{order}",
+                18.3 + 1.3 * (order - 1) / 84,
+                precursor_mz=mz,
+                product_mz=137.065,
+            )
+            for order in range(1, 86)
+        )
+        for label, mz in (("lower", 253.106354), ("upper", 253.111792))
+    )
+    owners = tuple(owner for band in bands for owner in band)
+    result = infer_feature_memberships(
+        tuple(reversed(owners)) if reverse else owners,
+        config=CID_NL_ALIGNMENT_CONFIG,
+        injection_order={f"s{order:02d}": order for order in range(1, 86)},
+        drift_lookup=None,
+        rt_warp=BatchRtWarp((), 0),
+    )
+    assert {frozenset(group.owner_ids) for group in result.groups} == {
+        frozenset(owner.owner_id for owner in band) for band in bands
+    }
+    assert all(group.disposition == "assigned" for group in result.groups)
+
+
+def test_ambiguous_distant_pair_does_not_erase_independent_local_support() -> None:
+    local = tuple(
+        _synthetic_owner(
+            sample, sample, 10.0, precursor_mz=253.106354, product_mz=137.065
+        )
+        for sample in ("first", "second")
+    )
+    distant = (
+        _synthetic_owner(
+            "later",
+            "lower",
+            10.0,
+            precursor_mz=253.106354,
+            product_mz=137.06618,
+        ),
+        _synthetic_owner(
+            "later",
+            "upper",
+            10.0,
+            precursor_mz=253.111792,
+            product_mz=137.065,
+        ),
+    )
+    result = infer_feature_memberships(
+        (*local, *distant),
+        config=CID_NL_ALIGNMENT_CONFIG,
+        injection_order={"first": 1, "second": 2, "later": 17},
+        drift_lookup=None,
+        rt_warp=BatchRtWarp((), 0),
+    )
+    assert any(
+        group.disposition == "assigned"
+        and {owner.owner_id for owner in local} <= set(group.owner_ids)
+        for group in result.groups
+    )
+    # The two later observations have near-equal costs for the one supported
+    # band. Neither gains membership merely because the band now exists.
+    for owner in distant:
+        assert any(
+            group.disposition == "undecided" and group.owner_ids == (owner.owner_id,)
+            for group in result.groups
+        )
+
+
 def test_sparse_band_remains_warp_only_beside_an_unrelated_dense_band() -> None:
     sparse_orders = (1, 21, 41, 61, 81)
     sparse = tuple(
