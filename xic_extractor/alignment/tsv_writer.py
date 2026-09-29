@@ -100,29 +100,6 @@ ALIGNMENT_CELLS_COLUMNS = (
     "family_center_mz",
     "family_center_rt",
     "reason",
-    "backfill_ms2_trigger_scan_count",
-    "backfill_strict_nl_scan_count",
-    "backfill_ms2_trace_strength",
-    "backfill_dda_missing_nl_policy_status",
-    "backfill_family_ms2_required_tag_status",
-    "backfill_evidence_reason",
-    "region_candidate_count",
-    "region_selected_proposal_sources",
-    "region_selected_merge_note",
-    "region_shadow_status",
-    "region_shadow_verdict",
-    "region_merge_suggestion_source",
-    "region_area_ratio",
-    "region_selected_interval_count",
-    "region_selected_interval_gap_max_min",
-    "region_local_mixture_diagnostic",
-    "region_local_mixture_reason",
-    "region_review_reason",
-    "region_decision_status",
-    "region_decision_class",
-    "region_product_action",
-    "region_promotion_reason",
-    "region_baseline_method",
 )
 
 BACKFILL_EVIDENCE_ROW_FLAGS = frozenset(
@@ -364,43 +341,6 @@ def _alignment_cell_rows(matrix: AlignmentMatrix) -> Iterable[dict[str, object]]
             "family_center_mz": format_value(_family_center_mz(cluster)),
             "family_center_rt": format_value(_family_center_rt(cluster)),
             "reason": cell.reason,
-            "backfill_ms2_trigger_scan_count": format_value(
-                cell.backfill_ms2_trigger_scan_count
-            ),
-            "backfill_strict_nl_scan_count": format_value(
-                cell.backfill_strict_nl_scan_count
-            ),
-            "backfill_ms2_trace_strength": cell.backfill_ms2_trace_strength,
-            "backfill_dda_missing_nl_policy_status": (
-                cell.backfill_dda_missing_nl_policy_status
-            ),
-            "backfill_family_ms2_required_tag_status": (
-                cell.backfill_family_ms2_required_tag_status
-            ),
-            "backfill_evidence_reason": cell.backfill_evidence_reason,
-            "region_candidate_count": format_value(cell.region_candidate_count),
-            "region_selected_proposal_sources": ";".join(
-                cell.region_selected_proposal_sources
-            ),
-            "region_selected_merge_note": cell.region_selected_merge_note,
-            "region_shadow_status": cell.region_shadow_status,
-            "region_shadow_verdict": cell.region_shadow_verdict,
-            "region_merge_suggestion_source": cell.region_merge_suggestion_source,
-            "region_area_ratio": format_value(cell.region_area_ratio),
-            "region_selected_interval_count": format_value(
-                cell.region_selected_interval_count
-            ),
-            "region_selected_interval_gap_max_min": format_value(
-                cell.region_selected_interval_gap_max_min
-            ),
-            "region_local_mixture_diagnostic": (cell.region_local_mixture_diagnostic),
-            "region_local_mixture_reason": cell.region_local_mixture_reason,
-            "region_review_reason": cell.region_review_reason,
-            "region_decision_status": cell.region_decision_status,
-            "region_decision_class": cell.region_decision_class,
-            "region_product_action": cell.region_product_action,
-            "region_promotion_reason": cell.region_promotion_reason,
-            "region_baseline_method": cell.region_baseline_method,
         }
 
 
@@ -462,12 +402,10 @@ def _backfill_cell_evidence_rows(
                 format_value(cell.scan_support_score),
                 cell.gap_fill_state,
                 cell.gap_fill_reason,
-                cell.backfill_evidence_reason,
                 cell.source_candidate_id or "",
                 cluster.neutral_loss_tag,
                 format_value(_family_center_mz(cluster)),
                 format_value(_family_center_rt(cluster)),
-                cell.region_shadow_verdict,
                 cell.reason,
             )
 
@@ -668,7 +606,6 @@ def _cell_mentions_backfill(cell: AlignedCell) -> bool:
         cell.matrix_area_source,
         cell.matrix_area_missing_reason,
         cell.reason,
-        cell.backfill_evidence_reason,
     )
     return any("backfill" in str(value).lower() for value in values)
 

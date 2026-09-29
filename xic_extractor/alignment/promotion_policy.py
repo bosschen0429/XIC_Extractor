@@ -134,12 +134,6 @@ class BackfillCellEvidence:
     region_shadow_status: str = ""
     region_shadow_verdict: str = ""
     group_hypothesis_id: str = ""
-    backfill_ms2_trigger_scan_count: int | None = None
-    backfill_strict_nl_scan_count: int | None = None
-    backfill_ms2_trace_strength: str = ""
-    backfill_dda_missing_nl_policy_status: str = ""
-    backfill_family_ms2_required_tag_status: str = ""
-    backfill_evidence_reason: str = ""
 
     @property
     def is_backfilled_quantifiable(self) -> bool:
@@ -276,7 +270,6 @@ class BackfillCellEvidence:
                 self.region_review_reason,
                 self.region_shadow_status,
                 self.region_shadow_verdict,
-                self.backfill_evidence_reason,
             ),
         ).lower()
         return any(marker in text for marker in _HYPOTHESIS_BLOCKING_MARKERS)
@@ -667,16 +660,6 @@ def _cell_from_aligned(
         region_shadow_status=cell.region_shadow_status,
         region_shadow_verdict=cell.region_shadow_verdict,
         group_hypothesis_id=cell.group_hypothesis_id,
-        backfill_ms2_trigger_scan_count=cell.backfill_ms2_trigger_scan_count,
-        backfill_strict_nl_scan_count=cell.backfill_strict_nl_scan_count,
-        backfill_ms2_trace_strength=cell.backfill_ms2_trace_strength,
-        backfill_dda_missing_nl_policy_status=(
-            cell.backfill_dda_missing_nl_policy_status
-        ),
-        backfill_family_ms2_required_tag_status=(
-            cell.backfill_family_ms2_required_tag_status
-        ),
-        backfill_evidence_reason=cell.backfill_evidence_reason,
     )
 
 
@@ -695,28 +678,7 @@ def _cell_from_tsv(row: Mapping[str, str]) -> BackfillCellEvidence:
         scan_support_score=_float_value(row.get("scan_support_score", "")),
         source_candidate_id=row.get("source_candidate_id", ""),
         reason=row.get("reason", ""),
-        region_local_mixture_diagnostic=row.get("region_local_mixture_diagnostic", ""),
-        region_local_mixture_reason=row.get("region_local_mixture_reason", ""),
-        region_review_reason=row.get("region_review_reason", ""),
-        region_shadow_status=row.get("region_shadow_status", ""),
-        region_shadow_verdict=row.get("region_shadow_verdict", ""),
         group_hypothesis_id=row.get("group_hypothesis_id", ""),
-        backfill_ms2_trigger_scan_count=_int_optional(
-            row.get("backfill_ms2_trigger_scan_count", ""),
-        ),
-        backfill_strict_nl_scan_count=_int_optional(
-            row.get("backfill_strict_nl_scan_count", ""),
-        ),
-        backfill_ms2_trace_strength=row.get("backfill_ms2_trace_strength", ""),
-        backfill_dda_missing_nl_policy_status=row.get(
-            "backfill_dda_missing_nl_policy_status",
-            "",
-        ),
-        backfill_family_ms2_required_tag_status=row.get(
-            "backfill_family_ms2_required_tag_status",
-            "",
-        ),
-        backfill_evidence_reason=row.get("backfill_evidence_reason", ""),
     )
 
 
@@ -775,8 +737,3 @@ def _nonnegative_int_value(value: object) -> int | None:
         return int(text)
     except ValueError:
         return None
-
-
-def _int_optional(value: object) -> int | None:
-    number = _float_value(value)
-    return None if number is None else int(number)

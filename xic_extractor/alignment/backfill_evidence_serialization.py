@@ -75,12 +75,10 @@ def backfill_evidence_record_from_projection(
         scan_support_score=_parse_optional_float(row, "scan_support_score"),
         gap_fill_state=row["gap_fill_state"],
         gap_fill_reason=row["gap_fill_reason"],
-        backfill_evidence_reason=row["backfill_evidence_reason"],
         source_candidate_id=row["source_candidate_id"],
         neutral_loss_tag=_required_text(row, "neutral_loss_tag"),
         family_center_mz=_parse_required_float(row, "family_center_mz"),
         family_center_rt=_parse_required_float(row, "family_center_rt"),
-        region_shadow_verdict=row["region_shadow_verdict"],
         reason=row["reason"],
     )
 
@@ -151,12 +149,10 @@ def backfill_evidence_record_to_projection(
         "scan_support_score": _float_text(record.scan_support_score),
         "gap_fill_state": record.gap_fill_state,
         "gap_fill_reason": record.gap_fill_reason,
-        "backfill_evidence_reason": record.backfill_evidence_reason,
         "source_candidate_id": record.source_candidate_id,
         "neutral_loss_tag": record.neutral_loss_tag,
         "family_center_mz": _float_text(record.family_center_mz),
         "family_center_rt": _float_text(record.family_center_rt),
-        "region_shadow_verdict": record.region_shadow_verdict,
         "reason": record.reason,
     }
 

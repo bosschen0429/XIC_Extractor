@@ -121,7 +121,7 @@ def test_neighboring_interference_forces_audit(tmp_path: Path) -> None:
         _cell_rows(
             detected=1,
             backfilled=1,
-            region_review_reason="neighboring_ms1_interference",
+            backfill_reason="neighboring_ms1_interference",
         ),
         source_context=source_context_for_artifacts(
             review_path=review_path,
@@ -371,7 +371,7 @@ def test_summarize_gate_decisions_reports_diagnostic_only_counts(
         _cell_rows(
             detected=1,
             backfilled=1,
-            region_review_reason="neighboring_ms1_interference",
+            backfill_reason="neighboring_ms1_interference",
         ),
         source_context=context,
     )
@@ -993,7 +993,7 @@ def _cell_rows(
     detected: int,
     backfilled: int,
     scan_support_score: str = "0.8",
-    region_review_reason: str = "",
+    backfill_reason: str = "",
 ) -> tuple[dict[str, str], ...]:
     rows: list[dict[str, str]] = []
     for index in range(detected):
@@ -1005,7 +1005,7 @@ def _cell_rows(
                 "backfilled",
                 "500",
                 scan_support_score,
-                region_review_reason,
+                backfill_reason,
             )
         )
     return tuple(rows)
@@ -1016,7 +1016,7 @@ def _cell_row(
     status: str,
     area: str,
     scan_support_score: str,
-    region_review_reason: str,
+    reason: str,
 ) -> dict[str, str]:
     return {
         "feature_family_id": "FAM001",
@@ -1030,8 +1030,7 @@ def _cell_row(
         "rt_delta_sec": "0.0",
         "trace_quality": "owner_backfill" if status == "backfilled" else "clean",
         "scan_support_score": scan_support_score,
-        "reason": status,
-        "region_review_reason": region_review_reason,
+        "reason": reason or status,
     }
 
 

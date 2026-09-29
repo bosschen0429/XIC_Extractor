@@ -141,7 +141,7 @@ def test_neighboring_interference_backfill_does_not_claim_ms1_backfill_support()
         _cell_rows(
             detected=1,
             backfilled=2,
-            backfill_region_review_reason="neighboring_ms1_interference",
+            backfill_reason="neighboring_ms1_interference",
         ),
     )
 
@@ -234,7 +234,6 @@ def _cell_rows(
     backfill_trace_quality: str = "clean",
     backfill_scan_support_score: str = "0.8",
     backfill_reason: str = "backfilled",
-    backfill_region_review_reason: str = "",
     backfill_rt_delta_sec: str = "0.0",
 ) -> tuple[dict[str, str], ...]:
     rows: list[dict[str, str]] = []
@@ -249,7 +248,6 @@ def _cell_rows(
                 trace_quality=backfill_trace_quality,
                 scan_support_score=backfill_scan_support_score,
                 reason=backfill_reason,
-                region_review_reason=backfill_region_review_reason,
                 rt_delta_sec=backfill_rt_delta_sec,
             ),
         )
@@ -271,7 +269,6 @@ def _cell_row(
     trace_quality: str | None = None,
     scan_support_score: str | None = None,
     reason: str | None = None,
-    region_review_reason: str = "",
     rt_delta_sec: str = "0.0",
 ) -> dict[str, str]:
     row = {
@@ -295,6 +292,5 @@ def _cell_row(
             else ("0.8" if area else "")
         ),
         "reason": reason if reason is not None else status,
-        "region_review_reason": region_review_reason,
     }
     return row

@@ -1,7 +1,7 @@
 import math
 from dataclasses import fields, replace
 from types import SimpleNamespace
-from typing import Any, cast
+from typing import cast
 
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.matrix import (
@@ -339,8 +339,8 @@ def test_backfill_heavy_row_needs_multiple_detected_owners_for_primary_promotion
         clusters=(_feature("FAM001", evidence="owner_complete_link;owner_count=2"),),
         cells=(
             _cell("s1", "FAM001", "detected", 100.0),
-            _cell("s2", "FAM001", "backfilled", 90.0, backfill_evidence=False),
-            _cell("s3", "FAM001", "backfilled", 80.0, backfill_evidence=False),
+            _cell("s2", "FAM001", "backfilled", 90.0),
+            _cell("s3", "FAM001", "backfilled", 80.0),
         ),
         sample_order=("s1", "s2", "s3"),
     )
@@ -370,7 +370,6 @@ def test_scan_support_only_backfill_keeps_seeds_and_reviews_backfills():
                     "FAM001",
                     "backfilled",
                     80.0 + i,
-                    backfill_evidence=False,
                 )
                 for i in range(1, 84)
             ),
@@ -414,7 +413,6 @@ def test_production_cell_decision_record_keeps_review_backfill_out_of_matrix() -
                     "FAM001",
                     "backfilled",
                     80.0 + i,
-                    backfill_evidence=False,
                 )
                 for i in range(1, 84)
             ),
@@ -575,7 +573,6 @@ def test_backfilled_outside_max_rt_is_review_only():
                 "backfilled",
                 90.0,
                 rt_delta_sec=config.max_rt_sec + 0.1,
-                backfill_evidence=False,
             ),
         ),
         sample_order=("s1",),
@@ -603,7 +600,6 @@ def test_backfilled_outside_preferred_without_drift_is_review_only():
                 "backfilled",
                 80.0,
                 rt_delta_sec=20.0,
-                backfill_evidence=False,
             ),
         ),
         sample_order=("d1", "d2", "d3", "rescued_same_peak"),
@@ -701,7 +697,6 @@ def _cell(
     rt_delta_sec: float | None = 0.0,
     source_candidate_id: str | None = None,
     selected_integration: IntegrationResult | None = None,
-    backfill_evidence: bool = True,
     group_hypothesis_id: str = "",
 ) -> AlignedCell:
     has_area = area is not None
@@ -741,13 +736,6 @@ def _cell(
         ),
         group_hypothesis_id=group_hypothesis_id,
         selected_integration=selected_integration,
-        **cast(
-            Any,
-            _backfill_evidence_fields(
-                status=status,
-                enabled=backfill_evidence,
-            ),
-        ),
     )
 
 
@@ -791,16 +779,6 @@ def _integration(
             "gaussian15_positive_asls_residual" if asls_area is not None else ""
         ),
     )
-
-
-def _backfill_evidence_fields(*, status: str, enabled: bool) -> dict[str, object]:
-    if status != "backfilled" or not enabled:
-        return {}
-    return {
-        "backfill_ms2_trigger_scan_count": 3,
-        "backfill_strict_nl_scan_count": 1,
-        "backfill_ms2_trace_strength": "moderate",
-    }
 
 
 def _positive_area_value(value: float | bool | None) -> float | None:

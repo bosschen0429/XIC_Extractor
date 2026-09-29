@@ -24,8 +24,8 @@ def test_owner_complete_link_requires_two_detected_identity_cells() -> None:
         _feature("FAM001", evidence="owner_complete_link;owner_count=2"),
         (
             _cell("s1", "FAM001", "detected", 100.0),
-            _cell("s2", "FAM001", "backfilled", 90.0, backfill_evidence=False),
-            _cell("s3", "FAM001", "backfilled", 80.0, backfill_evidence=False),
+            _cell("s2", "FAM001", "backfilled", 90.0),
+            _cell("s3", "FAM001", "backfilled", 80.0),
         ),
     )
 
@@ -69,8 +69,8 @@ def test_targeted_istd_trajectory_does_not_promote_one_detected_owner() -> None:
         ),
         (
             _cell("s1", "FAM001", "detected", 100.0),
-            _cell("s2", "FAM001", "backfilled", 90.0, backfill_evidence=False),
-            _cell("s3", "FAM001", "backfilled", 80.0, backfill_evidence=False),
+            _cell("s2", "FAM001", "backfilled", 90.0),
+            _cell("s3", "FAM001", "backfilled", 80.0),
         ),
     )
 
@@ -214,7 +214,6 @@ def test_scan_support_only_high_backfill_retains_seed_identity() -> None:
                     "FAM001",
                     "backfilled",
                     80.0 + i,
-                    backfill_evidence=False,
                 )
                 for i in range(1, 84)
             ),
@@ -243,7 +242,6 @@ def test_single_detected_seed_does_not_enter_policy_promotion() -> None:
                     "FAM001",
                     "backfilled",
                     80.0 + i,
-                    backfill_evidence=False,
                 )
                 for i in range(1, 8)
             ),
@@ -296,7 +294,6 @@ def test_one_detected_area_only_backfill_is_not_provisional_retention_candidate(
                 90.0,
                 trace_quality="owner_backfill",
                 scan_support_score=None,
-                backfill_evidence=False,
             ),
             _cell(
                 "rescue2",
@@ -305,7 +302,6 @@ def test_one_detected_area_only_backfill_is_not_provisional_retention_candidate(
                 80.0,
                 trace_quality="owner_backfill",
                 scan_support_score=None,
-                backfill_evidence=False,
             ),
         ),
     )
@@ -407,7 +403,6 @@ def test_unexplained_rt_delta_beyond_preferred_blocks_backfill_promotion() -> No
                     "backfilled",
                     70.0 + i,
                     rt_delta_sec=120.0,
-                    backfill_evidence=False,
                 )
                 for i in range(1, 7)
             ),
@@ -516,7 +511,6 @@ def test_high_score_low_event_seeds_do_not_bypass_weak_seed_gate() -> None:
                     70.0 + i,
                     trace_quality="review",
                     scan_support_score=None,
-                    backfill_evidence=False,
                 )
                 for i in range(1, 7)
             ),
@@ -601,7 +595,6 @@ def test_rt_local_apex_low_interference_alone_does_not_promote() -> None:
                     80.0 + i,
                     trace_quality="review",
                     scan_support_score=None,
-                    backfill_evidence=False,
                 )
                 for i in range(1, 84)
             ),
@@ -634,7 +627,6 @@ def test_owner_backfill_label_without_independent_support_does_not_promote() -> 
                     80.0 + i,
                     trace_quality="owner_backfill",
                     scan_support_score=None,
-                    backfill_evidence=False,
                 )
                 for i in range(1, 84)
             ),
@@ -878,7 +870,6 @@ def _cell(
     scan_support_score: float | None | object = _DEFAULT_SCAN_SUPPORT,
     rt_delta_sec: float = 0.0,
     region_review_reason: str = "",
-    backfill_evidence: bool = True,
     selected_integration: IntegrationResult | None = None,
 ) -> AlignedCell:
     has_area = area is not None
@@ -917,10 +908,6 @@ def _cell(
         reason=status,
         region_review_reason=region_review_reason,
         selected_integration=selected_integration,
-        **_backfill_evidence_fields(
-            status=status,
-            enabled=backfill_evidence,
-        ),
     )
 
 
@@ -1000,7 +987,6 @@ def _weak_seed_backfill_decision(
                     70.0 + i,
                     trace_quality="review",
                     scan_support_score=None,
-                    backfill_evidence=False,
                 )
                 for i in range(1, 7)
             ),
@@ -1008,16 +994,6 @@ def _weak_seed_backfill_decision(
         ),
     )
     return build_matrix_identity_decisions(matrix, AlignmentConfig()).row("FAM001")
-
-
-def _backfill_evidence_fields(*, status: str, enabled: bool) -> dict[str, object]:
-    if status != "backfilled" or not enabled:
-        return {}
-    return {
-        "backfill_ms2_trigger_scan_count": 3,
-        "backfill_strict_nl_scan_count": 1,
-        "backfill_ms2_trace_strength": "moderate",
-    }
 
 
 def _candidate(

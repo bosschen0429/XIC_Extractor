@@ -46,12 +46,10 @@ ALIGNMENT_BACKFILL_CELL_EVIDENCE_COLUMNS = (
     "scan_support_score",
     "gap_fill_state",
     "gap_fill_reason",
-    "backfill_evidence_reason",
     "source_candidate_id",
     "neutral_loss_tag",
     "family_center_mz",
     "family_center_rt",
-    "region_shadow_verdict",
     "reason",
 )
 
@@ -151,12 +149,10 @@ class BackfillEvidenceRecord:
     scan_support_score: float | None
     gap_fill_state: str
     gap_fill_reason: str
-    backfill_evidence_reason: str
     source_candidate_id: str
     neutral_loss_tag: str
     family_center_mz: float
     family_center_rt: float
-    region_shadow_verdict: str
     reason: str
 
     def __post_init__(self) -> None:
