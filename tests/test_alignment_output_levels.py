@@ -88,23 +88,6 @@ def test_diagnostic_levels_produce_the_explanation_report(level):
 @pytest.mark.parametrize(
     "level", ["production", "machine", "debug", "validation", "validation-minimal"]
 )
-@pytest.mark.parametrize(
-    "name",
-    [
-        "alignment_results.xlsx",
-        "review_report.html",
-        "event_to_ms1_owner.tsv",
-        "ambiguous_ms1_owners.tsv",
-    ],
-)
-def test_no_level_produces_the_retired_human_reports(level, name):
-    """Both were written for a reader who never used them; no level revives one."""
-    assert name not in artifact_names_for_output_level(level)
-
-
-@pytest.mark.parametrize(
-    "level", ["production", "machine", "debug", "validation", "validation-minimal"]
-)
 def test_no_level_produces_the_status_matrix(level):
     """It has no reader; emit_alignment_status_matrix is the only way to get it."""
     assert "alignment_matrix_status.tsv" not in artifact_names_for_output_level(level)

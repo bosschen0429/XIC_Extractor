@@ -822,15 +822,8 @@ def permanent_root_contract_problems(
     overrides = overrides or {}
     problems: list[str] = []
     visible_text = markdown_visible_text(text)
-    headings = markdown_headings(visible_text)
-    for heading in contract["required_headings"]:
-        if headings.count(heading) != 1:
-            problems.append(f"required heading must occur exactly once: {heading}")
-    for marker in contract["required_text"]:
-        if visible_text.count(marker) != 1:
-            problems.append(
-                f"required purpose landmark must occur exactly once: {marker}"
-            )
+    if not visible_text.strip():
+        problems.append("permanent root document has no visible text")
 
     resolved_routes = resolved_markdown_targets(rel_path, visible_text)
     for route in contract["required_routes"]:

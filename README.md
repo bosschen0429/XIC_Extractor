@@ -127,6 +127,10 @@ uv run xic-extractor-cli --base-dir .
 
 ## Documentation
 
+想理解或修改程式碼，先看[架構閱讀入口](docs/architecture-contract.md#reading-the-code)：
+從實際 GUI／CLI 入口走到資料處理與輸出，再依變更類型找負責的模組。
+[Repo 結構樹](docs/project-layout.md#repository-tree)則說明程式、文件、測試和產物各放在哪裡。
+
 | Audience | Document | Purpose |
 | --- | --- | --- |
 | Users | [Human guide index](docs/product/readers-index.html) | Choose an HTML guide for operation, processing, or system review |
