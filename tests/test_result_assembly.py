@@ -4,6 +4,9 @@ import numpy as np
 import pytest
 
 from xic_extractor.config import Target
+from xic_extractor.configuration.signal_processing_profile import (
+    SignalProcessingProfile,
+)
 from xic_extractor.evidence_semantics import EvidenceDecisionSemantics
 from xic_extractor.extraction.handoff_spine_runtime import (
     build_production_peak_hypotheses,
@@ -40,9 +43,6 @@ from xic_extractor.peak_detection.physical_peak_models import PhysicalPeakEvalua
 from xic_extractor.peak_detection.scoring_models import ScoringContext
 from xic_extractor.peak_detection.selection_decision import (
     PeakHypothesisSelectionDecision,
-)
-from xic_extractor.peak_detection.signal_processing_profile import (
-    SignalProcessingProfile,
 )
 
 

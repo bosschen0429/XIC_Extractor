@@ -20,6 +20,9 @@ from xic_extractor.alignment.hypothesis_owner_adapter import (
     compose_cid_nl_peak_hypotheses_from_assessment,
 )
 from xic_extractor.config import ExtractionConfig
+from xic_extractor.configuration.signal_processing_profile import (
+    SignalProcessingProfile,
+)
 from xic_extractor.peak_detection import capture as capture_owner
 from xic_extractor.peak_detection import search_scope as scope_owner
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
@@ -51,9 +54,6 @@ from xic_extractor.peak_detection.search_scope import (
     UntargetedSearchScope,
     require_capture_binding,
     scope_allows_evidence_inspection,
-)
-from xic_extractor.peak_detection.signal_processing_profile import (
-    SignalProcessingProfile,
 )
 from xic_extractor.peak_detection.traces import Trace
 from xic_extractor.processing_identity import (

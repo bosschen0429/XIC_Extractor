@@ -254,6 +254,19 @@ class DeltaMassPatternSettings:
             raise ValueError("rt_tolerance_sec must be finite and > 0")
 
 
+@dataclass(frozen=True)
+class PtPatternDiscoveryStrategy:
+    """Resolved Pt pattern Discovery strategy for one run.
+
+    ``label`` names the strategy source in error messages. ``cid_nl_composite``
+    requests the CID-NL(dR) intersection join over the matched Pt candidates.
+    """
+
+    label: str
+    settings: DeltaMassPatternSettings
+    cid_nl_composite: bool
+
+
 def load_detected_features_csv(path: Path) -> tuple[DetectedFeature, ...]:
     """Load and validate the Detected Features CSV input contract.
 

@@ -31,10 +31,12 @@ from xic_extractor.discovery.delta_mass_pipeline import (
 from xic_extractor.discovery.detected_features import (
     CID_NL_SHARED_IDENTITY_SOURCE,
     DeltaMassPatternSettings,
+    PtPatternDiscoveryStrategy,
 )
 from xic_extractor.discovery.pt_pattern_artifact_contract import (
     pt_pattern_candidate_assignment_fingerprint,
 )
+from xic_extractor.presets import resolve_pt_pattern_discovery
 
 DETECTED_FEATURES_COLUMNS = (
     "sample_stem",
@@ -181,7 +183,7 @@ def test_run_pt_pattern_discovery_writes_pt_only_outputs(
     outputs = run_pt_pattern_discovery(
         detected_features_csv=detected_features_csv,
         output_dir=output_dir,
-        preset_name="pt_pattern",
+        strategy=resolve_pt_pattern_discovery("pt_pattern"),
         cid_nl_candidates_csv=None,
     )
 
@@ -236,7 +238,7 @@ def test_run_pt_pattern_discovery_accepts_external_feature_table_source(
     outputs = run_pt_pattern_discovery(
         external_feature_table_tsv=external_table,
         output_dir=output_dir,
-        preset_name="pt_pattern",
+        strategy=resolve_pt_pattern_discovery("pt_pattern"),
         cid_nl_candidates_csv=None,
     )
 
@@ -295,7 +297,7 @@ def test_run_pt_pattern_discovery_accepts_mzmine_wide_feature_table_source(
     outputs = run_pt_pattern_discovery(
         mzmine_feature_table_csv=mzmine_table,
         output_dir=output_dir,
-        preset_name="pt_pattern",
+        strategy=resolve_pt_pattern_discovery("pt_pattern"),
         cid_nl_candidates_csv=None,
     )
 
@@ -345,7 +347,7 @@ def test_composite_mzmine_feature_source_uses_mz_rt_fallback(
     outputs = run_pt_pattern_discovery(
         mzmine_feature_table_csv=mzmine_table,
         output_dir=tmp_path / "out",
-        preset_name="pt_pattern_cid_nl_dr",
+        strategy=resolve_pt_pattern_discovery("pt_pattern_cid_nl_dr"),
         cid_nl_candidates_csv=cid_nl_candidates_csv,
     )
 
@@ -393,7 +395,7 @@ def test_composite_identity_less_external_source_uses_mz_rt_fallback(
     outputs = run_pt_pattern_discovery(
         external_feature_table_tsv=external_table,
         output_dir=tmp_path / "out",
-        preset_name="pt_pattern_cid_nl_dr",
+        strategy=resolve_pt_pattern_discovery("pt_pattern_cid_nl_dr"),
         cid_nl_candidates_csv=cid_nl_candidates_csv,
     )
 
@@ -439,7 +441,7 @@ def test_composite_external_detector_local_id_uses_mz_rt_fallback(
     outputs = run_pt_pattern_discovery(
         external_feature_table_tsv=external_table,
         output_dir=tmp_path / "out",
-        preset_name="pt_pattern_cid_nl_dr",
+        strategy=resolve_pt_pattern_discovery("pt_pattern_cid_nl_dr"),
         cid_nl_candidates_csv=cid_nl_candidates_csv,
     )
 
@@ -465,7 +467,7 @@ def test_composite_rejects_duplicate_cid_nl_headers(tmp_path: Path) -> None:
         run_pt_pattern_discovery(
             detected_features_csv=detected_features_csv,
             output_dir=tmp_path / "out",
-            preset_name="pt_pattern_cid_nl_dr",
+            strategy=resolve_pt_pattern_discovery("pt_pattern_cid_nl_dr"),
             cid_nl_candidates_csv=cid_nl_candidates_csv,
         )
 
@@ -497,7 +499,7 @@ def test_composite_local_detector_identity_uses_sample_local_mz_rt_fallback(
     outputs = run_pt_pattern_discovery(
         detected_features_csv=detected_features_csv,
         output_dir=tmp_path / "out",
-        preset_name="pt_pattern_cid_nl_dr",
+        strategy=resolve_pt_pattern_discovery("pt_pattern_cid_nl_dr"),
         cid_nl_candidates_csv=cid_nl_candidates_csv,
     )
 
@@ -542,7 +544,7 @@ def test_composite_detector_local_matching_string_cannot_bypass_mz_rt_fallback(
     outputs = run_pt_pattern_discovery(
         detected_features_csv=detected_features_csv,
         output_dir=tmp_path / "out",
-        preset_name="pt_pattern_cid_nl_dr",
+        strategy=resolve_pt_pattern_discovery("pt_pattern_cid_nl_dr"),
         cid_nl_candidates_csv=cid_nl_candidates_csv,
     )
 
@@ -610,7 +612,7 @@ def test_composite_rejects_formula_escaped_legacy_machine_identity(
         run_pt_pattern_discovery(
             detected_features_csv=detected_features_csv,
             output_dir=tmp_path / "out",
-            preset_name="pt_pattern_cid_nl_dr",
+            strategy=resolve_pt_pattern_discovery("pt_pattern_cid_nl_dr"),
             cid_nl_candidates_csv=cid_nl_candidates_csv,
         )
 
@@ -633,7 +635,7 @@ def test_composite_rejects_conflicting_explicit_and_derived_sample_identity(
         run_pt_pattern_discovery(
             detected_features_csv=detected_features_csv,
             output_dir=tmp_path / "out",
-            preset_name="pt_pattern_cid_nl_dr",
+            strategy=resolve_pt_pattern_discovery("pt_pattern_cid_nl_dr"),
             cid_nl_candidates_csv=cid_nl_candidates_csv,
         )
 
@@ -665,7 +667,7 @@ def test_composite_requires_nonblank_cid_nl_candidate_id(
         run_pt_pattern_discovery(
             detected_features_csv=detected_features_csv,
             output_dir=tmp_path / "out",
-            preset_name="pt_pattern_cid_nl_dr",
+            strategy=resolve_pt_pattern_discovery("pt_pattern_cid_nl_dr"),
             cid_nl_candidates_csv=cid_nl_candidates_csv,
         )
 
@@ -681,7 +683,7 @@ def test_run_pt_pattern_discovery_requires_cid_nl_csv_for_composite_method(
         run_pt_pattern_discovery(
             detected_features_csv=detected_features_csv,
             output_dir=output_dir,
-            preset_name="pt_pattern_cid_nl_dr",
+            strategy=resolve_pt_pattern_discovery("pt_pattern_cid_nl_dr"),
             cid_nl_candidates_csv=None,
         )
 
@@ -697,7 +699,7 @@ def test_run_pt_pattern_discovery_rejects_non_pt_pattern_preset(
         run_pt_pattern_discovery(
             detected_features_csv=detected_features_csv,
             output_dir=output_dir,
-            preset_name="dna_dr",
+            strategy=resolve_pt_pattern_discovery("dna_dr"),
             cid_nl_candidates_csv=None,
         )
 
@@ -726,7 +728,7 @@ def test_run_pt_pattern_discovery_composite_marks_matched_base_as_supported(
     outputs = run_pt_pattern_discovery(
         detected_features_csv=detected_features_csv,
         output_dir=output_dir,
-        preset_name="pt_pattern_cid_nl_dr",
+        strategy=resolve_pt_pattern_discovery("pt_pattern_cid_nl_dr"),
         cid_nl_candidates_csv=cid_nl_candidates_csv,
     )
 
@@ -763,7 +765,7 @@ def test_composite_declared_identity_mismatch_does_not_fall_back(
     outputs = run_pt_pattern_discovery(
         detected_features_csv=detected_features_csv,
         output_dir=tmp_path / "out",
-        preset_name="pt_pattern_cid_nl_dr",
+        strategy=resolve_pt_pattern_discovery("pt_pattern_cid_nl_dr"),
         cid_nl_candidates_csv=cid_nl_candidates_csv,
     )
 
@@ -802,7 +804,7 @@ def test_composite_rejects_candidate_without_detected_feature_owner(
         run_pt_pattern_discovery(
             detected_features_csv=detected_features_csv,
             output_dir=tmp_path / "out",
-            preset_name="pt_pattern_cid_nl_dr",
+            strategy=resolve_pt_pattern_discovery("pt_pattern_cid_nl_dr"),
             cid_nl_candidates_csv=cid_nl_candidates_csv,
         )
 
@@ -827,7 +829,7 @@ def test_composite_declared_feature_id_can_join_without_source_row_id(
     outputs = run_pt_pattern_discovery(
         detected_features_csv=detected_features_csv,
         output_dir=tmp_path / "out",
-        preset_name="pt_pattern_cid_nl_dr",
+        strategy=resolve_pt_pattern_discovery("pt_pattern_cid_nl_dr"),
         cid_nl_candidates_csv=cid_nl_candidates_csv,
     )
 
@@ -886,7 +888,7 @@ def test_composite_uses_cid_nl_base_seeds_before_matching(
     outputs = run_pt_pattern_discovery(
         detected_features_csv=detected_features_csv,
         output_dir=tmp_path / "out",
-        preset_name="pt_pattern_cid_nl_dr",
+        strategy=resolve_pt_pattern_discovery("pt_pattern_cid_nl_dr"),
         cid_nl_candidates_csv=cid_nl_candidates_csv,
     )
 
@@ -908,7 +910,7 @@ def test_run_pt_pattern_discovery_sidecar_records_input_paths_as_provided_string
     outputs = run_pt_pattern_discovery(
         detected_features_csv=detected_features_csv,
         output_dir=output_dir,
-        preset_name="pt_pattern",
+        strategy=resolve_pt_pattern_discovery("pt_pattern"),
         cid_nl_candidates_csv=None,
     )
 
@@ -922,22 +924,21 @@ def test_run_pt_pattern_discovery_sidecar_records_input_paths_as_provided_string
 
 def test_run_pt_pattern_discovery_sidecar_records_effective_matcher_tolerances(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     detected_features_csv = tmp_path / "detected_features.csv"
     _write_detected_features_csv(detected_features_csv, _full_pattern_rows())
-    monkeypatch.setattr(
-        "xic_extractor.discovery.delta_mass_pipeline.apply_to_delta_mass_discovery",
-        lambda _preset: DeltaMassPatternSettings(
-            mz_tolerance_ppm=7.5,
-            rt_tolerance_sec=12.0,
-        ),
-    )
 
     outputs = run_pt_pattern_discovery(
         detected_features_csv=detected_features_csv,
         output_dir=tmp_path / "out",
-        preset_name="pt_pattern",
+        strategy=PtPatternDiscoveryStrategy(
+            label="pt_pattern",
+            settings=DeltaMassPatternSettings(
+                mz_tolerance_ppm=7.5,
+                rt_tolerance_sec=12.0,
+            ),
+            cid_nl_composite=False,
+        ),
     )
 
     payload = json.loads(outputs.sidecar_json.read_text(encoding="utf-8"))
@@ -990,7 +991,7 @@ def test_run_pt_pattern_discovery_applies_optional_trace_summary_evidence(
     outputs = run_pt_pattern_discovery(
         detected_features_csv=detected_features_csv,
         output_dir=tmp_path / "out",
-        preset_name="pt_pattern",
+        strategy=resolve_pt_pattern_discovery("pt_pattern"),
         cid_nl_candidates_csv=None,
         trace_summary_csv=trace_summary_csv,
     )
@@ -1061,7 +1062,7 @@ def test_run_pt_pattern_discovery_ignores_review_only_orphan_nl_rows(
     outputs = run_pt_pattern_discovery(
         detected_features_csv=detected_features_csv,
         output_dir=output_dir,
-        preset_name="pt_pattern_cid_nl_dr",
+        strategy=resolve_pt_pattern_discovery("pt_pattern_cid_nl_dr"),
         cid_nl_candidates_csv=cid_nl_candidates_csv,
     )
 
@@ -1085,7 +1086,7 @@ def test_run_pt_pattern_discovery_writes_header_only_outputs_when_no_pattern_fou
     outputs = run_pt_pattern_discovery(
         detected_features_csv=detected_features_csv,
         output_dir=output_dir,
-        preset_name="pt_pattern",
+        strategy=resolve_pt_pattern_discovery("pt_pattern"),
         cid_nl_candidates_csv=None,
     )
 

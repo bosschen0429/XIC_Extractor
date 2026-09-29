@@ -9,6 +9,10 @@ from types import MappingProxyType
 from typing import Literal, TypeAlias
 
 from xic_extractor.configuration.models import ExtractionConfig
+from xic_extractor.configuration.signal_processing_profile import (
+    SignalProcessingProfile,
+    canonical_signal_processing_profile_bytes,
+)
 from xic_extractor.configuration.target_identity import (
     ResolvedTargetDefinition,
     TargetListSnapshot,
@@ -32,10 +36,6 @@ from xic_extractor.peak_detection.physical_peak_evaluation import (
 )
 from xic_extractor.peak_detection.physical_peak_models import (
     PhysicalPeakEvaluation,
-)
-from xic_extractor.peak_detection.signal_processing_profile import (
-    SignalProcessingProfile,
-    canonical_signal_processing_profile_bytes,
 )
 from xic_extractor.processing_identity import (
     ProcessingOwnerReferences,

@@ -31,6 +31,11 @@ from xic_extractor.alignment.quantitative_projection_authority import (
 from xic_extractor.alignment.raw_sources import existing_raw_paths
 from xic_extractor.config import ExtractionConfig
 from xic_extractor.configuration.models import ConfigError
+from xic_extractor.configuration.signal_processing_profile import (
+    DEFAULT_SIGNAL_PROCESSING_PROFILE,
+    SignalProcessingProfile,
+    resolve_signal_processing_profile,
+)
 from xic_extractor.diagnostics.process_memory import ProcessTreeMemorySampler
 from xic_extractor.diagnostics.timing import TimingRecorder
 from xic_extractor.execution_settings import (
@@ -39,11 +44,6 @@ from xic_extractor.execution_settings import (
 )
 from xic_extractor.extraction.untargeted_cid_nl_production_batch import (
     is_supported_alignment_discovery,
-)
-from xic_extractor.peak_detection.signal_processing_profile import (
-    DEFAULT_SIGNAL_PROCESSING_PROFILE,
-    SignalProcessingProfile,
-    resolve_signal_processing_profile,
 )
 from xic_extractor.presets import (
     BoundCidNlRecipe,

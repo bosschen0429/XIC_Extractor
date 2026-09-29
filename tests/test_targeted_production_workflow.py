@@ -9,6 +9,9 @@ from xic_extractor.alignment.result.application_result import (
     FinalizedTargetApplicationResult,
 )
 from xic_extractor.config import ExtractionConfig, Target
+from xic_extractor.configuration.signal_processing_profile import (
+    resolve_signal_processing_profile,
+)
 from xic_extractor.execution_runtime_observability import (
     RuntimeMetricAvailability,
     canonical_runtime_observability_ledger_bytes,
@@ -33,9 +36,6 @@ from xic_extractor.peak_detection.observations import (
 from xic_extractor.peak_detection.physical_peak_evaluation import (
     evaluate_physical_peak,
     prepare_physical_signal,
-)
-from xic_extractor.peak_detection.signal_processing_profile import (
-    resolve_signal_processing_profile,
 )
 from xic_extractor.peak_detection.targeted_product_projection import (
     TargetedPriorContext,

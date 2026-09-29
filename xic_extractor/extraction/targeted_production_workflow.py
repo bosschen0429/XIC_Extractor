@@ -25,6 +25,10 @@ from xic_extractor.alignment.workflow import (
     execute_alignment_workflow,
 )
 from xic_extractor.config import ConfigError, ExtractionConfig, Target
+from xic_extractor.configuration.signal_processing_profile import (
+    SignalProcessingProfile,
+    resolve_signal_processing_profile,
+)
 from xic_extractor.configuration.target_identity import (
     ResolvedTargetDefinition,
     TargetListSnapshot,
@@ -96,10 +100,6 @@ from xic_extractor.peak_detection.search_scope import (
     EvidenceProviderBinding,
     TargetSearchScope,
     target_ms1_subject_id,
-)
-from xic_extractor.peak_detection.signal_processing_profile import (
-    SignalProcessingProfile,
-    resolve_signal_processing_profile,
 )
 from xic_extractor.peak_detection.traces import Trace
 from xic_extractor.processing_identity import (

@@ -10,17 +10,17 @@ from pathlib import Path
 from typing import TypedDict
 
 from xic_extractor.config import ExtractionConfig
+from xic_extractor.configuration.signal_processing_profile import (
+    DEFAULT_SIGNAL_PROCESSING_PROFILE,
+    SignalProcessingProfile,
+    resolve_signal_processing_profile,
+)
 from xic_extractor.discovery.blank_qualification import (
     BlankBackgroundLibrary,
     resolve_background_library,
     serialize_background_library,
 )
 from xic_extractor.discovery.models import DiscoverySettings
-from xic_extractor.peak_detection.signal_processing_profile import (
-    DEFAULT_SIGNAL_PROCESSING_PROFILE,
-    SignalProcessingProfile,
-    resolve_signal_processing_profile,
-)
 from xic_extractor.processing_identity import (
     AcquisitionSourceExpectation,
     IdentityContractError,

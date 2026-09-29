@@ -25,6 +25,9 @@ from tests.untargeted_cid_nl_no_raw_fixture import (
     build_untargeted_cid_nl_no_raw_fixture,
 )
 from xic_extractor.acquisition_contract import BatchXICAdapter
+from xic_extractor.configuration.signal_processing_profile import (
+    SignalProcessingProfile,
+)
 from xic_extractor.discovery.grouping import group_discovery_seeds
 from xic_extractor.discovery.ms1_backfill import (
     _backfill_ms1_candidates_with_acquisition,
@@ -50,9 +53,6 @@ from xic_extractor.peak_detection.cid_nl_method_subject import (
 )
 from xic_extractor.peak_detection.hypotheses import build_peak_hypotheses
 from xic_extractor.peak_detection.ms1_trace_detection import detect_ms1_trace_peak
-from xic_extractor.peak_detection.signal_processing_profile import (
-    SignalProcessingProfile,
-)
 from xic_extractor.processing_identity import build_acquisition_source_identity
 from xic_extractor.raw_reader import (
     THERMO_RAW_ACQUISITION_FORMAT,

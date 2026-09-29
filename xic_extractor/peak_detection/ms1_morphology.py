@@ -6,7 +6,7 @@ from dataclasses import dataclass
 import numpy as np
 from scipy.signal import peak_widths
 
-from xic_extractor.peak_detection.signal_processing_profile import (
+from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )
 

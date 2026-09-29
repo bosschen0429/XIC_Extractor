@@ -20,6 +20,9 @@ from xic_extractor.alignment.drift_evidence import KnownIstdReference
 from xic_extractor.alignment.raw_sources import existing_raw_paths
 from xic_extractor.alignment.workflow import CompletedUntargetBatchWorkflowResult
 from xic_extractor.config import ExtractionConfig
+from xic_extractor.configuration.signal_processing_profile import (
+    SignalProcessingProfile,
+)
 from xic_extractor.diagnostics.process_memory import ProcessMemoryPeak
 from xic_extractor.diagnostics.timing import TimingRecorder
 from xic_extractor.discovery.batch_contract import (
@@ -57,9 +60,6 @@ from xic_extractor.extraction.untargeted_production_batch import (
     prepare_untargeted_production_plan,
 )
 from xic_extractor.immutable_sequence import ImmutableSequence
-from xic_extractor.peak_detection.signal_processing_profile import (
-    SignalProcessingProfile,
-)
 from xic_extractor.processing_identity import AcquisitionSourceExpectation
 from xic_extractor.processing_run_spec import (
     ProcessingAcquisitionInput,

@@ -67,6 +67,9 @@ from xic_extractor.alignment.workflow import (
     compose_untarget_subject,
 )
 from xic_extractor.config import ExtractionConfig
+from xic_extractor.configuration.signal_processing_profile import (
+    SignalProcessingProfile,
+)
 from xic_extractor.discovery.batch_contract import (
     DiscoveryCandidateUniverseReceipt,
 )
@@ -132,9 +135,6 @@ from xic_extractor.peak_detection.search_scope import (
     EvidenceProviderBinding,
     UntargetedSearchScope,
     require_capture_binding,
-)
-from xic_extractor.peak_detection.signal_processing_profile import (
-    SignalProcessingProfile,
 )
 from xic_extractor.processing_identity import AcquisitionSourceExpectation
 from xic_extractor.processing_run_spec import CidNlDiscoveryMethodSpec
