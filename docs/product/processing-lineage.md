@@ -575,9 +575,9 @@ The model fails and must be narrowed or redrawn if:
   owner references are not a production artifact registry or writer authority.
 - `configuration/target_identity.py` owns Targeted keys, exact definitions, and
   ordered snapshots. `delivery_lineage.py` owns Targeted per-cell revision,
-  stage, and seal **candidates**; `extraction/targeted_diagnostic_delivery.py`
-  and `extraction/targeted_service.py` reach them without publishing a product
-  seal. A migration must reuse these owners, not mint parallel Targeted IDs.
+  stage, and seal **candidates**. The current Targeted service does not
+  publish a product seal. A migration must reuse these owners, not mint
+  parallel Targeted IDs.
 - Alignment already mints request-scoped `UntargetRowKey` values from finalized
   canonical groups in `alignment/projection/untarget/pre_cell.py`. The ordinal
   `FAM000...` label is not that key. Untargeted output-level sealing remains

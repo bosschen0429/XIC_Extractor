@@ -64,19 +64,11 @@ that group.
    assessment must earn SUPPORT through the normal relation owner before the
    cell can hold a numeric value.
 
-### Other current consumers
+### Observation revisit contract
 
-1. Targeted diagnostic processing calls
-   `alignment.targeted_hypothesis_backfill`. That path uses
-   `alignment.backfill_peak_fact.build_backfill_result` as an XIC search
-   capability.
-2. The Targeted diagnostic path does not add an Untargeted eligibility
-   decision.
-3. The shared coverage and request-plan types remain available to the Targeted
-   diagnostic path and to the current alignment metadata.
-4. Final cell composition still accepts the typed `ObservationRevisitReceipt`
+1. Final cell composition still accepts the typed `ObservationRevisitReceipt`
    input for a revisited member.
-5. No installed workflow calls the former execute/close operation. No
+2. No installed workflow calls the former execute/close operation. No
    code creates the receipt, because the receipt mint token in
    `alignment/backfill/observation_revisit.py` is never passed to the receipt
    constructor. The receipt type alone does not prove that a revisit transaction
