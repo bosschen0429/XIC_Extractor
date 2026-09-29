@@ -57,7 +57,7 @@ jobs:
 
   test:
     name: test (Python 3.12)
-    runs-on: self-hosted
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v6
         with:
@@ -98,7 +98,7 @@ jobs:
             $runAgentHooks = $markerExpression -notmatch 'not agent_hooks'
           }
           $started = Get-Date
-          & .\.venv\Scripts\python.exe -m pytest -m $markerExpression -n 4 --dist loadfile -v --tb=short -x --durations=10
+          & .\.venv\Scripts\python.exe -m pytest -m $markerExpression -n 2 --dist loadfile -v --tb=short -x --durations=10
           $parallelExitCode = $LASTEXITCODE
           $parallelElapsed = [math]::Round(((Get-Date) - $started).TotalSeconds, 1)
           "- marker_expression=$markerExpression" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
@@ -130,7 +130,7 @@ jobs:
   compatibility:
     name: compatibility (Python 3.11)
     if: github.event_name == 'push'
-    runs-on: self-hosted
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v6
         with:
@@ -159,7 +159,7 @@ jobs:
           $venvScripts = (Resolve-Path .\.venv\Scripts).Path
           $env:PATH = "$venvScripts;$env:PATH"
           $started = Get-Date
-          & .\.venv\Scripts\python.exe -m pytest -m "not ledger_snapshot and not current_repository_census and not serial_ci and not packaging_build and not product_governance" -n 4 --dist loadfile -v --tb=short -x --durations=10
+          & .\.venv\Scripts\python.exe -m pytest -m "not ledger_snapshot and not current_repository_census and not serial_ci and not packaging_build and not product_governance" -n 2 --dist loadfile -v --tb=short -x --durations=10
           $parallelExitCode = $LASTEXITCODE
           if ($parallelExitCode -ne 0) { exit $parallelExitCode }
           & .\.venv\Scripts\python.exe -m pytest tests/test_config_codex_hooks.py::test_existing_hook_behavior_fixture_runs_in_ordinary_pytest -v --tb=short -x

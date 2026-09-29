@@ -68,7 +68,7 @@ markers = [
     "current_repository_census: validates the current checkout's complete architecture census. CI runs this once in the lint job; the main pytest sessions exclude it to avoid rebuilding the same repository-wide graph.",
     "packaging_build: builds installable wheel or PyInstaller outputs. Run for packaging-authority changes and on the primary main-branch test job; ordinary PRs and compatibility runs keep the cheaper packaging contract tests.",
     "product_governance: validates productization schemas, authority manifests, product docs, and their checker. Run for changes to those owners and on the primary main-branch test job.",
-    "serial_ci: uses a subprocess or build path whose bounded timeout is not parallel-safe on the self-hosted runner. CI runs these explicit node IDs after the parallel session.",
+    "serial_ci: uses a subprocess or build path whose bounded timeout is not parallel-safe. CI runs these explicit node IDs after the parallel session.",
 ]
 
 [tool.ruff.lint]
