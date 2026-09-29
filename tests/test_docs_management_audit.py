@@ -1732,11 +1732,12 @@ def test_topic_review_separates_bound_and_compressible_support_surfaces(
         (f"lane\tcurrent_artifact\nbroad_backfill\t{authority_bound_path}\n"),
     )
     _write(
-        root / "docs/superpowers/schemas/productization_authority_manifest.json",
+        root / "docs/superpowers/productization/status/"
+        "productization_authority_manifest.json",
         json.dumps({"decision_packet": authority_bound_path}),
     )
     _write(
-        root / "docs/superpowers/schemas/"
+        root / "docs/superpowers/productization/status/"
         "quantitative_projection_authority_manifest.json",
         json.dumps({"activation_summary_artifact": dependent_authority_bound_path}),
     )

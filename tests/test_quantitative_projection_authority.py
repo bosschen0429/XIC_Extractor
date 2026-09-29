@@ -43,7 +43,7 @@ _ACTIVATION_SUMMARY_ARTIFACT = (
     "activation_summary.json"
 )
 _MANIFEST_PATH = Path(
-    "docs/superpowers/schemas/quantitative_projection_authority_manifest.json"
+    "docs/superpowers/productization/status/quantitative_projection_authority_manifest.json"
 )
 
 

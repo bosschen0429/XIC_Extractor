@@ -22,7 +22,7 @@ active lane, current writer counts, promotion-packet status, and Backfill
 authority scopes are owned by the productization status index
 `docs/superpowers/validation/productization_status_index.tsv`, the authority
 manifest
-`docs/superpowers/schemas/productization_authority_manifest.json`, and the
+`docs/superpowers/productization/status/productization_authority_manifest.json`, and the
 promotion contract `docs/agent/product-validation-contract.md`. When this ledger
 cites a historical validation note, treat it as diagnostic/rerun memory unless
 a current structured authority artifact still promotes the same claim. The

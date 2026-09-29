@@ -38,7 +38,7 @@ packet outside that activation chain is not matrix authority by itself.
 This document owns durable evidence semantics, not live maturity tier, active
 lane, or current writer counts. Read lane/readiness from
 `docs/superpowers/validation/productization_status_index.tsv`, writer scope
-from `docs/superpowers/schemas/productization_authority_manifest.json`, and
+from `docs/superpowers/productization/status/productization_authority_manifest.json`, and
 promotion semantics from `docs/agent/product-validation-contract.md`.
 
 ## MS1 Morphology And Area Owner

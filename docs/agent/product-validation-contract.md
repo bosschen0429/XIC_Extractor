@@ -10,10 +10,10 @@ stable claims are routed to the correct owner. This file owns product-readiness
 language and product-surface discipline; it does not own active maturity tier,
 active lane, current writer counts, or promotion-packet status. Those live in
 `docs/superpowers/validation/productization_status_index.tsv`, and
-`docs/superpowers/schemas/productization_authority_manifest.json`.
+`docs/superpowers/productization/status/productization_authority_manifest.json`.
 Dependent canonical quantitative-effect status and its package/activation
 binding live separately in
-`docs/superpowers/schemas/quantitative_projection_authority_manifest.json`;
+`docs/superpowers/productization/status/quantitative_projection_authority_manifest.json`;
 that manifest does not add a ProductWriter scope.
 The schema at
 `docs/superpowers/schemas/productization_control_plane_schema.json` owns the

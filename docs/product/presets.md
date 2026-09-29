@@ -209,5 +209,5 @@ Before changing preset behavior, require the relevant subset of:
 - [Preset TOML data](../../xic_extractor/presets/data/)
 - [Historical compatibility index](../superpowers/plans/2026-06-15-productization-control-plane.md)
 - [Status index](../superpowers/validation/productization_status_index.tsv)
-- [Authority manifest](../superpowers/schemas/productization_authority_manifest.json)
+- [Authority manifest](../superpowers/productization/status/productization_authority_manifest.json)
 - [Diagnostic ledger](../diagnostic-ledger.md)

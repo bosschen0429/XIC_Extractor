@@ -420,7 +420,7 @@ def test_checker_rejects_crossed_or_active_dependent_status_row(
         DEPENDENT_EFFECT_LANE_ID,
         {
             "current_artifact": (
-                "docs/superpowers/schemas/productization_authority_manifest.json"
+                "docs/superpowers/productization/status/productization_authority_manifest.json"
             ),
             "artifact_sha256": artifact_sha256(DEFAULT_AUTHORITY_MANIFEST),
             "readiness_status": "production_ready",
@@ -610,7 +610,7 @@ def test_checker_allows_non_lane_artifact_readiness_label(tmp_path: Path) -> Non
 def test_checker_rejects_compatibility_owner_route_drift(tmp_path: Path) -> None:
     text = DEFAULT_CONTROL_PLANE.read_text(encoding="utf-8")
     text = text.replace(
-        "../schemas/productization_authority_manifest.json",
+        "../productization/status/productization_authority_manifest.json",
         "../schemas/wrong-authority.json",
         1,
     )

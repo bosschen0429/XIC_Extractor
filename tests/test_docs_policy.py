@@ -11,7 +11,6 @@ from tools.diagnostics.docs_policy import (
     PRODUCTIZATION_AUTHORITY_MANIFEST_REL,
     PRODUCTIZATION_SCHEMA_REL,
     QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_REL,
-    QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_SCHEMA_REL,
     classify_doc,
     classify_doc_path,
     is_productization_compatibility_index_text,
@@ -586,20 +585,15 @@ def test_productization_owner_route_uses_and_dependent_manifest_contracts() -> N
         "docs/superpowers/schemas/productization_control_plane_schema.json"
     )
     assert PRODUCTIZATION_AUTHORITY_MANIFEST_REL == (
-        "docs/superpowers/schemas/productization_authority_manifest.json"
+        "docs/superpowers/productization/status/productization_authority_manifest.json"
     )
     assert QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_REL == (
-        "docs/superpowers/schemas/quantitative_projection_authority_manifest.json"
-    )
-    assert QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_SCHEMA_REL == (
-        "docs/superpowers/schemas/"
-        "quantitative_projection_authority_manifest_schema.json"
+        "docs/superpowers/productization/status/quantitative_projection_authority_manifest.json"
     )
     for path in (
         PRODUCTIZATION_SCHEMA_REL,
         PRODUCTIZATION_AUTHORITY_MANIFEST_REL,
         QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_REL,
-        QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_SCHEMA_REL,
     ):
         assert Path(path).is_file()
         assert path in PRODUCTIZATION_OWNER_ROUTE
