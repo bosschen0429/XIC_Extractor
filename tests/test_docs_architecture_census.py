@@ -850,12 +850,7 @@ def test_discovery_to_extraction_imports_are_exact_owner_edges(
         and reference.imported_module.startswith("xic_extractor.extraction")
     }
 
-    assert observed == {
-        (
-            "xic_extractor.discovery.targeted_candidate_set",
-            "xic_extractor.extraction.cid_nl_evidence_projection",
-        ),
-    }
+    assert observed == set()
 
 
 @pytest.mark.current_repository_census

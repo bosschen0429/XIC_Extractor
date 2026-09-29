@@ -10,9 +10,6 @@ import pytest
 from tests.runtime_telemetry_fixtures import (
     build_runtime_telemetry_samples_from_coordinator,
 )
-from xic_extractor.alignment.cross_sample_peak_groups import (
-    CrossSamplePeakGroupHypothesis,
-)
 from xic_extractor.config import ExtractionConfig, Target
 from xic_extractor.execution_runtime import (
     AttemptRuntime,
@@ -38,10 +35,6 @@ from xic_extractor.execution_runtime_owner import (
     RuntimeExecutionPhaseError,
     start_runtime_attempt,
 )
-from xic_extractor.extraction.targeted_diagnostic_method import (
-    TargetedDiagnosticMethodResult,
-    canonical_targeted_diagnostic_method_bytes,
-)
 from xic_extractor.extraction.targeted_runtime_adapter import (
     TargetedProcessResourceReport,
     TargetedProcessResultRef,
@@ -53,7 +46,6 @@ from xic_extractor.extraction.targeted_runtime_adapter import (
     execute_targeted_runtime_lifecycle,
     mint_targeted_process_result_ref,
 )
-from xic_extractor.extractor import RunOutput
 from xic_extractor.processing_identity import (
     AcquisitionInputBinding,
     ProcessingAttemptIdentity,
@@ -73,29 +65,6 @@ def _build_spawned_envelope(
         attempt,
         work_unit_key,
         _result_ref(attempt, work_unit_key, payload),
-    )
-
-
-def _build_spawned_method_envelope(
-    attempt: ProcessingAttemptIdentity,
-    work_unit_key: str,
-    result: TargetedDiagnosticMethodResult,
-    upstream_ref: TargetedProcessResultRef,
-) -> TargetedProcessWorkerResultEnvelope:
-    reference = mint_targeted_process_result_ref(
-        processing_attempt=attempt,
-        work_unit_key=work_unit_key,
-        owner_result_payload=canonical_targeted_diagnostic_method_bytes(result),
-        upstream_artifacts=(upstream_ref.artifact,),
-    )
-    return _success(
-        attempt,
-        work_unit_key,
-        reference,
-        targeted_method_result=result,
-        targeted_method_upstream_artifact_ids=(
-            upstream_ref.artifact.evidence_artifact_id,
-        ),
     )
 
 
@@ -412,7 +381,6 @@ def test_targeted_accepted_cancellation_skips_successful_provider_projection(
     )
     assert result.settlement.successful_result_refs == ()
     assert result.settlement.successful_observation_batches == ()
-    assert result.settlement.successful_targeted_method_results == ()
     assert tuple(
         settlement.outcome for settlement in result.settlement.runtime.settlements
     ) == (WorkUnitTerminalOutcome.CANCELLED,)
@@ -661,184 +629,16 @@ def test_targeted_result_ref_binds_exact_owner_payload_without_legacy_dto(
         )
 
 
-def test_targeted_method_carriers_cross_spawn_in_manifest_order(
-    tmp_path: Path,
-) -> None:
-    attempt = _attempt(tmp_path)
-    first = _method_result(attempt, "group:a")
-    second = _method_result(attempt, "group:b")
-    upstream_a = _result_ref(attempt, "upstream:a", b"upstream-a")
-    upstream_b = _result_ref(attempt, "upstream:b", b"upstream-b")
-
-    with ProcessPoolExecutor(
-        max_workers=2,
-        mp_context=get_context("spawn"),
-    ) as executor:
-        envelopes = tuple(
-            future.result(timeout=15)
-            for future in (
-                executor.submit(
-                    _build_spawned_method_envelope,
-                    attempt,
-                    "raw:b",
-                    second,
-                    upstream_b,
-                ),
-                executor.submit(
-                    _build_spawned_method_envelope,
-                    attempt,
-                    "raw:a",
-                    first,
-                    upstream_a,
-                ),
-            )
-        )
-
-    settled = _execute_targeted_envelopes(
-        _runtime(attempt, ("raw:a", "raw:b")),
-        envelopes,
-    )
-
-    assert settled.successful_targeted_method_results == (
-        ("raw:a", first),
-        ("raw:b", second),
-    )
-
-
-def test_targeted_method_carrier_rejects_payload_and_attempt_mismatch(
-    tmp_path: Path,
-) -> None:
-    attempt = _attempt(tmp_path)
-    result = _method_result(attempt, "group:carrier")
-    wrong_payload_ref = _result_ref(attempt, "raw:a", b"wrong-payload")
-
-    with pytest.raises(TargetedRuntimeAdapterError, match="does not bind"):
-        _success(
-            attempt,
-            "raw:a",
-            wrong_payload_ref,
-            targeted_method_result=result,
-            targeted_method_upstream_artifact_ids=(),
-        )
-
-    matching_ref = _result_ref(
-        attempt,
-        "raw:a",
-        canonical_targeted_diagnostic_method_bytes(result),
-    )
-    with pytest.raises(TargetedRuntimeAdapterError, match="caller-provided"):
-        _success(
-            attempt,
-            "raw:a",
-            matching_ref,
-            targeted_method_result=result,
-        )
-
-    other_attempt = issue_processing_attempt(_request(tmp_path))
-    other_result = _method_result(other_attempt, "group:other-attempt")
-    other_payload_ref = _result_ref(
-        attempt,
-        "raw:a",
-        canonical_targeted_diagnostic_method_bytes(other_result),
-    )
-    with pytest.raises(TargetedRuntimeAdapterError, match="different processing"):
-        _success(
-            attempt,
-            "raw:a",
-            other_payload_ref,
-            targeted_method_result=other_result,
-            targeted_method_upstream_artifact_ids=(),
-        )
-
-
-@pytest.mark.parametrize(
-    "outcome",
-    [WorkUnitTerminalOutcome.FAILED, WorkUnitTerminalOutcome.CANCELLED],
-)
-def test_targeted_unsuccessful_envelope_cannot_carry_method_result(
-    tmp_path: Path,
-    outcome: WorkUnitTerminalOutcome,
-) -> None:
-    attempt = _attempt(tmp_path)
-
-    with pytest.raises(TargetedRuntimeAdapterError, match="only succeeded"):
-        TargetedProcessWorkerResultEnvelope(
-            attempt=attempt,
-            work_unit_key="raw:a",
-            outcome=outcome,
-            failure_detail=WorkUnitFailureDetail(
-                category=(
-                    WorkUnitFailureCategory.CANCELLATION
-                    if outcome is WorkUnitTerminalOutcome.CANCELLED
-                    else WorkUnitFailureCategory.EXECUTION_ERROR
-                ),
-                stage="targeted-process-worker",
-                source_reference="no-raw:raw:a",
-                message="worker did not succeed",
-            ),
-            targeted_method_result=_method_result(attempt, "group:forbidden"),
-            targeted_method_upstream_artifact_ids=(),
-        )
-
-
-def test_targeted_conflicting_replay_does_not_expose_method_carrier(
-    tmp_path: Path,
-) -> None:
-    attempt = _attempt(tmp_path)
-    first = _method_result(attempt, "group:first")
-    conflicting = _method_result(attempt, "group:conflicting")
-    first_ref = _result_ref(
-        attempt,
-        "raw:a",
-        canonical_targeted_diagnostic_method_bytes(first),
-    )
-    conflicting_ref = _result_ref(
-        attempt,
-        "raw:a",
-        canonical_targeted_diagnostic_method_bytes(conflicting),
-    )
-
-    settled = _execute_targeted_envelopes(
-        _runtime(attempt, ("raw:a",)),
-        (
-            _success(
-                attempt,
-                "raw:a",
-                first_ref,
-                targeted_method_result=first,
-                targeted_method_upstream_artifact_ids=(),
-            ),
-            _success(
-                attempt,
-                "raw:a",
-                conflicting_ref,
-                targeted_method_result=conflicting,
-                targeted_method_upstream_artifact_ids=(),
-            ),
-        ),
-    )
-
-    assert settled.runtime.integrity_failure is not None
-    assert settled.successful_targeted_method_results == ()
-
-
 def _success(
     attempt: ProcessingAttemptIdentity,
     work_unit_key: str,
     result_ref: TargetedProcessResultRef,
-    *,
-    targeted_method_result: TargetedDiagnosticMethodResult | None = None,
-    targeted_method_upstream_artifact_ids: tuple[str, ...] | None = None,
 ) -> TargetedProcessWorkerResultEnvelope:
     return TargetedProcessWorkerResultEnvelope(
         attempt=attempt,
         work_unit_key=work_unit_key,
         outcome=WorkUnitTerminalOutcome.SUCCEEDED,
         owner_result_ref=result_ref,
-        targeted_method_result=targeted_method_result,
-        targeted_method_upstream_artifact_ids=(
-            targeted_method_upstream_artifact_ids
-        ),
     )
 
 
@@ -877,27 +677,6 @@ def _execute_targeted_envelopes(
         finalization_persister=lambda proposed: proposed,
     )
     return lifecycle.settlement
-
-
-def _method_result(
-    attempt: ProcessingAttemptIdentity,
-    group_id: str,
-) -> TargetedDiagnosticMethodResult:
-    group = CrossSamplePeakGroupHypothesis(
-        group_hypothesis_id=group_id,
-        public_family_id=group_id,
-        owner_ids=(f"owner:{group_id}",),
-        event_ids=(f"event:{group_id}",),
-        event_member_count=1,
-    )
-    return TargetedDiagnosticMethodResult(
-        processing_request_id=attempt.processing_request_id,
-        processing_attempt_id=attempt.processing_attempt_id,
-        groups=(group,),
-        cells=(),
-        projections=(),
-        authoritative_legacy_output=RunOutput([], []),
-    )
 
 
 def _runtime(

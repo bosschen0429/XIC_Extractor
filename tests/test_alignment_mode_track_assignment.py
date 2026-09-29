@@ -797,8 +797,6 @@ def test_assignment_rejects_candidate_from_foreign_request_before_prediction(
         request=foreign_owners.request,
         attempt=foreign_owners.attempt,
         owners=foreign_owners,
-        artifact_registry={},
-        projections_by_hypothesis_id={},
     )
     foreign_track_a, foreign_track_b = _mode_track_spines(
         foreign_fixture,
