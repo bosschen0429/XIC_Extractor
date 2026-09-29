@@ -235,7 +235,6 @@ def _cell(
         trace_quality="clean" if area is not None else status,
         scan_support_score=0.8 if area is not None else None,
         source_candidate_id=f"{sample_stem}#1" if status == "detected" else None,
-        source_raw_file=Path(f"{sample_stem}.raw") if status == "detected" else None,
         reason=(
             "duplicate MS1 peak claim; winner=FAM001; original_status=detected"
             if status == "duplicate_assigned"

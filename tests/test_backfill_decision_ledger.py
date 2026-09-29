@@ -1101,7 +1101,6 @@ def _owner_valid_backfill_row() -> dict[str, str]:
         "gap_fill_reason": "group_centered_query_detected",
         "backfill_evidence_reason": "owner_backfill_supported",
         "source_candidate_id": "",
-        "source_raw_file": "Sample_A.synthetic",
         "neutral_loss_tag": "DNA_dR",
         "family_center_mz": "500",
         "family_center_rt": "8.5",

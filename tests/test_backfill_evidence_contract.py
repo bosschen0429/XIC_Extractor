@@ -67,7 +67,6 @@ def _backfill_row(**overrides: str) -> dict[str, str]:
         "gap_fill_reason": "group_centered_query_detected",
         "backfill_evidence_reason": "owner_backfill_supported",
         "source_candidate_id": "sample-a#candidate-1",
-        "source_raw_file": "sample-a.raw",
         "neutral_loss_tag": "DNA_dR",
         "family_center_mz": "242.1",
         "family_center_rt": "1.25",

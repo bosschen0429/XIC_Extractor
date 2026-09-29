@@ -195,7 +195,6 @@ def test_provisional_writer_timing_reports_only_owner_supported_phases(
         outputs,
         matrix,
         metadata=_provisional_metadata(),
-        ownership=SimpleNamespace(assignments=(), ambiguous_records=()),
         alignment_config=config,
         production_decisions=build_production_decisions(matrix, config),
         timing_recorder=recorder,
@@ -304,7 +303,6 @@ def test_streamed_pipeline_matches_frozen_formula_and_unquantified_bytes(
         streamed_outputs,
         matrix,
         metadata=_provisional_metadata(),
-        ownership=SimpleNamespace(assignments=(), ambiguous_records=()),
         alignment_config=config,
         production_decisions=build_production_decisions(matrix, config),
         timing_recorder=TimingRecorder("alignment", instrument_writers=True),
@@ -497,7 +495,6 @@ def test_provisional_outputs_publish_as_one_atomic_set(tmp_path: Path) -> None:
         outputs,
         matrix,
         metadata=_provisional_metadata(),
-        ownership=SimpleNamespace(assignments=(), ambiguous_records=()),
         alignment_config=config,
         production_decisions=build_production_decisions(matrix, config),
     )
@@ -527,7 +524,6 @@ def test_provisional_outputs_reject_any_incomplete_bundle(tmp_path: Path) -> Non
             outputs,
             matrix,
             metadata=_provisional_metadata(),
-            ownership=SimpleNamespace(assignments=(), ambiguous_records=()),
             alignment_config=config,
             production_decisions=build_production_decisions(matrix, config),
         )
@@ -568,7 +564,6 @@ def test_provisional_output_failure_leaves_no_partial_final_set(
             outputs,
             matrix,
             metadata=_provisional_metadata(),
-            ownership=SimpleNamespace(assignments=(), ambiguous_records=()),
             alignment_config=config,
             production_decisions=build_production_decisions(matrix, config),
         )
@@ -689,9 +684,6 @@ def _cell(
         trace_quality="clean" if status == "detected" else "owner_backfill",
         scan_support_score=0.8 if status == "detected" else None,
         source_candidate_id=source_candidate_id,
-        source_raw_file=(
-            Path(f"{sample_stem}.raw") if source_candidate_id is not None else None
-        ),
         reason=status,
         selected_integration=_integration(area),
         group_hypothesis_id=cell_group_hypothesis_id or group_id,

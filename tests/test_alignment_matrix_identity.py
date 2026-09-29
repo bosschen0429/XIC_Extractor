@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
 from types import SimpleNamespace
 
 from xic_extractor.alignment.config import AlignmentConfig
@@ -915,7 +914,6 @@ def _cell(
             if source_candidate_id is not None
             else f"{sample_stem}#{cluster_id}"
         ),
-        source_raw_file=Path(f"{sample_stem}.raw") if status == "detected" else None,
         reason=status,
         region_review_reason=region_review_reason,
         selected_integration=selected_integration,

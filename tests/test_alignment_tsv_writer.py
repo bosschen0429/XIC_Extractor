@@ -2284,7 +2284,6 @@ def _cell(
         ),
         scan_support_score=0.8 if area is not None else None,
         source_candidate_id=candidate_id,
-        source_raw_file=Path(f"{sample_stem}.raw") if candidate_id else None,
         reason="cell reason",
         region_candidate_count=2 if region else None,
         region_selected_proposal_sources=(

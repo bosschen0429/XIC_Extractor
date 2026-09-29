@@ -473,7 +473,6 @@ def _aligned_cell(
         trace_quality="finalized_owner_decision",
         scan_support_score=None,
         source_candidate_id=source_id,
-        source_raw_file=None,
         reason=owner_decision.source or owner_decision.variant,
         selected_integration=integration,
         backfill_seed_mz=(repaired.cell.backfill_seed_mz if repaired else None),

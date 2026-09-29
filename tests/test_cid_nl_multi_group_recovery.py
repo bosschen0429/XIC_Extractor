@@ -1226,7 +1226,6 @@ def test_ms1_only_backfill_fills_only_one_unique_group_window_peak(
         assert decision.raw_status == "backfilled"
         assert decision.production_status == "accepted_backfill"
         from tools.diagnostics.output_population_census import main as population_main
-        from xic_extractor.alignment.ownership import OwnershipBuildResult
         from xic_extractor.alignment.pipeline_outputs import (
             output_paths,
             write_outputs_atomic,
@@ -1243,9 +1242,6 @@ def test_ms1_only_backfill_fills_only_one_unique_group_window_peak(
             ),
             writer.matrix,
             metadata={},
-            ownership=OwnershipBuildResult(
-                owners=(), assignments=(), ambiguous_records=()
-            ),
             alignment_config=AlignmentConfig(anchor_min_seed_events=1),
             production_decisions=writer.production_decisions,
         )

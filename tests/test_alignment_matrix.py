@@ -1,5 +1,4 @@
 import pickle
-from pathlib import Path
 
 from xic_extractor.alignment import AlignedCell
 from xic_extractor.peak_detection.hypotheses import IntegrationResult
@@ -19,7 +18,6 @@ def test_aligned_cell_selected_integration_is_pickleable_for_process_mode():
         trace_quality="clean",
         scan_support_score=0.75,
         source_candidate_id="sample-a#42",
-        source_raw_file=Path("sample-a.raw"),
         reason="detected candidate",
         selected_integration=IntegrationResult(
             rt_left_min=5.0,
@@ -57,7 +55,6 @@ def test_aligned_cell_matrix_area_source_names_missing_asls():
         trace_quality="legacy-area-only",
         scan_support_score=None,
         source_candidate_id="sample-a#42",
-        source_raw_file=Path("sample-a.raw"),
         reason="detected candidate",
     )
 

@@ -37,7 +37,6 @@ from tests.test_untargeted_cid_nl_real_data_runtime import (
 )
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.csv_io import DiscoveryBatchInput
-from xic_extractor.alignment.ownership import OwnershipBuildResult
 from xic_extractor.alignment.pipeline_outputs import (
     alignment_metadata,
     output_paths,
@@ -3526,11 +3525,6 @@ def test_production_batch_executes_one_atomic_sample_phase(
             require_discovery_owner_closure=True,
             owner_backfill_peak_fact_provenance_row_count=1,
         ),
-        ownership=OwnershipBuildResult(
-            owners=(),
-            assignments=(),
-            ambiguous_records=(),
-        ),
         alignment_config=alignment_config,
         production_decisions=writer_inputs.production_decisions,
     )
@@ -4923,11 +4917,6 @@ def test_production_composition_closes_recovered_observation_without_candidate(
                 require_discovery_owner_closure=True,
                 owner_backfill_peak_fact_provenance_row_count=1,
             ),
-            ownership=OwnershipBuildResult(
-                owners=(),
-                assignments=(),
-                ambiguous_records=(),
-            ),
             alignment_config=AlignmentConfig(anchor_min_seed_events=1),
             production_decisions=decisions,
         )
@@ -5071,7 +5060,6 @@ def test_atomic_publication_preserves_ms1_only_backfill_and_no_peak(
             require_discovery_owner_closure=True,
             owner_backfill_peak_fact_provenance_row_count=1,
         ),
-        ownership=OwnershipBuildResult(owners=(), assignments=(), ambiguous_records=()),
         alignment_config=alignment_config,
         production_decisions=writer_inputs.production_decisions,
     )

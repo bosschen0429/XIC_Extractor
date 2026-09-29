@@ -1,6 +1,5 @@
 import math
 from dataclasses import fields, replace
-from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
 
@@ -797,7 +796,6 @@ def _cell(
             if status == "detected"
             else None
         ),
-        source_raw_file=Path(f"{sample_stem}.raw") if status == "detected" else None,
         reason=(
             "duplicate MS1 peak claim; winner=FAM000000; original_status=detected"
             if status == "duplicate_assigned"

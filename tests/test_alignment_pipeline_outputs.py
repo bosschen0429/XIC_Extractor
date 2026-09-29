@@ -1,7 +1,6 @@
 import json
 from dataclasses import replace
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 
@@ -265,7 +264,6 @@ def test_writer_timing_observations_are_truthful_with_live_output(
         outputs,
         matrix,
         metadata={},
-        ownership=SimpleNamespace(assignments=(), ambiguous_records=()),
         alignment_config=config,
         production_decisions=build_production_decisions(matrix, config),
         timing_recorder=recorder,
@@ -324,7 +322,6 @@ def test_writer_hashing_requires_instrumentation_opt_in(
         outputs,
         matrix,
         metadata={},
-        ownership=SimpleNamespace(assignments=(), ambiguous_records=()),
         alignment_config=config,
         production_decisions=build_production_decisions(matrix, config),
         timing_recorder=timing_recorder,
@@ -348,7 +345,6 @@ def test_writer_mints_exact_fingerprint_receipts_without_timing_instrumentation(
         outputs,
         matrix,
         metadata={},
-        ownership=SimpleNamespace(assignments=(), ambiguous_records=()),
         alignment_config=config,
         production_decisions=build_production_decisions(matrix, config),
         capture_artifact_fingerprints=True,
@@ -386,7 +382,6 @@ def test_writer_fingerprint_batch_rejects_missing_duplicate_or_foreign_receipts(
     config = AlignmentConfig()
     writer_kwargs = {
         "metadata": {},
-        "ownership": SimpleNamespace(assignments=(), ambiguous_records=()),
         "alignment_config": config,
         "production_decisions": build_production_decisions(matrix, config),
         "capture_artifact_fingerprints": True,
@@ -442,7 +437,6 @@ def test_writer_receipt_capture_reuses_instrumented_hashes_without_output_change
     writer_args = (matrix,)
     writer_kwargs = {
         "metadata": {},
-        "ownership": SimpleNamespace(assignments=(), ambiguous_records=()),
         "alignment_config": config,
         "production_decisions": build_production_decisions(matrix, config),
     }
@@ -525,7 +519,6 @@ def test_production_and_machine_plans_write_identical_matrix_bytes(
     decisions = build_production_decisions(matrix, config)
     writer_kwargs = {
         "metadata": {},
-        "ownership": SimpleNamespace(assignments=(), ambiguous_records=()),
         "alignment_config": config,
         "production_decisions": replace(
             decisions,
@@ -594,7 +587,6 @@ def test_writer_fingerprint_failure_rolls_back_without_returning_receipts(
             outputs,
             matrix,
             metadata={},
-            ownership=SimpleNamespace(assignments=(), ambiguous_records=()),
             alignment_config=config,
             production_decisions=build_production_decisions(matrix, config),
             capture_artifact_fingerprints=True,
@@ -623,7 +615,6 @@ def test_writer_binds_provenance_row_count_into_persisted_metadata(
         outputs,
         matrix,
         metadata={},
-        ownership=SimpleNamespace(assignments=(), ambiguous_records=()),
         alignment_config=config,
         production_decisions=build_production_decisions(matrix, config),
     )
@@ -668,7 +659,6 @@ def test_writer_rejects_provenance_row_count_mismatch_before_final_writes(
             outputs,
             matrix,
             metadata={"owner_backfill_peak_fact_provenance_row_count": "0"},
-            ownership=SimpleNamespace(assignments=(), ambiguous_records=()),
             alignment_config=config,
             production_decisions=build_production_decisions(matrix, config),
         )
@@ -722,7 +712,6 @@ def test_provenance_outer_transaction_never_nests_or_leaks_temp_files(
             outputs,
             matrix,
             metadata={},
-            ownership=SimpleNamespace(assignments=(), ambiguous_records=()),
             alignment_config=config,
             production_decisions=build_production_decisions(matrix, config),
         )

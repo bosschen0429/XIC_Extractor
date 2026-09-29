@@ -1008,7 +1008,6 @@ def _detected_cell(
         trace_quality="clean",
         scan_support_score=0.9,
         source_candidate_id=f"{sample_stem}-candidate",
-        source_raw_file=None,
         reason="detected",
         selected_integration=integration,
         group_hypothesis_id=stage.group_hypothesis_id,

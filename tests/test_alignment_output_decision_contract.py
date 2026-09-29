@@ -1,7 +1,6 @@
 import csv
 from dataclasses import replace
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 
@@ -38,7 +37,6 @@ def test_output_transaction_requires_owner_minted_decisions_before_writes(
             outputs,
             matrix,
             metadata={},
-            ownership=SimpleNamespace(assignments=(), ambiguous_records=()),
             alignment_config=config,
         )
     with pytest.raises(TypeError, match="production_decisions must be owner-minted"):
@@ -46,7 +44,6 @@ def test_output_transaction_requires_owner_minted_decisions_before_writes(
             outputs,
             matrix,
             metadata={},
-            ownership=SimpleNamespace(assignments=(), ambiguous_records=()),
             alignment_config=config,
             production_decisions=object(),  # type: ignore[arg-type]
         )
@@ -72,7 +69,6 @@ def test_matrix_only_output_plan_omits_unselected_provenance(
         outputs,
         matrix,
         metadata={},
-        ownership=SimpleNamespace(assignments=(), ambiguous_records=()),
         alignment_config=config,
         production_decisions=build_production_decisions(matrix, config),
     )
@@ -152,7 +148,6 @@ def test_activated_renderers_use_supplied_owner_values_statuses_and_counts(
         outputs,
         matrix,
         metadata={},
-        ownership=SimpleNamespace(assignments=(), ambiguous_records=()),
         alignment_config=config,
         production_decisions=supplied,
     )
@@ -189,7 +184,6 @@ def test_a_withheld_owner_decision_leaves_the_matrix_cell_empty(
         outputs,
         matrix,
         metadata={},
-        ownership=SimpleNamespace(assignments=(), ambiguous_records=()),
         alignment_config=config,
         production_decisions=supplied,
     )
