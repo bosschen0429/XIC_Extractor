@@ -31,15 +31,6 @@ POWERSHELL_VARIABLE = re.compile(r"\$[A-Za-z_][A-Za-z0-9_:]*")
 POWERSHELL_ASSIGNMENT = re.compile(
     r"^\s*(?P<name>\$[A-Za-z_][A-Za-z0-9_:]*)\s*=", re.IGNORECASE
 )
-EXEC_CONFIG_PATHS = [
-    "AGENTS.md",
-    ".codex/config.toml",
-    ".codex/hooks.json",
-    ".codex/rules/",
-    ".codex/hooks/",
-    ".codex/agents/",
-    "docs/agent/",
-]
 INERT_TEXT_COMMANDS = {
     "echo",
     "echo.exe",
@@ -70,17 +61,6 @@ def deny(reason: str) -> None:
     )
 
 
-def context(message: str) -> None:
-    emit(
-        {
-            "hookSpecificOutput": {
-                "hookEventName": "PreToolUse",
-                "additionalContext": message,
-            }
-        }
-    )
-
-
 def get_command(event: dict[str, object]) -> str:
     tool_input = event.get("tool_input")
     if isinstance(tool_input, dict):
@@ -99,20 +79,6 @@ def is_complete_apply_patch(event: dict[str, object], command: str) -> bool:
         and lines[0] == "*** Begin Patch"
         and lines[-1] == "*** End Patch"
     )
-
-
-def text_from_value(value: object) -> str:
-    if isinstance(value, str):
-        return value
-    if isinstance(value, dict):
-        return "\n".join(text_from_value(item) for item in value.values())
-    if isinstance(value, list):
-        return "\n".join(text_from_value(item) for item in value)
-    return ""
-
-
-def tool_payload_text(event: dict[str, object]) -> str:
-    return text_from_value(event.get("tool_input"))
 
 
 def executable_name(token: str) -> str:
@@ -243,8 +209,7 @@ def main() -> int:
         return 0
 
     command = get_command(event)
-    payload = tool_payload_text(event)
-    if not command and not payload:
+    if not command:
         return 0
 
     policy_command = "" if is_complete_apply_patch(event, command) else command
@@ -305,16 +270,6 @@ def main() -> int:
                 "git commit with -a/--all or pathspec is blocked because it can sweep unrelated changes into the commit. Stage explicit paths, review the staged diff, then commit."
             )
             return 0
-
-    advisory_messages: list[str] = []
-    normalized = f"{command}\n{payload}".replace("\\", "/")
-    if any(path.replace("\\", "/") in normalized for path in EXEC_CONFIG_PATHS):
-        advisory_messages.append(
-            "XIC agent guidance or execution config is referenced. If changed, follow docs/agent/codex-operating-system.md Change Protocol and run the checks required for the affected behavior."
-        )
-
-    if advisory_messages:
-        context("\n\n".join(advisory_messages))
 
     return 0
 

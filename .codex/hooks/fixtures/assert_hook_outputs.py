@@ -42,11 +42,6 @@ def assert_contains(value: object, expected: str) -> None:
         raise AssertionError(f"expected {expected!r} in {text}")
 
 
-def assert_absent(text: str, unexpected: str) -> None:
-    if unexpected in text:
-        raise AssertionError(f"did not expect {unexpected!r} in {text}")
-
-
 def assert_hook_silent(script: str, event: dict[str, object]) -> None:
     result = subprocess.run(
         [sys.executable, str(HOOKS / script)],
@@ -102,20 +97,6 @@ def main() -> int:
     assert_contains(
         run_hook("xic_pre_tool_guard.py", split_raw_background_payload),
         "payload directly",
-    )
-
-    execution_config_payload = {
-        "hook_event_name": "PreToolUse",
-        "turn_id": "fixture",
-        "tool_name": "apply_patch",
-        "tool_use_id": "fixture",
-        "cwd": ".",
-        "permission_mode": "default",
-        "tool_input": {"patch": "*** Update File: .codex/hooks.json\n"},
-    }
-    assert_contains(
-        run_hook("xic_pre_tool_guard.py", execution_config_payload),
-        "docs/agent/codex-operating-system.md Change Protocol",
     )
 
     search_vcs = "g" + "it"
@@ -422,14 +403,7 @@ def main() -> int:
             ),
         },
     }
-    patch_output = run_hook("xic_pre_tool_guard.py", patch_payload)
-    assert_contains(
-        patch_output, "docs/agent/codex-operating-system.md Change Protocol"
-    )
-    assert_absent(
-        json.dumps(patch_output, ensure_ascii=False),
-        '"permissionDecision"',
-    )
+    assert_hook_silent("xic_pre_tool_guard.py", patch_payload)
 
     shell_patch_payload = {
         **patch_payload,
@@ -478,17 +452,7 @@ def main() -> int:
             ),
         },
     }
-    execpolicy_meta_output = run_hook(
-        "xic_pre_tool_guard.py",
-        execpolicy_meta_payload,
-    )
-    assert_contains(
-        execpolicy_meta_output, "docs/agent/codex-operating-system.md Change Protocol"
-    )
-    assert_absent(
-        json.dumps(execpolicy_meta_output, ensure_ascii=False),
-        '"permissionDecision"',
-    )
+    assert_hook_silent("xic_pre_tool_guard.py", execpolicy_meta_payload)
 
     wrong_doctor_runner_payload = {
         **doctor_meta_payload,

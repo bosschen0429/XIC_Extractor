@@ -19,7 +19,7 @@ XIC technical inputs, not a second agent workflow.
 
 | Event | Retained decision |
 | --- | --- |
-| `PreToolUse` | Reject unsupported wrappers and unsafe Git or RAW-background command shapes; flag execution-config verification. |
+| `PreToolUse` | Reject unsupported wrappers and unsafe Git or RAW-background command shapes. |
 | `PostToolUse` | Reject zero-test and invalid-node pytest results. |
 
 `.codex/rules/xic-safety.rules` owns destructive Git/filesystem command policy.
