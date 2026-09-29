@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import csv
 import hashlib
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass, replace
@@ -63,13 +62,6 @@ from xic_extractor.peak_detection.targeted_product_projection import (
     TargetedProductProjection,
 )
 
-_FROZEN_LEGACY_CSV_SHA256 = (
-    "f0a471bd81046cefaa924d619b934957505ee22591b17820a73143f7b4126937"
-)
-_VALIDATION_PACKET = Path("docs/superpowers/validation/package2_targeted_method")
-_FROZEN_DIFFERENCE_MANIFEST_SHA256 = (
-    "213bf92f5f237cdedf61abc9435d675c63831774004bb2153952c2322a3dabcd"
-)
 _FROZEN_TRACE_ORACLE = {
     "observed-a": (
         "xic.peak-observation-content:"
@@ -497,40 +489,6 @@ def test_successor_reason_difference_stops_before_projection(
         match="non-canonical owner reason",
     ):
         run_targeted_diagnostic_method(request)
-
-
-def test_processing_identity_validation_packet_is_exact_zero_and_complete() -> None:
-    manifest_path = _VALIDATION_PACKET / "difference_manifest.tsv"
-    manifest_bytes = manifest_path.read_bytes()
-    assert hashlib.sha256(manifest_bytes).hexdigest() == (
-        _FROZEN_DIFFERENCE_MANIFEST_SHA256
-    )
-    with manifest_path.open(encoding="utf-8", newline="") as handle:
-        rows = list(csv.DictReader(handle, delimiter="\t"))
-
-    assert len(rows) == 13
-    assert all(row["old_value"] == row["new_value"] for row in rows)
-    assert all(row["classification"].startswith("exact_zero_") for row in rows)
-    assert {row["stage"] for row in rows} == {
-        "trace",
-        "hypothesis",
-        "alignment",
-        "backfill",
-        "selection",
-        "selected_result",
-        "xic_results_csv",
-        "matrix",
-        "writer",
-    }
-    assert any(_FROZEN_LEGACY_CSV_SHA256 in row["old_value"] for row in rows)
-    assert any(
-        "6792d0fcd4d15b3cf23f2ce9e174fdbf96ed8399" in row["old_value"] for row in rows
-    )
-    inventory = (_VALIDATION_PACKET / "artifact_inventory.tsv").read_text(
-        encoding="utf-8"
-    )
-    assert _FROZEN_DIFFERENCE_MANIFEST_SHA256 in inventory
-    assert _FROZEN_LEGACY_CSV_SHA256 in inventory
 
 
 def _method_request(

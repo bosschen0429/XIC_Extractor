@@ -36,7 +36,7 @@ from xic_extractor.tabular_io import write_tsv
 ROOT = Path(__file__).resolve().parents[1]
 
 DEFAULT_OUTPUT_DIR = Path(
-    "docs/superpowers/validation/quant_matrix_evidence_packet",
+    "output/validation/quant_matrix_evidence_packet",
 )
 DEFAULT_LARGE_COHORT_ARTIFACT = Path(
     "docs/superpowers/validation/quant_matrix_real_bundle/"
