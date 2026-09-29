@@ -5,7 +5,10 @@ from collections.abc import Iterable, Mapping
 from typing import Literal, cast
 
 from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.discovery.detected_features import DeltaMassPatternSettings
+from xic_extractor.discovery.detected_features import (
+    DeltaMassPatternSettings,
+    PtPatternDiscoveryStrategy,
+)
 from xic_extractor.discovery.models import DiscoverySettings, NeutralLossProfile
 from xic_extractor.presets.loader import (
     DISCOVERY_TUNING_OVERRIDE_KEYS,
@@ -209,6 +212,28 @@ def apply_to_discovery(
         rt_min=_float_setting(tuning, "rt_min", baseline.rt_min),
         rt_max=_float_setting(tuning, "rt_max", baseline.rt_max),
         resolver_mode=_str_setting(tuning, "resolver_mode", baseline.resolver_mode),
+    )
+
+
+def resolve_pt_pattern_discovery(preset_name: str) -> PtPatternDiscoveryStrategy:
+    """Load a Pt pattern preset and resolve its Discovery strategy.
+
+    Rejects presets without a ``delta_mass`` tag; a ``neutral_loss`` tag marks
+    the composite Pt pattern + CID-NL(dR) strategy.
+    """
+    preset = load_preset(preset_name)
+    if not any(tag.strategy == "delta_mass" for tag in preset.tags):
+        raise ValueError(
+            f"preset {preset_name!r} is not a 'pt_pattern' preset (no "
+            "'delta_mass' tag); use a Pt pattern preset such as 'pt_pattern' "
+            "or 'pt_pattern_cid_nl_dr'"
+        )
+    return PtPatternDiscoveryStrategy(
+        label=preset_name,
+        settings=apply_to_delta_mass_discovery(preset),
+        cid_nl_composite=any(
+            tag.strategy == "neutral_loss" for tag in preset.tags
+        ),
     )
 
 

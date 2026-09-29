@@ -323,13 +323,13 @@ def test_rt_envelope_reports_original_signal_apex_within_smoothed_bounds() -> No
 def test_rt_envelope_preserves_canonical_clear_valley_between_supported_peaks(
     sigma: float,
 ) -> None:
+    from xic_extractor.configuration.signal_processing_profile import (
+        SignalProcessingProfile,
+    )
     from xic_extractor.peak_detection.physical_peak_evaluation import (
         enumerate_physical_segment_universe,
         evaluate_physical_peak,
         prepare_physical_signal,
-    )
-    from xic_extractor.peak_detection.signal_processing_profile import (
-        SignalProcessingProfile,
     )
 
     rt = np.linspace(0.0, 2.0, 1001)

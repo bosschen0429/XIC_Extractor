@@ -15,12 +15,12 @@ from typing import Any
 
 from xic_extractor.alignment.drift_evidence import read_known_istd_reference
 from xic_extractor.configuration.models import ConfigError
+from xic_extractor.configuration.signal_processing_profile import (
+    DEFAULT_SIGNAL_PROCESSING_PROFILE,
+)
 from xic_extractor.configuration.targets import read_istd_targets
 from xic_extractor.discovery.blank_qualification import BlankBackgroundLibrary
 from xic_extractor.execution_settings import load_execution_profile
-from xic_extractor.peak_detection.signal_processing_profile import (
-    DEFAULT_SIGNAL_PROCESSING_PROFILE,
-)
 from xic_extractor.presets import bind_cid_nl_recipe, load_preset
 from xic_extractor.raw_reader import preflight_raw_reader, read_analysis_set
 from xic_extractor.sample_metadata import load_sample_metadata

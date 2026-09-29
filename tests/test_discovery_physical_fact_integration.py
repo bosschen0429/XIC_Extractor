@@ -29,6 +29,9 @@ from tests.test_discovery_pipeline import (
     _scan_event,
     _settings,
 )
+from xic_extractor.configuration.signal_processing_profile import (
+    SignalProcessingProfile,
+)
 from xic_extractor.discovery.csv_writer import build_discovery_review_note
 from xic_extractor.discovery.models import DiscoveryPhysicalWorkItem, DiscoverySettings
 from xic_extractor.discovery.ms1_backfill import (
@@ -46,9 +49,6 @@ from xic_extractor.execution_runtime_owner import derive_runtime_acquisition_met
 from xic_extractor.peak_detection.physical_peak_evaluation import (
     evaluate_physical_peak,
     prepare_physical_signal,
-)
-from xic_extractor.peak_detection.signal_processing_profile import (
-    SignalProcessingProfile,
 )
 from xic_extractor.processing_identity import build_acquisition_source_identity
 from xic_extractor.raw_reader import (

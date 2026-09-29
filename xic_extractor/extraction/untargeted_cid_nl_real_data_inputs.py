@@ -8,9 +8,16 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 from xic_extractor.config import ExtractionConfig
+from xic_extractor.configuration.signal_processing_profile import (
+    SignalProcessingProfile,
+)
 from xic_extractor.discovery.batch_contract import (
-    DISCOVERY_CANDIDATE_ARTIFACT_SCHEMA_VERSION,
+    ALIGNMENT_FEATURE_INPUT_KEY,
+    CANDIDATE_UNIVERSE_INPUT_KEY,
+    CANDIDATE_UNIVERSE_SCHEMA_VERSION,
     DiscoveryCandidateUniverseReceipt,
+    canonical_sample_stems,
+    validate_candidate_universe_payload,
     validate_discovery_candidate_universe,
 )
 from xic_extractor.discovery.models import DiscoveryCandidate, DiscoverySettings
@@ -29,9 +36,6 @@ from xic_extractor.peak_detection.cid_nl_method_subject import (
 from xic_extractor.peak_detection.search_scope import (
     PHYSICAL_CAPTURE_INPUT_KEY,
     physical_capture_input_payload,
-)
-from xic_extractor.peak_detection.signal_processing_profile import (
-    SignalProcessingProfile,
 )
 from xic_extractor.processing_identity import (
     AcquisitionInputBinding,
@@ -61,9 +65,6 @@ UNTARGETED_CID_NL_PROCESSING_ALGORITHM_VERSION = "untargeted_cid_nl_real_data_al
 UNTARGETED_CID_NL_PROCESSING_CONTRACT_VERSION = "untargeted_cid_nl_real_data_contract"
 DISCOVERY_SETTINGS_INPUT_KEY = "current_discovery_settings"
 DISCOVERY_SETTINGS_SCHEMA_VERSION = "current_discovery_settings"
-CANDIDATE_UNIVERSE_INPUT_KEY = "current_discovery_candidate_universe"
-CANDIDATE_UNIVERSE_SCHEMA_VERSION = "current_discovery_candidate_universe"
-ALIGNMENT_FEATURE_INPUT_KEY = "alignment_feature_candidate_ids"
 PEAK_SETTINGS_INPUT_KEY = "peak_detection_settings"
 
 
@@ -438,86 +439,6 @@ def _required_injection_order(row: SampleMetadata) -> int:
     return row.injection_order
 
 
-def validate_candidate_universe_payload(
-    payload: object,
-    *,
-    expected_sample_stems: Sequence[str],
-) -> tuple[dict[str, object], ...]:
-    expected = tuple(sorted(_canonical_sample_stems(expected_sample_stems)))
-    if not isinstance(payload, dict) or set(payload) != {
-        "schema_version",
-        "samples",
-    }:
-        raise IdentityContractError("candidate universe must use the exact envelope")
-    if payload.get("schema_version") != CANDIDATE_UNIVERSE_SCHEMA_VERSION:
-        raise IdentityContractError("candidate universe schema is unsupported")
-    samples = payload.get("samples")
-    if not isinstance(samples, list):
-        raise IdentityContractError("candidate universe samples must be a list")
-    typed: list[dict[str, object]] = []
-    for entry in samples:
-        if not isinstance(entry, dict) or set(entry) != {
-            "sample_stem",
-            "candidate_count",
-            "candidate_ids",
-            "candidate_payload_sha256",
-            "discovery_receipt_id",
-            "candidate_artifact_schema_version",
-            "candidate_artifact_sha256",
-            "candidate_artifact_byte_size",
-            "acquisition_source_id",
-        }:
-            raise IdentityContractError(
-                "candidate universe entry must use the exact current shape"
-            )
-        stem = entry.get("sample_stem")
-        count = entry.get("candidate_count")
-        ids = entry.get("candidate_ids")
-        digest = entry.get("candidate_payload_sha256")
-        if not isinstance(stem, str) or not stem.strip() or stem != stem.strip():
-            raise IdentityContractError("candidate universe sample stem is invalid")
-        if (
-            isinstance(count, bool)
-            or not isinstance(count, int)
-            or count < 0
-            or not isinstance(ids, list)
-            or ids != sorted(set(ids))
-            or count != len(ids)
-            or any(not isinstance(item, str) or not item.strip() for item in ids)
-        ):
-            raise IdentityContractError("candidate universe IDs are invalid")
-        if (
-            not isinstance(digest, str)
-            or len(digest) != 64
-            or any(character not in "0123456789abcdef" for character in digest)
-        ):
-            raise IdentityContractError("candidate universe digest is invalid")
-        if (
-            not isinstance(entry.get("discovery_receipt_id"), str)
-            or not entry["discovery_receipt_id"].startswith(
-                "xic.discovery-candidate-universe:"
-            )
-            or not isinstance(entry.get("candidate_artifact_schema_version"), str)
-            or entry["candidate_artifact_schema_version"]
-            != DISCOVERY_CANDIDATE_ARTIFACT_SCHEMA_VERSION
-            or not _is_digest(entry.get("candidate_artifact_sha256"))
-            or isinstance(entry.get("candidate_artifact_byte_size"), bool)
-            or not isinstance(entry.get("candidate_artifact_byte_size"), int)
-            or entry["candidate_artifact_byte_size"] < 0
-            or not isinstance(entry.get("acquisition_source_id"), str)
-            or not entry["acquisition_source_id"].startswith("xic.acquisition-source:")
-        ):
-            raise IdentityContractError(
-                "candidate universe owner receipt facts are invalid"
-            )
-        typed.append(entry)
-    if tuple(entry["sample_stem"] for entry in typed) != expected:
-        raise IdentityContractError(
-            "candidate universe must bind every acquisition sample exactly once"
-        )
-    return tuple(typed)
-
-
 def _candidate_universe_entry(
     sample_stem: str,
     candidates: tuple[DiscoveryCandidate, ...],
@@ -556,7 +477,7 @@ def _discovery_receipt_map(
     sources_by_stem: Mapping[str, object],
     candidates_by_stem: Mapping[str, tuple[DiscoveryCandidate, ...]],
 ) -> dict[str, DiscoveryCandidateUniverseReceipt]:
-    expected = set(_canonical_sample_stems(expected_sample_stems))
+    expected = set(canonical_sample_stems(expected_sample_stems))
     if not isinstance(receipts, Mapping) or set(receipts) != expected:
         raise IdentityContractError(
             "Discovery receipts must bind every acquisition sample exactly once"
@@ -580,14 +501,6 @@ def _discovery_receipt_map(
         )
         result[stem] = receipt
     return result
-
-
-def _is_digest(value: object) -> bool:
-    return (
-        isinstance(value, str)
-        and len(value) == 64
-        and all(character in "0123456789abcdef" for character in value)
-    )
 
 
 def _raw_paths_by_stem(raw_paths: Sequence[Path]) -> dict[str, Path]:
@@ -640,7 +553,7 @@ def _candidate_map(
 ) -> dict[str, tuple[DiscoveryCandidate, ...]]:
     if not isinstance(candidates_by_sample, Mapping):
         raise IdentityContractError("candidate universe must be sample-keyed")
-    expected = set(_canonical_sample_stems(expected_sample_stems))
+    expected = set(canonical_sample_stems(expected_sample_stems))
     if set(candidates_by_sample) != expected:
         raise IdentityContractError(
             "candidate universe must bind every acquisition sample exactly once"
@@ -664,19 +577,6 @@ def _candidate_map(
             )
         result[stem] = ordered
     return result
-
-
-def _canonical_sample_stems(values: Sequence[str]) -> tuple[str, ...]:
-    if isinstance(values, (str, bytes)):
-        raise IdentityContractError("sample stems must be a sequence")
-    stems = tuple(values)
-    if (
-        not stems
-        or len(stems) != len(set(stems))
-        or any(not isinstance(item, str) or not item.strip() for item in stems)
-    ):
-        raise IdentityContractError("sample stems must be unique non-empty text")
-    return stems
 
 
 def _canonical_json_mapping(
@@ -704,7 +604,6 @@ def _canonical_json_mapping(
 
 
 __all__ = (
-    "CANDIDATE_UNIVERSE_INPUT_KEY",
     "DISCOVERY_SETTINGS_INPUT_KEY",
     "PEAK_SETTINGS_INPUT_KEY",
     "UNTARGETED_CID_NL_PROCESSING_ALGORITHM_VERSION",
@@ -714,5 +613,4 @@ __all__ = (
     "build_untargeted_cid_nl_real_data_context",
     "candidate_universe_payload",
     "discovery_settings_payload",
-    "validate_candidate_universe_payload",
 )

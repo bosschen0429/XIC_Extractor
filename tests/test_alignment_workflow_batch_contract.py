@@ -34,11 +34,12 @@ from xic_extractor.alignment.workflow import (
     compose_untarget_batch_after_runtime,
     execute_untarget_batch_workflow,
 )
-from xic_extractor.execution_runtime import AttemptTerminalOutcome
-from xic_extractor.extraction.untargeted_cid_nl_real_data_inputs import (
+from xic_extractor.discovery.batch_contract import (
     CANDIDATE_UNIVERSE_INPUT_KEY,
     CANDIDATE_UNIVERSE_SCHEMA_VERSION,
+    validate_candidate_universe_payload,
 )
+from xic_extractor.execution_runtime import AttemptTerminalOutcome
 from xic_extractor.immutable_sequence import ImmutableSequence
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     CID_NL_PROVIDER_ID,
@@ -53,6 +54,7 @@ from xic_extractor.peak_detection.search_scope import (
     UntargetedSearchScope,
 )
 from xic_extractor.processing_identity import (
+    IdentityContractError,
     build_processing_request_identity,
     issue_processing_attempt,
     resolve_request_acquisition_source,
@@ -992,3 +994,52 @@ def test_subject_composition_closes_without_runtime_and_preserves_failure_stage(
             workflow_owner.compose_untarget_subject(request, adapter)
     else:
         assert workflow_owner.compose_untarget_subject(request, adapter) is child
+
+
+def _universe_entry(**overrides: object) -> dict[str, object]:
+    entry: dict[str, object] = {
+        "sample_stem": "S1",
+        "candidate_count": 1,
+        "candidate_ids": ["c1"],
+        "candidate_payload_sha256": "a" * 64,
+        "discovery_receipt_id": "xic.discovery-candidate-universe:test",
+        "candidate_artifact_schema_version": "discovery_candidates_csv",
+        "candidate_artifact_sha256": "b" * 64,
+        "candidate_artifact_byte_size": 0,
+        "acquisition_source_id": "xic.acquisition-source:test",
+    }
+    entry.update(overrides)
+    return entry
+
+
+def test_candidate_universe_payload_accepts_lowercase_digests() -> None:
+    entry = _universe_entry()
+    payload = {"schema_version": CANDIDATE_UNIVERSE_SCHEMA_VERSION, "samples": [entry]}
+
+    assert validate_candidate_universe_payload(
+        payload, expected_sample_stems=["S1"]
+    ) == (entry,)
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("candidate_payload_sha256", "A" * 64, "digest is invalid"),
+        ("candidate_payload_sha256", "a" * 63, "digest is invalid"),
+        ("candidate_payload_sha256", None, "digest is invalid"),
+        ("candidate_artifact_sha256", "B" * 64, "owner receipt facts are invalid"),
+        ("candidate_artifact_sha256", 7, "owner receipt facts are invalid"),
+    ],
+)
+def test_candidate_universe_payload_rejects_non_lowercase_sha256(
+    field: str,
+    value: object,
+    message: str,
+) -> None:
+    payload = {
+        "schema_version": CANDIDATE_UNIVERSE_SCHEMA_VERSION,
+        "samples": [_universe_entry(**{field: value})],
+    }
+
+    with pytest.raises(IdentityContractError, match=message):
+        validate_candidate_universe_payload(payload, expected_sample_stems=["S1"])

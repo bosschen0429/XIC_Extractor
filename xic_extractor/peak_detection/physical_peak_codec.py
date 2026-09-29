@@ -5,6 +5,11 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping
 
+from xic_extractor.configuration.signal_processing_profile import (
+    SignalProcessingProfile,
+    canonical_signal_processing_profile_bytes,
+    deserialize_signal_processing_profile,
+)
 from xic_extractor.peak_detection.integration_result import IntegrationResult
 from xic_extractor.peak_detection.physical_peak_evaluation import (
     _physical_operation,
@@ -29,11 +34,6 @@ from xic_extractor.peak_detection.physical_peak_models import (
     PhysicalSegment,
     PhysicalSegmentUniverse,
     PreparedSignalProjection,
-)
-from xic_extractor.peak_detection.signal_processing_profile import (
-    SignalProcessingProfile,
-    canonical_signal_processing_profile_bytes,
-    deserialize_signal_processing_profile,
 )
 
 _PERSISTED_PHYSICAL_EVALUATION_SCHEMA = "physical_peak_evaluation_persistence"

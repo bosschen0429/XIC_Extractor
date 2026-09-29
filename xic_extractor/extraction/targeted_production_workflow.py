@@ -14,17 +14,19 @@ from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.hypothesis_owner_adapter import (
     compose_peak_hypotheses_from_assessment_universe,
 )
-from xic_extractor.alignment.mode_track import ModeTrackTrajectoryPolicy
 from xic_extractor.alignment.workflow import (
     CaptureWorkflowArguments,
     CompletedTargetWorkflowResult,
-    ModeTrackWorkflowArguments,
     TargetWorkflowAdapter,
     TargetWorkflowRequest,
     WorkflowRuntimeInvocation,
     execute_alignment_workflow,
 )
 from xic_extractor.config import ConfigError, ExtractionConfig, Target
+from xic_extractor.configuration.signal_processing_profile import (
+    SignalProcessingProfile,
+    resolve_signal_processing_profile,
+)
 from xic_extractor.configuration.target_identity import (
     ResolvedTargetDefinition,
     TargetListSnapshot,
@@ -96,10 +98,6 @@ from xic_extractor.peak_detection.search_scope import (
     EvidenceProviderBinding,
     TargetSearchScope,
     target_ms1_subject_id,
-)
-from xic_extractor.peak_detection.signal_processing_profile import (
-    SignalProcessingProfile,
-    resolve_signal_processing_profile,
 )
 from xic_extractor.peak_detection.traces import Trace
 from xic_extractor.processing_identity import (
@@ -665,7 +663,9 @@ def _execute_target(
                         product.precursor_mz,
                         product.product_mz,
                         _neutral_loss(target.definition.target),
-                        _support_policy(target.definition.target).neutral_loss_tolerance_ppm,
+                        _support_policy(
+                            target.definition.target
+                        ).neutral_loss_tolerance_ppm,
                         observed_loss_da=product.observed_loss_da,
                     )[2]
                     and observations[0].content.integration.rt_left_min
@@ -746,13 +746,6 @@ def _execute_target(
         )
     )
     alignment_config = AlignmentConfig()
-    trajectory_policy = ModeTrackTrajectoryPolicy(
-        trajectory_policy_version="anchor-trajectory",
-        band_policy_version="fixed-band",
-        prediction_half_width_min=2 / 60,
-        max_interpolation_gap=10,
-        max_extrapolation_gap=10,
-    )
     workflow_artifact: EvidenceArtifactRef
     if assessment_tuple:
         workflow_artifact = assessment_tuple[0][1].artifact
@@ -812,12 +805,8 @@ def _execute_target(
         ),
         TargetWorkflowAdapter(
             capture_inputs=tuple(capture_inputs),
-            mode_track=ModeTrackWorkflowArguments(
-                sample_assessments=assessment_tuple,
-                alignment_config=alignment_config,
-                trajectory_policy=trajectory_policy,
-                retain_observation_only_candidates=True,
-            ),
+            sample_assessments=assessment_tuple,
+            alignment_config=alignment_config,
             predecessor_cell_observations=(),
             completed_capture_handoff=tuple(completed_captures),
         ),

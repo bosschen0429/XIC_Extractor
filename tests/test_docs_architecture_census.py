@@ -836,11 +836,37 @@ def test_alignment_to_extraction_imports_are_exact_owner_edges(
             "xic_extractor.alignment.pipeline",
             "xic_extractor.extraction.untargeted_production_batch",
         ),
-        (
-            "xic_extractor.alignment.result.application_result",
-            "xic_extractor.extraction.untargeted_cid_nl_real_data_inputs",
-        ),
     }
+
+
+@pytest.mark.current_repository_census
+def test_discovery_to_extraction_imports_are_exact_owner_edges(
+    current_architecture_census: census.ArchitectureCensus,
+) -> None:
+    observed = {
+        (reference.source_module, reference.imported_module)
+        for reference in current_architecture_census.internal_static_imports
+        if reference.source_module.startswith("xic_extractor.discovery")
+        and reference.imported_module.startswith("xic_extractor.extraction")
+    }
+
+    assert observed == set()
+
+
+@pytest.mark.current_repository_census
+def test_discovery_does_not_import_alignment_or_presets(
+    current_architecture_census: census.ArchitectureCensus,
+) -> None:
+    observed = {
+        (reference.source_module, reference.imported_module)
+        for reference in current_architecture_census.internal_static_imports
+        if reference.source_module.startswith("xic_extractor.discovery")
+        and reference.imported_module.startswith(
+            ("xic_extractor.alignment", "xic_extractor.presets")
+        )
+    }
+
+    assert observed == set()
 
 
 @pytest.mark.current_repository_census

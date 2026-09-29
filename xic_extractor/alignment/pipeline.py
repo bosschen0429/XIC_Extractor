@@ -56,6 +56,12 @@ from xic_extractor.alignment.untargeted_finalized_matrix import (
 )
 from xic_extractor.config import ExtractionConfig
 from xic_extractor.configuration.models import Target
+from xic_extractor.configuration.signal_processing_profile import (
+    DEFAULT_SIGNAL_PROCESSING_PROFILE,
+    DEFAULT_SIGNAL_PROCESSING_PROFILE_ID,
+    SignalProcessingProfile,
+    resolve_signal_processing_profile,
+)
 from xic_extractor.diagnostics.alignment_explanation import EvidenceLocator
 from xic_extractor.diagnostics.alignment_explanation_projection import (
     PreparedAlignmentExplanation,
@@ -72,12 +78,6 @@ from xic_extractor.extraction.untargeted_alignment import (
 )
 from xic_extractor.extraction.untargeted_production_batch import (
     is_supported_alignment_discovery,
-)
-from xic_extractor.peak_detection.signal_processing_profile import (
-    DEFAULT_SIGNAL_PROCESSING_PROFILE,
-    DEFAULT_SIGNAL_PROCESSING_PROFILE_ID,
-    SignalProcessingProfile,
-    resolve_signal_processing_profile,
 )
 from xic_extractor.sample_metadata import SampleMetadata
 

@@ -5,10 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Literal
 
-from xic_extractor.peak_detection.integration_result import IntegrationResult
-from xic_extractor.peak_detection.signal_processing_profile import (
+from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )
+from xic_extractor.peak_detection.integration_result import IntegrationResult
 
 PhysicalPeakState = Literal["available", "unavailable", "failed"]
 PHYSICAL_SEGMENT_UNIVERSE_SCHEMA = "physical_segment_universe"
