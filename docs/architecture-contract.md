@@ -6,6 +6,54 @@ boundaries of XIC Extractor. Detailed product behavior belongs in
 rules belong to source and executable checks. Migration history and
 decomposition plans belong in Issues, PRs, and Git.
 
+## Reading The Code
+
+先把 XIC 理解成一套「從量測證據得到樣本格值，再交付結果」的系統。
+Targeted 用已知 target 約束搜尋並輸出固定列；Untargeted 找一般候選並輸出
+feature-by-sample Matrix。兩者共用科學判斷，但保留不同搜尋政策及 writer。
+
+建議閱讀順序：
+
+1. [Repo 結構樹](project-layout.md#repository-tree)：辨認程式、文件與本機產物。
+2. [實際入口與交接](#entry-points-and-handoffs)：從你要改的使用情境進入。
+3. [模組責任表](#ownership-map)：找語義的正式 owner，避免在 caller 重算。
+4. [依賴方向](#dependency-direction)：確認哪些知識應留在內部。
+
+若只想先理解分析概念，可從[人讀版核心導覽](product/core-modules-explainer.html)
+開始；精確函式、型別與可用選項仍以連結的現行 source 為準。
+
+### Entry Points And Handoffs
+
+以下列出閱讀起點，不是完整 export 清單；安裝後的命令由
+[`pyproject.toml`](../pyproject.toml) 的 `project.scripts` 宣告。
+
+| 要追的行為 | 從哪裡讀 | 下一個負責的 module／交接 |
+| --- | --- | --- |
+| GUI 建立視窗與工作 | [`gui/main.py`](../gui/main.py)、[`gui/main_window.py`](../gui/main_window.py) | `views/`、`sections/` 處理互動；`workers/` 將設定轉成工作要求 |
+| Targeted 分析與交付 | [`scripts/run_extraction.py`](../scripts/run_extraction.py)、[`gui/workers/pipeline_worker.py`](../gui/workers/pipeline_worker.py) | [`TargetedApplicationService.execute_application`](../xic_extractor/extraction/targeted_service.py) 組合 acquisition、科學處理與交付；[`targeted_diagnostic_application.py`](../xic_extractor/extraction/targeted_diagnostic_application.py) 組裝正式 application |
+| 既有 Python Targeted 入口 | [`extractor.run`](../xic_extractor/extractor.py) | 進入同一 application；`extractor.acquire` 是它使用的 acquisition 入口 |
+| Discovery 候選產生 | [`scripts/run_discovery.py`](../scripts/run_discovery.py) | [`discovery/pipeline.py`](../xic_extractor/discovery/pipeline.py) 的 `run_discovery`／`run_discovery_batch`，交出候選檔與 batch index |
+| Untargeted GUI 全流程 | [`gui/workers/discovery_worker.py`](../gui/workers/discovery_worker.py) | 呼叫 Discovery，再將 batch index 交給 Alignment |
+| Alignment 與 Matrix | [`scripts/run_alignment.py`](../scripts/run_alignment.py) | [`alignment.pipeline.run_alignment`](../xic_extractor/alignment/pipeline.py) 選擇執行路線並交付 [`AlignmentRunOutputs`](../xic_extractor/alignment/pipeline_outputs.py)；CID-NL 路線可委派 `extraction/` 的 retained adapter |
+| 完成 Matrix 後的 feature 篩選 | [`scripts/run_feature_quality.py`](../scripts/run_feature_quality.py) | [`feature_quality.py`](../xic_extractor/feature_quality.py) 計算 availability；[`feature_quality_io.py`](../xic_extractor/feature_quality_io.py) 讀寫分析集合，保留既有值 |
+| 完成證據的只讀報告 | [`xic_inspector/cli.py`](../xic_inspector/cli.py) | [`api.generate_report`](../xic_inspector/api.py) 串起來源解讀、選擇及 HTML rendering |
+
+### Finding The Right Owner
+
+| 想改什麼 | 先找哪裡 | 交接時要分清的責任 |
+| --- | --- | --- |
+| 峰選擇、邊界、面積 | `peak_detection/`、`signal_processing.py` | 單峰／單次觀察的答案；跨樣本群組在 Alignment |
+| 跨樣本配對、RT 漂移、群組 | `alignment/grouping_workflow.py`、`alignment/cross_sample/` | 群組決定先完成，Backfill 與格值決策消費同一結果 |
+| 缺格補證及格值 | `alignment/backfill/`、`alignment/cell_decision/` | 新觀察、科學決策與檔案 writer 各自有 owner |
+| RAW 讀取或 DLL | `raw_reader.py` 及使用它的 acquisition adapter | 讀入量測資料；不因此取得群組、格值或發布決定權 |
+| 排程、取消、清理 | `execution_engine/`、`execution_runtime_owner.py` | engine 執行工作；runtime owner 決定 attempt 是否完成 |
+| 欄位、workbook 或 Matrix 格式 | `output/`、Alignment 的輸出 adapter | 呈現 owner 的答案；不要從格式變更反向改變選峰或計數 |
+
+Package 名稱不是可強制的分層證明：`alignment/` 包含科學與外層 adapter，
+`extraction/` 也承載保留的 Untargeted 執行。純計算 module 的約束見下文；
+實際 import 例外由 [`.importlinter`](../.importlinter) 明列，不能把通過該檢查
+解讀成所有 I/O 已經隔離。
+
 ## Design Principles
 
 - Make data flow and ownership obvious.

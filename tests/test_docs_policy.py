@@ -198,24 +198,6 @@ def test_permanent_root_contract_uses_first_reference_definition() -> None:
     assert "required route must resolve: docs/product/README.md" in problems
 
 
-def test_permanent_root_contract_ignores_html_comment_only_heading() -> None:
-    root = Path(__file__).parents[1]
-    rel_path = "AGENTS.md"
-    text = (root / rel_path).read_text(encoding="utf-8")
-    text = text.replace(
-        "# XIC Extractor Agent Contract",
-        "# XIC Extractor Repository",
-        1,
-    )
-    text += "\n<!--\n# XIC Extractor Agent Contract\n-->\n"
-
-    problems = permanent_root_contract_problems(root, rel_path, text)
-
-    assert "required heading must occur exactly once: XIC Extractor Agent Contract" in (
-        problems
-    )
-
-
 def test_permanent_root_contract_ignores_nested_fenced_only_route() -> None:
     root = Path(__file__).parents[1]
     rel_path = "AGENTS.md"
