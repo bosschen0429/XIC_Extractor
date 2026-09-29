@@ -31,13 +31,6 @@ from .targeted_runtime_adapter import (
 )
 
 if TYPE_CHECKING:
-    from xic_extractor.extraction.targeted_diagnostic_delivery import (
-        TargetedDiagnosticDeliveryCandidate,
-    )
-    from xic_extractor.extraction.targeted_diagnostic_method import (
-        TargetedDiagnosticMethodRequest,
-        TargetedDiagnosticMethodResult,
-    )
     from xic_extractor.extractor import RunOutput
     from xic_extractor.peak_detection.model_selection import (
         ExpectedDiffApprovalRecord,
@@ -89,15 +82,6 @@ class TargetedRuntimeFinalizationPersister(Protocol):
     ) -> RuntimeFinalizationReceipt: ...
 
 
-class TargetedDiagnosticMethodRunner(Protocol):
-    def __call__(
-        self,
-        request: TargetedDiagnosticMethodRequest,
-        *,
-        should_stop: Callable[[], bool] | None = None,
-    ) -> TargetedDiagnosticMethodResult | TargetedDiagnosticApplicationOutcome: ...
-
-
 @dataclass(frozen=True)
 class TargetedApplicationRequest:
     """Headless application input; callbacks are lifecycle adapters, not science."""
@@ -115,16 +99,6 @@ class TargetedApplicationRequest:
     excel_output_path: Path | None = None
     replace_existing_outputs: bool = False
     output_projection: Literal["finalized", "acquisition_baseline"] = "finalized"
-
-
-@dataclass(frozen=True)
-class TargetedDiagnosticApplicationOutcome:
-    """Adapter-neutral diagnostic settlement; legacy always remains active."""
-
-    status: Literal["staged_candidate", "quarantined"]
-    method_result: TargetedDiagnosticMethodResult | None
-    delivery_candidate: TargetedDiagnosticDeliveryCandidate | None
-    quarantine_reason: str = ""
 
 
 @dataclass(frozen=True)
@@ -150,7 +124,6 @@ class TargetedApplicationService:
     runtime_lifecycle_runner: TargetedRuntimeLifecycleRunner | None = None
     runtime_finalization_persister: TargetedRuntimeFinalizationPersister | None = None
     runtime_recovery_marker: OwnerPathRuntimeMarker | None = None
-    diagnostic_method_runner: TargetedDiagnosticMethodRunner | None = None
 
     def execute(self, request: TargetedApplicationRequest) -> RunOutput:
         """Preserve the existing application API while using the canonical path."""
@@ -290,27 +263,6 @@ class TargetedApplicationService:
             telemetry_provider=telemetry_provider,
             finalization_persister=finalization_persister,
         )
-
-    def execute_diagnostic_method(
-        self,
-        request: TargetedDiagnosticMethodRequest,
-    ) -> TargetedDiagnosticMethodResult:
-        """Run the bounded no-RAW method through this canonical service owner."""
-
-        if self.diagnostic_method_runner is None:
-            raise TargetedRuntimeAdapterError(
-                "TargetedApplicationService requires diagnostic_method_runner "
-                "for execute_diagnostic_method"
-            )
-        observed = self.diagnostic_method_runner(request)
-        if isinstance(observed, TargetedDiagnosticApplicationOutcome):
-            if observed.method_result is None:
-                raise TargetedRuntimeAdapterError(
-                    "diagnostic application outcome has no method result"
-                )
-            return observed.method_result
-        return observed
-
 
 def validate_finalized_result_population(
     request: TargetedApplicationRequest,
