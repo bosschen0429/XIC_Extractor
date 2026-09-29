@@ -371,8 +371,13 @@ class DiscoveryCandidate:
     discovery_candidate_state: DiscoveryCandidateState = "review_only_orphan_nl"
     ms1_feature_row_id: str = ""
     is_provisional: bool = False
-    # MS1 ion m/z read at the peak apex for an inferred precursor; report only.
+    # Qualified MS1 ion reading; the original precursor remains the MS2 seed key.
     ms1_apex_mz: float | None = None
+
+    @property
+    def physical_mz(self) -> float:
+        """Mass for physical capture and grouping, independent of MS2 receipts."""
+        return self.precursor_mz if self.ms1_apex_mz is None else self.ms1_apex_mz
 
     @classmethod
     def from_values(

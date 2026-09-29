@@ -128,7 +128,7 @@ _BATCH_PREFIX = "xic.owner-backfill-evaluation-coverage:"
 _COMPLETED_BACKFILL_CONTRACT = _mint_artifact_semantic_contract_ref(
     owner_namespace="xic_extractor.untargeted_cid_nl_real_data_runtime",
     semantic_role="owner_backfill_completed_backfill_projection",
-    schema_version="owner_backfill_completed_backfill_projection",
+    schema_version="owner_backfill_completed_physical_query_projection",
     validation_status="diagnostic_only",
     media_type="application/json",
     serialization_format="canonical-json-utf8-lf",
@@ -142,6 +142,7 @@ class BackfillCompletionProjection:
     processing_owners: ProcessingOwnerReferences
     sample: ResolvedCanonicalSampleIdentity
     group_identity: CrossSampleGroupIdentity
+    group_center_mz: float
     group_center_rt: float
     source_result_artifact: EvidenceArtifactRef
     initial_assessment_artifact: EvidenceArtifactRef
@@ -173,14 +174,13 @@ class BackfillCompletionProjection:
         request = self.trace_coordinate.request
         subject = assessment.content.method_subject
         if (
-            assessment.content.detector_invocation_id
-            != "untargeted-cid-nl-backfill"
+            assessment.content.detector_invocation_id != "untargeted-cid-nl-backfill"
             or assessment.content.technical_state != "evaluated"
             or assessment.content.method_result != "HOLD"
             or assessment.candidate_peaks
             or not receipt.search_completed
             or not receipt.acquisition_supported
-            or request.mz != subject.precursor_mz
+            or request.mz != self.group_center_mz
             or request.ppm_tol != subject.precursor_tolerance_ppm
             or request.rt_min != receipt.query_rt_min
             or request.rt_max != receipt.query_rt_max
@@ -242,6 +242,7 @@ def canonical_backfill_completion_bytes(
         processing_owners=projection.processing_owners,
         sample=projection.sample,
         group_identity=projection.group_identity,
+        group_center_mz=projection.group_center_mz,
         group_center_rt=projection.group_center_rt,
         source_result_artifact=projection.source_result_artifact,
         initial_assessment_artifact=projection.initial_assessment_artifact,
@@ -256,6 +257,7 @@ def _completed_backfill_projection_bytes(
     processing_owners: ProcessingOwnerReferences,
     sample: ResolvedCanonicalSampleIdentity,
     group_identity: CrossSampleGroupIdentity,
+    group_center_mz: float,
     group_center_rt: float,
     source_result_artifact: EvidenceArtifactRef,
     initial_assessment_artifact: EvidenceArtifactRef,
@@ -265,7 +267,7 @@ def _completed_backfill_projection_bytes(
 ) -> bytes:
     return _canonical_proof_bytes(
         {
-            "schema": "owner_backfill_completed_backfill_projection",
+            "schema": "owner_backfill_completed_physical_query_projection",
             "processing_request_id": processing_owners.request.processing_request_id,
             "processing_attempt_id": processing_owners.attempt.processing_attempt_id,
             "sample_identity_id": sample.identity.sample_identity_id,
@@ -273,6 +275,7 @@ def _completed_backfill_projection_bytes(
             "sample_snapshot_sha256": sample.snapshot.content_sha256,
             "group_id": group_identity.group_hypothesis_id,
             "group_basis": group_identity.basis_bytes.hex(),
+            "group_center_mz": group_center_mz,
             "group_center_rt": group_center_rt,
             "source_result_artifact_id": source_result_artifact.evidence_artifact_id,
             "initial_assessment_artifact_id": (
@@ -505,6 +508,7 @@ def _validate_conservative_no_request(
             or completion.processing_owners is not owners
             or completion.sample is not proof.sample
             or completion.group_identity != proof.group_identity
+            or completion.group_center_mz != facts.group_context.group.family_center_mz
             or completion.group_center_rt != facts.group_context.group.group_center_rt
             or completion.backfill_assessment is not target.method_assessment
             or universe.candidate_assessment is not target.method_assessment
@@ -1424,9 +1428,7 @@ def _canonical_terminals(
     position_rank = {
         position.position_id: index for index, position in enumerate(epoch.positions)
     }
-    phase_rank = {
-        phase: index for index, phase in enumerate(BACKFILL_CANDIDATE_PHASES)
-    }
+    phase_rank = {phase: index for index, phase in enumerate(BACKFILL_CANDIDATE_PHASES)}
     return tuple(
         sorted(
             terminals,

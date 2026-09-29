@@ -2494,6 +2494,94 @@ def test_physical_subject_units_require_complete_common_proof(
     )
 
 
+def test_physical_capture_keeps_own_scans_outside_shared_subject_center(
+    tmp_path: Path,
+) -> None:
+    import numpy as np
+
+    from tests.cid_nl_raw_fixture import _open_bound_raw
+    from tests.untargeted_cid_nl_no_raw_fixture import (
+        build_untargeted_cid_nl_no_raw_fixture,
+    )
+    from xic_extractor.extraction.untargeted_cid_nl_real_data_adapter import (
+        adapt_current_discovery_sample_subject,
+    )
+
+    fixture = build_untargeted_cid_nl_no_raw_fixture(
+        tmp_path, sample_roles={"S1": "study_sample"}, thermo_raw_sources=True
+    )
+    source_raw = _FakeRaw((7.98, 8.0, 8.02))
+    source_raw.scans = tuple(
+        replace(scan, precursor_mz=500.5, masses=np.asarray(scan.masses) + 0.016)
+        for scan in source_raw.scans
+    )
+    settings, peak_config = _settings(), _peak_config(tmp_path)
+    original = _current_candidates(
+        source_raw,
+        raw_file=fixture.source_paths["S1"],
+        settings=settings,
+        peak_config=peak_config,
+    )
+    assert len(original) == 1
+    assert original[0].precursor_mz == pytest.approx(500.016)
+    candidates = (replace(original[0], ms1_apex_mz=500.008),)
+    raw, _ = _open_bound_raw(fixture, "S1", source_raw, tmp_path=tmp_path)
+    result = adapt_current_discovery_sample_subject(
+        processing_owners=fixture.owners,
+        sample=fixture.sample("S1"),
+        method_subject=fixture.method_subject,
+        candidates=candidates,
+        settings=settings,
+        peak_config=peak_config,
+        raw=raw,
+    )
+    assessment = result.assessment_input.assessment
+    assert assessment.content.method_result == "SUPPORT"
+    assert assessment.candidate_peaks[0].content.mz == 500.008
+    assert {e.observation.scan_number for e in assessment.evidence_refs} == {
+        scan.scan_number for scan in source_raw.scans
+    }
+    assert all(
+        e.observation.precursor_mz == pytest.approx(500.016)
+        for e in assessment.evidence_refs
+    )
+
+
+def test_subject_planning_uses_physical_mass_without_rewriting_seed_receipts(
+    tmp_path: Path,
+) -> None:
+    from xic_extractor.extraction.untargeted_production_batch import (
+        prepare_untargeted_subject_membership,
+    )
+
+    raw_path = tmp_path / "S1.synthetic"
+    raw_path.write_bytes(b"physical-ion-planning:S1")
+    settings = replace(_settings(), neutral_loss_profile=None)
+    _, candidates = _nearby_subject_candidates(
+        raw_path, settings=settings, peak_config=_peak_config(tmp_path)
+    )
+    inferred = replace(
+        candidates[0],
+        precursor_mz=445.2140,
+        product_mz=445.2140 - 116.0474,
+        ms1_apex_mz=445.2071,
+        precursor_mz_basis="product_plus_neutral_loss",
+    )
+    subjects = prepare_untargeted_subject_membership(
+        candidates_by_sample={"S1": (inferred,)}, settings=settings
+    )
+    assert len(subjects.subjects) == 1
+    assert subjects.subjects[0].precursor_mz == 445.2071
+    assert inferred.precursor_mz == 445.2140
+    assert inferred.product_mz == 445.2140 - 116.0474
+
+    selected = replace(inferred, ms1_apex_mz=None, precursor_mz_basis="scan_precursor")
+    fallback = prepare_untargeted_subject_membership(
+        candidates_by_sample={"S1": (selected,)}, settings=settings
+    )
+    assert fallback.subjects[0].precursor_mz == 445.2140
+
+
 def test_physical_subject_units_keep_unproven_candidates_singleton(
     tmp_path: Path,
 ) -> None:

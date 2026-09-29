@@ -31,6 +31,7 @@ from xic_extractor.alignment.mode_track.producer import (
 )
 from xic_extractor.discovery.models import DiscoveryCandidate
 from xic_extractor.extraction.untargeted_cid_nl_real_data_adapter import (
+    UntargetedCidNlBackfillTarget,
     UntargetedCidNlRealDataAdapterError,
     acquire_untargeted_cid_nl_backfill_trace_batch,
     acquire_untargeted_cid_nl_sample_trace_batch,
@@ -939,29 +940,34 @@ def test_recovery_batch_canonicalizes_shared_group_queries_without_merging_cente
         processing_owners=fixture.owners,
         sample=fixture.sample("S1"),
         backfill_requests=(
-            (fixture.method_subject, 8.2),
-            (fixture.method_subject, 7.8),
-            (fixture.method_subject, 8.2),
+            UntargetedCidNlBackfillTarget(
+                "group-b", fixture.method_subject, 500.0, 8.2
+            ),
+            UntargetedCidNlBackfillTarget(
+                "group-a", fixture.method_subject, 500.0, 7.8
+            ),
+            UntargetedCidNlBackfillTarget(
+                "group-c", fixture.method_subject, 500.0, 8.2
+            ),
         ),
         peak_config=_peak_config(tmp_path),
         raw=raw,
     )
 
-    assert batch.group_center_rts == (7.8, 8.2)
+    assert batch.group_center_rts == (7.8, 8.2, 8.2)
     assert batch.method_subject_ids == (
+        fixture.method_subject.method_subject_id,
         fixture.method_subject.method_subject_id,
         fixture.method_subject.method_subject_id,
     )
     assert batch.acquisition.logical_xic_request_count == 2
     assert vendor_raw.chromatogram_request_counts == [2]
     first = batch.acquired_trace(
-        method_subject_id=fixture.method_subject.method_subject_id,
-        group_center_rt=7.8,
+        group_hypothesis_id="group-a",
         request=batch.requests[0],
     )
     second = batch.acquired_trace(
-        method_subject_id=fixture.method_subject.method_subject_id,
-        group_center_rt=8.2,
+        group_hypothesis_id="group-b",
         request=batch.requests[1],
     )
     assert first.coordinate.request == batch.requests[0]
@@ -969,11 +975,63 @@ def test_recovery_batch_canonicalizes_shared_group_queries_without_merging_cente
     assert first.coordinate.request.rt_min < second.coordinate.request.rt_min
     assert (
         batch.acquired_trace(
-            method_subject_id=fixture.method_subject.method_subject_id,
-            group_center_rt=7.8,
+            group_hypothesis_id="group-a",
             request=batch.requests[0],
         )
         is first
+    )
+    assert (
+        batch.acquired_trace(group_hypothesis_id="group-c", request=batch.requests[2])
+        is second
+    )
+
+
+def test_recovery_batch_preserves_distinct_group_masses_at_one_subject_rt(
+    tmp_path: Path,
+) -> None:
+    fixture = build_untargeted_cid_nl_no_raw_fixture(
+        tmp_path,
+        sample_roles={"S1": "study_sample"},
+        thermo_raw_sources=True,
+    )
+    raw, _vendor_raw = _open_bound_raw(
+        fixture, "S1", _FakeRaw((8.0,)), tmp_path=tmp_path
+    )
+    targets = (
+        UntargetedCidNlBackfillTarget(
+            group_hypothesis_id="group-a",
+            method_subject=fixture.method_subject,
+            physical_mz=500.0,
+            center_rt=8.0,
+        ),
+        UntargetedCidNlBackfillTarget(
+            group_hypothesis_id="group-b",
+            method_subject=fixture.method_subject,
+            physical_mz=500.012,
+            center_rt=8.0,
+        ),
+    )
+    batch = acquire_untargeted_cid_nl_backfill_trace_batch(
+        processing_owners=fixture.owners,
+        sample=fixture.sample("S1"),
+        backfill_requests=targets,
+        peak_config=_peak_config(tmp_path),
+        raw=raw,
+    )
+    assert batch.group_hypothesis_ids == ("group-a", "group-b")
+    assert tuple(request.mz for request in batch.requests) == (500.0, 500.012)
+    assert batch.acquisition.logical_xic_request_count == 2
+    assert (
+        batch.acquired_trace(
+            group_hypothesis_id="group-a", request=batch.requests[0]
+        ).coordinate.request.mz
+        == 500.0
+    )
+    assert (
+        batch.acquired_trace(
+            group_hypothesis_id="group-b", request=batch.requests[1]
+        ).coordinate.request.mz
+        == 500.012
     )
 
 
@@ -1495,6 +1553,8 @@ def test_recovery_revisits_one_hold_cell_without_minting_support(
         sample=fixture.sample("S1"),
         method_subject=fixture.method_subject,
         group_center_rt=8.0,
+        group_center_mz=fixture.method_subject.precursor_mz + 0.005,
+        group_hypothesis_id="group-physical",
         support_policy=DdaCidNlPeakSupportPolicy(
             precursor_tolerance_da=0.01,
             neutral_loss_tolerance_ppm=20.0,
@@ -1504,6 +1564,14 @@ def test_recovery_revisits_one_hold_cell_without_minting_support(
     )
 
     assert result.assessment.content.technical_state == "evaluated"
+    assert result.group_hypothesis_id == "group-physical"
+    assert result.assessment.content.method_subject is fixture.method_subject
+    assert result.acquisition.traces[0].coordinate.request.mz == pytest.approx(
+        fixture.method_subject.precursor_mz + 0.005
+    )
+    assert result.assessment.candidate_peaks[0].content.mz == pytest.approx(
+        fixture.method_subject.precursor_mz + 0.005
+    )
     assert result.assessment.content.method_result == "HOLD"
     assert result.assessment.content.evaluation_receipt.search_completed is True
     assert result.assessment.content.evaluation_receipt.scanned_event_count == 0

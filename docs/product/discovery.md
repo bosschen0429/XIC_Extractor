@@ -125,9 +125,10 @@ the error relative to the configured loss mass; it is not the acceptance gate.
   each side, inside the request, and reports the intensity-weighted reading as
   `ms1_apex_mz`. MS1 is the method's accurate-mass scan, while ddMS2 runs at a
   quarter of its resolution, so product + loss only points at the ion. The
-  reading is reported only: the candidate's precursor, trace, identity and MS2
-  evidence keep product + loss, because Alignment matches MS2 evidence and
-  shares search centers by that m/z (#551). Readings spread wider than 5 ppm
+  reading supplies Alignment's physical XIC and grouping mass. The candidate's
+  original precursor and product remain the keys for exact MS2 scan replay;
+  retained Discovery physical facts keep their original acquisition query.
+  Alignment evaluates a changed physical query afresh. Readings spread wider than 5 ppm
   come from two ions and report none. A selected (`scan_precursor` or `mixed`)
   precursor reports none: in full85, about half of the selected precursors a
   reading would have moved landed on a neighbouring ion present at the selected

@@ -273,6 +273,16 @@ exclusions and new assessment remain queryable together in the explanation store
 
 ### Evidence keys and relation rules
 
+Untargeted initial assessments reconstruct Discovery's declared scan receipts
+against the bound RAW source. Their `declared_scans` evidence scope retains
+those exact MS2 facts even outside the shared subject's mass window. The
+physical candidate universe and scan-to-peak mass/RT relation still determine
+SUPPORT; a scan link alone cannot grant it. Targeted assessments and independent
+subject searches retain `subject_window` scope. A Backfill reusing declared
+evidence preserves its scope and narrows it to the new RT window. Canonical
+CID-NL evidence continues to distinguish measured and product-derived precursor
+mass; the physical MS1 reading never overwrites either receipt.
+
 For single-loss methods, one assessment can contain at most one measured
 evidence ref for each exact `(acquisition_source_id, scan_number)` key.
 Composite methods add the configured loss to that evidence key, so one physical

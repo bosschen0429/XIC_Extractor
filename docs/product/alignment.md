@@ -131,8 +131,9 @@ subject in the runtime result. RT bounds describe the acquisition query rather
 than identify the destination group. The direct production API therefore takes
 its alignment configuration and known-ISTD reference at execution time;
 composition cannot replace that grouping context.
-The acquisition boundary canonicalizes repeated or unordered subject/RT
-queries. Different groups may reuse the same physical trace while retaining
+Backfill extracts at the frozen group's physical m/z and RT. The acquisition
+boundary canonicalizes repeated or unordered complete XIC queries, including
+mass. Different groups may reuse the same physical trace while retaining
 separate group-bound Backfill attempts and decisions.
 
 ### Initial grouping index

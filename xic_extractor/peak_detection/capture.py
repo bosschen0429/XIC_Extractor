@@ -507,6 +507,7 @@ def capture_physical_backfill_observation(
     method_subject: CidNlMethodSubject,
     trace: Trace,
     group_center_rt: float,
+    physical_mz: float,
     profile: SignalProcessingProfile,
     resolver_mode: str,
     evaluation_sink: Callable[[PhysicalPeakEvaluation], None] | None = None,
@@ -517,7 +518,7 @@ def capture_physical_backfill_observation(
     )
     if (
         not request_binds_physical_capture_profile(processing_owners.request, profile)
-        or trace.mz != method_subject.precursor_mz
+        or trace.mz != physical_mz
         or trace.ppm_tol != method_subject.precursor_tolerance_ppm
         or not trace.rt_min <= group_center_rt <= trace.rt_max
     ):
@@ -741,9 +742,7 @@ def bind_owner_backed_capture_hypothesis(
         selected_hypothesis=hypothesis,
         physical_evaluation=capture.physical_evaluation,
         physical_selection_intensity=capture._owner_seal.physical_selection_intensity,
-        physical_observation_content=(
-            capture._owner_seal.physical_observation_content
-        ),
+        physical_observation_content=(capture._owner_seal.physical_observation_content),
         physical_observation_provenance=(
             capture._owner_seal.physical_observation_provenance
         ),

@@ -1506,6 +1506,80 @@ def _truth_table_fixture(tmp_path: Path):
     return fixture, (s1, s2, s3, s4, s5)
 
 
+def test_declared_scan_scope_preserves_evidence_outside_shared_mass_center(
+    tmp_path: Path,
+) -> None:
+    from tests.untargeted_cid_nl_no_raw_fixture import (
+        build_untargeted_cid_nl_no_raw_fixture,
+    )
+
+    fixture = build_untargeted_cid_nl_no_raw_fixture(
+        tmp_path, sample_roles={"sample": "study_sample"}
+    )
+    peak = cid_nl_peak(fixture, "sample", mz=500.008)
+    precursor = 500.016
+    loss = fixture.method_subject.neutral_loss_da
+    assert loss is not None
+    product = precursor - loss
+    observed_loss = precursor - product
+    evidence = mint_cid_nl_evidence_ref(
+        processing_owners=fixture.owners,
+        sample=fixture.sample("sample"),
+        scan_number=42,
+        precursor_mz=precursor,
+        product_mz=product,
+        configured_neutral_loss_da=loss,
+        observed_neutral_loss_da=observed_loss,
+        observed_loss_error_ppm=abs(observed_loss - loss) / loss * 1e6,
+        scan_rt_min=8.0,
+        product_intensity=400.0,
+        precursor_mz_basis="product_plus_neutral_loss",
+        scan_precursor_mz=500.5,
+        precursor_inference_tolerance_da=1.1,
+    )
+    support = cid_nl_unique_support(fixture, "sample", peak=peak, evidence=evidence)
+    kwargs = dict(
+        processing_owners=fixture.owners,
+        sample=fixture.sample("sample"),
+        method_subject=fixture.method_subject,
+        detector_invocation_id="declared-scan-physical-ion",
+        candidate_peaks=(peak,),
+        evidence_refs=(evidence,),
+        individual_support_refs=(support,),
+    )
+    receipt = _completed_receipt(scanned_event_count=1)
+    with pytest.raises(CidNlMethodAssessmentContractError, match="CID-NL evidence"):
+        mint_cid_nl_method_assessment_ref(evaluation_receipt=receipt, **kwargs)
+    linked = mint_cid_nl_method_assessment_ref(
+        evaluation_receipt=replace(receipt, evidence_scope="declared_scans"),
+        **kwargs,
+    )
+    assert linked.content.method_result == "SUPPORT"
+    assert linked.evidence_refs == (evidence,)
+    assert linked.candidate_peaks[0].content.mz == 500.008
+    validate_cid_nl_method_assessment_binding(
+        linked,
+        processing_owners=fixture.owners,
+        sample=fixture.sample("sample"),
+        method_subject=fixture.method_subject,
+    )
+
+
+def test_targeted_assessment_retains_its_subject_mass_window(tmp_path: Path) -> None:
+    fixture = build_processing_identity_no_raw_fixture(tmp_path, sample_stems=("s1",))
+    with pytest.raises(CidNlMethodAssessmentContractError, match="Untargeted"):
+        mint_cid_nl_method_assessment_ref(
+            processing_owners=fixture.owners,
+            sample=fixture.sample("s1"),
+            target=fixture.target,
+            detector_invocation_id="targeted-scope",
+            evaluation_receipt=replace(
+                _completed_receipt(scanned_event_count=0),
+                evidence_scope="declared_scans",
+            ),
+        )
+
+
 def _completed_receipt(*, scanned_event_count: int) -> CidNlEvaluationReceipt:
     return CidNlEvaluationReceipt(
         query_rt_min=7.5,

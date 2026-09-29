@@ -1694,7 +1694,7 @@ def test_process_recovery_dispatches_only_missing_subjects(tmp_path, monkeypatch
     def observe_request(request):
         requests.append(request)
         keys = {job.work_unit_key for job in request.jobs}
-        assert keys == set(request.backfill_group_center_rts_by_key)
+        assert keys == set(request.backfill_targets_by_key)
         assert set(request.backfill_support_by_key) == keys
         # Recovery consumes only the support policy and the missing-MS1
         # initial assessment. Full initial adapter results stay in the parent.
@@ -1964,9 +1964,7 @@ def test_completed_partition_retains_only_light_parent_capture_metadata(
     persisted = composed.result
 
     stored = store.read(composed.sealed.index)
-    child_before = store.read_selected(
-        composed.sealed.index, "children", (0,)
-    )[0]
+    child_before = store.read_selected(composed.sealed.index, "children", (0,))[0]
     child_scope = child_before.scientific_core.scope
     assert child_scope.capture_bindings
     child_observations = child_before.scientific_core.cell_observations
@@ -1985,9 +1983,7 @@ def test_completed_partition_retains_only_light_parent_capture_metadata(
     finalized = adapter.finalize_application(store, (composed,))
     assert finalized.scope.capture_bindings == ()
     assert tuple(finalized.excluded_candidates) == tuple(plan.excluded_candidates)
-    child_after = store.read_selected(
-        composed.sealed.index, "children", (0,)
-    )[0]
+    child_after = store.read_selected(composed.sealed.index, "children", (0,))[0]
     assert (
         child_after.scientific_core.scope.capture_bindings
         == child_scope.capture_bindings
@@ -2167,9 +2163,7 @@ def _run_for_cache(tmp_path, monkeypatch, *, retain, tag, shared=None):
     return output_dir / ".cid_nl_acquisition_cache"
 
 
-def test_acquisition_cache_is_released_after_a_successful_run(
-    tmp_path, monkeypatch
-):
+def test_acquisition_cache_is_released_after_a_successful_run(tmp_path, monkeypatch):
     """A one-shot run leaves no cache behind; it only accelerates acquisition."""
     cache = _run_for_cache(tmp_path, monkeypatch, retain=False, tag="released")
     assert not cache.exists()
