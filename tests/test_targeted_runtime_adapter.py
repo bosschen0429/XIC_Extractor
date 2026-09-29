@@ -88,7 +88,7 @@ def _build_spawned_lifecycle_batch(
     )
 
 
-def _build_spawned_worker_loss_batch(
+def _worker_loss_batch(
     attempt: ProcessingAttemptIdentity,
 ) -> TargetedRuntimeWorkerBatch:
     partial = _result_ref(attempt, "raw:a", b"partial-before-worker-loss")
@@ -427,7 +427,7 @@ def test_targeted_lifecycle_fails_closed_without_exact_supervisor_ack(
         )
 
 
-def test_targeted_spawned_worker_loss_quarantines_partial_artifact(
+def test_targeted_worker_loss_receipt_quarantines_partial_artifact(
     tmp_path: Path,
 ) -> None:
     from xic_extractor.extraction.targeted_service import (
@@ -440,19 +440,9 @@ def test_targeted_spawned_worker_loss_quarantines_partial_artifact(
     def legacy_runner(*_args, **_kwargs):
         raise AssertionError("runtime lifecycle must not call the legacy runner")
 
-    def lifecycle_runner(_request, _state):
-        with ProcessPoolExecutor(
-            max_workers=1,
-            mp_context=get_context("spawn"),
-        ) as executor:
-            return executor.submit(
-                _build_spawned_worker_loss_batch,
-                attempt,
-            ).result(timeout=15)
-
     service = TargetedApplicationService(
         legacy_runner,
-        runtime_lifecycle_runner=lifecycle_runner,
+        runtime_lifecycle_runner=lambda _request, _state: _worker_loss_batch(attempt),
         runtime_finalization_persister=lambda proposed: proposed,
     )
     result = service.execute_runtime_lifecycle(
