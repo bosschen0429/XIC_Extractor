@@ -32,7 +32,7 @@ XIC_Extractor/
 │   │   ├── cell_decision/      每個樣本格的科學決策
 │   │   ├── projection/         Targeted／Untargeted 的前後投影
 │   │   └── result/             科學結果與 application 結果
-│   ├── execution/             attempt、工作分區、workers、結果暫存與 recovery
+│   ├── execution/             attempt、工作分區、workers、結果暫存與終局記錄
 │   ├── output/                CSV／workbook／HTML 等輸出程式
 │   ├── instrument_qc/         儀器 QC、校正與其報告流程
 │   ├── diagnostics/           可重用的診斷與說明工具
@@ -43,7 +43,13 @@ XIC_Extractor/
 │   └── rendering/             離線 HTML
 ├── tools/                     維護工具；diagnostics/ 為診斷，testing/ 管測試分片
 ├── tests/                     行為測試與小型 fixtures
-├── docs/                      正式文件；各子目錄用途見下表
+├── docs/                      文件依用途分流；不以 HTML 外觀判定權威
+│   ├── user/                  操作、欄位參考與概念 HTML；README.md 是使用者索引
+│   ├── product/               正式產品行為與科學責任；README.md 依主題找規則
+│   ├── agent/                 按任務載入的執行、驗證與交付契約
+│   ├── superpowers/           既有 schema、驗證與 productization 機器契約
+│   ├── architecture-contract.md  程式入口、責任與依賴方向
+│   └── project-layout.md      本結構樹與收納規則
 ├── config/                    公開設定與範例
 ├── assets/                    圖示與截圖
 ├── .github/                   CI 與 GitHub 設定

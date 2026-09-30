@@ -1,9 +1,26 @@
 # XIC Extractor
 
-Extracted-ion chromatogram (XIC) toolkit for LC-MS metabolomics. Reads Thermo
-`.raw` instrument files, extracts chromatographic peaks for targeted or
-untargeted workflows, and produces Excel workbooks and HTML reports ready for
-human review.
+XIC Extractor turns Thermo `.raw` LC-MS data into chromatographic measurements,
+quantitative results, and evidence you can inspect. Use **Targeted** when you
+have a compound list, or **Untargeted** to discover and align features across
+samples.
+
+## Start Here
+
+| What do you want to do? | Start with | What you will get |
+| --- | --- | --- |
+| Run an analysis | [Use the application](#use-the-application) | Choose a workflow, prepare inputs, and find the first result to inspect |
+| Understand how results are produced | [Follow the evidence](#follow-the-evidence) | Trace candidates through peak measurement, grouping, decisions, and output |
+| Something went wrong or a feature is missing | [Get help](#get-help) | Find troubleshooting guidance or report an issue |
+
+## Use The Application
+
+### Choose a workflow
+
+| Workflow | Bring | Main result | Step-by-step guide |
+| --- | --- | --- | --- |
+| **Targeted Extraction** | RAW files and a targets CSV with m/z, RT windows, and optional neutral-loss/ISTD settings | `xic_results_YYYYMMDD_HHMM.xlsx` | [Targeted guide](docs/user/targeted-extraction.md) |
+| **Untargeted Discovery** | RAW files and a method preset | Discovery candidates, then `alignment_matrix.tsv` for supported CID-NL Alignment | [Untargeted guide](docs/user/untargeted-discovery.md) |
 
 <table>
   <tr>
@@ -16,128 +33,57 @@ human review.
   </tr>
 </table>
 
-## How It Works
+### Run the packaged app
 
-XIC Extractor provides two workflows. Both start from Thermo `.raw`
-instrument files and produce outputs you can review directly — no
-post-processing scripts required.
+You need Windows 10 or 11, .NET 6 or later, and the Thermo RawFileReader DLLs
+(from Xcalibur or [Thermo Fisher](https://github.com/thermofishersci/RawFileReader)).
+The packaged app includes its Python runtime.
 
-### Targeted Extraction
+1. Download the Windows ZIP from [Releases](https://github.com/Chao-hu-Lab/XIC_Extractor/releases), unzip it, and run `XIC_Extractor.exe`.
+2. Set the RAW data and Thermo DLL directories, then follow the workflow guide above to supply targets or a preset.
+3. After Targeted finishes, open **Overview**, then **Review Queue** in the workbook. After Untargeted Alignment finishes, start with the Matrix; use **Export XIC Inspector** to inspect the retained CID-NL evidence as offline HTML.
 
-Use this when you already know the compounds you want to quantify.
+Retained CID-NL saves completed evidence alongside its Matrix. Additional
+review TSVs, galleries, and workbooks require explicit output options.
+For settings, column meanings, and troubleshooting, continue to the
+[user guide index](docs/user/README.md). HTML guides in that index can be opened
+locally in a browser; the Markdown guides can be read directly on GitHub.
 
-```
-.raw files + target list ──→ XIC extraction ──→ peak scoring ──→ Excel workbook
-```
+## Follow The Evidence
 
-You provide a CSV target list with compound names, m/z values, RT windows,
-ppm tolerances, and optional neutral-loss masses and ISTD pairings. The
-pipeline extracts ion chromatograms for each target, scores candidate peaks,
-checks MS2 neutral-loss confirmation, and writes an Excel workbook containing:
-
-| Sheet | Content |
-| --- | --- |
-| Overview | Run summary, detection rates, review priorities |
-| Review Queue | Rows needing human attention |
-| XIC Results | Per-sample RT, area, NL status, confidence, and reason |
-| Summary | Per-target detection, area, and RT statistics |
-
-**Primary output:** `output/xic_results_YYYYMMDD_HHMM.xlsx`
-
-### Untargeted Discovery
-
-Use this when you want to find features across samples without a predefined
-target list.
-
-```
-.raw files + method preset ──→ feature discovery ──→ cross-sample alignment ──→ matrix
+```text
+RAW measurements → candidates and peak evidence → cross-sample groups
+                 → cell decisions → workflow output → read-only inspection
 ```
 
-You select a built-in method preset (resolver, alignment, and post-alignment
-settings bundled as a TOML file). The pipeline discovers candidate features
-per sample using seed evidence (MS2 neutral loss, MS1 traces) and aligns them
-across samples into a cross-sample matrix. The default Alignment run writes
-`alignment_matrix.tsv` as its default quantitative output. Retained CID-NL also
-saves completed evidence for manual XIC Inspector export; additional review,
-gallery, and workbook artifacts require explicit output options.
+Targeted and Untargeted share scientific owners while retaining different
+search policies and output contracts. A candidate, a numeric value, and a
+counted detection are different facts; a review plot does not decide what the
+product writes.
 
-| Output | Content |
-| --- | --- |
-| `discovery_candidates.csv` | Per-sample candidate features with evidence detail |
-| `discovery_batch_index.csv` | Handoff index linking discovery to alignment |
-| `alignment_matrix.tsv` | Cross-sample aligned feature matrix |
-| `alignment_review.tsv` (explicit) | Review context for aligned features |
-| Gallery HTML (explicit) | Visual inspection of candidates and backfill context |
+For a guided explanation, start with the [core modules guide](docs/user/core-modules-explainer.html),
+then follow its links to processing or system behavior. The
+[HTML reading index](docs/user/readers-index.html) lets you enter at a specific question.
 
-## System Requirements
+To verify or change a rule, use the [product topic index](docs/product/README.md).
+It points to the maintained behavior contracts. The
+[LC-MS/MS evidence rules](docs/lc-msms-evidence-rules.md) own the scientific
+interpretation and area policy; HTML pages explain those owners.
 
-- Windows 10 or 11
-- .NET 6 or later
-- Thermo RawFileReader DLLs (installed with Thermo Xcalibur, or available from
-  [Thermo Fisher's developer portal](https://github.com/thermofishersci/RawFileReader))
+## Get Help
 
-## Quick Start
+Start with the troubleshooting section in your workflow guide:
+[Targeted](docs/user/targeted-extraction.md#troubleshooting) or
+[Untargeted](docs/user/untargeted-discovery.md#troubleshooting).
 
-### Packaged App
+If the problem remains, [open an issue](https://github.com/Chao-hu-Lab/XIC_Extractor/issues/new/choose).
+Include the app version, workflow, steps to reproduce, expected versus actual
+result, and the error message or a relevant screenshot. For a feature request,
+describe the analysis task you want to complete.
 
-1. Download `XIC_Extractor-Windows-vX.Y.Z.zip` from
-   [Releases](https://github.com/Chao-hu-Lab/XIC_Extractor/releases).
-2. Unzip it and run `XIC_Extractor.exe`.
-3. Point the GUI at your RAW data directory and Thermo DLL directory.
+## Repository Reference
 
-### Developer Checkout
-
-Source development uses Python 3.12. The packaged app includes its own Python
-runtime and does not require a separate Python installation.
-
-```powershell
-git clone https://github.com/Chao-hu-Lab/XIC_Extractor.git
-cd XIC_Extractor
-
-uv run --cache-dir .uv-cache --no-project python scripts/bootstrap_worktree.py
-uv run python -m gui.main
-```
-
-Run tests with:
-
-```powershell
-uv run pytest
-```
-
-## Guides
-
-| I want to... | Read this |
-| --- | --- |
-| Run targeted extraction step by step | [Targeted Extraction guide](docs/user/targeted-extraction.html) |
-| Run untargeted discovery from the GUI | [Untargeted Discovery guide](docs/user/untargeted-discovery.html) |
-
-## CLI
-
-Targeted extraction from a developer checkout:
-
-```powershell
-uv run python -m scripts.run_extraction --base-dir .
-```
-
-Installed entry point:
-
-```powershell
-uv run xic-extractor-cli --base-dir .
-```
-
-## Documentation
-
-想理解或修改程式碼，先看[架構閱讀入口](docs/architecture-contract.md#reading-the-code)：
-從實際 GUI／CLI 入口走到資料處理與輸出，再依變更類型找負責的模組。
-[Repo 結構樹](docs/project-layout.md#repository-tree)則說明程式、文件、測試和產物各放在哪裡。
-
-| Audience | Document | Purpose |
-| --- | --- | --- |
-| Users | [Human guide index](docs/user/readers-index.html) | Choose an HTML guide for operation, processing, or system review |
-| Users | [User guide index](docs/user/README.md) | Detailed Markdown workflow guidance and field references |
-| Readers | [Core modules guide](docs/user/core-modules-explainer.html) | Visual map of both workflows and their shared processing core |
-| Maintainers / agents | [Product topic index](docs/product/README.md) | Product contracts, output schemas, authority boundaries |
-| Developers / agents | [Architecture contract](docs/architecture-contract.md) | Package ownership, dependency rules, refactoring discipline |
-| Developers | [Project layout](docs/project-layout.md) | Directory structure, naming conventions, file placement rules |
-| Agents | [Agent contract](AGENTS.md) | Task-specific read routes, execution constraints, and verification |
-| Domain experts | [LC-MS/MS evidence rules](docs/lc-msms-evidence-rules.md) | Evidence semantics, peak selection, area ownership |
+For source work, see the [repository tree](docs/project-layout.md#repository-tree)
+and [architecture guide](docs/architecture-contract.md#reading-the-code).
+Coding agents start at [AGENTS.md](AGENTS.md); checkout setup is documented in
+[Local Execution](docs/agent/parameter-settings.md#runner-and-environment).
