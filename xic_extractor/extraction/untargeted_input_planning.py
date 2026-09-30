@@ -33,14 +33,14 @@ from xic_extractor.discovery.physical_fact_persistence import (
     IndexedDiscoveryPhysicalFacts,
 )
 from xic_extractor.discovery.physical_fact_record import DiscoveryPhysicalFactRecord
-from xic_extractor.extraction.untargeted_cid_nl_real_data_inputs import (
-    UntargetedCidNlRealDataContext,
-    build_untargeted_cid_nl_real_data_context,
-    compose_untargeted_real_data_context,
+from xic_extractor.extraction.untargeted_partition.models import (
+    UntargetedPartitionJob,
+    build_sample_jobs,
 )
-from xic_extractor.extraction.untargeted_real_data_models import (
-    UntargetedCidNlRealDataRuntimeJob,
-    build_untargeted_cid_nl_sample_runtime_jobs,
+from xic_extractor.extraction.untargeted_partition.request import (
+    UntargetedPartitionContext,
+    build_partition_context,
+    compose_partition_context,
 )
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     CidNlComposition,
@@ -65,8 +65,8 @@ class UntargetedInputPlan:
     """Request-bound subject inputs with eager templates or a lazy partition loader."""
 
     subject_batch: UntargetedCidNlMethodSubjectBatch
-    context: UntargetedCidNlRealDataContext
-    sample_job_templates: tuple[UntargetedCidNlRealDataRuntimeJob, ...]
+    context: UntargetedPartitionContext
+    sample_job_templates: tuple[UntargetedPartitionJob, ...]
     runtime_subjects: tuple[CidNlMethodSubject, ...]
     excluded_candidates: tuple[UntargetedCandidateExclusion, ...]
     partition_input_loader: (
@@ -371,7 +371,7 @@ def prepare_eager_untargeted_plan(
     candidates = tuple(
         candidate for values in candidates_by_sample.values() for candidate in values
     )
-    context = build_untargeted_cid_nl_real_data_context(
+    context = build_partition_context(
         raw_paths=raw_paths,
         sample_metadata=sample_metadata,
         method_subject=subject_batch,
@@ -431,7 +431,7 @@ def prepare_eager_untargeted_plan(
     templates = tuple(
         job
         for sample in context.samples
-        for job in build_untargeted_cid_nl_sample_runtime_jobs(
+        for job in build_sample_jobs(
             processing_owners=context.processing_owners,
             sample=sample,
             subject_work_units=tuple(
@@ -624,7 +624,7 @@ def prepare_indexed_untargeted_plan(
             raw_paths, acquisition_source_expectations, strict=True
         )
     }
-    context = compose_untargeted_real_data_context(
+    context = compose_partition_context(
         method_subject=subject_batch,
         settings=settings,
         peak_config=peak_config,

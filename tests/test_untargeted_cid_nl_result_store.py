@@ -387,12 +387,34 @@ def test_partition_result_store_cleanup(tmp_path: Path) -> None:
     assert not spool_dir.exists()
 
 
-def test_preserved_index_reads_one_record_in_a_separate_process(tmp_path):
+def test_preserved_index_reads_one_record_in_a_separate_process(tmp_path, monkeypatch):
     """A moved preserved spool is readable by a reader that never held the graph."""
-    shared = MappingProxyType({"owner": "shared"})
-    store = StreamedResultStore(tmp_path / "spool", (shared,))
-    store.append("alpha", Payload(children=("a0", "a1", "a2")))
-    store.append("beta", Payload(children=("b0", "b1")))
+    from tests.test_untargeted_cid_nl_bounded_runtime import _plan
+    from xic_extractor.extraction.untargeted_execution import (
+        _sample_worker_shared_objects,
+        materialize_untargeted_partition,
+    )
+
+    plan, _reference = _plan(tmp_path, monkeypatch, sample_count=2)
+    batch = materialize_untargeted_partition(plan, plan.subject_batch)
+    shared = _sample_worker_shared_objects(
+        plan.context.processing_owners,
+        (batch.jobs[0]._request_subjects, batch.subject_batch),
+    )
+    jobs_by_sample = {
+        job.sample.identity.sample_identity_id: tuple(
+            candidate
+            for candidate in batch.jobs
+            if candidate.sample.identity.sample_identity_id
+            == job.sample.identity.sample_identity_id
+        )
+        for job in batch.jobs
+    }
+    assert len(jobs_by_sample) == 2
+    cohorts = tuple(jobs_by_sample.values())
+    store = StreamedResultStore(tmp_path / "spool", shared)
+    store.append("alpha", Payload(children=cohorts[0]))
+    store.append("beta", Payload(children=cohorts[1]))
     store.seal()
     index = store.preserve_results()
     assert index.is_file()
@@ -407,15 +429,31 @@ def test_preserved_index_reads_one_record_in_a_separate_process(tmp_path):
         from xic_extractor.execution.result_store import (
             open_preserved_results,
         )
+        from xic_extractor.extraction.untargeted_partition.models import (
+            UntargetedPartitionJob,
+        )
 
         store = open_preserved_results(Path(sys.argv[1]))
-        print(store.read_selected(int(sys.argv[2]), "children", (int(sys.argv[3]),))[0])
+        job = store.read_selected(int(sys.argv[2]), "children", (int(sys.argv[3]),))[0]
+        assert isinstance(job, UntargetedPartitionJob)
+        print(
+            job.sample.identity.sample_identity_id
+            + ":"
+            + job.method_subject.method_subject_id
+        )
         """
     )
     script = tmp_path / "reader.py"
     script.write_text(reader, encoding="utf-8")
 
-    for partition_index, position, expected in ((0, 2, "a2"), (1, 0, "b0")):
+    for partition_index, cohort in enumerate(cohorts):
+        position = len(cohort) - 1
+        job = cohort[position]
+        expected = (
+            job.sample.identity.sample_identity_id
+            + ":"
+            + job.method_subject.method_subject_id
+        )
         completed = subprocess.run(
             [
                 sys.executable,

@@ -25,9 +25,9 @@ from xic_extractor.alignment.hypothesis_owner_adapter import (
     compose_peak_hypotheses_from_assessment_universe,
 )
 from xic_extractor.discovery.models import DiscoveryCandidate
-from xic_extractor.extraction.untargeted_cid_nl_real_data_adapter import (
+from xic_extractor.extraction.untargeted_partition.cid_nl_acquisition import (
+    CidNlAcquisitionError,
     UntargetedCidNlBackfillTarget,
-    UntargetedCidNlRealDataAdapterError,
     acquire_untargeted_cid_nl_backfill_trace_batch,
     acquire_untargeted_cid_nl_sample_trace_batch,
     adapt_current_discovery_sample_subject,
@@ -59,7 +59,9 @@ def test_changed_physical_query_evaluates_once_and_preserves_support(
     )
     from xic_extractor.discovery.ms2_seeds import collect_strict_nl_seeds
     from xic_extractor.discovery.physical_fact_record import DiscoveryPhysicalFactRecord
-    from xic_extractor.extraction import untargeted_cid_nl_real_data_adapter as adapter
+    from xic_extractor.extraction.untargeted_partition import (
+        cid_nl_acquisition as adapter,
+    )
     from xic_extractor.peak_detection import capture as capture_owner
     from xic_extractor.peak_detection.observations import (
         physical_peak_observation_integration,
@@ -836,7 +838,7 @@ def test_inferred_precursor_off_its_scan_receipt_is_rejected(
             raw=raw,
         )
 
-    with pytest.raises(UntargetedCidNlRealDataAdapterError, match="seed is not unique"):
+    with pytest.raises(CidNlAcquisitionError, match="seed is not unique"):
         adapt()
 
 
@@ -1391,7 +1393,7 @@ def test_adapter_requires_raw_to_preserve_inferred_physical_observations(
     candidates = (direct, inferred) if include_direct_candidate else (inferred,)
 
     with pytest.raises(
-        UntargetedCidNlRealDataAdapterError,
+        CidNlAcquisitionError,
         match="requires an owner-opened RAW adapter",
     ):
         adapt_current_discovery_sample_subject(
@@ -1619,7 +1621,7 @@ def test_adapter_rejects_discovery_candidate_receipt_drift(tmp_path: Path) -> No
     )
 
     with pytest.raises(
-        UntargetedCidNlRealDataAdapterError,
+        CidNlAcquisitionError,
         match="rt_apex_min mismatches current receipt",
     ):
         adapt_current_discovery_sample_subject(

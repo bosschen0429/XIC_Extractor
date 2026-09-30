@@ -1,4 +1,4 @@
-"""Atomic runtime owner for replayable untargeted real-data work."""
+"""Execute Untargeted partition acquisition and assessment under one attempt."""
 
 from __future__ import annotations
 
@@ -6,13 +6,7 @@ import importlib
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 
-from xic_extractor.acquisition_contract import AcquiredTrace, TraceAcquisitionBatch
-from xic_extractor.alignment.backfill.evaluation_coverage import (
-    BackfillCompletionProjection,
-)
-from xic_extractor.alignment.cell_observations import (
-    CidNlCellGroupContext,
-)
+from xic_extractor.acquisition_contract import TraceAcquisitionBatch
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.conservative_backfill import (
     ACTIVATION_ELIGIBLE_SAMPLE_ROLES,
@@ -53,39 +47,27 @@ from xic_extractor.execution.attempt import (
 )
 from xic_extractor.execution.recovery import OwnerPathRuntimeMarker
 from xic_extractor.execution.workers import WorkerAdmissionPool
-from xic_extractor.extraction.untargeted_cid_nl_real_data_adapter import (
+from xic_extractor.extraction.untargeted_partition.cid_nl_acquisition import (
+    _PartitionWorkObserver,
     _supports_direct_precursor_assessment,
-    _UntargetedRealDataWorkObserver,
-    acquire_untargeted_cid_nl_backfill_trace_batch,
-    acquire_untargeted_cid_nl_sample_trace_batch,
 )
-from xic_extractor.extraction.untargeted_real_data_models import (
+from xic_extractor.extraction.untargeted_partition.models import (
     _RUNTIME_COMPATIBILITY_TOKEN,
     RUNTIME_CALL_COST_METRIC_NAMES,
-    UntargetedCidNlInitialSampleResult,
-    UntargetedCidNlPreparedGrouping,
-    UntargetedCidNlRealDataRuntimeError,
-    UntargetedCidNlRealDataRuntimeJob,
-    UntargetedCidNlRuntimePartitionResult,
-    UntargetedCidNlRuntimeSampleResult,
-    UntargetedCidNlSampleResultRef,
+    UntargetedInitialSampleResult,
+    UntargetedPartitionError,
+    UntargetedPartitionJob,
+    UntargetedPartitionResult,
+    UntargetedPreparedGrouping,
+    UntargetedSampleResult,
     UntargetedSampleResultRef,
-    _canonical_acquisition_bytes,  # noqa: F401
     _canonical_acquisition_content,
     _mint_sample_result_ref,
-    _project_completed_backfill,
     _request_subject_candidates,
-    _request_subject_physical_records,  # noqa: F401
     _request_uses_subject_batch,
-    build_untargeted_cid_nl_sample_runtime_jobs,
-    canonical_untargeted_cid_nl_sample_result_bytes,
-    canonical_untargeted_sample_result_bytes,
-    mint_untargeted_cid_nl_sample_result_ref,
-    mint_untargeted_sample_result_ref,
-    project_untargeted_cid_nl_completed_backfill,
-    project_untargeted_completed_backfill,
+    _SampleResultContext,
 )
-from xic_extractor.extraction.untargeted_real_data_worker import (
+from xic_extractor.extraction.untargeted_partition.workers import (
     _backfill_support_context,
     _BatchSamplePhaseState,
     _execute_backfill,
@@ -95,7 +77,7 @@ from xic_extractor.extraction.untargeted_real_data_worker import (
     _execute_sample_backfill_worker,
     _execute_sample_initial_worker,
     _prepare_group_authorized_backfills,
-    _prepare_owner_authorized_backfills,  # noqa: F401
+    _prepare_owner_authorized_backfills,
     _RuntimeJobState,
     _SampleBackfillWorkerRequest,
     _SampleBackfillWorkerResponse,
@@ -106,80 +88,15 @@ from xic_extractor.processing_identity import (
     canonical_current_attempt_artifact_closure,
     resolve_request_acquisition_source,
 )
-from xic_extractor.raw_reader import _ensure_assemblies_loaded, open_raw
+from xic_extractor.raw_reader import _ensure_assemblies_loaded
 from xic_extractor.validation_primitives import require_owner_normalized_text
-from xic_extractor.xic_models import XICRequest
-
-
-class _RuntimeResultContext:
-    """Reuse completed adapter snapshots within one synchronous owner phase."""
-
-    def __init__(self, jobs: tuple[UntargetedCidNlRealDataRuntimeJob, ...]) -> None:
-        self._jobs = {id(job): job for job in jobs}
-        self._content: dict[int, tuple[TraceAcquisitionBatch, bytes, str]] = {}
-        self._traces: dict[
-            int,
-            tuple[
-                TraceAcquisitionBatch,
-                dict[tuple[XICRequest, str], tuple[AcquiredTrace, ...]],
-            ],
-        ] = {}
-
-    def acquisition_content(
-        self, acquisition: TraceAcquisitionBatch
-    ) -> tuple[bytes, str]:
-        cached = self._content.get(id(acquisition))
-        if cached is None:
-            payload, digest = _canonical_acquisition_content(acquisition)
-            cached = (acquisition, payload, digest)
-            self._content[id(acquisition)] = cached
-        return cached[1], cached[2]
-
-    def exact_traces(
-        self, acquisition: TraceAcquisitionBatch, request: XICRequest, source_id: str
-    ) -> tuple[AcquiredTrace, ...]:
-        cached = self._traces.get(id(acquisition))
-        if cached is None:
-            grouped: dict[tuple[XICRequest, str], list[AcquiredTrace]] = {}
-            for acquired in acquisition.traces:
-                key = (
-                    acquired.coordinate.request,
-                    acquired.coordinate.acquisition_source_id,
-                )
-                grouped.setdefault(key, []).append(acquired)
-            cached = (
-                acquisition,
-                {key: tuple(values) for key, values in grouped.items()},
-            )
-            self._traces[id(acquisition)] = cached
-        return cached[1].get((request, source_id), ())
-
-    def project_completed_backfill(
-        self,
-        result: UntargetedCidNlRuntimeSampleResult,
-        *,
-        group_context: CidNlCellGroupContext,
-    ) -> BackfillCompletionProjection:
-        if type(result) is not UntargetedCidNlRuntimeSampleResult:
-            raise UntargetedCidNlRealDataRuntimeError(
-                "backfill requires a runtime result"
-            )
-        if self._jobs.get(id(result.job)) is not result.job:
-            raise UntargetedCidNlRealDataRuntimeError(
-                "backfill result does not reuse an exact runtime batch job"
-            )
-        return _project_completed_backfill(
-            result,
-            group_context=group_context,
-            exact_traces=self.exact_traces,
-        )
 
 
 @dataclass(frozen=True, slots=True)
-class UntargetedCidNlRealDataRuntimeApplicationResult:
+class UntargetedAttemptResult:
     finalization: RuntimeFinalizationReceipt
-    sample_results: tuple[UntargetedCidNlRuntimeSampleResult, ...]
-    prepared_grouping: UntargetedCidNlPreparedGrouping | None = None
+    sample_results: tuple[UntargetedSampleResult, ...]
+    prepared_grouping: UntargetedPreparedGrouping | None = None
 
     @property
     def succeeded(self) -> bool:
@@ -189,13 +106,13 @@ class UntargetedCidNlRealDataRuntimeApplicationResult:
         )
 
 
-def untargeted_cid_nl_runtime_call_cost(
+def runtime_call_cost(
     finalization: RuntimeFinalizationReceipt,
 ) -> dict[str, int]:
     """Project the five real-data runtime call-cost facts from its ledger."""
 
     if not isinstance(finalization, RuntimeFinalizationReceipt):
-        raise UntargetedCidNlRealDataRuntimeError(
+        raise UntargetedPartitionError(
             "call cost requires an accepted RuntimeFinalizationReceipt"
         )
     attempt_id = (
@@ -218,52 +135,52 @@ def untargeted_cid_nl_runtime_call_cost(
             or not float(matches[0].value).is_integer()
             or matches[0].value < 0
         ):
-            raise UntargetedCidNlRealDataRuntimeError(
+            raise UntargetedPartitionError(
                 f"runtime owner did not provide measured integral {name}"
             )
         projected[name] = int(matches[0].value)
     return projected
 
 
-def execute_untargeted_cid_nl_real_data_runtime(
+def execute_attempt(
     runtime: AttemptRuntime,
-    jobs: tuple[UntargetedCidNlRealDataRuntimeJob, ...],
+    jobs: tuple[UntargetedPartitionJob, ...],
     *,
     telemetry_provider: RuntimeTelemetryProvider,
     recovery_marker: OwnerPathRuntimeMarker,
     progress_callback: Callable[[Mapping[str, object]], None] | None = None,
     alignment_config: AlignmentConfig = CID_NL_ALIGNMENT_CONFIG,
     prepare_grouping: Callable[
-        [tuple[UntargetedCidNlInitialSampleResult, ...]],
-        UntargetedCidNlPreparedGrouping,
+        [tuple[UntargetedInitialSampleResult, ...]],
+        UntargetedPreparedGrouping,
     ]
     | None = None,
-) -> UntargetedCidNlRealDataRuntimeApplicationResult:
+) -> UntargetedAttemptResult:
     """Execute every request sample through one attempt and one finalization."""
 
     if not isinstance(runtime, AttemptRuntime):
-        raise UntargetedCidNlRealDataRuntimeError("runtime must be an AttemptRuntime")
+        raise UntargetedPartitionError("runtime must be an AttemptRuntime")
     if not isinstance(alignment_config, AlignmentConfig):
-        raise UntargetedCidNlRealDataRuntimeError(
+        raise UntargetedPartitionError(
             "alignment_config must be an AlignmentConfig"
         )
     if not jobs or any(
-        not isinstance(job, UntargetedCidNlRealDataRuntimeJob) for job in jobs
+        not isinstance(job, UntargetedPartitionJob) for job in jobs
     ):
-        raise UntargetedCidNlRealDataRuntimeError(
+        raise UntargetedPartitionError(
             "jobs must contain Untargeted CID-NL runtime jobs"
         )
     if not isinstance(recovery_marker, OwnerPathRuntimeMarker):
-        raise UntargetedCidNlRealDataRuntimeError(
+        raise UntargetedPartitionError(
             "recovery_marker must be OwnerPathRuntimeMarker"
         )
     attempt = jobs[0].processing_owners.attempt
     if any(job.processing_owners.attempt != attempt for job in jobs):
-        raise UntargetedCidNlRealDataRuntimeError(
+        raise UntargetedPartitionError(
             "all runtime jobs must share one processing attempt"
         )
     if runtime.manifest.attempt != attempt:
-        raise UntargetedCidNlRealDataRuntimeError(
+        raise UntargetedPartitionError(
             "jobs must match the runtime manifest attempt"
         )
     keys = tuple(job.work_unit_key for job in jobs)
@@ -271,7 +188,7 @@ def execute_untargeted_cid_nl_real_data_runtime(
         not runtime.manifest_preflight_failed
         and runtime.manifest.work_unit_keys != keys
     ):
-        raise UntargetedCidNlRealDataRuntimeError(
+        raise UntargetedPartitionError(
             "runtime manifest must exactly match the declared real-data work units"
         )
 
@@ -296,15 +213,15 @@ def execute_untargeted_cid_nl_real_data_runtime(
     succeeded = (
         finalization.supervisor.terminal_outcome is AttemptTerminalOutcome.SUCCEEDED
     )
-    return UntargetedCidNlRealDataRuntimeApplicationResult(
+    return UntargetedAttemptResult(
         finalization=finalization,
         sample_results=(tuple(work.results) if succeeded else ()),
         prepared_grouping=work.prepared_grouping,
     )
 
 
-def execute_untargeted_cid_nl_runtime_partition(
-    jobs: tuple[UntargetedCidNlRealDataRuntimeJob, ...],
+def execute_partition(
+    jobs: tuple[UntargetedPartitionJob, ...],
     *,
     partition_key: str,
     alignment_config: AlignmentConfig,
@@ -313,13 +230,13 @@ def execute_untargeted_cid_nl_runtime_partition(
     raw_workers: int = DEFAULT_ALIGNMENT_WORKERS,
     raw_worker_backend: str = "thread",
     pool: WorkerAdmissionPool | None = None,
-    backfill_templates: tuple[UntargetedCidNlRealDataRuntimeJob, ...] = (),
+    backfill_templates: tuple[UntargetedPartitionJob, ...] = (),
     prepare_grouping: Callable[
-        [tuple[UntargetedCidNlInitialSampleResult, ...]],
-        UntargetedCidNlPreparedGrouping,
+        [tuple[UntargetedInitialSampleResult, ...]],
+        UntargetedPreparedGrouping,
     ]
     | None = None,
-) -> UntargetedCidNlRuntimePartitionResult:
+) -> UntargetedPartitionResult:
     """Execute one complete subject partition under the caller's runtime attempt."""
     _required_text(partition_key, field="partition_key")
     if pool is not None:
@@ -327,34 +244,34 @@ def execute_untargeted_cid_nl_runtime_partition(
         raw_worker_backend = pool.backend
     else:
         if type(raw_workers) is not int or raw_workers < 1:
-            raise UntargetedCidNlRealDataRuntimeError(
+            raise UntargetedPartitionError(
                 "raw_workers must be a positive integer"
             )
         if raw_worker_backend not in {"process", "thread"}:
-            raise UntargetedCidNlRealDataRuntimeError(
+            raise UntargetedPartitionError(
                 "raw_worker_backend must be 'process' or 'thread'"
             )
     if not isinstance(alignment_config, AlignmentConfig):
-        raise UntargetedCidNlRealDataRuntimeError(
+        raise UntargetedPartitionError(
             "alignment_config must be an AlignmentConfig"
         )
     if (
         not isinstance(jobs, tuple)
         or not jobs
-        or any(not isinstance(job, UntargetedCidNlRealDataRuntimeJob) for job in jobs)
+        or any(not isinstance(job, UntargetedPartitionJob) for job in jobs)
     ):
-        raise UntargetedCidNlRealDataRuntimeError(
+        raise UntargetedPartitionError(
             "jobs must contain Untargeted CID-NL runtime jobs"
         )
     if any(
         job.processing_owners.attempt != jobs[0].processing_owners.attempt
         for job in jobs
     ):
-        raise UntargetedCidNlRealDataRuntimeError(
+        raise UntargetedPartitionError(
             "all runtime jobs must share one processing attempt"
         )
     if len({job.work_unit_key for job in jobs}) != len(jobs):
-        raise UntargetedCidNlRealDataRuntimeError(
+        raise UntargetedPartitionError(
             "partition work unit keys must be unique"
         )
     work = _prepare_runtime_work(
@@ -370,7 +287,7 @@ def execute_untargeted_cid_nl_runtime_partition(
         prepare_grouping=prepare_grouping,
     )
     batch = work.provide_worker_batch(None)
-    return UntargetedCidNlRuntimePartitionResult(
+    return UntargetedPartitionResult(
         tuple(work.results),
         batch,
         batch.acquisitions,
@@ -382,13 +299,13 @@ def execute_untargeted_cid_nl_runtime_partition(
 class _RuntimeWork:
     reservations: list[RuntimeResourceReservation]
     provide_worker_batch: Callable[[object], RuntimeWorkerBatchReceipt]
-    results: list[UntargetedCidNlRuntimeSampleResult]
+    results: list[UntargetedSampleResult]
     acquisitions: list[TraceAcquisitionBatch]
-    prepared_grouping: UntargetedCidNlPreparedGrouping | None = None
+    prepared_grouping: UntargetedPreparedGrouping | None = None
 
 
 def _prepare_runtime_work(
-    jobs: tuple[UntargetedCidNlRealDataRuntimeJob, ...],
+    jobs: tuple[UntargetedPartitionJob, ...],
     *,
     alignment_config: AlignmentConfig,
     progress_callback: Callable[[Mapping[str, object]], None] | None,
@@ -397,10 +314,10 @@ def _prepare_runtime_work(
     raw_workers: int = DEFAULT_ALIGNMENT_WORKERS,
     raw_worker_backend: str = "thread",
     pool: WorkerAdmissionPool | None = None,
-    backfill_templates: tuple[UntargetedCidNlRealDataRuntimeJob, ...] = (),
+    backfill_templates: tuple[UntargetedPartitionJob, ...] = (),
     prepare_grouping: Callable[
-        [tuple[UntargetedCidNlInitialSampleResult, ...]],
-        UntargetedCidNlPreparedGrouping,
+        [tuple[UntargetedInitialSampleResult, ...]],
+        UntargetedPreparedGrouping,
     ]
     | None = None,
 ) -> _RuntimeWork:
@@ -408,7 +325,7 @@ def _prepare_runtime_work(
         raw_workers = pool.max_workers
         raw_worker_backend = pool.backend
     elif raw_worker_backend not in {"process", "thread"}:
-        raise UntargetedCidNlRealDataRuntimeError(
+        raise UntargetedPartitionError(
             "raw_worker_backend must be 'process' or 'thread'"
         )
     attempt = jobs[0].processing_owners.attempt
@@ -441,7 +358,7 @@ def _prepare_runtime_work(
             direct_assessment_by_key[job.work_unit_key] = False
             initial_raw_by_key[job.work_unit_key] = False
             planning_errors[job.work_unit_key] = exc
-    eligible_by_subject: dict[str, list[UntargetedCidNlRealDataRuntimeJob]] = {}
+    eligible_by_subject: dict[str, list[UntargetedPartitionJob]] = {}
     if prepare_grouping is None:
         for job in jobs:
             if (
@@ -510,7 +427,7 @@ def _prepare_runtime_work(
                 job=job,
                 resource_key=resource_key,
                 initial_requires_raw=initial_requires_raw,
-                observer=_UntargetedRealDataWorkObserver(job.processing_owners),
+                observer=_PartitionWorkObserver(job.processing_owners),
                 error=error,
             )
         )
@@ -587,7 +504,7 @@ def _prepare_runtime_work(
             )
         )
 
-    observed_results: list[UntargetedCidNlRuntimeSampleResult] = []
+    observed_results: list[UntargetedSampleResult] = []
     observed_acquisitions: list[TraceAcquisitionBatch] = []
 
     def provide_worker_batch(_aggregate: object) -> RuntimeWorkerBatchReceipt:
@@ -850,7 +767,7 @@ def _prepare_runtime_work(
                     ):
                         work.prepared_grouping = prepare_grouping(
                             tuple(
-                                UntargetedCidNlInitialSampleResult(
+                                UntargetedInitialSampleResult(
                                     state.job, state.adapter_result
                                 )
                                 for state in states
@@ -906,7 +823,7 @@ def _prepare_runtime_work(
                 worker_pool.shutdown()
         apply_stop()
 
-        result_context = _RuntimeResultContext(tuple(state.job for state in states))
+        result_context = _SampleResultContext(tuple(state.job for state in states))
         for completed, state in enumerate(states, 1):
             observe_cancellation()
             apply_stop()
@@ -1040,10 +957,10 @@ def _finalize_job_state(
     state: _RuntimeJobState,
     *,
     include_acquisition_receipt: bool = True,
-    result_context: _RuntimeResultContext | None = None,
+    result_context: _SampleResultContext | None = None,
 ) -> tuple[
     RuntimeWorkerBatchReceipt,
-    UntargetedCidNlRuntimeSampleResult | None,
+    UntargetedSampleResult | None,
     TraceAcquisitionBatch | None,
 ]:
     job = state.job
@@ -1057,7 +974,7 @@ def _finalize_job_state(
         if state.error is None:
             state.error = exc
 
-    result_ref: UntargetedCidNlSampleResultRef | None = None
+    result_ref: UntargetedSampleResultRef | None = None
     registered_artifacts = observed_artifacts
     if adapter_result is not None:
         try:
@@ -1079,7 +996,7 @@ def _finalize_job_state(
                 ),
             )
             if observed_artifacts != expected_lineage:
-                raise UntargetedCidNlRealDataRuntimeError(
+                raise UntargetedPartitionError(
                     "worker observer does not close the exact adapter/backfill result"
                 )
             result_ref = _mint_sample_result_ref(
@@ -1107,7 +1024,7 @@ def _finalize_job_state(
         state.error is None and adapter_result is not None and result_ref is not None
     )
     if not success and state.error is None:
-        state.error = UntargetedCidNlRealDataRuntimeError(
+        state.error = UntargetedPartitionError(
             "adapter returned no terminal scientific result"
         )
     settlement = mint_work_unit_settlement(
@@ -1165,7 +1082,7 @@ def _finalize_job_state(
         ),
     )
     sample_result = (
-        UntargetedCidNlRuntimeSampleResult(
+        UntargetedSampleResult(
             job=job,
             adapter_result=adapter_result,
             result_ref=result_ref,
@@ -1203,17 +1120,17 @@ def _runtime_sample_groups(
             or state.job.dll_dir != first.dll_dir
             for state in group[1:]
         ):
-            raise UntargetedCidNlRealDataRuntimeError(
+            raise UntargetedPartitionError(
                 "sample-local runtime jobs crossed their shared acquisition inputs"
             )
     return groups
 
 
 def _failure_detail(
-    job: UntargetedCidNlRealDataRuntimeJob,
+    job: UntargetedPartitionJob,
     error: Exception | None,
 ) -> WorkUnitFailureDetail:
-    observed = error or UntargetedCidNlRealDataRuntimeError("unknown worker failure")
+    observed = error or UntargetedPartitionError("unknown worker failure")
     message = " ".join(str(observed).split()) or type(observed).__name__
     return WorkUnitFailureDetail(
         category=WorkUnitFailureCategory.EXECUTION_ERROR,
@@ -1233,7 +1150,7 @@ def _validate_finalized_acquisition_metrics(
             acquisitions,
         )
     except RuntimeObservabilityContractError as exc:
-        raise UntargetedCidNlRealDataRuntimeError(
+        raise UntargetedPartitionError(
             "runtime acquisition metrics do not match observed RAW work"
         ) from exc
 
@@ -1242,55 +1159,14 @@ def _required_text(value: object, *, field: str) -> str:
     return require_owner_normalized_text(
         value,
         field=field,
-        error_factory=UntargetedCidNlRealDataRuntimeError,
+        error_factory=UntargetedPartitionError,
     )
 
 
-UntargetedRealDataRuntimeApplicationResult = (
-    UntargetedCidNlRealDataRuntimeApplicationResult
-)
-UntargetedRealDataRuntimeError = UntargetedCidNlRealDataRuntimeError
-UntargetedRealDataRuntimeJob = UntargetedCidNlRealDataRuntimeJob
-UntargetedRuntimeSampleResult = UntargetedCidNlRuntimeSampleResult
-execute_untargeted_real_data_runtime = execute_untargeted_cid_nl_real_data_runtime
-untargeted_runtime_call_cost = untargeted_cid_nl_runtime_call_cost
-build_untargeted_sample_runtime_jobs = build_untargeted_cid_nl_sample_runtime_jobs
-
-
-UntargetedRuntimePartitionResult = UntargetedCidNlRuntimePartitionResult
-execute_untargeted_runtime_partition = execute_untargeted_cid_nl_runtime_partition
-
 
 __all__ = (
-    "CID_NL_ALIGNMENT_CONFIG",
-    "RUNTIME_CALL_COST_METRIC_NAMES",
-    "UntargetedCidNlRealDataRuntimeApplicationResult",
-    "UntargetedCidNlRealDataRuntimeError",
-    "UntargetedCidNlRealDataRuntimeJob",
-    "UntargetedCidNlRuntimePartitionResult",
-    "UntargetedCidNlRuntimeSampleResult",
-    "UntargetedCidNlSampleResultRef",
-    "UntargetedRealDataRuntimeApplicationResult",
-    "UntargetedRealDataRuntimeError",
-    "UntargetedRealDataRuntimeJob",
-    "UntargetedRuntimePartitionResult",
-    "UntargetedRuntimeSampleResult",
-    "UntargetedSampleResultRef",
-    "acquire_untargeted_cid_nl_backfill_trace_batch",
-    "acquire_untargeted_cid_nl_sample_trace_batch",
-    "build_untargeted_cid_nl_sample_runtime_jobs",
-    "build_untargeted_sample_runtime_jobs",
-    "canonical_untargeted_cid_nl_sample_result_bytes",
-    "canonical_untargeted_sample_result_bytes",
-    "execute_untargeted_cid_nl_real_data_runtime",
-    "execute_untargeted_cid_nl_runtime_partition",
-    "execute_untargeted_real_data_runtime",
-    "execute_untargeted_runtime_partition",
-    "mint_untargeted_cid_nl_sample_result_ref",
-    "mint_untargeted_sample_result_ref",
-    "open_raw",
-    "project_untargeted_cid_nl_completed_backfill",
-    "project_untargeted_completed_backfill",
-    "untargeted_cid_nl_runtime_call_cost",
-    "untargeted_runtime_call_cost",
+    "UntargetedAttemptResult",
+    "execute_attempt",
+    "execute_partition",
+    "runtime_call_cost",
 )

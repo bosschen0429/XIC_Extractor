@@ -4,7 +4,7 @@ from unittest.mock import patch
 
 import pytest
 
-from xic_extractor.extraction.untargeted_cid_nl_real_data_inputs import (
+from xic_extractor.extraction.untargeted_partition.request import (
     IdentityContractError,
     _metadata_by_stem,
 )

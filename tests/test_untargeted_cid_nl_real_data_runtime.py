@@ -44,23 +44,26 @@ from xic_extractor.discovery.models import DiscoveryCandidate
 from xic_extractor.execution._finalization import RuntimeResourceOpenOutcome
 from xic_extractor.execution.attempt import start_runtime_attempt
 from xic_extractor.execution.recovery import OwnerPathRuntimeMarker
-from xic_extractor.extraction import (
-    untargeted_cid_nl_real_data_runtime as runtime_module,
-)
 from xic_extractor.extraction.untargeted_acquisition_cache import (
     CachedUntargetedRaw,
     acquire_untargeted_trace_batch,
     bind_untargeted_acquisition_cache,
 )
-from xic_extractor.extraction.untargeted_cid_nl_real_data_inputs import (
-    build_untargeted_cid_nl_real_data_context,
+from xic_extractor.extraction.untargeted_partition import cid_nl_acquisition
+from xic_extractor.extraction.untargeted_partition import execution as runtime_module
+from xic_extractor.extraction.untargeted_partition import models as partition_models
+from xic_extractor.extraction.untargeted_partition import workers as partition_workers
+from xic_extractor.extraction.untargeted_partition.execution import (
+    execute_attempt,
+    runtime_call_cost,
 )
-from xic_extractor.extraction.untargeted_cid_nl_real_data_runtime import (
-    UntargetedCidNlRealDataRuntimeError,
-    UntargetedCidNlRealDataRuntimeJob,
-    build_untargeted_cid_nl_sample_runtime_jobs,
-    execute_untargeted_cid_nl_real_data_runtime,
-    untargeted_cid_nl_runtime_call_cost,
+from xic_extractor.extraction.untargeted_partition.models import (
+    UntargetedPartitionError,
+    UntargetedPartitionJob,
+    build_sample_jobs,
+)
+from xic_extractor.extraction.untargeted_partition.request import (
+    build_partition_context,
 )
 from xic_extractor.peak_detection import capture as capture_owner
 from xic_extractor.peak_detection.cid_nl_method_subject import (
@@ -639,7 +642,7 @@ def test_runtime_delivers_one_real_subject_cohort_into_golden_path(
         precursor_tolerance_ppm=settings.precursor_mz_tolerance_ppm,
         neutral_loss_da=116.0474,
     )
-    context = build_untargeted_cid_nl_real_data_context(
+    context = build_partition_context(
         raw_paths=raw_paths,
         sample_metadata=(
             SampleMetadata(
@@ -673,7 +676,7 @@ def test_runtime_delivers_one_real_subject_cohort_into_golden_path(
         tmp_path=tmp_path,
     )
     jobs = tuple(
-        UntargetedCidNlRealDataRuntimeJob(
+        UntargetedPartitionJob(
             processing_owners=context.processing_owners,
             sample=sample,
             method_subject=context.method_subject,
@@ -693,7 +696,7 @@ def test_runtime_delivers_one_real_subject_cohort_into_golden_path(
         )
         for sample in context.samples
     )
-    from xic_extractor.extraction.untargeted_real_data_worker import _open_job_raw
+    from xic_extractor.extraction.untargeted_partition.workers import _open_job_raw
 
     changed_path = tmp_path / "Support.changed.synthetic"
     changed_path.write_bytes(b"changed-after-source-verification")
@@ -708,7 +711,7 @@ def test_runtime_delivers_one_real_subject_cohort_into_golden_path(
         owner_completeness_attestation="untargeted-cid-nl-real-data-runtime-test",
     )
 
-    result = execute_untargeted_cid_nl_real_data_runtime(
+    result = execute_attempt(
         runtime,
         jobs,
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
@@ -749,19 +752,19 @@ def test_runtime_delivers_one_real_subject_cohort_into_golden_path(
         tmp_path=tmp_path,
     )
     warm_open_calls: list[Path] = []
-    installed_warm_open = runtime_module.open_raw
+    installed_warm_open = partition_workers.open_raw
 
     def count_warm_open(path: Path, *args: object, **kwargs: object):
         warm_open_calls.append(path)
         return installed_warm_open(path, *args, **kwargs)
 
-    monkeypatch.setattr(runtime_module, "open_raw", count_warm_open)
+    monkeypatch.setattr(partition_workers, "open_raw", count_warm_open)
     warm_runtime = start_runtime_attempt(
         attempt=context.processing_owners.attempt,
         work_unit_keys=tuple(job.work_unit_key for job in jobs),
         owner_completeness_attestation="untargeted-cid-nl-real-data-runtime-warm-test",
     )
-    warm_result = execute_untargeted_cid_nl_real_data_runtime(
+    warm_result = execute_attempt(
         warm_runtime,
         jobs,
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
@@ -852,7 +855,7 @@ def test_runtime_does_not_evaluate_ineligible_inferred_precursor(
         precursor_tolerance_ppm=settings.precursor_mz_tolerance_ppm,
         neutral_loss_da=116.0474,
     )
-    context = build_untargeted_cid_nl_real_data_context(
+    context = build_partition_context(
         raw_paths=(raw_path,),
         sample_metadata=(
             SampleMetadata(
@@ -873,7 +876,7 @@ def test_runtime_does_not_evaluate_ineligible_inferred_precursor(
         ),
         sample_identity_namespace="study:real-data-runtime-unsupported-test",
     )
-    job = UntargetedCidNlRealDataRuntimeJob(
+    job = UntargetedPartitionJob(
         processing_owners=context.processing_owners,
         sample=context.samples[0],
         method_subject=context.method_subject,
@@ -897,7 +900,7 @@ def test_runtime_does_not_evaluate_ineligible_inferred_precursor(
         raw_path=raw_path,
         tmp_path=tmp_path,
     )
-    result = execute_untargeted_cid_nl_real_data_runtime(
+    result = execute_attempt(
         runtime,
         (job,),
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
@@ -979,7 +982,7 @@ def test_runtime_recovers_from_single_scan_cid_nl_support_owners(
         precursor_tolerance_ppm=settings.precursor_mz_tolerance_ppm,
         neutral_loss_da=116.0474,
     )
-    context = build_untargeted_cid_nl_real_data_context(
+    context = build_partition_context(
         raw_paths=raw_paths,
         sample_metadata=(
             SampleMetadata(
@@ -1030,7 +1033,7 @@ def test_runtime_recovers_from_single_scan_cid_nl_support_owners(
         tmp_path=tmp_path,
     )
     jobs = tuple(
-        UntargetedCidNlRealDataRuntimeJob(
+        UntargetedPartitionJob(
             processing_owners=context.processing_owners,
             sample=sample,
             method_subject=context.method_subject,
@@ -1054,7 +1057,7 @@ def test_runtime_recovers_from_single_scan_cid_nl_support_owners(
         ),
     )
 
-    result = execute_untargeted_cid_nl_real_data_runtime(
+    result = execute_attempt(
         runtime,
         jobs,
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
@@ -1142,7 +1145,7 @@ def test_runtime_job_rejects_candidate_content_changed_after_request_mint(
         precursor_tolerance_ppm=settings.precursor_mz_tolerance_ppm,
         neutral_loss_da=116.0474,
     )
-    context = build_untargeted_cid_nl_real_data_context(
+    context = build_partition_context(
         raw_paths=(raw_path,),
         sample_metadata=(
             SampleMetadata(
@@ -1165,10 +1168,10 @@ def test_runtime_job_rejects_candidate_content_changed_after_request_mint(
     )
 
     with pytest.raises(
-        UntargetedCidNlRealDataRuntimeError,
+        UntargetedPartitionError,
         match="candidate universe does not match the processing request",
     ):
-        UntargetedCidNlRealDataRuntimeJob(
+        UntargetedPartitionJob(
             processing_owners=context.processing_owners,
             sample=context.samples[0],
             method_subject=context.method_subject,
@@ -1230,7 +1233,7 @@ def test_batch_candidate_selection_preserves_order_and_request_sample_membership
         subject_batch = mint_untargeted_cid_nl_method_subject_batch(
             subjects=subjects, candidate_memberships=memberships
         )
-        context = build_untargeted_cid_nl_real_data_context(
+        context = build_partition_context(
             raw_paths=raw_paths,
             sample_metadata=tuple(
                 SampleMetadata(
@@ -1251,7 +1254,7 @@ def test_batch_candidate_selection_preserves_order_and_request_sample_membership
         jobs = tuple(
             job
             for sample in context.samples
-            for job in build_untargeted_cid_nl_sample_runtime_jobs(
+            for job in build_sample_jobs(
                 processing_owners=context.processing_owners,
                 sample=sample,
                 subject_work_units=tuple(
@@ -1277,7 +1280,7 @@ def test_batch_candidate_selection_preserves_order_and_request_sample_membership
             for job in jobs
         )
         with pytest.raises(
-            UntargetedCidNlRealDataRuntimeError,
+            UntargetedPartitionError,
             match="acquisition source expectation must match the request sample",
         ):
             replace(
@@ -1296,16 +1299,20 @@ def test_batch_candidate_selection_preserves_order_and_request_sample_membership
                 if subject_id == job.method_subject.method_subject_id
             }
             expected = tuple(c for c in job.candidates if c.candidate_id in member_ids)
-            selected = runtime_module._request_subject_candidates(job)
+            selected = partition_models._request_subject_candidates(job)
             assert selected == expected
             assert all(left is right for left, right in zip(selected, expected))
-            assert runtime_module._request_subject_candidates(replace(job)) == expected
-        assert any(not runtime_module._request_subject_candidates(job) for job in jobs)
+            assert (
+                partition_models._request_subject_candidates(replace(job)) == expected
+            )
         assert any(
-            len(runtime_module._request_subject_candidates(job)) > 1 for job in jobs
+            not partition_models._request_subject_candidates(job) for job in jobs
+        )
+        assert any(
+            len(partition_models._request_subject_candidates(job)) > 1 for job in jobs
         )
     with pytest.raises(
-        UntargetedCidNlRealDataRuntimeError, match="not an exact member"
+        UntargetedPartitionError, match="not an exact member"
     ):
         replace(
             requests_and_jobs[0][1][0],
@@ -1326,16 +1333,18 @@ def test_batch_candidate_selection_preserves_order_and_request_sample_membership
         if job.method_subject == subjects[1] and job.sample.metadata.raw_stem == "S1"
     )
     acquired_candidates = []
-    real_acquire = runtime_module.acquire_untargeted_cid_nl_sample_trace_batch
+    real_acquire = cid_nl_acquisition.acquire_untargeted_cid_nl_sample_trace_batch
 
     def record_acquire(**kwargs):
         acquired_candidates.append((kwargs["sample"], kwargs["candidates"]))
         return real_acquire(**kwargs)
 
     monkeypatch.setattr(
-        runtime_module, "acquire_untargeted_cid_nl_sample_trace_batch", record_acquire
+        cid_nl_acquisition,
+        "acquire_untargeted_cid_nl_sample_trace_batch",
+        record_acquire,
     )
-    partition = runtime_module.execute_untargeted_cid_nl_runtime_partition(
+    partition = runtime_module.execute_partition(
         selected_jobs,
         partition_key="subset",
         alignment_config=runtime_module.CID_NL_ALIGNMENT_CONFIG,
@@ -1344,7 +1353,7 @@ def test_batch_candidate_selection_preserves_order_and_request_sample_membership
     assert acquired_candidates
     for sample, acquired in acquired_candidates:
         job = next(job for job in selected_jobs if job.sample == sample)
-        assert acquired == runtime_module._request_subject_candidates(job)
+        assert acquired == partition_models._request_subject_candidates(job)
     assert any(
         len(acquired) < len(job.candidates)
         for sample, acquired in acquired_candidates
@@ -1356,7 +1365,7 @@ def test_batch_candidate_selection_preserves_order_and_request_sample_membership
 def test_partition_runtime_job_requires_exact_local_feature_membership(
     tmp_path: Path,
 ) -> None:
-    from xic_extractor.extraction import untargeted_real_data_models as models_owner
+    from xic_extractor.extraction.untargeted_partition import models as models_owner
 
     raw_path = tmp_path / "S1.synthetic"
     raw_path.write_bytes(b"partition-runtime")
@@ -1400,7 +1409,7 @@ def test_partition_runtime_job_requires_exact_local_feature_membership(
         (raw_path,),
         {"S1": candidates},
     )
-    context = build_untargeted_cid_nl_real_data_context(
+    context = build_partition_context(
         raw_paths=(raw_path,),
         sample_metadata=(
             SampleMetadata(
@@ -1467,15 +1476,15 @@ def test_partition_runtime_job_requires_exact_local_feature_membership(
         dll_dir=tmp_path,
         acquisition_source_expectation=context.acquisition_sources_by_sample["S1"],
     )
-    (job,) = build_untargeted_cid_nl_sample_runtime_jobs(**build_args)
-    build_untargeted_cid_nl_sample_runtime_jobs(**build_args)
+    (job,) = build_sample_jobs(**build_args)
+    build_sample_jobs(**build_args)
     request_index_cache = models_owner._request_input_index.cache_info()
     assert request_index_cache.misses == 1
     assert request_index_cache.hits == 1
-    assert runtime_module._request_subject_candidates(job) == (local_candidate,)
+    assert partition_models._request_subject_candidates(job) == (local_candidate,)
 
     with pytest.raises(
-        UntargetedCidNlRealDataRuntimeError,
+        UntargetedPartitionError,
         match="exactly cover its selected feature IDs",
     ):
         replace(job, candidates=())
@@ -1490,7 +1499,7 @@ def test_partition_runtime_job_requires_exact_local_feature_membership(
         ),
     )
     with pytest.raises(
-        UntargetedCidNlRealDataRuntimeError,
+        UntargetedPartitionError,
         match="foreign candidate membership",
     ):
         replace(job, subject_partition=foreign_partition)
@@ -1537,7 +1546,7 @@ def test_direct_subject_batch_seals_initial_and_recovery_acquisitions_once(
             for candidate in candidates_by_sample[path.stem]
         ),
     )
-    context = build_untargeted_cid_nl_real_data_context(
+    context = build_partition_context(
         raw_paths=raw_paths,
         sample_metadata=tuple(
             SampleMetadata(
@@ -1560,7 +1569,7 @@ def test_direct_subject_batch_seals_initial_and_recovery_acquisitions_once(
     jobs = tuple(
         job
         for sample in context.samples
-        for job in build_untargeted_cid_nl_sample_runtime_jobs(
+        for job in build_sample_jobs(
             processing_owners=context.processing_owners,
             sample=sample,
             subject_work_units=tuple(
@@ -1593,7 +1602,7 @@ def test_direct_subject_batch_seals_initial_and_recovery_acquisitions_once(
         "acquire_untargeted_cid_nl_sample_trace_batch",
         "acquire_untargeted_cid_nl_backfill_trace_batch",
     ):
-        original = getattr(runtime_module, name)
+        original = getattr(cid_nl_acquisition, name)
 
         def observe(*args, _original=original, **kwargs):
             acquired = _original(*args, **kwargs)
@@ -1601,10 +1610,10 @@ def test_direct_subject_batch_seals_initial_and_recovery_acquisitions_once(
                 observed_phase_acquisitions.append(acquired.acquisition)
             return acquired
 
-        monkeypatch.setattr(runtime_module, name, observe)
+        monkeypatch.setattr(cid_nl_acquisition, name, observe)
 
     submitted_batches = []
-    execute_attempt = runtime_module.execute_runtime_attempt
+    owner_execute_attempt = runtime_module.execute_runtime_attempt
 
     def capture_worker_batch(
         runtime,
@@ -1619,7 +1628,7 @@ def test_direct_subject_batch_seals_initial_and_recovery_acquisitions_once(
             submitted_batches.append(batch)
             return batch
 
-        return execute_attempt(
+        return owner_execute_attempt(
             runtime,
             reservations,
             worker_batch_provider=provide_and_capture,
@@ -1633,7 +1642,7 @@ def test_direct_subject_batch_seals_initial_and_recovery_acquisitions_once(
         work_unit_keys=tuple(job.work_unit_key for job in jobs),
         owner_completeness_attestation="runtime-phase-acquisition-seal",
     )
-    result = execute_untargeted_cid_nl_real_data_runtime(
+    result = execute_attempt(
         runtime,
         jobs,
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
@@ -1691,7 +1700,7 @@ def test_context_rejects_same_stem_receipt_from_different_acquisition(
         IdentityContractError,
         match="current acquisition source does not match the Discovery receipt",
     ):
-        build_untargeted_cid_nl_real_data_context(
+        build_partition_context(
             raw_paths=(replay_path,),
             sample_metadata=(
                 SampleMetadata(
@@ -1748,7 +1757,7 @@ def test_runtime_does_not_open_recovery_resource_when_owner_condition_is_false(
         precursor_tolerance_ppm=settings.precursor_mz_tolerance_ppm,
         neutral_loss_da=116.0474,
     )
-    context = build_untargeted_cid_nl_real_data_context(
+    context = build_partition_context(
         raw_paths=raw_paths,
         sample_metadata=tuple(
             SampleMetadata(
@@ -1779,16 +1788,16 @@ def test_runtime_does_not_open_recovery_resource_when_owner_condition_is_false(
         sources_by_path=source_raws,
         tmp_path=tmp_path,
     )
-    installed_open_raw = runtime_module.open_raw
+    installed_open_raw = partition_workers.open_raw
 
     def _reject_unused_open(path: Path, *args: object, **kwargs: object):
         if path == raw_paths[2]:
             raise AssertionError("owner-false recovery resource must not open RAW")
         return installed_open_raw(path, *args, **kwargs)
 
-    monkeypatch.setattr(runtime_module, "open_raw", _reject_unused_open)
+    monkeypatch.setattr(partition_workers, "open_raw", _reject_unused_open)
     jobs = tuple(
-        UntargetedCidNlRealDataRuntimeJob(
+        UntargetedPartitionJob(
             processing_owners=context.processing_owners,
             sample=sample,
             method_subject=context.method_subject,
@@ -1810,7 +1819,7 @@ def test_runtime_does_not_open_recovery_resource_when_owner_condition_is_false(
         owner_completeness_attestation=("real-data-runtime-conditional-resource-test"),
     )
 
-    result = execute_untargeted_cid_nl_real_data_runtime(
+    result = execute_attempt(
         runtime,
         jobs,
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
@@ -1837,7 +1846,7 @@ def test_runtime_does_not_open_recovery_resource_when_owner_condition_is_false(
         )
         assert empty_resource.reservation.owner_conditional is True
     assert (
-        untargeted_cid_nl_runtime_call_cost(result.finalization)["raw_open_count"] == 2
+        runtime_call_cost(result.finalization)["raw_open_count"] == 2
     )
     _assert_partition_matches_runtime(jobs, result, monkeypatch)
 
@@ -1904,7 +1913,7 @@ def _install_runtime_raw(
             ),
         )
 
-    monkeypatch.setattr(runtime_module, "open_raw", _open_runtime_raw)
+    monkeypatch.setattr(partition_workers, "open_raw", _open_runtime_raw)
     return vendor_raw
 
 
@@ -1947,7 +1956,7 @@ def _install_runtime_raws(
             ),
         )
 
-    monkeypatch.setattr(runtime_module, "open_raw", _open_runtime_raw)
+    monkeypatch.setattr(partition_workers, "open_raw", _open_runtime_raw)
     return opened
 
 
@@ -1961,7 +1970,7 @@ def _assert_partition_matches_runtime(jobs, full_result, monkeypatch):
         "acquire_untargeted_cid_nl_sample_trace_batch",
         "acquire_untargeted_cid_nl_backfill_trace_batch",
     ):
-        original = getattr(runtime_module, name)
+        original = getattr(cid_nl_acquisition, name)
 
         def observe(*args, _original=original, **kwargs):
             batch = _original(*args, **kwargs)
@@ -1969,9 +1978,9 @@ def _assert_partition_matches_runtime(jobs, full_result, monkeypatch):
                 observed_batches.append(batch.acquisition)
             return batch
 
-        monkeypatch.setattr(runtime_module, name, observe)
+        monkeypatch.setattr(cid_nl_acquisition, name, observe)
     events = []
-    result = runtime_module.execute_untargeted_cid_nl_runtime_partition(
+    result = runtime_module.execute_partition(
         jobs,
         partition_key="part-1",
         alignment_config=runtime_module.CID_NL_ALIGNMENT_CONFIG,
@@ -2026,12 +2035,12 @@ def _assert_partition_matches_runtime(jobs, full_result, monkeypatch):
         progress = [event for event in events if event.get("stage") == stage]
         assert progress[-1]["completed"] == progress[-1]["total"]
     # An acquisition failure must settle its jobs and return all resource cleanup facts.
-    monkeypatch.setattr(runtime_module, "open_raw", forbidden)
-    from xic_extractor.extraction import untargeted_real_data_worker as worker_module
+    monkeypatch.setattr(partition_workers, "open_raw", forbidden)
+    from xic_extractor.extraction.untargeted_partition import workers as worker_module
 
     monkeypatch.setattr(worker_module, "open_raw", forbidden)
     failed_jobs = tuple(replace(job, acquisition_cache_dir=None) for job in jobs)
-    failed = runtime_module.execute_untargeted_cid_nl_runtime_partition(
+    failed = runtime_module.execute_partition(
         failed_jobs,
         partition_key="part-error",
         alignment_config=runtime_module.CID_NL_ALIGNMENT_CONFIG,
@@ -2042,43 +2051,4 @@ def _assert_partition_matches_runtime(jobs, full_result, monkeypatch):
     assert any(
         item.open_outcome is RuntimeResourceOpenOutcome.OPEN_FAILED
         for item in failed.worker_batch.resource_settlements
-    )
-
-
-def test_untargeted_real_data_runtime_facade_and_generic_exports() -> None:
-    from xic_extractor.extraction import (
-        untargeted_cid_nl_real_data_runtime as facade,
-    )
-    from xic_extractor.extraction import (
-        untargeted_real_data_runtime as canonical,
-    )
-
-    assert facade is canonical
-    assert (
-        canonical.execute_untargeted_real_data_runtime
-        is canonical.execute_untargeted_cid_nl_real_data_runtime
-    )
-    assert (
-        canonical.UntargetedRealDataRuntimeJob
-        is canonical.UntargetedCidNlRealDataRuntimeJob
-    )
-    assert (
-        canonical.UntargetedRealDataRuntimeError
-        is canonical.UntargetedCidNlRealDataRuntimeError
-    )
-    assert (
-        canonical.UntargetedRealDataRuntimeApplicationResult
-        is canonical.UntargetedCidNlRealDataRuntimeApplicationResult
-    )
-    assert (
-        canonical.UntargetedRuntimeSampleResult
-        is canonical.UntargetedCidNlRuntimeSampleResult
-    )
-    assert (
-        canonical.untargeted_runtime_call_cost
-        is canonical.untargeted_cid_nl_runtime_call_cost
-    )
-    assert (
-        canonical.build_untargeted_sample_runtime_jobs
-        is canonical.build_untargeted_cid_nl_sample_runtime_jobs
     )

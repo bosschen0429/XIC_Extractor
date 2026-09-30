@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 from dataclasses import replace
 from pathlib import Path
@@ -54,7 +55,7 @@ from xic_extractor.sample_metadata import SampleMetadata
 
 @pytest.fixture(autouse=True)
 def _disable_real_dll_loading(monkeypatch) -> None:
-    import xic_extractor.extraction.untargeted_cid_nl_real_data_runtime as runtime_owner
+    import xic_extractor.extraction.untargeted_partition.execution as runtime_owner
 
     monkeypatch.setattr(runtime_owner, "_ensure_assemblies_loaded", lambda *_: None)
 
@@ -149,7 +150,7 @@ def _plan(
     opened = _install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
     if opened_sink is not None:
         opened_sink.append(opened)
-    import xic_extractor.extraction.untargeted_cid_nl_real_data_runtime as runtime_owner
+    import xic_extractor.extraction.untargeted_partition.execution as runtime_owner
 
     monkeypatch.setattr(
         runtime_owner,
@@ -254,9 +255,7 @@ def test_indexed_mass_partition_keeps_closed_worksets_and_budgets_neighbors(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from xic_extractor.extraction import (
-        untargeted_execution as bounded_owner,
-    )
+    from xic_extractor.extraction import untargeted_execution as bounded_owner
     from xic_extractor.extraction.untargeted_input_planning import (
         PreparedUntargetedAlignmentWorksets,
     )
@@ -370,9 +369,7 @@ def test_indexed_finalization_orders_children_by_canonical_subject(
 ) -> None:
     from types import SimpleNamespace
 
-    from xic_extractor.extraction import (
-        untargeted_execution as bounded_owner,
-    )
+    from xic_extractor.extraction import untargeted_execution as bounded_owner
 
     plan, _reference = _plan(tmp_path, monkeypatch)
     indexed_plan = replace(
@@ -450,9 +447,7 @@ def test_prepared_workset_index_stores_one_id_set_per_workset(
 
     from dataclasses import replace
 
-    from xic_extractor.extraction import (
-        untargeted_execution as bounded_owner,
-    )
+    from xic_extractor.extraction import untargeted_execution as bounded_owner
     from xic_extractor.peak_detection.cid_nl_method_subject import (
         mint_untargeted_cid_nl_method_subject,
         mint_untargeted_cid_nl_method_subject_batch,
@@ -510,9 +505,7 @@ def test_bounded_partition_real_entry_mints_interleaved_worksets_canonically(
 ) -> None:
     from types import SimpleNamespace
 
-    from xic_extractor.extraction import (
-        untargeted_execution as bounded_owner,
-    )
+    from xic_extractor.extraction import untargeted_execution as bounded_owner
     from xic_extractor.peak_detection.cid_nl_method_subject import (
         cid_nl_alignment_subject_worksets,
         mint_untargeted_cid_nl_method_subject,
@@ -665,7 +658,7 @@ def test_bounded_partition_real_entry_mints_interleaved_worksets_canonically(
     )
     monkeypatch.setattr(
         bounded_owner,
-        "execute_untargeted_cid_nl_runtime_partition",
+        'execute_partition',
         close_without_raw,
     )
     monkeypatch.setattr(_FakeThermoRaw, "__init__", forbid_raw_open)
@@ -850,7 +843,7 @@ def test_bounded_runtime_matches_eager_after_disk_owner_round_trip(
     )
     if scenario == "istd":
         assert tuple(len(workset) for workset in prepared_worksets.worksets) == (3,)
-    import xic_extractor.extraction.untargeted_cid_nl_real_data_runtime as runtime_owner
+    import xic_extractor.extraction.untargeted_partition.execution as runtime_owner
 
     coordinator_thread = get_ident()
     warm_threads = []
@@ -1054,7 +1047,7 @@ def test_bounded_runtime_failure_never_publishes_completed_batch(
     calls = []
     if failure_seam == "later_partition":
         seam_owner = bounded_owner
-        seam_name = "execute_untargeted_cid_nl_runtime_partition"
+        seam_name = 'execute_partition'
     else:
         seam_owner = bounded_owner.StreamedResultStore
         seam_name = "append_children"
@@ -1221,8 +1214,8 @@ def test_failed_attempt_retry_reuses_completed_raw_facts_and_recomposes(
 def test_partition_acquisitions_overlap_with_shared_worker_budget_and_ordered_output(
     tmp_path: Path, monkeypatch
 ) -> None:
-    import xic_extractor.extraction.untargeted_cid_nl_real_data_runtime as runtime_owner
     import xic_extractor.extraction.untargeted_execution as owner
+    import xic_extractor.extraction.untargeted_partition.execution as runtime_owner
 
     plan, _ = _plan(tmp_path, monkeypatch)
     monkeypatch.setattr(runtime_owner, "_ensure_assemblies_loaded", lambda *_args: None)
@@ -1240,7 +1233,7 @@ def test_partition_acquisitions_overlap_with_shared_worker_budget_and_ordered_ou
         pipeline_overlap=False,
     )
 
-    original_leaf = owner.execute_untargeted_cid_nl_runtime_partition
+    original_leaf = owner.execute_partition
     original_append = owner.StreamedResultStore.append_children
     first_two = {"partition-00000", "partition-00001"}
     barrier = Barrier(2)
@@ -1291,7 +1284,7 @@ def test_partition_acquisitions_overlap_with_shared_worker_budget_and_ordered_ou
             with lock:
                 composition_active = 0
 
-    monkeypatch.setattr(owner, "execute_untargeted_cid_nl_runtime_partition", leaf)
+    monkeypatch.setattr(owner, 'execute_partition', leaf)
     monkeypatch.setattr(owner.StreamedResultStore, "append_children", append)
     overlapped = owner.execute_untargeted_plan(
         plan,
@@ -1329,12 +1322,12 @@ def test_partition_acquisitions_overlap_with_shared_worker_budget_and_ordered_ou
 def test_overlapped_partition_acquisition_failure_propagates(
     tmp_path: Path, monkeypatch
 ) -> None:
-    import xic_extractor.extraction.untargeted_cid_nl_real_data_runtime as runtime_owner
     import xic_extractor.extraction.untargeted_execution as owner
+    import xic_extractor.extraction.untargeted_partition.execution as runtime_owner
 
     plan, _ = _plan(tmp_path, monkeypatch)
     monkeypatch.setattr(runtime_owner, "_ensure_assemblies_loaded", lambda *_args: None)
-    original_leaf = owner.execute_untargeted_cid_nl_runtime_partition
+    original_leaf = owner.execute_partition
     barrier = Barrier(2)
     failure_released = Event()
     injected_error = OSError("injected concurrent acquisition failure")
@@ -1353,7 +1346,7 @@ def test_overlapped_partition_acquisition_failure_propagates(
             assert failure_released.wait(timeout=10)
         return result
 
-    monkeypatch.setattr(owner, "execute_untargeted_cid_nl_runtime_partition", leaf)
+    monkeypatch.setattr(owner, 'execute_partition', leaf)
     marker = OwnerPathRuntimeMarker(
         tmp_path / "overlapped-failure.json", "overlapped-failure"
     )
@@ -1382,8 +1375,8 @@ def test_overlapped_partition_acquisition_failure_propagates(
 def test_sample_parallelism_keeps_partition_and_acquisition_counts_fixed(
     tmp_path: Path, monkeypatch, managed_call: bool, raw_workers: int
 ):
-    import xic_extractor.extraction.untargeted_cid_nl_real_data_runtime as runtime_owner
     import xic_extractor.extraction.untargeted_execution as owner
+    import xic_extractor.extraction.untargeted_partition.execution as runtime_owner
 
     if managed_call:
         pytest.importorskip("clr")
@@ -1425,7 +1418,7 @@ def test_sample_parallelism_keeps_partition_and_acquisition_counts_fixed(
         nonlocal live_jobs
         assert get_ident() == coordinator and live_jobs == 0
         batch = original_materialize(*args, **kwargs)
-        from xic_extractor.extraction.untargeted_real_data_models import (
+        from xic_extractor.extraction.untargeted_partition.models import (
             _request_subject_candidates,
         )
 
@@ -1541,8 +1534,8 @@ def test_sample_parallelism_keeps_partition_and_acquisition_counts_fixed(
 def test_sample_failure_drains_without_more_samples_or_partition_publication(
     tmp_path: Path, monkeypatch, failure_mode: str
 ):
-    import xic_extractor.extraction.untargeted_cid_nl_real_data_runtime as runtime_owner
     import xic_extractor.extraction.untargeted_execution as owner
+    import xic_extractor.extraction.untargeted_partition.execution as runtime_owner
 
     plan, _ = _plan(tmp_path, monkeypatch)
     monkeypatch.setattr(runtime_owner, "_ensure_assemblies_loaded", lambda *_args: None)
@@ -1555,7 +1548,7 @@ def test_sample_failure_drains_without_more_samples_or_partition_publication(
     opened = {}
     closed = set()
     batches = []
-    original_leaf = owner.execute_untargeted_cid_nl_runtime_partition
+    original_leaf = owner.execute_partition
     original_chromatogram = _FakeThermoRaw.GetChromatogramData
     original_init = _FakeThermoRaw.__init__
     original_dispose = _FakeThermoRaw.Dispose
@@ -1615,7 +1608,7 @@ def test_sample_failure_drains_without_more_samples_or_partition_publication(
     def fail_spool(*_args):
         raise OSError("injected spool failure")
 
-    monkeypatch.setattr(owner, "execute_untargeted_cid_nl_runtime_partition", leaf)
+    monkeypatch.setattr(owner, 'execute_partition', leaf)
     monkeypatch.setattr(owner, "execute_runtime_attempt", execute)
     monkeypatch.setattr(_FakeThermoRaw, "__init__", initialize)
     monkeypatch.setattr(_FakeThermoRaw, "Dispose", dispose)
@@ -1659,6 +1652,10 @@ def test_sample_failure_drains_without_more_samples_or_partition_publication(
     assert list((tmp_path / "failed").glob(".cid_nl_partitions-*")) == []
 
 
+def _round_trip_partition_job(job):
+    return os.getpid(), job
+
+
 def test_sample_worker_transport_references_global_request_owners(
     tmp_path: Path,
     monkeypatch,
@@ -1667,11 +1664,12 @@ def test_sample_worker_transport_references_global_request_owners(
         owner_pickle_dumps,
         owner_pickle_loads,
     )
+    from xic_extractor.execution.workers import WorkerAdmissionPool
     from xic_extractor.extraction.untargeted_execution import (
         _sample_worker_shared_objects,
     )
 
-    plan, _reference = _plan(tmp_path, monkeypatch)
+    plan, _reference = _plan(tmp_path, monkeypatch, sample_count=2)
     batch = materialize_untargeted_partition(plan, plan.subject_batch)
     shared = _sample_worker_shared_objects(
         plan.context.processing_owners,
@@ -1688,15 +1686,33 @@ def test_sample_worker_transport_references_global_request_owners(
     assert restored.sample == source.sample
     assert restored.candidates == source.candidates
 
+    transported = []
+    with WorkerAdmissionPool(
+        max_workers=2, backend="process", shared_objects=shared
+    ) as pool:
+        pool.run_windowed(
+            batch.jobs,
+            _round_trip_partition_job,
+            on_completed=lambda _done, _total, _job, result: transported.append(result),
+        )
+    assert all(pid != os.getpid() for pid, _job in transported)
+    expected = {
+        job.sample.identity.sample_identity_id: job for job in batch.jobs
+    }
+    assert len(expected) == 2
+    assert len(transported) == len(batch.jobs)
+    for _pid, job in transported:
+        original = expected[job.sample.identity.sample_identity_id]
+        assert job.processing_owners is original.processing_owners
+        assert job._request_subjects is original._request_subjects
+        assert job.sample == original.sample
+        assert job.candidates == original.candidates
+
 
 def test_process_recovery_dispatches_only_missing_subjects(tmp_path, monkeypatch):
     from xic_extractor.execution.workers import WorkerAdmissionPool
-    from xic_extractor.extraction import (
-        untargeted_real_data_runtime as runtime,
-    )
-    from xic_extractor.extraction import (
-        untargeted_real_data_worker as worker,
-    )
+    from xic_extractor.extraction.untargeted_partition import execution as runtime
+    from xic_extractor.extraction.untargeted_partition import workers as worker
 
     # Exercise process message construction/consumption with synthetic RAW I/O.
     # Native spawning and transport identity have their own existing coverage.
@@ -1728,7 +1744,7 @@ def test_process_recovery_dispatches_only_missing_subjects(tmp_path, monkeypatch
 
     monkeypatch.setattr(runtime, "_execute_sample_backfill_worker", observe_request)
     with LocalProcessMessages(max_workers=1) as pool:
-        result = runtime.execute_untargeted_cid_nl_runtime_partition(
+        result = runtime.execute_partition(
             batch.jobs,
             partition_key="sparse-recovery",
             alignment_config=AlignmentConfig(anchor_min_seed_events=1),
@@ -1748,7 +1764,7 @@ def test_two_sample_process_messages_match_serial_results_and_attribution(
     tmp_path, monkeypatch
 ):
     from xic_extractor.execution.workers import WorkerAdmissionPool
-    from xic_extractor.extraction import untargeted_real_data_runtime as runtime
+    from xic_extractor.extraction.untargeted_partition import execution as runtime
 
     # Exercise the process request/response route with synthetic RAW I/O;
     # native spawn and transport identity have separate existing coverage.
@@ -1761,14 +1777,14 @@ def test_two_sample_process_messages_match_serial_results_and_attribution(
     batch = materialize_untargeted_partition(plan, plan.subject_batch)
     config = AlignmentConfig(anchor_min_seed_events=1)
     with WorkerAdmissionPool(max_workers=1) as pool:
-        serial = runtime.execute_untargeted_cid_nl_runtime_partition(
+        serial = runtime.execute_partition(
             batch.jobs,
             partition_key="two-sample-serial",
             alignment_config=config,
             pool=pool,
         )
     with LocalProcessMessages(max_workers=2) as pool:
-        process = runtime.execute_untargeted_cid_nl_runtime_partition(
+        process = runtime.execute_partition(
             batch.jobs,
             partition_key="two-sample-process",
             alignment_config=config,
@@ -1799,7 +1815,7 @@ def test_two_sample_process_messages_match_serial_results_and_attribution(
 def test_sparse_partition_materializes_only_samples_with_request_candidates(
     tmp_path, monkeypatch
 ):
-    from xic_extractor.extraction.untargeted_real_data_models import (
+    from xic_extractor.extraction.untargeted_partition.models import (
         _request_subject_candidates,
     )
 
@@ -1829,11 +1845,11 @@ def test_sparse_recovery_partition_matches_dense_composition(
     from tests.untargeted_partition_fixtures import (
         execute_dense_partition,
     )
+    from xic_extractor.extraction.untargeted_partition.execution import (
+        execute_partition,
+    )
     from xic_extractor.extraction.untargeted_partition_composition import (
         compose_untargeted_partition,
-    )
-    from xic_extractor.extraction.untargeted_real_data_runtime import (
-        execute_untargeted_cid_nl_runtime_partition,
     )
 
     plan, reference = _plan(tmp_path, monkeypatch, scenario=scenario)
@@ -1858,7 +1874,7 @@ def test_sparse_recovery_partition_matches_dense_composition(
         plan, plan.subject_batch, sparse=True
     )
     assert len(sparse_batch.jobs) == expected_sparse_jobs
-    sparse_runtime = execute_untargeted_cid_nl_runtime_partition(
+    sparse_runtime = execute_partition(
         sparse_batch.jobs,
         backfill_templates=sparse_batch.sample_job_templates,
         partition_key="sparse-recovery",

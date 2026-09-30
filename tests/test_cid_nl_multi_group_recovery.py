@@ -35,16 +35,15 @@ from xic_extractor.alignment.untargeted_finalized_matrix import (
 )
 from xic_extractor.execution.attempt import start_runtime_attempt
 from xic_extractor.execution.recovery import OwnerPathRuntimeMarker
-from xic_extractor.extraction import (
-    untargeted_cid_nl_real_data_runtime as runtime_owner,
+from xic_extractor.extraction.untargeted_partition import cid_nl_acquisition
+from xic_extractor.extraction.untargeted_partition import models as partition_models
+from xic_extractor.extraction.untargeted_partition.execution import execute_attempt
+from xic_extractor.extraction.untargeted_partition.models import (
+    UntargetedPartitionJob,
+    project_completed_backfill,
 )
-from xic_extractor.extraction.untargeted_cid_nl_real_data_inputs import (
-    build_untargeted_cid_nl_real_data_context,
-)
-from xic_extractor.extraction.untargeted_cid_nl_real_data_runtime import (
-    UntargetedCidNlRealDataRuntimeJob,
-    execute_untargeted_cid_nl_real_data_runtime,
-    project_untargeted_cid_nl_completed_backfill,
+from xic_extractor.extraction.untargeted_partition.request import (
+    build_partition_context,
 )
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     is_ms1_only_cid_nl_backfill_assessment,
@@ -107,7 +106,7 @@ def test_rejected_initial_evidence_gets_one_independent_bounded_assessment(
     )
     opened = _install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
     recovery_calls = []
-    acquire = runtime_owner.acquire_untargeted_cid_nl_backfill_trace_batch
+    acquire = cid_nl_acquisition.acquire_untargeted_cid_nl_backfill_trace_batch
 
     def acquire_recovery(**kwargs):
         recovery_calls.append(kwargs["sample"].metadata.raw_stem)
@@ -116,7 +115,7 @@ def test_rejected_initial_evidence_gets_one_independent_bounded_assessment(
         return acquire(**kwargs)
 
     monkeypatch.setattr(
-        runtime_owner,
+        cid_nl_acquisition,
         "acquire_untargeted_cid_nl_backfill_trace_batch",
         acquire_recovery,
     )
@@ -125,7 +124,7 @@ def test_rejected_initial_evidence_gets_one_independent_bounded_assessment(
         work_unit_keys=tuple(job.work_unit_key for job in batch.jobs),
         owner_completeness_attestation="rejected-bounded-recovery",
     )
-    result = execute_untargeted_cid_nl_real_data_runtime(
+    result = execute_attempt(
         runtime,
         batch.jobs,
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
@@ -232,7 +231,7 @@ def test_rejected_initial_evidence_gets_one_independent_bounded_assessment(
             == decision.matrix_value
         )
 
-        from xic_extractor.extraction.untargeted_cid_nl_real_data_adapter import (
+        from xic_extractor.extraction.untargeted_partition.cid_nl_acquisition import (
             backfill_untargeted_cid_nl_sample_subject,
         )
 
@@ -386,11 +385,11 @@ def test_runtime_recovers_every_authorized_rt_group(
             precursor_tolerance_ppm=settings.precursor_mz_tolerance_ppm,
             neutral_loss_da=116.0474,
         )
-        context = build_untargeted_cid_nl_real_data_context(
+        context = build_partition_context(
             **kwargs, method_subject=subject
         )
         jobs = tuple(
-            UntargetedCidNlRealDataRuntimeJob(
+            UntargetedPartitionJob(
                 processing_owners=context.processing_owners,
                 sample=sample,
                 method_subject=subject,
@@ -413,14 +412,16 @@ def test_runtime_recovers_every_authorized_rt_group(
         owner_completeness_attestation="multi-group-recovery",
     )
     canonical_calls = []
-    canonical_bytes = runtime_owner._canonical_acquisition_bytes
+    canonical_bytes = partition_models._canonical_acquisition_bytes
 
     def count_canonical(acquisition):
         canonical_calls.append(id(acquisition))
         return canonical_bytes(acquisition)
 
-    monkeypatch.setattr(runtime_owner, "_canonical_acquisition_bytes", count_canonical)
-    result = execute_untargeted_cid_nl_real_data_runtime(
+    monkeypatch.setattr(
+        partition_models, "_canonical_acquisition_bytes", count_canonical
+    )
+    result = execute_attempt(
         runtime,
         jobs,
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
@@ -441,7 +442,7 @@ def test_runtime_recovers_every_authorized_rt_group(
             else sample_result.adapter_result.acquisition
         )
         assert sample_result.result_ref == (
-            runtime_owner.mint_untargeted_cid_nl_sample_result_ref(
+            partition_models.mint_sample_result_ref(
                 job=sample_result.job,
                 result=sample_result.adapter_result,
                 backfill_input=sample_result.backfill_input,
@@ -494,7 +495,7 @@ def test_runtime_recovers_every_authorized_rt_group(
         )
         assert len(canonical_calls) == len(set(canonical_calls))
         assert len(completed.initial_groups) == 2
-        projection_context = runtime_owner._RuntimeResultContext(jobs)
+        projection_context = partition_models._SampleResultContext(jobs)
 
         (child,) = completed.application_result.children
         scientific = child.scientific_core
@@ -731,7 +732,7 @@ def test_runtime_recovers_every_authorized_rt_group(
                     assert cell.backfill_cell is not None
                     assert cell.backfill_cell.method_assessment is recovery.assessment
                     recovery_context = cell.backfill_cell.group_context
-                completion = project_untargeted_cid_nl_completed_backfill(
+                completion = project_completed_backfill(
                     missing, group_context=recovery_context
                 )
                 assert (
@@ -754,14 +755,14 @@ def test_runtime_recovers_every_authorized_rt_group(
                     for attempt in missing.backfill_attempts
                 )
                 with pytest.raises(ValueError, match="sealed runtime result"):
-                    project_untargeted_cid_nl_completed_backfill(
+                    project_completed_backfill(
                         replace(missing, backfill_attempts=changed_recoveries),
                         group_context=recovery_context,
                     )
                 assert completion.backfill_assessment is recovery.assessment
                 if len(missing.backfill_attempts) > 1:
                     with pytest.raises(ValueError, match="sealed runtime result"):
-                        project_untargeted_cid_nl_completed_backfill(
+                        project_completed_backfill(
                             replace(missing, backfill_attempts=(recovery,)),
                             group_context=recovery_context,
                         )
@@ -958,7 +959,7 @@ def test_shared_physical_recovery_claim_is_not_assigned_to_two_groups(
         work_unit_keys=tuple(job.work_unit_key for job in batch.jobs),
         owner_completeness_attestation="shared-recovery-claim",
     )
-    result = execute_untargeted_cid_nl_real_data_runtime(
+    result = execute_attempt(
         runtime,
         batch.jobs,
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
@@ -1078,7 +1079,7 @@ def test_shared_ms1_only_backfill_peak_is_not_written_to_two_rows(
         work_unit_keys=tuple(job.work_unit_key for job in batch.jobs),
         owner_completeness_attestation="shared-ms1-only-backfill",
     )
-    result = execute_untargeted_cid_nl_real_data_runtime(
+    result = execute_attempt(
         runtime,
         batch.jobs,
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
@@ -1194,7 +1195,7 @@ def test_ms1_only_backfill_fills_only_one_unique_group_window_peak(
         work_unit_keys=tuple(job.work_unit_key for job in batch.jobs),
         owner_completeness_attestation="ms1-only-backfill",
     )
-    result = execute_untargeted_cid_nl_real_data_runtime(
+    result = execute_attempt(
         runtime,
         batch.jobs,
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
@@ -1338,7 +1339,7 @@ def test_backfill_reaches_a_sample_whose_support_belongs_to_another_group(
         work_unit_keys=tuple(job.work_unit_key for job in batch.jobs),
         owner_completeness_attestation="support-elsewhere",
     )
-    result = execute_untargeted_cid_nl_real_data_runtime(
+    result = execute_attempt(
         runtime,
         batch.jobs,
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
@@ -1391,16 +1392,14 @@ def _assert_alignment_uses_configured_recovery_groups(
     from xic_extractor.alignment.untargeted_finalized_matrix import (
         project_completed_untarget_batch_writer_inputs,
     )
-    from xic_extractor.extraction import (
-        untargeted_execution as bounded_runtime,
-    )
+    from xic_extractor.extraction import untargeted_execution as bounded_runtime
     from xic_extractor.extraction.untargeted_alignment import (
         complete_untargeted_alignment,
     )
 
     opened = _install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
     runtime_results = []
-    execute = bounded_runtime.execute_untargeted_cid_nl_runtime_partition
+    execute = bounded_runtime.execute_partition
 
     def retain_runtime(*args, **options):
         result = execute(*args, **options)
@@ -1421,7 +1420,7 @@ def _assert_alignment_uses_configured_recovery_groups(
         return result
 
     monkeypatch.setattr(
-        bounded_runtime, "execute_untargeted_cid_nl_runtime_partition", retain_runtime
+        bounded_runtime, 'execute_partition', retain_runtime
     )
     completed = complete_untargeted_alignment(
         discovery_batch=DiscoveryBatchInput(

@@ -59,19 +59,17 @@ from xic_extractor.extraction.untargeted_input_planning import (
     UntargetedInputPlan,
     prepare_untargeted_alignment_worksets,
 )
+from xic_extractor.extraction.untargeted_partition.execution import execute_partition
+from xic_extractor.extraction.untargeted_partition.models import (
+    UntargetedPartitionJob,
+    UntargetedPartitionResult,
+    build_sample_jobs,
+)
 from xic_extractor.extraction.untargeted_partition_composition import (
     PersistedUntargetedPartition,
     UntargetedPartitionInputs,
     compose_and_persist_untargeted_partition,
     prepare_untargeted_partition_grouping,
-)
-from xic_extractor.extraction.untargeted_real_data_models import (
-    UntargetedCidNlRealDataRuntimeJob,
-    UntargetedCidNlRuntimePartitionResult,
-    build_untargeted_cid_nl_sample_runtime_jobs,
-)
-from xic_extractor.extraction.untargeted_real_data_runtime import (
-    execute_untargeted_cid_nl_runtime_partition,
 )
 from xic_extractor.immutable_sequence import ImmutableSequence
 from xic_extractor.peak_detection.cid_nl_method_subject import (
@@ -146,11 +144,11 @@ def materialize_untargeted_partition(
             physical_records_by_candidate=records,
         )
         assert plan.dll_dir is not None
-        templates: list[UntargetedCidNlRealDataRuntimeJob] = []
+        templates: list[UntargetedPartitionJob] = []
         for sample in context.samples:
             stem = sample.metadata.raw_stem
             templates.extend(
-                build_untargeted_cid_nl_sample_runtime_jobs(
+                build_sample_jobs(
                     processing_owners=context.processing_owners,
                     sample=sample,
                     subject_work_units=tuple(
@@ -501,7 +499,7 @@ class UntargetedPartitionPipelineAdapter:
     ) -> PartitionAcquisitionOutput[
         tuple[
             UntargetedPartitionInputs,
-            UntargetedCidNlRuntimePartitionResult,
+            UntargetedPartitionResult,
         ]
     ]:
         subject_batch = self._partition_subject_batches[partition.partition_key]
@@ -518,7 +516,7 @@ class UntargetedPartitionPipelineAdapter:
             pool = self._process_pools[0]
             if pool.stopped:
                 raise RuntimeError("process worker pool failure stopped admission")
-            leaf = execute_untargeted_cid_nl_runtime_partition(
+            leaf = execute_partition(
                 batch.jobs,
                 prepare_grouping=partial(
                     prepare_untargeted_partition_grouping,
@@ -542,7 +540,7 @@ class UntargetedPartitionPipelineAdapter:
                 backend=self._raw_worker_backend,
                 thread_name_prefix="cid-nl-sample",
             ) as pool:
-                leaf = execute_untargeted_cid_nl_runtime_partition(
+                leaf = execute_partition(
                     batch.jobs,
                     prepare_grouping=partial(
                         prepare_untargeted_partition_grouping,
@@ -582,7 +580,7 @@ class UntargetedPartitionPipelineAdapter:
         acquisition_output: PartitionAcquisitionOutput[
             tuple[
                 UntargetedPartitionInputs,
-                UntargetedCidNlRuntimePartitionResult,
+                UntargetedPartitionResult,
             ]
         ],
         store: StreamedResultStore,
