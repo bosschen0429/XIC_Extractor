@@ -12,6 +12,7 @@ from xic_extractor.config import ExtractionConfig, Target
 from xic_extractor.configuration.signal_processing_profile import (
     resolve_signal_processing_profile,
 )
+from xic_extractor.evidence.neutral_loss import CandidateMS2Evidence
 from xic_extractor.extraction.anchors import (
     apply_anchor_mismatch_penalty,
     paired_anchor_mismatch_diagnostic,
@@ -35,7 +36,6 @@ from xic_extractor.extraction.scoring_factory import (
     selected_candidate,
     selected_shape_metrics,
 )
-from xic_extractor.neutral_loss import CandidateMS2Evidence
 from xic_extractor.output.messages import (
     DiagnosticRecord,
     build_diagnostic_records,
@@ -295,6 +295,7 @@ def extract_one_target(
         raw,
         target,
         config,
+        sample_key=sample_name,
         reference_rt=reference_rt,
         target_reference_rt=target_reference_rt,
         sample_drift=sample_drift,
@@ -313,7 +314,7 @@ def extract_one_target(
         context_rt_max,
         target.ppm_tol,
     )
-    nl_result = check_target_nl(raw, target, config)
+    nl_result = check_target_nl(raw, target, config, sample_key=sample_name)
     profile = resolve_signal_processing_profile(
         signal_processing_method=config.signal_processing_method,
         signal_processing_window_points=config.signal_processing_window_points,
@@ -445,7 +446,9 @@ def extract_one_target(
         )
 
     scoring_context_builder = None
-    candidate_ms2_builder = candidate_ms2_evidence_builder(raw, target, config)
+    candidate_ms2_builder = candidate_ms2_evidence_builder(
+        raw, target, config, sample_key=sample_name
+    )
     candidate_ms2_cache: dict[PeakCandidate, CandidateMS2Evidence] = {}
 
     def _cached_candidate_ms2_builder(

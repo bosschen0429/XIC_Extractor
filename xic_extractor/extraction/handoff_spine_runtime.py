@@ -6,13 +6,13 @@ from dataclasses import dataclass, replace
 from typing import cast
 
 from xic_extractor.config import ExtractionConfig, Target
+from xic_extractor.evidence.neutral_loss import CandidateMS2Evidence
 from xic_extractor.extraction.ms2_selection import selected_candidate_ms2_evidence
 from xic_extractor.extraction.peak_hypothesis_adapter import (
     build_targeted_peak_hypotheses as build_peak_hypotheses,
 )
 from xic_extractor.extraction.scoring_factory import selected_candidate
 from xic_extractor.extraction.trace_context import targeted_extraction_trace_group
-from xic_extractor.neutral_loss import CandidateMS2Evidence
 from xic_extractor.peak_detection.baseline import BaselineMethod
 from xic_extractor.peak_detection.hypotheses import PeakHypothesis
 from xic_extractor.peak_detection.model_selection import (

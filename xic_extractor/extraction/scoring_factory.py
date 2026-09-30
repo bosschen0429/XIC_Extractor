@@ -4,8 +4,8 @@ from typing import Any
 import numpy as np
 
 from xic_extractor.config import ExtractionConfig, Target
+from xic_extractor.evidence.neutral_loss import CandidateMS2Evidence, NLResult
 from xic_extractor.injection_rolling import rolling_median_rt
-from xic_extractor.neutral_loss import CandidateMS2Evidence, NLResult
 from xic_extractor.peak_detection import ms1_morphology
 from xic_extractor.peak_detection.ms1_morphology import (
     MS1_MORPHOLOGY_AREA_SOURCE,

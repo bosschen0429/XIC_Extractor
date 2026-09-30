@@ -2,10 +2,32 @@ from __future__ import annotations
 
 from typing import Any
 
+from xic_extractor.acquisition.ms2_windows import acquire_ms2_window
 from xic_extractor.config import ExtractionConfig, Target
+from xic_extractor.evidence.neutral_loss import (
+    anchor_window_bounds,
+)
+from xic_extractor.evidence.neutral_loss import (
+    find_nl_anchor_rt as evaluate_nl_anchor_rt,
+)
 from xic_extractor.extraction.anchors import (
     PAIRED_TARGET_NL_ANCHOR_REFERENCE_DELTA_MAX_MIN,
 )
+
+
+def find_nl_anchor_rt(
+    raw: Any,
+    *,
+    sample_key: str,
+    rt_center: float,
+    search_margin_min: float,
+    **question: Any,
+) -> float | None:
+    rt_min, rt_max = anchor_window_bounds(rt_center, search_margin_min)
+    window = acquire_ms2_window(
+        raw, sample_key=sample_key, rt_min=rt_min, rt_max=rt_max
+    )
+    return evaluate_nl_anchor_rt(window, **question)
 
 
 def get_rt_window(
@@ -13,13 +35,12 @@ def get_rt_window(
     target: Target,
     config: ExtractionConfig,
     *,
+    sample_key: str,
     reference_rt: float | None,
     target_reference_rt: float | None = None,
     sample_drift: float = 0.0,
 ) -> tuple[float, float, bool, float | None]:
     """Return (rt_min, rt_max, anchor_used, anchor_rt)."""
-    from xic_extractor import extractor
-
     if target.neutral_loss_da is None:
         # The configured center guides identity; acquisition retains its full
         # scope and the reference does not claim a measured NL anchor.
@@ -47,8 +68,9 @@ def get_rt_window(
     anchor_reference_rt = (
         target_reference_rt if target_reference_rt is not None else paired_reference_rt
     )
-    anchor_rt = extractor.find_nl_anchor_rt(
+    anchor_rt = find_nl_anchor_rt(
         raw,
+        sample_key=sample_key,
         precursor_mz=target.mz,
         rt_center=rt_center,
         search_margin_min=config.nl_rt_anchor_search_margin_min,

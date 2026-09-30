@@ -5,10 +5,10 @@ from dataclasses import replace
 from typing import cast
 
 from xic_extractor.config import ExtractionConfig, Target
+from xic_extractor.evidence.neutral_loss import CandidateMS2Evidence
 from xic_extractor.extraction.peak_hypothesis_adapter import (
     build_targeted_peak_hypotheses as build_peak_hypotheses,
 )
-from xic_extractor.neutral_loss import CandidateMS2Evidence
 from xic_extractor.peak_detection.baseline import BaselineMethod
 from xic_extractor.peak_detection.candidate_scoring import score_candidate
 from xic_extractor.peak_detection.cwt import add_cwt_proposals_for_audit

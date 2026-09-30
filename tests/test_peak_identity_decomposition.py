@@ -23,7 +23,7 @@ from xic_extractor.discovery.models import (
     NeutralLossProfile,
 )
 from xic_extractor.discovery.ms1_backfill import backfill_ms1_candidates
-from xic_extractor.neutral_loss import CandidateMS2Evidence
+from xic_extractor.evidence.neutral_loss import CandidateMS2Evidence
 from xic_extractor.peak_detection.hypotheses import (
     IntegrationResult,
     PeakHypothesis,

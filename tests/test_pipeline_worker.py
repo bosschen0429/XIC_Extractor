@@ -4,8 +4,8 @@ import pytest
 
 from gui.workers.pipeline_worker import PipelineWorker
 from xic_extractor.config import ConfigError, ExtractionConfig, Target
+from xic_extractor.evidence.neutral_loss import NLResult
 from xic_extractor.extractor import ExtractionResult, FileResult, RunOutput
-from xic_extractor.neutral_loss import NLResult
 from xic_extractor.raw_reader import RawReaderError
 from xic_extractor.signal_processing import PeakDetectionResult, PeakResult
 
