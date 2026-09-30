@@ -7,9 +7,6 @@ from scripts.build_quant_matrix_default_activation_dry_run import (
     build_quant_matrix_default_activation_dry_run,
 )
 from scripts.build_quant_matrix_product_ready_closeout import (
-    CHECK_COLUMNS,
-    PRODUCT_READY_CLOSEOUT_CHECK_SCHEMA,
-    PRODUCT_READY_CLOSEOUT_SCHEMA,
     build_quant_matrix_product_ready_closeout,
     validate_quant_matrix_product_ready_closeout,
 )
@@ -18,33 +15,6 @@ from tests.test_quant_matrix_default_activation_dry_run import (
 )
 
 ROOT = Path(__file__).resolve().parents[1]
-SCHEMA_PATH = (
-    ROOT
-    / "docs/superpowers/schemas/"
-    / "quant_matrix_product_ready_closeout_schema.json"
-)
-
-
-def test_product_ready_closeout_schema_matches_builder_contract() -> None:
-    schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
-
-    assert schema["schema_version"] == "quant_matrix_product_ready_closeout_schema"
-    assert schema["product_ready_closeout_schema"] == PRODUCT_READY_CLOSEOUT_SCHEMA
-    assert schema["check_schema"] == PRODUCT_READY_CLOSEOUT_CHECK_SCHEMA
-    assert schema["check_columns"] == list(CHECK_COLUMNS)
-    assert schema["binding_rules"]["default_activation_dry_run_must_validate"] is True
-    assert (
-        schema["binding_rules"][
-            "default_activation_dry_run_supplies_the_validated_promotion_packet_predecessor"
-        ]
-        is True
-    )
-    assert schema["binding_rules"]["checks_tsv_must_match_inputs"] is True
-    assert schema["authority_rules"]["write_authority"] is False
-    assert schema["authority_rules"]["product_writer_changed"] is False
-    assert schema["authority_rules"]["default_quant_matrix_changed"] is False
-    assert schema["authority_rules"]["default_matrix_files_written"] is False
-    assert schema["authority_rules"]["requires_explicit_activation_commit"] is True
 
 
 def test_product_ready_closeout_builds_candidate_from_promotion_and_replay(

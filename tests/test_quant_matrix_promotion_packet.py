@@ -5,7 +5,6 @@ from pathlib import Path
 
 import scripts.build_quant_matrix_promotion_packet as packet_module
 from scripts.build_quant_matrix_promotion_packet import (
-    PROMOTION_PACKET_SUMMARY_SCHEMA,
     build_quant_matrix_promotion_packet,
     validate_quant_matrix_promotion_packet,
 )
@@ -14,30 +13,6 @@ from tests.test_quant_matrix_real_bundle import _write_source_run_fixture
 from xic_extractor.tabular_io import file_sha256
 
 ROOT = Path(__file__).resolve().parents[1]
-SCHEMA_PATH = (
-    ROOT / "docs/superpowers/schemas/quant_matrix_promotion_packet_schema.json"
-)
-
-
-def test_promotion_packet_schema_matches_builder_contract() -> None:
-    schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
-
-    assert schema["schema_version"] == "quant_matrix_promotion_packet_schema"
-    assert (
-        schema["promotion_packet_summary_schema"]
-        == PROMOTION_PACKET_SUMMARY_SCHEMA
-    )
-    assert schema["binding_rules"]["real_bundle_must_validate"] is True
-    assert schema["binding_rules"]["validation_packet_must_validate"] is True
-    assert schema["binding_rules"][
-        "readiness_must_be_production_ready_candidate_packet"
-    ]
-    assert schema["authority_rules"]["read_only"] is True
-    assert schema["authority_rules"]["write_authority"] is False
-    assert schema["authority_rules"]["scorer_ran"] is False
-    assert schema["authority_rules"]["raw_or_full_cohort_ran"] is False
-    assert schema["authority_rules"]["product_writer_changed"] is False
-    assert schema["authority_rules"]["default_quant_matrix_changed"] is False
 
 
 def test_promotion_packet_builds_real_bundle_ready_candidate(

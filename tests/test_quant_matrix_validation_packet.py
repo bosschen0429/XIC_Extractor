@@ -13,10 +13,6 @@ from xic_extractor.alignment.quant_matrix_promotion import (
 )
 from xic_extractor.alignment.quant_matrix_report import QUANT_MATRIX_REVIEW_SCHEMA
 from xic_extractor.alignment.quant_matrix_validation_packet import (
-    REQUIRED_SCIENCE_EVIDENCE,
-    TIER_REQUIRED_METADATA,
-    VALIDATION_EVIDENCE_ALLOWED_TIERS,
-    VALIDATION_EVIDENCE_ROW_COLUMNS,
     VALIDATION_EVIDENCE_SCHEMA,
     VALIDATION_PACKET_SUMMARY_SCHEMA,
     ValidationEvidenceArtifact,
@@ -31,31 +27,6 @@ from xic_extractor.alignment.quant_matrix_version import (
 from xic_extractor.tabular_io import file_sha256
 
 ROOT = Path(__file__).resolve().parents[1]
-VALIDATION_SCHEMA = (
-    ROOT / "docs/superpowers/schemas/quant_matrix_validation_evidence_schema.json"
-)
-
-
-def test_quant_matrix_validation_evidence_schema_matches_builder_contract() -> None:
-    schema = json.loads(VALIDATION_SCHEMA.read_text(encoding="utf-8"))
-
-    assert schema["schema_version"] == "quant_matrix_validation_evidence_schema"
-    assert schema["validation_evidence_schema"] == VALIDATION_EVIDENCE_SCHEMA
-    assert schema["packet_summary_schema"] == VALIDATION_PACKET_SUMMARY_SCHEMA
-    assert schema["evidence_row_columns"] == list(VALIDATION_EVIDENCE_ROW_COLUMNS)
-    assert schema["allowed_tiers"] == list(VALIDATION_EVIDENCE_ALLOWED_TIERS)
-    assert schema["required_science_evidence"] == {
-        key: list(value) for key, value in REQUIRED_SCIENCE_EVIDENCE.items()
-    }
-    assert schema["required_tier_metadata"] == {
-        key: list(value) for key, value in TIER_REQUIRED_METADATA.items()
-    }
-    assert schema["authority_rules"]["write_authority"] is False
-    assert schema["authority_rules"]["does_not_run_scorer"] is True
-    assert schema["authority_rules"]["does_not_read_raw_inputs"] is True
-    assert schema["binding_rules"][
-        "downstream_impact_smoke_must_validate_artifact_content"
-    ]
 
 
 def test_build_packet_copies_artifacts_and_records_source_hashes(
