@@ -39,17 +39,6 @@ metadata_output = Path(sys.argv[3])
 sys.path.insert(0, str(target))
 
 from xic_extractor.alignment import quantitative_projection_authority as owner
-from xic_extractor.alignment import _completion_receipt as receipt
-from xic_extractor.alignment import _completion_receipt_native as native
-
-if not Path(native.__file__).resolve().is_relative_to(target):
-    raise RuntimeError("native receipt was not loaded from installed wheel")
-if receipt._native_digest is not native.retained_owner_digest:
-    raise RuntimeError("installed receipt did not select native encoder")
-graph = [None, "receipt", {"a": (1, 2)}]
-if receipt.retained_owner_digest(graph) != receipt._python_retained_owner_digest(graph):
-    raise RuntimeError("installed native receipt differs from Python encoding")
-
 authority = owner.load_quantitative_projection_authority_for_diagnostic()
 module_file = Path(owner.__file__).resolve()
 if not module_file.is_relative_to(target):
@@ -172,14 +161,14 @@ def test_pyinstaller_system_icu_wins_over_foreign_path_dll(monkeypatch, tmp_path
 def authority_packaging_source() -> Iterator[Path]:
     task_output_root = PROJECT_ROOT / "output"
     task_output_root.mkdir(exist_ok=True)
-    # Leave room for isolated build environments and native extension paths.
+    # Leave room for isolated build environments and their package paths.
     temp_root = task_output_root / f"pkg-{uuid.uuid4().hex}"
     temp_root.mkdir()
     try:
         source_root = temp_root / "source"
         source_root.mkdir()
 
-        for filename in ("pyproject.toml", "setup.py", "xic_extractor.spec"):
+        for filename in ("pyproject.toml", "xic_extractor.spec"):
             shutil.copy2(PROJECT_ROOT / filename, source_root / filename)
         for directory in PACKAGING_SOURCE_DIRECTORIES:
             shutil.copytree(

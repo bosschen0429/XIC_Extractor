@@ -545,10 +545,6 @@ def _validate_common_result(
 def _validate_target_result(result: FinalizedTargetApplicationResult) -> None:
     from xic_extractor.alignment.projection.target.post_cell import (
         TargetPostCellProjection,
-        validate_target_post_cell_completion_receipt,
-    )
-    from xic_extractor.alignment.projection.target.pre_cell import (
-        TargetProjectionContractError,
     )
 
     _validate_common_result(
@@ -562,10 +558,6 @@ def _validate_target_result(result: FinalizedTargetApplicationResult) -> None:
         raise ApplicationResultContractError(
             "Target application result requires an exact completed Target projection"
         )
-    try:
-        validate_target_post_cell_completion_receipt(result.completed_projection)
-    except TargetProjectionContractError as exc:
-        raise ApplicationResultContractError(str(exc)) from exc
     projection = result.completed_projection
     pre_cell = projection.pre_cell_projection
     core = result.scientific_core

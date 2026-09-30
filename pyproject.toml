@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=69", "wheel", "Cython>=3.1,<4"]
+requires = ["setuptools>=69", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -48,16 +48,9 @@ include = ["gui*", "scripts*", "tools*", "xic_extractor*", "xic_inspector*"]
 exclude = ["tests*"]
 
 [tool.setuptools.package-data]
-"xic_extractor.alignment" = ["data/quantitative_projection_authority.json", "*.pyx"]
+"xic_extractor.alignment" = ["data/quantitative_projection_authority.json"]
 "xic_extractor.presets.data" = ["*.toml"]
 "xic_extractor.discovery" = ["data/*"]
-
-[tool.uv]
-cache-keys = [
-    { file = "pyproject.toml" },
-    { file = "setup.py" },
-    { file = "xic_extractor/alignment/_completion_receipt_native.pyx" },
-]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
