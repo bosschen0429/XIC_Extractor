@@ -17,10 +17,10 @@ XIC_Extractor/
 ├── xic_extractor/               分析產品的實作
 │   ├── configuration/          載入設定與 target；驗證設定值
 │   ├── presets/                方法配方與綁定
-│   ├── applications/           產品政策與其結果模型
-│   │   └── targeted/          計數、角色例外與 review 原因
+│   ├── applications/           產品流程組合、政策與其結果模型
+│   │   └── targeted/          正式 Targeted application、計數與 review 原因
 │   ├── discovery/              從量測資料找候選及其證據
-│   ├── extraction/             Targeted 流程、擷取工作與保留的 Untargeted 執行 adapter
+│   ├── extraction/             Targeted 擷取／workflow adapter 與保留的 Untargeted 執行 adapter
 │   ├── peak_detection/         單次觀察、峰假設、選擇與積分
 │   ├── alignment/              跨樣本組合、Backfill、格值決策及其交付 adapter
 │   │   ├── cross_sample/       跨樣本關聯

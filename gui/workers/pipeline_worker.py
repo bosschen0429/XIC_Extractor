@@ -7,13 +7,11 @@ from PyQt6.QtCore import QThread, pyqtSignal
 
 from xic_extractor import config as config_module
 from xic_extractor import extractor
-from xic_extractor.config import ConfigError, ExtractionConfig, Target
-from xic_extractor.extraction.targeted_diagnostic_application import (
+from xic_extractor.applications.targeted.application import (
     build_canonical_targeted_application_service,
-)
-from xic_extractor.extraction.targeted_service import (
     build_targeted_application_request,
 )
+from xic_extractor.config import ConfigError, ExtractionConfig, Target
 from xic_extractor.extractor import ExtractionResult, RunOutput
 from xic_extractor.output.method_manifest import MethodManifestContext
 from xic_extractor.raw_reader import RawReaderError

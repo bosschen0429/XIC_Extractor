@@ -20,17 +20,21 @@ from xic_extractor.execution_runtime_owner import (
     RuntimeFinalizationReceipt,
     RuntimeTelemetryProvider,
 )
-from xic_extractor.rt_prior_library import LibraryEntry
-
-from .targeted_inputs import resolve_model_selection_expected_diff_approvals
-from .targeted_runtime_adapter import (
+from xic_extractor.extraction.targeted_inputs import (
+    resolve_model_selection_expected_diff_approvals,
+)
+from xic_extractor.extraction.targeted_runtime_adapter import (
     TargetedRuntimeAdapterError,
     TargetedRuntimeLifecycleApplicationResult,
     TargetedRuntimeWorkerBatch,
     execute_targeted_runtime_lifecycle,
 )
+from xic_extractor.rt_prior_library import LibraryEntry
 
 if TYPE_CHECKING:
+    from xic_extractor.extraction.targeted_production_workflow import (
+        TargetedProductionInputSnapshot,
+    )
     from xic_extractor.extractor import RunOutput
     from xic_extractor.peak_detection.model_selection import (
         ExpectedDiffApprovalRecord,
@@ -40,8 +44,6 @@ if TYPE_CHECKING:
         ProcessingRequestIdentity,
     )
     from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
-
-    from .targeted_production_workflow import TargetedProductionInputSnapshot
 
 
 class TargetedRunner(Protocol):
@@ -139,13 +141,12 @@ class TargetedApplicationService:
         resolved_request = _isolate_application_request(
             _resolve_application_request(request)
         )
-        from xic_extractor.processing_identity import FingerprintCancelledError
-
-        from .targeted_production_workflow import (
+        from xic_extractor.extraction.targeted_production_workflow import (
             complete_prepared_targeted_production_workflow,
             prepare_targeted_production_workflow,
             snapshot_targeted_production_inputs,
         )
+        from xic_extractor.processing_identity import FingerprintCancelledError
 
         try:
             input_snapshot = snapshot_targeted_production_inputs(resolved_request)
@@ -196,7 +197,9 @@ class TargetedApplicationService:
                 active_output=active_output,
                 finalized_results=finalized_results,
             )
-        from .targeted_output_boundary import publish_targeted_outputs
+        from xic_extractor.extraction.targeted_output_boundary import (
+            publish_targeted_outputs,
+        )
 
         publication = publish_targeted_outputs(
             resolved_request,
@@ -263,6 +266,7 @@ class TargetedApplicationService:
             telemetry_provider=telemetry_provider,
             finalization_persister=finalization_persister,
         )
+
 
 def validate_finalized_result_population(
     request: TargetedApplicationRequest,
@@ -413,3 +417,11 @@ def _isolate_application_request(
         ),
         method_manifest_context=deepcopy(request.method_manifest_context),
     )
+
+
+def build_canonical_targeted_application_service(
+    runner: TargetedRunner,
+) -> TargetedApplicationService:
+    """Build the formal Targeted application for Python, CLI, and GUI."""
+
+    return TargetedApplicationService(runner)

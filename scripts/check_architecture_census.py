@@ -109,7 +109,7 @@ RUNTIME_CONSUMER_PATHS = frozenset(
     {
         "xic_extractor/alignment/runtime_adapter.py",
         "xic_extractor/extraction/targeted_runtime_adapter.py",
-        "xic_extractor/extraction/targeted_service.py",
+        "xic_extractor/applications/targeted/application.py",
     }
 )
 RUNTIME_AUTHORITY_MODULES = frozenset(

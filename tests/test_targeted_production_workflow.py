@@ -9,6 +9,9 @@ from xic_extractor.alignment import workflow as alignment_workflow
 from xic_extractor.alignment.result.application_result import (
     FinalizedTargetApplicationResult,
 )
+from xic_extractor.applications.targeted.application import (
+    build_targeted_application_request,
+)
 from xic_extractor.applications.targeted.product_model import (
     TargetedProductContext,
 )
@@ -32,7 +35,6 @@ from xic_extractor.extraction.targeted_inputs import (
 from xic_extractor.extraction.targeted_production_workflow import (
     execute_targeted_production_workflow,
 )
-from xic_extractor.extraction.targeted_service import build_targeted_application_request
 from xic_extractor.extractor import ExtractionResult, FileResult, RunOutput
 from xic_extractor.neutral_loss import CandidateMS2Evidence, MS2ProductEvidence
 from xic_extractor.peak_detection import capture as capture_owner

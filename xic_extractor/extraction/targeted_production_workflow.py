@@ -22,6 +22,10 @@ from xic_extractor.alignment.workflow import (
     WorkflowRuntimeInvocation,
     execute_alignment_workflow,
 )
+from xic_extractor.applications.targeted.application import (
+    FinalizedTargetProductionResult,
+    TargetedApplicationRequest,
+)
 from xic_extractor.config import ConfigError, ExtractionConfig, Target
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
@@ -56,10 +60,6 @@ from xic_extractor.extraction.targeted_inputs import (
     build_targeted_processing_request_identity,
     resolve_targeted_inputs,
     resolve_targeted_raw_paths,
-)
-from xic_extractor.extraction.targeted_service import (
-    FinalizedTargetProductionResult,
-    TargetedApplicationRequest,
 )
 from xic_extractor.extractor import ExtractionResult, FileResult, RunOutput
 from xic_extractor.mass_accuracy import neutral_loss_match
