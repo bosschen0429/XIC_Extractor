@@ -1388,10 +1388,10 @@ def test_alignment_uses_configured_recovery_groups(tmp_path, monkeypatch):
 def _assert_alignment_uses_configured_recovery_groups(
     tmp_path, monkeypatch, paths, raws, candidates, kwargs, settings, peak_config
 ):
-    from xic_extractor.alignment.csv_io import DiscoveryBatchInput
     from xic_extractor.alignment.untargeted_finalized_matrix import (
         project_completed_untarget_batch_writer_inputs,
     )
+    from xic_extractor.discovery.csv_reader import DiscoveryBatchInput
     from xic_extractor.extraction import untargeted_execution as bounded_runtime
     from xic_extractor.extraction.untargeted_alignment import (
         complete_untargeted_alignment,

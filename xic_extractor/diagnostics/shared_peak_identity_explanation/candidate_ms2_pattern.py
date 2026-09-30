@@ -9,7 +9,7 @@ from typing import Protocol
 
 from xic_extractor.acquisition.ms2_windows import acquire_ms2_window
 from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.alignment.csv_io import (
+from xic_extractor.discovery.csv_reader import (
     DiscoveryBatchInput,
     read_discovery_batch_index,
     read_discovery_candidates_csv,

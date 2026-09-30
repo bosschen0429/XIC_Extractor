@@ -12,8 +12,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 
-from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.alignment.ms1_index_source import (
+from xic_extractor.alignment.config import (
+    AlignmentConfig,
     BackfillXicBackend,
     OwnerBuildXicBackend,
 )

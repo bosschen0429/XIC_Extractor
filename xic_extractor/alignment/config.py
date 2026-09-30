@@ -5,6 +5,8 @@ from dataclasses import dataclass
 from typing import Literal
 
 ReviewPriority = Literal["HIGH", "MEDIUM", "LOW"]
+OwnerBuildXicBackend = Literal["raw", "raw_superwindow", "ms1_index"]
+BackfillXicBackend = Literal["raw", "ms1_index", "ms1_index_hybrid"]
 
 
 @dataclass(frozen=True)

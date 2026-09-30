@@ -30,7 +30,6 @@ from tests.test_untargeted_cid_nl_real_data_runtime import (
     _install_runtime_raws,
 )
 from xic_extractor.alignment import AlignmentConfig
-from xic_extractor.alignment.csv_io import read_discovery_batch_index
 from xic_extractor.applications.untargeted.application import (
     AlignmentProcessExecutionError,
 )
@@ -38,6 +37,7 @@ from xic_extractor.configuration.signal_processing_profile import (
     resolve_signal_processing_profile,
 )
 from xic_extractor.discovery import pipeline as discovery_pipeline
+from xic_extractor.discovery.csv_reader import read_discovery_batch_index
 from xic_extractor.discovery.physical_fact_persistence import (
     read_discovery_physical_fact_records,
 )
@@ -1147,7 +1147,7 @@ def test_mixed_target_list_only_supplies_istds_to_untargeted_alignment(
     tmp_path,
     monkeypatch,
 ):
-    import xic_extractor.alignment.raw_sources as raw_sources
+    import xic_extractor.acquisition.raw_paths as raw_sources
     from xic_extractor.configuration.targets import read_targets
 
     source = Path(__file__).parents[1] / "config" / "targets.example.csv"

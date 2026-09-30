@@ -15,17 +15,17 @@ from pathlib import Path
 from typing import cast, final
 
 from xic_extractor.alignment.backfill_peak_fact import BackfillWindowStrategy
-from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.alignment.csv_io import (
-    DiscoveryBatchInput,
-    read_discovery_batch_index,
-)
-from xic_extractor.alignment.ms1_index_source import (
+from xic_extractor.alignment.config import (
+    AlignmentConfig,
     BackfillXicBackend,
     OwnerBuildXicBackend,
 )
 from xic_extractor.discovery.batch_contract import (
     DISCOVERY_BATCH_INDEX_SCHEMA_VERSION,
+)
+from xic_extractor.discovery.csv_reader import (
+    DiscoveryBatchInput,
+    read_discovery_batch_index,
 )
 from xic_extractor.discovery.models import DiscoverySettings
 from xic_extractor.output.alignment.artifact_write_receipts import (

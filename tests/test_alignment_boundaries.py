@@ -17,10 +17,10 @@ def test_alignment_exports_plan2_public_api_names():
     } == set(alignment.__all__)
 
 
-def test_alignment_csv_and_tsv_modules_do_not_import_raw_reader():
+def test_discovery_csv_and_alignment_tsv_do_not_import_raw_reader():
     package_root = Path(__file__).parents[1] / "xic_extractor"
     for relative_path in (
-        "alignment/csv_io.py",
+        "discovery/csv_reader.py",
         "output/alignment/tsv_writer.py",
     ):
         path = package_root / relative_path
@@ -35,24 +35,6 @@ def test_alignment_csv_and_tsv_modules_do_not_import_raw_reader():
         assert violations == []
 
 
-def test_alignment_raw_sources_do_not_import_raw_reader():
-    path = (
-        Path(__file__).parents[1]
-        / "xic_extractor"
-        / "alignment"
-        / "raw_sources.py"
-    )
-    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-    raw_reader_imports = [
-        node
-        for node in ast.walk(tree)
-        if any(
-            imported_name.startswith("xic_extractor.raw_reader")
-            for imported_name in _imported_module_names(node)
-        )
-    ]
-
-    assert raw_reader_imports == []
 
 
 def test_alignment_ownership_module_stays_domain_focused():

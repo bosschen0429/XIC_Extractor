@@ -16,12 +16,12 @@ from xic_extractor.acquisition_contract import (
     _mint_raw_acquisition_session_receipt,
     mint_raw_acquisition_session_capability,
 )
-from xic_extractor.alignment.csv_io import (
+from xic_extractor.config import ExtractionConfig
+from xic_extractor.diagnostics.timing import TimingRecord, TimingRecorder
+from xic_extractor.discovery.csv_reader import (
     read_discovery_batch_index,
     read_owner_bound_discovery_candidates_csv,
 )
-from xic_extractor.config import ExtractionConfig
-from xic_extractor.diagnostics.timing import TimingRecord, TimingRecorder
 from xic_extractor.discovery.evidence_config import (
     DEFAULT_EVIDENCE_PROFILE,
     DiscoveryEvidenceProfile,

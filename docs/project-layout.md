@@ -20,9 +20,9 @@ XIC_Extractor/
 │   ├── applications/           產品流程組合、政策與其結果模型
 │   │   ├── targeted/          正式 Targeted application、計數與 review 原因
 │   │   └── untargeted/        Untargeted 執行、結果發布與暫存生命週期
-│   ├── acquisition/           有界量測資料擷取 adapter
+│   ├── acquisition/           量測來源定位與有界資料擷取 adapter
 │   ├── evidence/              已擷取資料的純科學證據解讀
-│   ├── discovery/              從量測資料找候選及其證據
+│   ├── discovery/              候選探索、證據及 receipt-bound CSV 載入
 │   ├── extraction/             Targeted 擷取／workflow adapter 與保留的 Untargeted 執行 adapter
 │   ├── peak_detection/         單次觀察、峰假設、選擇與積分
 │   ├── alignment/              跨樣本組合、Backfill、格值決策及其交付 adapter

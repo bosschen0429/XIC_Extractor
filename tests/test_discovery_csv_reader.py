@@ -13,13 +13,13 @@ def test_owner_bound_csv_preserves_final_provisional_decision(
     provisional: bool,
     seed_count: int,
 ) -> None:
-    from xic_extractor.alignment.csv_io import (
-        read_discovery_candidates_csv,
-        read_owner_bound_discovery_candidates_csv,
-    )
     from xic_extractor.discovery.batch_contract import (
         mint_discovery_candidate_universe_receipt,
         validate_discovery_candidate_universe,
+    )
+    from xic_extractor.discovery.csv_reader import (
+        read_discovery_candidates_csv,
+        read_owner_bound_discovery_candidates_csv,
     )
     from xic_extractor.discovery.csv_writer import write_discovery_candidates_csv
     from xic_extractor.processing_identity import (
@@ -66,7 +66,7 @@ def test_owner_bound_csv_preserves_final_provisional_decision(
 def test_candidate_csv_rejects_invalid_provisional_flag(
     tmp_path: Path, value: str
 ) -> None:
-    from xic_extractor.alignment.csv_io import read_discovery_candidates_csv
+    from xic_extractor.discovery.csv_reader import read_discovery_candidates_csv
 
     path = tmp_path / "candidates.csv"
     columns = tuple(c for c in DISCOVERY_CANDIDATE_COLUMNS if c != "is_provisional")
@@ -80,7 +80,7 @@ def test_candidate_csv_rejects_invalid_provisional_flag(
 def test_candidate_csv_requires_current_provisional_column(
     tmp_path: Path,
 ) -> None:
-    from xic_extractor.alignment.csv_io import read_discovery_candidates_csv
+    from xic_extractor.discovery.csv_reader import read_discovery_candidates_csv
 
     path = tmp_path / "candidates.csv"
     columns = tuple(c for c in DISCOVERY_CANDIDATE_COLUMNS if c != "is_provisional")
@@ -94,7 +94,7 @@ def test_candidate_csv_requires_current_provisional_column(
 def test_read_discovery_batch_index_preserves_order_and_resolves_candidate_paths(
     tmp_path: Path,
 ) -> None:
-    from xic_extractor.alignment.csv_io import read_discovery_batch_index
+    from xic_extractor.discovery.csv_reader import read_discovery_batch_index
 
     index_path = tmp_path / "batch" / "discovery_batch_index.csv"
     index_path.parent.mkdir()
@@ -133,7 +133,7 @@ def test_read_discovery_batch_index_preserves_order_and_resolves_candidate_paths
 
 
 def test_read_discovery_batch_index_accepts_utf8_bom(tmp_path: Path) -> None:
-    from xic_extractor.alignment.csv_io import read_discovery_batch_index
+    from xic_extractor.discovery.csv_reader import read_discovery_batch_index
 
     index_path = tmp_path / "discovery_batch_index.csv"
     index_path.write_text(
@@ -154,7 +154,7 @@ def test_read_discovery_batch_index_accepts_utf8_bom(tmp_path: Path) -> None:
 def test_read_discovery_batch_index_unescapes_known_formula_fields(
     tmp_path: Path,
 ) -> None:
-    from xic_extractor.alignment.csv_io import read_discovery_batch_index
+    from xic_extractor.discovery.csv_reader import read_discovery_batch_index
 
     index_path = tmp_path / "discovery_batch_index.csv"
     _write_csv(
@@ -188,7 +188,7 @@ def test_read_discovery_batch_index_unescapes_known_formula_fields(
 def test_read_discovery_candidates_csv_parses_full_candidate_row(
     tmp_path: Path,
 ) -> None:
-    from xic_extractor.alignment.csv_io import read_discovery_candidates_csv
+    from xic_extractor.discovery.csv_reader import read_discovery_candidates_csv
 
     csv_path = tmp_path / "discovery_candidates.csv"
     _write_csv(csv_path, DISCOVERY_CANDIDATE_COLUMNS, [_candidate_row()])
@@ -229,7 +229,7 @@ def test_read_discovery_candidates_csv_parses_full_candidate_row(
 def test_read_discovery_candidates_csv_rejects_partial_successor_schema(
     tmp_path: Path,
 ) -> None:
-    from xic_extractor.alignment.csv_io import read_discovery_candidates_csv
+    from xic_extractor.discovery.csv_reader import read_discovery_candidates_csv
 
     fieldnames = tuple(
         column
@@ -254,7 +254,7 @@ def test_read_discovery_candidates_csv_rejects_partial_successor_schema(
 def test_read_discovery_candidates_preserves_multi_tag_evidence(
     tmp_path: Path,
 ) -> None:
-    from xic_extractor.alignment.csv_io import read_discovery_candidates_csv
+    from xic_extractor.discovery.csv_reader import read_discovery_candidates_csv
 
     row = _candidate_row(
         selected_tag_count="3",
@@ -279,7 +279,7 @@ def test_read_discovery_candidates_preserves_multi_tag_evidence(
 def test_read_discovery_candidates_accepts_writer_rounded_row_identity_mz(
     tmp_path: Path,
 ) -> None:
-    from xic_extractor.alignment.csv_io import read_discovery_candidates_csv
+    from xic_extractor.discovery.csv_reader import read_discovery_candidates_csv
 
     row = _candidate_row(
         candidate_id="Sample_1#6095@mz1000.377783_p884.330383",
@@ -302,7 +302,7 @@ def test_read_discovery_candidates_accepts_writer_rounded_row_identity_mz(
 def test_discovery_writer_to_alignment_reader_roundtrips_row_identity(
     tmp_path: Path,
 ) -> None:
-    from xic_extractor.alignment.csv_io import read_discovery_candidates_csv
+    from xic_extractor.discovery.csv_reader import read_discovery_candidates_csv
     from xic_extractor.discovery.csv_writer import write_discovery_candidates_csv
     from xic_extractor.discovery.models import DiscoveryCandidate, DiscoverySeed
 
@@ -374,7 +374,7 @@ def test_discovery_writer_to_alignment_reader_roundtrips_row_identity(
 def test_read_discovery_candidates_rejects_mz_just_outside_display_tolerance(
     tmp_path: Path,
 ) -> None:
-    from xic_extractor.alignment.csv_io import read_discovery_candidates_csv
+    from xic_extractor.discovery.csv_reader import read_discovery_candidates_csv
 
     row = _candidate_row(
         candidate_id="Sample_1#6095@mz1000.386_p884.330383",
@@ -396,7 +396,7 @@ def test_read_discovery_candidates_rejects_mz_just_outside_display_tolerance(
 def test_read_discovery_candidates_csv_unescapes_known_formula_fields(
     tmp_path: Path,
 ) -> None:
-    from xic_extractor.alignment.csv_io import read_discovery_candidates_csv
+    from xic_extractor.discovery.csv_reader import read_discovery_candidates_csv
 
     row = _candidate_row(
         candidate_id="'=Sample#6095@mz500.123456_p384.076056",
@@ -417,7 +417,7 @@ def test_read_discovery_candidates_csv_unescapes_known_formula_fields(
 
 
 def test_readers_reject_missing_required_columns(tmp_path: Path) -> None:
-    from xic_extractor.alignment.csv_io import (
+    from xic_extractor.discovery.csv_reader import (
         read_discovery_batch_index,
         read_discovery_candidates_csv,
     )
@@ -439,7 +439,7 @@ def test_readers_reject_missing_required_columns(tmp_path: Path) -> None:
 def test_read_discovery_candidates_csv_rejects_stale_scan_only_candidate_id(
     tmp_path: Path,
 ) -> None:
-    from xic_extractor.alignment.csv_io import read_discovery_candidates_csv
+    from xic_extractor.discovery.csv_reader import read_discovery_candidates_csv
 
     csv_path = tmp_path / "discovery_candidates.csv"
     _write_csv(
@@ -466,7 +466,7 @@ def test_read_discovery_candidates_csv_rejects_candidate_id_row_mismatch(
     overrides: dict[str, str],
     message: str,
 ) -> None:
-    from xic_extractor.alignment.csv_io import read_discovery_candidates_csv
+    from xic_extractor.discovery.csv_reader import read_discovery_candidates_csv
 
     csv_path = tmp_path / "discovery_candidates.csv"
     _write_csv(csv_path, DISCOVERY_CANDIDATE_COLUMNS, [_candidate_row(**overrides)])
@@ -478,7 +478,7 @@ def test_read_discovery_candidates_csv_rejects_candidate_id_row_mismatch(
 def test_read_discovery_candidates_csv_rejects_duplicate_candidate_id(
     tmp_path: Path,
 ) -> None:
-    from xic_extractor.alignment.csv_io import read_discovery_candidates_csv
+    from xic_extractor.discovery.csv_reader import read_discovery_candidates_csv
 
     csv_path = tmp_path / "discovery_candidates.csv"
     _write_csv(
@@ -497,7 +497,7 @@ def test_read_discovery_candidates_csv_rejects_duplicate_candidate_id(
 def test_read_discovery_candidates_csv_rejects_invalid_candidate_state(
     tmp_path: Path,
 ) -> None:
-    from xic_extractor.alignment.csv_io import read_discovery_candidates_csv
+    from xic_extractor.discovery.csv_reader import read_discovery_candidates_csv
 
     csv_path = tmp_path / "discovery_candidates.csv"
     _write_csv(
@@ -521,7 +521,7 @@ def test_read_discovery_candidates_csv_rejects_blank_feature_row_id_for_ms1_rows
     tmp_path: Path,
     state: str,
 ) -> None:
-    from xic_extractor.alignment.csv_io import read_discovery_candidates_csv
+    from xic_extractor.discovery.csv_reader import read_discovery_candidates_csv
 
     csv_path = tmp_path / "discovery_candidates.csv"
     _write_csv(
@@ -542,7 +542,7 @@ def test_read_discovery_candidates_csv_rejects_blank_feature_row_id_for_ms1_rows
 def test_read_discovery_candidates_csv_rejects_ms1_state_without_ms1_peak(
     tmp_path: Path,
 ) -> None:
-    from xic_extractor.alignment.csv_io import read_discovery_candidates_csv
+    from xic_extractor.discovery.csv_reader import read_discovery_candidates_csv
 
     csv_path = tmp_path / "discovery_candidates.csv"
     _write_csv(
@@ -574,7 +574,7 @@ def test_read_discovery_candidates_csv_rejects_mismatched_ms1_feature_row_id(
     tmp_path: Path,
     ms1_feature_row_id: str,
 ) -> None:
-    from xic_extractor.alignment.csv_io import read_discovery_candidates_csv
+    from xic_extractor.discovery.csv_reader import read_discovery_candidates_csv
 
     csv_path = tmp_path / "discovery_candidates.csv"
     _write_csv(
@@ -590,7 +590,7 @@ def test_read_discovery_candidates_csv_rejects_mismatched_ms1_feature_row_id(
 def test_read_discovery_candidates_csv_rejects_orphan_state_with_ms1_peak(
     tmp_path: Path,
 ) -> None:
-    from xic_extractor.alignment.csv_io import read_discovery_candidates_csv
+    from xic_extractor.discovery.csv_reader import read_discovery_candidates_csv
 
     csv_path = tmp_path / "discovery_candidates.csv"
     _write_csv(
@@ -611,7 +611,7 @@ def test_read_discovery_candidates_csv_rejects_orphan_state_with_ms1_peak(
 def test_read_discovery_candidates_csv_accepts_orphan_without_feature_row_id(
     tmp_path: Path,
 ) -> None:
-    from xic_extractor.alignment.csv_io import read_discovery_candidates_csv
+    from xic_extractor.discovery.csv_reader import read_discovery_candidates_csv
 
     csv_path = tmp_path / "discovery_candidates.csv"
     _write_csv(
@@ -643,7 +643,7 @@ def test_read_discovery_candidates_csv_accepts_orphan_without_feature_row_id(
 def test_read_discovery_candidates_rejects_duplicate_ms1_feature_row_id(
     tmp_path: Path,
 ) -> None:
-    from xic_extractor.alignment.csv_io import read_discovery_candidates_csv
+    from xic_extractor.discovery.csv_reader import read_discovery_candidates_csv
 
     csv_path = tmp_path / "discovery_candidates.csv"
     _write_csv(
@@ -677,7 +677,7 @@ def test_read_discovery_candidates_csv_rejects_invalid_basis_enum(
     column: str,
     value: str,
 ) -> None:
-    from xic_extractor.alignment.csv_io import read_discovery_candidates_csv
+    from xic_extractor.discovery.csv_reader import read_discovery_candidates_csv
 
     csv_path = tmp_path / "discovery_candidates.csv"
     _write_csv(
@@ -704,7 +704,7 @@ def test_read_discovery_candidates_csv_rejects_malformed_typed_fields_with_row_n
     column: str,
     value: str,
 ) -> None:
-    from xic_extractor.alignment.csv_io import read_discovery_candidates_csv
+    from xic_extractor.discovery.csv_reader import read_discovery_candidates_csv
 
     row = _candidate_row(**{column: value})
     csv_path = tmp_path / "discovery_candidates.csv"
@@ -718,7 +718,7 @@ def test_discovery_input_source_defers_typed_rows_and_loads_selected_features(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from xic_extractor.alignment import discovery_input_source as source_owner
+    from xic_extractor.discovery import input_source as source_owner
 
     rows = [
         _indexed_candidate_row(
@@ -762,7 +762,7 @@ def test_discovery_input_source_defers_typed_rows_and_loads_selected_features(
 def test_discovery_input_source_selects_only_direct_mixed_review_support(
     tmp_path: Path,
 ) -> None:
-    from xic_extractor.alignment.discovery_input_source import DiscoveryInputSource
+    from xic_extractor.discovery.input_source import DiscoveryInputSource
 
     sample_1_rows = [
         _indexed_candidate_row(
@@ -822,7 +822,7 @@ def test_discovery_input_source_selects_only_direct_mixed_review_support(
 
 
 def test_discovery_input_source_rejects_changed_csv(tmp_path: Path) -> None:
-    from xic_extractor.alignment.discovery_input_source import DiscoveryInputSource
+    from xic_extractor.discovery.input_source import DiscoveryInputSource
 
     row = _indexed_candidate_row(
         tmp_path,
@@ -849,12 +849,12 @@ def _discovery_input_batch(
     root: Path,
     rows_by_sample: dict[str, list[dict[str, str]]],
 ):
-    from xic_extractor.alignment.csv_io import (
-        DiscoveryBatchInput,
-        read_discovery_candidates_csv,
-    )
     from xic_extractor.discovery.batch_contract import (
         mint_discovery_candidate_universe_receipt,
+    )
+    from xic_extractor.discovery.csv_reader import (
+        DiscoveryBatchInput,
+        read_discovery_candidates_csv,
     )
     from xic_extractor.processing_identity import build_acquisition_source_identity
 

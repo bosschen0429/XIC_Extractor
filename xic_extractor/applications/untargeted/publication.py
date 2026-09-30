@@ -8,7 +8,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.alignment.discovery_input_source import DiscoveryInputSource
 from xic_extractor.alignment.drift_evidence import KnownIstdReference
 from xic_extractor.alignment.owner_build_route_receipt import OwnerBuildRouteReceipt
 from xic_extractor.diagnostics.alignment_explanation import EvidenceLocator
@@ -17,6 +16,7 @@ from xic_extractor.diagnostics.alignment_explanation_projection import (
     prepare_alignment_explanation,
 )
 from xic_extractor.diagnostics.timing import TimingRecorder
+from xic_extractor.discovery.input_source import DiscoveryInputSource
 from xic_extractor.discovery.models import DiscoveryCandidate
 from xic_extractor.output.alignment.artifact_write_receipts import (
     AlignmentArtifactFingerprintBatch,

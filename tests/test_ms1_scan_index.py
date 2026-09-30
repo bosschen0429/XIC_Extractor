@@ -100,6 +100,33 @@ def test_extract_index_xic_uses_ppm_window_and_max_intensity() -> None:
     np.testing.assert_allclose(trace.intensity, [20.0, 30.0])
 
 
+def test_extract_index_xic_can_sum_mass_window_intensities() -> None:
+    index = (
+        MS1Scan(
+            scan_number=1,
+            rt=1.0,
+            masses=np.asarray([99.0, 100.0, 101.0], dtype=np.float64),
+            intensities=np.asarray([5.0, 20.0, 10.0], dtype=np.float64),
+        ),
+        MS1Scan(
+            scan_number=3,
+            rt=3.0,
+            masses=np.asarray([99.0, 100.0, 101.0], dtype=np.float64),
+            intensities=np.asarray([15.0, 40.0, 30.0], dtype=np.float64),
+        ),
+    )
+
+    trace = extract_index_xic(
+        _Source(),
+        index,
+        XICRequest(mz=100.0, rt_min=1.0, rt_max=3.0, ppm_tol=10000.0),
+        intensity_mode="sum",
+    )
+
+    np.testing.assert_allclose(trace.rt, [1.0, 3.0])
+    np.testing.assert_allclose(trace.intensity, [35.0, 85.0])
+
+
 def test_build_ms1_scan_index_prefers_segmented_scan_api() -> None:
     class _Header:
         FirstSpectrum = 1

@@ -1,7 +1,6 @@
 import csv
 from pathlib import Path
 
-from xic_extractor.alignment.csv_io import read_discovery_candidates_csv
 from xic_extractor.alignment.edge_scoring import OwnerEdgeEvidence
 from xic_extractor.alignment.matrix import AlignedCell, AlignmentMatrix
 from xic_extractor.alignment.models import AlignmentCluster
@@ -12,6 +11,7 @@ from xic_extractor.discovery.batch_contract import (
     discovery_receipt_index_fields,
     mint_discovery_candidate_universe_receipt,
 )
+from xic_extractor.discovery.csv_reader import read_discovery_candidates_csv
 from xic_extractor.discovery.models import DISCOVERY_CANDIDATE_COLUMNS
 from xic_extractor.processing_identity import build_acquisition_source_identity
 
