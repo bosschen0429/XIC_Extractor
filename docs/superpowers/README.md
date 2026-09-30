@@ -13,10 +13,10 @@ evidence. It is not an implementation-planning or project-history archive.
 
 | Directory | Durable role |
 | --- | --- |
-| `schemas/` | Versioned JSON schemas and authority manifests. |
+| `schemas/` | Checker-consumed schema descriptions; runtime resources follow the consuming package under the [placement rules](../project-layout.md). |
 | `validation/` | Checker-readable validation packets, inventories, compact summaries, and retained evidence. |
 | `fixtures/` | Small test/checker fixtures and expected-output oracles. |
-| `productization/status/` | Stable compatibility keys and productization routing anchors. |
+| `productization/status/` | Current authority manifests, stable compatibility keys, and productization routing anchors. |
 | `productization/evidence/` | Compact machine evidence required by a current productization contract; not phase summaries or handoff archives. |
 | `file-management/` | Current machine-readable file-management contracts only. |
 | `handoffs/` | Ignored local continuation workspace; tracked historical handoffs are not retained. |
