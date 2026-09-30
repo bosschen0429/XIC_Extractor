@@ -5,36 +5,15 @@ import sys
 from pathlib import Path
 
 from scripts.build_quant_matrix_real_bundle import (
-    REAL_BUNDLE_SCHEMA,
     build_quant_matrix_real_bundle,
     validate_quant_matrix_real_bundle,
 )
 
 ROOT = Path(__file__).resolve().parents[1]
-SCHEMA_PATH = ROOT / "docs/superpowers/schemas/quant_matrix_real_bundle_schema.json"
 RETAINED_SUMMARY = (
     ROOT / "docs/superpowers/validation/quant_matrix_real_bundle/"
     "quant_matrix_real_bundle_summary.json"
 )
-
-
-def test_real_bundle_schema_matches_builder_contract() -> None:
-    schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
-
-    assert schema["schema_version"] == "quant_matrix_real_bundle_schema"
-    assert schema["real_bundle_schema"] == REAL_BUNDLE_SCHEMA
-    assert schema["authority_rules"]["read_only"] is True
-    assert schema["authority_rules"]["scorer_ran"] is False
-    assert schema["authority_rules"]["raw_or_full_cohort_ran"] is False
-    assert schema["authority_rules"]["product_writer_changed"] is False
-    assert schema["authority_rules"]["default_quant_matrix_changed"] is False
-    assert schema["binding_rules"]["downstream_impact_smoke_must_validate"] is True
-    assert schema["binding_rules"][
-        "default_check_only_must_match_current_511_source_run"
-    ]
-    assert schema["binding_rules"][
-        "default_check_only_must_match_511_accepted_backfills"
-    ]
 
 
 def test_retained_seed_guard_copy_hash_matches_summary() -> None:

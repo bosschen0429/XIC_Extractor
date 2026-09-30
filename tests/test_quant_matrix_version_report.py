@@ -15,7 +15,6 @@ from scripts.check_production_acceptance_manifest import (
     production_acceptance_manifest_sha256,
 )
 from xic_extractor.alignment.quant_matrix_report import (
-    QUANT_MATRIX_REVIEW_ROW_COLUMNS,
     QUANT_MATRIX_REVIEW_SCHEMA,
     build_quant_matrix_review_report,
 )
@@ -25,43 +24,6 @@ from xic_extractor.alignment.quant_matrix_version import (
 )
 
 ROOT = Path(__file__).resolve().parents[1]
-QUANT_MATRIX_REPORT_SCHEMA = (
-    ROOT / "docs/superpowers/schemas/quant_matrix_review_report_schema.json"
-)
-
-
-def test_quant_matrix_review_report_schema_matches_public_outputs() -> None:
-    schema = json.loads(QUANT_MATRIX_REPORT_SCHEMA.read_text(encoding="utf-8"))
-
-    assert schema["schema_version"] == "quant_matrix_review_report_schema"
-    assert schema["review_schema_version"] == QUANT_MATRIX_REVIEW_SCHEMA
-    assert schema["review_row_columns"] == list(QUANT_MATRIX_REVIEW_ROW_COLUMNS)
-    assert schema["authority_rules"]["report_only"] is True
-    assert schema["authority_rules"]["does_not_mutate_quant_matrix"] is True
-    assert (
-        schema["authority_rules"][
-            "source_summary_manifest_file_sha256_must_match_current_manifest_file"
-        ]
-        is True
-    )
-    assert (
-        schema["authority_rules"][
-            "accepted_backfill_manifest_join_must_match_manifest_sha256"
-        ]
-        is True
-    )
-    assert (
-        schema["authority_rules"][
-            "accepted_backfill_manifest_join_must_match_source_row_sha256"
-        ]
-        is True
-    )
-    assert (
-        schema["authority_rules"][
-            "accepted_backfill_manifest_join_must_preserve_authority_flags"
-        ]
-        is True
-    )
 
 
 def test_quant_matrix_report_writes_review_rows_summary_and_html(

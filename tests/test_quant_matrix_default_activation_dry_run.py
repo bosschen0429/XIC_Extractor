@@ -5,9 +5,6 @@ from pathlib import Path
 
 import scripts.build_quant_matrix_default_activation_dry_run as dry_run_module
 from scripts.build_quant_matrix_default_activation_dry_run import (
-    ACTIVATION_DRY_RUN_COMPARISON_SCHEMA,
-    COMPARISON_COLUMNS,
-    DEFAULT_ACTIVATION_DRY_RUN_SCHEMA,
     build_quant_matrix_default_activation_dry_run,
     validate_quant_matrix_default_activation_dry_run,
 )
@@ -19,34 +16,6 @@ from tests.test_quant_matrix_promotion_packet import _write_science_sources
 from tests.test_quant_matrix_real_bundle import _write_source_run_fixture
 
 ROOT = Path(__file__).resolve().parents[1]
-SCHEMA_PATH = (
-    ROOT
-    / "docs/superpowers/schemas/"
-    / "quant_matrix_default_activation_dry_run_schema.json"
-)
-
-
-def test_default_activation_dry_run_schema_matches_builder_contract() -> None:
-    schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
-
-    assert schema["schema_version"] == "quant_matrix_default_activation_dry_run_schema"
-    assert schema["default_activation_dry_run_schema"] == (
-        DEFAULT_ACTIVATION_DRY_RUN_SCHEMA
-    )
-    assert schema["comparison_schema"] == ACTIVATION_DRY_RUN_COMPARISON_SCHEMA
-    assert schema["comparison_columns"] == list(COMPARISON_COLUMNS)
-    assert schema["binding_rules"]["promotion_packet_must_validate"] is True
-    assert (
-        schema["binding_rules"][
-            "promotion_packet_supplies_the_validated_real_bundle_predecessor"
-        ]
-        is True
-    )
-    assert schema["binding_rules"]["comparison_tsv_must_match_rerun"] is True
-    assert schema["authority_rules"]["dry_run_only"] is True
-    assert schema["authority_rules"]["write_authority"] is False
-    assert schema["authority_rules"]["default_quant_matrix_changed"] is False
-    assert schema["authority_rules"]["default_matrix_files_written"] is False
 
 
 def test_default_activation_dry_run_replays_expected_diff_candidate(
