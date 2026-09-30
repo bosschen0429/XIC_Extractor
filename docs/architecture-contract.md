@@ -310,12 +310,15 @@ numbers are never identifier values. A real runtime phase or scientific name
 remains appropriate when it describes current behavior. Preserve compatibility
 when considering existing names; this guidance does not require unrelated renames.
 
-Method specificity (e.g. CID-NL matching rules, neutral loss thresholds, scan-level
-assertions) is strictly absorbed internally within `discovery/` and method models.
-Downstream orchestration, batch execution, and diagnostic explanations are shared
-system capabilities named by capability (e.g., `untargeted_partition_composition`,
-`untargeted_alignment`, `alignment_explanation`), preventing a single method from
-monopolizing or leaking into shared infrastructure.
+CID-NL is the currently supported Untargeted method. Its input interpretation
+lives in Discovery; typed method subjects and capture authorization live in
+`peak_detection/cid_nl_method_subject.py` and `peak_detection/search_scope.py`.
+Application composition selects these capabilities. Adding another scientific
+method requires its own validated subjects, authorization and evidence adapter;
+it does not require a second scheduling, settlement or output lifecycle. This
+is an explicit extension boundary, not an implemented multi-method registry.
+Shared execution and delivery are named for their capabilities and consume the
+completed domain results rather than selecting CID-NL scientific rules.
 
 ## Diagnostics Contract
 
@@ -323,7 +326,11 @@ monopolizing or leaking into shared infrastructure.
 
 - CLIs parse, validate, and orchestrate only.
 - Reusable loading, classification, models, summaries, plotting, and writers
-  belong in focused package modules.
+  belong in focused `xic_extractor/diagnostics/` packages. Shared-peak identity
+  explanation, Backfill evidence file binding/serialization, and quantitative
+  report/promotion artifacts each keep their related implementation together.
+- Pure Alignment record, claim and quantitative authority models remain with
+  their scientific owners; they do not import diagnostic file readers or writers.
 - Diagnostic writers render; they do not recompute evidence or rescan RAW.
 - Gate diagnostics emit machine-readable status/reason plus a short blocker
   and next action.

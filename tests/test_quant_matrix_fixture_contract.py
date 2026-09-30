@@ -1,16 +1,16 @@
 import json
 from pathlib import Path
 
-from xic_extractor.alignment.quant_matrix_fixture_contract import (
+from xic_extractor.alignment.quant_matrix_version import CELL_PROVENANCE_COLUMNS
+from xic_extractor.diagnostics.quant_matrix.fixture_contract import (
     ROW_UNIVERSE_KEY_COLUMNS,
     validate_fixture_contract,
     write_cell_provenance_contract,
     write_review_rows_contract,
 )
-from xic_extractor.alignment.quant_matrix_report import (
+from xic_extractor.diagnostics.quant_matrix.report import (
     QUANT_MATRIX_REVIEW_ROW_COLUMNS,
 )
-from xic_extractor.alignment.quant_matrix_version import CELL_PROVENANCE_COLUMNS
 from xic_extractor.tabular_io import file_sha256, write_tsv
 
 

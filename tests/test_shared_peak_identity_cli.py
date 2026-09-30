@@ -5,7 +5,7 @@ import hashlib
 from pathlib import Path
 
 from tools.diagnostics.shared_peak_identity_explanation import main
-from xic_extractor.alignment.shared_peak_identity_explanation.schema import (
+from xic_extractor.diagnostics.shared_peak_identity_explanation.schema import (
     ORACLE_COLUMNS,
     ORACLE_SCHEMA_VERSION,
 )
