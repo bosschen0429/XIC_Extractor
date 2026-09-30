@@ -4,7 +4,10 @@ import hashlib
 from collections.abc import Callable, Iterable
 from pathlib import Path
 
-from xic_extractor.acquisition.istd_reference import extract_batch_known_istd_reference
+from xic_extractor.acquisition.istd_reference import (
+    extract_batch_known_istd_reference,
+    read_known_istd_reference,
+)
 from xic_extractor.alignment.backfill_peak_fact import BackfillWindowStrategy
 from xic_extractor.alignment.backfill_peak_fact_provenance import (
     EMPTY_BACKFILL_PEAK_FACT_PROVENANCE_BATCH,
@@ -15,7 +18,6 @@ from xic_extractor.alignment.csv_io import read_discovery_batch_index
 from xic_extractor.alignment.discovery_input_source import DiscoveryInputSource
 from xic_extractor.alignment.drift_evidence import (
     KnownIstdReference,
-    read_known_istd_reference,
 )
 from xic_extractor.alignment.ms1_index_source import (
     BackfillXicBackend,
