@@ -317,11 +317,8 @@ class OwnerPathRuntimeMarker:
                     raise
                 winerror = getattr(exc, "winerror", None)
                 transient_lock_denial = winerror in {32, 33}
-                if (
-                    winerror is None
-                    and exc.errno == errno.EACCES
-                    and lock_path.is_file()
-                ):
+                # A competing owner can remove its lock before this denial is handled.
+                if winerror is None and exc.errno == errno.EACCES:
                     probe_path = lock_path.with_name(
                         f".{lock_path.name}.{time.monotonic_ns()}.probe"
                     )
