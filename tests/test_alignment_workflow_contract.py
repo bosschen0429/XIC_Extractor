@@ -24,7 +24,6 @@ from xic_extractor.alignment.workflow import (
     CompletedUntargetBatchWorkflowResult,
     CompletedUntargetWorkflowResult,
     FailedWorkflowResult,
-    ModeTrackWorkflowArguments,
     TargetWorkflowAdapter,
     TargetWorkflowRequest,
     UntargetWorkflowAdapter,
@@ -125,7 +124,6 @@ def test_public_workflow_surface_is_closed_and_variant_specific() -> None:
     assert {stage.value for stage in WorkflowStage} == {
         "runtime",
         "capture",
-        "mode_track_bootstrap",
         "cross_sample_grouping",
         "scientific_final",
         "pre_cell_projection",
@@ -146,12 +144,6 @@ def test_public_workflow_surface_is_closed_and_variant_specific() -> None:
         "owner_observation",
         "owner_hypothesis",
     )
-    assert tuple(field.name for field in fields(ModeTrackWorkflowArguments)) == (
-        "sample_assessments",
-        "alignment_config",
-        "trajectory_policy",
-        "retain_observation_only_candidates",
-    )
     common_adapter_fields = (
         "capture_inputs",
         "predecessor_cell_observations",
@@ -165,7 +157,7 @@ def test_public_workflow_surface_is_closed_and_variant_specific() -> None:
     )
     assert tuple(field.name for field in fields(UntargetWorkflowAdapter)) == (
         *common_adapter_fields,
-        "mode_track",
+        "sample_assessments",
         "completed_grouping",
         "closed_cell_coverage",
     )

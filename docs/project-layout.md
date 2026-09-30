@@ -26,7 +26,6 @@ XIC_Extractor/
 │   ├── peak_detection/         單次觀察、峰假設、選擇與積分
 │   ├── alignment/              跨樣本組合、Backfill、格值決策及其交付 adapter
 │   │   ├── cross_sample/       跨樣本關聯
-│   │   ├── mode_track/         RT 模式與指定／refinement
 │   │   ├── backfill/           有限度的 observation revisit
 │   │   ├── cell_decision/      每個樣本格的科學決策
 │   │   ├── projection/         Targeted／Untargeted 的前後投影

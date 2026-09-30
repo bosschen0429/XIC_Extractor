@@ -12,17 +12,13 @@ from tests.processing_identity_no_raw_fixture import (
     build_processing_identity_no_raw_fixture,
 )
 from xic_extractor.alignment.config import AlignmentConfig
+from xic_extractor.alignment.grouping_bootstrap import (
+    bootstrap_cid_nl_initial_population,
+)
 from xic_extractor.alignment.hypothesis_owner_adapter import (
     compose_cid_nl_peak_hypotheses_from_assessment,
     owner_from_cid_nl_assessment_support,
     validate_cid_nl_assessment_hypothesis_closure,
-)
-from xic_extractor.alignment.mode_track.assignment import (
-    ModeTrackTrajectoryPolicy,
-    reinforce_mode_track_model_set,
-)
-from xic_extractor.alignment.mode_track.producer import (
-    bootstrap_mode_tracks_from_cid_nl_support,
 )
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlEvaluationReceipt,
@@ -122,29 +118,15 @@ def test_one_assessment_preserves_two_individually_supported_peaks(
         )
         assert owner.owner_id == hypothesis.hypothesis_id
 
-    assignment_scope, model_set, batches, _source = (
-        bootstrap_mode_tracks_from_cid_nl_support(
-            processing_owners=fixture.owners,
-            sample_assessments=((sample, assessment),),
-            alignment_config=AlignmentConfig(),
-            trajectory_policy=ModeTrackTrajectoryPolicy(
-                trajectory_policy_version="anchor-trajectory",
-                band_policy_version="fixed-band",
-                prediction_half_width_min=0.1,
-                max_interpolation_gap=10,
-                max_extrapolation_gap=10,
-            ),
-        )
+    grouping_scope, _candidates, _drift = bootstrap_cid_nl_initial_population(
+        processing_owners=fixture.owners,
+        sample_assessments=((sample, assessment),),
+        alignment_config=AlignmentConfig(),
     )
 
-    assert len(assignment_scope.groups) == 2
-    assert len(model_set.tracks) == 2
-    assert len(batches) == 1
-    assert tuple(item.state for item in batches[0].assignments) == (
-        "uniquely_assigned",
-        "uniquely_assigned",
+    assert sorted(group.owner_ids for group in grouping_scope.groups) == sorted(
+        (hypothesis.hypothesis_id,) for hypothesis in hypotheses
     )
-    assert len({item.group_hypothesis_id for item in batches[0].assignments}) == 2
 
 
 def test_identity_membership_is_geometry_not_group_center_reclassification(
@@ -171,57 +153,27 @@ def test_identity_membership_is_geometry_not_group_center_reclassification(
         )
     )
 
-    assignment_scope, model_set, batches, _source = (
-        bootstrap_mode_tracks_from_cid_nl_support(
-            processing_owners=fixture.owners,
-            sample_assessments=sample_assessments,
-            alignment_config=AlignmentConfig(anchor_min_seed_events=1),
-            trajectory_policy=ModeTrackTrajectoryPolicy(
-                trajectory_policy_version="anchor-trajectory",
-                band_policy_version="fixed-band",
-                prediction_half_width_min=0.1,
-                max_interpolation_gap=10,
-                max_extrapolation_gap=10,
-            ),
-        )
+    grouping_scope, candidates, _drift = bootstrap_cid_nl_initial_population(
+        processing_owners=fixture.owners,
+        sample_assessments=sample_assessments,
+        alignment_config=AlignmentConfig(anchor_min_seed_events=1),
     )
 
-    assert len(assignment_scope.groups) == 2
-    assert len(model_set.tracks) == 2
-    assert tuple(len(batch.assignments) for batch in batches) == (2, 2)
-    assert {
-        assignment.state for batch in batches for assignment in batch.assignments
-    } == {"uniquely_assigned"}
-    assert all(
-        assignment.peak_hypothesis_id
-        in next(
-            track.owner_ids
-            for track in assignment_scope.groups
-            if track.group_hypothesis_id == assignment.group_hypothesis_id
-        )
-        for batch in batches
-        for assignment in batch.assignments
+    direct_ids = frozenset(
+        candidate.peak_hypothesis_id
+        for candidate in candidates
+        if candidate.direct_support_assessment is not None
     )
-    observation_assignments = tuple(
-        assignment
-        for batch in batches
-        for assignment in batch.assignments
-        if assignment.candidate_observation_class == "non_training"
+    observation_ids = frozenset(
+        candidate.peak_hypothesis_id
+        for candidate in candidates
+        if candidate.direct_support_assessment is None
     )
-    assert len(observation_assignments) == 2
-    assert all(
-        assignment.reason_codes == ("existing_group_owner_observation",)
-        for assignment in observation_assignments
-    )
-    assert all(
-        reinforce_mode_track_model_set(
-            processing_owners=fixture.owners,
-            model_set=model_set,
-            assignment_batch=batch,
-        )
-        is model_set
-        for batch in batches
-    )
+    assert len(direct_ids) == len(observation_ids) == 2
+    assert {frozenset(group.owner_ids) for group in grouping_scope.groups} == {
+        direct_ids,
+        observation_ids,
+    }
 
 
 def _assessment_with_observation_only_peak(

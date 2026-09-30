@@ -17,9 +17,6 @@ from xic_extractor.alignment.grouping_result import (
     CrossSampleGroupingContractError,
     CrossSampleGroupingResult,
 )
-from xic_extractor.alignment.grouping_workflow import (
-    apply_mode_track_refinement_run_for_workflow,
-)
 
 __all__ = [
     "CrossSampleAssociationContractError",
@@ -31,7 +28,6 @@ __all__ = [
     "CrossSampleRepairAdmissionApplication",
     "CrossSampleRepairAdmissionEdge",
     "CrossSampleRepairedObservation",
-    "apply_mode_track_refinement_run_for_workflow",
     "build_cross_sample_association_lineage_handoff",
     "validate_cross_sample_association_lineage_handoff",
 ]

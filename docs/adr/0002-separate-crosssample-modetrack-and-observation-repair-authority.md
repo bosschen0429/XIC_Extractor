@@ -42,6 +42,9 @@ becoming competing authorities.
   only if the active method-specific evidence owner independently classifies
   its evidence as sufficient. Repair provenance remains attached.
 
+ModeTrack was later retired without a replacement trajectory owner (#601); the
+CrossSample and ObservationRepair authorities above remain current.
+
 Current contracts: `docs/architecture-contract.md`,
 `docs/agent/architecture-public-contracts.md`, and
 `docs/product/shared-processing-kernel.md`. Delivery tickets: GitHub #302,

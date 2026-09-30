@@ -82,12 +82,7 @@ def test_workflow_forwards_exact_owner_objects_once(
     if variant == "target":
         adapter_fields.update(sample_assessments=(), alignment_config=object())
     else:
-        adapter_fields["mode_track"] = SimpleNamespace(
-            sample_assessments=(),
-            alignment_config=object(),
-            trajectory_policy=object(),
-            retain_observation_only_candidates=False,
-        )
+        adapter_fields["sample_assessments"] = ()
     adapter = _exact_uninitialized(
         TargetWorkflowAdapter if variant == "target" else UntargetWorkflowAdapter,
         **adapter_fields,
@@ -96,14 +91,9 @@ def test_workflow_forwards_exact_owner_objects_once(
     if variant != "target":
         object.__setattr__(adapter, "closed_cell_coverage", closed_coverage)
     capture = object()
-    run = SimpleNamespace(fit_once_source=object())
     context = _exact_uninitialized(CrossSampleGroupingResult)
     if variant != "target":
-        object.__setattr__(
-            adapter,
-            "completed_grouping",
-            None,
-        )
+        object.__setattr__(adapter, "completed_grouping", context)
     final_receipt = context
     scientific = _exact_uninitialized(FinalizedScientificAlignment)
     pre_cell = object()
@@ -144,16 +134,6 @@ def test_workflow_forwards_exact_owner_objects_once(
         workflow_owner,
         "capture_peak_hypotheses",
         lambda **kwargs: calls.append(("capture", kwargs)) or capture,
-    )
-    monkeypatch.setattr(
-        workflow_owner,
-        "bootstrap_mode_track_refinement_from_cid_nl_support",
-        lambda **kwargs: calls.append(("mt0", kwargs)) or run,
-    )
-    monkeypatch.setattr(
-        workflow_owner,
-        "apply_mode_track_refinement_run_for_workflow",
-        lambda **kwargs: calls.append(("cross_mt0", kwargs)) or context,
     )
     monkeypatch.setattr(
         workflow_owner,
@@ -230,11 +210,7 @@ def test_workflow_forwards_exact_owner_objects_once(
         "runtime",
         "capture",
     ]
-    expected_calls.extend(
-        ("target_grouping",) if variant == "target" else ("mt0", "cross_mt0")
-    )
-    if variant != "target":
-        expected_calls.append("association")
+    expected_calls.append("target_grouping" if variant == "target" else "association")
     expected_calls.append("scientific")
     assert [item[0] for item in calls] == expected_calls
     scientific_kwargs = next(item[1] for item in calls if item[0] == "scientific")

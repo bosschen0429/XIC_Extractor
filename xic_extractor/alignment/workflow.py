@@ -24,12 +24,7 @@ from xic_extractor.alignment.grouping_result import (
     CrossSampleGroupingResult,
 )
 from xic_extractor.alignment.grouping_workflow import (
-    apply_mode_track_refinement_run_for_workflow,
     build_targeted_cross_sample_groups,
-)
-from xic_extractor.alignment.mode_track.assignment import ModeTrackTrajectoryPolicy
-from xic_extractor.alignment.mode_track.refinement import (
-    bootstrap_mode_track_refinement_from_cid_nl_support,
 )
 from xic_extractor.alignment.projection.target.post_cell import (
     project_target_post_cell,
@@ -117,7 +112,6 @@ class _WorkflowStageFailure(Exception):
 class WorkflowStage(str, Enum):
     RUNTIME = "runtime"
     CAPTURE = "capture"
-    MODE_TRACK_BOOTSTRAP = "mode_track_bootstrap"
     CROSS_SAMPLE_GROUPING = "cross_sample_grouping"
     SCIENTIFIC_FINAL = "scientific_final"
     PRE_CELL_PROJECTION = "pre_cell_projection"
@@ -185,43 +179,6 @@ class CaptureWorkflowArguments:
         ):
             raise AlignmentWorkflowContractError(
                 "capture owner binding must use exact immutable values"
-            )
-
-
-@dataclass(frozen=True, slots=True)
-class ModeTrackWorkflowArguments:
-    sample_assessments: tuple[
-        tuple[ResolvedCanonicalSampleIdentity, CidNlMethodAssessmentRef], ...
-    ]
-    alignment_config: AlignmentConfig
-    trajectory_policy: ModeTrackTrajectoryPolicy | None
-    retain_observation_only_candidates: bool = False
-
-    def __post_init__(self) -> None:
-        if type(self.sample_assessments) is not tuple:
-            raise AlignmentWorkflowContractError(
-                "ModeTrack sample assessments must be an exact tuple"
-            )
-        if any(
-            type(item) is not tuple
-            or len(item) != 2
-            or type(item[0]) is not ResolvedCanonicalSampleIdentity
-            or type(item[1]) is not CidNlMethodAssessmentRef
-            for item in self.sample_assessments
-        ):
-            raise AlignmentWorkflowContractError(
-                "ModeTrack assessments must be exact sample/assessment pairs"
-            )
-        if type(self.alignment_config) is not AlignmentConfig:
-            raise AlignmentWorkflowContractError("alignment_config must be exact")
-        if (
-            self.trajectory_policy is not None
-            and type(self.trajectory_policy) is not ModeTrackTrajectoryPolicy
-        ):
-            raise AlignmentWorkflowContractError("trajectory_policy must be exact")
-        if not isinstance(self.retain_observation_only_candidates, bool):
-            raise AlignmentWorkflowContractError(
-                "retain_observation_only_candidates must be boolean"
             )
 
 
@@ -360,23 +317,23 @@ class TargetWorkflowAdapter(_WorkflowAdapterFields):
 
 @dataclass(frozen=True, slots=True)
 class UntargetWorkflowAdapter(_WorkflowAdapterFields):
-    mode_track: ModeTrackWorkflowArguments = field(kw_only=True)
+    sample_assessments: tuple[
+        tuple[ResolvedCanonicalSampleIdentity, CidNlMethodAssessmentRef], ...
+    ] = field(kw_only=True)
     completed_grouping: CrossSampleGroupingResult | None = None
     closed_cell_coverage: BackfillEvaluationCoverageBatch | None = None
 
     def __post_init__(self) -> None:
         super(UntargetWorkflowAdapter, self).__post_init__()
-        if type(self.mode_track) is not ModeTrackWorkflowArguments:
-            raise AlignmentWorkflowContractError(
-                "adapter requires exact ModeTrack arguments"
-            )
-        self.mode_track.__post_init__()
-        if (
-            self.completed_grouping is None
-            and self.mode_track.trajectory_policy is None
+        if type(self.sample_assessments) is not tuple or any(
+            type(item) is not tuple
+            or len(item) != 2
+            or type(item[0]) is not ResolvedCanonicalSampleIdentity
+            or type(item[1]) is not CidNlMethodAssessmentRef
+            for item in self.sample_assessments
         ):
             raise AlignmentWorkflowContractError(
-                "unclosed Untarget requires ModeTrack policy"
+                "Untarget assessments must be exact sample/assessment pairs"
             )
         if self.closed_cell_coverage is None:
             raise AlignmentWorkflowContractError(
@@ -860,28 +817,10 @@ def _compose_application_result(
             )
         else:
             untarget_adapter = cast(UntargetWorkflowAdapter, adapter)
-            stage = WorkflowStage.MODE_TRACK_BOOTSTRAP
-            completed_grouping = untarget_adapter.completed_grouping
-            if completed_grouping is not None:
-                context = completed_grouping
-            else:
-                assert untarget_adapter.mode_track.trajectory_policy is not None
-                run = bootstrap_mode_track_refinement_from_cid_nl_support(
-                    processing_owners=owners,
-                    sample_assessments=untarget_adapter.mode_track.sample_assessments,
-                    alignment_config=untarget_adapter.mode_track.alignment_config,
-                    trajectory_policy=untarget_adapter.mode_track.trajectory_policy,
-                    drift_lookup=untarget_adapter.drift_lookup,
-                    retain_observation_only_candidates=(
-                        untarget_adapter.mode_track.retain_observation_only_candidates
-                    ),
-                )
-                stage = WorkflowStage.CROSS_SAMPLE_GROUPING
-                context = apply_mode_track_refinement_run_for_workflow(
-                    processing_owners=owners,
-                    captures=captures,
-                    run=run,
-                )
+            stage = WorkflowStage.CROSS_SAMPLE_GROUPING
+            # The adapter contract admits Untarget only with completed grouping.
+            assert untarget_adapter.completed_grouping is not None
+            context = untarget_adapter.completed_grouping
         closed_coverage = (
             adapter.closed_cell_coverage
             if type(adapter) is UntargetWorkflowAdapter
@@ -1263,11 +1202,7 @@ def _validate_request_adapter(
         raise AlignmentWorkflowContractError(
             "capture inputs must exactly preserve declared candidate order"
         )
-    assessments = (
-        adapter.sample_assessments
-        if isinstance(adapter, TargetWorkflowAdapter)
-        else adapter.mode_track.sample_assessments
-    )
+    assessments = adapter.sample_assessments
     assessment_samples = tuple(sample for sample, _ in assessments)
     expected_samples = tuple(
         sorted(request.scope.samples, key=lambda item: item.identity.sample_identity_id)
@@ -1414,7 +1349,6 @@ __all__ = (
     "CompletedUntargetBatchWorkflowResult",
     "CompletedUntargetWorkflowResult",
     "FailedWorkflowResult",
-    "ModeTrackWorkflowArguments",
     "TargetWorkflowAdapter",
     "TargetWorkflowRequest",
     "UntargetWorkflowAdapter",

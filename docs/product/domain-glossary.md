@@ -26,7 +26,7 @@ XIC has one shared scientific processing lifecycle. Untargeted extraction is
 its general application; Targeted extraction is a constrained application,
 not a second peer core:
 
-`SearchScope -> provider-specific Discovery/capture -> shared observation/evidence contract -> PeakHypothesis/owner evidence -> constrained CrossSample grouping -> optional initial ModeTrack refinement where the workflow uses it -> stable CrossSampleGroupingResult -> optional bounded Backfill/ObservationRevisit -> projection binding/subjects -> ProductionCellDecision -> projection completion -> result finalizer`
+`SearchScope -> provider-specific Discovery/capture -> shared observation/evidence contract -> PeakHypothesis/owner evidence -> constrained CrossSample grouping -> stable CrossSampleGroupingResult -> optional bounded Backfill/ObservationRevisit -> projection binding/subjects -> ProductionCellDecision -> projection completion -> result finalizer`
 
 - Both applications may use a broad candidate-discovery policy. Here, `broad`
   describes which evidence relationships the method may inspect, such as dR,
@@ -49,10 +49,7 @@ capabilities, or an explicit interpretation/integration strategy when required;
 shared does not mean method-blind. CrossSample grouping owns group membership,
 identity, disposition, and lineage. It returns one immutable
 `CrossSampleGroupingResult`; the same object is consumed before bounded
-Backfill and through finalization. `ModeTrack` may propose an initial
-trajectory-based refinement only where the workflow explicitly uses it, and
-the grouping workflow applies an accepted complete-partition transition before
-the result becomes stable. Backfill uses an already established Target or group
+Backfill and through finalization. Backfill uses an already established Target or group
 context to make one bounded revisit of a missing cell and may
 return an observation or typed no-observation result. The retained
 `ObservationRevisit` receipt can represent that decision; the current Untargeted
@@ -70,8 +67,8 @@ Targeted and Untargeted may apply different search scopes, priors, projection
 rules, GUI flows, and output contracts. Evidence or output authority from one
 projection does not grant write authority in the other without an explicit
 contract, expected-diff evidence, and focused tests. Different projections do
-not imply different capture, group, ModeTrack, ObservationRevisit, or cell-
-decision implementations.
+not imply different capture, group, ObservationRevisit, or cell-decision
+implementations.
 
 ## Evidence Spine
 
@@ -119,11 +116,6 @@ Use these terms consistently:
 - `CrossSampleGroupDisposition`: the CrossSample-owned, mutually exclusive
   disposition of one finalized group: `established`, `provisional`,
   `unresolved`, or `rejected`. Disposition does not decide output inclusion.
-- `ModeTrack`: one request-bound trajectory model over immutable CrossSample
-  evidence. Where a workflow uses it, it proposes an assessable initial
-  refinement before `CrossSampleGroupingResult` closes. It does not refit after
-  Backfill, mint groups, re-integrate traces, repair observations, or write
-  values.
 - `ObservationRevisit`: the retained typed receipt for one bounded Backfill
   revisit of a pre-existing Target or group cell. The revisit may produce its
   first usable observation.

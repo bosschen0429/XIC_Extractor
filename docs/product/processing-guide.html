@@ -132,7 +132,7 @@
       <div class="topic-head"><span class="topic-no">03</span><h2 id="alignment-title">Alignment：判斷跨樣本是否對得上</h2></div>
       <p class="intro">Alignment 接收各樣本已帶來源的觀察和假說，建立或評估跨樣本對應。樣本內候選不是跨樣本群組的真值。</p>
       <div class="grid">
-        <div class="card"><h3>CrossSample 管身份；ModeTrack 只提建議</h3><p>CrossSample 決定群組、成員、群組狀態及分裂／合併沿革。ModeTrack 可依注射順序與 RT 軌跡提出修正，但只有 CrossSample 能套用建議；軌跡先驗也不能蓋過直接的本地證據。</p></div>
+        <div class="card"><h3>CrossSample 管身份</h3><p>CrossSample 決定群組、成員、群組狀態及分裂／合併沿革；RT 先驗不能蓋過直接的本地證據。</p></div>
         <div class="card example"><h3>例子：A、B 接近，仍須過硬條件</h3><p>A、B 的 RT 接近可支持比較，卻不能掩蓋不同峰、身份衝突或同一樣本多峰的歧義。群組關係關閉後，流程才把結果交給 Targeted 或 Untargeted 的列／格投影。</p></div>
       </div>
       <p class="owner"><strong>正式產品 owner：</strong><code>docs/product/alignment.md</code>。群組身份、成員、修正與結果交接以該文件為準。</p>
@@ -185,7 +185,6 @@
         <div class="term"><dt>XIC / Trace</dt><dd>指定 m/z 範圍內，訊號強度隨保留時間變化的曲線。</dd></div>
         <div class="term"><dt>PeakHypothesis</dt><dd>提出某個峰的身份、RT 範圍和積分依據；被選中也不等於有寫入權限。</dd></div>
         <div class="term"><dt>CrossSample</dt><dd>跨樣本群組、成員與身份的科學 owner。</dd></div>
-        <div class="term"><dt>ModeTrack</dt><dd>從不可變的 RT 軌跡證據提出修正建議，不能自行移動群組成員。</dd></div>
         <div class="term"><dt>ObservationRevisit</dt><dd>一個已有脈絡的本地觀察的修復決定；不等於插值或最後格值。</dd></div>
         <div class="term"><dt>ProductionCellDecision</dt><dd>對一個明確 Target／群組格子，獨立選定數值或 no-write 的 owner。</dd></div>
       </dl>

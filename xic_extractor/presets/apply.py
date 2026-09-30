@@ -43,9 +43,7 @@ OWNER_BUILD_XIC_BACKENDS = frozenset(
         "ms1-index",
     }
 )
-_CID_NL_RECIPE_ROUTES = frozenset(
-    {"full", "discovery_only", "align_only", "bounded_mode_track"}
-)
+_CID_NL_RECIPE_ROUTES = frozenset({"full", "discovery_only", "align_only"})
 _CID_NL_RECIPE_OVERRIDE_KEYS = frozenset(DISCOVERY_TUNING_OVERRIDE_KEYS) | {
     "owner_build_xic_backend",
 }
@@ -77,12 +75,6 @@ def bind_cid_nl_recipe(
         preset,
         explicit_tuning_overrides=discovery_overrides or None,
     )
-    if (
-        route == "bounded_mode_track"
-        and len(discovery_settings.neutral_loss_profiles) != 1
-    ):
-        raise ValueError("ModeTrack runner requires a single-tag CID-NL preset")
-
     alignment_config, runtime_options = apply_to_alignment(preset)
     owner_build_xic_backend = _owner_build_xic_backend_projection(
         runtime_options.get("owner_build_xic_backend", "raw")

@@ -23,9 +23,11 @@ from xic_extractor.alignment.cross_sample_peak_groups import (
     validate_cross_sample_peak_group_identity,
 )
 from xic_extractor.alignment.drift_evidence import KnownIstdReference
+from xic_extractor.alignment.grouping_bootstrap import (
+    InitialGroupingScope,
+    RetainedGroupingCandidate,
+)
 from xic_extractor.alignment.grouping_result import CrossSampleGroupingResult
-from xic_extractor.alignment.mode_track.assignment import ModeTrackCandidateObservation
-from xic_extractor.alignment.mode_track.assignment_scope import ModeTrackAssignmentScope
 from xic_extractor.alignment.untargeted_cid_nl_golden_path import (
     UntargetedCidNlBackfillInput,
 )
@@ -441,9 +443,9 @@ class UntargetedCidNlWorksetGrouping:
     scope: UntargetedSearchScope
     captures: tuple[SampleLocalCapture, ...]
     capture_inputs: tuple[CaptureWorkflowArguments, ...]
-    assignment_scope: ModeTrackAssignmentScope
+    grouping_scope: InitialGroupingScope
     grouping_result: CrossSampleGroupingResult
-    retained_candidates: tuple[ModeTrackCandidateObservation, ...]
+    retained_candidates: tuple[RetainedGroupingCandidate, ...]
 
 
 @dataclass(frozen=True, slots=True)

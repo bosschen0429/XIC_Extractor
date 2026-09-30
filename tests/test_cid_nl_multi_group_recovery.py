@@ -866,11 +866,8 @@ def test_runtime_recovers_every_authorized_rt_group(
             )
             assert not any(decision.raw_status == "detected" for decision in decisions)
         if shared_support == "shared" and recovery_peaks == (8.0, 12.0):
-            from xic_extractor.alignment.mode_track import (
-                ModeTrackTrajectoryPolicy,
-            )
-            from xic_extractor.alignment.mode_track.producer import (
-                bootstrap_mode_tracks_from_cid_nl_support,
+            from xic_extractor.alignment.grouping_bootstrap import (
+                bootstrap_cid_nl_initial_population,
             )
 
             inputs = tuple(
@@ -881,23 +878,16 @@ def test_runtime_recovers_every_authorized_rt_group(
             options = dict(
                 processing_owners=context.processing_owners,
                 alignment_config=AlignmentConfig(anchor_min_seed_events=1),
-                trajectory_policy=ModeTrackTrajectoryPolicy(
-                    trajectory_policy_version="anchor-trajectory",
-                    band_policy_version="fixed-band",
-                    prediction_half_width_min=2 / 60,
-                    max_interpolation_gap=10,
-                    max_extrapolation_gap=10,
-                ),
                 retain_observation_only_candidates=True,
             )
-            baseline = bootstrap_mode_tracks_from_cid_nl_support(
+            baseline = bootstrap_cid_nl_initial_population(
                 sample_assessments=inputs, **options
             )
-            replayed = bootstrap_mode_tracks_from_cid_nl_support(
+            replayed = bootstrap_cid_nl_initial_population(
                 sample_assessments=tuple(pair for pair in inputs for _ in range(2)),
                 **options,
             )
-            assert replayed == baseline
+            assert replayed[:2] == baseline[:2]
 
 
 def test_shared_physical_recovery_claim_is_not_assigned_to_two_groups(

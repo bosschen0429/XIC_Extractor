@@ -143,7 +143,7 @@ Targeted and Untargeted are applications of the same evidence lifecycle.
 Targeted adds target-list/search policy and fixed-row delivery; Untargeted adds
 general discovery, grouping, and matrix delivery. Separate entry points and
 writers do not justify duplicate capture, peak identity, CrossSample,
-ModeTrack, ObservationRevisit, or cell-decision owners.
+ObservationRevisit, or cell-decision owners.
 
 The detailed scientific lifecycle is owned by
 [`shared-processing-kernel.md`](product/shared-processing-kernel.md),
@@ -166,14 +166,13 @@ Alignment's grouping lifecycle is linear: candidate and exact-owner evidence
 enters constrained grouping. Untarget uses the directional bootstrap only to
 estimate a batch RT warp, then `grouping_workflow` closes its ordinary window
 bands; bootstrap membership has no downstream authority. Target workflows group
-their selected hypotheses directly through CrossSample; they do not fit or apply
-ModeTrack. The final
+their selected hypotheses directly through CrossSample. The final
 immutable `CrossSampleGroupingResult(processing_owners,
 partition_transition, drift_lookup)` reaches bounded Backfill,
 ObservationRevisit, cell decisions, and finalization. A revisit does not reopen
-grouping, refit ModeTrack, replace the partition, or mint a second grouping
+grouping, replace the partition, or mint a second grouping
 owner. `CrossSamplePartitionTransition` owns only the mathematical before/after
-complete-partition transition; `ModeTrackAssignmentScope` is a plain immutable
+complete-partition transition; `InitialGroupingScope` is a plain immutable
 m/z/RT-bounds-plus-groups handoff with no separate domain identity or persisted
 contract.
 
