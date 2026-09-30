@@ -8,22 +8,24 @@ consumer and a concrete removal loss.
 - `AGENTS.md`: high-frequency invariants and route pointers.
 - `docs/agent/`: detailed contracts loaded only by their matching route.
 - `.codex/skills/`: distinctive XIC workflows with domain-specific mechanics.
-- `.codex/hooks/` and `.codex/rules/`: deterministic, high-cost safety checks.
+- `.codex/rules/`: minimal destructive Git protection.
 
 Issue scope, TaskFrame continuity, CBM structure, code behavior, and PR delivery
 remain separate owners. Do not mirror one owner's contract in another layer.
 Dispatch and fan-in belong to global router skills; repo-local contracts supply
 XIC technical inputs, not a second agent workflow.
 
-## Current Hooks And Rules
+## Execution Owners
 
-| Event | Retained decision |
-| --- | --- |
-| `PreToolUse` | Reject unsupported wrappers and unsafe Git or RAW-background command shapes. |
-| `PostToolUse` | Reject zero-test and invalid-node pytest results. |
+Native command exit codes and existing CI report execution failures. The RAW
+runner validates inputs and saves its plan during normal execution. Environment
+diagnosis belongs to `scripts/agent_sandbox_doctor.py`, used after setup changes
+or a concrete runtime problem.
 
-`.codex/rules/xic-safety.rules` owns destructive Git/filesystem command policy.
-The hook fixtures and `tests/test_config_codex_hooks.py` own executable behavior.
+`.codex/rules/xic-safety.rules` protects destructive Git operations; its focused
+coverage lives in `tests/test_config_codex_rules.py`. Host permissions and global
+hooks remain host-owned. A repository edit does not change their authorization
+or activation state.
 
 ## Adoption And Retirement
 
@@ -54,18 +56,17 @@ references. Select further checks by the behavior affected:
 | --- | --- |
 | Wording or description with unchanged routing and permissions | Relevant docs/format/link checks; existing checks that consume the changed text. |
 | Skill selection, required reads, completion, approval, or stopping boundaries | Representative positive and negative scenarios covering the changed decision; distinguish observed agent behavior from a manual walkthrough. |
-| Hook, executable rule, runtime config, script, sandbox, or subagent execution | Run the smoke and focused runtime tests below, plus checks for the affected consumer. |
+| Executable rule, runtime config, script, sandbox, or subagent execution | Exercise the affected real interface and its focused runtime tests. |
 
-For execution changes:
+For changes to the retained rules or environment diagnostic:
 
 ```powershell
-.venv\Scripts\python.exe .codex\hooks\fixtures\assert_hook_outputs.py
-.venv\Scripts\python.exe -m pytest tests\test_agent_sandbox_doctor.py tests\test_config_codex_hooks.py -q
+.venv\Scripts\python.exe -m pytest tests\test_agent_sandbox_doctor.py tests\test_config_codex_rules.py -q
 ```
 
 Instruction changes that alter those execution contracts also require the
 affected runtime checks. Pure prose changes do not require unrelated sandbox
-tests. Keep RAW validation and final-SHA PR requirements with their owners.
+tests. Keep method acceptance and final-SHA PR requirements with their owners.
 
 Repository verification does not prove that the host trusted or activated the
 project layer; inspect host hooks separately when activation matters.

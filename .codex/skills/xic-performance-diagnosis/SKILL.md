@@ -5,199 +5,76 @@ description: Diagnose XIC performance from timing and parity artifacts before op
 
 # XIC Performance Diagnosis
 
-Treat each optimization as an artifact-driven, falsifiable claim. Produce one
-diagnosis packet before issue-bounded code edits. Route RAW execution or
-artifact acceptance to `xic-raw-validation`.
+Use timing and correctness evidence to answer the current performance question.
+Reuse a still-applicable diagnosis; no separate packet is required before edits.
 
-## 1. Bind The Decision And Evidence Branch
+## Choose The Evidence Needed
 
-Name the decision, workload/sample universe, suspected surface, and one branch:
+- No trustworthy timing: identify the smallest baseline that covers the question.
+- One completed run: rank its bottlenecks; it cannot prove an optimization win.
+- Baseline and candidate: establish comparability before calculating a speedup.
 
-- `baseline_needed`: no trustworthy timing covers the decision;
-- `single_run`: rank bottlenecks in one completed run;
-- `paired_comparison`: judge baseline and candidate artifacts.
+Locate the relevant artifacts and producing code, config, inputs, and backend.
+Search `tools/diagnostics/INDEX.md` and `docs/diagnostic-ledger.md` before adding
+measurement machinery. Use `docs/agent/parameter-settings.md#alignment-and-handoff`
+for RAW commands and preset limits; normal runner execution performs input checks.
 
-Locate the narrow artifact roots and record availability, completeness,
-freshness, producing code, config, input, and backend identity. For a pair,
-state the intended isolated change and every unrelated difference found. Search
-`tools/diagnostics/INDEX.md` and `docs/diagnostic-ledger.md` before proposing a
-new measurement path. Read
-`docs/agent/parameter-settings.md#alignment-and-handoff` for the current
-RAW/preset command and 85RAW launch/timing constraints.
+Read `references/xic-performance-artifact-contract.md` for timing sources and,
+for paired evidence, its Comparability Proof. Two timing files alone do not
+prove equivalent workload or coverage. Name missing evidence when it prevents
+the decision, and obtain the smallest useful probe within the task's scope.
 
-For successive optimizations, carry forward the accepted changes in the next
-baseline. If the operator selected a validated prototype as the cumulative
-baseline, bind that exact state; a comparison against an older formal version
-answers a separate integration question, not the stack's remaining speedup.
-Keep rollback scoped to the current unaccepted delta.
+Successive optimizations use the accepted cumulative baseline, including an
+operator-selected validated prototype. Comparing with an older formal version
+answers a separate integration question. Rollback covers only the current
+unaccepted delta.
 
-Completion criterion: one branch is selected; every run has a workload,
-artifact state, timing coverage, and producing state or an explicit `unknown`.
+## Interpret Cost And Correctness
 
-## 2. Prove The Timing Basis
+Prefer recorded `summaries.stage_summary` and
+`summaries.raw_xic_locality_summary`. Identify the timing source, covered stages,
+and aggregation basis. Never add nested spans as independent wall time. A stage
+maximum answers a worst-case question; it does not measure cumulative work.
 
-Read `references/xic-performance-artifact-contract.md` for timing-source
-priority and the XIC artifact inventory. A `single_run` must cover the suspected
-stage. When baseline and candidate artifacts are both present, read the
-reference's **Comparability Proof** before computing any delta.
+For a single run, report the top bottleneck and supporting call-cost evidence.
+For a comparable pair, report the decision metric, timing delta, observed noise,
+and cost removed, reduced, batched, cached, or parallelized. Select the relevant
+parity or approved expected-diff oracle before accepting the candidate.
 
-Classify paired evidence as `comparable` or `inconclusive`. Two `timing.json`
-files alone establish neither equivalent workload nor equivalent measurement.
-If the proof is missing, name the smallest provenance, parity, or bounded timing
-probe that would close it; this diagnosis does not widen into a RAW run by
-itself.
+Keep correctness, performance, and product readiness separate. Identify changed
+public outputs, selected values, counts, identities, or schemas when applicable:
 
-Completion criterion: the timing basis is trustworthy for the selected branch,
-or exactly one smallest missing proof is named and the result is
-`baseline_needed`/`inconclusive`.
+- `exact_safe`: output-preserving cost or worker-budget changes.
+- `expected_diff`: intentional semantic changes with an expected-diff owner.
+- `fast_mode_candidate`: explicit opt-in alternate semantics preserving defaults.
+- `diagnostic_only`: measurement without product behavior changes.
 
-## 3. Rank The Bottleneck And Cost Delta
+Tests or speed alone do not grant ProductWriter, activation, matrix, workbook,
+or export authority. Consult productization owners only when those decisions
+are actually in scope.
 
-Use recorded summaries before recomputing metrics:
+## Report The Decision
 
-- `summaries.stage_summary` for stage coverage and elapsed cost;
-- `summaries.raw_xic_locality_summary` for extraction, batching, RAW-call, and
-  point-count evidence.
+Give the conclusion, supporting artifact locators, correctness result when
+applicable, and material uncertainty or next action. Use the relevant verdict:
 
-State the aggregation basis: external wall clock, non-overlapping stage total,
-stage maximum, or paired per-sample/per-stage observations. Never sum nested
-spans as if they were independent wall clock. Explain why the chosen metric
-answers the decision: a stage maximum can answer a worst-case-stage question,
-but not cumulative work or end-to-end wall clock.
+- `baseline_needed`: trustworthy timing is missing.
+- `diagnosis_ready`: the bottleneck question is answered.
+- `optimization_ready`: evidence supports a bounded implementation.
+- `optimized`: comparable evidence beats observed noise and correctness passes.
+- `inconclusive`: comparability, timing stability, or parity is insufficient.
+- `rejected`: a comparable candidate is within noise, regresses, or fails correctness.
 
-For `single_run`, rank the top bottleneck. For `paired_comparison`, report the
-target-stage and call-cost deltas only after comparability passes, then name
-which cost was removed, reduced, batched, cached, or parallelized.
+Accept candidate code only with `optimized`. Otherwise retain it unaccepted
+while closing bounded missing proof; a rejected candidate calls for rollback.
+Disposition does not grant mutation authority: execute rollback only within
+authorization, preserving unrelated work and the accepted baseline. A read-only
+diagnosis reports the scoped action without changing files.
 
-Completion criterion: the top bottleneck and every claimed delta name their
-timing source, covered stages, decision metric, aggregation semantics, and XIC
-call-cost evidence.
+Update the diagnostic ledger only when a durable conclusion changes or prevents
+a known repeat. Reuse an applicable conclusion; otherwise no entry is required.
+The ledger remains the durable performance-conclusion owner.
 
-For `baseline_needed` or a `single_run` whose only decision is bottleneck
-diagnosis, issue the Core Diagnosis Packet in Step 5 and stop. Continue when the
-task asks for paired proof, implementation readiness, or acceptance.
-
-## 4. Bind Correctness And Optimization Lane When Needed
-
-For `paired_comparison`, select a project-appropriate parity or expected-diff
-oracle before accepting a performance claim.
-
-When the task prepares implementation or product acceptance, also state whether
-public outputs, selected peak/area, counted detections, reasons/confidence,
-matrix identity, schema, or persisted IDs are unchanged or covered by an
-approved expected diff, then choose one lane:
-
-- `exact_safe`: output-preserving removal, batching, caching, locality, or
-  deterministic worker-budget change;
-- `expected_diff`: an intentional selected-value, identity, schema, or status
-  change with an expected-diff owner;
-- `fast_mode_candidate`: explicit opt-in alternate semantics that leave exact
-  defaults intact;
-- `diagnostic_only`: measurement or analysis without product behavior change.
-
-Keep performance proof and product validation status separate. A measured win
-can remain `diagnostic_only`; tests or speed alone do not grant activation,
-matrix, selected-value, workbook, or export authority.
-
-Completion criterion: paired proof has separate correctness and performance
-verdicts; implementation/acceptance work additionally has one lane, validation
-gate, authority ceiling, and rollback/stop condition.
-
-## 5. Issue One Diagnosis Packet
-
-Use one workflow verdict:
-
-- `baseline_needed`, `diagnosis_ready`, or `optimization_ready` before edits;
-- `optimized` only after comparable evidence beats observed noise and the
-  correctness gate passes;
-- `inconclusive` for missing comparability, unstable timing, or absent parity
-  that prevents a candidate decision;
-- `rejected` for a comparable candidate within observed noise, an attributable
-  regression, or a failed correctness gate.
-
-`Candidate code` means unaccepted code for the optimization under decision. Use
-this complete disposition table:
-
-| Workflow verdict | No candidate code | Candidate code exists |
-| --- | --- | --- |
-| `baseline_needed` | `not_applicable` | `retain_unaccepted` |
-| `diagnosis_ready` | `not_applicable` | `retain_unaccepted` |
-| `optimization_ready` | `not_applicable` | `retain_unaccepted` |
-| `inconclusive` | `not_applicable` | `retain_unaccepted` |
-| `rejected` | `not_applicable` | `revert` |
-| `optimized` | `not_applicable` | `keep` |
-
-`retain_unaccepted` preserves candidate work without accepting its performance
-or product behavior. Keep the existing accepted exact baseline isolated and
-name the bounded missing proof or implementation handoff. `optimization_ready`
-opens issue-bounded edits that may continue from retained candidate work; only
-`optimized` accepts that candidate.
-
-Disposition does not grant mutation authority. For `rejected`, execute rollback
-only when the task authorizes it and only for the current unaccepted delta;
-preserve unrelated and user-owned work. A read-only diagnosis reports the
-disposition and scoped next action without changing files.
-
-Choose the diagnostic-ledger action independently:
-
-| Durable conclusion from this attempt | Applicable ledger conclusion exists | Action |
-| --- | --- | --- |
-| changes or prevents a known repeat | either | `update` |
-| no change | yes | `reuse` |
-| no change | no | `none` |
-
-The existing diagnostic ledger stays the only durable performance-conclusion
-owner.
-
-Every branch returns this core:
-
-```markdown
-Workflow/performance verdict:
-Candidate disposition: keep | retain_unaccepted | revert | not_applicable
-Diagnostic-ledger action: reuse | update | none
-Product validation status:
-Workload / sample universe / decision:
-Evidence branch and artifact roots:
-Artifact availability / completeness / freshness:
-Timing source / covered stages / aggregation basis:
-Top bottleneck:
-Call-cost interpretation:
-Next evidence / stop rule:
-```
-
-Add for `paired_comparison`:
-
-```markdown
-Producing state / intended isolated change / unrelated differences:
-Comparability verdict / blocker / smallest missing proof:
-Decision metric / why it answers the claim:
-Baseline/candidate timing and call-cost delta:
-Noise/repetition evidence:
-Correctness oracle / result:
-```
-
-Add when preparing implementation or acceptance:
-
-```markdown
-Optimization lane / authority ceiling:
-Validation gate / rollback:
-Residual risk:
-```
-
-Performance evidence alone leaves product validation status unchanged; use the
-canonical repo vocabulary for that separate field.
-
-Only `optimization_ready` opens issue-bounded code edits. Route actual RAW
-launch or artifact acceptance to `xic-raw-validation`. Consult the
-productization status index, authority
-manifest, and promotion contract only when the evidence could change a maturity
-tier, active lane, ProductWriter authority, or product gate state.
-
-Completion criterion: every packet field has observed evidence, a reasoned
-`N/A`, or an explicit unknown for the selected branch; claims remain
-source-qualified and the handoff cannot exceed the stated authority ceiling.
-
-Read `evals/trigger-cases.md` only when tuning skill routing.
-Read `evals/pressure-cases.md` only when testing candidate disposition under
-sunk-cost or deadline pressure. These prose fixtures are not behavioral
-automation and do not change skill routing.
+Routing scenarios live in `evals/trigger-cases.md`; candidate-disposition
+pressure scenarios live in `evals/pressure-cases.md`. These are manual fixtures,
+not observed agent behavior or automated acceptance.

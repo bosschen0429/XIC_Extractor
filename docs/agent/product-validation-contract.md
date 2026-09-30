@@ -131,9 +131,9 @@ passing alone never establishes production readiness.
   not product usability.
 - When validation work meets the boundary in `docs/architecture-contract.md`,
   the Issue binds the owner, consumer, expected delta, oracle, and stop rule;
-  verify current structure with CBM and source. Use `xic-raw-validation` for RAW
-  launch or artifact acceptance. A diagnostic, method, or RAW label alone does
-  not create another gate.
+  verify current structure with CBM and source. Use the documented runner for
+  RAW execution and the method's actual acceptance check for its results. A
+  diagnostic, method, or RAW label alone does not create another gate.
 - Establish a migration seam or dual-write contract when a current migration
   needs it and its compatibility/rollback costs are justified. Speculative
   future architecture is not a prerequisite for an authorized local fix.

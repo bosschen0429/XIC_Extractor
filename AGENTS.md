@@ -10,7 +10,7 @@ uses the affected source, existing tests, and the relevant branch below.
 
 | Trigger | Required route |
 | --- | --- |
-| Project Python, worktree bootstrap, RAW/DLL, validation scale, command shape, or sandbox friction | Choose one branch in [`parameter-settings.md#read-routes`](docs/agent/parameter-settings.md#read-routes). |
+| Project Python, worktree bootstrap, RAW/DLL, validation scale, or environment failure | Choose one branch in [`parameter-settings.md#read-routes`](docs/agent/parameter-settings.md#read-routes). |
 | Product terminology lookup | Read the relevant entry in [`domain-glossary.md`](docs/product/domain-glossary.md). |
 | Product behavior or method evidence decision | Use [`docs/product/README.md`](docs/product/README.md) to locate the relevant topic owner. |
 | Readiness claim or validation policy | Read [`product-validation-contract.md`](docs/agent/product-validation-contract.md). |
@@ -28,23 +28,14 @@ uses the affected source, existing tests, and the relevant branch below.
 
 ## Always-On Gates
 
-- **Mutation gate:** before non-trivial edits, verify worktree, branch, and dirty
-  scope. Preserve unrelated changes; stage only task files.
 - **Mission lock:** the current Issue/Current Packet is the durable task
   authority when one exists. TaskFrame keeps only its locator, volatile
   decisions/progress, and evidence receipts; do not copy the packet's scope or
   acceptance into another contract.
-- **Technical convergence:** Main resolves in-scope technical unknowns with the
-  cheapest decisive evidence and smallest reversible step. Ask one concrete
-  operator question only when missing intent or an operator-only value/authority
-  can change the outcome; block or hold is interim, never delivery.
 - **Structural observation:** use Codebase Memory (CBM) first for callers,
   dependencies, impact, and reachability; check index coverage once, then use
   targeted source reads only for exact text, reported gaps, or negative claims.
-- **Necessity proof:** prefer existing owners and mechanisms. Added design must
-  serve a present need worth its maintenance cost; use the
-  [design principles](docs/architecture-contract.md#design-principles).
-  Ownership, serialization, derived-fact, and internal-defense changes use the
+- **Change locality:** ownership, serialization, derived-fact, and internal-defense changes use the
   XIC technical criteria in [Change Locality](docs/architecture-contract.md#change-locality).
   [`testing.md`](docs/agent/testing.md) owns test worth.
 - 批次路徑將共享準備移出迴圈，先以呼叫次數與小規模量測確認成本，再放大資料量。深度診斷、全圖重驗與審計預設按需執行；只有會影響本次輸出正確性、且沒有較便宜替代檢查時，才放進正常執行路徑。
@@ -57,33 +48,15 @@ uses the affected source, existing tests, and the relevant branch below.
 - **Runtime owner:** use the active worktree's documented Python runner and
   bootstrap. Run-specific artifacts stay under ignored task-specific `output/`;
   tracked artifacts require a current runtime, CI, or public consumer.
-- **Git boundary:** run one direct Git command per shell step. Parallelize
-  independent reads inside one orchestrator call and return bounded summaries,
-  anomalies, counts, and locators. Read-only `diff`/`log`/`show` may end with
-  `| Select-Object -First N` or `| head -n N`, where N is a positive literal;
-  this is an output excerpt, not proof of complete inspection. Routine sync uses
-  `git pull --ff-only --no-stat` after inspecting only the current branch.
-- **Specialized gates:** performance work first uses
-  `xic-performance-diagnosis`; RAW launch or artifact acceptance uses
-  `xic-raw-validation`.
+- **Performance evidence:** use `xic-performance-diagnosis` for XIC timing,
+  locality, or baseline/candidate decisions; reuse a still-current diagnosis.
 - **Evidence claim:** report the canonical Evidence label and the actual method-
   appropriate oracle. Passing tests proves engineering regression coverage,
   not scientific or production readiness.
 - **Agent guidance changes:** use the
   [operating-system change protocol](docs/agent/codex-operating-system.md#change-protocol)
   for docs, skills, hooks, rules, config, and subagent definitions. Select its
-  checks by the behavior changed; execution changes require smoke and focused
-  runtime tests.
+  checks by the behavior changed.
 - **PR gate:** before push, PR creation, remote-head change, or ready-for-review,
   follow the SHA-bound [PR Verification Gate](docs/agent/execution-gates.md#pr-verification).
   Hosted checks on the final remote SHA remain merge authority.
-
-## Codex Code Review Rules
-
-- Main neutrally adjudicates reviewer findings as evidence leads. Adopt only a
-  current linked-issue/public-contract violation or reachable observable loss
-  naming its obligation, actor/input/path, and consumer-visible loss; severity
-  or a refreeze request does not replace the mission.
-- Review changed behavior, reachable production callers, and current consumers.
-  Hypothetical or test-only findings without a real entry are non-blocking;
-  route pre-existing out-of-scope losses to their owner.
