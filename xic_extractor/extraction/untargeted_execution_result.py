@@ -14,8 +14,8 @@ from xic_extractor.alignment.result.application_result import (
     FinalizedUntargetBatchApplicationResult,
 )
 from xic_extractor.discovery.physical_fact_record import DiscoveryPhysicalFactRecord
-from xic_extractor.execution_runtime import AttemptTerminalOutcome
-from xic_extractor.execution_runtime_owner import RuntimeFinalizationReceipt
+from xic_extractor.execution._lifecycle import AttemptTerminalOutcome
+from xic_extractor.execution.attempt import RuntimeFinalizationReceipt
 from xic_extractor.immutable_sequence import ImmutableSequence
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessmentRef,

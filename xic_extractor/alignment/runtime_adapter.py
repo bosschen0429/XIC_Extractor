@@ -21,25 +21,24 @@ from xic_extractor.evidence_artifacts import (
     _mint_evidence_artifact_ref,
     verify_evidence_artifact_payload,
 )
-from xic_extractor.execution_runtime import (
-    AttemptRuntime,
-    AttemptTerminalOutcome,
-    WorkUnitSettlement,
-    WorkUnitTerminalOutcome,
-)
-from xic_extractor.execution_runtime_finalization import (
+from xic_extractor.execution._finalization import (
     CoordinatorTerminalRecord,
     RuntimeResourceCleanupOutcome,
     RuntimeResourceOpenOutcome,
     RuntimeResourceReservation,
     SupervisorFinalizationRecord,
 )
-from xic_extractor.execution_runtime_marker import OwnerPathRuntimeMarker
-from xic_extractor.execution_runtime_observability import (
+from xic_extractor.execution._lifecycle import (
+    AttemptRuntime,
+    AttemptTerminalOutcome,
+    WorkUnitSettlement,
+    WorkUnitTerminalOutcome,
+)
+from xic_extractor.execution._observability import (
     RuntimeObservabilityContractError,
     validate_runtime_acquisition_metrics,
 )
-from xic_extractor.execution_runtime_owner import (
+from xic_extractor.execution.attempt import (
     RuntimeAcquisitionReceipt,
     RuntimeArtifactRegistrationReceipt,
     RuntimeAttemptAggregate,
@@ -49,6 +48,7 @@ from xic_extractor.execution_runtime_owner import (
     RuntimeWorkerBatchReceipt,
     execute_runtime_attempt,
 )
+from xic_extractor.execution.recovery import OwnerPathRuntimeMarker
 from xic_extractor.peak_detection.observation_batch import (
     PeakObservationBatch,
     canonical_peak_observation_batch_bytes,

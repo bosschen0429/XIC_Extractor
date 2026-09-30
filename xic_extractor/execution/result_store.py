@@ -12,10 +12,7 @@ from dataclasses import dataclass, fields, is_dataclass
 from pathlib import Path
 from typing import Any, BinaryIO
 
-from xic_extractor.execution_engine.owner_pickle import (
-    _OwnerPickler,
-    _OwnerUnpickler,
-)
+from xic_extractor.execution._serialization import _OwnerPickler, _OwnerUnpickler
 from xic_extractor.immutable_sequence import ImmutableSequence
 
 PRESERVED_INDEX_NAME = "partition-index.pickle"
@@ -201,9 +198,7 @@ class StreamedResultStore:
     ) -> SealedPartition:
         if not is_dataclass(payload) or isinstance(payload, type):
             raise TypeError("partition payload requires a dataclass result")
-        return self._append_payload(
-            partition_key, payload, retain_memory=retain_memory
-        )
+        return self._append_payload(partition_key, payload, retain_memory=retain_memory)
 
     def append_children(
         self,
@@ -514,6 +509,3 @@ def open_preserved_results(path: Path) -> StreamedResultStore:
     store._directory = resolved.parent
     store._field_caches = []
     return store
-
-
-PartitionResultStore = StreamedResultStore

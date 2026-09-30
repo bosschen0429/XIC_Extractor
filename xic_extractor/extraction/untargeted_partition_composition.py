@@ -56,14 +56,14 @@ from xic_extractor.alignment.result.application_result import (
     FinalizedUntargetApplicationResult,
     UntargetedCandidateExclusion,
 )
+from xic_extractor.configuration.execution_profile import DEFAULT_ALIGNMENT_WORKERS
 from xic_extractor.discovery.models import (
     MS1_FEATURE_BACKED_STATES,
 )
-from xic_extractor.execution_engine.streamed_result_store import (
+from xic_extractor.execution.result_store import (
     SealedPartition,
     StreamedResultStore,
 )
-from xic_extractor.execution_settings import DEFAULT_ALIGNMENT_WORKERS
 from xic_extractor.extraction.untargeted_cid_nl_real_data_inputs import (
     UntargetedCidNlRealDataContext,
 )

@@ -97,14 +97,13 @@ CENSUS_OWNER_REFS: Mapping[str, str] = {
 
 RUNTIME_CONSTRUCTION_OWNER_PATHS = frozenset(
     {
-        "xic_extractor/execution_runtime.py",
-        "xic_extractor/execution_runtime_finalization.py",
-        "xic_extractor/execution_runtime_finalization_models.py",
-        "xic_extractor/execution_runtime_observability.py",
-        "xic_extractor/execution_runtime_owner.py",
+        "xic_extractor/execution/_lifecycle.py",
+        "xic_extractor/execution/_finalization.py",
+        "xic_extractor/execution/_observability.py",
+        "xic_extractor/execution/attempt.py",
     }
 )
-RUNTIME_RECEIPT_CONTRACT_PATH = "xic_extractor/execution_runtime_receipts.py"
+RUNTIME_RECEIPT_CONTRACT_PATH = "xic_extractor/execution/_receipts.py"
 RUNTIME_CONSUMER_PATHS = frozenset(
     {
         "xic_extractor/alignment/runtime_adapter.py",
@@ -114,12 +113,11 @@ RUNTIME_CONSUMER_PATHS = frozenset(
 )
 RUNTIME_AUTHORITY_MODULES = frozenset(
     {
-        "xic_extractor.execution_runtime",
-        "xic_extractor.execution_runtime_finalization",
-        "xic_extractor.execution_runtime_finalization_models",
-        "xic_extractor.execution_runtime_observability",
-        "xic_extractor.execution_runtime_owner",
-        "xic_extractor.execution_runtime_receipts",
+        "xic_extractor.execution._lifecycle",
+        "xic_extractor.execution._finalization",
+        "xic_extractor.execution._observability",
+        "xic_extractor.execution.attempt",
+        "xic_extractor.execution._receipts",
     }
 )
 RAW_OPEN_RECEIPT_MINTER_REFERENCE = (
@@ -127,7 +125,7 @@ RAW_OPEN_RECEIPT_MINTER_REFERENCE = (
 )
 RAW_OPEN_RECEIPT_MINTER_ALLOWED_PATHS = frozenset({"xic_extractor/raw_reader.py"})
 RUNTIME_LOW_LEVEL_ALLOWED_EXPORTS: Mapping[str, frozenset[str]] = {
-    "xic_extractor/execution_runtime.py": frozenset(
+    "xic_extractor/execution/_lifecycle.py": frozenset(
         {
             "AttemptLifecycleContractError",
             "AttemptLifecycleEventKind",
@@ -138,7 +136,7 @@ RUNTIME_LOW_LEVEL_ALLOWED_EXPORTS: Mapping[str, frozenset[str]] = {
             "WorkUnitTerminalOutcome",
         }
     ),
-    "xic_extractor/execution_runtime_finalization.py": frozenset(
+    "xic_extractor/execution/_finalization.py": frozenset(
         {
             "RuntimeArtifactDisposition",
             "RuntimeFinalizationContractError",
@@ -152,19 +150,7 @@ RUNTIME_LOW_LEVEL_ALLOWED_EXPORTS: Mapping[str, frozenset[str]] = {
             "canonical_coordinator_terminal_record_bytes",
         }
     ),
-    "xic_extractor/execution_runtime_finalization_models.py": frozenset(
-        {
-            "RuntimeArtifactDisposition",
-            "RuntimeFinalizationContractError",
-            "RuntimeLifecycleEventKind",
-            "RuntimeLifecycleFailureKind",
-            "RuntimeResourceCleanupOutcome",
-            "RuntimeResourceKind",
-            "RuntimeResourceOpenOutcome",
-            "SupervisorFinalizationEventKind",
-        }
-    ),
-    "xic_extractor/execution_runtime_observability.py": frozenset(
+    "xic_extractor/execution/_observability.py": frozenset(
         {
             "REQUIRED_RUNTIME_METRIC_NAMES",
             "RuntimeMetricAvailability",
@@ -206,34 +192,23 @@ RUNTIME_LOW_LEVEL_ALLOWED_EXPORTS: Mapping[str, frozenset[str]] = {
         }
     ),
 }
-RUNTIME_RECEIPT_CONTRACT_INTERNAL_REFERENCES_BY_MODULE: Mapping[
-    str, frozenset[str]
-] = {
-    "xic_extractor.execution_runtime": frozenset({"WorkUnitSettlement"}),
-    "xic_extractor.execution_runtime_finalization": frozenset(
+RUNTIME_RECEIPT_CONTRACT_INTERNAL_REFERENCES_BY_MODULE: Mapping[str, frozenset[str]] = {
+    "xic_extractor.execution._lifecycle": frozenset({"WorkUnitSettlement"}),
+    "xic_extractor.execution._finalization": frozenset(
         {"CoordinatorTerminalRecord", "accept_supervisor_finalization"}
     ),
 }
 RUNTIME_EXTERNAL_CALLS_BY_MODULE: Mapping[str, frozenset[str]] = {
-    "xic_extractor.execution_runtime": RUNTIME_LOW_LEVEL_ALLOWED_EXPORTS[
-        "xic_extractor/execution_runtime.py"
+    "xic_extractor.execution._lifecycle": RUNTIME_LOW_LEVEL_ALLOWED_EXPORTS[
+        "xic_extractor/execution/_lifecycle.py"
     ],
-    "xic_extractor.execution_runtime_finalization": (
-        RUNTIME_LOW_LEVEL_ALLOWED_EXPORTS[
-            "xic_extractor/execution_runtime_finalization.py"
-        ]
+    "xic_extractor.execution._finalization": (
+        RUNTIME_LOW_LEVEL_ALLOWED_EXPORTS["xic_extractor/execution/_finalization.py"]
     ),
-    "xic_extractor.execution_runtime_finalization_models": (
-        RUNTIME_LOW_LEVEL_ALLOWED_EXPORTS[
-            "xic_extractor/execution_runtime_finalization_models.py"
-        ]
+    "xic_extractor.execution._observability": (
+        RUNTIME_LOW_LEVEL_ALLOWED_EXPORTS["xic_extractor/execution/_observability.py"]
     ),
-    "xic_extractor.execution_runtime_observability": (
-        RUNTIME_LOW_LEVEL_ALLOWED_EXPORTS[
-            "xic_extractor/execution_runtime_observability.py"
-        ]
-    ),
-    "xic_extractor.execution_runtime_owner": frozenset(
+    "xic_extractor.execution.attempt": frozenset(
         {
             "RuntimeAcquisitionMetrics",
             "RuntimeAcquisitionReceipt",
@@ -265,7 +240,7 @@ RUNTIME_EXTERNAL_CALLS_BY_MODULE: Mapping[str, frozenset[str]] = {
             "start_runtime_attempt",
         }
     ),
-    "xic_extractor.execution_runtime_receipts": frozenset(
+    "xic_extractor.execution._receipts": frozenset(
         {
             "RuntimeAcquisitionMetrics",
             "RuntimeAcquisitionReceipt",
@@ -551,7 +526,7 @@ def validate_runtime_boundary_authority(
             not is_test
             and (
                 path_key in RUNTIME_CONSUMER_PATHS
-                or _imports_runtime_owner_facade(
+                or _imports_runtime_attempt(
                     tree,
                     source_path=relative_path,
                 )
@@ -1281,12 +1256,12 @@ def _resolve_import_from_module(
     return resolved or None
 
 
-def _imports_runtime_owner_facade(
+def _imports_runtime_attempt(
     tree: ast.AST,
     *,
     source_path: Path,
 ) -> bool:
-    owner_module = "xic_extractor.execution_runtime_owner"
+    owner_module = "xic_extractor.execution.attempt"
     source_package = _source_package_from_path(source_path)
     for node in ast.walk(tree):
         if isinstance(node, ast.ImportFrom):

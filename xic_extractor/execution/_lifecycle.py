@@ -683,7 +683,7 @@ def _start_runtime_attempt(
 ) -> AttemptRuntime:
     """Mint one running or preflight-terminalized owner attempt.
 
-    The public facade lives in ``execution_runtime_owner``.  Keeping this
+    The attempt entry lives in ``execution.attempt``.  Keeping this
     implementation private prevents the state-model module from becoming an
     alternate production construction authority.
     """

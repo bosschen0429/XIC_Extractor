@@ -27,11 +27,11 @@ from xic_extractor.discovery.models import (
     DiscoverySettings,
 )
 from xic_extractor.discovery.physical_fact_record import DiscoveryPhysicalFactRecord
-from xic_extractor.execution_runtime_marker import OwnerPathRuntimeMarker
-from xic_extractor.execution_runtime_owner import (
+from xic_extractor.execution.attempt import (
     RuntimeTelemetryProvider,
     start_runtime_attempt,
 )
+from xic_extractor.execution.recovery import OwnerPathRuntimeMarker
 from xic_extractor.extraction.untargeted_execution import (
     materialize_untargeted_partition,
 )

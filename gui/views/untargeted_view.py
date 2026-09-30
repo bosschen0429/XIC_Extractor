@@ -20,7 +20,7 @@ from gui.workers.discovery_worker import (
     DiscoveryRequest,
     DiscoveryWorker,
 )
-from xic_extractor.execution_settings import resolve_execution_profile
+from xic_extractor.configuration.execution_profile import resolve_execution_profile
 from xic_extractor.presets import filter_cid_nl_recipe_presets, list_presets
 
 

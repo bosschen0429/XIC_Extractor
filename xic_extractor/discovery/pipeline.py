@@ -74,11 +74,11 @@ from xic_extractor.discovery.processing_run_spec_adapter import (
     processing_run_input_for_path,
     validate_processing_run_spec_call,
 )
-from xic_extractor.execution_runtime_owner import (
+from xic_extractor.execution.attempt import (
     derive_runtime_acquisition_metrics,
     derive_runtime_raw_open_metrics,
 )
-from xic_extractor.process_job_execution import execute_process_jobs
+from xic_extractor.execution.workers import execute_process_jobs
 from xic_extractor.processing_identity import (
     AcquisitionSourceIdentity,
     build_acquisition_source_identity,
@@ -1628,7 +1628,7 @@ def _record_raw_open_metrics(
         scope=sample_stem,
         unit="opens",
         source=(
-            "xic_extractor.execution_runtime_owner.derive_runtime_raw_open_metrics"
+            "xic_extractor.execution.attempt.derive_runtime_raw_open_metrics"
         ),
         availability=(
             "measured" if metrics.raw_open_count is not None else "unavailable"

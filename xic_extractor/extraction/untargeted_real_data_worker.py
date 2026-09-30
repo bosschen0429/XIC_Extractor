@@ -27,9 +27,7 @@ from xic_extractor.alignment.untargeted_cid_nl_golden_path import (
     UntargetedCidNlBackfillInput,
 )
 from xic_extractor.evidence_artifacts import EvidenceArtifactRef
-from xic_extractor.execution_runtime_finalization import (
-    RuntimeResourceCleanupOutcome,
-)
+from xic_extractor.execution._finalization import RuntimeResourceCleanupOutcome
 from xic_extractor.extraction.untargeted_acquisition_cache import (
     CachedUntargetedRaw,
     bind_untargeted_acquisition_cache,

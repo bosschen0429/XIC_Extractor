@@ -21,8 +21,8 @@ from tests.test_untargeted_cid_nl_real_data_runtime import (
     _install_runtime_raws,
 )
 from xic_extractor.discovery.models import DiscoveryCandidate
-from xic_extractor.execution_runtime_marker import OwnerPathRuntimeMarker
-from xic_extractor.execution_runtime_owner import start_runtime_attempt
+from xic_extractor.execution.attempt import start_runtime_attempt
+from xic_extractor.execution.recovery import OwnerPathRuntimeMarker
 from xic_extractor.extraction.untargeted_cid_nl_real_data_inputs import (
     build_untargeted_cid_nl_real_data_context,
 )

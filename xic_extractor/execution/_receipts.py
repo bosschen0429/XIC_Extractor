@@ -16,8 +16,7 @@ from xic_extractor.acquisition_contract import (
     acquired_trace_content_id,
 )
 from xic_extractor.evidence_artifacts import EvidenceArtifactRef
-from xic_extractor.execution_runtime import WorkUnitSettlement
-from xic_extractor.execution_runtime_finalization import (
+from xic_extractor.execution._finalization import (
     CoordinatorTerminalRecord,
     RuntimeFinalizationContractError,
     RuntimeResourceCleanupOutcome,
@@ -25,7 +24,8 @@ from xic_extractor.execution_runtime_finalization import (
     SupervisorFinalizationRecord,
     accept_supervisor_finalization,
 )
-from xic_extractor.execution_runtime_observability import (
+from xic_extractor.execution._lifecycle import WorkUnitSettlement
+from xic_extractor.execution._observability import (
     RuntimeMetricAvailability,
     RuntimeObservabilityLedger,
 )

@@ -1,37 +1,39 @@
-"""Generic partition pipeline execution engine scheduler."""
+"""Partition pipeline inputs, adapter protocol and scheduler."""
 
 from __future__ import annotations
 
 import queue
 import threading
 import time
-from collections.abc import Callable, Mapping
+from collections.abc import (
+    Callable,
+    Mapping,
+    Sequence,
+)
+from dataclasses import dataclass
 from pathlib import Path
 from tempfile import mkdtemp
-from typing import Any, TypeVar
+from typing import (
+    Any,
+    Generic,
+    Protocol,
+    TypeAlias,
+    TypeVar,
+)
 
-from xic_extractor.execution_engine.contracts import (
-    PartitionAcquisitionOutput,
-    PartitionCompositionOutput,
-    PartitionPipelineAdapter,
-    WorkPartition,
+from xic_extractor.execution._finalization import (
+    RuntimeResourceCleanupOutcome,
+    RuntimeResourceOpenOutcome,
+    RuntimeResourceReservation,
 )
-from xic_extractor.execution_engine.streamed_result_store import (
-    StreamedResultStore,
-)
-from xic_extractor.execution_runtime import (
+from xic_extractor.execution._lifecycle import (
     AttemptTerminalOutcome,
     WorkUnitFailureCategory,
     WorkUnitFailureDetail,
     WorkUnitSettlement,
     WorkUnitTerminalOutcome,
 )
-from xic_extractor.execution_runtime_finalization import (
-    RuntimeResourceCleanupOutcome,
-    RuntimeResourceOpenOutcome,
-)
-from xic_extractor.execution_runtime_marker import OwnerPathRuntimeMarker
-from xic_extractor.execution_runtime_owner import (
+from xic_extractor.execution.attempt import (
     RuntimeAcquisitionReceipt,
     RuntimeArtifactRegistrationReceipt,
     RuntimeCancellationIngress,
@@ -45,12 +47,130 @@ from xic_extractor.execution_runtime_owner import (
     mint_work_unit_settlement,
     start_runtime_attempt,
 )
+from xic_extractor.execution.recovery import OwnerPathRuntimeMarker
+from xic_extractor.execution.result_store import (
+    SealedPartition,
+    StreamedResultStore,
+)
+from xic_extractor.processing_identity import ProcessingOwnerReferences
 
-TPartitionPayload = TypeVar("TPartitionPayload")
+ProcessingOwners: TypeAlias = ProcessingOwnerReferences
+
+
+TPayload = TypeVar("TPayload")
 TAcquisitionResult = TypeVar("TAcquisitionResult")
 TCompositionResult = TypeVar("TCompositionResult")
+TPartitionPayload = TypeVar("TPartitionPayload")
 TApplicationResult = TypeVar("TApplicationResult")
-TFinalResult = TypeVar("TFinalResult")
+TFinalResult = TypeVar("TFinalResult", covariant=True)
+
+
+@dataclass(frozen=True, slots=True)
+class WorkPartition(Generic[TPayload]):
+    index: int
+    partition_key: str
+    payload: TPayload
+    work_unit_keys: tuple[str, ...]
+    resource_keys: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class PartitionAcquisitionOutput(Generic[TAcquisitionResult]):
+    result: TAcquisitionResult
+    resources: Sequence[RuntimeResourceSettlementReceipt] = ()
+    acquisitions: Sequence[RuntimeAcquisitionReceipt] = ()
+    succeeded: bool = True
+    failure_detail: WorkUnitFailureDetail | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class PartitionCompositionOutput(Generic[TCompositionResult]):
+    result: TCompositionResult
+    sealed: SealedPartition
+
+
+class PartitionPipelineAdapter(
+    Protocol[
+        TPartitionPayload,
+        TAcquisitionResult,
+        TCompositionResult,
+        TApplicationResult,
+        TFinalResult,
+    ]
+):
+    @property
+    def partitions(self) -> Sequence[WorkPartition[TPartitionPayload]]: ...
+
+    @property
+    def processing_owners(self) -> ProcessingOwners: ...
+
+    @property
+    def work_unit_keys(self) -> Sequence[str]: ...
+
+    @property
+    def resource_reservations(self) -> Sequence[RuntimeResourceReservation]: ...
+
+    @property
+    def owner_completeness_attestation(self) -> str: ...
+
+    def get_shared_objects(self) -> tuple[object, ...]: ...
+
+    def execute_acquisition(
+        self,
+        partition: WorkPartition[TPartitionPayload],
+        *,
+        should_cancel: Callable[[], bool] | None = None,
+        progress_callback: Callable[[Mapping[str, object]], None] | None = None,
+    ) -> PartitionAcquisitionOutput[TAcquisitionResult]: ...
+
+    def execute_composition(
+        self,
+        partition: WorkPartition[TPartitionPayload],
+        acquisition_output: PartitionAcquisitionOutput[TAcquisitionResult],
+        store: StreamedResultStore,
+        *,
+        retain_memory: bool = False,
+        should_cancel: Callable[[], None] | Callable[[], bool] | None = None,
+    ) -> PartitionCompositionOutput[TCompositionResult]: ...
+
+    def create_partition_artifacts(
+        self,
+        partition: WorkPartition[TPartitionPayload],
+        composition_output: PartitionCompositionOutput[TCompositionResult],
+    ) -> tuple[
+        Sequence[RuntimeArtifactRegistrationReceipt],
+        Sequence[WorkUnitSettlement],
+    ]: ...
+
+    def finalize_application(
+        self,
+        store: StreamedResultStore,
+        composition_outputs: Sequence[PartitionCompositionOutput[TCompositionResult]],
+    ) -> TApplicationResult: ...
+
+    @property
+    def global_closure_work_unit_key(self) -> str | None:
+        """Optional declared manifest work-unit key for global closure."""
+        return None
+
+    def create_global_closure_artifacts(
+        self,
+        application_result: TApplicationResult,
+    ) -> tuple[
+        Sequence[RuntimeArtifactRegistrationReceipt],
+        Sequence[WorkUnitSettlement],
+    ]:
+        """Mint artifact registrations and work settlements for global closure."""
+        return (), ()
+
+    def build_workflow_result(
+        self,
+        runtime_receipt: RuntimeFinalizationReceipt,
+        application_result: TApplicationResult,
+        store: StreamedResultStore,
+    ) -> TFinalResult: ...
+
+
 _DONE_SENTINEL = object()
 
 
@@ -235,7 +355,9 @@ class PartitionPipelineScheduler:
                             compact_runtime_acquisition_receipt(receipt)
                             for receipt in acq_out.acquisitions
                         )
-                        inflight_resource_keys.difference_update(partition.resource_keys)
+                        inflight_resource_keys.difference_update(
+                            partition.resource_keys
+                        )
                         if not acq_out.succeeded:
                             timeline_records[index]["status"] = "failed"
                             failure_msg = (
@@ -332,7 +454,9 @@ class PartitionPipelineScheduler:
 
                                 progress("partition_start", index)
                                 with thread_lock:
-                                    inflight_resource_keys.update(partition.resource_keys)
+                                    inflight_resource_keys.update(
+                                        partition.resource_keys
+                                    )
                                 acq_start = time.perf_counter()
                                 acq_out = adapter.execute_acquisition(
                                     partition,
@@ -699,6 +823,7 @@ class PartitionPipelineScheduler:
 
         try:
             recovery_marker.record_launch(runtime)
+
             def provide_worker_batch_and_cleanup(
                 aggregate: object,
             ) -> RuntimeWorkerBatchReceipt:

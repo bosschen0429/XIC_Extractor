@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from xic_extractor import execution_settings
+from xic_extractor.configuration import execution_profile as execution_settings
 from xic_extractor.configuration.models import ExtractionConfig
 
 
@@ -78,15 +78,36 @@ def test_load_profile_reads_only_worker_setting_and_defaults_missing_or_blank(
 
 def test_explicit_override_bypasses_invalid_saved_worker(tmp_path: Path) -> None:
     settings_path = tmp_path / "settings.csv"
-    settings_path.write_text(
-        "key,value\nparallel_workers,invalid\n", encoding="utf-8"
-    )
+    settings_path.write_text("key,value\nparallel_workers,invalid\n", encoding="utf-8")
 
     profile = execution_settings.load_execution_profile(
         settings_path, parallel_workers=3
     )
 
     assert profile.parallel_workers == 3
+
+
+@pytest.mark.parametrize("frozen", [False, True])
+def test_default_settings_resolve_from_development_or_executable_root(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, frozen: bool
+) -> None:
+    runtime_root = tmp_path / ("bundle" if frozen else "checkout")
+    config_dir = runtime_root / "config"
+    config_dir.mkdir(parents=True)
+    (config_dir / "settings.csv").write_text(
+        "key,value\nparallel_workers,7\n", encoding="utf-8"
+    )
+    monkeypatch.setattr(execution_settings.sys, "frozen", frozen, raising=False)
+    monkeypatch.setattr(
+        execution_settings.sys, "executable", str(runtime_root / "xic.exe")
+    )
+    monkeypatch.setattr(
+        execution_settings,
+        "__file__",
+        str(runtime_root / "xic_extractor" / "configuration" / "profile.py"),
+    )
+
+    assert execution_settings.load_execution_profile().parallel_workers == 7
 
 
 def test_extraction_config_default_factory_uses_shared_parallel_budget(

@@ -53,8 +53,8 @@ from xic_extractor.evidence_artifacts import (
     _mint_evidence_artifact_ref,
     verify_evidence_artifact_payload,
 )
-from xic_extractor.execution_runtime import WorkUnitTerminalOutcome
-from xic_extractor.execution_runtime_owner import (
+from xic_extractor.execution._lifecycle import WorkUnitTerminalOutcome
+from xic_extractor.execution.attempt import (
     RuntimeAcquisitionReceipt,
     RuntimeWorkerBatchReceipt,
 )

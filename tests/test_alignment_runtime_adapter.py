@@ -22,14 +22,7 @@ from xic_extractor.alignment.runtime_adapter import (
     mint_alignment_process_result_artifact,
 )
 from xic_extractor.evidence_artifacts import EvidenceArtifactRef
-from xic_extractor.execution_runtime import (
-    AttemptRuntime,
-    AttemptTerminalOutcome,
-    WorkUnitFailureCategory,
-    WorkUnitFailureDetail,
-    WorkUnitTerminalOutcome,
-)
-from xic_extractor.execution_runtime_finalization import (
+from xic_extractor.execution._finalization import (
     RuntimeArtifactDisposition,
     RuntimeResourceCleanupOutcome,
     RuntimeResourceKind,
@@ -37,12 +30,19 @@ from xic_extractor.execution_runtime_finalization import (
     RuntimeResourceReservation,
     canonical_coordinator_terminal_record_bytes,
 )
-from xic_extractor.execution_runtime_marker import OwnerPathRuntimeMarker
-from xic_extractor.execution_runtime_owner import (
+from xic_extractor.execution._lifecycle import (
+    AttemptRuntime,
+    AttemptTerminalOutcome,
+    WorkUnitFailureCategory,
+    WorkUnitFailureDetail,
+    WorkUnitTerminalOutcome,
+)
+from xic_extractor.execution.attempt import (
     RuntimeCancellationRequest,
     mint_work_unit_settlement,
     start_runtime_attempt,
 )
+from xic_extractor.execution.recovery import OwnerPathRuntimeMarker
 from xic_extractor.processing_identity import (
     AcquisitionInputBinding,
     ProcessingAttemptIdentity,

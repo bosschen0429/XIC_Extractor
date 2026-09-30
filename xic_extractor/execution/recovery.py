@@ -20,16 +20,16 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Iterator
 
-from xic_extractor.execution_runtime import AttemptRuntime, AttemptTerminalOutcome
-from xic_extractor.execution_runtime_finalization import (
+from xic_extractor.execution._finalization import (
     RuntimeArtifactDisposition,
     RuntimeFinalizationContractError,
     canonical_coordinator_terminal_record_bytes,
 )
-from xic_extractor.execution_runtime_observability import (
+from xic_extractor.execution._lifecycle import AttemptRuntime, AttemptTerminalOutcome
+from xic_extractor.execution._observability import (
     canonical_runtime_observability_ledger_bytes,
 )
-from xic_extractor.execution_runtime_owner import RuntimeFinalizationReceipt
+from xic_extractor.execution.attempt import RuntimeFinalizationReceipt
 from xic_extractor.processing_identity import ProcessingAttemptIdentity
 from xic_extractor.validation_primitives import require_owner_normalized_text
 
@@ -568,9 +568,9 @@ def _snapshot_from_payload(payload: Any) -> RuntimeMarkerSnapshot:
         or len(marker_sha256) != 64
         or any(character not in "0123456789abcdef" for character in marker_sha256)
         or marker_sha256
-            != hashlib.sha256(
-                json.dumps(
-                    digest_payload,
+        != hashlib.sha256(
+            json.dumps(
+                digest_payload,
                 ensure_ascii=False,
                 sort_keys=True,
                 separators=(",", ":"),
@@ -624,7 +624,6 @@ def _required_text(value: object, *, field: str) -> str:
     return require_owner_normalized_text(
         value, field=field, error_factory=RuntimeFinalizationContractError
     )
-
 
 
 __all__ = [

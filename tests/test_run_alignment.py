@@ -275,7 +275,7 @@ def test_run_alignment_env_enables_asls_baseline_audit(
     (execution_root / "config" / "settings.csv").write_text(
         "key,value\nparallel_workers,7\n", encoding="utf-8"
     )
-    from xic_extractor import execution_settings
+    from xic_extractor.configuration import execution_profile as execution_settings
 
     monkeypatch.setattr(execution_settings, "_runtime_root", lambda: execution_root)
 

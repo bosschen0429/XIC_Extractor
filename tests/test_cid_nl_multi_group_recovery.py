@@ -33,8 +33,8 @@ from xic_extractor.alignment.grouping_workflow import (
 from xic_extractor.alignment.untargeted_finalized_matrix import (
     project_completed_untarget_batch_writer_inputs,
 )
-from xic_extractor.execution_runtime_marker import OwnerPathRuntimeMarker
-from xic_extractor.execution_runtime_owner import start_runtime_attempt
+from xic_extractor.execution.attempt import start_runtime_attempt
+from xic_extractor.execution.recovery import OwnerPathRuntimeMarker
 from xic_extractor.extraction import (
     untargeted_cid_nl_real_data_runtime as runtime_owner,
 )

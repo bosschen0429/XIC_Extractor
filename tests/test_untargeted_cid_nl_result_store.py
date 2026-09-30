@@ -13,8 +13,8 @@ from types import MappingProxyType
 
 import pytest
 
-from xic_extractor.execution_engine.owner_pickle import owner_pickle_dumps
-from xic_extractor.execution_engine.streamed_result_store import (
+from xic_extractor.execution._serialization import owner_pickle_dumps
+from xic_extractor.execution.result_store import (
     PRESERVED_INDEX_NAME,
     StreamedResultStore,
     open_preserved_results,
@@ -388,7 +388,7 @@ def test_partition_result_store_cleanup(tmp_path: Path) -> None:
 
 
 def test_preserved_index_reads_one_record_in_a_separate_process(tmp_path):
-    """A preserved spool is readable by a reader that never held the graph."""
+    """A moved preserved spool is readable by a reader that never held the graph."""
     shared = MappingProxyType({"owner": "shared"})
     store = StreamedResultStore(tmp_path / "spool", (shared,))
     store.append("alpha", Payload(children=("a0", "a1", "a2")))
@@ -396,12 +396,15 @@ def test_preserved_index_reads_one_record_in_a_separate_process(tmp_path):
     store.seal()
     index = store.preserve_results()
     assert index.is_file()
+    moved = tmp_path / "moved-spool"
+    shutil.move(str(index.parent), str(moved))
+    index = moved / index.name
 
     reader = textwrap.dedent(
         """
         import sys
         from pathlib import Path
-        from xic_extractor.execution_engine.streamed_result_store import (
+        from xic_extractor.execution.result_store import (
             open_preserved_results,
         )
 

@@ -45,7 +45,7 @@ from xic_extractor.discovery.pipeline import run_discovery
 from xic_extractor.discovery.processing_run_spec_adapter import (
     compile_discovery_processing_run_spec,
 )
-from xic_extractor.execution_runtime_owner import derive_runtime_acquisition_metrics
+from xic_extractor.execution.attempt import derive_runtime_acquisition_metrics
 from xic_extractor.peak_detection.physical_peak_evaluation import (
     evaluate_physical_peak,
     prepare_physical_signal,

@@ -494,8 +494,8 @@ def test_pipeline_streams_partition_children_once_and_cleans_up(
     from xic_extractor.diagnostics.alignment_explanation_projection import (
         write_alignment_explanation,
     )
-    from xic_extractor.execution_engine.streamed_result_store import StreamedResultStore
-    from xic_extractor.execution_runtime_marker import OwnerPathRuntimeMarker
+    from xic_extractor.execution.recovery import OwnerPathRuntimeMarker
+    from xic_extractor.execution.result_store import StreamedResultStore
     from xic_extractor.extraction.untargeted_execution import (
         execute_untargeted_plan,
     )

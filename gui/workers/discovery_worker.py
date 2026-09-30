@@ -11,6 +11,10 @@ from xic_extractor.alignment.pipeline_outputs import AlignmentRunOutputs
 from xic_extractor.alignment.process_backend import AlignmentProcessExecutionError
 from xic_extractor.applications.untargeted.application import run_untargeted_application
 from xic_extractor.config import ExtractionConfig
+from xic_extractor.configuration.execution_profile import (
+    DEFAULT_ALIGNMENT_WORKER_BACKEND,
+    ExecutionProfile,
+)
 from xic_extractor.discovery.models import DiscoverySettings
 from xic_extractor.discovery.pipeline import (
     DiscoveryProcessExecutionError,
@@ -19,10 +23,6 @@ from xic_extractor.discovery.pipeline import (
 )
 from xic_extractor.discovery.processing_run_spec_adapter import (
     compile_discovery_processing_run_spec_from_config as _compile_processing_run_spec,
-)
-from xic_extractor.execution_settings import (
-    DEFAULT_ALIGNMENT_WORKER_BACKEND,
-    ExecutionProfile,
 )
 from xic_extractor.presets import (
     BoundCidNlRecipe,

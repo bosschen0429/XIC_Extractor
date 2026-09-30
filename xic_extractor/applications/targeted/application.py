@@ -10,16 +10,14 @@ from xic_extractor.alignment.result.application_result import (
     FinalizedTargetApplicationResult,
 )
 from xic_extractor.config import ConfigError, ExtractionConfig, Target
-from xic_extractor.execution_runtime import AttemptRuntime
-from xic_extractor.execution_runtime_finalization import (
-    RuntimeResourceReservation,
-)
-from xic_extractor.execution_runtime_marker import OwnerPathRuntimeMarker
-from xic_extractor.execution_runtime_owner import (
+from xic_extractor.execution._finalization import RuntimeResourceReservation
+from xic_extractor.execution._lifecycle import AttemptRuntime
+from xic_extractor.execution.attempt import (
     RuntimeAttemptAggregate,
     RuntimeFinalizationReceipt,
     RuntimeTelemetryProvider,
 )
+from xic_extractor.execution.recovery import OwnerPathRuntimeMarker
 from xic_extractor.extraction.targeted_inputs import (
     resolve_model_selection_expected_diff_approvals,
 )

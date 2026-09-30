@@ -21,37 +21,36 @@ from xic_extractor.alignment.result.application_result import (
     UntargetedCandidateExclusion,
     finalize_alignment_result,
 )
+from xic_extractor.configuration.execution_profile import DEFAULT_ALIGNMENT_WORKERS
 from xic_extractor.evidence_artifacts import (
     _mint_artifact_semantic_contract_ref,
     _mint_evidence_artifact_ref,
 )
-from xic_extractor.execution_engine import (
-    PartitionAcquisitionOutput,
-    PartitionCompositionOutput,
-    PartitionPipelineScheduler,
-    ProcessingOwners,
-    StreamedResultStore,
-    WorkerAdmissionPool,
-    WorkPartition,
-)
-from xic_extractor.execution_engine.worker_pool import WorkerTransportMetrics
-from xic_extractor.execution_runtime import (
-    WorkUnitSettlement,
-    WorkUnitTerminalOutcome,
-)
-from xic_extractor.execution_runtime_finalization import (
+from xic_extractor.execution._finalization import (
     RuntimeResourceKind,
     RuntimeResourceReservation,
 )
-from xic_extractor.execution_runtime_marker import OwnerPathRuntimeMarker
-from xic_extractor.execution_runtime_owner import (
+from xic_extractor.execution._lifecycle import (
+    WorkUnitSettlement,
+    WorkUnitTerminalOutcome,
+)
+from xic_extractor.execution.attempt import (
     RuntimeArtifactRegistrationReceipt,
     RuntimeFinalizationReceipt,
     RuntimeTelemetryProvider,
     execute_runtime_attempt,
     mint_work_unit_settlement,
 )
-from xic_extractor.execution_settings import DEFAULT_ALIGNMENT_WORKERS
+from xic_extractor.execution.partitions import (
+    PartitionAcquisitionOutput,
+    PartitionCompositionOutput,
+    PartitionPipelineScheduler,
+    ProcessingOwners,
+    WorkPartition,
+)
+from xic_extractor.execution.recovery import OwnerPathRuntimeMarker
+from xic_extractor.execution.result_store import StreamedResultStore
+from xic_extractor.execution.workers import WorkerAdmissionPool, WorkerTransportMetrics
 from xic_extractor.extraction.untargeted_execution_result import (
     CompletedUntargetBatchWorkflowResult,
 )

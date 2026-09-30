@@ -15,21 +15,7 @@ from dataclasses import InitVar, dataclass, field, replace
 from typing import final
 
 from xic_extractor.evidence_artifacts import EvidenceArtifactRef
-from xic_extractor.execution_runtime import (
-    AttemptLifecycleEventKind,
-    AttemptRuntime,
-    WorkUnitFailureCategory,
-    WorkUnitFailureDetail,
-    WorkUnitSettlement,
-    WorkUnitTerminalOutcome,
-    _settle_work_units,
-    _start_runtime_attempt,
-    append_attempt_lifecycle_event,
-)
-from xic_extractor.execution_runtime import (
-    mint_work_unit_settlement as _mint_work_unit_settlement,
-)
-from xic_extractor.execution_runtime_finalization import (
+from xic_extractor.execution._finalization import (
     AttemptFinalizationState,
     CoordinatorTerminalRecord,
     RuntimeArtifactDisposition,
@@ -49,7 +35,21 @@ from xic_extractor.execution_runtime_finalization import (
     mint_supervisor_finalization,
     propose_attempt_terminal,
 )
-from xic_extractor.execution_runtime_observability import (
+from xic_extractor.execution._lifecycle import (
+    AttemptLifecycleEventKind,
+    AttemptRuntime,
+    WorkUnitFailureCategory,
+    WorkUnitFailureDetail,
+    WorkUnitSettlement,
+    WorkUnitTerminalOutcome,
+    _settle_work_units,
+    _start_runtime_attempt,
+    append_attempt_lifecycle_event,
+)
+from xic_extractor.execution._lifecycle import (
+    mint_work_unit_settlement as _mint_work_unit_settlement,
+)
+from xic_extractor.execution._observability import (
     RuntimeMetricAvailability,
     RuntimeMetricRecord,
     RuntimeMetricScope,
@@ -59,9 +59,7 @@ from xic_extractor.execution_runtime_observability import (
     _index_event_offsets,
     _mint_runtime_observability_ledger,
 )
-from xic_extractor.processing_identity import ProcessingAttemptIdentity
-
-from .execution_runtime_receipts import (
+from xic_extractor.execution._receipts import (
     _RUNTIME_OWNER_MEASUREMENT_SOURCE,
     _RUNTIME_OWNER_MINT_TOKEN,
     RuntimeAcquisitionMetrics,
@@ -94,6 +92,7 @@ from .execution_runtime_receipts import (
     derive_runtime_peak_fact_cost_metrics,
     derive_runtime_raw_open_metrics,
 )
+from xic_extractor.processing_identity import ProcessingAttemptIdentity
 
 
 class RuntimeCancellationIngress:
@@ -385,10 +384,7 @@ def _apply_runtime_worker_batch(
 
     state = _record_runtime_resource_cleanups(
         state,
-        (
-            (item.resource_key, item.cleanup_outcome)
-            for item in resource_settlements
-        ),
+        ((item.resource_key, item.cleanup_outcome) for item in resource_settlements),
     )
 
     accepted_acquisitions: dict[str, list[RuntimeAcquisitionReceipt]] = {}

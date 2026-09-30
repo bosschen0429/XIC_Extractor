@@ -10,7 +10,7 @@ current contract only. Migration history belongs in Issues, PRs, and Git.
 | --- | --- |
 | owner or dependency boundary | [`../architecture-contract.md`](../architecture-contract.md) and the affected package |
 | persisted schema or evidence claim | the writer, strict reader, schema tests, and [`product-validation-contract.md`](product-validation-contract.md) |
-| runtime lifecycle or receipt | `xic_extractor.execution_runtime_owner` and `scripts/check_architecture_census.py` |
+| runtime lifecycle or receipt | `xic_extractor.execution.attempt` and `scripts/check_architecture_census.py` |
 | public command or diagnostic | [`script-tool-lifecycle.md`](script-tool-lifecycle.md) and `[project.scripts]` |
 | repository placement | [`../project-layout.md`](../project-layout.md) |
 
@@ -93,8 +93,8 @@ boundary, compatibility impact, and rollback oracle.
 
 ## Runtime Construction Authority
 
-`xic_extractor.execution_runtime_owner` is the sole runtime aggregate and
-finalization facade. Consumers submit typed settlements, registrations,
+`xic_extractor.execution.attempt` is the sole runtime aggregate and
+finalization authority. Consumers submit typed settlements, registrations,
 owner-bound cancellation, acquisition receipts, and telemetry; the owner
 derives lifecycle, counts, ledgers, dispositions, and final outcome.
 
