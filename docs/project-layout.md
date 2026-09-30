@@ -34,7 +34,7 @@ XIC_Extractor/
 │   │   ├── cell_decision/      每個樣本格的科學決策
 │   │   ├── projection/         Targeted／Untargeted 的前後投影
 │   │   └── result/             科學結果與 application 結果
-│   ├── execution/             attempt、工作分區、workers、結果暫存與 recovery
+│   ├── execution/             attempt、工作分區、workers、結果暫存與終局記錄
 │   ├── output/                CSV／workbook／HTML 等輸出程式
 │   │   └── alignment/         Matrix 格式、artifact 選擇、串流／實體化與 atomic publishing
 │   ├── instrument_qc/         儀器 QC、校正與其報告流程
@@ -47,7 +47,13 @@ XIC_Extractor/
 │   └── rendering/             離線 HTML
 ├── tools/                     維護工具；diagnostics/ 為診斷，testing/ 管測試分片
 ├── tests/                     行為測試與小型 fixtures
-├── docs/                      正式文件；各子目錄用途見下表
+├── docs/                      文件依用途分流；不以 HTML 外觀判定權威
+│   ├── user/                  操作、欄位參考與概念 HTML；README.md 是使用者索引
+│   ├── product/               正式產品行為與科學責任；README.md 依主題找規則
+│   ├── agent/                 按任務載入的執行、驗證與交付契約
+│   ├── superpowers/           既有 schema、驗證與 productization 機器契約
+│   ├── architecture-contract.md  程式入口、責任與依賴方向
+│   └── project-layout.md      本結構樹與收納規則
 ├── config/                    公開設定與範例
 ├── assets/                    圖示與截圖
 ├── .github/                   CI 與 GitHub 設定
@@ -69,7 +75,7 @@ XIC_Extractor/
 | --- | --- |
 | [`README.md`](../README.md) | 使用者入口與文件索引 |
 | [`AGENTS.md`](../AGENTS.md) | 高頻 agent guardrails 與 owner routing |
-| [`docs/user/`](user/) | GUI/CLI 操作手冊 |
+| [`docs/user/`](user/) | GUI/CLI 操作手冊、欄位參考與概念 HTML 導覽 |
 | [`docs/product/`](product/) | 維護中的產品語義與 topic authority |
 | [`docs/agent/`](agent/) | 執行、驗證、文件、架構與 PR 契約 |
 | [`docs/architecture-contract.md`](architecture-contract.md) | dependency direction 與 ownership map |
@@ -100,8 +106,8 @@ XIC_Extractor/
 | `scripts/` | Public CLI、product adapters、validation scripts |
 | `tools/diagnostics/` | Maintained product-adjacent diagnostics 與 docs governance |
 | `tests/` | pytest tests 與小型 fixtures |
-| `docs/user/` | 使用者文件 |
-| `docs/product/` | 產品 topic owners |
+| `docs/user/` | 使用者操作、參考與概念解說；HTML 連回正式 Markdown owner |
+| `docs/product/` | 維護者與 agent 使用的正式產品語義 Markdown topic owners |
 | `docs/agent/` | Agent/validation/execution contracts |
 | `docs/superpowers/schemas/` | Machine-readable schema contracts |
 | `docs/superpowers/validation/` | Checker-consumed validation contracts 與最小 artifacts |

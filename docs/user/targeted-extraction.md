@@ -73,15 +73,17 @@ uses `--skip-excel`.
 
 The `Overview` sheet reports two key percentages:
 
-- **Detection %** — analytical inclusion rate. A row is detected when it has
-  usable RT and area and an acceptable NL status. Rows with `NL_FAIL` are
-  excluded from detected medians, ratios, and RT deltas.
+- **Detection %** — the count decided by the formal Targeted projection.
+  Numeric availability and counted detection are separate: a row can retain
+  RT/area without counting. Read `Counted Detection`, `Product State`, and the
+  recorded reasons in the advanced columns; NL tokens alone do not decide it.
 - **Flagged %** — review workload. A detected row can still be flagged for
   manual inspection (e.g. low confidence, unusual RT shift).
 
-The `NO_MS2` handling depends on the `count_no_ms2_as_detected` setting in
-your config file — set it to `true` to count rows without MS2 data as
-detected, or `false` to exclude them.
+For missing MS2, the formal projection applies the ISTD/analyte role and
+support policy. `count_no_ms2_as_detected` controls only the legacy fallback
+when formal projection fields are absent; it does not override the formal
+result. The [Decision Policy](../product/decision-policy.md) owns these rules.
 
 ## CLI
 

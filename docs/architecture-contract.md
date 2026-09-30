@@ -19,7 +19,7 @@ feature-by-sample Matrix。兩者共用科學判斷，但保留不同搜尋政�
 3. [模組責任表](#ownership-map)：找語義的正式 owner，避免在 caller 重算。
 4. [依賴方向](#dependency-direction)：確認哪些知識應留在內部。
 
-若只想先理解分析概念，可從[人讀版核心導覽](product/core-modules-explainer.html)
+若只想先理解分析概念，可從[人讀版核心導覽](user/core-modules-explainer.html)
 開始；精確函式、型別與可用選項仍以連結的現行 source 為準。
 
 ### Entry Points And Handoffs

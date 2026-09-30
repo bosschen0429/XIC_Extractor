@@ -1,7 +1,7 @@
 # Targeted Output Reference
 
 Column-level reference for every sheet in the Targeted Extraction Excel workbook.
-The workbook is written to `<output_dir>/<batch_name>_xic_results.xlsx`.
+The workbook is written to `<output_dir>/xic_results_YYYYMMDD_HHMM.xlsx`.
 
 `TargetKey`, `TargetDefinition`, `TargetRowBinding`, typed no-write reasons,
 and archive references are internal lifecycle records. The Review Queue is

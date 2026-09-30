@@ -1,8 +1,12 @@
 # Product Topic Index
 
-Reference pages for XIC product behavior and ownership. Audience: maintainers
-and code reviewers. For user-facing workflow guides, see
-[`docs/user/`](../user/README.md).
+Reference pages for XIC product behavior and ownership. Audience: maintainers,
+code reviewers, and agents changing product behavior. For operation and
+conceptual HTML guides, use the [user guide index](../user/README.md).
+
+For implementation entry points and module responsibilities, use the
+[architecture reading guide](../architecture-contract.md#reading-the-code).
+For task-specific execution and verification rules, use [AGENTS.md](../../AGENTS.md).
 
 Use this index when a GUI workflow, preset, review surface, matrix, or
 validation claim needs a durable rule instead of a dated plan or private note.
@@ -54,11 +58,6 @@ owner for product documentation.
 | Presets | [`presets.md`](presets.md) | Resolver and alignment preset behavior, reproducibility rules |
 | Productization | [`productization.md`](productization.md) | Capability map, promotion boundaries, authority routing |
 | Untargeted GUI | [`untargeted-gui.md`](untargeted-gui.md) | Discovery workspace, run modes, local config, bundle resources |
-| Readers Index | [`readers-index.html`](readers-index.html) | Human-facing HTML route to the topics linked from the core modules guide |
-| Core Modules Explainer | [`core-modules-explainer.html`](core-modules-explainer.html) | User-readable map of the shared core, Targeted/Untargeted entry and delivery, supporting modules, and read-only review |
-| Processing Guide | [`processing-guide.html`](processing-guide.html) | Human-readable explanation of Discovery, shared peak/alignment/Backfill, and matrix decisions |
-| System Guide | [`system-guide.html`](system-guide.html) | Human-readable architecture, execution lifecycle, and completed-evidence review |
-| RAW-To-Final Matrix Story | [`raw-to-final-matrix-product-story.html`](raw-to-final-matrix-product-story.html) | Human-readable product explainer for RAW/discovery/alignment/matrix handoff |
 
 ## Authority Boundary
 
@@ -82,9 +81,8 @@ If a topic file conflicts with an owner listed below, the owner wins.
   command transcripts into this directory.
 - Topic pages do not change maturity tier, active lane, writer authority,
   matrix behavior, schema, or validation verdicts.
-- Human-readable HTML can stay here only as an explainer. If it conflicts with
-  topic pages, status index, authority manifest, or product validation
-  contract, those owners win.
+- Explanatory HTML belongs with the [user guides](../user/README.md).
+  Update the formal topic owner before synchronizing its explanation.
 
 ### Shared Conventions
 
