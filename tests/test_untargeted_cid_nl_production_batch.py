@@ -41,7 +41,6 @@ from tests.untargeted_partition_fixtures import (
     execute_dense_partition,
 )
 from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.alignment.csv_io import DiscoveryBatchInput
 from xic_extractor.alignment.pipeline_outputs import (
     alignment_metadata,
     output_paths,
@@ -63,6 +62,7 @@ from xic_extractor.diagnostics.process_memory import (
     ProcessTreeMemorySampler,
 )
 from xic_extractor.diagnostics.timing import TimingRecorder
+from xic_extractor.discovery.csv_reader import DiscoveryBatchInput
 from xic_extractor.discovery.models import (
     MS1_FEATURE_BACKED_STATES,
     DiscoveryCandidate,
@@ -874,9 +874,11 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     family_precursor_delta,
     indexed_input,
 ) -> None:
-    from xic_extractor.alignment.csv_io import read_owner_bound_discovery_candidates_csv
     from xic_extractor.configuration.signal_processing_profile import (
         SignalProcessingProfile,
+    )
+    from xic_extractor.discovery.csv_reader import (
+        read_owner_bound_discovery_candidates_csv,
     )
     from xic_extractor.discovery.grouping import group_discovery_seeds
     from xic_extractor.discovery.ms1_backfill import (
@@ -1538,7 +1540,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     monkeypatch.setattr(
         identity_owner, "fingerprint_file_content", count_preparation_fingerprint
     )
-    from xic_extractor.alignment.discovery_input_source import DiscoveryInputSource
+    from xic_extractor.discovery.input_source import DiscoveryInputSource
 
     completed = alignment_adapter.complete_untargeted_alignment(
         discovery_batch=discovery_batch,

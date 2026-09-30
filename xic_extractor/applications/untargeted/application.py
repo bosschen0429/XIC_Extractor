@@ -11,8 +11,6 @@ from xic_extractor.alignment.backfill_peak_fact_provenance import (
 )
 from xic_extractor.alignment.backfill_scope import BackfillScope
 from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.alignment.csv_io import read_discovery_batch_index
-from xic_extractor.alignment.discovery_input_source import DiscoveryInputSource
 from xic_extractor.alignment.drift_evidence import (
     KnownIstdReference,
     read_known_istd_reference,
@@ -48,6 +46,8 @@ from xic_extractor.configuration.signal_processing_profile import (
     resolve_signal_processing_profile,
 )
 from xic_extractor.diagnostics.timing import TimingRecorder
+from xic_extractor.discovery.csv_reader import read_discovery_batch_index
+from xic_extractor.discovery.input_source import DiscoveryInputSource
 from xic_extractor.discovery.models import DiscoverySettings
 from xic_extractor.extraction.untargeted_alignment import complete_untargeted_alignment
 from xic_extractor.extraction.untargeted_input_planning import (
@@ -189,7 +189,7 @@ def run_untargeted_application(
     if known_istd_reference is not None:
         resolved_known_istd_reference = known_istd_reference
     elif targets_csv is not None:
-        from xic_extractor.alignment.raw_sources import existing_raw_paths
+        from xic_extractor.acquisition.raw_paths import existing_raw_paths
         from xic_extractor.configuration.targets import read_istd_targets
 
         targets = read_istd_targets(targets_csv).targets

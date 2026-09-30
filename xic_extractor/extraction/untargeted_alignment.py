@@ -13,11 +13,9 @@ from tempfile import mkdtemp
 from threading import Lock
 from typing import Any
 
+from xic_extractor.acquisition.raw_paths import existing_raw_paths
 from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.alignment.csv_io import DiscoveryBatchInput
-from xic_extractor.alignment.discovery_input_source import DiscoveryInputSource
 from xic_extractor.alignment.drift_evidence import KnownIstdReference
-from xic_extractor.alignment.raw_sources import existing_raw_paths
 from xic_extractor.config import ExtractionConfig
 from xic_extractor.configuration.execution_profile import DEFAULT_ALIGNMENT_WORKERS
 from xic_extractor.configuration.signal_processing_profile import (
@@ -28,7 +26,9 @@ from xic_extractor.diagnostics.timing import TimingRecorder
 from xic_extractor.discovery.batch_contract import (
     DiscoveryCandidateUniverseReceipt,
 )
+from xic_extractor.discovery.csv_reader import DiscoveryBatchInput
 from xic_extractor.discovery.csv_writer import format_discovery_csv_value
+from xic_extractor.discovery.input_source import DiscoveryInputSource
 from xic_extractor.discovery.models import DiscoveryCandidate, DiscoverySettings
 from xic_extractor.discovery.physical_fact_persistence import (
     DetachedIndexedDiscoveryPhysicalFacts,

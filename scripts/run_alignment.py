@@ -11,10 +11,7 @@ from dataclasses import replace
 from pathlib import Path
 from zipfile import BadZipFile
 
-from xic_extractor.alignment.csv_io import (
-    DiscoveryBatchInput,
-    read_discovery_batch_index,
-)
+from xic_extractor.acquisition.raw_paths import existing_raw_paths
 from xic_extractor.alignment.drift_evidence import (
     KnownIstdReference,
     read_known_istd_reference,
@@ -24,7 +21,6 @@ from xic_extractor.alignment.process_backend import AlignmentProcessExecutionErr
 from xic_extractor.alignment.quantitative_projection_authority import (
     QuantitativeProjectionAuthorityHoldError,
 )
-from xic_extractor.alignment.raw_sources import existing_raw_paths
 from xic_extractor.applications.untargeted.application import (
     run_untargeted_application,
     validate_untargeted_application_options,
@@ -42,6 +38,10 @@ from xic_extractor.configuration.signal_processing_profile import (
 )
 from xic_extractor.diagnostics.process_memory import ProcessTreeMemorySampler
 from xic_extractor.diagnostics.timing import TimingRecorder
+from xic_extractor.discovery.csv_reader import (
+    DiscoveryBatchInput,
+    read_discovery_batch_index,
+)
 from xic_extractor.extraction.untargeted_input_planning import (
     is_supported_alignment_discovery,
 )

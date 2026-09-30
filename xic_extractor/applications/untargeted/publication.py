@@ -14,7 +14,6 @@ from xic_extractor.alignment.backfill_peak_fact_provenance import (
     EMPTY_BACKFILL_PEAK_FACT_PROVENANCE_BATCH,
 )
 from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.alignment.discovery_input_source import DiscoveryInputSource
 from xic_extractor.alignment.drift_evidence import KnownIstdReference
 from xic_extractor.alignment.output_levels import (
     EXPLANATION_ARTIFACT_NAME,
@@ -39,6 +38,7 @@ from xic_extractor.diagnostics.alignment_explanation_projection import (
     prepare_alignment_explanation,
 )
 from xic_extractor.diagnostics.timing import TimingRecorder
+from xic_extractor.discovery.input_source import DiscoveryInputSource
 from xic_extractor.discovery.models import DiscoveryCandidate
 
 if TYPE_CHECKING:

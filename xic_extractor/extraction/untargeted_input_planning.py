@@ -10,7 +10,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from xic_extractor.alignment.discovery_input_source import DiscoveryInputSource
 from xic_extractor.alignment.drift_evidence import KnownIstdReference
 from xic_extractor.alignment.result.application_result import (
     UntargetedCandidateExclusion,
@@ -24,6 +23,7 @@ from xic_extractor.discovery.batch_contract import (
     CANDIDATE_UNIVERSE_SCHEMA_VERSION,
     DiscoveryCandidateUniverseReceipt,
 )
+from xic_extractor.discovery.input_source import DiscoveryInputSource
 from xic_extractor.discovery.models import (
     MS1_FEATURE_BACKED_STATES,
     DiscoveryCandidate,
