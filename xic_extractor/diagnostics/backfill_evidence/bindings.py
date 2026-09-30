@@ -14,7 +14,7 @@ from xic_extractor.alignment.backfill_evidence_contract import (
     SkippedEvidenceOwnerBindings,
     SkippedEvidenceRecord,
 )
-from xic_extractor.alignment.backfill_evidence_serialization import (
+from xic_extractor.diagnostics.backfill_evidence.serialization import (
     backfill_evidence_identity_candidates,
 )
 

@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from xic_extractor.alignment.quant_matrix_downstream_impact import (
+from xic_extractor.diagnostics.quant_matrix.downstream_impact import (
     validate_quant_matrix_downstream_impact_smoke,
 )
 from xic_extractor.tabular_io import file_sha256, read_tsv_required, write_tsv
@@ -578,7 +578,7 @@ def _append_readiness_fixture_rerun_problems(
     readiness_checks: Path,
     problems: list[str],
 ) -> None:
-    from xic_extractor.alignment.quant_matrix_promotion import (
+    from xic_extractor.diagnostics.quant_matrix.promotion import (
         evaluate_quant_matrix_promotion_readiness,
     )
 

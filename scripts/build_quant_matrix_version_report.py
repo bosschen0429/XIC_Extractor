@@ -15,7 +15,7 @@ from pathlib import Path
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from xic_extractor.alignment.quant_matrix_report import (
+from xic_extractor.diagnostics.quant_matrix.report import (
     build_quant_matrix_review_report,
 )
 

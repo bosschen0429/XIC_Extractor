@@ -14,11 +14,11 @@ from xic_extractor.alignment.backfill_evidence_contract import (
     SkippedEvidenceRecord,
 )
 from xic_extractor.alignment.matrix import CellStatus
-from xic_extractor.alignment.output_rows import escape_excel_formula
 from xic_extractor.alignment.production_decisions import (
     BackfillTier,
     ProductionStatus,
 )
+from xic_extractor.tabular_io import escape_excel_formula
 
 _NONNEGATIVE_INTEGER = re.compile(r"0|[1-9][0-9]*")
 

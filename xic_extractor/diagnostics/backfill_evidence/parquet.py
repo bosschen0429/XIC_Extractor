@@ -17,20 +17,20 @@ from xic_extractor.alignment.backfill_evidence_contract import (
     SkippedEvidenceOwnerBindings,
     SkippedEvidenceRecord,
 )
-from xic_extractor.alignment.backfill_evidence_owner import (
+from xic_extractor.alignment.evidence_claims import _mint_evidence_query_result
+from xic_extractor.diagnostics.backfill_evidence.bindings import (
     backfill_evidence_query_claims,
     rehydrate_backfill_evidence_bindings,
     skipped_evidence_query_claims,
     validate_skipped_evidence_bindings,
 )
-from xic_extractor.alignment.backfill_evidence_serialization import (
+from xic_extractor.diagnostics.backfill_evidence.serialization import (
     backfill_evidence_identity_projection_spellings,
     backfill_evidence_record_from_projection,
     backfill_evidence_record_to_projection,
     skipped_evidence_record_from_projection,
     skipped_evidence_record_to_projection,
 )
-from xic_extractor.alignment.evidence_claims import _mint_evidence_query_result
 
 PARQUET_ROW_ORDINAL_COLUMN = "_row_ordinal"
 DEFAULT_PARQUET_ROW_GROUP_SIZE = 16_384

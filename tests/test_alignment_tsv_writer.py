@@ -1666,12 +1666,12 @@ def test_backfill_cell_evidence_tsv_is_compact_and_backfill_scoped(
         BackfillEvidenceOwnerBindings,
         EvidenceClaimState,
     )
-    from xic_extractor.alignment.backfill_evidence_tsv import (
-        lookup_backfill_evidence_tsv,
-    )
     from xic_extractor.alignment.tsv_writer import (
         ALIGNMENT_BACKFILL_CELL_EVIDENCE_COLUMNS,
         write_alignment_backfill_cell_evidence_tsv,
+    )
+    from xic_extractor.diagnostics.backfill_evidence.tsv import (
+        lookup_backfill_evidence_tsv,
     )
 
     matrix = AlignmentMatrix(

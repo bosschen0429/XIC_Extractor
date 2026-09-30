@@ -5,16 +5,14 @@ from pathlib import Path
 
 import pytest
 
-from xic_extractor.alignment.shared_peak_identity_explanation import (
+from xic_extractor.diagnostics.shared_peak_identity_explanation import (
+    machine_artifacts,
     machine_evidence_loaders,
 )
-from xic_extractor.alignment.shared_peak_identity_explanation.machine_artifacts import (
-    load_machine_matches,
-)
-from xic_extractor.alignment.shared_peak_identity_explanation.oracle import (
+from xic_extractor.diagnostics.shared_peak_identity_explanation.oracle import (
     load_manual_oracle,
 )
-from xic_extractor.alignment.shared_peak_identity_explanation.schema import (
+from xic_extractor.diagnostics.shared_peak_identity_explanation.schema import (
     ORACLE_COLUMNS,
 )
 
@@ -69,7 +67,7 @@ def test_machine_loader_preserves_ambiguous_source_row_ids(tmp_path: Path) -> No
     )
     rows = load_manual_oracle(oracle_path)
 
-    matches = load_machine_matches(
+    matches = machine_artifacts.load_machine_matches(
         oracle_rows=rows,
         alignment_review_tsv=review_path,
         alignment_cells_tsv=cells_path,
@@ -94,7 +92,7 @@ def test_machine_loader_keeps_candidate_gate_family_context(tmp_path: Path) -> N
     gate_path = _candidate_gate(tmp_path)
     rows = load_manual_oracle(oracle_path)
 
-    matches = load_machine_matches(
+    matches = machine_artifacts.load_machine_matches(
         oracle_rows=rows,
         alignment_review_tsv=review_path,
         alignment_cells_tsv=cells_path,

@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from xic_extractor.alignment.shared_peak_identity_explanation import (
+from xic_extractor.diagnostics.shared_peak_identity_explanation import (
     overlay_trace_data,
 )
 
