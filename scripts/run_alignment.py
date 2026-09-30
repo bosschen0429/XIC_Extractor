@@ -11,17 +11,17 @@ from dataclasses import replace
 from pathlib import Path
 from zipfile import BadZipFile
 
+from xic_extractor.acquisition.istd_reference import read_known_istd_reference
 from xic_extractor.acquisition.raw_paths import existing_raw_paths
 from xic_extractor.alignment.drift_evidence import (
     KnownIstdReference,
-    read_known_istd_reference,
 )
 from xic_extractor.alignment.owner_build_route_receipt import OwnerBuildRouteReceipt
-from xic_extractor.alignment.process_backend import AlignmentProcessExecutionError
 from xic_extractor.alignment.quantitative_projection_authority import (
     QuantitativeProjectionAuthorityHoldError,
 )
 from xic_extractor.applications.untargeted.application import (
+    AlignmentProcessExecutionError,
     run_untargeted_application,
     validate_untargeted_application_options,
 )

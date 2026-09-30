@@ -260,7 +260,7 @@ def start_cancelled(attempt):
 def test_runtime_boundary_authority_rejects_nested_and_branched_partial_paths(
     tmp_path: Path,
 ) -> None:
-    adapter = Path("xic_extractor/alignment/runtime_adapter.py")
+    adapter = Path("xic_extractor/extraction/targeted_runtime_adapter.py")
     source = tmp_path / adapter
     source.parent.mkdir(parents=True)
     source.write_text(

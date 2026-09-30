@@ -4,7 +4,10 @@ import hashlib
 from collections.abc import Callable, Iterable
 from pathlib import Path
 
-from xic_extractor.acquisition.istd_reference import extract_batch_known_istd_reference
+from xic_extractor.acquisition.istd_reference import (
+    extract_batch_known_istd_reference,
+    read_known_istd_reference,
+)
 from xic_extractor.alignment.backfill_peak_fact import BackfillWindowStrategy
 from xic_extractor.alignment.backfill_peak_fact_provenance import (
     EMPTY_BACKFILL_PEAK_FACT_PROVENANCE_BATCH,
@@ -17,7 +20,6 @@ from xic_extractor.alignment.config import (
 )
 from xic_extractor.alignment.drift_evidence import (
     KnownIstdReference,
-    read_known_istd_reference,
 )
 from xic_extractor.alignment.output_levels import (
     AlignmentOutputLevel,
@@ -32,7 +34,6 @@ from xic_extractor.alignment.pipeline_outputs import (
     alignment_metadata,
     output_paths,
 )
-from xic_extractor.alignment.process_execution import AlignmentProcessExecutionError
 from xic_extractor.applications.untargeted.publication import publish_untargeted_outputs
 from xic_extractor.config import ExtractionConfig
 from xic_extractor.configuration.execution_profile import (
@@ -54,6 +55,10 @@ from xic_extractor.extraction.untargeted_input_planning import (
     is_supported_alignment_discovery,
 )
 from xic_extractor.sample_metadata import SampleMetadata
+
+
+class AlignmentProcessExecutionError(RuntimeError):
+    """Raised when retained Untargeted execution fails before publication."""
 
 
 def run_untargeted_application(

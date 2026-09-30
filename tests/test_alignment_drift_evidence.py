@@ -11,7 +11,6 @@ from xic_extractor.alignment.drift_evidence import (
     SampleDriftEvidence,
     assess_local_trajectory,
     build_targeted_istd_identity_anchor,
-    read_targeted_istd_drift_evidence,
 )
 from xic_extractor.configuration.models import Target
 from xic_extractor.configuration.target_identity import mint_target_list_snapshot
@@ -52,7 +51,7 @@ def test_known_reference_uses_declared_targets_rt_and_source_bytes(
 ) -> None:
     import hashlib
 
-    from xic_extractor.alignment.drift_evidence import read_known_istd_reference
+    from xic_extractor.acquisition.istd_reference import read_known_istd_reference
 
     path = tmp_path / "reference.xlsx"
     workbook = _known_reference_workbook(path)
@@ -127,7 +126,7 @@ def test_known_reference_content_identity_tracks_declared_and_measured_content()
 def test_known_reference_rejects_invalid_consumed_input(
     tmp_path: Path, damage: str
 ) -> None:
-    from xic_extractor.alignment.drift_evidence import read_known_istd_reference
+    from xic_extractor.acquisition.istd_reference import read_known_istd_reference
 
     path = tmp_path / "reference.xlsx"
     workbook = _known_reference_workbook(path)
@@ -157,8 +156,8 @@ def test_known_reference_only_corrects_unique_same_target_support_pairs(
     from dataclasses import replace
 
     from tests.test_alignment_edge_scoring import _owner
+    from xic_extractor.acquisition.istd_reference import read_known_istd_reference
     from xic_extractor.alignment.config import AlignmentConfig
-    from xic_extractor.alignment.drift_evidence import read_known_istd_reference
     from xic_extractor.alignment.edge_scoring import evaluate_owner_edge
 
     path = tmp_path / "reference.xlsx"
@@ -227,11 +226,11 @@ def test_known_reference_grouping_preserves_main_peak_against_closer_competitor(
     tmp_path: Path, use_reference: bool,
 ) -> None:
     from tests.test_alignment_owner_clustering import _owner
+    from xic_extractor.acquisition.istd_reference import read_known_istd_reference
     from xic_extractor.alignment.config import AlignmentConfig
     from xic_extractor.alignment.cross_sample_peak_groups import (
         construct_cross_sample_peak_group_hypotheses,
     )
-    from xic_extractor.alignment.drift_evidence import read_known_istd_reference
 
     path = tmp_path / "reference.xlsx"
     _known_reference_workbook(path)
@@ -255,7 +254,7 @@ def test_known_reference_grouping_preserves_main_peak_against_closer_competitor(
 
 
 def _batch_reference(tmp_path: Path, observations):
-    from xic_extractor.alignment.drift_evidence import read_known_istd_reference
+    from xic_extractor.acquisition.istd_reference import read_known_istd_reference
 
     path = tmp_path / "batch-reference.xlsx"
     workbook = _known_reference_workbook(path)
@@ -878,120 +877,6 @@ def test_lookup_keeps_conflicting_injection_order_lazy_per_sample() -> None:
         lookup.injection_order("sample-a")
 
 
-def test_read_targeted_istd_drift_evidence_uses_opaque_trends_and_no_target_context(
-    tmp_path: Path,
-) -> None:
-    workbook = tmp_path / "targeted.xlsx"
-    sample_info = tmp_path / "sample_info.csv"
-    sample_info.write_text(
-        "Sample_Name,Injection_Order\nsample-a,1\nsample-b,2\nsample-c,3\n",
-        encoding="utf-8",
-    )
-    _write_targeted_workbook(workbook)
-
-    lookup = read_targeted_istd_drift_evidence(
-        targeted_workbook=workbook,
-        sample_info=sample_info,
-        local_window=10,
-    )
-
-    assert lookup.source == "targeted_istd_trend"
-    assert [point.trend_id for point in lookup.points] == [
-        "trend-001",
-        "trend-001",
-        "trend-001",
-    ]
-    assert [point.sample_stem for point in lookup.points] == [
-        "sample-a",
-        "sample-b",
-        "sample-c",
-    ]
-    assert [point.injection_order for point in lookup.points] == [1, 2, 3]
-    assert [round(point.rt_drift_delta_min, 2) for point in lookup.points] == [
-        -0.10,
-        0.0,
-        0.10,
-    ]
-    assert [point.source for point in lookup.points] == [
-        "targeted_istd_trend",
-        "targeted_istd_trend",
-        "targeted_istd_trend",
-    ]
-    assert lookup.sample_delta_min("sample-a") == pytest.approx(-0.10)
-    assert lookup.sample_delta_min("sample-b") == 0.0
-    assert lookup.sample_delta_min("sample-c") == pytest.approx(0.10)
-
-    point = lookup.points[0]
-    assert not hasattr(point, "istd_label")
-    assert not hasattr(point, "target_label")
-    assert lookup.istd_identity_anchor is None
-
-
-def test_read_targeted_istd_drift_evidence_treats_whitespace_sample_as_blank(
-    tmp_path: Path,
-) -> None:
-    workbook = tmp_path / "targeted.xlsx"
-    sample_info = tmp_path / "sample_info.csv"
-    sample_info.write_text(
-        "Sample_Name,Injection_Order\nsample-a,1\nsample-b,2\nsample-c,3\n",
-        encoding="utf-8",
-    )
-    _write_targeted_workbook_with_whitespace_sample(workbook)
-
-    lookup = read_targeted_istd_drift_evidence(
-        targeted_workbook=workbook,
-        sample_info=sample_info,
-        local_window=10,
-    )
-
-    assert [point.sample_stem for point in lookup.points] == [
-        "sample-a",
-        "sample-b",
-        "sample-c",
-    ]
-    assert lookup.points[0].istd_rt_min == 2.0
-
-
-def test_read_targeted_istd_drift_evidence_maps_sorted_labels_to_opaque_trends(
-    tmp_path: Path,
-) -> None:
-    workbook = tmp_path / "targeted.xlsx"
-    sample_info = tmp_path / "sample_info.csv"
-    sample_info.write_text(
-        "Sample_Name,Injection_Order\nsample-a,1\nsample-b,2\nsample-c,3\n",
-        encoding="utf-8",
-    )
-    _write_targeted_workbook_with_reverse_istd_labels(workbook)
-
-    lookup = read_targeted_istd_drift_evidence(
-        targeted_workbook=workbook,
-        sample_info=sample_info,
-        local_window=10,
-    )
-
-    points_by_trend = {
-        (point.trend_id, point.sample_stem): point for point in lookup.points
-    }
-    assert sorted(points_by_trend) == [
-        ("trend-001", "sample-a"),
-        ("trend-001", "sample-b"),
-        ("trend-001", "sample-c"),
-        ("trend-002", "sample-a"),
-        ("trend-002", "sample-b"),
-        ("trend-002", "sample-c"),
-    ]
-    assert points_by_trend[("trend-001", "sample-a")].istd_rt_min == 1.1
-    assert points_by_trend[("trend-001", "sample-b")].istd_rt_min == 1.2
-    assert points_by_trend[("trend-001", "sample-c")].istd_rt_min == 1.3
-    assert points_by_trend[("trend-002", "sample-a")].istd_rt_min == 2.1
-    assert points_by_trend[("trend-002", "sample-b")].istd_rt_min == 2.2
-    assert points_by_trend[("trend-002", "sample-c")].istd_rt_min == 2.3
-
-    point = lookup.points[0]
-    assert not hasattr(point, "istd_label")
-    assert not hasattr(point, "target_label")
-
-
 def test_targeted_istd_anchor_matches_only_observed_dna_dr_target() -> None:
     target = Target(
         label="d3-5-hmdC",
@@ -1060,101 +945,3 @@ def test_targeted_istd_anchor_matches_only_observed_dna_dr_target() -> None:
             ),
         )
     ) == frozenset({"FAM_ISTD"})
-
-
-def test_reader_mints_anchor_from_explicit_target_snapshot(tmp_path: Path) -> None:
-    workbook = tmp_path / "targeted.xlsx"
-    sample_info = tmp_path / "sample_info.csv"
-    sample_info.write_text(
-        "Sample_Name,Injection_Order\nsample-a,1\nsample-b,2\n",
-        encoding="utf-8",
-    )
-    wb = Workbook()
-    ws = wb.active
-    ws.title = "XIC Results"
-    ws.append(["SampleName", "Target", "Role", "RT"])
-    ws.append(["sample-a", "d3-5-hmdC", "ISTD", 8.5])
-    ws.append(["sample-b", "d3-5-hmdC", "ISTD", 8.6])
-    wb.save(workbook)
-
-    target = Target(
-        label="d3-5-hmdC",
-        mz=261.127276,
-        rt_min=8.0,
-        rt_max=10.0,
-        ppm_tol=20.0,
-        neutral_loss_da=116.0474,
-        nl_ppm_warn=20.0,
-        nl_ppm_max=50.0,
-        is_istd=True,
-        istd_pair="",
-    )
-
-    lookup = read_targeted_istd_drift_evidence(
-        targeted_workbook=workbook,
-        sample_info=sample_info,
-        local_window=2,
-        target_snapshot=mint_target_list_snapshot(
-            (target,),
-            identity_namespace="test-targeted-istd",
-        ),
-    )
-
-    assert lookup.istd_identity_anchor is not None
-    assert lookup.istd_identity_anchor.matching_family_ids(
-        (
-            SimpleNamespace(
-                feature_family_id="FAM_ISTD",
-                neutral_loss_tag="DNA_dR",
-                family_center_mz=261.127276,
-                family_center_rt=9.0,
-            ),
-        )
-    ) == frozenset({"FAM_ISTD"})
-
-
-def _write_targeted_workbook(path: Path) -> None:
-    wb = Workbook()
-    ws = wb.active
-    ws.title = "XIC Results"
-    ws.append(["SampleName", "Target", "Role", "RT", "GT Pass"])
-    ws.append(["sample-a", "Analyte A", "Target", 4.0, "PASS"])
-    ws.append([None, "ISTD-B", "ISTD", 1.9, "FAIL"])
-    ws.append([None, "ISTD-B", "ISTD", "not numeric", "PASS"])
-    ws.append(["sample-b", "Analyte B", "Target", 4.1, "PASS"])
-    ws.append([None, "ISTD-B", "ISTD", 2.0, "PASS"])
-    ws.append(["sample-c", "Analyte C", "Target", 4.2, "PASS"])
-    ws.append([None, "ISTD-B", "ISTD", 2.1, "PASS"])
-    wb.save(path)
-
-
-def _write_targeted_workbook_with_whitespace_sample(path: Path) -> None:
-    wb = Workbook()
-    ws = wb.active
-    ws.title = "XIC Results"
-    ws.append(["SampleName", "Target", "Role", "RT"])
-    ws.append(["sample-a", "Analyte A", "Target", 4.0])
-    ws.append([None, "ISTD-B", "ISTD", 1.9])
-    ws.append(["   ", "ISTD-B", "ISTD", 2.0])
-    ws.append(["sample-b", "Analyte B", "Target", 4.1])
-    ws.append([None, "ISTD-B", "ISTD", 2.1])
-    ws.append(["sample-c", "Analyte C", "Target", 4.2])
-    ws.append([None, "ISTD-B", "ISTD", 2.2])
-    wb.save(path)
-
-
-def _write_targeted_workbook_with_reverse_istd_labels(path: Path) -> None:
-    wb = Workbook()
-    ws = wb.active
-    ws.title = "XIC Results"
-    ws.append(["SampleName", "Target", "Role", "RT"])
-    ws.append(["sample-a", "Analyte A", "Target", 4.0])
-    ws.append([None, "ISTD-Z", "ISTD", 2.1])
-    ws.append([None, "ISTD-A", "ISTD", 1.1])
-    ws.append(["sample-b", "Analyte B", "Target", 4.1])
-    ws.append([None, "ISTD-Z", "ISTD", 2.2])
-    ws.append([None, "ISTD-A", "ISTD", 1.2])
-    ws.append(["sample-c", "Analyte C", "Target", 4.2])
-    ws.append([None, "ISTD-Z", "ISTD", 2.3])
-    ws.append([None, "ISTD-A", "ISTD", 1.3])
-    wb.save(path)
