@@ -53,8 +53,10 @@ def _disable_real_dll_loading(monkeypatch) -> None:
     monkeypatch.setattr(runtime_owner, "_ensure_assemblies_loaded", lambda *_: None)
 
 
-def _plan(tmp_path, monkeypatch, *, scenario="positive", opened_sink=None):
-    paths = tuple(tmp_path / f"S{i}.synthetic" for i in range(4))
+def _plan(
+    tmp_path, monkeypatch, *, scenario="positive", opened_sink=None, sample_count=4
+):
+    paths = tuple(tmp_path / f"S{i}.synthetic" for i in range(sample_count))
     settings = replace(
         _settings(),
         neutral_loss_profile=None,
@@ -1722,6 +1724,58 @@ def test_process_recovery_dispatches_only_missing_subjects(tmp_path, monkeypatch
         assert bool(sample_result.backfill_attempts) is (
             sample_result.job.work_unit_key in selected
         )
+
+
+def test_two_sample_process_messages_match_serial_results_and_attribution(
+    tmp_path, monkeypatch
+):
+    from xic_extractor.execution_engine.worker_pool import WorkerAdmissionPool
+    from xic_extractor.extraction import untargeted_real_data_runtime as runtime
+
+    # Exercise the process request/response route with synthetic RAW I/O;
+    # native spawn and transport identity have separate existing coverage.
+    class LocalProcessMessages(WorkerAdmissionPool):
+        @property
+        def backend(self):
+            return "process"
+
+    plan, _ = _plan(tmp_path, monkeypatch, sample_count=2)
+    batch = materialize_untargeted_cid_nl_partition(plan, plan.subject_batch)
+    config = AlignmentConfig(anchor_min_seed_events=1)
+    with WorkerAdmissionPool(max_workers=1) as pool:
+        serial = runtime.execute_untargeted_cid_nl_runtime_partition(
+            batch.jobs,
+            partition_key="two-sample-serial",
+            alignment_config=config,
+            pool=pool,
+        )
+    with LocalProcessMessages(max_workers=2) as pool:
+        process = runtime.execute_untargeted_cid_nl_runtime_partition(
+            batch.jobs,
+            partition_key="two-sample-process",
+            alignment_config=config,
+            pool=pool,
+        )
+
+    assert serial.succeeded and process.succeeded
+    serial_results = tuple(
+        (
+            result.job.sample.identity.sample_identity_id,
+            result.job.method_subject.method_subject_id,
+            result.result_ref,
+        )
+        for result in serial.sample_results
+    )
+    process_results = tuple(
+        (
+            result.job.sample.identity.sample_identity_id,
+            result.job.method_subject.method_subject_id,
+            result.result_ref,
+        )
+        for result in process.sample_results
+    )
+    assert len({sample_id for sample_id, _, _ in serial_results}) == 2
+    assert process_results == serial_results
 
 
 def test_sparse_partition_materializes_only_samples_with_request_candidates(

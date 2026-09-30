@@ -6,7 +6,6 @@ import math
 from collections.abc import Callable, Mapping
 from copy import copy
 from dataclasses import dataclass, replace
-from itertools import zip_longest
 from pathlib import Path
 from typing import Any, cast
 
@@ -121,10 +120,12 @@ from xic_extractor.peak_detection.cid_nl_method_subject import (
     CID_NL_PROVIDER_ID,
     CidNlComposition,
     CidNlMethodSubject,
+    CidNlPhysicalCandidateFact,
+    CidNlPhysicalProof,
     UntargetedCidNlMethodSubjectBatch,
     cid_nl_alignment_subject_worksets,
-    mint_untargeted_cid_nl_method_subject,
-    mint_untargeted_cid_nl_method_subject_batch,
+    group_cid_nl_physical_subject_units,
+    mint_cid_nl_subject_membership_from_physical_units,
 )
 from xic_extractor.peak_detection.hypotheses import PeakHypothesis
 from xic_extractor.peak_detection.observations import RetainedCaptureEvidence
@@ -323,167 +324,29 @@ def is_supported_alignment_discovery(settings: Any) -> bool:
     return False
 
 
-def _method_center_interval(mz: float, ppm: float) -> tuple[float, float]:
-    fraction = ppm / 1_000_000.0
-    return mz / (1.0 + fraction), mz / (1.0 - fraction)
-
-
-def _same_physical_core(
-    left: DiscoveryPhysicalFactRecord,
-    right: DiscoveryPhysicalFactRecord,
-    *,
-    rt_min: float,
-    rt_max: float,
-) -> bool:
-    sentinel = object()
-    matched = False
-    left_core = (
-        point
-        for point in zip(left.rt, left.raw, strict=True)
-        if rt_min <= point[0] <= rt_max
-    )
-    right_core = (
-        point
-        for point in zip(right.rt, right.raw, strict=True)
-        if rt_min <= point[0] <= rt_max
-    )
-    for left_point, right_point in zip_longest(
-        left_core,
-        right_core,
-        fillvalue=sentinel,
-    ):
-        if (
-            left_point is sentinel
-            or right_point is sentinel
-            or left_point != right_point
-        ):
-            return False
-        matched = True
-    return matched
-
-
-def _physical_subject_units(
-    candidates: tuple[DiscoveryCandidate, ...],
-    *,
-    physical_records_by_candidate: Mapping[str, DiscoveryPhysicalFactRecord],
-    composition: CidNlComposition | None,
-    precursor_tolerance_ppm: float,
-) -> tuple[tuple[float | None, tuple[DiscoveryCandidate, ...]], ...]:
-    """Keep query wrappers for one proven peak in the same method workset."""
-
-    views: dict[
-        str,
-        tuple[
-            DiscoveryPhysicalFactRecord,
-            tuple[float, float],
-            tuple[float, float],
-        ],
-    ] = {}
-    buckets: dict[tuple[str, float | None, float], list[DiscoveryCandidate]] = {}
-    unproved: list[tuple[float | None, tuple[DiscoveryCandidate, ...]]] = []
-    for candidate in candidates:
-        requirement = (
-            None if composition is not None else candidate.configured_neutral_loss_da
+def _physical_subject_candidate_fact(
+    candidate: DiscoveryCandidate,
+    record: DiscoveryPhysicalFactRecord | None,
+) -> CidNlPhysicalCandidateFact:
+    facts = None if record is None else record.evaluation.facts
+    proof = None
+    if record is not None and facts is not None:
+        trace = record.acquired_trace.trace
+        proof = CidNlPhysicalProof(
+            acquisition_source_id=record.work_item.acquisition_source_id,
+            apex_rt_min=facts.apex_rt_min,
+            left_rt_min=facts.left_rt_min,
+            right_rt_min=facts.right_rt_min,
+            xic_mz=record.work_item.xic_mz,
+            xic_ppm_tol=record.work_item.xic_ppm_tol,
+            rt=trace.rt,
+            raw=trace.intensity,
         )
-        record = physical_records_by_candidate.get(candidate.candidate_id)
-        facts = None if record is None else record.evaluation.facts
-        if record is None or facts is None:
-            unproved.append((requirement, (candidate,)))
-            continue
-        xic_fraction = record.work_item.xic_ppm_tol / 1_000_000.0
-        views[candidate.candidate_id] = (
-            record,
-            (
-                record.work_item.xic_mz * (1.0 - xic_fraction),
-                record.work_item.xic_mz * (1.0 + xic_fraction),
-            ),
-            _method_center_interval(
-                candidate.physical_mz,
-                precursor_tolerance_ppm,
-            ),
-        )
-        buckets.setdefault(
-            (
-                record.work_item.acquisition_source_id,
-                requirement,
-                facts.apex_rt_min,
-            ),
-            [],
-        ).append(candidate)
-
-    proved: list[tuple[float | None, tuple[DiscoveryCandidate, ...]]] = []
-    for bucket_key, bucket_candidates in sorted(buckets.items()):
-        requirement = bucket_key[1]
-        ordered = sorted(
-            bucket_candidates,
-            key=lambda item: (item.physical_mz, item.candidate_id),
-        )
-        cohort: list[DiscoveryCandidate] = []
-        representative_record: DiscoveryPhysicalFactRecord | None = None
-        common_rt = (0.0, 0.0)
-        common_xic = (0.0, 0.0)
-        common_center = (0.0, 0.0)
-        for candidate in ordered:
-            record, xic_interval, center_interval = views[candidate.candidate_id]
-            facts = record.evaluation.facts
-            if facts is None:  # Kept local for type narrowing; filtered above.
-                raise RuntimeError("physical proof lost its selected peak")
-            if not cohort:
-                cohort = [candidate]
-                representative_record = record
-                common_rt = (facts.left_rt_min, facts.right_rt_min)
-                common_xic = xic_interval
-                common_center = center_interval
-                continue
-            next_rt = (
-                max(common_rt[0], facts.left_rt_min),
-                min(common_rt[1], facts.right_rt_min),
-            )
-            next_xic = (
-                max(common_xic[0], xic_interval[0]),
-                min(common_xic[1], xic_interval[1]),
-            )
-            next_center = (
-                max(common_center[0], center_interval[0]),
-                min(common_center[1], center_interval[1]),
-            )
-            apex = bucket_key[2]
-            joins = (
-                next_rt[0] < apex < next_rt[1]
-                and next_xic[0] <= next_xic[1]
-                and next_center[0] <= next_center[1]
-                and representative_record is not None
-                and _same_physical_core(
-                    representative_record,
-                    record,
-                    rt_min=next_rt[0],
-                    rt_max=next_rt[1],
-                )
-            )
-            if not joins:
-                proved.append((requirement, tuple(cohort)))
-                cohort = [candidate]
-                representative_record = record
-                common_rt = (facts.left_rt_min, facts.right_rt_min)
-                common_xic = xic_interval
-                common_center = center_interval
-                continue
-            cohort.append(candidate)
-            common_rt = next_rt
-            common_xic = next_xic
-            common_center = next_center
-        if cohort:
-            proved.append((requirement, tuple(cohort)))
-
-    return tuple(
-        sorted(
-            (*proved, *unproved),
-            key=lambda unit: (
-                0.0 if unit[0] is None else unit[0],
-                unit[1][0].physical_mz,
-                tuple(candidate.candidate_id for candidate in unit[1]),
-            ),
-        )
+    return CidNlPhysicalCandidateFact(
+        candidate_id=candidate.candidate_id,
+        physical_mz=candidate.physical_mz,
+        configured_neutral_loss_da=candidate.configured_neutral_loss_da,
+        proof=proof,
     )
 
 
@@ -517,21 +380,23 @@ def prepare_untargeted_subject_membership(
             or neutral_loss_da <= 0.0
         ):
             raise ValueError("Discovery candidate lacks finite CID-NL owner facts")
-    subject_units = _physical_subject_units(
-        candidates,
-        physical_records_by_candidate=physical_records_by_candidate or {},
+    physical_records = physical_records_by_candidate or {}
+    subject_units = group_cid_nl_physical_subject_units(
+        tuple(
+            _physical_subject_candidate_fact(
+                candidate, physical_records.get(candidate.candidate_id)
+            )
+            for candidate in candidates
+        ),
         composition=composition,
         precursor_tolerance_ppm=settings.precursor_mz_tolerance_ppm,
     )
-    return mint_subject_membership_from_physical_units(
-        subject_units=tuple(
-            (requirement, tuple(candidate.candidate_id for candidate in unit))
-            for requirement, unit in subject_units
-        ),
+    return mint_cid_nl_subject_membership_from_physical_units(
+        subject_units=subject_units,
         precursor_by_id={
             candidate.candidate_id: candidate.physical_mz for candidate in candidates
         },
-        settings=settings,
+        precursor_tolerance_ppm=settings.precursor_mz_tolerance_ppm,
         composition=composition,
     )
 
@@ -552,71 +417,6 @@ def cid_nl_composition(settings: DiscoverySettings) -> CidNlComposition | None:
         if len(settings.neutral_loss_profiles) > 1 and combine_mode != "single"
         else None
     )
-
-
-def mint_subject_membership_from_physical_units(
-    *,
-    subject_units: tuple[tuple[float | None, tuple[str, ...]], ...],
-    precursor_by_id: Mapping[str, float],
-    settings: DiscoverySettings,
-    composition: CidNlComposition | None,
-) -> UntargetedCidNlMethodSubjectBatch:
-    """Assign fixed query centers from compact, physically closed units."""
-    subject_by_key: dict[tuple[float, float | None], CidNlMethodSubject] = {}
-    membership_keys: list[tuple[str, tuple[float, float | None]]] = []
-    key_by_requirement: dict[float | None, tuple[float, float | None]] = {}
-    for requirement, unit_candidates in subject_units:
-        key = key_by_requirement.get(requirement)
-        # A proven physical unit is indivisible. Existing fixed centers may host
-        # it only when every physical query remains inside the method window.
-        if key is None or any(
-            abs(precursor_by_id[candidate] - key[0]) / key[0] * 1_000_000.0
-            > settings.precursor_mz_tolerance_ppm
-            for candidate in unit_candidates
-        ):
-            if len(unit_candidates) == 1:
-                center = precursor_by_id[unit_candidates[0]]
-            else:
-                center_intervals = tuple(
-                    _method_center_interval(
-                        precursor_by_id[candidate],
-                        settings.precursor_mz_tolerance_ppm,
-                    )
-                    for candidate in unit_candidates
-                )
-                lower = max(interval[0] for interval in center_intervals)
-                upper = min(interval[1] for interval in center_intervals)
-                if lower > upper:
-                    raise RuntimeError(
-                        "physical subject unit lacks a common method center"
-                    )
-                center = (lower + upper) / 2.0
-            key = (center, requirement)
-            key_by_requirement[requirement] = key
-            subject_by_key[key] = mint_untargeted_cid_nl_method_subject(
-                precursor_mz=center,
-                precursor_tolerance_ppm=settings.precursor_mz_tolerance_ppm,
-                neutral_loss_da=requirement,
-                composition=composition,
-            )
-        membership_keys.extend((candidate, key) for candidate in unit_candidates)
-
-    subjects = tuple(
-        sorted(subject_by_key.values(), key=lambda subject: subject.method_subject_id)
-    )
-    subject_batch = mint_untargeted_cid_nl_method_subject_batch(
-        subjects=subjects,
-        candidate_memberships=tuple(
-            sorted(
-                (
-                    candidate_id,
-                    subject_by_key[key].method_subject_id,
-                )
-                for candidate_id, key in membership_keys
-            )
-        ),
-    )
-    return subject_batch
 
 
 def prepare_untargeted_cid_nl_production_plan(
