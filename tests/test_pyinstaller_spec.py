@@ -74,6 +74,10 @@ from xic_extractor.applications.untargeted.application import run_untargeted_app
 from xic_extractor.alignment.untargeted_finalized_matrix import (
     project_completed_untarget_batch_writer_inputs,
 )
+from xic_extractor.alignment.completion import complete_analysis
+from xic_extractor.extraction.untargeted_execution_result import (
+    CompletedUntargetBatchWorkflowResult,
+)
 from xic_extractor.extraction.untargeted_cid_nl_alignment import (
     complete_untargeted_cid_nl_alignment,
 )
@@ -98,7 +102,12 @@ public_objects = {
     ),
 }
 module_files = {}
-for public_name, public_object in public_objects.items():
+installed_objects = {
+    **public_objects,
+    "complete_analysis": complete_analysis,
+    "CompletedUntargetBatchWorkflowResult": CompletedUntargetBatchWorkflowResult,
+}
+for public_name, public_object in installed_objects.items():
     module = sys.modules[public_object.__module__]
     module_file = Path(module.__file__).resolve()
     if not module_file.is_relative_to(target):

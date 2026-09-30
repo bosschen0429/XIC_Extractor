@@ -49,7 +49,6 @@ from xic_extractor.alignment.result.scientific_alignment import (
 from xic_extractor.alignment.untargeted_finalized_matrix import (
     project_completed_untarget_batch_writer_inputs,
 )
-from xic_extractor.alignment.workflow import CompletedUntargetBatchWorkflowResult
 from xic_extractor.configuration.signal_processing_profile import (
     DEFAULT_SIGNAL_PROCESSING_PROFILE,
 )
@@ -84,6 +83,9 @@ from xic_extractor.extraction.untargeted_cid_nl_real_data_runtime import (
     UntargetedCidNlRealDataRuntimeError,
     UntargetedCidNlRealDataRuntimeJob,
     build_untargeted_cid_nl_sample_runtime_jobs,
+)
+from xic_extractor.extraction.untargeted_execution_result import (
+    CompletedUntargetBatchWorkflowResult,
 )
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     CidNlPhysicalCandidateFact,
@@ -206,8 +208,12 @@ def _assert_partition_composition_parity(
         )
     )
     recomposed = replace(completed, application_result=result)
-    assert project_completed_untarget_batch_writer_inputs(recomposed).matrix == (
-        project_completed_untarget_batch_writer_inputs(completed).matrix
+    assert project_completed_untarget_batch_writer_inputs(
+        recomposed.application_result
+    ).matrix == (
+        project_completed_untarget_batch_writer_inputs(
+            completed.application_result
+        ).matrix
     )
     assert result.excluded_candidates == original.excluded_candidates
     assert result.physical_observation_ids == original.physical_observation_ids
@@ -358,7 +364,9 @@ def _assert_single_unsupported_exclusion(
     )
     assert {item.candidate_id for item in exclusions} == expected_candidate_ids
     assert len(result.children) == int(populated)
-    writer = project_completed_untarget_batch_writer_inputs(completed)
+    writer = project_completed_untarget_batch_writer_inputs(
+        completed.application_result
+    )
     destination = tmp_path / "single-unsupported-matrix.tsv"
     write_alignment_matrix_tsv(
         destination, writer.matrix, production_decisions=writer.production_decisions
@@ -1201,8 +1209,8 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         bounded_owner, "materialize_untargeted_cid_nl_partition", retain_batch
     )
     from xic_extractor.alignment import cell_observations as cell_owner
+    from xic_extractor.alignment import completion as workflow_owner
     from xic_extractor.alignment import grouping_bootstrap as bootstrap_owner
-    from xic_extractor.alignment import workflow as workflow_owner
     from xic_extractor.alignment.projection.untarget import post_cell as post_cell_owner
     from xic_extractor.alignment.result import application_result as result_owner
     from xic_extractor.extraction import (
@@ -1728,7 +1736,9 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     assert rss[0]["availability"] == "measured"
     assert rss[0]["value"] == 123456
     _assert_jobs_match_direct_construction(captured_batches[0])
-    writer = project_completed_untarget_batch_writer_inputs(completed)
+    writer = project_completed_untarget_batch_writer_inputs(
+        completed.application_result
+    )
     from xic_extractor.alignment.tsv_writer import write_alignment_matrix_tsv
 
     matrix_path = tmp_path / "canonical-matrix.tsv"
@@ -2383,9 +2393,7 @@ def _subject_proof_record(
                 right_rt_min=bounds[1],
             )
         ),
-        acquired_trace=SimpleNamespace(
-            trace=SimpleNamespace(rt=rt, intensity=raw)
-        ),
+        acquired_trace=SimpleNamespace(trace=SimpleNamespace(rt=rt, intensity=raw)),
     )
 
 
@@ -3491,7 +3499,9 @@ def test_production_batch_executes_one_atomic_sample_phase(
         )
         if method_subject_id == subject.method_subject_id
     )
-    writer_inputs = project_completed_untarget_batch_writer_inputs(completed)
+    writer_inputs = project_completed_untarget_batch_writer_inputs(
+        completed.application_result
+    )
     assert writer_inputs.matrix.sample_order == ("S1",)
     assert len(writer_inputs.matrix.clusters) == 2
     assert len(writer_inputs.matrix.cells) == 2
@@ -3802,7 +3812,9 @@ def test_production_composition_closes_observation_only_hold_without_membership(
     assert not set(hold_observation_ids) & set(
         completed.application_result.physical_observation_ids
     )
-    writer_inputs = project_completed_untarget_batch_writer_inputs(completed)
+    writer_inputs = project_completed_untarget_batch_writer_inputs(
+        completed.application_result
+    )
     assert writer_inputs.matrix.sample_order == stems
     if scenario == "hold_no_input":
         assert completed.application_result.children == ()
@@ -4241,8 +4253,12 @@ def test_known_istd_reference_closes_drifting_group_and_cell_proof(
         known_istd_reference=reference,
         subject_worksets=(batch.subject_batch.subjects,),
     )
-    plain_matrix = project_completed_untarget_batch_writer_inputs(plain).matrix
-    corrected_matrix = project_completed_untarget_batch_writer_inputs(corrected).matrix
+    plain_matrix = project_completed_untarget_batch_writer_inputs(
+        plain.application_result
+    ).matrix
+    corrected_matrix = project_completed_untarget_batch_writer_inputs(
+        corrected.application_result
+    ).matrix
     assert len(plain_matrix.clusters) == 2
     assert len(corrected_matrix.clusters) == 1
     assert {
@@ -4723,7 +4739,9 @@ def test_production_composition_closes_recovered_observation_without_candidate(
     )
 
     assert completed.application_result.children
-    writer_inputs = project_completed_untarget_batch_writer_inputs(completed)
+    writer_inputs = project_completed_untarget_batch_writer_inputs(
+        completed.application_result
+    )
     if recovery_case != "positive":
         assert (
             sum(map(len, opened.values()))
@@ -4868,7 +4886,7 @@ def test_production_composition_closes_recovered_observation_without_candidate(
         for index, candidate in enumerate(direct_candidates[:-1])
     }
     reported = project_completed_untarget_batch_writer_inputs(
-        completed, ms1_apex_mz_by_candidate=readings
+        completed.application_result, ms1_apex_mz_by_candidate=readings
     )
     (reported_row,) = reported.matrix.clusters
     assert reported_row.family_center_mz == pytest.approx(
@@ -5073,7 +5091,9 @@ def test_atomic_publication_preserves_ms1_only_backfill_and_no_peak(
     assert all(owner_decisions[stem].variant == "numeric" for stem in sample_stems[:3])
     assert len({owner_decisions[stem].value for stem in sample_stems[:4]}) == 4
 
-    writer_inputs = project_completed_untarget_batch_writer_inputs(completed)
+    writer_inputs = project_completed_untarget_batch_writer_inputs(
+        completed.application_result
+    )
     outputs = output_paths(
         tmp_path / "writer",
         output_level="machine",

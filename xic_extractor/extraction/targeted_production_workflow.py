@@ -10,17 +10,19 @@ from dataclasses import InitVar, dataclass, replace
 from pathlib import Path
 from typing import Any, cast
 
+from xic_extractor.alignment.completion import (
+    AlignmentWorkflowContractError,
+    CaptureWorkflowArguments,
+    TargetWorkflowAdapter,
+    TargetWorkflowRequest,
+    WorkflowStage,
+    _WorkflowStageFailure,
+    complete_analysis,
+    validate_completion_inputs,
+)
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.hypothesis_owner_adapter import (
     compose_peak_hypotheses_from_assessment_universe,
-)
-from xic_extractor.alignment.workflow import (
-    CaptureWorkflowArguments,
-    CompletedTargetWorkflowResult,
-    TargetWorkflowAdapter,
-    TargetWorkflowRequest,
-    WorkflowRuntimeInvocation,
-    execute_alignment_workflow,
 )
 from xic_extractor.applications.targeted.application import (
     FinalizedTargetProductionResult,
@@ -42,7 +44,11 @@ from xic_extractor.evidence_artifacts import (
     _mint_artifact_semantic_contract_ref,
     _mint_evidence_artifact_ref,
 )
-from xic_extractor.execution_runtime import WorkUnitTerminalOutcome
+from xic_extractor.execution_runtime import (
+    AttemptRuntime,
+    AttemptTerminalOutcome,
+    WorkUnitTerminalOutcome,
+)
 from xic_extractor.execution_runtime_observability import RuntimeMetricAvailability
 from xic_extractor.execution_runtime_owner import (
     RuntimeArtifactRegistrationReceipt,
@@ -50,6 +56,7 @@ from xic_extractor.execution_runtime_owner import (
     RuntimeTelemetrySamples,
     RuntimeWorkerBatchReceipt,
     RuntimeWorkerPeakRssSample,
+    execute_runtime_attempt,
     mint_work_unit_settlement,
     runtime_started_worker_keys,
     start_runtime_attempt,
@@ -775,33 +782,11 @@ def _execute_target(
         work_unit_keys=(work_unit_key,),
         owner_completeness_attestation="targeted-retained-acquisition-handoff",
     )
-    terminal = execute_alignment_workflow(
+    return _complete_retained_target(
         TargetWorkflowRequest(
             scope=scope,
             processing_request=context.owners.request,
             processing_attempt=context.owners.attempt,
-            runtime=WorkflowRuntimeInvocation(
-                runtime=runtime,
-                reservations=(),
-                worker_batch_provider=lambda _aggregate: RuntimeWorkerBatchReceipt(
-                    settlements=(
-                        mint_work_unit_settlement(
-                            attempt=context.owners.attempt,
-                            work_unit_key=work_unit_key,
-                            outcome=WorkUnitTerminalOutcome.SUCCEEDED,
-                            owner_result_ref=workflow_artifact,
-                        ),
-                    ),
-                    artifact_registrations=(
-                        RuntimeArtifactRegistrationReceipt(
-                            work_unit_key=work_unit_key,
-                            artifact=workflow_artifact,
-                        ),
-                    ),
-                ),
-                telemetry_provider=_runtime_telemetry,
-                persister=lambda receipt: receipt,
-            ),
         ),
         TargetWorkflowAdapter(
             capture_inputs=tuple(capture_inputs),
@@ -810,14 +795,69 @@ def _execute_target(
             predecessor_cell_observations=(),
             completed_capture_handoff=tuple(completed_captures),
         ),
+        runtime=runtime,
+        workflow_artifact=workflow_artifact,
+        work_unit_key=work_unit_key,
     )
-    if type(terminal) is not CompletedTargetWorkflowResult:
+
+
+def _complete_retained_target(
+    request: TargetWorkflowRequest,
+    adapter: TargetWorkflowAdapter,
+    *,
+    runtime: AttemptRuntime,
+    workflow_artifact: EvidenceArtifactRef,
+    work_unit_key: str,
+) -> FinalizedTargetProductionResult:
+    """Acknowledge retained acquisition, then complete its exact owner evidence."""
+    owners = validate_completion_inputs(request, adapter)
+    if (
+        runtime.manifest.attempt is not request.processing_attempt
+        or runtime.history.attempt is not request.processing_attempt
+    ):
+        raise AlignmentWorkflowContractError(
+            "workflow runtime crossed the exact processing attempt"
+        )
+    receipt = execute_runtime_attempt(
+        runtime,
+        (),
+        worker_batch_provider=lambda _aggregate: RuntimeWorkerBatchReceipt(
+            settlements=(
+                mint_work_unit_settlement(
+                    attempt=request.processing_attempt,
+                    work_unit_key=work_unit_key,
+                    outcome=WorkUnitTerminalOutcome.SUCCEEDED,
+                    owner_result_ref=workflow_artifact,
+                ),
+            ),
+            artifact_registrations=(
+                RuntimeArtifactRegistrationReceipt(
+                    work_unit_key=work_unit_key,
+                    artifact=workflow_artifact,
+                ),
+            ),
+        ),
+        telemetry_provider=_runtime_telemetry,
+        persister=lambda receipt: receipt,
+    )
+    outcome = receipt.supervisor.terminal_outcome
+    if outcome is not AttemptTerminalOutcome.SUCCEEDED:
+        stage = (
+            WorkflowStage.RUNTIME if outcome is AttemptTerminalOutcome.FAILED else None
+        )
+        raise RuntimeError(
+            f"Targeted workflow failed before publication: stage={stage}; reason=None"
+        )
+    try:
+        result = complete_analysis(request, adapter, processing_owners=owners)
+    except _WorkflowStageFailure as failure:
         raise RuntimeError(
             "Targeted workflow failed before publication: "
-            f"stage={getattr(terminal, 'stage', None)}; "
-            f"reason={getattr(terminal, 'failure_message', None)}"
-        )
-    return terminal.application_result
+            f"stage={failure.stage}; reason={failure.error}"
+        ) from failure.error
+    if type(result) is not FinalizedTargetProductionResult:
+        raise RuntimeError("Targeted completion returned a crossed result")
+    return result
 
 
 def _mint_no_observation_capture_artifact(

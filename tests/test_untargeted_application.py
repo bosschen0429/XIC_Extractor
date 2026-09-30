@@ -59,6 +59,8 @@ def test_pure_cid_nl_wrapper_reports_retained_route_and_typed_handoff(
     closed: list[bool] = []
 
     class MockCompleted:
+        application_result = object()
+
         def close(self) -> None:
             closed.append(True)
 
@@ -111,7 +113,9 @@ def test_pure_cid_nl_wrapper_reports_retained_route_and_typed_handoff(
     monkeypatch.setattr(
         publication_module,
         "project_completed_untarget_batch_writer_inputs",
-        lambda value, **_kwargs: writer_inputs if value is completed else pytest.fail(),
+        lambda value, **_kwargs: (
+            writer_inputs if value is completed.application_result else pytest.fail()
+        ),
     )
     monkeypatch.setattr(
         publication_module,
@@ -220,7 +224,9 @@ def test_pure_cid_nl_cancellation_after_completion_skips_publication(
 ) -> None:
     batch_index = _write_batch(tmp_path, ("S1",))
     closed: list[bool] = []
-    completed = SimpleNamespace(close=lambda: closed.append(True))
+    completed = SimpleNamespace(
+        close=lambda: closed.append(True), application_result=object()
+    )
     cancellation_checks = iter((False, True))
     monkeypatch.setattr(
         application_module,
@@ -259,7 +265,9 @@ def test_pure_cid_nl_cancellation_during_projection_skips_publication(
 ) -> None:
     batch_index = _write_batch(tmp_path, ("S1",))
     closed: list[bool] = []
-    completed = SimpleNamespace(close=lambda: closed.append(True))
+    completed = SimpleNamespace(
+        close=lambda: closed.append(True), application_result=object()
+    )
     writer_inputs = SimpleNamespace(
         matrix=_matrix(("S1",)),
         production_decisions=object(),
@@ -272,7 +280,7 @@ def test_pure_cid_nl_cancellation_during_projection_skips_publication(
     )
 
     def project(value: object, **_kwargs: object) -> object:
-        assert value is completed
+        assert value is completed.application_result
         return writer_inputs
 
     monkeypatch.setattr(
@@ -415,7 +423,9 @@ def test_pure_cid_nl_projection_failure_publishes_no_owned_outputs(
     batch_index = _write_batch(tmp_path, ("S1",))
     output_dir = tmp_path / "out"
     closed: list[bool] = []
-    completed = SimpleNamespace(close=lambda: closed.append(True))
+    completed = SimpleNamespace(
+        close=lambda: closed.append(True), application_result=object()
+    )
     monkeypatch.setattr(
         application_module,
         "complete_untargeted_alignment",
@@ -423,7 +433,7 @@ def test_pure_cid_nl_projection_failure_publishes_no_owned_outputs(
     )
 
     def reject_projection(value: object, **_kwargs: object) -> object:
-        assert value is completed
+        assert value is completed.application_result
         raise ValueError("invalid finalized projection")
 
     monkeypatch.setattr(
@@ -526,7 +536,7 @@ def test_pipeline_streams_partition_children_once_and_cleans_up(
 
     if failure is None:
         writer = publication_module.project_completed_untarget_batch_writer_inputs(
-            completed
+            completed.application_result
         )
         write_alignment_matrix_tsv(
             matrix_path,
@@ -818,7 +828,7 @@ def test_pure_cid_nl_targets_csv_integration(
     raw_dir.mkdir()
     (raw_dir / "S1.raw").touch()
 
-    completed = object()
+    completed = SimpleNamespace(application_result=object())
     writer_inputs = SimpleNamespace(
         matrix=_matrix(("S1",)),
         production_decisions=object(),

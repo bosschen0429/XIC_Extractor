@@ -125,7 +125,9 @@ def _owner_run(tmp_path, monkeypatch, scenario):
     completed = compose_untargeted_cid_nl_production_result(
         batch, runtime, alignment_config=config
     )
-    writer = project_completed_untarget_batch_writer_inputs(completed)
+    writer = project_completed_untarget_batch_writer_inputs(
+        completed.application_result
+    )
     matrix = tmp_path / "matrix.tsv"
     write_alignment_matrix_tsv(
         matrix,
@@ -541,8 +543,7 @@ def test_related_set_links_preserve_union_order_and_legacy_read(tmp_path):
         writer.finalize({})
 
     expected = {
-        (candidate_id, "S1", "facts", "one")
-        for candidate_id in ("C1", "C2", "C3")
+        (candidate_id, "S1", "facts", "one") for candidate_id in ("C1", "C2", "C3")
     }
     assert set(read_explanation_metadata(report).links) == expected
     for candidate_id in ("C1", "C2", "C3"):

@@ -20,7 +20,6 @@ from xic_extractor.alignment.result.application_result import (
     UntargetedCandidateExclusion,
     finalize_alignment_result,
 )
-from xic_extractor.alignment.workflow import CompletedUntargetBatchWorkflowResult
 from xic_extractor.evidence_artifacts import (
     _mint_artifact_semantic_contract_ref,
     _mint_evidence_artifact_ref,
@@ -65,6 +64,9 @@ from xic_extractor.extraction.untargeted_cid_nl_production_batch import (
 from xic_extractor.extraction.untargeted_cid_nl_real_data_runtime import (
     UntargetedCidNlRuntimePartitionResult,
     execute_untargeted_cid_nl_runtime_partition,
+)
+from xic_extractor.extraction.untargeted_execution_result import (
+    CompletedUntargetBatchWorkflowResult,
 )
 from xic_extractor.immutable_sequence import ImmutableSequence
 from xic_extractor.peak_detection.cid_nl_method_subject import (

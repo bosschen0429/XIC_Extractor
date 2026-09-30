@@ -18,7 +18,6 @@ from xic_extractor.alignment.csv_io import DiscoveryBatchInput
 from xic_extractor.alignment.discovery_input_source import DiscoveryInputSource
 from xic_extractor.alignment.drift_evidence import KnownIstdReference
 from xic_extractor.alignment.raw_sources import existing_raw_paths
-from xic_extractor.alignment.workflow import CompletedUntargetBatchWorkflowResult
 from xic_extractor.config import ExtractionConfig
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
@@ -52,6 +51,9 @@ from xic_extractor.execution_runtime_owner import (
 from xic_extractor.execution_settings import DEFAULT_ALIGNMENT_WORKERS
 from xic_extractor.extraction.untargeted_cid_nl_bounded_runtime import (
     execute_bounded_untargeted_cid_nl,
+)
+from xic_extractor.extraction.untargeted_execution_result import (
+    CompletedUntargetBatchWorkflowResult,
 )
 from xic_extractor.extraction.untargeted_input_planning import (
     prepare_indexed_untargeted_plan,

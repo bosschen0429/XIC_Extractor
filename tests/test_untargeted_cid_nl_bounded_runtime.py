@@ -29,7 +29,6 @@ from xic_extractor.alignment.drift_evidence import read_known_istd_reference
 from xic_extractor.alignment.untargeted_finalized_matrix import (
     project_completed_untarget_batch_writer_inputs,
 )
-from xic_extractor.alignment.workflow import CompletedUntargetBatchWorkflowResult
 from xic_extractor.execution_runtime import AttemptTerminalOutcome
 from xic_extractor.execution_runtime_finalization import (
     RuntimeResourceCleanupOutcome,
@@ -41,6 +40,9 @@ from xic_extractor.extraction.untargeted_cid_nl_production_batch import (
     execute_untargeted_cid_nl_production_batch,
     materialize_untargeted_cid_nl_partition,
     prepare_untargeted_cid_nl_production_plan,
+)
+from xic_extractor.extraction.untargeted_execution_result import (
+    CompletedUntargetBatchWorkflowResult,
 )
 from xic_extractor.immutable_sequence import ImmutableSequence
 from xic_extractor.sample_metadata import SampleMetadata
@@ -777,9 +779,11 @@ def test_bounded_runtime_skips_subjects_without_ms1_features(
         assert not exclusion.method_assessments
         assert not exclusion.composite_assessments
     assert bool(result.application_result.children) is bool(eligible_subject_ids)
-    writer = project_completed_untarget_batch_writer_inputs(result)
+    writer = project_completed_untarget_batch_writer_inputs(result.application_result)
     if eager is not None:
-        assert writer == project_completed_untarget_batch_writer_inputs(eager)
+        assert writer == project_completed_untarget_batch_writer_inputs(
+            eager.application_result
+        )
         assert {
             assessment.artifact.evidence_artifact_id: assessment
             for assessment in result.method_assessments
@@ -905,8 +909,12 @@ def test_bounded_runtime_matches_eager_after_disk_owner_round_trip(
     assert bool(warm_threads) is (raw_workers > 1)
     assert all(thread == coordinator_thread for thread in warm_threads)
     assert type(bounded.application_result.children) is ImmutableSequence
-    bounded_writer = project_completed_untarget_batch_writer_inputs(bounded)
-    eager_writer = project_completed_untarget_batch_writer_inputs(eager)
+    bounded_writer = project_completed_untarget_batch_writer_inputs(
+        bounded.application_result
+    )
+    eager_writer = project_completed_untarget_batch_writer_inputs(
+        eager.application_result
+    )
     assert bounded_writer.matrix == eager_writer.matrix
     if scenario == "istd":
         expected_areas = {
@@ -1007,7 +1015,9 @@ def _assert_explanation_parity(tmp_path, plan, config, eager, bounded):
     candidate_id = plan.subject_batch.candidate_memberships[0][0]
     records = []
     for name, completed in (("eager", eager), ("bounded", bounded)):
-        writer = project_completed_untarget_batch_writer_inputs(completed)
+        writer = project_completed_untarget_batch_writer_inputs(
+            completed.application_result
+        )
         matrix = tmp_path / f"{name}.tsv"
         write_alignment_matrix_tsv(
             matrix,
@@ -1106,7 +1116,9 @@ def test_failed_attempt_retry_reuses_completed_raw_facts_and_recomposes(
         max_partition_jobs=len(baseline_plan.context.samples),
         pipeline_overlap=False,
     )
-    baseline_writer = project_completed_untarget_batch_writer_inputs(baseline)
+    baseline_writer = project_completed_untarget_batch_writer_inputs(
+        baseline.application_result
+    )
     opened_runs = []
     plan, _ = _plan(tmp_path, monkeypatch, opened_sink=opened_runs)
     output_dir = tmp_path / "retry-output"
@@ -1158,7 +1170,9 @@ def test_failed_attempt_retry_reuses_completed_raw_facts_and_recomposes(
         retry_plan.context.processing_owners.attempt.processing_attempt_id
         != failed_attempt_id
     )
-    writer = project_completed_untarget_batch_writer_inputs(completed)
+    writer = project_completed_untarget_batch_writer_inputs(
+        completed.application_result
+    )
     assert writer.matrix.cells
     assert writer.matrix == baseline_writer.matrix
     assert completed.application_result.candidate_ids == (
@@ -1297,9 +1311,9 @@ def test_partition_acquisitions_overlap_with_shared_worker_budget_and_ordered_ou
     assert set(observed_budgets.values()) == {2}
     assert peak_budget == 4
     assert composition_active == 0 and not active_budgets
-    assert project_completed_untarget_batch_writer_inputs(overlapped) == (
-        project_completed_untarget_batch_writer_inputs(serial)
-    )
+    assert project_completed_untarget_batch_writer_inputs(
+        overlapped.application_result
+    ) == (project_completed_untarget_batch_writer_inputs(serial.application_result))
     assert overlapped.application_result.candidate_ids == (
         serial.application_result.candidate_ids
     )

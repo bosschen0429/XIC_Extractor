@@ -26,6 +26,7 @@ XIC_Extractor/
 │   ├── extraction/             Targeted 擷取／workflow adapter 與保留的 Untargeted 執行 adapter
 │   ├── peak_detection/         單次觀察、峰假設、選擇與積分
 │   ├── alignment/              跨樣本組合、Backfill、格值決策及其交付 adapter
+│   │   ├── completion.py       已取得 evidence → 完成的科學結果；不呼叫 runtime
 │   │   ├── cross_sample/       跨樣本關聯
 │   │   ├── backfill/           有限度的 observation revisit
 │   │   ├── cell_decision/      每個樣本格的科學決策

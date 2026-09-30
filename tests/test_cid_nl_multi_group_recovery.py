@@ -163,7 +163,9 @@ def test_rejected_initial_evidence_gets_one_independent_bounded_assessment(
         exclusion.candidate_id == candidates["Rejected"][0].candidate_id
         for exclusion in completed.application_result.excluded_candidates
     )
-    writer = project_completed_untarget_batch_writer_inputs(completed)
+    writer = project_completed_untarget_batch_writer_inputs(
+        completed.application_result
+    )
     (decision,) = tuple(
         d
         for d in writer.production_decisions.cells.values()
@@ -809,7 +811,9 @@ def test_runtime_recovers_every_authorized_rt_group(
             project_completed_untarget_batch_writer_inputs,
         )
 
-        writer = project_completed_untarget_batch_writer_inputs(completed)
+        writer = project_completed_untarget_batch_writer_inputs(
+            completed.application_result
+        )
         decisions = tuple(
             decision
             for decision in writer.production_decisions.cells.values()
@@ -998,7 +1002,9 @@ def test_shared_physical_recovery_claim_is_not_assigned_to_two_groups(
     assert len(missing_cells) == 2
     assert all(cell.backfill_cell is not None for cell in missing_cells)
     assert all(cell.evidence_states == ("unresolved",) for cell in missing_cells)
-    writer = project_completed_untarget_batch_writer_inputs(completed)
+    writer = project_completed_untarget_batch_writer_inputs(
+        completed.application_result
+    )
     missing_decisions = tuple(
         decision
         for decision in writer.production_decisions.cells.values()
@@ -1108,7 +1114,9 @@ def test_shared_ms1_only_backfill_peak_is_not_written_to_two_rows(
     )
     assert len(missing_cells) == 2
     assert all(cell.evidence_states == ("unresolved",) for cell in missing_cells)
-    writer = project_completed_untarget_batch_writer_inputs(completed)
+    writer = project_completed_untarget_batch_writer_inputs(
+        completed.application_result
+    )
     missing_decisions = tuple(
         decision
         for decision in writer.production_decisions.cells.values()
@@ -1213,7 +1221,9 @@ def test_ms1_only_backfill_fills_only_one_unique_group_window_peak(
         if cell.canonical_sample.metadata.raw_stem == "Missing"
     )
     assert missing_cell.evidence_states == (expected_state,)
-    writer = project_completed_untarget_batch_writer_inputs(completed)
+    writer = project_completed_untarget_batch_writer_inputs(
+        completed.application_result
+    )
     (decision,) = tuple(
         decision
         for decision in writer.production_decisions.cells.values()
@@ -1348,7 +1358,9 @@ def test_backfill_reaches_a_sample_whose_support_belongs_to_another_group(
     completed = compose_untargeted_cid_nl_production_result(
         batch, result, alignment_config=AlignmentConfig(anchor_min_seed_events=1)
     )
-    writer = project_completed_untarget_batch_writer_inputs(completed)
+    writer = project_completed_untarget_batch_writer_inputs(
+        completed.application_result
+    )
     sample_stems = writer.matrix.sample_order
     group_rows = {
         round(cluster.family_center_rt, 1): cluster
@@ -1479,7 +1491,9 @@ def _assert_alignment_uses_configured_recovery_groups(
     assert no_input.backfill_cell is None
     assert no_input.evidence_states == ("not_searched",)
     assert no_input.integrations == ()
-    writer = project_completed_untarget_batch_writer_inputs(completed)
+    writer = project_completed_untarget_batch_writer_inputs(
+        completed.application_result
+    )
     assert all(
         not decision.write_matrix_value and decision.matrix_value is None
         for decision in writer.production_decisions.cells.values()

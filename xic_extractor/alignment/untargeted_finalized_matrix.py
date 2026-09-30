@@ -22,11 +22,13 @@ from xic_extractor.alignment.production_decisions import (
     ProductionRowDecision,
     ProductionStatus,
 )
+from xic_extractor.alignment.result.application_result import (
+    FinalizedUntargetBatchApplicationResult,
+)
 from xic_extractor.alignment.result.scientific_alignment import (
     FinalizedScientificAlignment,
     ObservedSearchSubject,
 )
-from xic_extractor.alignment.workflow import CompletedUntargetBatchWorkflowResult
 from xic_extractor.peak_detection.integration_result import IntegrationResult
 from xic_extractor.peak_detection.physical_peak_evaluation import (
     validate_bounded_physical_peak_evaluation,
@@ -104,7 +106,7 @@ class CompletedUntargetBatchWriterInputs:
 
 
 def project_completed_untarget_batch_writer_inputs(
-    completed: CompletedUntargetBatchWorkflowResult,
+    completed: FinalizedUntargetBatchApplicationResult,
     *,
     consume_child: Callable[[FinalizedUntargetApplicationResult], None] | None = None,
     ms1_apex_mz_by_candidate: Mapping[str, float] | None = None,
@@ -137,13 +139,13 @@ def project_completed_untarget_batch_writer_inputs(
 
 
 def completed_untarget_batch_sample_order(
-    completed: CompletedUntargetBatchWorkflowResult,
+    completed: FinalizedUntargetBatchApplicationResult,
 ) -> tuple[str, ...]:
     """Return the canonical output columns, including for an empty batch."""
 
-    if type(completed) is not CompletedUntargetBatchWorkflowResult:
+    if type(completed) is not FinalizedUntargetBatchApplicationResult:
         raise TypeError("writer projection requires a completed Untarget batch")
-    application = completed.application_result
+    application = completed
     canonical_samples = tuple(application.canonical_samples)
     injection_orders = tuple(
         sample.metadata.injection_order for sample in canonical_samples
@@ -168,7 +170,7 @@ def completed_untarget_batch_sample_order(
 
 
 def iter_completed_untarget_batch_writer_inputs(
-    completed: CompletedUntargetBatchWorkflowResult,
+    completed: FinalizedUntargetBatchApplicationResult,
     *,
     consume_child: Callable[[FinalizedUntargetApplicationResult], None] | None = None,
     ms1_apex_mz_by_candidate: Mapping[str, float] | None = None,
@@ -182,7 +184,7 @@ def iter_completed_untarget_batch_writer_inputs(
 
     sample_stems = completed_untarget_batch_sample_order(completed)
     sample_set = frozenset(sample_stems)
-    application = completed.application_result
+    application = completed
 
     seen_row_ids: set[str] = set()
     seen_group_ids: set[str] = set()
