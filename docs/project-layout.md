@@ -65,7 +65,7 @@ XIC_Extractor/
 | --- | --- |
 | [`README.md`](../README.md) | 使用者入口與文件索引 |
 | [`AGENTS.md`](../AGENTS.md) | 高頻 agent guardrails 與 owner routing |
-| [`docs/user/`](user/) | GUI/CLI 操作手冊 |
+| [`docs/user/`](user/) | GUI/CLI 操作手冊、欄位參考與概念 HTML 導覽 |
 | [`docs/product/`](product/) | 維護中的產品語義與 topic authority |
 | [`docs/agent/`](agent/) | 執行、驗證、文件、架構與 PR 契約 |
 | [`docs/architecture-contract.md`](architecture-contract.md) | dependency direction 與 ownership map |
@@ -96,8 +96,8 @@ XIC_Extractor/
 | `scripts/` | Public CLI、product adapters、validation scripts |
 | `tools/diagnostics/` | Maintained product-adjacent diagnostics 與 docs governance |
 | `tests/` | pytest tests 與小型 fixtures |
-| `docs/user/` | 使用者文件 |
-| `docs/product/` | 產品 topic owners |
+| `docs/user/` | 使用者操作、參考與概念解說；HTML 連回正式 Markdown owner |
+| `docs/product/` | 維護者與 agent 使用的正式產品語義 Markdown topic owners |
 | `docs/agent/` | Agent/validation/execution contracts |
 | `docs/superpowers/schemas/` | Machine-readable schema contracts |
 | `docs/superpowers/validation/` | Checker-consumed validation contracts 與最小 artifacts |

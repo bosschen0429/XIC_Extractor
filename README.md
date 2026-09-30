@@ -132,10 +132,11 @@ uv run xic-extractor-cli --base-dir .
 
 | Audience | Document | Purpose |
 | --- | --- | --- |
-| Users | [Human guide index](docs/product/readers-index.html) | Choose an HTML guide for operation, processing, or system review |
-| Workflow owners | [User guide index](docs/user/README.md) | Detailed Markdown workflow guidance and field references |
-| Readers | [Core modules guide](docs/product/core-modules-explainer.html) | Visual map of both workflows and their shared processing core |
-| Maintainers | [Product topic index](docs/product/README.md) | Product contracts, output schemas, authority boundaries |
-| Developers | [Architecture contract](docs/architecture-contract.md) | Package ownership, dependency rules, refactoring discipline |
+| Users | [Human guide index](docs/user/readers-index.html) | Choose an HTML guide for operation, processing, or system review |
+| Users | [User guide index](docs/user/README.md) | Detailed Markdown workflow guidance and field references |
+| Readers | [Core modules guide](docs/user/core-modules-explainer.html) | Visual map of both workflows and their shared processing core |
+| Maintainers / agents | [Product topic index](docs/product/README.md) | Product contracts, output schemas, authority boundaries |
+| Developers / agents | [Architecture contract](docs/architecture-contract.md) | Package ownership, dependency rules, refactoring discipline |
 | Developers | [Project layout](docs/project-layout.md) | Directory structure, naming conventions, file placement rules |
+| Agents | [Agent contract](AGENTS.md) | Task-specific read routes, execution constraints, and verification |
 | Domain experts | [LC-MS/MS evidence rules](docs/lc-msms-evidence-rules.md) | Evidence semantics, peak selection, area ownership |

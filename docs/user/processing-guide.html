@@ -115,7 +115,7 @@
         <div class="card"><h3>方法可以不同，交接方式相同</h3><p>CID-NL 可由中性流失等 MS2 線索出發；HCD-PI、Delta Mass 等方法讀取自己的證據。下游接收帶來源的觀察與假說，而不必為每種方法重建 Alignment 和 Backfill 流程。</p></div>
         <div class="card example"><h3>例子：A 有候選，還不是「同一列」</h3><p>A 的 MS1 trace 與種子證據支持一個本地峰，Discovery 會保留候選與 review 資訊。即使多個候選共用同一個樣本內峰錨點，那個標籤也不是 A、B、C 的跨樣本群組身份。</p></div>
       </div>
-      <p class="owner"><strong>正式產品 owner：</strong><code>docs/product/discovery.md</code>。候選狀態、方法證據、輸出和交接契約以該文件為準。</p>
+      <p class="owner"><strong>正式產品 owner：</strong><a href="../product/discovery.md"><code>docs/product/discovery.md</code></a>。候選狀態、方法證據、輸出和交接契約以該文件為準。</p>
     </section>
 
     <section class="topic" id="peak" aria-labelledby="peak-title">
@@ -125,7 +125,7 @@
         <div class="card"><h3>三個範圍，三種用途</h3><p>搜尋窗用來找可能訊號；候選區間是峰提案；定量脈絡則是觀察峰形與計算面積所需的 trace 範圍。候選邊界若切掉峰翼，可在設定的 RT 限制內有限擴張。</p></div>
         <div class="card example"><h3>例子：不能把整段雜訊都積進去</h3><p>A 的候選左翼被截短時，系統可查看較完整的局部 trace。波形、局部極小值或形態特徵都是提案和審查證據；任何一項都不能暗中替代最後的峰選擇與面積決策。</p></div>
       </div>
-      <p class="owner"><strong>正式產品 owner：</strong><code>docs/product/quantitation-context.md</code>。邊界擴張、形態證據與面積影響的限制以該文件為準。</p>
+      <p class="owner"><strong>正式產品 owner：</strong><a href="../product/quantitation-context.md"><code>docs/product/quantitation-context.md</code></a>。邊界擴張、形態證據與面積影響的限制以該文件為準。</p>
     </section>
 
     <section class="topic" id="alignment" aria-labelledby="alignment-title">
@@ -135,7 +135,7 @@
         <div class="card"><h3>CrossSample 管身份</h3><p>CrossSample 決定群組、成員、群組狀態及分裂／合併沿革；RT 先驗不能蓋過直接的本地證據。</p></div>
         <div class="card example"><h3>例子：A、B 接近，仍須過硬條件</h3><p>A、B 的 RT 接近可支持比較，卻不能掩蓋不同峰、身份衝突或同一樣本多峰的歧義。群組關係關閉後，流程才把結果交給 Targeted 或 Untargeted 的列／格投影。</p></div>
       </div>
-      <p class="owner"><strong>正式產品 owner：</strong><code>docs/product/alignment.md</code>。群組身份、成員、修正與結果交接以該文件為準。</p>
+      <p class="owner"><strong>正式產品 owner：</strong><a href="../product/alignment.md"><code>docs/product/alignment.md</code></a>。群組身份、成員、修正與結果交接以該文件為準。</p>
     </section>
 
     <section class="topic" id="kernel" aria-labelledby="kernel-title">
@@ -145,7 +145,7 @@
         <div class="card"><h3>入口約束不等於觀察結果</h3><p>Targeted 的目標清單限制搜尋並固定輸出列，但不能證明某樣本真的有峰。Untargeted 搜尋設定的證據空間，從關閉的 CrossSample 群組取得列身份。兩個入口都要走觀察、群組、可選修復與格值決策。</p></div>
         <div class="card"><h3>每個 owner 只回答自己的問題</h3><p>Discovery 產生候選；CrossSample 管群組；ObservationRevisit 修一個不完整的觀察；Backfill 重訪缺格；<code>ProductionCellDecision</code> 選數值或不寫。結果關閉後，writer 只呈現已完成的決策，不重新讀 RAW 或重做科學判斷。</p></div>
       </div>
-      <p class="owner"><strong>正式產品 owner：</strong><code>docs/product/shared-processing-kernel.md</code>。介面、生命周期與 Targeted／Untargeted 責任邊界以該文件為準。</p>
+      <p class="owner"><strong>正式產品 owner：</strong><a href="../product/shared-processing-kernel.md"><code>docs/product/shared-processing-kernel.md</code></a>。介面、生命周期與 Targeted／Untargeted 責任邊界以該文件為準。</p>
     </section>
 
     <section class="topic" id="backfill" aria-labelledby="backfill-title">
@@ -155,7 +155,7 @@
         <div class="card example"><h3>例子：C 的缺格</h3><p>若 A、B 提供已由 owner 支持的群組脈絡，C 可以依那個脈絡檢查本地訊號。找到峰也只是新增或修復一個觀察；還要另外判斷它是否屬於群組、是否可量化，以及能否寫出數值。</p></div>
         <div class="card"><h3>回填不是插值</h3><p>Backfill 不從 A、B 的面積猜 C 的數字，也不能從零建立 Target／群組。它回傳可追溯的 <code>ObservationRevisit</code> 決定或明確的不修復結果；不直接給群組成員資格、選定數值或 writer 權限。</p></div>
       </div>
-      <p class="owner"><strong>正式產品 owner：</strong><code>docs/product/backfill.md</code>。重訪資格、來源證據、修復結果與套用邊界以該文件為準。</p>
+      <p class="owner"><strong>正式產品 owner：</strong><a href="../product/backfill.md"><code>docs/product/backfill.md</code></a>。重訪資格、來源證據、修復結果與套用邊界以該文件為準。</p>
     </section>
 
     <section class="topic" id="decisions" aria-labelledby="decisions-title">
@@ -165,7 +165,7 @@
         <div class="card"><h3>一個可解釋的決策順序</h3><p>先說正在決定哪個群組或格子；列出必要的 trace、峰、來源等證據；檢查衝突與歧義；最後才用支持事實和排序解決仍可比較的候選。Targeted 與 Untargeted 各自決定列、計數、理由與檢視路由。</p></div>
         <div class="card example"><h3>例子：C 找到峰也可能不寫</h3><p>C 的 Backfill observation 若與群組身份不符，或積分不可用，格值可以明確停在 no-write。投影先建立列與格的 subject；<code>ProductionCellDecision</code> 再決定數值或不寫；同一投影最後處理列納入與理由。</p></div>
       </div>
-      <p class="owner"><strong>正式產品 owner：</strong><code>docs/product/decision-policy.md</code>。證據語義、硬門檻、排序與工作模式決策以該文件為準。</p>
+      <p class="owner"><strong>正式產品 owner：</strong><a href="../product/decision-policy.md"><code>docs/product/decision-policy.md</code></a>。證據語義、硬門檻、排序與工作模式決策以該文件為準。</p>
     </section>
 
     <section class="topic" id="matrix" aria-labelledby="matrix-title">
@@ -175,7 +175,7 @@
         <div class="card"><h3>每格有來源，也有不寫的可能</h3><p>直接觀察與修復觀察是不同證據狀態。格值 owner 依已關閉的觀察決定最後數值或 typed no-write；投影決定這列和這格是否納入，授權 writer 再將結果呈現為矩陣。</p></div>
         <div class="card example"><h3>例子：C 不會自動變成補上的數字</h3><p>C 的 Backfill review 行即使看起來有面積，也還不是主矩陣格值。只有在對應的產品權限與已完成的格值決策允許時，版本化矩陣才可收下它；審查圖和診斷表不能自行授權寫入。</p></div>
       </div>
-      <p class="owner"><strong>正式產品 owner：</strong><code>docs/product/quant-matrix.md</code>。矩陣形狀、數值／sidecar 分工及寫入授權以該文件為準。</p>
+      <p class="owner"><strong>正式產品 owner：</strong><a href="../product/quant-matrix.md"><code>docs/product/quant-matrix.md</code></a>。矩陣形狀、數值／sidecar 分工及寫入授權以該文件為準。</p>
     </section>
 
     <section class="topic" id="terms" aria-labelledby="terms-title">
@@ -188,7 +188,7 @@
         <div class="term"><dt>ObservationRevisit</dt><dd>一個已有脈絡的本地觀察的修復決定；不等於插值或最後格值。</dd></div>
         <div class="term"><dt>ProductionCellDecision</dt><dd>對一個明確 Target／群組格子，獨立選定數值或 no-write 的 owner。</dd></div>
       </dl>
-      <p class="owner"><strong>正式詞彙 owner：</strong><code>docs/product/domain-glossary.md</code>。完整術語、Targeted／Untargeted 與產品權限定義以該文件為準。</p>
+      <p class="owner"><strong>正式詞彙 owner：</strong><a href="../product/domain-glossary.md"><code>docs/product/domain-glossary.md</code></a>。完整術語、Targeted／Untargeted 與產品權限定義以該文件為準。</p>
     </section>
 
     <div class="finish">
