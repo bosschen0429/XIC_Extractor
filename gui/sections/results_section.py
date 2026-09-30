@@ -48,6 +48,7 @@ class ResultsSection(QWidget):
         # colours at build time, so they can't follow the theme on their own).
         self._last_summary: dict | None = None
         self._last_error: str | None = None
+        self._last_cancelled = False
         self._previous = False
         self.setVisible(False)
 
@@ -103,6 +104,7 @@ class ResultsSection(QWidget):
         self._title.setText("本次分析結果")
         self._last_summary = summary
         self._last_error = None
+        self._last_cancelled = False
         self._excel_path = summary.get("excel_path", "")
         has_path = bool(self._excel_path)
         self._open_button.setVisible(has_path)
@@ -160,10 +162,11 @@ class ResultsSection(QWidget):
 
         self.setVisible(True)
 
-    def show_error(self, message: str) -> None:
+    def show_error(self, message: str, *, cancelled: bool = False) -> None:
         self._previous = False
-        self._title.setText("本次執行未完成")
+        self._title.setText("本次執行已停止" if cancelled else "本次執行未完成")
         self._last_error = message
+        self._last_cancelled = cancelled
         self._last_summary = None
         self._excel_path = ""
         self._open_button.setVisible(False)
@@ -182,6 +185,7 @@ class ResultsSection(QWidget):
     def clear_results(self) -> None:
         self._last_summary = None
         self._last_error = None
+        self._last_cancelled = False
         self._previous = False
         self._excel_path = ""
         self._clear_grid()
@@ -200,7 +204,7 @@ class ResultsSection(QWidget):
         """
         previous = self._previous
         if self._last_error is not None:
-            self.show_error(self._last_error)
+            self.show_error(self._last_error, cancelled=self._last_cancelled)
         elif self._last_summary is not None:
             self.update_results(self._last_summary)
         if previous:

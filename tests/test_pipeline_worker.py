@@ -1,4 +1,6 @@
 from pathlib import Path
+from threading import Event
+from types import SimpleNamespace
 
 import pytest
 
@@ -325,6 +327,177 @@ def test_stop_requests_interruption(tmp_path: Path, monkeypatch) -> None:
     worker.stop()
 
     assert called == [True]
+
+
+@pytest.mark.parametrize(
+    "outcome",
+    ["missing_dll", "worker_failed", "unwritable_output", "cancelled", "succeeded"],
+)
+def test_real_targeted_view_restores_controls_and_preserves_run_problem(
+    outcome, tmp_path, monkeypatch, qtbot
+) -> None:
+    import gui.views.targeted_view as view_module
+    from xic_extractor.raw_reader import preflight_raw_reader
+
+    module = _module()
+    config = _config(tmp_path)
+    config.dll_dir.mkdir()
+    output_dir = config.output_csv.parent
+    stale_excel = output_dir / "previous.xlsx"
+    if outcome == "unwritable_output":
+        output_dir.write_bytes(b"a file blocks the requested output directory")
+    else:
+        output_dir.mkdir()
+        stale_excel.write_bytes(b"previous attempt")
+    monkeypatch.setattr(
+        module.config_module, "load_config", lambda path: (config, [_target("Analyte")])
+    )
+    output_errors = []
+
+    class Service:
+        def execute_application(self, request):
+            if outcome == "missing_dll":
+                errors = preflight_raw_reader(
+                    config.dll_dir,
+                    import_module_func=lambda name: SimpleNamespace(
+                        get_runtime_info=lambda: None
+                    ),
+                )
+                raise RawReaderError(" ".join(errors))
+            if outcome == "worker_failed":
+                raise RuntimeError("Targeted sample worker lost")
+            if outcome == "cancelled":
+                raise InterruptedError("Targeted cancelled before result publication")
+            try:
+                output_dir.mkdir(exist_ok=True)
+            except OSError as exc:
+                output_errors.append(str(exc))
+                raise
+            request.excel_output_path.write_bytes(b"current published artifact")
+            return SimpleNamespace(
+                active_output=RunOutput(file_results=[], diagnostics=[]),
+                published_paths=(request.excel_output_path,),
+            )
+
+    monkeypatch.setattr(
+        module, "build_canonical_targeted_application_service", lambda runner: Service()
+    )
+    view = view_module.TargetedView(tmp_path / "config")
+    qtbot.addWidget(view)
+    view.resize(1000, 800)
+    view.show()
+    monkeypatch.setattr(view._settings, "is_valid", lambda: True)
+    monkeypatch.setattr(view, "_save_settings", lambda: None)
+    monkeypatch.setattr(view, "_save_targets", lambda: None)
+    view.trigger_run()
+    worker = view._worker
+    assert worker is not None
+    try:
+        assert worker.wait(5000)
+        qtbot.wait(1)
+        assert not view.is_busy()
+        assert view._settings.isEnabled() and view._targets.isEnabled()
+        assert view._run._button.text() == "開始執行" and view._run._button.isEnabled()
+        if outcome == "succeeded":
+            assert view._terminal_state == "完成"
+            assert Path(view._results._excel_path).is_file()
+            assert view._results._open_button.isVisible()
+            return
+        message = view._results._error_label.text()
+        assert view._results._error_label.isVisible()
+        assert str(output_dir) in message and worker.stage in message
+        assert "本次可用產物：無" in message
+        assert "attempt" in message and "下一步" in message
+        assert str(stale_excel) not in message
+        assert not view._results._open_button.isVisible()
+        assert view._run._status_label.toolTip() == message
+        if outcome == "missing_dll":
+            assert "ThermoFisher.CommonCore.RawFileReader.dll" in message
+            assert str(config.dll_dir) in message and "open Settings" in message
+        elif outcome == "worker_failed":
+            assert "Targeted sample worker lost" in message
+        elif outcome == "unwritable_output":
+            assert len(output_errors) == 1 and output_errors[0] in message
+        elif outcome == "cancelled":
+            assert view._terminal_state == "已停止"
+            assert "Targeted cancelled before result publication" in message
+            assert view._results._title.text() == "本次執行已停止"
+            view.refresh_theme()
+            assert view._results._title.text() == "本次執行已停止"
+    finally:
+        worker.stop()
+        assert worker.wait(5000)
+        view._worker = None
+
+
+@pytest.mark.parametrize("outcome", ["failed", "cancelled", "succeeded"])
+def test_targeted_stop_preserves_queued_worker_terminal_outcome(
+    outcome, tmp_path, monkeypatch, qtbot
+) -> None:
+    import gui.views.targeted_view as view_module
+
+    module = _module()
+    started, release = Event(), Event()
+    config = _config(tmp_path)
+    monkeypatch.setattr(
+        module.config_module, "load_config", lambda path: (config, [_target("Analyte")])
+    )
+
+    class Service:
+        def execute_application(self, request):
+            if outcome == "succeeded":
+                request.excel_output_path.parent.mkdir()
+                request.excel_output_path.write_bytes(b"committed before stop")
+            started.set()
+            assert release.wait(5)
+            assert request.should_stop()
+            if outcome == "failed":
+                raise RuntimeError("Targeted failed while stopping")
+            if outcome == "cancelled":
+                raise InterruptedError("Targeted cancelled before publication")
+            return SimpleNamespace(
+                active_output=RunOutput(file_results=[], diagnostics=[]),
+                published_paths=(request.excel_output_path,),
+            )
+
+    monkeypatch.setattr(
+        module, "build_canonical_targeted_application_service", lambda runner: Service()
+    )
+    view = view_module.TargetedView(tmp_path / "config")
+    qtbot.addWidget(view)
+    monkeypatch.setattr(view._settings, "is_valid", lambda: True)
+    monkeypatch.setattr(view, "_save_settings", lambda: None)
+    monkeypatch.setattr(view, "_save_targets", lambda: None)
+    view.trigger_run()
+    worker = view._worker
+    assert worker is not None
+    stop = worker.stop
+
+    def release_after_stop():
+        stop()
+        release.set()
+
+    monkeypatch.setattr(worker, "stop", release_after_stop)
+    try:
+        assert started.wait(5)
+        view.trigger_stop(confirm=False)
+        assert view.is_busy() and view._terminal_state is None
+        assert not view._run._button.isEnabled()
+        assert worker.wait(5000)
+        qtbot.wait(1)
+        assert not view.is_busy()
+        assert view._settings.isEnabled() and view._targets.isEnabled()
+        assert view._terminal_state == {
+            "failed": "執行失敗", "cancelled": "已停止", "succeeded": "完成",
+        }[outcome]
+        if outcome == "failed":
+            assert "Targeted failed while stopping" in view._results._error_label.text()
+        if outcome == "succeeded":
+            assert Path(view._results._excel_path).is_file()
+    finally:
+        release.set()
+        assert worker.wait(5000)
+        view._worker = None
 
 
 def test_main_window_run_uses_user_writable_config_dir(

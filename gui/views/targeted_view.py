@@ -6,7 +6,7 @@ from PyQt6.QtWidgets import QVBoxLayout, QWidget
 from gui.config_io import read_settings, read_targets, write_settings, write_targets
 from gui.dialogs import confirm_stop
 from gui.sections.results_section import ResultsSection
-from gui.sections.run_section import RunSection
+from gui.sections.run_section import RunSection, format_run_problem
 from gui.sections.settings_section import SettingsSection
 from gui.sections.targets_section import TargetsSection
 from gui.ui import AnalysisWorkspace
@@ -141,12 +141,17 @@ class TargetedView(QWidget):
         self.status_message.emit("開始執行 pipeline...", 0)
         self.state_changed.emit("執行中…")
 
-        self._worker = PipelineWorker(self._config_dir)
-        self._worker.progress.connect(self._run.set_progress)
-        self._worker.finished.connect(self._on_finished)
-        self._worker.error.connect(self._on_error)
-        self._worker.cancelled.connect(self._on_cancelled)
-        self._worker.start()
+        worker = PipelineWorker(self._config_dir)
+        self._worker = worker
+        worker.progress.connect(
+            lambda current, total, filename: self._on_progress(
+                worker, current, total, filename
+            )
+        )
+        worker.finished.connect(lambda summary: self._on_finished(worker, summary))
+        worker.error.connect(lambda message: self._on_error(worker, message))
+        worker.cancelled.connect(lambda: self._on_cancelled(worker))
+        worker.start()
 
     def is_busy(self) -> bool:
         return self._worker is not None
@@ -179,9 +184,17 @@ class TargetedView(QWidget):
             if not self._worker.wait(1000):
                 self.status_message.emit("正在停止，等待目前階段結束...", 5000)
                 return
-            self._on_cancelled()
+            # The queued worker signal owns failure, cancellation and success.
 
-    def _on_finished(self, summary: dict) -> None:
+    def _on_progress(
+        self, worker: PipelineWorker, current: int, total: int, filename: str
+    ) -> None:
+        if self._worker is worker:
+            self._run.set_progress(current, total, filename)
+
+    def _on_finished(self, worker: PipelineWorker, summary: dict) -> None:
+        if self._worker is not worker:
+            return
         self._worker = None
         self._stop_requested = False
         self._terminal_state = "完成"
@@ -194,25 +207,44 @@ class TargetedView(QWidget):
         self.status_message.emit("Pipeline 執行完成", 5000)
         self._update_ready()
 
-    def _on_error(self, message: str) -> None:
+    def _on_error(self, worker: PipelineWorker, message: str) -> None:
+        if self._worker is not worker:
+            return
+        details = format_run_problem(
+            message,
+            stage=worker.stage,
+            output_dir=worker.output_dir,
+            available_outputs=worker.available_outputs,
+        )
         self._worker = None
         self._stop_requested = False
         self._terminal_state = "執行失敗"
         self._run.set_running(False)
-        self._run.set_error(message)
+        self._run.set_error(details)
         self._settings.set_enabled(True)
         self._targets.set_enabled(True)
-        self._results.show_error(message)
+        self._results.show_error(details)
         self._workspace.reveal(self._results)
         self.status_message.emit(f"執行失敗: {message}", 5000)
         self._update_ready()
 
-    def _on_cancelled(self) -> None:
+    def _on_cancelled(self, worker: PipelineWorker) -> None:
+        if self._worker is not worker:
+            return
+        details = format_run_problem(
+            worker.cancellation_reason,
+            stage=worker.stage,
+            output_dir=worker.output_dir,
+            available_outputs=worker.available_outputs,
+            cancelled=True,
+        )
         self._worker = None
         self._stop_requested = False
         self._terminal_state = "已停止"
-        self._run.set_stopped()
+        self._run.set_stopped(details)
         self._settings.set_enabled(True)
         self._targets.set_enabled(True)
+        self._results.show_error(details, cancelled=True)
+        self._workspace.reveal(self._results)
         self.status_message.emit("已停止執行", 3000)
         self._update_ready()
