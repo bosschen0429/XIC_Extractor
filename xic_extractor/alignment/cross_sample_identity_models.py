@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-import math
 from collections.abc import Sequence
-from dataclasses import InitVar, dataclass, field
+from dataclasses import dataclass, field
 from typing import Literal, TypeAlias
 
 from xic_extractor.discovery.models import (
@@ -31,9 +30,6 @@ from xic_extractor.validation_primitives import require_owner_normalized_text
 
 _GROUP_MEMBER_SUBJECT_PREFIX = "xic.group-member-subject:"
 _CROSS_SAMPLE_GROUP_PREFIX = "xic.cross-sample-group:"
-_CROSS_SAMPLE_REPAIRED_OBSERVATION_PREFIX = "xic.cross-sample-repaired-observation:"
-_CROSS_SAMPLE_REPAIRED_OBSERVATION_MINT_TOKEN = object()
-
 CrossSampleGroupDisposition: TypeAlias = Literal[
     "established",
     "provisional",
@@ -495,238 +491,6 @@ def validate_cross_sample_group_population(
     return canonical
 
 
-@dataclass(frozen=True, slots=True)
-class CrossSampleNeighborhoodBudget:
-    max_members: int
-    max_eligible_edges: int
-
-    def __post_init__(self) -> None:
-        if (
-            isinstance(self.max_members, bool)
-            or not isinstance(self.max_members, int)
-            or self.max_members < 1
-            or isinstance(self.max_eligible_edges, bool)
-            or not isinstance(self.max_eligible_edges, int)
-            or self.max_eligible_edges < 0
-        ):
-            raise CrossSampleContractError("neighborhood budget is invalid")
-
-
-@dataclass(frozen=True, slots=True)
-class CrossSampleRepairedObservation:
-    """CrossSample projection of repaired physical evidence without identity support."""
-
-    observation_id: str
-    repair_receipt_id: str
-    authorization_id: str
-    candidate_id: str
-    sample_stem: str
-    acquisition_source_id: str
-    precursor_mz: float
-    rt_left_min: float
-    rt_apex_min: float
-    rt_right_min: float
-    height: float
-    scan_support_count: int
-    area_counts_seconds: float
-    member_subject: CrossSampleGroupMemberSubject
-    basis_bytes: bytes
-    _mint_token: InitVar[object] = field(kw_only=True, repr=False)
-
-    def __post_init__(self, _mint_token: object) -> None:
-        if _mint_token is not _CROSS_SAMPLE_REPAIRED_OBSERVATION_MINT_TOKEN:
-            raise CrossSampleContractError(
-                "repaired observation must be minted by CrossSample"
-            )
-        for text_field_name, text_value in (
-            ("repair_receipt_id", self.repair_receipt_id),
-            ("authorization_id", self.authorization_id),
-            ("candidate_id", self.candidate_id),
-            ("sample_stem", self.sample_stem),
-            ("acquisition_source_id", self.acquisition_source_id),
-        ):
-            _required_text(text_value, field=text_field_name)
-        if type(self.member_subject) is not CrossSampleGroupMemberSubject:
-            raise CrossSampleContractError(
-                "repaired observation requires an exact CrossSample member"
-            )
-        if (
-            self.member_subject.subject_kind != "physical_observation"
-            or self.member_subject.subject_id
-            not in self.member_subject.physical_observation_ids
-        ):
-            raise CrossSampleContractError(
-                "repaired observation member is not physical evidence"
-            )
-        for numeric_field_name, numeric_value in (
-            ("precursor_mz", self.precursor_mz),
-            ("rt_left_min", self.rt_left_min),
-            ("rt_apex_min", self.rt_apex_min),
-            ("rt_right_min", self.rt_right_min),
-            ("height", self.height),
-            ("area_counts_seconds", self.area_counts_seconds),
-        ):
-            if not isinstance(numeric_value, float) or not math.isfinite(numeric_value):
-                raise CrossSampleContractError(
-                    f"{numeric_field_name} must be a finite float"
-                )
-        if not self.rt_left_min < self.rt_apex_min < self.rt_right_min:
-            raise CrossSampleContractError(
-                "repaired observation apex must lie inside its physical bounds"
-            )
-        if (
-            self.precursor_mz <= 0.0
-            or self.height < 0.0
-            or self.area_counts_seconds < 0.0
-        ):
-            raise CrossSampleContractError(
-                "repaired observation physical values are invalid"
-            )
-        if (
-            isinstance(self.scan_support_count, bool)
-            or not isinstance(self.scan_support_count, int)
-            or self.scan_support_count < 1
-        ):
-            raise CrossSampleContractError(
-                "repaired observation scan support must be positive"
-            )
-        basis = _repaired_observation_basis(
-            repair_receipt_id=self.repair_receipt_id,
-            authorization_id=self.authorization_id,
-            candidate_id=self.candidate_id,
-            sample_stem=self.sample_stem,
-            acquisition_source_id=self.acquisition_source_id,
-            precursor_mz=self.precursor_mz,
-            rt_left_min=self.rt_left_min,
-            rt_apex_min=self.rt_apex_min,
-            rt_right_min=self.rt_right_min,
-            height=self.height,
-            scan_support_count=self.scan_support_count,
-            area_counts_seconds=self.area_counts_seconds,
-            member_subject=self.member_subject,
-        )
-        if self.basis_bytes != basis:
-            raise CrossSampleContractError(
-                "repaired observation basis bytes are not exact"
-            )
-        try:
-            validate_typed_identity_basis(
-                self.observation_id,
-                prefix=_CROSS_SAMPLE_REPAIRED_OBSERVATION_PREFIX,
-                basis_bytes=basis,
-                field="repaired observation_id",
-            )
-        except ValueError as exc:
-            raise CrossSampleContractError(str(exc)) from exc
-
-    @property
-    def owner_id(self) -> str:
-        return self.observation_id
-
-    @property
-    def owner_apex_rt(self) -> float:
-        return self.rt_apex_min
-
-    @property
-    def cross_sample_member_subject(self) -> CrossSampleGroupMemberSubject:
-        return self.member_subject
-
-    @property
-    def identity_evidence_authority(self) -> Literal["none"]:
-        return "none"
-
-
-def _repaired_observation_basis(
-    *,
-    repair_receipt_id: str,
-    authorization_id: str,
-    candidate_id: str,
-    sample_stem: str,
-    acquisition_source_id: str,
-    precursor_mz: float,
-    rt_left_min: float,
-    rt_apex_min: float,
-    rt_right_min: float,
-    height: float,
-    scan_support_count: int,
-    area_counts_seconds: float,
-    member_subject: CrossSampleGroupMemberSubject,
-) -> bytes:
-    return canonical_identity_basis_bytes(
-        {
-            "schema_version": "cross_sample_repaired_observation",
-            "repair_receipt_id": repair_receipt_id,
-            "authorization_id": authorization_id,
-            "candidate_id": candidate_id,
-            "sample_stem": sample_stem,
-            "acquisition_source_id": acquisition_source_id,
-            "precursor_mz": precursor_mz,
-            "rt_left_min": rt_left_min,
-            "rt_apex_min": rt_apex_min,
-            "rt_right_min": rt_right_min,
-            "height": height,
-            "scan_support_count": scan_support_count,
-            "area_counts_seconds": area_counts_seconds,
-            "member_subject_id": member_subject.member_subject_id,
-            "physical_observation_ids": list(member_subject.physical_observation_ids),
-        }
-    )
-
-
-def _mint_cross_sample_repaired_observation(
-    *,
-    repair_receipt_id: str,
-    authorization_id: str,
-    candidate_id: str,
-    sample_stem: str,
-    acquisition_source_id: str,
-    precursor_mz: float,
-    rt_left_min: float,
-    rt_apex_min: float,
-    rt_right_min: float,
-    height: float,
-    scan_support_count: int,
-    area_counts_seconds: float,
-    member_subject: CrossSampleGroupMemberSubject,
-) -> CrossSampleRepairedObservation:
-    basis = _repaired_observation_basis(
-        repair_receipt_id=repair_receipt_id,
-        authorization_id=authorization_id,
-        candidate_id=candidate_id,
-        sample_stem=sample_stem,
-        acquisition_source_id=acquisition_source_id,
-        precursor_mz=precursor_mz,
-        rt_left_min=rt_left_min,
-        rt_apex_min=rt_apex_min,
-        rt_right_min=rt_right_min,
-        height=height,
-        scan_support_count=scan_support_count,
-        area_counts_seconds=area_counts_seconds,
-        member_subject=member_subject,
-    )
-    return CrossSampleRepairedObservation(
-        observation_id=typed_identity_digest(
-            _CROSS_SAMPLE_REPAIRED_OBSERVATION_PREFIX,
-            basis,
-        ),
-        repair_receipt_id=repair_receipt_id,
-        authorization_id=authorization_id,
-        candidate_id=candidate_id,
-        sample_stem=sample_stem,
-        acquisition_source_id=acquisition_source_id,
-        precursor_mz=precursor_mz,
-        rt_left_min=rt_left_min,
-        rt_apex_min=rt_apex_min,
-        rt_right_min=rt_right_min,
-        height=height,
-        scan_support_count=scan_support_count,
-        area_counts_seconds=area_counts_seconds,
-        member_subject=member_subject,
-        basis_bytes=basis,
-        _mint_token=_CROSS_SAMPLE_REPAIRED_OBSERVATION_MINT_TOKEN,
-    )
-
-
 __all__ = (
     "CrossSampleContractError",
     "CrossSampleEdgeDisposition",
@@ -735,16 +499,10 @@ __all__ = (
     "CrossSampleGroupMemberSubject",
     "CrossSampleIdentityBasisRegistry",
     "CrossSampleInitialEdgeContext",
-    "CrossSampleNeighborhoodBudget",
     "CrossSampleNeighborhoodStatus",
-    "CrossSampleRepairedObservation",
     "_CROSS_SAMPLE_GROUP_PREFIX",
-    "_CROSS_SAMPLE_REPAIRED_OBSERVATION_MINT_TOKEN",
-    "_CROSS_SAMPLE_REPAIRED_OBSERVATION_PREFIX",
     "_GROUP_MEMBER_SUBJECT_PREFIX",
     "_canonical_members",
-    "_mint_cross_sample_repaired_observation",
-    "_repaired_observation_basis",
     "_request_id",
     "_required_text",
     "group_member_subject_from_discovery_physical_selection",
