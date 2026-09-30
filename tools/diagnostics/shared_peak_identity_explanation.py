@@ -7,9 +7,10 @@ import sys
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
-from xic_extractor.alignment.shared_peak_identity_explanation import (
+from xic_extractor.diagnostics.shared_peak_identity_explanation import (
     candidate_ms2_pattern,
     hypothesis_consistency,
+    machine_artifacts,
     machine_evidence_support,
     matrix_rt_drift_policy,
     mode_hypothesis_assignment,
@@ -17,10 +18,10 @@ from xic_extractor.alignment.shared_peak_identity_explanation import (
     peak_hypothesis_selection,
     rt_mode_evidence,
 )
-from xic_extractor.alignment.shared_peak_identity_explanation.assembler import (
+from xic_extractor.diagnostics.shared_peak_identity_explanation.assembler import (
     assemble_evidence_vectors,
 )
-from xic_extractor.alignment.shared_peak_identity_explanation.blast_radius import (
+from xic_extractor.diagnostics.shared_peak_identity_explanation.blast_radius import (
     CELLS_REQUIRED_FIELDS,
     OPTIONAL_ARTIFACT_ROLES,
     REVIEW_REQUIRED_FIELDS,
@@ -29,25 +30,21 @@ from xic_extractor.alignment.shared_peak_identity_explanation.blast_radius impor
     build_class_profiles,
     preflight_tsv_artifact,
 )
-from xic_extractor.alignment.shared_peak_identity_explanation.classifier import (
+from xic_extractor.diagnostics.shared_peak_identity_explanation.classifier import (
     build_slice0_run_facts,
     build_slice1_run_facts,
     classify_explanations,
 )
-from xic_extractor.alignment.shared_peak_identity_explanation.machine_artifacts import (
-    MachineMatch,
-    load_machine_matches,
-)
-from xic_extractor.alignment.shared_peak_identity_explanation.oracle import (
+from xic_extractor.diagnostics.shared_peak_identity_explanation.oracle import (
     load_manual_oracle,
     oracle_rows_as_dicts,
 )
-from xic_extractor.alignment.shared_peak_identity_explanation.shadow_labels import (
+from xic_extractor.diagnostics.shared_peak_identity_explanation.shadow_labels import (
     build_shadow_alignment_summary,
     build_shadow_label_rows,
     build_shadow_readiness,
 )
-from xic_extractor.alignment.shared_peak_identity_explanation.writers import (
+from xic_extractor.diagnostics.shared_peak_identity_explanation.writers import (
     write_shadow_outputs,
     write_slice0_outputs,
     write_slice1_outputs,
@@ -282,7 +279,7 @@ def run_explanation(
         )
 
     oracle_rows = load_manual_oracle(manual_oracle_tsv)
-    matches = load_machine_matches(
+    matches = machine_artifacts.load_machine_matches(
         oracle_rows=oracle_rows,
         alignment_review_tsv=alignment_review_tsv,
         alignment_cells_tsv=alignment_cells_tsv,
@@ -586,7 +583,7 @@ def _write_shadow_from_current_outputs(
     prior_outputs: Mapping[str, Path],
     explanations: Sequence[Mapping[str, str]],
     run_facts: Mapping[str, str],
-    machine_matches: Mapping[str, Sequence[MachineMatch]],
+    machine_matches: Mapping[str, Sequence[machine_artifacts.MachineMatch]],
     cwt_shape_evidence: Mapping[tuple[str, str], Mapping[str, str]],
     tier2_trace_evidence: Mapping[str, Mapping[str, str]],
     candidate_ms2_pattern_evidence: Mapping[tuple[str, str], Mapping[str, str]],

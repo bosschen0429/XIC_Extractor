@@ -8,7 +8,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
-from xic_extractor.alignment.backfill_evidence_tsv import (
+from xic_extractor.diagnostics.backfill_evidence.tsv import (
     iter_skipped_evidence_tsv,
 )
 from xic_extractor.tabular_io import write_tsv

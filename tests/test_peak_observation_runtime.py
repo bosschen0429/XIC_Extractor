@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import inspect
 import time
-from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
+from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass, replace
 from multiprocessing import get_context
 from pathlib import Path
@@ -19,13 +19,6 @@ from xic_extractor.acquisition_contract import (
     TraceCoordinate,
     TraceCoordinateKind,
     mint_trace_acquisition_capability,
-)
-from xic_extractor.alignment.runtime_adapter import (
-    AlignmentRuntimeAdapterError,
-    AlignmentRuntimeApplicationResult,
-    AlignmentRuntimeProcessResult,
-    execute_alignment_process_runtime,
-    mint_alignment_process_result_artifact,
 )
 from xic_extractor.applications.targeted.application import (
     TargetedApplicationService,
@@ -47,16 +40,7 @@ from xic_extractor.execution._lifecycle import (
     WorkUnitFailureDetail,
     WorkUnitTerminalOutcome,
 )
-from xic_extractor.execution.attempt import (
-    RuntimeAcquisitionReceipt,
-    RuntimeArtifactRegistrationReceipt,
-    RuntimeFinalizationReceipt,
-    RuntimeResourceSettlementReceipt,
-    RuntimeWorkerBatchReceipt,
-    execute_runtime_attempt,
-    mint_work_unit_settlement,
-    start_runtime_attempt,
-)
+from xic_extractor.execution.attempt import start_runtime_attempt
 from xic_extractor.execution.recovery import OwnerPathRuntimeMarker
 from xic_extractor.extraction.targeted_runtime_adapter import (
     TargetedProcessResourceReport,
@@ -139,12 +123,6 @@ class _RecordingNoRawBatchAdapter:
         return 100 + offset, 104 + offset
 
 
-@dataclass(frozen=True)
-class _AlignmentReplayJob:
-    job: _ObservationJob
-    fail: bool
-
-
 def _produce_batch(job: _ObservationJob) -> PeakObservationBatch:
     if job.delay_sec:
         time.sleep(job.delay_sec)
@@ -194,68 +172,7 @@ def _run_targeted_job(
     )
 
 
-def _run_alignment_job(job: _ObservationJob) -> AlignmentRuntimeProcessResult:
-    batch = _produce_batch(job)
-    payload = canonical_peak_observation_batch_bytes(batch)
-    artifact = mint_alignment_process_result_artifact(
-        processing_attempt=job.owners.attempt,
-        work_unit_key=job.work_unit_key,
-        owner_result_payload=payload,
-        upstream_artifacts=batch.observation_artifacts,
-    )
-    return AlignmentRuntimeProcessResult(
-        settlement=mint_work_unit_settlement(
-            attempt=job.owners.attempt,
-            work_unit_key=job.work_unit_key,
-            outcome=WorkUnitTerminalOutcome.SUCCEEDED,
-            owner_result_ref=artifact,
-        ),
-        resource_key=job.resource_key,
-        open_outcome=RuntimeResourceOpenOutcome.OPENED,
-        cleanup_outcome=RuntimeResourceCleanupOutcome.SUCCEEDED,
-        runtime_artifacts=(artifact, *batch.observation_artifacts),
-        peak_observation_batch=batch,
-    )
-
-
-def _alignment_error(
-    job: _ObservationJob,
-    error: Exception,
-) -> AlignmentRuntimeProcessResult:
-    return AlignmentRuntimeProcessResult(
-        settlement=mint_work_unit_settlement(
-            attempt=job.owners.attempt,
-            work_unit_key=job.work_unit_key,
-            outcome=WorkUnitTerminalOutcome.FAILED,
-            failure_detail=WorkUnitFailureDetail(
-                category=WorkUnitFailureCategory.EXECUTION_ERROR,
-                stage="alignment-process-worker",
-                source_reference=f"no-raw:{job.work_unit_key}",
-                message=str(error),
-            ),
-        ),
-        resource_key=job.resource_key,
-        open_outcome=RuntimeResourceOpenOutcome.NOT_OPENED,
-        cleanup_outcome=RuntimeResourceCleanupOutcome.SUCCEEDED,
-    )
-
-
-def _run_alignment_replay_job(
-    replay: _AlignmentReplayJob,
-) -> AlignmentRuntimeProcessResult:
-    if replay.fail:
-        return _alignment_error(replay.job, RuntimeError("replayed failure"))
-    return _run_alignment_job(replay.job)
-
-
-def _alignment_replay_error(
-    replay: _AlignmentReplayJob,
-    error: Exception,
-) -> AlignmentRuntimeProcessResult:
-    return _alignment_error(replay.job, error)
-
-
-def test_targeted_and_alignment_close_same_spawned_observation_batches(
+def test_targeted_runtime_preserves_spawned_observation_batches_under_reordering(
     tmp_path: Path,
 ) -> None:
     owners, sample = _identity_fixture(tmp_path)
@@ -277,32 +194,6 @@ def test_targeted_and_alignment_close_same_spawned_observation_batches(
         max_workers=2,
         marker_path=tmp_path / "targeted-reordered.runtime.json",
     )
-    alignment_serial = execute_alignment_process_runtime(
-        runtime,
-        jobs,
-        worker=_run_alignment_job,
-        error_factory=_alignment_error,
-        max_workers=1,
-        resource_reservations=reservations,
-        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-        recovery_marker=OwnerPathRuntimeMarker(
-            tmp_path / "alignment-serial.runtime.json",
-            "alignment-observation-runtime:test",
-        ),
-    )
-    alignment_reordered = execute_alignment_process_runtime(
-        runtime,
-        tuple(reversed(jobs)),
-        worker=_run_alignment_job,
-        error_factory=_alignment_error,
-        max_workers=2,
-        resource_reservations=reservations,
-        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-        recovery_marker=OwnerPathRuntimeMarker(
-            tmp_path / "alignment-reordered.runtime.json",
-            "alignment-observation-runtime:test",
-        ),
-    )
 
     with pytest.raises(TargetedRuntimeAdapterError, match="acquisition metrics"):
         TargetedRuntimeLifecycleApplicationResult(
@@ -312,25 +203,13 @@ def test_targeted_and_alignment_close_same_spawned_observation_batches(
             ),
             finalization=targeted_serial.finalization,
         )
-    with pytest.raises(AlignmentRuntimeAdapterError, match="acquisition metrics"):
-        AlignmentRuntimeApplicationResult(
-            runtime=alignment_serial.runtime,
-            finalization=alignment_serial.finalization,
-            successful_observation_batches=(),
-        )
 
     targeted_batches = targeted_serial.settlement.successful_observation_batches
     reordered_targeted_batches = (
         targeted_reordered.settlement.successful_observation_batches
     )
-    alignment_batches = alignment_serial.successful_observation_batches
-    reordered_alignment_batches = alignment_reordered.successful_observation_batches
     assert _canonical_batches(targeted_batches) == _canonical_batches(
         reordered_targeted_batches
-    )
-    assert _canonical_batches(targeted_batches) == _canonical_batches(alignment_batches)
-    assert _canonical_batches(alignment_batches) == _canonical_batches(
-        reordered_alignment_batches
     )
     assert tuple(key for key, _batch in targeted_batches) == (
         "sample:native",
@@ -353,26 +232,12 @@ def test_targeted_and_alignment_close_same_spawned_observation_batches(
     ) == canonical_coordinator_terminal_record_bytes(
         targeted_reordered.coordinator_record
     )
-    assert canonical_coordinator_terminal_record_bytes(
-        alignment_serial.coordinator_record
-    ) == canonical_coordinator_terminal_record_bytes(
-        alignment_reordered.coordinator_record
-    )
     assert _offered_count(targeted_serial.finalization_record) == 5
-    assert _offered_count(alignment_serial.finalization_record) == 5
-    with pytest.raises(TargetedRuntimeAdapterError, match="one settled runtime"):
-        replace(
-            targeted_serial,
-            finalization=alignment_serial.finalization,
-        )
-    with pytest.raises(AlignmentRuntimeAdapterError, match="coordinator record"):
-        replace(
-            alignment_serial,
-            finalization=targeted_serial.finalization,
-        )
 
 
-def test_runtime_carriers_reject_unclosed_observation_lineage(tmp_path: Path) -> None:
+def test_targeted_runtime_carrier_rejects_unclosed_observation_lineage(
+    tmp_path: Path,
+) -> None:
     owners, sample = _identity_fixture(tmp_path)
     job = _jobs(owners, sample)[0]
     batch = _produce_batch(job)
@@ -391,46 +256,6 @@ def test_runtime_carriers_reject_unclosed_observation_lineage(tmp_path: Path) ->
             peak_observation_batch=batch,
         )
 
-    unclosed_alignment = mint_alignment_process_result_artifact(
-        processing_attempt=owners.attempt,
-        work_unit_key=job.work_unit_key,
-        owner_result_payload=payload,
-    )
-    with pytest.raises(AlignmentRuntimeAdapterError, match="exact observation"):
-        AlignmentRuntimeProcessResult(
-            settlement=mint_work_unit_settlement(
-                attempt=owners.attempt,
-                work_unit_key=job.work_unit_key,
-                outcome=WorkUnitTerminalOutcome.SUCCEEDED,
-                owner_result_ref=unclosed_alignment,
-            ),
-            resource_key=job.resource_key,
-            open_outcome=RuntimeResourceOpenOutcome.OPENED,
-            cleanup_outcome=RuntimeResourceCleanupOutcome.SUCCEEDED,
-            runtime_artifacts=(unclosed_alignment, *batch.observation_artifacts),
-            peak_observation_batch=batch,
-        )
-
-    foreign_owner = mint_targeted_process_result_ref(
-        processing_attempt=owners.attempt,
-        work_unit_key=job.work_unit_key,
-        owner_result_payload=payload,
-        upstream_artifacts=batch.observation_artifacts,
-    ).artifact
-    with pytest.raises(AlignmentRuntimeAdapterError, match="Alignment-owned"):
-        AlignmentRuntimeProcessResult(
-            settlement=mint_work_unit_settlement(
-                attempt=owners.attempt,
-                work_unit_key=job.work_unit_key,
-                outcome=WorkUnitTerminalOutcome.SUCCEEDED,
-                owner_result_ref=foreign_owner,
-            ),
-            resource_key=job.resource_key,
-            open_outcome=RuntimeResourceOpenOutcome.OPENED,
-            cleanup_outcome=RuntimeResourceCleanupOutcome.SUCCEEDED,
-            runtime_artifacts=(foreign_owner, *batch.observation_artifacts),
-            peak_observation_batch=batch,
-        )
 
 
 def test_batch_receipt_is_stable_and_coordinate_truth_changes_identity(
@@ -457,64 +282,6 @@ def test_batch_receipt_is_stable_and_coordinate_truth_changes_identity(
         )
 
 
-def test_alignment_public_result_rejects_unclosed_observation_upstreams(
-    tmp_path: Path,
-) -> None:
-    owners, sample = _identity_fixture(tmp_path)
-    job = _jobs(owners, sample)[0]
-    batch = _produce_batch(job)
-    payload = canonical_peak_observation_batch_bytes(batch)
-    unclosed = mint_alignment_process_result_artifact(
-        processing_attempt=owners.attempt,
-        work_unit_key=job.work_unit_key,
-        owner_result_payload=payload,
-    )
-    runtime = _runtime(owners.attempt, (job.work_unit_key,))
-    reservation = _reservations(owners.attempt, (job,))[0]
-    finalization = _execute_owner_batch(
-        runtime,
-        (reservation,),
-        RuntimeWorkerBatchReceipt(
-            settlements=(
-                mint_work_unit_settlement(
-                    attempt=owners.attempt,
-                    work_unit_key=job.work_unit_key,
-                    outcome=WorkUnitTerminalOutcome.SUCCEEDED,
-                    owner_result_ref=unclosed,
-                ),
-            ),
-            resource_settlements=(
-                RuntimeResourceSettlementReceipt(
-                    attempt=owners.attempt,
-                    resource_key=job.resource_key,
-                    open_outcome=RuntimeResourceOpenOutcome.OPENED,
-                    cleanup_outcome=RuntimeResourceCleanupOutcome.SUCCEEDED,
-                ),
-            ),
-            artifact_registrations=tuple(
-                RuntimeArtifactRegistrationReceipt(
-                    work_unit_key=job.work_unit_key,
-                    artifact=artifact,
-                )
-                for artifact in (unclosed, *batch.observation_artifacts)
-            ),
-            acquisitions=(
-                RuntimeAcquisitionReceipt(
-                    work_unit_key=job.work_unit_key,
-                    acquisition=batch.acquisition,
-                ),
-            ),
-        ),
-    )
-
-    with pytest.raises(AlignmentRuntimeAdapterError, match="exact observation"):
-        AlignmentRuntimeApplicationResult(
-            runtime=finalization.coordinator.state.runtime,
-            finalization=finalization,
-            successful_observation_batches=((job.work_unit_key, batch),),
-        )
-
-
 def test_batch_production_rejects_selection_trace_length_mismatch(
     tmp_path: Path,
 ) -> None:
@@ -531,7 +298,7 @@ def test_batch_production_rejects_selection_trace_length_mismatch(
         )
 
 
-def test_runtime_consumers_coalesce_identical_completed_result_replay(
+def test_targeted_runtime_coalesces_identical_completed_result_replay(
     tmp_path: Path,
 ) -> None:
     owners, sample = _identity_fixture(tmp_path)
@@ -561,28 +328,8 @@ def test_runtime_consumers_coalesce_identical_completed_result_replay(
         resource_reservations=reservations,
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
     )
-    alignment_result = _run_alignment_job(job)
-    alignment = execute_alignment_process_runtime(
-        runtime,
-        (job, job),
-        worker=lambda _job: alignment_result,
-        error_factory=_alignment_error,
-        max_workers=2,
-        resource_reservations=reservations,
-        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-        executor_factory=lambda *, max_workers, mp_context: ThreadPoolExecutor(
-            max_workers=max_workers
-        ),
-        recovery_marker=OwnerPathRuntimeMarker(
-            tmp_path / "alignment-replay.runtime.json",
-            "alignment-observation-replay:test",
-        ),
-    )
-
     assert len(targeted.settlement.successful_observation_batches) == 1
-    assert len(alignment.successful_observation_batches) == 1
     assert _offered_count(targeted.finalization_record) == 3
-    assert _offered_count(alignment.finalization_record) == 3
 
 
 def test_replay_coalescing_keeps_late_carrier_and_hides_conflicting_success(
@@ -635,37 +382,6 @@ def test_replay_coalescing_keeps_late_carrier_and_hides_conflicting_success(
     assert targeted_conflict.runtime.integrity_failure is not None
     assert targeted_conflict.successful_observation_batches == ()
 
-    for index, replay_jobs in enumerate(
-        (
-            (
-                _AlignmentReplayJob(job=job, fail=True),
-                _AlignmentReplayJob(job=job, fail=False),
-            ),
-            (
-                _AlignmentReplayJob(job=job, fail=False),
-                _AlignmentReplayJob(job=job, fail=True),
-            ),
-        )
-    ):
-        conflict_runtime = _runtime(owners.attempt, (job.work_unit_key,))
-        conflict_reservations = _reservations(owners.attempt, (job,))
-        conflicting = execute_alignment_process_runtime(
-            conflict_runtime,
-            replay_jobs,
-            worker=_run_alignment_replay_job,
-            error_factory=_alignment_replay_error,
-            max_workers=1,
-            resource_reservations=conflict_reservations,
-            telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-            recovery_marker=OwnerPathRuntimeMarker(
-                tmp_path / f"alignment-conflict-{index}.runtime.json",
-                "alignment-observation-conflict:test",
-            ),
-        )
-        assert conflicting.runtime.integrity_failure is not None
-        assert conflicting.successful_observation_batches == ()
-
-
 def test_batch_freezes_signal_and_detects_post_mint_mutation(tmp_path: Path) -> None:
     owners, sample = _identity_fixture(tmp_path)
     batch = _produce_batch(_jobs(owners, sample)[0])
@@ -714,7 +430,7 @@ def test_observation_batch_rejects_cross_sample_capability_before_acquisition(
     assert adapter.extract_many_call_count == 0
 
 
-def test_runtime_consumers_derive_acquisition_counts_without_scalar_override(
+def test_targeted_runtime_derives_acquisition_counts_without_scalar_override(
     tmp_path: Path,
 ) -> None:
     owners, sample = _identity_fixture(tmp_path)
@@ -728,32 +444,18 @@ def test_runtime_consumers_derive_acquisition_counts_without_scalar_override(
         max_workers=1,
         marker_path=tmp_path / "targeted-derived-counts.runtime.json",
     )
-    alignment = execute_alignment_process_runtime(
-        runtime,
-        (job,),
-        worker=_run_alignment_job,
-        error_factory=_alignment_error,
-        max_workers=1,
-        resource_reservations=reservations,
-        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-        recovery_marker=OwnerPathRuntimeMarker(
-            tmp_path / "alignment-derived-counts.runtime.json",
-            "alignment-observation-derived-counts:test",
-        ),
-    )
     expected = _produce_batch(job).acquisition
-    for ledger in (
-        targeted.finalization.observability_ledger,
-        alignment.finalization.observability_ledger,
+    values = {
+        metric.name: metric.value
+        for metric in targeted.finalization.observability_ledger.metrics
+    }
+    for metric_name in (
+        "logical_xic_request_count",
+        "xic_batch_count",
+        "adapter_chromatogram_call_count",
+        "trace_point_count",
     ):
-        values = {metric.name: metric.value for metric in ledger.metrics}
-        for metric_name in (
-            "logical_xic_request_count",
-            "xic_batch_count",
-            "adapter_chromatogram_call_count",
-            "trace_point_count",
-        ):
-            assert values[metric_name] == getattr(expected, metric_name)
+        assert values[metric_name] == getattr(expected, metric_name)
 
     forbidden_parameters = {
         "observability_ledger",
@@ -766,9 +468,6 @@ def test_runtime_consumers_derive_acquisition_counts_without_scalar_override(
         inspect.signature(
             TargetedApplicationService.execute_runtime_lifecycle
         ).parameters
-    )
-    assert not forbidden_parameters & set(
-        inspect.signature(execute_alignment_process_runtime).parameters
     )
 
 
@@ -994,20 +693,6 @@ def _two_sample_identity_fixture(
         sample_resolutions=(first, second),
     )
     return owners, first, second
-
-
-def _execute_owner_batch(
-    runtime: AttemptRuntime,
-    reservations: tuple[RuntimeResourceReservation, ...],
-    batch: RuntimeWorkerBatchReceipt,
-) -> RuntimeFinalizationReceipt:
-    return execute_runtime_attempt(
-        runtime,
-        reservations,
-        worker_batch_provider=lambda _aggregate: batch,
-        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-        persister=lambda proposed: proposed,
-    )
 
 
 def _execute_targeted_envelopes(

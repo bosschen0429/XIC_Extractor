@@ -3,10 +3,10 @@ from __future__ import annotations
 import csv
 from pathlib import Path
 
-from xic_extractor.alignment.shared_peak_identity_explanation.classifier import (
+from xic_extractor.diagnostics.shared_peak_identity_explanation.classifier import (
     build_slice1_run_facts,
 )
-from xic_extractor.alignment.shared_peak_identity_explanation.writers import (
+from xic_extractor.diagnostics.shared_peak_identity_explanation.writers import (
     write_slice1_outputs,
 )
 

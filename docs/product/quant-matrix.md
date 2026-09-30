@@ -107,10 +107,10 @@ this topic owns the human-readable meaning and relationships.
 
 | Surface / executable owner | Outputs and purpose |
 | --- | --- |
-| [Review report](../../xic_extractor/alignment/quant_matrix_report.py) | Review rows TSV, summary JSON, and HTML rendered from version sidecars and the acceptance manifest. Distinguishes accepted Backfill from detected cells and displays prevalence uncertainty, source hashes, and closure evidence. |
-| [Validation evidence packet](../../xic_extractor/alignment/quant_matrix_validation_packet.py) | Evidence JSON, rows TSV, summary JSON, and copied artifacts with source and packet hashes. Binds tier provenance and records missing scientific evidence for readiness evaluation. |
-| [Promotion readiness](../../xic_extractor/alignment/quant_matrix_promotion.py) | Readiness summary JSON and checks TSV separating contract correctness from scientific confidence. |
-| [Downstream-impact smoke](../../xic_extractor/alignment/quant_matrix_downstream_impact.py) | Summary JSON and row metrics TSV showing increased numeric availability while preserving reconstructable detected-only claims. |
+| [Review report](../../xic_extractor/diagnostics/quant_matrix/report.py) | Review rows TSV, summary JSON, and HTML rendered from version sidecars and the acceptance manifest. Distinguishes accepted Backfill from detected cells and displays prevalence uncertainty, source hashes, and closure evidence. |
+| [Validation evidence packet](../../xic_extractor/diagnostics/quant_matrix/validation_packet.py) | Evidence JSON, rows TSV, summary JSON, and copied artifacts with source and packet hashes. Binds tier provenance and records missing scientific evidence for readiness evaluation. |
+| [Promotion readiness](../../xic_extractor/diagnostics/quant_matrix/promotion.py) | Readiness summary JSON and checks TSV separating contract correctness from scientific confidence. |
+| [Downstream-impact smoke](../../xic_extractor/diagnostics/quant_matrix/downstream_impact.py) | Summary JSON and row metrics TSV showing increased numeric availability while preserving reconstructable detected-only claims. |
 | [Real candidate bundle](../../scripts/build_quant_matrix_real_bundle.py) | Baseline/identity inputs, acceptance manifest, expected diff, source copies, version bundle, review, downstream-impact, and contract-only readiness artifacts assembled from the standard-peak Backfill authority replay. |
 | [Promotion packet](../../scripts/build_quant_matrix_promotion_packet.py) | Candidate summary, validation evidence packet, and readiness rerun against the real bundle, binding large-cohort, heldout-oracle, and real downstream-impact evidence. |
 | [Default activation dry run](../../scripts/build_quant_matrix_default_activation_dry_run.py) | Comparison TSV and summary JSON from a temporary manifest-driven version replay against the promotion packet's real bundle. |

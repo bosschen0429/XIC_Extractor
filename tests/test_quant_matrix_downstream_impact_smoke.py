@@ -4,7 +4,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from xic_extractor.alignment.quant_matrix_downstream_impact import (
+from xic_extractor.diagnostics.quant_matrix.downstream_impact import (
     build_quant_matrix_downstream_impact_smoke,
     validate_quant_matrix_downstream_impact_smoke,
 )

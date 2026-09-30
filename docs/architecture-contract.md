@@ -51,7 +51,7 @@ feature-by-sample Matrix。兩者共用科學判斷，但保留不同搜尋政�
 | 缺格補證及格值 | `alignment/backfill/`、`alignment/cell_decision/` | 新觀察、科學決策與檔案 writer 各自有 owner |
 | RAW 讀取或 DLL | `raw_reader.py` 及使用它的 acquisition adapter | 讀入量測資料；不因此取得群組、格值或發布決定權 |
 | Targeted／Alignment RT-window MS2 擷取與 NL 解讀 | `acquisition/ms2_windows.py` 擷取單一樣本的有界視窗；`evidence/neutral_loss.py` 解讀已擷取事件 | 前者持有 reader 呼叫，後者只處理 `Ms2Window` 與候選幾何；Discovery 宣告 scan 的 strict receipt 保留原 owner |
-| Untargeted ISTD RAW 參考值擷取 | `acquisition/istd_reference.py` | 依既有 target 邊界擷取 trace 並呼叫單峰 owner；Alignment 的 drift evidence owner 建立 reference |
+| Untargeted ISTD 參考資料取得 | `acquisition/istd_reference.py` | 讀取 workbook 或依既有 target 邊界擷取 RAW trace；兩種來源都交由 Alignment 的 drift evidence owner 建立同一 reference，科學 owner 不開檔 |
 | 排程、取消、清理 | `execution/` | partitions 排程；workers 執行；attempt 決定一次執行是否完成 |
 | 欄位、workbook 或 Matrix 格式 | `output/`、Alignment 的輸出 adapter | 呈現 owner 的答案；不要從格式變更反向改變選峰或計數 |
 
@@ -308,12 +308,15 @@ numbers are never identifier values. A real runtime phase or scientific name
 remains appropriate when it describes current behavior. Preserve compatibility
 when considering existing names; this guidance does not require unrelated renames.
 
-Method specificity (e.g. CID-NL matching rules, neutral loss thresholds, scan-level
-assertions) is strictly absorbed internally within `discovery/` and method models.
-Downstream orchestration, batch execution, and diagnostic explanations are shared
-system capabilities named by capability (e.g., `untargeted_partition_composition`,
-`untargeted_alignment`, `alignment_explanation`), preventing a single method from
-monopolizing or leaking into shared infrastructure.
+CID-NL is the currently supported Untargeted method. Its input interpretation
+lives in Discovery; typed method subjects and capture authorization live in
+`peak_detection/cid_nl_method_subject.py` and `peak_detection/search_scope.py`.
+Application composition selects these capabilities. Adding another scientific
+method requires its own validated subjects, authorization and evidence adapter;
+it does not require a second scheduling, settlement or output lifecycle. This
+is an explicit extension boundary, not an implemented multi-method registry.
+Shared execution and delivery are named for their capabilities and consume the
+completed domain results rather than selecting CID-NL scientific rules.
 
 ## Diagnostics Contract
 
@@ -321,7 +324,11 @@ monopolizing or leaking into shared infrastructure.
 
 - CLIs parse, validate, and orchestrate only.
 - Reusable loading, classification, models, summaries, plotting, and writers
-  belong in focused package modules.
+  belong in focused `xic_extractor/diagnostics/` packages. Shared-peak identity
+  explanation, Backfill evidence file binding/serialization, and quantitative
+  report/promotion artifacts each keep their related implementation together.
+- Pure Alignment record, claim and quantitative authority models remain with
+  their scientific owners; they do not import diagnostic file readers or writers.
 - Diagnostic writers render; they do not recompute evidence or rescan RAW.
 - Gate diagnostics emit machine-readable status/reason plus a short blocker
   and next action.

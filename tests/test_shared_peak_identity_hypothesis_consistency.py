@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from xic_extractor.alignment.shared_peak_identity_explanation import (
+from xic_extractor.diagnostics.shared_peak_identity_explanation import (
     hypothesis_consistency,
 )
 
