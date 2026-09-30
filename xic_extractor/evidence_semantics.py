@@ -1,12 +1,7 @@
 from __future__ import annotations
 
-import math
-from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, Literal
-
-from xic_extractor.neutral_loss import CandidateMS2Evidence
-from xic_extractor.peak_detection.models import PeakCandidate, PeakCandidateScore
+from typing import Literal
 
 _SOFT_TRACE_QUALITY_FLAGS = {"low_trace_continuity", "poor_edge_recovery"}
 _HARD_LOCAL_CONCERN_LABELS = {
@@ -80,135 +75,6 @@ class EvidenceSignalSet:
     reason: str = ""
     rejection_reason: str = ""
     count_no_ms2_as_detected: bool = False
-
-
-def common_evidence_from_targeted_candidate(
-    candidate: PeakCandidate,
-    *,
-    score: PeakCandidateScore | None = None,
-    candidate_ms2_evidence: CandidateMS2Evidence | None = None,
-    target_label: str = "",
-) -> CommonEvidence:
-    return common_evidence_from_peak_candidate(
-        candidate,
-        score=score,
-        candidate_ms2_evidence=candidate_ms2_evidence,
-        source="targeted_peak",
-        source_id=target_label,
-        provenance="selected_or_candidate",
-    )
-
-
-def common_evidence_from_peak_candidate(
-    candidate: PeakCandidate,
-    *,
-    score: PeakCandidateScore | None = None,
-    candidate_ms2_evidence: CandidateMS2Evidence | None = None,
-    source: Literal["targeted_peak", "discovery_candidate"],
-    source_id: str,
-    provenance: str,
-) -> CommonEvidence:
-    """Project one captured peak without assigning workflow product authority."""
-
-    return CommonEvidence(
-        source=source,
-        source_id=source_id,
-        provenance=provenance,
-        ms1_peak_found=True,
-        ms1_apex_rt_min=candidate.selection_apex_rt,
-        ms1_area=candidate.peak.area,
-        ms1_height=candidate.raw_apex_intensity,
-        ms1_peak_rt_start=candidate.peak.peak_start,
-        ms1_peak_rt_end=candidate.peak.peak_end,
-        trace_quality=_targeted_trace_quality(candidate),
-        scan_support_score=_scan_support_from_candidate(candidate),
-        neutral_loss_error_ppm=(
-            candidate_ms2_evidence.best_loss_ppm
-            if candidate_ms2_evidence is not None
-            else None
-        ),
-        ms2_present=(
-            candidate_ms2_evidence.ms2_present
-            if candidate_ms2_evidence is not None
-            else None
-        ),
-        nl_match=(
-            candidate_ms2_evidence.nl_match
-            if candidate_ms2_evidence is not None
-            else None
-        ),
-        ms2_trace_strength=(
-            candidate_ms2_evidence.trace.strength
-            if candidate_ms2_evidence is not None
-            else ""
-        ),
-        confidence=score.confidence if score is not None else "",
-        evidence_score=score.raw_score if score is not None else None,
-        reason=score.reason if score is not None else "",
-    )
-
-
-def common_evidence_from_discovery_candidate(candidate: Any) -> CommonEvidence:
-    seed_event_count = _optional_int(_field(candidate, "seed_event_count"))
-    neutral_loss_error_ppm = _optional_float(
-        _field(candidate, "neutral_loss_mass_error_ppm")
-    )
-    return CommonEvidence(
-        source="discovery_candidate",
-        source_id=_text_field(candidate, "candidate_id"),
-        provenance="original_discovery_seed",
-        ms1_peak_found=_optional_bool(_field(candidate, "ms1_peak_found")),
-        ms1_apex_rt_min=_optional_float(_field(candidate, "ms1_apex_rt")),
-        ms1_area=_optional_float(_field(candidate, "ms1_area")),
-        ms1_height=_optional_float(_field(candidate, "ms1_height")),
-        ms1_peak_rt_start=_optional_float(_field(candidate, "ms1_peak_rt_start")),
-        ms1_peak_rt_end=_optional_float(_field(candidate, "ms1_peak_rt_end")),
-        rt_delta_min=_optional_float(_field(candidate, "ms1_seed_delta_min")),
-        trace_quality=_text_field(candidate, "ms1_trace_quality"),
-        scan_support_score=_optional_float(_field(candidate, "ms1_scan_support_score")),
-        neutral_loss_tag=_text_field(candidate, "neutral_loss_tag"),
-        configured_neutral_loss_da=_optional_float(
-            _field(candidate, "configured_neutral_loss_da")
-        ),
-        observed_neutral_loss_da=_optional_float(
-            _field(candidate, "observed_neutral_loss_da")
-        ),
-        neutral_loss_error_ppm=neutral_loss_error_ppm,
-        seed_event_count=seed_event_count,
-        ms2_present=seed_event_count is not None and seed_event_count > 0,
-        nl_match=neutral_loss_error_ppm is not None,
-        evidence_score=_optional_int(_field(candidate, "evidence_score")),
-        review_priority=_text_field(candidate, "review_priority"),
-        reason=_text_field(candidate, "reason"),
-    )
-
-
-def common_evidence_from_aligned_cell(
-    cell: Any,
-    *,
-    neutral_loss_tag: str = "",
-    family_id: str = "",
-) -> CommonEvidence:
-    status = _text_field(cell, "status")
-    sample_stem = _text_field(cell, "sample_stem")
-    provenance = status or "unknown"
-    source_id = f"{family_id}:{sample_stem}" if family_id else sample_stem
-    return CommonEvidence(
-        source="alignment_cell",
-        source_id=source_id,
-        provenance=provenance,
-        ms1_peak_found=status in {"detected", "backfilled"},
-        ms1_apex_rt_min=_optional_float(_field(cell, "apex_rt")),
-        ms1_area=_optional_float(_field(cell, "area")),
-        ms1_height=_optional_float(_field(cell, "height")),
-        ms1_peak_rt_start=_optional_float(_field(cell, "peak_start_rt")),
-        ms1_peak_rt_end=_optional_float(_field(cell, "peak_end_rt")),
-        rt_delta_min=_delta_sec_to_min(_optional_float(_field(cell, "rt_delta_sec"))),
-        trace_quality=_text_field(cell, "trace_quality"),
-        scan_support_score=_optional_float(_field(cell, "scan_support_score")),
-        neutral_loss_tag=neutral_loss_tag,
-        reason=_text_field(cell, "reason"),
-    )
 
 
 def canonical_support_labels(evidence: CommonEvidence) -> tuple[str, ...]:
@@ -535,61 +401,6 @@ def _append_unique(values: tuple[str, ...], value: str) -> tuple[str, ...]:
     if value in values:
         return values
     return (*values, value)
-
-
-def _targeted_trace_quality(candidate: PeakCandidate) -> str:
-    return "review" if candidate.quality_flags else "clean"
-
-
-def _scan_support_from_candidate(candidate: PeakCandidate) -> float | None:
-    if candidate.region_scan_count is None:
-        return None
-    return float(candidate.region_scan_count)
-
-
-def _field(item: Any, key: str) -> Any:
-    if isinstance(item, Mapping):
-        return item.get(key)
-    return getattr(item, key, None)
-
-
-def _text_field(item: Any, key: str) -> str:
-    value = _field(item, key)
-    if value is None:
-        return ""
-    return str(value)
-
-
-def _optional_bool(value: Any) -> bool | None:
-    if isinstance(value, bool):
-        return value
-    return None
-
-
-def _optional_int(value: Any) -> int | None:
-    if isinstance(value, bool) or value is None:
-        return None
-    try:
-        number = int(value)
-    except (TypeError, ValueError):
-        return None
-    return number
-
-
-def _optional_float(value: Any) -> float | None:
-    if isinstance(value, bool) or value is None:
-        return None
-    try:
-        number = float(value)
-    except (TypeError, ValueError):
-        return None
-    return number if math.isfinite(number) else None
-
-
-def _delta_sec_to_min(value: float | None) -> float | None:
-    if value is None:
-        return None
-    return value / 60.0
 
 
 def _positive(value: float | None) -> bool:
