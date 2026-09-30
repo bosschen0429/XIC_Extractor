@@ -61,9 +61,8 @@ from xic_extractor.alignment.backfill_result import (
 from xic_extractor.alignment.backfill_runtime_projection import (
     BackfillRuntimeFeature,
 )
-from xic_extractor.alignment.config import AlignmentConfig
+from xic_extractor.alignment.config import AlignmentConfig, BackfillXicBackend
 from xic_extractor.alignment.matrix import AlignedCell
-from xic_extractor.alignment.ms1_index_source import BackfillXicBackend
 from xic_extractor.config import ExtractionConfig
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,

@@ -15,8 +15,8 @@ from typing import cast
 from xic_extractor.alignment.artifact_write_receipts import (
     AlignmentArtifactFingerprintBatch,
 )
-from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.alignment.ms1_index_source import (
+from xic_extractor.alignment.config import (
+    AlignmentConfig,
     BackfillXicBackend,
     OwnerBuildXicBackend,
 )

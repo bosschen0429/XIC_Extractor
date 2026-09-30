@@ -10,14 +10,14 @@ from xic_extractor.alignment.backfill_peak_fact_provenance import (
     EMPTY_BACKFILL_PEAK_FACT_PROVENANCE_BATCH,
 )
 from xic_extractor.alignment.backfill_scope import BackfillScope
-from xic_extractor.alignment.config import AlignmentConfig
+from xic_extractor.alignment.config import (
+    AlignmentConfig,
+    BackfillXicBackend,
+    OwnerBuildXicBackend,
+)
 from xic_extractor.alignment.drift_evidence import (
     KnownIstdReference,
     read_known_istd_reference,
-)
-from xic_extractor.alignment.ms1_index_source import (
-    BackfillXicBackend,
-    OwnerBuildXicBackend,
 )
 from xic_extractor.alignment.output_levels import (
     AlignmentOutputLevel,
