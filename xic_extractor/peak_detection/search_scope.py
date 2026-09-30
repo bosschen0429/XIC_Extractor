@@ -104,6 +104,8 @@ class CaptureCandidateBinding:
     selection_policy: CaptureSelectionPolicy = "capture_default"
     physical_evaluation: PhysicalPeakEvaluation | None = None
     source_physical_evaluation: PhysicalPeakEvaluation | None = None
+    # The evaluated XIC center; omission means the active query_mz.
+    physical_evaluation_mz: float | None = None
 
     def __post_init__(self) -> None:
         _normalized_text(self.candidate_id, field="candidate_id")
@@ -160,6 +162,14 @@ class CaptureCandidateBinding:
             ):
                 raise SearchScopeContractError(
                     "physical capture binding crosses its exact owner question"
+                )
+        if self.physical_evaluation_mz is not None:
+            _positive_finite_number(
+                self.physical_evaluation_mz, field="physical_evaluation_mz"
+            )
+            if self.physical_evaluation is None:
+                raise SearchScopeContractError(
+                    "evaluated XIC mass requires a retained physical evaluation"
                 )
 
 

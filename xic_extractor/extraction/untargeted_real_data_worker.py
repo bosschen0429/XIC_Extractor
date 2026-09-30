@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import importlib
 from copy import copy
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from typing import Literal
 
 from xic_extractor.acquisition_contract import TraceAcquisitionBatch
@@ -36,6 +36,7 @@ from xic_extractor.extraction.untargeted_acquisition_cache import (
 )
 from xic_extractor.extraction.untargeted_cid_nl_real_data_adapter import (
     UntargetedCidNlBackfillAttemptResult,
+    UntargetedCidNlBackfillTarget,
     UntargetedCidNlBackfillTraceBatch,
     UntargetedCidNlRealDataAdapterResult,
     UntargetedCidNlSampleTraceBatch,
@@ -81,8 +82,7 @@ class _RuntimeJobState:
     backfill_support: _BackfillSupportContext | None = None
     backfill_input: UntargetedCidNlBackfillInput | None = None
     backfill_attempts: tuple[UntargetedCidNlBackfillAttemptResult, ...] = ()
-    backfill_group_center_rts: tuple[float, ...] = ()
-    backfill_group_ids: tuple[str, ...] = ()
+    backfill_targets: tuple[UntargetedCidNlBackfillTarget, ...] = ()
     open_attempted: bool = False
     opened: bool = False
     cleanup_outcome: RuntimeResourceCleanupOutcome = (
@@ -415,8 +415,23 @@ def _prepare_group_authorized_backfills(
                         candidate_assessment=assessment,
                     )
                 else:
-                    state.backfill_group_center_rts += (group.group_center_rt,)
-                    state.backfill_group_ids += (group.group_hypothesis_id,)
+                    state.backfill_targets = tuple(
+                        sorted(
+                            (
+                                *state.backfill_targets,
+                                UntargetedCidNlBackfillTarget(
+                                    group_hypothesis_id=group.group_hypothesis_id,
+                                    method_subject=subject,
+                                    physical_mz=group.family_center_mz,
+                                    center_rt=group.group_center_rt,
+                                ),
+                            ),
+                            key=lambda target: (
+                                target.center_rt,
+                                target.group_hypothesis_id,
+                            ),
+                        )
+                    )
 
 
 def _group_revisit(
@@ -555,8 +570,22 @@ def _prepare_subject_authorized_backfills(
                     candidate_assessment=assessment,
                 )
             else:
-                state.backfill_group_center_rts = tuple(
-                    sorted((*state.backfill_group_center_rts, center))
+                state.backfill_targets = tuple(
+                    sorted(
+                        (
+                            *state.backfill_targets,
+                            UntargetedCidNlBackfillTarget(
+                                group_hypothesis_id=group.group_hypothesis_id,
+                                method_subject=state.job.method_subject,
+                                physical_mz=group.family_center_mz,
+                                center_rt=center,
+                            ),
+                        ),
+                        key=lambda target: (
+                            target.center_rt,
+                            target.group_hypothesis_id,
+                        ),
+                    )
                 )
     return tuple(added_states)
 
@@ -592,19 +621,18 @@ def _execute_backfill(
         trace_batch = active_acquire(
             processing_owners=job.processing_owners,
             sample=job.sample,
-            backfill_requests=tuple(
-                (job.method_subject, center)
-                for center in state.backfill_group_center_rts
-            ),
+            backfill_requests=state.backfill_targets,
             peak_config=job.peak_config,
             raw=raw,
         )
-        for index, center in enumerate(state.backfill_group_center_rts):
+        for target in state.backfill_targets:
             backfill = backfill_untargeted_cid_nl_sample_subject(
                 processing_owners=job.processing_owners,
                 sample=job.sample,
                 method_subject=job.method_subject,
-                group_center_rt=center,
+                group_center_rt=target.center_rt,
+                group_center_mz=target.physical_mz,
+                group_hypothesis_id=target.group_hypothesis_id,
                 initial_assessment=ctx.initial_assessment,
                 support_policy=ctx.support_policy,
                 peak_config=job.peak_config,
@@ -614,10 +642,6 @@ def _execute_backfill(
                 signal_processing_profile=job.signal_processing_profile,
                 _preacquired_traces=trace_batch,
             )
-            if state.backfill_group_ids:
-                backfill = replace(
-                    backfill, group_hypothesis_id=state.backfill_group_ids[index]
-                )
             state.backfill_attempts += (backfill,)
         if len(state.backfill_attempts) == 1:
             state.backfill_input = state.backfill_attempts[0].backfill_input
@@ -651,7 +675,7 @@ def _execute_backfill_batch(phase: _BatchSamplePhaseState) -> None:
             (
                 state
                 for state in phase.states
-                if state.error is None and state.backfill_group_center_rts
+                if state.error is None and state.backfill_targets
             ),
             key=lambda state: state.job.method_subject.method_subject_id,
         )
@@ -680,12 +704,7 @@ def _execute_backfill_batch(phase: _BatchSamplePhaseState) -> None:
             processing_owners=first.processing_owners,
             sample=first.sample,
             backfill_requests=tuple(
-                (
-                    state.job.method_subject,
-                    center,
-                )
-                for state in pending
-                for center in state.backfill_group_center_rts
+                target for state in pending for target in state.backfill_targets
             ),
             peak_config=first.peak_config,
             raw=raw,
@@ -696,12 +715,14 @@ def _execute_backfill_batch(phase: _BatchSamplePhaseState) -> None:
             if ctx is None and state.adapter_result is not None:
                 ctx = _backfill_support_context(state.adapter_result)
             assert ctx is not None
-            for index, center in enumerate(state.backfill_group_center_rts):
+            for target in state.backfill_targets:
                 backfill = backfill_untargeted_cid_nl_sample_subject(
                     processing_owners=state.job.processing_owners,
                     sample=state.job.sample,
                     method_subject=state.job.method_subject,
-                    group_center_rt=center,
+                    group_center_rt=target.center_rt,
+                    group_center_mz=target.physical_mz,
+                    group_hypothesis_id=target.group_hypothesis_id,
                     initial_assessment=ctx.initial_assessment,
                     support_policy=ctx.support_policy,
                     peak_config=state.job.peak_config,
@@ -711,10 +732,6 @@ def _execute_backfill_batch(phase: _BatchSamplePhaseState) -> None:
                     _observer=state.observer,
                     _preacquired_traces=trace_batch,
                 )
-                if state.backfill_group_ids:
-                    backfill = replace(
-                        backfill, group_hypothesis_id=state.backfill_group_ids[index]
-                    )
                 state.backfill_attempts += (backfill,)
             if len(state.backfill_attempts) == 1:
                 state.backfill_input = state.backfill_attempts[0].backfill_input
@@ -802,8 +819,7 @@ def _execute_sample_initial_worker(
 @dataclass(slots=True)
 class _SampleBackfillWorkerRequest:
     jobs: tuple[UntargetedCidNlRealDataRuntimeJob, ...]
-    backfill_group_center_rts_by_key: dict[str, tuple[float, ...]]
-    backfill_group_ids_by_key: dict[str, tuple[str, ...]]
+    backfill_targets_by_key: dict[str, tuple[UntargetedCidNlBackfillTarget, ...]]
     backfill_inputs_by_key: dict[str, UntargetedCidNlBackfillInput | None]
     backfill_support_by_key: dict[str, _BackfillSupportContext]
     backfill_resource_key: str | None
@@ -838,12 +854,7 @@ def _execute_sample_backfill_worker(
             observer=_UntargetedRealDataWorkObserver(job.processing_owners),
             backfill_support=request.backfill_support_by_key.get(job.work_unit_key),
             backfill_input=request.backfill_inputs_by_key.get(job.work_unit_key),
-            backfill_group_center_rts=request.backfill_group_center_rts_by_key.get(
-                job.work_unit_key, ()
-            ),
-            backfill_group_ids=request.backfill_group_ids_by_key.get(
-                job.work_unit_key, ()
-            ),
+            backfill_targets=request.backfill_targets_by_key.get(job.work_unit_key, ()),
         )
         for job in request.jobs
     )

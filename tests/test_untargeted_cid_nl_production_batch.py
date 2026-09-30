@@ -2061,6 +2061,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         sample=job.sample,
         method_subject=job.method_subject,
         group_center_rt=center_rt,
+        group_center_mz=job.method_subject.precursor_mz,
         support_policy=DdaCidNlPeakSupportPolicy(
             precursor_tolerance_da=0.01, neutral_loss_tolerance_ppm=10.0
         ),
@@ -2492,6 +2493,41 @@ def test_physical_subject_units_require_complete_common_proof(
         )
         == expected_units
     )
+
+
+def test_subject_planning_uses_physical_mass_without_rewriting_seed_receipts(
+    tmp_path: Path,
+) -> None:
+    from xic_extractor.extraction.untargeted_production_batch import (
+        prepare_untargeted_subject_membership,
+    )
+
+    raw_path = tmp_path / "S1.synthetic"
+    raw_path.write_bytes(b"physical-ion-planning:S1")
+    settings = replace(_settings(), neutral_loss_profile=None)
+    _, candidates = _nearby_subject_candidates(
+        raw_path, settings=settings, peak_config=_peak_config(tmp_path)
+    )
+    inferred = replace(
+        candidates[0],
+        precursor_mz=445.2140,
+        product_mz=445.2140 - 116.0474,
+        ms1_apex_mz=445.2071,
+        precursor_mz_basis="product_plus_neutral_loss",
+    )
+    subjects = prepare_untargeted_subject_membership(
+        candidates_by_sample={"S1": (inferred,)}, settings=settings
+    )
+    assert len(subjects.subjects) == 1
+    assert subjects.subjects[0].precursor_mz == 445.2071
+    assert inferred.precursor_mz == 445.2140
+    assert inferred.product_mz == 445.2140 - 116.0474
+
+    selected = replace(inferred, ms1_apex_mz=None, precursor_mz_basis="scan_precursor")
+    fallback = prepare_untargeted_subject_membership(
+        candidates_by_sample={"S1": (selected,)}, settings=settings
+    )
+    assert fallback.subjects[0].precursor_mz == 445.2140
 
 
 def test_physical_subject_units_keep_unproven_candidates_singleton(

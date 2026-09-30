@@ -59,7 +59,7 @@ from xic_extractor.processing_identity import (
 )
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 
-SCHEMA_VERSION = "cid_nl_method_assessment"
+SCHEMA_VERSION = "cid_nl_method_assessment_physical_query"
 ARTIFACT_SEMANTIC_ROLE = "cid_nl_method_assessment"
 VALIDATION_STATUS = "diagnostic_only"
 MEDIA_TYPE = "application/json"
@@ -89,6 +89,8 @@ _ARTIFACT_SEMANTIC_CONTRACT = _mint_artifact_semantic_contract_ref(
     media_type=MEDIA_TYPE,
     serialization_format=SERIALIZATION_FORMAT,
 )
+
+
 class CidNlMethodAssessmentContractError(ValueError):
     """Raised when one complete CID-NL method attempt cannot be closed."""
 
@@ -104,6 +106,9 @@ class CidNlEvaluationReceipt:
     search_completed: bool
     scanned_event_count: int
     reason_code: str | None
+    evidence_scope: Literal["subject_window", "declared_scans"] = "subject_window"
+    # Untargeted Backfill queries the frozen group while retaining subject lineage.
+    physical_query_mz: float | None = None
 
     def __post_init__(self) -> None:
         query_min = _finite_float(self.query_rt_min, field="query_rt_min")
@@ -134,6 +139,19 @@ class CidNlEvaluationReceipt:
             )
         if self.reason_code is not None:
             _required_text(self.reason_code, field="reason_code")
+        if self.evidence_scope not in {"subject_window", "declared_scans"}:
+            raise CidNlMethodAssessmentContractError(
+                "unsupported CID-NL evidence scope"
+            )
+        if self.physical_query_mz is not None:
+            physical_mz = _finite_float(
+                self.physical_query_mz, field="physical_query_mz"
+            )
+            if physical_mz <= 0.0:
+                raise CidNlMethodAssessmentContractError(
+                    "physical_query_mz must be positive"
+                )
+            object.__setattr__(self, "physical_query_mz", physical_mz)
         object.__setattr__(self, "query_rt_min", query_min)
         object.__setattr__(self, "query_rt_max", query_max)
 
@@ -198,6 +216,20 @@ class CidNlMethodAssessmentContent:
         if not isinstance(self.evaluation_receipt, CidNlEvaluationReceipt):
             raise CidNlMethodAssessmentContractError(
                 "evaluation_receipt must be owner-normalized"
+            )
+        if (
+            self.evaluation_receipt.evidence_scope == "declared_scans"
+            and self.method_subject.subject_kind != "untargeted_precursor"
+        ):
+            raise CidNlMethodAssessmentContractError(
+                "declared scan evidence requires an Untargeted method subject"
+            )
+        if (
+            self.evaluation_receipt.physical_query_mz is not None
+            and self.method_subject.subject_kind != "untargeted_precursor"
+        ):
+            raise CidNlMethodAssessmentContractError(
+                "a physical query center requires an Untargeted method subject"
             )
         for values, field in (
             (self.evidence_artifact_content_ids, "evidence_artifact_content_ids"),
@@ -688,6 +720,11 @@ def _validate_upstream_bindings(
     individual_support_refs: tuple[DdaCidNlPeakSupportRef, ...],
     set_relation_refs: tuple[DdaCidNlCandidateSetRelationRef, ...],
 ) -> None:
+    candidate_query_mz = (
+        method_subject.precursor_mz
+        if evaluation_receipt.physical_query_mz is None
+        else evaluation_receipt.physical_query_mz
+    )
     for peak in candidate_peaks:
         try:
             validate_peak_observation_binding(
@@ -699,7 +736,7 @@ def _validate_upstream_bindings(
             raise CidNlMethodAssessmentContractError(str(exc)) from exc
         _validate_target_precursor(
             observed_mz=peak.content.mz,
-            target_mz=method_subject.precursor_mz,
+            target_mz=candidate_query_mz,
             target_tolerance_ppm=method_subject.precursor_tolerance_ppm,
             subject="candidate peak",
         )
@@ -718,12 +755,13 @@ def _validate_upstream_bindings(
             )
         except CidNlEvidenceContractError as exc:
             raise CidNlMethodAssessmentContractError(str(exc)) from exc
-        _validate_target_precursor(
-            observed_mz=evidence.observation.precursor_mz,
-            target_mz=method_subject.precursor_mz,
-            target_tolerance_ppm=method_subject.precursor_tolerance_ppm,
-            subject="CID-NL evidence",
-        )
+        if evaluation_receipt.evidence_scope == "subject_window":
+            _validate_target_precursor(
+                observed_mz=evidence.observation.precursor_mz,
+                target_mz=method_subject.precursor_mz,
+                target_tolerance_ppm=method_subject.precursor_tolerance_ppm,
+                subject="CID-NL evidence",
+            )
         _validate_query_rt(
             observed_rt_min=evidence.observation.scan_rt_min,
             evaluation_receipt=evaluation_receipt,
@@ -985,8 +1023,7 @@ def is_ms1_only_cid_nl_backfill_assessment(
     The group owner authorized the revisit; the result grants no detection.
     """
     return (
-        assessment.content.detector_invocation_id
-        == "untargeted-cid-nl-backfill"
+        assessment.content.detector_invocation_id == "untargeted-cid-nl-backfill"
         and assessment.content.technical_state == "evaluated"
         and assessment.content.method_result == "HOLD"
         and assessment.content.reason_codes == ("no_unique_qualifying_relation",)

@@ -649,7 +649,7 @@ def _prepare_runtime_work(
                 if (
                     partition_key is None
                     and not _request_uses_subject_batch(state.job)
-                    and state.backfill_group_center_rts
+                    and state.backfill_targets
                 ):
                     _execute_backfill(state)
             phase = phases_by_sample.get(
@@ -736,7 +736,7 @@ def _prepare_runtime_work(
 
         def skip_backfill(sample_states: tuple[_RuntimeJobState, ...]) -> bool:
             return not any(
-                state.error is None and state.backfill_group_center_rts
+                state.error is None and state.backfill_targets
                 for state in sample_states
             )
 
@@ -748,17 +748,14 @@ def _prepare_runtime_work(
             pending = tuple(
                 state
                 for state in sample_states
-                if state.error is None and state.backfill_group_center_rts
+                if state.error is None and state.backfill_targets
             )
             return _SampleBackfillWorkerRequest(
                 jobs=tuple(s.job for s in pending),
-                backfill_group_center_rts_by_key={
-                    s.job.work_unit_key: s.backfill_group_center_rts
+                backfill_targets_by_key={
+                    s.job.work_unit_key: s.backfill_targets
                     for s in pending
-                    if s.backfill_group_center_rts
-                },
-                backfill_group_ids_by_key={
-                    s.job.work_unit_key: s.backfill_group_ids for s in pending
+                    if s.backfill_targets
                 },
                 backfill_inputs_by_key={
                     s.job.work_unit_key: s.backfill_input

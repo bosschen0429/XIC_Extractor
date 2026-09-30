@@ -242,6 +242,7 @@ def test_rejected_initial_evidence_gets_one_independent_bounded_assessment(
                 sample=batch.context.sample("S1"),
                 method_subject=initial.content.method_subject,
                 group_center_rt=8.0,
+                group_center_mz=initial.content.method_subject.precursor_mz,
                 support_policy=initial.content.evaluation_receipt.support_policy,
                 peak_config=peak_config,
                 raw=None,
@@ -253,6 +254,7 @@ def test_rejected_initial_evidence_gets_one_independent_bounded_assessment(
                 sample=rejected.job.sample,
                 method_subject=initial.content.method_subject,
                 group_center_rt=8.0,
+                group_center_mz=initial.content.method_subject.precursor_mz,
                 support_policy=replace(
                     initial.content.evaluation_receipt.support_policy,
                     precursor_tolerance_da=0.25,
@@ -468,7 +470,13 @@ def test_runtime_recovers_every_authorized_rt_group(
     for center, attempt in zip(
         authorized_centers, missing.backfill_attempts, strict=True
     ):
-        assert missing.backfill_for_group(center) is attempt
+        assert attempt.group_hypothesis_id is not None
+        assert (
+            missing.backfill_for_group(
+                center, group_hypothesis_id=attempt.group_hypothesis_id
+            )
+            is attempt
+        )
         receipt = attempt.assessment.content.evaluation_receipt
         assert (receipt.query_rt_min, receipt.query_rt_max) == (
             center - peak_config.nl_rt_anchor_half_window_min,
@@ -683,12 +691,19 @@ def test_runtime_recovers_every_authorized_rt_group(
                 center = initial_group.group_center_rt
             else:
                 center = (
-                    initial_groups_by_id[next(iter(predecessor_group_ids))].group_center_rt
+                    initial_groups_by_id[
+                        next(iter(predecessor_group_ids))
+                    ].group_center_rt
                     if predecessor_group_ids
                     else None
                 )
             recovery = (
-                missing.backfill_for_group(center) if center is not None else None
+                missing.backfill_for_group(
+                    center,
+                    group_hypothesis_id=next(iter(predecessor_group_ids)),
+                )
+                if center is not None
+                else None
             )
             if recovery is None:
                 assert cell.evidence_states == ("not_searched",)
@@ -712,9 +727,7 @@ def test_runtime_recovers_every_authorized_rt_group(
                     recovery_context = source.group_context
                 else:
                     assert cell.backfill_cell is not None
-                    assert (
-                        cell.backfill_cell.method_assessment is recovery.assessment
-                    )
+                    assert cell.backfill_cell.method_assessment is recovery.assessment
                     recovery_context = cell.backfill_cell.group_context
                 completion = project_untargeted_cid_nl_completed_backfill(
                     missing, group_context=recovery_context
@@ -1198,9 +1211,7 @@ def test_ms1_only_backfill_fills_only_one_unique_group_window_peak(
         if item.job.sample.metadata.raw_stem == "Missing"
     )
     (attempt,) = missing.backfill_attempts
-    assert attempt.assessment.content.reason_codes == (
-        "no_unique_qualifying_relation",
-    )
+    assert attempt.assessment.content.reason_codes == ("no_unique_qualifying_relation",)
     assert len(attempt.assessment.candidate_peaks) == len(missing_peaks)
     completed = compose_untargeted_cid_nl_production_result(
         batch, result, alignment_config=AlignmentConfig(anchor_min_seed_events=1)
@@ -1458,9 +1469,7 @@ def _assert_alignment_uses_configured_recovery_groups(
         assert len(predecessor_group_ids) == 1
         return initial_groups_by_id[next(iter(predecessor_group_ids))].group_center_rt
 
-    recovered = next(
-        cell for cell in missing_cells if predecessor_center(cell) == 8.0
-    )
+    recovered = next(cell for cell in missing_cells if predecessor_center(cell) == 8.0)
     no_input = next(cell for cell in missing_cells if predecessor_center(cell) != 8.0)
     # The partition store restores the empty recovery assessment from the
     # completed runtime and leaves the other no-input position unsearched.

@@ -1506,6 +1506,32 @@ def _truth_table_fixture(tmp_path: Path):
     return fixture, (s1, s2, s3, s4, s5)
 
 
+@pytest.mark.parametrize("scope_override", ["declared_scans", "physical_query_mz"])
+def test_targeted_assessment_retains_its_subject_mass_window(
+    tmp_path: Path,
+    scope_override: str,
+) -> None:
+    fixture = build_processing_identity_no_raw_fixture(tmp_path, sample_stems=("s1",))
+    with pytest.raises(CidNlMethodAssessmentContractError, match="Untargeted"):
+        mint_cid_nl_method_assessment_ref(
+            processing_owners=fixture.owners,
+            sample=fixture.sample("s1"),
+            target=fixture.target,
+            detector_invocation_id="targeted-scope",
+            evaluation_receipt=replace(
+                _completed_receipt(scanned_event_count=0),
+                evidence_scope=(
+                    "declared_scans"
+                    if scope_override == "declared_scans"
+                    else "subject_window"
+                ),
+                physical_query_mz=(
+                    500.012 if scope_override == "physical_query_mz" else None
+                ),
+            ),
+        )
+
+
 def _completed_receipt(*, scanned_event_count: int) -> CidNlEvaluationReceipt:
     return CidNlEvaluationReceipt(
         query_rt_min=7.5,
