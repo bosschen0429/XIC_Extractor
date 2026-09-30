@@ -207,9 +207,39 @@ def test_export_and_open_announces_success_before_browser_event_reentry(
     qtbot.wait(50)
     assert opened == [str(tmp_path / "opened.html")]
     assert (tmp_path / "opened.html").is_file()
-    assert "selected 1" in section._inspector_status.text()
-    assert "retained_curves" in section._inspector_status.text()
-    assert statuses and "selected 1" in statuses[-1]
+    assert "Inspector 已就緒：抽出 1 / 1 項" == section._inspector_status.text()
+    assert "selected 1" in section._inspector_status.toolTip()
+    assert "retained_curves" in section._inspector_status.toolTip()
+    assert statuses and "已就緒" in statuses[-1]
+
+
+def test_completed_result_writes_default_report_beside_evidence(
+    monkeypatch, qtbot, tmp_path
+):
+    import gui.sections.discovery_results_section as section_module
+
+    source = _source(tmp_path)
+    opened = []
+    monkeypatch.setattr(section_module, "_open_path", opened.append)
+    section = DiscoveryResultsSection()
+    qtbot.addWidget(section)
+    section.update_results(_summary(source))
+    assert not section._open_inspector.isEnabled()
+
+    section.generate_default_report()
+    worker = section._report_worker
+    assert worker is not None
+    assert worker.job.request == SelectionRequest()
+    assert worker.wait(10000)
+    qtbot.wait(50)
+
+    report = tmp_path / "xic_inspector.html"
+    assert report.is_file()
+    assert opened == []
+    assert section._open_inspector.isEnabled()
+    assert section._inspector_status.text().startswith("Inspector 已就緒")
+    section._open_inspector.click()
+    assert opened == [str(report)]
 
 
 def test_slow_report_keeps_start_snapshot_while_new_result_arrives(

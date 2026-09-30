@@ -126,6 +126,24 @@ def test_completion_survives_readiness_refresh(monkeypatch, qtbot) -> None:
     assert "完成" in view._run._status_label.text()
 
 
+def test_completion_starts_default_inspector_report(monkeypatch, qtbot) -> None:
+    import gui.views.untargeted_view as module
+
+    monkeypatch.setattr(module, "read_discovery_config", lambda: {})
+    view = module.UntargetedView()
+    qtbot.addWidget(view)
+    calls: list[str] = []
+    monkeypatch.setattr(
+        view._results, "generate_default_report", lambda: calls.append("report")
+    )
+    worker = _SlowStoppingWorker()
+    view._worker = worker
+    view._run.set_running(True)
+    view._on_finished(worker, {"mode": "full", "sample_count": 3})
+
+    assert calls == ["report"]
+
+
 def test_untargeted_stop_waits_for_cancelled_signal_before_restoring_controls(
     monkeypatch,
     qtbot,

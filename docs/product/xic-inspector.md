@@ -34,15 +34,17 @@ Each run uses one selection strategy:
 | `attention` | Select items carrying owner-provided review conditions. |
 | `query` | Filter one actual evidence-witness chain by sample, candidate, group, precursor m/z, or RT apex, with offset/limit pagination. |
 
-The Untargeted GUI also offers manual **Export XIC Inspector** after a completed
-alignment publishes an evidence locator. The export settings dialog uses the
-same `SelectionRequest` defaults and limits. The dialog shows source sample
-stems beside their canonical IDs.
+End users open the Inspector without commands. When an Untargeted GUI run
+publishes an evidence locator, the GUI writes the default `sample` report as
+`xic_inspector.html` beside the evidence file, so the HTML can also be opened
+from the output folder.
 
-- **Export and Open** opens the successful HTML in the default browser.
-- **Open XIC Inspector** reopens the last successful report for the current
-  result, even after the source files of that report are removed.
-- A new run clears that Open target.
+- **開啟 Inspector** sits with the other result openers and opens the report
+  of the current result, even after its source files are removed.
+- **自訂匯出…** opens the settings dialog. The dialog uses the same
+  `SelectionRequest` defaults and limits, shows source sample stems beside
+  their canonical IDs, and its **Export and Open** opens the HTML.
+- A new run clears the open target.
 - Report progress, cancellation, and errors do not change science completion
   or Matrix publication.
 

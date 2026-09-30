@@ -106,9 +106,11 @@ workflows. The workspace does not create a separate product-authority lane.
 
 ### XIC Inspector export
 
-- A completed alignment with a published evidence locator enables manual
-  **Export XIC Inspector** in the results section.
-- Completion never starts a report.
+- A completed alignment with a published evidence locator starts the default
+  report in the background and writes `xic_inspector.html` beside the evidence.
+  **開啟 Inspector** opens it once ready; the default report does not open a
+  browser by itself.
+- **自訂匯出…** opens the settings dialog for another selection or path.
 - The settings dialog reads source sample metadata in the background. The
   dialog displays stems and submits canonical sample IDs.
 - The dialog offers:
@@ -119,7 +121,7 @@ workflows. The workspace does not create a separate product-authority lane.
   - a query offset;
   - an HTML output path.
 - **Export and Open** opens the completed HTML in the default browser.
-  **Open XIC Inspector** can later reopen that HTML without the source files.
+  **開啟 Inspector** can later reopen the latest HTML without the source files.
 - The report uses the [shared Inspector API](xic-inspector.md), including its
   source binding and error/cancellation rules.
 - The GUI does not re-read RAW or alter the Matrix.
