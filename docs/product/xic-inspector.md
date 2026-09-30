@@ -82,7 +82,8 @@ transition is the group query ID. Each trace ID is a candidate query ID.
 - Each transition carries a fixed `review_rt_window` and a `quality_flags`
   JSON object. `quality_flags` preserves transition-level gate labels,
   identity decisions, counts, Δm/z, ΔRT, ratios, and other diagnostic text or
-  numeric facts.
+  numeric facts. The item list and summary state the sample and flag counts;
+  the flags themselves open through the transition's quality-flag record.
 - Each trace carries the sample ID and label, role, RAW identity, extraction
   m/z, ppm and RT window, producer and version, and its own quality flags.
 - An available trace carries paired `ChromatogramCurve(rt, intensity)` raw and
@@ -167,7 +168,9 @@ Inspector.
   solid for initial Discovery, long-dashed for reacquired, and dotted for
   Backfill.
 - The sample legend names each origin. An unavailable origin uses a separate
-  dash.
+  dash when another sample of the item records an origin. An item with no
+  recorded origin draws solid lines, because line style has nothing to
+  distinguish.
 - A physical direct-observation cell is not by itself evidence of initial
   Discovery support.
 
@@ -209,6 +212,8 @@ Inspector.
   records.
 - Full fields and exact identifiers remain available together on demand. A
   missing summary does not become generic filler.
+- A field value that is a serialized object or list is displayed as key-value
+  lines or a list, not as raw JSON text.
 - Curve provenance, quantitative decisions, and candidate exclusions have
   distinct entry labels.
 - An excluded candidate can open its recorded exclusion evidence even when no
@@ -237,7 +242,9 @@ Inspector.
 
 - Capture stage, signal type, and time axis are distinct.
 - Raw-time and aligned-time plots are shown together for comparison, with
-  separate zoom controls.
+  separate zoom controls. When the selected curves have no aligned
+  coordinates, the raw-time plot uses the full width and one line states that
+  the aligned plot is unavailable.
 - Aligned curves and peak marks use the formal calibration saved by the
   producer that built the groups.
 - The source adapter applies the stored sample knots to curve and peak times.
