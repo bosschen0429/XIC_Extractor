@@ -29,13 +29,43 @@ from xic_extractor.extraction.untargeted_cid_nl_real_data_inputs import (
 )
 from xic_extractor.extraction.untargeted_production_batch import (
     UntargetedCidNlProductionPlan,
-    _method_center_interval,
-    _physical_subject_units,
     cid_nl_composition,
-    mint_subject_membership_from_physical_units,
+)
+from xic_extractor.peak_detection.cid_nl_method_subject import (
+    CidNlPhysicalCandidateFact,
+    CidNlPhysicalProof,
+    cid_nl_method_center_interval,
+    group_cid_nl_physical_subject_units,
+    mint_cid_nl_subject_membership_from_physical_units,
 )
 from xic_extractor.processing_identity import AcquisitionSourceExpectation
 from xic_extractor.sample_metadata import SampleMetadata
+
+
+def _physical_subject_candidate_fact(
+    candidate: DiscoveryCandidate,
+    record: DiscoveryPhysicalFactRecord | None,
+) -> CidNlPhysicalCandidateFact:
+    facts = None if record is None else record.evaluation.facts
+    proof = None
+    if record is not None and facts is not None:
+        trace = record.acquired_trace.trace
+        proof = CidNlPhysicalProof(
+            acquisition_source_id=record.work_item.acquisition_source_id,
+            apex_rt_min=facts.apex_rt_min,
+            left_rt_min=facts.left_rt_min,
+            right_rt_min=facts.right_rt_min,
+            xic_mz=record.work_item.xic_mz,
+            xic_ppm_tol=record.work_item.xic_ppm_tol,
+            rt=trace.rt,
+            raw=trace.intensity,
+        )
+    return CidNlPhysicalCandidateFact(
+        candidate_id=candidate.candidate_id,
+        physical_mz=candidate.physical_mz,
+        configured_neutral_loss_da=candidate.configured_neutral_loss_da,
+        proof=proof,
+    )
 
 
 def prepare_indexed_untargeted_plan(
@@ -124,16 +154,18 @@ def prepare_indexed_untargeted_plan(
             units.append((requirement, (ids[0],)))
             return
         candidates, records = load_inputs(tuple(ids))
-        local_units = _physical_subject_units(
-            tuple(candidate for values in candidates.values() for candidate in values),
-            physical_records_by_candidate=records,
+        local_units = group_cid_nl_physical_subject_units(
+            tuple(
+                _physical_subject_candidate_fact(
+                    candidate, records.get(candidate.candidate_id)
+                )
+                for values in candidates.values()
+                for candidate in values
+            ),
             composition=composition,
             precursor_tolerance_ppm=settings.precursor_mz_tolerance_ppm,
         )
-        units.extend(
-            (loss, tuple(candidate.candidate_id for candidate in group))
-            for loss, group in local_units
-        )
+        units.extend(local_units)
 
     # Only same-source, same-apex, overlapping m/z cohorts can share a physical
     # core. Isolated entries require no curve hydration during planning.
@@ -141,7 +173,7 @@ def prepare_indexed_untargeted_plan(
         cohort: list[str] = []
         upper = float("-inf")
         for cid in sorted(ids, key=lambda key: (precursor_by_id[key], key)):
-            lower, next_upper = _method_center_interval(
+            lower, next_upper = cid_nl_method_center_interval(
                 precursor_by_id[cid], settings.precursor_mz_tolerance_ppm
             )
             if cohort and lower > upper:
@@ -158,10 +190,10 @@ def prepare_indexed_untargeted_plan(
             unit[1],
         )
     )
-    subject_batch = mint_subject_membership_from_physical_units(
+    subject_batch = mint_cid_nl_subject_membership_from_physical_units(
         subject_units=tuple(units),
         precursor_by_id=precursor_by_id,
-        settings=settings,
+        precursor_tolerance_ppm=settings.precursor_mz_tolerance_ppm,
         composition=composition,
     )
     receipts = source.batch.candidate_receipts

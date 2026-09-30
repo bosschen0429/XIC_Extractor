@@ -85,11 +85,45 @@ from xic_extractor.extraction.untargeted_cid_nl_real_data_runtime import (
     UntargetedCidNlRealDataRuntimeJob,
     build_untargeted_cid_nl_sample_runtime_jobs,
 )
+from xic_extractor.peak_detection.cid_nl_method_subject import (
+    CidNlPhysicalCandidateFact,
+    CidNlPhysicalProof,
+    group_cid_nl_physical_subject_units,
+)
 from xic_extractor.peak_detection.physical_peak_evaluation import (
     evaluate_physical_peak,
     prepare_physical_signal,
 )
 from xic_extractor.sample_metadata import SampleMetadata
+
+
+def _physical_subject_facts(candidates, records):
+    facts = []
+    for candidate in candidates:
+        record = records.get(candidate.candidate_id)
+        selected = None if record is None else record.evaluation.facts
+        proof = None
+        if record is not None and selected is not None:
+            trace = record.acquired_trace.trace
+            proof = CidNlPhysicalProof(
+                acquisition_source_id=record.work_item.acquisition_source_id,
+                apex_rt_min=selected.apex_rt_min,
+                left_rt_min=selected.left_rt_min,
+                right_rt_min=selected.right_rt_min,
+                xic_mz=record.work_item.xic_mz,
+                xic_ppm_tol=record.work_item.xic_ppm_tol,
+                rt=trace.rt,
+                raw=trace.intensity,
+            )
+        facts.append(
+            CidNlPhysicalCandidateFact(
+                candidate_id=candidate.candidate_id,
+                physical_mz=candidate.physical_mz,
+                configured_neutral_loss_da=candidate.configured_neutral_loss_da,
+                proof=proof,
+            )
+        )
+    return tuple(facts)
 
 
 def _assert_partition_composition_parity(
@@ -1083,17 +1117,15 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         )
         physical_facts[path.stem] = record.evaluation.facts
     if family_precursor_delta:
-        from xic_extractor.extraction import (
-            untargeted_cid_nl_production_batch as production_owner,
-        )
-
-        proof_units = production_owner._physical_subject_units(
-            tuple(
-                candidate
-                for sample_candidates in candidates.values()
-                for candidate in sample_candidates
+        proof_units = group_cid_nl_physical_subject_units(
+            _physical_subject_facts(
+                tuple(
+                    candidate
+                    for sample_candidates in candidates.values()
+                    for candidate in sample_candidates
+                ),
+                source_records,
             ),
-            physical_records_by_candidate=source_records,
             composition=None,
             precursor_tolerance_ppm=settings.precursor_mz_tolerance_ppm,
         )
@@ -2385,8 +2417,9 @@ def _subject_proof_record(
                 right_rt_min=bounds[1],
             )
         ),
-        rt=rt,
-        raw=raw,
+        acquired_trace=SimpleNamespace(
+            trace=SimpleNamespace(rt=rt, intensity=raw)
+        ),
     )
 
 
@@ -2427,10 +2460,6 @@ def test_physical_subject_units_require_complete_common_proof(
     masses: tuple[float, ...],
     expected_units: tuple[tuple[int, ...], ...],
 ) -> None:
-    from xic_extractor.extraction import (
-        untargeted_cid_nl_production_batch as production_owner,
-    )
-
     raw_path = tmp_path / "S1.synthetic"
     raw_path.write_bytes(b"physical-subject-units:S1")
     settings = replace(
@@ -2466,19 +2495,28 @@ def test_physical_subject_units_require_complete_common_proof(
         records[candidates[1].candidate_id] = _subject_proof_record(
             candidates[1], apex=7.51
         )
-    elif scenario == "far":
+    input_facts = _physical_subject_facts(candidates, records)
+    if scenario == "far":
 
         class TraceMustStayLazy:
             def __iter__(self):
                 raise AssertionError("far-mass candidates must not read trace arrays")
 
-        for record in records.values():
-            record.rt = TraceMustStayLazy()
-            record.raw = TraceMustStayLazy()
+        assert all(fact.proof is not None for fact in input_facts)
+        input_facts = tuple(
+            replace(
+                fact,
+                proof=replace(
+                    fact.proof,
+                    rt=TraceMustStayLazy(),
+                    raw=TraceMustStayLazy(),
+                ),
+            )
+            for fact in input_facts
+        )
 
-    units = production_owner._physical_subject_units(
-        candidates,
-        physical_records_by_candidate=records,
+    units = group_cid_nl_physical_subject_units(
+        input_facts,
         composition=None,
         precursor_tolerance_ppm=20.0,
     )
@@ -2488,7 +2526,7 @@ def test_physical_subject_units_require_complete_common_proof(
     }
     assert (
         tuple(
-            tuple(candidate_index[candidate.candidate_id] for candidate in unit)
+            tuple(candidate_index[candidate_id] for candidate_id in unit)
             for _requirement, unit in units
         )
         == expected_units
@@ -2533,10 +2571,6 @@ def test_subject_planning_uses_physical_mass_without_rewriting_seed_receipts(
 def test_physical_subject_units_keep_unproven_candidates_singleton(
     tmp_path: Path,
 ) -> None:
-    from xic_extractor.extraction import (
-        untargeted_cid_nl_production_batch as production_owner,
-    )
-
     raw_path = tmp_path / "S1.synthetic"
     raw_path.write_bytes(b"unproven-subject-units:S1")
     settings = replace(
@@ -2554,11 +2588,11 @@ def test_physical_subject_units_keep_unproven_candidates_singleton(
         for index in range(2)
     )
 
-    units = production_owner._physical_subject_units(
-        candidates,
-        physical_records_by_candidate={
-            candidates[0].candidate_id: _subject_proof_record(candidates[0])
-        },
+    units = group_cid_nl_physical_subject_units(
+        _physical_subject_facts(
+            candidates,
+            {candidates[0].candidate_id: _subject_proof_record(candidates[0])},
+        ),
         composition=None,
         precursor_tolerance_ppm=20.0,
     )
