@@ -410,6 +410,9 @@ def test_physical_mass_change_preserves_scan_evidence_and_requantifies(
     import json
     from types import SimpleNamespace
 
+    from xic_extractor.configuration.signal_processing_profile import (
+        SignalProcessingProfile,
+    )
     from xic_extractor.discovery.grouping import group_discovery_seeds
     from xic_extractor.discovery.ms1_backfill import (
         _backfill_ms1_candidates_with_acquisition,
@@ -423,9 +426,6 @@ def test_physical_mass_change_preserves_scan_evidence_and_requantifies(
     from xic_extractor.peak_detection.search_scope import (
         PHYSICAL_CAPTURE_INPUT_KEY,
         physical_capture_input_payload,
-    )
-    from xic_extractor.peak_detection.signal_processing_profile import (
-        SignalProcessingProfile,
     )
     from xic_extractor.processing_identity import (
         build_processing_request_identity,
