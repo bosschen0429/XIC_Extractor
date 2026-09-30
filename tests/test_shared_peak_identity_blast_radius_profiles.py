@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from xic_extractor.alignment.shared_peak_identity_explanation.blast_radius import (
+from xic_extractor.diagnostics.shared_peak_identity_explanation.blast_radius import (
     BlastRadiusClassProfile,
     build_class_profiles,
 )

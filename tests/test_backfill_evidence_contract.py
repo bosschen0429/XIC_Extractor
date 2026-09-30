@@ -15,14 +15,14 @@ from xic_extractor.alignment.backfill_evidence_contract import (
     EvidenceClaimState,
     SkippedEvidenceOwnerBindings,
 )
-from xic_extractor.alignment.backfill_evidence_tsv import (
+from xic_extractor.alignment.backfill_scope import (
+    SkippedEvidenceRecord,
+)
+from xic_extractor.diagnostics.backfill_evidence.tsv import (
     iter_backfill_evidence_tsv,
     iter_skipped_evidence_tsv,
     lookup_backfill_evidence_tsv,
     lookup_skipped_evidence_tsv,
-)
-from xic_extractor.alignment.backfill_scope import (
-    SkippedEvidenceRecord,
 )
 
 

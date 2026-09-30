@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from xic_extractor.alignment.shared_peak_identity_explanation.classifier import (
+from xic_extractor.diagnostics.shared_peak_identity_explanation.classifier import (
     build_slice0_run_facts,
     classify_explanations,
 )
-from xic_extractor.alignment.shared_peak_identity_explanation.oracle import (
+from xic_extractor.diagnostics.shared_peak_identity_explanation.oracle import (
     ManualOracleRow,
     load_manual_oracle,
 )

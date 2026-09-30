@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from xic_extractor.alignment.shared_peak_identity_explanation.blast_radius import (
+from xic_extractor.diagnostics.shared_peak_identity_explanation.blast_radius import (
     build_blast_radius_manifest,
 )
 

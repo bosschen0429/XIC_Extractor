@@ -16,18 +16,18 @@ from xic_extractor.alignment.backfill_evidence_contract import (
     EvidenceClaimState,
     SkippedEvidenceOwnerBindings,
 )
-from xic_extractor.alignment.backfill_evidence_parquet import (
+from xic_extractor.diagnostics.backfill_evidence.bundle import (
+    PARQUET_SHADOW_BUNDLE_SCHEMA_VERSION,
+    open_backfill_evidence_parquet_shadow_bundle,
+    write_backfill_evidence_parquet_shadow_bundle,
+)
+from xic_extractor.diagnostics.backfill_evidence.parquet import (
     iter_backfill_evidence_parquet,
     iter_skipped_evidence_parquet,
     lookup_backfill_evidence_parquet,
     lookup_skipped_evidence_parquet,
 )
-from xic_extractor.alignment.backfill_evidence_parquet_bundle import (
-    PARQUET_SHADOW_BUNDLE_SCHEMA_VERSION,
-    open_backfill_evidence_parquet_shadow_bundle,
-    write_backfill_evidence_parquet_shadow_bundle,
-)
-from xic_extractor.alignment.backfill_evidence_tsv import (
+from xic_extractor.diagnostics.backfill_evidence.tsv import (
     iter_backfill_evidence_tsv,
     iter_skipped_evidence_tsv,
     lookup_backfill_evidence_tsv,
@@ -426,7 +426,9 @@ def test_shadow_bundle_rejects_source_replacement_during_conversion(
     source_index: int,
     source_label: str,
 ) -> None:
-    from xic_extractor.alignment import backfill_evidence_parquet_bundle
+    from xic_extractor.diagnostics.backfill_evidence import (
+        bundle as backfill_evidence_parquet_bundle,
+    )
 
     sources = _sources(tmp_path)
     source_path = sources[source_index]
@@ -606,7 +608,9 @@ def test_failed_shadow_validation_never_publishes_final_directory(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from xic_extractor.alignment import backfill_evidence_parquet_bundle
+    from xic_extractor.diagnostics.backfill_evidence import (
+        bundle as backfill_evidence_parquet_bundle,
+    )
 
     backfill, skipped, metadata = _sources(tmp_path)
     output_dir = tmp_path / "shadow"
@@ -650,7 +654,9 @@ def test_missing_optional_dependency_has_actionable_error(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from xic_extractor.alignment import backfill_evidence_parquet
+    from xic_extractor.diagnostics.backfill_evidence import (
+        parquet as backfill_evidence_parquet,
+    )
 
     def missing_pyarrow():
         raise RuntimeError(

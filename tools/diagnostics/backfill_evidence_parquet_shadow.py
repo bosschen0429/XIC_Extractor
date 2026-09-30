@@ -8,7 +8,7 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
-from xic_extractor.alignment.backfill_evidence_parquet_bundle import (
+from xic_extractor.diagnostics.backfill_evidence.bundle import (
     open_backfill_evidence_parquet_shadow_bundle,
     write_backfill_evidence_parquet_shadow_bundle,
 )
