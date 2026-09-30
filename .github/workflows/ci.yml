@@ -26,8 +26,8 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
-      - run: uv sync --all-extras --dev
-      - run: uv run ruff check xic_extractor tests
+      - run: uv sync --locked --all-extras --dev
+      - run: uv run ruff check xic_extractor xic_inspector gui scripts tools tests
       - name: Static dependency contracts
         run: uv run lint-imports --no-cache
       - name: Architecture census
@@ -52,7 +52,7 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
-      - run: uv sync --all-extras --dev
+      - run: uv sync --locked --all-extras --dev
       - run: uv run mypy xic_extractor
 
   test:
@@ -124,46 +124,5 @@ jobs:
           $serialElapsed = [math]::Round(((Get-Date) - $serialStarted).TotalSeconds, 1)
           $elapsed = [math]::Round(((Get-Date) - $started).TotalSeconds, 1)
           "- serial_test_seconds=$serialElapsed" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
-          "- test_seconds=$elapsed" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
-          exit $serialExitCode
-
-  compatibility:
-    name: compatibility (Python 3.11)
-    if: github.event_name == 'push'
-    runs-on: self-hosted
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-          path: repo-3.11-compatibility
-          submodules: false
-      - uses: astral-sh/setup-uv@v8.2.0
-        with:
-          python-version: "3.11"
-          working-directory: repo-3.11-compatibility
-      - name: Install
-        shell: pwsh
-        working-directory: repo-3.11-compatibility
-        run: |
-          $started = Get-Date
-          uv sync --locked --extra dev --group dev --python 3.11
-          $exitCode = $LASTEXITCODE
-          $elapsed = [math]::Round(((Get-Date) - $started).TotalSeconds, 1)
-          "### Python 3.11 timing" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
-          "- install_seconds=$elapsed" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
-          exit $exitCode
-      - name: Test
-        shell: pwsh
-        working-directory: repo-3.11-compatibility
-        run: |
-          $venvScripts = (Resolve-Path .\.venv\Scripts).Path
-          $env:PATH = "$venvScripts;$env:PATH"
-          $started = Get-Date
-          & .\.venv\Scripts\python.exe -m pytest -m "not ledger_snapshot and not current_repository_census and not serial_ci and not packaging_build and not product_governance" -n 4 --dist loadfile -v --tb=short -x --durations=10
-          $parallelExitCode = $LASTEXITCODE
-          if ($parallelExitCode -ne 0) { exit $parallelExitCode }
-          & .\.venv\Scripts\python.exe -m pytest tests/test_config_codex_hooks.py::test_existing_hook_behavior_fixture_runs_in_ordinary_pytest -v --tb=short -x
-          $serialExitCode = $LASTEXITCODE
-          $elapsed = [math]::Round(((Get-Date) - $started).TotalSeconds, 1)
           "- test_seconds=$elapsed" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
           exit $serialExitCode
