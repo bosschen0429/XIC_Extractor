@@ -1,12 +1,208 @@
 from __future__ import annotations
 
 import zipfile
+from pathlib import Path
 from threading import Event
 from types import SimpleNamespace
 
 import pytest
 
 from gui.sections.discovery_method_section import POSITIVE_DISCOVERY_OVERRIDE_FIELDS
+
+
+@pytest.mark.parametrize(
+    "outcome",
+    [
+        "missing_dll", "worker_failed", "publication_failed",
+        "unwritable_output", "cancelled", "succeeded",
+    ],
+)
+def test_real_discovery_view_restores_controls_and_preserves_run_problem(
+    outcome, tmp_path, monkeypatch, qtbot
+) -> None:
+    import gui.views.untargeted_view as view_module
+    import gui.workers.discovery_worker as worker_module
+    from xic_extractor.discovery.pipeline import (
+        DiscoveryProcessExecutionError,
+        DiscoverySampleProcessError,
+    )
+    from xic_extractor.raw_reader import RawReaderError, preflight_raw_reader
+
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    raw_path = raw_dir / "sample.raw"
+    raw_path.write_bytes(b"synthetic input")
+    dll_dir = tmp_path / "empty-dll"
+    dll_dir.mkdir()
+    output_dir = tmp_path / "requested-output"
+    stale_matrix = output_dir / "alignment_matrix.tsv"
+    if outcome == "unwritable_output":
+        output_dir.write_bytes(b"a file blocks the requested output directory")
+    else:
+        output_dir.mkdir()
+        stale_matrix.write_text("previous attempt", encoding="utf-8")
+    request = worker_module.DiscoveryRequest(
+        mode="discovery_only", preset="dna_dr", tuning_overrides={},
+        raw_dir=raw_dir, raw_file=None, dll_dir=dll_dir,
+        output_dir=output_dir, discovery_batch_index=None,
+    )
+    monkeypatch.setattr(view_module, "read_discovery_config", lambda: {})
+    monkeypatch.setattr(view_module, "write_discovery_config", lambda config: None)
+    if outcome != "missing_dll":
+        monkeypatch.setattr(
+            worker_module, "_raw_paths_from_dir", lambda *args: (raw_path,)
+        )
+    output_errors = []
+
+    def batch(*args, output_dir, progress_callback, **kwargs):
+        progress_callback(0, 1, raw_path.name)
+        if outcome == "missing_dll":
+            errors = preflight_raw_reader(
+                dll_dir,
+                import_module_func=lambda name: SimpleNamespace(
+                    get_runtime_info=lambda: None
+                ),
+            )
+            raise RawReaderError(" ".join(errors))
+        if outcome == "worker_failed":
+            raise DiscoveryProcessExecutionError(
+                DiscoverySampleProcessError(
+                    0, "sample", str(raw_path), "sample worker lost"
+                ),
+                completed_sample_stems=(), failed_sample_stems=("sample",),
+                cancelled_job_count=0, in_flight_job_count=0, unsubmitted_job_count=0,
+            )
+        if outcome == "publication_failed":
+            raise RuntimeError("Discovery publication aborted")
+        if outcome == "cancelled":
+            raise InterruptedError("Discovery cancelled before batch index publication")
+        try:
+            output_dir.mkdir(exist_ok=True)
+        except OSError as exc:
+            output_errors.append(str(exc))
+            raise
+        index_path = output_dir / "discovery_batch_index.csv"
+        index_path.write_text(
+            "sample,high_count,medium_count,low_count,candidate_count\n"
+            "sample.raw,0,0,0,0\n", encoding="utf-8"
+        )
+        return SimpleNamespace(batch_index_csv=index_path)
+
+    monkeypatch.setattr(worker_module, "run_discovery_batch", batch)
+    view = view_module.UntargetedView()
+    qtbot.addWidget(view)
+    view.resize(1000, 800)
+    view.show()
+    monkeypatch.setattr(view._source, "is_valid", lambda: True)
+    monkeypatch.setattr(view._source, "missing_fields", lambda: [])
+    monkeypatch.setattr(view._method, "is_valid", lambda: True)
+    monkeypatch.setattr(view, "_build_request", lambda config: request)
+    view.trigger_run()
+    worker = view._worker
+    assert worker is not None
+    try:
+        assert worker.wait(5000)
+        qtbot.wait(1)
+        assert not view.is_busy()
+        assert view._source.isEnabled() and view._method.isEnabled()
+        assert view._run._button.text() == "開始執行"
+        assert view._run._button.isEnabled()
+        if outcome == "succeeded":
+            assert view._terminal_state == "完成"
+            assert request.output_dir.joinpath("discovery_batch_index.csv").is_file()
+            assert not view._results._open_matrix.isEnabled()
+            return
+        message = view._results._error.text()
+        assert view._results._error.isVisible()
+        assert str(output_dir) in message
+        assert worker.stage in message
+        assert "本次可用產物：無" in message
+        assert "attempt" in message and "下一步" in message
+        assert str(stale_matrix) not in message
+        assert not view._results._open_matrix.isEnabled()
+        assert view._run._status_label.toolTip() in message
+        if outcome == "missing_dll":
+            assert "ThermoFisher.CommonCore.RawFileReader.dll" in message
+            assert str(dll_dir) in message and "open Settings" in message
+        elif outcome == "worker_failed":
+            assert "sample worker lost" in message
+        elif outcome == "publication_failed":
+            assert "Discovery publication aborted" in message
+        elif outcome == "unwritable_output":
+            assert len(output_errors) == 1 and output_errors[0] in message
+        else:
+            assert view._terminal_state == "已停止"
+            assert "Discovery cancelled before batch index publication" in message
+            assert view._results._title.text() == "本次執行已停止"
+    finally:
+        worker.stop()
+        assert worker.wait(5000)
+        view._worker = None
+
+
+@pytest.mark.parametrize("cancelled", [False, True])
+def test_failed_alignment_keeps_only_current_discovery_intermediate(
+    cancelled, tmp_path, monkeypatch, qtbot
+) -> None:
+    import gui.views.untargeted_view as view_module
+    import gui.workers.discovery_worker as worker_module
+
+    raw_path = tmp_path / "sample.raw"
+    raw_path.write_bytes(b"synthetic input")
+    output_dir = tmp_path / "output"
+    output_dir.mkdir()
+    stale_matrix = output_dir / "alignment_matrix.tsv"
+    stale_matrix.write_text("previous attempt", encoding="utf-8")
+    index_path = output_dir / "current-discovery.csv"
+    index_path.write_text(
+        "sample,high_count,medium_count,low_count,candidate_count\n"
+        "sample.raw,0,0,0,0\n", encoding="utf-8"
+    )
+    request = worker_module.DiscoveryRequest(
+        mode="full", preset="dna_dr", tuning_overrides={},
+        raw_dir=tmp_path, raw_file=None, dll_dir=tmp_path,
+        output_dir=output_dir, discovery_batch_index=None,
+    )
+    monkeypatch.setattr(view_module, "read_discovery_config", lambda: {})
+    monkeypatch.setattr(view_module, "write_discovery_config", lambda config: None)
+    monkeypatch.setattr(worker_module, "_raw_paths_from_dir", lambda *args: (raw_path,))
+    monkeypatch.setattr(
+        worker_module, "run_discovery_batch",
+        lambda *args, **kwargs: SimpleNamespace(batch_index_csv=index_path),
+    )
+    reason = (
+        "Alignment cancelled before Matrix publication"
+        if cancelled else "Matrix publication failed"
+    )
+
+    def fail_alignment(*args, **kwargs):
+        raise InterruptedError(reason) if cancelled else RuntimeError(reason)
+
+    monkeypatch.setattr(worker_module, "run_untargeted_application", fail_alignment)
+    view = view_module.UntargetedView()
+    qtbot.addWidget(view)
+    view.show()
+    monkeypatch.setattr(view._source, "is_valid", lambda: True)
+    monkeypatch.setattr(view._source, "missing_fields", lambda: [])
+    monkeypatch.setattr(view._method, "is_valid", lambda: True)
+    monkeypatch.setattr(view, "_build_request", lambda config: request)
+    view.trigger_run()
+    worker = view._worker
+    assert worker is not None
+    try:
+        assert worker.wait(5000)
+        qtbot.wait(1)
+        assert not view.is_busy()
+        message = view._results._error.text()
+        assert reason in message and "Alignment" in message
+        assert str(index_path) in message and "中間產物" in message
+        assert str(stale_matrix) not in message
+        assert not view._results._open_matrix.isEnabled()
+        assert view._source.isEnabled() and view._method.isEnabled()
+    finally:
+        worker.stop()
+        assert worker.wait(5000)
+        view._worker = None
 
 
 @pytest.mark.parametrize("outcome", ["failed", "cancelled", "succeeded"])
@@ -99,6 +295,10 @@ def test_discovery_stop_preserves_worker_terminal_outcome(
 class _SlowStoppingWorker:
     def __init__(self) -> None:
         self.stop_called = False
+        self.stage = "Alignment"
+        self.output_dir = Path("requested-output")
+        self.available_outputs = ()
+        self.cancellation_reason = "使用者要求停止"
 
     def stop(self) -> None:
         self.stop_called = True

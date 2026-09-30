@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from PyQt6.QtCore import QTimer, pyqtSignal
 from PyQt6.QtWidgets import (
     QHBoxLayout,
@@ -169,10 +171,14 @@ class RunSection(QWidget):
         self._button.setText("停止中…")
         self._status_label.setText("停止中，等待目前階段結束")
 
-    def set_stopped(self) -> None:
+    def set_stopped(self, message: str = "") -> None:
         self._terminal = True
         self.set_running(False)
-        self._status_label.setText("已停止執行")
+        first_line = message.splitlines()[0] if message else "已停止執行"
+        self._status_label.setText(
+            f"已停止：{first_line[:180]}" if message else first_line
+        )
+        self._status_label.setToolTip(message)
         self._status_label.show()
         self._progress.hide()
 
@@ -199,3 +205,28 @@ class RunSection(QWidget):
             self.stop_clicked.emit()
             return
         self.run_clicked.emit()
+
+
+def format_run_problem(
+    reason: str,
+    *,
+    stage: str,
+    output_dir: Path,
+    available_outputs: tuple[tuple[str, Path], ...] = (),
+    cancelled: bool = False,
+) -> str:
+    """Render GUI-owned run facts without searching an output directory."""
+    parts = [f"{stage}：{reason}", f"要求的輸出位置：{output_dir}"]
+    if available_outputs:
+        parts.append("本次可用產物：")
+        parts.extend(f"{label}：{path}" for label, path in available_outputs)
+    else:
+        parts.append("本次可用產物：無；尚未取得本次成功發布的產物。")
+    parts.append("本次 attempt：GUI 尚未取得可供識別的 attempt ID。")
+    if cancelled:
+        parts.append("下一步：可檢查停止原因、調整設定後重新執行。")
+    elif any(word in reason.lower() for word in ("denied", "permission", "errno 13")):
+        parts.append("下一步：關閉占用的輸出檔，確認上述輸出資料夾可寫入，再重新執行。")
+    else:
+        parts.append("下一步：依照上述原因修正該階段的設定、輸入或輸出位置，再重新執行。")
+    return "\n".join(parts)

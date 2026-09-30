@@ -13,7 +13,7 @@ from gui.sections.discovery_method_section import DiscoveryMethodSection
 from gui.sections.discovery_results_section import DiscoveryResultsSection
 from gui.sections.discovery_samples_section import DiscoverySamplesSection
 from gui.sections.discovery_source_section import DiscoverySourceSection
-from gui.sections.run_section import RunSection
+from gui.sections.run_section import RunSection, format_run_problem
 from gui.ui import AnalysisWorkspace
 from gui.workers.discovery_worker import (
     DiscoveryMode,
@@ -282,24 +282,39 @@ class UntargetedView(QWidget):
     def _on_error(self, worker: DiscoveryWorker, message: str) -> None:
         if self._worker is not worker:
             return
+        details = format_run_problem(
+            message,
+            stage=worker.stage,
+            output_dir=worker.output_dir,
+            available_outputs=worker.available_outputs,
+        )
         self._worker = None
         self._stop_requested = False
         self._terminal_state = "執行失敗"
         self._run.set_running(False)
-        self._run.set_error(message)
+        self._run.set_error(details)
         self._restore_controls()
-        self._results.show_error(message)
+        self._results.show_error(details)
         self._workspace.reveal(self._results)
         self.status_message.emit(f"執行失敗: {message}", 5000)
 
     def _on_cancelled(self, worker: DiscoveryWorker) -> None:
         if self._worker is not worker:
             return
+        details = format_run_problem(
+            worker.cancellation_reason,
+            stage=worker.stage,
+            output_dir=worker.output_dir,
+            available_outputs=worker.available_outputs,
+            cancelled=True,
+        )
         self._worker = None
         self._stop_requested = False
         self._terminal_state = "已停止"
-        self._run.set_stopped()
+        self._run.set_stopped(details)
         self._restore_controls()
+        self._results.show_error(details, cancelled=True)
+        self._workspace.reveal(self._results)
         self.status_message.emit("已停止執行", 3000)
 
     def _restore_controls(self) -> None:
