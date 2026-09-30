@@ -11,15 +11,15 @@ from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.owner_build_route_receipt import (
     _mint_retained_untargeted_cid_nl_route_receipt,
 )
-from xic_extractor.alignment.pipeline_outputs import (
-    AlignmentRunOutputs as _AlignmentRunOutputs,
-)
 from xic_extractor.applications.untargeted import application as untargeted_application
 from xic_extractor.config import ExtractionConfig
 from xic_extractor.configuration.execution_profile import DEFAULT_ALIGNMENT_WORKERS
 from xic_extractor.discovery.pipeline import (
     DiscoveryProcessExecutionError,
     DiscoverySampleProcessError,
+)
+from xic_extractor.output.alignment.pipeline_outputs import (
+    AlignmentRunOutputs as _AlignmentRunOutputs,
 )
 from xic_extractor.sample_metadata import SampleMetadata
 

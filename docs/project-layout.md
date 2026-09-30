@@ -34,6 +34,7 @@ XIC_Extractor/
 │   │   └── result/             科學結果與 application 結果
 │   ├── execution/             attempt、工作分區、workers、結果暫存與 recovery
 │   ├── output/                CSV／workbook／HTML 等輸出程式
+│   │   └── alignment/         Matrix 格式、artifact 選擇、串流／實體化與 atomic publishing
 │   ├── instrument_qc/         儀器 QC、校正與其報告流程
 │   ├── diagnostics/           可重用的診斷與說明工具
 │   └── *.py                   RAW adapter、共享模型／規則、公開入口

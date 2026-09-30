@@ -16,7 +16,7 @@ from xic_extractor.alignment.matrix import (
     AlignmentRowLike,
 )
 from xic_extractor.alignment.models import AlignmentCluster
-from xic_extractor.alignment.tsv_writer import write_safe_alignment_tsv
+from xic_extractor.output.alignment.tsv_writer import write_safe_alignment_tsv
 
 PROVISIONAL_VALIDATION_STATUS = "diagnostic_only"
 PROVISIONAL_MATRIX_SCHEMA_VERSION = "untargeted_provisional_matrix"

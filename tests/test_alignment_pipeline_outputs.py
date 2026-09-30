@@ -4,18 +4,21 @@ from pathlib import Path
 
 import pytest
 
-import xic_extractor.alignment.pipeline_outputs as pipeline_outputs_module
+import xic_extractor.output.alignment.pipeline_outputs as pipeline_outputs_module
 from tests.alignment_pipeline_helpers import matrix as _matrix
 from tests.alignment_pipeline_helpers import peak_config as _peak_config
 from xic_extractor.alignment import AlignmentConfig
-from xic_extractor.alignment import artifact_write_receipts as receipts_module
-from xic_extractor.alignment.artifact_write_receipts import (
+from xic_extractor.alignment.production_decisions import build_production_decisions
+from xic_extractor.diagnostics.timing import TimingRecorder
+from xic_extractor.output.alignment import artifact_write_receipts as receipts_module
+from xic_extractor.output.alignment.artifact_write_receipts import (
     AlignmentArtifactFingerprintBatch,
     AlignmentArtifactFingerprintReceipt,
 )
-from xic_extractor.alignment.pipeline_outputs import alignment_metadata, output_paths
-from xic_extractor.alignment.production_decisions import build_production_decisions
-from xic_extractor.diagnostics.timing import TimingRecorder
+from xic_extractor.output.alignment.pipeline_outputs import (
+    alignment_metadata,
+    output_paths,
+)
 from xic_extractor.processing_identity import (
     FileContentFingerprint,
     fingerprint_file_content,

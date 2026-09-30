@@ -10,6 +10,7 @@ import pytest
 
 import xic_extractor.applications.untargeted.application as application_module
 import xic_extractor.applications.untargeted.publication as publication_module
+import xic_extractor.output.alignment.pipeline_outputs as output_owner
 from tests.alignment_pipeline_helpers import matrix as _matrix
 from tests.alignment_pipeline_helpers import peak_config as _peak_config
 from tests.alignment_pipeline_helpers import write_batch as _write_batch
@@ -111,14 +112,14 @@ def test_pure_cid_nl_wrapper_reports_retained_route_and_typed_handoff(
         complete,
     )
     monkeypatch.setattr(
-        publication_module,
+        output_owner,
         "project_completed_untarget_batch_writer_inputs",
         lambda value, **_kwargs: (
             writer_inputs if value is completed.application_result else pytest.fail()
         ),
     )
     monkeypatch.setattr(
-        publication_module,
+        output_owner,
         "supports_streamed_untargeted_outputs",
         lambda _outputs: False,
     )
@@ -150,7 +151,7 @@ def test_pure_cid_nl_wrapper_reports_retained_route_and_typed_handoff(
 
         yield SimpleNamespace(consume_child=lambda _child: None, finalize=finalize)
 
-    monkeypatch.setattr(publication_module, "write_outputs_atomic", write_outputs)
+    monkeypatch.setattr(output_owner, "write_outputs_atomic", write_outputs)
     monkeypatch.setattr(
         publication_module, "prepare_alignment_explanation", prepare_explanation
     )
@@ -234,12 +235,12 @@ def test_pure_cid_nl_cancellation_after_completion_skips_publication(
         lambda **_kwargs: completed,
     )
     monkeypatch.setattr(
-        publication_module,
+        output_owner,
         "project_completed_untarget_batch_writer_inputs",
         lambda _value: pytest.fail("cancelled run reached writer projection"),
     )
     monkeypatch.setattr(
-        publication_module,
+        output_owner,
         "write_outputs_atomic",
         lambda *_args, **_kwargs: pytest.fail("cancelled run published outputs"),
     )
@@ -284,7 +285,7 @@ def test_pure_cid_nl_cancellation_during_projection_skips_publication(
         return writer_inputs
 
     monkeypatch.setattr(
-        publication_module,
+        output_owner,
         "project_completed_untarget_batch_writer_inputs",
         project,
     )
@@ -294,7 +295,7 @@ def test_pure_cid_nl_cancellation_during_projection_skips_publication(
         lambda *_args, **_kwargs: nullcontext(SimpleNamespace(consume_child=None)),
     )
     monkeypatch.setattr(
-        publication_module,
+        output_owner,
         "write_outputs_atomic",
         lambda *_args, **_kwargs: pytest.fail("cancelled run published outputs"),
     )
@@ -437,12 +438,12 @@ def test_pure_cid_nl_projection_failure_publishes_no_owned_outputs(
         raise ValueError("invalid finalized projection")
 
     monkeypatch.setattr(
-        publication_module,
+        output_owner,
         "project_completed_untarget_batch_writer_inputs",
         reject_projection,
     )
     monkeypatch.setattr(
-        publication_module,
+        output_owner,
         "supports_streamed_untargeted_outputs",
         lambda _outputs: False,
     )
@@ -487,7 +488,6 @@ def test_pipeline_streams_partition_children_once_and_cleans_up(
     from xic_extractor.alignment.result.application_result import (
         FinalizedUntargetApplicationResult,
     )
-    from xic_extractor.alignment.tsv_writer import write_alignment_matrix_tsv
     from xic_extractor.diagnostics.alignment_explanation import (
         read_alignment_explanation,
     )
@@ -499,6 +499,7 @@ def test_pipeline_streams_partition_children_once_and_cleans_up(
     from xic_extractor.extraction.untargeted_execution import (
         execute_untargeted_plan,
     )
+    from xic_extractor.output.alignment.tsv_writer import write_alignment_matrix_tsv
 
     plan, _ = _plan(tmp_path, monkeypatch)
     config = AlignmentConfig(anchor_min_seed_events=1)
@@ -535,7 +536,7 @@ def test_pipeline_streams_partition_children_once_and_cleans_up(
             }
 
     if failure is None:
-        writer = publication_module.project_completed_untarget_batch_writer_inputs(
+        writer = output_owner.project_completed_untarget_batch_writer_inputs(
             completed.application_result
         )
         write_alignment_matrix_tsv(
@@ -592,19 +593,19 @@ def test_pipeline_streams_partition_children_once_and_cleans_up(
     monkeypatch.setattr(StreamedResultStore, "_read_record", counted_read)
 
     if failure == "projection":
-        project = publication_module.iter_completed_untarget_batch_writer_inputs
+        project = output_owner.iter_completed_untarget_batch_writer_inputs
 
         def fail_projection(*args, **kwargs):
             yield from project(*args, **kwargs)
             raise OSError("projection failed")
 
         monkeypatch.setattr(
-            publication_module,
+            output_owner,
             "iter_completed_untarget_batch_writer_inputs",
             fail_projection,
         )
     elif failure == "matrix":
-        from xic_extractor.alignment import pipeline_outputs
+        from xic_extractor.output.alignment import pipeline_outputs
 
         write_rows = pipeline_outputs.write_alignment_tsv_row_batches
 
@@ -856,17 +857,17 @@ def test_pure_cid_nl_targets_csv_integration(
         lambda **kwargs: captured.update(kwargs) or completed,
     )
     monkeypatch.setattr(
-        publication_module,
+        output_owner,
         "project_completed_untarget_batch_writer_inputs",
         lambda _value, **_kwargs: writer_inputs,
     )
     monkeypatch.setattr(
-        publication_module,
+        output_owner,
         "write_outputs_atomic",
         lambda *_args, **_kwargs: None,
     )
     monkeypatch.setattr(
-        publication_module,
+        output_owner,
         "supports_streamed_untargeted_outputs",
         lambda _outputs: False,
     )

@@ -2,19 +2,13 @@ from __future__ import annotations
 
 import math
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
-from xic_extractor.alignment.matrix import AlignedCell, AlignmentMatrix
+from xic_extractor.alignment.matrix import AlignedCell
+from xic_extractor.tabular_io import escape_excel_formula
 
 if TYPE_CHECKING:
     from xic_extractor.alignment.production_decisions import ProductionCellDecision
-
-
-def cells_by_cluster(matrix: AlignmentMatrix) -> dict[str, tuple[AlignedCell, ...]]:
-    grouped: dict[str, list[AlignedCell]] = {}
-    for cell in matrix.cells:
-        grouped.setdefault(cell.cluster_id, []).append(cell)
-    return {cluster_id: tuple(cells) for cluster_id, cells in grouped.items()}
 
 
 def count_status(cells: tuple[AlignedCell, ...], status: str) -> int:
@@ -61,15 +55,3 @@ def format_value(value: object) -> str:
 
 def format_float(value: float) -> str:
     return f"{value:.6g}"
-
-
-def escape_excel_formula(value: str) -> str:
-    if value.startswith(("=", "+", "-", "@")):
-        return f"'{value}"
-    return value
-
-
-def row_id(row: Any) -> str:
-    if hasattr(row, "feature_family_id"):
-        return str(row.feature_family_id)
-    return str(row.cluster_id)

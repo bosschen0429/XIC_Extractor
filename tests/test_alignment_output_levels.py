@@ -1,6 +1,6 @@
 import pytest
 
-from xic_extractor.alignment.output_levels import (
+from xic_extractor.output.alignment.output_levels import (
     EXPLANATION_ARTIFACT_NAME,
     artifact_names_for_output_level,
     parse_alignment_output_level,

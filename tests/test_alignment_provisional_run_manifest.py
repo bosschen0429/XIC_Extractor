@@ -13,9 +13,9 @@ from types import SimpleNamespace
 
 import pytest
 
-import xic_extractor.alignment.artifact_write_receipts as alignment_receipt_owner
-import xic_extractor.alignment.pipeline_outputs as pipeline_outputs_owner
 import xic_extractor.extraction.provisional_run_manifest as manifest_owner
+import xic_extractor.output.alignment.artifact_write_receipts as alignment_receipt_owner
+import xic_extractor.output.alignment.pipeline_outputs as pipeline_outputs_owner
 from tests.test_alignment_provisional_matrix import (
     _representative_matrix,
 )

@@ -34,7 +34,7 @@ feature-by-sample Matrix。兩者共用科學判斷，但保留不同搜尋政�
 | 既有 Python Targeted 入口 | [`extractor.run`](../xic_extractor/extractor.py) | 進入同一 application；`extractor.acquire` 是它使用的 acquisition 入口 |
 | Discovery 候選產生 | [`scripts/run_discovery.py`](../scripts/run_discovery.py) | [`discovery/pipeline.py`](../xic_extractor/discovery/pipeline.py) 的 `run_discovery`／`run_discovery_batch`，交出候選檔與 batch index |
 | Untargeted GUI 全流程 | [`gui/workers/discovery_worker.py`](../gui/workers/discovery_worker.py) | 呼叫 Discovery，再將 batch index 交給 Alignment |
-| Untargeted Alignment 與 Matrix | [`scripts/run_alignment.py`](../scripts/run_alignment.py)、[`gui/workers/discovery_worker.py`](../gui/workers/discovery_worker.py) | [`run_untargeted_application`](../xic_extractor/applications/untargeted/application.py) 準備輸入並呼叫 retained execution；[`publication`](../xic_extractor/applications/untargeted/publication.py) 消費完成結果、發布 [`AlignmentRunOutputs`](../xic_extractor/alignment/pipeline_outputs.py) 並關閉暫存 |
+| Untargeted Alignment 與 Matrix | [`scripts/run_alignment.py`](../scripts/run_alignment.py)、[`gui/workers/discovery_worker.py`](../gui/workers/discovery_worker.py) | [`run_untargeted_application`](../xic_extractor/applications/untargeted/application.py) 準備輸入並呼叫 retained execution；[`publication`](../xic_extractor/applications/untargeted/publication.py) 消費完成結果、發布 [`AlignmentRunOutputs`](../xic_extractor/output/alignment/pipeline_outputs.py) 並關閉暫存 |
 | 完成 Matrix 後的 feature 篩選 | [`scripts/run_feature_quality.py`](../scripts/run_feature_quality.py) | [`feature_quality.py`](../xic_extractor/feature_quality.py) 計算 availability；[`feature_quality_io.py`](../xic_extractor/feature_quality_io.py) 讀寫分析集合，保留既有值 |
 | 完成證據的只讀報告 | [`xic_inspector/cli.py`](../xic_inspector/cli.py) | [`api.generate_report`](../xic_inspector/api.py) 串起來源解讀、選擇及 HTML rendering |
 
@@ -53,7 +53,7 @@ feature-by-sample Matrix。兩者共用科學判斷，但保留不同搜尋政�
 | Targeted／Alignment RT-window MS2 擷取與 NL 解讀 | `acquisition/ms2_windows.py` 擷取單一樣本的有界視窗；`evidence/neutral_loss.py` 解讀已擷取事件 | 前者持有 reader 呼叫，後者只處理 `Ms2Window` 與候選幾何；Discovery 宣告 scan 的 strict receipt 保留原 owner |
 | Untargeted ISTD RAW 參考值擷取 | `acquisition/istd_reference.py` | 依既有 target 邊界擷取 trace 並呼叫單峰 owner；Alignment 的 drift evidence owner 建立 reference |
 | 排程、取消、清理 | `execution/` | partitions 排程；workers 執行；attempt 決定一次執行是否完成 |
-| 欄位、workbook 或 Matrix 格式 | `output/`、Alignment 的輸出 adapter | 呈現 owner 的答案；不要從格式變更反向改變選峰或計數 |
+| 欄位、workbook 或 Matrix 格式 | `output/`；Alignment Matrix 的 schema、格式及 atomic publishing 在 `output/alignment/` | 呈現 owner 的答案；不要從格式變更反向改變選峰或計數 |
 
 Package 名稱不是可強制的分層證明：`alignment/` 包含科學與外層 adapter，
 `extraction/` 也承載保留的 Untargeted 執行。純計算 module 的約束見下文；
@@ -202,8 +202,10 @@ policy; result writers consume the completed groups and cells.
 - `applications.untargeted.application.run_untargeted_application` prepares
   inputs, rejects output collisions before acquisition, and invokes retained
   CID-NL execution in `extraction/`. Its publication boundary consumes the
-  completed typed batch, projects it through Alignment's existing adapters,
-  and closes its private stores on every exit. CLI and GUI receive only
+  completed typed batch, delegates Matrix publishing to `output/alignment/`,
+  and closes its private stores on every exit. The output owner selects
+  streaming or materialization using Alignment's pure finalized projection.
+  CLI and GUI receive only
   published output paths and durable evidence locators. Alignment owns neither
   this application lifecycle nor a duplicate runtime or writer transaction.
 - Retained CID-NL execution partitions complete subjects across the sample cohort
@@ -244,13 +246,13 @@ Use this map to choose the reason a package changes. File placement is owned by
 | --- | --- | --- |
 | `configuration/` | settings, target/config loading, validation, typed runtime settings | extraction or rendering |
 | `applications/targeted/` | Formal Targeted application composition and request/result interface; product state, role/applicability policy, counted detection and reason overlays; pure product result model | scientific peak selection, numeric cell decisions, RAW acquisition or rendering |
-| `applications/untargeted/` | Untargeted input preparation, execution-to-publication orchestration, cancellation and completed-store lifetime; publication through existing Alignment projections and writers | scientific grouping, cell decisions, a second runtime owner or writer algorithm |
+| `applications/untargeted/` | Untargeted input preparation, execution-to-publication orchestration, cancellation, completed-store and explanation lifetime; delegates Matrix publishing to `output/alignment/` | scientific grouping, cell decisions, a second runtime owner or writer algorithm |
 | `discovery/` | general candidate discovery, seed generation, workflow-neutral discovery facts | matrix decisions or target-list policy |
 | `execution/` | generic attempt execution/finalization, partition scheduling, reusable worker admission pools, one-shot process jobs, streamed result storage, and recovery | method-specific science, subject splitting, or writer authority |
 | `extraction/` | Targeted acquisition and production workflow adapters, jobs, windowing, drift, backend coordination, publication mechanics, and retained Untargeted batch execution (`untargeted_input_planning`, `untargeted_execution`, `untargeted_partition_composition`, `untargeted_alignment`) | application composition, GUI, or Alignment decisions |
 | `peak_detection/` | physical observations, hypotheses, resolvers, boundaries, integration, evidence composition | cross-sample grouping, workflow policy, or writers |
 | `alignment/` | cross-sample grouping, refinement/repair composition, Alignment adapters and renderers | a second runtime owner, mutable transport authority, or Targeted-only science |
-| `output/` | workbook/TSV/HTML schema rendering | evidence recomputation or RAW access |
+| `output/` | workbook/TSV/HTML schema rendering; `output/alignment/` owns Matrix artifact selection, streaming/materialization coordination, atomic writes and fingerprint receipts | evidence recomputation, application store lifetime or RAW access |
 | `diagnostics/` | reusable diagnostic models, summaries, classification, and alignment explanation persistence (`alignment_explanation`) | CLI parsing, production mutation, or domain recomputation |
 | `xic_inspector/` | installed read-only review API/CLI, source adapters, canonical selection, and self-contained offline HTML rendering | RAW acquisition, scientific recomputation, identity/Matrix decisions, or write authority |
 | `gui/` and `scripts/` | interaction and thin orchestration | reusable domain behavior |

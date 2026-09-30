@@ -9,12 +9,13 @@ from types import SimpleNamespace
 
 import pytest
 
-import xic_extractor.alignment.pipeline_outputs as pipeline_outputs
+import xic_extractor.output.alignment.pipeline_outputs as pipeline_outputs
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.matrix import AlignedCell, AlignmentMatrix
-from xic_extractor.alignment.pipeline_outputs import AlignmentRunOutputs
 from xic_extractor.alignment.production_decisions import build_production_decisions
-from xic_extractor.alignment.provisional_matrix import (
+from xic_extractor.diagnostics.timing import TimingRecorder
+from xic_extractor.output.alignment.pipeline_outputs import AlignmentRunOutputs
+from xic_extractor.output.alignment.provisional_matrix import (
     PROVISIONAL_VALIDATION_STATUS,
     build_provisional_matrix_projection,
     write_provisional_identity_tsv,
@@ -22,7 +23,6 @@ from xic_extractor.alignment.provisional_matrix import (
     write_provisional_provenance_tsv,
     write_provisional_summary_json,
 )
-from xic_extractor.diagnostics.timing import TimingRecorder
 from xic_extractor.peak_detection.integration_result import IntegrationResult
 from xic_extractor.peak_detection.ms1_morphology import MS1_MORPHOLOGY_AREA_SOURCE
 

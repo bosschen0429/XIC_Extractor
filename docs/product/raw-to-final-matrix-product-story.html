@@ -874,10 +874,6 @@
                 <td>Matrix 每一行的 identity sidecar：peak hypothesis ID、source families、split 狀態。</td>
               </tr>
               <tr>
-                <td><code>alignment_results.xlsx</code></td>
-                <td>多 sheet 工作簿：Matrix / Review / Audit / Cells。</td>
-              </tr>
-              <tr>
                 <td><code>run_metadata.json</code></td>
                 <td>Pipeline 參數、timing、版本資訊。</td>
               </tr>
@@ -890,8 +886,7 @@
               <ul>
 <li><code>xic_extractor/alignment/untargeted_finalized_matrix.py</code> — 建立 detected/backfilled/absent/ambiguous cells</li>
                 <li><code>xic_extractor/alignment/production_decisions.py</code> — row/cell production decision</li>
-                <li><code>xic_extractor/alignment/tsv_writer.py</code> — TSV 輸出</li>
-                <li><code>xic_extractor/alignment/xlsx_writer.py</code> — XLSX 多 sheet 輸出</li>
+                <li><code>xic_extractor/output/alignment/tsv_writer.py</code> — TSV 輸出</li>
               </ul>
             </div>
           </details>
@@ -968,8 +963,7 @@
 <li><code>xic_extractor/alignment/backfill_peak_fact.py</code></li>
             <li><code>xic_extractor/alignment/matrix_identity.py</code></li>
             <li><code>xic_extractor/alignment/production_decisions.py</code></li>
-            <li><code>xic_extractor/alignment/tsv_writer.py</code></li>
-            <li><code>xic_extractor/alignment/xlsx_writer.py</code></li>
+            <li><code>xic_extractor/output/alignment/tsv_writer.py</code></li>
           </ul>
         </section>
 

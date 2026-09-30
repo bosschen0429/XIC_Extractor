@@ -8,16 +8,12 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from xic_extractor.diagnostics.cid_nl_explanation import (
-        EvidenceLocator,
+    from xic_extractor.alignment.result.application_result import (
+        FinalizedUntargetApplicationResult,
+        FinalizedUntargetBatchApplicationResult,
     )
+    from xic_extractor.diagnostics.alignment_explanation import EvidenceLocator
 
-from xic_extractor.alignment.artifact_write_receipts import (
-    AlignmentArtifactFingerprintBatch,
-    AlignmentArtifactFingerprintReceipt,
-    _mint_alignment_artifact_fingerprint_batch,
-    _mint_alignment_artifact_fingerprint_receipt,
-)
 from xic_extractor.alignment.backfill.evaluation_coverage import (
     BackfillEvaluationCoverageBatch,
 )
@@ -36,20 +32,38 @@ from xic_extractor.alignment.ms1_index_source import (
     BackfillXicBackend,
     OwnerBuildXicBackend,
 )
-from xic_extractor.alignment.output_levels import (
+from xic_extractor.alignment.owner_build_route_receipt import OwnerBuildRouteReceipt
+from xic_extractor.alignment.production_decisions import ProductionDecisionSet
+from xic_extractor.alignment.untargeted_finalized_matrix import (
+    CompletedUntargetBatchWriterInputs,
+    completed_untarget_batch_sample_order,
+    iter_completed_untarget_batch_writer_inputs,
+    project_completed_untarget_batch_writer_inputs,
+)
+from xic_extractor.config import ExtractionConfig
+from xic_extractor.configuration.signal_processing_profile import (
+    DEFAULT_SIGNAL_PROCESSING_PROFILE,
+    SignalProcessingProfile,
+)
+from xic_extractor.diagnostics.timing import TimingRecorder
+from xic_extractor.output.alignment.artifact_write_receipts import (
+    AlignmentArtifactFingerprintBatch,
+    AlignmentArtifactFingerprintReceipt,
+    _mint_alignment_artifact_fingerprint_batch,
+    _mint_alignment_artifact_fingerprint_receipt,
+)
+from xic_extractor.output.alignment.output_levels import (
     AlignmentOutputLevel,
     artifact_names_for_output_level,
 )
-from xic_extractor.alignment.owner_build_route_receipt import OwnerBuildRouteReceipt
-from xic_extractor.alignment.production_decisions import ProductionDecisionSet
-from xic_extractor.alignment.provisional_matrix import (
+from xic_extractor.output.alignment.provisional_matrix import (
     build_provisional_matrix_projection,
     write_provisional_identity_tsv,
     write_provisional_matrix_tsv,
     write_provisional_provenance_tsv,
     write_provisional_summary_json,
 )
-from xic_extractor.alignment.tsv_writer import (
+from xic_extractor.output.alignment.tsv_writer import (
     write_alignment_backfill_cell_evidence_tsv,
     write_alignment_backfill_seed_audit_tsv,
     write_alignment_cells_tsv,
@@ -59,15 +73,6 @@ from xic_extractor.alignment.tsv_writer import (
     write_alignment_status_matrix_tsv,
     write_alignment_tsv_row_batches,
 )
-from xic_extractor.alignment.untargeted_finalized_matrix import (
-    CompletedUntargetBatchWriterInputs,
-)
-from xic_extractor.config import ExtractionConfig
-from xic_extractor.configuration.signal_processing_profile import (
-    DEFAULT_SIGNAL_PROCESSING_PROFILE,
-    SignalProcessingProfile,
-)
-from xic_extractor.diagnostics.timing import TimingRecorder
 from xic_extractor.processing_identity import fingerprint_file_content
 
 
@@ -82,7 +87,6 @@ class AlignmentRunOutputs:
     backfill_seed_audit_tsv: Path | None = None
     status_matrix_tsv: Path | None = None
     run_metadata_json: Path | None = None
-    identity_coherence_output_dir: Path | None = None
     provisional_matrix_tsv: Path | None = None
     provisional_identity_tsv: Path | None = None
     provisional_cell_provenance_tsv: Path | None = None
@@ -286,6 +290,59 @@ def alignment_metadata(
         ),
     }
     return metadata
+
+
+def write_completed_untargeted_outputs_atomic(
+    outputs: AlignmentRunOutputs,
+    completed: FinalizedUntargetBatchApplicationResult,
+    *,
+    metadata: dict[str, str],
+    alignment_config: AlignmentConfig,
+    timing_recorder: TimingRecorder,
+    consume_child: Callable[[FinalizedUntargetApplicationResult], None] | None = None,
+    ms1_apex_mz_by_candidate: Mapping[str, float] | None = None,
+    before_write: Callable[[], None] | None = None,
+    capture_artifact_fingerprints: bool = False,
+) -> tuple[int, AlignmentArtifactFingerprintBatch | None]:
+    """Publish completed matrix facts through the selected atomic output path."""
+    stream_outputs = supports_streamed_untargeted_outputs(outputs)
+    writer_inputs = None
+    if not stream_outputs:
+        with timing_recorder.stage("alignment.project_outputs"):
+            writer_inputs = project_completed_untarget_batch_writer_inputs(
+                completed,
+                consume_child=consume_child,
+                ms1_apex_mz_by_candidate=ms1_apex_mz_by_candidate,
+            )
+    if before_write is not None:
+        before_write()
+    with timing_recorder.stage("alignment.write_outputs"):
+        if stream_outputs:
+            return write_streamed_untargeted_outputs_atomic(
+                outputs,
+                iter_completed_untarget_batch_writer_inputs(
+                    completed,
+                    consume_child=consume_child,
+                    ms1_apex_mz_by_candidate=ms1_apex_mz_by_candidate,
+                ),
+                sample_order=completed_untarget_batch_sample_order(completed),
+                metadata=metadata,
+                alignment_config=alignment_config,
+                timing_recorder=timing_recorder,
+                capture_artifact_fingerprints=capture_artifact_fingerprints,
+            )
+        assert writer_inputs is not None
+        artifact_fingerprint_batch = write_outputs_atomic(
+            outputs,
+            writer_inputs.matrix,
+            metadata=metadata,
+            alignment_config=alignment_config,
+            backfill_peak_fact_provenance=EMPTY_BACKFILL_PEAK_FACT_PROVENANCE_BATCH,
+            production_decisions=writer_inputs.production_decisions,
+            timing_recorder=timing_recorder,
+            capture_artifact_fingerprints=capture_artifact_fingerprints,
+        )
+        return len(writer_inputs.matrix.clusters), artifact_fingerprint_batch
 
 
 def write_outputs_atomic(

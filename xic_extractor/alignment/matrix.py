@@ -101,3 +101,16 @@ class AlignmentMatrix:
     clusters: tuple[AlignmentCluster | AlignmentRowLike, ...]
     cells: tuple[AlignedCell, ...]
     sample_order: tuple[str, ...]
+
+
+def cells_by_cluster(matrix: AlignmentMatrix) -> dict[str, tuple[AlignedCell, ...]]:
+    grouped: dict[str, list[AlignedCell]] = {}
+    for cell in matrix.cells:
+        grouped.setdefault(cell.cluster_id, []).append(cell)
+    return {cluster_id: tuple(cells) for cluster_id, cells in grouped.items()}
+
+
+def row_id(row: Any) -> str:
+    if hasattr(row, "feature_family_id"):
+        return str(row.feature_family_id)
+    return str(row.cluster_id)

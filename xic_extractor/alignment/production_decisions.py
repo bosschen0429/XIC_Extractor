@@ -12,12 +12,16 @@ from xic_extractor.alignment.cell_quality import (
     build_cell_quality_decisions,
 )
 from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.alignment.matrix import AlignedCell, AlignmentMatrix
+from xic_extractor.alignment.matrix import (
+    AlignedCell,
+    AlignmentMatrix,
+    cells_by_cluster,
+    row_id,
+)
 from xic_extractor.alignment.matrix_identity import (
     MatrixIdentityRowDecision,
     build_matrix_identity_decisions,
 )
-from xic_extractor.alignment.output_rows import cells_by_cluster, row_id
 from xic_extractor.alignment.promotion_policy import (
     BACKFILL_CELL_EVIDENCE_REQUIRED_FLAG,
     LOW_MS1_COVERAGE_BLOCKED_REASON,

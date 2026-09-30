@@ -30,7 +30,6 @@ from xic_extractor.alignment.conservative_backfill import (
     map_conservative_backfill_candidates,
     mint_conservative_backfill_candidate_universe,
 )
-from xic_extractor.alignment.matrix_output_contract import canonical_mz_text
 from xic_extractor.alignment.production_acceptance import (
     CheckedProductionAcceptanceManifest,
     ProductionAcceptanceManifestError,
@@ -44,6 +43,7 @@ from xic_extractor.alignment.quant_matrix_version import (
 from xic_extractor.discovery.cid_nl_evidence_projection import (
     UntargetedCidNlProjectionRef,
 )
+from xic_extractor.output.alignment.matrix_output_contract import canonical_mz_text
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessmentRef,
     is_unsearched_cid_nl_discovery_assessment,

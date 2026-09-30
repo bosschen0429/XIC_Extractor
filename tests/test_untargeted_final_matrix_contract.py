@@ -8,7 +8,7 @@ from xic_extractor.alignment.production_decisions import (
     ProductionDecisionSet,
     build_production_decisions,
 )
-from xic_extractor.alignment.tsv_writer import (
+from xic_extractor.output.alignment.tsv_writer import (
     write_alignment_matrix_identity_tsv,
     write_alignment_matrix_tsv,
 )
