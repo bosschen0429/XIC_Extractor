@@ -5,12 +5,6 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from xic_extractor.diagnostics.diagnostic_io import (
-    bool_value,
-    optional_float,
-    read_tsv_required,
-    text_value,
-)
 from xic_extractor.diagnostics.targeted_ms1_shape_identity import (
     DECISION_AUTHORITY,
     SCHEMA_VERSION,
@@ -20,6 +14,12 @@ from xic_extractor.diagnostics.targeted_ms1_shape_identity import (
 from xic_extractor.extraction.result_assembly import reproject_extraction_result
 from xic_extractor.extraction.targeted_projection_reasons import (
     OWN_MAX_SAME_PEAK_SUPPORT_REASON,
+)
+from xic_extractor.tabular_io import (
+    bool_value,
+    optional_float,
+    read_tsv_required,
+    text_value,
 )
 from xic_extractor.targeted_ms1_shape_identity_policy import (
     EXPLICIT_SUPPORT_TSV_POLICY,

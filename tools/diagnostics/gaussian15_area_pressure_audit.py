@@ -7,7 +7,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from statistics import median
 
-from xic_extractor.diagnostics.diagnostic_io import (
+from xic_extractor.tabular_io import (
     optional_float,
     optional_int,
     read_tsv_required,

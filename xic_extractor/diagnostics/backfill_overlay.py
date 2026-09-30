@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 
-from xic_extractor.diagnostics.diagnostic_io import text_value
+from xic_extractor.tabular_io import text_value
 
 
 def selected_overlay_row(

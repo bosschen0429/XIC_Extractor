@@ -6,7 +6,6 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any, cast
 
-from tools.diagnostics.diagnostic_io import write_delimited_rows
 from tools.diagnostics.targeted_gt_alignment_audit_models import (
     DRIFT_MODE,
     DUPLICATE_MODE,
@@ -20,6 +19,7 @@ from tools.diagnostics.targeted_gt_alignment_audit_utils import (
     _format_float,
     _is_numeric_text,
 )
+from xic_extractor.tabular_io import write_delimited_rows
 
 
 def _write_report(

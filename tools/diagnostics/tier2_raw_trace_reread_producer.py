@@ -10,7 +10,6 @@ from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 
-from tools.diagnostics.diagnostic_io import file_sha256, read_tsv_required, write_tsv
 from xic_extractor.alignment.production_candidate_gate import (
     TIER2_RAW_MANIFEST_REQUIRED_COLUMNS,
     TIER2_TRACE_EVIDENCE_REQUIRED_COLUMNS,
@@ -25,6 +24,7 @@ from xic_extractor.alignment.tier2_trace_producer import (
     TraceLoader,
     build_tier2_trace_evidence_rows,
 )
+from xic_extractor.tabular_io import file_sha256, read_tsv_required, write_tsv
 
 REVIEW_REQUIRED_COLUMNS = (
     "feature_family_id",

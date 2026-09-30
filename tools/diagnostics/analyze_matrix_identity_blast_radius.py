@@ -12,7 +12,6 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
-from tools.diagnostics.diagnostic_io import write_tsv
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.machine_decision import (
     machine_decision_as_row,
@@ -24,6 +23,7 @@ from xic_extractor.alignment.primary_matrix_area import (
     MS1_MORPHOLOGY_PRIMARY_MATRIX_AREA_SOURCE,
 )
 from xic_extractor.peak_detection.hypotheses import IntegrationResult
+from xic_extractor.tabular_io import write_tsv
 
 REVIEW_REQUIRED = {"feature_family_id", "include_in_primary_matrix"}
 REVIEW_EVIDENCE_COLUMNS = {"family_evidence", "evidence"}

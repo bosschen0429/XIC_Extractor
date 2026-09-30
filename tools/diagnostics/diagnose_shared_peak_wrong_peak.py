@@ -10,13 +10,13 @@ from pathlib import Path
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from tools.diagnostics.diagnostic_io import read_tsv_required, write_tsv
 from xic_extractor.alignment.shared_peak_identity_explanation import (
     wrong_peak_root_cause,
 )
 from xic_extractor.alignment.shared_peak_identity_explanation.schema import (
     WRONG_PEAK_ROOT_CAUSE_COLUMNS,
 )
+from xic_extractor.tabular_io import read_tsv_required, write_tsv
 
 _MACHINE_SUPPORT_REQUIRED_COLUMNS = (
     "feature_family_id",

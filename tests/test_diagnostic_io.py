@@ -4,9 +4,6 @@ from pathlib import Path
 
 import pytest
 
-from tools.diagnostics import diagnostic_io as shim_diagnostic_io
-from xic_extractor import tabular_io as canonical_tabular_io
-from xic_extractor.diagnostics import diagnostic_io as package_diagnostic_io
 from xic_extractor.tabular_io import (
     bool_value,
     file_sha256,
@@ -28,21 +25,6 @@ from xic_extractor.tabular_io import (
     write_delimited_rows,
     write_tsv,
 )
-
-
-def test_diagnostic_io_shims_reexport_neutral_helpers() -> None:
-    assert (
-        shim_diagnostic_io.read_tsv_required
-        is canonical_tabular_io.read_tsv_required
-    )
-    assert (
-        package_diagnostic_io.read_tsv_required
-        is canonical_tabular_io.read_tsv_required
-    )
-    assert shim_diagnostic_io.write_tsv is canonical_tabular_io.write_tsv
-    assert package_diagnostic_io.write_tsv is canonical_tabular_io.write_tsv
-    assert shim_diagnostic_io.text_value is canonical_tabular_io.text_value
-    assert package_diagnostic_io.text_value is canonical_tabular_io.text_value
 
 
 def test_read_delimited_rows_fails_with_clear_missing_columns(

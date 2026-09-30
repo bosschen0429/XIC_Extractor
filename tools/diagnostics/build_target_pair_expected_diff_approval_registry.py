@@ -8,11 +8,11 @@ from pathlib import Path
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from xic_extractor.diagnostics.diagnostic_io import read_tsv_required, write_tsv
 from xic_extractor.peak_detection.model_selection import expected_diff_stable_row_id
 from xic_extractor.peak_detection.model_selection_approval_registry import (
     EXPECTED_DIFF_APPROVAL_REGISTRY_HEADERS,
 )
+from xic_extractor.tabular_io import read_tsv_required, write_tsv
 
 REQUIRED_TARGET_PAIR_REVIEW_COLUMNS = (
     "sample_name",

@@ -21,7 +21,7 @@ from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from tools.diagnostics.diagnostic_io import write_tsv
+from xic_extractor.tabular_io import write_tsv
 
 REPORT_COLUMNS = ("artifact", "finding", "column", "value", "data_row_count")
 _DELIMITERS = {".tsv": "\t", ".csv": ","}

@@ -5,7 +5,6 @@ from pathlib import Path
 
 from openpyxl import load_workbook
 
-from tools.diagnostics.diagnostic_io import read_tsv_required
 from tools.diagnostics.targeted_gt_alignment_audit_models import (
     AuditConfig,
     TargetGroundTruth,
@@ -14,6 +13,7 @@ from tools.diagnostics.targeted_gt_alignment_audit_utils import (
     _to_float,
     _unescape_excel_formula,
 )
+from xic_extractor.tabular_io import read_tsv_required
 
 
 def _load_target_ground_truth(config: AuditConfig) -> list[TargetGroundTruth]:
