@@ -8,11 +8,7 @@ from bisect import bisect_right
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import InitVar, dataclass, field, replace
 from functools import cached_property
-from io import BytesIO
-from pathlib import Path
 from typing import Literal
-
-from openpyxl import load_workbook
 
 from xic_extractor.alignment.identity_gates import is_dr_neutral_loss_tag
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
@@ -21,7 +17,6 @@ from xic_extractor.configuration.target_identity import (
     TargetListSnapshot,
     mint_target_list_snapshot,
 )
-from xic_extractor.injection_rolling import read_injection_order, rolling_median_rt
 from xic_extractor.mass_accuracy import neutral_loss_match
 
 DriftPriorSource = Literal["targeted_istd_trend", "batch_istd_trend", "none"]
@@ -305,114 +300,6 @@ def interpolate_calibrated_rt_min(
     left_x, left_y = knots[right - 1]
     right_x, right_y = knots[right]
     return left_y + (value - left_x) / (right_x - left_x) * (right_y - left_y)
-
-
-def read_known_istd_reference(path: Path) -> KnownIstdReference:
-    """Read the current report schema and validate declared targets at their owner."""
-    if not isinstance(path, Path):
-        raise TypeError("known ISTD reference workbook must be a Path")
-    payload = path.read_bytes()
-    workbook = load_workbook(BytesIO(payload), read_only=True, data_only=True)
-
-    def rows(sheet: str, required: tuple[str, ...]) -> Iterable[dict[str, object]]:
-        if sheet not in workbook.sheetnames:
-            raise ValueError(f"known ISTD reference requires sheet {sheet}")
-        values = iter(workbook[sheet].values)
-        headers = tuple(
-            str(value).strip() if value is not None else ""
-            for value in next(values, ())
-        )
-        if any(headers.count(key) != 1 for key in required):
-            raise ValueError(
-                f"{sheet}: missing or duplicate required headers {required}"
-            )
-        for row in values:
-            if any(value is not None for value in row):
-                yield dict(zip(headers, row))
-
-    def number(row: dict[str, object], key: str) -> float:
-        value = row[key]
-        parsed = _finite_float(value)
-        if isinstance(value, bool) or parsed is None:
-            raise ValueError(f"known ISTD reference: invalid required {key}: {value!r}")
-        return parsed
-
-    def text(row: dict[str, object], key: str) -> str:
-        value = row[key]
-        if not isinstance(value, str) or not value.strip():
-            raise ValueError(f"known ISTD reference: invalid required {key}")
-        return value.strip()
-
-    try:
-        targets = []
-        for row in rows(
-            "Targets",
-            (
-                "Label",
-                "Role",
-                "m/z",
-                "RT min",
-                "RT max",
-                "ppm tol",
-                "NL (Da)",
-                "NL ppm warn",
-                "NL ppm max",
-            ),
-        ):
-            if str(row["Role"]).strip() != "ISTD":
-                continue
-            targets.append(
-                Target(
-                    label=text(row, "Label"),
-                    mz=number(row, "m/z"),
-                    rt_min=number(row, "RT min"),
-                    rt_max=number(row, "RT max"),
-                    ppm_tol=number(row, "ppm tol"),
-                    neutral_loss_da=number(row, "NL (Da)"),
-                    nl_ppm_warn=number(row, "NL ppm warn"),
-                    nl_ppm_max=number(row, "NL ppm max"),
-                    is_istd=True,
-                    istd_pair="",
-                )
-            )
-        if not targets or len({t.label for t in targets}) != len(targets):
-            raise ValueError("known ISTD reference requires unique ISTD target labels")
-        labels = {target.label for target in targets}
-        coordinates: dict[tuple[str, str], float] = {}
-        seen: set[tuple[str, str]] = set()
-        sample: str | None = None
-        for row in rows("XIC Results", ("SampleName", "Target", "Role", "RT")):
-            # The report carries SampleName across each sample block, whose
-            # first named row can be an analyte rather than an ISTD.
-            if row["SampleName"] is not None and str(row["SampleName"]).strip():
-                sample = text(row, "SampleName")
-            if str(row["Role"]).strip() != "ISTD":
-                continue
-            if sample is None:
-                raise ValueError(
-                    "XIC Results: ISTD reference has no preceding SampleName"
-                )
-            label = text(row, "Target")
-            if label not in labels:
-                raise ValueError(f"XIC Results: undeclared ISTD target {label}")
-            key = label, sample
-            if key in seen:
-                raise ValueError(f"XIC Results: duplicate ISTD reference {key}")
-            seen.add(key)
-            if row["RT"] is None or str(row["RT"]).strip() == "ND":
-                continue
-            rt = number(row, "RT")
-            if rt < 0:
-                raise ValueError("XIC Results: reference RT must be nonnegative")
-            coordinates[key] = rt
-        return mint_known_istd_reference_from_measurements(
-            targets,
-            coordinates,
-            source_identifier=str(path.resolve()),
-            source_sha256=hashlib.sha256(payload).hexdigest(),
-        )
-    finally:
-        workbook.close()
 
 
 def mint_known_istd_reference_from_measurements(
@@ -1013,119 +900,6 @@ class DriftEvidenceLookup:
         }
 
 
-def read_targeted_istd_drift_evidence(
-    targeted_workbook: Path,
-    sample_info: Path,
-    local_window: int = 4,
-    *,
-    target_snapshot: TargetListSnapshot | None = None,
-) -> DriftEvidenceLookup:
-    injection_order = read_injection_order(sample_info)
-    rt_by_label = _read_istd_rt_by_label(targeted_workbook)
-    ordered_labels = tuple(sorted(rt_by_label))
-    trend_ids = {
-        label: f"trend-{index:03d}"
-        for index, label in enumerate(ordered_labels, start=1)
-    }
-    points: list[SampleDriftEvidence] = []
-    for label in ordered_labels:
-        rt_by_sample = rt_by_label[label]
-        for sample_stem in sorted(
-            rt_by_sample,
-            key=lambda sample: (injection_order.get(sample, 10**12), sample),
-        ):
-            local_median = rolling_median_rt(
-                label,
-                sample_stem,
-                rt_by_sample,
-                injection_order,
-                window=local_window,
-            )
-            sample_order = injection_order.get(sample_stem)
-            if local_median is None or sample_order is None:
-                continue
-            istd_rt = rt_by_sample[sample_stem]
-            points.append(
-                SampleDriftEvidence(
-                    sample_stem=sample_stem,
-                    injection_order=sample_order,
-                    trend_id=trend_ids[label],
-                    istd_rt_min=istd_rt,
-                    local_trend_rt_min=local_median,
-                    rt_drift_delta_min=istd_rt - local_median,
-                    source="targeted_istd_trend",
-                )
-            )
-    identity_anchor = _default_targeted_istd_identity_anchor(
-        observed_labels=tuple(rt_by_label),
-        target_snapshot=target_snapshot,
-    )
-    return DriftEvidenceLookup(
-        points=tuple(points),
-        istd_identity_anchor=identity_anchor,
-    )
-
-
-def _read_istd_rt_by_label(targeted_workbook: Path) -> dict[str, dict[str, float]]:
-    wb = load_workbook(targeted_workbook, read_only=True, data_only=True)
-    try:
-        ws = wb["XIC Results"]
-        rows = ws.iter_rows(values_only=True)
-        header = next(rows)
-        cols = _header_indexes(header)
-        sample_name = ""
-        out: dict[str, dict[str, float]] = {}
-        for row in rows:
-            raw_sample = row[cols["SampleName"]]
-            if raw_sample is not None:
-                candidate_sample = str(raw_sample).strip()
-                if candidate_sample:
-                    sample_name = candidate_sample
-            if not sample_name:
-                continue
-            role = row[cols["Role"]]
-            if str(role).strip() != "ISTD":
-                continue
-            rt = _to_float(row[cols["RT"]])
-            if rt is None:
-                continue
-            label = str(row[cols["Target"]]).strip()
-            if not label:
-                continue
-            out.setdefault(label, {})[sample_name] = rt
-        return out
-    finally:
-        wb.close()
-
-
-def _default_targeted_istd_identity_anchor(
-    *,
-    observed_labels: Iterable[str],
-    target_snapshot: TargetListSnapshot | None,
-) -> TargetedIstdIdentityAnchor | None:
-    if target_snapshot is None:
-        return None
-    targets = tuple(
-        definition.target for definition in target_snapshot.definitions
-    )
-    known_labels = {target.label for target in targets}
-    labels = tuple(
-        sorted(
-            {
-                str(label).strip()
-                for label in observed_labels
-                if str(label).strip() in known_labels
-            }
-        )
-    )
-    if not targets or not labels:
-        return None
-    return build_targeted_istd_identity_anchor(
-        target_snapshot,
-        observed_labels=labels,
-    )
-
-
 def _family_id(family: object) -> str:
     return str(
         getattr(family, "feature_family_id", "")
@@ -1138,30 +912,6 @@ def _finite_float(value: object) -> float | None:
         return None
     numeric = float(value)
     return numeric if math.isfinite(numeric) else None
-
-
-def _header_indexes(header: tuple[object, ...]) -> dict[str, int]:
-    cols = {
-        str(value).strip(): i
-        for i, value in enumerate(header)
-        if value is not None
-    }
-    required = ("SampleName", "Target", "Role", "RT")
-    missing = [name for name in required if name not in cols]
-    if missing:
-        raise ValueError(f"XIC Results sheet missing required columns: {missing}")
-    return cols
-
-
-def _to_float(value: object) -> float | None:
-    if value is None or isinstance(value, bool):
-        return None
-    if isinstance(value, int | float):
-        return float(value)
-    try:
-        return float(str(value).strip())
-    except ValueError:
-        return None
 
 
 def _require_canonical_text(values: tuple[str, ...], *, field: str) -> None:

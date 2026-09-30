@@ -29,8 +29,8 @@ from tests.untargeted_partition_fixtures import (
     complete_dense_partition,
     execute_dense_partition,
 )
+from xic_extractor.acquisition.istd_reference import read_known_istd_reference
 from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.alignment.drift_evidence import read_known_istd_reference
 from xic_extractor.alignment.untargeted_finalized_matrix import (
     project_completed_untarget_batch_writer_inputs,
 )

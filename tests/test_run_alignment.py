@@ -14,7 +14,9 @@ from xic_extractor.alignment.owner_build_route_receipt import (
 from xic_extractor.alignment.pipeline_outputs import (
     AlignmentRunOutputs as _AlignmentRunOutputs,
 )
-from xic_extractor.alignment.process_execution import AlignmentProcessExecutionError
+from xic_extractor.applications.untargeted.application import (
+    AlignmentProcessExecutionError,
+)
 from xic_extractor.diagnostics.process_memory import ProcessMemoryPeak
 from xic_extractor.discovery.batch_contract import (
     DISCOVERY_BATCH_INDEX_SCHEMA_VERSION,
