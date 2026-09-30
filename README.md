@@ -86,6 +86,9 @@ remain available through explicit output options.
 
 ### Developer Checkout
 
+Source development uses Python 3.12. The packaged app includes its own Python
+runtime and does not require a separate Python installation.
+
 ```powershell
 git clone https://github.com/Chao-hu-Lab/XIC_Extractor.git
 cd XIC_Extractor
