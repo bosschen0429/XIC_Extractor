@@ -179,6 +179,36 @@ the error relative to the configured loss mass; it is not the acceptance gate.
   a later Pt owner explicitly names a different fixture. Reviewed Pt labels are
   method-development evidence, not ground truth or an accuracy oracle by default.
 
+### CID-NL oracle formats
+
+CID-NL/NL116 oracle inputs carry `diagnostic_only` evidence. The Python
+validators own their exact fields, version tokens, and rejection rules.
+The formats below separate tracer proposals, independent references, blinded
+human judgments, and the gate decision.
+
+| Format | Meaning and required boundary | Executable owner |
+| --- | --- | --- |
+| Tested-tracer proposal manifest | Freeze every candidate and its Targeted/Untargeted decision from one tracer attempt before holdout review. `select_value` rows define proposal precision; independent references define recovery. Blank candidate metrics do not remove a candidate from the frozen universe. | [`validate_proposal_row`, `validate_proposal_manifest_rows`](../../xic_extractor/discovery/cid_nl_oracle_contract.py) |
+| Formal-holdout sampling manifest | Freeze blinded case and presentation assignments before review. `case_id` is the analysis unit, with exactly one primary presentation. Hidden duplicates measure repeatability only; adaptive supplemental cases are descriptive only. Probability samples retain inclusion probabilities, inverse-probability weights, and dependency groups. | [`validate_sampling_row`, `validate_sampling_manifest_rows`, `validate_sampling_statistical_binding`](../../xic_extractor/discovery/cid_nl_oracle_contract.py) |
+| Oracle lineage binding | Bind proposals, cases, immutable review events, and gate results to canonical request, attempt, and evidence-artifact identities. Paths, display names, timestamps, row order, and case locators cannot replace lineage identity. Missing source bytes are `not_replayable`; missing required bindings yield `inconclusive`. | [`validate_lineage_binding_row`, `validate_lineage_binding_rows`](../../xic_extractor/discovery/cid_nl_oracle_contract.py); [Result Traceability](processing-lineage.md) |
+| Review and adjudication events | Seal blinded sample-local identity, peak, and boundary labels before cross-sample policy review. Policy context cannot rewrite those labels. `unassessable` is a completed scientific judgment. Hidden duplicates use the same reviewer within each phase. Adjudication is append-only; unblinded taxonomy cannot change confirmatory labels. | [`validate_review_event`, `validate_review_event_set`, `validate_adjudication_event`, `validate_adjudication_event_set`](../../xic_extractor/discovery/cid_nl_oracle_review.py) |
+| Independent reference universe | Use independent, sample-local, method-matched evidence for expected controls and supported positives. Tracer proposals, legacy calls, and library membership cannot establish sample presence or the recovery denominator. Declare shared enumeration dependencies; shared candidate or decision logic cannot claim independent recovery. ISTD presence does not establish its paired analyte. Out-of-scope and unassessable rows do not enter eligible denominators. Incomplete frames downgrade recovery claims. | [`validate_reference_row`, `validate_reference_manifest_rows`](../../xic_extractor/discovery/cid_nl_oracle_contract.py) |
+| Narrow-scope manifest | Freeze scope precedence, exact case membership hashes, required gates, and allowed overall failures before reveal. Membership binds existing primary holdout rows and must agree with the structured scope. Derive `NARROW` from sealed membership and raw gate results; do not select a passing scope after reveal. | [`validate_narrow_scope_row`](../../xic_extractor/discovery/cid_nl_oracle_contract.py), [`reduce_oracle_verdict`](../../xic_extractor/discovery/cid_nl_oracle_verdict.py) |
+| Statistical-design manifest | Preregister estimands, thresholds, planning inputs, grouping keys, review budget, and uncertainty routes before reveal. A finite census describes its frame; sampled inference follows the probability and dependency design. Nonprobability challenges remain descriptive. Incomplete frames require partial bounds or a known-reference claim. Machine `hold` remains in unconditional recovery denominators; human unassessable cases are reported separately. | [`validate_statistical_design_row`, `validate_sampling_statistical_binding`](../../xic_extractor/discovery/cid_nl_oracle_contract.py) |
+
+Seals bind the actual artifact bytes, canonical rows, derived counts, and
+required identity coverage. Sealed rows remain append-only. Corrections require
+a new manifest or packet with a supersession edge. Post-reveal integrity incidents
+yield `inconclusive`; they do not authorize case removal, relabeling, or
+denominator recomputation. `validate_manifest_seal` and
+`validate_review_label_seal` enforce the supplied seal contract and byte bindings.
+
+These inputs grant no compound-identification, selected-area, counted-detection,
+Matrix, Backfill-write, workbook, GUI, activation, or export authority.
+[Product Validation](../agent/product-validation-contract.md) owns readiness and
+promotion semantics; [Result Traceability](processing-lineage.md) owns the
+canonical lineage identities.
+
 ### Outputs, peak anchors, and batch handoff
 
 - Standard per-sample outputs: `discovery_candidates.csv` (archival/alignment
@@ -680,6 +710,12 @@ behavior.
   reopen broad Backfill or expand the Backfill authority manifest by accident.
 
 ## Verification
+
+`tests/test_cid_nl_oracle_contract_validator.py` exercises invalid rows,
+missing fields, sealed-byte mismatches, counts, and reveal timing.
+`tests/test_cid_nl_oracle_gate_verdict_contract.py` and
+`tests/test_cid_nl_oracle_synthetic_contract_suite.py` exercise gate reduction
+and denominator behavior. Those tests prove engineering regression coverage.
 
 Before changing discovery behavior, require the relevant subset of:
 
