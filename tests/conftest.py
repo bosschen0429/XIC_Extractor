@@ -1,6 +1,4 @@
 import os
-import shutil
-import uuid
 from pathlib import Path
 
 import pytest
@@ -11,6 +9,12 @@ from PyQt6.QtWidgets import QApplication
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 _TMP_ROOT = Path(__file__).resolve().parent.parent / "tmp_runtime"
+
+
+def pytest_configure() -> None:
+    if "PYTEST_DEBUG_TEMPROOT" not in os.environ:
+        _TMP_ROOT.mkdir(parents=True, exist_ok=True)
+        os.environ["PYTEST_DEBUG_TEMPROOT"] = str(_TMP_ROOT)
 
 
 @pytest.fixture(autouse=True)
@@ -49,17 +53,6 @@ class _QtBot:
             widget.close()
             widget.deleteLater()
         self._app.processEvents()
-
-
-@pytest.fixture()
-def tmp_path() -> Path:
-    _TMP_ROOT.mkdir(parents=True, exist_ok=True)
-    path = _TMP_ROOT / f"case_{uuid.uuid4().hex}"
-    path.mkdir(parents=True, exist_ok=False)
-    try:
-        yield path
-    finally:
-        shutil.rmtree(path, ignore_errors=True)
 
 
 @pytest.fixture(scope="session")

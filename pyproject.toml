@@ -61,7 +61,8 @@ cache-keys = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-p no:cacheprovider -p no:tmpdir"
+addopts = "-p no:cacheprovider"
+tmp_path_retention_policy = "failed"
 markers = [
     "agent_hooks: validates the repository Codex hook configuration and policy scripts under .codex/. Run for changes to .codex/ hook files or this test and on the primary main-branch test job.",
     "ledger_snapshot: pins a recorded value from docs/superpowers/validation/, so a legitimate re-analysis turns it red. Excluded from CI shards; run with `python -m tools.testing.test_shards --snapshots`. Only direct decorators on top-level synchronous test functions are supported; the inventory rejects class, method, async, and module-level placement. A test whose subject is checker behaviour must stay unmarked and run in CI: rejection paths, monkeypatched dependencies, and invariants that survive a consistent re-run are not snapshots even when they read a register.",
