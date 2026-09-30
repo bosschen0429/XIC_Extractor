@@ -20,11 +20,11 @@ from scripts.check_productization_authority import (
     main,
 )
 from scripts.check_productization_state import artifact_sha256
-from xic_extractor.alignment.production_acceptance import (
-    ProductionAcceptanceManifestError,
-)
 from xic_extractor.alignment.quantitative_projection_authority import (
     QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_FIELDS,
+)
+from xic_extractor.diagnostics.quant_matrix.acceptance import (
+    ProductionAcceptanceManifestError,
 )
 
 BACKFILL_EXTERNALIZED_SUMMARY = (

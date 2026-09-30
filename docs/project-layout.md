@@ -27,6 +27,8 @@ XIC_Extractor/
 │   ├── peak_detection/         單次觀察、峰假設、選擇與積分
 │   ├── alignment/              跨樣本組合、Backfill、格值決策及其交付 adapter
 │   │   ├── completion.py       已取得 evidence → 完成的科學結果；不呼叫 runtime
+│   │   ├── cid_nl_inputs.py    正式 partition／diagnostic 共用的純 CID-NL input contract
+│   │   ├── quantitative_projection_authority.py  Packaged promotion contract boundary
 │   │   ├── cross_sample/       跨樣本關聯
 │   │   ├── backfill/           有限度的 observation revisit
 │   │   ├── cell_decision/      每個樣本格的科學決策
@@ -37,6 +39,7 @@ XIC_Extractor/
 │   │   └── alignment/         Matrix 格式、artifact 選擇、串流／實體化與 atomic publishing
 │   ├── instrument_qc/         儀器 QC、校正與其報告流程
 │   ├── diagnostics/           可重用的診斷與說明工具
+│   │   └── quant_matrix/      版本化 Matrix artifact projection、acceptance 及 table model
 │   └── *.py                   RAW adapter、共享模型／規則、公開入口
 ├── xic_inspector/              完成證據的只讀檢視
 │   ├── sources/               解讀來源證據

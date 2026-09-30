@@ -9,7 +9,7 @@ from typing import Any
 from xic_extractor.alignment.quant_matrix_fixture_contract import (
     validate_fixture_contract,
 )
-from xic_extractor.alignment.quant_matrix_version import (
+from xic_extractor.diagnostics.quant_matrix.version import (
     CELL_PROVENANCE_COLUMNS,
     CELL_PROVENANCE_SCHEMA,
     ROW_SUMMARY_COLUMNS,

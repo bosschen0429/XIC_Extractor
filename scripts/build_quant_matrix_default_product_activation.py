@@ -36,7 +36,7 @@ from xic_extractor.alignment.quant_matrix_fixture_contract import (
     validate_fixture_contract,
     write_cell_provenance_contract,
 )
-from xic_extractor.alignment.quant_matrix_version import EXPECTED_DIFF_SUMMARY_COLUMNS
+from xic_extractor.diagnostics.quant_matrix.version import EXPECTED_DIFF_SUMMARY_COLUMNS
 from xic_extractor.tabular_io import (
     file_sha256,
     optional_int,

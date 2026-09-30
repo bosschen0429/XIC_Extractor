@@ -37,7 +37,7 @@ from scripts.build_quant_matrix_version import run_activation
 from xic_extractor.alignment.quant_matrix_fixture_contract import (
     validate_fixture_contract,
 )
-from xic_extractor.alignment.quant_matrix_version import (
+from xic_extractor.diagnostics.quant_matrix.version import (
     EXPECTED_DIFF_SUMMARY_COLUMNS,
 )
 from xic_extractor.tabular_io import (

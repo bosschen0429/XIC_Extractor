@@ -49,7 +49,7 @@ from xic_extractor.alignment.quant_matrix_promotion import (
 from xic_extractor.alignment.quant_matrix_report import (
     build_quant_matrix_review_report,
 )
-from xic_extractor.alignment.quant_matrix_version import (
+from xic_extractor.diagnostics.quant_matrix.version import (
     CELL_PROVENANCE_COLUMNS,
     EXPECTED_DIFF_COLUMNS,
     EXPECTED_DIFF_SUMMARY_COLUMNS,
@@ -1125,7 +1125,7 @@ def _original_entry(path: Path, *, repo_root: Path) -> dict[str, str]:
 
 
 def _rewrite_source_summary_paths(source_summary_tsv: Path) -> None:
-    from xic_extractor.alignment.quant_matrix_version import SOURCE_SUMMARY_COLUMNS
+    from xic_extractor.diagnostics.quant_matrix.version import SOURCE_SUMMARY_COLUMNS
 
     rows = list(read_tsv_required(source_summary_tsv, SOURCE_SUMMARY_COLUMNS))
     path_fields = (

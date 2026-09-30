@@ -13,7 +13,7 @@ from xic_extractor.alignment.quant_matrix_report import QUANT_MATRIX_REVIEW_SCHE
 from xic_extractor.alignment.quant_matrix_validation_packet import (
     VALIDATION_EVIDENCE_SCHEMA,
 )
-from xic_extractor.alignment.quant_matrix_version import (
+from xic_extractor.diagnostics.quant_matrix.version import (
     CELL_PROVENANCE_COLUMNS,
     CELL_PROVENANCE_SCHEMA,
     EXPECTED_DIFF_SUMMARY_COLUMNS,

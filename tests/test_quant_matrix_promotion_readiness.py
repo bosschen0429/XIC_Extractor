@@ -12,7 +12,7 @@ from xic_extractor.alignment.quant_matrix_promotion import (
     evaluate_quant_matrix_promotion_readiness,
 )
 from xic_extractor.alignment.quant_matrix_report import QUANT_MATRIX_REVIEW_SCHEMA
-from xic_extractor.alignment.quant_matrix_version import (
+from xic_extractor.diagnostics.quant_matrix.version import (
     CELL_PROVENANCE_COLUMNS,
     EXPECTED_DIFF_SUMMARY_COLUMNS,
     ROW_SUMMARY_COLUMNS,

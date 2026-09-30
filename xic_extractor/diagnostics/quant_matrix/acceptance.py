@@ -19,7 +19,7 @@ from pathlib import Path, PurePosixPath, PureWindowsPath
 from types import MappingProxyType
 from typing import Any, final
 
-from xic_extractor.alignment.quant_matrix_version import (
+from xic_extractor.diagnostics.quant_matrix.version import (
     PRODUCTION_ACCEPTANCE_COLUMNS,
     QuantMatrixVersionRows,
     build_quant_matrix_version_rows,

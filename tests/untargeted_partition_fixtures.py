@@ -6,14 +6,14 @@ from collections.abc import Callable, Mapping
 from dataclasses import replace
 from pathlib import Path
 
+from xic_extractor.alignment.cid_nl_inputs import (
+    CID_NL_ALIGNMENT_CONFIG,
+)
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.drift_evidence import KnownIstdReference
 from xic_extractor.alignment.result.application_result import (
     UntargetBatchApplicationResultRequest,
     finalize_alignment_result,
-)
-from xic_extractor.alignment.untargeted_cid_nl_golden_path import (
-    CID_NL_ALIGNMENT_CONFIG,
 )
 from xic_extractor.config import ExtractionConfig
 from xic_extractor.configuration.signal_processing_profile import (

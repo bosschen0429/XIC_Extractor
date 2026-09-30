@@ -12,7 +12,7 @@ from scripts.check_production_acceptance_manifest import (
 from scripts.check_production_acceptance_manifest import (
     production_acceptance_manifest_sha256,
 )
-from xic_extractor.alignment.quant_matrix_version import EXPECTED_DIFF_COLUMNS
+from xic_extractor.diagnostics.quant_matrix.version import EXPECTED_DIFF_COLUMNS
 
 
 def test_successor_authority_contract_builds_write_allowlist_and_replay(

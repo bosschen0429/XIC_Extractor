@@ -18,7 +18,7 @@ from xic_extractor.alignment.quant_matrix_report import (
     QUANT_MATRIX_REVIEW_SCHEMA,
     build_quant_matrix_review_report,
 )
-from xic_extractor.alignment.quant_matrix_version import (
+from xic_extractor.diagnostics.quant_matrix.version import (
     EXPECTED_DIFF_COLUMNS,
     SOURCE_SUMMARY_COLUMNS,
 )

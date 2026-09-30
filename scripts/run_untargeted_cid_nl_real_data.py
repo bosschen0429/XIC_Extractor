@@ -14,18 +14,18 @@ from xic_extractor.alignment.csv_io import (
     read_discovery_batch_index,
     read_owner_bound_discovery_candidates_csv,
 )
-from xic_extractor.alignment.production_acceptance import REQUIRED_COLUMNS
-from xic_extractor.alignment.quant_matrix_version import (
+from xic_extractor.alignment.raw_sources import existing_raw_paths
+from xic_extractor.config import ExtractionConfig
+from xic_extractor.diagnostics.quant_matrix.acceptance import REQUIRED_COLUMNS
+from xic_extractor.diagnostics.quant_matrix.golden_path import (
+    build_untargeted_cid_nl_golden_path,
+    build_untargeted_cid_nl_quant_matrix_version,
+)
+from xic_extractor.diagnostics.quant_matrix.version import (
     CELL_PROVENANCE_COLUMNS,
     EXPECTED_DIFF_SUMMARY_COLUMNS,
     ROW_SUMMARY_COLUMNS,
 )
-from xic_extractor.alignment.raw_sources import existing_raw_paths
-from xic_extractor.alignment.untargeted_cid_nl_golden_path import (
-    build_untargeted_cid_nl_golden_path,
-    build_untargeted_cid_nl_quant_matrix_version,
-)
-from xic_extractor.config import ExtractionConfig
 from xic_extractor.discovery.models import DiscoverySettings, NeutralLossProfile
 from xic_extractor.execution._observability import RuntimeMetricAvailability
 from xic_extractor.execution.attempt import (
