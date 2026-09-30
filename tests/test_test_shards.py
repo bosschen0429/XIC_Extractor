@@ -46,6 +46,10 @@ _ALLOWED_SHARD_OVERLAPS: dict[Path, tuple[str, ...]] = {
         "targeted-core",
         "product-gates-evidence",
     ),
+    Path("tests/test_targeted_peak_selection.py"): (
+        "targeted-core",
+        "product-gates-evidence",
+    ),
     Path("tests/test_targeted_service_contract.py"): (
         "targeted-core",
         "product-gates-evidence",

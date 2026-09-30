@@ -1,3 +1,5 @@
+"""Select the Targeted product peak from hypothesis and approval evidence."""
+
 from __future__ import annotations
 
 import math
@@ -8,10 +10,10 @@ from typing import cast
 from xic_extractor.config import ExtractionConfig, Target
 from xic_extractor.evidence.neutral_loss import CandidateMS2Evidence
 from xic_extractor.extraction.ms2_selection import selected_candidate_ms2_evidence
-from xic_extractor.extraction.peak_hypothesis_adapter import (
+from xic_extractor.extraction.scoring_factory import selected_candidate
+from xic_extractor.extraction.targeted_peak_hypotheses import (
     build_targeted_peak_hypotheses as build_peak_hypotheses,
 )
-from xic_extractor.extraction.scoring_factory import selected_candidate
 from xic_extractor.extraction.trace_context import targeted_extraction_trace_group
 from xic_extractor.peak_detection.baseline import BaselineMethod
 from xic_extractor.peak_detection.hypotheses import PeakHypothesis
@@ -39,7 +41,7 @@ from xic_extractor.target_sample_applicability import (
 
 
 @dataclass(frozen=True)
-class HandoffPeakSelection:
+class TargetedPeakSelection:
     candidate_ms2_evidence: CandidateMS2Evidence | None
     selected_hypothesis: PeakHypothesis | None
     selection_decision: PeakHypothesisSelectionDecision | None
@@ -100,7 +102,7 @@ def selected_peak_hypothesis(
     return None
 
 
-def selected_handoff_peak(
+def select_targeted_peak(
     *,
     config: ExtractionConfig,
     sample_name: str,
@@ -116,7 +118,7 @@ def selected_handoff_peak(
     expected_rt_min: float | None,
     paired_istd_anchor_rt: float | None = None,
     model_selection_expected_diff_approvals: ExpectedDiffApprovalRecords | None = None,
-) -> HandoffPeakSelection:
+) -> TargetedPeakSelection:
     trace_group = targeted_extraction_trace_group(
         sample_name=sample_name,
         target=target,
@@ -161,7 +163,7 @@ def selected_handoff_peak(
         model_selection_result,
         legacy_selected_hypothesis,
     )
-    return HandoffPeakSelection(
+    return TargetedPeakSelection(
         candidate_ms2_evidence=candidate_ms2_evidence,
         selected_hypothesis=selected_hypothesis,
         selection_decision=(

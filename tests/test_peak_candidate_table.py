@@ -13,7 +13,7 @@ from xic_extractor.extraction.peak_candidate_table import (
     candidate_audit_id,
     with_product_selected_marker,
 )
-from xic_extractor.extraction.peak_hypothesis_adapter import (
+from xic_extractor.extraction.targeted_peak_hypotheses import (
     build_targeted_peak_hypotheses as build_peak_hypotheses,
 )
 from xic_extractor.output.peak_candidates import (

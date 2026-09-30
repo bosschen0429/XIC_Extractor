@@ -24,9 +24,6 @@ from xic_extractor.extraction.diagnostics import (
     istd_anchor_missing_diagnostic,
 )
 from xic_extractor.extraction.drift import estimate_sample_drift
-from xic_extractor.extraction.handoff_spine_runtime import (
-    selected_handoff_peak,
-)
 from xic_extractor.extraction.peak_candidate_audit import append_peak_audit_rows
 from xic_extractor.extraction.result_assembly import build_extraction_result
 from xic_extractor.extraction.rt_windows import get_rt_window
@@ -35,6 +32,9 @@ from xic_extractor.extraction.scoring_factory import (
     paired_istd_fwhm,
     selected_candidate,
     selected_shape_metrics,
+)
+from xic_extractor.extraction.targeted_peak_selection import (
+    select_targeted_peak,
 )
 from xic_extractor.output.messages import (
     DiagnosticRecord,
@@ -508,7 +508,7 @@ def extract_one_target(
             paired_istd_anchor_rt=istd_rt_in_this_sample,
         )
     candidate = selected_candidate(peak_result)
-    handoff_peak = selected_handoff_peak(
+    handoff_peak = select_targeted_peak(
         config=selection_config,
         sample_name=sample_name,
         target=target,
