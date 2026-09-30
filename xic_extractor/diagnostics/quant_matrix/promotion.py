@@ -6,20 +6,20 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
 
-from xic_extractor.alignment.quant_matrix_version import (
-    CELL_PROVENANCE_COLUMNS,
-    CELL_PROVENANCE_SCHEMA,
-    EXPECTED_DIFF_SUMMARY_COLUMNS,
-    EXPECTED_DIFF_SUMMARY_SCHEMA,
-    ROW_SUMMARY_COLUMNS,
-    ROW_SUMMARY_SCHEMA,
-)
 from xic_extractor.diagnostics.quant_matrix.downstream_impact import (
     validate_quant_matrix_downstream_impact_smoke,
 )
 from xic_extractor.diagnostics.quant_matrix.report import QUANT_MATRIX_REVIEW_SCHEMA
 from xic_extractor.diagnostics.quant_matrix.validation_packet import (
     VALIDATION_EVIDENCE_SCHEMA,
+)
+from xic_extractor.diagnostics.quant_matrix.version import (
+    CELL_PROVENANCE_COLUMNS,
+    CELL_PROVENANCE_SCHEMA,
+    EXPECTED_DIFF_SUMMARY_COLUMNS,
+    EXPECTED_DIFF_SUMMARY_SCHEMA,
+    ROW_SUMMARY_COLUMNS,
+    ROW_SUMMARY_SCHEMA,
 )
 from xic_extractor.tabular_io import (
     file_sha256,

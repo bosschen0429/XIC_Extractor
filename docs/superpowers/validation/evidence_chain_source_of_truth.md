@@ -306,7 +306,7 @@ authority.
 
 Owners:
 
-- `xic_extractor/alignment/quant_matrix_version.py`
+- `xic_extractor/diagnostics/quant_matrix/version.py`
 - `xic_extractor/alignment/quant_matrix_promotion.py`
 - `scripts/build_quant_matrix_default_product_activation.py`
 - `scripts/build_cid_nl_default_product_activation.py`

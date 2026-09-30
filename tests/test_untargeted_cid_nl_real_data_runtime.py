@@ -31,7 +31,7 @@ from xic_extractor.acquisition_contract import (
     mint_trace_acquisition_capability,
     serialize_acquired_trace,
 )
-from xic_extractor.alignment.untargeted_cid_nl_golden_path import (
+from xic_extractor.diagnostics.quant_matrix.golden_path import (
     build_untargeted_cid_nl_golden_path,
 )
 from xic_extractor.discovery.batch_contract import (

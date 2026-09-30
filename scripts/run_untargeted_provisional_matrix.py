@@ -12,16 +12,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 
-from xic_extractor.alignment.artifact_write_receipts import (
-    AlignmentArtifactFingerprintBatch,
-)
 from xic_extractor.alignment.config import (
     AlignmentConfig,
     BackfillXicBackend,
     OwnerBuildXicBackend,
-)
-from xic_extractor.alignment.provisional_matrix import (
-    PROVISIONAL_VALIDATION_STATUS,
 )
 from xic_extractor.diagnostics.timing import TimingRecorder
 from xic_extractor.discovery.models import DiscoverySettings
@@ -35,6 +29,12 @@ from xic_extractor.extraction.untargeted_input_planning import (
 )
 from xic_extractor.extraction.untargeted_provisional_matrix_workflow import (
     run_untargeted_provisional_matrix_workflow,
+)
+from xic_extractor.output.alignment.artifact_write_receipts import (
+    AlignmentArtifactFingerprintBatch,
+)
+from xic_extractor.output.alignment.provisional_matrix import (
+    PROVISIONAL_VALIDATION_STATUS,
 )
 from xic_extractor.presets import (
     bind_cid_nl_recipe,

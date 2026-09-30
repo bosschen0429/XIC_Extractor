@@ -7,17 +7,17 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
-from xic_extractor.alignment.production_acceptance import (
+from xic_extractor.diagnostics.quant_matrix.acceptance import (
     ACCEPTANCE_DECISIONS,
     REQUIRED_COLUMNS,
 )
-from xic_extractor.alignment.production_acceptance import (
+from xic_extractor.diagnostics.quant_matrix.acceptance import (
     check_production_acceptance_manifest as _check_manifest,
 )
-from xic_extractor.alignment.production_acceptance import (
+from xic_extractor.diagnostics.quant_matrix.acceptance import (
     check_production_acceptance_manifest_schema as _check_schema,
 )
-from xic_extractor.alignment.quant_matrix_version import (
+from xic_extractor.diagnostics.quant_matrix.version import (
     production_acceptance_manifest_sha256,
 )
 

@@ -11,9 +11,6 @@ from scripts import run_alignment
 from xic_extractor.alignment.owner_build_route_receipt import (
     _mint_retained_untargeted_cid_nl_route_receipt,
 )
-from xic_extractor.alignment.pipeline_outputs import (
-    AlignmentRunOutputs as _AlignmentRunOutputs,
-)
 from xic_extractor.applications.untargeted.application import (
     AlignmentProcessExecutionError,
 )
@@ -23,6 +20,9 @@ from xic_extractor.discovery.batch_contract import (
     DISCOVERY_BATCH_RECEIPT_COLUMNS,
     discovery_receipt_index_fields,
     mint_discovery_candidate_universe_receipt,
+)
+from xic_extractor.output.alignment.pipeline_outputs import (
+    AlignmentRunOutputs as _AlignmentRunOutputs,
 )
 from xic_extractor.processing_identity import build_acquisition_source_identity
 from xic_extractor.raw_reader import (

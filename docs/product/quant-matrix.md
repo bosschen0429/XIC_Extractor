@@ -41,7 +41,7 @@ delivery seam as if they were already final.
 - Candidate sidecars, review packets, galleries, lockbox labels, and
   diagnostics do not grant authority by themselves.
 - File-backed activation reads each manifest byte snapshot once.
-- The `production_acceptance` owner validates that snapshot and mints an
+- The [`production_acceptance` owner](../../xic_extractor/diagnostics/quant_matrix/acceptance.py) validates that snapshot and mints an
   immutable `CheckedProductionAcceptanceManifest`. Activation writers consume
   those exact checked rows. Activation writers do not reopen the path.
 - The lower-level `QuantMatrixVersion` row builder is a pure renderer. The row
@@ -76,7 +76,7 @@ delivery seam as if they were already final.
 
 ### Activation formats
 
-The [version format owner](../../xic_extractor/alignment/quant_matrix_version.py)
+The [version format owner](../../xic_extractor/diagnostics/quant_matrix/version.py)
 defines schema tokens, ordered sidecar columns, and row/count projection.
 The [version writer](../../scripts/build_quant_matrix_version.py) consumes the
 checked manifest and expected diff, then writes `quant_matrix.tsv`,
@@ -190,7 +190,7 @@ remain with the productization state and authority owners.
   XLSX, and HTML writers. `ProductionDecisionSet` holds a separate
   compatibility cell type that is also named `ProductionCellDecision`.
 - The legacy matrix-based `build_production_decisions` still builds a
-  `ProductionDecisionSet` as the fallback in `alignment/product_matrix.py` and
+  `ProductionDecisionSet` as the fallback in `output/alignment/product_matrix.py` and
   for diagnostics and provenance replay.
 - The structural migration must preserve current values, states, counts, row
   inclusion, and renderer bytes before any behavior promotion.

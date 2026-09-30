@@ -12,18 +12,11 @@ from xic_extractor.alignment.backfill_evidence_contract import (
     ALIGNMENT_BACKFILL_CELL_EVIDENCE_SCHEMA_VERSION,
 )
 from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.alignment.matrix import AlignedCell, AlignmentMatrix
-from xic_extractor.alignment.matrix_output_contract import (
-    bind_matrix_identity_row,
-    canonical_mz_text,
-    serialize_public_matrix_table,
-)
-from xic_extractor.alignment.output_rows import (
+from xic_extractor.alignment.matrix import (
+    AlignedCell,
+    AlignmentMatrix,
     cells_by_cluster,
-    escape_excel_formula,
-    format_value,
     row_id,
-    safe_rate,
 )
 from xic_extractor.alignment.owner_group_delivery import (
     CROSS_SAMPLE_GROUP_CELL_COLUMNS,
@@ -31,18 +24,28 @@ from xic_extractor.alignment.owner_group_delivery import (
     GROUP_REVIEW_PROJECTION_COLUMNS,
     delivery_group_projection,
 )
-from xic_extractor.alignment.product_matrix import (
-    ALIGNMENT_MATRIX_IDENTITY_COLUMNS,
-    build_product_matrix_rows,
-    formatted_identity_rows,
-    product_matrix_tsv_rows,
-)
 from xic_extractor.alignment.production_decisions import (
     ProductionDecisionSet,
 )
 from xic_extractor.alignment.untargeted_finalized_matrix import (
     CompletedUntargetBatchWriterInputs,
 )
+from xic_extractor.output.alignment.matrix_output_contract import (
+    bind_matrix_identity_row,
+    canonical_mz_text,
+    serialize_public_matrix_table,
+)
+from xic_extractor.output.alignment.output_rows import (
+    format_value,
+    safe_rate,
+)
+from xic_extractor.output.alignment.product_matrix import (
+    ALIGNMENT_MATRIX_IDENTITY_COLUMNS,
+    build_product_matrix_rows,
+    formatted_identity_rows,
+    product_matrix_tsv_rows,
+)
+from xic_extractor.tabular_io import escape_excel_formula
 
 ALIGNMENT_REVIEW_COLUMNS = (
     "feature_family_id",

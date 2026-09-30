@@ -39,11 +39,11 @@ from tools.diagnostics.cid_nl_activation_copy_candidate import (  # noqa: E402
 from tools.diagnostics.cid_nl_feature_inclusion_gate import (  # noqa: E402
     EXPECTED_DIFF_COLUMNS as CID_NL_EXPECTED_DIFF_COLUMNS,
 )
-from xic_extractor.alignment.quant_matrix_version import (  # noqa: E402
+from xic_extractor.diagnostics.quant_matrix.version import (  # noqa: E402
     CELL_PROVENANCE_COLUMNS,
     EXPECTED_DIFF_SUMMARY_COLUMNS,
 )
-from xic_extractor.alignment.quant_matrix_version import (
+from xic_extractor.diagnostics.quant_matrix.version import (
     EXPECTED_DIFF_COLUMNS as QUANT_EXPECTED_DIFF_COLUMNS,
 )
 from xic_extractor.tabular_io import (  # noqa: E402

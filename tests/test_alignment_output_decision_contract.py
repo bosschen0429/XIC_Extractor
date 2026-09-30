@@ -4,15 +4,15 @@ from pathlib import Path
 
 import pytest
 
-import xic_extractor.alignment.pipeline_outputs as pipeline_outputs_module
+import xic_extractor.output.alignment.pipeline_outputs as pipeline_outputs_module
 from tests.alignment_pipeline_helpers import matrix as _matrix
 from xic_extractor.alignment import AlignmentConfig
-from xic_extractor.alignment.pipeline_outputs import output_paths
 from xic_extractor.alignment.production_decisions import (
     ProductionDecisionSet,
     build_production_decisions,
 )
-from xic_extractor.alignment.tsv_writer import (
+from xic_extractor.output.alignment.pipeline_outputs import output_paths
+from xic_extractor.output.alignment.tsv_writer import (
     write_alignment_backfill_cell_evidence_tsv,
     write_alignment_matrix_identity_tsv,
     write_alignment_matrix_tsv,

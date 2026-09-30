@@ -185,11 +185,11 @@ def test_rejected_initial_evidence_gets_one_independent_bounded_assessment(
             is None
         )
 
-        from xic_extractor.alignment.tsv_writer import write_alignment_matrix_tsv
         from xic_extractor.diagnostics.cid_nl_explanation import read_cid_nl_explanation
         from xic_extractor.diagnostics.cid_nl_explanation_projection import (
             write_cid_nl_explanation,
         )
+        from xic_extractor.output.alignment.tsv_writer import write_alignment_matrix_tsv
 
         matrix_path = tmp_path / "matrix.tsv"
         config = AlignmentConfig(anchor_min_seed_events=1)
@@ -1238,7 +1238,7 @@ def test_ms1_only_backfill_fills_only_one_unique_group_window_peak(
         assert decision.raw_status == "backfilled"
         assert decision.production_status == "accepted_backfill"
         from tools.diagnostics.output_population_census import main as population_main
-        from xic_extractor.alignment.pipeline_outputs import (
+        from xic_extractor.output.alignment.pipeline_outputs import (
             output_paths,
             write_outputs_atomic,
         )

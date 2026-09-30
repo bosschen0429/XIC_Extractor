@@ -26,4 +26,3 @@ def existing_raw_paths(
                 paths[sample_stem] = candidate
                 break
     return paths
-

@@ -1,1 +1,1 @@
-"""Maintained quant matrix diagnostic adapters."""
+"""Quant matrix diagnostic artifacts, projections and acceptance contracts."""

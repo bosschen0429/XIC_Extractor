@@ -18,12 +18,12 @@ if __package__ in {None, ""}:
 from scripts.check_production_acceptance_manifest import (
     check_production_acceptance_manifest_schema,
 )
-from xic_extractor.alignment.production_acceptance import (
+from xic_extractor.diagnostics.quant_matrix.acceptance import (
     ProductionAcceptanceManifestError,
     build_quant_matrix_version_from_checked_manifest,
     load_checked_production_acceptance_manifest,
 )
-from xic_extractor.alignment.quant_matrix_version import (
+from xic_extractor.diagnostics.quant_matrix.version import (
     CELL_PROVENANCE_COLUMNS,
     EXPECTED_DIFF_COLUMNS,
     EXPECTED_DIFF_SUMMARY_COLUMNS,

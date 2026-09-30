@@ -14,13 +14,13 @@ from scripts.check_production_acceptance_manifest import (
 from scripts.check_production_acceptance_manifest import (
     production_acceptance_manifest_sha256,
 )
-from xic_extractor.alignment.quant_matrix_version import (
-    EXPECTED_DIFF_COLUMNS,
-    SOURCE_SUMMARY_COLUMNS,
-)
 from xic_extractor.diagnostics.quant_matrix.report import (
     QUANT_MATRIX_REVIEW_SCHEMA,
     build_quant_matrix_review_report,
+)
+from xic_extractor.diagnostics.quant_matrix.version import (
+    EXPECTED_DIFF_COLUMNS,
+    SOURCE_SUMMARY_COLUMNS,
 )
 
 ROOT = Path(__file__).resolve().parents[1]

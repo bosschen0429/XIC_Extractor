@@ -7,31 +7,9 @@ from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from xic_extractor.alignment.artifact_write_receipts import (
-    AlignmentArtifactFingerprintBatch,
-)
-from xic_extractor.alignment.backfill_peak_fact_provenance import (
-    EMPTY_BACKFILL_PEAK_FACT_PROVENANCE_BATCH,
-)
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.drift_evidence import KnownIstdReference
-from xic_extractor.alignment.output_levels import (
-    EXPLANATION_ARTIFACT_NAME,
-    AlignmentOutputLevel,
-    artifact_names_for_output_level,
-)
 from xic_extractor.alignment.owner_build_route_receipt import OwnerBuildRouteReceipt
-from xic_extractor.alignment.pipeline_outputs import (
-    AlignmentRunOutputs,
-    supports_streamed_untargeted_outputs,
-    write_outputs_atomic,
-    write_streamed_untargeted_outputs_atomic,
-)
-from xic_extractor.alignment.untargeted_finalized_matrix import (
-    completed_untarget_batch_sample_order,
-    iter_completed_untarget_batch_writer_inputs,
-    project_completed_untarget_batch_writer_inputs,
-)
 from xic_extractor.diagnostics.alignment_explanation import EvidenceLocator
 from xic_extractor.diagnostics.alignment_explanation_projection import (
     PreparedAlignmentExplanation,
@@ -40,6 +18,18 @@ from xic_extractor.diagnostics.alignment_explanation_projection import (
 from xic_extractor.diagnostics.timing import TimingRecorder
 from xic_extractor.discovery.input_source import DiscoveryInputSource
 from xic_extractor.discovery.models import DiscoveryCandidate
+from xic_extractor.output.alignment.artifact_write_receipts import (
+    AlignmentArtifactFingerprintBatch,
+)
+from xic_extractor.output.alignment.output_levels import (
+    EXPLANATION_ARTIFACT_NAME,
+    AlignmentOutputLevel,
+    artifact_names_for_output_level,
+)
+from xic_extractor.output.alignment.pipeline_outputs import (
+    AlignmentRunOutputs,
+    write_completed_untargeted_outputs_atomic,
+)
 
 if TYPE_CHECKING:
     from xic_extractor.extraction.untargeted_execution_result import (
@@ -67,8 +57,7 @@ def publish_untargeted_outputs(
     with ExitStack() as output_stack:
         if hasattr(completed, "close"):
             output_stack.callback(completed.close)
-        if should_cancel is not None and should_cancel():
-            raise InterruptedError("Alignment cancelled before output publication")
+        _ensure_output_publication_not_cancelled(should_cancel)
         matrix_path = outputs.matrix_tsv
         write_explanation = emit_cid_nl_explanation or EXPLANATION_ARTIFACT_NAME in (
             artifact_names_for_output_level(output_level)
@@ -97,7 +86,6 @@ def publish_untargeted_outputs(
                         progress_callback=timing_recorder.heartbeat_event,
                     )
                 )
-        stream_outputs = supports_streamed_untargeted_outputs(outputs)
         ms1_apex_mz_by_candidate = (
             candidates_by_sample.ms1_apex_mz_by_candidate
             if isinstance(candidates_by_sample, DiscoveryInputSource)
@@ -108,48 +96,21 @@ def publish_untargeted_outputs(
                 if candidate.ms1_apex_mz is not None
             }
         )
-        writer_inputs = None
-        if not stream_outputs:
-            with timing_recorder.stage("alignment.project_outputs"):
-                writer_inputs = project_completed_untarget_batch_writer_inputs(
-                    completed.application_result,
-                    consume_child=_explanation_sink(explanation),
-                    ms1_apex_mz_by_candidate=ms1_apex_mz_by_candidate,
-                )
-        if should_cancel is not None and should_cancel():
-            raise InterruptedError("Alignment cancelled before output publication")
-        with timing_recorder.stage("alignment.write_outputs"):
-            if stream_outputs:
-                writer_row_count, artifact_fingerprint_batch = (
-                    write_streamed_untargeted_outputs_atomic(
-                        outputs,
-                        iter_completed_untarget_batch_writer_inputs(
-                            completed.application_result,
-                            consume_child=_explanation_sink(explanation),
-                            ms1_apex_mz_by_candidate=ms1_apex_mz_by_candidate,
-                        ),
-                        sample_order=completed_untarget_batch_sample_order(
-                            completed.application_result
-                        ),
-                        metadata=metadata,
-                        alignment_config=alignment_config,
-                        timing_recorder=timing_recorder,
-                        capture_artifact_fingerprints=capture_artifact_fingerprints,
-                    )
-                )
-            else:
-                assert writer_inputs is not None
-                writer_row_count = len(writer_inputs.matrix.clusters)
-                artifact_fingerprint_batch = write_outputs_atomic(
-                    outputs,
-                    writer_inputs.matrix,
-                    metadata=metadata,
-                    alignment_config=alignment_config,
-                    backfill_peak_fact_provenance=EMPTY_BACKFILL_PEAK_FACT_PROVENANCE_BATCH,
-                    production_decisions=writer_inputs.production_decisions,
-                    timing_recorder=timing_recorder,
-                    capture_artifact_fingerprints=capture_artifact_fingerprints,
-                )
+        writer_row_count, artifact_fingerprint_batch = (
+            write_completed_untargeted_outputs_atomic(
+                outputs,
+                completed.application_result,
+                metadata=metadata,
+                alignment_config=alignment_config,
+                timing_recorder=timing_recorder,
+                consume_child=_explanation_sink(explanation),
+                ms1_apex_mz_by_candidate=ms1_apex_mz_by_candidate,
+                before_write=lambda: _ensure_output_publication_not_cancelled(
+                    should_cancel
+                ),
+                capture_artifact_fingerprints=capture_artifact_fingerprints,
+            )
+        )
         if capture_artifact_fingerprints:
             if not isinstance(
                 artifact_fingerprint_batch, AlignmentArtifactFingerprintBatch
@@ -191,6 +152,13 @@ def publish_untargeted_outputs(
             owner_build_route_receipt=owner_build_route_receipt,
             evidence=evidence,
         )
+
+
+def _ensure_output_publication_not_cancelled(
+    should_cancel: Callable[[], bool] | None,
+) -> None:
+    if should_cancel is not None and should_cancel():
+        raise InterruptedError("Alignment cancelled before output publication")
 
 
 def _explanation_sink(

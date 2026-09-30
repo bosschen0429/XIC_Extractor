@@ -6,14 +6,14 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-from xic_extractor.alignment.quant_matrix_version import (
+from xic_extractor.diagnostics.quant_matrix.fixture_contract import (
+    validate_fixture_contract,
+)
+from xic_extractor.diagnostics.quant_matrix.version import (
     CELL_PROVENANCE_COLUMNS,
     CELL_PROVENANCE_SCHEMA,
     ROW_SUMMARY_COLUMNS,
     ROW_SUMMARY_SCHEMA,
-)
-from xic_extractor.diagnostics.quant_matrix.fixture_contract import (
-    validate_fixture_contract,
 )
 from xic_extractor.tabular_io import (
     file_sha256,

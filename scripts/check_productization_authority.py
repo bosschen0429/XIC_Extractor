@@ -23,18 +23,18 @@ from tools.diagnostics.docs_policy import (  # noqa: E402
     PRODUCTIZATION_AUTHORITY_MANIFEST_REL,
     QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_REL,
 )
-from xic_extractor.alignment.production_acceptance import (  # noqa: E402
-    ProductionAcceptanceManifestError,
-    load_checked_production_acceptance_manifest,
-)
-from xic_extractor.alignment.quant_matrix_version import (  # noqa: E402
-    accepted_production_acceptance_rows_by_key,
-)
 from xic_extractor.alignment.quantitative_projection_authority import (  # noqa: E402
     QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_FIELDS,
     QuantitativeProjectionAuthorityError,
     rehydrate_quantitative_projection_authority_manifest,
     render_quantitative_projection_authority_manifest_bytes,
+)
+from xic_extractor.diagnostics.quant_matrix.acceptance import (  # noqa: E402
+    ProductionAcceptanceManifestError,
+    load_checked_production_acceptance_manifest,
+)
+from xic_extractor.diagnostics.quant_matrix.version import (  # noqa: E402
+    accepted_production_acceptance_rows_by_key,
 )
 from xic_extractor.tabular_io import read_tsv_with_header_snapshot  # noqa: E402
 

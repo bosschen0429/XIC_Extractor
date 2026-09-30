@@ -30,7 +30,7 @@ from scripts.check_cid_nl_default_activation_bridge_gate import (  # noqa: E402
     REQUIRED_MANIFEST_COLUMNS,
     evaluate_bridge_gate,
 )
-from xic_extractor.alignment.quant_matrix_version import (  # noqa: E402
+from xic_extractor.diagnostics.quant_matrix.version import (  # noqa: E402
     EXPECTED_DIFF_COLUMNS,
     build_quant_matrix_version_rows,
 )

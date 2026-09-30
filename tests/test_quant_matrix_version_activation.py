@@ -12,7 +12,7 @@ from scripts.check_production_acceptance_manifest import (
 from scripts.check_production_acceptance_manifest import (
     production_acceptance_manifest_sha256,
 )
-from xic_extractor.alignment.quant_matrix_version import (
+from xic_extractor.diagnostics.quant_matrix.version import (
     EXPECTED_DIFF_COLUMNS,
     detected_only_matrix_rows_from_quant_version,
 )

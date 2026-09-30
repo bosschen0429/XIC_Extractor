@@ -12,7 +12,6 @@ from xic_extractor.alignment.config import (
     BackfillXicBackend,
     OwnerBuildXicBackend,
 )
-from xic_extractor.alignment.pipeline_outputs import AlignmentRunOutputs
 from xic_extractor.applications.untargeted.application import (
     run_untargeted_application,
     validate_untargeted_application_options,
@@ -25,6 +24,7 @@ from xic_extractor.discovery.pipeline import run_discovery_batch
 from xic_extractor.extraction.untargeted_input_planning import (
     is_pure_single_provider_cid_nl,
 )
+from xic_extractor.output.alignment.pipeline_outputs import AlignmentRunOutputs
 from xic_extractor.sample_metadata import SampleMetadata
 from xic_extractor.settings_schema import CANONICAL_SETTINGS_DEFAULTS
 

@@ -17,7 +17,7 @@ from scripts.check_production_acceptance_manifest import (
     production_acceptance_manifest_sha256,
 )
 from tools.diagnostics import cid_nl_feature_inclusion_gate as feature_gate
-from xic_extractor.alignment.quant_matrix_version import CELL_PROVENANCE_COLUMNS
+from xic_extractor.diagnostics.quant_matrix.version import CELL_PROVENANCE_COLUMNS
 from xic_extractor.tabular_io import read_tsv_required
 
 
