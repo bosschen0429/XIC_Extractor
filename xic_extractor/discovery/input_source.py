@@ -11,14 +11,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import BinaryIO
 
-from xic_extractor.alignment.csv_io import (
+from xic_extractor.discovery.batch_contract import validate_discovery_candidate_artifact
+from xic_extractor.discovery.csv_reader import (
     DiscoveryBatchInput,
     _machine_field,
     _parse_bool,
     _parse_candidate_row,
     _require_columns,
 )
-from xic_extractor.discovery.batch_contract import validate_discovery_candidate_artifact
 from xic_extractor.discovery.models import (
     DISCOVERY_CANDIDATE_COLUMNS,
     MS1_FEATURE_BACKED_STATES,

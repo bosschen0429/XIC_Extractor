@@ -83,7 +83,7 @@ def test_discovery_retained_physical_peak_cardinality(
     expected_apices: tuple[float, ...],
     representative_scan: int | None,
 ) -> None:
-    from xic_extractor.alignment.csv_io import read_discovery_candidates_csv
+    from xic_extractor.discovery.csv_reader import read_discovery_candidates_csv
     from xic_extractor.discovery.csv_writer import write_discovery_candidates_csv
 
     fixture = json.loads(
@@ -215,8 +215,8 @@ def test_merged_physical_candidate_persists_representative_search_window(
     tmp_path: Path, combine_mode: str
 ) -> None:
     from xic_extractor.acquisition_contract import serialize_acquired_trace
-    from xic_extractor.alignment.csv_io import read_discovery_candidates_csv
     from xic_extractor.diagnostics.timing import TimingRecorder
+    from xic_extractor.discovery.csv_reader import read_discovery_candidates_csv
     from xic_extractor.discovery.pipeline import _write_dual_csvs
     from xic_extractor.extraction.untargeted_alignment import (
         _restore_physical_candidate,
