@@ -22,13 +22,14 @@ def test_extractor_delegates_backend_orchestration() -> None:
 
 
 def test_process_jobs_live_under_extraction_package() -> None:
-    execution_path = ROOT / "xic_extractor" / "execution.py"
+    from xic_extractor.extraction import jobs
+
     process_backend_path = (
         ROOT / "xic_extractor" / "extraction" / "process_backend.py"
     )
 
-    assert _function_names(execution_path) == set()
-    assert len(execution_path.read_text(encoding="utf-8").splitlines()) <= 60
+    assert inspect.getmodule(jobs.run_raw_file_jobs) is jobs
+    assert inspect.getmodule(jobs.run_istd_prepass_jobs) is jobs
     assert "xic_extractor.execution" not in process_backend_path.read_text(
         encoding="utf-8"
     )
