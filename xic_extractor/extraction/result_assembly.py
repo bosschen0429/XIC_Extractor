@@ -7,7 +7,7 @@ from xic_extractor.applications.targeted.product_projection import (
     project_targeted_result,
 )
 from xic_extractor.config import Target
-from xic_extractor.neutral_loss import CandidateMS2Evidence, NLResult
+from xic_extractor.evidence.neutral_loss import CandidateMS2Evidence, NLResult
 from xic_extractor.peak_detection.hypotheses import (
     PeakHypothesis,
     validate_peak_hypothesis_selection_authority,

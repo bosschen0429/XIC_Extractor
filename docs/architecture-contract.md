@@ -47,6 +47,7 @@ feature-by-sample Matrix。兩者共用科學判斷，但保留不同搜尋政�
 | 跨樣本配對、RT 漂移、群組 | `alignment/grouping_workflow.py`、`alignment/cross_sample/` | 群組決定先完成，Backfill 與格值決策消費同一結果 |
 | 缺格補證及格值 | `alignment/backfill/`、`alignment/cell_decision/` | 新觀察、科學決策與檔案 writer 各自有 owner |
 | RAW 讀取或 DLL | `raw_reader.py` 及使用它的 acquisition adapter | 讀入量測資料；不因此取得群組、格值或發布決定權 |
+| Targeted／Alignment RT-window MS2 擷取與 NL 解讀 | `acquisition/ms2_windows.py` 擷取單一樣本的有界視窗；`evidence/neutral_loss.py` 解讀已擷取事件 | 前者持有 reader 呼叫，後者只處理 `Ms2Window` 與候選幾何；Discovery 宣告 scan 的 strict receipt 保留原 owner |
 | 排程、取消、清理 | `execution_engine/`、`execution_runtime_owner.py` | engine 執行工作；runtime owner 決定 attempt 是否完成 |
 | 欄位、workbook 或 Matrix 格式 | `output/`、Alignment 的輸出 adapter | 呈現 owner 的答案；不要從格式變更反向改變選峰或計數 |
 

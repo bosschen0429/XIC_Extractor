@@ -1,11 +1,10 @@
-from collections.abc import Iterator
 from dataclasses import dataclass, field
-from typing import Literal, Protocol
+from typing import Literal
 
 import numpy as np
 
 from xic_extractor.mass_accuracy import neutral_loss_match
-from xic_extractor.ms2_scan_models import Ms2Scan, Ms2ScanEvent
+from xic_extractor.ms2_scan_models import Ms2Scan, Ms2Window
 from xic_extractor.ms2_trace_evidence import (
     MS2TraceEvidence,
     MS2TracePoint,
@@ -22,12 +21,6 @@ _CANDIDATE_MS2_APEX_FALLBACK_MIN = 0.08
 _CANDIDATE_MS2_BOUNDARY_RESCUE_MIN = 0.08
 _CANDIDATE_MS2_BOUNDARY_RESCUE_MAX = 0.20
 _CANDIDATE_MS2_BOUNDARY_RESCUE_WIDTH_FRACTION = 0.5
-
-
-class MS2ScanSource(Protocol):
-    def iter_ms2_scans(self, rt_min: float, rt_max: float) -> Iterator[Ms2ScanEvent]:
-        """Yield MS2 scan events for the requested retention-time window."""
-        ...
 
 
 @dataclass(frozen=True)
@@ -112,19 +105,82 @@ class CandidateMS2Evidence:
         return self.nl_status
 
 
+def anchor_window_bounds(
+    rt_center: float, search_margin_min: float
+) -> tuple[float, float]:
+    """Preserve the configured anchor request's exact RT bounds."""
+    return max(0.0, rt_center - search_margin_min), rt_center + search_margin_min
+
+
+@dataclass(frozen=True)
+class CandidateMS2Geometry:
+    peak_start: float
+    peak_end: float
+    apex_rt: float
+    scoped_peak_group: tuple[float, float] | None
+    primary_start: float
+    primary_end: float
+    boundary_rescue_margin: float
+    rt_min: float
+    rt_max: float
+
+
+def candidate_ms2_geometry(
+    candidate: object,
+    *,
+    ms1_peak_group_rt_min: float | None = None,
+    ms1_peak_group_rt_max: float | None = None,
+) -> CandidateMS2Geometry:
+    """Resolve candidate geometry once for acquisition and evaluation."""
+    peak = getattr(candidate, "peak")
+    evidence_peak_start = getattr(candidate, "ms2_evidence_peak_start", None)
+    evidence_peak_end = getattr(candidate, "ms2_evidence_peak_end", None)
+    peak_start = float(
+        evidence_peak_start
+        if evidence_peak_start is not None
+        else getattr(peak, "peak_start")
+    )
+    peak_end = float(
+        evidence_peak_end
+        if evidence_peak_end is not None
+        else getattr(peak, "peak_end")
+    )
+    apex_rt = float(getattr(candidate, "selection_apex_rt"))
+    scoped_peak_group = _valid_ms1_peak_group_scope(
+        ms1_peak_group_rt_min,
+        ms1_peak_group_rt_max,
+    )
+    primary_start = (
+        scoped_peak_group[0] if scoped_peak_group is not None else peak_start
+    )
+    primary_end = scoped_peak_group[1] if scoped_peak_group is not None else peak_end
+    boundary_rescue_margin = _candidate_ms2_boundary_rescue_margin(
+        primary_start, primary_end
+    )
+    return CandidateMS2Geometry(
+        peak_start=peak_start,
+        peak_end=peak_end,
+        apex_rt=apex_rt,
+        scoped_peak_group=scoped_peak_group,
+        primary_start=primary_start,
+        primary_end=primary_end,
+        boundary_rescue_margin=boundary_rescue_margin,
+        rt_min=max(0.0, min(primary_start, apex_rt) - boundary_rescue_margin),
+        rt_max=max(primary_end, apex_rt) + boundary_rescue_margin,
+    )
+
+
 def find_nl_anchor_rt(
-    raw: MS2ScanSource,
+    window: Ms2Window,
     *,
     precursor_mz: float,
-    rt_center: float,
-    search_margin_min: float,
     neutral_loss_da: float,
     nl_ppm_max: float,
     ms2_precursor_tol_da: float,
     nl_min_intensity_ratio: float,
     reference_rt: float | None = None,
 ) -> float | None:
-    """在 rt_center ± search_margin_min 範圍內搜尋 NL 確認的 MS2 scan，回傳最合適的 RT。
+    """Find the best NL-confirmed anchor in an already acquired MS2 window.
 
     選擇邏輯依 reference_rt 而定：
     - reference_rt 為 None：選 base_peak 最高的 scan。
@@ -134,15 +190,13 @@ def find_nl_anchor_rt(
       適用於有 ISTD pair 的 analyte，傳入 ISTD 的 anchor_rt 以區分同 RT
       窗口內的異構體（如 5-medC vs N4-medC）。
     """
-    rt_min = max(0.0, rt_center - search_margin_min)
-    rt_max = rt_center + search_margin_min
     diagnostic_ppm = max(3.0 * nl_ppm_max, NL_DIAGNOSTIC_PPM_FLOOR)
 
     best_rt: float | None = None
     best_base_peak: float = -1.0
     best_distance: float = float("inf")
 
-    for event in raw.iter_ms2_scans(rt_min, rt_max):
+    for event in window.events:
         if event.parse_error is not None or event.scan is None:
             continue
         if abs(event.scan.precursor_mz - precursor_mz) > ms2_precursor_tol_da:
@@ -175,11 +229,9 @@ def find_nl_anchor_rt(
 
 
 def check_nl(
-    raw: MS2ScanSource,
+    window: Ms2Window,
     *,
     precursor_mz: float,
-    rt_min: float,
-    rt_max: float,
     neutral_loss_da: float,
     nl_ppm_warn: float,
     nl_ppm_max: float,
@@ -195,7 +247,7 @@ def check_nl(
     best_scan_rt: float | None = None
     best_strict_match = False
 
-    for event in raw.iter_ms2_scans(rt_min, rt_max):
+    for event in window.events:
         if event.parse_error is not None:
             parse_error_count += 1
             continue
@@ -247,46 +299,24 @@ def check_nl(
 
 
 def collect_candidate_ms2_evidence(
-    raw: MS2ScanSource,
+    window: Ms2Window,
     *,
-    candidate: object,
+    geometry: CandidateMS2Geometry,
     precursor_mz: float,
     neutral_loss_da: float,
     nl_ppm_warn: float,
     nl_ppm_max: float,
     ms2_precursor_tol_da: float,
     nl_min_intensity_ratio: float,
-    ms1_peak_group_rt_min: float | None = None,
-    ms1_peak_group_rt_max: float | None = None,
     ms1_peak_group_source: str = "",
 ) -> CandidateMS2Evidence:
-    peak = getattr(candidate, "peak")
-    evidence_peak_start = getattr(candidate, "ms2_evidence_peak_start", None)
-    evidence_peak_end = getattr(candidate, "ms2_evidence_peak_end", None)
-    peak_start = float(
-        evidence_peak_start
-        if evidence_peak_start is not None
-        else getattr(peak, "peak_start")
-    )
-    peak_end = float(
-        evidence_peak_end
-        if evidence_peak_end is not None
-        else getattr(peak, "peak_end")
-    )
-    apex_rt = float(getattr(candidate, "selection_apex_rt"))
-    scoped_peak_group = _valid_ms1_peak_group_scope(
-        ms1_peak_group_rt_min,
-        ms1_peak_group_rt_max,
-    )
-    primary_start = (
-        scoped_peak_group[0] if scoped_peak_group is not None else peak_start
-    )
-    primary_end = scoped_peak_group[1] if scoped_peak_group is not None else peak_end
-    boundary_rescue_margin = _candidate_ms2_boundary_rescue_margin(
-        primary_start, primary_end
-    )
-    rt_min = max(0.0, min(primary_start, apex_rt) - boundary_rescue_margin)
-    rt_max = max(primary_end, apex_rt) + boundary_rescue_margin
+    peak_start = geometry.peak_start
+    peak_end = geometry.peak_end
+    apex_rt = geometry.apex_rt
+    scoped_peak_group = geometry.scoped_peak_group
+    primary_start = geometry.primary_start
+    primary_end = geometry.primary_end
+    boundary_rescue_margin = geometry.boundary_rescue_margin
     diagnostic_ppm = max(3.0 * nl_ppm_max, NL_DIAGNOSTIC_PPM_FLOOR)
 
     trigger_scan_count = 0
@@ -300,7 +330,7 @@ def collect_candidate_ms2_evidence(
     outside_peak_group_trigger_scan_count = 0
     outside_peak_group_strict_nl_scan_count = 0
 
-    for event in raw.iter_ms2_scans(rt_min, rt_max):
+    for event in window.events:
         if event.parse_error is not None or event.scan is None:
             continue
         scan = event.scan

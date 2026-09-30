@@ -7,13 +7,13 @@ from xic_extractor.applications.targeted.product_model import (
     TargetedProductProjection,
 )
 from xic_extractor.config import ExtractionConfig, Target
+from xic_extractor.evidence.neutral_loss import NLResult
 from xic_extractor.extractor import (
     DiagnosticRecord,
     ExtractionResult,
     FileResult,
     RunOutput,
 )
-from xic_extractor.neutral_loss import NLResult
 from xic_extractor.output.schema import TARGETED_PRODUCT_PROJECTION_HEADERS
 from xic_extractor.signal_processing import (
     PeakCandidate,

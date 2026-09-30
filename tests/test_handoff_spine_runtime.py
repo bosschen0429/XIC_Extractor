@@ -5,8 +5,8 @@ import numpy as np
 import pytest
 
 from xic_extractor.config import ExtractionConfig, Target
+from xic_extractor.evidence.neutral_loss import CandidateMS2Evidence
 from xic_extractor.extraction import handoff_spine_runtime
-from xic_extractor.neutral_loss import CandidateMS2Evidence
 from xic_extractor.peak_detection.model_selection import (
     ExpectedDiffApprovalRecord,
     expected_diff_stable_row_id,

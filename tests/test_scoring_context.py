@@ -11,9 +11,9 @@ from xic_extractor.config import ExtractionConfig, Target
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )
+from xic_extractor.evidence.neutral_loss import CandidateMS2Evidence, NLResult
 from xic_extractor.extraction.scoring_factory import build_scoring_context_factory
 from xic_extractor.ms2_trace_evidence import MS2TraceEvidence
-from xic_extractor.neutral_loss import CandidateMS2Evidence, NLResult
 from xic_extractor.peak_detection.candidate_scoring import score_candidate
 from xic_extractor.peak_detection.candidate_selection import (
     select_candidate_by_evidence,

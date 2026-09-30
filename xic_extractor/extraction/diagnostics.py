@@ -3,27 +3,89 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
+from xic_extractor.acquisition.ms2_windows import acquire_ms2_window
 from xic_extractor.config import ExtractionConfig, Target
+from xic_extractor.evidence.neutral_loss import (
+    CandidateMS2Evidence,
+    NLResult,
+    candidate_ms2_geometry,
+)
+from xic_extractor.evidence.neutral_loss import (
+    check_nl as evaluate_nl,
+)
+from xic_extractor.evidence.neutral_loss import (
+    collect_candidate_ms2_evidence as evaluate_candidate_ms2_evidence,
+)
 from xic_extractor.extraction.anchors import ANCHOR_PEAK_DELTA_WARN_MIN
-from xic_extractor.neutral_loss import NLResult
 from xic_extractor.output.messages import DiagnosticRecord
 from xic_extractor.signal_processing import PeakCandidate, PeakDetectionResult
+
+
+def check_nl(
+    raw: Any,
+    *,
+    sample_key: str,
+    rt_min: float,
+    rt_max: float,
+    **question: Any,
+) -> NLResult:
+    window = acquire_ms2_window(
+        raw, sample_key=sample_key, rt_min=rt_min, rt_max=rt_max
+    )
+    return evaluate_nl(window, **question)
+
+
+def collect_candidate_ms2_evidence(
+    raw: Any,
+    *,
+    sample_key: str,
+    candidate: object,
+    precursor_mz: float,
+    neutral_loss_da: float,
+    nl_ppm_warn: float,
+    nl_ppm_max: float,
+    ms2_precursor_tol_da: float,
+    nl_min_intensity_ratio: float,
+    ms1_peak_group_rt_min: float | None = None,
+    ms1_peak_group_rt_max: float | None = None,
+    ms1_peak_group_source: str = "",
+) -> CandidateMS2Evidence:
+    geometry = candidate_ms2_geometry(
+        candidate,
+        ms1_peak_group_rt_min=ms1_peak_group_rt_min,
+        ms1_peak_group_rt_max=ms1_peak_group_rt_max,
+    )
+    window = acquire_ms2_window(
+        raw, sample_key=sample_key, rt_min=geometry.rt_min, rt_max=geometry.rt_max
+    )
+    return evaluate_candidate_ms2_evidence(
+        window,
+        geometry=geometry,
+        precursor_mz=precursor_mz,
+        neutral_loss_da=neutral_loss_da,
+        nl_ppm_warn=nl_ppm_warn,
+        nl_ppm_max=nl_ppm_max,
+        ms2_precursor_tol_da=ms2_precursor_tol_da,
+        nl_min_intensity_ratio=nl_min_intensity_ratio,
+        ms1_peak_group_source=ms1_peak_group_source,
+    )
 
 
 def check_target_nl(
     raw: Any,
     target: Target,
     config: ExtractionConfig,
+    *,
+    sample_key: str,
 ) -> NLResult | None:
     """NL quality uses the original target window for full matched scan counts."""
-    from xic_extractor import extractor
-
     if target.neutral_loss_da is None:
         return None
     if target.nl_ppm_warn is None or target.nl_ppm_max is None:
         return None
-    return extractor.check_nl(
+    return check_nl(
         raw,
+        sample_key=sample_key,
         precursor_mz=target.mz,
         rt_min=target.rt_min,
         rt_max=target.rt_max,
@@ -39,9 +101,9 @@ def candidate_ms2_evidence_builder(
     raw: Any,
     target: Target,
     config: ExtractionConfig,
+    *,
+    sample_key: str,
 ) -> Callable[[PeakCandidate], Any] | None:
-    from xic_extractor import extractor
-
     if target.neutral_loss_da is None:
         return None
     if target.nl_ppm_warn is None or target.nl_ppm_max is None:
@@ -52,8 +114,9 @@ def candidate_ms2_evidence_builder(
 
     def _builder(candidate: PeakCandidate) -> Any:
         peak_group_scope = _candidate_ms1_peak_group_scope(candidate)
-        return extractor.collect_candidate_ms2_evidence(
+        return collect_candidate_ms2_evidence(
             raw,
+            sample_key=sample_key,
             candidate=candidate,
             precursor_mz=target.mz,
             neutral_loss_da=neutral_loss_da,

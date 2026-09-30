@@ -6,8 +6,8 @@ import numpy as np
 import pytest
 
 from xic_extractor.config import ExtractionConfig, Target
+from xic_extractor.evidence.neutral_loss import CandidateMS2Evidence, NLResult
 from xic_extractor.extractor import ExtractionResult
-from xic_extractor.neutral_loss import CandidateMS2Evidence, NLResult
 from xic_extractor.peak_detection.evidence_facts import (
     build_candidate_evidence_facts,
 )
@@ -33,7 +33,7 @@ def _disable_reader_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
         raising=False,
     )
     monkeypatch.setattr(
-        "xic_extractor.extractor.collect_candidate_ms2_evidence",
+        "xic_extractor.extraction.diagnostics.collect_candidate_ms2_evidence",
         _candidate_evidence_for_active_nl_fixture,
     )
 
@@ -87,7 +87,7 @@ def test_run_writes_success_rows_with_area_columns_and_optional_nl(
         ),
     )
     monkeypatch.setattr(
-        "xic_extractor.extractor.check_nl",
+        "xic_extractor.extraction.diagnostics.check_nl",
         _nl_sequence([NLResult("WARN", 12.34, None, 3, 0, 2)]),
     )
 
@@ -355,10 +355,11 @@ def test_no_selected_apex_does_not_capture_a_broad_tail(
         "xic_extractor.extractor.open_raw", lambda *_args, **_kwargs: BroadTailRaw()
     )
     monkeypatch.setattr(
-        "xic_extractor.extractor.find_nl_anchor_rt", _anchor_sequence([10.8])
+        "xic_extractor.extraction.rt_windows.find_nl_anchor_rt",
+        _anchor_sequence([10.8]),
     )
     monkeypatch.setattr(
-        "xic_extractor.extractor.check_nl",
+        "xic_extractor.extraction.diagnostics.check_nl",
         _nl_sequence([NLResult("OK", 1.0, 10.8, 1, 0, 1)]),
     )
 
@@ -419,11 +420,11 @@ def test_target_selection_window_uses_one_wide_physical_context(
         lambda *_args, **_kwargs: raw,
     )
     monkeypatch.setattr(
-        "xic_extractor.extractor.find_nl_anchor_rt",
+        "xic_extractor.extraction.rt_windows.find_nl_anchor_rt",
         _anchor_sequence([9.0]),
     )
     monkeypatch.setattr(
-        "xic_extractor.extractor.check_nl",
+        "xic_extractor.extraction.diagnostics.check_nl",
         _nl_sequence([NLResult("OK", 1.0, 9.0, 1, 0, 1)]),
     )
 
@@ -546,7 +547,7 @@ def test_run_wires_candidate_ms2_evidence_into_scoring_context(
         _open_raw_factory(),
     )
     monkeypatch.setattr(
-        "xic_extractor.extractor.collect_candidate_ms2_evidence",
+        "xic_extractor.extraction.diagnostics.collect_candidate_ms2_evidence",
         _fake_collect_candidate_ms2_evidence,
         raising=False,
     )
@@ -694,7 +695,7 @@ def test_peak_candidate_table_does_not_echo_unused_anchor_as_selection_reference
     peak_result = _ok_peak(8.5, 1200.0, 3400.25)
     monkeypatch.setattr("xic_extractor.extractor.open_raw", _open_raw_factory())
     monkeypatch.setattr(
-        "xic_extractor.extractor.find_nl_anchor_rt",
+        "xic_extractor.extraction.rt_windows.find_nl_anchor_rt",
         _anchor_sequence([8.45]),
     )
     monkeypatch.setattr(
@@ -976,7 +977,7 @@ def test_run_writes_nd_for_peak_failure_but_keeps_nl_result(
         "xic_extractor.extractor.open_raw", lambda *_args, **_kwargs: FlatRaw()
     )
     monkeypatch.setattr(
-        "xic_extractor.extractor.check_nl",
+        "xic_extractor.extraction.diagnostics.check_nl",
         _nl_sequence([NLResult("OK", 1.2, None, 3, 0, 2)]),
     )
 
@@ -1010,7 +1011,7 @@ def test_run_projects_very_low_for_nd_rows_with_failed_nl(
         ),
     )
     monkeypatch.setattr(
-        "xic_extractor.extractor.check_nl",
+        "xic_extractor.extraction.diagnostics.check_nl",
         _nl_sequence([NLResult("NL_FAIL", 78.4, None, 10, 1, 3)]),
     )
 
@@ -1101,7 +1102,7 @@ def test_run_writes_file_error_row_and_continues(
         _peak_sequence([_ok_peak(8.5, 1000.0, 2000.0), _ok_peak(9.5, 1100.0, 2100.0)]),
     )
     monkeypatch.setattr(
-        "xic_extractor.extractor.check_nl",
+        "xic_extractor.extraction.diagnostics.check_nl",
         _nl_sequence([NLResult("OK", 1.0, None, 2, 0, 1)]),
     )
 
@@ -1204,7 +1205,9 @@ def test_run_writes_neutral_loss_diagnostics(
         "xic_extractor.extraction.target_extraction.find_peak_and_area_from_candidates",
         _peak_sequence([_ok_peak(8.5, 1000.0, 2000.0)]),
     )
-    monkeypatch.setattr("xic_extractor.extractor.check_nl", _nl_sequence([nl_result]))
+    monkeypatch.setattr(
+        "xic_extractor.extraction.diagnostics.check_nl", _nl_sequence([nl_result])
+    )
 
     _run(config, targets)
 
@@ -1235,7 +1238,7 @@ def test_istd_no_ms2_keeps_ms1_peak_and_writes_confidence_flags(
         _peak_sequence([_ok_peak(9.05, 1200.0, 3400.25)]),
     )
     monkeypatch.setattr(
-        "xic_extractor.extractor.check_nl",
+        "xic_extractor.extraction.diagnostics.check_nl",
         _nl_sequence([NLResult("NO_MS2", None, None, 12, 0, 0)]),
     )
 
@@ -1310,7 +1313,7 @@ def test_paired_analyte_uses_strict_anchor_peak_selection(
         lambda *_args, **_kwargs: None,
     )
     monkeypatch.setattr(
-        "xic_extractor.extractor.find_nl_anchor_rt",
+        "xic_extractor.extraction.rt_windows.find_nl_anchor_rt",
         _anchor_sequence([13.70, 13.75]),
     )
     monkeypatch.setattr(
@@ -1321,7 +1324,7 @@ def test_paired_analyte_uses_strict_anchor_peak_selection(
         ),
     )
     monkeypatch.setattr(
-        "xic_extractor.extractor.check_nl",
+        "xic_extractor.extraction.diagnostics.check_nl",
         _nl_sequence(
             [
                 NLResult("OK", 1.0, 13.70, 1, 0, 1),
@@ -1379,7 +1382,7 @@ def test_istd_anchor_keeps_strongest_anchor_when_far_from_target_center(
         lambda *_args, **_kwargs: None,
     )
     monkeypatch.setattr(
-        "xic_extractor.extractor.find_nl_anchor_rt",
+        "xic_extractor.extraction.rt_windows.find_nl_anchor_rt",
         _fake_find_nl_anchor_rt,
     )
     monkeypatch.setattr(
@@ -1387,7 +1390,7 @@ def test_istd_anchor_keeps_strongest_anchor_when_far_from_target_center(
         _fake_find_peak_and_area,
     )
     monkeypatch.setattr(
-        "xic_extractor.extractor.check_nl",
+        "xic_extractor.extraction.diagnostics.check_nl",
         _nl_sequence([NLResult("OK", 1.0, 7.08, 1, 0, 1)]),
     )
 
@@ -1441,7 +1444,7 @@ def test_istd_anchor_keeps_strongest_anchor_when_it_is_near_target_center(
         lambda *_args, **_kwargs: None,
     )
     monkeypatch.setattr(
-        "xic_extractor.extractor.find_nl_anchor_rt",
+        "xic_extractor.extraction.rt_windows.find_nl_anchor_rt",
         _fake_find_nl_anchor_rt,
     )
     monkeypatch.setattr(
@@ -1449,7 +1452,7 @@ def test_istd_anchor_keeps_strongest_anchor_when_it_is_near_target_center(
         _fake_find_peak_and_area,
     )
     monkeypatch.setattr(
-        "xic_extractor.extractor.check_nl",
+        "xic_extractor.extraction.diagnostics.check_nl",
         _nl_sequence([NLResult("OK", 1.0, 8.55, 1, 0, 1)]),
     )
 
@@ -1476,7 +1479,7 @@ def test_istd_peak_not_found_does_not_reacquire_context(
         lambda *_args, **_kwargs: None,
     )
     monkeypatch.setattr(
-        "xic_extractor.extractor.find_nl_anchor_rt",
+        "xic_extractor.extraction.rt_windows.find_nl_anchor_rt",
         _anchor_sequence([9.0]),
     )
     monkeypatch.setattr(
@@ -1486,7 +1489,7 @@ def test_istd_peak_not_found_does_not_reacquire_context(
         ),
     )
     monkeypatch.setattr(
-        "xic_extractor.extractor.check_nl",
+        "xic_extractor.extraction.diagnostics.check_nl",
         _nl_sequence([NLResult("OK", 1.0, 9.0, 1, 0, 1)]),
     )
 
@@ -1521,7 +1524,7 @@ def test_istd_no_signal_does_not_reacquire_context(
         lambda *_args, **_kwargs: None,
     )
     monkeypatch.setattr(
-        "xic_extractor.extractor.find_nl_anchor_rt",
+        "xic_extractor.extraction.rt_windows.find_nl_anchor_rt",
         _anchor_sequence([9.0]),
     )
     monkeypatch.setattr(
@@ -1529,7 +1532,7 @@ def test_istd_no_signal_does_not_reacquire_context(
         _peak_sequence([_failed_peak("NO_SIGNAL", n_points=0, max_smoothed=None)]),
     )
     monkeypatch.setattr(
-        "xic_extractor.extractor.check_nl",
+        "xic_extractor.extraction.diagnostics.check_nl",
         _nl_sequence([NLResult("OK", 1.0, 9.0, 1, 0, 1)]),
     )
 
@@ -1558,7 +1561,7 @@ def test_istd_weak_peak_keeps_single_complete_context(
         lambda *_args, **_kwargs: None,
     )
     monkeypatch.setattr(
-        "xic_extractor.extractor.find_nl_anchor_rt",
+        "xic_extractor.extraction.rt_windows.find_nl_anchor_rt",
         _anchor_sequence([9.0]),
     )
     monkeypatch.setattr(
@@ -1575,7 +1578,7 @@ def test_istd_weak_peak_keeps_single_complete_context(
         ),
     )
     monkeypatch.setattr(
-        "xic_extractor.extractor.check_nl",
+        "xic_extractor.extraction.diagnostics.check_nl",
         _nl_sequence([NLResult("OK", 1.0, 9.0, 1, 0, 1)]),
     )
 
@@ -1606,7 +1609,7 @@ def test_istd_low_confidence_peak_keeps_single_complete_context(
         lambda *_args, **_kwargs: None,
     )
     monkeypatch.setattr(
-        "xic_extractor.extractor.find_nl_anchor_rt",
+        "xic_extractor.extraction.rt_windows.find_nl_anchor_rt",
         _anchor_sequence([9.0]),
     )
     monkeypatch.setattr(
@@ -1624,7 +1627,7 @@ def test_istd_low_confidence_peak_keeps_single_complete_context(
         ),
     )
     monkeypatch.setattr(
-        "xic_extractor.extractor.check_nl",
+        "xic_extractor.extraction.diagnostics.check_nl",
         _nl_sequence([NLResult("OK", 1.0, 9.0, 1, 0, 1)]),
     )
 
@@ -1658,7 +1661,7 @@ def test_paired_analyte_preserves_mismatched_target_anchor_peak_as_ambiguous(
         lambda *_args, **_kwargs: None,
     )
     monkeypatch.setattr(
-        "xic_extractor.extractor.find_nl_anchor_rt",
+        "xic_extractor.extraction.rt_windows.find_nl_anchor_rt",
         _anchor_sequence([13.70, 13.75]),
     )
     monkeypatch.setattr(
@@ -1668,7 +1671,7 @@ def test_paired_analyte_preserves_mismatched_target_anchor_peak_as_ambiguous(
         ),
     )
     monkeypatch.setattr(
-        "xic_extractor.extractor.check_nl",
+        "xic_extractor.extraction.diagnostics.check_nl",
         _nl_sequence(
             [
                 NLResult("OK", 1.0, 13.70, 1, 0, 1),
@@ -1729,7 +1732,7 @@ def test_paired_analyte_accepts_peak_close_to_target_anchor_even_if_farther_from
         lambda *_args, **_kwargs: None,
     )
     monkeypatch.setattr(
-        "xic_extractor.extractor.find_nl_anchor_rt",
+        "xic_extractor.extraction.rt_windows.find_nl_anchor_rt",
         _anchor_sequence([13.70, 13.95]),
     )
     monkeypatch.setattr(
@@ -1739,7 +1742,7 @@ def test_paired_analyte_accepts_peak_close_to_target_anchor_even_if_farther_from
         ),
     )
     monkeypatch.setattr(
-        "xic_extractor.extractor.check_nl",
+        "xic_extractor.extraction.diagnostics.check_nl",
         _nl_sequence(
             [
                 NLResult("OK", 1.0, 13.70, 1, 0, 1),
@@ -1807,7 +1810,7 @@ def test_paired_analyte_keeps_target_nl_anchor_far_from_istd_anchor(
         lambda *_args, **_kwargs: None,
     )
     monkeypatch.setattr(
-        "xic_extractor.extractor.find_nl_anchor_rt",
+        "xic_extractor.extraction.rt_windows.find_nl_anchor_rt",
         _anchor_sequence([13.70, 15.10]),
     )
     monkeypatch.setattr(
@@ -1815,7 +1818,7 @@ def test_paired_analyte_keeps_target_nl_anchor_far_from_istd_anchor(
         _fake_find_peak_and_area,
     )
     monkeypatch.setattr(
-        "xic_extractor.extractor.check_nl",
+        "xic_extractor.extraction.diagnostics.check_nl",
         _nl_sequence(
             [
                 NLResult("OK", 1.0, 13.70, 1, 0, 1),
@@ -1850,7 +1853,7 @@ def test_paired_analyte_istd_rt_fallback_does_not_force_counted_detection(
         lambda *_args, **_kwargs: None,
     )
     monkeypatch.setattr(
-        "xic_extractor.extractor.find_nl_anchor_rt",
+        "xic_extractor.extraction.rt_windows.find_nl_anchor_rt",
         _anchor_sequence([13.70, None]),
     )
     monkeypatch.setattr(
@@ -1863,7 +1866,7 @@ def test_paired_analyte_istd_rt_fallback_does_not_force_counted_detection(
         ),
     )
     monkeypatch.setattr(
-        "xic_extractor.extractor.check_nl",
+        "xic_extractor.extraction.diagnostics.check_nl",
         _nl_sequence(
             [
                 NLResult("OK", 1.0, 13.70, 1, 0, 1),
@@ -1913,7 +1916,7 @@ def test_paired_analyte_fallback_preserves_not_counted_peak_in_matrix(
         lambda *_args, **_kwargs: None,
     )
     monkeypatch.setattr(
-        "xic_extractor.extractor.find_nl_anchor_rt",
+        "xic_extractor.extraction.rt_windows.find_nl_anchor_rt",
         _anchor_sequence([13.70, None]),
     )
     monkeypatch.setattr(
@@ -1926,7 +1929,7 @@ def test_paired_analyte_fallback_preserves_not_counted_peak_in_matrix(
         ),
     )
     monkeypatch.setattr(
-        "xic_extractor.extractor.check_nl",
+        "xic_extractor.extraction.diagnostics.check_nl",
         _nl_sequence(
             [
                 NLResult("OK", 1.0, 13.70, 1, 0, 1),

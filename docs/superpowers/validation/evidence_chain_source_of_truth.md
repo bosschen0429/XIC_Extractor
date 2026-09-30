@@ -138,7 +138,8 @@ not enough to write a new matrix cell.
 
 Owners:
 
-- `xic_extractor/neutral_loss.py`
+- `xic_extractor/evidence/neutral_loss.py` for data-only interpretation;
+  `xic_extractor/acquisition/ms2_windows.py` for bounded RT-window reads
 - `xic_extractor/ms2_trace_evidence.py`
 - `xic_extractor/discovery/*`
 - `xic_extractor/instrument_qc/hcd_evidence.py`

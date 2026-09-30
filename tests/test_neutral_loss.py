@@ -3,13 +3,118 @@ from collections.abc import Iterator
 import numpy as np
 import pytest
 
-from xic_extractor import neutral_loss as neutral_loss_module
-from xic_extractor.neutral_loss import check_nl, find_nl_anchor_rt
+from xic_extractor.acquisition.ms2_windows import acquire_ms2_window
+from xic_extractor.evidence import neutral_loss as neutral_loss_module
+from xic_extractor.evidence.neutral_loss import (
+    candidate_ms2_geometry,
+    check_nl,
+    find_nl_anchor_rt,
+)
 from xic_extractor.raw_reader import Ms2Scan, Ms2ScanEvent
 
 PRECURSOR_MZ = 258.0969
 NEUTRAL_LOSS_DA = 131.0405
 EXPECTED_PRODUCT_MZ = PRECURSOR_MZ - NEUTRAL_LOSS_DA
+
+
+def test_two_sample_windows_keep_attribution_and_bounded_reader_calls() -> None:
+    candidate = _candidate(peak_start=8.0, peak_end=8.3, apex_rt=8.1)
+    geometry = candidate_ms2_geometry(candidate)
+    observed = {}
+    for sample_key, rt, ppm in (("sample-a", 8.1, 5.0), ("sample-b", 8.2, 12.0)):
+        raw = _FakeRaw(
+            [
+                _scan_event(
+                    precursor_mz=PRECURSOR_MZ,
+                    rt=rt,
+                    masses=[_product_for_loss_ppm(PRECURSOR_MZ, ppm)],
+                    intensities=[100.0],
+                )
+            ]
+        )
+        shared_window = acquire_ms2_window(
+            raw, sample_key=sample_key, rt_min=8.0, rt_max=9.0
+        )
+        anchor = find_nl_anchor_rt(
+            shared_window,
+            precursor_mz=PRECURSOR_MZ,
+            neutral_loss_da=NEUTRAL_LOSS_DA,
+            nl_ppm_max=20.0,
+            ms2_precursor_tol_da=0.5,
+            nl_min_intensity_ratio=0.05,
+        )
+        result = check_nl(
+            shared_window,
+            precursor_mz=PRECURSOR_MZ,
+            neutral_loss_da=NEUTRAL_LOSS_DA,
+            nl_ppm_warn=10.0,
+            nl_ppm_max=20.0,
+            ms2_precursor_tol_da=0.5,
+            nl_min_intensity_ratio=0.05,
+        )
+        candidate_window = acquire_ms2_window(
+            raw,
+            sample_key=sample_key,
+            rt_min=geometry.rt_min,
+            rt_max=geometry.rt_max,
+        )
+        evidence = neutral_loss_module.collect_candidate_ms2_evidence(
+            candidate_window,
+            geometry=geometry,
+            precursor_mz=PRECURSOR_MZ,
+            neutral_loss_da=NEUTRAL_LOSS_DA,
+            nl_ppm_warn=10.0,
+            nl_ppm_max=20.0,
+            ms2_precursor_tol_da=0.5,
+            nl_min_intensity_ratio=0.05,
+        )
+        observed[sample_key] = (shared_window, anchor, result, evidence, raw.calls)
+
+    first_window, first_anchor, first_nl, first_evidence, first_calls = observed[
+        "sample-a"
+    ]
+    second_window, second_anchor, second_nl, second_evidence, second_calls = (
+        observed["sample-b"]
+    )
+    assert (first_window.sample_key, second_window.sample_key) == (
+        "sample-a",
+        "sample-b",
+    )
+    assert (len(first_window.events), len(second_window.events)) == (1, 1)
+    assert (first_anchor, second_anchor) == pytest.approx((8.1, 8.2))
+    assert (first_nl.status, second_nl.status) == ("OK", "WARN")
+    assert (first_nl.to_token(), second_nl.to_token()) == ("OK", "WARN_12.0ppm")
+    assert (first_nl.best_ppm, second_nl.best_ppm) == pytest.approx((5.0, 12.0))
+    assert (first_nl.valid_ms2_scan_count, second_nl.valid_ms2_scan_count) == (1, 1)
+    assert (first_nl.parse_error_count, second_nl.parse_error_count) == (0, 0)
+    assert (first_nl.matched_scan_count, second_nl.matched_scan_count) == (1, 1)
+    assert (first_evidence.to_token(), second_evidence.to_token()) == (
+        "OK",
+        "WARN_12.0ppm",
+    )
+    assert (first_evidence.trigger_scan_count, second_evidence.trigger_scan_count) == (
+        1,
+        1,
+    )
+    assert (
+        first_evidence.strict_nl_scan_count,
+        second_evidence.strict_nl_scan_count,
+    ) == (
+        1,
+        1,
+    )
+    assert (first_evidence.alignment_source, second_evidence.alignment_source) == (
+        "region",
+        "region",
+    )
+    assert (
+        first_evidence.trace.product_point_count,
+        second_evidence.trace.product_point_count,
+    ) == (1, 1)
+    assert first_calls == second_calls == [
+        (8.0, 9.0),
+        (geometry.rt_min, geometry.rt_max),
+    ]
 
 
 def test_check_nl_returns_ok_when_best_ppm_is_at_or_below_warn() -> None:
@@ -112,10 +217,8 @@ def test_check_nl_rejects_target_product_when_observed_loss_is_wrong() -> None:
     )
 
     result = check_nl(
-        raw,
+        _window(raw, 8.0, 10.0),
         precursor_mz=261.127276,
-        rt_min=8.0,
-        rt_max=10.0,
         neutral_loss_da=116.0474,
         nl_ppm_warn=20.0,
         nl_ppm_max=50.0,
@@ -143,10 +246,8 @@ def test_check_nl_accepts_observed_loss_within_threshold() -> None:
     )
 
     result = check_nl(
-        raw,
+        _window(raw, 8.0, 10.0),
         precursor_mz=258.1085,
-        rt_min=8.0,
-        rt_max=10.0,
         neutral_loss_da=neutral_loss_da,
         nl_ppm_warn=20.0,
         nl_ppm_max=50.0,
@@ -292,10 +393,8 @@ def test_find_nl_anchor_rt_ignores_wrong_observed_loss_with_target_product() -> 
     )
 
     anchor_rt = find_nl_anchor_rt(
-        raw,
+        _window(raw, 8.0, 10.0),
         precursor_mz=261.127276,
-        rt_center=9.0,
-        search_margin_min=1.0,
         neutral_loss_da=116.0474,
         nl_ppm_max=50.0,
         ms2_precursor_tol_da=1.6,
@@ -800,8 +899,8 @@ def test_candidate_evidence_separates_trigger_from_failed_nl() -> None:
     )
 
     evidence = neutral_loss_module.collect_candidate_ms2_evidence(
-        raw,
-        candidate=candidate,
+        _window(raw, 7.9, 8.3),
+        geometry=candidate_ms2_geometry(candidate),
         precursor_mz=261.127276,
         neutral_loss_da=116.0474,
         nl_ppm_warn=20.0,
@@ -819,10 +918,8 @@ def test_candidate_evidence_separates_trigger_from_failed_nl() -> None:
 
 def _check(raw: "_FakeRaw"):
     return check_nl(
-        raw,
+        _window(raw, 8.0, 9.0),
         precursor_mz=PRECURSOR_MZ,
-        rt_min=8.0,
-        rt_max=9.0,
         neutral_loss_da=NEUTRAL_LOSS_DA,
         nl_ppm_warn=10.0,
         nl_ppm_max=20.0,
@@ -833,10 +930,8 @@ def _check(raw: "_FakeRaw"):
 
 def _anchor(raw: "_FakeRaw", reference_rt: float | None = None) -> float | None:
     return find_nl_anchor_rt(
-        raw,
+        _window(raw, 7.5, 9.5),
         precursor_mz=PRECURSOR_MZ,
-        rt_center=8.5,
-        search_margin_min=1.0,
         neutral_loss_da=NEUTRAL_LOSS_DA,
         nl_ppm_max=20.0,
         ms2_precursor_tol_da=0.5,
@@ -853,18 +948,27 @@ def _candidate_evidence(
     ms1_peak_group_rt_max: float | None = None,
     ms1_peak_group_source: str = "",
 ):
+    geometry = candidate_ms2_geometry(
+        candidate,
+        ms1_peak_group_rt_min=ms1_peak_group_rt_min,
+        ms1_peak_group_rt_max=ms1_peak_group_rt_max,
+    )
     return neutral_loss_module.collect_candidate_ms2_evidence(
-        raw,
-        candidate=candidate,
+        _window(raw, geometry.rt_min, geometry.rt_max),
+        geometry=geometry,
         precursor_mz=PRECURSOR_MZ,
         neutral_loss_da=NEUTRAL_LOSS_DA,
         nl_ppm_warn=10.0,
         nl_ppm_max=20.0,
         ms2_precursor_tol_da=0.5,
         nl_min_intensity_ratio=0.05,
-        ms1_peak_group_rt_min=ms1_peak_group_rt_min,
-        ms1_peak_group_rt_max=ms1_peak_group_rt_max,
         ms1_peak_group_source=ms1_peak_group_source,
+    )
+
+
+def _window(raw: "_FakeRaw", rt_min: float, rt_max: float):
+    return acquire_ms2_window(
+        raw, sample_key="fixture", rt_min=rt_min, rt_max=rt_max
     )
 
 
@@ -903,9 +1007,11 @@ class _FakeRaw:
     def __init__(self, events: list[Ms2ScanEvent]) -> None:
         self.events = events
         self.requested_window: tuple[float, float] | None = None
+        self.calls: list[tuple[float, float]] = []
 
     def iter_ms2_scans(self, rt_min: float, rt_max: float) -> Iterator[Ms2ScanEvent]:
         self.requested_window = (rt_min, rt_max)
+        self.calls.append((rt_min, rt_max))
         yield from self.events
 
 

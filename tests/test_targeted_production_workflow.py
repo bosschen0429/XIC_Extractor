@@ -22,6 +22,7 @@ from xic_extractor.config import ExtractionConfig, Target
 from xic_extractor.configuration.signal_processing_profile import (
     resolve_signal_processing_profile,
 )
+from xic_extractor.evidence.neutral_loss import CandidateMS2Evidence, MS2ProductEvidence
 from xic_extractor.execution_runtime_observability import (
     RuntimeMetricAvailability,
     canonical_runtime_observability_ledger_bytes,
@@ -36,7 +37,6 @@ from xic_extractor.extraction.targeted_production_workflow import (
     execute_targeted_production_workflow,
 )
 from xic_extractor.extractor import ExtractionResult, FileResult, RunOutput
-from xic_extractor.neutral_loss import CandidateMS2Evidence, MS2ProductEvidence
 from xic_extractor.peak_detection import capture as capture_owner
 from xic_extractor.peak_detection.hypotheses import build_peak_hypotheses
 from xic_extractor.peak_detection.observations import (

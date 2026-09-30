@@ -6,6 +6,7 @@ from typing import Literal
 
 import numpy as np
 
+from xic_extractor.evidence.neutral_loss import CandidateMS2Evidence
 from xic_extractor.evidence_artifacts import EvidenceArtifactRef
 from xic_extractor.evidence_semantics import (
     CommonEvidence,
@@ -13,7 +14,6 @@ from xic_extractor.evidence_semantics import (
     EvidenceSignalSet,
     decision_semantics_from_signal_set,
 )
-from xic_extractor.neutral_loss import CandidateMS2Evidence
 from xic_extractor.peak_detection.baseline import (
     BaselineMethod,
     asls_baseline,
