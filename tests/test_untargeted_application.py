@@ -8,7 +8,8 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-import xic_extractor.alignment.pipeline as pipeline_module
+import xic_extractor.applications.untargeted.application as application_module
+import xic_extractor.applications.untargeted.publication as publication_module
 from tests.alignment_pipeline_helpers import matrix as _matrix
 from tests.alignment_pipeline_helpers import peak_config as _peak_config
 from tests.alignment_pipeline_helpers import write_batch as _write_batch
@@ -42,51 +43,6 @@ from xic_extractor.discovery.processing_run_spec_adapter import (
 )
 from xic_extractor.sample_metadata import SampleMetadata
 from xic_extractor.xic_models import XICTrace
-
-
-def test_pure_single_provider_cid_nl_dispatches_with_route_receipt(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    batch_index = _write_batch(tmp_path, ("S1",))
-    expected = pipeline_module.AlignmentRunOutputs(
-        matrix_tsv=tmp_path / "out" / "alignment_matrix.tsv"
-    )
-    calls: list[dict[str, object]] = []
-
-    def run_cid_nl(**kwargs: object):
-        calls.append(kwargs)
-        return expected
-
-    monkeypatch.setattr(
-        pipeline_module,
-        "_run_untargeted_cid_nl_alignment",
-        run_cid_nl,
-    )
-
-    result = pipeline_module.run_alignment(
-        discovery_batch_index=batch_index,
-        raw_dir=tmp_path / "raw",
-        dll_dir=tmp_path / "dll",
-        output_dir=tmp_path / "out",
-        alignment_config=AlignmentConfig(),
-        peak_config=_peak_config(),
-        discovery_settings=_settings(),
-        owner_build_xic_backend="raw_superwindow",
-    )
-
-    assert result is expected
-    assert len(calls) == 1
-    assert calls[0]["settings"] == _settings()
-    assert calls[0]["outputs"] == expected
-    assert calls[0]["owner_build_route_receipt"].as_dict() == {
-        "configured_owner_build_xic_backend": "raw_superwindow",
-        "effective_owner_build_route": "retained_untargeted_cid_nl_batch",
-        "effective_owner_build_xic_backend": None,
-        "effective_route_validation": "owner_validated",
-        "processing_run_spec_id": None,
-        "processing_run_spec_hash": None,
-    }
 
 
 @pytest.mark.parametrize("writer_fails", (False, True))
@@ -138,7 +94,7 @@ def test_pure_cid_nl_wrapper_reports_retained_route_and_typed_handoff(
         },
     )
     monkeypatch.setattr(
-        pipeline_module,
+        application_module,
         "read_known_istd_reference",
         lambda _path: reference,
     )
@@ -148,17 +104,19 @@ def test_pure_cid_nl_wrapper_reports_retained_route_and_typed_handoff(
         return completed
 
     monkeypatch.setattr(
-        pipeline_module,
-        "complete_untargeted_cid_nl_alignment",
+        application_module,
+        "complete_untargeted_alignment",
         complete,
     )
     monkeypatch.setattr(
-        pipeline_module,
+        publication_module,
         "project_completed_untarget_batch_writer_inputs",
         lambda value, **_kwargs: writer_inputs if value is completed else pytest.fail(),
     )
     monkeypatch.setattr(
-        pipeline_module, "supports_streamed_untargeted_outputs", lambda _outputs: False
+        publication_module,
+        "supports_streamed_untargeted_outputs",
+        lambda _outputs: False,
     )
 
     def write_outputs(*_args: object, **kwargs: object) -> None:
@@ -188,14 +146,14 @@ def test_pure_cid_nl_wrapper_reports_retained_route_and_typed_handoff(
 
         yield SimpleNamespace(consume_child=lambda _child: None, finalize=finalize)
 
-    monkeypatch.setattr(pipeline_module, "_write_outputs_atomic", write_outputs)
+    monkeypatch.setattr(publication_module, "write_outputs_atomic", write_outputs)
     monkeypatch.setattr(
-        pipeline_module, "prepare_alignment_explanation", prepare_explanation
+        publication_module, "prepare_alignment_explanation", prepare_explanation
     )
 
     if writer_fails:
         with pytest.raises(OSError, match="Matrix publication failed"):
-            pipeline_module.run_alignment(
+            application_module.run_untargeted_application(
                 discovery_batch_index=batch_index,
                 raw_dir=tmp_path / "raw",
                 dll_dir=tmp_path / "dll",
@@ -210,7 +168,7 @@ def test_pure_cid_nl_wrapper_reports_retained_route_and_typed_handoff(
         assert closed == [True]
         return
 
-    result = pipeline_module.run_alignment(
+    result = application_module.run_untargeted_application(
         discovery_batch_index=batch_index,
         raw_dir=tmp_path / "raw",
         dll_dir=tmp_path / "dll",
@@ -261,26 +219,27 @@ def test_pure_cid_nl_cancellation_after_completion_skips_publication(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     batch_index = _write_batch(tmp_path, ("S1",))
-    completed = object()
+    closed: list[bool] = []
+    completed = SimpleNamespace(close=lambda: closed.append(True))
     cancellation_checks = iter((False, True))
     monkeypatch.setattr(
-        pipeline_module,
-        "complete_untargeted_cid_nl_alignment",
+        application_module,
+        "complete_untargeted_alignment",
         lambda **_kwargs: completed,
     )
     monkeypatch.setattr(
-        pipeline_module,
+        publication_module,
         "project_completed_untarget_batch_writer_inputs",
         lambda _value: pytest.fail("cancelled run reached writer projection"),
     )
     monkeypatch.setattr(
-        pipeline_module,
-        "_write_outputs_atomic",
+        publication_module,
+        "write_outputs_atomic",
         lambda *_args, **_kwargs: pytest.fail("cancelled run published outputs"),
     )
 
     with pytest.raises(InterruptedError, match="before output publication"):
-        pipeline_module.run_alignment(
+        application_module.run_untargeted_application(
             discovery_batch_index=batch_index,
             raw_dir=tmp_path / "raw",
             dll_dir=tmp_path / "dll",
@@ -290,6 +249,8 @@ def test_pure_cid_nl_cancellation_after_completion_skips_publication(
             discovery_settings=_settings(),
             should_cancel=lambda: next(cancellation_checks),
         )
+    assert closed == [True]
+    assert not (tmp_path / "out" / "alignment_matrix.tsv").exists()
 
 
 def test_pure_cid_nl_cancellation_during_projection_skips_publication(
@@ -297,15 +258,16 @@ def test_pure_cid_nl_cancellation_during_projection_skips_publication(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     batch_index = _write_batch(tmp_path, ("S1",))
-    completed = object()
+    closed: list[bool] = []
+    completed = SimpleNamespace(close=lambda: closed.append(True))
     writer_inputs = SimpleNamespace(
         matrix=_matrix(("S1",)),
         production_decisions=object(),
     )
     cancellation_checks = iter((False, False, True))
     monkeypatch.setattr(
-        pipeline_module,
-        "complete_untargeted_cid_nl_alignment",
+        application_module,
+        "complete_untargeted_alignment",
         lambda **_kwargs: completed,
     )
 
@@ -314,23 +276,23 @@ def test_pure_cid_nl_cancellation_during_projection_skips_publication(
         return writer_inputs
 
     monkeypatch.setattr(
-        pipeline_module,
+        publication_module,
         "project_completed_untarget_batch_writer_inputs",
         project,
     )
     monkeypatch.setattr(
-        pipeline_module,
+        publication_module,
         "prepare_alignment_explanation",
         lambda *_args, **_kwargs: nullcontext(SimpleNamespace(consume_child=None)),
     )
     monkeypatch.setattr(
-        pipeline_module,
-        "_write_outputs_atomic",
+        publication_module,
+        "write_outputs_atomic",
         lambda *_args, **_kwargs: pytest.fail("cancelled run published outputs"),
     )
 
     with pytest.raises(InterruptedError, match="before output publication"):
-        pipeline_module.run_alignment(
+        application_module.run_untargeted_application(
             discovery_batch_index=batch_index,
             raw_dir=tmp_path / "raw",
             dll_dir=tmp_path / "dll",
@@ -340,6 +302,8 @@ def test_pure_cid_nl_cancellation_during_projection_skips_publication(
             discovery_settings=_settings(),
             should_cancel=lambda: next(cancellation_checks),
         )
+    assert closed == [True]
+    assert not (tmp_path / "out" / "alignment_matrix.tsv").exists()
 
 
 def test_pure_cid_nl_runtime_failure_uses_alignment_error_boundary(
@@ -352,13 +316,13 @@ def test_pure_cid_nl_runtime_failure_uses_alignment_error_boundary(
         raise RuntimeError("retained runtime failed")
 
     monkeypatch.setattr(
-        pipeline_module,
-        "complete_untargeted_cid_nl_alignment",
+        application_module,
+        "complete_untargeted_alignment",
         fail_runtime,
     )
 
     with pytest.raises(AlignmentProcessExecutionError, match="retained runtime failed"):
-        pipeline_module.run_alignment(
+        application_module.run_untargeted_application(
             discovery_batch_index=batch_index,
             raw_dir=tmp_path / "raw",
             dll_dir=tmp_path / "dll",
@@ -378,13 +342,13 @@ def test_pure_cid_nl_collision_rejects_before_retained_runtime(
     output_dir.mkdir()
     (output_dir / "alignment_matrix.tsv").write_text("owned\n", encoding="utf-8")
     monkeypatch.setattr(
-        pipeline_module,
-        "_run_untargeted_cid_nl_alignment",
+        application_module,
+        "complete_untargeted_alignment",
         lambda **_kwargs: pytest.fail("collision reached retained runtime"),
     )
 
     with pytest.raises(FileExistsError, match="owned artifact collisions"):
-        pipeline_module.run_alignment(
+        application_module.run_untargeted_application(
             discovery_batch_index=batch_index,
             raw_dir=tmp_path / "raw",
             dll_dir=tmp_path / "dll",
@@ -402,13 +366,13 @@ def test_pure_cid_nl_rejects_invalid_worker_budget_before_acquisition(
 ) -> None:
     batch_index = _write_batch(tmp_path, ("S1",))
     monkeypatch.setattr(
-        pipeline_module,
-        "complete_untargeted_cid_nl_alignment",
+        application_module,
+        "complete_untargeted_alignment",
         lambda **_kwargs: pytest.fail("invalid knobs reached retained acquisition"),
     )
 
     with pytest.raises(ValueError, match="raw_workers"):
-        pipeline_module.run_alignment(
+        application_module.run_untargeted_application(
             discovery_batch_index=batch_index,
             raw_dir=tmp_path / "raw",
             dll_dir=tmp_path / "dll",
@@ -426,13 +390,13 @@ def test_pure_cid_nl_rejects_invalid_worker_backend_before_acquisition(
 ) -> None:
     batch_index = _write_batch(tmp_path, ("S1",))
     monkeypatch.setattr(
-        pipeline_module,
-        "complete_untargeted_cid_nl_alignment",
+        application_module,
+        "complete_untargeted_alignment",
         lambda **_kwargs: pytest.fail("invalid knobs reached retained acquisition"),
     )
 
     with pytest.raises(ValueError, match="raw_worker_backend"):
-        pipeline_module.run_alignment(
+        application_module.run_untargeted_application(
             discovery_batch_index=batch_index,
             raw_dir=tmp_path / "raw",
             dll_dir=tmp_path / "dll",
@@ -450,10 +414,11 @@ def test_pure_cid_nl_projection_failure_publishes_no_owned_outputs(
 ) -> None:
     batch_index = _write_batch(tmp_path, ("S1",))
     output_dir = tmp_path / "out"
-    completed = object()
+    closed: list[bool] = []
+    completed = SimpleNamespace(close=lambda: closed.append(True))
     monkeypatch.setattr(
-        pipeline_module,
-        "complete_untargeted_cid_nl_alignment",
+        application_module,
+        "complete_untargeted_alignment",
         lambda **_kwargs: completed,
     )
 
@@ -462,21 +427,23 @@ def test_pure_cid_nl_projection_failure_publishes_no_owned_outputs(
         raise ValueError("invalid finalized projection")
 
     monkeypatch.setattr(
-        pipeline_module,
+        publication_module,
         "project_completed_untarget_batch_writer_inputs",
         reject_projection,
     )
     monkeypatch.setattr(
-        pipeline_module, "supports_streamed_untargeted_outputs", lambda _outputs: False
+        publication_module,
+        "supports_streamed_untargeted_outputs",
+        lambda _outputs: False,
     )
     monkeypatch.setattr(
-        pipeline_module,
+        publication_module,
         "prepare_alignment_explanation",
         lambda *_args, **_kwargs: nullcontext(SimpleNamespace(consume_child=None)),
     )
 
     with pytest.raises(ValueError, match="invalid finalized projection"):
-        pipeline_module.run_alignment(
+        application_module.run_untargeted_application(
             discovery_batch_index=batch_index,
             raw_dir=tmp_path / "raw",
             dll_dir=tmp_path / "dll",
@@ -489,6 +456,7 @@ def test_pure_cid_nl_projection_failure_publishes_no_owned_outputs(
     assert not (output_dir / "alignment_matrix.tsv").exists()
     assert not (output_dir / "alignment_results.xlsx").exists()
     assert not (output_dir / "review_report.html").exists()
+    assert closed == [True]
 
 
 @pytest.mark.parametrize("emit_explanation", (True, False))
@@ -557,7 +525,7 @@ def test_pipeline_streams_partition_children_once_and_cleans_up(
             }
 
     if failure is None:
-        writer = pipeline_module.project_completed_untarget_batch_writer_inputs(
+        writer = publication_module.project_completed_untarget_batch_writer_inputs(
             completed
         )
         write_alignment_matrix_tsv(
@@ -579,13 +547,13 @@ def test_pipeline_streams_partition_children_once_and_cleans_up(
 
     batch_index = _write_batch(tmp_path, tuple(candidates))
     monkeypatch.setattr(
-        pipeline_module.DiscoveryInputSource,
+        application_module.DiscoveryInputSource,
         "feature_view",
         lambda _source: candidates,
     )
     monkeypatch.setattr(
-        pipeline_module,
-        "complete_untargeted_cid_nl_alignment",
+        application_module,
+        "complete_untargeted_alignment",
         lambda **_kwargs: completed,
     )
     restored_ids = set()
@@ -614,14 +582,14 @@ def test_pipeline_streams_partition_children_once_and_cleans_up(
     monkeypatch.setattr(StreamedResultStore, "_read_record", counted_read)
 
     if failure == "projection":
-        project = pipeline_module.iter_completed_untarget_batch_writer_inputs
+        project = publication_module.iter_completed_untarget_batch_writer_inputs
 
         def fail_projection(*args, **kwargs):
             yield from project(*args, **kwargs)
             raise OSError("projection failed")
 
         monkeypatch.setattr(
-            pipeline_module,
+            publication_module,
             "iter_completed_untarget_batch_writer_inputs",
             fail_projection,
         )
@@ -639,7 +607,7 @@ def test_pipeline_streams_partition_children_once_and_cleans_up(
         )
 
     def run():
-        return pipeline_module.run_alignment(
+        return application_module.run_untargeted_application(
             discovery_batch_index=batch_index,
             raw_dir=tmp_path,
             dll_dir=tmp_path,
@@ -697,11 +665,11 @@ def test_pipeline_rejects_profile_config_conflict_before_read_or_raw(
         raise AssertionError("entry validation must fail before batch or RAW work")
 
     monkeypatch.setattr(
-        pipeline_module, "complete_untargeted_cid_nl_alignment", fail_if_touched
+        application_module, "complete_untargeted_alignment", fail_if_touched
     )
 
     with pytest.raises(ValueError, match="conflicts with peak_config"):
-        pipeline_module.run_alignment(
+        application_module.run_untargeted_application(
             discovery_batch_index=tmp_path / "batch.csv",
             raw_dir=tmp_path / "raw",
             dll_dir=tmp_path / "dll",
@@ -742,11 +710,11 @@ def test_pipeline_rejects_owned_output_collision_before_raw(
         raise AssertionError("RAW must not open after an output collision")
 
     monkeypatch.setattr(
-        pipeline_module, "complete_untargeted_cid_nl_alignment", fail_opener
+        application_module, "complete_untargeted_alignment", fail_opener
     )
 
     with pytest.raises(FileExistsError, match="owned artifact collisions"):
-        pipeline_module.run_alignment(
+        application_module.run_untargeted_application(
             discovery_batch_index=batch_index,
             raw_dir=raw_dir,
             dll_dir=tmp_path / "dll",
@@ -774,12 +742,12 @@ def test_pipeline_rejects_unsupported_discovery_before_acquisition_or_output(
         pytest.fail("unsupported discovery reached acquisition or output")
 
     monkeypatch.setattr(
-        pipeline_module, "complete_untargeted_cid_nl_alignment", fail_if_touched
+        application_module, "complete_untargeted_alignment", fail_if_touched
     )
-    monkeypatch.setattr(pipeline_module, "_output_paths", fail_if_touched)
+    monkeypatch.setattr(application_module, "output_paths", fail_if_touched)
 
     with pytest.raises(ValueError, match="pure single-provider CID-NL"):
-        pipeline_module.run_alignment(
+        application_module.run_untargeted_application(
             discovery_batch_index=tmp_path / "missing-batch.csv",
             raw_dir=tmp_path / "missing-raw",
             dll_dir=tmp_path / "missing-dll",
@@ -868,30 +836,32 @@ def test_pure_cid_nl_targets_csv_integration(
     captured: dict[str, object] = {}
 
     monkeypatch.setattr(
-        pipeline_module,
+        application_module,
         "extract_batch_known_istd_reference",
         lambda **kwargs: fake_ref,
     )
     monkeypatch.setattr(
-        pipeline_module,
-        "complete_untargeted_cid_nl_alignment",
+        application_module,
+        "complete_untargeted_alignment",
         lambda **kwargs: captured.update(kwargs) or completed,
     )
     monkeypatch.setattr(
-        pipeline_module,
+        publication_module,
         "project_completed_untarget_batch_writer_inputs",
         lambda _value, **_kwargs: writer_inputs,
     )
     monkeypatch.setattr(
-        pipeline_module,
-        "_write_outputs_atomic",
+        publication_module,
+        "write_outputs_atomic",
         lambda *_args, **_kwargs: None,
     )
     monkeypatch.setattr(
-        pipeline_module, "supports_streamed_untargeted_outputs", lambda _outputs: False
+        publication_module,
+        "supports_streamed_untargeted_outputs",
+        lambda _outputs: False,
     )
     monkeypatch.setattr(
-        pipeline_module,
+        publication_module,
         "prepare_alignment_explanation",
         lambda path, **_kwargs: nullcontext(
             SimpleNamespace(
@@ -902,7 +872,7 @@ def test_pure_cid_nl_targets_csv_integration(
     )
     (tmp_path / "out").mkdir(parents=True, exist_ok=True)
 
-    pipeline_module.run_alignment(
+    application_module.run_untargeted_application(
         discovery_batch_index=batch_index,
         raw_dir=raw_dir,
         dll_dir=tmp_path / "dll",
@@ -937,9 +907,7 @@ def test_reduced_discovery_persistence_keeps_alignment_families(
             return tuple(
                 XICTrace.from_arrays(
                     self._rt,
-                    self._intensity
-                    if request.mz > 600.0
-                    else np.zeros_like(self._rt),
+                    self._intensity if request.mz > 600.0 else np.zeros_like(self._rt),
                 )
                 for request in requests
             )
@@ -962,10 +930,7 @@ def test_reduced_discovery_persistence_keeps_alignment_families(
             ],
             rt=rt,
             intensity=(
-                100.0
-                + (index + 1)
-                * 500.0
-                * np.exp(-0.5 * ((rt - 7.8) / 0.08) ** 2)
+                100.0 + (index + 1) * 500.0 * np.exp(-0.5 * ((rt - 7.8) / 0.08) ** 2)
             ),
         )
         for index, raw_path in enumerate(raw_paths)
@@ -990,11 +955,8 @@ def test_reduced_discovery_persistence_keeps_alignment_families(
             neutral_loss_das=(116.0474,),
         )
         raw.rt = rt
-        raw.intensity = (
-            100.0
-            + (index + 1)
-            * 500.0
-            * np.exp(-0.5 * ((rt - 7.8) / 0.08) ** 2)
+        raw.intensity = 100.0 + (index + 1) * 500.0 * np.exp(
+            -0.5 * ((rt - 7.8) / 0.08) ** 2
         )
         raw.scans = tuple(
             replace(
@@ -1015,7 +977,7 @@ def test_reduced_discovery_persistence_keeps_alignment_families(
         },
         tmp_path=tmp_path,
     )
-    alignment = pipeline_module.run_alignment(
+    alignment = application_module.run_untargeted_application(
         discovery_batch_index=discovery.batch_index_csv,
         raw_dir=tmp_path,
         dll_dir=tmp_path,
@@ -1030,12 +992,83 @@ def test_reduced_discovery_persistence_keeps_alignment_families(
         raw_worker_backend="thread",
     )
 
+    # Exercise the declared CLI's real application and publication path with
+    # the same scientific fixture; recipe/config parsing has its own CLI tests.
+    from scripts import run_alignment as cli
+
+    monkeypatch.setattr(
+        cli,
+        "_resolve_preset",
+        lambda _args: (
+            SimpleNamespace(name="DNA dR"),
+            SimpleNamespace(
+                discovery_settings=settings,
+                alignment_config=AlignmentConfig(),
+                owner_build_xic_backend="raw",
+            ),
+        ),
+    )
+    monkeypatch.setattr(
+        cli, "_peak_config", lambda *_args, **_kwargs: _discovery_peak_config(tmp_path)
+    )
+    cli_output = tmp_path / "cli-alignment"
+    assert (
+        cli.main(
+            [
+                "--discovery-batch-index",
+                str(discovery.batch_index_csv),
+                "--raw-dir",
+                str(tmp_path),
+                "--dll-dir",
+                str(tmp_path),
+                "--output-dir",
+                str(cli_output),
+                "--preset",
+                "dna_dr",
+                "--allow-uncorrected",
+                "--output-level",
+                "machine",
+                "--emit-alignment-cells",
+                "--raw-workers",
+                "1",
+                "--raw-worker-backend",
+                "thread",
+            ]
+        )
+        == 0
+    )
+
     assert alignment.matrix_tsv is not None
     assert alignment.cells_tsv is not None
     with alignment.matrix_tsv.open(encoding="utf-8", newline="") as handle:
         matrix = tuple(csv.DictReader(handle, delimiter="	"))
     with alignment.cells_tsv.open(encoding="utf-8", newline="") as handle:
         cells = tuple(csv.DictReader(handle, delimiter="	"))
+    assert (cli_output / "alignment_matrix.tsv").read_bytes() == (
+        alignment.matrix_tsv.read_bytes()
+    )
+    with (cli_output / "alignment_cells.tsv").open(
+        encoding="utf-8", newline=""
+    ) as handle:
+        cli_cells = tuple(csv.DictReader(handle, delimiter="\t"))
+    value_columns = (
+        "sample_stem",
+        "source_candidate_id",
+        "family_center_mz",
+        "status",
+        "area",
+        "height",
+        "apex_rt",
+        "peak_start_rt",
+        "peak_end_rt",
+    )
+    assert [tuple(row[column] for column in value_columns) for row in cli_cells] == [
+        tuple(row[column] for column in value_columns) for row in cells
+    ]
+    assert alignment.review_tsv is not None
+    assert (cli_output / "alignment_review.tsv").read_bytes() == (
+        alignment.review_tsv.read_bytes()
+    )
     # The m/z 700 family exists only through product + neutral-loss inference;
     # the m/z 701 family is a direct scan-precursor match.
     assert [row["Mz"] for row in matrix] == ["700.0000", "701.0000"]
@@ -1072,9 +1105,9 @@ def test_reduced_discovery_persistence_keeps_alignment_families(
     } == {"sample-a": 3, "sample-b": 3}
     assert {
         output.candidates_csv.parent.name: len(
-            json.loads(
-                output.physical_facts_json.read_text(encoding="utf-8")
-            )["records"]
+            json.loads(output.physical_facts_json.read_text(encoding="utf-8"))[
+                "records"
+            ]
         )
         for output in discovery.per_sample
         if output.physical_facts_json is not None
@@ -1085,13 +1118,16 @@ def test_reduced_discovery_persistence_keeps_alignment_families(
         strict=True,
     ):
         assert output.physical_facts_json is not None
-        assert len(
-            read_discovery_physical_fact_records(
-                output.physical_facts_json,
-                expected_run_spec=spec,
-                expected_acquisition_input=acquisition,
+        assert (
+            len(
+                read_discovery_physical_fact_records(
+                    output.physical_facts_json,
+                    expected_run_spec=spec,
+                    expected_acquisition_input=acquisition,
+                )
             )
-        ) == 2
+            == 2
+        )
 
 
 def test_mixed_target_list_only_supplies_istds_to_untargeted_alignment(
@@ -1112,16 +1148,19 @@ def test_mixed_target_list_only_supplies_istds_to_untargeted_alignment(
 
     monkeypatch.setattr(raw_sources, "existing_raw_paths", lambda **kwargs: {})
     monkeypatch.setattr(
-        pipeline_module,
+        application_module,
         "extract_batch_known_istd_reference",
         extract_reference,
     )
     monkeypatch.setattr(
-        pipeline_module,
-        "_run_untargeted_cid_nl_alignment",
+        application_module,
+        "complete_untargeted_alignment",
         lambda **kwargs: None,
     )
-    pipeline_module.run_alignment(
+    monkeypatch.setattr(
+        application_module, "publish_untargeted_outputs", lambda *args, **kwargs: None
+    )
+    application_module.run_untargeted_application(
         discovery_batch_index=batch_index,
         raw_dir=tmp_path / "raw",
         dll_dir=tmp_path / "dll",
@@ -1146,6 +1185,8 @@ def test_alignment_outputs_publish_no_live_workflow_result() -> None:
     durable locator in `evidence` instead.
     """
 
-    field_names = {field.name for field in fields(pipeline_module.AlignmentRunOutputs)}
+    field_names = {
+        field.name for field in fields(application_module.AlignmentRunOutputs)
+    }
     assert "untargeted_cid_nl_result" not in field_names
     assert "evidence" in field_names

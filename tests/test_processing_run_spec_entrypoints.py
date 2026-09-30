@@ -110,7 +110,7 @@ def test_actual_gui_modes_and_cli_main_reach_equal_final_run_spec(
             monkeypatch.setattr(
                 worker,
                 "_run_alignment",
-                lambda *_args, **_kwargs: (outputs, outputs.owner_build_route_receipt),
+                lambda *_args, **_kwargs: outputs,
             )
         worker.run()
 

@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-import xic_extractor.alignment.pipeline as pipeline_module
+import xic_extractor.applications.untargeted.application as application_module
 from tests.alignment_pipeline_helpers import peak_config as _peak_config
 from tests.alignment_pipeline_helpers import write_batch as _write_batch
 from tests.cid_nl_raw_fixture import _settings
@@ -25,10 +25,10 @@ def test_pipeline_rejects_stale_explanation_before_raw(
         pytest.fail("stale diagnostic reached retained acquisition")
 
     monkeypatch.setattr(
-        pipeline_module, "complete_untargeted_cid_nl_alignment", fail_completion
+        application_module, "complete_untargeted_alignment", fail_completion
     )
     with pytest.raises(FileExistsError, match="cid_nl_explanation"):
-        pipeline_module.run_alignment(
+        application_module.run_untargeted_application(
             discovery_batch_index=batch_index,
             raw_dir=tmp_path / "raw",
             dll_dir=tmp_path / "dll",
@@ -63,10 +63,10 @@ def test_pipeline_rejects_stale_output_pair_before_writer_or_raw(
         pytest.fail("collision reached retained acquisition")
 
     monkeypatch.setattr(
-        pipeline_module, "complete_untargeted_cid_nl_alignment", fail_completion
+        application_module, "complete_untargeted_alignment", fail_completion
     )
     with pytest.raises(FileExistsError, match="owned artifact collisions"):
-        pipeline_module.run_alignment(
+        application_module.run_untargeted_application(
             discovery_batch_index=batch_index,
             raw_dir=raw_dir,
             dll_dir=tmp_path / "dll",
@@ -105,10 +105,10 @@ def test_pipeline_rejects_stale_output_pair_before_replace_or_raw(
         pytest.fail("collision reached retained acquisition")
 
     monkeypatch.setattr(
-        pipeline_module, "complete_untargeted_cid_nl_alignment", fail_completion
+        application_module, "complete_untargeted_alignment", fail_completion
     )
     with pytest.raises(FileExistsError, match="owned artifact collisions"):
-        pipeline_module.run_alignment(
+        application_module.run_untargeted_application(
             discovery_batch_index=batch_index,
             raw_dir=raw_dir,
             dll_dir=tmp_path / "dll",
@@ -145,10 +145,10 @@ def test_run_alignment_rejects_stale_owner_edge_outputs_before_raw(
         pytest.fail("collision reached retained acquisition")
 
     monkeypatch.setattr(
-        pipeline_module, "complete_untargeted_cid_nl_alignment", fail_completion
+        application_module, "complete_untargeted_alignment", fail_completion
     )
     with pytest.raises(FileExistsError, match="owned artifact collisions"):
-        pipeline_module.run_alignment(
+        application_module.run_untargeted_application(
             discovery_batch_index=batch_index,
             raw_dir=raw_dir,
             dll_dir=tmp_path / "dll",
@@ -198,10 +198,10 @@ def test_run_alignment_rejects_stale_product_artifacts_before_raw(
         pytest.fail("collision reached retained acquisition")
 
     monkeypatch.setattr(
-        pipeline_module, "complete_untargeted_cid_nl_alignment", fail_completion
+        application_module, "complete_untargeted_alignment", fail_completion
     )
     with pytest.raises(FileExistsError, match="owned artifact collisions"):
-        pipeline_module.run_alignment(
+        application_module.run_untargeted_application(
             discovery_batch_index=batch_index,
             raw_dir=raw_dir,
             dll_dir=tmp_path / "dll",

@@ -406,7 +406,7 @@ def test_snapshot_runner_rejects_malformed_marker_before_pytest(
         (".codex/skills/foo/SKILL.md", set()),
         (".codex/hooks.jsonx", set()),
         ("tests/test_config_codex_hooks_extra.py", set()),
-        ("xic_extractor/alignment/pipeline.py", {"packaging_build"}),
+        ("xic_extractor/applications/untargeted/application.py", {"packaging_build"}),
     ),
 )
 def test_relevance_rules_keep_only_markers_whose_paths_changed(

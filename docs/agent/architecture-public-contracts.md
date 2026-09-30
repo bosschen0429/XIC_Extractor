@@ -27,12 +27,14 @@ schema versions, and command flags. Do not copy those inventories here.
   plotting, and writers belong in package modules.
 - Writers render owner results; they do not recompute domain evidence or
   rescan RAW files.
-- Retained pure untargeted/CID-NL execution enters Alignment only through the
-  exact `alignment.pipeline` adapter/predicate edges. The finalized projection
-  stays in Alignment, and the extraction adapter never writes.
-  `tests/test_docs_architecture_census.py` pins the allowed Alignment edges;
+- The Untargeted application invokes retained CID-NL execution; Alignment has
+  no extraction imports. The finalized projection and atomic writer stay in
+  Alignment, and the extraction adapter never writes. Application publication
+  owns the completed result's private stores through streaming, explanation
+  and writing; GUI and CLI receive durable published outputs only.
+  `tests/test_docs_architecture_census.py` pins these execution boundaries;
   `xic_extractor.alignment.owner_build_route_receipt` and
-  `tests/test_alignment_pipeline.py` own the route receipt labels.
+  `tests/test_untargeted_application.py` own the route receipt labels.
 - Shared models or protocols are justified when they prevent an actual cycle
   or schema drift.
 - Separate real-data validation from normal unit tests.

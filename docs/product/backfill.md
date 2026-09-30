@@ -12,7 +12,7 @@ conservative decision in `xic_extractor.alignment.conservative_backfill`.
 ### Untargeted route
 
 1. Normal Untargeted GUI runs, Alignment CLI runs, and preset runs enter the
-   retained CID-NL workflow through `alignment.pipeline.run_alignment`.
+   retained CID-NL workflow through `applications.untargeted.application.run_untargeted_application`.
 2. The runtime schedules bounded per-sample Backfill work in
    `extraction.untargeted_real_data_worker`.
 3. Production composition in `extraction.untargeted_production_batch` maps the

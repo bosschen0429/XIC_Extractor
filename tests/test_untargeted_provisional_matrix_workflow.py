@@ -60,7 +60,7 @@ def test_workflow_routes_complete_discovery_universe_to_full_alignment(
         )
 
     monkeypatch.setattr(workflow, "run_discovery_batch", fake_discovery)
-    monkeypatch.setattr(workflow, "run_alignment", fake_alignment)
+    monkeypatch.setattr(workflow, "run_untargeted_application", fake_alignment)
 
     timing_recorder = TimingRecorder.disabled("test")
 

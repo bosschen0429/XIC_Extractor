@@ -12,11 +12,11 @@ from xic_extractor.alignment.ms1_index_source import (
     BackfillXicBackend,
     OwnerBuildXicBackend,
 )
-from xic_extractor.alignment.pipeline import (
-    _validate_untargeted_cid_nl_alignment_options,
-    run_alignment,
-)
 from xic_extractor.alignment.pipeline_outputs import AlignmentRunOutputs
+from xic_extractor.applications.untargeted.application import (
+    run_untargeted_application,
+    validate_untargeted_application_options,
+)
 from xic_extractor.config import ExtractionConfig
 from xic_extractor.diagnostics.timing import TimingRecorder
 from xic_extractor.discovery.models import DiscoverySettings
@@ -61,7 +61,7 @@ def run_untargeted_provisional_matrix_workflow(
             "provisional review supports only pure single-provider CID-NL; "
             "use the dna_dr preset"
         )
-    _validate_untargeted_cid_nl_alignment_options(
+    validate_untargeted_application_options(
         raw_workers=raw_workers,
         raw_xic_batch_size=raw_xic_batch_size,
         owner_backfill_xic_backend=owner_backfill_xic_backend,
@@ -110,7 +110,7 @@ def run_untargeted_provisional_matrix_workflow(
     )
     _progress(progress_callback, "discovery_complete")
 
-    outputs = run_alignment(
+    outputs = run_untargeted_application(
         discovery_batch_index=discovery.batch_index_csv,
         raw_dir=raw_dir,
         dll_dir=dll_dir,

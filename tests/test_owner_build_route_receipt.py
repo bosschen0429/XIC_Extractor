@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-import xic_extractor.alignment.pipeline as pipeline_module
+import xic_extractor.applications.untargeted.application as application_module
 from tests.alignment_pipeline_helpers import peak_config as _peak_config
 from tests.cid_nl_raw_fixture import _settings
 from xic_extractor.alignment import AlignmentConfig
@@ -55,10 +55,10 @@ def test_pipeline_rejects_invalid_backend_before_input_io(
     def fail_io(*_args, **_kwargs):
         raise AssertionError("invalid backend reached Alignment input I/O")
 
-    monkeypatch.setattr(pipeline_module, "read_discovery_batch_index", fail_io)
+    monkeypatch.setattr(application_module, "read_discovery_batch_index", fail_io)
 
     with pytest.raises(ValueError, match="unsupported owner build XIC backend"):
-        pipeline_module.run_alignment(
+        application_module.run_untargeted_application(
             discovery_batch_index=tmp_path / "discovery_batch_index.csv",
             raw_dir=tmp_path / "raw",
             dll_dir=tmp_path / "dll",

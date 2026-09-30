@@ -11,7 +11,7 @@ from scripts import run_alignment
 from xic_extractor.alignment.owner_build_route_receipt import (
     _mint_retained_untargeted_cid_nl_route_receipt,
 )
-from xic_extractor.alignment.pipeline import (
+from xic_extractor.alignment.pipeline_outputs import (
     AlignmentRunOutputs as _AlignmentRunOutputs,
 )
 from xic_extractor.alignment.process_execution import AlignmentProcessExecutionError
@@ -61,7 +61,7 @@ def test_run_alignment_cli_rejects_nondefault_profile_before_acquisition_or_outp
     def fail_alignment(**_kwargs):
         pytest.fail("unsupported signal profile reached acquisition")
 
-    monkeypatch.setattr(run_alignment, "run_alignment", fail_alignment)
+    monkeypatch.setattr(run_alignment, "run_untargeted_application", fail_alignment)
     code = run_alignment.main(
         [
             "--preset",
@@ -153,7 +153,7 @@ def test_run_alignment_accepts_asls_baseline_integration_method_override(
             status_matrix_tsv=None,
         )
 
-    monkeypatch.setattr(run_alignment, "run_alignment", fake_run_alignment)
+    monkeypatch.setattr(run_alignment, "run_untargeted_application", fake_run_alignment)
 
     code = run_alignment.main(
         [
@@ -192,7 +192,7 @@ def test_run_alignment_rejects_retired_linear_edge_baseline_override(
     def fake_run_alignment(**_kwargs):
         raise AssertionError("run_alignment should not be called")
 
-    monkeypatch.setattr(run_alignment, "run_alignment", fake_run_alignment)
+    monkeypatch.setattr(run_alignment, "run_untargeted_application", fake_run_alignment)
 
     code = run_alignment.main(
         [
@@ -233,7 +233,7 @@ def test_run_alignment_rejects_retired_linear_edge_baseline_env(
     def fake_run_alignment(**_kwargs):
         raise AssertionError("run_alignment should not be called")
 
-    monkeypatch.setattr(run_alignment, "run_alignment", fake_run_alignment)
+    monkeypatch.setattr(run_alignment, "run_untargeted_application", fake_run_alignment)
     monkeypatch.setenv("BASELINE_INTEGRATION_METHOD", "linear_edge")
 
     code = run_alignment.main(
@@ -283,7 +283,7 @@ def test_run_alignment_env_enables_asls_baseline_audit(
         captured.update(kwargs)
         return AlignmentRunOutputs()
 
-    monkeypatch.setattr(run_alignment, "run_alignment", fake_run_alignment)
+    monkeypatch.setattr(run_alignment, "run_untargeted_application", fake_run_alignment)
     monkeypatch.setenv("BASELINE_AUDIT_METHOD", "asls")
 
     code = run_alignment.main(
@@ -324,7 +324,7 @@ def test_run_alignment_cli_accepts_output_level_debug(
         captured.update(kwargs)
         return AlignmentRunOutputs()
 
-    monkeypatch.setattr(run_alignment, "run_alignment", fake_run_alignment)
+    monkeypatch.setattr(run_alignment, "run_untargeted_application", fake_run_alignment)
 
     code = run_alignment.main(
         [
@@ -365,7 +365,7 @@ def test_run_alignment_cli_accepts_raw_worker_backend(
         captured.update(kwargs)
         return AlignmentRunOutputs()
 
-    monkeypatch.setattr(run_alignment, "run_alignment", fake_run_alignment)
+    monkeypatch.setattr(run_alignment, "run_untargeted_application", fake_run_alignment)
 
     code = run_alignment.main(
         [
@@ -405,7 +405,7 @@ def test_run_alignment_cli_accepts_validation_minimal_output_level(
         captured.update(kwargs)
         return AlignmentRunOutputs()
 
-    monkeypatch.setattr(run_alignment, "run_alignment", fake_run_alignment)
+    monkeypatch.setattr(run_alignment, "run_untargeted_application", fake_run_alignment)
 
     code = run_alignment.main(
         [
@@ -464,7 +464,7 @@ def test_run_alignment_cli_dna_dr_preset_binds_retained_recipe(
             backfill_seed_audit_tsv=seed_audit,
         )
 
-    monkeypatch.setattr(run_alignment, "run_alignment", fake_run_alignment)
+    monkeypatch.setattr(run_alignment, "run_untargeted_application", fake_run_alignment)
     monkeypatch.setattr(run_alignment, "bind_cid_nl_recipe", bind_once)
 
     code = run_alignment.main(
@@ -525,7 +525,7 @@ nl_min_intensity_ratio = 0.37
         captured.update(kwargs)
         return AlignmentRunOutputs()
 
-    monkeypatch.setattr(run_alignment, "run_alignment", fake_run_alignment)
+    monkeypatch.setattr(run_alignment, "run_untargeted_application", fake_run_alignment)
 
     code = run_alignment.main(
         [
@@ -590,7 +590,7 @@ def test_run_alignment_cli_compat_preset_reports_retained_route(
             _owner_build_xic_backend=kwargs["owner_build_xic_backend"],
         )
 
-    monkeypatch.setattr(run_alignment, "run_alignment", fake_run_alignment)
+    monkeypatch.setattr(run_alignment, "run_untargeted_application", fake_run_alignment)
 
     code = run_alignment.main(
         [
@@ -652,7 +652,7 @@ def test_run_alignment_cli_can_override_product_ready_owner_build_backend(
             ),
         )
 
-    monkeypatch.setattr(run_alignment, "run_alignment", fake_run_alignment)
+    monkeypatch.setattr(run_alignment, "run_untargeted_application", fake_run_alignment)
 
     code = run_alignment.main(
         [
@@ -754,7 +754,7 @@ backfill_expansion_productization = "clean-target-selective"
     def fail_product_ready_check(**_kwargs):
         raise AssertionError("custom explicit replay preset is not built-in")
 
-    monkeypatch.setattr(run_alignment, "run_alignment", fake_run_alignment)
+    monkeypatch.setattr(run_alignment, "run_untargeted_application", fake_run_alignment)
 
     code = run_alignment.main(
         [
@@ -810,7 +810,7 @@ def test_run_alignment_cli_dna_dr_preset_uses_light_cells_for_validation_minimal
             backfill_seed_audit_tsv=seed_audit,
         )
 
-    monkeypatch.setattr(run_alignment, "run_alignment", fake_run_alignment)
+    monkeypatch.setattr(run_alignment, "run_untargeted_application", fake_run_alignment)
 
     code = run_alignment.main(
         [
@@ -850,7 +850,7 @@ def test_run_alignment_cli_passes_owner_build_xic_backend(
         captured.update(kwargs)
         return AlignmentRunOutputs()
 
-    monkeypatch.setattr(run_alignment, "run_alignment", fake_run_alignment)
+    monkeypatch.setattr(run_alignment, "run_untargeted_application", fake_run_alignment)
 
     code = run_alignment.main(
         [
@@ -887,7 +887,7 @@ def test_run_alignment_cli_passes_raw_superwindow_owner_build_xic_backend(
         captured.update(kwargs)
         return AlignmentRunOutputs()
 
-    monkeypatch.setattr(run_alignment, "run_alignment", fake_run_alignment)
+    monkeypatch.setattr(run_alignment, "run_untargeted_application", fake_run_alignment)
 
     code = run_alignment.main(
         [
@@ -930,7 +930,7 @@ def test_run_alignment_cli_writes_timing_json(
             pass
         return AlignmentRunOutputs()
 
-    monkeypatch.setattr(run_alignment, "run_alignment", fake_run_alignment)
+    monkeypatch.setattr(run_alignment, "run_untargeted_application", fake_run_alignment)
 
     code = run_alignment.main(
         [
@@ -974,7 +974,7 @@ def test_run_alignment_cli_records_foreground_memory_and_stops_sampler(
         sampler.peak = (321, 123)
         return AlignmentRunOutputs()
 
-    monkeypatch.setattr(run_alignment, "run_alignment", fake_run_alignment)
+    monkeypatch.setattr(run_alignment, "run_untargeted_application", fake_run_alignment)
 
     code = run_alignment.main(
         [
@@ -1024,7 +1024,7 @@ def test_run_alignment_cli_stops_memory_sampler_on_failure(
         ):
             raise ValueError("failed in foreground")
 
-    monkeypatch.setattr(run_alignment, "run_alignment", fail_run_alignment)
+    monkeypatch.setattr(run_alignment, "run_untargeted_application", fail_run_alignment)
 
     code = run_alignment.main(
         [
@@ -1094,7 +1094,7 @@ def test_run_alignment_cli_writes_live_timing_json(
         timing_recorder.record("alignment.run_config", elapsed_sec=0.0)
         return AlignmentRunOutputs()
 
-    monkeypatch.setattr(run_alignment, "run_alignment", fake_run_alignment)
+    monkeypatch.setattr(run_alignment, "run_untargeted_application", fake_run_alignment)
 
     code = run_alignment.main(
         [
@@ -1133,7 +1133,7 @@ def test_run_alignment_cli_writes_cprofile_outputs(
 
     monkeypatch.setattr(
         run_alignment,
-        "run_alignment",
+        "run_untargeted_application",
         lambda **kwargs: AlignmentRunOutputs(),
     )
 
@@ -1325,7 +1325,7 @@ def test_run_alignment_cli_normal_run_does_not_require_all_raw_paths(
     def fake_run_alignment(**kwargs):
         return AlignmentRunOutputs()
 
-    monkeypatch.setattr(run_alignment, "run_alignment", fake_run_alignment)
+    monkeypatch.setattr(run_alignment, "run_untargeted_application", fake_run_alignment)
 
     code = run_alignment.main(
         [
@@ -1412,7 +1412,7 @@ def test_run_alignment_cli_preflight_only_prints_launch_contract(
     def fail_run_alignment(**kwargs):
         raise AssertionError("preflight-only should not run alignment")
 
-    monkeypatch.setattr(run_alignment, "run_alignment", fail_run_alignment)
+    monkeypatch.setattr(run_alignment, "run_untargeted_application", fail_run_alignment)
 
     reference_args = []
     reference_path = tmp_path / "reference.xlsx"
@@ -1750,7 +1750,7 @@ def test_run_alignment_cli_returns_2_for_user_visible_errors(
     def fail_run_alignment(**kwargs):
         raise exc
 
-    monkeypatch.setattr(run_alignment, "run_alignment", fail_run_alignment)
+    monkeypatch.setattr(run_alignment, "run_untargeted_application", fail_run_alignment)
 
     code = run_alignment.main(
         [
@@ -1865,7 +1865,7 @@ def test_run_alignment_cli_istd_input_is_explicit_or_validated_before_raw(
     def no_raw(**kwargs):
         pytest.fail("preflight or invalid ISTD input reached RAW execution")
 
-    monkeypatch.setattr(run_alignment, "run_alignment", no_raw)
+    monkeypatch.setattr(run_alignment, "run_untargeted_application", no_raw)
     extras = []
     if mode in {"uncorrected", "conflict_target", "conflict_workbook"}:
         extras = ["--allow-uncorrected"]

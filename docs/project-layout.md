@@ -18,7 +18,8 @@ XIC_Extractor/
 │   ├── configuration/          載入設定與 target；驗證設定值
 │   ├── presets/                方法配方與綁定
 │   ├── applications/           產品流程組合、政策與其結果模型
-│   │   └── targeted/          正式 Targeted application、計數與 review 原因
+│   │   ├── targeted/          正式 Targeted application、計數與 review 原因
+│   │   └── untargeted/        Untargeted 執行、結果發布與暫存生命週期
 │   ├── acquisition/           有界量測資料擷取 adapter
 │   ├── evidence/              已擷取資料的純科學證據解讀
 │   ├── discovery/              從量測資料找候選及其證據

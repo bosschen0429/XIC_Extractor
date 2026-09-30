@@ -7,10 +7,9 @@ from typing import Any, Literal
 
 from PyQt6.QtCore import QThread, pyqtSignal
 
-from xic_extractor.alignment.owner_build_route_receipt import OwnerBuildRouteReceipt
-from xic_extractor.alignment.pipeline import run_alignment
 from xic_extractor.alignment.pipeline_outputs import AlignmentRunOutputs
 from xic_extractor.alignment.process_backend import AlignmentProcessExecutionError
+from xic_extractor.applications.untargeted.application import run_untargeted_application
 from xic_extractor.config import ExtractionConfig
 from xic_extractor.discovery.models import DiscoverySettings
 from xic_extractor.discovery.pipeline import (
@@ -153,7 +152,7 @@ class DiscoveryWorker(QThread):
             return None
 
         self.progress.emit(len(raw_paths), total_steps, "Alignment...")
-        outputs, owner_build_route = self._run_alignment(
+        outputs = self._run_alignment(
             request,
             index_path=index_path,
             raw_dir=raw_dir,
@@ -162,7 +161,7 @@ class DiscoveryWorker(QThread):
         self.progress.emit(total_steps, total_steps, "完成")
 
         summary = self._discovery_summary(request, index_path=index_path)
-        summary.update(_alignment_summary(outputs, owner_build_route))
+        summary.update(_alignment_summary(outputs))
         summary.update(_parked_gallery_summary())
         return summary
 
@@ -230,7 +229,7 @@ class DiscoveryWorker(QThread):
         candidate_counts, sample_count = _read_batch_counts(index_path)
 
         self.progress.emit(0, 1, "Alignment...")
-        outputs, owner_build_route = self._run_alignment(
+        outputs = self._run_alignment(
             request,
             index_path=index_path,
             raw_dir=request.raw_dir,
@@ -250,7 +249,7 @@ class DiscoveryWorker(QThread):
             "matrix_tsv": None,
             "gallery_html": None,
         }
-        summary.update(_alignment_summary(outputs, owner_build_route))
+        summary.update(_alignment_summary(outputs))
         summary.update(_parked_gallery_summary())
         return summary
 
@@ -260,9 +259,9 @@ class DiscoveryWorker(QThread):
         *,
         index_path: Path,
         raw_dir: Path,
-    ) -> tuple[AlignmentRunOutputs, OwnerBuildRouteReceipt]:
+    ) -> AlignmentRunOutputs:
         recipe = self._alignment_runtime(request)
-        outputs = run_alignment(
+        return run_untargeted_application(
             discovery_batch_index=index_path,
             raw_dir=raw_dir,
             dll_dir=request.dll_dir,
@@ -281,10 +280,6 @@ class DiscoveryWorker(QThread):
             should_cancel=self.isInterruptionRequested,
             **_GUI_ALIGNMENT_KWARGS,
         )
-        owner_build_route = outputs.owner_build_route_receipt
-        if not isinstance(owner_build_route, OwnerBuildRouteReceipt):
-            raise TypeError("Alignment owner did not return its route receipt")
-        return outputs, owner_build_route
 
     def _alignment_runtime(
         self,
@@ -401,7 +396,6 @@ def _batch_index_path(batch_outputs: Any, output_dir: Path) -> Path:
 
 def _alignment_summary(
     outputs: Any,
-    owner_build_route: OwnerBuildRouteReceipt,
 ) -> dict[str, Any]:
     alignment_outputs: dict[str, str] = {}
     for attr in _ALIGNMENT_OUTPUT_ATTRS:
@@ -416,7 +410,11 @@ def _alignment_summary(
         "matrix_tsv": str(matrix) if matrix is not None else None,
         "run_metadata_json": str(run_metadata) if run_metadata is not None else None,
         "evidence": evidence,
-        "owner_build_route": owner_build_route.as_dict(),
+        "owner_build_route": (
+            outputs.owner_build_route_receipt.as_dict()
+            if outputs.owner_build_route_receipt is not None
+            else None
+        ),
     }
 
 

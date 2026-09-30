@@ -70,7 +70,7 @@ target = Path(sys.argv[1]).resolve()
 metadata_output = Path(sys.argv[2])
 sys.path.insert(0, str(target))
 
-from xic_extractor.alignment.pipeline import run_alignment
+from xic_extractor.applications.untargeted.application import run_untargeted_application
 from xic_extractor.alignment.untargeted_finalized_matrix import (
     project_completed_untarget_batch_writer_inputs,
 )
@@ -89,7 +89,7 @@ if not is_pure_single_provider_cid_nl(recipe.discovery_settings):
 
 public_objects = {
     "bind_cid_nl_recipe": bind_cid_nl_recipe,
-    "run_alignment": run_alignment,
+    "run_untargeted_application": run_untargeted_application,
     "complete_untargeted_cid_nl_alignment": complete_untargeted_cid_nl_alignment,
     "is_pure_single_provider_cid_nl": is_pure_single_provider_cid_nl,
     "load_preset": load_preset,
@@ -468,7 +468,7 @@ def test_built_wheel_exposes_public_cid_nl_activation_surface(
         "is_pure_single_provider_cid_nl",
         "load_preset",
         "project_completed_untarget_batch_writer_inputs",
-        "run_alignment",
+        "run_untargeted_application",
     ]
     assert metadata["preset"] == "DNA dR"
     assert metadata["route"] == "align_only"
