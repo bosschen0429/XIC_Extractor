@@ -79,22 +79,6 @@ Use these terms consistently:
 
 - `Trace`: intensity over retention time for a feature, target, or candidate.
 - `TraceGroup`: related traces that should be compared together.
-- `physical` (qualifier): the MS1-measured ion or chromatographic peak itself,
-  as opposed to CID-NL/MS2 evidence about it. It claims neither chemical
-  identity nor CID-NL support.
-- `physical peak`: one contiguous MS1 chromatographic peak of one ion in one
-  sample. Its canonical content is the `PeakObservationRef` physical content
-  defined in [evidence-spine.md](evidence-spine.md).
-- `physical peak evaluation`: the `peak_detection/physical_peak_*` answer for
-  one XIC question: prepared signal, enumerated segments, the selected
-  segment or typed no-selection state, and the resulting facts and
-  integration.
-- `physical facts`: Discovery's persisted physical peak evaluations for
-  feature-backed candidates (`discovery_physical_facts.json`), owned by
-  `discovery/physical_fact_*`; see [discovery.md](discovery.md).
-- `physical m/z`: the MS1-measured ion mass used for the Alignment XIC and
-  grouping. It is distinct from the precursor key used to replay MS2 evidence;
-  see [discovery.md](discovery.md).
 - `PeakHypothesis`: a proposed peak identity, retention-time window, and
   integration basis.
 - `selected hypothesis`: the chosen `PeakHypothesis` and its audit context.
@@ -411,6 +395,18 @@ are attributed (`SampleLocalMS1Owner`, `owner_apex_rt`), processing authority
 (`processing_owners`, `capture_owner`), and module responsibility
 (`owner_build_xic_backend`). The adjective formerly attached to internal
 Backfill types, functions, constants, and modules adds no meaning and is removed.
+
+`physical` means the MS1-measured ion or chromatographic peak itself, as opposed
+to CID-NL/MS2 evidence about it. It never implies chemical identity or CID-NL
+support. The word names four views of the same MS1 peak in one sample, so a
+name should say which view it means:
+
+| Name in code | Plain meaning | Kind |
+| --- | --- | --- |
+| physical peak (`PeakObservationRef` content, see [evidence spine](evidence-spine.md)) | the MS1 peak itself | a thing |
+| `peak_detection/physical_peak_*` evaluation | finding and judging that peak on its XIC | a step |
+| `discovery/physical_fact_*`, `discovery_physical_facts.json` | Discovery's saved copy of that judgement (see [Discovery](discovery.md)) | a record |
+| `physical_mz` | the measured MS1 mass used to extract the peak; not the precursor key that replays MS2 evidence | a number |
 
 Persisted and public exceptions retain their exact spelling:
 
