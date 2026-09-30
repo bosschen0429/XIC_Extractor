@@ -21,8 +21,13 @@ from xic_extractor.alignment.conservative_backfill import (
 from xic_extractor.alignment.untargeted_cid_nl_golden_path import (
     CID_NL_ALIGNMENT_CONFIG,
 )
-from xic_extractor.execution_engine.worker_pool import WorkerAdmissionPool
-from xic_extractor.execution_runtime import (
+from xic_extractor.configuration.execution_profile import DEFAULT_ALIGNMENT_WORKERS
+from xic_extractor.execution._finalization import (
+    RuntimeResourceKind,
+    RuntimeResourceOpenOutcome,
+    RuntimeResourceReservation,
+)
+from xic_extractor.execution._lifecycle import (
     AttemptRuntime,
     AttemptTerminalOutcome,
     WorkUnitFailureCategory,
@@ -30,19 +35,13 @@ from xic_extractor.execution_runtime import (
     WorkUnitSettlement,
     WorkUnitTerminalOutcome,
 )
-from xic_extractor.execution_runtime_finalization import (
-    RuntimeResourceKind,
-    RuntimeResourceOpenOutcome,
-    RuntimeResourceReservation,
-)
-from xic_extractor.execution_runtime_marker import OwnerPathRuntimeMarker
-from xic_extractor.execution_runtime_observability import (
+from xic_extractor.execution._observability import (
     RuntimeMetricAvailability,
     RuntimeMetricScope,
     RuntimeObservabilityContractError,
     validate_runtime_acquisition_metrics,
 )
-from xic_extractor.execution_runtime_owner import (
+from xic_extractor.execution.attempt import (
     RuntimeAcquisitionReceipt,
     RuntimeArtifactRegistrationReceipt,
     RuntimeFinalizationReceipt,
@@ -52,7 +51,8 @@ from xic_extractor.execution_runtime_owner import (
     execute_runtime_attempt,
     mint_work_unit_settlement,
 )
-from xic_extractor.execution_settings import DEFAULT_ALIGNMENT_WORKERS
+from xic_extractor.execution.recovery import OwnerPathRuntimeMarker
+from xic_extractor.execution.workers import WorkerAdmissionPool
 from xic_extractor.extraction.untargeted_cid_nl_real_data_adapter import (
     _supports_direct_precursor_assessment,
     _UntargetedRealDataWorkObserver,

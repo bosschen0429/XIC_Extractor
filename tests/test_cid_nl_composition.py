@@ -27,7 +27,7 @@ from xic_extractor.alignment.tsv_writer import write_alignment_matrix_tsv
 from xic_extractor.alignment.untargeted_finalized_matrix import (
     project_completed_untarget_batch_writer_inputs,
 )
-from xic_extractor.execution_runtime_marker import OwnerPathRuntimeMarker
+from xic_extractor.execution.recovery import OwnerPathRuntimeMarker
 from xic_extractor.presets.apply import apply_to_discovery
 from xic_extractor.presets.loader import load_preset
 from xic_extractor.sample_metadata import SampleMetadata

@@ -36,14 +36,10 @@ def resolve_execution_profile(
     configured_parallel = default_parallel_workers()
     configured_value = settings.get("parallel_workers", "") if settings else ""
     if parallel_workers is None and configured_value.strip():
-        configured_parallel = _parse_workers(
-            configured_value, field="parallel_workers"
-        )
+        configured_parallel = _parse_workers(configured_value, field="parallel_workers")
     return ExecutionProfile(
         parallel_workers=(
-            configured_parallel
-            if parallel_workers is None
-            else parallel_workers
+            configured_parallel if parallel_workers is None else parallel_workers
         ),
         alignment_workers=(
             DEFAULT_ALIGNMENT_WORKERS
@@ -75,7 +71,7 @@ def load_execution_profile(
 def _runtime_root() -> Path:
     if getattr(sys, "frozen", False):
         return Path(sys.executable).resolve().parent
-    return Path(__file__).resolve().parents[1]
+    return Path(__file__).resolve().parents[2]
 
 
 def _parse_workers(value: str, *, field: str) -> int:

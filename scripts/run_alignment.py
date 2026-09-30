@@ -30,6 +30,10 @@ from xic_extractor.applications.untargeted.application import (
     validate_untargeted_application_options,
 )
 from xic_extractor.config import ExtractionConfig
+from xic_extractor.configuration.execution_profile import (
+    DEFAULT_ALIGNMENT_WORKER_BACKEND,
+    load_execution_profile,
+)
 from xic_extractor.configuration.models import ConfigError
 from xic_extractor.configuration.signal_processing_profile import (
     DEFAULT_SIGNAL_PROCESSING_PROFILE,
@@ -38,10 +42,6 @@ from xic_extractor.configuration.signal_processing_profile import (
 )
 from xic_extractor.diagnostics.process_memory import ProcessTreeMemorySampler
 from xic_extractor.diagnostics.timing import TimingRecorder
-from xic_extractor.execution_settings import (
-    DEFAULT_ALIGNMENT_WORKER_BACKEND,
-    load_execution_profile,
-)
 from xic_extractor.extraction.untargeted_input_planning import (
     is_supported_alignment_discovery,
 )

@@ -11,15 +11,7 @@ from tests.runtime_telemetry_fixtures import (
     build_runtime_telemetry_samples_from_coordinator,
 )
 from xic_extractor.config import ExtractionConfig, Target
-from xic_extractor.execution_runtime import (
-    AttemptRuntime,
-    AttemptTerminalOutcome,
-    WorkUnitFailureCategory,
-    WorkUnitFailureDetail,
-    WorkUnitSettlementIntegrityFailureKind,
-    WorkUnitTerminalOutcome,
-)
-from xic_extractor.execution_runtime_finalization import (
+from xic_extractor.execution._finalization import (
     RuntimeArtifactDisposition,
     RuntimeFinalizationContractError,
     RuntimeLifecycleEventKind,
@@ -28,13 +20,21 @@ from xic_extractor.execution_runtime_finalization import (
     RuntimeResourceOpenOutcome,
     RuntimeResourceReservation,
 )
-from xic_extractor.execution_runtime_marker import OwnerPathRuntimeMarker
-from xic_extractor.execution_runtime_owner import (
+from xic_extractor.execution._lifecycle import (
+    AttemptRuntime,
+    AttemptTerminalOutcome,
+    WorkUnitFailureCategory,
+    WorkUnitFailureDetail,
+    WorkUnitSettlementIntegrityFailureKind,
+    WorkUnitTerminalOutcome,
+)
+from xic_extractor.execution.attempt import (
     RuntimeCancellationRequest,
     RuntimeExecutionPhase,
     RuntimeExecutionPhaseError,
     start_runtime_attempt,
 )
+from xic_extractor.execution.recovery import OwnerPathRuntimeMarker
 from xic_extractor.extraction.targeted_runtime_adapter import (
     TargetedProcessResourceReport,
     TargetedProcessResultRef,

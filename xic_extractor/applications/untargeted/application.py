@@ -37,6 +37,10 @@ from xic_extractor.alignment.pipeline_outputs import (
 from xic_extractor.alignment.process_execution import AlignmentProcessExecutionError
 from xic_extractor.applications.untargeted.publication import publish_untargeted_outputs
 from xic_extractor.config import ExtractionConfig
+from xic_extractor.configuration.execution_profile import (
+    DEFAULT_ALIGNMENT_WORKER_BACKEND,
+    DEFAULT_ALIGNMENT_WORKERS,
+)
 from xic_extractor.configuration.signal_processing_profile import (
     DEFAULT_SIGNAL_PROCESSING_PROFILE,
     DEFAULT_SIGNAL_PROCESSING_PROFILE_ID,
@@ -45,10 +49,6 @@ from xic_extractor.configuration.signal_processing_profile import (
 )
 from xic_extractor.diagnostics.timing import TimingRecorder
 from xic_extractor.discovery.models import DiscoverySettings
-from xic_extractor.execution_settings import (
-    DEFAULT_ALIGNMENT_WORKER_BACKEND,
-    DEFAULT_ALIGNMENT_WORKERS,
-)
 from xic_extractor.extraction.untargeted_alignment import complete_untargeted_alignment
 from xic_extractor.extraction.untargeted_input_planning import (
     is_supported_alignment_discovery,

@@ -41,9 +41,9 @@ from xic_extractor.discovery.batch_contract import (
 )
 from xic_extractor.discovery.csv_writer import write_discovery_candidates_csv
 from xic_extractor.discovery.models import DiscoveryCandidate
-from xic_extractor.execution_runtime_finalization import RuntimeResourceOpenOutcome
-from xic_extractor.execution_runtime_marker import OwnerPathRuntimeMarker
-from xic_extractor.execution_runtime_owner import start_runtime_attempt
+from xic_extractor.execution._finalization import RuntimeResourceOpenOutcome
+from xic_extractor.execution.attempt import start_runtime_attempt
+from xic_extractor.execution.recovery import OwnerPathRuntimeMarker
 from xic_extractor.extraction import (
     untargeted_cid_nl_real_data_runtime as runtime_module,
 )

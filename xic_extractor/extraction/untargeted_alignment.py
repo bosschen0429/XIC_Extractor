@@ -19,6 +19,7 @@ from xic_extractor.alignment.discovery_input_source import DiscoveryInputSource
 from xic_extractor.alignment.drift_evidence import KnownIstdReference
 from xic_extractor.alignment.raw_sources import existing_raw_paths
 from xic_extractor.config import ExtractionConfig
+from xic_extractor.configuration.execution_profile import DEFAULT_ALIGNMENT_WORKERS
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )
@@ -38,17 +39,16 @@ from xic_extractor.discovery.physical_fact_record import DiscoveryPhysicalFactRe
 from xic_extractor.discovery.processing_run_spec_adapter import (
     compile_discovery_processing_run_spec_with_expectations,
 )
-from xic_extractor.execution_engine.streamed_result_store import StreamedResultStore
-from xic_extractor.execution_engine.worker_pool import WorkerAdmissionPool
-from xic_extractor.execution_runtime_marker import OwnerPathRuntimeMarker
-from xic_extractor.execution_runtime_observability import RuntimeMetricAvailability
-from xic_extractor.execution_runtime_owner import (
+from xic_extractor.execution._observability import RuntimeMetricAvailability
+from xic_extractor.execution.attempt import (
     RuntimeProcessTreePeakRssSample,
     RuntimeTelemetrySamples,
     RuntimeWorkerPeakRssSample,
     runtime_started_worker_keys,
 )
-from xic_extractor.execution_settings import DEFAULT_ALIGNMENT_WORKERS
+from xic_extractor.execution.recovery import OwnerPathRuntimeMarker
+from xic_extractor.execution.result_store import StreamedResultStore
+from xic_extractor.execution.workers import WorkerAdmissionPool
 from xic_extractor.extraction.untargeted_execution import (
     execute_untargeted_plan,
 )

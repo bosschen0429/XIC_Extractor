@@ -44,13 +44,13 @@ from xic_extractor.evidence_artifacts import (
     _mint_artifact_semantic_contract_ref,
     _mint_evidence_artifact_ref,
 )
-from xic_extractor.execution_runtime import (
+from xic_extractor.execution._lifecycle import (
     AttemptRuntime,
     AttemptTerminalOutcome,
     WorkUnitTerminalOutcome,
 )
-from xic_extractor.execution_runtime_observability import RuntimeMetricAvailability
-from xic_extractor.execution_runtime_owner import (
+from xic_extractor.execution._observability import RuntimeMetricAvailability
+from xic_extractor.execution.attempt import (
     RuntimeArtifactRegistrationReceipt,
     RuntimeProcessTreePeakRssSample,
     RuntimeTelemetrySamples,

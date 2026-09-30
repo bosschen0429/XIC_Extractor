@@ -10,24 +10,12 @@ from pathlib import Path
 
 import pytest
 
-import xic_extractor.execution_runtime_marker as runtime_marker_module
+import xic_extractor.execution.recovery as runtime_marker_module
 from tests.runtime_telemetry_fixtures import (
     build_runtime_telemetry_samples_from_coordinator,
 )
-from xic_extractor.execution_runtime import (
-    AttemptLifecycleEventKind,
-    AttemptLifecycleHistory,
-    AttemptRuntime,
-    AttemptTerminalOutcome,
-    WorkUnitFailureCategory,
-    WorkUnitFailureDetail,
-    WorkUnitTerminalOutcome,
-    append_attempt_lifecycle_event,
-    preflight_required_work_manifest,
-    settle_work_unit,
-    start_attempt_runtime,
-)
-from xic_extractor.execution_runtime_finalization import (
+from xic_extractor.execution._finalization import (
+    CoordinatorTerminalRecord,
     RuntimeArtifactDisposition,
     RuntimeFinalizationContractError,
     RuntimeResourceCleanupOutcome,
@@ -42,20 +30,30 @@ from xic_extractor.execution_runtime_finalization import (
     reserve_runtime_resource,
     settle_runtime_resource,
 )
-from xic_extractor.execution_runtime_finalization_models import (
-    CoordinatorTerminalRecord,
+from xic_extractor.execution._lifecycle import (
+    AttemptLifecycleEventKind,
+    AttemptLifecycleHistory,
+    AttemptRuntime,
+    AttemptTerminalOutcome,
+    WorkUnitFailureCategory,
+    WorkUnitFailureDetail,
+    WorkUnitTerminalOutcome,
+    append_attempt_lifecycle_event,
+    preflight_required_work_manifest,
+    settle_work_unit,
+    start_attempt_runtime,
 )
-from xic_extractor.execution_runtime_marker import (
-    OwnerPathRuntimeMarker,
-    RuntimeMarkerState,
-)
-from xic_extractor.execution_runtime_observability import (
+from xic_extractor.execution._observability import (
     canonical_runtime_observability_ledger_bytes,
 )
-from xic_extractor.execution_runtime_owner import (
+from xic_extractor.execution.attempt import (
     _derive_runtime_observability_ledger,
     _mint_runtime_attempt_aggregate,
     _mint_runtime_finalization_receipt,
+)
+from xic_extractor.execution.recovery import (
+    OwnerPathRuntimeMarker,
+    RuntimeMarkerState,
 )
 from xic_extractor.extraction.targeted_runtime_adapter import (
     mint_targeted_process_result_ref,

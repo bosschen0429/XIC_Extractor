@@ -17,7 +17,7 @@ from xic_extractor.acquisition_contract import (
     mint_trace_acquisition_capability,
     serialize_acquired_trace,
 )
-from xic_extractor.execution_runtime_owner import (
+from xic_extractor.execution.attempt import (
     RuntimeAcquisitionMetrics,
     derive_runtime_acquisition_metrics,
 )

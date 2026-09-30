@@ -47,8 +47,8 @@ from xic_extractor.diagnostics.cid_nl_explanation import (
 from xic_extractor.diagnostics.cid_nl_explanation_projection import (
     write_cid_nl_explanation,
 )
-from xic_extractor.execution_engine.streamed_result_store import StreamedResultStore
-from xic_extractor.execution_runtime_marker import OwnerPathRuntimeMarker
+from xic_extractor.execution.recovery import OwnerPathRuntimeMarker
+from xic_extractor.execution.result_store import StreamedResultStore
 from xic_extractor.immutable_sequence import ImmutableSequence
 from xic_extractor.presets.apply import apply_to_discovery
 from xic_extractor.presets.loader import load_preset

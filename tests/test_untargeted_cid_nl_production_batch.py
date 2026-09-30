@@ -70,9 +70,9 @@ from xic_extractor.discovery.models import (
 from xic_extractor.discovery.processing_run_spec_adapter import (
     compile_discovery_processing_run_spec_with_expectations,
 )
-from xic_extractor.execution_runtime import AttemptTerminalOutcome
-from xic_extractor.execution_runtime_marker import OwnerPathRuntimeMarker
-from xic_extractor.execution_runtime_observability import RuntimeMetricAvailability
+from xic_extractor.execution._lifecycle import AttemptTerminalOutcome
+from xic_extractor.execution._observability import RuntimeMetricAvailability
+from xic_extractor.execution.recovery import OwnerPathRuntimeMarker
 from xic_extractor.extraction.untargeted_cid_nl_real_data_runtime import (
     UntargetedCidNlRealDataRuntimeError,
     UntargetedCidNlRealDataRuntimeJob,

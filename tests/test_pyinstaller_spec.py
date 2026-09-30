@@ -62,8 +62,11 @@ metadata_output.write_text(
 )
 """
 PUBLIC_ACTIVATION_INSTALLED_WHEEL_PROBE = """
+import contextlib
+import io
 import json
 import sys
+from importlib.metadata import distributions
 from pathlib import Path
 
 target = Path(sys.argv[1]).resolve()
@@ -84,6 +87,12 @@ from xic_extractor.extraction.untargeted_alignment import (
 from xic_extractor.extraction.untargeted_input_planning import (
     is_pure_single_provider_cid_nl,
 )
+from xic_extractor.configuration.execution_profile import load_execution_profile
+from xic_extractor.execution.attempt import start_runtime_attempt
+from xic_extractor.execution.partitions import PartitionPipelineScheduler
+from xic_extractor.execution.result_store import StreamedResultStore
+from xic_extractor.execution.workers import WorkerAdmissionPool, execute_process_jobs
+from xic_extractor.extraction.jobs import RawFileJob
 from xic_extractor.presets import bind_cid_nl_recipe, load_preset
 
 preset = load_preset("dna_dr")
@@ -106,6 +115,13 @@ installed_objects = {
     **public_objects,
     "complete_analysis": complete_analysis,
     "CompletedUntargetBatchWorkflowResult": CompletedUntargetBatchWorkflowResult,
+    "load_execution_profile": load_execution_profile,
+    "start_runtime_attempt": start_runtime_attempt,
+    "PartitionPipelineScheduler": PartitionPipelineScheduler,
+    "StreamedResultStore": StreamedResultStore,
+    "WorkerAdmissionPool": WorkerAdmissionPool,
+    "execute_process_jobs": execute_process_jobs,
+    "RawFileJob": RawFileJob,
 }
 for public_name, public_object in installed_objects.items():
     module = sys.modules[public_object.__module__]
@@ -116,11 +132,38 @@ for public_name, public_object in installed_objects.items():
         )
     module_files[public_name] = str(module_file)
 
+installed_distribution = next(
+    distribution for distribution in distributions(path=[str(target)])
+    if distribution.metadata["Name"] == "xic-extractor"
+)
+cli_help_names = ["xic-align-cli", "xic-discovery-cli", "xic-extractor-cli"]
+for cli_name in cli_help_names:
+    entrypoint = next(
+        entrypoint for entrypoint in installed_distribution.entry_points
+        if entrypoint.group == "console_scripts" and entrypoint.name == cli_name
+    )
+    cli = entrypoint.load()
+    module_file = Path(sys.modules[cli.__module__].__file__).resolve()
+    if not module_file.is_relative_to(target):
+        raise RuntimeError(f"{cli_name} did not load from installed target")
+    sys.argv = [cli_name, "--help"]
+    with contextlib.redirect_stdout(io.StringIO()) as help_output:
+        try:
+            cli()
+        except SystemExit as exc:
+            if exc.code != 0:
+                raise
+        else:
+            raise RuntimeError(f"{cli_name} did not complete --help")
+    if "usage:" not in help_output.getvalue():
+        raise RuntimeError(f"{cli_name} did not expose CLI help")
+
 metadata_output.write_text(
     json.dumps(
         {
             "public_names": sorted(public_objects),
             "module_files": module_files,
+            "cli_help_names": cli_help_names,
             "preset": preset.name,
             "route": recipe.route,
         }
@@ -481,6 +524,9 @@ def test_built_wheel_exposes_public_cid_nl_activation_surface(
     ]
     assert metadata["preset"] == "DNA dR"
     assert metadata["route"] == "align_only"
+    assert metadata["cli_help_names"] == [
+        "xic-align-cli", "xic-discovery-cli", "xic-extractor-cli"
+    ]
     for module_file in metadata["module_files"].values():
         assert Path(module_file).resolve().is_relative_to(install_target.resolve())
 

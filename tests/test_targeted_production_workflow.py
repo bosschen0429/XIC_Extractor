@@ -22,8 +22,8 @@ from xic_extractor.configuration.signal_processing_profile import (
     resolve_signal_processing_profile,
 )
 from xic_extractor.evidence.neutral_loss import CandidateMS2Evidence, MS2ProductEvidence
-from xic_extractor.execution_runtime import AttemptTerminalOutcome
-from xic_extractor.execution_runtime_observability import (
+from xic_extractor.execution._lifecycle import AttemptTerminalOutcome
+from xic_extractor.execution._observability import (
     RuntimeMetricAvailability,
     canonical_runtime_observability_ledger_bytes,
 )

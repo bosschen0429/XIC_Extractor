@@ -33,12 +33,12 @@ from xic_extractor.alignment.drift_evidence import read_known_istd_reference
 from xic_extractor.alignment.untargeted_finalized_matrix import (
     project_completed_untarget_batch_writer_inputs,
 )
-from xic_extractor.execution_runtime import AttemptTerminalOutcome
-from xic_extractor.execution_runtime_finalization import (
+from xic_extractor.execution._finalization import (
     RuntimeResourceCleanupOutcome,
     RuntimeResourceOpenOutcome,
 )
-from xic_extractor.execution_runtime_marker import OwnerPathRuntimeMarker
+from xic_extractor.execution._lifecycle import AttemptTerminalOutcome
+from xic_extractor.execution.recovery import OwnerPathRuntimeMarker
 from xic_extractor.extraction.untargeted_execution import (
     materialize_untargeted_partition,
 )
@@ -1663,7 +1663,7 @@ def test_sample_worker_transport_references_global_request_owners(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    from xic_extractor.execution_engine.owner_pickle import (
+    from xic_extractor.execution._serialization import (
         owner_pickle_dumps,
         owner_pickle_loads,
     )
@@ -1690,7 +1690,7 @@ def test_sample_worker_transport_references_global_request_owners(
 
 
 def test_process_recovery_dispatches_only_missing_subjects(tmp_path, monkeypatch):
-    from xic_extractor.execution_engine.worker_pool import WorkerAdmissionPool
+    from xic_extractor.execution.workers import WorkerAdmissionPool
     from xic_extractor.extraction import (
         untargeted_real_data_runtime as runtime,
     )
@@ -1747,7 +1747,7 @@ def test_process_recovery_dispatches_only_missing_subjects(tmp_path, monkeypatch
 def test_two_sample_process_messages_match_serial_results_and_attribution(
     tmp_path, monkeypatch
 ):
-    from xic_extractor.execution_engine.worker_pool import WorkerAdmissionPool
+    from xic_extractor.execution.workers import WorkerAdmissionPool
     from xic_extractor.extraction import untargeted_real_data_runtime as runtime
 
     # Exercise the process request/response route with synthetic RAW I/O;
@@ -1915,7 +1915,7 @@ def test_formal_partition_reuses_prepared_group_ids_for_recovery_and_composition
 ):
     import xic_extractor.extraction.untargeted_execution as bounded_owner
     import xic_extractor.extraction.untargeted_partition_composition as production_owner
-    from xic_extractor.execution_engine.streamed_result_store import StreamedResultStore
+    from xic_extractor.execution.result_store import StreamedResultStore
 
     plan, _ = _plan(tmp_path, monkeypatch, scenario="cross_subject_recovery")
     calls = []
@@ -2020,7 +2020,7 @@ def test_completed_partition_retains_only_light_parent_capture_metadata(
     """Parent closure keeps IDs while children retain exact capture evidence."""
 
     import xic_extractor.extraction.untargeted_execution as bounded_owner
-    from xic_extractor.execution_engine.streamed_result_store import StreamedResultStore
+    from xic_extractor.execution.result_store import StreamedResultStore
 
     plan, _reference = _plan(tmp_path, monkeypatch, scenario="mixed_eligibility")
     adapter = bounded_owner.UntargetedPartitionPipelineAdapter(
@@ -2181,7 +2181,7 @@ def test_retained_spool_keeps_its_partitions_and_publishes_a_readable_index(
     tmp_path, monkeypatch
 ):
     """Retention leaves an index a separate reader can restore records from."""
-    from xic_extractor.execution_engine.streamed_result_store import (
+    from xic_extractor.execution.result_store import (
         PRESERVED_INDEX_NAME,
         open_preserved_results,
     )

@@ -14,7 +14,7 @@ from xic_extractor.peak_detection.model_selection import ExpectedDiffApprovalRec
 
 
 def test_worker_job_and_result_objects_are_pickleable(tmp_path: Path) -> None:
-    from xic_extractor.execution import (
+    from xic_extractor.extraction.jobs import (
         RawFileJob,
         ScoringInputs,
         WorkerError,
@@ -66,7 +66,7 @@ def test_worker_job_and_result_objects_are_pickleable(tmp_path: Path) -> None:
 
 
 def test_aggregation_sorts_successful_results_by_raw_index(tmp_path: Path) -> None:
-    from xic_extractor.execution import collect_ordered_results
+    from xic_extractor.extraction.jobs import collect_ordered_results
     from xic_extractor.extractor import RawFileExtractionResult
 
     result_b = RawFileExtractionResult(
@@ -81,7 +81,7 @@ def test_aggregation_sorts_successful_results_by_raw_index(tmp_path: Path) -> No
 
 
 def test_worker_error_result_is_surfaced_with_raw_name() -> None:
-    from xic_extractor.execution import (
+    from xic_extractor.extraction.jobs import (
         ParallelExecutionError,
         WorkerError,
         collect_ordered_results,
@@ -131,7 +131,10 @@ def test_istd_prepass_result_collection_reuses_worker_error_contract() -> None:
 
 
 def test_job_payload_rejects_callables_and_open_file_handles(tmp_path: Path) -> None:
-    from xic_extractor.execution import RawFileJob, validate_job_payload
+    from xic_extractor.extraction.jobs import (
+        RawFileJob,
+        validate_job_payload,
+    )
 
     job = RawFileJob(
         raw_index=1,
@@ -155,7 +158,10 @@ def test_job_payload_rejects_callables_and_open_file_handles(tmp_path: Path) -> 
 def test_process_pool_spawn_can_run_importable_no_raw_worker(
     tmp_path: Path,
 ) -> None:
-    from xic_extractor.execution import SpawnSmokeJob, spawn_smoke_worker
+    from xic_extractor.extraction.jobs import (
+        SpawnSmokeJob,
+        spawn_smoke_worker,
+    )
 
     context = multiprocessing.get_context("spawn")
     job = SpawnSmokeJob(raw_index=5, raw_name="SampleA.raw")
@@ -170,7 +176,7 @@ def test_process_pool_spawn_can_run_importable_no_raw_worker(
 def test_parallel_istd_prepass_submits_one_job_per_raw_file(
     tmp_path: Path,
 ) -> None:
-    from xic_extractor.execution import IstdPrepassResult
+    from xic_extractor.extraction.jobs import IstdPrepassResult
     from xic_extractor.extraction.process_backend import collect_istd_prepass_process
 
     config = replace(_config(tmp_path), parallel_mode="process", parallel_workers=2)
@@ -211,7 +217,7 @@ def test_parallel_istd_prepass_submits_one_job_per_raw_file(
 def test_parallel_istd_prepass_aggregates_out_of_completion_order(
     tmp_path: Path,
 ) -> None:
-    from xic_extractor.execution import IstdPrepassResult
+    from xic_extractor.extraction.jobs import IstdPrepassResult
     from xic_extractor.extraction.process_backend import collect_istd_prepass_process
 
     config = replace(_config(tmp_path), parallel_mode="process", parallel_workers=2)
@@ -252,7 +258,10 @@ def test_parallel_istd_prepass_aggregates_out_of_completion_order(
 def test_parallel_istd_prepass_reports_worker_failure_with_raw_name(
     tmp_path: Path,
 ) -> None:
-    from xic_extractor.execution import ParallelExecutionError, WorkerError
+    from xic_extractor.extraction.jobs import (
+        ParallelExecutionError,
+        WorkerError,
+    )
     from xic_extractor.extraction.process_backend import collect_istd_prepass_process
 
     config = replace(_config(tmp_path), parallel_mode="process", parallel_workers=2)
@@ -273,7 +282,10 @@ def test_parallel_istd_prepass_reports_worker_failure_with_raw_name(
 def test_parallel_full_extraction_submits_pickleable_scoring_jobs_and_sorts(
     tmp_path: Path,
 ) -> None:
-    from xic_extractor.execution import ScoringInputs, validate_job_payload
+    from xic_extractor.extraction.jobs import (
+        ScoringInputs,
+        validate_job_payload,
+    )
     from xic_extractor.extraction.process_backend import (
         collect_raw_file_results_process,
     )
@@ -338,7 +350,7 @@ def test_parallel_full_extraction_submits_pickleable_scoring_jobs_and_sorts(
 def test_parallel_full_extraction_worker_error_fails_with_raw_name(
     tmp_path: Path,
 ) -> None:
-    from xic_extractor.execution import (
+    from xic_extractor.extraction.jobs import (
         ParallelExecutionError,
         ScoringInputs,
         WorkerError,
@@ -371,7 +383,11 @@ def test_raw_worker_rebuilds_scoring_factory_inside_worker(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from xic_extractor.execution import RawFileJob, ScoringInputs, extract_raw_file_job
+    from xic_extractor.extraction.jobs import (
+        RawFileJob,
+        ScoringInputs,
+        extract_raw_file_job,
+    )
 
     config = _config(tmp_path)
     raw_path = tmp_path / "SampleA.raw"

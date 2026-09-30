@@ -16,11 +16,11 @@ from xic_extractor.alignment.pipeline_outputs import (
 )
 from xic_extractor.applications.untargeted import application as untargeted_application
 from xic_extractor.config import ExtractionConfig
+from xic_extractor.configuration.execution_profile import DEFAULT_ALIGNMENT_WORKERS
 from xic_extractor.discovery.pipeline import (
     DiscoveryProcessExecutionError,
     DiscoverySampleProcessError,
 )
-from xic_extractor.execution_settings import DEFAULT_ALIGNMENT_WORKERS
 from xic_extractor.sample_metadata import SampleMetadata
 
 
@@ -261,7 +261,7 @@ def test_gui_batch_discovery_uses_bounded_parallel_workers(
         return SimpleNamespace(batch_index_csv=index_path, per_sample=())
 
     monkeypatch.setattr(module, "run_discovery_batch", fake_run_discovery_batch)
-    from xic_extractor.execution_settings import ExecutionProfile
+    from xic_extractor.configuration.execution_profile import ExecutionProfile
 
     request = DiscoveryRequest(
         mode="discovery_only",

@@ -145,7 +145,7 @@
         <div class="grid three" aria-label="模組責任摘要">
           <div class="card"><h3>候選與單樣本證據</h3><p>Discovery 產生一般候選；Extraction 協調 Targeted 工作和保留的 CID-NL 執行 adapter。Peak Detection 負責物理觀察與峰證據。</p><code>discovery/ · extraction/ · peak_detection/</code></div>
           <div class="card"><h3>跨樣本與輸出</h3><p>Alignment 接手群組、修復組合及格值決策。Output 只渲染已完成結果，不再讀 RAW 或改選峰。</p><code>alignment/ · output/</code></div>
-          <div class="card"><h3>機械工作與檢視</h3><p>Execution Engine 管分區排程與暫存；runtime owner 管一次 attempt 的生命週期。Inspector 從完成證據做只讀報告。</p><code>execution_engine/ · execution_runtime_owner.py · xic_inspector/</code></div>
+          <div class="card"><h3>機械工作與檢視</h3><p>Execution Engine 管分區排程與暫存；runtime owner 管一次 attempt 的生命週期。Inspector 從完成證據做只讀報告。</p><code>execution/ · execution/attempt.py · xic_inspector/</code></div>
         </div>
         <div class="panel note">
           <div class="boundary">

@@ -33,13 +33,7 @@ from xic_extractor.applications.targeted.application import (
     build_targeted_application_request,
 )
 from xic_extractor.config import ExtractionConfig, Target
-from xic_extractor.execution_runtime import (
-    AttemptRuntime,
-    WorkUnitFailureCategory,
-    WorkUnitFailureDetail,
-    WorkUnitTerminalOutcome,
-)
-from xic_extractor.execution_runtime_finalization import (
+from xic_extractor.execution._finalization import (
     RuntimeArtifactDisposition,
     RuntimeResourceCleanupOutcome,
     RuntimeResourceKind,
@@ -47,8 +41,13 @@ from xic_extractor.execution_runtime_finalization import (
     RuntimeResourceReservation,
     canonical_coordinator_terminal_record_bytes,
 )
-from xic_extractor.execution_runtime_marker import OwnerPathRuntimeMarker
-from xic_extractor.execution_runtime_owner import (
+from xic_extractor.execution._lifecycle import (
+    AttemptRuntime,
+    WorkUnitFailureCategory,
+    WorkUnitFailureDetail,
+    WorkUnitTerminalOutcome,
+)
+from xic_extractor.execution.attempt import (
     RuntimeAcquisitionReceipt,
     RuntimeArtifactRegistrationReceipt,
     RuntimeFinalizationReceipt,
@@ -58,6 +57,7 @@ from xic_extractor.execution_runtime_owner import (
     mint_work_unit_settlement,
     start_runtime_attempt,
 )
+from xic_extractor.execution.recovery import OwnerPathRuntimeMarker
 from xic_extractor.extraction.targeted_runtime_adapter import (
     TargetedProcessResourceReport,
     TargetedProcessWorkerResultEnvelope,

@@ -10,7 +10,7 @@ from time import perf_counter
 from types import ModuleType, SimpleNamespace
 from typing import Any
 
-from xic_extractor.process_job_execution import execute_process_jobs
+from xic_extractor.execution.workers import execute_process_jobs
 from xic_extractor.xic_models import XICTrace
 
 ProcessProgressCallback = Callable[[Any], None]

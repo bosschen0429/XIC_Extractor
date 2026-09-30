@@ -138,7 +138,7 @@ def test_run_discovery_cli_passes_raw_dir_batch_settings(
     (execution_root / "config" / "settings.csv").write_text(
         "key,value\nparallel_workers,1\n", encoding="utf-8"
     )
-    from xic_extractor import execution_settings
+    from xic_extractor.configuration import execution_profile as execution_settings
 
     monkeypatch.setattr(execution_settings, "_runtime_root", lambda: execution_root)
 

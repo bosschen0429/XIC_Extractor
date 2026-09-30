@@ -12,7 +12,7 @@ this page is the target design.
 
 | Part | Plain meaning | Status |
 | --- | --- | --- |
-| `AttemptRuntime` and its finalization, marker, and receipt modules (`xic_extractor/execution_runtime*.py`) | One state machine for one run attempt | Implemented; the Targeted path (`applications.targeted.application`), the Untargeted path (`extraction.untargeted_real_data_runtime`, `extraction.untargeted_execution`), and the GUI pipeline worker use it |
+| `AttemptRuntime` and its finalization, marker, and receipt modules (`xic_extractor/execution/`) | One state machine for one run attempt | Implemented; the Targeted path (`applications.targeted.application`), the Untargeted path (`extraction.untargeted_real_data_runtime`, `extraction.untargeted_execution`), and the GUI pipeline worker use it |
 | `RequiredWorkManifest`, `WorkUnit` | The closed list of work one attempt must finish | Implemented inside the runtime |
 | `RuntimeEvent` | One ordered event log for scheduling, resources, outcome, cleanup, and cache | Not implemented |
 | `ValidatedDependencyToken` | Approval to reuse a prior attempt's output during retry or resume | Not implemented; retry and resume from prior work are not available |
@@ -35,7 +35,7 @@ Matrix, workbook, Backfill-write, activation, publication, or export authority.
 
 ## Worker Settings
 
-`xic_extractor.execution_settings` owns the shared execution profile and worker
+`xic_extractor.configuration.execution_profile` owns the shared execution profile and worker
 defaults. The existing `config/settings.csv` owns the saved `parallel_workers`
 value used by Targeted, Discovery CLI/GUI, and tissue validation. When absent,
 the profile supplies the CPU-count-minus-one default (at least one). An explicit
@@ -549,7 +549,7 @@ scientific parity.
 ## Current Implementation Gaps
 
 The initial event-contract slices are executable in
-`xic_extractor.execution_runtime`: they bind `attempt_queued`,
+`xic_extractor.execution._lifecycle`: they bind `attempt_queued`,
 `attempt_started`, and `cancellation_accepted` to one owner-issued
 `ProcessingAttemptIdentity`, enforce contiguous append-only ordering, and
 prevent an accepted queued cancellation from later becoming a started attempt.
@@ -613,8 +613,11 @@ There is no public settlement-only service or adapter bypass. This boundary is
 product outputs are unchanged.
 
 The next bounded Targeted lifecycle seam is also executable no-RAW.
-`execution_runtime_owner.RuntimeAttemptAggregate` is the single construction
-facade over the focused state-model companions. It reserves resources before the
+`execution.attempt.RuntimeAttemptAggregate` belongs to the sole attempt
+construction and execution entry. Its private lifecycle, receipt and observability
+companions support separate state transitions, typed facts and ledger validation.
+The combined finalization models and reducer own terminal/resource settlement.
+The attempt owner reserves resources before the
 process runner, accepts exactly one open and cleanup outcome per reservation,
 closes worker loss conservatively, registers current-attempt immutable artifacts,
 and freezes a content-bound `CoordinatorTerminalRecord`. The owner then mints
@@ -648,7 +651,7 @@ Alignment is now the second no-RAW consumer. Callers supply only typed
 `RuntimeTelemetrySamples` for monotonic offsets, serial-or-process RSS, and
 runtime-mediated artifact I/O. The runtime owner derives the complete event
 topology and mechanical counts, while the focused
-`execution_runtime_observability` companion validates elapsed-event agreement
+`execution._observability` companion validates elapsed-event agreement
 and required finite/integral metric availability without collecting live
 telemetry or selecting an event store or telemetry backend. It also enforces
 the global phase boundary: coordinator
@@ -681,7 +684,7 @@ The owner-path durable launch/finalization marker and coordinator-loss
 recovery are also executable for both Targeted and Alignment. These contracts
 do not make the legacy runners use a new storage or writer path.
 
-`execution_runtime_owner.execute_runtime_attempt(...)` also owns the exception
+`execution.attempt.execute_runtime_attempt(...)` also owns the exception
 boundary for its three direct callbacks. A thrown `Exception` is classified as
 one `RuntimeExecutionPhaseError` carrying the exact owner-issued
 `ProcessingAttemptIdentity` and one closed `RuntimeExecutionPhase`:

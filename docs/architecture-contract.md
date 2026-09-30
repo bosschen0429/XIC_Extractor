@@ -50,7 +50,7 @@ feature-by-sample Matrix。兩者共用科學判斷，但保留不同搜尋政�
 | RAW 讀取或 DLL | `raw_reader.py` 及使用它的 acquisition adapter | 讀入量測資料；不因此取得群組、格值或發布決定權 |
 | Targeted／Alignment RT-window MS2 擷取與 NL 解讀 | `acquisition/ms2_windows.py` 擷取單一樣本的有界視窗；`evidence/neutral_loss.py` 解讀已擷取事件 | 前者持有 reader 呼叫，後者只處理 `Ms2Window` 與候選幾何；Discovery 宣告 scan 的 strict receipt 保留原 owner |
 | Untargeted ISTD RAW 參考值擷取 | `acquisition/istd_reference.py` | 依既有 target 邊界擷取 trace 並呼叫單峰 owner；Alignment 的 drift evidence owner 建立 reference |
-| 排程、取消、清理 | `execution_engine/`、`execution_runtime_owner.py` | engine 執行工作；runtime owner 決定 attempt 是否完成 |
+| 排程、取消、清理 | `execution/` | partitions 排程；workers 執行；attempt 決定一次執行是否完成 |
 | 欄位、workbook 或 Matrix 格式 | `output/`、Alignment 的輸出 adapter | 呈現 owner 的答案；不要從格式變更反向改變選峰或計數 |
 
 Package 名稱不是可強制的分層證明：`alignment/` 包含科學與外層 adapter，
@@ -206,8 +206,9 @@ policy; result writers consume the completed groups and cells.
   this application lifecycle nor a duplicate runtime or writer transaction.
 - Retained CID-NL execution partitions complete subjects across the sample cohort
   under one runtime attempt. It adapts method acquisition and composition to the
-  generic execution engine in `execution_engine/`. The engine's private result store
-  spools completed scientific results for same-process reuse; it grants no scientific,
+  generic execution engine in `execution/`. The engine's private result store
+  spools completed scientific results for same-version process transport and preserved
+  read-only reopen; it grants no scientific,
   activation, or writer authority. Scientific and Untarget projection owners
   restore their own process-local completion seals. Target projection retains its
   validated immutable decisions without graph serialization. The runtime owner
@@ -243,7 +244,7 @@ Use this map to choose the reason a package changes. File placement is owned by
 | `applications/targeted/` | Formal Targeted application composition and request/result interface; product state, role/applicability policy, counted detection and reason overlays; pure product result model | scientific peak selection, numeric cell decisions, RAW acquisition or rendering |
 | `applications/untargeted/` | Untargeted input preparation, execution-to-publication orchestration, cancellation and completed-store lifetime; publication through existing Alignment projections and writers | scientific grouping, cell decisions, a second runtime owner or writer algorithm |
 | `discovery/` | general candidate discovery, seed generation, workflow-neutral discovery facts | matrix decisions or target-list policy |
-| `execution_engine/` | generic partition scheduling, worker-pool admission/concurrency, streamed result store, and bounded spool lifecycle | method-specific science, subject splitting, or writer authority |
+| `execution/` | generic attempt execution/finalization, partition scheduling, reusable worker admission pools, one-shot process jobs, streamed result storage, and recovery | method-specific science, subject splitting, or writer authority |
 | `extraction/` | Targeted acquisition and production workflow adapters, jobs, windowing, drift, backend coordination, publication mechanics, and retained Untargeted batch execution (`untargeted_input_planning`, `untargeted_execution`, `untargeted_partition_composition`, `untargeted_alignment`) | application composition, GUI, or Alignment decisions |
 | `peak_detection/` | physical observations, hypotheses, resolvers, boundaries, integration, evidence composition | cross-sample grouping, workflow policy, or writers |
 | `alignment/` | cross-sample grouping, refinement/repair composition, Alignment adapters and renderers | a second runtime owner, mutable transport authority, or Targeted-only science |
@@ -262,7 +263,7 @@ Cross-cutting owners remain focused:
 | `review_records.py` | review subject/action identity and supersession |
 | `evidence_artifacts.py` / `artifact_lineage.py` | exact-byte artifact identity and supplied-lineage validation |
 | `processing_identity.py` | request, attempt, source, and retry-predecessor identity |
-| `execution_runtime_owner.py` | atomic runtime execution, lifecycle, observability, recovery, and finalization |
+| `execution/attempt.py` | sole attempt construction, execution, settlement and finalization authority; private lifecycle/receipt/observability companions support it |
 | `acquisition_contract.py` | capability-bound acquisition batches and mechanical call/point facts |
 | `delivery_lineage.py` | Targeted delivery-cell, revision, stage, and seal-candidate identity |
 

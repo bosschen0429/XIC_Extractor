@@ -513,13 +513,9 @@ def _validate_work_event_lifecycle(
                 "work lifecycle order must be submitted, started, then settled"
             )
     expected_lifecycle = tuple(
-        (key, kind)
-        for key in work_unit_keys
-        for kind in _WORK_UNIT_LIFECYCLE_KINDS
+        (key, kind) for key in work_unit_keys for kind in _WORK_UNIT_LIFECYCLE_KINDS
     )
-    observed_lifecycle = tuple(
-        (event.subject_key, event.kind) for event in work_events
-    )
+    observed_lifecycle = tuple((event.subject_key, event.kind) for event in work_events)
     if observed_lifecycle != expected_lifecycle:
         raise RuntimeObservabilityContractError(
             "work lifecycle must follow manifest order with one complete "
@@ -785,9 +781,7 @@ def _validate_cross_domain_event_lifecycle(
     def positions(*kinds: str) -> tuple[int, ...]:
         accepted = set(kinds)
         return tuple(
-            index
-            for index, event in enumerate(events)
-            if event.kind in accepted
+            index for index, event in enumerate(events) if event.kind in accepted
         )
 
     def require_before(

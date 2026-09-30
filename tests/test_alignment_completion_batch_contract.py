@@ -32,7 +32,7 @@ from xic_extractor.discovery.batch_contract import (
     CANDIDATE_UNIVERSE_SCHEMA_VERSION,
     validate_candidate_universe_payload,
 )
-from xic_extractor.execution_runtime import AttemptTerminalOutcome
+from xic_extractor.execution._lifecycle import AttemptTerminalOutcome
 from xic_extractor.extraction.untargeted_execution_result import (
     CompletedUntargetBatchWorkflowResult,
 )

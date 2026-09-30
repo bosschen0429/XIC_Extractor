@@ -32,11 +32,11 @@ XIC_Extractor/
 │   │   ├── cell_decision/      每個樣本格的科學決策
 │   │   ├── projection/         Targeted／Untargeted 的前後投影
 │   │   └── result/             科學結果與 application 結果
-│   ├── execution_engine/      工作分區、worker pool、結果暫存
+│   ├── execution/             attempt、工作分區、workers、結果暫存與 recovery
 │   ├── output/                CSV／workbook／HTML 等輸出程式
 │   ├── instrument_qc/         儀器 QC、校正與其報告流程
 │   ├── diagnostics/           可重用的診斷與說明工具
-│   └── *.py                   RAW adapter、共享模型／規則、runtime owner 與公開入口
+│   └── *.py                   RAW adapter、共享模型／規則、公開入口
 ├── xic_inspector/              完成證據的只讀檢視
 │   ├── sources/               解讀來源證據
 │   ├── selection/             選擇要呈現的記錄
