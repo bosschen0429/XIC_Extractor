@@ -4,15 +4,15 @@ import subprocess
 import sys
 from pathlib import Path
 
-from xic_extractor.alignment.quant_matrix_downstream_impact import (
+from xic_extractor.diagnostics.quant_matrix.downstream_impact import (
     build_quant_matrix_downstream_impact_smoke,
 )
-from xic_extractor.alignment.quant_matrix_promotion import (
+from xic_extractor.diagnostics.quant_matrix.promotion import (
     PROMOTION_READINESS_SCHEMA,
     evaluate_quant_matrix_promotion_readiness,
 )
-from xic_extractor.alignment.quant_matrix_report import QUANT_MATRIX_REVIEW_SCHEMA
-from xic_extractor.alignment.quant_matrix_validation_packet import (
+from xic_extractor.diagnostics.quant_matrix.report import QUANT_MATRIX_REVIEW_SCHEMA
+from xic_extractor.diagnostics.quant_matrix.validation_packet import (
     VALIDATION_EVIDENCE_SCHEMA,
     VALIDATION_PACKET_SUMMARY_SCHEMA,
     ValidationEvidenceArtifact,

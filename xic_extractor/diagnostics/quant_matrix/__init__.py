@@ -1,1 +1,1 @@
-"""QuantMatrixVersion artifact projections and acceptance contracts."""
+"""Quant matrix diagnostic artifacts, projections and acceptance contracts."""

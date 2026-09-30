@@ -2,10 +2,10 @@ from pathlib import Path
 
 import pytest
 
+from xic_extractor.acquisition.istd_reference import read_known_istd_reference
 from xic_extractor.alignment.drift_evidence import (
     KnownIstdReference,
     mint_known_istd_reference_from_measurements,
-    read_known_istd_reference,
 )
 from xic_extractor.configuration.models import Target
 from xic_extractor.configuration.targets import read_targets

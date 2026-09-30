@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from tools.diagnostics.diagnose_shared_peak_wrong_peak import main
-from xic_extractor.alignment.shared_peak_identity_explanation import (
+from xic_extractor.diagnostics.shared_peak_identity_explanation import (
     wrong_peak_root_cause,
 )
 

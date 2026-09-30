@@ -6,7 +6,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-from xic_extractor.alignment.quant_matrix_fixture_contract import (
+from xic_extractor.diagnostics.quant_matrix.fixture_contract import (
     validate_fixture_contract,
 )
 from xic_extractor.diagnostics.quant_matrix.version import (

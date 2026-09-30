@@ -17,17 +17,17 @@ from xic_extractor.alignment.backfill_evidence_contract import (
     SkippedEvidenceOwnerBindings,
     SkippedEvidenceRecord,
 )
-from xic_extractor.alignment.backfill_evidence_owner import (
+from xic_extractor.alignment.evidence_claims import _mint_evidence_query_result
+from xic_extractor.diagnostics.backfill_evidence.bindings import (
     backfill_evidence_query_claims,
     rehydrate_backfill_evidence_bindings,
     skipped_evidence_query_claims,
     validate_skipped_evidence_bindings,
 )
-from xic_extractor.alignment.backfill_evidence_serialization import (
+from xic_extractor.diagnostics.backfill_evidence.serialization import (
     backfill_evidence_record_from_projection,
     skipped_evidence_record_from_projection,
 )
-from xic_extractor.alignment.evidence_claims import _mint_evidence_query_result
 
 _RawRow = Mapping[str | None, str | list[str] | None]
 

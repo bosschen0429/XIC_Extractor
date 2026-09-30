@@ -14,7 +14,7 @@ from scripts.check_production_acceptance_manifest import (
 from scripts.check_production_acceptance_manifest import (
     production_acceptance_manifest_sha256,
 )
-from xic_extractor.alignment.quant_matrix_report import (
+from xic_extractor.diagnostics.quant_matrix.report import (
     QUANT_MATRIX_REVIEW_SCHEMA,
     build_quant_matrix_review_report,
 )

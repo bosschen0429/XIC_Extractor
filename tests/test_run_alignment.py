@@ -11,7 +11,9 @@ from scripts import run_alignment
 from xic_extractor.alignment.owner_build_route_receipt import (
     _mint_retained_untargeted_cid_nl_route_receipt,
 )
-from xic_extractor.alignment.process_execution import AlignmentProcessExecutionError
+from xic_extractor.applications.untargeted.application import (
+    AlignmentProcessExecutionError,
+)
 from xic_extractor.diagnostics.process_memory import ProcessMemoryPeak
 from xic_extractor.discovery.batch_contract import (
     DISCOVERY_BATCH_INDEX_SCHEMA_VERSION,

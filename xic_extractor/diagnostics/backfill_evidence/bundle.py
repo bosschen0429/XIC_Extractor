@@ -15,14 +15,14 @@ from xic_extractor.alignment.backfill_evidence_contract import (
     ALIGNMENT_BACKFILL_CELL_EVIDENCE_COLUMNS,
     SKIPPED_EVIDENCE_LEDGER_COLUMNS,
 )
-from xic_extractor.alignment.backfill_evidence_parquet import (
+from xic_extractor.diagnostics.backfill_evidence.parquet import (
     DEFAULT_PARQUET_COMPRESSION,
     DEFAULT_PARQUET_ROW_GROUP_SIZE,
     parquet_evidence_row_count,
     write_backfill_evidence_parquet,
     write_skipped_evidence_parquet,
 )
-from xic_extractor.alignment.backfill_evidence_tsv import (
+from xic_extractor.diagnostics.backfill_evidence.tsv import (
     iter_backfill_evidence_tsv,
     iter_skipped_evidence_tsv,
 )

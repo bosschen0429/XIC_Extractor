@@ -34,19 +34,19 @@ from scripts.check_production_acceptance_manifest import (
     check_production_acceptance_manifest,
     production_acceptance_manifest_sha256,
 )
-from xic_extractor.alignment.quant_matrix_downstream_impact import (
+from xic_extractor.diagnostics.quant_matrix.downstream_impact import (
     build_quant_matrix_downstream_impact_smoke,
     validate_quant_matrix_downstream_impact_smoke,
 )
-from xic_extractor.alignment.quant_matrix_fixture_contract import (
+from xic_extractor.diagnostics.quant_matrix.fixture_contract import (
     validate_fixture_contract,
     write_cell_provenance_contract,
     write_review_rows_contract,
 )
-from xic_extractor.alignment.quant_matrix_promotion import (
+from xic_extractor.diagnostics.quant_matrix.promotion import (
     evaluate_quant_matrix_promotion_readiness,
 )
-from xic_extractor.alignment.quant_matrix_report import (
+from xic_extractor.diagnostics.quant_matrix.report import (
     build_quant_matrix_review_report,
 )
 from xic_extractor.diagnostics.quant_matrix.version import (

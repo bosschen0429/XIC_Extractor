@@ -6,11 +6,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
 
-from xic_extractor.alignment.quant_matrix_downstream_impact import (
+from xic_extractor.diagnostics.quant_matrix.downstream_impact import (
     validate_quant_matrix_downstream_impact_smoke,
 )
-from xic_extractor.alignment.quant_matrix_report import QUANT_MATRIX_REVIEW_SCHEMA
-from xic_extractor.alignment.quant_matrix_validation_packet import (
+from xic_extractor.diagnostics.quant_matrix.report import QUANT_MATRIX_REVIEW_SCHEMA
+from xic_extractor.diagnostics.quant_matrix.validation_packet import (
     VALIDATION_EVIDENCE_SCHEMA,
 )
 from xic_extractor.diagnostics.quant_matrix.version import (
