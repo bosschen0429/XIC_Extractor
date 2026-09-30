@@ -48,7 +48,7 @@ successful result. The Alignment entry point archives a finalized failed or
 cancelled runtime marker before launching a new attempt in the same directory.
 
 Targeted and Untargeted CID-NL close through the shared scientific workflow.
-`alignment.pipeline.run_alignment` adapts pure CID-NL inputs to that workflow
+`applications.untargeted.application.run_untargeted_application` adapts pure CID-NL inputs to that workflow
 and renders its finalized result. It requires explicit pure CID-NL discovery
 settings; the Alignment CLI supplies them through a bound preset. Unsupported
 discovery settings are rejected before acquisition or output creation.

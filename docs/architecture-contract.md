@@ -34,7 +34,7 @@ feature-by-sample Matrix。兩者共用科學判斷，但保留不同搜尋政�
 | 既有 Python Targeted 入口 | [`extractor.run`](../xic_extractor/extractor.py) | 進入同一 application；`extractor.acquire` 是它使用的 acquisition 入口 |
 | Discovery 候選產生 | [`scripts/run_discovery.py`](../scripts/run_discovery.py) | [`discovery/pipeline.py`](../xic_extractor/discovery/pipeline.py) 的 `run_discovery`／`run_discovery_batch`，交出候選檔與 batch index |
 | Untargeted GUI 全流程 | [`gui/workers/discovery_worker.py`](../gui/workers/discovery_worker.py) | 呼叫 Discovery，再將 batch index 交給 Alignment |
-| Alignment 與 Matrix | [`scripts/run_alignment.py`](../scripts/run_alignment.py) | [`alignment.pipeline.run_alignment`](../xic_extractor/alignment/pipeline.py) 選擇執行路線並交付 [`AlignmentRunOutputs`](../xic_extractor/alignment/pipeline_outputs.py)；CID-NL 路線可委派 `extraction/` 的 retained adapter |
+| Untargeted Alignment 與 Matrix | [`scripts/run_alignment.py`](../scripts/run_alignment.py)、[`gui/workers/discovery_worker.py`](../gui/workers/discovery_worker.py) | [`run_untargeted_application`](../xic_extractor/applications/untargeted/application.py) 準備輸入並呼叫 retained execution；[`publication`](../xic_extractor/applications/untargeted/publication.py) 消費完成結果、發布 [`AlignmentRunOutputs`](../xic_extractor/alignment/pipeline_outputs.py) 並關閉暫存 |
 | 完成 Matrix 後的 feature 篩選 | [`scripts/run_feature_quality.py`](../scripts/run_feature_quality.py) | [`feature_quality.py`](../xic_extractor/feature_quality.py) 計算 availability；[`feature_quality_io.py`](../xic_extractor/feature_quality_io.py) 讀寫分析集合，保留既有值 |
 | 完成證據的只讀報告 | [`xic_inspector/cli.py`](../xic_inspector/cli.py) | [`api.generate_report`](../xic_inspector/api.py) 串起來源解讀、選擇及 HTML rendering |
 
@@ -48,6 +48,7 @@ feature-by-sample Matrix。兩者共用科學判斷，但保留不同搜尋政�
 | 缺格補證及格值 | `alignment/backfill/`、`alignment/cell_decision/` | 新觀察、科學決策與檔案 writer 各自有 owner |
 | RAW 讀取或 DLL | `raw_reader.py` 及使用它的 acquisition adapter | 讀入量測資料；不因此取得群組、格值或發布決定權 |
 | Targeted／Alignment RT-window MS2 擷取與 NL 解讀 | `acquisition/ms2_windows.py` 擷取單一樣本的有界視窗；`evidence/neutral_loss.py` 解讀已擷取事件 | 前者持有 reader 呼叫，後者只處理 `Ms2Window` 與候選幾何；Discovery 宣告 scan 的 strict receipt 保留原 owner |
+| Untargeted ISTD RAW 參考值擷取 | `acquisition/istd_reference.py` | 依既有 target 邊界擷取 trace 並呼叫單峰 owner；Alignment 的 drift evidence owner 建立 reference |
 | 排程、取消、清理 | `execution_engine/`、`execution_runtime_owner.py` | engine 執行工作；runtime owner 決定 attempt 是否完成 |
 | 欄位、workbook 或 Matrix 格式 | `output/`、Alignment 的輸出 adapter | 呈現 owner 的答案；不要從格式變更反向改變選峰或計數 |
 
@@ -196,10 +197,13 @@ policy; result writers consume the completed groups and cells.
   Source adapters own method-specific record/schema interpretation; its public
   API, selection, and renderer remain method-neutral. Scientific/core packages
   must not import or invoke the Inspector.
-- `alignment.pipeline.run_alignment` may dispatch pure single-provider CID-NL
-  work to the retained execution adapter in `extraction/` after Alignment's
-  output-collision guard. Alignment may only consume the completed typed batch
-  result; it must not duplicate that runtime or let the adapter write outputs.
+- `applications.untargeted.application.run_untargeted_application` prepares
+  inputs, rejects output collisions before acquisition, and invokes retained
+  CID-NL execution in `extraction/`. Its publication boundary consumes the
+  completed typed batch, projects it through Alignment's existing adapters,
+  and closes its private stores on every exit. CLI and GUI receive only
+  published output paths and durable evidence locators. Alignment owns neither
+  this application lifecycle nor a duplicate runtime or writer transaction.
 - Retained CID-NL execution partitions complete subjects across the sample cohort
   under one runtime attempt. It adapts method acquisition and composition to the
   generic execution engine in `execution_engine/`. The engine's private result store
@@ -229,6 +233,7 @@ Use this map to choose the reason a package changes. File placement is owned by
 | --- | --- | --- |
 | `configuration/` | settings, target/config loading, validation, typed runtime settings | extraction or rendering |
 | `applications/targeted/` | Formal Targeted application composition and request/result interface; product state, role/applicability policy, counted detection and reason overlays; pure product result model | scientific peak selection, numeric cell decisions, RAW acquisition or rendering |
+| `applications/untargeted/` | Untargeted input preparation, execution-to-publication orchestration, cancellation and completed-store lifetime; publication through existing Alignment projections and writers | scientific grouping, cell decisions, a second runtime owner or writer algorithm |
 | `discovery/` | general candidate discovery, seed generation, workflow-neutral discovery facts | matrix decisions or target-list policy |
 | `execution_engine/` | generic partition scheduling, worker-pool admission/concurrency, streamed result store, and bounded spool lifecycle | method-specific science, subject splitting, or writer authority |
 | `extraction/` | Targeted acquisition and production workflow adapters, jobs, windowing, drift, backend coordination, publication mechanics, and retained Untargeted batch execution (`untargeted_production_batch`, `untargeted_alignment`) | application composition, GUI, or Alignment decisions |

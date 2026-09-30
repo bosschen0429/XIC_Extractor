@@ -827,16 +827,7 @@ def test_alignment_to_extraction_imports_are_exact_owner_edges(
         and reference.imported_module.startswith("xic_extractor.extraction")
     }
 
-    assert observed == {
-        (
-            "xic_extractor.alignment.pipeline",
-            "xic_extractor.extraction.untargeted_alignment",
-        ),
-        (
-            "xic_extractor.alignment.pipeline",
-            "xic_extractor.extraction.untargeted_production_batch",
-        ),
-    }
+    assert observed == set()
 
 
 @pytest.mark.current_repository_census
@@ -872,7 +863,7 @@ def test_discovery_does_not_import_alignment_or_presets(
 @pytest.mark.current_repository_census
 def test_default_production_activation_loci_are_exact() -> None:
     production_calls: dict[str, set[Path]] = {
-        "run_alignment": set(),
+        "run_untargeted_application": set(),
         "complete_untargeted_alignment": set(),
         "execute_bounded_untargeted_cid_nl": set(),
         "execute_untargeted_cid_nl_runtime_partition": set(),
@@ -894,21 +885,22 @@ def test_default_production_activation_loci_are_exact() -> None:
             if called in production_calls:
                 production_calls[called].add(path)
 
-    outer_callers = production_calls["run_alignment"]
+    outer_callers = production_calls["run_untargeted_application"]
     assert outer_callers == {
         Path("scripts/run_alignment.py"),
         Path("gui/workers/discovery_worker.py"),
         Path("xic_extractor/extraction/untargeted_provisional_matrix_workflow.py"),
     }
-    activation_loci = outer_callers | {Path("xic_extractor/alignment/pipeline.py")}
+    application_path = Path("xic_extractor/applications/untargeted/application.py")
+    activation_loci = outer_callers | {application_path}
     assert activation_loci == {
-        Path("xic_extractor/alignment/pipeline.py"),
+        application_path,
         Path("scripts/run_alignment.py"),
         Path("gui/workers/discovery_worker.py"),
         Path("xic_extractor/extraction/untargeted_provisional_matrix_workflow.py"),
     }
     assert production_calls["complete_untargeted_alignment"] == {
-        Path("xic_extractor/alignment/pipeline.py")
+        application_path
     }
     assert production_calls["execute_bounded_untargeted_cid_nl"] == {
         Path("xic_extractor/extraction/untargeted_alignment.py")

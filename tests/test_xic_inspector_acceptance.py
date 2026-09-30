@@ -244,7 +244,7 @@ def test_acceptance_a9_pipeline_shared_callable_handoff(tmp_path, monkeypatch) -
     completed, writer, candidates, matrix, config = _owner_run(
         tmp_path, monkeypatch, "positive"
     )
-    import xic_extractor.alignment.pipeline as pipeline
+    import xic_extractor.applications.untargeted.application as application
     from tests.alignment_pipeline_helpers import peak_config, write_batch
     from tests.cid_nl_raw_fixture import _settings
 
@@ -252,18 +252,18 @@ def test_acceptance_a9_pipeline_shared_callable_handoff(tmp_path, monkeypatch) -
     # The pipeline reads candidates through DiscoveryInputSource; the CSV
     # reader it used to call by name lives elsewhere now.
     monkeypatch.setattr(
-        pipeline.DiscoveryInputSource,
+        application.DiscoveryInputSource,
         "feature_view",
         lambda _source: candidates,
     )
     # The runtime fixture supplies actual completed science; exercise the real
     # public publication interface, SQLite writer, locator mint and close path.
     monkeypatch.setattr(
-        pipeline,
-        "complete_untargeted_cid_nl_alignment",
+        application,
+        "complete_untargeted_alignment",
         lambda **kwargs: completed,
     )
-    outputs = pipeline.run_alignment(
+    outputs = application.run_untargeted_application(
         discovery_batch_index=batch_index,
         raw_dir=tmp_path,
         dll_dir=tmp_path,

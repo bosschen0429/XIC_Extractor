@@ -10,10 +10,10 @@ import scripts.run_untargeted_provisional_matrix as runner
 import xic_extractor.alignment.artifact_write_receipts as alignment_receipt_owner
 import xic_extractor.extraction.provisional_run_manifest as manifest_owner
 from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.alignment.pipeline import (
-    _validate_untargeted_cid_nl_alignment_options,
-)
 from xic_extractor.alignment.pipeline_outputs import AlignmentRunOutputs
+from xic_extractor.applications.untargeted.application import (
+    validate_untargeted_application_options,
+)
 from xic_extractor.discovery.models import DiscoverySettings, NeutralLossProfile
 from xic_extractor.extraction.untargeted_provisional_matrix_workflow import (
     UntargetedProvisionalMatrixRun,
@@ -66,7 +66,7 @@ def test_runner_publishes_full_universe_outputs_atomically(
         captured.update(kwargs)
         # Exercise the retained route's actual option gate so this test catches
         # forwarding metadata that the pure owner must mint itself.
-        _validate_untargeted_cid_nl_alignment_options(
+        validate_untargeted_application_options(
             raw_workers=kwargs["raw_workers"],
             raw_xic_batch_size=kwargs["raw_xic_batch_size"],
             owner_backfill_xic_backend=kwargs["owner_backfill_xic_backend"],

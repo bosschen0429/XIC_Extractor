@@ -454,7 +454,7 @@ def test_identity_coherence_process_payload_stays_no_raw_boundary() -> None:
         "raw_reader",
         "ms1_index_source",
         "owner_backfill",
-        "alignment.pipeline",
+        "applications.untargeted",
         "scripts.run_alignment",
         "source_for_backfill_backend",
         "xic_extractor.output",
