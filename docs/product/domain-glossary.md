@@ -108,11 +108,10 @@ Use these terms consistently:
   together so their observations can reach the same CrossSample decision.
   Workset membership is computational scope, not chemical identity. Alignment
   owns its compatibility and Backfill-binding policy in [alignment.md](alignment.md).
-- `identity-bearing member subject`: canonical sample identity plus a
-  discriminated union of owner-backed `PeakHypothesis` identity or owner-backed
-  physical-observation identity. The canonical variant tag is part of identity;
-  wrappers over the same physical observation canonicalize to one subject unless
-  explicit different tags deliberately preserve distinct identities.
+- `identity-bearing member subject`: canonical sample identity plus an
+  owner-backed `PeakHypothesis` identity and its physical observations. The
+  kind tag is part of identity; equivalent hypothesis wrappers over the same
+  physical observation canonicalize to one subject.
 - `CrossSampleGroupDisposition`: the CrossSample-owned, mutually exclusive
   disposition of one finalized group: `established`, `provisional`,
   `unresolved`, or `rejected`. Disposition does not decide output inclusion.

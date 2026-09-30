@@ -64,10 +64,8 @@ from xic_extractor.peak_detection.peak_hypothesis_identity import (
     validate_cid_nl_peak_hypothesis_binding,
 )
 from xic_extractor.processing_identity import (
-    PROCESSING_REQUEST_ID_PREFIX,
     ProcessingOwnerReferences,
     retry_predecessor_attempt_ids,
-    validate_typed_identity_id,
 )
 from xic_extractor.review_records import ResolvedReviewRecordRef
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
@@ -533,35 +531,11 @@ def _direct_member_integration(
                     raise CellObservationContractError(str(exc)) from exc
         return direct_hypothesis.integration
     if peak_observation is not None:
-        if type(peak_observation) is not PeakObservationRef:
-            raise CellObservationContractError(
-                "direct member observation is not owner-backed"
-            )
-        observation_id = peak_observation.content.peak_observation_content_id
-        if (
-            member.subject_kind != "physical_observation"
-            or member.subject_id != observation_id
-            or peak_observation.artifact.producer_processing_request_id
-            != processing_request_id
-            or peak_observation.content.canonical_sample_identity_id
-            != canonical_sample_identity_id
-        ):
-            raise CellObservationContractError(
-                "direct observation does not mint the exact final member"
-            )
-        if method_assessment is not None:
-            if (
-                method_assessment.content.method_result != "SUPPORT"
-                or peak_observation not in method_assessment.candidate_peaks
-                or not any(
-                    relation.content.peak_observation_content_id == observation_id
-                    for relation in method_assessment.individual_support_refs
-                )
-            ):
-                raise CellObservationContractError(
-                    "direct member observation is outside the exact SUPPORT subset"
-                )
-        return peak_observation.content.integration
+        # Final members bind owner-backed hypotheses; an observation alone
+        # cannot mint the exact member.
+        raise CellObservationContractError(
+            "direct observation does not mint the exact final member"
+        )
     return None
 
 
@@ -634,25 +608,6 @@ def _repaired_member_integration(
             "repair integration authority content ID was substituted"
         )
     return facts.integration
-
-
-def _processing_request_id(value: object) -> str:
-    try:
-        return validate_typed_identity_id(
-            value,
-            prefix=PROCESSING_REQUEST_ID_PREFIX,
-            field="processing_request_id",
-        )
-    except ValueError as exc:
-        raise CellObservationContractError(str(exc)) from exc
-
-
-def _terminal_trace_group_id(value: object) -> str:
-    if not isinstance(value, str) or value != value.strip():
-        raise CellObservationContractError(
-            "terminal_trace_group_id must be normalized text"
-        )
-    return value
 
 
 def _outside_group_relation(

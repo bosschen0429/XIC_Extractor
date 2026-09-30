@@ -678,15 +678,16 @@ def _group(
     )
 
     processing_request_id = attempt.processing_request_id
-    subject_id = f"xic.peak-observation-content:{group_id}"
+    subject_id = f"xic.peak-hypothesis:{group_id}"
+    physical_id = f"xic.peak-observation-content:{group_id}"
     sample_id = f"xic.sample:{group_id}"
     member_basis = canonical_identity_basis_bytes(
         {
             "schema_version": "group_member_subject",
             "processing_request_id": processing_request_id,
             "canonical_sample_identity_id": sample_id,
-            "subject": {"kind": "physical_observation", "id": subject_id},
-            "physical_observation_ids": [subject_id],
+            "subject": {"kind": "peak_hypothesis", "id": subject_id},
+            "physical_observation_ids": [physical_id],
         }
     )
     member = CrossSampleGroupMemberSubject(
@@ -696,9 +697,9 @@ def _group(
         ),
         processing_request_id=processing_request_id,
         canonical_sample_identity_id=sample_id,
-        subject_kind="physical_observation",
+        subject_kind="peak_hypothesis",
         subject_id=subject_id,
-        physical_observation_ids=(subject_id,),
+        physical_observation_ids=(physical_id,),
         basis_bytes=member_basis,
     )
     identity = mint_cross_sample_group_identity(

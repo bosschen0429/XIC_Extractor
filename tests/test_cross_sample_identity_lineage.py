@@ -13,22 +13,31 @@ from tests.processing_identity_no_raw_fixture import (
 )
 
 
-def _subjects(tmp_path, *sample_stems: str):
+def _member(fixture, sample_stem: str, **peak_kwargs):
     from xic_extractor.alignment.cross_sample_peak_groups import (
-        group_member_subject_from_peak_observation,
+        group_member_subject_from_peak_hypothesis,
+    )
+    from xic_extractor.peak_detection.peak_hypothesis_identity import (
+        compose_ms1_observation_peak_hypothesis,
     )
 
+    hypothesis = compose_ms1_observation_peak_hypothesis(
+        processing_owners=fixture.owners,
+        sample=fixture.sample(sample_stem),
+        peak_observation=cid_nl_peak(fixture, sample_stem, **peak_kwargs),
+    )
+    return group_member_subject_from_peak_hypothesis(
+        processing_owners=fixture.owners,
+        sample=fixture.sample(sample_stem),
+        hypothesis=hypothesis,
+    )
+
+
+def _subjects(tmp_path, *sample_stems: str):
     fixture = build_processing_identity_no_raw_fixture(
         tmp_path, sample_stems=sample_stems
     )
-    subjects = tuple(
-        group_member_subject_from_peak_observation(
-            processing_owners=fixture.owners,
-            sample=fixture.sample(sample_stem),
-            observation=cid_nl_peak(fixture, sample_stem),
-        )
-        for sample_stem in sample_stems
-    )
+    subjects = tuple(_member(fixture, sample_stem) for sample_stem in sample_stems)
     return fixture, subjects
 
 
@@ -61,25 +70,16 @@ def test_equal_digest_with_unequal_basis_bytes_fails_closed(tmp_path) -> None:
 def test_group_rejects_two_identity_members_for_one_canonical_sample(tmp_path) -> None:
     from xic_extractor.alignment.cross_sample_peak_groups import (
         CrossSampleContractError,
-        group_member_subject_from_peak_observation,
         mint_cross_sample_group_identity,
     )
 
     fixture = build_processing_identity_no_raw_fixture(
         tmp_path, sample_stems=("sample-a",)
     )
-    first = group_member_subject_from_peak_observation(
-        processing_owners=fixture.owners,
-        sample=fixture.sample("sample-a"),
-        observation=cid_nl_peak(fixture, "sample-a", apex_rt=8.0),
-    )
-    second = group_member_subject_from_peak_observation(
-        processing_owners=fixture.owners,
-        sample=fixture.sample("sample-a"),
-        observation=cid_nl_peak(fixture, "sample-a", apex_rt=8.03),
-    )
+    first = _member(fixture, "sample-a", apex_rt=8.0)
+    second = _member(fixture, "sample-a", apex_rt=8.03)
     assert first.member_subject_id != second.member_subject_id
-    with pytest.raises(CrossSampleContractError, match="physical observation member"):
+    with pytest.raises(CrossSampleContractError, match="basis bytes are not exact"):
         replace(
             first,
             physical_observation_ids=second.physical_observation_ids,
@@ -108,12 +108,9 @@ def test_group_identity_is_order_and_parallelism_invariant(tmp_path) -> None:
     assert receipts[0] == receipts[1]
 
 
-def test_equivalent_wrappers_share_identity_and_tagged_variant_stays_distinct(
-    tmp_path,
-) -> None:
+def test_equivalent_hypothesis_wrappers_share_member_identity(tmp_path) -> None:
     from xic_extractor.alignment.cross_sample_peak_groups import (
         group_member_subject_from_peak_hypothesis,
-        group_member_subject_from_peak_observation,
     )
     from xic_extractor.peak_detection.peak_hypothesis_identity import (
         compose_ms1_observation_peak_hypothesis,
@@ -143,17 +140,11 @@ def test_equivalent_wrappers_share_identity_and_tagged_variant_stays_distinct(
         sample=fixture.sample("sample-a"),
         hypothesis=hypothesis_b,
     )
-    physical = group_member_subject_from_peak_observation(
-        processing_owners=fixture.owners,
-        sample=fixture.sample("sample-a"),
-        observation=observation,
-    )
 
     assert (wrapped_a.member_subject_id, wrapped_a.basis_bytes) == (
         wrapped_b.member_subject_id,
         wrapped_b.basis_bytes,
     )
-    assert wrapped_a.member_subject_id != physical.member_subject_id
 
 
 def test_group_and_population_reject_crossed_or_duplicate_membership(tmp_path) -> None:
@@ -246,5 +237,3 @@ def test_initial_edge_classifier_is_closed_and_preserves_existing_policy() -> No
         )
         == "excluded"
     )
-
-

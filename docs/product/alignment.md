@@ -215,12 +215,11 @@ reasons, Review Queue/archive routing, and result finalization close afterward.
 
 - `group_hypothesis_id` is a typed digest over the group identity schema, exact
   `processing_request_id`, and canonical-sorted identity-bearing members. Each
-  member combines canonical sample identity with a discriminated member-subject
-  union: an owner-backed `PeakHypothesis` identity or an owner-backed physical-
-  observation identity. The canonical variant tag is part of identity. The same
-  physical observation reached through different wrappers must canonicalize to
-  the same member subject, or remain deliberately distinct under different
-  explicit variant tags.
+  member combines canonical sample identity with an owner-backed
+  `PeakHypothesis` identity and the physical observations it binds; the
+  `peak_hypothesis` kind tag remains in the identity basis. Equivalent
+  hypothesis wrappers over the same physical observation canonicalize to the
+  same member subject.
 - Ordinal `FAM...`, row order, sample stem, m/z/RT display coordinates, and
   area are compatibility/display facts, not identity bases.
 - A group contains at most one identity-bearing member per canonical sample.

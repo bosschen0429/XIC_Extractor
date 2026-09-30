@@ -77,8 +77,8 @@ Missing NL, a false detection-count flag, or a review reason cannot independentl
 replace an accepted value with ND.
 
 An identity-bearing CrossSample member combines canonical sample identity with
-a discriminated owner-backed `PeakHypothesis` or physical-observation identity.
-The canonical variant tag is part of identity. Canonical serialization and
+an owner-backed `PeakHypothesis` identity. The member kind tag is part of
+identity. Canonical serialization and
 digest mechanics come from `xic_extractor.processing_identity`; CrossSample and
 the Untargeted projection still own their domain payloads and minting decisions.
 
