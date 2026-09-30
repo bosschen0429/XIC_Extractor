@@ -101,6 +101,12 @@ readiness from passing pytest.
 
 ## Verification
 
+Pytest manages temporary files under the worktree's ignored `tmp_runtime/`.
+Failed tests retain their `tmp_path` files for inspection within pytest's
+retention window; passing tests are cleaned. Concurrent sessions use distinct
+numbered directories. `PYTEST_DEBUG_TEMPROOT` and `--basetemp` remain available
+for explicit overrides; do not share a fixed `--basetemp` across concurrent runs.
+
 Run the narrowest existing tests that can falsify the change, then expand in
 proportion to affected consumers and public surfaces. The complete hosted
 command surface lives in .github/workflows/ci.yml; do not cache its command list

@@ -20,7 +20,7 @@ repos:
         name: pytest staged test files
         entry: uv run --cache-dir .uv-cache pytest -q
         language: system
-        files: ^tests/.*\.py$
+        files: ^tests/(.*/)?test_[^/]*\.py$
         types: [python]
 
       - id: test-shard-coverage
