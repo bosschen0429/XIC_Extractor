@@ -2495,59 +2495,6 @@ def test_physical_subject_units_require_complete_common_proof(
     )
 
 
-def test_physical_capture_keeps_own_scans_outside_shared_subject_center(
-    tmp_path: Path,
-) -> None:
-    import numpy as np
-
-    from tests.cid_nl_raw_fixture import _open_bound_raw
-    from tests.untargeted_cid_nl_no_raw_fixture import (
-        build_untargeted_cid_nl_no_raw_fixture,
-    )
-    from xic_extractor.extraction.untargeted_cid_nl_real_data_adapter import (
-        adapt_current_discovery_sample_subject,
-    )
-
-    fixture = build_untargeted_cid_nl_no_raw_fixture(
-        tmp_path, sample_roles={"S1": "study_sample"}, thermo_raw_sources=True
-    )
-    source_raw = _FakeRaw((7.98, 8.0, 8.02))
-    source_raw.scans = tuple(
-        replace(scan, precursor_mz=500.5, masses=np.asarray(scan.masses) + 0.016)
-        for scan in source_raw.scans
-    )
-    settings, peak_config = _settings(), _peak_config(tmp_path)
-    original = _current_candidates(
-        source_raw,
-        raw_file=fixture.source_paths["S1"],
-        settings=settings,
-        peak_config=peak_config,
-    )
-    assert len(original) == 1
-    assert original[0].precursor_mz == pytest.approx(500.016)
-    candidates = (replace(original[0], ms1_apex_mz=500.008),)
-    raw, _ = _open_bound_raw(fixture, "S1", source_raw, tmp_path=tmp_path)
-    result = adapt_current_discovery_sample_subject(
-        processing_owners=fixture.owners,
-        sample=fixture.sample("S1"),
-        method_subject=fixture.method_subject,
-        candidates=candidates,
-        settings=settings,
-        peak_config=peak_config,
-        raw=raw,
-    )
-    assessment = result.assessment_input.assessment
-    assert assessment.content.method_result == "SUPPORT"
-    assert assessment.candidate_peaks[0].content.mz == 500.008
-    assert {e.observation.scan_number for e in assessment.evidence_refs} == {
-        scan.scan_number for scan in source_raw.scans
-    }
-    assert all(
-        e.observation.precursor_mz == pytest.approx(500.016)
-        for e in assessment.evidence_refs
-    )
-
-
 def test_subject_planning_uses_physical_mass_without_rewriting_seed_receipts(
     tmp_path: Path,
 ) -> None:
