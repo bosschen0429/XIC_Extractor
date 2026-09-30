@@ -78,10 +78,10 @@ from xic_extractor.alignment.completion import complete_analysis
 from xic_extractor.extraction.untargeted_execution_result import (
     CompletedUntargetBatchWorkflowResult,
 )
-from xic_extractor.extraction.untargeted_cid_nl_alignment import (
-    complete_untargeted_cid_nl_alignment,
+from xic_extractor.extraction.untargeted_alignment import (
+    complete_untargeted_alignment,
 )
-from xic_extractor.extraction.untargeted_cid_nl_production_batch import (
+from xic_extractor.extraction.untargeted_input_planning import (
     is_pure_single_provider_cid_nl,
 )
 from xic_extractor.presets import bind_cid_nl_recipe, load_preset
@@ -94,7 +94,7 @@ if not is_pure_single_provider_cid_nl(recipe.discovery_settings):
 public_objects = {
     "bind_cid_nl_recipe": bind_cid_nl_recipe,
     "run_untargeted_application": run_untargeted_application,
-    "complete_untargeted_cid_nl_alignment": complete_untargeted_cid_nl_alignment,
+    "complete_untargeted_alignment": complete_untargeted_alignment,
     "is_pure_single_provider_cid_nl": is_pure_single_provider_cid_nl,
     "load_preset": load_preset,
     "project_completed_untarget_batch_writer_inputs": (
@@ -473,7 +473,7 @@ def test_built_wheel_exposes_public_cid_nl_activation_surface(
     metadata = json.loads(probe_metadata.read_text(encoding="utf-8"))
     assert metadata["public_names"] == [
         "bind_cid_nl_recipe",
-        "complete_untargeted_cid_nl_alignment",
+        "complete_untargeted_alignment",
         "is_pure_single_provider_cid_nl",
         "load_preset",
         "project_completed_untarget_batch_writer_inputs",

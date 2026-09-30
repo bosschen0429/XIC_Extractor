@@ -50,7 +50,7 @@ from xic_extractor.execution_settings import (
     DEFAULT_ALIGNMENT_WORKERS,
 )
 from xic_extractor.extraction.untargeted_alignment import complete_untargeted_alignment
-from xic_extractor.extraction.untargeted_production_batch import (
+from xic_extractor.extraction.untargeted_input_planning import (
     is_supported_alignment_discovery,
 )
 from xic_extractor.sample_metadata import SampleMetadata

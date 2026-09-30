@@ -865,7 +865,7 @@ def test_default_production_activation_loci_are_exact() -> None:
     production_calls: dict[str, set[Path]] = {
         "run_untargeted_application": set(),
         "complete_untargeted_alignment": set(),
-        "execute_bounded_untargeted_cid_nl": set(),
+        "execute_untargeted_plan": set(),
         "execute_untargeted_cid_nl_runtime_partition": set(),
     }
     for path in census.repository_python_paths(ROOT):
@@ -902,11 +902,11 @@ def test_default_production_activation_loci_are_exact() -> None:
     assert production_calls["complete_untargeted_alignment"] == {
         application_path
     }
-    assert production_calls["execute_bounded_untargeted_cid_nl"] == {
+    assert production_calls["execute_untargeted_plan"] == {
         Path("xic_extractor/extraction/untargeted_alignment.py")
     }
     assert production_calls["execute_untargeted_cid_nl_runtime_partition"] == {
-        Path("xic_extractor/extraction/untargeted_cid_nl_bounded_runtime.py")
+        Path("xic_extractor/extraction/untargeted_execution.py")
     }
 
 

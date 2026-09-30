@@ -12,7 +12,7 @@ this page is the target design.
 
 | Part | Plain meaning | Status |
 | --- | --- | --- |
-| `AttemptRuntime` and its finalization, marker, and receipt modules (`xic_extractor/execution_runtime*.py`) | One state machine for one run attempt | Implemented; the Targeted path (`applications.targeted.application`), the Untargeted path (`extraction.untargeted_real_data_runtime`, `extraction.untargeted_production_batch`), and the GUI pipeline worker use it |
+| `AttemptRuntime` and its finalization, marker, and receipt modules (`xic_extractor/execution_runtime*.py`) | One state machine for one run attempt | Implemented; the Targeted path (`applications.targeted.application`), the Untargeted path (`extraction.untargeted_real_data_runtime`, `extraction.untargeted_execution`), and the GUI pipeline worker use it |
 | `RequiredWorkManifest`, `WorkUnit` | The closed list of work one attempt must finish | Implemented inside the runtime |
 | `RuntimeEvent` | One ordered event log for scheduling, resources, outcome, cleanup, and cache | Not implemented |
 | `ValidatedDependencyToken` | Approval to reuse a prior attempt's output during retry or resume | Not implemented; retry and resume from prior work are not available |

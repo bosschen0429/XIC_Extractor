@@ -15,7 +15,7 @@ conservative decision in `xic_extractor.alignment.conservative_backfill`.
    retained CID-NL workflow through `applications.untargeted.application.run_untargeted_application`.
 2. The runtime schedules bounded per-sample Backfill work in
    `extraction.untargeted_real_data_worker`.
-3. Production composition in `extraction.untargeted_production_batch` maps the
+3. Production composition in `extraction.untargeted_partition_composition` maps the
    resulting evidence through the conservative Backfill decision.
 4. The Untargeted route does not execute the retained `ObservationRevisit`
    transaction.

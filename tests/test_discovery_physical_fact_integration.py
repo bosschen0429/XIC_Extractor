@@ -218,7 +218,7 @@ def test_merged_physical_candidate_persists_representative_search_window(
     from xic_extractor.alignment.csv_io import read_discovery_candidates_csv
     from xic_extractor.diagnostics.timing import TimingRecorder
     from xic_extractor.discovery.pipeline import _write_dual_csvs
-    from xic_extractor.extraction.untargeted_cid_nl_alignment import (
+    from xic_extractor.extraction.untargeted_alignment import (
         _restore_physical_candidate,
     )
     from xic_extractor.peak_detection.physical_peak_codec import (

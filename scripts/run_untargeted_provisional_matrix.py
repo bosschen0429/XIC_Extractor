@@ -30,7 +30,7 @@ from xic_extractor.extraction.provisional_run_manifest import (
     mint_retained_sample_metadata_fingerprint_receipt,
     publish_provisional_run_bundle_atomic,
 )
-from xic_extractor.extraction.untargeted_cid_nl_production_batch import (
+from xic_extractor.extraction.untargeted_input_planning import (
     is_pure_single_provider_cid_nl,
 )
 from xic_extractor.extraction.untargeted_provisional_matrix_workflow import (

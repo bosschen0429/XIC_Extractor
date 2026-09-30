@@ -7,6 +7,7 @@ import json
 import shutil
 import threading
 from collections.abc import Callable, Mapping, Sequence
+from copy import copy
 from dataclasses import fields, replace
 from functools import partial
 from pathlib import Path
@@ -51,27 +52,33 @@ from xic_extractor.execution_runtime_owner import (
     mint_work_unit_settlement,
 )
 from xic_extractor.execution_settings import DEFAULT_ALIGNMENT_WORKERS
-from xic_extractor.extraction.untargeted_cid_nl_production_batch import (
-    PreparedCidNlAlignmentSubjectWorksets,
-    UntargetedCidNlPersistedPartition,
-    UntargetedCidNlProductionBatch,
-    UntargetedCidNlProductionPlan,
-    compose_and_persist_untargeted_cid_nl_partition,
-    materialize_untargeted_cid_nl_partition,
-    prepare_untargeted_cid_nl_alignment_subject_worksets,
-    prepare_untargeted_cid_nl_grouping,
-)
-from xic_extractor.extraction.untargeted_cid_nl_real_data_runtime import (
-    UntargetedCidNlRuntimePartitionResult,
-    execute_untargeted_cid_nl_runtime_partition,
-)
 from xic_extractor.extraction.untargeted_execution_result import (
     CompletedUntargetBatchWorkflowResult,
+)
+from xic_extractor.extraction.untargeted_input_planning import (
+    PreparedUntargetedAlignmentWorksets,
+    UntargetedInputPlan,
+    prepare_untargeted_alignment_worksets,
+)
+from xic_extractor.extraction.untargeted_partition_composition import (
+    PersistedUntargetedPartition,
+    UntargetedPartitionInputs,
+    compose_and_persist_untargeted_partition,
+    prepare_untargeted_partition_grouping,
+)
+from xic_extractor.extraction.untargeted_real_data_models import (
+    UntargetedCidNlRealDataRuntimeJob,
+    UntargetedCidNlRuntimePartitionResult,
+    build_untargeted_cid_nl_sample_runtime_jobs,
+)
+from xic_extractor.extraction.untargeted_real_data_runtime import (
+    execute_untargeted_cid_nl_runtime_partition,
 )
 from xic_extractor.immutable_sequence import ImmutableSequence
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     CID_NL_PROVIDER_ID,
     CidNlMethodSubject,
+    UntargetedCidNlMethodSubjectBatch,
 )
 from xic_extractor.peak_detection.search_scope import (
     SEARCH_SCOPE_SCHEMA_VERSION,
@@ -81,8 +88,6 @@ from xic_extractor.peak_detection.search_scope import (
 )
 from xic_extractor.processing_identity import resolve_request_acquisition_source
 from xic_extractor.raw_reader import _ensure_assemblies_loaded
-
-PartitionResultStore = StreamedResultStore
 
 _PARTITION_CONTRACT = _mint_artifact_semantic_contract_ref(
     owner_namespace="xic_extractor.untargeted_cid_nl_bounded_runtime",
@@ -107,14 +112,122 @@ def _initialize_sample_process(dll_dir: Path) -> None:
     _ensure_assemblies_loaded(dll_dir, importlib.import_module)
 
 
-class CidNlPartitionPipelineAdapter:
+def materialize_untargeted_partition(
+    plan: UntargetedInputPlan,
+    subject_batch: UntargetedCidNlMethodSubjectBatch,
+    *,
+    prepared_worksets: PreparedUntargetedAlignmentWorksets | None = None,
+    acquisition_cache_dir: Path | None = None,
+    sparse: bool = False,
+) -> UntargetedPartitionInputs:
+    """Bind a finite subject partition to shared, already-validated inputs."""
+
+    prepared = (
+        prepare_untargeted_alignment_worksets(plan)
+        if prepared_worksets is None
+        else prepared_worksets
+    )
+    if prepared.plan is not plan:
+        raise ValueError("prepared alignment worksets crossed the production plan")
+    expected_batch = (
+        plan.subject_batch
+        if subject_batch == plan.subject_batch
+        else prepared.subject_batch(subject_batch.subjects)
+    )
+    if subject_batch.candidate_memberships != expected_batch.candidate_memberships:
+        raise ValueError("CID-NL partition crossed prepared candidate memberships")
+
+    if plan.partition_input_loader is not None:
+        candidates, records, support = plan.partition_input_loader(
+            tuple(cid for cid, _ in subject_batch.candidate_memberships)
+        )
+        context = replace(
+            plan.context,
+            candidates_by_sample=candidates,
+            physical_records_by_candidate=records,
+        )
+        assert plan.dll_dir is not None
+        templates: list[UntargetedCidNlRealDataRuntimeJob] = []
+        for sample in context.samples:
+            stem = sample.metadata.raw_stem
+            templates.extend(
+                build_untargeted_cid_nl_sample_runtime_jobs(
+                    processing_owners=context.processing_owners,
+                    sample=sample,
+                    subject_work_units=tuple(
+                        (
+                            subject,
+                            f"untargeted-cid-nl:{stem}:{subject.method_subject_id}",
+                        )
+                        for subject in subject_batch.subjects[:1]
+                    ),
+                    candidates=candidates[stem],
+                    discovery_receipt=context.discovery_receipts_by_sample[stem],
+                    settings=context.settings,
+                    peak_config=context.peak_config,
+                    raw_path=context.raw_paths_by_sample[stem],
+                    dll_dir=plan.dll_dir,
+                    signal_processing_profile=context.signal_processing_profile,
+                    physical_records=tuple(
+                        records[item.candidate_id] for item in candidates[stem]
+                    ),
+                    acquisition_source_expectation=context.acquisition_sources_by_sample[
+                        stem
+                    ],
+                    subject_partition=subject_batch,
+                    support_candidates=support[stem],
+                    acquisition_cache_dir=acquisition_cache_dir,
+                )
+            )
+    else:
+        context = plan.context
+        templates = list(plan.sample_job_templates)
+    jobs = []
+    subjects_by_id = {
+        subject.method_subject_id: subject for subject in subject_batch.subjects
+    }
+    bound_templates = []
+    for source_template in templates:
+        template = copy(source_template)
+        object.__setattr__(template, "acquisition_cache_dir", acquisition_cache_dir)
+        bound_templates.append(template)
+        subject_ids = (
+            tuple(
+                subject_id
+                for subject_id in subjects_by_id
+                if template._request_candidates_by_subject.get(subject_id)
+            )
+            if sparse
+            else tuple(subjects_by_id)
+        )
+        for subject_id in subject_ids:
+            subject = subjects_by_id[subject_id]
+            job = copy(template)
+            subject_id = subject.method_subject_id
+            object.__setattr__(job, "method_subject", subject)
+            object.__setattr__(
+                job,
+                "work_unit_key",
+                f"untargeted-cid-nl:{template.sample.metadata.raw_stem}:{subject_id}",
+            )
+            object.__setattr__(job, "acquisition_cache_dir", acquisition_cache_dir)
+            jobs.append(job)
+    return UntargetedPartitionInputs(
+        subject_batch=subject_batch,
+        context=context,
+        jobs=tuple(jobs),
+        sample_job_templates=tuple(bound_templates) if sparse else (),
+    )
+
+
+class UntargetedPartitionPipelineAdapter:
     """Adapts CID-NL partition acquisition, composition, and closure to the
     generic execution engine.
     """
 
     def __init__(
         self,
-        plan: UntargetedCidNlProductionPlan,
+        plan: UntargetedInputPlan,
         *,
         alignment_config: AlignmentConfig,
         known_istd_reference: KnownIstdReference | None = None,
@@ -151,8 +264,8 @@ class CidNlPartitionPipelineAdapter:
 
         context = plan.context
         self._owners = context.processing_owners
-        self._prepared_worksets: PreparedCidNlAlignmentSubjectWorksets = (
-            prepare_untargeted_cid_nl_alignment_subject_worksets(
+        self._prepared_worksets: PreparedUntargetedAlignmentWorksets = (
+            prepare_untargeted_alignment_worksets(
                 plan,
                 known_istd_reference=self._known_istd_reference,
             )
@@ -388,12 +501,12 @@ class CidNlPartitionPipelineAdapter:
         progress_callback: Callable[[Mapping[str, object]], None] | None = None,
     ) -> PartitionAcquisitionOutput[
         tuple[
-            UntargetedCidNlProductionBatch,
+            UntargetedPartitionInputs,
             UntargetedCidNlRuntimePartitionResult,
         ]
     ]:
         subject_batch = self._partition_subject_batches[partition.partition_key]
-        batch = materialize_untargeted_cid_nl_partition(
+        batch = materialize_untargeted_partition(
             self._plan,
             subject_batch,
             prepared_worksets=self._prepared_worksets,
@@ -409,7 +522,7 @@ class CidNlPartitionPipelineAdapter:
             leaf = execute_untargeted_cid_nl_runtime_partition(
                 batch.jobs,
                 prepare_grouping=partial(
-                    prepare_untargeted_cid_nl_grouping,
+                    prepare_untargeted_partition_grouping,
                     batch,
                     alignment_config=self._alignment_config,
                     known_istd_reference=self._known_istd_reference,
@@ -433,7 +546,7 @@ class CidNlPartitionPipelineAdapter:
                 leaf = execute_untargeted_cid_nl_runtime_partition(
                     batch.jobs,
                     prepare_grouping=partial(
-                        prepare_untargeted_cid_nl_grouping,
+                        prepare_untargeted_partition_grouping,
                         batch,
                         alignment_config=self._alignment_config,
                         known_istd_reference=self._known_istd_reference,
@@ -469,7 +582,7 @@ class CidNlPartitionPipelineAdapter:
         partition: WorkPartition[tuple[CidNlMethodSubject, ...]],
         acquisition_output: PartitionAcquisitionOutput[
             tuple[
-                UntargetedCidNlProductionBatch,
+                UntargetedPartitionInputs,
                 UntargetedCidNlRuntimePartitionResult,
             ]
         ],
@@ -477,14 +590,14 @@ class CidNlPartitionPipelineAdapter:
         *,
         retain_memory: bool = False,
         should_cancel: Callable[[], bool] | Callable[[], None] | None = None,
-    ) -> PartitionCompositionOutput[UntargetedCidNlPersistedPartition]:
+    ) -> PartitionCompositionOutput[PersistedUntargetedPartition]:
         batch, leaf = acquisition_output.result
 
         def cancel_check() -> None:
             if should_cancel is not None and should_cancel():
                 raise InterruptedError("CID-NL batch cancelled")
 
-        persisted = compose_and_persist_untargeted_cid_nl_partition(
+        persisted = compose_and_persist_untargeted_partition(
             batch,
             leaf.sample_results,
             store=store,
@@ -500,9 +613,7 @@ class CidNlPartitionPipelineAdapter:
     def create_partition_artifacts(
         self,
         partition: WorkPartition[tuple[CidNlMethodSubject, ...]],
-        composition_output: PartitionCompositionOutput[
-            UntargetedCidNlPersistedPartition
-        ],
+        composition_output: PartitionCompositionOutput[PersistedUntargetedPartition],
     ) -> tuple[
         Sequence[RuntimeArtifactRegistrationReceipt],
         Sequence[WorkUnitSettlement],
@@ -548,7 +659,7 @@ class CidNlPartitionPipelineAdapter:
         self,
         store: StreamedResultStore,
         composition_outputs: Sequence[
-            PartitionCompositionOutput[UntargetedCidNlPersistedPartition]
+            PartitionCompositionOutput[PersistedUntargetedPartition]
         ],
     ) -> FinalizedUntargetBatchApplicationResult:
         context = self._plan.context
@@ -683,8 +794,8 @@ class CidNlPartitionPipelineAdapter:
         return retain
 
 
-def execute_bounded_untargeted_cid_nl(
-    plan: UntargetedCidNlProductionPlan,
+def execute_untargeted_plan(
+    plan: UntargetedInputPlan,
     *,
     output_dir: Path,
     alignment_config: AlignmentConfig,
@@ -708,7 +819,7 @@ def execute_bounded_untargeted_cid_nl(
     backfill decisions. Operational work units describe partition/sample phases;
     scientific per-subject receipts live in the owner-controlled result store.
     """
-    if type(plan) is not UntargetedCidNlProductionPlan:
+    if type(plan) is not UntargetedInputPlan:
         raise TypeError("bounded execution requires a production plan")
     if type(max_partition_jobs) is not int or max_partition_jobs < 1:
         raise ValueError("partition job budget must be a positive integer")
@@ -724,7 +835,7 @@ def execute_bounded_untargeted_cid_nl(
         if acquisition_cache_dir is not None
         else Path(output_dir) / ".cid_nl_acquisition_cache"
     )
-    adapter = CidNlPartitionPipelineAdapter(
+    adapter = UntargetedPartitionPipelineAdapter(
         plan,
         alignment_config=alignment_config,
         known_istd_reference=known_istd_reference,
@@ -748,7 +859,7 @@ def execute_bounded_untargeted_cid_nl(
             pipeline_overlap=pipeline_overlap,
             acquisition_workers=adapter.acquisition_workers,
             execute_runtime_attempt=execute_runtime_attempt,
-            store_factory=PartitionResultStore,
+            store_factory=StreamedResultStore,
             acquisition_cleanup=adapter.close_process_worker_pools,
         )
         completed_once = True
@@ -766,7 +877,7 @@ def execute_bounded_untargeted_cid_nl(
             shutil.rmtree(cache_dir, ignore_errors=True)
 
 
-def _shared_objects(plan: UntargetedCidNlProductionPlan) -> tuple[object, ...]:
+def _shared_objects(plan: UntargetedInputPlan) -> tuple[object, ...]:
     context = plan.context
     owners = context.processing_owners
     values = [
@@ -801,7 +912,7 @@ def _sample_worker_shared_objects(
 
 
 def _sample_worker_subject_owners(
-    plan: UntargetedCidNlProductionPlan,
+    plan: UntargetedInputPlan,
     partition_batches: tuple[object, ...],
 ) -> tuple[object, ...]:
     values = [plan.subject_batch, *partition_batches]
@@ -809,7 +920,7 @@ def _sample_worker_subject_owners(
     return tuple({id(value): value for value in values}.values())
 
 
-def _plan_dll_dir(plan: UntargetedCidNlProductionPlan) -> Path:
+def _plan_dll_dir(plan: UntargetedInputPlan) -> Path:
     if plan.dll_dir is not None:
         return plan.dll_dir
     if plan.sample_job_templates:
