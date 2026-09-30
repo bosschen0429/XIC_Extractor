@@ -216,11 +216,10 @@ def run(
     rt_prior_library: dict[tuple[str, str], LibraryEntry] | None = None,
     model_selection_expected_diff_approvals: ExpectedDiffApprovalRecords | None = None,
 ) -> RunOutput:
-    from xic_extractor.extraction import targeted_diagnostic_application as application
-    from xic_extractor.extraction import targeted_service
+    from xic_extractor.applications.targeted import application
 
     return application.build_canonical_targeted_application_service(acquire).execute(
-        targeted_service.build_targeted_application_request(
+        application.build_targeted_application_request(
             config,
             targets,
             progress_callback=progress_callback,

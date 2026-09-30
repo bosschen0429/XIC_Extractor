@@ -125,7 +125,7 @@ def _worker_loss_batch(
 def test_targeted_application_service_has_no_settle_only_runtime_bypass(
     tmp_path: Path,
 ) -> None:
-    from xic_extractor.extraction.targeted_service import (
+    from xic_extractor.applications.targeted.application import (
         TargetedApplicationService,
         build_targeted_application_request,
     )
@@ -142,7 +142,7 @@ def test_targeted_application_service_has_no_settle_only_runtime_bypass(
 def test_targeted_application_service_closes_true_process_lifecycle(
     tmp_path: Path,
 ) -> None:
-    from xic_extractor.extraction.targeted_service import (
+    from xic_extractor.applications.targeted.application import (
         TargetedApplicationService,
         build_targeted_application_request,
     )
@@ -206,7 +206,7 @@ def test_targeted_application_service_closes_true_process_lifecycle(
 def test_targeted_lifecycle_uses_owner_path_marker_as_durable_finalizer(
     tmp_path: Path,
 ) -> None:
-    from xic_extractor.extraction.targeted_service import (
+    from xic_extractor.applications.targeted.application import (
         TargetedApplicationService,
         build_targeted_application_request,
     )
@@ -249,7 +249,7 @@ def test_targeted_lifecycle_rejects_independent_dual_finalizers_before_side_effe
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from xic_extractor.extraction.targeted_service import (
+    from xic_extractor.applications.targeted.application import (
         TargetedApplicationService,
         build_targeted_application_request,
     )
@@ -277,7 +277,7 @@ def test_targeted_lifecycle_rejects_independent_dual_finalizers_before_side_effe
         return proposed
 
     monkeypatch.setattr(
-        "xic_extractor.extraction.targeted_service._resolve_application_request",
+        "xic_extractor.applications.targeted.application._resolve_application_request",
         unexpected_resolution,
     )
     service = TargetedApplicationService(
@@ -304,7 +304,7 @@ def test_targeted_lifecycle_rejects_independent_dual_finalizers_before_side_effe
 def test_targeted_preflight_failure_skips_runner_and_finalizes_marker(
     tmp_path: Path,
 ) -> None:
-    from xic_extractor.extraction.targeted_service import (
+    from xic_extractor.applications.targeted.application import (
         TargetedApplicationService,
         build_targeted_application_request,
     )
@@ -389,7 +389,7 @@ def test_targeted_accepted_cancellation_skips_successful_provider_projection(
 def test_targeted_lifecycle_fails_closed_without_exact_supervisor_ack(
     tmp_path: Path,
 ) -> None:
-    from xic_extractor.extraction.targeted_service import (
+    from xic_extractor.applications.targeted.application import (
         TargetedApplicationService,
         build_targeted_application_request,
     )
@@ -430,7 +430,7 @@ def test_targeted_lifecycle_fails_closed_without_exact_supervisor_ack(
 def test_targeted_worker_loss_receipt_quarantines_partial_artifact(
     tmp_path: Path,
 ) -> None:
-    from xic_extractor.extraction.targeted_service import (
+    from xic_extractor.applications.targeted.application import (
         TargetedApplicationService,
         build_targeted_application_request,
     )

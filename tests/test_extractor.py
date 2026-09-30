@@ -209,7 +209,6 @@ def test_peak_only_outside_selection_still_answers_physical_question(
     assert evaluation.question.query_rt_min == pytest.approx(5.0)
 
 
-
 @pytest.mark.parametrize("with_supported_main", [True, False])
 def test_formal_target_ranks_only_physically_supported_signal(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, with_supported_main: bool
@@ -284,10 +283,6 @@ def test_formal_target_ranks_only_physically_supported_signal(
         assert rows[0]["Qualified_RT"] != "ND"
         assert rows[0]["Qualified_Area"] != "ND"
         assert long_rows[0]["Counted Detection"] == "TRUE"
-
-
-
-
 
 
 def test_formal_target_drops_selection_when_final_physical_owner_is_unavailable(
@@ -394,11 +389,11 @@ def test_no_selected_apex_does_not_capture_a_broad_tail(
     row = _read_csv(config.output_csv)[0]
     assert row["OutsideApex_RT"] == row["OutsideApex_Area"] == "ND"
 
+    from xic_extractor.applications.targeted.application import (
+        build_targeted_application_request,
+    )
     from xic_extractor.extraction.targeted_production_workflow import (
         execute_targeted_production_workflow,
-    )
-    from xic_extractor.extraction.targeted_service import (
-        build_targeted_application_request,
     )
 
     finalized = execute_targeted_production_workflow(
@@ -971,6 +966,7 @@ def test_run_writes_nd_for_peak_failure_but_keeps_nl_result(
     config = _config(tmp_path)
     (config.data_dir / "SampleA.raw").write_text("", encoding="utf-8")
     targets = [_target("WithNL")]
+
     class FlatRaw(_FakeRaw):
         def extract_xic(self, mz, rt_min, rt_max, ppm_tol):
             rt = np.linspace(rt_min, rt_max, 201)
@@ -1508,6 +1504,7 @@ def test_istd_no_signal_does_not_reacquire_context(
     config = _config(tmp_path)
     (config.data_dir / "SampleA.raw").write_text("", encoding="utf-8")
     targets = [_target("ISTD", is_istd=True)]
+
     class NoSignalRaw(_RecordingRaw):
         def extract_xic(self, mz, rt_min, rt_max, ppm_tol):
             rt, _intensity = super().extract_xic(mz, rt_min, rt_max, ppm_tol)

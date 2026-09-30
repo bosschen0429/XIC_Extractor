@@ -8,6 +8,10 @@ from datetime import datetime
 from pathlib import Path
 
 from xic_extractor import extractor
+from xic_extractor.applications.targeted.application import (
+    build_canonical_targeted_application_service,
+    build_targeted_application_request,
+)
 from xic_extractor.config import ConfigError, ExtractionConfig, load_config
 from xic_extractor.diagnostics.targeted_ms1_shape_identity_auto_diff import (
     write_targeted_ms1_shape_identity_auto_diff_artifacts,
@@ -15,17 +19,11 @@ from xic_extractor.diagnostics.targeted_ms1_shape_identity_auto_diff import (
 from xic_extractor.diagnostics.targeted_ms1_shape_identity_support_producer import (
     run_build_targeted_ms1_shape_identity_supports,
 )
-from xic_extractor.extraction.targeted_diagnostic_application import (
-    build_canonical_targeted_application_service,
-)
 from xic_extractor.extraction.targeted_inputs import (
     resolve_model_selection_expected_diff_approvals,
 )
 from xic_extractor.extraction.targeted_output_boundary import (
     TargetedOutputBoundaryError,
-)
-from xic_extractor.extraction.targeted_service import (
-    build_targeted_application_request,
 )
 from xic_extractor.output.method_manifest import (
     MethodManifestContext,

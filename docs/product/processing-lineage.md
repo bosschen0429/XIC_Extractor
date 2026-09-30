@@ -14,7 +14,7 @@ planned seal changes the current product writer.
 | --- | --- | --- |
 | Processing identity (`xic_extractor/processing_identity.py`) | Which request and attempt ran, over which RAW sources | Implemented; production Alignment, Backfill, and Discovery modules use it |
 | Target identity (`TargetKey`, `TargetListSnapshot` in `xic_extractor/configuration/target_identity.py`) | Which exact target list a run used | Implemented; production Targeted modules use it |
-| Targeted delivery lineage (`TargetedDeliveryCellKey`, revision/stage/seal candidates in `xic_extractor/delivery_lineage.py`) | Per-cell Targeted lineage candidates | Diagnostic-only; reached through `extraction.targeted_service`, with no product seal or publication authority |
+| Targeted delivery lineage (`TargetedDeliveryCellKey`, revision/stage/seal candidates in `xic_extractor/delivery_lineage.py`) | Per-cell Targeted lineage candidates | Diagnostic-only; reached through `applications.targeted.application`, with no product seal or publication authority |
 | Untargeted row identity (`UntargetRowKey`) | A stable identity for one Untargeted Matrix row | Implemented in `alignment/projection/untarget/pre_cell.py` |
 | Untargeted per-cell delivery lineage | A retained revision/evidence bundle for each Matrix cell | Not planned; see [Untargeted delivery decision](#untargeted-delivery-decision) |
 | Untargeted output-level seal | One sealed manifest for one complete Untargeted Matrix delivery | Planned; not implemented |

@@ -13,18 +13,18 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Iterator, cast
 
 from xic_extractor.alignment.result.scientific_alignment import ObservedSearchSubject
+from xic_extractor.applications.targeted.application import (
+    FinalizedTargetProductionResult,
+    TargetedApplicationRequest,
+    TargetedPublication,
+    validate_finalized_result_population,
+)
 from xic_extractor.applications.targeted.product_model import (
     TargetedProductProjection,
 )
 from xic_extractor.extraction.output_dispatch import write_outputs
 from xic_extractor.extraction.targeted_production_workflow import (
     acquisition_snapshot_for_publication,
-)
-from xic_extractor.extraction.targeted_service import (
-    FinalizedTargetProductionResult,
-    TargetedApplicationRequest,
-    TargetedPublication,
-    validate_finalized_result_population,
 )
 from xic_extractor.extractor import ExtractionResult, FileResult, RunOutput
 from xic_extractor.output.excel_pipeline import write_excel_from_run_output

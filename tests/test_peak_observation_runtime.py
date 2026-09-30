@@ -27,6 +27,11 @@ from xic_extractor.alignment.runtime_adapter import (
     execute_alignment_process_runtime,
     mint_alignment_process_result_artifact,
 )
+from xic_extractor.applications.targeted.application import (
+    TargetedApplicationService,
+    TargetedRuntimeLifecycleRunner,
+    build_targeted_application_request,
+)
 from xic_extractor.config import ExtractionConfig, Target
 from xic_extractor.execution_runtime import (
     AttemptRuntime,
@@ -61,11 +66,6 @@ from xic_extractor.extraction.targeted_runtime_adapter import (
     TargetedRuntimeWorkerBatch,
     execute_targeted_runtime_lifecycle,
     mint_targeted_process_result_ref,
-)
-from xic_extractor.extraction.targeted_service import (
-    TargetedApplicationService,
-    TargetedRuntimeLifecycleRunner,
-    build_targeted_application_request,
 )
 from xic_extractor.peak_detection.integration_result import IntegrationResult
 from xic_extractor.peak_detection.observation_batch import (
