@@ -294,6 +294,13 @@ def _capture_physical_peak(
         raise SampleLocalCaptureError(
             "physical capture requires its closed owner question"
         )
+    if (
+        binding.physical_evaluation_mz is not None
+        and binding.physical_evaluation_mz != trace.mz
+    ):
+        raise SampleLocalCaptureError(
+            "physical capture m/z differs from the retained owner query"
+        )
     if mint_physical_trace_content_id(trace.rt, trace.intensity) != (
         expected.prepared.trace_content_id
     ):
@@ -339,6 +346,10 @@ def capture_reacquired_physical_peak(
         raise SampleLocalCaptureError("capture trace must be an owner trace")
     if (
         trace.mz == binding.query_mz
+        and (
+            binding.physical_evaluation_mz is None
+            or trace.mz == binding.physical_evaluation_mz
+        )
         and trace.rt_min == binding.query_rt_min
         and trace.rt_max == binding.query_rt_max
         and trace.ppm_tol == binding.query_ppm_tol
@@ -373,6 +384,7 @@ def capture_reacquired_physical_peak(
         binding,
         source_physical_evaluation=source_evaluation,
         physical_evaluation=evaluation,
+        physical_evaluation_mz=trace.mz,
     )
     scope = replace(
         scope,
@@ -507,6 +519,7 @@ def capture_physical_backfill_observation(
     method_subject: CidNlMethodSubject,
     trace: Trace,
     group_center_rt: float,
+    physical_mz: float,
     profile: SignalProcessingProfile,
     resolver_mode: str,
     evaluation_sink: Callable[[PhysicalPeakEvaluation], None] | None = None,
@@ -517,7 +530,7 @@ def capture_physical_backfill_observation(
     )
     if (
         not request_binds_physical_capture_profile(processing_owners.request, profile)
-        or trace.mz != method_subject.precursor_mz
+        or trace.mz != physical_mz
         or trace.ppm_tol != method_subject.precursor_tolerance_ppm
         or not trace.rt_min <= group_center_rt <= trace.rt_max
     ):
@@ -741,9 +754,7 @@ def bind_owner_backed_capture_hypothesis(
         selected_hypothesis=hypothesis,
         physical_evaluation=capture.physical_evaluation,
         physical_selection_intensity=capture._owner_seal.physical_selection_intensity,
-        physical_observation_content=(
-            capture._owner_seal.physical_observation_content
-        ),
+        physical_observation_content=(capture._owner_seal.physical_observation_content),
         physical_observation_provenance=(
             capture._owner_seal.physical_observation_provenance
         ),

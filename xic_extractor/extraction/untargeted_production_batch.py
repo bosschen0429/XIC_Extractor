@@ -398,7 +398,7 @@ def _physical_subject_units(
                 record.work_item.xic_mz * (1.0 + xic_fraction),
             ),
             _method_center_interval(
-                candidate.precursor_mz,
+                candidate.physical_mz,
                 precursor_tolerance_ppm,
             ),
         )
@@ -416,7 +416,7 @@ def _physical_subject_units(
         requirement = bucket_key[1]
         ordered = sorted(
             bucket_candidates,
-            key=lambda item: (item.precursor_mz, item.candidate_id),
+            key=lambda item: (item.physical_mz, item.candidate_id),
         )
         cohort: list[DiscoveryCandidate] = []
         representative_record: DiscoveryPhysicalFactRecord | None = None
@@ -480,7 +480,7 @@ def _physical_subject_units(
             (*proved, *unproved),
             key=lambda unit: (
                 0.0 if unit[0] is None else unit[0],
-                unit[1][0].precursor_mz,
+                unit[1][0].physical_mz,
                 tuple(candidate.candidate_id for candidate in unit[1]),
             ),
         )
@@ -508,7 +508,7 @@ def prepare_untargeted_subject_membership(
 
     composition = cid_nl_composition(settings)
     for candidate in candidates:
-        precursor_mz = float(candidate.precursor_mz)
+        precursor_mz = float(candidate.physical_mz)
         neutral_loss_da = float(candidate.configured_neutral_loss_da)
         if (
             not math.isfinite(precursor_mz)
@@ -529,7 +529,7 @@ def prepare_untargeted_subject_membership(
             for requirement, unit in subject_units
         ),
         precursor_by_id={
-            candidate.candidate_id: candidate.precursor_mz for candidate in candidates
+            candidate.candidate_id: candidate.physical_mz for candidate in candidates
         },
         settings=settings,
         composition=composition,
@@ -568,7 +568,7 @@ def mint_subject_membership_from_physical_units(
     for requirement, unit_candidates in subject_units:
         key = key_by_requirement.get(requirement)
         # A proven physical unit is indivisible. Existing fixed centers may host
-        # it only when every original query remains inside the method window.
+        # it only when every physical query remains inside the method window.
         if key is None or any(
             abs(precursor_by_id[candidate] - key[0]) / key[0] * 1_000_000.0
             > settings.precursor_mz_tolerance_ppm

@@ -224,15 +224,47 @@ class UntargetedCidNlSampleTraceBatch:
 
 
 @dataclass(frozen=True, slots=True)
+class UntargetedCidNlBackfillTarget:
+    """One frozen group question using its physical ion and subject lineage."""
+
+    group_hypothesis_id: str
+    method_subject: CidNlMethodSubject
+    physical_mz: float
+    center_rt: float
+
+    def __post_init__(self) -> None:
+        if (
+            not isinstance(self.group_hypothesis_id, str)
+            or not self.group_hypothesis_id.strip()
+            or not isinstance(self.method_subject, CidNlMethodSubject)
+            or isinstance(self.physical_mz, bool)
+            or not isinstance(self.physical_mz, (int, float))
+            or not math.isfinite(float(self.physical_mz))
+            or self.physical_mz <= 0.0
+            or isinstance(self.center_rt, bool)
+            or not isinstance(self.center_rt, (int, float))
+            or not math.isfinite(float(self.center_rt))
+            or self.center_rt < 0.0
+        ):
+            raise UntargetedCidNlRealDataAdapterError(
+                "backfill target requires a group, physical mass, and RT"
+            )
+
+
+@dataclass(frozen=True, slots=True)
 class UntargetedCidNlBackfillTraceBatch:
-    """One sample-local backfill phase keyed by exact method-subject identity."""
+    """One sample-local backfill phase with exact group-to-trace attribution."""
 
     sample_identity_id: str
     acquisition_source_id: str
-    method_subject_ids: tuple[str, ...]
-    group_center_rts: tuple[float, ...]
+    targets: tuple[UntargetedCidNlBackfillTarget, ...]
     requests: tuple[XICRequest, ...]
+    trace_indices: tuple[int, ...]
     acquisition: TraceAcquisitionBatch
+
+    @property
+    def group_hypothesis_ids(self) -> tuple[str, ...]:
+        return tuple(target.group_hypothesis_id for target in self.targets)
 
     def __post_init__(self) -> None:
         if (
@@ -243,24 +275,41 @@ class UntargetedCidNlBackfillTraceBatch:
                 "backfill trace batch requires owner identities"
             )
         if (
-            type(self.method_subject_ids) is not tuple
-            or tuple(zip(self.method_subject_ids, self.group_center_rts))
-            != tuple(sorted(set(zip(self.method_subject_ids, self.group_center_rts))))
-            or not self.method_subject_ids
-            or type(self.group_center_rts) is not tuple
-            or type(self.requests) is not tuple
-            or not (
-                len(self.method_subject_ids)
-                == len(self.group_center_rts)
-                == len(self.requests)
+            type(self.targets) is not tuple
+            or not self.targets
+            or any(
+                not isinstance(target, UntargetedCidNlBackfillTarget)
+                for target in self.targets
             )
+            or len(self.group_hypothesis_ids) != len(set(self.group_hypothesis_ids))
+            or self.targets
+            != tuple(
+                sorted(
+                    self.targets,
+                    key=lambda target: (
+                        target.method_subject.method_subject_id,
+                        target.center_rt,
+                        target.group_hypothesis_id,
+                    ),
+                )
+            )
+            or type(self.requests) is not tuple
+            or type(self.trace_indices) is not tuple
+            or not (len(self.targets) == len(self.requests) == len(self.trace_indices))
         ):
             raise UntargetedCidNlRealDataAdapterError(
                 "backfill trace batch entries must be canonical and complete"
             )
-        if not isinstance(self.acquisition, TraceAcquisitionBatch) or len(
-            self.acquisition.traces
-        ) != len(self.requests):
+        if (
+            not isinstance(self.acquisition, TraceAcquisitionBatch)
+            or set(self.trace_indices) != set(range(len(self.acquisition.traces)))
+            or any(
+                self.acquisition.traces[index].coordinate.request != request
+                for request, index in zip(
+                    self.requests, self.trace_indices, strict=True
+                )
+            )
+        ):
             raise UntargetedCidNlRealDataAdapterError(
                 "backfill trace batch acquisition does not close its requests"
             )
@@ -268,26 +317,20 @@ class UntargetedCidNlBackfillTraceBatch:
     def acquired_trace(
         self,
         *,
-        method_subject_id: str,
-        group_center_rt: float,
+        group_hypothesis_id: str,
         request: XICRequest,
     ) -> AcquiredTrace:
         try:
-            index = tuple(zip(self.method_subject_ids, self.group_center_rts)).index(
-                (method_subject_id, group_center_rt)
-            )
+            index = self.group_hypothesis_ids.index(group_hypothesis_id)
         except ValueError as exc:
             raise UntargetedCidNlRealDataAdapterError(
-                "backfill trace batch has no matching method subject"
+                "backfill trace batch has no matching group"
             ) from exc
-        if (
-            self.group_center_rts[index] != group_center_rt
-            or self.requests[index] != request
-        ):
+        if self.requests[index] != request:
             raise UntargetedCidNlRealDataAdapterError(
                 "backfill trace batch request crossed its owner decision"
             )
-        return self.acquisition.traces[index]
+        return self.acquisition.traces[self.trace_indices[index]]
 
 
 class _UntargetedRealDataWorkObserver:
@@ -364,7 +407,7 @@ def _sample_capture_requests(
 ) -> tuple[tuple[XICRequest, ...], tuple[int, ...]]:
     requests = {
         item.candidate_id: XICRequest(
-            mz=item.precursor_mz,
+            mz=item.physical_mz,
             rt_min=item.ms1_search_rt_min,
             rt_max=item.ms1_search_rt_max,
             ppm_tol=settings.precursor_mz_tolerance_ppm,
@@ -508,7 +551,7 @@ def acquire_untargeted_cid_nl_backfill_trace_batch(
     *,
     processing_owners: ProcessingOwnerReferences,
     sample: ResolvedCanonicalSampleIdentity,
-    backfill_requests: tuple[tuple[CidNlMethodSubject, float], ...],
+    backfill_requests: tuple[UntargetedCidNlBackfillTarget, ...],
     peak_config: ExtractionConfig,
     raw: UntargetedCidNlRealDataRaw,
 ) -> UntargetedCidNlBackfillTraceBatch:
@@ -528,35 +571,33 @@ def acquire_untargeted_cid_nl_backfill_trace_batch(
         type(backfill_requests) is not tuple
         or not backfill_requests
         or any(
-            type(item) is not tuple
-            or len(item) != 2
-            or not isinstance(item[0], CidNlMethodSubject)
-            or isinstance(item[1], bool)
-            or not isinstance(item[1], (int, float))
-            or not math.isfinite(float(item[1]))
-            or float(item[1]) < 0.0
+            not isinstance(item, UntargetedCidNlBackfillTarget)
             for item in backfill_requests
         )
+        or len({item.group_hypothesis_id for item in backfill_requests})
+        != len(backfill_requests)
     ):
         raise UntargetedCidNlRealDataAdapterError(
             "backfill requests must be a non-empty typed tuple"
         )
-    for method_subject, _group_center_rt in backfill_requests:
+    for target in backfill_requests:
         try:
             validate_cid_nl_method_subject_binding(
-                method_subject,
+                target.method_subject,
                 processing_owners=processing_owners,
             )
         except CidNlMethodSubjectContractError as exc:
             raise UntargetedCidNlRealDataAdapterError(str(exc)) from exc
-    # Group identity owns each backfill attempt. Acquisition owns the physical
-    # query: different groups can reuse one subject/RT trace, in any input order.
-    unique_requests = {
-        (subject.method_subject_id, float(center)): (subject, float(center))
-        for subject, center in backfill_requests
-    }
-    backfill_requests = tuple(unique_requests[key] for key in sorted(unique_requests))
-    method_subject_ids = tuple(item[0].method_subject_id for item in backfill_requests)
+    targets = tuple(
+        sorted(
+            backfill_requests,
+            key=lambda target: (
+                target.method_subject.method_subject_id,
+                target.center_rt,
+                target.group_hypothesis_id,
+            ),
+        )
+    )
     _validate_raw_adapter(raw)
     source = resolve_request_acquisition_source(
         processing_owners=processing_owners,
@@ -571,12 +612,16 @@ def acquire_untargeted_cid_nl_backfill_trace_batch(
     half_window = peak_config.nl_rt_anchor_half_window_min
     requests = tuple(
         XICRequest(
-            mz=method_subject.precursor_mz,
-            rt_min=max(0.0, float(group_center_rt) - half_window),
-            rt_max=float(group_center_rt) + half_window,
-            ppm_tol=method_subject.precursor_tolerance_ppm,
+            mz=target.physical_mz,
+            rt_min=max(0.0, float(target.center_rt) - half_window),
+            rt_max=float(target.center_rt) + half_window,
+            ppm_tol=target.method_subject.precursor_tolerance_ppm,
         )
-        for method_subject, group_center_rt in backfill_requests
+        for target in targets
+    )
+    unique: dict[XICRequest, int] = {}
+    trace_indices = tuple(
+        unique.setdefault(request, len(unique)) for request in requests
     )
     capability = mint_trace_acquisition_capability(
         source,
@@ -584,14 +629,14 @@ def acquire_untargeted_cid_nl_backfill_trace_batch(
         coordinate_kind=TraceCoordinateKind.NATIVE_SCAN,
     )
     acquisition = _freeze_acquisition(
-        acquire_untargeted_trace_batch(capability, requests, bound_raw)
+        acquire_untargeted_trace_batch(capability, tuple(unique), bound_raw)
     )
     return UntargetedCidNlBackfillTraceBatch(
         sample_identity_id=sample.identity.sample_identity_id,
         acquisition_source_id=source.acquisition_source_id,
-        method_subject_ids=method_subject_ids,
-        group_center_rts=tuple(float(item[1]) for item in backfill_requests),
+        targets=targets,
         requests=requests,
+        trace_indices=trace_indices,
         acquisition=acquisition,
     )
 
@@ -718,15 +763,6 @@ def adapt_current_discovery_sample_subject(
             settings=settings,
             preserve_configured_losses=method_subject.composition is not None,
             include_inferred=True,
-        )
-        scan_seeds = tuple(
-            item
-            for item in scan_seeds
-            if _within_ppm(
-                item[1].precursor_mz,
-                method_subject.precursor_mz,
-                method_subject.precursor_tolerance_ppm,
-            )
         )
     except StrictSeedReceiptError as exc:
         raise UntargetedCidNlRealDataAdapterError(str(exc)) from exc
@@ -881,6 +917,8 @@ def backfill_untargeted_cid_nl_sample_subject(
     sample: ResolvedCanonicalSampleIdentity,
     method_subject: CidNlMethodSubject,
     group_center_rt: float,
+    group_center_mz: float,
+    group_hypothesis_id: str | None = None,
     support_policy: DdaCidNlPeakSupportPolicy,
     peak_config: ExtractionConfig,
     raw: UntargetedCidNlRealDataRaw | None,
@@ -938,6 +976,16 @@ def backfill_untargeted_cid_nl_sample_subject(
         raise UntargetedCidNlRealDataAdapterError(
             "group_center_rt must be finite and non-negative"
         )
+    physical_mz = group_center_mz
+    if (
+        isinstance(physical_mz, bool)
+        or not isinstance(physical_mz, (int, float))
+        or not math.isfinite(float(physical_mz))
+        or physical_mz <= 0.0
+    ):
+        raise UntargetedCidNlRealDataAdapterError(
+            "group_center_mz must be finite and positive"
+        )
     try:
         validate_cid_nl_method_subject_binding(
             method_subject,
@@ -959,7 +1007,7 @@ def backfill_untargeted_cid_nl_sample_subject(
     query_rt_min = max(0.0, float(group_center_rt) - half_window)
     query_rt_max = float(group_center_rt) + half_window
     request = XICRequest(
-        mz=method_subject.precursor_mz,
+        mz=physical_mz,
         rt_min=query_rt_min,
         rt_max=query_rt_max,
         ppm_tol=method_subject.precursor_tolerance_ppm,
@@ -986,6 +1034,10 @@ def backfill_untargeted_cid_nl_sample_subject(
         )
         acquired = acquisition.traces[0]
     else:
+        if group_hypothesis_id is None:
+            raise UntargetedCidNlRealDataAdapterError(
+                "preacquired backfill requires exact group identity"
+            )
         if (
             _preacquired_traces.sample_identity_id != sample.identity.sample_identity_id
             or _preacquired_traces.acquisition_source_id != source.acquisition_source_id
@@ -995,8 +1047,7 @@ def backfill_untargeted_cid_nl_sample_subject(
             )
         acquisition = _preacquired_traces.acquisition
         acquired = _preacquired_traces.acquired_trace(
-            method_subject_id=method_subject.method_subject_id,
-            group_center_rt=float(group_center_rt),
+            group_hypothesis_id=group_hypothesis_id,
             request=request,
         )
     if _observer is not None:
@@ -1017,6 +1068,7 @@ def backfill_untargeted_cid_nl_sample_subject(
             method_subject=method_subject,
             trace=trace,
             group_center_rt=float(group_center_rt),
+            physical_mz=float(physical_mz),
             profile=signal_processing_profile,
             resolver_mode=peak_config.resolver_mode,
             evaluation_sink=physical_evaluations.append,
@@ -1177,6 +1229,12 @@ def backfill_untargeted_cid_nl_sample_subject(
                 search_completed=True,
                 scanned_event_count=scanned_count,
                 reason_code=None,
+                evidence_scope=(
+                    initial_assessment.content.evaluation_receipt.evidence_scope
+                    if initial_assessment is not None and backfill_evidence
+                    else "subject_window"
+                ),
+                physical_query_mz=request.mz,
             ),
             candidate_peaks=observations,
             evidence_refs=backfill_evidence,
@@ -1210,6 +1268,7 @@ def backfill_untargeted_cid_nl_sample_subject(
         backfill_input=backfill_input,
         acquisition=acquisition,
         lineage_artifacts=lineage,
+        group_hypothesis_id=group_hypothesis_id,
         capture_evidence=tuple(
             RetainedCaptureEvidence(
                 canonical_sample_identity_id=sample.identity.sample_identity_id,
@@ -1391,6 +1450,10 @@ def _reacquire_peak_observations(
         )
         if binding.physical_evaluation is not None and (
             trace.mz != binding.query_mz
+            or (
+                binding.physical_evaluation_mz is not None
+                and trace.mz != binding.physical_evaluation_mz
+            )
             or trace.rt_min != binding.query_rt_min
             or trace.rt_max != binding.query_rt_max
             or trace.ppm_tol != binding.query_ppm_tol
@@ -1495,7 +1558,6 @@ def _reacquire_peak_observations(
     if search_scope.method_constraints.signal_processing_profile is not None:
         observations = list(dict.fromkeys(observations))
     return acquisition, tuple(observations), tuple(captures)
-
 
 
 def method_label(candidate: DiscoveryCandidate) -> str:
@@ -1604,6 +1666,7 @@ def _mint_assessment(
                     else 0
                 ),
                 reason_code=technical_reason_code,
+                evidence_scope="declared_scans",
             ),
             candidate_peaks=candidate_peaks,
             evidence_refs=evidence_refs,
@@ -1642,7 +1705,7 @@ def _bounded_subject_candidates(
                 candidate
                 for candidate in candidates
                 if _within_ppm(
-                    candidate.precursor_mz,
+                    candidate.physical_mz,
                     method_subject.precursor_mz,
                     method_subject.precursor_tolerance_ppm,
                 )
@@ -1699,13 +1762,20 @@ def _untargeted_search_scope(
                     sample_identity_id=sample.identity.sample_identity_id,
                     sample_name=sample.metadata.sample_name,
                     acquisition_source_id=acquisition_source_id,
-                    query_mz=item.precursor_mz,
+                    query_mz=item.physical_mz,
                     query_rt_min=item.ms1_search_rt_min,
                     query_rt_max=item.ms1_search_rt_max,
                     query_ppm_tol=method_subject.precursor_tolerance_ppm,
                     preferred_rt=item.best_seed_rt,
                     physical_evaluation=(
                         records[item.candidate_id].evaluation
+                        if signal_processing_profile is not None
+                        else None
+                    ),
+                    # The active query belongs to the physical subject; the
+                    # retained evaluation still belongs to its original XIC.
+                    physical_evaluation_mz=(
+                        records[item.candidate_id].work_item.xic_mz
                         if signal_processing_profile is not None
                         else None
                     ),

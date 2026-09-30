@@ -58,7 +58,9 @@ def prepare_indexed_untargeted_plan(
     composition = cid_nl_composition(settings)
     feature_ids = source.feature_candidate_ids()
     precursor_by_id = {
-        cid: physical_sources[source.locations[cid].sample_stem].precursor_mz[cid]
+        cid: source.ms1_apex_mz_by_candidate.get(
+            cid, source.locations[cid].precursor_mz
+        )
         for cid in feature_ids
     }
 

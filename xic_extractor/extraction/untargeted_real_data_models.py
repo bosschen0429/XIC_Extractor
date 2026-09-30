@@ -593,8 +593,7 @@ def _project_completed_backfill(
         assessment.content.technical_state != "evaluated"
         or assessment.content.method_result != "HOLD"
         or assessment.candidate_peaks
-        or assessment.content.detector_invocation_id
-        != "untargeted-cid-nl-backfill"
+        or assessment.content.detector_invocation_id != "untargeted-cid-nl-backfill"
         or not receipt.search_completed
         or not receipt.acquisition_supported
         or backfill.backfill_input is not None
@@ -603,7 +602,7 @@ def _project_completed_backfill(
             "backfill is not a completed empty epoch"
         )
     expected_request = XICRequest(
-        mz=job.method_subject.precursor_mz,
+        mz=group_context.group.family_center_mz,
         rt_min=max(0.0, center - job.peak_config.nl_rt_anchor_half_window_min),
         rt_max=center + job.peak_config.nl_rt_anchor_half_window_min,
         ppm_tol=job.method_subject.precursor_tolerance_ppm,
@@ -629,6 +628,7 @@ def _project_completed_backfill(
             processing_owners=job.processing_owners,
             sample=job.sample,
             group_identity=group,
+            group_center_mz=group_context.group.family_center_mz,
             group_center_rt=center,
             source_result_artifact=result.result_ref.artifact,
             initial_assessment_artifact=initial.artifact,
@@ -642,6 +642,7 @@ def _project_completed_backfill(
         processing_owners=job.processing_owners,
         sample=job.sample,
         group_identity=group,
+        group_center_mz=group_context.group.family_center_mz,
         group_center_rt=center,
         source_result_artifact=result.result_ref.artifact,
         initial_assessment_artifact=initial.artifact,

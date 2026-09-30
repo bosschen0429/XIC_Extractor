@@ -31,6 +31,7 @@ from xic_extractor.alignment.mode_track.producer import (
 )
 from xic_extractor.discovery.models import DiscoveryCandidate
 from xic_extractor.extraction.untargeted_cid_nl_real_data_adapter import (
+    UntargetedCidNlBackfillTarget,
     UntargetedCidNlRealDataAdapterError,
     acquire_untargeted_cid_nl_backfill_trace_batch,
     acquire_untargeted_cid_nl_sample_trace_batch,
@@ -300,6 +301,7 @@ def test_changed_physical_query_evaluates_once_and_preserves_support(
             query_ppm_tol=record.work_item.xic_ppm_tol,
             physical_evaluation=record.evaluation,
             source_physical_evaluation=None,
+            physical_evaluation_mz=record.work_item.xic_mz,
         )
         replay_scope = replace(
             capture.scope,
@@ -388,6 +390,172 @@ def test_changed_physical_query_evaluates_once_and_preserves_support(
                 acquisition_source_id="xic.acquisition-source:" + "0" * 64,
             ),
         )
+
+
+@pytest.mark.parametrize(
+    ("subject_mz", "batch_subject", "interference_abundance"),
+    [
+        (500.0, False, 0.5),
+        (500.015, True, 0.0),
+        (500.015, False, 0.5),
+    ],
+)
+def test_physical_mass_change_preserves_scan_evidence_and_requantifies(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    subject_mz: float,
+    batch_subject: bool,
+    interference_abundance: float,
+) -> None:
+    import json
+    from types import SimpleNamespace
+
+    from xic_extractor.discovery.grouping import group_discovery_seeds
+    from xic_extractor.discovery.ms1_backfill import (
+        _backfill_ms1_candidates_with_acquisition,
+    )
+    from xic_extractor.discovery.ms2_seeds import collect_strict_nl_seeds
+    from xic_extractor.peak_detection.cid_nl_method_subject import (
+        REQUEST_INPUT_KEY,
+        mint_untargeted_cid_nl_method_subject,
+        mint_untargeted_cid_nl_method_subject_batch,
+    )
+    from xic_extractor.peak_detection.search_scope import (
+        PHYSICAL_CAPTURE_INPUT_KEY,
+        physical_capture_input_payload,
+    )
+    from xic_extractor.peak_detection.signal_processing_profile import (
+        SignalProcessingProfile,
+    )
+    from xic_extractor.processing_identity import (
+        build_processing_request_identity,
+        compose_processing_owner_references,
+        issue_processing_attempt,
+    )
+
+    fixture = build_untargeted_cid_nl_no_raw_fixture(
+        tmp_path, sample_roles={"S1": "study_sample"}, thermo_raw_sources=True
+    )
+    physical_mz = 500.008
+    source_raw = _FakeRaw((8.0,))
+    source_raw.scans = tuple(
+        replace(scan, precursor_mz=500.5, masses=scan.masses + 0.016)
+        for scan in source_raw.scans
+    )
+    raw, vendor = _open_bound_raw(fixture, "S1", source_raw, tmp_path=tmp_path)
+
+    def mass_filtered_chromatogram(trace_settings, start_scan, end_scan):
+        rt = source_raw.rt[start_scan - 1 : end_scan]
+        signal = source_raw.intensity[start_scan - 1 : end_scan]
+        # The inferred 500.016 window includes both ions. The measured-ion
+        # window excludes the coeluting 500.024 interference.
+        return SimpleNamespace(
+            PositionsArray=[rt.tolist() for _ in trace_settings],
+            IntensitiesArray=[
+                (
+                    signal
+                    * sum(
+                        abundance
+                        for mz, abundance in (
+                            (physical_mz, 1.0),
+                            (500.024, interference_abundance),
+                        )
+                        if setting.MassRanges[0][0] <= mz <= setting.MassRanges[0][1]
+                    )
+                ).tolist()
+                for setting in trace_settings
+            ],
+        )
+
+    monkeypatch.setattr(vendor, "GetChromatogramData", mass_filtered_chromatogram)
+    settings = replace(_settings(), neutral_loss_profile=None)
+    peak_config = _peak_config(tmp_path)
+    profile = SignalProcessingProfile(window_points=15)
+    discovery = _backfill_ms1_candidates_with_acquisition(
+        raw,
+        group_discovery_seeds(
+            collect_strict_nl_seeds(
+                raw, raw_file=fixture.source_paths["S1"], settings=settings
+            ),
+            settings=settings,
+        ),
+        acquisition_source=fixture.owners.request.acquisition_sources[0],
+        run_spec_id="processing-run:" + "0" * 64,
+        settings=settings,
+        peak_config=peak_config,
+        signal_processing_profile=profile,
+    )
+    (original,) = discovery.candidates
+    (record,) = discovery.physical_evaluations
+    candidate = replace(original, ms1_apex_mz=physical_mz)
+    method_subject = mint_untargeted_cid_nl_method_subject(
+        precursor_mz=subject_mz,
+        precursor_tolerance_ppm=20.0,
+        neutral_loss_da=116.0474,
+    )
+    pinned = (
+        mint_untargeted_cid_nl_method_subject_batch(
+            subjects=(method_subject,),
+            candidate_memberships=(
+                (candidate.candidate_id, method_subject.method_subject_id),
+            ),
+        )
+        if batch_subject
+        else method_subject
+    )
+    old_request = fixture.owners.request
+    request = build_processing_request_identity(
+        acquisition_sources=old_request.acquisition_sources,
+        acquisition_bindings=old_request.acquisition_bindings,
+        scientific_input_schema_version=old_request.scientific_input_schema_version,
+        processing_algorithm_version=old_request.processing_algorithm_version,
+        processing_contract_version=old_request.processing_contract_version,
+        scientific_inputs=json.loads(old_request.normalized_scientific_inputs_json)
+        | {
+            REQUEST_INPUT_KEY: pinned.request_payload(),
+            PHYSICAL_CAPTURE_INPUT_KEY: physical_capture_input_payload(
+                profile, {record.candidate_id: record.evaluation}
+            ),
+        },
+    )
+    owners = compose_processing_owner_references(
+        request=request,
+        attempt=issue_processing_attempt(request),
+        sample_snapshot=fixture.owners.sample_snapshot,
+        sample_resolutions=fixture.samples,
+    )
+    result = adapt_current_discovery_sample_subject(
+        processing_owners=owners,
+        sample=fixture.sample("S1"),
+        method_subject=method_subject,
+        candidates=(candidate,),
+        settings=settings,
+        peak_config=peak_config,
+        raw=raw,
+        signal_processing_profile=profile,
+        physical_records=(record,),
+    )
+    assessment = result.assessment_input.assessment
+    assert assessment.content.method_result == "SUPPORT"
+    assert {e.observation.scan_number for e in assessment.evidence_refs} == {
+        scan.scan_number for scan in source_raw.scans
+    }
+    assert all(
+        e.observation.precursor_mz == pytest.approx(500.016)
+        for e in assessment.evidence_refs
+    )
+    (capture,) = result.captures
+    assert capture.trace.mz == physical_mz
+    assert capture.trace.rt_min == record.work_item.xic_rt_min
+    assert capture.trace.rt_max == record.work_item.xic_rt_max
+    assert capture.selected_hypothesis is not None
+    assert record.evaluation.facts is not None
+    assert capture.selected_hypothesis.integration.area_baseline_corrected == (
+        pytest.approx(
+            record.evaluation.facts.area_counts_seconds / (1 + interference_abundance)
+        )
+    )
+    assert candidate.precursor_mz == record.work_item.xic_mz == pytest.approx(500.016)
 
 
 def test_adapter_preserves_complete_multiscan_evidence_without_target_identity(
@@ -939,29 +1107,37 @@ def test_recovery_batch_canonicalizes_shared_group_queries_without_merging_cente
         processing_owners=fixture.owners,
         sample=fixture.sample("S1"),
         backfill_requests=(
-            (fixture.method_subject, 8.2),
-            (fixture.method_subject, 7.8),
-            (fixture.method_subject, 8.2),
+            UntargetedCidNlBackfillTarget(
+                "group-b", fixture.method_subject, 500.0, 8.2
+            ),
+            UntargetedCidNlBackfillTarget(
+                "group-a", fixture.method_subject, 500.0, 7.8
+            ),
+            UntargetedCidNlBackfillTarget(
+                "group-c", fixture.method_subject, 500.0, 8.2
+            ),
+            UntargetedCidNlBackfillTarget(
+                "group-d", fixture.method_subject, 500.012, 8.2
+            ),
         ),
         peak_config=_peak_config(tmp_path),
         raw=raw,
     )
 
-    assert batch.group_center_rts == (7.8, 8.2)
-    assert batch.method_subject_ids == (
-        fixture.method_subject.method_subject_id,
-        fixture.method_subject.method_subject_id,
+    assert batch.targets == (
+        UntargetedCidNlBackfillTarget("group-a", fixture.method_subject, 500.0, 7.8),
+        UntargetedCidNlBackfillTarget("group-b", fixture.method_subject, 500.0, 8.2),
+        UntargetedCidNlBackfillTarget("group-c", fixture.method_subject, 500.0, 8.2),
+        UntargetedCidNlBackfillTarget("group-d", fixture.method_subject, 500.012, 8.2),
     )
-    assert batch.acquisition.logical_xic_request_count == 2
-    assert vendor_raw.chromatogram_request_counts == [2]
+    assert batch.acquisition.logical_xic_request_count == 3
+    assert vendor_raw.chromatogram_request_counts == [3]
     first = batch.acquired_trace(
-        method_subject_id=fixture.method_subject.method_subject_id,
-        group_center_rt=7.8,
+        group_hypothesis_id="group-a",
         request=batch.requests[0],
     )
     second = batch.acquired_trace(
-        method_subject_id=fixture.method_subject.method_subject_id,
-        group_center_rt=8.2,
+        group_hypothesis_id="group-b",
         request=batch.requests[1],
     )
     assert first.coordinate.request == batch.requests[0]
@@ -969,12 +1145,21 @@ def test_recovery_batch_canonicalizes_shared_group_queries_without_merging_cente
     assert first.coordinate.request.rt_min < second.coordinate.request.rt_min
     assert (
         batch.acquired_trace(
-            method_subject_id=fixture.method_subject.method_subject_id,
-            group_center_rt=7.8,
+            group_hypothesis_id="group-a",
             request=batch.requests[0],
         )
         is first
     )
+    assert (
+        batch.acquired_trace(group_hypothesis_id="group-c", request=batch.requests[2])
+        is second
+    )
+    distinct_mass = batch.acquired_trace(
+        group_hypothesis_id="group-d", request=batch.requests[3]
+    )
+    assert second.coordinate.request.mz == 500.0
+    assert distinct_mass.coordinate.request.mz == 500.012
+    assert distinct_mass.coordinate.request.rt_min == second.coordinate.request.rt_min
 
 
 def test_adapter_receipt_covers_candidate_search_beyond_seed_window(
@@ -1474,9 +1659,17 @@ def test_adapter_rejects_discovery_candidate_receipt_drift(tmp_path: Path) -> No
         )
 
 
+@pytest.mark.parametrize("physical_mz_offset", [0.005, 0.012])
 def test_recovery_revisits_one_hold_cell_without_minting_support(
     tmp_path: Path,
+    physical_mz_offset: float,
 ) -> None:
+    import json
+
+    from xic_extractor.peak_detection.cid_nl_method_assessment import (
+        canonical_cid_nl_method_assessment_bytes,
+    )
+
     fixture = build_untargeted_cid_nl_no_raw_fixture(
         tmp_path,
         sample_roles={"S1": "study_sample"},
@@ -1495,6 +1688,8 @@ def test_recovery_revisits_one_hold_cell_without_minting_support(
         sample=fixture.sample("S1"),
         method_subject=fixture.method_subject,
         group_center_rt=8.0,
+        group_center_mz=fixture.method_subject.precursor_mz + physical_mz_offset,
+        group_hypothesis_id="group-physical",
         support_policy=DdaCidNlPeakSupportPolicy(
             precursor_tolerance_da=0.01,
             neutral_loss_tolerance_ppm=20.0,
@@ -1504,6 +1699,23 @@ def test_recovery_revisits_one_hold_cell_without_minting_support(
     )
 
     assert result.assessment.content.technical_state == "evaluated"
+    assert result.group_hypothesis_id == "group-physical"
+    assert result.assessment.content.method_subject is fixture.method_subject
+    assert result.assessment.content.evaluation_receipt.physical_query_mz == (
+        fixture.method_subject.precursor_mz + physical_mz_offset
+    )
+    payload = json.loads(
+        canonical_cid_nl_method_assessment_bytes(result.assessment.content)
+    )
+    assert payload["content"]["evaluation_receipt"]["physical_query_mz"] == (
+        fixture.method_subject.precursor_mz + physical_mz_offset
+    )
+    assert result.acquisition.traces[0].coordinate.request.mz == pytest.approx(
+        fixture.method_subject.precursor_mz + physical_mz_offset
+    )
+    assert result.assessment.candidate_peaks[0].content.mz == pytest.approx(
+        fixture.method_subject.precursor_mz + physical_mz_offset
+    )
     assert result.assessment.content.method_result == "HOLD"
     assert result.assessment.content.evaluation_receipt.search_completed is True
     assert result.assessment.content.evaluation_receipt.scanned_event_count == 0

@@ -191,7 +191,7 @@ owners. The derived runtime value does not mint or change request identity.
 
 The Untargeted batch factory assigns each Discovery candidate to one bounded
 method-query subject. Within each scalar loss or full configured composition,
-candidates are ordered by exact precursor m/z and candidate ID. The first mass
+candidates are ordered by physical query m/z and candidate ID. The first mass
 fixes a subject center; later candidates join only within its configured ppm
 tolerance, without moving the center or chaining through another candidate.
 Before this assignment, source-bound records with the same selected apex and
@@ -199,7 +199,7 @@ identical raw RT/intensity throughout their shared peak interior may form one
 indivisible workset. Every contributor must share an extraction m/z interval
 and an admissible method-center interval; pairwise overlap cannot form a chain
 without an all-member intersection. A fixed center can accept the workset only
-when it covers every original precursor; otherwise the workset uses the midpoint
+when it covers every physical query; otherwise the workset uses the midpoint
 of its common admissible center interval. Candidates without this evidence keep
 the fixed-first behavior. This prevents one observed peak from being split into
 separate method subjects merely because its queries straddle a bucket boundary.
@@ -213,8 +213,10 @@ per-query physical facts and original MS2 evidence remain intact.
 This declared query membership lets nearby measured masses in different samples
 reach evaluation of the same method subject. Each physical query retains its own
 exact source m/z, RT bounds, trace and acquisition identity. Both single-subject
-and batch SearchScope apply the same method-center ppm compatibility while
-physical-record validation remains exact. Query membership grants no
+and batch SearchScope apply the same method-center ppm compatibility to the
+active query. A retained physical evaluation separately carries its original
+XIC center, so moving that center requires fresh evaluation without changing
+the original receipt. Query membership grants no
 cross-sample identity or Matrix eligibility; those decisions remain with the
 existing assessment and CrossSample owners.
 
@@ -272,6 +274,16 @@ MS1 presence alone cannot promote a cell. The original rejection, Discovery
 exclusions and new assessment remain queryable together in the explanation store.
 
 ### Evidence keys and relation rules
+
+Untargeted initial assessments reconstruct Discovery's declared scan receipts
+against the bound RAW source. Their `declared_scans` evidence scope retains
+those exact MS2 facts even outside the shared subject's mass window. The
+physical candidate universe and scan-to-peak mass/RT relation still determine
+SUPPORT; a scan link alone cannot grant it. Targeted assessments and independent
+subject searches retain `subject_window` scope. A Backfill reusing declared
+evidence preserves its scope and narrows it to the new RT window. Canonical
+CID-NL evidence continues to distinguish measured and product-derived precursor
+mass; the physical MS1 reading never overwrites either receipt.
 
 For single-loss methods, one assessment can contain at most one measured
 evidence ref for each exact `(acquisition_source_id, scan_number)` key.
