@@ -90,13 +90,12 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
             "  tissue-full-cohort opt-in full targeted workbook gate; requires "
             "--confirm-full-run\n\n"
             "Workflow:\n"
-            "  inspect  use --dry-run before RAW-backed work\n"
+            "  inspect  use --dry-run to inspect commands without running\n"
             "  output   <output-root>/<run-id>/validation_summary.csv\n"
             "  compare  reuse the run ID and pass --baseline-root\n"
             "  stop     fix an inconclusive FIXTURE_COHORT gate; do not escalate it to "
             "FULL_COHORT\n"
-            "  safety   docs/agent/parameter-settings.md and "
-            "xic-raw-validation"
+            "  runtime  docs/agent/parameter-settings.md"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )

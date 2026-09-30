@@ -381,11 +381,7 @@ def test_snapshot_runner_rejects_malformed_marker_before_pytest(
 @pytest.mark.parametrize(
     ("path", "kept"),
     (
-        (".codex/hooks/xic_pre_tool_guard.py", {"agent_hooks"}),
-        (".codex/hooks.json", {"agent_hooks"}),
-        (".codex/rules/xic-safety.rules", {"agent_hooks"}),
-        ("tests/test_config_codex_hooks.py", {"agent_hooks"}),
-        ("pyproject.toml", {"agent_hooks", "packaging_build"}),
+        ("pyproject.toml", {"packaging_build"}),
         ("uv.lock", {"packaging_build"}),
         ("xic_extractor.spec", {"packaging_build"}),
         (".github/workflows/build.yml", {"packaging_build"}),
@@ -408,8 +404,6 @@ def test_snapshot_runner_rejects_malformed_marker_before_pytest(
         ("README.md", set()),
         ("pyproject.toml.example", set()),
         (".codex/skills/foo/SKILL.md", set()),
-        (".codex/hooks.jsonx", set()),
-        ("tests/test_config_codex_hooks_extra.py", set()),
         ("xic_extractor/applications/untargeted/application.py", {"packaging_build"}),
     ),
 )
@@ -455,7 +449,7 @@ def test_local_shard_skips_markers_unrelated_to_the_change(
     expression = _capture_shard_marker(monkeypatch)
 
     assert expression == (
-        "not ledger_snapshot and not packaging_build and not agent_hooks"
+        "not ledger_snapshot and not packaging_build"
     )
     assert _capture_shard_marker(monkeypatch, all_markers=True) == "not ledger_snapshot"
 

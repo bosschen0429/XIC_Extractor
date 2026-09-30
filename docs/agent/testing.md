@@ -95,9 +95,10 @@ engineering regression coverage only. Manual-2RAW, lane-specific subsets, and
 85RAW runs are validation evidence only when the active Issue and method owner
 require them.
 
-Before launching or accepting RAW-backed evidence, use xic-raw-validation and
-the method-specific validation contract. Do not infer scientific or production
-readiness from passing pytest.
+Use the method-specific acceptance check when RAW-backed evidence is needed.
+The runner owns input checks and run metadata; tests do not require a separate
+RAW preparation packet. Do not infer scientific or production readiness from
+passing pytest.
 
 ## Verification
 

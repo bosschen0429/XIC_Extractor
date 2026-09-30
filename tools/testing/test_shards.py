@@ -62,10 +62,6 @@ RELEVANCE_RULES: dict[str, re.Pattern[str]] = {
         r"|tests/test_(pyinstaller_spec|test_shards)\.py$"
         r"|(xic_extractor|xic_inspector|gui|scripts|tools|assets|config)/)"
     ),
-    "agent_hooks": re.compile(
-        r"^(\.codex/(hooks/|hooks\.json$|rules/)|tests/test_config_codex_hooks\.py$"
-        r"|pyproject\.toml$)"
-    ),
     "product_governance": re.compile(
         r"^(scripts/check_productization_state\.py|tests/test_productization_state_index\.py"
         r"|docs/product/|docs/superpowers/(validation|schemas|productization)/"

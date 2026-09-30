@@ -24,7 +24,7 @@ Use Windows Native and the current checkout's .venv\Scripts\python.exe for
 project tests, scripts, and RAW commands. Each worktree owns its .venv; linked
 worktrees share only .uv-cache. Do not borrow another checkout's interpreter.
 
-Check an existing worktree with:
+Check a worktree after setup changes or an environment failure with:
 
     uv run --cache-dir .uv-cache --no-project python scripts/bootstrap_worktree.py --check --local --json
     .venv\Scripts\python.exe -m scripts.agent_sandbox_doctor --strict --probe-write
@@ -51,9 +51,8 @@ the public template.
 | XIC_ACQUISITION_CACHE_DIR | shared Alignment RAW acquisition cache; keep it on a fast local disk |
 
 Stable accepted-input paths and hashes live in
-docs/diagnostic-ledger.md#stable-inputs. Verify the named path and the owning
-CLI's preflight-only result before use. A missing path is a blocker; an older
-sibling path is not an automatic fallback.
+docs/diagnostic-ledger.md#stable-inputs. The runner validates the selected inputs;
+do not silently substitute another dataset when the configured input is missing.
 
 ## Validation Scale
 
@@ -66,18 +65,20 @@ Validation data is method-specific, not a universal ladder.
 | lane subset | smoke, parity, or benchmark evidence named by the owner |
 | 85RAW | expensive full-tissue evidence explicitly required by the owner |
 
-Use xic-raw-validation before launching or accepting RAW-backed evidence.
-An inconclusive smaller gate closes its named blocker before a larger run.
+Select the data and comparison that answer the current task. Reuse existing
+evidence when its producing state and inputs support that decision; a historical
+run does not by itself validate changed code. Do not enlarge a run merely because
+a smaller one was inconclusive.
 
 For current CID-NL tissue validation, use the shared maintained entry point:
 
-    .venv\Scripts\python.exe -m scripts.run_tissue_validation --dataset 8 --preflight-only
+    .venv\Scripts\python.exe -m scripts.run_tissue_validation --dataset 8
 
-Use `--dataset 85` for the full cohort. Preflight resolves local inputs and
-prints the effective plan without opening RAW files or running analysis.
-After the RAW launch gate is satisfied, the same command without
-`--preflight-only` runs Discovery followed by Alignment. `--help` owns runtime
-overrides; the printed plan owns the actual paths and effective settings.
+Use `--dataset 85` for the full cohort. Normal execution validates local inputs,
+prints and saves the effective plan, then runs Discovery followed by Alignment.
+Add `--preflight-only` to inspect that plan without running analysis; it is not
+a required extra invocation. `--help` owns runtime overrides; the plan owns the
+actual paths and effective settings.
 
 Both datasets use the same scientific preset, background library, ISTD input,
 and shared [execution profile](../product/execution-runtime.md#worker-settings).
@@ -101,9 +102,9 @@ parameter values stay in the Issue or validation owner.
 
 Alignment requires a bound pure CID-NL preset. Its retained runtime owns
 acquisition and scheduling; CLI help defines supported execution options.
-For method-authorized RAW validation, resolve the configured local inputs and
-run the current command's preflight before acquisition. Keep final and live
-timing outputs in the task-specific output directory.
+The command validates its inputs before acquisition. Use its preflight option
+when settings need inspection, and keep timing outputs in the task-specific
+output directory.
 
 The live timing file is the heartbeat for interrupted runs; the final timing
 file is the completed history. Performance interpretation belongs to
@@ -115,9 +116,6 @@ flags.
 - Use PowerShell command syntax. Bash heredocs, export, and Unix continuations
   fail before Python runs.
 - Invoke a PowerShell helper from the active shell with `& <script.ps1> ...`.
-  The command policy rejects nested `powershell`/`pwsh` wrappers, including
-  copied `-File` examples; keep the helper and its arguments unchanged.
-- Use one current-worktree command at a time when a hook or policy is involved.
 - Prefer CLI help over copying command examples into docs.
 - Keep run outputs under ignored output/ and local inputs under ignored
   local_validation_artifacts/.
