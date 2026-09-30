@@ -42,7 +42,9 @@ from xic_extractor.diagnostics.timing import TimingRecorder
 from xic_extractor.discovery.models import DiscoveryCandidate
 
 if TYPE_CHECKING:
-    from xic_extractor.alignment.workflow import CompletedUntargetBatchWorkflowResult
+    from xic_extractor.extraction.untargeted_execution_result import (
+        CompletedUntargetBatchWorkflowResult,
+    )
 
 
 def publish_untargeted_outputs(
@@ -110,7 +112,7 @@ def publish_untargeted_outputs(
         if not stream_outputs:
             with timing_recorder.stage("alignment.project_outputs"):
                 writer_inputs = project_completed_untarget_batch_writer_inputs(
-                    completed,
+                    completed.application_result,
                     consume_child=_explanation_sink(explanation),
                     ms1_apex_mz_by_candidate=ms1_apex_mz_by_candidate,
                 )
@@ -122,11 +124,13 @@ def publish_untargeted_outputs(
                     write_streamed_untargeted_outputs_atomic(
                         outputs,
                         iter_completed_untarget_batch_writer_inputs(
-                            completed,
+                            completed.application_result,
                             consume_child=_explanation_sink(explanation),
                             ms1_apex_mz_by_candidate=ms1_apex_mz_by_candidate,
                         ),
-                        sample_order=completed_untarget_batch_sample_order(completed),
+                        sample_order=completed_untarget_batch_sample_order(
+                            completed.application_result
+                        ),
                         metadata=metadata,
                         alignment_config=alignment_config,
                         timing_recorder=timing_recorder,

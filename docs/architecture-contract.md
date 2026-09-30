@@ -45,6 +45,7 @@ feature-by-sample Matrix。兩者共用科學判斷，但保留不同搜尋政�
 | 峰選擇、邊界、面積 | `peak_detection/`、`signal_processing.py` | 單峰／單次觀察的答案；跨樣本群組在 Alignment |
 | Targeted 計數、角色例外與 review 原因 | `applications/targeted/product_projection.py` | 消費已完成的科學結果，決定產品狀態；純結果模型在同目錄 `product_model.py`，writer 只呈現它 |
 | 跨樣本配對、RT 漂移、群組 | `alignment/grouping_workflow.py`、`alignment/cross_sample/` | 群組決定先完成，Backfill 與格值決策消費同一結果 |
+| 從已取得的 evidence 完成科學結果 | `alignment/completion.py` | Targeted／Untargeted 共用 capture、grouping、cell 與 projection；不執行 runtime 或保存暫存 |
 | 缺格補證及格值 | `alignment/backfill/`、`alignment/cell_decision/` | 新觀察、科學決策與檔案 writer 各自有 owner |
 | RAW 讀取或 DLL | `raw_reader.py` 及使用它的 acquisition adapter | 讀入量測資料；不因此取得群組、格值或發布決定權 |
 | Targeted／Alignment RT-window MS2 擷取與 NL 解讀 | `acquisition/ms2_windows.py` 擷取單一樣本的有界視窗；`evidence/neutral_loss.py` 解讀已擷取事件 | 前者持有 reader 呼叫，後者只處理 `Ms2Window` 與候選幾何；Discovery 宣告 scan 的 strict receipt 保留原 owner |
@@ -211,6 +212,13 @@ policy; result writers consume the completed groups and cells.
   restore their own process-local completion seals. Target projection retains its
   validated immutable decisions without graph serialization. The runtime owner
   compacts acquisition facts after scientific results have been stored.
+- `alignment.completion` completes pure owner-bound inputs and returns the
+  existing finalized application results. Targeted retained execution validates
+  its population before acknowledging acquisition through the runtime owner.
+  Untargeted execution combines the same completion with partition persistence;
+  its `untargeted_execution_result` carrier binds runtime success to the
+  finalized batch and owns the close action. Application publication consumes
+  that carrier, while Matrix projection receives only the pure finalized batch.
 - Keep a compatibility facade only for a current public/downstream contract or
   real external consumer. Tests and historical artifacts are not consumers.
 - When replacing an internal surface, remove its obsolete implementation,

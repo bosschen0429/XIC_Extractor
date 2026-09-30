@@ -170,7 +170,9 @@ def test_configured_composition_runs_discovery_to_owner_matrix(
     completed = compose_untargeted_cid_nl_production_result(
         batch, runtime, alignment_config=alignment_config
     )
-    writer = project_completed_untarget_batch_writer_inputs(completed)
+    writer = project_completed_untarget_batch_writer_inputs(
+        completed.application_result
+    )
     if scenario == "pooled":
         assert all(item.content.method_result == "HOLD" for item in by_sample.values())
         assert not writer.matrix.clusters

@@ -23,6 +23,16 @@ from xic_extractor.alignment.cell_observations import (
     CellObservationRef,
     compose_cid_nl_predecessor_cells,
 )
+from xic_extractor.alignment.completion import (
+    AlignmentWorkflowContractError,
+    CaptureWorkflowArguments,
+    UntargetWorkflowAdapter,
+    UntargetWorkflowBundle,
+    UntargetWorkflowCompositionRequest,
+    _WorkflowStageFailure,
+    complete_untarget_batch,
+    compose_untarget_subject,
+)
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.conservative_backfill import (
     ConservativeBackfillCandidateUniverse,
@@ -55,15 +65,6 @@ from xic_extractor.alignment.result.application_result import (
 from xic_extractor.alignment.untargeted_cid_nl_golden_path import (
     CID_NL_ALIGNMENT_CONFIG,
 )
-from xic_extractor.alignment.workflow import (
-    CaptureWorkflowArguments,
-    CompletedUntargetBatchWorkflowResult,
-    UntargetWorkflowAdapter,
-    UntargetWorkflowBundle,
-    UntargetWorkflowCompositionRequest,
-    compose_untarget_batch_after_runtime,
-    compose_untarget_subject,
-)
 from xic_extractor.config import ExtractionConfig
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
@@ -90,6 +91,9 @@ from xic_extractor.extraction.untargeted_cid_nl_real_data_inputs import (
 from xic_extractor.extraction.untargeted_cid_nl_result_store import (
     PartitionResultStore,
     SealedPartition,
+)
+from xic_extractor.extraction.untargeted_execution_result import (
+    CompletedUntargetBatchWorkflowResult,
 )
 from xic_extractor.extraction.untargeted_real_data_models import (
     UntargetedCidNlInitialSampleResult,
@@ -872,19 +876,23 @@ def compose_untargeted_cid_nl_production_result(
         alignment_config=alignment_config,
         known_istd_reference=known_istd_reference,
     )
-    terminal = compose_untarget_batch_after_runtime(
-        inputs.request,
-        lambda: inputs.bundles,
-        runtime_result.finalization,
-    )
-    if type(terminal) is not CompletedUntargetBatchWorkflowResult:
+    if (
+        runtime_result.finalization.supervisor.attempt
+        is not inputs.request.processing_attempt
+    ):
+        raise AlignmentWorkflowContractError(
+            "Untarget batch composition crossed its processing attempt"
+        )
+    try:
+        application_result = complete_untarget_batch(inputs.request, inputs.bundles)
+    except _WorkflowStageFailure as failure:
         raise RuntimeError(
             "CID-NL workflow failed atomically: "
-            f"stage={getattr(terminal, 'stage', None)}; "
-            f"reason={getattr(terminal, 'failure_message', None)}"
-        )
-    return replace(
-        terminal,
+            f"stage={failure.stage}; reason={failure.error}"
+        ) from failure.error
+    return CompletedUntargetBatchWorkflowResult(
+        runtime_receipt=runtime_result.finalization,
+        application_result=application_result,
         method_assessments=inputs.method_assessments,
         initial_groups=inputs.initial_groups,
         initial_edges=inputs.initial_edges,

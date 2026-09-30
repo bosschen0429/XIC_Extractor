@@ -18,6 +18,10 @@ from xic_extractor.alignment.backfill.evaluation_coverage import (
     _completed_backfill_projection_bytes,
 )
 from xic_extractor.alignment.cell_observations import CidNlCellGroupContext
+from xic_extractor.alignment.completion import (
+    CaptureWorkflowArguments,
+    UntargetWorkflowCompositionRequest,
+)
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.cross_sample_peak_groups import (
     validate_cross_sample_peak_group_identity,
@@ -30,10 +34,6 @@ from xic_extractor.alignment.grouping_bootstrap import (
 from xic_extractor.alignment.grouping_result import CrossSampleGroupingResult
 from xic_extractor.alignment.untargeted_cid_nl_golden_path import (
     UntargetedCidNlBackfillInput,
-)
-from xic_extractor.alignment.workflow import (
-    CaptureWorkflowArguments,
-    UntargetWorkflowCompositionRequest,
 )
 from xic_extractor.config import ExtractionConfig
 from xic_extractor.configuration.signal_processing_profile import (

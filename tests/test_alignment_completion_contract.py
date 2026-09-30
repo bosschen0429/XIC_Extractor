@@ -2,37 +2,25 @@
 
 from __future__ import annotations
 
-from dataclasses import fields, replace
-from inspect import signature
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
-from typing import get_args
 
 import numpy as np
 import pytest
 
-import xic_extractor.alignment.workflow as workflow_owner
+import xic_extractor.alignment.completion as workflow_owner
+import xic_extractor.extraction.targeted_production_workflow as production_workflow
 from tests.processing_identity_no_raw_fixture import (
     build_processing_identity_no_raw_fixture,
 )
 from tests.test_search_scope_capture import _capture_binding, _peak_config
-from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.alignment.workflow import (
-    CancelledWorkflowResult,
+from xic_extractor.alignment.completion import (
     CaptureWorkflowArguments,
-    CompletedTargetWorkflowResult,
-    CompletedUntargetBatchWorkflowResult,
-    CompletedUntargetWorkflowResult,
-    FailedWorkflowResult,
     TargetWorkflowAdapter,
     TargetWorkflowRequest,
-    UntargetWorkflowAdapter,
-    UntargetWorkflowRequest,
-    WorkflowRuntimeInvocation,
-    WorkflowStage,
-    WorkflowTerminalResult,
-    execute_alignment_workflow,
 )
+from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.peak_detection.capture import capture_peak_hypotheses
 from xic_extractor.peak_detection.cid_nl_method_subject import CID_NL_PROVIDER_ID
 from xic_extractor.peak_detection.search_scope import (
@@ -43,7 +31,6 @@ from xic_extractor.peak_detection.search_scope import (
 )
 from xic_extractor.peak_detection.traces import Trace
 from xic_extractor.processing_identity import (
-    issue_processing_attempt,
     resolve_request_acquisition_source,
 )
 
@@ -116,72 +103,6 @@ def _target_scope_and_captures(fixture, spine, tmp_path: Path):
     )
 
 
-def test_public_workflow_surface_is_closed_and_variant_specific() -> None:
-    assert tuple(signature(execute_alignment_workflow).parameters) == (
-        "request",
-        "adapter",
-    )
-    assert {stage.value for stage in WorkflowStage} == {
-        "runtime",
-        "capture",
-        "cross_sample_grouping",
-        "scientific_final",
-        "pre_cell_projection",
-        "cell_decision",
-        "post_cell_projection",
-        "application_result",
-    }
-    assert tuple(field.name for field in fields(WorkflowRuntimeInvocation)) == (
-        "runtime",
-        "reservations",
-        "worker_batch_provider",
-        "telemetry_provider",
-        "persister",
-    )
-    assert tuple(field.name for field in fields(CaptureWorkflowArguments)) == (
-        "candidate_id",
-        "trace",
-        "owner_observation",
-        "owner_hypothesis",
-    )
-    common_adapter_fields = (
-        "capture_inputs",
-        "predecessor_cell_observations",
-        "drift_lookup",
-        "backfill_cell_observations",
-    )
-    assert tuple(field.name for field in fields(TargetWorkflowAdapter)) == (
-        *common_adapter_fields,
-        "sample_assessments",
-        "alignment_config",
-    )
-    assert tuple(field.name for field in fields(UntargetWorkflowAdapter)) == (
-        *common_adapter_fields,
-        "sample_assessments",
-        "completed_grouping",
-        "closed_cell_coverage",
-    )
-    assert tuple(field.name for field in fields(TargetWorkflowRequest)) == (
-        "scope",
-        "processing_request",
-        "processing_attempt",
-        "runtime",
-    )
-    assert tuple(field.name for field in fields(UntargetWorkflowRequest)) == (
-        "scope",
-        "processing_request",
-        "processing_attempt",
-        "runtime",
-    )
-    assert set(get_args(WorkflowTerminalResult)) == {
-        CompletedTargetWorkflowResult,
-        CompletedUntargetWorkflowResult,
-        CompletedUntargetBatchWorkflowResult,
-        CancelledWorkflowResult,
-        FailedWorkflowResult,
-    }
-
-
 def test_public_workflow_carriers_reject_non_exact_mutable_inputs() -> None:
     class CandidateId(str):
         pass
@@ -199,7 +120,7 @@ def test_public_workflow_carriers_reject_non_exact_mutable_inputs() -> None:
         workflow_owner.AlignmentWorkflowContractError,
         match="Target request scope must be exact",
     ):
-        TargetWorkflowRequest(object(), object(), object(), object())
+        TargetWorkflowRequest(object(), object(), object())
 
     with pytest.raises(
         workflow_owner.AlignmentWorkflowContractError,
@@ -210,24 +131,6 @@ def test_public_workflow_carriers_reject_non_exact_mutable_inputs() -> None:
             predecessor_cell_observations=(),
             sample_assessments=(),
             alignment_config=AlignmentConfig(),
-        )
-
-    with pytest.raises(
-        workflow_owner.AlignmentWorkflowContractError,
-        match="owner-minted runtime receipt",
-    ):
-        CancelledWorkflowResult(object())
-
-    with pytest.raises(
-        workflow_owner.AlignmentWorkflowContractError,
-        match="runtime must be an exact attempt",
-    ):
-        WorkflowRuntimeInvocation(
-            runtime=object(),
-            reservations=(),
-            worker_batch_provider=lambda _value: None,
-            telemetry_provider=lambda _value: None,
-            persister=lambda value: value,
         )
 
 
@@ -259,20 +162,14 @@ def test_workflow_rejects_incomplete_or_crossed_owner_population(
                 "inspection-only:candidate",
             ),
         )
-    runtime = object.__new__(workflow_owner.AttemptRuntime)
-    object.__setattr__(runtime, "manifest", SimpleNamespace(attempt=fixture.attempt))
-    object.__setattr__(runtime, "history", SimpleNamespace(attempt=fixture.attempt))
+    runtime = SimpleNamespace(
+        manifest=SimpleNamespace(attempt=fixture.attempt),
+        history=SimpleNamespace(attempt=fixture.attempt),
+    )
     request = TargetWorkflowRequest(
         scope=scope,
         processing_request=fixture.request,
         processing_attempt=fixture.attempt,
-        runtime=WorkflowRuntimeInvocation(
-            runtime=runtime,
-            reservations=(),
-            worker_batch_provider=lambda _value: None,
-            telemetry_provider=lambda _value: None,
-            persister=lambda value: value,
-        ),
     )
     assessments = tuple(
         sorted(
@@ -317,7 +214,7 @@ def test_workflow_rejects_incomplete_or_crossed_owner_population(
     def stop_at_runtime(*_args, **_kwargs):
         raise RuntimeReached
 
-    monkeypatch.setattr(workflow_owner, "execute_runtime_attempt", stop_at_runtime)
+    monkeypatch.setattr(production_workflow, "execute_runtime_attempt", stop_at_runtime)
 
     with pytest.raises(
         workflow_owner.AlignmentWorkflowContractError,
@@ -325,43 +222,10 @@ def test_workflow_rejects_incomplete_or_crossed_owner_population(
         if mismatch == "capture-subset"
         else "exact scope samples",
     ):
-        execute_alignment_workflow(request, adapter)
-
-
-def test_workflow_runtime_rejects_a_crossed_processing_attempt(
-    tmp_path: Path,
-) -> None:
-    fixture = build_processing_identity_no_raw_fixture(
-        tmp_path, sample_stems=("sample-a",)
-    )
-    crossed_attempt = issue_processing_attempt(
-        fixture.request,
-        retry_of=fixture.attempt,
-    )
-    crossed_runtime = object.__new__(workflow_owner.AttemptRuntime)
-    object.__setattr__(
-        crossed_runtime,
-        "manifest",
-        SimpleNamespace(attempt=crossed_attempt),
-    )
-    object.__setattr__(
-        crossed_runtime,
-        "history",
-        SimpleNamespace(attempt=crossed_attempt),
-    )
-    invocation = WorkflowRuntimeInvocation(
-        runtime=crossed_runtime,
-        reservations=(),
-        worker_batch_provider=lambda _aggregate: (),
-        telemetry_provider=lambda _aggregate: (),
-        persister=lambda value: value,
-    )
-
-    with pytest.raises(
-        workflow_owner.AlignmentWorkflowContractError,
-        match="runtime crossed the exact processing attempt",
-    ):
-        workflow_owner._validate_runtime_attempt_binding(
-            invocation,
-            fixture.attempt,
+        production_workflow._complete_retained_target(
+            request,
+            adapter,
+            runtime=runtime,
+            workflow_artifact=object(),
+            work_unit_key="retained",
         )

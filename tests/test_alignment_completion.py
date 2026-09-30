@@ -1,4 +1,4 @@
-"""Owner-spine integration for the shared alignment workflow."""
+"""Exact scientific-owner handoffs for pure shared completion."""
 
 from __future__ import annotations
 
@@ -6,7 +6,15 @@ from types import SimpleNamespace
 
 import pytest
 
-import xic_extractor.alignment.workflow as workflow_owner
+import xic_extractor.alignment.completion as workflow_owner
+from xic_extractor.alignment.completion import (
+    TargetWorkflowAdapter,
+    TargetWorkflowRequest,
+    UntargetWorkflowAdapter,
+    UntargetWorkflowCompositionRequest,
+    WorkflowStage,
+    complete_analysis,
+)
 from xic_extractor.alignment.grouping_result import (
     CrossSampleGroupingResult,
 )
@@ -23,18 +31,6 @@ from xic_extractor.alignment.result.application_result import (
 from xic_extractor.alignment.result.scientific_alignment import (
     FinalizedScientificAlignment,
 )
-from xic_extractor.alignment.workflow import (
-    CompletedTargetWorkflowResult,
-    CompletedUntargetWorkflowResult,
-    FailedWorkflowResult,
-    TargetWorkflowAdapter,
-    TargetWorkflowRequest,
-    UntargetWorkflowAdapter,
-    UntargetWorkflowRequest,
-    WorkflowStage,
-    execute_alignment_workflow,
-)
-from xic_extractor.execution_runtime import AttemptTerminalOutcome
 
 
 def _exact_uninitialized(value_type, **fields):
@@ -55,21 +51,11 @@ def test_workflow_forwards_exact_owner_objects_once(
 
     calls = []
     owners = object()
-    runtime_receipt = SimpleNamespace(
-        supervisor=SimpleNamespace(
-            terminal_outcome=AttemptTerminalOutcome.SUCCEEDED,
-        ),
-    )
     request = _exact_uninitialized(
-        TargetWorkflowRequest if variant == "target" else UntargetWorkflowRequest,
+        TargetWorkflowRequest
+        if variant == "target"
+        else UntargetWorkflowCompositionRequest,
         scope=object(),
-        runtime=SimpleNamespace(
-            runtime=object(),
-            reservations=(),
-            worker_batch_provider=object(),
-            telemetry_provider=object(),
-            persister=object(),
-        ),
     )
     adapter_fields = {
         "capture_inputs": (
@@ -115,20 +101,10 @@ def test_workflow_forwards_exact_owner_objects_once(
 
     monkeypatch.setattr(
         workflow_owner,
-        "_validate_request_adapter",
+        "validate_completion_inputs",
         lambda supplied_request, supplied_adapter: (
             calls.append(("validate", supplied_request, supplied_adapter)) or owners
         ),
-    )
-    monkeypatch.setattr(
-        workflow_owner,
-        "RuntimeFinalizationReceipt",
-        SimpleNamespace,
-    )
-    monkeypatch.setattr(
-        workflow_owner,
-        "execute_runtime_attempt",
-        lambda *_args, **_kwargs: calls.append(("runtime",)) or runtime_receipt,
     )
     monkeypatch.setattr(
         workflow_owner,
@@ -189,25 +165,18 @@ def test_workflow_forwards_exact_owner_objects_once(
         lambda value: application_result,
     )
 
-    result = execute_alignment_workflow(request, adapter)
-
     if crossed_result:
-        assert type(result) is FailedWorkflowResult
-        assert result.stage is WorkflowStage.APPLICATION_RESULT
-        assert result.failure_type == (
-            "xic_extractor.alignment.workflow.AlignmentWorkflowContractError"
+        with pytest.raises(workflow_owner._WorkflowStageFailure) as failure:
+            complete_analysis(request, adapter)
+        assert failure.value.stage is WorkflowStage.APPLICATION_RESULT
+        assert (
+            type(failure.value.error) is workflow_owner.AlignmentWorkflowContractError
         )
+        assert "crossed" in str(failure.value.error)
     else:
-        assert type(result) is (
-            CompletedTargetWorkflowResult
-            if variant == "target"
-            else CompletedUntargetWorkflowResult
-        )
-        assert result.application_result is application_result
-    assert result.runtime_receipt is runtime_receipt
+        assert complete_analysis(request, adapter) is application_result
     expected_calls = [
         "validate",
-        "runtime",
         "capture",
     ]
     expected_calls.append("target_grouping" if variant == "target" else "association")
