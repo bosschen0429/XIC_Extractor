@@ -156,9 +156,10 @@ processing, see [`product/signal-processing-rationale.md`](product/signal-proces
   bound canonical signal and fact identity.
 - Gaussian15 morphology improves boundary readability and MS1 shape/pattern
   evidence. It is not identity authority by itself: paired RT, target window,
-  product/NL/MS2 acquisition opportunity, and untargeted identity-coherence
-  guards still decide whether a candidate is accepted, not counted, ambiguous,
-  or excluded.
+  product/NL/MS2 acquisition opportunity, method-specific CID-NL evidence, and
+  CrossSample identity gates still decide whether a candidate is accepted,
+  not counted, ambiguous, or excluded; see the [evidence spine](product/evidence-spine.md)
+  and [shared processing kernel](product/shared-processing-kernel.md).
 - Canonical Gaussian(raw)-nonnegative-AsLS(raw) positive area is the selected product
   direction for the bounded Owner Backfill migration, with profile/fact/value
   provenance. Numeric area differences from legacy integration are accepted

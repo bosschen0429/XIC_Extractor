@@ -30,7 +30,9 @@ from tests.test_untargeted_cid_nl_real_data_runtime import (
 )
 from xic_extractor.alignment import AlignmentConfig
 from xic_extractor.alignment.csv_io import read_discovery_batch_index
-from xic_extractor.alignment.process_execution import AlignmentProcessExecutionError
+from xic_extractor.applications.untargeted.application import (
+    AlignmentProcessExecutionError,
+)
 from xic_extractor.configuration.signal_processing_profile import (
     resolve_signal_processing_profile,
 )

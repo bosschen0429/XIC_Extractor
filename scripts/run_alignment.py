@@ -20,12 +20,12 @@ from xic_extractor.alignment.drift_evidence import (
     KnownIstdReference,
 )
 from xic_extractor.alignment.owner_build_route_receipt import OwnerBuildRouteReceipt
-from xic_extractor.alignment.process_backend import AlignmentProcessExecutionError
 from xic_extractor.alignment.quantitative_projection_authority import (
     QuantitativeProjectionAuthorityHoldError,
 )
 from xic_extractor.alignment.raw_sources import existing_raw_paths
 from xic_extractor.applications.untargeted.application import (
+    AlignmentProcessExecutionError,
     run_untargeted_application,
     validate_untargeted_application_options,
 )
