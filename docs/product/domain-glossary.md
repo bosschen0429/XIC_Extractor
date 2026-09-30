@@ -79,6 +79,22 @@ Use these terms consistently:
 
 - `Trace`: intensity over retention time for a feature, target, or candidate.
 - `TraceGroup`: related traces that should be compared together.
+- `physical` (qualifier): the MS1-measured ion or chromatographic peak itself,
+  as opposed to CID-NL/MS2 evidence about it. It claims neither chemical
+  identity nor CID-NL support.
+- `physical peak`: one contiguous MS1 chromatographic peak of one ion in one
+  sample. Its canonical content is the `PeakObservationRef` physical content
+  defined in [evidence-spine.md](evidence-spine.md).
+- `physical peak evaluation`: the `peak_detection/physical_peak_*` answer for
+  one XIC question: prepared signal, enumerated segments, the selected
+  segment or typed no-selection state, and the resulting facts and
+  integration.
+- `physical facts`: Discovery's persisted physical peak evaluations for
+  feature-backed candidates (`discovery_physical_facts.json`), owned by
+  `discovery/physical_fact_*`; see [discovery.md](discovery.md).
+- `physical m/z`: the MS1-measured ion mass used for the Alignment XIC and
+  grouping. It is distinct from the precursor key used to replay MS2 evidence;
+  see [discovery.md](discovery.md).
 - `PeakHypothesis`: a proposed peak identity, retention-time window, and
   integration basis.
 - `selected hypothesis`: the chosen `PeakHypothesis` and its audit context.
