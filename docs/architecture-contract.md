@@ -204,9 +204,10 @@ policy; result writers consume the completed groups and cells.
   under one runtime attempt. It adapts method acquisition and composition to the
   generic execution engine in `execution_engine/`. The engine's private result store
   spools completed scientific results for same-process reuse; it grants no scientific,
-  activation, or writer authority. Scientific and projection owners restore their
-  own process-local completion seals, and the runtime owner compacts acquisition
-  facts after those scientific results have been stored.
+  activation, or writer authority. Scientific and Untarget projection owners
+  restore their own process-local completion seals. Target projection retains its
+  validated immutable decisions without graph serialization. The runtime owner
+  compacts acquisition facts after scientific results have been stored.
 - Keep a compatibility facade only for a current public/downstream contract or
   real external consumer. Tests and historical artifacts are not consumers.
 - When replacing an internal surface, remove its obsolete implementation,

@@ -54,10 +54,10 @@ SNAPSHOT_MARKER = "ledger_snapshot"
 # two select the same tests for the same change.
 RELEVANCE_RULES: dict[str, re.Pattern[str]] = {
     # Include whole shipped package roots: an installed/frozen import can depend
-    # on any of their code or data. A shortlist of entry points misses native
-    # build inputs and resources, while ordinary documentation can still skip.
+    # on any of their code or data. A shortlist of entry points misses package
+    # inputs and resources, while ordinary documentation can still skip.
     "packaging_build": re.compile(
-        r"^((pyproject\.toml|setup\.py|uv\.lock|xic_extractor\.spec)$"
+        r"^((pyproject\.toml|uv\.lock|xic_extractor\.spec)$"
         r"|\.github/workflows/(build|ci)\.yml$"
         r"|tests/test_(pyinstaller_spec|test_shards)\.py$"
         r"|(xic_extractor|xic_inspector|gui|scripts|tools|assets|config)/)"
