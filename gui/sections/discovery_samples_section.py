@@ -104,9 +104,9 @@ class DiscoverySamplesSection(QWidget):
         self._status_label.setWordWrap(True)
         body.addWidget(self._status_label)
 
-        self._export_button = QPushButton("匯出 CSV")
-        self._export_button.setToolTip("將當前樣品列表匯出為 sample_metadata.csv")
-        self._export_button.clicked.connect(self._on_export_csv)
+        self._export_button = QPushButton("匯出樣品資料")
+        self._export_button.setToolTip("匯出樣品角色與排除資訊；TSV 可用於矩陣篩選")
+        self._export_button.clicked.connect(self._on_export_metadata)
         summary_toolbar.addWidget(self._export_button)
         summary_toolbar.addStretch()
         summary_toolbar.addWidget(self._source_label)
@@ -703,14 +703,15 @@ class DiscoverySamplesSection(QWidget):
             return f"{preview} …（另 {len(names) - 8} 筆）"
         return preview
 
-    def _on_export_csv(self) -> None:
+    def _on_export_metadata(self) -> None:
         metadata = self.get_sample_metadata()
         if not metadata:
             QMessageBox.information(self, "提示", "表格內無樣品資訊可供匯出。")
             return
 
         path_str, _ = QFileDialog.getSaveFileName(
-            self, "匯出樣品元數據 CSV", "sample_metadata.csv", "CSV Files (*.csv)"
+            self, "匯出樣品資料", "sample_metadata.tsv",
+            "TSV Files (*.tsv);;CSV Files (*.csv)",
         )
         if not path_str:
             return
@@ -719,7 +720,8 @@ class DiscoverySamplesSection(QWidget):
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
             with path.open("w", newline="", encoding="utf-8-sig") as handle:
-                writer = csv.writer(handle)
+                delimiter = "\t" if path.suffix.lower() == ".tsv" else ","
+                writer = csv.writer(handle, delimiter=delimiter)
                 writer.writerow(SAMPLE_METADATA_COLUMNS)
                 for row in metadata:
                     writer.writerow(

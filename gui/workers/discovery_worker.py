@@ -40,22 +40,18 @@ from xic_extractor.settings_schema import (
 
 DiscoveryMode = Literal["full", "discovery_only", "align_only"]
 
-# Keep the default GUI Alignment route on the primary Matrix artifact. Other
-# renderers remain available through explicit Alignment output levels/flags.
+# Machine output retains the bound identity needed for post-Matrix selection.
 _GUI_ALIGNMENT_KWARGS: dict[str, Any] = {
-    "output_level": "production",
+    "output_level": "machine",
     "emit_alignment_cells": False,
     "emit_alignment_backfill_seed_audit": False,
     "audit_evidence_mode": "none",
 }
 
-_GALLERY_PARK_REASON = (
-    "Backfill gallery / MS1 overlay 已退出一般 GUI 流程；保留為診斷工具。"
-)
-
 _ALIGNMENT_OUTPUT_ATTRS = (
     "review_tsv",
     "matrix_tsv",
+    "matrix_identity_tsv",
     "cells_tsv",
     "run_metadata_json",
 )
@@ -163,7 +159,6 @@ class DiscoveryWorker(QThread):
 
         summary = self._discovery_summary(request, index_path=index_path)
         summary.update(_alignment_summary(outputs, owner_build_route))
-        summary.update(_parked_gallery_summary())
         return summary
 
     def _run_discovery_only(self, request: DiscoveryRequest) -> dict[str, Any] | None:
@@ -193,7 +188,6 @@ class DiscoveryWorker(QThread):
                 "discovery_batch_index": None,
                 "alignment_outputs": {},
                 "matrix_tsv": None,
-                "gallery_html": None,
             }
 
         raw_paths = _raw_paths_from_dir(
@@ -248,10 +242,8 @@ class DiscoveryWorker(QThread):
             "discovery_batch_index": str(index_path),
             "alignment_outputs": {},
             "matrix_tsv": None,
-            "gallery_html": None,
         }
         summary.update(_alignment_summary(outputs, owner_build_route))
-        summary.update(_parked_gallery_summary())
         return summary
 
     def _run_alignment(
@@ -385,7 +377,6 @@ class DiscoveryWorker(QThread):
             "discovery_batch_index": str(index_path),
             "alignment_outputs": {},
             "matrix_tsv": None,
-            "gallery_html": None,
         }
 
 
@@ -417,13 +408,6 @@ def _alignment_summary(
         "run_metadata_json": str(run_metadata) if run_metadata is not None else None,
         "evidence": evidence,
         "owner_build_route": owner_build_route.as_dict(),
-    }
-
-
-def _parked_gallery_summary() -> dict[str, Any]:
-    return {
-        "gallery_html": None,
-        "gallery_error": _GALLERY_PARK_REASON,
     }
 
 

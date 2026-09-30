@@ -20,6 +20,7 @@ from PyQt6.QtWidgets import (
 )
 
 from gui import styles
+from gui.feature_quality_dialog import FeatureQualityDialog
 from gui.inspector_export_dialog import InspectorExportDialog
 from gui.ui import section_card
 from gui.workers.inspector_report_worker import (
@@ -31,10 +32,6 @@ from xic_inspector.api import EvidenceLocator, ReportResult, SelectionRequest
 
 _PER_SAMPLE_HEADERS = ("樣本", "候選", "高", "中", "低")
 _INSPECTOR_FILENAME = "xic_inspector.html"
-
-_GALLERY_TOOLTIP = (
-    "開啟 backfill + MS1 overlay 審閱 gallery（解釋 why-backfill 並比對 MS1 峰形）。"
-)
 
 # Confidence tiers resolve to live palette tokens (success / warning / neutral)
 # at render time, so the dashboard's segments and legend follow the active
@@ -53,7 +50,6 @@ class DiscoveryResultsSection(QWidget):
     def __init__(self) -> None:
         super().__init__()
         self._output_dir = ""
-        self._gallery = ""
         self._matrix = ""
         self._alignment_outputs: dict[str, str] = {}
         self._summary_text = "尚未執行"
@@ -123,12 +119,12 @@ class DiscoveryResultsSection(QWidget):
         button_row.setSpacing(8)
         self._open_output = QPushButton("開啟輸出資料夾")
         self._open_output.clicked.connect(lambda: _open_path(self._output_dir))
-        self._open_gallery = QPushButton("開啟審閱圖集")
-        self._open_gallery.setToolTip(_GALLERY_TOOLTIP)
-        self._open_gallery.clicked.connect(lambda: _open_path(self._gallery))
         self._open_matrix = QPushButton("開啟定量矩陣")
         self._open_matrix.clicked.connect(lambda: _open_path(self._matrix))
-        self._buttons = (self._open_output, self._open_gallery, self._open_matrix)
+        self._feature_quality = QPushButton("篩選匯出…")
+        self._feature_quality.setObjectName("export_feature_quality")
+        self._feature_quality.clicked.connect(self._export_feature_quality)
+        self._buttons = (self._open_output, self._open_matrix, self._feature_quality)
         for button in self._buttons:
             button.setEnabled(False)
             button_row.addWidget(button)
@@ -186,18 +182,9 @@ class DiscoveryResultsSection(QWidget):
             for key, path in (summary.get("alignment_outputs") or {}).items()
             if path
         }
-        # Only open a real review gallery; do NOT fall back to review_report.html
-        # (the bare stats page) — it is not the backfill+MS1-overlay gallery the
-        # user reviews with, and surfacing it as "gallery" is misleading.
-        self._gallery = str(
-            summary.get("gallery_html")
-            or self._alignment_outputs.get("gallery_html")
-            or ""
-        )
         self._matrix = str(
             summary.get("matrix_tsv") or self._alignment_outputs.get("matrix_tsv") or ""
         )
-        gallery_error = str(summary.get("gallery_error") or "")
 
         self._empty.setVisible(False)
         self._dashboard.setVisible(True)
@@ -212,22 +199,33 @@ class DiscoveryResultsSection(QWidget):
         self._populate_sample_table(summary.get("discovery_batch_index"))
 
         self._open_output.setEnabled(bool(self._output_dir))
-        self._open_gallery.setEnabled(bool(self._gallery))
-        if self._gallery:
-            self._open_gallery.setToolTip(_GALLERY_TOOLTIP)
-        elif gallery_error:
-            self._open_gallery.setToolTip(f"gallery 未產出：{gallery_error}")
-        else:
-            self._open_gallery.setToolTip(_GALLERY_TOOLTIP)
         self._open_matrix.setEnabled(bool(self._matrix))
+        can_filter = bool(
+            self._matrix and self._alignment_outputs.get("matrix_identity_tsv")
+        )
+        self._feature_quality.setEnabled(can_filter)
+        self._feature_quality.setToolTip(
+            "依研究樣本的有效數值比例篩選，另存分析矩陣"
+            if can_filter else "需要特徵識別資料；請重新執行 Alignment"
+        )
         self._summary_text = self._build_text(summary)
+
+    def _export_feature_quality(self) -> None:
+        identity = self._alignment_outputs.get("matrix_identity_tsv")
+        if not self._matrix or not identity:
+            return
+        dialog = FeatureQualityDialog(Path(self._matrix), Path(identity), self)
+        if dialog.exec() and dialog.manifest_path is not None:
+            directory = dialog.manifest_path.parent
+            self.status_message.emit(f"已匯出分析矩陣：{directory}", 10000)
+            _open_path(str(directory))
+        dialog.deleteLater()
 
     def show_error(self, message: str) -> None:
         self._invalidate_inspector("執行未完成，無 Inspector 來源")
         self.show()
         self._title.setText("本次執行未完成")
         self._output_dir = ""
-        self._gallery = ""
         self._matrix = ""
         self._alignment_outputs = {}
         self._empty.setVisible(False)
@@ -252,7 +250,6 @@ class DiscoveryResultsSection(QWidget):
     def clear_results(self) -> None:
         self._invalidate_inspector("新執行尚未完成，無 Inspector 來源")
         self._output_dir = ""
-        self._gallery = ""
         self._matrix = ""
         self._alignment_outputs = {}
         self._summary_text = "尚未執行"

@@ -168,6 +168,90 @@ def test_cli_rejects_missing_sample_metadata_and_no_eligible_samples(tmp_path):
     assert not output.exists()
 
 
+def test_gui_exports_the_same_analysis_set_as_cli(qtbot, qapp, tmp_path, monkeypatch):
+    from PyQt6.QtCore import Qt, QTimer
+    from PyQt6.QtWidgets import QDialog
+
+    from gui.feature_quality_dialog import FeatureQualityDialog
+    from gui.sections import discovery_results_section as results_module
+
+    paths = _inputs(tmp_path)
+    originals = [path.read_bytes() for path in paths]
+    output = tmp_path / "gui_quality"
+    opened = []
+    monkeypatch.setattr(results_module, "_open_path", opened.append)
+    section = results_module.DiscoveryResultsSection()
+    qtbot.addWidget(section)
+    section.update_results({
+        "matrix_tsv": str(paths[0]),
+        "alignment_outputs": {"matrix_identity_tsv": str(paths[1])},
+    })
+    assert section._feature_quality.isEnabled()
+    seen = []
+
+    def fill_dialog():
+        dialog = qapp.activeModalWidget()
+        if not isinstance(dialog, FeatureQualityDialog):
+            if isinstance(dialog, QDialog):
+                dialog.reject()
+            return
+        seen.append(dialog.threshold.text())
+        dialog.metadata.setText(str(paths[2]))
+        dialog.threshold.setText("0.6")
+        dialog.output.setText(str(output))
+        dialog.export_button.click()
+
+    QTimer.singleShot(0, fill_dialog)
+    qtbot.mouseClick(section._feature_quality, Qt.MouseButton.LeftButton)
+    assert seen == [""]  # No scientific threshold is silently selected.
+    assert opened == [str(output)]
+    assert [path.read_bytes() for path in paths] == originals
+    _, selected = read_tsv_with_header(output / "analysis_matrix.tsv")
+    assert [row["Mz"] for row in selected] == ["101.0000", "103.0000"]
+    assert selected[0]["S1"] == "0"
+    cli_output = tmp_path / "cli_quality"
+    result = _run(paths, cli_output, "0.6")
+    assert result.returncode == 0, result.stderr
+    assert {p.name: p.read_bytes() for p in output.iterdir()} == {
+        p.name: p.read_bytes() for p in cli_output.iterdir()
+    }
+    section.clear_results()
+    assert not section._feature_quality.isEnabled()
+    section.update_results({"matrix_tsv": str(paths[0])})
+    assert not section._feature_quality.isEnabled()
+
+
+def test_gui_rejects_empty_threshold_and_stale_identity(qtbot, tmp_path):
+    import time
+
+    from PyQt6.QtCore import Qt
+
+    from gui.feature_quality_dialog import FeatureQualityDialog
+
+    paths = _inputs(tmp_path)
+    output = tmp_path / "quality"
+    dialog = FeatureQualityDialog(paths[0], paths[1])
+    qtbot.addWidget(dialog)
+    dialog.show()
+    dialog.metadata.setText(str(paths[2]))
+    dialog.output.setText(str(output))
+    qtbot.mouseClick(dialog.export_button, Qt.MouseButton.LeftButton)
+    assert "比例" in dialog.error.text()
+    assert not output.exists()
+
+    paths[0].write_text(paths[0].read_text().replace("\t8\t", "\t9\t"))
+    dialog.threshold.setText("0.6")
+    qtbot.mouseClick(dialog.export_button, Qt.MouseButton.LeftButton)
+    deadline = time.monotonic() + 10
+    while dialog._worker is not None and time.monotonic() < deadline:
+        qtbot.wait(10)
+    assert dialog._worker is None
+    assert "binding" in dialog.error.text()
+    assert dialog.isVisible()
+    assert dialog.export_button.isEnabled()
+    assert not output.exists()
+
+
 def test_cli_does_not_overwrite_existing_output(tmp_path):
     paths = _inputs(tmp_path)
     output = tmp_path / "quality"

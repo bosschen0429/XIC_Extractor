@@ -22,6 +22,27 @@ in the entry status text, `docs/product/`, `docs/architecture-contract.md`,
 > renames a diagnostic entry-point. The file is grouped by **purpose**, not
 > alphabetically — open the table of contents below to navigate.
 
+## Choose The Workflow
+
+`scripts/` and `tools/` contain different kinds of adapters; their directory
+does not determine whether an operation is a user feature. Start with the
+workflow owner rather than chaining similarly named commands.
+
+| Task | Entry and owner |
+| --- | --- |
+| Extract, discover, or align samples | [GUI and CLI user guides](../../docs/user/README.md) |
+| Inspect chromatograms | GUI **開啟 Inspector** or `xic-inspector`; [Inspector](../../docs/product/xic-inspector.md) owns offline review |
+| Select Matrix features for downstream analysis | GUI **篩選匯出…** or `xic-feature-quality`; [Feature Quality](../../docs/product/feature-quality.md) owns the rule and output |
+| Review instrument/ISTD drift | `scripts.run_instrument_qc` and `scripts.add_istd_rt_trend`; [Instrument QC](../../docs/product/instrument-qc-calibration.md) owns their distinct inputs and claims |
+| Build a solvent-blank background library | `tools.extract_blank_library`; `xic_extractor.discovery.blank_qualification` owns extraction and serialization |
+| Run tissue validation | `scripts.run_tissue_validation`; [execution settings](../../docs/agent/parameter-settings.md#validation-scale) own prerequisites |
+| Rebuild activation or expected-diff evidence | Use the current [productization lane](../../docs/product/productization.md) and its named producer/checker; `build_*` and `check_*` commands do not independently activate a feature |
+| Maintain CI or command safety | `tools.testing.test_shards` and `tools.command_policy` serve CI/hooks; they have no GUI workflow |
+
+The sections below index maintained diagnostics. Retired tools are recovered
+from Git history; retained historical evidence does not make them current
+commands.
+
 ## Table of Contents
 
 1. [Validation Gates](#validation-gates)

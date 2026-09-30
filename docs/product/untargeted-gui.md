@@ -99,11 +99,6 @@ workflows. The workspace does not create a separate product-authority lane.
   persisted method remains visible and blocks Run until the operator selects a
   valid method.
 
-### Backfill gallery
-
-- Automatic Backfill gallery / MS1 overlay generation is parked outside the
-  normal GUI route. That generation cannot change the Matrix.
-
 ### XIC Inspector export
 
 - A completed alignment with a published evidence locator starts the default
@@ -128,6 +123,19 @@ workflows. The workspace does not create a separate product-authority lane.
 - A new run or batch clears the current locator and the Open target.
 - A running report keeps its original locator. The completion message
   identifies the original request/attempt of that report.
+
+### Analysis matrix export
+
+- **篩選匯出…** uses the completed Matrix and its bound identity. It is enabled
+  only when the result includes both paths.
+- The operator selects a sample-metadata TSV, explicitly enters a minimum
+  finite-value fraction, and chooses a new output folder. The sample table's
+  **匯出樣品資料** action supports TSV (default) and CSV.
+- The dialog calls the existing [Feature Quality](feature-quality.md) owner in
+  a background thread. There is no GUI-specific filtering rule or default
+  threshold. The source Matrix is unchanged.
+- A failed export leaves the dialog open with an error; a successful export
+  opens the new analysis-set folder. Closing waits for an active export.
 
 ### Packaging
 
@@ -197,10 +205,11 @@ plus alignment from the GUI, use `full`.
 | `gui/sections/discovery_samples_section.py` | Acquisition-document matching, displayed sequence, and role corrections |
 | `gui/sections/discovery_method_section.py` | Method selection/import, displayed snapshot, and advanced overrides |
 | `gui/method_editor.py` | Name, tag, and composition editing; delegates TOML saving to the preset owner |
-| `gui/sections/discovery_results_section.py` | Output links, run summary, and manual Inspector Export/Open state |
+| `gui/sections/discovery_results_section.py` | Output links, analysis-set export, run summary, and Inspector Export/Open state |
+| `gui/feature_quality_dialog.py` | Explicit selection inputs and background export through the Feature Quality owner |
 | `gui/inspector_export_dialog.py` | One-report selection and output settings |
 | `gui/workers/inspector_report_worker.py` | Background Inspector metadata/report calls and cooperative cancellation |
-| `gui/workers/discovery_worker.py` | Threaded mode dispatch; passes the published evidence locator and reports the gallery route as parked |
+| `gui/workers/discovery_worker.py` | Threaded mode dispatch; passes the published evidence locator and Matrix identity |
 | `gui/discovery_config_io.py` | Local persisted Untargeted settings |
 | `xic_extractor.spec` | Frozen-release resource bundle contract |
 
@@ -211,9 +220,10 @@ User-visible outputs surfaced by the GUI:
 - `discovery_batch_index.csv`
 - `alignment_matrix.tsv`
 
-The default GUI Alignment route surfaces only `alignment_matrix.tsv`. Alignment
-review TSV, HTML, XLSX, and other sidecars remain explicit non-default outputs
-for machine, validation, or diagnostic workflows.
+The GUI Alignment route uses the existing `machine` output level so its Matrix
+has a bound identity for analysis-set export. That level also retains the
+owner/backfill provenance and Alignment review TSV. Curve review uses Inspector;
+the GUI has no separate Backfill gallery entry. CLI output defaults are unchanged.
 
 ## Boundaries
 
@@ -237,7 +247,7 @@ for machine, validation, or diagnostic workflows.
 | Untargeted run/stop behavior | `tests/test_untargeted_view.py` |
 | Worker mode dispatch | `tests/test_discovery_worker.py` |
 | Shared run controls | `tests/test_pipeline_worker.py` |
-| Parked GUI gallery route | `tests/test_discovery_worker.py` |
+| Matrix identity and analysis-set export | `tests/test_discovery_worker.py`, `tests/test_feature_quality.py` |
 | Manual Inspector Export/Open | `tests/test_gui_inspector_export.py` and source/frozen GUI browser receipts |
 | Alignment output surfaces | `tests/test_alignment_output_levels.py`, `tests/test_alignment_pipeline_outputs.py` |
 | Frozen preset bundling | `tests/test_pyinstaller_spec.py` |
