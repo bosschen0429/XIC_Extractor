@@ -36,11 +36,16 @@ def _summary(source: EvidenceLocator) -> dict:
 
 def test_completed_alignment_hands_off_locator_without_changing_path_map(tmp_path):
     source = _source(tmp_path)
-    outputs = SimpleNamespace(matrix_tsv=source.matrix_path, evidence=source)
     route = SimpleNamespace(as_dict=lambda: {"route": "retained"})
-    summary = _alignment_summary(outputs, route)
+    outputs = SimpleNamespace(
+        matrix_tsv=source.matrix_path,
+        evidence=source,
+        owner_build_route_receipt=route,
+    )
+    summary = _alignment_summary(outputs)
     assert summary["evidence"] == _summary(source)["evidence"]
     assert summary["alignment_outputs"] == {"matrix_tsv": str(source.matrix_path)}
+    assert summary["owner_build_route"] == {"route": "retained"}
 
 
 def test_results_only_enable_export_for_valid_current_locator(qtbot, tmp_path):
