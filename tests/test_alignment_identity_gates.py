@@ -166,6 +166,45 @@ def test_low_scan_support_seed_is_weak_and_not_trusted() -> None:
     assert reason == WEAK_SEED_TOLERATED_REASON
 
 
+def test_seed_quality_summary_preserves_candidate_value_coercion() -> None:
+    summary = summarize_detected_seed_quality(
+        (
+            DetectedSeedRef(sample_stem="S1", source_candidate_id="S1#C1"),
+            DetectedSeedRef(sample_stem="S2", source_candidate_id="S2#C2"),
+            DetectedSeedRef(sample_stem="S3", source_candidate_id="S3#C3"),
+        ),
+        {
+            "S1#C1": {
+                "evidence_score": "80",
+                "seed_event_count": "3",
+                "neutral_loss_mass_error_ppm": "3.0",
+                "ms1_scan_support_score": "0.8",
+            },
+            "S2#C2": SimpleNamespace(
+                evidence_score=True,
+                seed_event_count=False,
+                neutral_loss_mass_error_ppm=float("nan"),
+                ms1_scan_support_score=float("inf"),
+            ),
+            "S3#C3": {
+                "evidence_score": "invalid",
+                "seed_event_count": None,
+                "neutral_loss_mass_error_ppm": None,
+                "ms1_scan_support_score": "invalid",
+            },
+        },
+        enrichment_available=True,
+    )
+
+    assert summary.status == "adequate"
+    assert summary.min_evidence_score == 80.0
+    assert summary.min_seed_event_count == 3.0
+    assert summary.max_abs_nl_ppm == 3.0
+    assert summary.min_scan_support_score == 0.8
+    assert summary.trusted_detected_candidate_count == 1
+    assert summary.looked_up_candidate_count == 3
+
+
 def test_non_dr_backfill_is_out_of_scope_even_when_extreme() -> None:
     reason = classify_single_dr_backfill_dependency(
         neutral_loss_tag="DNA_R",
