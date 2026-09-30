@@ -4,15 +4,19 @@ from __future__ import annotations
 
 import argparse
 import sys
+import webbrowser
 from pathlib import Path
 from typing import Sequence
 
+from xic_extractor.diagnostics.cid_nl_explanation import REPORT_FILENAME
 from xic_inspector.api import (
     InspectorCancelled,
     InspectorError,
     SelectionRequest,
     generate_report,
 )
+
+DEFAULT_OUTPUT_NAME = "xic_inspector.html"
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -24,16 +28,31 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
-        "--report",
-        required=True,
+        "source",
+        nargs="?",
         type=Path,
-        help="Path to a feature evidence SQLite report or versioned curve-bundle JSON.",
+        help=(
+            "Feature evidence SQLite report, versioned curve-bundle JSON, or an "
+            f"alignment output folder containing {REPORT_FILENAME}."
+        ),
+    )
+    parser.add_argument(
+        "--report",
+        type=Path,
+        help="Same as the positional source.",
     )
     parser.add_argument(
         "--output",
-        required=True,
         type=Path,
-        help="Target output path for the single-file self-contained HTML workbench.",
+        help=(
+            "Target path for the single-file HTML workbench "
+            f"(default: {DEFAULT_OUTPUT_NAME} beside the source)."
+        ),
+    )
+    parser.add_argument(
+        "--no-open",
+        action="store_true",
+        help="Do not open the generated report in the default browser.",
     )
     parser.add_argument(
         "--strategy",
@@ -107,12 +126,33 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _resolve_source(path: Path) -> Path:
+    """Return the evidence file for a file path or an alignment output folder."""
+    if not path.is_dir():
+        return path
+    for candidate in (path / REPORT_FILENAME, path / "alignment" / REPORT_FILENAME):
+        if candidate.is_file():
+            return candidate
+    raise FileNotFoundError(f"No {REPORT_FILENAME} in {path} or its alignment folder")
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     try:
         args = parser.parse_args(argv)
+        if args.source is not None and args.report is not None:
+            parser.error("give the source either positionally or with --report")
+        if args.source is None and args.report is None:
+            parser.error("a source report or alignment output folder is required")
     except SystemExit as exc:
         return 2 if exc.code != 0 else 0
+
+    try:
+        report = _resolve_source(args.source or args.report)
+    except FileNotFoundError as exc:
+        sys.stderr.write(f"Error [code 3]: Source unavailable: {exc}\n")
+        return 3
+    output = args.output or report.parent / DEFAULT_OUTPUT_NAME
 
     try:
         selection = SelectionRequest(
@@ -130,9 +170,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
 
         result = generate_report(
-            report=args.report,
+            report=report,
             selection=selection,
-            output=args.output,
+            output=output,
         )
 
         sys.stdout.write(
@@ -141,6 +181,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             f"Run Total: {result.run_total}, Eligible: {result.eligible_count}, "
             f"Matched: {result.matched_count}, Selected: {result.selected_count}\n"
         )
+        if not args.no_open:
+            webbrowser.open(Path(result.output_path).resolve().as_uri())
         return 0
 
     except InspectorCancelled as exc:

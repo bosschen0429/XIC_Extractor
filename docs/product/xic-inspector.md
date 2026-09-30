@@ -9,16 +9,24 @@ scientific decisions, or write Matrix values.
 ## Public entry points
 
 The package installs the `xic-inspector` command and provides the equivalent
-module entry point:
+module entry point. Neither requires the Extractor GUI:
 
 ```console
-xic-inspector --report cid_nl_explanation.sqlite --output review.html --strategy sample
-python -m xic_inspector --report cid_nl_explanation.sqlite --output review.html --strategy attention
-python -m xic_inspector --report diagnostic_curves.json --output review.html --strategy sample
+xic-inspector D:\data\run-output
+xic-inspector cid_nl_explanation.sqlite --strategy attention
+python -m xic_inspector diagnostic_curves.json --output review.html --no-open
 ```
 
-Both entries accept a completed feature-evidence SQLite report or a versioned
-curve-bundle JSON file, an output path, and one selection strategy:
+- The source is a completed feature-evidence SQLite report, a versioned
+  curve-bundle JSON file, or an alignment output folder. A folder resolves to
+  its `cid_nl_explanation.sqlite`, or to the one in its `alignment` subfolder.
+  `--report` is an equivalent named form.
+- Without `--output`, the report is written as `xic_inspector.html` beside the
+  resolved source, the same default as the GUI export.
+- A successful report opens in the default browser; `--no-open` only writes it.
+- A folder without the evidence file exits with the source-unavailable code 3.
+
+Each run uses one selection strategy:
 
 | Strategy | Purpose |
 | --- | --- |

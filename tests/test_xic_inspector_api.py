@@ -513,6 +513,7 @@ def test_cli_execution() -> None:
                 "sample",
                 "--limit",
                 "5",
+                "--no-open",
             ]
         )
         assert code == 0
@@ -530,6 +531,29 @@ def test_cli_execution() -> None:
             ]
         )
         assert bad_code == 2
+
+
+def test_cli_opens_report_from_run_folder_with_default_output(
+    tmp_path, monkeypatch
+) -> None:
+    alignment = tmp_path / "alignment"
+    alignment.mkdir()
+    _create_mock_db(alignment)
+    opened = []
+    monkeypatch.setattr("xic_inspector.cli.webbrowser.open", opened.append)
+
+    assert cli_main([str(tmp_path)]) == 0
+
+    report = alignment / "xic_inspector.html"
+    assert report.is_file()
+    assert opened == [report.resolve().as_uri()]
+
+    assert cli_main([str(tmp_path), "--no-open"]) == 0
+    assert len(opened) == 1
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    assert cli_main([str(empty)]) == 3
+    assert cli_main([]) == 2
 
 
 @pytest.mark.parametrize("row_count", [2, 30, 50])
