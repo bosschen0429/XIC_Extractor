@@ -404,9 +404,11 @@ def test_concurrent_conflicting_finalizations_fail_closed_at_replace(
     }
 
 
+@pytest.mark.parametrize("release_before_denial", [False, True])
 def test_windows_permission_race_while_acquiring_marker_lock_is_retried(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    release_before_denial: bool,
 ) -> None:
     marker = OwnerPathRuntimeMarker(
         tmp_path / "attempt.runtime.json",
@@ -428,6 +430,8 @@ def test_windows_permission_race_while_acquiring_marker_lock_is_retried(
             permission_races += 1
             descriptor = real_open(path, flags, mode)
             os.close(descriptor)
+            if release_before_denial:
+                lock_path.unlink()
             raise PermissionError(13, "synthetic concurrent Windows lock denial", path)
         if str(path).endswith(".lock") and lock_path.exists():
             lock_path.unlink()
@@ -439,6 +443,7 @@ def test_windows_permission_race_while_acquiring_marker_lock_is_retried(
 
     assert permission_races == 1
     assert snapshot.processing_attempt_id == attempt.processing_attempt_id
+    assert marker.read() == snapshot
 
 
 def test_windows_sharing_violation_retries_without_directory_probe(
