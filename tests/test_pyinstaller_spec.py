@@ -93,6 +93,17 @@ from xic_extractor.execution.partitions import PartitionPipelineScheduler
 from xic_extractor.execution.result_store import StreamedResultStore
 from xic_extractor.execution.workers import WorkerAdmissionPool, execute_process_jobs
 from xic_extractor.extraction.jobs import RawFileJob
+from xic_extractor.extraction.untargeted_partition.execution import execute_partition
+from xic_extractor.extraction.untargeted_partition.models import UntargetedPartitionJob
+from xic_extractor.extraction.untargeted_partition.request import (
+    build_partition_context,
+)
+from xic_extractor.extraction.untargeted_partition.workers import (
+    _SampleInitialWorkerRequest,
+)
+from xic_extractor.extraction.untargeted_partition.cid_nl_acquisition import (
+    CidNlAcquisitionResult,
+)
 from xic_extractor.presets import bind_cid_nl_recipe, load_preset
 
 preset = load_preset("dna_dr")
@@ -122,6 +133,11 @@ installed_objects = {
     "WorkerAdmissionPool": WorkerAdmissionPool,
     "execute_process_jobs": execute_process_jobs,
     "RawFileJob": RawFileJob,
+    "execute_partition": execute_partition,
+    "UntargetedPartitionJob": UntargetedPartitionJob,
+    "build_partition_context": build_partition_context,
+    "_SampleInitialWorkerRequest": _SampleInitialWorkerRequest,
+    "CidNlAcquisitionResult": CidNlAcquisitionResult,
 }
 for public_name, public_object in installed_objects.items():
     module = sys.modules[public_object.__module__]
@@ -136,7 +152,10 @@ installed_distribution = next(
     distribution for distribution in distributions(path=[str(target)])
     if distribution.metadata["Name"] == "xic-extractor"
 )
-cli_help_names = ["xic-align-cli", "xic-discovery-cli", "xic-extractor-cli"]
+cli_help_names = [
+    "xic-align-cli", "xic-discovery-cli", "xic-extractor-cli",
+    "xic-untargeted-cid-nl-real-data-cli",
+]
 for cli_name in cli_help_names:
     entrypoint = next(
         entrypoint for entrypoint in installed_distribution.entry_points
@@ -525,7 +544,8 @@ def test_built_wheel_exposes_public_cid_nl_activation_surface(
     assert metadata["preset"] == "DNA dR"
     assert metadata["route"] == "align_only"
     assert metadata["cli_help_names"] == [
-        "xic-align-cli", "xic-discovery-cli", "xic-extractor-cli"
+        "xic-align-cli", "xic-discovery-cli", "xic-extractor-cli",
+        "xic-untargeted-cid-nl-real-data-cli",
     ]
     for module_file in metadata["module_files"].values():
         assert Path(module_file).resolve().is_relative_to(install_target.resolve())

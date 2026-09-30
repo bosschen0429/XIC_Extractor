@@ -38,13 +38,13 @@ from xic_extractor.execution.attempt import (
     start_runtime_attempt,
 )
 from xic_extractor.execution.recovery import OwnerPathRuntimeMarker
-from xic_extractor.extraction.untargeted_cid_nl_real_data_inputs import (
-    build_untargeted_cid_nl_real_data_context,
+from xic_extractor.extraction.untargeted_partition.execution import (
+    execute_attempt,
+    runtime_call_cost,
 )
-from xic_extractor.extraction.untargeted_cid_nl_real_data_runtime import (
-    UntargetedCidNlRealDataRuntimeJob,
-    execute_untargeted_cid_nl_real_data_runtime,
-    untargeted_cid_nl_runtime_call_cost,
+from xic_extractor.extraction.untargeted_partition.models import UntargetedPartitionJob
+from xic_extractor.extraction.untargeted_partition.request import (
+    build_partition_context,
 )
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     mint_untargeted_cid_nl_method_subject,
@@ -172,7 +172,7 @@ def _run(
         precursor_tolerance_ppm=settings.precursor_mz_tolerance_ppm,
         neutral_loss_da=args.neutral_loss_da,
     )
-    context = build_untargeted_cid_nl_real_data_context(
+    context = build_partition_context(
         raw_paths=tuple(raw_paths_by_sample[stem] for stem in selected_stems),
         sample_metadata=selected_metadata,
         method_subject=method_subject,
@@ -183,7 +183,7 @@ def _run(
         sample_identity_namespace=args.sample_identity_namespace,
     )
     jobs = tuple(
-        UntargetedCidNlRealDataRuntimeJob(
+        UntargetedPartitionJob(
             processing_owners=context.processing_owners,
             sample=sample,
             method_subject=context.method_subject,
@@ -204,7 +204,7 @@ def _run(
         work_unit_keys=tuple(job.work_unit_key for job in jobs),
         owner_completeness_attestation="untargeted-cid-nl-real-data-runtime-runner",
     )
-    runtime_result = execute_untargeted_cid_nl_real_data_runtime(
+    runtime_result = execute_attempt(
         runtime,
         jobs,
         telemetry_provider=_coarse_runtime_telemetry,
@@ -216,7 +216,7 @@ def _run(
     )
     if not runtime_result.succeeded:
         raise RuntimeError("Real-data atomic runtime did not succeed")
-    call_cost = untargeted_cid_nl_runtime_call_cost(runtime_result.finalization)
+    call_cost = runtime_call_cost(runtime_result.finalization)
 
     has_direct_support = any(
         item.adapter_result.assessment_input.assessment.content.method_result

@@ -35,18 +35,18 @@ from xic_extractor.discovery.ms1_backfill import (
 from xic_extractor.discovery.ms2_seeds import collect_strict_nl_seeds
 from xic_extractor.execution.attempt import start_runtime_attempt
 from xic_extractor.execution.recovery import OwnerPathRuntimeMarker
-from xic_extractor.extraction.untargeted_cid_nl_real_data_adapter import (
-    UntargetedCidNlRealDataAdapterError,
+from xic_extractor.extraction.untargeted_partition.cid_nl_acquisition import (
+    CidNlAcquisitionError,
     adapt_current_discovery_sample_subject,
     method_label,
 )
-from xic_extractor.extraction.untargeted_cid_nl_real_data_inputs import (
-    build_untargeted_cid_nl_real_data_context,
+from xic_extractor.extraction.untargeted_partition.execution import (
+    execute_attempt,
+    runtime_call_cost,
 )
-from xic_extractor.extraction.untargeted_cid_nl_real_data_runtime import (
-    UntargetedCidNlRealDataRuntimeJob,
-    execute_untargeted_cid_nl_real_data_runtime,
-    untargeted_cid_nl_runtime_call_cost,
+from xic_extractor.extraction.untargeted_partition.models import UntargetedPartitionJob
+from xic_extractor.extraction.untargeted_partition.request import (
+    build_partition_context,
 )
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     mint_untargeted_cid_nl_method_subject,
@@ -103,7 +103,7 @@ def test_adapter_parks_unresolved_morphology_receipt_compatibility(
     )
 
     with pytest.raises(
-        UntargetedCidNlRealDataAdapterError,
+        CidNlAcquisitionError,
         match=(f"morphology_receipt_compatibility_unresolved: {receipt_field}"),
     ):
         adapt_current_discovery_sample_subject(
@@ -178,7 +178,7 @@ def test_adapter_parks_owner_observed_morphology_divergence(
     )
 
     with pytest.raises(
-        UntargetedCidNlRealDataAdapterError,
+        CidNlAcquisitionError,
         match=(f"morphology_receipt_compatibility_unresolved: {receipt_field}"),
     ):
         adapt_current_discovery_sample_subject(
@@ -238,7 +238,7 @@ def test_runtime_retains_morphology_park_reason_and_call_cost(
         precursor_tolerance_ppm=settings.precursor_mz_tolerance_ppm,
         neutral_loss_da=116.0474,
     )
-    context = build_untargeted_cid_nl_real_data_context(
+    context = build_partition_context(
         raw_paths=(raw_path,),
         sample_metadata=(
             SampleMetadata(
@@ -265,7 +265,7 @@ def test_runtime_retains_morphology_park_reason_and_call_cost(
         raw_path=raw_path,
         tmp_path=tmp_path,
     )
-    job = UntargetedCidNlRealDataRuntimeJob(
+    job = UntargetedPartitionJob(
         processing_owners=context.processing_owners,
         sample=context.samples[0],
         method_subject=context.method_subject,
@@ -283,7 +283,7 @@ def test_runtime_retains_morphology_park_reason_and_call_cost(
         owner_completeness_attestation="untargeted-cid-nl-morphology-park-test",
     )
 
-    result = execute_untargeted_cid_nl_real_data_runtime(
+    result = execute_attempt(
         runtime,
         (job,),
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
@@ -304,7 +304,7 @@ def test_runtime_retains_morphology_park_reason_and_call_cost(
         candidates[0].ms1_search_rt_min <= float(rt) <= candidates[0].ms1_search_rt_max
         for rt in source_raw.rt
     )
-    assert untargeted_cid_nl_runtime_call_cost(result.finalization) == {
+    assert runtime_call_cost(result.finalization) == {
         "raw_open_count": 1,
         "logical_xic_request_count": 1,
         "xic_batch_count": 1,

@@ -64,21 +64,19 @@ from xic_extractor.execution.result_store import (
     SealedPartition,
     StreamedResultStore,
 )
-from xic_extractor.extraction.untargeted_cid_nl_real_data_inputs import (
-    UntargetedCidNlRealDataContext,
-)
 from xic_extractor.extraction.untargeted_input_planning import (
     alignment_subject_worksets,
 )
-from xic_extractor.extraction.untargeted_real_data_models import (
-    UntargetedCidNlInitialSampleResult,
-    UntargetedCidNlPreparedGrouping,
-    UntargetedCidNlWorksetGrouping,
+from xic_extractor.extraction.untargeted_partition.models import (
+    UntargetedInitialSampleResult,
+    UntargetedPartitionJob,
+    UntargetedPreparedGrouping,
+    UntargetedSampleResult,
+    UntargetedWorksetGrouping,
+    _SampleResultContext,
 )
-from xic_extractor.extraction.untargeted_real_data_runtime import (
-    UntargetedCidNlRealDataRuntimeJob,
-    UntargetedCidNlRuntimeSampleResult,
-    _RuntimeResultContext,
+from xic_extractor.extraction.untargeted_partition.request import (
+    UntargetedPartitionContext,
 )
 from xic_extractor.peak_detection.capture import (
     SampleLocalCapture,
@@ -111,10 +109,10 @@ class UntargetedPartitionInputs:
     """Partition inputs, executable jobs, and optional sparse backfill templates."""
 
     subject_batch: UntargetedCidNlMethodSubjectBatch
-    context: UntargetedCidNlRealDataContext
-    jobs: tuple[UntargetedCidNlRealDataRuntimeJob, ...]
-    sample_job_templates: tuple[UntargetedCidNlRealDataRuntimeJob, ...] = ()
-    prepared_grouping: UntargetedCidNlPreparedGrouping | None = None
+    context: UntargetedPartitionContext
+    jobs: tuple[UntargetedPartitionJob, ...]
+    sample_job_templates: tuple[UntargetedPartitionJob, ...] = ()
+    prepared_grouping: UntargetedPreparedGrouping | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -142,7 +140,7 @@ class PersistedUntargetedPartition:
 
 def compose_and_persist_untargeted_partition(
     batch: UntargetedPartitionInputs,
-    sample_results: tuple[UntargetedCidNlRuntimeSampleResult, ...],
+    sample_results: tuple[UntargetedSampleResult, ...],
     *,
     store: StreamedResultStore,
     partition_key: str,
@@ -234,7 +232,7 @@ class _ProductionCompositionInputs:
 
 def compose_untargeted_partition(
     batch: UntargetedPartitionInputs,
-    sample_results: tuple[UntargetedCidNlRuntimeSampleResult, ...],
+    sample_results: tuple[UntargetedSampleResult, ...],
     *,
     alignment_config: AlignmentConfig,
     known_istd_reference: KnownIstdReference | None = None,
@@ -268,15 +266,15 @@ def compose_untargeted_partition(
 
 def prepare_untargeted_partition_grouping(
     batch: UntargetedPartitionInputs,
-    sample_results: tuple[UntargetedCidNlInitialSampleResult, ...],
+    sample_results: tuple[UntargetedInitialSampleResult, ...],
     *,
     alignment_config: AlignmentConfig,
     known_istd_reference: KnownIstdReference | None = None,
     progress_callback: Callable[[Mapping[str, object]], None] | None = None,
-) -> UntargetedCidNlPreparedGrouping:
+) -> UntargetedPreparedGrouping:
     """Freeze compatible-workset membership once, before any backfill search."""
     requested_reference = known_istd_reference
-    results_by_subject: dict[str, list[UntargetedCidNlInitialSampleResult]] = {}
+    results_by_subject: dict[str, list[UntargetedInitialSampleResult]] = {}
     for result in sample_results:
         results_by_subject.setdefault(
             result.job.method_subject.method_subject_id, []
@@ -556,7 +554,7 @@ def prepare_untargeted_partition_grouping(
             operation_counts_sink=operation_counts,
         )
         prepared_worksets.append(
-            UntargetedCidNlWorksetGrouping(
+            UntargetedWorksetGrouping(
                 subjects=subject_workset,
                 scope=child_scope,
                 captures=captures,
@@ -627,7 +625,7 @@ def prepare_untargeted_partition_grouping(
                     },
                 }
             )
-    return UntargetedCidNlPreparedGrouping(
+    return UntargetedPreparedGrouping(
         request=parent_request,
         worksets=tuple(final_worksets),
         alignment_config=alignment_config,
@@ -637,19 +635,19 @@ def prepare_untargeted_partition_grouping(
 
 def _build_production_composition_inputs(
     batch: UntargetedPartitionInputs,
-    sample_results: tuple[UntargetedCidNlRuntimeSampleResult, ...],
+    sample_results: tuple[UntargetedSampleResult, ...],
     *,
     alignment_config: AlignmentConfig,
     known_istd_reference: KnownIstdReference | None,
 ) -> _ProductionCompositionInputs:
     if type(sample_results) is not tuple or any(
-        type(result) is not UntargetedCidNlRuntimeSampleResult
+        type(result) is not UntargetedSampleResult
         for result in sample_results
     ):
         raise TypeError("sample_results must be an immutable typed runtime population")
     if not isinstance(alignment_config, AlignmentConfig):
         raise TypeError("alignment_config must be an AlignmentConfig")
-    result_context = _RuntimeResultContext(
+    result_context = _SampleResultContext(
         tuple(result.job for result in sample_results)
     )
     result_by_key = {
@@ -698,7 +696,7 @@ def _build_production_composition_inputs(
             "CID-NL production runtime lost exact sample/subject results"
         )
 
-    results_by_subject: dict[str, list[UntargetedCidNlRuntimeSampleResult]] = {}
+    results_by_subject: dict[str, list[UntargetedSampleResult]] = {}
     for result in sample_results:
         results_by_subject.setdefault(
             result.job.method_subject.method_subject_id, []
@@ -715,7 +713,7 @@ def _build_production_composition_inputs(
     prepared = batch.prepared_grouping or prepare_untargeted_partition_grouping(
         batch,
         tuple(
-            UntargetedCidNlInitialSampleResult(item.job, item.adapter_result)
+            UntargetedInitialSampleResult(item.job, item.adapter_result)
             for item in sample_results
         ),
         alignment_config=alignment_config,
@@ -1064,7 +1062,7 @@ def _build_production_composition_inputs(
 
 def _runtime_captures_by_candidate(
     batch: UntargetedPartitionInputs,
-    sample_results: tuple[UntargetedCidNlInitialSampleResult, ...],
+    sample_results: tuple[UntargetedInitialSampleResult, ...],
 ) -> dict[str, SampleLocalCapture]:
     captures: dict[str, SampleLocalCapture] = {}
     for result in sample_results:

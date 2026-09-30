@@ -41,14 +41,14 @@ from xic_extractor.extraction.untargeted_execution_result import (
 from xic_extractor.extraction.untargeted_input_planning import (
     prepare_eager_untargeted_plan,
 )
+from xic_extractor.extraction.untargeted_partition.execution import (
+    UntargetedAttemptResult,
+    execute_attempt,
+)
 from xic_extractor.extraction.untargeted_partition_composition import (
     UntargetedPartitionInputs,
     compose_untargeted_partition,
     prepare_untargeted_partition_grouping,
-)
-from xic_extractor.extraction.untargeted_real_data_runtime import (
-    UntargetedCidNlRealDataRuntimeApplicationResult,
-    execute_untargeted_cid_nl_real_data_runtime,
 )
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     CID_NL_PROVIDER_ID,
@@ -103,7 +103,7 @@ def execute_dense_partition(
     progress_callback: Callable[[Mapping[str, object]], None] | None = None,
     alignment_config: AlignmentConfig = CID_NL_ALIGNMENT_CONFIG,
     known_istd_reference: KnownIstdReference | None = None,
-) -> UntargetedCidNlRealDataRuntimeApplicationResult:
+) -> UntargetedAttemptResult:
     """Run the retained dense replay runtime for partition result oracles."""
 
     runtime = start_runtime_attempt(
@@ -114,7 +114,7 @@ def execute_dense_partition(
             "cid-nl-production"
         ),
     )
-    result = execute_untargeted_cid_nl_real_data_runtime(
+    result = execute_attempt(
         runtime,
         batch.jobs,
         telemetry_provider=telemetry_provider,

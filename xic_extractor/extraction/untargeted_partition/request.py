@@ -1,4 +1,4 @@
-"""Request owner for replayable Untargeted CID-NL real-data work."""
+"""Bind an Untargeted partition cohort to its processing request and sources."""
 
 from __future__ import annotations
 
@@ -69,7 +69,7 @@ PEAK_SETTINGS_INPUT_KEY = "peak_detection_settings"
 
 
 @dataclass(frozen=True, slots=True)
-class UntargetedCidNlRealDataContext:
+class UntargetedPartitionContext:
     """One attempt's exact cohort, subject, candidate receipts, and RAW paths."""
 
     processing_owners: ProcessingOwnerReferences
@@ -102,7 +102,7 @@ class UntargetedCidNlRealDataContext:
         return matches[0]
 
 
-def build_untargeted_cid_nl_real_data_context(
+def build_partition_context(
     *,
     raw_paths: Sequence[Path],
     sample_metadata: Sequence[SampleMetadata],
@@ -120,7 +120,7 @@ def build_untargeted_cid_nl_real_data_context(
     | None = None,
     acquisition_source_expectations: tuple[AcquisitionSourceExpectation, ...]
     | None = None,
-) -> UntargetedCidNlRealDataContext:
+) -> UntargetedPartitionContext:
     """Mint one replayable request before any real-data runtime RAW handle is opened."""
 
     if not isinstance(
@@ -267,7 +267,7 @@ def build_untargeted_cid_nl_real_data_context(
                 raise IdentityContractError(
                     "physical replay crossed candidate, acquisition, or profile"
                 )
-    return compose_untargeted_real_data_context(
+    return compose_partition_context(
         method_subject=method_subject,
         settings=settings,
         peak_config=peak_config,
@@ -296,7 +296,7 @@ def build_untargeted_cid_nl_real_data_context(
     )
 
 
-def compose_untargeted_real_data_context(
+def compose_partition_context(
     *,
     method_subject: CidNlMethodSubject | UntargetedCidNlMethodSubjectBatch,
     settings: DiscoverySettings,
@@ -313,7 +313,7 @@ def compose_untargeted_real_data_context(
     candidate_universe: dict[str, object],
     physical_capture: dict[str, object] | None,
     feature_candidate_ids: tuple[str, ...] | None = None,
-) -> UntargetedCidNlRealDataContext:
+) -> UntargetedPartitionContext:
     """Compose request identity from input-owner verified compact facts."""
     ordered_stems = tuple(
         stem
@@ -371,7 +371,7 @@ def compose_untargeted_real_data_context(
         sample_snapshot=snapshot,
         sample_resolutions=samples,
     )
-    return UntargetedCidNlRealDataContext(
+    return UntargetedPartitionContext(
         processing_owners=owners,
         samples=samples,
         method_subject=method_subject,
@@ -609,8 +609,8 @@ __all__ = (
     "UNTARGETED_CID_NL_PROCESSING_ALGORITHM_VERSION",
     "UNTARGETED_CID_NL_PROCESSING_CONTRACT_VERSION",
     "UNTARGETED_CID_NL_PROCESSING_INPUT_SCHEMA_VERSION",
-    "UntargetedCidNlRealDataContext",
-    "build_untargeted_cid_nl_real_data_context",
+    'UntargetedPartitionContext',
+    'build_partition_context',
     "candidate_universe_payload",
     "discovery_settings_payload",
 )

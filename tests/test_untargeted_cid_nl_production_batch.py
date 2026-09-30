@@ -16,7 +16,7 @@ import xic_extractor.alignment.result.application_result as application_result_o
 import xic_extractor.alignment.untargeted_finalized_matrix as finalized_matrix
 import xic_extractor.discovery.processing_run_spec_adapter as processing_spec_adapter
 import xic_extractor.extraction.untargeted_alignment as alignment_adapter
-import xic_extractor.extraction.untargeted_cid_nl_real_data_inputs as input_owner
+import xic_extractor.extraction.untargeted_partition.request as input_owner
 import xic_extractor.processing_identity as identity_owner
 import xic_extractor.raw_reader as raw_reader_owner
 from tests.cid_nl_raw_fixture import (
@@ -73,11 +73,6 @@ from xic_extractor.discovery.processing_run_spec_adapter import (
 from xic_extractor.execution._lifecycle import AttemptTerminalOutcome
 from xic_extractor.execution._observability import RuntimeMetricAvailability
 from xic_extractor.execution.recovery import OwnerPathRuntimeMarker
-from xic_extractor.extraction.untargeted_cid_nl_real_data_runtime import (
-    UntargetedCidNlRealDataRuntimeError,
-    UntargetedCidNlRealDataRuntimeJob,
-    build_untargeted_cid_nl_sample_runtime_jobs,
-)
 from xic_extractor.extraction.untargeted_execution import (
     execute_untargeted_plan,
 )
@@ -86,6 +81,13 @@ from xic_extractor.extraction.untargeted_execution_result import (
 )
 from xic_extractor.extraction.untargeted_input_planning import (
     prepare_eager_untargeted_plan,
+)
+from xic_extractor.extraction.untargeted_partition import models as partition_models
+from xic_extractor.extraction.untargeted_partition import workers as partition_workers
+from xic_extractor.extraction.untargeted_partition.models import (
+    UntargetedPartitionError,
+    UntargetedPartitionJob,
+    build_sample_jobs,
 )
 from xic_extractor.extraction.untargeted_partition_composition import (
     compose_untargeted_partition,
@@ -246,9 +248,6 @@ def _assert_partition_composition_parity(
 
 
 def _assert_jobs_match_direct_construction(batch) -> None:
-    from xic_extractor.extraction import (
-        untargeted_cid_nl_real_data_runtime as runtime_owner,
-    )
 
     context = batch.context
     memberships = dict(batch.subject_batch.candidate_memberships)
@@ -259,7 +258,7 @@ def _assert_jobs_match_direct_construction(batch) -> None:
         if candidate.candidate_id in memberships
     }
     expected = tuple(
-        UntargetedCidNlRealDataRuntimeJob(
+        UntargetedPartitionJob(
             processing_owners=context.processing_owners,
             sample=sample,
             method_subject=subject,
@@ -309,10 +308,10 @@ def _assert_jobs_match_direct_construction(batch) -> None:
             if memberships.get(record.candidate_id)
             == job.method_subject.method_subject_id
         )
-        selected = runtime_owner._request_subject_physical_records(job)
+        selected = partition_models._request_subject_physical_records(job)
         assert selected == records
         assert all(left is right for left, right in zip(selected, records, strict=True))
-        assert runtime_owner._request_subject_physical_records(direct_job) == records
+        assert partition_models._request_subject_physical_records(direct_job) == records
 
 
 def _assert_single_unsupported_exclusion(
@@ -920,9 +919,6 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     spec = compile_discovery_processing_run_spec(
         paths, discovery_settings=settings, signal_processing_profile=profile
     )
-    from xic_extractor.extraction import (
-        untargeted_cid_nl_real_data_runtime as runtime_module,
-    )
 
     source_raws = {}
     opened_raws = _install_runtime_raws(
@@ -1012,7 +1008,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
                 for index in scan_indexes
             )
         source_raws[path] = raw
-        with runtime_module.open_raw(
+        with partition_workers.open_raw(
             path, tmp_path, expected_acquisition_source=source.acquisition_source
         ) as discovery_raw:
             seeds = collect_strict_nl_seeds(
@@ -1197,9 +1193,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     monkeypatch.setattr(
         capture_owner, "capture_reacquired_physical_peak", retain_reacquired_capture
     )
-    from xic_extractor.extraction import (
-        untargeted_execution as bounded_owner,
-    )
+    from xic_extractor.extraction import untargeted_execution as bounded_owner
 
     materialize_batch = bounded_owner.materialize_untargeted_partition
 
@@ -1216,9 +1210,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     from xic_extractor.alignment import grouping_bootstrap as bootstrap_owner
     from xic_extractor.alignment.projection.untarget import post_cell as post_cell_owner
     from xic_extractor.alignment.result import application_result as result_owner
-    from xic_extractor.extraction import (
-        untargeted_partition_composition as production,
-    )
+    from xic_extractor.extraction import untargeted_partition_composition as production
     from xic_extractor.peak_detection import observations as observation_owner
 
     mint_captured = production.mint_captured_peak_observation
@@ -1434,7 +1426,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     )
 
     runtime_results = []
-    runtime_execute = bounded_owner.execute_untargeted_cid_nl_runtime_partition
+    runtime_execute = bounded_owner.execute_partition
 
     def checked_runtime(*args, **kwargs):
         result = runtime_execute(*args, **kwargs)
@@ -1525,7 +1517,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         return result
 
     monkeypatch.setattr(
-        bounded_owner, "execute_untargeted_cid_nl_runtime_partition", checked_runtime
+        bounded_owner, 'execute_partition', checked_runtime
     )
     preparation_fingerprints = []
     runtime_fingerprints = []
@@ -2047,11 +2039,8 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
             ),
         )
     batch = captured_batches[0]
-    from xic_extractor.extraction import (
-        untargeted_cid_nl_real_data_runtime as runtime_module,
-    )
-    from xic_extractor.extraction.untargeted_cid_nl_real_data_adapter import (
-        UntargetedCidNlRealDataAdapterError,
+    from xic_extractor.extraction.untargeted_partition.cid_nl_acquisition import (
+        CidNlAcquisitionError,
         backfill_untargeted_cid_nl_sample_subject,
     )
     from xic_extractor.peak_detection.cid_nl_peak_support import (
@@ -2060,7 +2049,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     from xic_extractor.processing_identity import resolve_request_acquisition_source
 
     job = batch.jobs[0]
-    recovery_raw = runtime_module.open_raw(
+    recovery_raw = partition_workers.open_raw(
         paths[0],
         tmp_path,
         expected_acquisition_source=resolve_request_acquisition_source(
@@ -2118,7 +2107,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
             )
         )
     with pytest.raises(
-        UntargetedCidNlRealDataAdapterError, match="lost its request-bound profile"
+        CidNlAcquisitionError, match="lost its request-bound profile"
     ):
         backfill_untargeted_cid_nl_sample_subject(
             **(recovery_args | {"signal_processing_profile": None})
@@ -2241,12 +2230,12 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     _assert_fresh_process_curve_parity(
         recovery_path, [_expected_capture_curve(item) for item in recovery_sources]
     )
-    from xic_extractor.extraction.untargeted_cid_nl_real_data_runtime import (
-        UntargetedCidNlRealDataRuntimeError,
+    from xic_extractor.extraction.untargeted_partition.models import (
+        UntargetedPartitionError,
     )
 
     with pytest.raises(
-        UntargetedCidNlRealDataRuntimeError, match="profile is not request-bound"
+        UntargetedPartitionError, match="profile is not request-bound"
     ):
         replace(
             batch.jobs[0],
@@ -2271,8 +2260,8 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         ),
         ({"physical_records": ()}, "candidate coverage changed"),
     ):
-        with pytest.raises(UntargetedCidNlRealDataRuntimeError, match=message):
-            build_untargeted_cid_nl_sample_runtime_jobs(
+        with pytest.raises(UntargetedPartitionError, match=message):
+            build_sample_jobs(
                 **(sample_inputs | changed), subject_work_units=subject_work_units
             )
     if not indexed_input:
@@ -2580,9 +2569,7 @@ def test_physical_subject_units_keep_unproven_candidates_singleton(
 def test_proven_subject_unit_is_not_split_by_lower_fixed_anchor(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from xic_extractor.extraction import (
-        untargeted_input_planning as planning_owner,
-    )
+    from xic_extractor.extraction import untargeted_input_planning as planning_owner
 
     raw_path = tmp_path / "S1.synthetic"
     raw_path.write_bytes(b"lower-anchor-subject-unit:S1")
@@ -2624,7 +2611,7 @@ def test_proven_subject_unit_is_not_split_by_lower_fixed_anchor(
 
     monkeypatch.setattr(
         planning_owner,
-        "build_untargeted_cid_nl_real_data_context",
+        'build_partition_context',
         capture_subject_batch,
     )
     with pytest.raises(ExpectedStop):
@@ -3219,7 +3206,7 @@ def test_sample_job_builder_rejects_changed_request_bound_inputs(
     work_units = tuple((job.method_subject, job.work_unit_key) for job in batch.jobs)
     assert len(work_units) == 2
     assert (
-        build_untargeted_cid_nl_sample_runtime_jobs(
+        build_sample_jobs(
             **shared, subject_work_units=work_units
         )
         == batch.jobs
@@ -3237,8 +3224,8 @@ def test_sample_job_builder_rejects_changed_request_bound_inputs(
         (None, "changed-subject", "wrong owner type"),
         (work_units[1][0], "", "work_unit_key"),
     ):
-        with pytest.raises(UntargetedCidNlRealDataRuntimeError, match=message):
-            build_untargeted_cid_nl_sample_runtime_jobs(
+        with pytest.raises(UntargetedPartitionError, match=message):
+            build_sample_jobs(
                 **shared, subject_work_units=(work_units[0], (subject, key))
             )
     for changed, message in (
@@ -3258,8 +3245,8 @@ def test_sample_job_builder_rejects_changed_request_bound_inputs(
             "candidate universe",
         ),
     ):
-        with pytest.raises(UntargetedCidNlRealDataRuntimeError, match=message):
-            build_untargeted_cid_nl_sample_runtime_jobs(
+        with pytest.raises(UntargetedPartitionError, match=message):
+            build_sample_jobs(
                 **(shared | changed), subject_work_units=work_units
             )
 
@@ -4002,9 +3989,7 @@ def test_production_initial_groups_use_complete_feature_inference_batch(
     monkeypatch: pytest.MonkeyPatch,
     supported_samples: int,
 ) -> None:
-    from xic_extractor.extraction import (
-        untargeted_partition_composition as production,
-    )
+    from xic_extractor.extraction import untargeted_partition_composition as production
 
     stems = ("Early", "Middle", "Late")
     paths = tuple(tmp_path / f"{stem}.synthetic" for stem in stems)
@@ -4377,9 +4362,9 @@ def _assert_conservative_proof_seals(
         _derive_lane_evidence_state,
         canonical_cell_observation_bytes,
     )
-    from xic_extractor.extraction.untargeted_cid_nl_real_data_runtime import (
-        canonical_untargeted_cid_nl_sample_result_bytes,
-        project_untargeted_cid_nl_completed_backfill,
+    from xic_extractor.extraction.untargeted_partition.models import (
+        canonical_sample_result_bytes,
+        project_completed_backfill,
     )
     from xic_extractor.processing_identity import issue_processing_attempt
 
@@ -4561,11 +4546,11 @@ def _assert_conservative_proof_seals(
         if item.job.sample is proof.sample
     )
     context = proof.decision.group_facts.group_context
-    original_result_bytes = canonical_untargeted_cid_nl_sample_result_bytes(
+    original_result_bytes = canonical_sample_result_bytes(
         result.result_ref
     )
     with pytest.raises(ValueError, match="not a backfill"):
-        project_untargeted_cid_nl_completed_backfill(
+        project_completed_backfill(
             replace(result, backfill_attempts=()), group_context=context
         )
     if proof.completion is not None:
@@ -4573,7 +4558,7 @@ def _assert_conservative_proof_seals(
         with pytest.raises(ValueError):
             replace(proof, completion=None)
         assert (
-            project_untargeted_cid_nl_completed_backfill(result, group_context=context)
+            project_completed_backfill(result, group_context=context)
             == completion
         )
         other_coordinate = next(
@@ -4590,7 +4575,7 @@ def _assert_conservative_proof_seals(
                 replace(completion, **substitution)
         recovery = result.backfill_attempt
         with pytest.raises(ValueError):
-            project_untargeted_cid_nl_completed_backfill(
+            project_completed_backfill(
                 replace(
                     result,
                     backfill_attempts=(
@@ -4611,7 +4596,7 @@ def _assert_conservative_proof_seals(
             with pytest.raises(
                 ValueError, match="backfill crossed its exact request coordinates"
             ):
-                project_untargeted_cid_nl_completed_backfill(
+                project_completed_backfill(
                     replace(
                         result,
                         backfill_attempts=(
@@ -4621,7 +4606,7 @@ def _assert_conservative_proof_seals(
                     group_context=context,
                 )
     assert (
-        canonical_untargeted_cid_nl_sample_result_bytes(result.result_ref)
+        canonical_sample_result_bytes(result.result_ref)
         == original_result_bytes
     )
 
@@ -4743,8 +4728,8 @@ def test_production_composition_closes_recovered_observation_without_candidate(
             threshold=recovery_case == "threshold",
         )
         return
-    from xic_extractor.extraction.untargeted_cid_nl_real_data_runtime import (
-        project_untargeted_cid_nl_completed_backfill,
+    from xic_extractor.extraction.untargeted_partition.models import (
+        project_completed_backfill,
     )
 
     (child,) = completed.application_result.children
@@ -4755,7 +4740,7 @@ def test_production_composition_closes_recovered_observation_without_candidate(
         if source.method_assessment is recovered[0].effective_assessment
     )
     with pytest.raises(ValueError, match="completed empty epoch"):
-        project_untargeted_cid_nl_completed_backfill(
+        project_completed_backfill(
             recovered[0], group_context=recovered_source.group_context
         )
     assert writer_inputs.matrix.sample_order == sample_stems

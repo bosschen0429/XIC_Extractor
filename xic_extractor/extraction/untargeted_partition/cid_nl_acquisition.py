@@ -127,11 +127,11 @@ _WRITER_ROUNDING_REL_TOL = 5e-6
 _WRITER_ROUNDING_ABS_TOL = 5e-6
 
 
-class UntargetedCidNlRealDataAdapterError(ValueError):
+class CidNlAcquisitionError(ValueError):
     """Raised when real observations cannot close one Untargeted subject."""
 
 
-class UntargetedCidNlRealDataRaw(BatchXICAdapter, Protocol):
+class CidNlRawSource(BatchXICAdapter, Protocol):
     def iter_ms2_scans(
         self,
         rt_min: float,
@@ -140,7 +140,7 @@ class UntargetedCidNlRealDataRaw(BatchXICAdapter, Protocol):
 
 
 @dataclass(frozen=True, slots=True)
-class UntargetedCidNlRealDataAdapterResult:
+class CidNlAcquisitionResult:
     assessment_input: UntargetedCidNlAssessmentInput
     acquisition: TraceAcquisitionBatch | None
     captures: tuple[capture_owner.SampleLocalCapture, ...]
@@ -181,19 +181,19 @@ class UntargetedCidNlSampleTraceBatch:
             not self.sample_identity_id.strip()
             or not self.acquisition_source_id.strip()
         ):
-            raise UntargetedCidNlRealDataAdapterError(
+            raise CidNlAcquisitionError(
                 "sample trace batch requires owner identities"
             )
         if type(self.candidate_ids) is not tuple or not self.candidate_ids:
-            raise UntargetedCidNlRealDataAdapterError(
+            raise CidNlAcquisitionError(
                 "sample trace batch requires exact candidate identities"
             )
         if self.candidate_ids != tuple(sorted(set(self.candidate_ids))):
-            raise UntargetedCidNlRealDataAdapterError(
+            raise CidNlAcquisitionError(
                 "sample trace batch candidate identities must be canonical and unique"
             )
         if not isinstance(self.acquisition, TraceAcquisitionBatch):
-            raise UntargetedCidNlRealDataAdapterError("invalid sample acquisition")
+            raise CidNlAcquisitionError("invalid sample acquisition")
         indices = self.candidate_trace_indices
         if indices is None:
             indices = tuple(range(len(self.candidate_ids)))
@@ -208,7 +208,7 @@ class UntargetedCidNlSampleTraceBatch:
             or self.acquisition.capability.acquisition_source.acquisition_source_id
             != self.acquisition_source_id
         ):
-            raise UntargetedCidNlRealDataAdapterError(
+            raise CidNlAcquisitionError(
                 "sample trace batch acquisition does not close its candidates"
             )
 
@@ -216,7 +216,7 @@ class UntargetedCidNlSampleTraceBatch:
         try:
             index = self.candidate_ids.index(candidate_id)
         except ValueError as exc:
-            raise UntargetedCidNlRealDataAdapterError(
+            raise CidNlAcquisitionError(
                 f"sample trace batch has no candidate {candidate_id!r}"
             ) from exc
         assert self.candidate_trace_indices is not None
@@ -246,7 +246,7 @@ class UntargetedCidNlBackfillTarget:
             or not math.isfinite(float(self.center_rt))
             or self.center_rt < 0.0
         ):
-            raise UntargetedCidNlRealDataAdapterError(
+            raise CidNlAcquisitionError(
                 "backfill target requires a group, physical mass, and RT"
             )
 
@@ -271,7 +271,7 @@ class UntargetedCidNlBackfillTraceBatch:
             not self.sample_identity_id.strip()
             or not self.acquisition_source_id.strip()
         ):
-            raise UntargetedCidNlRealDataAdapterError(
+            raise CidNlAcquisitionError(
                 "backfill trace batch requires owner identities"
             )
         if (
@@ -297,7 +297,7 @@ class UntargetedCidNlBackfillTraceBatch:
             or type(self.trace_indices) is not tuple
             or not (len(self.targets) == len(self.requests) == len(self.trace_indices))
         ):
-            raise UntargetedCidNlRealDataAdapterError(
+            raise CidNlAcquisitionError(
                 "backfill trace batch entries must be canonical and complete"
             )
         if (
@@ -310,7 +310,7 @@ class UntargetedCidNlBackfillTraceBatch:
                 )
             )
         ):
-            raise UntargetedCidNlRealDataAdapterError(
+            raise CidNlAcquisitionError(
                 "backfill trace batch acquisition does not close its requests"
             )
 
@@ -323,17 +323,17 @@ class UntargetedCidNlBackfillTraceBatch:
         try:
             index = self.group_hypothesis_ids.index(group_hypothesis_id)
         except ValueError as exc:
-            raise UntargetedCidNlRealDataAdapterError(
+            raise CidNlAcquisitionError(
                 "backfill trace batch has no matching group"
             ) from exc
         if self.requests[index] != request:
-            raise UntargetedCidNlRealDataAdapterError(
+            raise CidNlAcquisitionError(
                 "backfill trace batch request crossed its owner decision"
             )
         return self.acquisition.traces[self.trace_indices[index]]
 
 
-class _UntargetedRealDataWorkObserver:
+class _PartitionWorkObserver:
     """Retain already-minted facts so runtime failure can quarantine them."""
 
     __slots__ = (
@@ -358,7 +358,7 @@ class _UntargetedRealDataWorkObserver:
     ) -> None:
         observed = self.backfill_acquisition if backfill else self.initial_acquisition
         if observed is not None and observed is not acquisition:
-            raise UntargetedCidNlRealDataAdapterError(
+            raise CidNlAcquisitionError(
                 "one acquisition phase cannot replace its observed acquisition"
             )
         if backfill:
@@ -372,12 +372,12 @@ class _UntargetedRealDataWorkObserver:
             artifact.producer_processing_request_id != attempt.processing_request_id
             or artifact.producer_processing_attempt_id != attempt.processing_attempt_id
         ):
-            raise UntargetedCidNlRealDataAdapterError(
+            raise CidNlAcquisitionError(
                 "observer artifact must bind the current processing attempt"
             )
         existing = self._artifacts.get(artifact.evidence_artifact_id)
         if existing is not None and existing != artifact:
-            raise UntargetedCidNlRealDataAdapterError(
+            raise CidNlAcquisitionError(
                 "observer artifact identity was rebound"
             )
         self._artifacts[artifact.evidence_artifact_id] = artifact
@@ -427,7 +427,7 @@ def _sample_capture_requests(
             for item in candidates:
                 subject_id = memberships.get(item.candidate_id)
                 if subject_id not in subject_values:
-                    raise UntargetedCidNlRealDataAdapterError(
+                    raise CidNlAcquisitionError(
                         "capture candidate lacks method subject"
                     )
                 grouped.setdefault(subject_id, []).append(item)
@@ -473,28 +473,28 @@ def acquire_untargeted_cid_nl_sample_trace_batch(
     sample: ResolvedCanonicalSampleIdentity,
     candidates: tuple[DiscoveryCandidate, ...],
     settings: DiscoverySettings,
-    raw: UntargetedCidNlRealDataRaw,
+    raw: CidNlRawSource,
     signal_processing_profile: SignalProcessingProfile | None = None,
 ) -> UntargetedCidNlSampleTraceBatch | None:
     """Acquire all eligible candidate XICs for one sample in one adapter call."""
 
     if not isinstance(processing_owners, ProcessingOwnerReferences):
-        raise UntargetedCidNlRealDataAdapterError(
+        raise CidNlAcquisitionError(
             "processing_owners has the wrong owner type"
         )
     if not isinstance(sample, ResolvedCanonicalSampleIdentity):
-        raise UntargetedCidNlRealDataAdapterError("sample has the wrong owner type")
+        raise CidNlAcquisitionError("sample has the wrong owner type")
     if not isinstance(settings, DiscoverySettings):
-        raise UntargetedCidNlRealDataAdapterError("settings has the wrong owner type")
+        raise CidNlAcquisitionError("settings has the wrong owner type")
     if type(candidates) is not tuple or any(
         not isinstance(candidate, DiscoveryCandidate) for candidate in candidates
     ):
-        raise UntargetedCidNlRealDataAdapterError(
+        raise CidNlAcquisitionError(
             "candidates must be current DiscoveryCandidate receipts"
         )
     candidate_ids = tuple(candidate.candidate_id for candidate in candidates)
     if candidate_ids != tuple(sorted(set(candidate_ids))):
-        raise UntargetedCidNlRealDataAdapterError(
+        raise CidNlAcquisitionError(
             "sample trace batch candidates must be canonical and unique"
         )
     raw_stem = sample.metadata.raw_stem
@@ -502,7 +502,7 @@ def acquire_untargeted_cid_nl_sample_trace_batch(
         candidate.sample_stem != raw_stem or candidate.raw_file.stem != raw_stem
         for candidate in candidates
     ):
-        raise UntargetedCidNlRealDataAdapterError(
+        raise CidNlAcquisitionError(
             "sample trace batch candidates crossed the resolved sample"
         )
     capture_candidates = tuple(
@@ -521,7 +521,7 @@ def acquire_untargeted_cid_nl_sample_trace_batch(
     try:
         bound_raw = require_owner_bound_untargeted_raw(raw, source)
     except RawReaderError as exc:
-        raise UntargetedCidNlRealDataAdapterError(
+        raise CidNlAcquisitionError(
             "raw handle is not owner-bound to the resolved acquisition source"
         ) from exc
     capability = mint_trace_acquisition_capability(
@@ -553,18 +553,18 @@ def acquire_untargeted_cid_nl_backfill_trace_batch(
     sample: ResolvedCanonicalSampleIdentity,
     backfill_requests: tuple[UntargetedCidNlBackfillTarget, ...],
     peak_config: ExtractionConfig,
-    raw: UntargetedCidNlRealDataRaw,
+    raw: CidNlRawSource,
 ) -> UntargetedCidNlBackfillTraceBatch:
     """Acquire one sample's owner-authorized backfill requests in one phase."""
 
     if not isinstance(processing_owners, ProcessingOwnerReferences):
-        raise UntargetedCidNlRealDataAdapterError(
+        raise CidNlAcquisitionError(
             "processing_owners has the wrong owner type"
         )
     if not isinstance(sample, ResolvedCanonicalSampleIdentity):
-        raise UntargetedCidNlRealDataAdapterError("sample has the wrong owner type")
+        raise CidNlAcquisitionError("sample has the wrong owner type")
     if not isinstance(peak_config, ExtractionConfig):
-        raise UntargetedCidNlRealDataAdapterError(
+        raise CidNlAcquisitionError(
             "peak_config has the wrong owner type"
         )
     if (
@@ -577,7 +577,7 @@ def acquire_untargeted_cid_nl_backfill_trace_batch(
         or len({item.group_hypothesis_id for item in backfill_requests})
         != len(backfill_requests)
     ):
-        raise UntargetedCidNlRealDataAdapterError(
+        raise CidNlAcquisitionError(
             "backfill requests must be a non-empty typed tuple"
         )
     for target in backfill_requests:
@@ -587,7 +587,7 @@ def acquire_untargeted_cid_nl_backfill_trace_batch(
                 processing_owners=processing_owners,
             )
         except CidNlMethodSubjectContractError as exc:
-            raise UntargetedCidNlRealDataAdapterError(str(exc)) from exc
+            raise CidNlAcquisitionError(str(exc)) from exc
     targets = tuple(
         sorted(
             backfill_requests,
@@ -606,7 +606,7 @@ def acquire_untargeted_cid_nl_backfill_trace_batch(
     try:
         bound_raw = require_owner_bound_untargeted_raw(raw, source)
     except RawReaderError as exc:
-        raise UntargetedCidNlRealDataAdapterError(
+        raise CidNlAcquisitionError(
             "raw handle is not owner-bound to the resolved acquisition source"
         ) from exc
     half_window = peak_config.nl_rt_anchor_half_window_min
@@ -650,12 +650,12 @@ def adapt_current_discovery_sample_subject(
     support_candidates: tuple[DiscoveryCandidate, ...] = (),
     settings: DiscoverySettings,
     peak_config: ExtractionConfig,
-    raw: UntargetedCidNlRealDataRaw | None,
-    _observer: _UntargetedRealDataWorkObserver | None = None,
+    raw: CidNlRawSource | None,
+    _observer: _PartitionWorkObserver | None = None,
     _preacquired_traces: UntargetedCidNlSampleTraceBatch | None = None,
     signal_processing_profile: SignalProcessingProfile | None = None,
     physical_records: tuple[DiscoveryPhysicalFactRecord, ...] = (),
-) -> UntargetedCidNlRealDataAdapterResult:
+) -> CidNlAcquisitionResult:
     """Reacquire a subject and mint its complete CellObservationRef input."""
 
     _validate_inputs(
@@ -682,7 +682,7 @@ def adapt_current_discovery_sample_subject(
     if {candidate.candidate_id for candidate in bounded} & {
         candidate.candidate_id for candidate in support_bounded
     }:
-        raise UntargetedCidNlRealDataAdapterError(
+        raise CidNlAcquisitionError(
             "support candidates must be distinct from feature candidates"
         )
     support_policy = DdaCidNlPeakSupportPolicy(
@@ -730,7 +730,7 @@ def adapt_current_discovery_sample_subject(
             producer_attempt=processing_owners.attempt,
             artifacts=(assessment.artifact,),
         )
-        return UntargetedCidNlRealDataAdapterResult(
+        return CidNlAcquisitionResult(
             assessment_input=UntargetedCidNlAssessmentInput(
                 sample=sample,
                 assessment=assessment,
@@ -742,7 +742,7 @@ def adapt_current_discovery_sample_subject(
             lineage_artifacts=lineage,
         )
     if raw is None:
-        raise UntargetedCidNlRealDataAdapterError(
+        raise CidNlAcquisitionError(
             "bounded subject universe requires an owner-opened RAW adapter"
         )
     _validate_raw_adapter(raw)
@@ -753,7 +753,7 @@ def adapt_current_discovery_sample_subject(
     try:
         bound_raw = require_owner_bound_untargeted_raw(raw, source)
     except RawReaderError as exc:
-        raise UntargetedCidNlRealDataAdapterError(
+        raise CidNlAcquisitionError(
             "raw handle is not owner-bound to the resolved acquisition source"
         ) from exc
     try:
@@ -765,7 +765,7 @@ def adapt_current_discovery_sample_subject(
             include_inferred=True,
         )
     except StrictSeedReceiptError as exc:
-        raise UntargetedCidNlRealDataAdapterError(str(exc)) from exc
+        raise CidNlAcquisitionError(str(exc)) from exc
 
     search_scope = _untargeted_search_scope(
         processing_owners=processing_owners,
@@ -890,7 +890,7 @@ def adapt_current_discovery_sample_subject(
             assessment.artifact,
         ),
     )
-    return UntargetedCidNlRealDataAdapterResult(
+    return CidNlAcquisitionResult(
         assessment_input=UntargetedCidNlAssessmentInput(
             sample=sample,
             assessment=assessment,
@@ -921,11 +921,11 @@ def backfill_untargeted_cid_nl_sample_subject(
     group_hypothesis_id: str | None = None,
     support_policy: DdaCidNlPeakSupportPolicy,
     peak_config: ExtractionConfig,
-    raw: UntargetedCidNlRealDataRaw | None,
+    raw: CidNlRawSource | None,
     initial_assessment: CidNlMethodAssessmentRef | None = None,
     settings: DiscoverySettings | None = None,
     signal_processing_profile: SignalProcessingProfile | None = None,
-    _observer: _UntargetedRealDataWorkObserver | None = None,
+    _observer: _PartitionWorkObserver | None = None,
     _preacquired_traces: UntargetedCidNlBackfillTraceBatch | None = None,
 ) -> UntargetedCidNlBackfillAttemptResult:
     """Evaluate one owner-authorized bounded physical candidate universe.
@@ -935,21 +935,21 @@ def backfill_untargeted_cid_nl_sample_subject(
     """
 
     if not isinstance(processing_owners, ProcessingOwnerReferences):
-        raise UntargetedCidNlRealDataAdapterError(
+        raise CidNlAcquisitionError(
             "processing_owners has the wrong owner type"
         )
     if not isinstance(sample, ResolvedCanonicalSampleIdentity):
-        raise UntargetedCidNlRealDataAdapterError("sample has the wrong owner type")
+        raise CidNlAcquisitionError("sample has the wrong owner type")
     if not isinstance(method_subject, CidNlMethodSubject):
-        raise UntargetedCidNlRealDataAdapterError(
+        raise CidNlAcquisitionError(
             "method_subject has the wrong owner type"
         )
     if not isinstance(peak_config, ExtractionConfig):
-        raise UntargetedCidNlRealDataAdapterError(
+        raise CidNlAcquisitionError(
             "peak_config has the wrong owner type"
         )
     if not isinstance(support_policy, DdaCidNlPeakSupportPolicy):
-        raise UntargetedCidNlRealDataAdapterError(
+        raise CidNlAcquisitionError(
             "support_policy has the wrong owner type"
         )
     if initial_assessment is not None:
@@ -964,7 +964,7 @@ def backfill_untargeted_cid_nl_sample_subject(
             or initial_assessment.content.evaluation_receipt.support_policy
             != support_policy
         ):
-            raise UntargetedCidNlRealDataAdapterError(
+            raise CidNlAcquisitionError(
                 "backfill requires the exact missing-MS1 rejection and support policy"
             )
     if (
@@ -973,7 +973,7 @@ def backfill_untargeted_cid_nl_sample_subject(
         or not math.isfinite(float(group_center_rt))
         or float(group_center_rt) < 0.0
     ):
-        raise UntargetedCidNlRealDataAdapterError(
+        raise CidNlAcquisitionError(
             "group_center_rt must be finite and non-negative"
         )
     physical_mz = group_center_mz
@@ -983,7 +983,7 @@ def backfill_untargeted_cid_nl_sample_subject(
         or not math.isfinite(float(physical_mz))
         or physical_mz <= 0.0
     ):
-        raise UntargetedCidNlRealDataAdapterError(
+        raise CidNlAcquisitionError(
             "group_center_mz must be finite and positive"
         )
     try:
@@ -992,11 +992,11 @@ def backfill_untargeted_cid_nl_sample_subject(
             processing_owners=processing_owners,
         )
     except CidNlMethodSubjectContractError as exc:
-        raise UntargetedCidNlRealDataAdapterError(str(exc)) from exc
+        raise CidNlAcquisitionError(str(exc)) from exc
     if signal_processing_profile is None and PHYSICAL_CAPTURE_INPUT_KEY in json.loads(
         processing_owners.request.normalized_scientific_inputs_json
     ):
-        raise UntargetedCidNlRealDataAdapterError(
+        raise CidNlAcquisitionError(
             "physical backfill lost its request-bound profile"
         )
     source = resolve_request_acquisition_source(
@@ -1014,14 +1014,14 @@ def backfill_untargeted_cid_nl_sample_subject(
     )
     if _preacquired_traces is None:
         if raw is None:
-            raise UntargetedCidNlRealDataAdapterError(
+            raise CidNlAcquisitionError(
                 "backfill requires owner-opened RAW or preacquired traces"
             )
         _validate_raw_adapter(raw)
         try:
             bound_raw = require_owner_bound_untargeted_raw(raw, source)
         except RawReaderError as exc:
-            raise UntargetedCidNlRealDataAdapterError(
+            raise CidNlAcquisitionError(
                 "raw handle is not owner-bound to the resolved acquisition source"
             ) from exc
         capability = mint_trace_acquisition_capability(
@@ -1035,14 +1035,14 @@ def backfill_untargeted_cid_nl_sample_subject(
         acquired = acquisition.traces[0]
     else:
         if group_hypothesis_id is None:
-            raise UntargetedCidNlRealDataAdapterError(
+            raise CidNlAcquisitionError(
                 "preacquired backfill requires exact group identity"
             )
         if (
             _preacquired_traces.sample_identity_id != sample.identity.sample_identity_id
             or _preacquired_traces.acquisition_source_id != source.acquisition_source_id
         ):
-            raise UntargetedCidNlRealDataAdapterError(
+            raise CidNlAcquisitionError(
                 "backfill trace batch crossed its sample or acquisition source"
             )
         acquisition = _preacquired_traces.acquisition
@@ -1176,11 +1176,11 @@ def backfill_untargeted_cid_nl_sample_subject(
                 _observer.record_artifact(ref.artifact)
     elif method_subject.composition is not None:
         if raw is None or settings is None:
-            raise UntargetedCidNlRealDataAdapterError(
+            raise CidNlAcquisitionError(
                 "composite backfill requires full settings and owner-opened MS2 source"
             )
         if settings.tag_combine_mode == "single":
-            raise UntargetedCidNlRealDataAdapterError(
+            raise CidNlAcquisitionError(
                 "Composite backfill requires union or intersection"
             )
         expected = CidNlComposition(
@@ -1191,7 +1191,7 @@ def backfill_untargeted_cid_nl_sample_subject(
             combine_mode=settings.tag_combine_mode,
         )
         if expected != method_subject.composition:
-            raise UntargetedCidNlRealDataAdapterError(
+            raise CidNlAcquisitionError(
                 "backfill composition mismatches the method subject"
             )
         bound_raw = require_owner_bound_untargeted_raw(raw, source)
@@ -1242,7 +1242,7 @@ def backfill_untargeted_cid_nl_sample_subject(
             set_relation_refs=backfill_sets,
         )
     except CidNlMethodAssessmentContractError as exc:
-        raise UntargetedCidNlRealDataAdapterError(str(exc)) from exc
+        raise CidNlAcquisitionError(str(exc)) from exc
     if _observer is not None:
         _observer.record_artifact(assessment.artifact)
     lineage = canonical_current_attempt_artifact_closure(
@@ -1291,7 +1291,7 @@ def _composite_backfill_evidence(
     processing_owners: ProcessingOwnerReferences,
     sample: ResolvedCanonicalSampleIdentity,
     method_subject: CidNlMethodSubject,
-    raw: UntargetedCidNlRealDataRaw,
+    raw: CidNlRawSource,
     settings: DiscoverySettings,
     query_rt_min: float,
     query_rt_max: float,
@@ -1310,12 +1310,12 @@ def _composite_backfill_evidence(
     scan_numbers: set[int] = set()
     for event in raw.iter_ms2_scans(query_rt_min, query_rt_max):
         if event.parse_error is not None or event.scan is None:
-            raise UntargetedCidNlRealDataAdapterError(
+            raise CidNlAcquisitionError(
                 "composite backfill MS2 acquisition did not complete"
             )
         scan = event.scan
         if scan.scan_number in scan_numbers:
-            raise UntargetedCidNlRealDataAdapterError(
+            raise CidNlAcquisitionError(
                 "duplicate acquisition scan during composite backfill"
             )
         scan_numbers.add(scan.scan_number)
@@ -1379,12 +1379,12 @@ def _reacquire_peak_observations(
     candidates: tuple[DiscoveryCandidate, ...],
     settings: DiscoverySettings,
     peak_config: ExtractionConfig,
-    raw: UntargetedCidNlRealDataRaw,
+    raw: CidNlRawSource,
     source,
     search_scope: UntargetedSearchScope,
     method_subject: CidNlMethodSubject | None = None,
     evidence_sink: list[RetainedCaptureEvidence] | None = None,
-    _observer: _UntargetedRealDataWorkObserver | None = None,
+    _observer: _PartitionWorkObserver | None = None,
     _preacquired_traces: UntargetedCidNlSampleTraceBatch | None = None,
 ) -> tuple[
     TraceAcquisitionBatch | None,
@@ -1415,7 +1415,7 @@ def _reacquire_peak_observations(
             _preacquired_traces.sample_identity_id != sample.identity.sample_identity_id
             or _preacquired_traces.acquisition_source_id != source.acquisition_source_id
         ):
-            raise UntargetedCidNlRealDataAdapterError(
+            raise CidNlAcquisitionError(
                 "preacquired traces crossed their sample or acquisition source"
             )
         acquired_traces = tuple(
@@ -1427,7 +1427,7 @@ def _reacquire_peak_observations(
         acquired.coordinate.request != requests[index]
         for acquired, index in zip(acquired_traces, indices, strict=True)
     ):
-        raise UntargetedCidNlRealDataAdapterError(
+        raise CidNlAcquisitionError(
             "preacquired trace does not match the candidate capture plan"
         )
     if _observer is not None:
@@ -1503,7 +1503,7 @@ def _reacquire_peak_observations(
             capture.detection.status != "detected"
             or capture.selected_hypothesis is None
         ):
-            raise UntargetedCidNlRealDataAdapterError(
+            raise CidNlAcquisitionError(
                 f"{candidate.candidate_id}: current MS1 receipt was not reacquired"
             )
         integration = capture.selected_hypothesis.integration
@@ -1675,7 +1675,7 @@ def _mint_assessment(
             technical_state=technical_state,
         )
     except CidNlMethodAssessmentContractError as exc:
-        raise UntargetedCidNlRealDataAdapterError(str(exc)) from exc
+        raise CidNlAcquisitionError(str(exc)) from exc
 
 
 def _bounded_subject_candidates(
@@ -1687,16 +1687,16 @@ def _bounded_subject_candidates(
 ) -> tuple[DiscoveryCandidate, ...]:
     ids = tuple(candidate.candidate_id for candidate in candidates)
     if len(ids) != len(set(ids)):
-        raise UntargetedCidNlRealDataAdapterError(
+        raise CidNlAcquisitionError(
             "Discovery candidate IDs must be unique"
         )
     for candidate in candidates:
         if candidate.sample_stem != sample.metadata.raw_stem:
-            raise UntargetedCidNlRealDataAdapterError(
+            raise CidNlAcquisitionError(
                 f"{candidate.candidate_id}: candidate references a different sample"
             )
         if candidate.raw_file.stem != sample.metadata.raw_stem:
-            raise UntargetedCidNlRealDataAdapterError(
+            raise CidNlAcquisitionError(
                 f"{candidate.candidate_id}: raw receipt mismatches its sample"
             )
     return tuple(
@@ -1784,7 +1784,7 @@ def _untargeted_search_scope(
             ),
         )
     except SearchScopeContractError as exc:
-        raise UntargetedCidNlRealDataAdapterError(str(exc)) from exc
+        raise CidNlAcquisitionError(str(exc)) from exc
 
 
 def _supports_direct_precursor_assessment(
@@ -1809,19 +1809,19 @@ def _validate_inputs(**values: object) -> None:
     }
     for name, kind in expected.items():
         if not isinstance(values[name], kind):
-            raise UntargetedCidNlRealDataAdapterError(
+            raise CidNlAcquisitionError(
                 f"{name} has the wrong owner type"
             )
     candidates = values["candidates"]
     assert isinstance(candidates, tuple)
     if any(not isinstance(item, DiscoveryCandidate) for item in candidates):
-        raise UntargetedCidNlRealDataAdapterError(
+        raise CidNlAcquisitionError(
             "candidates must contain current DiscoveryCandidate values"
         )
     support_candidates = values["support_candidates"]
     assert isinstance(support_candidates, tuple)
     if any(not isinstance(item, DiscoveryCandidate) for item in support_candidates):
-        raise UntargetedCidNlRealDataAdapterError(
+        raise CidNlAcquisitionError(
             "support_candidates must contain current DiscoveryCandidate values"
         )
     method_subject = values["method_subject"]
@@ -1833,7 +1833,7 @@ def _validate_inputs(**values: object) -> None:
     assert isinstance(peak_config, ExtractionConfig)
     assert isinstance(processing_owners, ProcessingOwnerReferences)
     if method_subject.subject_kind != "untargeted_precursor":
-        raise UntargetedCidNlRealDataAdapterError(
+        raise CidNlAcquisitionError(
             "adapter requires an Untargeted CID-NL method subject"
         )
     try:
@@ -1842,10 +1842,10 @@ def _validate_inputs(**values: object) -> None:
             processing_owners=processing_owners,
         )
     except CidNlMethodSubjectContractError as exc:
-        raise UntargetedCidNlRealDataAdapterError(str(exc)) from exc
+        raise CidNlAcquisitionError(str(exc)) from exc
     if method_subject.composition is not None:
         if settings.tag_combine_mode == "single":
-            raise UntargetedCidNlRealDataAdapterError(
+            raise CidNlAcquisitionError(
                 "Composite assessment requires union or intersection"
             )
         expected_composition = CidNlComposition(
@@ -1856,7 +1856,7 @@ def _validate_inputs(**values: object) -> None:
             combine_mode=settings.tag_combine_mode,
         )
         if method_subject.composition != expected_composition:
-            raise UntargetedCidNlRealDataAdapterError(
+            raise CidNlAcquisitionError(
                 "Discovery composition mismatches the method subject"
             )
     elif (
@@ -1864,7 +1864,7 @@ def _validate_inputs(**values: object) -> None:
         or len(settings.selected_tag_names) != 1
         or len(settings.neutral_loss_profiles) != 1
     ):
-        raise UntargetedCidNlRealDataAdapterError(
+        raise CidNlAcquisitionError(
             "The real-data runtime accepts exactly one CID-NL Discovery tag"
         )
     if method_subject.composition is None and not math.isclose(
@@ -1873,7 +1873,7 @@ def _validate_inputs(**values: object) -> None:
         rel_tol=0.0,
         abs_tol=1e-12,
     ):
-        raise UntargetedCidNlRealDataAdapterError(
+        raise CidNlAcquisitionError(
             "Discovery neutral loss mismatches the method subject"
         )
     if not math.isclose(
@@ -1882,11 +1882,11 @@ def _validate_inputs(**values: object) -> None:
         rel_tol=0.0,
         abs_tol=1e-12,
     ):
-        raise UntargetedCidNlRealDataAdapterError(
+        raise CidNlAcquisitionError(
             "Discovery precursor tolerance mismatches the method subject"
         )
     if peak_config.baseline_integration_method != "asls":
-        raise UntargetedCidNlRealDataAdapterError(
+        raise CidNlAcquisitionError(
             "peak_config requires canonical asls baseline integration"
         )
 
@@ -1894,7 +1894,7 @@ def _validate_inputs(**values: object) -> None:
 def _validate_raw_adapter(raw: object) -> None:
     for method in ("extract_xic_many", "scan_window_for_request", "iter_ms2_scans"):
         if not callable(getattr(raw, method, None)):
-            raise UntargetedCidNlRealDataAdapterError(f"raw adapter lacks {method}")
+            raise CidNlAcquisitionError(f"raw adapter lacks {method}")
 
 
 def _validate_physical_candidate_receipt(
@@ -1903,7 +1903,7 @@ def _validate_physical_candidate_receipt(
 ) -> None:
     facts = evaluation.facts
     if evaluation.state != "available" or facts is None:
-        raise UntargetedCidNlRealDataAdapterError("physical receipt was not reacquired")
+        raise CidNlAcquisitionError("physical receipt was not reacquired")
     for field, expected in (
         ("apex_rt_min", candidate.ms1_apex_rt),
         ("left_rt_min", candidate.ms1_peak_rt_start),
@@ -1917,7 +1917,7 @@ def _validate_physical_candidate_receipt(
             rel_tol=_WRITER_ROUNDING_REL_TOL,
             abs_tol=_WRITER_ROUNDING_ABS_TOL,
         ):
-            raise UntargetedCidNlRealDataAdapterError(
+            raise CidNlAcquisitionError(
                 f"{candidate.candidate_id}: physical {field} mismatches current receipt"
             )
 
@@ -1941,13 +1941,13 @@ def _validate_candidate_integration(
             abs_tol=_WRITER_ROUNDING_ABS_TOL,
         ):
             if field in {"area_raw_counts_seconds", "height_raw"}:
-                raise UntargetedCidNlRealDataAdapterError(
+                raise CidNlAcquisitionError(
                     f"{candidate.candidate_id}: "
                     "morphology_receipt_compatibility_unresolved: "
                     f"{field} mismatches current receipt; "
                     "compatibility remains diagnostic_only"
                 )
-            raise UntargetedCidNlRealDataAdapterError(
+            raise CidNlAcquisitionError(
                 f"{candidate.candidate_id}: reacquired {field} mismatches "
                 "current receipt"
             )
@@ -1976,8 +1976,8 @@ __all__ = [
     "UNTARGETED_CID_NL_CAPTURE_TRACE_SOURCE",
     "UntargetedCidNlSampleTraceBatch",
     "UntargetedCidNlBackfillTraceBatch",
-    "UntargetedCidNlRealDataAdapterError",
-    "UntargetedCidNlRealDataAdapterResult",
+    'CidNlAcquisitionError',
+    'CidNlAcquisitionResult',
     "acquire_untargeted_cid_nl_sample_trace_batch",
     "acquire_untargeted_cid_nl_backfill_trace_batch",
 ]

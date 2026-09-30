@@ -1,4 +1,4 @@
-"""In-process and pool harnesses for untargeted real-data extraction."""
+"""Acquire and assess Untargeted samples in-process or through worker transport."""
 
 from __future__ import annotations
 
@@ -32,22 +32,21 @@ from xic_extractor.extraction.untargeted_acquisition_cache import (
     CachedUntargetedRaw,
     bind_untargeted_acquisition_cache,
 )
-from xic_extractor.extraction.untargeted_cid_nl_real_data_adapter import (
+from xic_extractor.extraction.untargeted_partition import cid_nl_acquisition
+from xic_extractor.extraction.untargeted_partition.cid_nl_acquisition import (
+    CidNlAcquisitionResult,
     UntargetedCidNlBackfillAttemptResult,
     UntargetedCidNlBackfillTarget,
     UntargetedCidNlBackfillTraceBatch,
-    UntargetedCidNlRealDataAdapterResult,
     UntargetedCidNlSampleTraceBatch,
-    _UntargetedRealDataWorkObserver,
-    acquire_untargeted_cid_nl_backfill_trace_batch,
-    acquire_untargeted_cid_nl_sample_trace_batch,
+    _PartitionWorkObserver,
     adapt_current_discovery_sample_subject,
     backfill_untargeted_cid_nl_sample_subject,
 )
-from xic_extractor.extraction.untargeted_real_data_models import (
-    UntargetedCidNlPreparedGrouping,
-    UntargetedCidNlRealDataRuntimeError,
-    UntargetedCidNlRealDataRuntimeJob,
+from xic_extractor.extraction.untargeted_partition.models import (
+    UntargetedPartitionError,
+    UntargetedPartitionJob,
+    UntargetedPreparedGrouping,
     _request_subject_candidates,
     _request_subject_physical_records,
 )
@@ -71,12 +70,12 @@ from xic_extractor.raw_reader import (
 
 @dataclass(slots=True)
 class _RuntimeJobState:
-    job: UntargetedCidNlRealDataRuntimeJob
+    job: UntargetedPartitionJob
     resource_key: str | None
     initial_requires_raw: bool
-    observer: _UntargetedRealDataWorkObserver
+    observer: _PartitionWorkObserver
     error: Exception | None = None
-    adapter_result: UntargetedCidNlRealDataAdapterResult | None = None
+    adapter_result: CidNlAcquisitionResult | None = None
     backfill_support: _BackfillSupportContext | None = None
     backfill_input: UntargetedCidNlBackfillInput | None = None
     backfill_attempts: tuple[UntargetedCidNlBackfillAttemptResult, ...] = ()
@@ -107,7 +106,7 @@ class _BackfillSupportContext:
 
 
 def _backfill_support_context(
-    result: UntargetedCidNlRealDataAdapterResult,
+    result: CidNlAcquisitionResult,
 ) -> _BackfillSupportContext:
     """Project the backfill-consumed facts out of one initial result."""
 
@@ -137,28 +136,19 @@ class _BatchSamplePhaseState:
     )
     initial_acquisition: TraceAcquisitionBatch | None = None
     backfill_acquisition: TraceAcquisitionBatch | None = None
-    sample_template: UntargetedCidNlRealDataRuntimeJob | None = None
+    sample_template: UntargetedPartitionJob | None = None
 
     @property
-    def job(self) -> UntargetedCidNlRealDataRuntimeJob:
+    def job(self) -> UntargetedPartitionJob:
         if self.sample_template is not None:
             return self.sample_template
         return self.states[0].job
 
 
-def _runtime_delegate(name: str, fallback):
-    import sys
-
-    rt = sys.modules.get("xic_extractor.extraction.untargeted_real_data_runtime")
-    if rt is not None and hasattr(rt, name):
-        return getattr(rt, name)
-    return fallback
-
-
 def _open_job_raw(
-    job: UntargetedCidNlRealDataRuntimeJob,
+    job: UntargetedPartitionJob,
 ) -> RawFileHandle | CachedUntargetedRaw:
-    active_open = _runtime_delegate("open_raw", open_raw)
+    active_open = open_raw
     expectation = job.acquisition_source_expectation
     source = (
         expectation.source
@@ -201,7 +191,7 @@ def _execute_initial_assessment(state: _RuntimeJobState) -> None:
     try:
         if state.error is None and state.initial_requires_raw:
             if state.resource_key is None:
-                raise UntargetedCidNlRealDataRuntimeError(
+                raise UntargetedPartitionError(
                     "bounded subject is missing its acquisition reservation"
                 )
             state.open_attempted = True
@@ -256,7 +246,7 @@ def _execute_initial_assessment_batch(
     try:
         if any(state.initial_requires_raw and state.error is None for state in states):
             if phase.initial_resource_key is None:
-                raise UntargetedCidNlRealDataRuntimeError(
+                raise UntargetedPartitionError(
                     "sample batch is missing its acquisition reservation"
                 )
             phase.initial_open_attempted = True
@@ -278,9 +268,8 @@ def _execute_initial_assessment_batch(
                         ],
                     )
                 )
-            active_acquire = _runtime_delegate(
-                "acquire_untargeted_cid_nl_sample_trace_batch",
-                acquire_untargeted_cid_nl_sample_trace_batch,
+            active_acquire = (
+                cid_nl_acquisition.acquire_untargeted_cid_nl_sample_trace_batch
             )
             trace_batch = active_acquire(
                 processing_owners=job.processing_owners,
@@ -340,8 +329,8 @@ def _execute_initial_assessment_batch(
 def _prepare_group_authorized_backfills(
     states: list[_RuntimeJobState],
     *,
-    prepared: UntargetedCidNlPreparedGrouping,
-    sample_templates: tuple[UntargetedCidNlRealDataRuntimeJob, ...] = (),
+    prepared: UntargetedPreparedGrouping,
+    sample_templates: tuple[UntargetedPartitionJob, ...] = (),
 ) -> None:
     """Schedule searches from frozen workset membership, without regrouping."""
     templates = {
@@ -395,7 +384,7 @@ def _prepare_group_authorized_backfills(
                         job=job,
                         resource_key=None,
                         initial_requires_raw=False,
-                        observer=_UntargetedRealDataWorkObserver(job.processing_owners),
+                        observer=_PartitionWorkObserver(job.processing_owners),
                     )
                     _execute_initial_assessment(state)
                     states.append(state)
@@ -456,7 +445,7 @@ def _prepare_owner_authorized_backfills(
     states: list[_RuntimeJobState],
     *,
     alignment_config: AlignmentConfig,
-    sample_templates: tuple[UntargetedCidNlRealDataRuntimeJob, ...] = (),
+    sample_templates: tuple[UntargetedPartitionJob, ...] = (),
 ) -> None:
     by_subject: dict[str, list[_RuntimeJobState]] = {}
     for state in states:
@@ -478,7 +467,7 @@ def _prepare_subject_authorized_backfills(
     states: tuple[_RuntimeJobState, ...],
     *,
     alignment_config: AlignmentConfig,
-    sample_templates: tuple[UntargetedCidNlRealDataRuntimeJob, ...] = (),
+    sample_templates: tuple[UntargetedPartitionJob, ...] = (),
 ) -> tuple[_RuntimeJobState, ...]:
     if any(state.error is not None or state.adapter_result is None for state in states):
         return ()
@@ -530,7 +519,7 @@ def _prepare_subject_authorized_backfills(
     ):
         center = group.group_center_rt
         if center is None:
-            raise UntargetedCidNlRealDataRuntimeError(
+            raise UntargetedPartitionError(
                 "authorized backfill requires a frozen RT group"
             )
         for sample_id in sorted(target_sample_ids):
@@ -548,7 +537,7 @@ def _prepare_subject_authorized_backfills(
                     job=job,
                     resource_key=None,
                     initial_requires_raw=False,
-                    observer=_UntargetedRealDataWorkObserver(job.processing_owners),
+                    observer=_PartitionWorkObserver(job.processing_owners),
                 )
                 _execute_initial_assessment(state)
                 states_by_sample[sample_id] = state
@@ -596,12 +585,12 @@ def _execute_backfill(
     if ctx is None and state.adapter_result is not None:
         ctx = _backfill_support_context(state.adapter_result)
     if ctx is None:
-        state.error = UntargetedCidNlRealDataRuntimeError(
+        state.error = UntargetedPartitionError(
             "backfill requires a completed initial assessment"
         )
         return
     if state.resource_key is None:
-        state.error = UntargetedCidNlRealDataRuntimeError(
+        state.error = UntargetedPartitionError(
             "eligible backfill is missing its acquisition reservation"
         )
         return
@@ -612,9 +601,8 @@ def _execute_backfill(
         state.open_attempted = True
         raw = _open_job_raw(job)
         state.opened = True
-        active_acquire = _runtime_delegate(
-            "acquire_untargeted_cid_nl_backfill_trace_batch",
-            acquire_untargeted_cid_nl_backfill_trace_batch,
+        active_acquire = (
+            cid_nl_acquisition.acquire_untargeted_cid_nl_backfill_trace_batch
         )
         trace_batch = active_acquire(
             processing_owners=job.processing_owners,
@@ -681,7 +669,7 @@ def _execute_backfill_batch(phase: _BatchSamplePhaseState) -> None:
     if not pending:
         return
     if phase.backfill_resource_key is None:
-        error = UntargetedCidNlRealDataRuntimeError(
+        error = UntargetedPartitionError(
             "eligible backfill batch is missing its phase reservation"
         )
         for state in pending:
@@ -694,9 +682,8 @@ def _execute_backfill_batch(phase: _BatchSamplePhaseState) -> None:
         phase.backfill_open_attempted = True
         raw = _open_job_raw(first)
         phase.backfill_opened = True
-        active_acquire = _runtime_delegate(
-            "acquire_untargeted_cid_nl_backfill_trace_batch",
-            acquire_untargeted_cid_nl_backfill_trace_batch,
+        active_acquire = (
+            cid_nl_acquisition.acquire_untargeted_cid_nl_backfill_trace_batch
         )
         trace_batch = active_acquire(
             processing_owners=first.processing_owners,
@@ -760,14 +747,14 @@ def _execute_backfill_batch(phase: _BatchSamplePhaseState) -> None:
 
 @dataclass(slots=True)
 class _SampleInitialWorkerRequest:
-    jobs: tuple[UntargetedCidNlRealDataRuntimeJob, ...]
+    jobs: tuple[UntargetedPartitionJob, ...]
     initial_resource_key: str | None
     partition_candidates: bool
 
 
 @dataclass(slots=True)
 class _SampleInitialWorkerResponse:
-    adapter_results: tuple[UntargetedCidNlRealDataAdapterResult | None, ...]
+    adapter_results: tuple[CidNlAcquisitionResult | None, ...]
     observer_artifacts: tuple[tuple[EvidenceArtifactRef, ...], ...]
     observer_has_acquisitions: tuple[bool, ...]
     initial_open_attempted: bool
@@ -787,7 +774,7 @@ def _execute_sample_initial_worker(
             job=job,
             resource_key=None,
             initial_requires_raw=bool(_request_subject_candidates(job)),
-            observer=_UntargetedRealDataWorkObserver(job.processing_owners),
+            observer=_PartitionWorkObserver(job.processing_owners),
         )
         for job in request.jobs
     )
@@ -816,7 +803,7 @@ def _execute_sample_initial_worker(
 
 @dataclass(slots=True)
 class _SampleBackfillWorkerRequest:
-    jobs: tuple[UntargetedCidNlRealDataRuntimeJob, ...]
+    jobs: tuple[UntargetedPartitionJob, ...]
     backfill_targets_by_key: dict[str, tuple[UntargetedCidNlBackfillTarget, ...]]
     backfill_inputs_by_key: dict[str, UntargetedCidNlBackfillInput | None]
     backfill_support_by_key: dict[str, _BackfillSupportContext]
@@ -849,7 +836,7 @@ def _execute_sample_backfill_worker(
             job=job,
             resource_key=None,
             initial_requires_raw=False,
-            observer=_UntargetedRealDataWorkObserver(job.processing_owners),
+            observer=_PartitionWorkObserver(job.processing_owners),
             backfill_support=request.backfill_support_by_key.get(job.work_unit_key),
             backfill_input=request.backfill_inputs_by_key.get(job.work_unit_key),
             backfill_targets=request.backfill_targets_by_key.get(job.work_unit_key, ()),

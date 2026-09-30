@@ -1,4 +1,4 @@
-"""Data models, contracts, and validation helpers for untargeted real-data runtime."""
+"""Bind Untargeted partition jobs and their immutable sample result evidence."""
 
 from __future__ import annotations
 
@@ -61,12 +61,12 @@ from xic_extractor.execution.attempt import (
 from xic_extractor.extraction.targeted_inputs import (
     TARGETED_SCIENTIFIC_SETTING_FIELDS,
 )
-from xic_extractor.extraction.untargeted_cid_nl_real_data_adapter import (
+from xic_extractor.extraction.untargeted_partition.cid_nl_acquisition import (
+    CidNlAcquisitionResult,
     UntargetedCidNlBackfillAttemptResult,
-    UntargetedCidNlRealDataAdapterResult,
     _bounded_subject_candidates,
 )
-from xic_extractor.extraction.untargeted_cid_nl_real_data_inputs import (
+from xic_extractor.extraction.untargeted_partition.request import (
     DISCOVERY_SETTINGS_INPUT_KEY,
     PEAK_SETTINGS_INPUT_KEY,
     UNTARGETED_CID_NL_PROCESSING_ALGORITHM_VERSION,
@@ -143,7 +143,7 @@ _ARTIFACT_SEMANTIC_CONTRACT = _mint_artifact_semantic_contract_ref(
 )
 
 
-class UntargetedCidNlRealDataRuntimeError(ValueError):
+class UntargetedPartitionError(ValueError):
     """Raised when real-data runtime work cannot close atomically."""
 
 
@@ -151,12 +151,12 @@ def _required_text(value: object, *, field: str) -> str:
     return require_owner_normalized_text(
         value,
         field=field,
-        error_factory=UntargetedCidNlRealDataRuntimeError,
+        error_factory=UntargetedPartitionError,
     )
 
 
 @dataclass(frozen=True, slots=True)
-class UntargetedCidNlRealDataRuntimeJob:
+class UntargetedPartitionJob:
     processing_owners: ProcessingOwnerReferences
     sample: ResolvedCanonicalSampleIdentity
     method_subject: CidNlMethodSubject
@@ -199,25 +199,25 @@ class UntargetedCidNlRealDataRuntimeJob:
         )
         for field_name, kind in expected:
             if not isinstance(getattr(self, field_name), kind):
-                raise UntargetedCidNlRealDataRuntimeError(
+                raise UntargetedPartitionError(
                     f"{field_name} has the wrong owner type"
                 )
         if not isinstance(self.candidates, tuple) or any(
             not isinstance(item, DiscoveryCandidate) for item in self.candidates
         ):
-            raise UntargetedCidNlRealDataRuntimeError(
+            raise UntargetedPartitionError(
                 "candidates must contain current DiscoveryCandidate values"
             )
         if self.subject_partition is not None and not isinstance(
             self.subject_partition, UntargetedCidNlMethodSubjectBatch
         ):
-            raise UntargetedCidNlRealDataRuntimeError(
+            raise UntargetedPartitionError(
                 "subject_partition must be an owner-normalized subject batch or None"
             )
         if not isinstance(self.support_candidates, tuple) or any(
             not isinstance(item, DiscoveryCandidate) for item in self.support_candidates
         ):
-            raise UntargetedCidNlRealDataRuntimeError(
+            raise UntargetedPartitionError(
                 "support_candidates must contain current DiscoveryCandidate values"
             )
         _required_text(self.work_unit_key, field="work_unit_key")
@@ -242,13 +242,13 @@ class UntargetedCidNlRealDataRuntimeJob:
                     processing_owners=self.processing_owners, sample=self.sample
                 )
             ):
-                raise UntargetedCidNlRealDataRuntimeError(
+                raise UntargetedPartitionError(
                     "acquisition source expectation must match the request sample"
                 )
         if self.acquisition_cache_dir is not None and not isinstance(
             self.acquisition_cache_dir, Path
         ):
-            raise UntargetedCidNlRealDataRuntimeError(
+            raise UntargetedPartitionError(
                 "acquisition_cache_dir must be a Path or None"
             )
         object.__setattr__(
@@ -265,7 +265,7 @@ class UntargetedCidNlRealDataRuntimeJob:
         )
 
 
-def build_untargeted_cid_nl_sample_runtime_jobs(
+def build_sample_jobs(
     *,
     processing_owners: ProcessingOwnerReferences,
     sample: ResolvedCanonicalSampleIdentity,
@@ -282,14 +282,14 @@ def build_untargeted_cid_nl_sample_runtime_jobs(
     subject_partition: UntargetedCidNlMethodSubjectBatch | None = None,
     support_candidates: tuple[DiscoveryCandidate, ...] = (),
     acquisition_cache_dir: Path | None = None,
-) -> tuple[UntargetedCidNlRealDataRuntimeJob, ...]:
+) -> tuple[UntargetedPartitionJob, ...]:
     """Validate a sample once, then bind each subject to those same inputs."""
 
     if not subject_work_units:
         return ()
     if subject_partition is not None:
         if not isinstance(subject_partition, UntargetedCidNlMethodSubjectBatch):
-            raise UntargetedCidNlRealDataRuntimeError(
+            raise UntargetedPartitionError(
                 "subject_partition must be an owner-normalized subject batch or None"
             )
         partition_subjects = {
@@ -299,11 +299,11 @@ def build_untargeted_cid_nl_sample_runtime_jobs(
             partition_subjects.get(subject.method_subject_id) != subject
             for subject, _work_unit_key in subject_work_units
         ):
-            raise UntargetedCidNlRealDataRuntimeError(
+            raise UntargetedPartitionError(
                 "subject work units must belong to the declared subject partition"
             )
     first_subject, first_key = subject_work_units[0]
-    first = UntargetedCidNlRealDataRuntimeJob(
+    first = UntargetedPartitionJob(
         processing_owners=processing_owners,
         sample=sample,
         method_subject=first_subject,
@@ -330,17 +330,17 @@ def build_untargeted_cid_nl_sample_runtime_jobs(
     jobs = [first]
     for subject, work_unit_key in subject_work_units[1:]:
         if not isinstance(subject, CidNlMethodSubject):
-            raise UntargetedCidNlRealDataRuntimeError(
+            raise UntargetedPartitionError(
                 "method_subject has the wrong owner type"
             )
         _required_text(work_unit_key, field="work_unit_key")
         if subjects_by_id is not None:
             if subjects_by_id.get(subject.method_subject_id) != subject:
-                raise UntargetedCidNlRealDataRuntimeError(
+                raise UntargetedPartitionError(
                     "method subject is not an exact member of the processing request"
                 )
         elif pinned != subject:
-            raise UntargetedCidNlRealDataRuntimeError(
+            raise UntargetedPartitionError(
                 "method subject does not match the processing request"
             )
         # Only these two fields vary; every shared field was validated above.
@@ -351,8 +351,8 @@ def build_untargeted_cid_nl_sample_runtime_jobs(
     return tuple(jobs)
 
 
-def canonical_untargeted_cid_nl_sample_result_bytes(
-    reference: UntargetedCidNlSampleResultRef,
+def canonical_sample_result_bytes(
+    reference: UntargetedSampleResultRef,
 ) -> bytes:
     return _sample_result_bytes(
         work_unit_key=reference.work_unit_key,
@@ -390,7 +390,7 @@ def _sample_result_bytes(**values: object) -> bytes:
 
 
 @dataclass(frozen=True, slots=True)
-class UntargetedCidNlSampleResultRef:
+class UntargetedSampleResultRef:
     work_unit_key: str
     canonical_sample_identity_id: str
     method_subject_id: str
@@ -409,26 +409,26 @@ class UntargetedCidNlSampleResultRef:
 
     def __post_init__(self) -> None:
         if self.artifact.semantic_contract != _ARTIFACT_SEMANTIC_CONTRACT:
-            raise UntargetedCidNlRealDataRuntimeError(
+            raise UntargetedPartitionError(
                 "sample result artifact has the wrong semantic owner"
             )
         try:
             verify_evidence_artifact_payload(
                 self.artifact,
-                canonical_untargeted_cid_nl_sample_result_bytes(self),
+                canonical_sample_result_bytes(self),
             )
         except ValueError as exc:
-            raise UntargetedCidNlRealDataRuntimeError(
+            raise UntargetedPartitionError(
                 "sample result mismatches its immutable artifact"
             ) from exc
 
 
 @dataclass(frozen=True, slots=True)
-class UntargetedCidNlInitialSampleResult:
+class UntargetedInitialSampleResult:
     """Initial evidence available before backfill and runtime result sealing."""
 
-    job: UntargetedCidNlRealDataRuntimeJob
-    adapter_result: UntargetedCidNlRealDataAdapterResult
+    job: UntargetedPartitionJob
+    adapter_result: CidNlAcquisitionResult
 
     @property
     def effective_assessments(self) -> tuple[CidNlMethodAssessmentRef, ...]:
@@ -436,7 +436,7 @@ class UntargetedCidNlInitialSampleResult:
 
 
 @dataclass(frozen=True, slots=True)
-class UntargetedCidNlWorksetGrouping:
+class UntargetedWorksetGrouping:
     """The existing grouping owner's answer and its exact capture inputs."""
 
     subjects: tuple[CidNlMethodSubject, ...]
@@ -449,25 +449,25 @@ class UntargetedCidNlWorksetGrouping:
 
 
 @dataclass(frozen=True, slots=True)
-class UntargetedCidNlPreparedGrouping:
+class UntargetedPreparedGrouping:
     request: UntargetWorkflowCompositionRequest
-    worksets: tuple[UntargetedCidNlWorksetGrouping, ...]
+    worksets: tuple[UntargetedWorksetGrouping, ...]
     alignment_config: AlignmentConfig
     known_istd_reference: KnownIstdReference | None
 
 
 @dataclass(frozen=True, slots=True)
-class UntargetedCidNlRuntimeSampleResult:
-    job: UntargetedCidNlRealDataRuntimeJob
-    adapter_result: UntargetedCidNlRealDataAdapterResult
-    result_ref: UntargetedCidNlSampleResultRef
+class UntargetedSampleResult:
+    job: UntargetedPartitionJob
+    adapter_result: CidNlAcquisitionResult
+    result_ref: UntargetedSampleResultRef
     backfill_input: UntargetedCidNlBackfillInput | None = None
     backfill_attempts: tuple[UntargetedCidNlBackfillAttemptResult, ...] = ()
 
     @property
     def backfill_attempt(self) -> UntargetedCidNlBackfillAttemptResult | None:
         if len(self.backfill_attempts) > 1:
-            raise UntargetedCidNlRealDataRuntimeError(
+            raise UntargetedPartitionError(
                 "multiple backfill attempts require group selection"
             )
         return self.backfill_attempts[0] if self.backfill_attempts else None
@@ -510,20 +510,20 @@ class UntargetedCidNlRuntimeSampleResult:
                 == center + half_window
             )
         if len(matches) > 1:
-            raise UntargetedCidNlRealDataRuntimeError(
+            raise UntargetedPartitionError(
                 "group has duplicate backfill attempts"
             )
         return matches[0] if matches else None
 
 
-def project_untargeted_cid_nl_completed_backfill(
-    result: UntargetedCidNlRuntimeSampleResult,
+def project_completed_backfill(
+    result: UntargetedSampleResult,
     *,
     group_context: CidNlCellGroupContext,
 ) -> BackfillCompletionProjection:
     """Project an existing completed empty backfill without executing it again."""
-    if type(result) is not UntargetedCidNlRuntimeSampleResult:
-        raise UntargetedCidNlRealDataRuntimeError("backfill requires a runtime result")
+    if type(result) is not UntargetedSampleResult:
+        raise UntargetedPartitionError("backfill requires a runtime result")
     replace(result.job)
     replace(group_context)
     projection = _project_completed_backfill(
@@ -547,14 +547,14 @@ def project_untargeted_cid_nl_completed_backfill(
         acquisition_content=_canonical_acquisition_content,
     )
     if result.result_ref != expected_result:
-        raise UntargetedCidNlRealDataRuntimeError(
+        raise UntargetedPartitionError(
             "completed backfill lost its sealed runtime result"
         )
     return projection
 
 
 def _project_completed_backfill(
-    result: UntargetedCidNlRuntimeSampleResult,
+    result: UntargetedSampleResult,
     *,
     group_context: CidNlCellGroupContext,
     exact_traces: Callable[
@@ -573,12 +573,12 @@ def _project_completed_backfill(
         or group_context.method_subject != job.method_subject
         or center is None
     ):
-        raise UntargetedCidNlRealDataRuntimeError("backfill crossed its owner group")
+        raise UntargetedPartitionError("backfill crossed its owner group")
     backfill = result.backfill_for_group(
         center, group_hypothesis_id=group_context.group.group_hypothesis_id
     )
     if backfill is None:
-        raise UntargetedCidNlRealDataRuntimeError(
+        raise UntargetedPartitionError(
             "initial assessment is not a backfill"
         )
     assessment = backfill.assessment
@@ -600,7 +600,7 @@ def _project_completed_backfill(
         or not receipt.acquisition_supported
         or backfill.backfill_input is not None
     ):
-        raise UntargetedCidNlRealDataRuntimeError(
+        raise UntargetedPartitionError(
             "backfill is not a completed empty epoch"
         )
     expected_request = XICRequest(
@@ -616,7 +616,7 @@ def _project_completed_backfill(
         receipt.query_rt_min != expected_request.rt_min
         or receipt.query_rt_max != expected_request.rt_max
     ):
-        raise UntargetedCidNlRealDataRuntimeError(
+        raise UntargetedPartitionError(
             "backfill crossed its exact request coordinates"
         )
     (acquired,) = exact
@@ -656,11 +656,11 @@ def _project_completed_backfill(
 
 
 @dataclass(frozen=True, slots=True)
-class UntargetedCidNlRuntimePartitionResult:
-    sample_results: tuple[UntargetedCidNlRuntimeSampleResult, ...]
+class UntargetedPartitionResult:
+    sample_results: tuple[UntargetedSampleResult, ...]
     worker_batch: RuntimeWorkerBatchReceipt
     acquisitions: tuple[RuntimeAcquisitionReceipt, ...]
-    prepared_grouping: UntargetedCidNlPreparedGrouping | None = None
+    prepared_grouping: UntargetedPreparedGrouping | None = None
 
     @property
     def succeeded(self) -> bool:
@@ -670,15 +670,15 @@ class UntargetedCidNlRuntimePartitionResult:
         )
 
 
-def mint_untargeted_cid_nl_sample_result_ref(
+def mint_sample_result_ref(
     *,
-    job: UntargetedCidNlRealDataRuntimeJob,
-    result: UntargetedCidNlRealDataAdapterResult,
+    job: UntargetedPartitionJob,
+    result: CidNlAcquisitionResult,
     backfill_input: UntargetedCidNlBackfillInput | None,
     backfill_attempt: UntargetedCidNlBackfillAttemptResult | None,
     acquisition: TraceAcquisitionBatch | None,
     backfill_attempts: tuple[UntargetedCidNlBackfillAttemptResult, ...] = (),
-) -> UntargetedCidNlSampleResultRef:
+) -> UntargetedSampleResultRef:
     return _mint_sample_result_ref(
         job=job,
         result=result,
@@ -692,17 +692,17 @@ def mint_untargeted_cid_nl_sample_result_ref(
 
 def _mint_sample_result_ref(
     *,
-    job: UntargetedCidNlRealDataRuntimeJob,
-    result: UntargetedCidNlRealDataAdapterResult,
+    job: UntargetedPartitionJob,
+    result: CidNlAcquisitionResult,
     backfill_input: UntargetedCidNlBackfillInput | None,
     backfill_attempt: UntargetedCidNlBackfillAttemptResult | None,
     acquisition: TraceAcquisitionBatch | None,
     acquisition_content: Callable[[TraceAcquisitionBatch], tuple[bytes, str]],
     backfill_attempts: tuple[UntargetedCidNlBackfillAttemptResult, ...] = (),
-) -> UntargetedCidNlSampleResultRef:
+) -> UntargetedSampleResultRef:
     if backfill_attempt is not None:
         if backfill_attempts:
-            raise UntargetedCidNlRealDataRuntimeError(
+            raise UntargetedPartitionError(
                 "duplicate backfill input carriers"
             )
         backfill_attempts = (backfill_attempt,)
@@ -717,7 +717,7 @@ def _mint_sample_result_ref(
         backfill_attempt is not None
         and backfill_input != backfill_attempt.backfill_input
     ):
-        raise UntargetedCidNlRealDataRuntimeError(
+        raise UntargetedPartitionError(
             "backfill input does not match the observed backfill attempt"
         )
     for observed in backfill_attempts:
@@ -731,11 +731,11 @@ def _mint_sample_result_ref(
             observed.acquisition is not acquisition
             and acquisition_content(observed.acquisition)[0] != content[0]
         ):
-            raise UntargetedCidNlRealDataRuntimeError(
+            raise UntargetedPartitionError(
                 "backfill lost its sealed runtime result acquisition"
             )
     if len(backfill_attempts) > 1 and backfill_input is not None:
-        raise UntargetedCidNlRealDataRuntimeError(
+        raise UntargetedPartitionError(
             "multiple backfills cannot use a scalar backfill input"
         )
     backfill_assessment = (
@@ -810,7 +810,7 @@ def _mint_sample_result_ref(
             )
         ),
     )
-    return UntargetedCidNlSampleResultRef(
+    return UntargetedSampleResultRef(
         work_unit_key=job.work_unit_key,
         canonical_sample_identity_id=job.sample.identity.sample_identity_id,
         method_subject_id=job.method_subject.method_subject_id,
@@ -894,7 +894,7 @@ def _exact_acquisition_traces(
 
 
 def _validate_request_bound_inputs(
-    job: UntargetedCidNlRealDataRuntimeJob,
+    job: UntargetedPartitionJob,
 ) -> CidNlMethodSubject | UntargetedCidNlMethodSubjectBatch:
     request = job.processing_owners.request
     if (
@@ -905,7 +905,7 @@ def _validate_request_bound_inputs(
         or request.processing_contract_version
         != UNTARGETED_CID_NL_PROCESSING_CONTRACT_VERSION
     ):
-        raise UntargetedCidNlRealDataRuntimeError(
+        raise UntargetedPartitionError(
             "processing request does not use the supported real-data runtime contract"
         )
     expected_stems = tuple(
@@ -917,13 +917,13 @@ def _validate_request_bound_inputs(
             expected_stems,
         )
     except (IdentityContractError, TypeError, ValueError) as exc:
-        raise UntargetedCidNlRealDataRuntimeError(
+        raise UntargetedPartitionError(
             "processing request scientific inputs are malformed"
         ) from exc
     physical_payload = request_inputs.get(PHYSICAL_CAPTURE_INPUT_KEY)
     if job.signal_processing_profile is None:
         if physical_payload is not None or job.physical_records:
-            raise UntargetedCidNlRealDataRuntimeError(
+            raise UntargetedPartitionError(
                 "physical replay lost its profile"
             )
     else:
@@ -933,7 +933,7 @@ def _validate_request_bound_inputs(
             or len(records) != len(job.physical_records)
             or set(records) != {candidate.candidate_id for candidate in job.candidates}
         ):
-            raise UntargetedCidNlRealDataRuntimeError(
+            raise UntargetedPartitionError(
                 "physical replay candidate coverage changed"
             )
         expected_physical = physical_capture_input_payload(
@@ -948,7 +948,7 @@ def _validate_request_bound_inputs(
             or physical_payload.get("profile") != expected_physical["profile"]
             or not isinstance(physical_payload.get("candidates"), dict)
         ):
-            raise UntargetedCidNlRealDataRuntimeError(
+            raise UntargetedPartitionError(
                 "physical replay profile is not request-bound"
             )
         expected_candidates = expected_physical["candidates"]
@@ -958,13 +958,13 @@ def _validate_request_bound_inputs(
             actual_candidates.get(candidate_id) != value
             for candidate_id, value in expected_candidates.items()
         ):
-            raise UntargetedCidNlRealDataRuntimeError(
+            raise UntargetedPartitionError(
                 "physical replay answer is not request-bound"
             )
     try:
         pinned = cid_nl_method_subjects_from_request(request)
     except CidNlMethodSubjectContractError as exc:
-        raise UntargetedCidNlRealDataRuntimeError(
+        raise UntargetedPartitionError(
             "processing request has an invalid CID-NL method subject configuration"
         ) from exc
     if isinstance(pinned, UntargetedCidNlMethodSubjectBatch):
@@ -974,17 +974,17 @@ def _validate_request_bound_inputs(
             if subject.method_subject_id == job.method_subject.method_subject_id
         )
         if matching_subjects != (job.method_subject,):
-            raise UntargetedCidNlRealDataRuntimeError(
+            raise UntargetedPartitionError(
                 "method subject is not an exact member of the processing request"
             )
     elif pinned != job.method_subject:
-        raise UntargetedCidNlRealDataRuntimeError(
+        raise UntargetedPartitionError(
             "method subject does not match the processing request"
         )
     if request_inputs.get(DISCOVERY_SETTINGS_INPUT_KEY) != (
         discovery_settings_payload(job.settings)
     ):
-        raise UntargetedCidNlRealDataRuntimeError(
+        raise UntargetedPartitionError(
             "Discovery settings do not match the processing request"
         )
     expected_peak_settings = {
@@ -992,13 +992,13 @@ def _validate_request_bound_inputs(
         for field in TARGETED_SCIENTIFIC_SETTING_FIELDS
     }
     if request_inputs.get(PEAK_SETTINGS_INPUT_KEY) != expected_peak_settings:
-        raise UntargetedCidNlRealDataRuntimeError(
+        raise UntargetedPartitionError(
             "peak settings do not match the processing request"
         )
     universe = request_inputs.get(CANDIDATE_UNIVERSE_INPUT_KEY)
     sample_entry = universe_by_sample.get(job.sample.metadata.raw_stem)
     if sample_entry is None:
-        raise UntargetedCidNlRealDataRuntimeError(
+        raise UntargetedPartitionError(
             "candidate universe does not contain the request sample"
         )
     active_subjects = _validate_subject_partition(job, pinned)
@@ -1020,7 +1020,7 @@ def _validate_request_bound_inputs(
             expected_sample_stems=(job.sample.metadata.raw_stem,),
         )
     except IdentityContractError as exc:
-        raise UntargetedCidNlRealDataRuntimeError(
+        raise UntargetedPartitionError(
             "candidate universe does not match the processing request"
         ) from exc
     assert isinstance(universe, dict)
@@ -1035,11 +1035,11 @@ def _validate_request_bound_inputs(
         and entry.get("sample_stem") == job.sample.metadata.raw_stem
     ]
     if len(matches) != 1 or matches != expected_entries:
-        raise UntargetedCidNlRealDataRuntimeError(
+        raise UntargetedPartitionError(
             "candidate universe does not match the processing request"
         )
     if job.support_candidates:
-        raise UntargetedCidNlRealDataRuntimeError(
+        raise UntargetedPartitionError(
             "support candidates require an alignment feature selection"
         )
     return active_subjects
@@ -1056,7 +1056,7 @@ def _request_input_index(
 ]:
     values = json.loads(normalized_inputs_json)
     if not isinstance(values, dict):
-        raise UntargetedCidNlRealDataRuntimeError(
+        raise UntargetedPartitionError(
             "processing request scientific inputs must be a mapping"
         )
     entries = validate_candidate_universe_payload(
@@ -1074,7 +1074,7 @@ def _request_input_index(
             or any(not isinstance(item, str) or not item for item in raw_feature_ids)
             or raw_feature_ids != sorted(set(raw_feature_ids))
         ):
-            raise UntargetedCidNlRealDataRuntimeError(
+            raise UntargetedPartitionError(
                 "alignment feature candidate IDs are malformed"
             )
         universe_ids: set[str] = set()
@@ -1083,7 +1083,7 @@ def _request_input_index(
             assert isinstance(entry_ids, list)
             universe_ids.update(entry_ids)
         if not set(raw_feature_ids).issubset(universe_ids):
-            raise UntargetedCidNlRealDataRuntimeError(
+            raise UntargetedPartitionError(
                 "alignment feature candidates are outside the Discovery universe"
             )
         feature_ids = frozenset(raw_feature_ids)
@@ -1091,14 +1091,14 @@ def _request_input_index(
 
 
 def _validate_subject_partition(
-    job: UntargetedCidNlRealDataRuntimeJob,
+    job: UntargetedPartitionJob,
     pinned: CidNlMethodSubject | UntargetedCidNlMethodSubjectBatch,
 ) -> CidNlMethodSubject | UntargetedCidNlMethodSubjectBatch:
     partition = job.subject_partition
     if partition is None:
         return pinned
     if not isinstance(pinned, UntargetedCidNlMethodSubjectBatch):
-        raise UntargetedCidNlRealDataRuntimeError(
+        raise UntargetedPartitionError(
             "subject partition requires a batched processing request"
         )
     pinned_subjects = {
@@ -1108,22 +1108,22 @@ def _validate_subject_partition(
         pinned_subjects.get(subject.method_subject_id) != subject
         for subject in partition.subjects
     ):
-        raise UntargetedCidNlRealDataRuntimeError(
+        raise UntargetedPartitionError(
             "subject partition contains a foreign method subject"
         )
     if not set(partition.candidate_memberships).issubset(pinned.candidate_memberships):
-        raise UntargetedCidNlRealDataRuntimeError(
+        raise UntargetedPartitionError(
             "subject partition contains a foreign candidate membership"
         )
     if job.method_subject not in partition.subjects:
-        raise UntargetedCidNlRealDataRuntimeError(
+        raise UntargetedPartitionError(
             "method subject is outside the declared subject partition"
         )
     return partition
 
 
 def _validate_partition_candidates(
-    job: UntargetedCidNlRealDataRuntimeJob,
+    job: UntargetedPartitionJob,
     *,
     pinned: CidNlMethodSubject | UntargetedCidNlMethodSubjectBatch,
     active_subjects: CidNlMethodSubject | UntargetedCidNlMethodSubjectBatch,
@@ -1141,7 +1141,7 @@ def _validate_partition_candidates(
         }
     actual_ids = tuple(candidate.candidate_id for candidate in job.candidates)
     if len(actual_ids) != len(set(actual_ids)) or set(actual_ids) != selected_ids:
-        raise UntargetedCidNlRealDataRuntimeError(
+        raise UntargetedPartitionError(
             "partition candidates do not exactly cover its selected feature IDs"
         )
     _validate_sample_candidates(job.candidates, job=job, label="partition")
@@ -1156,7 +1156,7 @@ def _validate_partition_candidates(
         or not set(support_ids).issubset(source_ids)
         or set(support_ids) & (set(actual_ids) | membership_ids)
     ):
-        raise UntargetedCidNlRealDataRuntimeError(
+        raise UntargetedPartitionError(
             "support candidates must be distinct non-member rows from this "
             "source universe"
         )
@@ -1179,7 +1179,7 @@ def _validate_partition_candidates(
     if receipt.sample_stem != job.sample.metadata.raw_stem or any(
         sample_entry.get(key) != value for key, value in expected_receipt_values
     ):
-        raise UntargetedCidNlRealDataRuntimeError(
+        raise UntargetedPartitionError(
             "Discovery receipt metadata does not match the source universe"
         )
 
@@ -1187,7 +1187,7 @@ def _validate_partition_candidates(
 def _validate_sample_candidates(
     candidates: tuple[DiscoveryCandidate, ...],
     *,
-    job: UntargetedCidNlRealDataRuntimeJob,
+    job: UntargetedPartitionJob,
     label: str,
 ) -> None:
     if any(
@@ -1195,7 +1195,7 @@ def _validate_sample_candidates(
         or candidate.raw_file.stem != job.sample.metadata.raw_stem
         for candidate in candidates
     ):
-        raise UntargetedCidNlRealDataRuntimeError(
+        raise UntargetedPartitionError(
             f"{label} candidate references a different sample"
         )
 
@@ -1217,7 +1217,7 @@ def _index_request_subject_candidates(
 
 
 def _request_subject_candidates(
-    job: UntargetedCidNlRealDataRuntimeJob,
+    job: UntargetedPartitionJob,
 ) -> tuple[DiscoveryCandidate, ...]:
     if not isinstance(job._request_subjects, UntargetedCidNlMethodSubjectBatch):
         return _bounded_subject_candidates(
@@ -1248,7 +1248,7 @@ def _index_request_subject_physical_records(
 
 
 def _request_subject_physical_records(
-    job: UntargetedCidNlRealDataRuntimeJob,
+    job: UntargetedPartitionJob,
 ) -> tuple[DiscoveryPhysicalFactRecord, ...]:
     if not isinstance(job._request_subjects, UntargetedCidNlMethodSubjectBatch):
         return job.physical_records
@@ -1257,45 +1257,71 @@ def _request_subject_physical_records(
     )
 
 
-def _request_uses_subject_batch(job: UntargetedCidNlRealDataRuntimeJob) -> bool:
+def _request_uses_subject_batch(job: UntargetedPartitionJob) -> bool:
     return isinstance(job._request_subjects, UntargetedCidNlMethodSubjectBatch)
 
 
-# Capability-named Aliases
-UntargetedRealDataRuntimeJob = UntargetedCidNlRealDataRuntimeJob
-UntargetedSampleResultRef = UntargetedCidNlSampleResultRef
-UntargetedRuntimeSampleResult = UntargetedCidNlRuntimeSampleResult
-UntargetedRuntimePartitionResult = UntargetedCidNlRuntimePartitionResult
-UntargetedRealDataRuntimeError = UntargetedCidNlRealDataRuntimeError
-
-build_untargeted_sample_runtime_jobs = build_untargeted_cid_nl_sample_runtime_jobs
-project_untargeted_completed_backfill = project_untargeted_cid_nl_completed_backfill
-mint_untargeted_sample_result_ref = mint_untargeted_cid_nl_sample_result_ref
-canonical_untargeted_sample_result_bytes = (
-    canonical_untargeted_cid_nl_sample_result_bytes
-)
 
 
-__all__ = [
-    "RUNTIME_CALL_COST_METRIC_NAMES",
-    "SCHEMA_VERSION",
-    "UntargetedCidNlRealDataRuntimeError",
-    "UntargetedCidNlRealDataRuntimeJob",
-    "UntargetedCidNlRuntimePartitionResult",
-    "UntargetedCidNlRuntimeSampleResult",
-    "UntargetedCidNlSampleResultRef",
-    "UntargetedRealDataRuntimeError",
-    "UntargetedRealDataRuntimeJob",
-    "UntargetedRuntimePartitionResult",
-    "UntargetedRuntimeSampleResult",
-    "UntargetedSampleResultRef",
-    "VALIDATION_STATUS",
-    "build_untargeted_cid_nl_sample_runtime_jobs",
-    "build_untargeted_sample_runtime_jobs",
-    "canonical_untargeted_cid_nl_sample_result_bytes",
-    "canonical_untargeted_sample_result_bytes",
-    "mint_untargeted_cid_nl_sample_result_ref",
-    "mint_untargeted_sample_result_ref",
-    "project_untargeted_cid_nl_completed_backfill",
-    "project_untargeted_completed_backfill",
-]
+class _SampleResultContext:
+    """Reuse completed adapter snapshots within one synchronous owner phase."""
+
+    def __init__(self, jobs: tuple[UntargetedPartitionJob, ...]) -> None:
+        self._jobs = {id(job): job for job in jobs}
+        self._content: dict[int, tuple[TraceAcquisitionBatch, bytes, str]] = {}
+        self._traces: dict[
+            int,
+            tuple[
+                TraceAcquisitionBatch,
+                dict[tuple[XICRequest, str], tuple[AcquiredTrace, ...]],
+            ],
+        ] = {}
+
+    def acquisition_content(
+        self, acquisition: TraceAcquisitionBatch
+    ) -> tuple[bytes, str]:
+        cached = self._content.get(id(acquisition))
+        if cached is None:
+            payload, digest = _canonical_acquisition_content(acquisition)
+            cached = (acquisition, payload, digest)
+            self._content[id(acquisition)] = cached
+        return cached[1], cached[2]
+
+    def exact_traces(
+        self, acquisition: TraceAcquisitionBatch, request: XICRequest, source_id: str
+    ) -> tuple[AcquiredTrace, ...]:
+        cached = self._traces.get(id(acquisition))
+        if cached is None:
+            grouped: dict[tuple[XICRequest, str], list[AcquiredTrace]] = {}
+            for acquired in acquisition.traces:
+                key = (
+                    acquired.coordinate.request,
+                    acquired.coordinate.acquisition_source_id,
+                )
+                grouped.setdefault(key, []).append(acquired)
+            cached = (
+                acquisition,
+                {key: tuple(values) for key, values in grouped.items()},
+            )
+            self._traces[id(acquisition)] = cached
+        return cached[1].get((request, source_id), ())
+
+    def project_completed_backfill(
+        self,
+        result: UntargetedSampleResult,
+        *,
+        group_context: CidNlCellGroupContext,
+    ) -> BackfillCompletionProjection:
+        if type(result) is not UntargetedSampleResult:
+            raise UntargetedPartitionError(
+                "backfill requires a runtime result"
+            )
+        if self._jobs.get(id(result.job)) is not result.job:
+            raise UntargetedPartitionError(
+                "backfill result does not reuse an exact runtime batch job"
+            )
+        return _project_completed_backfill(
+            result,
+            group_context=group_context,
+            exact_traces=self.exact_traces,
+        )
