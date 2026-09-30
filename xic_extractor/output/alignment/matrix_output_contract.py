@@ -8,10 +8,8 @@ import math
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 
-from xic_extractor.alignment.output_rows import (
-    escape_excel_formula,
-    format_value,
-)
+from xic_extractor.output.alignment.output_rows import format_value
+from xic_extractor.tabular_io import escape_excel_formula
 
 MATRIX_IDENTITY_SCHEMA_VERSION = "untargeted_peak_hypothesis_matrix_identity"
 MATRIX_ROW_BINDING_COLUMN = "matrix_row_binding_sha256"

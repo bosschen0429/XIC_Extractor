@@ -18,8 +18,12 @@ def test_alignment_exports_plan2_public_api_names():
 
 
 def test_discovery_csv_and_alignment_tsv_do_not_import_raw_reader():
-    for module_path in ("discovery/csv_reader.py", "alignment/tsv_writer.py"):
-        path = Path(__file__).parents[1] / "xic_extractor" / module_path
+    package_root = Path(__file__).parents[1] / "xic_extractor"
+    for relative_path in (
+        "discovery/csv_reader.py",
+        "output/alignment/tsv_writer.py",
+    ):
+        path = package_root / relative_path
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         violations = [
             imported_name
@@ -42,7 +46,7 @@ def test_alignment_ownership_module_stays_domain_focused():
     ).read_text(encoding="utf-8")
 
     forbidden = (
-        "xic_extractor.alignment.tsv_writer",
+        "xic_extractor.output.alignment.tsv_writer",
         "scripts.run_alignment",
         "openpyxl",
         "csv.",
@@ -62,7 +66,6 @@ def test_alignment_edge_scoring_stays_domain_focused():
         "gui",
         "openpyxl",
         "scripts",
-        "xic_extractor.alignment.xlsx_writer",
         "xic_extractor.alignment.process_backend",
         "xic_extractor.raw_reader",
     )

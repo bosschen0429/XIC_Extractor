@@ -7,7 +7,6 @@ from typing import Any, Literal
 
 from PyQt6.QtCore import QThread, pyqtSignal
 
-from xic_extractor.alignment.pipeline_outputs import AlignmentRunOutputs
 from xic_extractor.applications.untargeted.application import run_untargeted_application
 from xic_extractor.config import ExtractionConfig
 from xic_extractor.configuration.execution_profile import (
@@ -22,6 +21,7 @@ from xic_extractor.discovery.pipeline import (
 from xic_extractor.discovery.processing_run_spec_adapter import (
     compile_discovery_processing_run_spec_from_config as _compile_processing_run_spec,
 )
+from xic_extractor.output.alignment.pipeline_outputs import AlignmentRunOutputs
 from xic_extractor.presets import (
     BoundCidNlRecipe,
     Preset,

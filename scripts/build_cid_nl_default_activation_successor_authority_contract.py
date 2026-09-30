@@ -40,7 +40,7 @@ from scripts.check_production_acceptance_manifest import (  # noqa: E402
 from scripts.check_production_acceptance_manifest import (  # noqa: E402
     production_acceptance_manifest_sha256,
 )
-from xic_extractor.alignment.quant_matrix_version import (  # noqa: E402
+from xic_extractor.diagnostics.quant_matrix.version import (  # noqa: E402
     EXPECTED_DIFF_COLUMNS,
     EXPECTED_DIFF_SUMMARY_COLUMNS,
 )

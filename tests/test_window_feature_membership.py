@@ -8,6 +8,9 @@ from pathlib import Path
 
 import pytest
 
+from xic_extractor.alignment.cid_nl_inputs import (
+    CID_NL_ALIGNMENT_CONFIG,
+)
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.feature_membership_inference import (
     BatchRtWarp,
@@ -15,9 +18,6 @@ from xic_extractor.alignment.feature_membership_inference import (
     infer_feature_memberships,
 )
 from xic_extractor.alignment.ownership_models import IdentityEvent, SampleLocalMS1Owner
-from xic_extractor.alignment.untargeted_cid_nl_golden_path import (
-    CID_NL_ALIGNMENT_CONFIG,
-)
 
 _FIXTURES = Path(__file__).parent / "fixtures"
 _DATA = json.loads((_FIXTURES / "window_feature_regression_cases.json").read_text())

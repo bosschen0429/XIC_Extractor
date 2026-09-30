@@ -14,20 +14,11 @@ from dataclasses import InitVar, asdict, dataclass, field, fields
 from pathlib import Path
 from typing import cast, final
 
-from xic_extractor.alignment.artifact_write_receipts import (
-    AlignmentArtifactFingerprintBatch,
-)
 from xic_extractor.alignment.backfill_peak_fact import BackfillWindowStrategy
 from xic_extractor.alignment.config import (
     AlignmentConfig,
     BackfillXicBackend,
     OwnerBuildXicBackend,
-)
-from xic_extractor.alignment.provisional_matrix import (
-    PROVISIONAL_IDENTITY_SCHEMA_VERSION,
-    PROVISIONAL_MATRIX_SCHEMA_VERSION,
-    PROVISIONAL_PROVENANCE_SCHEMA_VERSION,
-    PROVISIONAL_SUMMARY_SCHEMA_VERSION,
 )
 from xic_extractor.discovery.batch_contract import (
     DISCOVERY_BATCH_INDEX_SCHEMA_VERSION,
@@ -37,6 +28,15 @@ from xic_extractor.discovery.csv_reader import (
     read_discovery_batch_index,
 )
 from xic_extractor.discovery.models import DiscoverySettings
+from xic_extractor.output.alignment.artifact_write_receipts import (
+    AlignmentArtifactFingerprintBatch,
+)
+from xic_extractor.output.alignment.provisional_matrix import (
+    PROVISIONAL_IDENTITY_SCHEMA_VERSION,
+    PROVISIONAL_MATRIX_SCHEMA_VERSION,
+    PROVISIONAL_PROVENANCE_SCHEMA_VERSION,
+    PROVISIONAL_SUMMARY_SCHEMA_VERSION,
+)
 from xic_extractor.presets import bind_cid_nl_recipe, load_preset
 from xic_extractor.processing_identity import (
     FileContentFingerprint,

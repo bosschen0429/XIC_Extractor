@@ -34,7 +34,7 @@ feature-by-sample Matrix。兩者共用科學判斷，但保留不同搜尋政�
 | 既有 Python Targeted 入口 | [`extractor.run`](../xic_extractor/extractor.py) | 進入同一 application；`extractor.acquire` 是它使用的 acquisition 入口 |
 | Discovery 候選產生 | [`scripts/run_discovery.py`](../scripts/run_discovery.py) | [`discovery/pipeline.py`](../xic_extractor/discovery/pipeline.py) 的 `run_discovery`／`run_discovery_batch`，交出候選檔與 batch index |
 | Untargeted GUI 全流程 | [`gui/workers/discovery_worker.py`](../gui/workers/discovery_worker.py) | 呼叫 Discovery，再將 batch index 交給 Alignment |
-| Untargeted Alignment 與 Matrix | [`scripts/run_alignment.py`](../scripts/run_alignment.py)、[`gui/workers/discovery_worker.py`](../gui/workers/discovery_worker.py) | [`run_untargeted_application`](../xic_extractor/applications/untargeted/application.py) 準備輸入並呼叫 retained execution；[`publication`](../xic_extractor/applications/untargeted/publication.py) 消費完成結果、發布 [`AlignmentRunOutputs`](../xic_extractor/alignment/pipeline_outputs.py) 並關閉暫存 |
+| Untargeted Alignment 與 Matrix | [`scripts/run_alignment.py`](../scripts/run_alignment.py)、[`gui/workers/discovery_worker.py`](../gui/workers/discovery_worker.py) | [`run_untargeted_application`](../xic_extractor/applications/untargeted/application.py) 準備輸入並呼叫 retained execution；[`publication`](../xic_extractor/applications/untargeted/publication.py) 消費完成結果、發布 [`AlignmentRunOutputs`](../xic_extractor/output/alignment/pipeline_outputs.py) 並關閉暫存 |
 | 完成 Matrix 後的 feature 篩選 | [`scripts/run_feature_quality.py`](../scripts/run_feature_quality.py) | [`feature_quality.py`](../xic_extractor/feature_quality.py) 計算 availability；[`feature_quality_io.py`](../xic_extractor/feature_quality_io.py) 讀寫分析集合，保留既有值 |
 | 完成證據的只讀報告 | [`xic_inspector/cli.py`](../xic_inspector/cli.py) | [`api.generate_report`](../xic_inspector/api.py) 串起來源解讀、選擇及 HTML rendering |
 
@@ -48,6 +48,9 @@ feature-by-sample Matrix。兩者共用科學判斷，但保留不同搜尋政�
 | Targeted 計數、角色例外與 review 原因 | `applications/targeted/product_projection.py` | 消費已完成的科學結果，決定產品狀態；純結果模型在同目錄 `product_model.py`，writer 只呈現它 |
 | 跨樣本配對、RT 漂移、群組 | `alignment/grouping_workflow.py`、`alignment/cross_sample/` | 群組決定先完成，Backfill 與格值決策消費同一結果 |
 | 從已取得的 evidence 完成科學結果 | `alignment/completion.py` | Targeted／Untargeted 共用 capture、grouping、cell 與 projection；不執行 runtime 或保存暫存 |
+| Untargeted CID-NL 的 sample assessment／Backfill inputs | `alignment/cid_nl_inputs.py` | 正式 partition 與 diagnostic projection 共用相同 input types、payload validation 和 method default；不依賴 artifact rendering |
+| 版本化 Matrix 的 artifact projection 與 acceptance | `diagnostics/quant_matrix/` | `golden_path.py` 組合 owner facts；`acceptance.py` 驗 manifest snapshot／source hashes 並 mint checked receipt；`version.py` 投影 table rows；不改 default product authority |
+| Packaged quantitative-effect promotion authority | `alignment/quantitative_projection_authority.py` | 封住 packaged resource、strict manifest rehydration 與 canonical rendering；是 promotion contract boundary，不是數值算法或 active application guard |
 | 缺格補證及格值 | `alignment/backfill/`、`alignment/cell_decision/` | 新觀察、科學決策與檔案 writer 各自有 owner |
 | RAW 讀取或 DLL | `raw_reader.py` 及使用它的 acquisition adapter | 讀入量測資料；不因此取得群組、格值或發布決定權 |
 | Discovery 已保存輸入 | `discovery/csv_reader.py`、`discovery/input_source.py` | 依 Discovery receipt 讀取 batch/candidate CSV，提供整批或有界 row loading；Alignment 只消費候選 |
@@ -55,7 +58,7 @@ feature-by-sample Matrix。兩者共用科學判斷，但保留不同搜尋政�
 | Targeted／Alignment RT-window MS2 擷取與 NL 解讀 | `acquisition/ms2_windows.py` 擷取單一樣本的有界視窗；`evidence/neutral_loss.py` 解讀已擷取事件 | 前者持有 reader 呼叫，後者只處理 `Ms2Window` 與候選幾何；Discovery 宣告 scan 的 strict receipt 保留原 owner |
 | Untargeted ISTD 參考資料取得 | `acquisition/istd_reference.py` | 讀取 workbook 或依既有 target 邊界擷取 RAW trace；兩種來源都交由 Alignment 的 drift evidence owner 建立同一 reference，科學 owner 不開檔 |
 | 排程、取消、清理 | `execution/` | partitions 排程；workers 執行；attempt 決定一次執行是否完成 |
-| 欄位、workbook 或 Matrix 格式 | `output/`、Alignment 的輸出 adapter | 呈現 owner 的答案；不要從格式變更反向改變選峰或計數 |
+| 欄位、workbook 或 Matrix 格式 | `output/`；Alignment Matrix 的 schema、格式及 atomic publishing 在 `output/alignment/` | 呈現 owner 的答案；不要從格式變更反向改變選峰或計數 |
 
 Package 名稱不是可強制的分層證明：`alignment/` 包含科學與外層 adapter，
 `extraction/` 也承載保留的 Untargeted 執行。純計算 module 的約束見下文；
@@ -204,8 +207,10 @@ policy; result writers consume the completed groups and cells.
 - `applications.untargeted.application.run_untargeted_application` prepares
   inputs, rejects output collisions before acquisition, and invokes retained
   CID-NL execution in `extraction/`. Its publication boundary consumes the
-  completed typed batch, projects it through Alignment's existing adapters,
-  and closes its private stores on every exit. CLI and GUI receive only
+  completed typed batch, delegates Matrix publishing to `output/alignment/`,
+  and closes its private stores on every exit. The output owner selects
+  streaming or materialization using Alignment's pure finalized projection.
+  CLI and GUI receive only
   published output paths and durable evidence locators. Alignment owns neither
   this application lifecycle nor a duplicate runtime or writer transaction.
 - Retained CID-NL execution partitions complete subjects across the sample cohort
@@ -246,13 +251,13 @@ Use this map to choose the reason a package changes. File placement is owned by
 | --- | --- | --- |
 | `configuration/` | settings, target/config loading, validation, typed runtime settings | extraction or rendering |
 | `applications/targeted/` | Formal Targeted application composition and request/result interface; product state, role/applicability policy, counted detection and reason overlays; pure product result model | scientific peak selection, numeric cell decisions, RAW acquisition or rendering |
-| `applications/untargeted/` | Untargeted input preparation, execution-to-publication orchestration, cancellation and completed-store lifetime; publication through existing Alignment projections and writers | scientific grouping, cell decisions, a second runtime owner or writer algorithm |
+| `applications/untargeted/` | Untargeted input preparation, execution-to-publication orchestration, cancellation, completed-store and explanation lifetime; delegates Matrix publishing to `output/alignment/` | scientific grouping, cell decisions, a second runtime owner or writer algorithm |
 | `discovery/` | general candidate discovery, seed generation, workflow-neutral discovery facts, receipt-bound CSV reading and bounded candidate loading | matrix decisions or target-list policy |
 | `execution/` | generic attempt execution/finalization, partition scheduling, reusable worker admission pools, one-shot process jobs, streamed result storage, and recovery | method-specific science, subject splitting, or writer authority |
 | `extraction/` | Targeted acquisition and production workflow adapters, jobs, windowing, drift, backend coordination, publication mechanics, and retained Untargeted batch execution (`untargeted_input_planning`, `untargeted_execution`, `untargeted_partition_composition`, `untargeted_alignment`) | application composition, GUI, or Alignment decisions |
 | `peak_detection/` | physical observations, hypotheses, resolvers, boundaries, integration, evidence composition | cross-sample grouping, workflow policy, or writers |
 | `alignment/` | cross-sample grouping, refinement/repair composition, Alignment adapters and renderers | a second runtime owner, mutable transport authority, or Targeted-only science |
-| `output/` | workbook/TSV/HTML schema rendering | evidence recomputation or RAW access |
+| `output/` | workbook/TSV/HTML schema rendering; `output/alignment/` owns Matrix artifact selection, streaming/materialization coordination, atomic writes and fingerprint receipts | evidence recomputation, application store lifetime or RAW access |
 | `diagnostics/` | reusable diagnostic models, summaries, classification, and alignment explanation persistence (`alignment_explanation`) | CLI parsing, production mutation, or domain recomputation |
 | `xic_inspector/` | installed read-only review API/CLI, source adapters, canonical selection, and self-contained offline HTML rendering | RAW acquisition, scientific recomputation, identity/Matrix decisions, or write authority |
 | `gui/` and `scripts/` | interaction and thin orchestration | reusable domain behavior |

@@ -34,11 +34,6 @@ from scripts.check_production_acceptance_manifest import (
     check_production_acceptance_manifest,
     production_acceptance_manifest_sha256,
 )
-from xic_extractor.alignment.quant_matrix_version import (
-    CELL_PROVENANCE_COLUMNS,
-    EXPECTED_DIFF_COLUMNS,
-    EXPECTED_DIFF_SUMMARY_COLUMNS,
-)
 from xic_extractor.diagnostics.quant_matrix.downstream_impact import (
     build_quant_matrix_downstream_impact_smoke,
     validate_quant_matrix_downstream_impact_smoke,
@@ -53,6 +48,11 @@ from xic_extractor.diagnostics.quant_matrix.promotion import (
 )
 from xic_extractor.diagnostics.quant_matrix.report import (
     build_quant_matrix_review_report,
+)
+from xic_extractor.diagnostics.quant_matrix.version import (
+    CELL_PROVENANCE_COLUMNS,
+    EXPECTED_DIFF_COLUMNS,
+    EXPECTED_DIFF_SUMMARY_COLUMNS,
 )
 from xic_extractor.tabular_io import (
     file_sha256,
@@ -1125,7 +1125,7 @@ def _original_entry(path: Path, *, repo_root: Path) -> dict[str, str]:
 
 
 def _rewrite_source_summary_paths(source_summary_tsv: Path) -> None:
-    from xic_extractor.alignment.quant_matrix_version import SOURCE_SUMMARY_COLUMNS
+    from xic_extractor.diagnostics.quant_matrix.version import SOURCE_SUMMARY_COLUMNS
 
     rows = list(read_tsv_required(source_summary_tsv, SOURCE_SUMMARY_COLUMNS))
     path_fields = (

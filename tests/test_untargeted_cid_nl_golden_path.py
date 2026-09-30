@@ -24,10 +24,12 @@ from tests.untargeted_cid_nl_no_raw_fixture import (
     UntargetedCidNlNoRawFixture,
     build_untargeted_cid_nl_no_raw_fixture,
 )
-from xic_extractor.alignment.untargeted_cid_nl_golden_path import (
+from xic_extractor.alignment.cid_nl_inputs import (
     UntargetedCidNlAssessmentInput,
     UntargetedCidNlBackfillInput,
     UntargetedCidNlGoldenPathError,
+)
+from xic_extractor.diagnostics.quant_matrix.golden_path import (
     build_untargeted_cid_nl_golden_path,
     build_untargeted_cid_nl_quant_matrix_version,
 )

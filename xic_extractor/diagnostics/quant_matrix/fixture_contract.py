@@ -14,10 +14,10 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-from xic_extractor.alignment.quant_matrix_version import CELL_PROVENANCE_COLUMNS
 from xic_extractor.diagnostics.quant_matrix.report import (
     QUANT_MATRIX_REVIEW_ROW_COLUMNS,
 )
+from xic_extractor.diagnostics.quant_matrix.version import CELL_PROVENANCE_COLUMNS
 from xic_extractor.tabular_io import (
     file_sha256,
     read_tsv_with_header,

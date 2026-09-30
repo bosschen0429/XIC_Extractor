@@ -7,10 +7,9 @@ from pathlib import Path
 import pytest
 
 import scripts.run_untargeted_provisional_matrix as runner
-import xic_extractor.alignment.artifact_write_receipts as alignment_receipt_owner
 import xic_extractor.extraction.provisional_run_manifest as manifest_owner
+import xic_extractor.output.alignment.artifact_write_receipts as alignment_receipt_owner
 from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.alignment.pipeline_outputs import AlignmentRunOutputs
 from xic_extractor.applications.untargeted.application import (
     validate_untargeted_application_options,
 )
@@ -18,6 +17,7 @@ from xic_extractor.discovery.models import DiscoverySettings, NeutralLossProfile
 from xic_extractor.extraction.untargeted_provisional_matrix_workflow import (
     UntargetedProvisionalMatrixRun,
 )
+from xic_extractor.output.alignment.pipeline_outputs import AlignmentRunOutputs
 from xic_extractor.processing_identity import fingerprint_file_content
 from xic_extractor.sample_metadata import SAMPLE_METADATA_COLUMNS, SampleMetadata
 from xic_extractor.tabular_io import render_delimited_rows

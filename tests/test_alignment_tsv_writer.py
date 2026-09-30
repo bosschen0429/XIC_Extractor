@@ -14,7 +14,7 @@ from xic_extractor.alignment.production_decisions import (
     ProductionDecisionSet,
     build_production_decisions,
 )
-from xic_extractor.alignment.tsv_writer import ALIGNMENT_CELLS_COLUMNS
+from xic_extractor.output.alignment.tsv_writer import ALIGNMENT_CELLS_COLUMNS
 from xic_extractor.peak_detection.hypotheses import IntegrationResult
 from xic_extractor.peak_detection.integration_audit import CellIntegrationAuditSummary
 
@@ -55,7 +55,7 @@ REVIEW_COLUMNS = [
 
 
 def test_write_alignment_review_tsv_columns_counts_rates_and_reason(tmp_path: Path):
-    from xic_extractor.alignment.tsv_writer import write_alignment_review_tsv
+    from xic_extractor.output.alignment.tsv_writer import write_alignment_review_tsv
 
     matrix = AlignmentMatrix(
         clusters=(_cluster(has_anchor=True, member_count=1),),
@@ -117,7 +117,7 @@ def test_write_alignment_review_tsv_columns_counts_rates_and_reason(tmp_path: Pa
 
 
 def test_write_alignment_review_tsv_warning_precedence(tmp_path: Path):
-    from xic_extractor.alignment.tsv_writer import write_alignment_review_tsv
+    from xic_extractor.output.alignment.tsv_writer import write_alignment_review_tsv
 
     matrix = AlignmentMatrix(
         clusters=(
@@ -172,7 +172,7 @@ def test_write_alignment_review_tsv_warning_precedence(tmp_path: Path):
 
 
 def test_write_alignment_review_tsv_reports_duplicate_assigned_cells(tmp_path: Path):
-    from xic_extractor.alignment.tsv_writer import write_alignment_review_tsv
+    from xic_extractor.output.alignment.tsv_writer import write_alignment_review_tsv
 
     matrix = AlignmentMatrix(
         clusters=(_cluster(has_anchor=False),),
@@ -200,7 +200,7 @@ def test_write_alignment_review_tsv_reports_duplicate_assigned_cells(tmp_path: P
 def test_write_alignment_review_tsv_counts_duplicate_assigned_separately(
     tmp_path: Path,
 ):
-    from xic_extractor.alignment.tsv_writer import write_alignment_review_tsv
+    from xic_extractor.output.alignment.tsv_writer import write_alignment_review_tsv
 
     matrix = AlignmentMatrix(
         clusters=(_cluster(has_anchor=True),),
@@ -232,7 +232,7 @@ def test_write_alignment_review_tsv_counts_duplicate_assigned_separately(
 def test_write_alignment_review_tsv_reports_ambiguous_ms1_owner_cells(
     tmp_path: Path,
 ):
-    from xic_extractor.alignment.tsv_writer import write_alignment_review_tsv
+    from xic_extractor.output.alignment.tsv_writer import write_alignment_review_tsv
 
     matrix = AlignmentMatrix(
         clusters=(_cluster(has_anchor=True),),
@@ -258,7 +258,7 @@ def test_write_alignment_review_tsv_reports_ambiguous_ms1_owner_cells(
 
 
 def test_write_alignment_review_tsv_reports_folded_clusters(tmp_path: Path):
-    from xic_extractor.alignment.tsv_writer import write_alignment_review_tsv
+    from xic_extractor.output.alignment.tsv_writer import write_alignment_review_tsv
 
     matrix = AlignmentMatrix(
         clusters=(
@@ -298,7 +298,7 @@ def test_write_alignment_review_tsv_reports_folded_clusters(tmp_path: Path):
 
 
 def test_write_alignment_matrix_tsv_blanks_missing_and_invalid_areas(tmp_path: Path):
-    from xic_extractor.alignment.tsv_writer import write_alignment_matrix_tsv
+    from xic_extractor.output.alignment.tsv_writer import write_alignment_matrix_tsv
 
     matrix = AlignmentMatrix(
         clusters=(_cluster(fold_evidence="owner_complete_link;owner_count=2"),),
@@ -363,7 +363,7 @@ def test_write_alignment_matrix_tsv_blanks_missing_and_invalid_areas(tmp_path: P
 def test_write_alignment_matrix_tsv_uses_stable_numeric_text_without_value_drift(
     tmp_path: Path,
 ) -> None:
-    from xic_extractor.alignment.tsv_writer import write_alignment_matrix_tsv
+    from xic_extractor.output.alignment.tsv_writer import write_alignment_matrix_tsv
 
     matrix = AlignmentMatrix(
         clusters=(_cluster(fold_evidence="owner_complete_link;owner_count=2"),),
@@ -395,10 +395,10 @@ def test_write_alignment_matrix_tsv_uses_stable_numeric_text_without_value_drift
 def test_alignment_matrix_mz_format_preserves_identity_coordinate_contract(
     tmp_path: Path,
 ) -> None:
-    from xic_extractor.alignment.matrix_output_contract import (
+    from xic_extractor.output.alignment.matrix_output_contract import (
         validate_matrix_identity_rows,
     )
-    from xic_extractor.alignment.tsv_writer import (
+    from xic_extractor.output.alignment.tsv_writer import (
         write_alignment_matrix_identity_tsv,
         write_alignment_matrix_tsv,
         write_alignment_review_tsv,
@@ -452,7 +452,7 @@ def test_alignment_matrix_mz_format_preserves_identity_coordinate_contract(
 def test_alignment_matrix_mz_format_is_display_only_for_small_mz(
     tmp_path: Path,
 ) -> None:
-    from xic_extractor.alignment.tsv_writer import (
+    from xic_extractor.output.alignment.tsv_writer import (
         write_alignment_matrix_identity_tsv,
         write_alignment_matrix_tsv,
     )
@@ -493,7 +493,7 @@ def test_alignment_matrix_mz_format_is_display_only_for_small_mz(
 def test_alignment_matrix_display_collision_does_not_merge_identity_rows(
     tmp_path: Path,
 ) -> None:
-    from xic_extractor.alignment.tsv_writer import (
+    from xic_extractor.output.alignment.tsv_writer import (
         write_alignment_matrix_identity_tsv,
         write_alignment_matrix_tsv,
     )
@@ -543,10 +543,10 @@ def test_alignment_matrix_identity_binding_rejects_every_row_substitution(
     tmp_path: Path,
     mutation: str,
 ) -> None:
-    from xic_extractor.alignment.matrix_output_contract import (
+    from xic_extractor.output.alignment.matrix_output_contract import (
         validate_matrix_identity_rows,
     )
-    from xic_extractor.alignment.tsv_writer import (
+    from xic_extractor.output.alignment.tsv_writer import (
         write_alignment_matrix_identity_tsv,
         write_alignment_matrix_tsv,
     )
@@ -608,7 +608,7 @@ def test_alignment_matrix_identity_binding_rejects_every_row_substitution(
 
 def test_alignment_matrix_identity_requires_current_schema_and_binding() -> None:
     from tests.matrix_identity_fixtures import current_matrix_identity_row
-    from xic_extractor.alignment.matrix_output_contract import (
+    from xic_extractor.output.alignment.matrix_output_contract import (
         ALIGNMENT_MATRIX_IDENTITY_COLUMNS,
         MATRIX_ROW_BINDING_COLUMN,
         validate_matrix_identity_rows,
@@ -663,7 +663,7 @@ def test_alignment_matrix_identity_rejects_malformed_serialized_row_shapes(
     mutation: str,
 ) -> None:
     from tests.matrix_identity_fixtures import current_matrix_identity_row
-    from xic_extractor.alignment.matrix_output_contract import (
+    from xic_extractor.output.alignment.matrix_output_contract import (
         ALIGNMENT_MATRIX_IDENTITY_COLUMNS,
         validate_matrix_identity_rows,
     )
@@ -706,10 +706,10 @@ def test_alignment_matrix_identity_rejects_malformed_serialized_row_shapes(
 def test_alignment_matrix_binding_uses_exact_persisted_rt_and_header_tokens(
     tmp_path: Path,
 ) -> None:
-    from xic_extractor.alignment.matrix_output_contract import (
+    from xic_extractor.output.alignment.matrix_output_contract import (
         validate_matrix_identity_rows,
     )
-    from xic_extractor.alignment.tsv_writer import (
+    from xic_extractor.output.alignment.tsv_writer import (
         write_alignment_matrix_identity_tsv,
         write_alignment_matrix_tsv,
     )
@@ -758,7 +758,7 @@ def test_alignment_matrix_binding_uses_exact_persisted_rt_and_header_tokens(
 
 
 def test_alignment_matrix_mz_binding_accepts_only_current_text() -> None:
-    from xic_extractor.alignment.matrix_output_contract import (
+    from xic_extractor.output.alignment.matrix_output_contract import (
         matrix_mz_binding_matches,
     )
 
@@ -774,7 +774,7 @@ def test_alignment_matrix_mz_format_preserves_nonfinite_blank_semantics(
     tmp_path: Path,
     center_mz: float,
 ) -> None:
-    from xic_extractor.alignment.tsv_writer import write_alignment_matrix_tsv
+    from xic_extractor.output.alignment.tsv_writer import write_alignment_matrix_tsv
 
     matrix = AlignmentMatrix(
         clusters=(
@@ -804,7 +804,7 @@ def test_alignment_matrix_mz_format_preserves_nonfinite_blank_semantics(
 def test_write_alignment_matrix_tsv_prefers_ms1_morphology_area(
     tmp_path: Path,
 ):
-    from xic_extractor.alignment.tsv_writer import write_alignment_matrix_tsv
+    from xic_extractor.output.alignment.tsv_writer import write_alignment_matrix_tsv
 
     matrix = AlignmentMatrix(
         clusters=(_cluster(fold_evidence="owner_complete_link;owner_count=2"),),
@@ -853,7 +853,7 @@ def test_alignment_writers_preserve_physical_owner_area_source(
     tmp_path: Path,
     area_source: str,
 ) -> None:
-    from xic_extractor.alignment.tsv_writer import (
+    from xic_extractor.output.alignment.tsv_writer import (
         write_alignment_cells_tsv,
         write_alignment_matrix_tsv,
     )
@@ -896,7 +896,7 @@ def test_alignment_writers_preserve_physical_owner_area_source(
 
 
 def test_write_alignment_matrix_tsv_blanks_duplicate_assigned_cells(tmp_path: Path):
-    from xic_extractor.alignment.tsv_writer import write_alignment_matrix_tsv
+    from xic_extractor.output.alignment.tsv_writer import write_alignment_matrix_tsv
 
     matrix = AlignmentMatrix(
         clusters=(_cluster(),),
@@ -929,7 +929,7 @@ def test_write_alignment_matrix_tsv_blanks_duplicate_assigned_cells(tmp_path: Pa
 def test_write_alignment_matrix_tsv_blanks_ambiguous_ms1_owner_cells(
     tmp_path: Path,
 ):
-    from xic_extractor.alignment.tsv_writer import write_alignment_matrix_tsv
+    from xic_extractor.output.alignment.tsv_writer import write_alignment_matrix_tsv
 
     matrix = AlignmentMatrix(
         clusters=(_cluster(),),
@@ -962,7 +962,7 @@ def test_write_alignment_matrix_tsv_blanks_ambiguous_ms1_owner_cells(
 def test_write_alignment_matrix_tsv_excludes_rows_without_accepted_cells(
     tmp_path: Path,
 ):
-    from xic_extractor.alignment.tsv_writer import write_alignment_matrix_tsv
+    from xic_extractor.output.alignment.tsv_writer import write_alignment_matrix_tsv
 
     matrix = AlignmentMatrix(
         clusters=(
@@ -1006,7 +1006,7 @@ def test_write_alignment_matrix_tsv_excludes_rows_without_accepted_cells(
 def test_write_alignment_matrix_identity_tsv_maps_product_rows(
     tmp_path: Path,
 ) -> None:
-    from xic_extractor.alignment.tsv_writer import (
+    from xic_extractor.output.alignment.tsv_writer import (
         ALIGNMENT_MATRIX_IDENTITY_COLUMNS,
         write_alignment_matrix_identity_tsv,
         write_alignment_matrix_tsv,
@@ -1068,7 +1068,7 @@ def test_write_alignment_matrix_identity_tsv_maps_product_rows(
 def test_write_alignment_matrix_rejects_family_projection_identity(
     tmp_path: Path,
 ) -> None:
-    from xic_extractor.alignment.tsv_writer import write_alignment_matrix_tsv
+    from xic_extractor.output.alignment.tsv_writer import write_alignment_matrix_tsv
 
     matrix = AlignmentMatrix(
         clusters=(
@@ -1106,7 +1106,9 @@ def test_write_alignment_matrix_rejects_family_projection_identity(
 def test_write_alignment_matrix_identity_tsv_records_split_hypothesis(
     tmp_path: Path,
 ) -> None:
-    from xic_extractor.alignment.tsv_writer import write_alignment_matrix_identity_tsv
+    from xic_extractor.output.alignment.tsv_writer import (
+        write_alignment_matrix_identity_tsv,
+    )
 
     matrix = AlignmentMatrix(
         clusters=(
@@ -1152,7 +1154,7 @@ def test_write_alignment_matrix_identity_tsv_records_split_hypothesis(
 def test_write_alignment_matrix_uses_explicit_peak_hypotheses_as_rows(
     tmp_path: Path,
 ) -> None:
-    from xic_extractor.alignment.tsv_writer import (
+    from xic_extractor.output.alignment.tsv_writer import (
         write_alignment_matrix_identity_tsv,
         write_alignment_matrix_tsv,
     )
@@ -1236,7 +1238,7 @@ def test_write_alignment_matrix_uses_explicit_peak_hypotheses_as_rows(
 def test_write_alignment_matrix_rejects_split_hypothesis_without_identity(
     tmp_path: Path,
 ) -> None:
-    from xic_extractor.alignment.tsv_writer import write_alignment_matrix_tsv
+    from xic_extractor.output.alignment.tsv_writer import write_alignment_matrix_tsv
 
     parent = SimpleNamespace(
         feature_family_id="FAM_PARENT",
@@ -1280,7 +1282,7 @@ def test_write_alignment_matrix_rejects_split_hypothesis_without_identity(
 def test_write_alignment_matrix_rejects_duplicate_split_hypothesis_id(
     tmp_path: Path,
 ) -> None:
-    from xic_extractor.alignment.tsv_writer import write_alignment_matrix_tsv
+    from xic_extractor.output.alignment.tsv_writer import write_alignment_matrix_tsv
 
     matrix = _split_writer_matrix(
         (
@@ -1300,7 +1302,7 @@ def test_write_alignment_matrix_rejects_duplicate_split_hypothesis_id(
 def test_write_alignment_matrix_rejects_overlapping_split_sample_claims(
     tmp_path: Path,
 ) -> None:
-    from xic_extractor.alignment.tsv_writer import write_alignment_matrix_tsv
+    from xic_extractor.output.alignment.tsv_writer import write_alignment_matrix_tsv
 
     matrix = _split_writer_matrix(
         (
@@ -1320,7 +1322,7 @@ def test_write_alignment_matrix_rejects_overlapping_split_sample_claims(
 def test_write_alignment_matrix_rejects_unassigned_split_product_cell(
     tmp_path: Path,
 ) -> None:
-    from xic_extractor.alignment.tsv_writer import write_alignment_matrix_tsv
+    from xic_extractor.output.alignment.tsv_writer import write_alignment_matrix_tsv
 
     matrix = _split_writer_matrix(
         (_split_hypothesis("FAM_PARENT::early", ("sample-a",)),)
@@ -1337,7 +1339,7 @@ def test_write_alignment_matrix_rejects_unassigned_split_product_cell(
 def test_write_alignment_matrix_rejects_split_hypothesis_missing_source_family(
     tmp_path: Path,
 ) -> None:
-    from xic_extractor.alignment.tsv_writer import write_alignment_matrix_tsv
+    from xic_extractor.output.alignment.tsv_writer import write_alignment_matrix_tsv
 
     matrix = _split_writer_matrix(
         (
@@ -1365,7 +1367,7 @@ def test_write_alignment_matrix_rejects_split_hypothesis_missing_source_family(
 def test_write_alignment_matrix_rejects_multi_family_product_identity(
     tmp_path: Path,
 ) -> None:
-    from xic_extractor.alignment.tsv_writer import write_alignment_matrix_tsv
+    from xic_extractor.output.alignment.tsv_writer import write_alignment_matrix_tsv
 
     matrix = AlignmentMatrix(
         clusters=(
@@ -1401,7 +1403,7 @@ def test_write_alignment_matrix_rejects_multi_family_product_identity(
 def test_write_alignment_matrix_rejects_duplicate_source_candidate_writes(
     tmp_path: Path,
 ) -> None:
-    from xic_extractor.alignment.tsv_writer import write_alignment_matrix_tsv
+    from xic_extractor.output.alignment.tsv_writer import write_alignment_matrix_tsv
 
     matrix = AlignmentMatrix(
         clusters=(
@@ -1446,7 +1448,7 @@ def test_write_alignment_matrix_rejects_duplicate_source_candidate_writes(
 def test_write_alignment_review_tsv_includes_production_decision_columns(
     tmp_path: Path,
 ):
-    from xic_extractor.alignment.tsv_writer import write_alignment_review_tsv
+    from xic_extractor.output.alignment.tsv_writer import write_alignment_review_tsv
 
     matrix = AlignmentMatrix(
         clusters=(_cluster(has_anchor=False, fold_evidence=""),),
@@ -1478,7 +1480,7 @@ def test_write_alignment_review_tsv_includes_production_decision_columns(
 def test_one_detected_provisional_retention_stays_out_of_primary_matrix(
     tmp_path: Path,
 ):
-    from xic_extractor.alignment.tsv_writer import (
+    from xic_extractor.output.alignment.tsv_writer import (
         write_alignment_matrix_tsv,
         write_alignment_review_tsv,
     )
@@ -1532,7 +1534,7 @@ def test_direct_tier2_review_token_does_not_change_matrix_writer(
         evaluate_production_candidate_gate,
         source_context_for_artifacts,
     )
-    from xic_extractor.alignment.tsv_writer import (
+    from xic_extractor.output.alignment.tsv_writer import (
         write_alignment_cells_tsv,
         write_alignment_matrix_tsv,
         write_alignment_review_tsv,
@@ -1591,7 +1593,9 @@ def test_direct_tier2_review_token_does_not_change_matrix_writer(
 def test_write_alignment_status_matrix_tsv_preserves_duplicate_assigned(
     tmp_path: Path,
 ):
-    from xic_extractor.alignment.tsv_writer import write_alignment_status_matrix_tsv
+    from xic_extractor.output.alignment.tsv_writer import (
+        write_alignment_status_matrix_tsv,
+    )
 
     matrix = AlignmentMatrix(
         clusters=(_cluster(),),
@@ -1612,7 +1616,7 @@ def test_write_alignment_status_matrix_tsv_preserves_duplicate_assigned(
 
 
 def test_debug_tsvs_write_cells_and_status_matrix(tmp_path: Path):
-    from xic_extractor.alignment.tsv_writer import (
+    from xic_extractor.output.alignment.tsv_writer import (
         write_alignment_cells_tsv,
         write_alignment_status_matrix_tsv,
     )
@@ -1666,12 +1670,12 @@ def test_backfill_cell_evidence_tsv_is_compact_and_backfill_scoped(
         BackfillEvidenceOwnerBindings,
         EvidenceClaimState,
     )
-    from xic_extractor.alignment.tsv_writer import (
-        ALIGNMENT_BACKFILL_CELL_EVIDENCE_COLUMNS,
-        write_alignment_backfill_cell_evidence_tsv,
-    )
     from xic_extractor.diagnostics.backfill_evidence.tsv import (
         lookup_backfill_evidence_tsv,
+    )
+    from xic_extractor.output.alignment.tsv_writer import (
+        ALIGNMENT_BACKFILL_CELL_EVIDENCE_COLUMNS,
+        write_alignment_backfill_cell_evidence_tsv,
     )
 
     matrix = AlignmentMatrix(
@@ -1742,7 +1746,7 @@ def test_backfill_cell_evidence_tsv_is_compact_and_backfill_scoped(
 
 
 def test_alignment_cells_tsv_has_no_region_audit_columns(tmp_path: Path) -> None:
-    from xic_extractor.alignment.tsv_writer import write_alignment_cells_tsv
+    from xic_extractor.output.alignment.tsv_writer import write_alignment_cells_tsv
 
     matrix = AlignmentMatrix(
         clusters=(_cluster(),),
@@ -1767,7 +1771,7 @@ def test_alignment_cells_tsv_has_no_region_audit_columns(tmp_path: Path) -> None
 def test_write_alignment_owner_backfill_seed_audit_tsv_is_sidecar(
     tmp_path: Path,
 ) -> None:
-    from xic_extractor.alignment.tsv_writer import (
+    from xic_extractor.output.alignment.tsv_writer import (
         ALIGNMENT_BACKFILL_SEED_AUDIT_COLUMNS,
         ALIGNMENT_CELLS_COLUMNS,
         write_alignment_backfill_seed_audit_tsv,
@@ -1813,7 +1817,7 @@ def test_write_alignment_owner_backfill_seed_audit_tsv_is_sidecar(
 
 
 def test_tsv_writers_escape_formula_like_text(tmp_path: Path):
-    from xic_extractor.alignment.tsv_writer import (
+    from xic_extractor.output.alignment.tsv_writer import (
         write_alignment_matrix_tsv,
         write_alignment_review_tsv,
     )
@@ -1868,7 +1872,7 @@ def test_tsv_writers_escape_formula_like_text(tmp_path: Path):
 def test_private_write_tsv_preserves_lf_formula_and_format_contract(
     tmp_path: Path,
 ) -> None:
-    from xic_extractor.alignment import tsv_writer
+    from xic_extractor.output.alignment import tsv_writer
 
     path = tsv_writer._write_tsv(
         tmp_path / "nested" / "alignment.tsv",
@@ -1889,7 +1893,7 @@ def test_private_write_tsv_preserves_lf_formula_and_format_contract(
 
 
 def test_private_write_tsv_accepts_generator_rows(tmp_path: Path) -> None:
-    from xic_extractor.alignment import tsv_writer
+    from xic_extractor.output.alignment import tsv_writer
 
     rows = ({"name": f"row-{index}", "value": index} for index in range(3))
 

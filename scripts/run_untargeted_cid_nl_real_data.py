@@ -11,17 +11,17 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 from xic_extractor.acquisition.raw_paths import existing_raw_paths
-from xic_extractor.alignment.production_acceptance import REQUIRED_COLUMNS
-from xic_extractor.alignment.quant_matrix_version import (
+from xic_extractor.config import ExtractionConfig
+from xic_extractor.diagnostics.quant_matrix.acceptance import REQUIRED_COLUMNS
+from xic_extractor.diagnostics.quant_matrix.golden_path import (
+    build_untargeted_cid_nl_golden_path,
+    build_untargeted_cid_nl_quant_matrix_version,
+)
+from xic_extractor.diagnostics.quant_matrix.version import (
     CELL_PROVENANCE_COLUMNS,
     EXPECTED_DIFF_SUMMARY_COLUMNS,
     ROW_SUMMARY_COLUMNS,
 )
-from xic_extractor.alignment.untargeted_cid_nl_golden_path import (
-    build_untargeted_cid_nl_golden_path,
-    build_untargeted_cid_nl_quant_matrix_version,
-)
-from xic_extractor.config import ExtractionConfig
 from xic_extractor.discovery.csv_reader import (
     read_discovery_batch_index,
     read_owner_bound_discovery_candidates_csv,

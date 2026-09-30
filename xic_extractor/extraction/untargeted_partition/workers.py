@@ -11,6 +11,9 @@ from xic_extractor.acquisition_contract import TraceAcquisitionBatch
 from xic_extractor.alignment.cell_group_context import (
     select_cid_nl_group_backfill_subject,
 )
+from xic_extractor.alignment.cid_nl_inputs import (
+    UntargetedCidNlBackfillInput,
+)
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.conservative_backfill import (
     plan_conservative_backfill_targets,
@@ -23,9 +26,6 @@ from xic_extractor.alignment.hypothesis_owner_adapter import (
     owner_from_cid_nl_assessment_support,
 )
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
-from xic_extractor.alignment.untargeted_cid_nl_golden_path import (
-    UntargetedCidNlBackfillInput,
-)
 from xic_extractor.evidence_artifacts import EvidenceArtifactRef
 from xic_extractor.execution._finalization import RuntimeResourceCleanupOutcome
 from xic_extractor.extraction.untargeted_acquisition_cache import (

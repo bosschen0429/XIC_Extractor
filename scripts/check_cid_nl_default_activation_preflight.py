@@ -21,7 +21,7 @@ from typing import Any
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from xic_extractor.alignment.quant_matrix_version import (  # noqa: E402
+from xic_extractor.diagnostics.quant_matrix.version import (  # noqa: E402
     EXPECTED_DIFF_COLUMNS,
     build_quant_matrix_version_rows,
 )

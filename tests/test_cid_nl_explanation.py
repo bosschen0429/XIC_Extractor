@@ -32,7 +32,6 @@ from xic_extractor.alignment.result.application_result import (
     UntargetBatchApplicationResultRequest,
     finalize_alignment_result,
 )
-from xic_extractor.alignment.tsv_writer import write_alignment_matrix_tsv
 from xic_extractor.alignment.untargeted_finalized_matrix import (
     project_completed_untarget_batch_writer_inputs,
 )
@@ -50,6 +49,7 @@ from xic_extractor.diagnostics.cid_nl_explanation_projection import (
 from xic_extractor.execution.recovery import OwnerPathRuntimeMarker
 from xic_extractor.execution.result_store import StreamedResultStore
 from xic_extractor.immutable_sequence import ImmutableSequence
+from xic_extractor.output.alignment.tsv_writer import write_alignment_matrix_tsv
 from xic_extractor.presets.apply import apply_to_discovery
 from xic_extractor.presets.loader import load_preset
 from xic_extractor.sample_metadata import SampleMetadata

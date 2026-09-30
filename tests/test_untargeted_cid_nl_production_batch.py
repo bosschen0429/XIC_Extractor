@@ -41,11 +41,6 @@ from tests.untargeted_partition_fixtures import (
     execute_dense_partition,
 )
 from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.alignment.pipeline_outputs import (
-    alignment_metadata,
-    output_paths,
-    write_outputs_atomic,
-)
 from xic_extractor.alignment.production_decisions import ProductionDecisionSet
 from xic_extractor.alignment.result.scientific_alignment import (
     ObservedSearchSubject,
@@ -91,6 +86,11 @@ from xic_extractor.extraction.untargeted_partition.models import (
 )
 from xic_extractor.extraction.untargeted_partition_composition import (
     compose_untargeted_partition,
+)
+from xic_extractor.output.alignment.pipeline_outputs import (
+    alignment_metadata,
+    output_paths,
+    write_outputs_atomic,
 )
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     CidNlPhysicalCandidateFact,
@@ -323,7 +323,7 @@ def _assert_single_unsupported_exclusion(
         ApplicationResultContractError,
         UntargetBatchApplicationResultRequest,
     )
-    from xic_extractor.alignment.tsv_writer import write_alignment_matrix_tsv
+    from xic_extractor.output.alignment.tsv_writer import write_alignment_matrix_tsv
     from xic_extractor.peak_detection.cid_nl_method_assessment import (
         is_unsearched_cid_nl_discovery_assessment,
         mint_cid_nl_method_assessment_ref,
@@ -1736,7 +1736,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     writer = project_completed_untarget_batch_writer_inputs(
         completed.application_result
     )
-    from xic_extractor.alignment.tsv_writer import write_alignment_matrix_tsv
+    from xic_extractor.output.alignment.tsv_writer import write_alignment_matrix_tsv
 
     matrix_path = tmp_path / "canonical-matrix.tsv"
     write_alignment_matrix_tsv(
@@ -3849,7 +3849,7 @@ def test_production_composition_closes_observation_only_hold_without_membership(
             / len(member_observations)
         )
     if above_threshold:
-        from xic_extractor.alignment.tsv_writer import write_alignment_matrix_tsv
+        from xic_extractor.output.alignment.tsv_writer import write_alignment_matrix_tsv
 
         (child,) = completed.application_result.children
         scientific = child.scientific_core
@@ -3905,7 +3905,7 @@ def test_production_composition_closes_observation_only_hold_without_membership(
         assert float(row["Support"]) > 0 and float(row["Support2"]) > 0
         return
     if scenario == "ambiguous_hold_below_threshold":
-        from xic_extractor.alignment.tsv_writer import write_alignment_matrix_tsv
+        from xic_extractor.output.alignment.tsv_writer import write_alignment_matrix_tsv
 
         assert all(
             not result.backfill_attempts for result in runtime_result.sample_results
@@ -4273,7 +4273,7 @@ def test_known_istd_reference_closes_drifting_group_and_cell_proof(
 def _assert_conservative_coverage_handoff(
     completed, writer_inputs, batch, runtime_result, tmp_path, *, threshold: bool
 ) -> None:
-    from xic_extractor.alignment.tsv_writer import write_alignment_matrix_tsv
+    from xic_extractor.output.alignment.tsv_writer import write_alignment_matrix_tsv
 
     (child,) = completed.application_result.children
     scientific = child.scientific_core

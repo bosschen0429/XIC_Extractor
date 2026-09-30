@@ -790,10 +790,10 @@ def test_bounded_runtime_skips_subjects_without_ms1_features(
             if assessment.content.method_subject.method_subject_id
             in eligible_subject_ids
         }
-    from xic_extractor.alignment.tsv_writer import write_alignment_matrix_tsv
     from xic_extractor.diagnostics.cid_nl_explanation_projection import (
         write_cid_nl_explanation,
     )
+    from xic_extractor.output.alignment.tsv_writer import write_alignment_matrix_tsv
 
     matrix_path = tmp_path / "eligibility.tsv"
     write_alignment_matrix_tsv(
@@ -1003,11 +1003,11 @@ def test_bounded_runtime_matches_eager_after_disk_owner_round_trip(
 
 
 def _assert_explanation_parity(tmp_path, plan, config, eager, bounded):
-    from xic_extractor.alignment.tsv_writer import write_alignment_matrix_tsv
     from xic_extractor.diagnostics.cid_nl_explanation import read_cid_nl_explanation
     from xic_extractor.diagnostics.cid_nl_explanation_projection import (
         write_cid_nl_explanation,
     )
+    from xic_extractor.output.alignment.tsv_writer import write_alignment_matrix_tsv
 
     candidate_id = plan.subject_batch.candidate_memberships[0][0]
     records = []

@@ -36,11 +36,11 @@ from tools.diagnostics.docs_policy import (  # noqa: E402
     PRODUCTIZATION_STATUS_INDEX_REL,
     QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_REL,
 )
-from xic_extractor.alignment.production_acceptance import (  # noqa: E402
+from xic_extractor.diagnostics.quant_matrix.acceptance import (  # noqa: E402
     ProductionAcceptanceManifestError,
     load_checked_production_acceptance_manifest,
 )
-from xic_extractor.alignment.quant_matrix_version import (  # noqa: E402
+from xic_extractor.diagnostics.quant_matrix.version import (  # noqa: E402
     accepted_production_acceptance_rows_by_key,
 )
 

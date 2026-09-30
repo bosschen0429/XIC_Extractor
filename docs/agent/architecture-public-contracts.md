@@ -28,15 +28,23 @@ schema versions, and command flags. Do not copy those inventories here.
 - Writers render owner results; they do not recompute domain evidence or
   rescan RAW files.
 - The Untargeted application invokes retained CID-NL execution; Alignment has
-  no extraction imports. The finalized projection and atomic writer stay in
-  Alignment, and the extraction adapter never writes. Application publication
-  owns the completed result's private stores through streaming, explanation
-  and writing; GUI and CLI receive durable published outputs only.
+  no extraction imports. Alignment owns the pure finalized Matrix projection;
+  `output/alignment/` owns artifact selection, formatting, streaming or
+  materialization, atomic writing and fingerprint receipts. The extraction
+  adapter never writes. Application publication owns cancellation, the
+  completed result's private stores and explanation lifetime through writing;
+  GUI and CLI receive durable published outputs only.
   `tests/test_docs_architecture_census.py` pins these execution boundaries;
   `xic_extractor.alignment.owner_build_route_receipt` and
   `tests/test_untargeted_application.py` own the route receipt labels.
 - Shared models or protocols are justified when they prevent an actual cycle
   or schema drift.
+- Formal Untargeted partitions consume the pure CID-NL input contract in
+  `alignment/cid_nl_inputs.py`. Golden Path artifacts, checked acceptance and
+  versioned table projection belong to `diagnostics/quant_matrix/`.
+  `alignment/quantitative_projection_authority.py` encapsulates the packaged
+  promotion contract; its resource registration and HOLD policy remain its
+  authority. It is not a numerical algorithm or an active application guard.
 - Separate real-data validation from normal unit tests.
 
 ## Boundary Projection Closure

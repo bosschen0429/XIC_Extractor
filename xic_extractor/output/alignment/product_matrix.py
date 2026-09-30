@@ -6,19 +6,10 @@ from dataclasses import dataclass
 from typing import Any
 
 from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.alignment.matrix import AlignedCell, AlignmentMatrix
-from xic_extractor.alignment.matrix_output_contract import (
-    ALIGNMENT_MATRIX_IDENTITY_COLUMNS,
-    MATRIX_IDENTITY_SCHEMA_VERSION,
-    MATRIX_ROW_BINDING_COLUMN,
-    bind_matrix_identity_rows,
-    canonical_mz_text,
-    serialize_public_matrix_table,
-)
-from xic_extractor.alignment.output_rows import (
+from xic_extractor.alignment.matrix import (
+    AlignedCell,
+    AlignmentMatrix,
     cells_by_cluster,
-    format_value,
-    production_matrix_area,
     row_id,
 )
 from xic_extractor.alignment.production_decisions import (
@@ -28,6 +19,18 @@ from xic_extractor.alignment.production_decisions import (
 )
 from xic_extractor.alignment.untargeted_finalized_matrix import (
     FinalizedUntargetMatrixRow,
+)
+from xic_extractor.output.alignment.matrix_output_contract import (
+    ALIGNMENT_MATRIX_IDENTITY_COLUMNS,
+    MATRIX_IDENTITY_SCHEMA_VERSION,
+    MATRIX_ROW_BINDING_COLUMN,
+    bind_matrix_identity_rows,
+    canonical_mz_text,
+    serialize_public_matrix_table,
+)
+from xic_extractor.output.alignment.output_rows import (
+    format_value,
+    production_matrix_area,
 )
 
 _ALLOWED_ROW_IDENTITY_BASIS = {
