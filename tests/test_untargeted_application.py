@@ -496,13 +496,13 @@ def test_pipeline_streams_partition_children_once_and_cleans_up(
     )
     from xic_extractor.execution_engine.streamed_result_store import StreamedResultStore
     from xic_extractor.execution_runtime_marker import OwnerPathRuntimeMarker
-    from xic_extractor.extraction.untargeted_cid_nl_bounded_runtime import (
-        execute_bounded_untargeted_cid_nl,
+    from xic_extractor.extraction.untargeted_execution import (
+        execute_untargeted_plan,
     )
 
     plan, _ = _plan(tmp_path, monkeypatch)
     config = AlignmentConfig(anchor_min_seed_events=1)
-    completed = execute_bounded_untargeted_cid_nl(
+    completed = execute_untargeted_plan(
         plan,
         output_dir=tmp_path / "runtime",
         alignment_config=config,

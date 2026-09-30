@@ -42,7 +42,7 @@ from xic_extractor.execution_settings import (
     DEFAULT_ALIGNMENT_WORKER_BACKEND,
     load_execution_profile,
 )
-from xic_extractor.extraction.untargeted_cid_nl_production_batch import (
+from xic_extractor.extraction.untargeted_input_planning import (
     is_supported_alignment_discovery,
 )
 from xic_extractor.presets import (

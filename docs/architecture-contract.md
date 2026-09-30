@@ -244,7 +244,7 @@ Use this map to choose the reason a package changes. File placement is owned by
 | `applications/untargeted/` | Untargeted input preparation, execution-to-publication orchestration, cancellation and completed-store lifetime; publication through existing Alignment projections and writers | scientific grouping, cell decisions, a second runtime owner or writer algorithm |
 | `discovery/` | general candidate discovery, seed generation, workflow-neutral discovery facts | matrix decisions or target-list policy |
 | `execution_engine/` | generic partition scheduling, worker-pool admission/concurrency, streamed result store, and bounded spool lifecycle | method-specific science, subject splitting, or writer authority |
-| `extraction/` | Targeted acquisition and production workflow adapters, jobs, windowing, drift, backend coordination, publication mechanics, and retained Untargeted batch execution (`untargeted_production_batch`, `untargeted_alignment`) | application composition, GUI, or Alignment decisions |
+| `extraction/` | Targeted acquisition and production workflow adapters, jobs, windowing, drift, backend coordination, publication mechanics, and retained Untargeted batch execution (`untargeted_input_planning`, `untargeted_execution`, `untargeted_partition_composition`, `untargeted_alignment`) | application composition, GUI, or Alignment decisions |
 | `peak_detection/` | physical observations, hypotheses, resolvers, boundaries, integration, evidence composition | cross-sample grouping, workflow policy, or writers |
 | `alignment/` | cross-sample grouping, refinement/repair composition, Alignment adapters and renderers | a second runtime owner, mutable transport authority, or Targeted-only science |
 | `output/` | workbook/TSV/HTML schema rendering | evidence recomputation or RAW access |
@@ -308,7 +308,7 @@ when considering existing names; this guidance does not require unrelated rename
 Method specificity (e.g. CID-NL matching rules, neutral loss thresholds, scan-level
 assertions) is strictly absorbed internally within `discovery/` and method models.
 Downstream orchestration, batch execution, and diagnostic explanations are shared
-system capabilities named by capability (e.g., `untargeted_production_batch`,
+system capabilities named by capability (e.g., `untargeted_partition_composition`,
 `untargeted_alignment`, `alignment_explanation`), preventing a single method from
 monopolizing or leaking into shared infrastructure.
 

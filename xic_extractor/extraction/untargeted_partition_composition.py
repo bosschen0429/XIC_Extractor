@@ -1,13 +1,10 @@
-"""Owner-closed production input assembly for pure Untargeted CID-NL."""
+"""Group and compose acquired Untargeted partitions into scientific results."""
 
 from __future__ import annotations
 
-import math
 from collections.abc import Callable, Mapping
-from copy import copy
 from dataclasses import dataclass, replace
-from pathlib import Path
-from typing import Any, cast
+from typing import cast
 
 from xic_extractor.alignment.backfill.evaluation_coverage import (
     BackfillPlanningPosition,
@@ -24,13 +21,10 @@ from xic_extractor.alignment.cell_observations import (
     compose_cid_nl_predecessor_cells,
 )
 from xic_extractor.alignment.completion import (
-    AlignmentWorkflowContractError,
     CaptureWorkflowArguments,
     UntargetWorkflowAdapter,
     UntargetWorkflowBundle,
     UntargetWorkflowCompositionRequest,
-    _WorkflowStageFailure,
-    complete_untarget_batch,
     compose_untarget_subject,
 )
 from xic_extractor.alignment.config import AlignmentConfig
@@ -62,38 +56,19 @@ from xic_extractor.alignment.result.application_result import (
     FinalizedUntargetApplicationResult,
     UntargetedCandidateExclusion,
 )
-from xic_extractor.alignment.untargeted_cid_nl_golden_path import (
-    CID_NL_ALIGNMENT_CONFIG,
-)
-from xic_extractor.config import ExtractionConfig
-from xic_extractor.configuration.signal_processing_profile import (
-    SignalProcessingProfile,
-)
-from xic_extractor.discovery.batch_contract import (
-    DiscoveryCandidateUniverseReceipt,
-)
 from xic_extractor.discovery.models import (
     MS1_FEATURE_BACKED_STATES,
-    DiscoveryCandidate,
-    DiscoverySettings,
 )
-from xic_extractor.discovery.physical_fact_record import DiscoveryPhysicalFactRecord
-from xic_extractor.execution_runtime_marker import OwnerPathRuntimeMarker
-from xic_extractor.execution_runtime_owner import (
-    RuntimeTelemetryProvider,
-    start_runtime_attempt,
+from xic_extractor.execution_engine.streamed_result_store import (
+    SealedPartition,
+    StreamedResultStore,
 )
 from xic_extractor.execution_settings import DEFAULT_ALIGNMENT_WORKERS
 from xic_extractor.extraction.untargeted_cid_nl_real_data_inputs import (
     UntargetedCidNlRealDataContext,
-    build_untargeted_cid_nl_real_data_context,
 )
-from xic_extractor.extraction.untargeted_cid_nl_result_store import (
-    PartitionResultStore,
-    SealedPartition,
-)
-from xic_extractor.extraction.untargeted_execution_result import (
-    CompletedUntargetBatchWorkflowResult,
+from xic_extractor.extraction.untargeted_input_planning import (
+    alignment_subject_worksets,
 )
 from xic_extractor.extraction.untargeted_real_data_models import (
     UntargetedCidNlInitialSampleResult,
@@ -101,13 +76,9 @@ from xic_extractor.extraction.untargeted_real_data_models import (
     UntargetedCidNlWorksetGrouping,
 )
 from xic_extractor.extraction.untargeted_real_data_runtime import (
-    UntargetedCidNlRealDataRuntimeApplicationResult,
     UntargetedCidNlRealDataRuntimeJob,
     UntargetedCidNlRuntimeSampleResult,
     _RuntimeResultContext,
-    build_untargeted_cid_nl_sample_runtime_jobs,
-    execute_untargeted_cid_nl_real_data_runtime,
-    untargeted_cid_nl_runtime_call_cost,
 )
 from xic_extractor.peak_detection.capture import (
     SampleLocalCapture,
@@ -121,14 +92,7 @@ from xic_extractor.peak_detection.cid_nl_method_assessment import (
 )
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     CID_NL_PROVIDER_ID,
-    CidNlComposition,
-    CidNlMethodSubject,
-    CidNlPhysicalCandidateFact,
-    CidNlPhysicalProof,
     UntargetedCidNlMethodSubjectBatch,
-    cid_nl_alignment_subject_worksets,
-    group_cid_nl_physical_subject_units,
-    mint_cid_nl_subject_membership_from_physical_units,
 )
 from xic_extractor.peak_detection.hypotheses import PeakHypothesis
 from xic_extractor.peak_detection.observations import RetainedCaptureEvidence
@@ -140,15 +104,10 @@ from xic_extractor.peak_detection.search_scope import (
     UntargetedSearchScope,
     require_capture_binding,
 )
-from xic_extractor.processing_identity import AcquisitionSourceExpectation
-from xic_extractor.processing_run_spec import CidNlDiscoveryMethodSpec
-from xic_extractor.sample_metadata import (
-    SampleMetadata,
-)
 
 
 @dataclass(frozen=True, slots=True)
-class UntargetedCidNlProductionBatch:
+class UntargetedPartitionInputs:
     """Partition inputs, executable jobs, and optional sparse backfill templates."""
 
     subject_batch: UntargetedCidNlMethodSubjectBatch
@@ -159,592 +118,7 @@ class UntargetedCidNlProductionBatch:
 
 
 @dataclass(frozen=True, slots=True)
-class UntargetedCidNlProductionPlan:
-    """Global scientific inputs with one validated job template per sample."""
-
-    subject_batch: UntargetedCidNlMethodSubjectBatch
-    context: UntargetedCidNlRealDataContext
-    sample_job_templates: tuple[UntargetedCidNlRealDataRuntimeJob, ...]
-    runtime_subjects: tuple[CidNlMethodSubject, ...]
-    excluded_candidates: tuple[UntargetedCandidateExclusion, ...]
-    partition_input_loader: (
-        Callable[
-            [tuple[str, ...]],
-            tuple[
-                dict[str, tuple[DiscoveryCandidate, ...]],
-                dict[str, DiscoveryPhysicalFactRecord],
-                dict[str, tuple[DiscoveryCandidate, ...]],
-            ],
-        ]
-        | None
-    ) = None
-    dll_dir: Path | None = None
-
-
-@dataclass(frozen=True, slots=True)
-class PreparedCidNlAlignmentSubjectWorksets:
-    """One plan's complete Alignment worksets and partition lookup indexes."""
-
-    plan: UntargetedCidNlProductionPlan
-    worksets: tuple[tuple[CidNlMethodSubject, ...], ...]
-    subjects_by_id: dict[str, CidNlMethodSubject]
-    workset_ids_by_subject: dict[str, frozenset[str]]
-    memberships_by_subject: dict[str, tuple[tuple[str, str], ...]]
-
-    def subject_batch(
-        self,
-        subjects: tuple[CidNlMethodSubject, ...],
-    ) -> UntargetedCidNlMethodSubjectBatch:
-        """Bind whole prepared worksets to their exact candidate memberships."""
-
-        requested_ids: set[str] = set()
-        touched_worksets: set[frozenset[str]] = set()
-        for subject in subjects:
-            expected = self.subjects_by_id.get(subject.method_subject_id)
-            if expected is None or subject != expected:
-                raise ValueError(
-                    "CID-NL partition contains a foreign alignment subject"
-                )
-            requested_ids.add(subject.method_subject_id)
-            touched_worksets.add(self.workset_ids_by_subject[subject.method_subject_id])
-        if len(requested_ids) != len(subjects):
-            raise ValueError("CID-NL partition contains duplicate alignment subjects")
-        if any(not workset_ids <= requested_ids for workset_ids in touched_worksets):
-            raise ValueError(
-                "CID-NL partition cannot split one alignment subject workset"
-            )
-        return UntargetedCidNlMethodSubjectBatch(
-            subjects=subjects,
-            candidate_memberships=tuple(
-                sorted(
-                    membership
-                    for subject in subjects
-                    for membership in self.memberships_by_subject[
-                        subject.method_subject_id
-                    ]
-                )
-            ),
-        )
-
-
-def prepare_untargeted_cid_nl_alignment_subject_worksets(
-    plan: UntargetedCidNlProductionPlan,
-    *,
-    known_istd_reference: KnownIstdReference | None = None,
-) -> PreparedCidNlAlignmentSubjectWorksets:
-    """Prepare the complete workset closure once before partition materialization."""
-
-    if type(plan) is not UntargetedCidNlProductionPlan:
-        raise TypeError("Alignment subject worksets require a production plan")
-    worksets = cid_nl_alignment_subject_worksets(
-        plan.runtime_subjects,
-        comparison_mz_intervals=_known_istd_comparison_intervals(known_istd_reference),
-    )
-    subjects_by_id = {
-        subject.method_subject_id: subject
-        for workset in worksets
-        for subject in workset
-    }
-    workset_ids_by_subject: dict[str, frozenset[str]] = {}
-    for workset in worksets:
-        # One set per workset, shared by its members. Building it per subject
-        # instead stores the same k ids k times.
-        member_ids = frozenset(member.method_subject_id for member in workset)
-        for subject in workset:
-            workset_ids_by_subject[subject.method_subject_id] = member_ids
-    memberships: dict[str, list[tuple[str, str]]] = {
-        subject_id: [] for subject_id in subjects_by_id
-    }
-    for membership in plan.subject_batch.candidate_memberships:
-        subject_memberships = memberships.get(membership[1])
-        if subject_memberships is not None:
-            subject_memberships.append(membership)
-    memberships_by_subject = {
-        subject_id: tuple(sorted(subject_memberships))
-        for subject_id, subject_memberships in memberships.items()
-    }
-    if any(
-        not subject_memberships
-        for subject_memberships in memberships_by_subject.values()
-    ):
-        raise ValueError("runtime alignment subject has no candidate membership")
-    return PreparedCidNlAlignmentSubjectWorksets(
-        plan=plan,
-        worksets=worksets,
-        subjects_by_id=subjects_by_id,
-        workset_ids_by_subject=workset_ids_by_subject,
-        memberships_by_subject=memberships_by_subject,
-    )
-
-
-def _known_istd_comparison_intervals(
-    reference: KnownIstdReference | None,
-) -> tuple[tuple[float, float], ...]:
-    """Co-locate possible known identities without assigning identity by mass."""
-    if reference is None:
-        return ()
-    return tuple(
-        (
-            target.mz * (1 - target.ppm_tol / 1_000_000),
-            target.mz * (1 + target.ppm_tol / 1_000_000),
-        )
-        for target in reference.anchor.targets
-        if target.neutral_loss_da is not None
-        and target.label in reference.anchor.observed_labels
-    )
-
-
-def is_pure_single_provider_cid_nl(settings: DiscoverySettings) -> bool:
-    """Return whether settings select the production-owned pure CID-NL route."""
-
-    if not isinstance(settings, DiscoverySettings):
-        return False
-    try:
-        CidNlDiscoveryMethodSpec(settings=settings)
-    except (TypeError, ValueError):
-        return False
-    return True
-
-
-def is_supported_alignment_discovery(settings: Any) -> bool:
-    """Return whether settings select a supported discovery method for alignment."""
-
-    from xic_extractor.processing_run_spec import DiscoveryMethodSpec
-
-    if isinstance(settings, DiscoveryMethodSpec):
-        return True
-    if isinstance(settings, DiscoverySettings):
-        try:
-            CidNlDiscoveryMethodSpec(settings=settings)
-            return True
-        except (TypeError, ValueError):
-            return False
-    if hasattr(settings, "tags") and getattr(settings, "tags"):
-        return all(
-            getattr(tag, "strategy", None) in {"neutral_loss", "delta_mass"}
-            for tag in settings.tags
-        )
-    return False
-
-
-def _physical_subject_candidate_fact(
-    candidate: DiscoveryCandidate,
-    record: DiscoveryPhysicalFactRecord | None,
-) -> CidNlPhysicalCandidateFact:
-    facts = None if record is None else record.evaluation.facts
-    proof = None
-    if record is not None and facts is not None:
-        trace = record.acquired_trace.trace
-        proof = CidNlPhysicalProof(
-            acquisition_source_id=record.work_item.acquisition_source_id,
-            apex_rt_min=facts.apex_rt_min,
-            left_rt_min=facts.left_rt_min,
-            right_rt_min=facts.right_rt_min,
-            xic_mz=record.work_item.xic_mz,
-            xic_ppm_tol=record.work_item.xic_ppm_tol,
-            rt=trace.rt,
-            raw=trace.intensity,
-        )
-    return CidNlPhysicalCandidateFact(
-        candidate_id=candidate.candidate_id,
-        physical_mz=candidate.physical_mz,
-        configured_neutral_loss_da=candidate.configured_neutral_loss_da,
-        proof=proof,
-    )
-
-
-def prepare_untargeted_subject_membership(
-    *,
-    candidates_by_sample: Mapping[str, tuple[DiscoveryCandidate, ...]],
-    settings: DiscoverySettings,
-    physical_records_by_candidate: Mapping[str, DiscoveryPhysicalFactRecord]
-    | None = None,
-) -> UntargetedCidNlMethodSubjectBatch:
-    """Resolve exact subject membership for a closed precursor working set."""
-    candidates = tuple(
-        candidate
-        for sample_candidates in candidates_by_sample.values()
-        for candidate in sample_candidates
-    )
-    if not candidates:
-        raise ValueError("Untargeted CID-NL production requires candidates")
-    candidate_ids = tuple(candidate.candidate_id for candidate in candidates)
-    if len(candidate_ids) != len(set(candidate_ids)):
-        raise ValueError("Discovery candidate identity must be globally unique")
-
-    composition = cid_nl_composition(settings)
-    for candidate in candidates:
-        precursor_mz = float(candidate.physical_mz)
-        neutral_loss_da = float(candidate.configured_neutral_loss_da)
-        if (
-            not math.isfinite(precursor_mz)
-            or precursor_mz <= 0.0
-            or not math.isfinite(neutral_loss_da)
-            or neutral_loss_da <= 0.0
-        ):
-            raise ValueError("Discovery candidate lacks finite CID-NL owner facts")
-    physical_records = physical_records_by_candidate or {}
-    subject_units = group_cid_nl_physical_subject_units(
-        tuple(
-            _physical_subject_candidate_fact(
-                candidate, physical_records.get(candidate.candidate_id)
-            )
-            for candidate in candidates
-        ),
-        composition=composition,
-        precursor_tolerance_ppm=settings.precursor_mz_tolerance_ppm,
-    )
-    return mint_cid_nl_subject_membership_from_physical_units(
-        subject_units=subject_units,
-        precursor_by_id={
-            candidate.candidate_id: candidate.physical_mz for candidate in candidates
-        },
-        precursor_tolerance_ppm=settings.precursor_mz_tolerance_ppm,
-        composition=composition,
-    )
-
-
-def cid_nl_composition(settings: DiscoverySettings) -> CidNlComposition | None:
-    """Resolve the configured requirement shared by all precursor worksets."""
-    combine_mode = settings.tag_combine_mode
-    if len(settings.neutral_loss_profiles) > 1 and combine_mode == "single":
-        raise ValueError("Multiple CID-NL tags require union or intersection")
-    return (
-        CidNlComposition(
-            tags=tuple(
-                (profile.tag, profile.neutral_loss_da)
-                for profile in settings.neutral_loss_profiles
-            ),
-            combine_mode=combine_mode,
-        )
-        if len(settings.neutral_loss_profiles) > 1 and combine_mode != "single"
-        else None
-    )
-
-
-def prepare_untargeted_cid_nl_production_plan(
-    *,
-    raw_paths: tuple[Path, ...],
-    sample_metadata: tuple[SampleMetadata, ...],
-    settings: DiscoverySettings,
-    peak_config: ExtractionConfig,
-    candidates_by_sample: Mapping[str, tuple[DiscoveryCandidate, ...]],
-    discovery_receipts_by_sample: Mapping[
-        str,
-        DiscoveryCandidateUniverseReceipt,
-    ],
-    dll_dir: Path,
-    sample_identity_namespace: str,
-    signal_processing_profile: SignalProcessingProfile | None = None,
-    physical_records_by_candidate: Mapping[str, DiscoveryPhysicalFactRecord]
-    | None = None,
-    acquisition_source_expectations: tuple[AcquisitionSourceExpectation, ...]
-    | None = None,
-) -> UntargetedCidNlProductionPlan:
-    """Seal exact candidate membership before any subject-local runtime work."""
-
-    if not is_pure_single_provider_cid_nl(settings):
-        raise ValueError(
-            "Untargeted CID-NL production requires a pure single-provider route"
-        )
-    if not isinstance(dll_dir, Path):
-        raise TypeError("dll_dir must be a Path")
-    subject_batch = prepare_untargeted_subject_membership(
-        candidates_by_sample=candidates_by_sample,
-        settings=settings,
-        physical_records_by_candidate=physical_records_by_candidate,
-    )
-    candidates = tuple(
-        candidate for values in candidates_by_sample.values() for candidate in values
-    )
-    context = build_untargeted_cid_nl_real_data_context(
-        raw_paths=raw_paths,
-        sample_metadata=sample_metadata,
-        method_subject=subject_batch,
-        settings=settings,
-        peak_config=peak_config,
-        candidates_by_sample=candidates_by_sample,
-        discovery_receipts_by_sample=discovery_receipts_by_sample,
-        sample_identity_namespace=sample_identity_namespace,
-        signal_processing_profile=signal_processing_profile,
-        physical_records_by_candidate=physical_records_by_candidate,
-        acquisition_source_expectations=acquisition_source_expectations,
-    )
-    candidate_by_id = {candidate.candidate_id: candidate for candidate in candidates}
-    eligible_subject_ids = {
-        subject_id
-        for candidate_id, subject_id in subject_batch.candidate_memberships
-        if candidate_by_id[candidate_id].ms1_peak_found
-        and candidate_by_id[candidate_id].discovery_candidate_state
-        in MS1_FEATURE_BACKED_STATES
-    }
-    # Keep the complete membership and fixed query centers as request identity.
-    # Only subjects backed by an MS1 feature can seed cross-sample assessment.
-    runtime_subjects = tuple(
-        subject
-        for subject in subject_batch.subjects
-        if subject.method_subject_id in eligible_subject_ids
-    )
-    sample_ids = {
-        sample.metadata.raw_stem: sample.identity.sample_identity_id
-        for sample in context.samples
-    }
-    excluded_candidates = tuple(
-        UntargetedCandidateExclusion(
-            candidate_id=candidate_id,
-            method_subject_id=subject_id,
-            canonical_sample_identity_id=sample_ids[
-                candidate_by_id[candidate_id].sample_stem
-            ],
-            discovery_candidate_state=(
-                candidate_by_id[candidate_id].discovery_candidate_state
-            ),
-        )
-        for candidate_id, subject_id in subject_batch.candidate_memberships
-        if subject_id not in eligible_subject_ids
-    )
-    ordered_physical_records = tuple(
-        record
-        for _candidate_id, record in sorted(
-            context.physical_records_by_candidate.items()
-        )
-    )
-    physical_records_by_sample: dict[str, list[DiscoveryPhysicalFactRecord]] = {}
-    for record in ordered_physical_records:
-        physical_records_by_sample.setdefault(record.work_item.sample_stem, []).append(
-            record
-        )
-    templates = tuple(
-        job
-        for sample in context.samples
-        for job in build_untargeted_cid_nl_sample_runtime_jobs(
-            processing_owners=context.processing_owners,
-            sample=sample,
-            subject_work_units=tuple(
-                (
-                    subject,
-                    "untargeted-cid-nl:"
-                    f"{sample.metadata.raw_stem}:{subject.method_subject_id}",
-                )
-                for subject in subject_batch.subjects[:1]
-            ),
-            candidates=context.candidates_by_sample[sample.metadata.raw_stem],
-            discovery_receipt=context.discovery_receipts_by_sample[
-                sample.metadata.raw_stem
-            ],
-            settings=context.settings,
-            peak_config=context.peak_config,
-            raw_path=context.raw_paths_by_sample[sample.metadata.raw_stem],
-            acquisition_source_expectation=context.acquisition_sources_by_sample[
-                sample.metadata.raw_stem
-            ],
-            dll_dir=dll_dir,
-            signal_processing_profile=context.signal_processing_profile,
-            physical_records=tuple(
-                physical_records_by_sample.get(sample.metadata.raw_stem, ())
-            ),
-        )
-    )
-    return UntargetedCidNlProductionPlan(
-        subject_batch=subject_batch,
-        context=context,
-        sample_job_templates=templates,
-        runtime_subjects=runtime_subjects,
-        excluded_candidates=excluded_candidates,
-    )
-
-
-def materialize_untargeted_cid_nl_partition(
-    plan: UntargetedCidNlProductionPlan,
-    subject_batch: UntargetedCidNlMethodSubjectBatch,
-    *,
-    prepared_worksets: PreparedCidNlAlignmentSubjectWorksets | None = None,
-    acquisition_cache_dir: Path | None = None,
-    sparse: bool = False,
-) -> UntargetedCidNlProductionBatch:
-    """Bind a finite subject partition to shared, already-validated inputs."""
-
-    prepared = (
-        prepare_untargeted_cid_nl_alignment_subject_worksets(plan)
-        if prepared_worksets is None
-        else prepared_worksets
-    )
-    if prepared.plan is not plan:
-        raise ValueError("prepared alignment worksets crossed the production plan")
-    expected_batch = (
-        plan.subject_batch
-        if subject_batch == plan.subject_batch
-        else prepared.subject_batch(subject_batch.subjects)
-    )
-    if subject_batch.candidate_memberships != expected_batch.candidate_memberships:
-        raise ValueError("CID-NL partition crossed prepared candidate memberships")
-
-    if plan.partition_input_loader is not None:
-        candidates, records, support = plan.partition_input_loader(
-            tuple(cid for cid, _ in subject_batch.candidate_memberships)
-        )
-        context = replace(
-            plan.context,
-            candidates_by_sample=candidates,
-            physical_records_by_candidate=records,
-        )
-        assert plan.dll_dir is not None
-        templates: list[UntargetedCidNlRealDataRuntimeJob] = []
-        for sample in context.samples:
-            stem = sample.metadata.raw_stem
-            templates.extend(
-                build_untargeted_cid_nl_sample_runtime_jobs(
-                    processing_owners=context.processing_owners,
-                    sample=sample,
-                    subject_work_units=tuple(
-                        (
-                            subject,
-                            f"untargeted-cid-nl:{stem}:{subject.method_subject_id}",
-                        )
-                        for subject in subject_batch.subjects[:1]
-                    ),
-                    candidates=candidates[stem],
-                    discovery_receipt=context.discovery_receipts_by_sample[stem],
-                    settings=context.settings,
-                    peak_config=context.peak_config,
-                    raw_path=context.raw_paths_by_sample[stem],
-                    dll_dir=plan.dll_dir,
-                    signal_processing_profile=context.signal_processing_profile,
-                    physical_records=tuple(
-                        records[item.candidate_id] for item in candidates[stem]
-                    ),
-                    acquisition_source_expectation=context.acquisition_sources_by_sample[
-                        stem
-                    ],
-                    subject_partition=subject_batch,
-                    support_candidates=support[stem],
-                    acquisition_cache_dir=acquisition_cache_dir,
-                )
-            )
-    else:
-        context = plan.context
-        templates = list(plan.sample_job_templates)
-    jobs = []
-    subjects_by_id = {
-        subject.method_subject_id: subject for subject in subject_batch.subjects
-    }
-    bound_templates = []
-    for source_template in templates:
-        template = copy(source_template)
-        object.__setattr__(template, "acquisition_cache_dir", acquisition_cache_dir)
-        bound_templates.append(template)
-        subject_ids = (
-            tuple(
-                subject_id
-                for subject_id in subjects_by_id
-                if template._request_candidates_by_subject.get(subject_id)
-            )
-            if sparse
-            else tuple(subjects_by_id)
-        )
-        for subject_id in subject_ids:
-            subject = subjects_by_id[subject_id]
-            job = copy(template)
-            subject_id = subject.method_subject_id
-            object.__setattr__(job, "method_subject", subject)
-            object.__setattr__(
-                job,
-                "work_unit_key",
-                f"untargeted-cid-nl:{template.sample.metadata.raw_stem}:{subject_id}",
-            )
-            object.__setattr__(job, "acquisition_cache_dir", acquisition_cache_dir)
-            jobs.append(job)
-    return UntargetedCidNlProductionBatch(
-        subject_batch=subject_batch,
-        context=context,
-        jobs=tuple(jobs),
-        sample_job_templates=tuple(bound_templates) if sparse else (),
-    )
-
-
-def build_untargeted_cid_nl_production_batch(
-    *,
-    raw_paths: tuple[Path, ...],
-    sample_metadata: tuple[SampleMetadata, ...],
-    settings: DiscoverySettings,
-    peak_config: ExtractionConfig,
-    candidates_by_sample: Mapping[str, tuple[DiscoveryCandidate, ...]],
-    discovery_receipts_by_sample: Mapping[str, DiscoveryCandidateUniverseReceipt],
-    dll_dir: Path,
-    sample_identity_namespace: str,
-    signal_processing_profile: SignalProcessingProfile | None = None,
-    physical_records_by_candidate: Mapping[str, DiscoveryPhysicalFactRecord]
-    | None = None,
-) -> UntargetedCidNlProductionBatch:
-    """Materialize a complete batch for existing direct runtime consumers."""
-
-    plan = prepare_untargeted_cid_nl_production_plan(
-        raw_paths=raw_paths,
-        sample_metadata=sample_metadata,
-        settings=settings,
-        peak_config=peak_config,
-        candidates_by_sample=candidates_by_sample,
-        discovery_receipts_by_sample=discovery_receipts_by_sample,
-        dll_dir=dll_dir,
-        sample_identity_namespace=sample_identity_namespace,
-        signal_processing_profile=signal_processing_profile,
-        physical_records_by_candidate=physical_records_by_candidate,
-    )
-    return materialize_untargeted_cid_nl_partition(plan, plan.subject_batch)
-
-
-def execute_untargeted_cid_nl_production_batch(
-    batch: UntargetedCidNlProductionBatch,
-    *,
-    telemetry_provider: RuntimeTelemetryProvider,
-    recovery_marker: OwnerPathRuntimeMarker,
-    progress_callback: Callable[[Mapping[str, object]], None] | None = None,
-    alignment_config: AlignmentConfig = CID_NL_ALIGNMENT_CONFIG,
-    known_istd_reference: KnownIstdReference | None = None,
-) -> UntargetedCidNlRealDataRuntimeApplicationResult:
-    """Execute the sealed universe once and enforce its per-sample phase bound."""
-
-    if not isinstance(batch, UntargetedCidNlProductionBatch):
-        raise TypeError("batch must be an UntargetedCidNlProductionBatch")
-    runtime = start_runtime_attempt(
-        attempt=batch.context.processing_owners.attempt,
-        work_unit_keys=tuple(job.work_unit_key for job in batch.jobs),
-        owner_completeness_attestation=(
-            f"{batch.context.processing_owners.request.processing_request_id}:"
-            "cid-nl-production"
-        ),
-    )
-    result = execute_untargeted_cid_nl_real_data_runtime(
-        runtime,
-        batch.jobs,
-        telemetry_provider=telemetry_provider,
-        recovery_marker=recovery_marker,
-        progress_callback=progress_callback,
-        alignment_config=alignment_config,
-        prepare_grouping=lambda results: prepare_untargeted_cid_nl_grouping(
-            batch,
-            results,
-            alignment_config=alignment_config,
-            known_istd_reference=known_istd_reference,
-            progress_callback=progress_callback,
-        ),
-    )
-    if not result.succeeded or len(result.sample_results) != len(batch.jobs):
-        raise RuntimeError("Untargeted CID-NL production did not complete atomically")
-    call_cost = untargeted_cid_nl_runtime_call_cost(result.finalization)
-    sample_count = len(batch.context.samples)
-    if (
-        call_cost["raw_open_count"] > sample_count * 2
-        or call_cost["xic_batch_count"] > sample_count * 2
-    ):
-        raise RuntimeError(
-            "Untargeted CID-NL production exceeded initial/backfill sample phases"
-        )
-    return result
-
-
-@dataclass(frozen=True, slots=True)
-class UntargetedCidNlPartitionComposition:
+class UntargetedPartitionComposition:
     """Subject-local scientific closure without a whole-runtime completion claim."""
 
     children: tuple[FinalizedUntargetApplicationResult, ...]
@@ -757,7 +131,7 @@ class UntargetedCidNlPartitionComposition:
 
 
 @dataclass(frozen=True, slots=True)
-class UntargetedCidNlPersistedPartition:
+class PersistedUntargetedPartition:
     """Lightweight positions for one persisted scientific partition."""
 
     sealed: SealedPartition
@@ -766,18 +140,18 @@ class UntargetedCidNlPersistedPartition:
     child_order_keys: tuple[str, ...] = ()
 
 
-def compose_and_persist_untargeted_cid_nl_partition(
-    batch: UntargetedCidNlProductionBatch,
+def compose_and_persist_untargeted_partition(
+    batch: UntargetedPartitionInputs,
     sample_results: tuple[UntargetedCidNlRuntimeSampleResult, ...],
     *,
-    store: PartitionResultStore,
+    store: StreamedResultStore,
     partition_key: str,
     alignment_config: AlignmentConfig,
     known_istd_reference: KnownIstdReference | None = None,
     should_cancel: Callable[[], object] | None = None,
     retain_memory: bool = False,
     raw_workers: int = DEFAULT_ALIGNMENT_WORKERS,
-) -> UntargetedCidNlPersistedPartition:
+) -> PersistedUntargetedPartition:
     """Compose one child at a time and publish only after the full partition.
 
     Composition inputs are prepared once.  The result store owns the trusted
@@ -819,7 +193,7 @@ def compose_and_persist_untargeted_cid_nl_partition(
             yield child
             del child
 
-    metadata_payload = UntargetedCidNlPartitionComposition(
+    metadata_payload = UntargetedPartitionComposition(
         children=(),
         excluded_candidates=inputs.request.excluded_candidates,
         # Child scopes and capture_evidence retain the complete physical facts.
@@ -837,7 +211,7 @@ def compose_and_persist_untargeted_cid_nl_partition(
         metadata_payload=metadata_payload,
         retain_memory=retain_memory,
     )
-    return UntargetedCidNlPersistedPartition(
+    return PersistedUntargetedPartition(
         sealed=sealed,
         child_count=child_count,
         excluded_candidate_ids=tuple(
@@ -858,55 +232,13 @@ class _ProductionCompositionInputs:
     capture_evidence: tuple[RetainedCaptureEvidence, ...] = ()
 
 
-def compose_untargeted_cid_nl_production_result(
-    batch: UntargetedCidNlProductionBatch,
-    runtime_result: UntargetedCidNlRealDataRuntimeApplicationResult,
-    *,
-    alignment_config: AlignmentConfig,
-    known_istd_reference: KnownIstdReference | None = None,
-) -> CompletedUntargetBatchWorkflowResult:
-    """Close exact subject-local workflows from the one completed runtime."""
-
-    if not runtime_result.succeeded:
-        raise RuntimeError("CID-NL production cannot compose a partial runtime")
-    batch = replace(batch, prepared_grouping=runtime_result.prepared_grouping)
-    inputs = _build_production_composition_inputs(
-        batch,
-        runtime_result.sample_results,
-        alignment_config=alignment_config,
-        known_istd_reference=known_istd_reference,
-    )
-    if (
-        runtime_result.finalization.supervisor.attempt
-        is not inputs.request.processing_attempt
-    ):
-        raise AlignmentWorkflowContractError(
-            "Untarget batch composition crossed its processing attempt"
-        )
-    try:
-        application_result = complete_untarget_batch(inputs.request, inputs.bundles)
-    except _WorkflowStageFailure as failure:
-        raise RuntimeError(
-            "CID-NL workflow failed atomically: "
-            f"stage={failure.stage}; reason={failure.error}"
-        ) from failure.error
-    return CompletedUntargetBatchWorkflowResult(
-        runtime_receipt=runtime_result.finalization,
-        application_result=application_result,
-        method_assessments=inputs.method_assessments,
-        initial_groups=inputs.initial_groups,
-        initial_edges=inputs.initial_edges,
-        capture_evidence=inputs.capture_evidence,
-    )
-
-
-def compose_untargeted_cid_nl_partition(
-    batch: UntargetedCidNlProductionBatch,
+def compose_untargeted_partition(
+    batch: UntargetedPartitionInputs,
     sample_results: tuple[UntargetedCidNlRuntimeSampleResult, ...],
     *,
     alignment_config: AlignmentConfig,
     known_istd_reference: KnownIstdReference | None = None,
-) -> UntargetedCidNlPartitionComposition:
+) -> UntargetedPartitionComposition:
     """Compose complete subject partitions before global runtime finalization."""
     inputs = _build_production_composition_inputs(
         batch,
@@ -914,7 +246,7 @@ def compose_untargeted_cid_nl_partition(
         alignment_config=alignment_config,
         known_istd_reference=known_istd_reference,
     )
-    return UntargetedCidNlPartitionComposition(
+    return UntargetedPartitionComposition(
         children=tuple(
             compose_untarget_subject(
                 cast(UntargetWorkflowCompositionRequest, bundle.request),
@@ -934,8 +266,8 @@ def compose_untargeted_cid_nl_partition(
     )
 
 
-def prepare_untargeted_cid_nl_grouping(
-    batch: UntargetedCidNlProductionBatch,
+def prepare_untargeted_partition_grouping(
+    batch: UntargetedPartitionInputs,
     sample_results: tuple[UntargetedCidNlInitialSampleResult, ...],
     *,
     alignment_config: AlignmentConfig,
@@ -1087,9 +419,9 @@ def prepare_untargeted_cid_nl_grouping(
         for subject in batch.subject_batch.subjects
         if bindings_by_subject.get(subject.method_subject_id)
     )
-    for subject_workset in cid_nl_alignment_subject_worksets(
+    for subject_workset in alignment_subject_worksets(
         active_subjects,
-        comparison_mz_intervals=_known_istd_comparison_intervals(known_istd_reference),
+        known_istd_reference=known_istd_reference,
     ):
         child_bindings = tuple(
             sorted(
@@ -1304,7 +636,7 @@ def prepare_untargeted_cid_nl_grouping(
 
 
 def _build_production_composition_inputs(
-    batch: UntargetedCidNlProductionBatch,
+    batch: UntargetedPartitionInputs,
     sample_results: tuple[UntargetedCidNlRuntimeSampleResult, ...],
     *,
     alignment_config: AlignmentConfig,
@@ -1380,7 +712,7 @@ def _build_production_composition_inputs(
         if not is_unsearched_cid_nl_discovery_assessment(assessment)
     ]
 
-    prepared = batch.prepared_grouping or prepare_untargeted_cid_nl_grouping(
+    prepared = batch.prepared_grouping or prepare_untargeted_partition_grouping(
         batch,
         tuple(
             UntargetedCidNlInitialSampleResult(item.job, item.adapter_result)
@@ -1731,7 +1063,7 @@ def _build_production_composition_inputs(
 
 
 def _runtime_captures_by_candidate(
-    batch: UntargetedCidNlProductionBatch,
+    batch: UntargetedPartitionInputs,
     sample_results: tuple[UntargetedCidNlInitialSampleResult, ...],
 ) -> dict[str, SampleLocalCapture]:
     captures: dict[str, SampleLocalCapture] = {}
@@ -1751,39 +1083,3 @@ def _runtime_captures_by_candidate(
     if set(captures) != expected:
         raise RuntimeError("runtime capture does not close capture-eligible candidates")
     return captures
-
-
-build_untargeted_production_batch = build_untargeted_cid_nl_production_batch
-execute_untargeted_production_batch = execute_untargeted_cid_nl_production_batch
-compose_untargeted_production_result = compose_untargeted_cid_nl_production_result
-prepare_untargeted_production_plan = prepare_untargeted_cid_nl_production_plan
-UntargetedProductionBatch = UntargetedCidNlProductionBatch
-UntargetedProductionPlan = UntargetedCidNlProductionPlan
-materialize_untargeted_partition = materialize_untargeted_cid_nl_partition
-
-
-__all__ = [
-    "UntargetedCidNlPartitionComposition",
-    "UntargetedCidNlPersistedPartition",
-    "PreparedCidNlAlignmentSubjectWorksets",
-    "UntargetedCidNlProductionBatch",
-    "UntargetedCidNlProductionPlan",
-    "UntargetedProductionBatch",
-    "UntargetedProductionPlan",
-    "build_untargeted_cid_nl_production_batch",
-    "build_untargeted_production_batch",
-    "compose_and_persist_untargeted_cid_nl_partition",
-    "compose_untargeted_cid_nl_partition",
-    "compose_untargeted_cid_nl_production_result",
-    "compose_untargeted_production_result",
-    "execute_untargeted_cid_nl_production_batch",
-    "execute_untargeted_production_batch",
-    "is_pure_single_provider_cid_nl",
-    "is_supported_alignment_discovery",
-    "materialize_untargeted_cid_nl_partition",
-    "materialize_untargeted_partition",
-    "prepare_untargeted_cid_nl_alignment_subject_worksets",
-    "prepare_untargeted_cid_nl_grouping",
-    "prepare_untargeted_cid_nl_production_plan",
-    "prepare_untargeted_production_plan",
-]

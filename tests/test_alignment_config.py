@@ -46,33 +46,33 @@ def test_alignment_modules_do_not_import_pipeline_or_io_boundaries():
         (
             "pipeline.py",
             "xic_extractor.extraction.untargeted_alignment."
-            "complete_untargeted_cid_nl_alignment",
+            "complete_untargeted_alignment",
         ),
         (
             "pipeline.py",
-            "xic_extractor.extraction.untargeted_production_batch",
+            "xic_extractor.extraction.untargeted_partition_composition",
         ),
         (
             "pipeline.py",
-            "xic_extractor.extraction.untargeted_production_batch."
+            "xic_extractor.extraction.untargeted_partition_composition."
             "is_supported_alignment_discovery",
         ),
         (
             "pipeline.py",
-            "xic_extractor.extraction.untargeted_cid_nl_alignment",
+            "xic_extractor.extraction.untargeted_alignment",
         ),
         (
             "pipeline.py",
-            "xic_extractor.extraction.untargeted_cid_nl_alignment."
-            "complete_untargeted_cid_nl_alignment",
+            "xic_extractor.extraction.untargeted_alignment."
+            "complete_untargeted_alignment",
         ),
         (
             "pipeline.py",
-            "xic_extractor.extraction.untargeted_cid_nl_production_batch",
+            "xic_extractor.extraction.untargeted_partition_composition",
         ),
         (
             "pipeline.py",
-            "xic_extractor.extraction.untargeted_cid_nl_production_batch."
+            "xic_extractor.extraction.untargeted_partition_composition."
             "is_supported_alignment_discovery",
         ),
     }

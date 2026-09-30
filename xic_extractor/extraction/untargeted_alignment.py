@@ -49,17 +49,15 @@ from xic_extractor.execution_runtime_owner import (
     runtime_started_worker_keys,
 )
 from xic_extractor.execution_settings import DEFAULT_ALIGNMENT_WORKERS
-from xic_extractor.extraction.untargeted_cid_nl_bounded_runtime import (
-    execute_bounded_untargeted_cid_nl,
+from xic_extractor.extraction.untargeted_execution import (
+    execute_untargeted_plan,
 )
 from xic_extractor.extraction.untargeted_execution_result import (
     CompletedUntargetBatchWorkflowResult,
 )
 from xic_extractor.extraction.untargeted_input_planning import (
+    prepare_eager_untargeted_plan,
     prepare_indexed_untargeted_plan,
-)
-from xic_extractor.extraction.untargeted_production_batch import (
-    prepare_untargeted_production_plan,
 )
 from xic_extractor.immutable_sequence import ImmutableSequence
 from xic_extractor.processing_identity import AcquisitionSourceExpectation
@@ -71,8 +69,6 @@ from xic_extractor.sample_metadata import SampleMetadata
 
 _SAMPLE_IDENTITY_NAMESPACE = "alignment-untargeted-cid-nl"
 _RUNTIME_ARTIFACT_NAMESPACE = "untargeted-cid-nl-alignment"
-_real_prepare_untargeted_production_plan = prepare_untargeted_production_plan
-prepare_untargeted_cid_nl_production_plan = prepare_untargeted_production_plan
 
 
 @dataclass(frozen=True, slots=True)
@@ -190,7 +186,7 @@ def _index_discovery_physical_sources(
         raise
 
 
-def complete_untargeted_cid_nl_alignment(
+def complete_untargeted_alignment(
     *,
     discovery_batch: DiscoveryBatchInput,
     candidates_by_sample: Mapping[str, tuple[DiscoveryCandidate, ...]],
@@ -371,14 +367,8 @@ def complete_untargeted_cid_nl_alignment(
                     raw_workers=raw_workers,
                     retained_records_sink=retain_records,
                 )
-        _prepare_plan = prepare_untargeted_production_plan
-        if (
-            prepare_untargeted_cid_nl_production_plan
-            is not _real_prepare_untargeted_production_plan
-        ):
-            _prepare_plan = prepare_untargeted_cid_nl_production_plan
         if not isinstance(candidates_by_sample, DiscoveryInputSource):
-            plan = _prepare_plan(
+            plan = prepare_eager_untargeted_plan(
                 raw_paths=ordered_raw_paths,
                 sample_metadata=retained_sample_metadata,
                 settings=settings,
@@ -419,7 +409,7 @@ def complete_untargeted_cid_nl_alignment(
             recorder.stage("alignment.untargeted_cid_nl_runtime") as runtime_stage,
             recorder.process_memory_scope("retained_runtime") as runtime_peak,
         ):
-            completed = execute_bounded_untargeted_cid_nl(
+            completed = execute_untargeted_plan(
                 plan,
                 output_dir=output_dir,
                 telemetry_provider=lambda coordinator: _coarse_runtime_telemetry(
@@ -668,15 +658,6 @@ def _coarse_runtime_telemetry(
         ),
         unavailable_reason=unavailable_reason,
     )
-
-
-complete_untargeted_alignment = complete_untargeted_cid_nl_alignment
-prepare_untargeted_cid_nl_production_plan = prepare_untargeted_production_plan
-
-
 __all__ = [
     "complete_untargeted_alignment",
-    "complete_untargeted_cid_nl_alignment",
-    "prepare_untargeted_cid_nl_production_plan",
-    "prepare_untargeted_production_plan",
 ]

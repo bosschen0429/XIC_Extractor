@@ -17,17 +17,17 @@ from tests.test_untargeted_cid_nl_real_data_runtime import (
     _discovery_receipts,
     _install_runtime_raws,
 )
+from tests.untargeted_partition_fixtures import (
+    build_dense_partition,
+    complete_dense_partition,
+    execute_dense_partition,
+)
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.tsv_writer import write_alignment_matrix_tsv
 from xic_extractor.alignment.untargeted_finalized_matrix import (
     project_completed_untarget_batch_writer_inputs,
 )
 from xic_extractor.execution_runtime_marker import OwnerPathRuntimeMarker
-from xic_extractor.extraction.untargeted_cid_nl_production_batch import (
-    build_untargeted_cid_nl_production_batch,
-    compose_untargeted_cid_nl_production_result,
-    execute_untargeted_cid_nl_production_batch,
-)
 from xic_extractor.presets.apply import apply_to_discovery
 from xic_extractor.presets.loader import load_preset
 from xic_extractor.sample_metadata import SampleMetadata
@@ -102,7 +102,7 @@ def test_configured_composition_runs_discovery_to_owner_matrix(
         )
         if recovery and index == 3:
             candidates[path.stem] = ()
-    batch = build_untargeted_cid_nl_production_batch(
+    batch = build_dense_partition(
         raw_paths=paths,
         sample_metadata=tuple(
             SampleMetadata(
@@ -123,7 +123,7 @@ def test_configured_composition_runs_discovery_to_owner_matrix(
     assert len(batch.subject_batch.subjects) == 1
     _install_runtime_raws(monkeypatch, sources_by_path=sources, tmp_path=tmp_path)
     alignment_config = AlignmentConfig(anchor_min_seed_events=1)
-    runtime = execute_untargeted_cid_nl_production_batch(
+    runtime = execute_dense_partition(
         batch,
         alignment_config=alignment_config,
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
@@ -167,7 +167,7 @@ def test_configured_composition_runs_discovery_to_owner_matrix(
             and assessment.content.evaluation_receipt.scanned_event_count == 1
             for assessment in by_sample.values()
         )
-    completed = compose_untargeted_cid_nl_production_result(
+    completed = complete_dense_partition(
         batch, runtime, alignment_config=alignment_config
     )
     writer = project_completed_untarget_batch_writer_inputs(

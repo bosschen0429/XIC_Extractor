@@ -18,6 +18,10 @@ from tests.test_untargeted_cid_nl_real_data_runtime import (
     _discovery_receipts,
     _install_runtime_raws,
 )
+from tests.untargeted_partition_fixtures import (
+    build_dense_partition,
+    complete_dense_partition,
+)
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.cross_sample_neighborhood_graph import (
     CrossSamplePartitionTransition,
@@ -33,10 +37,6 @@ from xic_extractor.execution_runtime_marker import OwnerPathRuntimeMarker
 from xic_extractor.execution_runtime_owner import start_runtime_attempt
 from xic_extractor.extraction import (
     untargeted_cid_nl_real_data_runtime as runtime_owner,
-)
-from xic_extractor.extraction.untargeted_cid_nl_production_batch import (
-    build_untargeted_cid_nl_production_batch,
-    compose_untargeted_cid_nl_production_result,
 )
 from xic_extractor.extraction.untargeted_cid_nl_real_data_inputs import (
     build_untargeted_cid_nl_real_data_context,
@@ -82,7 +82,7 @@ def test_rejected_initial_evidence_gets_one_independent_bounded_assessment(
             )
             if outcome == "empty":
                 raw.intensity[:] = 0.0
-    batch = build_untargeted_cid_nl_production_batch(
+    batch = build_dense_partition(
         raw_paths=paths,
         sample_metadata=tuple(
             SampleMetadata(
@@ -155,7 +155,7 @@ def test_rejected_initial_evidence_gets_one_independent_bounded_assessment(
     assert initial.content.reason_codes == (
         "qualifying_cid_nl_without_usable_ms1_peak",
     )
-    completed = compose_untargeted_cid_nl_production_result(
+    completed = complete_dense_partition(
         batch, result, alignment_config=AlignmentConfig(anchor_min_seed_events=1)
     )
     assert initial in completed.method_assessments
@@ -377,7 +377,7 @@ def test_runtime_recovers_every_authorized_rt_group(
         )
         return
     if batched:
-        batch = build_untargeted_cid_nl_production_batch(**kwargs, dll_dir=tmp_path)
+        batch = build_dense_partition(**kwargs, dll_dir=tmp_path)
         context, jobs = batch.context, batch.jobs
         assert len(batch.subject_batch.subjects) == 1
     else:
@@ -489,7 +489,7 @@ def test_runtime_recovers_every_authorized_rt_group(
             _ = missing.backfill_attempt
     if batched:
         canonical_calls.clear()
-        completed = compose_untargeted_cid_nl_production_result(
+        completed = complete_dense_partition(
             batch, result, alignment_config=AlignmentConfig(anchor_min_seed_events=1)
         )
         assert len(canonical_calls) == len(set(canonical_calls))
@@ -934,7 +934,7 @@ def test_shared_physical_recovery_claim_is_not_assigned_to_two_groups(
             if path.stem != "Missing"
             else tuple(_without_ms1_peak(candidate) for candidate in current)
         )
-    batch = build_untargeted_cid_nl_production_batch(
+    batch = build_dense_partition(
         raw_paths=paths,
         sample_metadata=tuple(
             SampleMetadata(
@@ -972,7 +972,7 @@ def test_shared_physical_recovery_claim_is_not_assigned_to_two_groups(
         for item in result.sample_results
         if item.job.sample.metadata.raw_stem == "Missing"
     )
-    completed = compose_untargeted_cid_nl_production_result(
+    completed = complete_dense_partition(
         batch, result, alignment_config=AlignmentConfig(anchor_min_seed_events=1)
     )
     assert len(missing.backfill_attempts) == 2, (
@@ -1054,7 +1054,7 @@ def test_shared_ms1_only_backfill_peak_is_not_written_to_two_rows(
             if path.stem != "Missing"
             else ()
         )
-    batch = build_untargeted_cid_nl_production_batch(
+    batch = build_dense_partition(
         raw_paths=paths,
         sample_metadata=tuple(
             SampleMetadata(
@@ -1103,7 +1103,7 @@ def test_shared_ms1_only_backfill_peak_is_not_written_to_two_rows(
     }
     assert len(physical_ids) == 1
 
-    completed = compose_untargeted_cid_nl_production_result(
+    completed = complete_dense_partition(
         batch, result, alignment_config=AlignmentConfig(anchor_min_seed_events=1)
     )
     (child,) = completed.application_result.children
@@ -1170,7 +1170,7 @@ def test_ms1_only_backfill_fills_only_one_unique_group_window_peak(
             if path.stem != "Missing"
             else ()
         )
-    batch = build_untargeted_cid_nl_production_batch(
+    batch = build_dense_partition(
         raw_paths=paths,
         sample_metadata=tuple(
             SampleMetadata(
@@ -1211,7 +1211,7 @@ def test_ms1_only_backfill_fills_only_one_unique_group_window_peak(
     (attempt,) = missing.backfill_attempts
     assert attempt.assessment.content.reason_codes == ("no_unique_qualifying_relation",)
     assert len(attempt.assessment.candidate_peaks) == len(missing_peaks)
-    completed = compose_untargeted_cid_nl_production_result(
+    completed = complete_dense_partition(
         batch, result, alignment_config=AlignmentConfig(anchor_min_seed_events=1)
     )
     (child,) = completed.application_result.children
@@ -1314,7 +1314,7 @@ def test_backfill_reaches_a_sample_whose_support_belongs_to_another_group(
         candidates[path.stem] = _current_candidates(
             raw, raw_file=path, settings=settings, peak_config=peak_config
         )
-    batch = build_untargeted_cid_nl_production_batch(
+    batch = build_dense_partition(
         raw_paths=paths,
         sample_metadata=tuple(
             SampleMetadata(
@@ -1355,7 +1355,7 @@ def test_backfill_reaches_a_sample_whose_support_belongs_to_another_group(
     assert missing.adapter_result.assessment_input.assessment.content.method_result == (
         "SUPPORT"
     )
-    completed = compose_untargeted_cid_nl_production_result(
+    completed = complete_dense_partition(
         batch, result, alignment_config=AlignmentConfig(anchor_min_seed_events=1)
     )
     writer = project_completed_untarget_batch_writer_inputs(
@@ -1392,10 +1392,10 @@ def _assert_alignment_uses_configured_recovery_groups(
         project_completed_untarget_batch_writer_inputs,
     )
     from xic_extractor.extraction import (
-        untargeted_cid_nl_bounded_runtime as bounded_runtime,
+        untargeted_execution as bounded_runtime,
     )
-    from xic_extractor.extraction.untargeted_cid_nl_alignment import (
-        complete_untargeted_cid_nl_alignment,
+    from xic_extractor.extraction.untargeted_alignment import (
+        complete_untargeted_alignment,
     )
 
     opened = _install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
@@ -1423,7 +1423,7 @@ def _assert_alignment_uses_configured_recovery_groups(
     monkeypatch.setattr(
         bounded_runtime, "execute_untargeted_cid_nl_runtime_partition", retain_runtime
     )
-    completed = complete_untargeted_cid_nl_alignment(
+    completed = complete_untargeted_alignment(
         discovery_batch=DiscoveryBatchInput(
             sample_order=tuple(candidates),
             candidate_csvs={
