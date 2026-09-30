@@ -214,6 +214,7 @@ SHARD_PATTERNS: ShardPatterns = OrderedDict(
             "tests/test_blank_qualification.py",
             "tests/test_build_local_ms1_feature_table_cli.py",
             "tests/test_cell_observations.py",
+            "tests/test_collapse_same_compound_rows.py",
             "tests/test_cross_sample_*.py",
             "tests/test_delta_mass_*.py",
             "tests/test_detected_feature_sources.py",

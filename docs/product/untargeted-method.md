@@ -84,6 +84,26 @@ by itself:
 - Broad artifact/adduct/isotope/in-source fragment deconvolution.
 - Treating review-only candidates as product matrix values.
 
+## Same-Compound Row Collapse
+
+`scripts/collapse_same_compound_rows.py` is an operator tool run after
+Alignment. It writes a separate Matrix for downstream analysis with one row per
+compound; the canonical Matrix, its writer authority and its outputs are
+unchanged. It needs the `validation-minimal` outputs, because only they record
+which cells are direct detections, and it compares areas over directly
+detected samples only.
+
+- An M+1 row (one 13C or 15N heavier) of a co-eluting row that is at least
+  twice as strong, with a stable per-sample ratio, is removed.
+- Co-eluting ions of one compound (Na+, K+ and NH4+ adducts, [2M+H]+, M+2,
+  in-source loss of dR or H2O) with stable ratios form a group that keeps only
+  its [M+H]+ row: the member from which the most other members follow by mass,
+  not the most intense ion.
+- ISTD rows from the targets file are always kept.
+
+Every removal names the row kept in its place, and rows needing judgement are
+listed for review. The thresholds come from one full85 tissue batch; see #475.
+
 ## Promotion Rule
 
 Any future expansion from method evidence to product output must name:
