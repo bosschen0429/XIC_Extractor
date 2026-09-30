@@ -1,3 +1,5 @@
+"""Translate Targeted caller inputs into the shared peak hypothesis owner."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -11,7 +13,7 @@ from xic_extractor.peak_detection.hypotheses import (
 def build_targeted_peak_hypotheses(**values: Any) -> tuple[PeakHypothesis, ...]:
     """Convert current Targeted callers into the neutral hypothesis owner.
 
-    Remove after the named candidate-table, boundary, and handoff callers receive
+    Remove after the candidate-table, boundary, and selection callers receive
     owner-issued ``TargetSearchScope`` values directly.
     """
 

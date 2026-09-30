@@ -51,7 +51,7 @@ def test_direct_hypothesis_owner_consumers_match_the_finite_census() -> None:
     }
 
     assert direct_importers == {
-        "extraction/peak_hypothesis_adapter.py",
+        "extraction/targeted_peak_hypotheses.py",
         "extraction/untargeted_partition/cid_nl_acquisition.py",
         "peak_detection/capture.py",
     }

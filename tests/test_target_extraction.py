@@ -196,13 +196,13 @@ def test_extract_one_target_uses_shared_physical_candidate_and_owner_apex(
     monkeypatch.setattr(
         target_extraction, "enumerate_physical_segment_universe", _enumerate
     )
-    selected_handoff_peak = target_extraction.selected_handoff_peak
+    select_targeted_peak = target_extraction.select_targeted_peak
 
     def _handoff(**kwargs):
         captured["handoff_inputs"] = kwargs
-        return selected_handoff_peak(**kwargs)
+        return select_targeted_peak(**kwargs)
 
-    monkeypatch.setattr(target_extraction, "selected_handoff_peak", _handoff)
+    monkeypatch.setattr(target_extraction, "select_targeted_peak", _handoff)
 
     acquired_rt = np.linspace(8.0, 8.8, 41)
     acquired_intensity = 10.0 + 100.0 * np.exp(-((acquired_rt - 8.4) ** 2) / 0.002)

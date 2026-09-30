@@ -6,7 +6,7 @@ import pytest
 
 from xic_extractor.config import ExtractionConfig, Target
 from xic_extractor.evidence.neutral_loss import CandidateMS2Evidence
-from xic_extractor.extraction import handoff_spine_runtime
+from xic_extractor.extraction import targeted_peak_selection
 from xic_extractor.peak_detection.model_selection import (
     ExpectedDiffApprovalRecord,
     expected_diff_stable_row_id,
@@ -54,7 +54,7 @@ def test_build_production_peak_hypotheses_maps_selected_ms2_only(tmp_path) -> No
             _score(rejected, confidence="LOW"),
         ),
     )
-    hypotheses = handoff_spine_runtime.build_production_peak_hypotheses(
+    hypotheses = targeted_peak_selection.build_production_peak_hypotheses(
         config=_config(tmp_path),
         sample_name="SampleA",
         target=target,
@@ -65,7 +65,7 @@ def test_build_production_peak_hypotheses_maps_selected_ms2_only(tmp_path) -> No
         trace_group=trace_group,
     )
 
-    selected_hypothesis = handoff_spine_runtime.selected_peak_hypothesis(hypotheses)
+    selected_hypothesis = targeted_peak_selection.selected_peak_hypothesis(hypotheses)
     rejected_hypothesis = next(
         hypothesis for hypothesis in hypotheses if not hypothesis.audit.selected
     )
@@ -80,7 +80,7 @@ def test_build_production_peak_hypotheses_maps_selected_ms2_only(tmp_path) -> No
 def test_selected_peak_hypothesis_returns_none_without_selected_candidate(
     tmp_path,
 ) -> None:
-    hypotheses = handoff_spine_runtime.build_production_peak_hypotheses(
+    hypotheses = targeted_peak_selection.build_production_peak_hypotheses(
         config=_config(tmp_path),
         sample_name="SampleA",
         target=_target(),
@@ -95,7 +95,7 @@ def test_selected_peak_hypothesis_returns_none_without_selected_candidate(
     )
 
     assert hypotheses == ()
-    assert handoff_spine_runtime.selected_peak_hypothesis(hypotheses) is None
+    assert targeted_peak_selection.selected_peak_hypothesis(hypotheses) is None
 
 
 def test_build_production_peak_hypotheses_passes_no_ms2_detection_policy(
@@ -119,8 +119,8 @@ def test_build_production_peak_hypotheses_passes_no_ms2_detection_policy(
         ),
     )
 
-    hypothesis = handoff_spine_runtime.selected_peak_hypothesis(
-        handoff_spine_runtime.build_production_peak_hypotheses(
+    hypothesis = targeted_peak_selection.selected_peak_hypothesis(
+        targeted_peak_selection.build_production_peak_hypotheses(
             config=replace(_config(tmp_path), count_no_ms2_as_detected=True),
             sample_name="SampleA",
             target=_target(),
@@ -164,8 +164,8 @@ def test_selected_hypothesis_uses_final_peak_result_confidence_when_score_is_sta
         candidate_scores=(_score(candidate, confidence="HIGH"),),
     )
 
-    selected = handoff_spine_runtime.selected_peak_hypothesis(
-        handoff_spine_runtime.build_production_peak_hypotheses(
+    selected = targeted_peak_selection.selected_peak_hypothesis(
+        targeted_peak_selection.build_production_peak_hypotheses(
             config=_config(tmp_path),
             sample_name="SampleA",
             target=_target(),
@@ -180,7 +180,7 @@ def test_selected_hypothesis_uses_final_peak_result_confidence_when_score_is_sta
     )
 
 
-def test_selected_handoff_peak_uses_model_selection_gate_for_selected_hypothesis(
+def test_select_targeted_peak_uses_model_selection_gate_for_selected_hypothesis(
     tmp_path,
 ) -> None:
     candidate = _candidate(8.50)
@@ -196,7 +196,7 @@ def test_selected_handoff_peak_uses_model_selection_gate_for_selected_hypothesis
         candidate_scores=(_score(candidate, confidence="HIGH"),),
     )
 
-    handoff = handoff_spine_runtime.selected_handoff_peak(
+    handoff = targeted_peak_selection.select_targeted_peak(
         config=replace(_config(tmp_path), emit_peak_candidates=True),
         sample_name="SampleA",
         target=_target(),
@@ -226,7 +226,7 @@ def test_selected_handoff_peak_uses_model_selection_gate_for_selected_hypothesis
     )
 
 
-def test_selected_handoff_peak_keeps_trace_group_without_candidate_table_output(
+def test_select_targeted_peak_keeps_trace_group_without_candidate_table_output(
     tmp_path,
 ) -> None:
     candidate = _candidate(8.50)
@@ -242,7 +242,7 @@ def test_selected_handoff_peak_keeps_trace_group_without_candidate_table_output(
         candidate_scores=(_score(candidate, confidence="HIGH"),),
     )
     rt = np.asarray([8.3, 8.5, 8.7, 9.2])
-    handoff = handoff_spine_runtime.selected_handoff_peak(
+    handoff = targeted_peak_selection.select_targeted_peak(
         config=replace(_config(tmp_path), emit_peak_candidates=False),
         sample_name="SampleA",
         target=_target(),
@@ -265,7 +265,7 @@ def test_selected_handoff_peak_keeps_trace_group_without_candidate_table_output(
     )
 
 
-def test_selected_handoff_peak_falls_back_on_unapproved_successor_diff(
+def test_select_targeted_peak_falls_back_on_unapproved_successor_diff(
     tmp_path,
 ) -> None:
     legacy_selected = _candidate(8.50)
@@ -285,7 +285,7 @@ def test_selected_handoff_peak_falls_back_on_unapproved_successor_diff(
         ),
     )
 
-    handoff = handoff_spine_runtime.selected_handoff_peak(
+    handoff = targeted_peak_selection.select_targeted_peak(
         config=replace(_config(tmp_path), emit_peak_candidates=True),
         sample_name="SampleA",
         target=_target(),
@@ -320,7 +320,7 @@ def test_selected_handoff_peak_falls_back_on_unapproved_successor_diff(
     )
 
 
-def test_selected_handoff_peak_promotes_rna_containing_strict_nl_successor(
+def test_select_targeted_peak_promotes_rna_containing_strict_nl_successor(
     tmp_path,
 ) -> None:
     legacy_selected = _candidate(12.76, area=49_350.0)
@@ -357,7 +357,7 @@ def test_selected_handoff_peak_promotes_rna_containing_strict_nl_successor(
         ),
     )
 
-    handoff = handoff_spine_runtime.selected_handoff_peak(
+    handoff = targeted_peak_selection.select_targeted_peak(
         config=replace(_config(tmp_path), emit_peak_candidates=True),
         sample_name="TumorBC2304_DNAandRNA",
         target=_target(sample_applicability="rna_containing"),
@@ -395,7 +395,7 @@ def test_selected_handoff_peak_promotes_rna_containing_strict_nl_successor(
     assert "13.08000" in handoff.selected_hypothesis.hypothesis_id
 
 
-def test_selected_handoff_peak_switches_on_approved_expected_diff(
+def test_select_targeted_peak_switches_on_approved_expected_diff(
     tmp_path,
 ) -> None:
     legacy_selected = _candidate(8.50)
@@ -449,7 +449,7 @@ def test_selected_handoff_peak_switches_on_approved_expected_diff(
         final_label="expected_diff",
     )
 
-    handoff = handoff_spine_runtime.selected_handoff_peak(
+    handoff = targeted_peak_selection.select_targeted_peak(
         config=replace(_config(tmp_path), emit_peak_candidates=True),
         sample_name="SampleA",
         target=_target(),
@@ -484,7 +484,7 @@ def test_selected_handoff_peak_switches_on_approved_expected_diff(
     )
 
 
-def test_selected_handoff_peak_can_switch_to_paired_ratio_supported_nl_dropout(
+def test_select_targeted_peak_can_switch_to_paired_ratio_supported_nl_dropout(
     tmp_path,
 ) -> None:
     legacy_selected = _candidate(16.43, area=1_000.0, quality_flags=())
@@ -564,7 +564,7 @@ def test_selected_handoff_peak_can_switch_to_paired_ratio_supported_nl_dropout(
         final_label="expected_diff",
     )
 
-    handoff = handoff_spine_runtime.selected_handoff_peak(
+    handoff = targeted_peak_selection.select_targeted_peak(
         config=replace(_config(tmp_path), emit_peak_candidates=True),
         sample_name="BenignfatBC1055_DNA",
         target=_target(),
@@ -601,7 +601,7 @@ def test_selected_handoff_peak_can_switch_to_paired_ratio_supported_nl_dropout(
     assert handoff.selection_decision.projected_confidence == "VERY_LOW"
 
 
-def test_selected_handoff_peak_blocks_approved_expected_diff_for_unpaired_target(
+def test_select_targeted_peak_blocks_approved_expected_diff_for_unpaired_target(
     tmp_path,
 ) -> None:
     legacy_selected = _candidate(8.50)
@@ -655,7 +655,7 @@ def test_selected_handoff_peak_blocks_approved_expected_diff_for_unpaired_target
         final_label="expected_diff",
     )
 
-    handoff = handoff_spine_runtime.selected_handoff_peak(
+    handoff = targeted_peak_selection.select_targeted_peak(
         config=replace(_config(tmp_path), emit_peak_candidates=True),
         sample_name="SampleA",
         target=replace(_target(), istd_pair=""),
@@ -687,7 +687,7 @@ def test_selected_handoff_peak_blocks_approved_expected_diff_for_unpaired_target
     )
 
 
-def test_selected_handoff_peak_blocks_pair_switch_without_same_sample_istd_anchor(
+def test_select_targeted_peak_blocks_pair_switch_without_same_sample_istd_anchor(
     tmp_path,
 ) -> None:
     legacy_selected = _candidate(8.50)
@@ -741,7 +741,7 @@ def test_selected_handoff_peak_blocks_pair_switch_without_same_sample_istd_ancho
         final_label="expected_diff",
     )
 
-    handoff = handoff_spine_runtime.selected_handoff_peak(
+    handoff = targeted_peak_selection.select_targeted_peak(
         config=replace(_config(tmp_path), emit_peak_candidates=True),
         sample_name="SampleA",
         target=_target(),
@@ -773,7 +773,7 @@ def test_selected_handoff_peak_blocks_pair_switch_without_same_sample_istd_ancho
     )
 
 
-def test_selected_handoff_peak_ignores_wrong_expected_diff_approval(
+def test_select_targeted_peak_ignores_wrong_expected_diff_approval(
     tmp_path,
 ) -> None:
     legacy_selected = _candidate(8.50)
@@ -827,7 +827,7 @@ def test_selected_handoff_peak_ignores_wrong_expected_diff_approval(
         final_label="expected_diff",
     )
 
-    handoff = handoff_spine_runtime.selected_handoff_peak(
+    handoff = targeted_peak_selection.select_targeted_peak(
         config=replace(_config(tmp_path), emit_peak_candidates=True),
         sample_name="SampleA",
         target=_target(),
@@ -854,7 +854,7 @@ def test_selected_handoff_peak_ignores_wrong_expected_diff_approval(
     )
 
 
-def test_selected_handoff_peak_blocks_audit_overlay_expected_diff_approval(
+def test_select_targeted_peak_blocks_audit_overlay_expected_diff_approval(
     tmp_path,
 ) -> None:
     legacy_selected = _candidate(8.50)
@@ -907,7 +907,7 @@ def test_selected_handoff_peak_blocks_audit_overlay_expected_diff_approval(
         final_label="expected_diff",
     )
 
-    handoff = handoff_spine_runtime.selected_handoff_peak(
+    handoff = targeted_peak_selection.select_targeted_peak(
         config=replace(_config(tmp_path), emit_peak_candidates=True),
         sample_name="SampleA",
         target=_target(),
@@ -952,7 +952,7 @@ def test_build_production_peak_hypotheses_uses_config_baseline_method(
     )
 
     with pytest.raises(ValueError, match="retired; use asls"):
-        handoff_spine_runtime.build_production_peak_hypotheses(
+        targeted_peak_selection.build_production_peak_hypotheses(
             config=replace(
                 _config(tmp_path),
                 baseline_integration_method="linear_edge",
@@ -966,7 +966,7 @@ def test_build_production_peak_hypotheses_uses_config_baseline_method(
 
 
 def test_production_handoff_runtime_has_no_cwt_audit_dependency() -> None:
-    source = inspect.getsource(handoff_spine_runtime)
+    source = inspect.getsource(targeted_peak_selection)
 
     assert "add_cwt_proposals_for_audit" not in source
     assert "peak_candidate_table" not in source

@@ -87,6 +87,13 @@ from xic_extractor.extraction.untargeted_alignment import (
 from xic_extractor.extraction.untargeted_input_planning import (
     is_pure_single_provider_cid_nl,
 )
+from xic_extractor.extraction.targeted_peak_hypotheses import (
+    build_targeted_peak_hypotheses,
+)
+from xic_extractor.extraction.targeted_peak_selection import (
+    TargetedPeakSelection,
+    select_targeted_peak,
+)
 from xic_extractor.configuration.execution_profile import load_execution_profile
 from xic_extractor.execution.attempt import start_runtime_attempt
 from xic_extractor.execution.partitions import PartitionPipelineScheduler
@@ -124,6 +131,9 @@ public_objects = {
 module_files = {}
 installed_objects = {
     **public_objects,
+    "build_targeted_peak_hypotheses": build_targeted_peak_hypotheses,
+    "TargetedPeakSelection": TargetedPeakSelection,
+    "select_targeted_peak": select_targeted_peak,
     "complete_analysis": complete_analysis,
     "CompletedUntargetBatchWorkflowResult": CompletedUntargetBatchWorkflowResult,
     "load_execution_profile": load_execution_profile,
