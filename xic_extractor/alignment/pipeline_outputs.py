@@ -30,12 +30,12 @@ from xic_extractor.alignment.backfill_peak_fact_provenance import (
 from xic_extractor.alignment.backfill_scope import (
     REQUEST_PLAN_VERSION,
 )
-from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.alignment.matrix import AlignmentMatrix
-from xic_extractor.alignment.ms1_index_source import (
+from xic_extractor.alignment.config import (
+    AlignmentConfig,
     BackfillXicBackend,
     OwnerBuildXicBackend,
 )
+from xic_extractor.alignment.matrix import AlignmentMatrix
 from xic_extractor.alignment.output_levels import (
     AlignmentOutputLevel,
     artifact_names_for_output_level,

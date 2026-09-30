@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import InitVar, dataclass, field
 from typing import Literal, cast, final, get_args
 
-from xic_extractor.alignment.ms1_index_source import OwnerBuildXicBackend
+from xic_extractor.alignment.config import OwnerBuildXicBackend
 
 EffectiveOwnerBuildRoute = Literal[
     "configured_backend",

@@ -26,7 +26,7 @@ from xic_extractor.alignment.backfill_result import (
     _WindowedRequestItem,
     validate_backfill_peak_fact_observation,  # noqa: F401
 )
-from xic_extractor.alignment.ms1_index_source import BackfillXicBackend
+from xic_extractor.alignment.config import BackfillXicBackend
 from xic_extractor.alignment.scan_retention_times import (
     ScanRetentionTimeCache,
     cached_retention_time_for_scan,

@@ -446,11 +446,10 @@ in `mzmine_seeded` mode, `candidate_edge_count` means mass-detected point count,
 `conflict_component_count` means m/z seed range count, and degraded-assignment
 counts are not applicable because bipartite assignment is not used.
 
-The local generator and Alignment's opt-in `MS1IndexedRawSource` share
+The local generator and Discovery's same-scan evidence consumers share
 `xic_extractor.ms1_scan_index`. That owner fails closed when an MS1 scan has
-malformed mass/intensity arrays or when a RAW source contains no MS1 scans;
-Alignment no longer silently skips those inputs when the indexed backend is
-selected. Alignment consumer tests preserve this shared failure contract.
+malformed mass/intensity arrays or when a RAW source contains no MS1 scans.
+Its index and Discovery consumer tests preserve this shared failure contract.
 
 The reusable co-elution support semantics belong in
 `xic_extractor.discovery.pt_pattern_trace_evidence`. Diagnostic tools may open
