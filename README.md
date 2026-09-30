@@ -94,10 +94,6 @@ uv run --cache-dir .uv-cache --no-project python scripts/bootstrap_worktree.py
 uv run python -m gui.main
 ```
 
-The package build includes a native receipt encoder when a C++ compiler is
-available (MSVC Build Tools on Windows). It is loaded automatically; source
-checkouts and installs without a compiler use the equivalent Python encoder.
-
 Run tests with:
 
 ```powershell

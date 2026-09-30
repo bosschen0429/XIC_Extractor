@@ -6,9 +6,9 @@ import runpy
 import shutil
 import subprocess
 import sys
-import uuid
+import textwrap
 import zipfile
-from collections.abc import Iterator, Sequence
+from collections.abc import Sequence
 from pathlib import Path, PurePosixPath
 
 import pytest
@@ -239,31 +239,22 @@ def test_pyinstaller_system_icu_wins_over_foreign_path_dll(monkeypatch, tmp_path
 
 
 @pytest.fixture(scope="module")
-def authority_packaging_source() -> Iterator[Path]:
-    task_output_root = PROJECT_ROOT / "output"
-    task_output_root.mkdir(exist_ok=True)
+def authority_packaging_source(tmp_path_factory: pytest.TempPathFactory) -> Path:
     # Leave room for isolated build environments and their package paths.
-    temp_root = task_output_root / f"pkg-{uuid.uuid4().hex}"
-    temp_root.mkdir()
-    try:
-        source_root = temp_root / "source"
-        source_root.mkdir()
+    temp_root = tmp_path_factory.mktemp("pkg")
+    source_root = temp_root / "source"
+    source_root.mkdir()
 
-        for filename in ("pyproject.toml", "xic_extractor.spec"):
-            shutil.copy2(PROJECT_ROOT / filename, source_root / filename)
-        for directory in PACKAGING_SOURCE_DIRECTORIES:
-            shutil.copytree(
-                PROJECT_ROOT / directory,
-                source_root / directory,
-                ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "*.pyd", "*.so"),
-            )
+    for filename in ("pyproject.toml", "xic_extractor.spec"):
+        shutil.copy2(PROJECT_ROOT / filename, source_root / filename)
+    for directory in PACKAGING_SOURCE_DIRECTORIES:
+        shutil.copytree(
+            PROJECT_ROOT / directory,
+            source_root / directory,
+            ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "*.pyd", "*.so"),
+        )
 
-        yield source_root
-    finally:
-        resolved_temp_root = temp_root.resolve()
-        assert resolved_temp_root.parent == task_output_root.resolve()
-        assert resolved_temp_root.name.startswith("pkg-")
-        shutil.rmtree(resolved_temp_root)
+    return source_root
 
 
 def _run_packaging_command(
@@ -554,7 +545,9 @@ def test_built_wheel_exposes_public_cid_nl_activation_surface(
     assert metadata["preset"] == "DNA dR"
     assert metadata["route"] == "align_only"
     assert metadata["cli_help_names"] == [
-        "xic-align-cli", "xic-discovery-cli", "xic-extractor-cli",
+        "xic-align-cli",
+        "xic-discovery-cli",
+        "xic-extractor-cli",
         "xic-untargeted-cid-nl-real-data-cli",
     ]
     for module_file in metadata["module_files"].values():
@@ -605,3 +598,158 @@ def test_final_pyinstaller_output_contains_one_byte_identical_quantitative_autho
         -len(AUTHORITY_RESOURCE_ARCHIVE_PATH.parts) :
     ] == (AUTHORITY_RESOURCE_ARCHIVE_PATH.parts)
     _assert_resource_bytes_match_source(resource_paths[0].read_bytes())
+
+    # Exercise the archive that would be delivered, rather than rebuilding a probe.
+    archive_path = Path(
+        shutil.make_archive(
+            str(artifact_root / "delivered"),
+            "zip",
+            root_dir=dist_root,
+            base_dir="XIC_Extractor",
+        )
+    )
+    archive_hash = hashlib.sha256(archive_path.read_bytes()).hexdigest()
+    extracted_root = artifact_root / "delivered-extracted"
+    shutil.unpack_archive(archive_path, extracted_root)
+    smoke_report = extracted_root / "smoke.json"
+    executable = extracted_root / "XIC_Extractor" / "XIC_Extractor.exe"
+    _run_packaging_command(
+        (str(executable), "--smoke-test", str(smoke_report)),
+        cwd=extracted_root,
+        timeout_seconds=60,
+    )
+    report = json.loads(smoke_report.read_text(encoding="utf-8"))
+    assert report["status"] == "passed"
+    assert report["frozen"] and report["qt_started"] and report["preset_roundtrip"]
+    assert Path(report["executable"]).resolve() == executable.resolve()
+    assert (
+        report["resources"]["authority_id"]
+        == json.loads(resource_paths[0].read_bytes())["authority_id"]
+    )
+    assert Path(report["preset_path"]).is_file()
+    assert hashlib.sha256(archive_path.read_bytes()).hexdigest() == archive_hash
+    print(f"Delivered archive smoke report: {smoke_report}")
+
+
+def _build_workflow_script(step_id: str) -> str:
+    text = (PROJECT_ROOT / ".github" / "workflows" / "build.yml").read_text(
+        encoding="utf-8"
+    )
+    step = text.split(f"        id: {step_id}\n", 1)[1].split("\n      - name:", 1)[0]
+    return textwrap.dedent(step.split("        run: |\n", 1)[1])
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows release workflow")
+@pytest.mark.parametrize(
+    ("runs", "accepted"),
+    (
+        ([{"id": 1, "head_sha": "release-sha", "conclusion": "success"}], True),
+        ([{"id": 2, "head_sha": "release-sha", "conclusion": "failure"}], False),
+        ([{"id": 3, "head_sha": "other-sha", "conclusion": "success"}], False),
+        ([], False),
+    ),
+)
+def test_release_gate_requires_successful_ci_for_exact_sha(tmp_path, runs, accepted):
+    response = tmp_path / "ci-response.json"
+    response.write_text(json.dumps({"workflow_runs": runs}), encoding="utf-8")
+    script = tmp_path / "verify-ci.ps1"
+    script.write_text(
+        """
+function Invoke-RestMethod {
+    param($Uri, $Headers)
+    if ($Uri -notmatch '/actions/workflows/ci.yml/runs\\?head_sha=release-sha&') {
+        throw "CI gate queried the wrong workflow or SHA"
+    }
+    Get-Content -LiteralPath $env:CI_RESPONSE -Raw | ConvertFrom-Json
+}
+"""
+        + _build_workflow_script("verify_ci"),
+        encoding="utf-8",
+    )
+    completed = subprocess.run(
+        ["pwsh", "-NoProfile", "-File", str(script)],
+        env={
+            **os.environ,
+            "CI_RESPONSE": str(response),
+            "GITHUB_API_URL": "https://api.github.com",
+            "GITHUB_REPOSITORY": "example/repository",
+            "GITHUB_SHA": "release-sha",
+            "GH_TOKEN": "test-token",
+        },
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+    assert (completed.returncode == 0) is accepted, completed.stderr
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows release workflow")
+@pytest.mark.parametrize(
+    ("outcome", "accepted"),
+    (("success", True), ("nonzero", False), ("timeout", False), ("failed", False)),
+)
+def test_delivered_archive_gate_rejects_failed_or_timed_out_smoke(
+    tmp_path, outcome, accepted
+):
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    (dist / "fixture.zip").write_bytes(b"the archive selected for delivery")
+    report = tmp_path / "response.json"
+    report.write_text(
+        json.dumps(
+            {
+                "status": "failed" if outcome == "failed" else "passed",
+                "frozen": True,
+                "qt_started": True,
+                "preset_roundtrip": True,
+            }
+        ),
+        encoding="utf-8",
+    )
+    script = tmp_path / "smoke-archive.ps1"
+    script.write_text(
+        """
+function Expand-Archive {
+    param($LiteralPath, $DestinationPath)
+    New-Item -ItemType Directory -Path $DestinationPath | Out-Null
+    Copy-Item $env:SMOKE_RESPONSE (Join-Path $DestinationPath "smoke.json")
+}
+function Start-Process {
+    param($FilePath, $ArgumentList, $WorkingDirectory, $WindowStyle, [switch]$PassThru)
+    $process = [pscustomobject]@{ ExitCode = [int]$env:SMOKE_EXIT; Id = 1234 }
+    $process | Add-Member -MemberType ScriptMethod -Name WaitForExit -Value {
+        param($Timeout)
+        return $env:SMOKE_OUTCOME -ne "timeout"
+    }
+    return $process
+}
+function Stop-Process {
+    param($Id, [switch]$Force)
+}
+"""
+        + _build_workflow_script("smoke_archive").replace(
+            "${{ steps.meta.outputs.artifact_stem }}", "fixture"
+        ),
+        encoding="utf-8",
+    )
+    completed = subprocess.run(
+        ["pwsh", "-NoProfile", "-File", str(script)],
+        cwd=tmp_path,
+        env={
+            **os.environ,
+            "RUNNER_TEMP": str(tmp_path),
+            "SMOKE_RESPONSE": str(report),
+            "SMOKE_EXIT": "7" if outcome == "nonzero" else "0",
+            "SMOKE_OUTCOME": outcome,
+        },
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+    assert (completed.returncode == 0) is accepted, completed.stderr
+    if outcome == "nonzero":
+        assert "exit 7" in completed.stderr
+    elif outcome == "timeout":
+        assert "timed out" in completed.stderr
+    elif outcome == "failed":
+        assert "did not complete" in completed.stderr

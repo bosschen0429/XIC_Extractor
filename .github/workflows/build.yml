@@ -12,6 +12,7 @@ on:
 
 permissions:
   contents: write
+  actions: read
 
 jobs:
   build:
@@ -33,6 +34,28 @@ jobs:
       - name: Install locked dependencies
         shell: pwsh
         run: uv sync --locked --extra dev --group dev --python 3.12
+
+      - name: Verify same-SHA CI for release
+        id: verify_ci
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $uri = "$env:GITHUB_API_URL/repos/$env:GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$env:GITHUB_SHA&status=completed&per_page=100"
+          $runs = Invoke-RestMethod -Uri $uri -Headers @{
+            Authorization = "Bearer $env:GH_TOKEN"
+            Accept = "application/vnd.github+json"
+            "X-GitHub-Api-Version" = "2022-11-28"
+          }
+          $verified = @($runs.workflow_runs | Where-Object {
+            $_.head_sha -eq $env:GITHUB_SHA -and $_.conclusion -eq "success"
+          })
+          if ($verified.Count -eq 0) {
+            throw "Release requires successful ci.yml checks for exactly $env:GITHUB_SHA"
+          }
+          Write-Host "Verified CI run $($verified[0].id) for $env:GITHUB_SHA"
 
       - name: Determine package metadata
         id: meta
@@ -77,6 +100,36 @@ jobs:
           Copy-Item "README.md" (Join-Path $stageDir "README.md")
 
           Compress-Archive -Path $stageDir -DestinationPath $archivePath -Force
+
+      - name: Smoke the delivered archive
+        id: smoke_archive
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $artifactStem = "${{ steps.meta.outputs.artifact_stem }}"
+          $archivePath = Join-Path "dist" "$artifactStem.zip"
+          $archiveHash = (Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash
+          $smokeRoot = Join-Path $env:RUNNER_TEMP ("xic-delivered-smoke-" + [guid]::NewGuid().ToString("N"))
+          Expand-Archive -LiteralPath $archivePath -DestinationPath $smokeRoot
+          $exe = Join-Path $smokeRoot "$artifactStem/XIC_Extractor.exe"
+          $reportPath = Join-Path $smokeRoot "smoke.json"
+          $env:QT_QPA_PLATFORM = "offscreen"
+          $process = Start-Process -FilePath $exe -ArgumentList @("--smoke-test", "`"$reportPath`"") -WorkingDirectory $smokeRoot -WindowStyle Hidden -PassThru
+          if (-not $process.WaitForExit(60000)) {
+            Stop-Process -Id $process.Id -Force
+            throw "Delivered archive smoke timed out: $reportPath"
+          }
+          if ($process.ExitCode -ne 0) {
+            throw "Delivered archive smoke failed (exit $($process.ExitCode)): $reportPath"
+          }
+          $report = Get-Content -LiteralPath $reportPath -Raw | ConvertFrom-Json
+          if ($report.status -ne "passed" -or -not $report.frozen -or -not $report.qt_started -or -not $report.preset_roundtrip) {
+            throw "Delivered archive smoke did not complete: $reportPath"
+          }
+          if ((Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash -ne $archiveHash) {
+            throw "Delivered archive changed after verification"
+          }
+          Write-Host "Verified delivered archive SHA256 $archiveHash; report: $reportPath"
 
       - name: Upload artifact
         if: startsWith(github.ref, 'refs/tags/') || inputs.upload_artifact
