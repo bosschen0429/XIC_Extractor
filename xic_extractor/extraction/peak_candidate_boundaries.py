@@ -4,7 +4,7 @@ from collections.abc import Sequence
 from typing import Any, cast
 
 from xic_extractor.config import ExtractionConfig, Target
-from xic_extractor.extraction.peak_hypothesis_adapter import (
+from xic_extractor.extraction.targeted_peak_hypotheses import (
     build_targeted_peak_hypotheses as build_peak_hypotheses,
 )
 from xic_extractor.peak_detection.baseline import (

@@ -71,7 +71,7 @@ from xic_extractor.alignment.projection.untarget import (
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )
-from xic_extractor.extraction.peak_hypothesis_adapter import (
+from xic_extractor.extraction.targeted_peak_hypotheses import (
     build_targeted_peak_hypotheses,
 )
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
