@@ -5,9 +5,9 @@ import numpy as np
 import pytest
 
 from xic_extractor.config import ExtractionConfig, Target
+from xic_extractor.evidence.neutral_loss import CandidateMS2Evidence, NLResult
 from xic_extractor.extraction.target_extraction import extract_one_target
 from xic_extractor.extractor import ExtractionResult
-from xic_extractor.neutral_loss import CandidateMS2Evidence, NLResult
 from xic_extractor.output.messages import (
     DiagnosticRecord,
     build_diagnostic_records,

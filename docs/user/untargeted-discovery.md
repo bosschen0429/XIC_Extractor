@@ -54,10 +54,10 @@ error; clearing the field runs without an internal-standard list.
 
 ## Outputs
 
-The default Alignment run writes only `alignment_matrix.tsv`. Other Alignment
-TSV, HTML, and XLSX artifacts remain available through explicit machine,
-debug, validation, or artifact options when a review or diagnostic workflow
-needs them.
+The default quantitative output is `alignment_matrix.tsv`. After successful
+Matrix publication, retained CID-NL also saves `cid_nl_explanation.sqlite`
+alongside its runtime marker. Additional review TSV, HTML, and XLSX artifacts
+require explicit machine, debug, validation, or artifact options.
 
 Start with the file that matches your review question:
 
@@ -67,11 +67,15 @@ Start with the file that matches your review question:
 | `discovery_review.csv` | Compact subset of candidate fields with confidence | Quick review triage |
 | `discovery_batch_index.csv` | Links each sample's candidate/review CSVs | Input for alignment (generated automatically) |
 | `alignment_matrix.tsv` | Samples as columns, aligned features as rows, area values in cells | Default cross-sample quantitative output |
+| `cid_nl_explanation.sqlite` | Completed CID-NL decisions and retained curve evidence | Manual XIC Inspector export after successful alignment |
 | `alignment_review.tsv` | Alignment quality, owner identity, backfill status per cell | Explicit review/diagnostic output |
 | Review / gallery HTML | Visual plots of candidate peaks and backfill context | Explicit human inspection output |
 
-The GUI surfaces the matrix by default. Explicit review or diagnostic runs may
-also produce the corresponding output files.
+The GUI surfaces the matrix by default. After successful alignment supplies an
+evidence locator, **Export XIC Inspector** creates an offline HTML report on
+request. **Open XIC Inspector** reopens the last successful report for the
+current run. This is separate from an automatically generated gallery; see the
+[Inspector contract](../product/xic-inspector.md).
 
 ## Further Reading
 

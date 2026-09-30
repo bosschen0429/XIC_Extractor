@@ -7,7 +7,7 @@ from pathlib import Path
 
 import numpy as np
 
-from xic_extractor.alignment.shared_peak_identity_explanation import (
+from xic_extractor.diagnostics.shared_peak_identity_explanation import (
     candidate_ms2_pattern,
 )
 from xic_extractor.discovery.models import DISCOVERY_CANDIDATE_COLUMNS

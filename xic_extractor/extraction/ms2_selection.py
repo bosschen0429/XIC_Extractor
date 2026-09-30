@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from xic_extractor.neutral_loss import CandidateMS2Evidence
+from xic_extractor.evidence.neutral_loss import CandidateMS2Evidence
 from xic_extractor.signal_processing import PeakCandidate
 
 

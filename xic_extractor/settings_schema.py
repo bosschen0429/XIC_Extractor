@@ -1,5 +1,5 @@
-from xic_extractor.execution_settings import default_parallel_workers
-from xic_extractor.peak_detection.signal_processing_profile import (
+from xic_extractor.configuration.execution_profile import default_parallel_workers
+from xic_extractor.configuration.signal_processing_profile import (
     DEFAULT_SIGNAL_PROCESSING_PROFILE,
 )
 from xic_extractor.targeted_ms1_shape_identity_policy import (

@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from threading import Event
 from time import perf_counter, sleep
 
-from xic_extractor.process_job_execution import execute_process_jobs
+from xic_extractor.execution.workers import execute_process_jobs
 
 
 def test_cancellation_before_dispatch_does_not_create_workers() -> None:
@@ -218,7 +218,7 @@ def test_stop_during_wait_drains_active_work_when_a_job_fails(monkeypatch) -> No
         futures[0].set_result(_Failure(0, "owner boom"))
         return {futures[0]}, set(pending) - {futures[0]}
 
-    monkeypatch.setattr("xic_extractor.process_job_execution.wait", wait_with_stop)
+    monkeypatch.setattr("xic_extractor.execution.workers.wait", wait_with_stop)
     report = execute_process_jobs(
         tuple(_Job(index=index) for index in range(4)),
         worker=lambda job: job,

@@ -12,10 +12,10 @@ conservative decision in `xic_extractor.alignment.conservative_backfill`.
 ### Untargeted route
 
 1. Normal Untargeted GUI runs, Alignment CLI runs, and preset runs enter the
-   retained CID-NL workflow through `alignment.pipeline.run_alignment`.
+   retained CID-NL workflow through `applications.untargeted.application.run_untargeted_application`.
 2. The runtime schedules bounded per-sample Backfill work in
-   `extraction.untargeted_real_data_worker`.
-3. Production composition in `extraction.untargeted_production_batch` maps the
+   `extraction.untargeted_partition.workers`.
+3. Production composition in `extraction.untargeted_partition_composition` maps the
    resulting evidence through the conservative Backfill decision.
 4. The Untargeted route does not execute the retained `ObservationRevisit`
    transaction.
@@ -64,19 +64,11 @@ that group.
    assessment must earn SUPPORT through the normal relation owner before the
    cell can hold a numeric value.
 
-### Other current consumers
+### Observation revisit contract
 
-1. Targeted diagnostic processing calls
-   `alignment.targeted_hypothesis_backfill`. That path uses
-   `alignment.backfill_peak_fact.build_backfill_result` as an XIC search
-   capability.
-2. The Targeted diagnostic path does not add an Untargeted eligibility
-   decision.
-3. The shared coverage and request-plan types remain available to the Targeted
-   diagnostic path and to the current alignment metadata.
-4. Final cell composition still accepts the typed `ObservationRevisitReceipt`
+1. Final cell composition still accepts the typed `ObservationRevisitReceipt`
    input for a revisited member.
-5. No installed workflow calls the former execute/close operation. No
+2. No installed workflow calls the former execute/close operation. No
    code creates the receipt, because the receipt mint token in
    `alignment/backfill/observation_revisit.py` is never passed to the receipt
    constructor. The receipt type alone does not prove that a revisit transaction
@@ -98,7 +90,7 @@ that group.
 - CrossSample owns membership.
 - The [Quant Matrix](quant-matrix.md), the
   [productization status index](../superpowers/validation/productization_status_index.tsv),
-  and the [authority manifest](../superpowers/schemas/productization_authority_manifest.json)
+  and the [authority manifest](../superpowers/productization/status/productization_authority_manifest.json)
   own publication scope.
 - Diagnostic traces, a well-formed coverage epoch, and candidate records do not
   grant any of the authorities listed above.

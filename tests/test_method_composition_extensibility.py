@@ -23,7 +23,7 @@ from xic_extractor.diagnostics.cid_nl_explanation_projection import (
     write_cid_nl_explanation,
 )
 from xic_extractor.discovery.models import DiscoverySettings, NeutralLossProfile
-from xic_extractor.extraction.untargeted_cid_nl_production_batch import (
+from xic_extractor.extraction.untargeted_input_planning import (
     is_supported_alignment_discovery,
 )
 from xic_extractor.presets import PresetTag, load_preset

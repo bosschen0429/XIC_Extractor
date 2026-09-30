@@ -8,12 +8,11 @@ from pathlib import Path
 
 import numpy as np
 
-from xic_extractor.alignment.matrix_output_contract import (
+from xic_extractor.feature_quality import evaluate_feature_quality
+from xic_extractor.output.alignment.matrix_output_contract import (
     MATRIX_ROW_BINDING_COLUMN,
     validate_matrix_identity_rows,
 )
-from xic_extractor.alignment.output_rows import escape_excel_formula
-from xic_extractor.feature_quality import evaluate_feature_quality
 from xic_extractor.sample_metadata import (
     SAMPLE_METADATA_COLUMNS,
     SAMPLE_METADATA_SCHEMA_VERSION,
@@ -21,6 +20,7 @@ from xic_extractor.sample_metadata import (
     parse_sample_metadata,
 )
 from xic_extractor.tabular_io import (
+    escape_excel_formula,
     file_sha256,
     read_tsv_with_header_snapshot,
     write_tsv,

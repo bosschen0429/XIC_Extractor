@@ -18,7 +18,7 @@ Targeted selection does four things:
 
 Existing CSV/workbook/review surfaces render human-facing reasons from those
 typed decisions. Targeted selection does not require a second capture,
-CrossSample, ModeTrack, Backfill, or selected-value implementation.
+CrossSample, Backfill, or selected-value implementation.
 
 ## Contract
 
@@ -52,6 +52,13 @@ Missing RAW evidence remains unavailable. CLI help owns policy defaults and
 acquisition bounds; the JSON preserves the effective policy and input provenance.
 These outputs have `diagnostic_only` evidence status and no selected-peak,
 reference-editing, quantitation, or ProductWriter authority.
+
+### Selected-hypothesis grouping
+
+Targeted groups its already selected hypotheses through the existing CrossSample
+owner. CID-NL support, observation-only
+selections, and MS1-only targets retain their sample-local identities and values.
+Grouping does not reselect peaks or add a cohort RT review policy.
 
 ### Physical evaluation
 

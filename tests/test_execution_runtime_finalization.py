@@ -11,20 +11,7 @@ from tests.runtime_observability_fixtures import (
     build_runtime_observability_ledger,
 )
 from xic_extractor.evidence_artifacts import EvidenceArtifactRef
-from xic_extractor.execution_runtime import (
-    AttemptLifecycleEventKind,
-    AttemptLifecycleHistory,
-    AttemptRuntime,
-    AttemptTerminalOutcome,
-    WorkUnitFailureCategory,
-    WorkUnitFailureDetail,
-    WorkUnitTerminalOutcome,
-    append_attempt_lifecycle_event,
-    preflight_required_work_manifest,
-    settle_work_unit,
-    start_attempt_runtime,
-)
-from xic_extractor.execution_runtime_finalization import (
+from xic_extractor.execution._finalization import (
     AttemptFinalizationState,
     RuntimeArtifactDisposition,
     RuntimeArtifactRecord,
@@ -47,6 +34,19 @@ from xic_extractor.execution_runtime_finalization import (
     register_runtime_artifact,
     reserve_runtime_resource,
     settle_runtime_resource,
+)
+from xic_extractor.execution._lifecycle import (
+    AttemptLifecycleEventKind,
+    AttemptLifecycleHistory,
+    AttemptRuntime,
+    AttemptTerminalOutcome,
+    WorkUnitFailureCategory,
+    WorkUnitFailureDetail,
+    WorkUnitTerminalOutcome,
+    append_attempt_lifecycle_event,
+    preflight_required_work_manifest,
+    settle_work_unit,
+    start_attempt_runtime,
 )
 from xic_extractor.extraction.targeted_runtime_adapter import (
     mint_targeted_process_result_ref,
@@ -768,16 +768,10 @@ def test_successful_settlement_requires_artifact_registered_for_same_work_unit(
 
 def test_runtime_finalization_modules_stay_inside_mechanical_boundary() -> None:
     expected = {
-        "xic_extractor/execution_runtime_finalization.py": (
+        "xic_extractor/execution/_finalization.py": (
             "xic_extractor.evidence_artifacts",
-            "xic_extractor.execution_runtime",
-            "xic_extractor.execution_runtime_finalization_models",
-            "xic_extractor.execution_runtime_observability",
-        ),
-        "xic_extractor/execution_runtime_finalization_models.py": (
-            "xic_extractor.evidence_artifacts",
-            "xic_extractor.execution_runtime",
-            "xic_extractor.execution_runtime_observability",
+            "xic_extractor.execution._lifecycle",
+            "xic_extractor.execution._observability",
             "xic_extractor.processing_identity",
             "xic_extractor.validation_primitives",
         ),

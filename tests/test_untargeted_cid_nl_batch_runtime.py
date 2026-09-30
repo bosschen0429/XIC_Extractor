@@ -21,16 +21,16 @@ from tests.test_untargeted_cid_nl_real_data_runtime import (
     _install_runtime_raws,
 )
 from xic_extractor.discovery.models import DiscoveryCandidate
-from xic_extractor.execution_runtime_marker import OwnerPathRuntimeMarker
-from xic_extractor.execution_runtime_owner import start_runtime_attempt
-from xic_extractor.extraction.untargeted_cid_nl_real_data_inputs import (
-    build_untargeted_cid_nl_real_data_context,
-)
-from xic_extractor.extraction.untargeted_cid_nl_real_data_runtime import (
+from xic_extractor.execution.attempt import start_runtime_attempt
+from xic_extractor.execution.recovery import OwnerPathRuntimeMarker
+from xic_extractor.extraction.untargeted_partition.execution import (
     CID_NL_ALIGNMENT_CONFIG,
-    UntargetedCidNlRealDataRuntimeJob,
-    execute_untargeted_cid_nl_real_data_runtime,
-    execute_untargeted_cid_nl_runtime_partition,
+    execute_attempt,
+    execute_partition,
+)
+from xic_extractor.extraction.untargeted_partition.models import UntargetedPartitionJob
+from xic_extractor.extraction.untargeted_partition.request import (
+    build_partition_context,
 )
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     CidNlMethodSubject,
@@ -67,7 +67,7 @@ def test_runtime_batch_request_shares_initial_acquisition_across_exact_subjects(
             )
         ),
     )
-    context = build_untargeted_cid_nl_real_data_context(
+    context = build_partition_context(
         raw_paths=(raw_path,),
         sample_metadata=(
             SampleMetadata(
@@ -96,7 +96,7 @@ def test_runtime_batch_request_shares_initial_acquisition_across_exact_subjects(
     )
     sample = context.samples[0]
     jobs = tuple(
-        UntargetedCidNlRealDataRuntimeJob(
+        UntargetedPartitionJob(
             processing_owners=context.processing_owners,
             sample=sample,
             method_subject=subject,
@@ -118,7 +118,7 @@ def test_runtime_batch_request_shares_initial_acquisition_across_exact_subjects(
         ),
     )
 
-    result = execute_untargeted_cid_nl_real_data_runtime(
+    result = execute_attempt(
         runtime,
         jobs,
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
@@ -180,9 +180,9 @@ def test_runtime_batch_request_bounds_initial_and_recovery_by_sample_phase(
         )
         source_raws[raw_paths[2]] = source_raw
         candidates_by_sample["Missing"] = candidates
-        from xic_extractor.extraction import untargeted_cid_nl_real_data_adapter
+        from xic_extractor.extraction.untargeted_partition import cid_nl_acquisition
 
-        acquire_peaks = untargeted_cid_nl_real_data_adapter._reacquire_peak_observations
+        acquire_peaks = cid_nl_acquisition._reacquire_peak_observations
 
         def capture_without_peak(**kwargs):
             acquisition, observations, captures = acquire_peaks(**kwargs)
@@ -193,7 +193,7 @@ def test_runtime_batch_request_bounds_initial_and_recovery_by_sample_phase(
             return acquisition, observations, captures
 
         monkeypatch.setattr(
-            untargeted_cid_nl_real_data_adapter,
+            cid_nl_acquisition,
             "_reacquire_peak_observations",
             capture_without_peak,
         )
@@ -215,7 +215,7 @@ def test_runtime_batch_request_bounds_initial_and_recovery_by_sample_phase(
             )
         ),
     )
-    context = build_untargeted_cid_nl_real_data_context(
+    context = build_partition_context(
         raw_paths=raw_paths,
         sample_metadata=tuple(
             SampleMetadata(
@@ -243,7 +243,7 @@ def test_runtime_batch_request_bounds_initial_and_recovery_by_sample_phase(
         tmp_path=tmp_path,
     )
     jobs = tuple(
-        UntargetedCidNlRealDataRuntimeJob(
+        UntargetedPartitionJob(
             processing_owners=context.processing_owners,
             sample=sample,
             method_subject=subject,
@@ -264,7 +264,7 @@ def test_runtime_batch_request_bounds_initial_and_recovery_by_sample_phase(
         for sample in context.samples
     )
     if initial_trace_without_peak:
-        partition = execute_untargeted_cid_nl_runtime_partition(
+        partition = execute_partition(
             jobs,
             partition_key="initial-and-recovery",
             alignment_config=CID_NL_ALIGNMENT_CONFIG,
@@ -305,7 +305,7 @@ def test_runtime_batch_request_bounds_initial_and_recovery_by_sample_phase(
         ),
     )
 
-    result = execute_untargeted_cid_nl_real_data_runtime(
+    result = execute_attempt(
         runtime,
         jobs,
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,

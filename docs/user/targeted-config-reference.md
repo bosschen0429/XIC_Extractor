@@ -42,7 +42,7 @@ reference and ISTD evidence select a component without recomputing its area.
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
-| `count_no_ms2_as_detected` | bool | `false` | Count samples without MS2 triggers as detected (compensates for DDA stochasticity) |
+| `count_no_ms2_as_detected` | bool | `false` | Legacy fallback for rows without formal projection fields; does not override the Targeted projection's `Counted Detection` (see [Decision Policy](../product/decision-policy.md)) |
 | `dirty_matrix_mode` | bool | `false` | Relax S/N and tighten peak shape criteria for complex matrices (e.g., urine) |
 
 ### ISTD RT Prior

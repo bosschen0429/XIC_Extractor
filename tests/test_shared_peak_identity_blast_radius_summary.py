@@ -5,12 +5,12 @@ from pathlib import Path
 
 import pytest
 
-from xic_extractor.alignment.shared_peak_identity_explanation.blast_radius import (
+from xic_extractor.diagnostics.shared_peak_identity_explanation.blast_radius import (
     _cell_facts_from_row,
     build_blast_radius_summary,
     build_class_profiles,
 )
-from xic_extractor.alignment.shared_peak_identity_explanation.schema import (
+from xic_extractor.diagnostics.shared_peak_identity_explanation.schema import (
     BLAST_RADIUS_SUMMARY_COLUMNS,
 )
 

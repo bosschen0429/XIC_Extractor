@@ -8,9 +8,9 @@ import pytest
 from tests.runtime_observability_fixtures import (
     build_runtime_observability_ledger,
 )
-from xic_extractor import execution_runtime_observability as observability_owner
-from xic_extractor.execution_runtime_finalization_models import RuntimeResourceKind
-from xic_extractor.execution_runtime_observability import (
+from xic_extractor.execution import _observability as observability_owner
+from xic_extractor.execution._finalization import RuntimeResourceKind
+from xic_extractor.execution._observability import (
     REQUIRED_RUNTIME_METRIC_NAMES,
     RuntimeMetricAvailability,
     RuntimeMetricRecord,

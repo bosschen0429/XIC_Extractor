@@ -1,6 +1,5 @@
 import csv
 import hashlib
-import json
 from pathlib import Path
 
 import pytest
@@ -13,27 +12,10 @@ from scripts.check_production_acceptance_manifest import (
 from scripts.check_production_acceptance_manifest import (
     production_acceptance_manifest_sha256,
 )
-from xic_extractor.alignment.quant_matrix_version import (
+from xic_extractor.diagnostics.quant_matrix.version import (
     EXPECTED_DIFF_COLUMNS,
-    EXPECTED_DIFF_SUMMARY_COLUMNS,
-    SOURCE_SUMMARY_COLUMNS,
     detected_only_matrix_rows_from_quant_version,
 )
-
-ROOT = Path(__file__).resolve().parents[1]
-QUANT_MATRIX_VERSION_SCHEMA = (
-    ROOT / "docs/superpowers/schemas/quant_matrix_version_schema.json"
-)
-
-
-def test_current_quant_matrix_version_schema_covers_all_public_outputs() -> None:
-    schema = json.loads(QUANT_MATRIX_VERSION_SCHEMA.read_text(encoding="utf-8"))
-
-    assert schema["expected_diff_columns"] == list(EXPECTED_DIFF_COLUMNS)
-    assert schema["expected_diff_summary_columns"] == list(
-        EXPECTED_DIFF_SUMMARY_COLUMNS
-    )
-    assert schema["source_summary_columns"] == list(SOURCE_SUMMARY_COLUMNS)
 
 
 def test_quant_matrix_version_writes_accepted_backfill_with_provenance(

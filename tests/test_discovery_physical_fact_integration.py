@@ -29,6 +29,9 @@ from tests.test_discovery_pipeline import (
     _scan_event,
     _settings,
 )
+from xic_extractor.configuration.signal_processing_profile import (
+    SignalProcessingProfile,
+)
 from xic_extractor.discovery.csv_writer import build_discovery_review_note
 from xic_extractor.discovery.models import DiscoveryPhysicalWorkItem, DiscoverySettings
 from xic_extractor.discovery.ms1_backfill import (
@@ -42,13 +45,10 @@ from xic_extractor.discovery.pipeline import run_discovery
 from xic_extractor.discovery.processing_run_spec_adapter import (
     compile_discovery_processing_run_spec,
 )
-from xic_extractor.execution_runtime_owner import derive_runtime_acquisition_metrics
+from xic_extractor.execution.attempt import derive_runtime_acquisition_metrics
 from xic_extractor.peak_detection.physical_peak_evaluation import (
     evaluate_physical_peak,
     prepare_physical_signal,
-)
-from xic_extractor.peak_detection.signal_processing_profile import (
-    SignalProcessingProfile,
 )
 from xic_extractor.processing_identity import build_acquisition_source_identity
 from xic_extractor.raw_reader import (
@@ -83,7 +83,7 @@ def test_discovery_retained_physical_peak_cardinality(
     expected_apices: tuple[float, ...],
     representative_scan: int | None,
 ) -> None:
-    from xic_extractor.alignment.csv_io import read_discovery_candidates_csv
+    from xic_extractor.discovery.csv_reader import read_discovery_candidates_csv
     from xic_extractor.discovery.csv_writer import write_discovery_candidates_csv
 
     fixture = json.loads(
@@ -215,10 +215,10 @@ def test_merged_physical_candidate_persists_representative_search_window(
     tmp_path: Path, combine_mode: str
 ) -> None:
     from xic_extractor.acquisition_contract import serialize_acquired_trace
-    from xic_extractor.alignment.csv_io import read_discovery_candidates_csv
     from xic_extractor.diagnostics.timing import TimingRecorder
+    from xic_extractor.discovery.csv_reader import read_discovery_candidates_csv
     from xic_extractor.discovery.pipeline import _write_dual_csvs
-    from xic_extractor.extraction.untargeted_cid_nl_alignment import (
+    from xic_extractor.extraction.untargeted_alignment import (
         _restore_physical_candidate,
     )
     from xic_extractor.peak_detection.physical_peak_codec import (

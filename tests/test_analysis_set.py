@@ -190,7 +190,7 @@ def test_discovery_cli_excludes_metadata_flagged_nested_samples(
 
 
 def test_alignment_locates_nested_analysis_members(tmp_path: Path) -> None:
-    from xic_extractor.alignment.raw_sources import existing_raw_paths
+    from xic_extractor.acquisition.raw_paths import existing_raw_paths
 
     nested = tmp_path / "sub" / "S3.raw"
     nested.parent.mkdir()

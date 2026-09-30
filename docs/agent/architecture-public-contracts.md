@@ -10,7 +10,7 @@ current contract only. Migration history belongs in Issues, PRs, and Git.
 | --- | --- |
 | owner or dependency boundary | [`../architecture-contract.md`](../architecture-contract.md) and the affected package |
 | persisted schema or evidence claim | the writer, strict reader, schema tests, and [`product-validation-contract.md`](product-validation-contract.md) |
-| runtime lifecycle or receipt | `xic_extractor.execution_runtime_owner` and `scripts/check_architecture_census.py` |
+| runtime lifecycle or receipt | `xic_extractor.execution.attempt` and `scripts/check_architecture_census.py` |
 | public command or diagnostic | [`script-tool-lifecycle.md`](script-tool-lifecycle.md) and `[project.scripts]` |
 | repository placement | [`../project-layout.md`](../project-layout.md) |
 
@@ -27,14 +27,24 @@ schema versions, and command flags. Do not copy those inventories here.
   plotting, and writers belong in package modules.
 - Writers render owner results; they do not recompute domain evidence or
   rescan RAW files.
-- Retained pure untargeted/CID-NL execution enters Alignment only through the
-  exact `alignment.pipeline` adapter/predicate edges. The finalized projection
-  stays in Alignment, and the extraction adapter never writes.
-  `tests/test_docs_architecture_census.py` pins the allowed Alignment edges;
+- The Untargeted application invokes retained CID-NL execution; Alignment has
+  no extraction imports. Alignment owns the pure finalized Matrix projection;
+  `output/alignment/` owns artifact selection, formatting, streaming or
+  materialization, atomic writing and fingerprint receipts. The extraction
+  adapter never writes. Application publication owns cancellation, the
+  completed result's private stores and explanation lifetime through writing;
+  GUI and CLI receive durable published outputs only.
+  `tests/test_docs_architecture_census.py` pins these execution boundaries;
   `xic_extractor.alignment.owner_build_route_receipt` and
-  `tests/test_alignment_pipeline.py` own the route receipt labels.
+  `tests/test_untargeted_application.py` own the route receipt labels.
 - Shared models or protocols are justified when they prevent an actual cycle
   or schema drift.
+- Formal Untargeted partitions consume the pure CID-NL input contract in
+  `alignment/cid_nl_inputs.py`. Golden Path artifacts, checked acceptance and
+  versioned table projection belong to `diagnostics/quant_matrix/`.
+  `alignment/quantitative_projection_authority.py` encapsulates the packaged
+  promotion contract; its resource registration and HOLD policy remain its
+  authority. It is not a numerical algorithm or an active application guard.
 - Separate real-data validation from normal unit tests.
 
 ## Boundary Projection Closure
@@ -91,8 +101,8 @@ boundary, compatibility impact, and rollback oracle.
 
 ## Runtime Construction Authority
 
-`xic_extractor.execution_runtime_owner` is the sole runtime aggregate and
-finalization facade. Consumers submit typed settlements, registrations,
+`xic_extractor.execution.attempt` is the sole runtime aggregate and
+finalization authority. Consumers submit typed settlements, registrations,
 owner-bound cancellation, acquisition receipts, and telemetry; the owner
 derives lifecycle, counts, ledgers, dispositions, and final outcome.
 

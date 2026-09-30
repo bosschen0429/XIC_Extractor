@@ -17,22 +17,17 @@ from tests.untargeted_cid_nl_no_raw_fixture import (
     build_untargeted_cid_nl_no_raw_fixture,
 )
 from xic_extractor.alignment.config import AlignmentConfig
+from xic_extractor.alignment.grouping_bootstrap import (
+    bootstrap_cid_nl_initial_population,
+)
 from xic_extractor.alignment.hypothesis_owner_adapter import (
     bind_retained_peak_hypotheses_to_assessment_universe,
     compose_peak_hypotheses_from_assessment_universe,
 )
-from xic_extractor.alignment.mode_track.assignment import (
-    ModeTrackContractError,
-    ModeTrackTrajectoryPolicy,
-    mint_mode_track_support_anchor,
-)
-from xic_extractor.alignment.mode_track.producer import (
-    bootstrap_mode_tracks_from_cid_nl_support,
-)
 from xic_extractor.discovery.models import DiscoveryCandidate
-from xic_extractor.extraction.untargeted_cid_nl_real_data_adapter import (
+from xic_extractor.extraction.untargeted_partition.cid_nl_acquisition import (
+    CidNlAcquisitionError,
     UntargetedCidNlBackfillTarget,
-    UntargetedCidNlRealDataAdapterError,
     acquire_untargeted_cid_nl_backfill_trace_batch,
     acquire_untargeted_cid_nl_sample_trace_batch,
     adapt_current_discovery_sample_subject,
@@ -55,13 +50,18 @@ def test_changed_physical_query_evaluates_once_and_preserves_support(
     from types import SimpleNamespace
     from unittest.mock import Mock
 
+    from xic_extractor.configuration.signal_processing_profile import (
+        SignalProcessingProfile,
+    )
     from xic_extractor.discovery.grouping import group_discovery_seeds
     from xic_extractor.discovery.ms1_backfill import (
         _backfill_ms1_candidates_with_acquisition,
     )
     from xic_extractor.discovery.ms2_seeds import collect_strict_nl_seeds
     from xic_extractor.discovery.physical_fact_record import DiscoveryPhysicalFactRecord
-    from xic_extractor.extraction import untargeted_cid_nl_real_data_adapter as adapter
+    from xic_extractor.extraction.untargeted_partition import (
+        cid_nl_acquisition as adapter,
+    )
     from xic_extractor.peak_detection import capture as capture_owner
     from xic_extractor.peak_detection.observations import (
         physical_peak_observation_integration,
@@ -73,9 +73,6 @@ def test_changed_physical_query_evaluates_once_and_preserves_support(
     from xic_extractor.peak_detection.search_scope import (
         PHYSICAL_CAPTURE_INPUT_KEY,
         physical_capture_input_payload,
-    )
-    from xic_extractor.peak_detection.signal_processing_profile import (
-        SignalProcessingProfile,
     )
     from xic_extractor.peak_detection.traces import trace_from_xic_request
     from xic_extractor.processing_identity import (
@@ -410,6 +407,9 @@ def test_physical_mass_change_preserves_scan_evidence_and_requantifies(
     import json
     from types import SimpleNamespace
 
+    from xic_extractor.configuration.signal_processing_profile import (
+        SignalProcessingProfile,
+    )
     from xic_extractor.discovery.grouping import group_discovery_seeds
     from xic_extractor.discovery.ms1_backfill import (
         _backfill_ms1_candidates_with_acquisition,
@@ -423,9 +423,6 @@ def test_physical_mass_change_preserves_scan_evidence_and_requantifies(
     from xic_extractor.peak_detection.search_scope import (
         PHYSICAL_CAPTURE_INPUT_KEY,
         physical_capture_input_payload,
-    )
-    from xic_extractor.peak_detection.signal_processing_profile import (
-        SignalProcessingProfile,
     )
     from xic_extractor.processing_identity import (
         build_processing_request_identity,
@@ -841,7 +838,7 @@ def test_inferred_precursor_off_its_scan_receipt_is_rejected(
             raw=raw,
         )
 
-    with pytest.raises(UntargetedCidNlRealDataAdapterError, match="seed is not unique"):
+    with pytest.raises(CidNlAcquisitionError, match="seed is not unique"):
         adapt()
 
 
@@ -1396,7 +1393,7 @@ def test_adapter_requires_raw_to_preserve_inferred_physical_observations(
     candidates = (direct, inferred) if include_direct_candidate else (inferred,)
 
     with pytest.raises(
-        UntargetedCidNlRealDataAdapterError,
+        CidNlAcquisitionError,
         match="requires an owner-opened RAW adapter",
     ):
         adapt_current_discovery_sample_subject(
@@ -1415,6 +1412,9 @@ def test_adapter_supports_adjacent_physical_peaks_with_interior_scans(
 ) -> None:
     import json
 
+    from xic_extractor.configuration.signal_processing_profile import (
+        SignalProcessingProfile,
+    )
     from xic_extractor.discovery.grouping import group_discovery_seeds
     from xic_extractor.discovery.ms1_backfill import (
         _backfill_ms1_candidates_with_acquisition,
@@ -1423,9 +1423,6 @@ def test_adapter_supports_adjacent_physical_peaks_with_interior_scans(
     from xic_extractor.peak_detection.search_scope import (
         PHYSICAL_CAPTURE_INPUT_KEY,
         physical_capture_input_payload,
-    )
-    from xic_extractor.peak_detection.signal_processing_profile import (
-        SignalProcessingProfile,
     )
     from xic_extractor.processing_identity import (
         build_processing_request_identity,
@@ -1579,45 +1576,24 @@ def test_adapter_preserves_supported_and_observation_only_physical_peaks(
         rebound_by_id is source_by_id
         for rebound_by_id, source_by_id in zip(rebound, hypotheses, strict=True)
     )
-    assignment_scope, model_set, batches, _source = (
-        bootstrap_mode_tracks_from_cid_nl_support(
-            processing_owners=fixture.owners,
-            sample_assessments=((fixture.sample("S1"), assessment),),
-            alignment_config=AlignmentConfig(),
-            trajectory_policy=ModeTrackTrajectoryPolicy(
-                trajectory_policy_version="anchor-trajectory",
-                band_policy_version="fixed-band",
-                prediction_half_width_min=0.1,
-                max_interpolation_gap=0,
-                max_extrapolation_gap=0,
-            ),
-        )
+    grouping_scope, candidates, _drift = bootstrap_cid_nl_initial_population(
+        processing_owners=fixture.owners,
+        sample_assessments=((fixture.sample("S1"), assessment),),
+        alignment_config=AlignmentConfig(),
     )
-    assert len(assignment_scope.groups) == 2
-    assert sum(len(track.anchors) for track in model_set.tracks) == 1
-    assert {item.candidate_observation_class for item in batches[0].assignments} == {
-        "direct_support",
-        "non_training",
+    assert sorted(group.owner_ids for group in grouping_scope.groups) == sorted(
+        (hypothesis.hypothesis_id,) for hypothesis in hypotheses
+    )
+    direct_support = {
+        candidate.peak_hypothesis.hypothesis_method: (
+            candidate.direct_support_assessment
+        )
+        for candidate in candidates
     }
-    assert {item.state for item in batches[0].assignments} == {"uniquely_assigned"}
-    observation_only = next(
-        item
-        for item in hypotheses
-        if item.hypothesis_method == "ms1_physical_observation"
-    )
-    observation_track = next(
-        track
-        for track in assignment_scope.groups
-        if observation_only.hypothesis_id in track.owner_ids
-    )
-    with pytest.raises(ModeTrackContractError):
-        mint_mode_track_support_anchor(
-            processing_owners=fixture.owners,
-            track=observation_track,
-            sample=fixture.sample("S1"),
-            direct_support_assessment=assessment,
-            peak_hypothesis=observation_only,
-        )
+    assert direct_support == {
+        "dda_cid_nl": assessment,
+        "ms1_physical_observation": None,
+    }
 
 
 def test_adapter_rejects_discovery_candidate_receipt_drift(tmp_path: Path) -> None:
@@ -1645,7 +1621,7 @@ def test_adapter_rejects_discovery_candidate_receipt_drift(tmp_path: Path) -> No
     )
 
     with pytest.raises(
-        UntargetedCidNlRealDataAdapterError,
+        CidNlAcquisitionError,
         match="rt_apex_min mismatches current receipt",
     ):
         adapt_current_discovery_sample_subject(

@@ -4,16 +4,15 @@ import subprocess
 import sys
 from pathlib import Path
 
-from xic_extractor.alignment.quant_matrix_downstream_impact import (
+from xic_extractor.diagnostics.quant_matrix.downstream_impact import (
     build_quant_matrix_downstream_impact_smoke,
 )
-from xic_extractor.alignment.quant_matrix_promotion import (
-    PROMOTION_CHECK_COLUMNS,
+from xic_extractor.diagnostics.quant_matrix.promotion import (
     PROMOTION_READINESS_SCHEMA,
     evaluate_quant_matrix_promotion_readiness,
 )
-from xic_extractor.alignment.quant_matrix_report import QUANT_MATRIX_REVIEW_SCHEMA
-from xic_extractor.alignment.quant_matrix_version import (
+from xic_extractor.diagnostics.quant_matrix.report import QUANT_MATRIX_REVIEW_SCHEMA
+from xic_extractor.diagnostics.quant_matrix.version import (
     CELL_PROVENANCE_COLUMNS,
     EXPECTED_DIFF_SUMMARY_COLUMNS,
     ROW_SUMMARY_COLUMNS,
@@ -21,29 +20,6 @@ from xic_extractor.alignment.quant_matrix_version import (
 from xic_extractor.tabular_io import file_sha256
 
 ROOT = Path(__file__).resolve().parents[1]
-PROMOTION_SCHEMA = (
-    ROOT / "docs/superpowers/schemas/quant_matrix_promotion_readiness_schema.json"
-)
-
-
-def test_quant_matrix_promotion_schema_matches_public_outputs() -> None:
-    schema = json.loads(PROMOTION_SCHEMA.read_text(encoding="utf-8"))
-
-    assert schema["schema_version"] == "quant_matrix_promotion_readiness_schema"
-    assert schema["readiness_schema_version"] == PROMOTION_READINESS_SCHEMA
-    assert schema["promotion_check_columns"] == list(PROMOTION_CHECK_COLUMNS)
-    assert schema["authority_rules"]["contract_correctness_is_not_science"] is True
-    assert schema["authority_rules"]["focused_tests_cannot_claim_production_ready"]
-    assert (
-        schema["authority_rules"]["required_science_pass_rows_must_be_artifact_bound"]
-    )
-    assert schema["authority_rules"]["duplicate_validation_tiers_fail_closed"]
-    assert schema["required_science_tier_provenance"]["full_cohort"] == [
-        "artifact_path",
-        "artifact_sha256",
-        "cohort_id",
-        "raw_run_count",
-    ]
 
 
 def test_promotion_readiness_is_inconclusive_without_science_evidence(

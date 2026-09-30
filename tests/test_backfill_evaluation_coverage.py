@@ -26,7 +26,7 @@ from xic_extractor.alignment.cross_sample_peak_groups import (
     CrossSampleGroupMemberSubject,
     mint_cross_sample_group_identity,
 )
-from xic_extractor.peak_detection.signal_processing_profile import (
+from xic_extractor.configuration.signal_processing_profile import (
     DEFAULT_SIGNAL_PROCESSING_PROFILE,
 )
 from xic_extractor.processing_identity import (
@@ -703,10 +703,10 @@ def _coverage_fixture(
             "processing_request_id": request.processing_request_id,
             "canonical_sample_identity_id": resolved[0].identity.sample_identity_id,
             "subject": {
-                "kind": "physical_observation",
+                "kind": old_subject.subject_kind,
                 "id": old_subject.subject_id,
             },
-            "physical_observation_ids": [old_subject.subject_id],
+            "physical_observation_ids": list(old_subject.physical_observation_ids),
         }
     )
     member = CrossSampleGroupMemberSubject(
@@ -716,9 +716,9 @@ def _coverage_fixture(
         ),
         processing_request_id=request.processing_request_id,
         canonical_sample_identity_id=resolved[0].identity.sample_identity_id,
-        subject_kind="physical_observation",
+        subject_kind=old_subject.subject_kind,
         subject_id=old_subject.subject_id,
-        physical_observation_ids=(old_subject.subject_id,),
+        physical_observation_ids=old_subject.physical_observation_ids,
         basis_bytes=member_basis,
     )
     group = mint_cross_sample_group_identity(

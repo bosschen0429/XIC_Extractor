@@ -35,10 +35,8 @@ from xic_extractor.alignment.backfill_runtime_projection import (
     validate_backfill_runtime_feature,
 )
 from xic_extractor.alignment.backfill_scope import backfill_request_sample_stems
-from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.alignment.ms1_index_source import BackfillXicBackend
-from xic_extractor.alignment.raw_sources import timed_backfill_sources
-from xic_extractor.peak_detection.signal_processing_profile import (
+from xic_extractor.alignment.config import AlignmentConfig, BackfillXicBackend
+from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )
 from xic_extractor.processing_identity import (
@@ -867,26 +865,6 @@ def test_exact_superwindow_failure_falls_back_with_exact_typed_identity(
         (item.logical_request_count, item.canonical_request_class_count)
         for item in result.request_reuse_observations
     ] == [(2, 2)]
-
-
-@pytest.mark.parametrize("backend", ("raw", "ms1_index", "ms1_index_hybrid"))
-def test_serial_backend_wrappers_preserve_owner_acquisition_identity(
-    tmp_path: Path,
-    backend: BackfillXicBackend,
-) -> None:
-    source_identity = _acquisition_source(tmp_path, "sample-b", b"sample-b")
-    backfill_sources, validation_sources, _stats = timed_backfill_sources(
-        {"sample-b": _OwnerBoundBatchSource(source_identity)},
-        backend=backend,
-        stage="test.owner_backfill",
-    )
-
-    assert backfill_sources["sample-b"].acquisition_source == source_identity
-    if backend == "ms1_index_hybrid":
-        assert validation_sources is not None
-        assert validation_sources["sample-b"].acquisition_source == source_identity
-    else:
-        assert validation_sources is None
 
 
 def test_exact_reuse_preserves_cells_and_candidate_audit(

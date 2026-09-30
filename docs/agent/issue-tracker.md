@@ -7,24 +7,13 @@ This file owns GitHub mechanics only. The implementation issue-to-PR shape and
 
 ## Conventions
 
-- **Create an issue**: use `gh issue create --title "..." --body "..."` for a short body, or `gh issue create --title "..." --body-file <path>` for a multi-line body. Follow the repo's PowerShell command contract; do not use Bash heredocs.
-- **Read an issue**: select the needed fields with `gh issue view <number> --json number,title,body,labels`; retrieve comments only when the decision depends on them. Capture long bodies or comment history with bounded output transport.
-- **List issues**: start with `gh issue list --state open --limit 20 --json number,title,labels` and appropriate `--label` and `--state` filters, then read the selected issues. A limited list is not an exhaustive inventory; fetch further pages only when the task requires completeness.
-- **Comment on an issue**: `gh issue comment <number> --body "..."`
-- **Apply / remove labels**: `gh issue edit <number> --add-label "..."` / `--remove-label "..."`
-- **Close**: `gh issue close <number> --comment "..."`
-
-Infer the repo from `git remote -v` — `gh` does this automatically when run inside a clone.
+Use `gh --help` for command syntax and `--body-file` for multiline text. Read
+only the fields or comments needed for the decision; paginate when an exhaustive
+inventory is required. A limited issue list is not a complete census.
 
 ## Pull requests as a triage surface
 
 **PRs as a request surface: no.** _(Set to `yes` if this repo treats external PRs as feature requests; `/triage` reads this flag.)_
-
-When set to `yes`, PRs run through the same labels and states as issues, using the `gh pr` equivalents:
-
-- **Read a PR**: `gh pr view <number> --comments` and `gh pr diff <number>` for the diff.
-- **List external PRs for triage**: `gh pr list --state open --json number,title,body,labels,author,authorAssociation,comments` then keep only `authorAssociation` of `CONTRIBUTOR`, `FIRST_TIME_CONTRIBUTOR`, or `NONE` (drop `OWNER`/`MEMBER`/`COLLABORATOR`).
-- **Comment / label / close**: `gh pr comment`, `gh pr edit --add-label`/`--remove-label`, `gh pr close`.
 
 GitHub shares one number space across issues and PRs, so a bare `#42` may be either — resolve with `gh pr view 42` and fall back to `gh issue view 42`.
 

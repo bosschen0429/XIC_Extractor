@@ -12,10 +12,10 @@ from xic_extractor.alignment.backfill_peak_fact_provenance import (
     EMPTY_BACKFILL_PEAK_FACT_PROVENANCE_BATCH,
     render_backfill_peak_fact_provenance_tsv,
 )
-from xic_extractor.peak_detection.integration_result import IntegrationResult
-from xic_extractor.peak_detection.signal_processing_profile import (
+from xic_extractor.configuration.signal_processing_profile import (
     DEFAULT_SIGNAL_PROCESSING_PROFILE,
 )
+from xic_extractor.peak_detection.integration_result import IntegrationResult
 
 
 def test_provenance_writes_one_run_profile_row_with_profile_columns() -> None:

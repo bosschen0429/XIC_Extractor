@@ -95,11 +95,18 @@ engineering regression coverage only. Manual-2RAW, lane-specific subsets, and
 85RAW runs are validation evidence only when the active Issue and method owner
 require them.
 
-Before launching or accepting RAW-backed evidence, use xic-raw-validation and
-the method-specific validation contract. Do not infer scientific or production
-readiness from passing pytest.
+Use the method-specific acceptance check when RAW-backed evidence is needed.
+The runner owns input checks and run metadata; tests do not require a separate
+RAW preparation packet. Do not infer scientific or production readiness from
+passing pytest.
 
 ## Verification
+
+Pytest manages temporary files under the worktree's ignored `tmp_runtime/`.
+Failed tests retain their `tmp_path` files for inspection within pytest's
+retention window; passing tests are cleaned. Concurrent sessions use distinct
+numbered directories. `PYTEST_DEBUG_TEMPROOT` and `--basetemp` remain available
+for explicit overrides; do not share a fixed `--basetemp` across concurrent runs.
 
 Run the narrowest existing tests that can falsify the change, then expand in
 proportion to affected consumers and public surfaces. The complete hosted

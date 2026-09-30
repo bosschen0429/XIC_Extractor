@@ -33,7 +33,7 @@ activation contract promotes a correction or gate.
 - `scripts/add_istd_rt_trend.py` is a maintained operator diagnostic for
   visualizing measured ISTD RT drift. The observed ISTD trend does not justify
   inferring, correcting, or gating other-feature RT behavior.
-- A future ModeTrack sensitivity packet must not assume one batch-wide
+- A future RT-trajectory sensitivity packet must not assume one batch-wide
   monotonic shift. The packet must:
   - permit feature-specific directions and adjacent-injection jumps;
   - examine several high-detection unknown features and method-appropriate

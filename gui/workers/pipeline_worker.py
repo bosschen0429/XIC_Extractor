@@ -7,13 +7,11 @@ from PyQt6.QtCore import QThread, pyqtSignal
 
 from xic_extractor import config as config_module
 from xic_extractor import extractor
-from xic_extractor.config import ConfigError, ExtractionConfig, Target
-from xic_extractor.extraction.targeted_diagnostic_application import (
+from xic_extractor.applications.targeted.application import (
     build_canonical_targeted_application_service,
-)
-from xic_extractor.extraction.targeted_service import (
     build_targeted_application_request,
 )
+from xic_extractor.config import ConfigError, ExtractionConfig, Target
 from xic_extractor.extractor import ExtractionResult, RunOutput
 from xic_extractor.output.method_manifest import MethodManifestContext
 from xic_extractor.raw_reader import RawReaderError
@@ -39,6 +37,10 @@ class PipelineWorker(QThread):
     def __init__(self, config_dir: Path) -> None:
         super().__init__()
         self._config_dir = config_dir
+        self.stage = "讀取 Targeted 設定"
+        self.output_dir = config_dir.parent / "output"
+        self.available_outputs: tuple[tuple[str, Path], ...] = ()
+        self.cancellation_reason = "使用者要求停止，本次 Targeted 執行已停止。"
 
     def stop(self) -> None:
         self.requestInterruption()
@@ -46,7 +48,9 @@ class PipelineWorker(QThread):
     def run(self) -> None:
         try:
             config, targets = config_module.load_config(self._config_dir)
+            self.output_dir = config.output_csv.parent
             excel_path = _excel_output_path(config)
+            self.stage = "Targeted 分析與結果發布"
             execution = build_canonical_targeted_application_service(
                 extractor.acquire
             ).execute_application(
@@ -63,18 +67,27 @@ class PipelineWorker(QThread):
                     excel_output_path=excel_path,
                 )
             )
+            self.available_outputs = tuple(
+                ("已發布 Targeted 結果", Path(path))
+                for path in execution.published_paths
+                if Path(path).is_file()
+            )
             output = execution.active_output
             if self.isInterruptionRequested() and not execution.published_paths:
                 self.cancelled.emit()
                 return
+            self.stage = "Targeted 結果摘要"
             summary = build_summary(config, targets, output, excel_path)
             self.finished.emit(summary)
         except ConfigError as exc:
             self.error.emit(f"設定檔錯誤：{exc}")
         except RawReaderError as exc:
             self.error.emit(f"Raw file 讀取失敗：{exc}")
+        except InterruptedError as exc:
+            self.cancellation_reason = str(exc) or self.cancellation_reason
+            self.cancelled.emit()
         except Exception as exc:
-            self.error.emit(str(exc))
+            self.error.emit(str(exc) or type(exc).__name__)
 
 
 def _excel_output_path(config: ExtractionConfig) -> Path:

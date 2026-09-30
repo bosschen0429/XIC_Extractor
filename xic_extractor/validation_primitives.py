@@ -321,6 +321,11 @@ def require_keys(
         raise error_factory(f"{label} fields must be exactly {keys}; got {actual}")
 
 
+def is_lower_sha256(value: object) -> bool:
+    """Return whether value is a 64-character lowercase hex SHA-256 digest."""
+    return isinstance(value, str) and _LOWER_SHA256.fullmatch(value) is not None
+
+
 def require_lower_sha256(
     value: object,
     *,
@@ -333,7 +338,7 @@ def require_lower_sha256(
         if type_error_factory is not None:
             raise type_error_factory(f"{field} must be text")
         raise error_factory(f"{field} must be a lowercase SHA-256")
-    if _LOWER_SHA256.fullmatch(value) is None:
+    if not is_lower_sha256(value):
         raise error_factory(f"{field} must be a lowercase SHA-256")
     return value
 

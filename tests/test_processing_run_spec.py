@@ -8,14 +8,14 @@ from pathlib import Path
 import pytest
 
 from xic_extractor.config import ExtractionConfig
+from xic_extractor.configuration.signal_processing_profile import (
+    SignalProcessingProfile,
+)
 from xic_extractor.discovery.evidence_config import DiscoveryEvidenceThresholds
 from xic_extractor.discovery.models import DiscoverySettings, NeutralLossProfile
 from xic_extractor.discovery.processing_run_spec_adapter import (
     compile_discovery_processing_run_spec,
     validate_processing_run_spec_call,
-)
-from xic_extractor.peak_detection.signal_processing_profile import (
-    SignalProcessingProfile,
 )
 from xic_extractor.processing_run_spec import (
     ProcessingAcquisitionInput,

@@ -22,8 +22,7 @@ from xic_extractor.alignment.identity_gates import (
     classify_single_dr_backfill_dependency,
     summarize_detected_seed_quality,
 )
-from xic_extractor.alignment.matrix import AlignedCell, AlignmentMatrix
-from xic_extractor.alignment.output_rows import row_id
+from xic_extractor.alignment.matrix import AlignedCell, AlignmentMatrix, row_id
 from xic_extractor.alignment.promotion_policy import (
     BACKFILL_CELL_EVIDENCE_REQUIRED_FLAG,
     BACKFILL_ONLY_BLOCKED_REASON,

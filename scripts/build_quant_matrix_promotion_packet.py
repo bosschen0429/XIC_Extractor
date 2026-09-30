@@ -38,13 +38,13 @@ from scripts.build_quant_matrix_real_bundle import (
     DEFAULT_OUTPUT_DIR as DEFAULT_REAL_BUNDLE_DIR,
 )
 from scripts.build_quant_matrix_version import run_activation
-from xic_extractor.alignment.quant_matrix_fixture_contract import (
+from xic_extractor.diagnostics.quant_matrix.fixture_contract import (
     validate_fixture_contract,
 )
-from xic_extractor.alignment.quant_matrix_promotion import (
+from xic_extractor.diagnostics.quant_matrix.promotion import (
     evaluate_quant_matrix_promotion_readiness,
 )
-from xic_extractor.alignment.quant_matrix_validation_packet import (
+from xic_extractor.diagnostics.quant_matrix.validation_packet import (
     VALIDATION_EVIDENCE_ROW_COLUMNS,
     ValidationEvidenceArtifact,
     build_quant_matrix_validation_evidence_packet,

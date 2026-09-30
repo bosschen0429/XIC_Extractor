@@ -2,18 +2,18 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from typing import Literal
 
 import numpy as np
 
+from xic_extractor.evidence.neutral_loss import CandidateMS2Evidence
 from xic_extractor.evidence_artifacts import EvidenceArtifactRef
 from xic_extractor.evidence_semantics import (
     CommonEvidence,
     EvidenceDecisionSemantics,
     EvidenceSignalSet,
-    common_evidence_from_peak_candidate,
     decision_semantics_from_signal_set,
 )
-from xic_extractor.neutral_loss import CandidateMS2Evidence
 from xic_extractor.peak_detection.baseline import (
     BaselineMethod,
     asls_baseline,
@@ -451,7 +451,7 @@ def _evidence_from_candidate(
     count_no_ms2_as_detected: bool = False,
 ) -> EvidenceVector:
     facts = score.evidence_facts if score is not None else None
-    common = common_evidence_from_peak_candidate(
+    common = _common_evidence_from_peak_candidate(
         candidate,
         score=score,
         candidate_ms2_evidence=evidence,
@@ -579,6 +579,59 @@ def _evidence_from_candidate(
         cwt_ridge_persistence=candidate.cwt_ridge_persistence,
         common=common,
         decision_semantics=semantics,
+    )
+
+
+def _common_evidence_from_peak_candidate(
+    candidate: PeakCandidate,
+    *,
+    score: PeakCandidateScore | None = None,
+    candidate_ms2_evidence: CandidateMS2Evidence | None = None,
+    source: Literal["targeted_peak", "discovery_candidate"],
+    source_id: str,
+    provenance: str,
+) -> CommonEvidence:
+    """Project one captured peak without assigning workflow product authority."""
+
+    return CommonEvidence(
+        source=source,
+        source_id=source_id,
+        provenance=provenance,
+        ms1_peak_found=True,
+        ms1_apex_rt_min=candidate.selection_apex_rt,
+        ms1_area=candidate.peak.area,
+        ms1_height=candidate.raw_apex_intensity,
+        ms1_peak_rt_start=candidate.peak.peak_start,
+        ms1_peak_rt_end=candidate.peak.peak_end,
+        trace_quality="review" if candidate.quality_flags else "clean",
+        scan_support_score=(
+            float(candidate.region_scan_count)
+            if candidate.region_scan_count is not None
+            else None
+        ),
+        neutral_loss_error_ppm=(
+            candidate_ms2_evidence.best_loss_ppm
+            if candidate_ms2_evidence is not None
+            else None
+        ),
+        ms2_present=(
+            candidate_ms2_evidence.ms2_present
+            if candidate_ms2_evidence is not None
+            else None
+        ),
+        nl_match=(
+            candidate_ms2_evidence.nl_match
+            if candidate_ms2_evidence is not None
+            else None
+        ),
+        ms2_trace_strength=(
+            candidate_ms2_evidence.trace.strength
+            if candidate_ms2_evidence is not None
+            else ""
+        ),
+        confidence=score.confidence if score is not None else "",
+        evidence_score=score.raw_score if score is not None else None,
+        reason=score.reason if score is not None else "",
     )
 
 

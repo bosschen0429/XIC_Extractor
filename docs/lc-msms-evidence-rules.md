@@ -38,7 +38,7 @@ packet outside that activation chain is not matrix authority by itself.
 This document owns durable evidence semantics, not live maturity tier, active
 lane, or current writer counts. Read lane/readiness from
 `docs/superpowers/validation/productization_status_index.tsv`, writer scope
-from `docs/superpowers/schemas/productization_authority_manifest.json`, and
+from `docs/superpowers/productization/status/productization_authority_manifest.json`, and
 promotion semantics from `docs/agent/product-validation-contract.md`.
 
 ## MS1 Morphology And Area Owner
@@ -156,9 +156,10 @@ processing, see [`product/signal-processing-rationale.md`](product/signal-proces
   bound canonical signal and fact identity.
 - Gaussian15 morphology improves boundary readability and MS1 shape/pattern
   evidence. It is not identity authority by itself: paired RT, target window,
-  product/NL/MS2 acquisition opportunity, and untargeted identity-coherence
-  guards still decide whether a candidate is accepted, not counted, ambiguous,
-  or excluded.
+  product/NL/MS2 acquisition opportunity, method-specific CID-NL evidence, and
+  CrossSample identity gates still decide whether a candidate is accepted,
+  not counted, ambiguous, or excluded; see the [evidence spine](product/evidence-spine.md)
+  and [shared processing kernel](product/shared-processing-kernel.md).
 - Canonical Gaussian(raw)-nonnegative-AsLS(raw) positive area is the selected product
   direction for the bounded Owner Backfill migration, with profile/fact/value
   provenance. Numeric area differences from legacy integration are accepted

@@ -6,6 +6,7 @@ from typing import Any
 import numpy as np
 
 from xic_extractor.config import ExtractionConfig, Target
+from xic_extractor.evidence.neutral_loss import CandidateMS2Evidence
 from xic_extractor.extraction.peak_candidate_boundaries import (
     PeakCandidateBoundaryRow,
     append_peak_candidate_boundary_rows_from_hypotheses,
@@ -16,7 +17,6 @@ from xic_extractor.extraction.peak_candidate_table import (
     build_peak_candidate_audit_hypotheses,
     with_product_selected_marker,
 )
-from xic_extractor.neutral_loss import CandidateMS2Evidence
 from xic_extractor.peak_detection.cwt import add_cwt_proposals_for_audit
 from xic_extractor.peak_detection.hypotheses import PeakHypothesis
 from xic_extractor.peak_detection.models import PeakCandidate, PeakDetectionResult

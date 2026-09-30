@@ -39,6 +39,9 @@ from xic_extractor.alignment.owner_group_delivery import (
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
 from xic_extractor.alignment.trace_context import alignment_trace_group
 from xic_extractor.config import ExtractionConfig
+from xic_extractor.configuration.signal_processing_profile import (
+    SignalProcessingProfile,
+)
 from xic_extractor.peak_detection.evidence_facts import (
     TraceWindowEvidenceFacts,
     peak_trace_evidence,
@@ -55,9 +58,6 @@ from xic_extractor.peak_detection.physical_peak_models import (
 from xic_extractor.peak_detection.region_audit import (
     PeakRegionAuditSummary,
     build_peak_region_audit_summary,
-)
-from xic_extractor.peak_detection.signal_processing_profile import (
-    SignalProcessingProfile,
 )
 from xic_extractor.signal_processing import find_peak_and_area
 from xic_extractor.xic_models import XICRequest, XICTrace

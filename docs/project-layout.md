@@ -5,13 +5,77 @@
 保存，不以 dated Markdown 留在 repo。
 本節也定義 documentation source-of-truth 與歷程邊界。
 
+## Repository Tree
+
+這是閱讀用的主要結構，省略個別實作檔案。先分清「程式放哪裡」；
+再用[架構導覽](architecture-contract.md#reading-the-code)找執行入口與責任。
+
+```text
+XIC_Extractor/
+├── gui/                         桌面互動；views/、sections/ 組畫面，workers/ 啟動工作
+├── scripts/                     已宣告 CLI、操作與驗證入口
+├── xic_extractor/               分析產品的實作
+│   ├── configuration/          載入設定與 target；驗證設定值
+│   ├── presets/                方法配方與綁定
+│   ├── applications/           產品流程組合、政策與其結果模型
+│   │   ├── targeted/          正式 Targeted application、計數與 review 原因
+│   │   └── untargeted/        Untargeted 執行、結果發布與暫存生命週期
+│   ├── acquisition/           量測來源定位與有界資料擷取 adapter
+│   ├── evidence/              已擷取資料的純科學證據解讀
+│   ├── discovery/              候選探索、證據及 receipt-bound CSV 載入
+│   ├── extraction/             Targeted 擷取／workflow adapter 與保留的 Untargeted 執行 adapter
+│   ├── peak_detection/         單次觀察、峰假設、選擇與積分
+│   ├── alignment/              跨樣本組合、Backfill、格值決策及其交付 adapter
+│   │   ├── completion.py       已取得 evidence → 完成的科學結果；不呼叫 runtime
+│   │   ├── cid_nl_inputs.py    正式 partition／diagnostic 共用的純 CID-NL input contract
+│   │   ├── quantitative_projection_authority.py  Packaged promotion contract boundary
+│   │   ├── cross_sample/       跨樣本關聯
+│   │   ├── backfill/           有限度的 observation revisit
+│   │   ├── cell_decision/      每個樣本格的科學決策
+│   │   ├── projection/         Targeted／Untargeted 的前後投影
+│   │   └── result/             科學結果與 application 結果
+│   ├── execution/             attempt、工作分區、workers、結果暫存與終局記錄
+│   ├── output/                CSV／workbook／HTML 等輸出程式
+│   │   └── alignment/         Matrix 格式、artifact 選擇、串流／實體化與 atomic publishing
+│   ├── instrument_qc/         儀器 QC、校正與其報告流程
+│   ├── diagnostics/           可重用的診斷與說明工具
+│   │   └── quant_matrix/      版本化 Matrix artifact projection、acceptance 及 table model
+│   └── *.py                   RAW adapter、共享模型／規則、公開入口
+├── xic_inspector/              完成證據的只讀檢視
+│   ├── sources/               解讀來源證據
+│   ├── selection/             選擇要呈現的記錄
+│   └── rendering/             離線 HTML
+├── tools/                     維護工具；diagnostics/ 為診斷，testing/ 管測試分片
+├── tests/                     行為測試與小型 fixtures
+├── docs/                      文件依用途分流；不以 HTML 外觀判定權威
+│   ├── user/                  操作、欄位參考與概念 HTML；README.md 是使用者索引
+│   ├── product/               正式產品行為與科學責任；README.md 依主題找規則
+│   ├── agent/                 按任務載入的執行、驗證與交付契約
+│   ├── superpowers/           既有 schema、驗證與 productization 機器契約
+│   ├── architecture-contract.md  程式入口、責任與依賴方向
+│   └── project-layout.md      本結構樹與收納規則
+├── config/                    公開設定與範例
+├── assets/                    圖示與截圖
+├── .github/                   CI 與 GitHub 設定
+├── .codex/                    Repo 的 agent 執行規則
+├── pyproject.toml             套件、依賴、已安裝 CLI 與測試設定
+├── .importlinter              可執行的靜態依賴限制
+├── xic_extractor.spec          Windows 打包輸入
+└── output/                    本機執行產物，不追蹤
+```
+
+`xic_extractor/output/` 是受版本控制的**輸出程式**；根目錄 `output/` 是不追蹤的
+**執行產物**。`alignment/` 現在同時容納演算法、流程、I/O 與交付 adapter，
+不能把整個目錄當成純計算層。`xic_extractor/` 根層也不全是 facade；
+應依[責任表](architecture-contract.md#ownership-map)辨認正式 owner。
+
 ## § 1 主要規則文件的職責分工
 
 | 文件 | 職責 |
 | --- | --- |
 | [`README.md`](../README.md) | 使用者入口與文件索引 |
 | [`AGENTS.md`](../AGENTS.md) | 高頻 agent guardrails 與 owner routing |
-| [`docs/user/`](user/) | GUI/CLI 操作手冊 |
+| [`docs/user/`](user/) | GUI/CLI 操作手冊、欄位參考與概念 HTML 導覽 |
 | [`docs/product/`](product/) | 維護中的產品語義與 topic authority |
 | [`docs/agent/`](agent/) | 執行、驗證、文件、架構與 PR 契約 |
 | [`docs/architecture-contract.md`](architecture-contract.md) | dependency direction 與 ownership map |
@@ -19,8 +83,9 @@
 
 ### Permanent root document contract
 
-只有下列四個路徑是永久 root authority，路徑本身提供 placement、purpose 與
-self-ownership，因此不需要 generic lifecycle metadata：
+只有下列四個路徑是永久 root authority。Audit 確認路徑存在、文件有可見內容，
+並檢查下列 route、target 與 referrer；標題與說明文字可隨內容調整。路徑本身
+提供 placement、purpose 與 self-ownership，因此不需要 generic lifecycle metadata：
 
 | Path | Purpose / required route |
 | --- | --- |
@@ -41,8 +106,8 @@ self-ownership，因此不需要 generic lifecycle metadata：
 | `scripts/` | Public CLI、product adapters、validation scripts |
 | `tools/diagnostics/` | Maintained product-adjacent diagnostics 與 docs governance |
 | `tests/` | pytest tests 與小型 fixtures |
-| `docs/user/` | 使用者文件 |
-| `docs/product/` | 產品 topic owners |
+| `docs/user/` | 使用者操作、參考與概念解說；HTML 連回正式 Markdown owner |
+| `docs/product/` | 維護者與 agent 使用的正式產品語義 Markdown topic owners |
 | `docs/agent/` | Agent/validation/execution contracts |
 | `docs/superpowers/schemas/` | Machine-readable schema contracts |
 | `docs/superpowers/validation/` | Checker-consumed validation contracts 與最小 artifacts |
@@ -89,7 +154,8 @@ audit/evidence 寫到 ignored `output/`。方法變更直接更新現行文件�
 | Product semantics | `docs/product/<topic>.md` |
 | Product maturity and promotion vocabulary | `docs/agent/product-validation-contract.md` |
 | Current productization lane state | `docs/superpowers/validation/productization_status_index.tsv` |
-| Writer scope and authority | `docs/superpowers/schemas/productization_authority_manifest.json` |
+| Writer scope and authority | `docs/superpowers/productization/status/productization_authority_manifest.json` |
+| Dependent quantitative-effect authority | `docs/superpowers/productization/status/quantitative_projection_authority_manifest.json` |
 | LC-MS/MS evidence semantics | `docs/lc-msms-evidence-rules.md` |
 | Validation verdict and rerun policy | `docs/diagnostic-ledger.md` or current checker-consumed artifact |
 | Architecture/dependency ownership | `docs/architecture-contract.md` |
@@ -142,7 +208,11 @@ build workflow，並驗證 dev/frozen 兩種模式。
 5. Maintained diagnostic → `tools/diagnostics/`，並更新 `tools/diagnostics/INDEX.md`。
 6. Tests → `tests/test_<module>_<behavior>.py`；shared fixture → `tests/fixtures/`。
 7. Stable product/user/agent/architecture rule → 對應 canonical owner。
-8. JSON schema → `docs/superpowers/schemas/<contract>.vN.json`。
+8. 格式契約依 consumer 放置：內部資料留在 capability owner 的 typed model；
+   執行時確實需要的 schema/data 隨 consuming package 安裝；checker 消費的
+   schema 描述留在 `docs/superpowers/schemas/`。可變 authority instance 依
+   [Current authority routes](#current-authority-routes) 歸 productization state。
+   不因資料是 JSON 就另建 schema，也不為搬檔新增 loader。
 9. Current small validation contract/fixture → `docs/superpowers/validation/` 或
    `docs/superpowers/fixtures/`，必須有現存 checker/test consumer。
 10. Construction spec/plan → GitHub Issue；branch closeout → PR body。
@@ -167,7 +237,7 @@ rule，不能只因單次施工方便而建立。
 
 | 類別 | 慣例 |
 | --- | --- |
-| Schema | `docs/superpowers/schemas/<contract>.vN.json` |
+| Schema | 依 § 5 的 consumer 選 owner；名稱描述格式契約，只有相容性需要時加入語義版本 |
 | Test | `tests/test_<module>_<behavior>.py` |
 | Public CLI | `scripts/run_<purpose>.py` |
 | Diagnostic | `tools/diagnostics/<purpose>.py` |

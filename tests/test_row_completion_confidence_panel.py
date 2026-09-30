@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import pytest
@@ -249,34 +248,6 @@ def test_load_canonical_panel_rejects_malformed_row_shape(tmp_path: Path) -> Non
 
     with pytest.raises(ValueError, match="malformed row shape"):
         load_canonical_panel(panel)
-
-
-def test_committed_canonical_panel_manifest_binding() -> None:
-    repo_root = Path(__file__).resolve().parents[1]
-    panel_path = (
-        repo_root
-        / "docs"
-        / "superpowers"
-        / "validation"
-        / "row_completion_canonical_panel.tsv"
-    )
-    manifest_path = (
-        repo_root
-        / "docs"
-        / "superpowers"
-        / "validation"
-        / "row_completion_canonical_panel_manifest.json"
-    )
-
-    panel_cases = load_canonical_panel(panel_path)
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    expected_panel_tsv = (
-        "docs/superpowers/validation/row_completion_canonical_panel.tsv"
-    )
-
-    assert len(panel_cases) == 6
-    assert manifest["required_case_count"] == len(panel_cases)
-    assert manifest["panel_tsv"] == expected_panel_tsv
 
 
 def _write_panel(

@@ -22,12 +22,16 @@ from tests.test_untargeted_cid_nl_real_data_runtime import (
     _discovery_receipts,
     _install_runtime_raws,
 )
+from tests.untargeted_partition_fixtures import (
+    build_dense_partition,
+    complete_dense_partition,
+    execute_dense_partition,
+)
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.result.application_result import (
     UntargetBatchApplicationResultRequest,
     finalize_alignment_result,
 )
-from xic_extractor.alignment.tsv_writer import write_alignment_matrix_tsv
 from xic_extractor.alignment.untargeted_finalized_matrix import (
     project_completed_untarget_batch_writer_inputs,
 )
@@ -42,14 +46,10 @@ from xic_extractor.diagnostics.cid_nl_explanation import (
 from xic_extractor.diagnostics.cid_nl_explanation_projection import (
     write_cid_nl_explanation,
 )
-from xic_extractor.execution_runtime_marker import OwnerPathRuntimeMarker
-from xic_extractor.extraction.untargeted_cid_nl_production_batch import (
-    build_untargeted_cid_nl_production_batch,
-    compose_untargeted_cid_nl_production_result,
-    execute_untargeted_cid_nl_production_batch,
-)
-from xic_extractor.extraction.untargeted_cid_nl_result_store import PartitionResultStore
+from xic_extractor.execution.recovery import OwnerPathRuntimeMarker
+from xic_extractor.execution.result_store import StreamedResultStore
 from xic_extractor.immutable_sequence import ImmutableSequence
+from xic_extractor.output.alignment.tsv_writer import write_alignment_matrix_tsv
 from xic_extractor.presets.apply import apply_to_discovery
 from xic_extractor.presets.loader import load_preset
 from xic_extractor.sample_metadata import SampleMetadata
@@ -89,7 +89,7 @@ def _owner_run(tmp_path, monkeypatch, scenario):
         candidates[path.stem] = _current_candidates(
             source, raw_file=path, settings=settings, peak_config=peak_config
         )
-    batch = build_untargeted_cid_nl_production_batch(
+    batch = build_dense_partition(
         raw_paths=paths,
         sample_metadata=tuple(
             SampleMetadata(
@@ -114,7 +114,7 @@ def _owner_run(tmp_path, monkeypatch, scenario):
         # aligned moderate owners are eligible through batch continuity.
         preferred_rt_sec=2.0 if scenario == "review_only" else 60.0,
     )
-    runtime = execute_untargeted_cid_nl_production_batch(
+    runtime = execute_dense_partition(
         batch,
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
         recovery_marker=OwnerPathRuntimeMarker(
@@ -122,10 +122,12 @@ def _owner_run(tmp_path, monkeypatch, scenario):
         ),
         alignment_config=config,
     )
-    completed = compose_untargeted_cid_nl_production_result(
+    completed = complete_dense_partition(
         batch, runtime, alignment_config=config
     )
-    writer = project_completed_untarget_batch_writer_inputs(completed)
+    writer = project_completed_untarget_batch_writer_inputs(
+        completed.application_result
+    )
     matrix = tmp_path / "matrix.tsv"
     write_alignment_matrix_tsv(
         matrix,
@@ -334,7 +336,7 @@ def test_exclusions_load_once_with_restored_duplicate_assessments(
     original = write_cid_nl_explanation(
         tmp_path / "original.sqlite", completed=completed, **kwargs
     )
-    store = PartitionResultStore(tmp_path / "assessment-store", ())
+    store = StreamedResultStore(tmp_path / "assessment-store", ())
     store.append("one", _AssessmentBatch(completed.method_assessments))
     restored = store.read(0).method_assessments
     assert restored[0] is not completed.method_assessments[0]
@@ -416,7 +418,7 @@ def test_explanation_loads_each_file_backed_child_once(tmp_path, monkeypatch, sc
     original = write_cid_nl_explanation(
         tmp_path / "memory.sqlite", completed=completed, **kwargs
     )
-    store = PartitionResultStore(
+    store = StreamedResultStore(
         tmp_path / "child-store",
         (
             application.processing_request,
@@ -541,8 +543,7 @@ def test_related_set_links_preserve_union_order_and_legacy_read(tmp_path):
         writer.finalize({})
 
     expected = {
-        (candidate_id, "S1", "facts", "one")
-        for candidate_id in ("C1", "C2", "C3")
+        (candidate_id, "S1", "facts", "one") for candidate_id in ("C1", "C2", "C3")
     }
     assert set(read_explanation_metadata(report).links) == expected
     for candidate_id in ("C1", "C2", "C3"):

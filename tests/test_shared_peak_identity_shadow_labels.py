@@ -2,18 +2,16 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from xic_extractor.alignment.shared_peak_identity_explanation import (
+from xic_extractor.diagnostics.shared_peak_identity_explanation import (
+    machine_artifacts,
     machine_evidence_support,
 )
-from xic_extractor.alignment.shared_peak_identity_explanation.machine_artifacts import (
-    MachineMatch,
-)
-from xic_extractor.alignment.shared_peak_identity_explanation.shadow_labels import (
+from xic_extractor.diagnostics.shared_peak_identity_explanation.shadow_labels import (
     build_shadow_alignment_summary,
     build_shadow_label_rows,
     build_shadow_readiness,
 )
-from xic_extractor.alignment.shared_peak_identity_explanation.writers import (
+from xic_extractor.diagnostics.shared_peak_identity_explanation.writers import (
     write_shadow_outputs,
 )
 
@@ -2324,8 +2322,8 @@ def _machine_match(
     source_role: str,
     sample_level: bool,
     row: dict[str, str],
-) -> MachineMatch:
-    return MachineMatch(
+) -> machine_artifacts.MachineMatch:
+    return machine_artifacts.MachineMatch(
         evidence_source="alignment_cells" if sample_level else "alignment_review",
         source_role=source_role,
         source_artifact=Path("artifact.tsv"),

@@ -16,6 +16,10 @@ from xic_extractor.acquisition_contract import (
     mint_raw_acquisition_session_capability,
 )
 from xic_extractor.config import ExtractionConfig
+from xic_extractor.configuration.signal_processing_profile import (
+    SignalProcessingProfile,
+    resolve_signal_processing_profile,
+)
 from xic_extractor.diagnostics.timing import TimingRecord, TimingRecorder
 from xic_extractor.discovery.batch_contract import (
     DISCOVERY_BATCH_INDEX_SCHEMA_VERSION,
@@ -70,15 +74,11 @@ from xic_extractor.discovery.processing_run_spec_adapter import (
     processing_run_input_for_path,
     validate_processing_run_spec_call,
 )
-from xic_extractor.execution_runtime_owner import (
+from xic_extractor.execution.attempt import (
     derive_runtime_acquisition_metrics,
     derive_runtime_raw_open_metrics,
 )
-from xic_extractor.peak_detection.signal_processing_profile import (
-    SignalProcessingProfile,
-    resolve_signal_processing_profile,
-)
-from xic_extractor.process_job_execution import execute_process_jobs
+from xic_extractor.execution.workers import execute_process_jobs
 from xic_extractor.processing_identity import (
     AcquisitionSourceIdentity,
     build_acquisition_source_identity,
@@ -1628,7 +1628,7 @@ def _record_raw_open_metrics(
         scope=sample_stem,
         unit="opens",
         source=(
-            "xic_extractor.execution_runtime_owner.derive_runtime_raw_open_metrics"
+            "xic_extractor.execution.attempt.derive_runtime_raw_open_metrics"
         ),
         availability=(
             "measured" if metrics.raw_open_count is not None else "unavailable"

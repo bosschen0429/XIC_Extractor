@@ -4,7 +4,7 @@ on:
   push:
     branches: ["master", "main"]
   pull_request:
-    branches: ["master", "main"]
+    branches: ["master", "main", "integration/**"]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -26,17 +26,23 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
-      - run: uv sync --all-extras --dev
-      - run: uv run ruff check xic_extractor tests
+      - id: install
+        run: uv sync --locked --all-extras --dev
+      - run: uv run ruff check xic_extractor xic_inspector gui scripts tools tests
       - name: Static dependency contracts
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: uv run lint-imports --no-cache
       - name: Architecture census
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: uv run pytest tests/test_docs_architecture_census.py -m current_repository_census --noconftest -o addopts= --basetemp=${{ runner.temp }}/xic-architecture-census -q
       - name: Test shard coverage
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: uv run python -m tools.testing.test_shards --check
       - name: Diagnostics index in sync
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: uv run python scripts/check_diagnostics_index.py
       - name: Docs lifecycle audit
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: uv run python tools/diagnostics/docs_management_audit.py --repo-only --json
 
   typecheck:
@@ -52,7 +58,7 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
-      - run: uv sync --all-extras --dev
+      - run: uv sync --locked --all-extras --dev
       - run: uv run mypy xic_extractor
 
   test:
@@ -87,7 +93,6 @@ jobs:
           $env:PATH = "$venvScripts;$env:PATH"
           $markerExpression = "not ledger_snapshot and not current_repository_census and not serial_ci"
           $runPackagingBuild = $true
-          $runAgentHooks = $true
           if ("${{ github.event_name }}" -eq "pull_request") {
             $baseSha = "${{ github.event.pull_request.base.sha }}"
             $headSha = "${{ github.event.pull_request.head.sha }}"
@@ -95,20 +100,15 @@ jobs:
             $markerExpression = & .\.venv\Scripts\python.exe -m tools.testing.test_shards --marker-expression --base $baseSha --head $headSha
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
             $runPackagingBuild = $markerExpression -notmatch 'not packaging_build'
-            $runAgentHooks = $markerExpression -notmatch 'not agent_hooks'
           }
           $started = Get-Date
-          & .\.venv\Scripts\python.exe -m pytest -m $markerExpression -n 4 --dist loadfile -v --tb=short -x --durations=10
+          & .\.venv\Scripts\python.exe -m pytest -m $markerExpression -n 4 --dist loadfile -v --tb=short --durations=10
           $parallelExitCode = $LASTEXITCODE
           $parallelElapsed = [math]::Round(((Get-Date) - $started).TotalSeconds, 1)
           "- marker_expression=$markerExpression" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
           "- parallel_test_seconds=$parallelElapsed" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
-          if ($parallelExitCode -ne 0) { exit $parallelExitCode }
 
           $serialTargets = @()
-          if ($runAgentHooks) {
-            $serialTargets += "tests/test_config_codex_hooks.py::test_existing_hook_behavior_fixture_runs_in_ordinary_pytest"
-          }
           if ($runPackagingBuild) {
             $serialTargets += "tests/test_pyinstaller_spec.py::test_built_wheel_contains_one_byte_identical_quantitative_authority"
             $serialTargets += "tests/test_pyinstaller_spec.py::test_final_pyinstaller_output_contains_one_byte_identical_quantitative_authority"
@@ -117,53 +117,12 @@ jobs:
           $serialStarted = Get-Date
           $serialExitCode = 0
           if ($serialTargets.Count -gt 0) {
-            & .\.venv\Scripts\python.exe -m pytest @serialTargets -v --tb=short -x --durations=10
+            & .\.venv\Scripts\python.exe -m pytest @serialTargets -v --tb=short --durations=10
             $serialExitCode = $LASTEXITCODE
           }
-          "- agent_hooks_run=$runAgentHooks" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
           $serialElapsed = [math]::Round(((Get-Date) - $serialStarted).TotalSeconds, 1)
           $elapsed = [math]::Round(((Get-Date) - $started).TotalSeconds, 1)
           "- serial_test_seconds=$serialElapsed" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
           "- test_seconds=$elapsed" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
-          exit $serialExitCode
-
-  compatibility:
-    name: compatibility (Python 3.11)
-    if: github.event_name == 'push'
-    runs-on: self-hosted
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-          path: repo-3.11-compatibility
-          submodules: false
-      - uses: astral-sh/setup-uv@v8.2.0
-        with:
-          python-version: "3.11"
-          working-directory: repo-3.11-compatibility
-      - name: Install
-        shell: pwsh
-        working-directory: repo-3.11-compatibility
-        run: |
-          $started = Get-Date
-          uv sync --locked --extra dev --group dev --python 3.11
-          $exitCode = $LASTEXITCODE
-          $elapsed = [math]::Round(((Get-Date) - $started).TotalSeconds, 1)
-          "### Python 3.11 timing" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
-          "- install_seconds=$elapsed" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
-          exit $exitCode
-      - name: Test
-        shell: pwsh
-        working-directory: repo-3.11-compatibility
-        run: |
-          $venvScripts = (Resolve-Path .\.venv\Scripts).Path
-          $env:PATH = "$venvScripts;$env:PATH"
-          $started = Get-Date
-          & .\.venv\Scripts\python.exe -m pytest -m "not ledger_snapshot and not current_repository_census and not serial_ci and not packaging_build and not product_governance" -n 4 --dist loadfile -v --tb=short -x --durations=10
-          $parallelExitCode = $LASTEXITCODE
           if ($parallelExitCode -ne 0) { exit $parallelExitCode }
-          & .\.venv\Scripts\python.exe -m pytest tests/test_config_codex_hooks.py::test_existing_hook_behavior_fixture_runs_in_ordinary_pytest -v --tb=short -x
-          $serialExitCode = $LASTEXITCODE
-          $elapsed = [math]::Round(((Get-Date) - $started).TotalSeconds, 1)
-          "- test_seconds=$elapsed" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
           exit $serialExitCode

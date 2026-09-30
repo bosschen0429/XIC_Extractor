@@ -4,14 +4,20 @@ import numpy as np
 import pytest
 
 import xic_extractor.extraction.target_extraction as target_extraction
+from xic_extractor.applications.targeted.product_model import (
+    TargetedProductProjection,
+)
 from xic_extractor.config import ExtractionConfig, Target
+from xic_extractor.configuration.signal_processing_profile import (
+    DEFAULT_SIGNAL_PROCESSING_PROFILE,
+)
+from xic_extractor.evidence.neutral_loss import CandidateMS2Evidence, NLResult
 from xic_extractor.extraction.istd_prepass import extract_istd_anchors_only
 from xic_extractor.extraction.ms2_selection import selected_candidate_ms2_evidence
 from xic_extractor.extraction.rt_windows import get_rt_window
 from xic_extractor.extraction.scoring_factory import build_scoring_context_factory
 from xic_extractor.extractor import ExtractionResult
 from xic_extractor.ms2_scan_models import Ms2Scan, Ms2ScanEvent
-from xic_extractor.neutral_loss import CandidateMS2Evidence, NLResult
 from xic_extractor.peak_detection.baseline import asls_baseline, asls_baseline_on_rt
 from xic_extractor.peak_detection.evidence_facts import build_candidate_evidence_facts
 from xic_extractor.peak_detection.hypotheses import PeakHypothesis
@@ -38,12 +44,6 @@ from xic_extractor.peak_detection.physical_peak_models import (
 )
 from xic_extractor.peak_detection.selection_decision import (
     PeakHypothesisSelectionDecision,
-)
-from xic_extractor.peak_detection.signal_processing_profile import (
-    DEFAULT_SIGNAL_PROCESSING_PROFILE,
-)
-from xic_extractor.peak_detection.targeted_product_projection import (
-    TargetedProductProjection,
 )
 from xic_extractor.rt_prior_library import LibraryEntry
 
@@ -196,13 +196,13 @@ def test_extract_one_target_uses_shared_physical_candidate_and_owner_apex(
     monkeypatch.setattr(
         target_extraction, "enumerate_physical_segment_universe", _enumerate
     )
-    selected_handoff_peak = target_extraction.selected_handoff_peak
+    select_targeted_peak = target_extraction.select_targeted_peak
 
     def _handoff(**kwargs):
         captured["handoff_inputs"] = kwargs
-        return selected_handoff_peak(**kwargs)
+        return select_targeted_peak(**kwargs)
 
-    monkeypatch.setattr(target_extraction, "selected_handoff_peak", _handoff)
+    monkeypatch.setattr(target_extraction, "select_targeted_peak", _handoff)
 
     acquired_rt = np.linspace(8.0, 8.8, 41)
     acquired_intensity = 10.0 + 100.0 * np.exp(-((acquired_rt - 8.4) ** 2) / 0.002)
@@ -734,7 +734,7 @@ def test_paired_analyte_fallback_window_uses_target_region_not_istd_rt(
         istd_pair="ISTD",
     )
     monkeypatch.setattr(
-        "xic_extractor.extractor.find_nl_anchor_rt",
+        "xic_extractor.extraction.rt_windows.find_nl_anchor_rt",
         lambda *_args, **_kwargs: None,
     )
 
@@ -742,6 +742,7 @@ def test_paired_analyte_fallback_window_uses_target_region_not_istd_rt(
         object(),
         target,
         config,
+        sample_key="fixture",
         reference_rt=12.0,
     )
 
@@ -780,7 +781,7 @@ def test_paired_analyte_fallback_window_uses_learned_target_reference(
         istd_pair="ISTD",
     )
     monkeypatch.setattr(
-        "xic_extractor.extractor.find_nl_anchor_rt",
+        "xic_extractor.extraction.rt_windows.find_nl_anchor_rt",
         lambda *_args, **_kwargs: None,
     )
 
@@ -788,6 +789,7 @@ def test_paired_analyte_fallback_window_uses_learned_target_reference(
         object(),
         target,
         config,
+        sample_key="fixture",
         reference_rt=16.40,
         target_reference_rt=16.45,
     )
@@ -827,7 +829,7 @@ def test_distant_target_nl_anchor_falls_back_to_target_reference_not_istd_rt(
         istd_pair="ISTD",
     )
     monkeypatch.setattr(
-        "xic_extractor.extractor.find_nl_anchor_rt",
+        "xic_extractor.extraction.rt_windows.find_nl_anchor_rt",
         lambda *_args, **_kwargs: 18.20,
     )
 
@@ -835,6 +837,7 @@ def test_distant_target_nl_anchor_falls_back_to_target_reference_not_istd_rt(
         object(),
         target,
         config,
+        sample_key="fixture",
         reference_rt=16.40,
         target_reference_rt=16.45,
     )
@@ -874,7 +877,7 @@ def test_distant_target_nl_anchor_falls_back_to_paired_istd_inside_target_window
         istd_pair="ISTD",
     )
     monkeypatch.setattr(
-        "xic_extractor.extractor.find_nl_anchor_rt",
+        "xic_extractor.extraction.rt_windows.find_nl_anchor_rt",
         lambda *_args, **_kwargs: 18.20,
     )
 
@@ -882,6 +885,7 @@ def test_distant_target_nl_anchor_falls_back_to_paired_istd_inside_target_window
         object(),
         target,
         config,
+        sample_key="fixture",
         reference_rt=16.40,
         target_reference_rt=None,
     )

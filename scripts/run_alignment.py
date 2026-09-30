@@ -11,39 +11,39 @@ from dataclasses import replace
 from pathlib import Path
 from zipfile import BadZipFile
 
-from xic_extractor.alignment.csv_io import (
-    DiscoveryBatchInput,
-    read_discovery_batch_index,
-)
+from xic_extractor.acquisition.istd_reference import read_known_istd_reference
+from xic_extractor.acquisition.raw_paths import existing_raw_paths
 from xic_extractor.alignment.drift_evidence import (
     KnownIstdReference,
-    read_known_istd_reference,
 )
 from xic_extractor.alignment.owner_build_route_receipt import OwnerBuildRouteReceipt
-from xic_extractor.alignment.pipeline import (
-    _validate_untargeted_cid_nl_alignment_options,
-    run_alignment,
-)
-from xic_extractor.alignment.process_backend import AlignmentProcessExecutionError
 from xic_extractor.alignment.quantitative_projection_authority import (
     QuantitativeProjectionAuthorityHoldError,
 )
-from xic_extractor.alignment.raw_sources import existing_raw_paths
+from xic_extractor.applications.untargeted.application import (
+    AlignmentProcessExecutionError,
+    run_untargeted_application,
+    validate_untargeted_application_options,
+)
 from xic_extractor.config import ExtractionConfig
-from xic_extractor.configuration.models import ConfigError
-from xic_extractor.diagnostics.process_memory import ProcessTreeMemorySampler
-from xic_extractor.diagnostics.timing import TimingRecorder
-from xic_extractor.execution_settings import (
+from xic_extractor.configuration.execution_profile import (
     DEFAULT_ALIGNMENT_WORKER_BACKEND,
     load_execution_profile,
 )
-from xic_extractor.extraction.untargeted_cid_nl_production_batch import (
-    is_supported_alignment_discovery,
-)
-from xic_extractor.peak_detection.signal_processing_profile import (
+from xic_extractor.configuration.models import ConfigError
+from xic_extractor.configuration.signal_processing_profile import (
     DEFAULT_SIGNAL_PROCESSING_PROFILE,
     SignalProcessingProfile,
     resolve_signal_processing_profile,
+)
+from xic_extractor.diagnostics.process_memory import ProcessTreeMemorySampler
+from xic_extractor.diagnostics.timing import TimingRecorder
+from xic_extractor.discovery.csv_reader import (
+    DiscoveryBatchInput,
+    read_discovery_batch_index,
+)
+from xic_extractor.extraction.untargeted_input_planning import (
+    is_supported_alignment_discovery,
 )
 from xic_extractor.presets import (
     BoundCidNlRecipe,
@@ -88,7 +88,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             "(historical compatibility name only)"
         )
     try:
-        _validate_untargeted_cid_nl_alignment_options(
+        validate_untargeted_application_options(
             signal_processing_profile=signal_processing_profile,
             raw_workers=args.raw_workers,
             raw_worker_backend=args.raw_worker_backend,
@@ -233,9 +233,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         authority_hold = False
         try:
             if profiler is None:
-                outputs = run_alignment(**run_kwargs)
+                outputs = run_untargeted_application(**run_kwargs)
             else:
-                outputs = profiler.runcall(run_alignment, **run_kwargs)
+                outputs = profiler.runcall(run_untargeted_application, **run_kwargs)
         except QuantitativeProjectionAuthorityHoldError:
             authority_hold = True
             raise

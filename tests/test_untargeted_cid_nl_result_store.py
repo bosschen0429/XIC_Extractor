@@ -13,12 +13,12 @@ from types import MappingProxyType
 
 import pytest
 
-from xic_extractor.execution_engine.owner_pickle import owner_pickle_dumps
-from xic_extractor.execution_engine.streamed_result_store import (
+from xic_extractor.execution._serialization import owner_pickle_dumps
+from xic_extractor.execution.result_store import (
     PRESERVED_INDEX_NAME,
+    StreamedResultStore,
     open_preserved_results,
 )
-from xic_extractor.extraction.untargeted_cid_nl_result_store import PartitionResultStore
 from xic_extractor.immutable_sequence import ImmutableSequence
 
 _restored_children = []
@@ -55,7 +55,7 @@ def test_roundtrip_preserves_explicit_nested_owner_identity_and_proxy(tmp_path):
     owner = object()
     shared_container = (owner,)
     payload = Payload((MappingProxyType({"owner": owner, "shared": shared_container}),))
-    store = PartitionResultStore(tmp_path, (owner, shared_container))
+    store = StreamedResultStore(tmp_path, (owner, shared_container))
     entry = store.append("subject-1", payload)
     assert (entry.index, entry.key) == (0, "subject-1")
     assert entry.size_bytes > 0
@@ -71,7 +71,7 @@ def test_roundtrip_preserves_explicit_nested_owner_identity_and_proxy(tmp_path):
 
 
 def test_sealed_sequence_preserves_order_indices_and_empty_chunks(tmp_path):
-    store = PartitionResultStore(tmp_path, ())
+    store = StreamedResultStore(tmp_path, ())
     for index, values in enumerate(((), (1, 2), (), (3,), ())):
         store.append(str(index), Payload(values))
     with pytest.raises(ValueError, match="seal"):
@@ -93,7 +93,7 @@ def test_sealed_sequence_preserves_order_indices_and_empty_chunks(tmp_path):
 
 
 def test_empty_sealed_store_has_empty_sequence(tmp_path):
-    store = PartitionResultStore(tmp_path, ())
+    store = StreamedResultStore(tmp_path, ())
     store.seal()
     assert tuple(store.sequence("children")) == ()
 
@@ -102,9 +102,9 @@ def test_streaming_children_matches_append_bytes_and_reader(tmp_path):
     payload = Payload(
         (1, 2, 3), method_assessments=(4,), excluded_candidates=(5,), label="same"
     )
-    tuple_store = PartitionResultStore(tmp_path / "tuple", ())
+    tuple_store = StreamedResultStore(tmp_path / "tuple", ())
     tuple_entry = tuple_store.append("partition", payload)
-    stream_store = PartitionResultStore(tmp_path / "stream", ())
+    stream_store = StreamedResultStore(tmp_path / "stream", ())
 
     def children():
         yield from payload.children
@@ -124,7 +124,7 @@ def test_streaming_children_matches_append_bytes_and_reader(tmp_path):
 
 
 def test_streaming_children_failure_does_not_publish_or_seal(tmp_path):
-    store = PartitionResultStore(tmp_path, ())
+    store = StreamedResultStore(tmp_path, ())
 
     def failing_children():
         yield 1
@@ -141,7 +141,7 @@ def test_streaming_children_failure_does_not_publish_or_seal(tmp_path):
 
 
 def test_streaming_children_checks_cancellation_before_publication(tmp_path):
-    store = PartitionResultStore(tmp_path, ())
+    store = StreamedResultStore(tmp_path, ())
 
     def cancel():
         raise InterruptedError("cancel before publication")
@@ -158,7 +158,7 @@ def test_streaming_children_checks_cancellation_before_publication(tmp_path):
 
 
 def test_streaming_children_releases_previous_value_before_next_child(tmp_path):
-    store = PartitionResultStore(tmp_path, ())
+    store = StreamedResultStore(tmp_path, ())
     references = []
 
     def children():
@@ -180,7 +180,7 @@ def test_streaming_children_releases_previous_value_before_next_child(tmp_path):
 
 
 def test_sequential_sequence_reuses_one_open_file_per_partition(tmp_path, monkeypatch):
-    store = PartitionResultStore(tmp_path, ())
+    store = StreamedResultStore(tmp_path, ())
     store.append("one", Payload((1, 2)))
     store.append("two", Payload((3,)))
     store.seal()
@@ -205,7 +205,7 @@ def test_sequential_sequence_reuses_one_open_file_per_partition(tmp_path, monkey
 def test_sequential_sequence_closes_partition_on_early_close_and_error(
     tmp_path, monkeypatch
 ):
-    store = PartitionResultStore(tmp_path, ())
+    store = StreamedResultStore(tmp_path, ())
     store.append("one", Payload((1,)))
     store.seal()
 
@@ -236,7 +236,7 @@ def test_sequential_sequence_closes_partition_on_early_close_and_error(
 def test_sequential_sequence_releases_previous_value_before_next_record(
     tmp_path, monkeypatch
 ):
-    store = PartitionResultStore(tmp_path, ())
+    store = StreamedResultStore(tmp_path, ())
     first = _EphemeralChild()
     second = _EphemeralChild()
     store.append("one", Payload((first,)))
@@ -271,7 +271,7 @@ def test_sequential_loader_rejects_changed_chunk_cardinality():
 
 
 def test_diagnostic_field_read_does_not_restore_unrelated_scientific_children(tmp_path):
-    store = PartitionResultStore(tmp_path, ())
+    store = StreamedResultStore(tmp_path, ())
     store.append(
         "one", Payload((_ObservedChild(),), tuple(range(5000)), tuple(range(5000)))
     )
@@ -289,7 +289,7 @@ def test_diagnostic_field_read_does_not_restore_unrelated_scientific_children(tm
 
 
 def test_append_does_not_retain_payload_and_reads_do_not_cache(tmp_path):
-    store = PartitionResultStore(tmp_path, ())
+    store = StreamedResultStore(tmp_path, ())
     payload = Payload((object(),))
     reference = weakref.ref(payload)
     store.append("one", payload)
@@ -304,7 +304,7 @@ def test_append_does_not_retain_payload_and_reads_do_not_cache(tmp_path):
 
 
 def test_failed_append_does_not_publish_or_consume_partition_key(tmp_path):
-    store = PartitionResultStore(tmp_path, ())
+    store = StreamedResultStore(tmp_path, ())
     with pytest.raises((AttributeError, TypeError)):
         store.append("retry", Payload((lambda: None,)))
     assert list(tmp_path.iterdir()) == []
@@ -318,7 +318,7 @@ def test_failed_append_does_not_publish_or_consume_partition_key(tmp_path):
 
 @pytest.mark.parametrize("key", ("", ".", "..", "../escape", "a/b", "a\\b", "a:b"))
 def test_partition_keys_cannot_escape_owner_directory(tmp_path, key):
-    store = PartitionResultStore(tmp_path, ())
+    store = StreamedResultStore(tmp_path, ())
     with pytest.raises(ValueError, match="partition key"):
         store.append(key, Payload(()))
     assert list(tmp_path.iterdir()) == []
@@ -331,7 +331,7 @@ def test_retained_memory_sequence_and_selected_bypass_file_reads(tmp_path, monke
         excluded_candidates=(1000, 2000),
         label="retained",
     )
-    store = PartitionResultStore(tmp_path, ())
+    store = StreamedResultStore(tmp_path, ())
     entry = store.append_children(
         "part-0",
         Payload(
@@ -369,7 +369,7 @@ def test_retained_memory_sequence_and_selected_bypass_file_reads(tmp_path, monke
 
 def test_partition_result_store_cleanup(tmp_path: Path) -> None:
     spool_dir = tmp_path / "spool"
-    store = PartitionResultStore(spool_dir, ())
+    store = StreamedResultStore(spool_dir, ())
     store.append(
         "part-0",
         Payload(children=(1, 2), method_assessments=("a", "b")),
@@ -387,32 +387,73 @@ def test_partition_result_store_cleanup(tmp_path: Path) -> None:
     assert not spool_dir.exists()
 
 
-def test_preserved_index_reads_one_record_in_a_separate_process(tmp_path):
-    """A preserved spool is readable by a reader that never held the graph."""
-    shared = MappingProxyType({"owner": "shared"})
-    store = PartitionResultStore(tmp_path / "spool", (shared,))
-    store.append("alpha", Payload(children=("a0", "a1", "a2")))
-    store.append("beta", Payload(children=("b0", "b1")))
+def test_preserved_index_reads_one_record_in_a_separate_process(tmp_path, monkeypatch):
+    """A moved preserved spool is readable by a reader that never held the graph."""
+    from tests.test_untargeted_cid_nl_bounded_runtime import _plan
+    from xic_extractor.extraction.untargeted_execution import (
+        _sample_worker_shared_objects,
+        materialize_untargeted_partition,
+    )
+
+    plan, _reference = _plan(tmp_path, monkeypatch, sample_count=2)
+    batch = materialize_untargeted_partition(plan, plan.subject_batch)
+    shared = _sample_worker_shared_objects(
+        plan.context.processing_owners,
+        (batch.jobs[0]._request_subjects, batch.subject_batch),
+    )
+    jobs_by_sample = {
+        job.sample.identity.sample_identity_id: tuple(
+            candidate
+            for candidate in batch.jobs
+            if candidate.sample.identity.sample_identity_id
+            == job.sample.identity.sample_identity_id
+        )
+        for job in batch.jobs
+    }
+    assert len(jobs_by_sample) == 2
+    cohorts = tuple(jobs_by_sample.values())
+    store = StreamedResultStore(tmp_path / "spool", shared)
+    store.append("alpha", Payload(children=cohorts[0]))
+    store.append("beta", Payload(children=cohorts[1]))
     store.seal()
     index = store.preserve_results()
     assert index.is_file()
+    moved = tmp_path / "moved-spool"
+    shutil.move(str(index.parent), str(moved))
+    index = moved / index.name
 
     reader = textwrap.dedent(
         """
         import sys
         from pathlib import Path
-        from xic_extractor.execution_engine.streamed_result_store import (
+        from xic_extractor.execution.result_store import (
             open_preserved_results,
+        )
+        from xic_extractor.extraction.untargeted_partition.models import (
+            UntargetedPartitionJob,
         )
 
         store = open_preserved_results(Path(sys.argv[1]))
-        print(store.read_selected(int(sys.argv[2]), "children", (int(sys.argv[3]),))[0])
+        job = store.read_selected(int(sys.argv[2]), "children", (int(sys.argv[3]),))[0]
+        assert isinstance(job, UntargetedPartitionJob)
+        print(
+            job.sample.identity.sample_identity_id
+            + ":"
+            + job.method_subject.method_subject_id
+        )
         """
     )
     script = tmp_path / "reader.py"
     script.write_text(reader, encoding="utf-8")
 
-    for partition_index, position, expected in ((0, 2, "a2"), (1, 0, "b0")):
+    for partition_index, cohort in enumerate(cohorts):
+        position = len(cohort) - 1
+        job = cohort[position]
+        expected = (
+            job.sample.identity.sample_identity_id
+            + ":"
+            + job.method_subject.method_subject_id
+        )
         completed = subprocess.run(
             [
                 sys.executable,
@@ -431,7 +472,7 @@ def test_preserved_index_reads_one_record_in_a_separate_process(tmp_path):
 
 def test_preserved_index_is_sealed_and_rebinds_to_its_own_directory(tmp_path):
     """Moving a preserved spool keeps it readable and keeps it read-only."""
-    store = PartitionResultStore(tmp_path / "spool", ())
+    store = StreamedResultStore(tmp_path / "spool", ())
     store.append("alpha", Payload(children=("a0", "a1")))
     store.seal()
     store.preserve_results()
@@ -447,7 +488,7 @@ def test_preserved_index_is_sealed_and_rebinds_to_its_own_directory(tmp_path):
 
 def test_preserved_index_refuses_a_truncated_file(tmp_path):
     """A damaged index fails loudly instead of yielding partial records."""
-    store = PartitionResultStore(tmp_path / "spool", ())
+    store = StreamedResultStore(tmp_path / "spool", ())
     store.append("alpha", Payload(children=("a0",)))
     store.seal()
     index = store.preserve_results()
@@ -459,7 +500,7 @@ def test_preserved_index_refuses_a_truncated_file(tmp_path):
 
 
 def test_preserve_results_refuses_to_overwrite_an_existing_index(tmp_path):
-    store = PartitionResultStore(tmp_path / "spool", ())
+    store = StreamedResultStore(tmp_path / "spool", ())
     store.append("alpha", Payload(children=("a0",)))
     store.seal()
     store.preserve_results()
@@ -469,7 +510,7 @@ def test_preserve_results_refuses_to_overwrite_an_existing_index(tmp_path):
 
 def test_preserved_index_refuses_an_unsealed_store(tmp_path):
     """Only a sealed store may be published; an open spool can still grow."""
-    store = PartitionResultStore(tmp_path / "spool", ())
+    store = StreamedResultStore(tmp_path / "spool", ())
     store.append("alpha", Payload(children=("a0",)))
     forged = tmp_path / "spool" / "forged.pickle"
     forged.write_bytes(owner_pickle_dumps(store, ()))

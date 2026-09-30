@@ -22,13 +22,14 @@ def test_extractor_delegates_backend_orchestration() -> None:
 
 
 def test_process_jobs_live_under_extraction_package() -> None:
-    execution_path = ROOT / "xic_extractor" / "execution.py"
+    from xic_extractor.extraction import jobs
+
     process_backend_path = (
         ROOT / "xic_extractor" / "extraction" / "process_backend.py"
     )
 
-    assert _function_names(execution_path) == set()
-    assert len(execution_path.read_text(encoding="utf-8").splitlines()) <= 60
+    assert inspect.getmodule(jobs.run_raw_file_jobs) is jobs
+    assert inspect.getmodule(jobs.run_istd_prepass_jobs) is jobs
     assert "xic_extractor.execution" not in process_backend_path.read_text(
         encoding="utf-8"
     )
@@ -125,7 +126,7 @@ def test_extractor_delegates_target_extraction() -> None:
 
 def test_target_extraction_delegates_diagnostic_evidence_helpers() -> None:
     assert importlib.util.find_spec("xic_extractor.extraction.diagnostics")
-    assert importlib.util.find_spec("xic_extractor.extraction.handoff_spine_runtime")
+    assert importlib.util.find_spec("xic_extractor.extraction.targeted_peak_selection")
     assert importlib.util.find_spec("xic_extractor.extraction.peak_candidate_audit")
     assert importlib.util.find_spec("xic_extractor.extraction.result_assembly")
 
@@ -135,7 +136,7 @@ def test_target_extraction_delegates_diagnostic_evidence_helpers() -> None:
 
     assert "_check_target_nl" not in function_names
     assert "_candidate_ms2_evidence_builder" not in function_names
-    assert "selected_handoff_peak(" in source
+    assert "select_targeted_peak(" in source
     assert "append_peak_audit_rows(" in source
     assert "build_extraction_result(" in source
 

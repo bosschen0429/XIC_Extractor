@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from xic_extractor.alignment.shared_peak_identity_explanation.blast_radius import (
+from xic_extractor.diagnostics.shared_peak_identity_explanation.blast_radius import (
     CELLS_REQUIRED_FIELDS,
     preflight_tsv_artifact,
 )

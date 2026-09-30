@@ -3,6 +3,9 @@ import warnings
 import numpy as np
 import pytest
 
+from xic_extractor.configuration.signal_processing_profile import (
+    SignalProcessingProfile,
+)
 from xic_extractor.peak_detection.ms1_morphology import (
     DEFAULT_GAUSSIAN15_WINDOW_POINTS,
     MS1_MORPHOLOGY_AREA_SOURCE,
@@ -16,9 +19,6 @@ from xic_extractor.peak_detection.ms1_morphology import (
 from xic_extractor.peak_detection.scoring_metrics import (
     peak_width_severity,
     symmetry_severity,
-)
-from xic_extractor.peak_detection.signal_processing_profile import (
-    SignalProcessingProfile,
 )
 
 

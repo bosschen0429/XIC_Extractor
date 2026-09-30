@@ -15,6 +15,13 @@ import pytest
 from openpyxl import load_workbook
 
 from tests.test_targeted_production_workflow import production_case
+from xic_extractor.applications.targeted.application import (
+    TargetedApplicationService,
+    build_targeted_application_request,
+)
+from xic_extractor.configuration.signal_processing_profile import (
+    resolve_signal_processing_profile,
+)
 from xic_extractor.extraction import targeted_output_boundary
 from xic_extractor.extraction.result_assembly import reproject_extraction_result
 from xic_extractor.extraction.targeted_inputs import (
@@ -28,19 +35,12 @@ from xic_extractor.extraction.targeted_output_boundary import (
 from xic_extractor.extraction.targeted_production_workflow import (
     execute_targeted_production_workflow,
 )
-from xic_extractor.extraction.targeted_service import (
-    TargetedApplicationService,
-    build_targeted_application_request,
-)
 from xic_extractor.output.messages import DiagnosticRecord
 from xic_extractor.output.method_manifest import artifact_sha256, method_manifest_path
 from xic_extractor.output.review_report import review_report_path_for_excel
 from xic_extractor.peak_detection.physical_peak_evaluation import (
     evaluate_physical_peak,
     prepare_physical_signal,
-)
-from xic_extractor.peak_detection.signal_processing_profile import (
-    resolve_signal_processing_profile,
 )
 from xic_extractor.peak_detection.traces import Trace
 from xic_extractor.processing_identity import build_acquisition_source_identity

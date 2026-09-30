@@ -3,18 +3,21 @@ from dataclasses import replace
 import numpy as np
 import pytest
 
+from xic_extractor.applications.targeted.product_model import (
+    OWN_MAX_SAME_PEAK_SUPPORT_REASON,
+)
 from xic_extractor.config import Target
+from xic_extractor.configuration.signal_processing_profile import (
+    SignalProcessingProfile,
+)
+from xic_extractor.evidence.neutral_loss import CandidateMS2Evidence, NLResult
 from xic_extractor.evidence_semantics import EvidenceDecisionSemantics
-from xic_extractor.extraction.handoff_spine_runtime import (
+from xic_extractor.extraction.result_assembly import build_extraction_result
+from xic_extractor.extraction.targeted_peak_selection import (
     build_production_peak_hypotheses,
     selected_peak_hypothesis,
 )
-from xic_extractor.extraction.result_assembly import build_extraction_result
-from xic_extractor.extraction.targeted_projection_reasons import (
-    OWN_MAX_SAME_PEAK_SUPPORT_REASON,
-)
 from xic_extractor.extractor import ExtractionResult
-from xic_extractor.neutral_loss import CandidateMS2Evidence, NLResult
 from xic_extractor.peak_detection.evidence_facts import (
     CandidateEvidenceFacts,
     build_candidate_evidence_facts,
@@ -40,9 +43,6 @@ from xic_extractor.peak_detection.physical_peak_models import PhysicalPeakEvalua
 from xic_extractor.peak_detection.scoring_models import ScoringContext
 from xic_extractor.peak_detection.selection_decision import (
     PeakHypothesisSelectionDecision,
-)
-from xic_extractor.peak_detection.signal_processing_profile import (
-    SignalProcessingProfile,
 )
 
 

@@ -20,11 +20,11 @@ from scripts.check_productization_authority import (
     main,
 )
 from scripts.check_productization_state import artifact_sha256
-from xic_extractor.alignment.production_acceptance import (
-    ProductionAcceptanceManifestError,
-)
 from xic_extractor.alignment.quantitative_projection_authority import (
     QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_FIELDS,
+)
+from xic_extractor.diagnostics.quant_matrix.acceptance import (
+    ProductionAcceptanceManifestError,
 )
 
 BACKFILL_EXTERNALIZED_SUMMARY = (
@@ -255,7 +255,7 @@ def test_productization_authority_checker_rejects_crossed_resealed_or_active(
     payload = json.loads(DEFAULT_DEPENDENT_MANIFEST.read_text(encoding="utf-8"))
     if mutation == "crossed":
         payload["package_authority_artifact"] = (
-            "docs/superpowers/schemas/productization_authority_manifest.json"
+            "docs/superpowers/productization/status/productization_authority_manifest.json"
         )
         payload["package_authority_sha256"] = _raw_sha256(DEFAULT_MANIFEST)
     elif mutation == "resealed_hash":
@@ -422,9 +422,7 @@ def test_productization_authority_checker_validates_compact_summary_contents(
     shutil.copyfile(DEFAULT_MANIFEST, manifest)
     summary.parent.mkdir(parents=True)
     shutil.copyfile(
-        DEFAULT_MANIFEST.parent.parent
-        / "validation/backfill_generated_policy_externalized_artifacts/"
-        / "backfill_generated_policy_externalized_artifacts_summary.json",
+        Path(__file__).resolve().parents[1] / BACKFILL_EXTERNALIZED_SUMMARY,
         summary,
     )
 

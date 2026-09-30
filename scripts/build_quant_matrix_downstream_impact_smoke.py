@@ -10,7 +10,7 @@ from pathlib import Path
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from xic_extractor.alignment.quant_matrix_downstream_impact import (
+from xic_extractor.diagnostics.quant_matrix.downstream_impact import (
     DOWNSTREAM_IMPACT_BUNDLE_KINDS,
     build_quant_matrix_downstream_impact_smoke,
     validate_quant_matrix_downstream_impact_smoke,

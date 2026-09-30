@@ -2,13 +2,11 @@ from pathlib import Path
 
 import pytest
 
-import xic_extractor.execution_runtime_owner as owner_mod
-import xic_extractor.execution_runtime_receipts as receipts_mod
+import xic_extractor.execution._receipts as receipts_mod
+import xic_extractor.execution.attempt as owner_mod
 from tests.test_execution_runtime_owner import _attempt
-from xic_extractor.execution_runtime_finalization import (
-    RuntimeFinalizationContractError,
-)
-from xic_extractor.execution_runtime_receipts import (
+from xic_extractor.execution._finalization import RuntimeFinalizationContractError
+from xic_extractor.execution._receipts import (
     RuntimeArtifactIoSample,
     RuntimeCancellationRequest,
     RuntimeExecutionPhase,
@@ -18,7 +16,7 @@ from xic_extractor.execution_runtime_receipts import (
 
 
 def test_reexport_identity() -> None:
-    """Symbols re-exported by execution_runtime_owner must be the exact same object."""
+    """Typed facts exposed by execution.attempt must be the exact same object."""
     exported_symbols = (
         "RuntimeAcquisitionMetrics",
         "RuntimeAcquisitionReceipt",

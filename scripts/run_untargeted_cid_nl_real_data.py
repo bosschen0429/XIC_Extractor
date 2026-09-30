@@ -10,26 +10,25 @@ import time
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
-from xic_extractor.alignment.csv_io import (
-    read_discovery_batch_index,
-    read_owner_bound_discovery_candidates_csv,
+from xic_extractor.acquisition.raw_paths import existing_raw_paths
+from xic_extractor.config import ExtractionConfig
+from xic_extractor.diagnostics.quant_matrix.acceptance import REQUIRED_COLUMNS
+from xic_extractor.diagnostics.quant_matrix.golden_path import (
+    build_untargeted_cid_nl_golden_path,
+    build_untargeted_cid_nl_quant_matrix_version,
 )
-from xic_extractor.alignment.production_acceptance import REQUIRED_COLUMNS
-from xic_extractor.alignment.quant_matrix_version import (
+from xic_extractor.diagnostics.quant_matrix.version import (
     CELL_PROVENANCE_COLUMNS,
     EXPECTED_DIFF_SUMMARY_COLUMNS,
     ROW_SUMMARY_COLUMNS,
 )
-from xic_extractor.alignment.raw_sources import existing_raw_paths
-from xic_extractor.alignment.untargeted_cid_nl_golden_path import (
-    build_untargeted_cid_nl_golden_path,
-    build_untargeted_cid_nl_quant_matrix_version,
+from xic_extractor.discovery.csv_reader import (
+    read_discovery_batch_index,
+    read_owner_bound_discovery_candidates_csv,
 )
-from xic_extractor.config import ExtractionConfig
 from xic_extractor.discovery.models import DiscoverySettings, NeutralLossProfile
-from xic_extractor.execution_runtime_marker import OwnerPathRuntimeMarker
-from xic_extractor.execution_runtime_observability import RuntimeMetricAvailability
-from xic_extractor.execution_runtime_owner import (
+from xic_extractor.execution._observability import RuntimeMetricAvailability
+from xic_extractor.execution.attempt import (
     RuntimeArtifactIoSample,
     RuntimeProcessTreePeakRssSample,
     RuntimeTelemetrySamples,
@@ -38,13 +37,14 @@ from xic_extractor.execution_runtime_owner import (
     runtime_started_worker_keys,
     start_runtime_attempt,
 )
-from xic_extractor.extraction.untargeted_cid_nl_real_data_inputs import (
-    build_untargeted_cid_nl_real_data_context,
+from xic_extractor.execution.recovery import OwnerPathRuntimeMarker
+from xic_extractor.extraction.untargeted_partition.execution import (
+    execute_attempt,
+    runtime_call_cost,
 )
-from xic_extractor.extraction.untargeted_cid_nl_real_data_runtime import (
-    UntargetedCidNlRealDataRuntimeJob,
-    execute_untargeted_cid_nl_real_data_runtime,
-    untargeted_cid_nl_runtime_call_cost,
+from xic_extractor.extraction.untargeted_partition.models import UntargetedPartitionJob
+from xic_extractor.extraction.untargeted_partition.request import (
+    build_partition_context,
 )
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     mint_untargeted_cid_nl_method_subject,
@@ -172,7 +172,7 @@ def _run(
         precursor_tolerance_ppm=settings.precursor_mz_tolerance_ppm,
         neutral_loss_da=args.neutral_loss_da,
     )
-    context = build_untargeted_cid_nl_real_data_context(
+    context = build_partition_context(
         raw_paths=tuple(raw_paths_by_sample[stem] for stem in selected_stems),
         sample_metadata=selected_metadata,
         method_subject=method_subject,
@@ -183,7 +183,7 @@ def _run(
         sample_identity_namespace=args.sample_identity_namespace,
     )
     jobs = tuple(
-        UntargetedCidNlRealDataRuntimeJob(
+        UntargetedPartitionJob(
             processing_owners=context.processing_owners,
             sample=sample,
             method_subject=context.method_subject,
@@ -204,7 +204,7 @@ def _run(
         work_unit_keys=tuple(job.work_unit_key for job in jobs),
         owner_completeness_attestation="untargeted-cid-nl-real-data-runtime-runner",
     )
-    runtime_result = execute_untargeted_cid_nl_real_data_runtime(
+    runtime_result = execute_attempt(
         runtime,
         jobs,
         telemetry_provider=_coarse_runtime_telemetry,
@@ -216,7 +216,7 @@ def _run(
     )
     if not runtime_result.succeeded:
         raise RuntimeError("Real-data atomic runtime did not succeed")
-    call_cost = untargeted_cid_nl_runtime_call_cost(runtime_result.finalization)
+    call_cost = runtime_call_cost(runtime_result.finalization)
 
     has_direct_support = any(
         item.adapter_result.assessment_input.assessment.content.method_result

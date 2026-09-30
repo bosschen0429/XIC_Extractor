@@ -10,7 +10,6 @@ CidNlRecipeRoute = Literal[
     "full",
     "discovery_only",
     "align_only",
-    "bounded_mode_track",
 ]
 
 

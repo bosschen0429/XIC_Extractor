@@ -21,16 +21,7 @@ from xic_extractor.acquisition_contract import (
     mint_raw_acquisition_session_capability,
     mint_trace_acquisition_capability,
 )
-from xic_extractor.execution_runtime import (
-    AttemptLifecycleContractError,
-    AttemptLifecycleEventKind,
-    AttemptTerminalOutcome,
-    WorkUnitFailureCategory,
-    WorkUnitFailureDetail,
-    WorkUnitTerminalOutcome,
-    settle_work_unit,
-)
-from xic_extractor.execution_runtime_finalization import (
+from xic_extractor.execution._finalization import (
     AttemptFinalizationState,
     RuntimeFinalizationContractError,
     RuntimeResourceCleanupOutcome,
@@ -42,13 +33,21 @@ from xic_extractor.execution_runtime_finalization import (
     record_runtime_resource_open,
     register_runtime_artifact,
 )
-from xic_extractor.execution_runtime_marker import OwnerPathRuntimeMarker
-from xic_extractor.execution_runtime_observability import (
+from xic_extractor.execution._lifecycle import (
+    AttemptLifecycleContractError,
+    AttemptLifecycleEventKind,
+    AttemptTerminalOutcome,
+    WorkUnitFailureCategory,
+    WorkUnitFailureDetail,
+    WorkUnitTerminalOutcome,
+    settle_work_unit,
+)
+from xic_extractor.execution._observability import (
     RuntimeMetricAvailability,
     _index_event_offsets,
     canonical_runtime_observability_ledger_bytes,
 )
-from xic_extractor.execution_runtime_owner import (
+from xic_extractor.execution.attempt import (
     RuntimeAcquisitionMetrics,
     RuntimeAcquisitionReceipt,
     RuntimeArtifactIoSample,
@@ -80,6 +79,7 @@ from xic_extractor.execution_runtime_owner import (
     mint_work_unit_settlement,
     start_runtime_attempt,
 )
+from xic_extractor.execution.recovery import OwnerPathRuntimeMarker
 from xic_extractor.extraction.targeted_runtime_adapter import (
     mint_targeted_process_result_ref,
 )
@@ -901,14 +901,14 @@ def test_runtime_phase_error_public_contract_is_closed_and_owner_bound(
     assert (
         "RuntimeExecutionPhase"
         in __import__(
-            "xic_extractor.execution_runtime_owner",
+            "xic_extractor.execution.attempt",
             fromlist=["__all__"],
         ).__all__
     )
     assert (
         "RuntimeExecutionPhaseError"
         in __import__(
-            "xic_extractor.execution_runtime_owner",
+            "xic_extractor.execution.attempt",
             fromlist=["__all__"],
         ).__all__
     )

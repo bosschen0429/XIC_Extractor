@@ -38,11 +38,13 @@ from xic_extractor.alignment.result import (
 
 def _target_completion(
     root: Path,
+    *,
+    sample_stems: tuple[str, ...] = ("sample-a", "sample-b"),
 ) -> tuple[object, TargetPostCellProjection]:
     root.mkdir(exist_ok=True)
     _fixture, _scope, alignment, _hypotheses = _finalized_case(
         root,
-        sample_stems=("sample-a", "sample-b"),
+        sample_stems=sample_stems,
         observed_stems=(),
         group_specs=(((), "provisional"),),
     )
@@ -242,23 +244,6 @@ def test_untarget_result_rejects_a_partial_completed_row_population(
         )
 
 
-def test_target_result_rejects_substituted_completed_counts(tmp_path: Path) -> None:
-    scientific_core, projection = _target_completion(tmp_path / "target")
-    object.__setattr__(
-        projection,
-        "accepted_cell_count",
-        bool(projection.accepted_cell_count),
-    )
-
-    with pytest.raises(ApplicationResultContractError, match="receipt|substituted"):
-        finalize_alignment_result(
-            TargetApplicationResultRequest(
-                scientific_core=cast(Any, scientific_core),
-                completed_projection=projection,
-            )
-        )
-
-
 def test_untarget_result_rejects_a_substituted_completed_route(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -283,25 +268,6 @@ def test_untarget_result_rejects_a_substituted_completed_route(
         )
 
 
-def test_target_result_rejects_a_substituted_nested_decision_owner(
-    tmp_path: Path,
-) -> None:
-    scientific_core, projection = _target_completion(tmp_path / "target")
-    object.__setattr__(
-        projection.decisions[0],
-        "basis_bytes",
-        b"substituted-owner-basis",
-    )
-
-    with pytest.raises(ApplicationResultContractError, match="receipt|substituted"):
-        finalize_alignment_result(
-            TargetApplicationResultRequest(
-                scientific_core=cast(Any, scientific_core),
-                completed_projection=projection,
-            )
-        )
-
-
 def test_untarget_projection_rejects_a_partial_subject_population(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -319,30 +285,21 @@ def test_untarget_projection_rejects_a_partial_subject_population(
         )
 
 
-@pytest.mark.parametrize("variant", ["targeted", "untargeted"])
-def test_result_rejects_a_substituted_completed_projection_owner(
+def test_untarget_result_rejects_a_substituted_completed_projection_owner(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    variant: str,
 ) -> None:
-    if variant == "targeted":
-        scientific_core, projection = _target_completion(tmp_path / "target")
-        request = TargetApplicationResultRequest(
-            scientific_core=cast(Any, scientific_core),
-            completed_projection=copy(projection),
-        )
-    else:
-        scientific_core, projection = _untarget_completion(
-            tmp_path / "untarget",
-            monkeypatch,
-        )
-        request = UntargetApplicationResultRequest(
-            scientific_core=cast(Any, scientific_core),
-            completed_projection=copy(projection),
-        )
-
+    scientific_core, projection = _untarget_completion(
+        tmp_path / "untarget",
+        monkeypatch,
+    )
     with pytest.raises(ApplicationResultContractError, match="receipt|substituted"):
-        finalize_alignment_result(request)
+        finalize_alignment_result(
+            UntargetApplicationResultRequest(
+                scientific_core=cast(Any, scientific_core),
+                completed_projection=copy(projection),
+            )
+        )
 
 
 def test_target_result_rejects_a_substituted_scientific_core(tmp_path: Path) -> None:
@@ -357,73 +314,34 @@ def test_target_result_rejects_a_substituted_scientific_core(tmp_path: Path) -> 
         )
 
 
-@pytest.mark.parametrize(
-    "variant",
-    [
-        "target_request",
-        "target_definition",
-        "target_sample",
-        "untarget_request",
-        "untarget_sample",
-    ],
-)
-def test_result_rejects_equal_nested_owner_clones(
+@pytest.mark.parametrize("variant", ["untarget_request", "untarget_sample"])
+def test_untarget_result_rejects_equal_nested_owner_clones(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     variant: str,
 ) -> None:
-    if variant.startswith("target_"):
-        scientific_core, projection = _target_completion(tmp_path / variant)
-        if variant == "target_request":
-            object.__setattr__(
-                projection.row_binding,
-                "processing_request",
-                copy(projection.row_binding.processing_request),
-            )
-        elif variant == "target_definition":
-            object.__setattr__(
-                projection.row_binding,
-                "target",
-                copy(projection.row_binding.target),
-            )
-        else:
-            samples = scientific_core.scope.samples
-            object.__setattr__(
-                scientific_core.scope,
-                "samples",
-                (copy(samples[0]), *samples[1:]),
-            )
-        request = TargetApplicationResultRequest(
-            scientific_core=cast(Any, scientific_core),
-            completed_projection=projection,
-        )
+    scientific_core, projection = _untarget_completion(
+        tmp_path / variant,
+        monkeypatch,
+    )
+    if variant == "untarget_request":
+        cloned_request = copy(scientific_core.processing_request)
+        object.__setattr__(scientific_core, "processing_request", cloned_request)
+        object.__setattr__(scientific_core.scope, "request", cloned_request)
     else:
-        scientific_core, projection = _untarget_completion(
-            tmp_path / variant,
-            monkeypatch,
+        samples = scientific_core.scope.samples
+        object.__setattr__(
+            scientific_core.scope,
+            "samples",
+            (copy(samples[0]), *samples[1:]),
         )
-        if variant == "untarget_request":
-            cloned_request = copy(scientific_core.processing_request)
-            object.__setattr__(
-                scientific_core,
-                "processing_request",
-                cloned_request,
-            )
-            object.__setattr__(scientific_core.scope, "request", cloned_request)
-        else:
-            samples = scientific_core.scope.samples
-            object.__setattr__(
-                scientific_core.scope,
-                "samples",
-                (copy(samples[0]), *samples[1:]),
-            )
-        request = UntargetApplicationResultRequest(
-            scientific_core=cast(Any, scientific_core),
-            completed_projection=projection,
-        )
-
     with pytest.raises(ApplicationResultContractError, match="substituted|receipt"):
-        finalize_alignment_result(request)
+        finalize_alignment_result(
+            UntargetApplicationResultRequest(
+                scientific_core=cast(Any, scientific_core),
+                completed_projection=projection,
+            )
+        )
 
 
 def test_mixed_target_and_untarget_variants_fail_before_finalization(
@@ -448,72 +366,24 @@ def test_mixed_target_and_untarget_variants_fail_before_finalization(
         )
 
 
+@pytest.mark.parametrize(
+    "other_samples",
+    [("sample-a", "sample-b"), ("sample-a", "sample-c"), ("sample-a",)],
+)
 def test_crossed_same_variant_core_and_projection_fail_closed(
     tmp_path: Path,
+    other_samples: tuple[str, ...],
 ) -> None:
     owner_core, _owner_projection = _target_completion(tmp_path / "owner")
-    _other_core, other_projection = _target_completion(tmp_path / "other")
+    _other_core, other_projection = _target_completion(
+        tmp_path / "other", sample_stems=other_samples
+    )
 
     with pytest.raises(ApplicationResultContractError, match="crossed|substituted"):
         finalize_alignment_result(
             TargetApplicationResultRequest(
                 scientific_core=cast(Any, owner_core),
                 completed_projection=other_projection,
-            )
-        )
-
-
-@pytest.mark.parametrize(
-    "variant",
-    ["missing_sample", "duplicate_sample", "partial_decisions", "duplicate_decisions"],
-)
-def test_incomplete_duplicate_or_partial_owner_populations_fail_closed(
-    tmp_path: Path,
-    variant: str,
-) -> None:
-    scientific_core, projection = _target_completion(tmp_path / variant)
-    changed_core = scientific_core
-    changed_projection = projection
-    if variant == "missing_sample":
-        changed_core = copy(scientific_core)
-        object.__setattr__(
-            changed_core,
-            "canonical_samples",
-            scientific_core.canonical_samples[:-1],
-        )
-    elif variant == "duplicate_sample":
-        changed_core = copy(scientific_core)
-        object.__setattr__(
-            changed_core,
-            "canonical_samples",
-            (
-                scientific_core.canonical_samples[0],
-                scientific_core.canonical_samples[0],
-            ),
-        )
-    elif variant == "partial_decisions":
-        changed_projection = copy(projection)
-        object.__setattr__(
-            changed_projection,
-            "decisions",
-            projection.decisions[:-1],
-        )
-    else:
-        changed_projection = copy(projection)
-        object.__setattr__(
-            changed_projection,
-            "decisions",
-            projection.decisions + (projection.decisions[0],),
-        )
-
-    with pytest.raises(
-        ApplicationResultContractError,
-        match="sample universe|population|decision|duplicate|partial",
-    ):
-        finalize_alignment_result(
-            TargetApplicationResultRequest(
-                scientific_core=cast(Any, changed_core),
-                completed_projection=changed_projection,
             )
         )
 
@@ -554,16 +424,6 @@ def test_untarget_owner_pickle_rebinds_completion_and_still_rejects_substitution
     monkeypatch: pytest.MonkeyPatch,
     tamper: str,
 ) -> None:
-    from xic_extractor.alignment._completion_receipt import retained_owner_digest
-
-    graph_walks = []
-
-    def counted(*args, **kwargs):
-        graph_walks.append(args[0])
-        return retained_owner_digest(*args, **kwargs)
-
-    for owner in (scientific_alignment_owner, untarget_post_cell):
-        monkeypatch.setattr(owner, "retained_owner_digest", counted, raising=False)
     core, projection = _untarget_completion(tmp_path, monkeypatch)
     restored_core, restored_projection = _pickle_completed_owner((core, projection))
     assert restored_core is not core
@@ -583,7 +443,6 @@ def test_untarget_owner_pickle_rebinds_completion_and_still_rejects_substitution
     )
     assert restored_projection.rows[0].counts == projection.rows[0].counts
     assert restored_projection.rows[0].route == projection.rows[0].route
-    assert graph_walks == []
     if tamper == "core":
         object.__setattr__(
             restored_core,

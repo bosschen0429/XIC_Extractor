@@ -17,16 +17,16 @@ from pathlib import Path
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from xic_extractor.alignment.quant_matrix_promotion import (
+from xic_extractor.diagnostics.quant_matrix.promotion import (
     evaluate_quant_matrix_promotion_readiness,
 )
-from xic_extractor.alignment.quant_matrix_report import QUANT_MATRIX_REVIEW_SCHEMA
-from xic_extractor.alignment.quant_matrix_validation_packet import (
+from xic_extractor.diagnostics.quant_matrix.report import QUANT_MATRIX_REVIEW_SCHEMA
+from xic_extractor.diagnostics.quant_matrix.validation_packet import (
     ValidationEvidenceArtifact,
     build_quant_matrix_validation_evidence_packet,
     validate_quant_matrix_validation_evidence_packet,
 )
-from xic_extractor.alignment.quant_matrix_version import (
+from xic_extractor.diagnostics.quant_matrix.version import (
     CELL_PROVENANCE_COLUMNS,
     EXPECTED_DIFF_SUMMARY_COLUMNS,
     ROW_SUMMARY_COLUMNS,
@@ -36,7 +36,7 @@ from xic_extractor.tabular_io import write_tsv
 ROOT = Path(__file__).resolve().parents[1]
 
 DEFAULT_OUTPUT_DIR = Path(
-    "docs/superpowers/validation/quant_matrix_evidence_packet",
+    "output/validation/quant_matrix_evidence_packet",
 )
 DEFAULT_LARGE_COHORT_ARTIFACT = Path(
     "docs/superpowers/validation/quant_matrix_real_bundle/"

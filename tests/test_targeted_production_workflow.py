@@ -8,8 +8,22 @@ import pytest
 from xic_extractor.alignment.result.application_result import (
     FinalizedTargetApplicationResult,
 )
+from xic_extractor.applications.targeted.application import (
+    build_targeted_application_request,
+)
+from xic_extractor.applications.targeted.product_model import (
+    TargetedProductContext,
+)
+from xic_extractor.applications.targeted.product_projection import (
+    build_targeted_product_projection,
+)
 from xic_extractor.config import ExtractionConfig, Target
-from xic_extractor.execution_runtime_observability import (
+from xic_extractor.configuration.signal_processing_profile import (
+    resolve_signal_processing_profile,
+)
+from xic_extractor.evidence.neutral_loss import CandidateMS2Evidence, MS2ProductEvidence
+from xic_extractor.execution._lifecycle import AttemptTerminalOutcome
+from xic_extractor.execution._observability import (
     RuntimeMetricAvailability,
     canonical_runtime_observability_ledger_bytes,
 )
@@ -22,9 +36,7 @@ from xic_extractor.extraction.targeted_inputs import (
 from xic_extractor.extraction.targeted_production_workflow import (
     execute_targeted_production_workflow,
 )
-from xic_extractor.extraction.targeted_service import build_targeted_application_request
 from xic_extractor.extractor import ExtractionResult, FileResult, RunOutput
-from xic_extractor.neutral_loss import CandidateMS2Evidence, MS2ProductEvidence
 from xic_extractor.peak_detection import capture as capture_owner
 from xic_extractor.peak_detection.hypotheses import build_peak_hypotheses
 from xic_extractor.peak_detection.observations import (
@@ -33,13 +45,6 @@ from xic_extractor.peak_detection.observations import (
 from xic_extractor.peak_detection.physical_peak_evaluation import (
     evaluate_physical_peak,
     prepare_physical_signal,
-)
-from xic_extractor.peak_detection.signal_processing_profile import (
-    resolve_signal_processing_profile,
-)
-from xic_extractor.peak_detection.targeted_product_projection import (
-    TargetedPriorContext,
-    build_targeted_product_projection,
 )
 from xic_extractor.peak_detection.traces import Trace, targeted_trace_group
 from xic_extractor.processing_identity import (
@@ -128,6 +133,50 @@ def test_two_samples_reuse_exact_acquired_physical_evaluations(
     )
 
 
+@pytest.mark.parametrize("ms1_only", [False, True])
+def test_targeted_grouping_keeps_each_sample_selected_value(
+    tmp_path: Path,
+    ms1_only: bool,
+) -> None:
+    config, target, output = production_case(
+        tmp_path,
+        sample_names=("SampleA", "SampleB"),
+        sample_peak_scales={"SampleA": 1.0, "SampleB": 2.0},
+    )
+    if ms1_only:
+        target = replace(
+            target,
+            neutral_loss_da=None,
+            nl_ppm_warn=None,
+            nl_ppm_max=None,
+        )
+
+    finalized = execute_targeted_production_workflow(
+        build_targeted_application_request(
+            config,
+            [target],
+            injection_order={"SampleA": 1, "SampleB": 2},
+        ),
+        output,
+    )
+
+    result = finalized[0]
+    decision_values = tuple(
+        decision.value for decision in result.completed_projection.decisions
+    )
+    assert decision_values == (
+        output.file_results[0].results[target.label].reported_peak_area,
+        output.file_results[1].results[target.label].reported_peak_area,
+    )
+    groups = result.scientific_core.final_population
+    assert groups == result.scientific_core.grouping_result.initial_population
+    assert {
+        member.canonical_sample_identity_id
+        for group in groups
+        for member in group.member_subjects
+    } == {sample.identity.sample_identity_id for sample in result.canonical_samples}
+
+
 def test_nl_event_outside_exact_target_precursor_is_not_target_evidence(
     tmp_path: Path,
 ) -> None:
@@ -185,7 +234,9 @@ def test_nl_event_outside_retained_peak_finalizes_without_direct_support(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    config, target, output = production_case(tmp_path)
+    config, target, output = production_case(
+        tmp_path, sample_names=("SampleA", "SampleB")
+    )
     original = output.file_results[0].results[target.label]
     selected = original.selected_hypothesis
     evidence = original.candidate_ms2_evidence
@@ -220,16 +271,29 @@ def test_nl_event_outside_retained_peak_finalizes_without_direct_support(
         build_targeted_application_request(
             config,
             [target],
-            injection_order={"SampleA": 1},
+            injection_order={"SampleA": 1, "SampleB": 2},
         ),
         output,
     )
 
     assert len(finalized) == 1
-    # A local MS1 value is allowed; an outside event must not become direct support.
-    assert len(assessments) == 1
+    # SampleA's local MS1 value stays selected beside SampleB's direct support.
+    assert len(assessments) == 2
     assert assessments[0].individual_support_refs == ()
     assert assessments[0].content.method_result != "SUPPORT"
+    result = finalized[0]
+    decision_values = tuple(
+        decision.value for decision in result.completed_projection.decisions
+    )
+    assert decision_values == (
+        output.file_results[0].results[target.label].reported_peak_area,
+        output.file_results[1].results[target.label].reported_peak_area,
+    )
+    assert {
+        member.canonical_sample_identity_id
+        for group in result.scientific_core.final_population
+        for member in group.member_subjects
+    } == {sample.identity.sample_identity_id for sample in result.canonical_samples}
 
 
 def test_retained_peak_outside_target_rt_is_not_a_target_capture(
@@ -357,17 +421,17 @@ def test_targeted_runtime_receipt_does_not_claim_uncollected_metrics_measured(
     monkeypatch,
 ) -> None:
     config, target, output = production_case(tmp_path)
-    original_execute = production_workflow.execute_alignment_workflow
+    original_execute = production_workflow.execute_runtime_attempt
     terminals = []
 
-    def capture_terminal(request, adapter):
-        terminal = original_execute(request, adapter)
+    def capture_terminal(*args, **kwargs):
+        terminal = original_execute(*args, **kwargs)
         terminals.append(terminal)
         return terminal
 
     monkeypatch.setattr(
         production_workflow,
-        "execute_alignment_workflow",
+        "execute_runtime_attempt",
         capture_terminal,
     )
     finalized = execute_targeted_production_workflow(
@@ -381,7 +445,7 @@ def test_targeted_runtime_receipt_does_not_claim_uncollected_metrics_measured(
 
     assert len(finalized) == 1
     assert len(terminals) == 1
-    receipt = terminals[0].runtime_receipt
+    receipt = terminals[0]
     assert receipt.supervisor.terminal_outcome.value == "succeeded"
     assert all(
         event.monotonic_offset_ns is None
@@ -983,7 +1047,7 @@ def production_case(
                         acquisition_trace=trace,
                         physical_evaluation=physical_evaluation,
                         targeted_product_projection=build_targeted_product_projection(
-                            TargetedPriorContext(role="Analyte"),
+                            TargetedProductContext(role="Analyte"),
                             rt=selected.integration.rt_apex_min,
                             area=selected.integration.area_raw_counts_seconds,
                             confidence="HIGH",
@@ -1047,4 +1111,164 @@ def _physical_evaluation(
         query_rt_min=query_rt_min,
         request_context_rt_start_min=trace.rt_min,
         request_context_rt_end_min=trace.rt_max,
+    )
+
+
+def _retained_completion_boundary(monkeypatch):
+    from types import SimpleNamespace
+
+    from xic_extractor.alignment.completion import (
+        TargetWorkflowAdapter,
+        TargetWorkflowRequest,
+    )
+
+    attempt = object()
+    request = object.__new__(TargetWorkflowRequest)
+    object.__setattr__(request, "scope", object())
+    object.__setattr__(request, "processing_attempt", attempt)
+    adapter = object.__new__(TargetWorkflowAdapter)
+    object.__setattr__(
+        adapter, "capture_inputs", (SimpleNamespace(candidate_id="c", trace=object()),)
+    )
+    runtime = SimpleNamespace(
+        manifest=SimpleNamespace(attempt=attempt),
+        history=SimpleNamespace(attempt=attempt),
+    )
+    monkeypatch.setattr(
+        production_workflow, "validate_completion_inputs", lambda *_: object()
+    )
+
+    def run():
+        return production_workflow._complete_retained_target(
+            request,
+            adapter,
+            runtime=runtime,
+            workflow_artifact=object(),
+            work_unit_key="retained",
+        )
+
+    return run, runtime
+
+
+@pytest.mark.parametrize("outcome", ["cancelled", "failed"])
+def test_retained_runtime_terminal_never_enters_science(monkeypatch, outcome):
+    from types import SimpleNamespace
+
+
+    run, _ = _retained_completion_boundary(monkeypatch)
+    monkeypatch.setattr(
+        production_workflow,
+        "execute_runtime_attempt",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            supervisor=SimpleNamespace(terminal_outcome=AttemptTerminalOutcome(outcome))
+        ),
+    )
+    monkeypatch.setattr(
+        production_workflow,
+        "complete_analysis",
+        lambda *_args, **_kwargs: pytest.fail("runtime terminal entered science"),
+    )
+    stage = "None" if outcome == "cancelled" else "WorkflowStage.RUNTIME"
+    with pytest.raises(RuntimeError, match=f"stage={stage}; reason=None"):
+        run()
+
+
+def test_retained_runtime_owner_exception_propagates(monkeypatch):
+    run, _ = _retained_completion_boundary(monkeypatch)
+
+    class RuntimeOwnerError(RuntimeError):
+        pass
+
+    def fail_runtime(*args, **kwargs):
+        raise RuntimeOwnerError("owner phase failed")
+
+    monkeypatch.setattr(production_workflow, "execute_runtime_attempt", fail_runtime)
+    with pytest.raises(RuntimeOwnerError, match="owner phase failed"):
+        run()
+
+
+def test_retained_capture_failure_keeps_stage_type_and_message(monkeypatch):
+    from types import SimpleNamespace
+
+    import xic_extractor.alignment.completion as completion_owner
+
+    run, _ = _retained_completion_boundary(monkeypatch)
+    monkeypatch.setattr(
+        production_workflow,
+        "execute_runtime_attempt",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            supervisor=SimpleNamespace(
+                terminal_outcome=AttemptTerminalOutcome.SUCCEEDED
+            )
+        ),
+    )
+
+    class CaptureFailure(RuntimeError):
+        pass
+
+    error = CaptureFailure("capture broke")
+
+    def fail_capture(**kwargs):
+        raise error
+
+    monkeypatch.setattr(completion_owner, "capture_peak_hypotheses", fail_capture)
+    with pytest.raises(
+        RuntimeError, match="stage=WorkflowStage.CAPTURE; reason=capture broke"
+    ) as failure:
+        run()
+    assert failure.value.__cause__ is error
+    assert type(failure.value.__cause__) is CaptureFailure
+
+
+def test_retained_target_rejects_a_crossed_runtime_before_execution(monkeypatch):
+    from types import SimpleNamespace
+
+    from xic_extractor.alignment.completion import AlignmentWorkflowContractError
+
+    run, runtime = _retained_completion_boundary(monkeypatch)
+    runtime.manifest = SimpleNamespace(attempt=object())
+    monkeypatch.setattr(
+        production_workflow,
+        "execute_runtime_attempt",
+        lambda *_args, **_kwargs: pytest.fail("crossed attempt executed"),
+    )
+    with pytest.raises(
+        AlignmentWorkflowContractError,
+        match="runtime crossed the exact processing attempt",
+    ):
+        run()
+
+
+def test_acquired_target_inputs_complete_without_runtime(tmp_path, monkeypatch):
+    config, target, output = production_case(
+        tmp_path,
+        sample_names=("SampleA", "SampleB"),
+        sample_peak_scales={"SampleA": 1.0, "SampleB": 2.0},
+    )
+    acquired_inputs = []
+    complete = production_workflow.complete_analysis
+
+    def retain_inputs(request, adapter, **kwargs):
+        acquired_inputs.append((request, adapter))
+        return complete(request, adapter, **kwargs)
+
+    monkeypatch.setattr(production_workflow, "complete_analysis", retain_inputs)
+    execute_targeted_production_workflow(
+        build_targeted_application_request(
+            config, [target], injection_order={"SampleA": 1, "SampleB": 2}
+        ),
+        output,
+    )
+    monkeypatch.setattr(
+        production_workflow,
+        "execute_runtime_attempt",
+        lambda *_args, **_kwargs: pytest.fail("pure completion entered runtime"),
+    )
+    request, adapter = acquired_inputs[0]
+    result = complete(request, adapter)
+    assert tuple(
+        decision.value for decision in result.completed_projection.decisions
+    ) == tuple(
+        file_result.results[target.label].reported_peak_area
+        for file_result in output.file_results
     )

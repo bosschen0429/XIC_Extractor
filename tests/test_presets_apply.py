@@ -217,7 +217,7 @@ def test_bind_cid_nl_recipe_preserves_route_compatibility_boundaries() -> None:
 
     generic_recipe = bind_cid_nl_recipe(multi_tag, "full")
     assert len(generic_recipe.discovery_settings.neutral_loss_profiles) == 2
-    with pytest.raises(ValueError, match="single-tag CID-NL preset"):
-        bind_cid_nl_recipe(multi_tag, "bounded_mode_track")
+    with pytest.raises(PresetError, match="recipe route must be one of"):
+        bind_cid_nl_recipe(multi_tag, "bounded_mode_track")  # type: ignore[arg-type]
     with pytest.raises(PresetError, match="neutral-loss preset"):
         bind_cid_nl_recipe(load_preset("pt_pattern"), "discovery_only")

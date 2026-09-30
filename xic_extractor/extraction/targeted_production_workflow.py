@@ -10,21 +10,29 @@ from dataclasses import InitVar, dataclass, replace
 from pathlib import Path
 from typing import Any, cast
 
+from xic_extractor.alignment.completion import (
+    AlignmentWorkflowContractError,
+    CaptureWorkflowArguments,
+    TargetWorkflowAdapter,
+    TargetWorkflowRequest,
+    WorkflowStage,
+    _WorkflowStageFailure,
+    complete_analysis,
+    validate_completion_inputs,
+)
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.hypothesis_owner_adapter import (
     compose_peak_hypotheses_from_assessment_universe,
 )
-from xic_extractor.alignment.mode_track import ModeTrackTrajectoryPolicy
-from xic_extractor.alignment.workflow import (
-    CaptureWorkflowArguments,
-    CompletedTargetWorkflowResult,
-    ModeTrackWorkflowArguments,
-    TargetWorkflowAdapter,
-    TargetWorkflowRequest,
-    WorkflowRuntimeInvocation,
-    execute_alignment_workflow,
+from xic_extractor.applications.targeted.application import (
+    FinalizedTargetProductionResult,
+    TargetedApplicationRequest,
 )
 from xic_extractor.config import ConfigError, ExtractionConfig, Target
+from xic_extractor.configuration.signal_processing_profile import (
+    SignalProcessingProfile,
+    resolve_signal_processing_profile,
+)
 from xic_extractor.configuration.target_identity import (
     ResolvedTargetDefinition,
     TargetListSnapshot,
@@ -36,14 +44,19 @@ from xic_extractor.evidence_artifacts import (
     _mint_artifact_semantic_contract_ref,
     _mint_evidence_artifact_ref,
 )
-from xic_extractor.execution_runtime import WorkUnitTerminalOutcome
-from xic_extractor.execution_runtime_observability import RuntimeMetricAvailability
-from xic_extractor.execution_runtime_owner import (
+from xic_extractor.execution._lifecycle import (
+    AttemptRuntime,
+    AttemptTerminalOutcome,
+    WorkUnitTerminalOutcome,
+)
+from xic_extractor.execution._observability import RuntimeMetricAvailability
+from xic_extractor.execution.attempt import (
     RuntimeArtifactRegistrationReceipt,
     RuntimeProcessTreePeakRssSample,
     RuntimeTelemetrySamples,
     RuntimeWorkerBatchReceipt,
     RuntimeWorkerPeakRssSample,
+    execute_runtime_attempt,
     mint_work_unit_settlement,
     runtime_started_worker_keys,
     start_runtime_attempt,
@@ -54,10 +67,6 @@ from xic_extractor.extraction.targeted_inputs import (
     build_targeted_processing_request_identity,
     resolve_targeted_inputs,
     resolve_targeted_raw_paths,
-)
-from xic_extractor.extraction.targeted_service import (
-    FinalizedTargetProductionResult,
-    TargetedApplicationRequest,
 )
 from xic_extractor.extractor import ExtractionResult, FileResult, RunOutput
 from xic_extractor.mass_accuracy import neutral_loss_match
@@ -96,10 +105,6 @@ from xic_extractor.peak_detection.search_scope import (
     EvidenceProviderBinding,
     TargetSearchScope,
     target_ms1_subject_id,
-)
-from xic_extractor.peak_detection.signal_processing_profile import (
-    SignalProcessingProfile,
-    resolve_signal_processing_profile,
 )
 from xic_extractor.peak_detection.traces import Trace
 from xic_extractor.processing_identity import (
@@ -665,7 +670,9 @@ def _execute_target(
                         product.precursor_mz,
                         product.product_mz,
                         _neutral_loss(target.definition.target),
-                        _support_policy(target.definition.target).neutral_loss_tolerance_ppm,
+                        _support_policy(
+                            target.definition.target
+                        ).neutral_loss_tolerance_ppm,
                         observed_loss_da=product.observed_loss_da,
                     )[2]
                     and observations[0].content.integration.rt_left_min
@@ -746,13 +753,6 @@ def _execute_target(
         )
     )
     alignment_config = AlignmentConfig()
-    trajectory_policy = ModeTrackTrajectoryPolicy(
-        trajectory_policy_version="anchor-trajectory",
-        band_policy_version="fixed-band",
-        prediction_half_width_min=2 / 60,
-        max_interpolation_gap=10,
-        max_extrapolation_gap=10,
-    )
     workflow_artifact: EvidenceArtifactRef
     if assessment_tuple:
         workflow_artifact = assessment_tuple[0][1].artifact
@@ -782,53 +782,82 @@ def _execute_target(
         work_unit_keys=(work_unit_key,),
         owner_completeness_attestation="targeted-retained-acquisition-handoff",
     )
-    terminal = execute_alignment_workflow(
+    return _complete_retained_target(
         TargetWorkflowRequest(
             scope=scope,
             processing_request=context.owners.request,
             processing_attempt=context.owners.attempt,
-            runtime=WorkflowRuntimeInvocation(
-                runtime=runtime,
-                reservations=(),
-                worker_batch_provider=lambda _aggregate: RuntimeWorkerBatchReceipt(
-                    settlements=(
-                        mint_work_unit_settlement(
-                            attempt=context.owners.attempt,
-                            work_unit_key=work_unit_key,
-                            outcome=WorkUnitTerminalOutcome.SUCCEEDED,
-                            owner_result_ref=workflow_artifact,
-                        ),
-                    ),
-                    artifact_registrations=(
-                        RuntimeArtifactRegistrationReceipt(
-                            work_unit_key=work_unit_key,
-                            artifact=workflow_artifact,
-                        ),
-                    ),
-                ),
-                telemetry_provider=_runtime_telemetry,
-                persister=lambda receipt: receipt,
-            ),
         ),
         TargetWorkflowAdapter(
             capture_inputs=tuple(capture_inputs),
-            mode_track=ModeTrackWorkflowArguments(
-                sample_assessments=assessment_tuple,
-                alignment_config=alignment_config,
-                trajectory_policy=trajectory_policy,
-                retain_observation_only_candidates=True,
-            ),
+            sample_assessments=assessment_tuple,
+            alignment_config=alignment_config,
             predecessor_cell_observations=(),
             completed_capture_handoff=tuple(completed_captures),
         ),
+        runtime=runtime,
+        workflow_artifact=workflow_artifact,
+        work_unit_key=work_unit_key,
     )
-    if type(terminal) is not CompletedTargetWorkflowResult:
+
+
+def _complete_retained_target(
+    request: TargetWorkflowRequest,
+    adapter: TargetWorkflowAdapter,
+    *,
+    runtime: AttemptRuntime,
+    workflow_artifact: EvidenceArtifactRef,
+    work_unit_key: str,
+) -> FinalizedTargetProductionResult:
+    """Acknowledge retained acquisition, then complete its exact owner evidence."""
+    owners = validate_completion_inputs(request, adapter)
+    if (
+        runtime.manifest.attempt is not request.processing_attempt
+        or runtime.history.attempt is not request.processing_attempt
+    ):
+        raise AlignmentWorkflowContractError(
+            "workflow runtime crossed the exact processing attempt"
+        )
+    receipt = execute_runtime_attempt(
+        runtime,
+        (),
+        worker_batch_provider=lambda _aggregate: RuntimeWorkerBatchReceipt(
+            settlements=(
+                mint_work_unit_settlement(
+                    attempt=request.processing_attempt,
+                    work_unit_key=work_unit_key,
+                    outcome=WorkUnitTerminalOutcome.SUCCEEDED,
+                    owner_result_ref=workflow_artifact,
+                ),
+            ),
+            artifact_registrations=(
+                RuntimeArtifactRegistrationReceipt(
+                    work_unit_key=work_unit_key,
+                    artifact=workflow_artifact,
+                ),
+            ),
+        ),
+        telemetry_provider=_runtime_telemetry,
+        persister=lambda receipt: receipt,
+    )
+    outcome = receipt.supervisor.terminal_outcome
+    if outcome is not AttemptTerminalOutcome.SUCCEEDED:
+        stage = (
+            WorkflowStage.RUNTIME if outcome is AttemptTerminalOutcome.FAILED else None
+        )
+        raise RuntimeError(
+            f"Targeted workflow failed before publication: stage={stage}; reason=None"
+        )
+    try:
+        result = complete_analysis(request, adapter, processing_owners=owners)
+    except _WorkflowStageFailure as failure:
         raise RuntimeError(
             "Targeted workflow failed before publication: "
-            f"stage={getattr(terminal, 'stage', None)}; "
-            f"reason={getattr(terminal, 'failure_message', None)}"
-        )
-    return terminal.application_result
+            f"stage={failure.stage}; reason={failure.error}"
+        ) from failure.error
+    if type(result) is not FinalizedTargetProductionResult:
+        raise RuntimeError("Targeted completion returned a crossed result")
+    return result
 
 
 def _mint_no_observation_capture_artifact(

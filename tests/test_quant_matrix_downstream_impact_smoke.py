@@ -4,38 +4,13 @@ import subprocess
 import sys
 from pathlib import Path
 
-from xic_extractor.alignment.quant_matrix_downstream_impact import (
-    DOWNSTREAM_IMPACT_BUNDLE_KINDS,
-    DOWNSTREAM_IMPACT_ROW_COLUMNS,
-    DOWNSTREAM_IMPACT_SCHEMA,
+from xic_extractor.diagnostics.quant_matrix.downstream_impact import (
     build_quant_matrix_downstream_impact_smoke,
     validate_quant_matrix_downstream_impact_smoke,
 )
 from xic_extractor.tabular_io import file_sha256
 
 ROOT = Path(__file__).resolve().parents[1]
-SCHEMA_PATH = (
-    ROOT
-    / "docs"
-    / "superpowers"
-    / "schemas"
-    / "quant_matrix_downstream_impact_smoke_schema.json"
-)
-
-
-def test_downstream_impact_schema_matches_builder_contract() -> None:
-    schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
-
-    assert schema["schema_version"] == "quant_matrix_downstream_impact_smoke_schema"
-    assert schema["downstream_impact_schema"] == DOWNSTREAM_IMPACT_SCHEMA
-    assert schema["bundle_kinds"] == list(DOWNSTREAM_IMPACT_BUNDLE_KINDS)
-    assert schema["row_columns"] == list(DOWNSTREAM_IMPACT_ROW_COLUMNS)
-    assert schema["authority_rules"]["read_only"] is True
-    assert schema["authority_rules"]["write_authority"] is False
-    assert schema["authority_rules"]["contract_fixture_cannot_satisfy_promotion"]
-    assert schema["promotion_binding_rules"][
-        "metrics_must_recompute_from_input_artifacts"
-    ]
 
 
 def test_downstream_impact_smoke_passes_for_real_quant_matrix_version(

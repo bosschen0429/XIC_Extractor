@@ -10,24 +10,12 @@ from pathlib import Path
 
 import pytest
 
-import xic_extractor.execution_runtime_marker as runtime_marker_module
+import xic_extractor.execution.recovery as runtime_marker_module
 from tests.runtime_telemetry_fixtures import (
     build_runtime_telemetry_samples_from_coordinator,
 )
-from xic_extractor.execution_runtime import (
-    AttemptLifecycleEventKind,
-    AttemptLifecycleHistory,
-    AttemptRuntime,
-    AttemptTerminalOutcome,
-    WorkUnitFailureCategory,
-    WorkUnitFailureDetail,
-    WorkUnitTerminalOutcome,
-    append_attempt_lifecycle_event,
-    preflight_required_work_manifest,
-    settle_work_unit,
-    start_attempt_runtime,
-)
-from xic_extractor.execution_runtime_finalization import (
+from xic_extractor.execution._finalization import (
+    CoordinatorTerminalRecord,
     RuntimeArtifactDisposition,
     RuntimeFinalizationContractError,
     RuntimeResourceCleanupOutcome,
@@ -42,20 +30,30 @@ from xic_extractor.execution_runtime_finalization import (
     reserve_runtime_resource,
     settle_runtime_resource,
 )
-from xic_extractor.execution_runtime_finalization_models import (
-    CoordinatorTerminalRecord,
+from xic_extractor.execution._lifecycle import (
+    AttemptLifecycleEventKind,
+    AttemptLifecycleHistory,
+    AttemptRuntime,
+    AttemptTerminalOutcome,
+    WorkUnitFailureCategory,
+    WorkUnitFailureDetail,
+    WorkUnitTerminalOutcome,
+    append_attempt_lifecycle_event,
+    preflight_required_work_manifest,
+    settle_work_unit,
+    start_attempt_runtime,
 )
-from xic_extractor.execution_runtime_marker import (
-    OwnerPathRuntimeMarker,
-    RuntimeMarkerState,
-)
-from xic_extractor.execution_runtime_observability import (
+from xic_extractor.execution._observability import (
     canonical_runtime_observability_ledger_bytes,
 )
-from xic_extractor.execution_runtime_owner import (
+from xic_extractor.execution.attempt import (
     _derive_runtime_observability_ledger,
     _mint_runtime_attempt_aggregate,
     _mint_runtime_finalization_receipt,
+)
+from xic_extractor.execution.recovery import (
+    OwnerPathRuntimeMarker,
+    RuntimeMarkerState,
 )
 from xic_extractor.extraction.targeted_runtime_adapter import (
     mint_targeted_process_result_ref,
@@ -406,9 +404,11 @@ def test_concurrent_conflicting_finalizations_fail_closed_at_replace(
     }
 
 
+@pytest.mark.parametrize("release_before_denial", [False, True])
 def test_windows_permission_race_while_acquiring_marker_lock_is_retried(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    release_before_denial: bool,
 ) -> None:
     marker = OwnerPathRuntimeMarker(
         tmp_path / "attempt.runtime.json",
@@ -430,6 +430,8 @@ def test_windows_permission_race_while_acquiring_marker_lock_is_retried(
             permission_races += 1
             descriptor = real_open(path, flags, mode)
             os.close(descriptor)
+            if release_before_denial:
+                lock_path.unlink()
             raise PermissionError(13, "synthetic concurrent Windows lock denial", path)
         if str(path).endswith(".lock") and lock_path.exists():
             lock_path.unlink()
@@ -441,6 +443,7 @@ def test_windows_permission_race_while_acquiring_marker_lock_is_retried(
 
     assert permission_races == 1
     assert snapshot.processing_attempt_id == attempt.processing_attempt_id
+    assert marker.read() == snapshot
 
 
 def test_windows_sharing_violation_retries_without_directory_probe(

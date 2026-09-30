@@ -3,10 +3,10 @@ import json
 from pathlib import Path
 
 from tests.alignment_pipeline_helpers import peak_config as _peak_config
-from xic_extractor.alignment.pipeline_outputs import alignment_metadata
 from xic_extractor.diagnostics import (
     backfill_peakhypothesis_transfer_readiness as readiness,
 )
+from xic_extractor.output.alignment.pipeline_outputs import alignment_metadata
 
 
 def test_readiness_reports_production_candidate_not_ready(tmp_path: Path) -> None:

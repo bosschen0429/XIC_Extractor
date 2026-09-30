@@ -5,6 +5,9 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from xic_extractor.applications.targeted.product_model import (
+    OWN_MAX_SAME_PEAK_SUPPORT_REASON,
+)
 from xic_extractor.diagnostics.targeted_ms1_shape_identity import (
     DECISION_AUTHORITY,
     SCHEMA_VERSION,
@@ -13,9 +16,6 @@ from xic_extractor.diagnostics.targeted_ms1_shape_identity import (
     TargetedMs1ShapeCandidate,
     build_targeted_ms1_shape_identity_rows,
     write_targeted_ms1_shape_identity_tsv,
-)
-from xic_extractor.extraction.targeted_projection_reasons import (
-    OWN_MAX_SAME_PEAK_SUPPORT_REASON,
 )
 
 

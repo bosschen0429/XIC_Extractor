@@ -3,10 +3,10 @@ from __future__ import annotations
 import csv
 from pathlib import Path
 
-from xic_extractor.alignment.shared_peak_identity_explanation.oracle import (
+from xic_extractor.diagnostics.shared_peak_identity_explanation.oracle import (
     load_manual_oracle,
 )
-from xic_extractor.alignment.shared_peak_identity_explanation.schema import (
+from xic_extractor.diagnostics.shared_peak_identity_explanation.schema import (
     ORACLE_COLUMNS,
 )
 

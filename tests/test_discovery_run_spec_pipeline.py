@@ -22,12 +22,12 @@ from xic_extractor.acquisition_contract import (
     mint_raw_acquisition_session_capability,
     serialize_acquired_trace,
 )
-from xic_extractor.alignment.csv_io import (
-    read_discovery_batch_index,
-    read_owner_bound_discovery_candidates_csv,
-)
 from xic_extractor.discovery.batch_contract import (
     validate_discovery_candidate_physical_bindings,
+)
+from xic_extractor.discovery.csv_reader import (
+    read_discovery_batch_index,
+    read_owner_bound_discovery_candidates_csv,
 )
 from xic_extractor.discovery.pipeline import (
     DiscoverySampleProcessError,

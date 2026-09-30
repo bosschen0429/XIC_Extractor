@@ -11,7 +11,6 @@ from tools.diagnostics.docs_policy import (
     PRODUCTIZATION_AUTHORITY_MANIFEST_REL,
     PRODUCTIZATION_SCHEMA_REL,
     QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_REL,
-    QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_SCHEMA_REL,
     classify_doc,
     classify_doc_path,
     is_productization_compatibility_index_text,
@@ -196,24 +195,6 @@ def test_permanent_root_contract_uses_first_reference_definition() -> None:
     problems = permanent_root_contract_problems(root, rel_path, text)
 
     assert "required route must resolve: docs/product/README.md" in problems
-
-
-def test_permanent_root_contract_ignores_html_comment_only_heading() -> None:
-    root = Path(__file__).parents[1]
-    rel_path = "AGENTS.md"
-    text = (root / rel_path).read_text(encoding="utf-8")
-    text = text.replace(
-        "# XIC Extractor Agent Contract",
-        "# XIC Extractor Repository",
-        1,
-    )
-    text += "\n<!--\n# XIC Extractor Agent Contract\n-->\n"
-
-    problems = permanent_root_contract_problems(root, rel_path, text)
-
-    assert "required heading must occur exactly once: XIC Extractor Agent Contract" in (
-        problems
-    )
 
 
 def test_permanent_root_contract_ignores_nested_fenced_only_route() -> None:
@@ -604,20 +585,15 @@ def test_productization_owner_route_uses_and_dependent_manifest_contracts() -> N
         "docs/superpowers/schemas/productization_control_plane_schema.json"
     )
     assert PRODUCTIZATION_AUTHORITY_MANIFEST_REL == (
-        "docs/superpowers/schemas/productization_authority_manifest.json"
+        "docs/superpowers/productization/status/productization_authority_manifest.json"
     )
     assert QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_REL == (
-        "docs/superpowers/schemas/quantitative_projection_authority_manifest.json"
-    )
-    assert QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_SCHEMA_REL == (
-        "docs/superpowers/schemas/"
-        "quantitative_projection_authority_manifest_schema.json"
+        "docs/superpowers/productization/status/quantitative_projection_authority_manifest.json"
     )
     for path in (
         PRODUCTIZATION_SCHEMA_REL,
         PRODUCTIZATION_AUTHORITY_MANIFEST_REL,
         QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_REL,
-        QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_SCHEMA_REL,
     ):
         assert Path(path).is_file()
         assert path in PRODUCTIZATION_OWNER_ROUTE
