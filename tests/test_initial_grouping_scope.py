@@ -7,9 +7,7 @@ import pytest
 from xic_extractor.alignment.cross_sample_peak_groups import (
     CrossSamplePeakGroupHypothesis,
 )
-from xic_extractor.alignment.mode_track.assignment_scope import (
-    ModeTrackAssignmentScope,
-)
+from xic_extractor.alignment.grouping_bootstrap import InitialGroupingScope
 
 
 def _group(
@@ -30,11 +28,11 @@ def _group(
     )
 
 
-def test_assignment_scope_is_a_minimal_immutable_canonical_value() -> None:
-    first = _group("track-a")
-    second = _group("track-b", center_rt=8.4)
+def test_initial_grouping_scope_is_a_minimal_immutable_canonical_value() -> None:
+    first = _group("group-a")
+    second = _group("group-b", center_rt=8.4)
 
-    scope = ModeTrackAssignmentScope(
+    scope = InitialGroupingScope(
         mz_interval=(499, 501),
         rt_interval=(-0.0, 8.8),
         groups=(second, first),
@@ -58,20 +56,20 @@ def test_assignment_scope_is_a_minimal_immutable_canonical_value() -> None:
         ({"mz_interval": (500.1, 499.9)}, "mz_interval"),
         ({"rt_interval": (8.8, 7.5)}, "rt_interval"),
         (
-            {"groups": (_group("track-a"), _group("track-a"))},
+            {"groups": (_group("group-a"), _group("group-a"))},
             "duplicate group_hypothesis_id",
         ),
         (
-            {"groups": (_group("track-a", center_mz=501.1),)},
-            "outside the assignment scope m/z interval",
+            {"groups": (_group("group-a", center_mz=501.1),)},
+            "outside the grouping scope m/z interval",
         ),
         (
-            {"groups": (_group("track-a", center_rt=9.0),)},
-            "outside the assignment scope RT interval",
+            {"groups": (_group("group-a", center_rt=9.0),)},
+            "outside the grouping scope RT interval",
         ),
     ),
 )
-def test_assignment_scope_rejects_invalid_bounds_or_group_membership(
+def test_initial_grouping_scope_rejects_invalid_bounds_or_group_membership(
     kwargs: dict[str, object],
     message: str,
 ) -> None:
@@ -83,24 +81,24 @@ def test_assignment_scope_rejects_invalid_bounds_or_group_membership(
     arguments.update(kwargs)
 
     with pytest.raises(ValueError, match=message):
-        ModeTrackAssignmentScope(**arguments)  # type: ignore[arg-type]
+        InitialGroupingScope(**arguments)  # type: ignore[arg-type]
 
 
-def test_assignment_scope_rejects_shared_or_malformed_owner_ids() -> None:
+def test_initial_grouping_scope_rejects_shared_or_malformed_owner_ids() -> None:
     with pytest.raises(ValueError, match="must not share owner ids"):
-        ModeTrackAssignmentScope(
+        InitialGroupingScope(
             mz_interval=(499.9, 500.1),
             rt_interval=(7.5, 8.8),
             groups=(
-                _group("track-a", owner_ids=("owner:shared",)),
-                _group("track-b", owner_ids=("owner:shared",), center_rt=8.4),
+                _group("group-a", owner_ids=("owner:shared",)),
+                _group("group-b", owner_ids=("owner:shared",), center_rt=8.4),
             ),
         )
 
-    malformed = _group("track-a")
-    object.__setattr__(malformed, "owner_ids", ["owner:track-a"])
+    malformed = _group("group-a")
+    object.__setattr__(malformed, "owner_ids", ["owner:group-a"])
     with pytest.raises(ValueError, match="owner_ids must be a tuple"):
-        ModeTrackAssignmentScope(
+        InitialGroupingScope(
             mz_interval=(499.9, 500.1),
             rt_interval=(7.5, 8.8),
             groups=(malformed,),

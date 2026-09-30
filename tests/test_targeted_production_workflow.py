@@ -5,7 +5,6 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from xic_extractor.alignment import workflow as alignment_workflow
 from xic_extractor.alignment.result.application_result import (
     FinalizedTargetApplicationResult,
 )
@@ -134,9 +133,8 @@ def test_two_samples_reuse_exact_acquired_physical_evaluations(
 
 
 @pytest.mark.parametrize("ms1_only", [False, True])
-def test_targeted_selected_values_close_without_mode_track(
+def test_targeted_grouping_keeps_each_sample_selected_value(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
     ms1_only: bool,
 ) -> None:
     config, target, output = production_case(
@@ -151,26 +149,6 @@ def test_targeted_selected_values_close_without_mode_track(
             nl_ppm_warn=None,
             nl_ppm_max=None,
         )
-
-    def mode_track_must_not_run(**_kwargs):
-        pytest.fail("Targeted grouping must not invoke ModeTrack")
-
-    monkeypatch.setattr(
-        alignment_workflow,
-        "bootstrap_mode_track_refinement_from_cid_nl_support",
-        mode_track_must_not_run,
-    )
-    monkeypatch.setattr(
-        alignment_workflow,
-        "bootstrap_mode_track_refinement_from_ms1_hypotheses",
-        mode_track_must_not_run,
-        raising=False,
-    )
-    monkeypatch.setattr(
-        alignment_workflow,
-        "apply_mode_track_refinement_run_for_workflow",
-        mode_track_must_not_run,
-    )
 
     finalized = execute_targeted_production_workflow(
         build_targeted_application_request(

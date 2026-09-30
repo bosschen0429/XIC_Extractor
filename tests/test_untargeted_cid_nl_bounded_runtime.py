@@ -1932,7 +1932,7 @@ def test_formal_partition_reuses_prepared_group_ids_for_recovery_and_composition
     prepared_group_ids = {
         group.group_hypothesis_id
         for workset in prepared.worksets
-        for group in workset.assignment_scope.groups
+        for group in workset.grouping_scope.groups
     }
     assert len(prepared_group_ids) == 1
     backfill_group_ids = {

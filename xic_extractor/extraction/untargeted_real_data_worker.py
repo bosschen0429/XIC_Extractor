@@ -366,7 +366,7 @@ def _prepare_group_authorized_backfills(
         }
         groups = tuple(
             group
-            for group in workset.assignment_scope.groups
+            for group in workset.grouping_scope.groups
             if all(owner_id in direct for owner_id in group.owner_ids)
         )
         for group, target_ids in plan_conservative_backfill_targets(

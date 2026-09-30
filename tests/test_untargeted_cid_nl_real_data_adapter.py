@@ -17,17 +17,12 @@ from tests.untargeted_cid_nl_no_raw_fixture import (
     build_untargeted_cid_nl_no_raw_fixture,
 )
 from xic_extractor.alignment.config import AlignmentConfig
+from xic_extractor.alignment.grouping_bootstrap import (
+    bootstrap_cid_nl_initial_population,
+)
 from xic_extractor.alignment.hypothesis_owner_adapter import (
     bind_retained_peak_hypotheses_to_assessment_universe,
     compose_peak_hypotheses_from_assessment_universe,
-)
-from xic_extractor.alignment.mode_track.assignment import (
-    ModeTrackContractError,
-    ModeTrackTrajectoryPolicy,
-    mint_mode_track_support_anchor,
-)
-from xic_extractor.alignment.mode_track.producer import (
-    bootstrap_mode_tracks_from_cid_nl_support,
 )
 from xic_extractor.discovery.models import DiscoveryCandidate
 from xic_extractor.extraction.untargeted_cid_nl_real_data_adapter import (
@@ -1579,45 +1574,24 @@ def test_adapter_preserves_supported_and_observation_only_physical_peaks(
         rebound_by_id is source_by_id
         for rebound_by_id, source_by_id in zip(rebound, hypotheses, strict=True)
     )
-    assignment_scope, model_set, batches, _source = (
-        bootstrap_mode_tracks_from_cid_nl_support(
-            processing_owners=fixture.owners,
-            sample_assessments=((fixture.sample("S1"), assessment),),
-            alignment_config=AlignmentConfig(),
-            trajectory_policy=ModeTrackTrajectoryPolicy(
-                trajectory_policy_version="anchor-trajectory",
-                band_policy_version="fixed-band",
-                prediction_half_width_min=0.1,
-                max_interpolation_gap=0,
-                max_extrapolation_gap=0,
-            ),
-        )
+    grouping_scope, candidates, _drift = bootstrap_cid_nl_initial_population(
+        processing_owners=fixture.owners,
+        sample_assessments=((fixture.sample("S1"), assessment),),
+        alignment_config=AlignmentConfig(),
     )
-    assert len(assignment_scope.groups) == 2
-    assert sum(len(track.anchors) for track in model_set.tracks) == 1
-    assert {item.candidate_observation_class for item in batches[0].assignments} == {
-        "direct_support",
-        "non_training",
+    assert sorted(group.owner_ids for group in grouping_scope.groups) == sorted(
+        (hypothesis.hypothesis_id,) for hypothesis in hypotheses
+    )
+    direct_support = {
+        candidate.peak_hypothesis.hypothesis_method: (
+            candidate.direct_support_assessment
+        )
+        for candidate in candidates
     }
-    assert {item.state for item in batches[0].assignments} == {"uniquely_assigned"}
-    observation_only = next(
-        item
-        for item in hypotheses
-        if item.hypothesis_method == "ms1_physical_observation"
-    )
-    observation_track = next(
-        track
-        for track in assignment_scope.groups
-        if observation_only.hypothesis_id in track.owner_ids
-    )
-    with pytest.raises(ModeTrackContractError):
-        mint_mode_track_support_anchor(
-            processing_owners=fixture.owners,
-            track=observation_track,
-            sample=fixture.sample("S1"),
-            direct_support_assessment=assessment,
-            peak_hypothesis=observation_only,
-        )
+    assert direct_support == {
+        "dda_cid_nl": assessment,
+        "ms1_physical_observation": None,
+    }
 
 
 def test_adapter_rejects_discovery_candidate_receipt_drift(tmp_path: Path) -> None:

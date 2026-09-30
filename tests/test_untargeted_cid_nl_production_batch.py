@@ -1202,10 +1202,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     )
     from xic_extractor.alignment import cell_observations as cell_owner
     from xic_extractor.alignment import grouping_bootstrap as bootstrap_owner
-    from xic_extractor.alignment import grouping_workflow as grouping_workflow_owner
     from xic_extractor.alignment import workflow as workflow_owner
-    from xic_extractor.alignment.mode_track import producer as producer_owner
-    from xic_extractor.alignment.mode_track import refinement as refinement_owner
     from xic_extractor.alignment.projection.untarget import post_cell as post_cell_owner
     from xic_extractor.alignment.result import application_result as result_owner
     from xic_extractor.extraction import (
@@ -1341,9 +1338,6 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
             owner, "bind_owner_backed_capture_hypothesis", record_binding
         )
 
-    def unexpected_mt0(*args, **kwargs):
-        raise AssertionError("retained production must not execute initial refinement")
-
     hypothesis_universe_compositions = []
     compose_hypothesis_universe = (
         bootstrap_owner.compose_peak_hypotheses_from_assessment_universe
@@ -1374,26 +1368,6 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
             count_hypothesis_universe(owner_name),
         )
 
-    for model_operation in (
-        "fit_mode_track_model_set",
-        "assign_mode_tracks",
-        "mint_mode_track_fit_once_sample_source",
-        "mint_mode_track_fit_once_source",
-    ):
-        monkeypatch.setattr(producer_owner, model_operation, unexpected_mt0)
-
-    monkeypatch.setattr(
-        refinement_owner, "mint_mode_track_trajectory_input", unexpected_mt0
-    )
-    monkeypatch.setattr(
-        refinement_owner, "_propose_mode_track_refinement", unexpected_mt0
-    )
-    monkeypatch.setattr(
-        grouping_workflow_owner,
-        "apply_accepted_mode_track_refinement",
-        unexpected_mt0,
-    )
-
     retained_contexts = []
     bootstrap_contexts = []
     retained_initial_edges = []
@@ -1408,16 +1382,16 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     finalize_scientific = workflow_owner.finalize_scientific_alignment
 
     def retain_initial_context(**kwargs):
-        assignment_scope, context, retained_candidates = build_initial_context(**kwargs)
+        grouping_scope, context, retained_candidates = build_initial_context(**kwargs)
         bootstrap_contexts.append(context)
         retained_captures.extend(kwargs["captures"])
         retained_candidate_batches.append(retained_candidates)
-        return assignment_scope, context, retained_candidates
+        return grouping_scope, context, retained_candidates
 
     def retain_regrouped_context(**kwargs):
-        assignment_scope, context = regroup_initial_context(**kwargs)
+        grouping_scope, context = regroup_initial_context(**kwargs)
         retained_contexts.append(context)
-        return assignment_scope, context
+        return grouping_scope, context
 
     def retain_predecessor_cells(**kwargs):
         cells = compose_predecessor_cells(**kwargs)
@@ -1429,11 +1403,6 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         consumed_captures.extend(kwargs["captures"])
         return finalize_scientific(**kwargs)
 
-    monkeypatch.setattr(
-        workflow_owner,
-        "bootstrap_mode_track_refinement_from_cid_nl_support",
-        unexpected_mt0,
-    )
     monkeypatch.setattr(
         production,
         "build_initial_cid_nl_cross_sample_groups",
@@ -1448,9 +1417,6 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         production,
         "compose_cid_nl_predecessor_cells",
         retain_predecessor_cells,
-    )
-    monkeypatch.setattr(
-        workflow_owner, "apply_mode_track_refinement_run_for_workflow", unexpected_mt0
     )
     monkeypatch.setattr(
         workflow_owner, "finalize_scientific_alignment", retain_scientific_captures

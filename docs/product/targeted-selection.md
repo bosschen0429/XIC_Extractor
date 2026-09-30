@@ -18,7 +18,7 @@ Targeted selection does four things:
 
 Existing CSV/workbook/review surfaces render human-facing reasons from those
 typed decisions. Targeted selection does not require a second capture,
-CrossSample, ModeTrack, Backfill, or selected-value implementation.
+CrossSample, Backfill, or selected-value implementation.
 
 ## Contract
 
@@ -56,7 +56,7 @@ reference-editing, quantitation, or ProductWriter authority.
 ### Selected-hypothesis grouping
 
 Targeted groups its already selected hypotheses through the existing CrossSample
-owner without fitting or applying ModeTrack. CID-NL support, observation-only
+owner. CID-NL support, observation-only
 selections, and MS1-only targets retain their sample-local identities and values.
 Grouping does not reselect peaks or add a cohort RT review policy.
 

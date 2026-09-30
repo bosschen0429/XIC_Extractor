@@ -156,7 +156,7 @@ labels until an adapter binds them to the contract above.
 | `evidence_artifact_id` | Producer attempt + semantic role + schema version + content digest | Filename, directory, row count, or generated timestamp alone |
 | owner-backed CID-NL `peak_hypothesis_id` | Hypothesis method + canonical sample identity + physical peak content ID + chromatographic-support artifact content ID | Target label, ISTD role/pairing, trace-group ID, selection status, attempt token, or output position |
 | kernel object reference | Request identity plus the normalized sample-local or cross-sample scientific identity | A bare ID whose meaning can change across requests |
-| `group_hypothesis_id` | Group identity schema + exact processing request + canonical-sorted identity-bearing members, each binding canonical sample to a tagged union of owner-backed hypothesis or physical-observation identity | `FAM...`, group ordinal, sample stem, area, display RT/m/z, ModeTrack anchor ID, or an untagged wrapper identity |
+| `group_hypothesis_id` | Group identity schema + exact processing request + canonical-sorted identity-bearing members, each binding canonical sample to an owner-backed hypothesis identity | `FAM...`, group ordinal, sample stem, area, display RT/m/z, or an untagged wrapper identity |
 | `untarget_row_key` | Untarget projection schema + finalized canonical group identity | Group/display label alone, center coordinates, current Matrix row number, or cross-request inference |
 | `delivery_cell_key` (Targeted) | `sample_metadata`-owned stable sample identity + target-list-owner identity | Acquisition-source identity, display name alone, column position, or output path |
 | `delivery_revision_id` (Targeted) | Cell key + producer attempt + selected decision/null payload + projection policy/contract version | Mutable “latest” state or Untargeted cell identity |
@@ -307,10 +307,9 @@ request deliberately creates new group and Untarget row identities; automatic
 cross-request same/split/merge continuity is deferred until a real consumer and
 oracle justify it.
 
-The member-subject variant tag is part of canonical identity. Different wrappers
-over the same owner-backed physical observation must canonicalize to one member
-subject; deliberately distinct hypothesis-versus-observation subjects require
-explicit different tags and a CrossSample counterexample test.
+The member-subject kind tag is part of canonical identity. Equivalent hypothesis
+wrappers over the same owner-backed physical observation must canonicalize to
+one member subject.
 
 ## Lineage Graph And Invariants
 

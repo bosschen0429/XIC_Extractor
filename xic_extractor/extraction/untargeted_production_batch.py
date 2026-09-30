@@ -58,7 +58,6 @@ from xic_extractor.alignment.untargeted_cid_nl_golden_path import (
 from xic_extractor.alignment.workflow import (
     CaptureWorkflowArguments,
     CompletedUntargetBatchWorkflowResult,
-    ModeTrackWorkflowArguments,
     UntargetWorkflowAdapter,
     UntargetWorkflowBundle,
     UntargetWorkflowCompositionRequest,
@@ -1204,7 +1203,7 @@ def prepare_untargeted_cid_nl_grouping(
         capture_inputs = tuple(capture_inputs_list)
         operation_counts: list[FeatureInferenceOperationCounts] = []
         (
-            assignment_scope,
+            grouping_scope,
             grouping_result,
             retained_candidates,
         ) = build_initial_cid_nl_cross_sample_groups(
@@ -1222,7 +1221,7 @@ def prepare_untargeted_cid_nl_grouping(
                 scope=child_scope,
                 captures=captures,
                 capture_inputs=capture_inputs,
-                assignment_scope=assignment_scope,
+                grouping_scope=grouping_scope,
                 grouping_result=grouping_result,
                 retained_candidates=retained_candidates,
             )
@@ -1230,7 +1229,7 @@ def prepare_untargeted_cid_nl_grouping(
     bootstrap_groups = tuple(
         group
         for workset in prepared_worksets
-        for group in workset.assignment_scope.groups
+        for group in workset.grouping_scope.groups
         if group.inference_basis is not None
         and group.inference_basis.basis
         in {"bidirectional_membership_agreement", "known_identity_constraint"}
@@ -1238,7 +1237,7 @@ def prepare_untargeted_cid_nl_grouping(
     bootstrap_owners = {
         owner.owner_id: owner
         for workset in prepared_worksets
-        for group in workset.assignment_scope.groups
+        for group in workset.grouping_scope.groups
         for owner in group.owners
     }
     rt_warp = estimate_batch_rt_warp(
@@ -1249,9 +1248,9 @@ def prepare_untargeted_cid_nl_grouping(
     final_worksets = []
     for workset in prepared_worksets:
         operation_counts = []
-        assignment_scope, grouping_result = regroup_cid_nl_cross_sample_groups(
+        grouping_scope, grouping_result = regroup_cid_nl_cross_sample_groups(
             processing_owners=batch.context.processing_owners,
-            assignment_scope=workset.assignment_scope,
+            grouping_scope=workset.grouping_scope,
             grouping_result=workset.grouping_result,
             alignment_config=alignment_config,
             injection_order=injection_order,
@@ -1264,7 +1263,7 @@ def prepare_untargeted_cid_nl_grouping(
         final_worksets.append(
             replace(
                 workset,
-                assignment_scope=assignment_scope,
+                grouping_scope=grouping_scope,
                 grouping_result=grouping_result,
             )
         )
@@ -1274,7 +1273,7 @@ def prepare_untargeted_cid_nl_grouping(
                     "event": "feature_membership_inference",
                     "stage": "feature_membership_inference",
                     "subject_count": len(workset.subjects),
-                    "group_count": len(assignment_scope.groups),
+                    "group_count": len(grouping_scope.groups),
                     "operation_counts": {
                         key: (
                             max(
@@ -1410,7 +1409,7 @@ def _build_production_composition_inputs(
         child_scope = workset.scope
         captures = workset.captures
         capture_inputs = workset.capture_inputs
-        assignment_scope = workset.assignment_scope
+        grouping_scope = workset.grouping_scope
         grouping_result = workset.grouping_result
         retained_candidates = workset.retained_candidates
         assessments = tuple(
@@ -1420,7 +1419,7 @@ def _build_production_composition_inputs(
             for assessment in result.effective_assessments
             if not is_unsearched_cid_nl_discovery_assessment(assessment)
         )
-        initial_groups.extend(assignment_scope.groups)
+        initial_groups.extend(grouping_scope.groups)
         subject_order = {
             subject.method_subject_id: index
             for index, subject in enumerate(subject_workset)
@@ -1462,7 +1461,7 @@ def _build_production_composition_inputs(
             for subject in subject_workset
             for sample_result in results_by_subject.get(subject.method_subject_id, ())
             if sample_result.backfill_attempts
-            for group in assignment_scope.groups
+            for group in grouping_scope.groups
             if group.group_center_rt is not None
             and not any(
                 member.canonical_sample_identity_id
@@ -1479,7 +1478,7 @@ def _build_production_composition_inputs(
         grouping_result, backfilled_groups, successor_ids, backfilled_hypotheses = (
             admit_cid_nl_group_backfills(
                 result=grouping_result,
-                groups=assignment_scope.groups,
+                groups=grouping_scope.groups,
                 backfills=group_backfills,
                 alignment_config=alignment_config,
             )
@@ -1491,7 +1490,7 @@ def _build_production_composition_inputs(
         )
         predecessor_cells = compose_cid_nl_predecessor_cells(
             processing_owners=batch.context.processing_owners,
-            groups=assignment_scope.groups,
+            groups=grouping_scope.groups,
             sample_assessments=initial_assessments,
             alignment_config=alignment_config,
             drift_lookup=grouping_result.drift_lookup,
@@ -1693,12 +1692,7 @@ def _build_production_composition_inputs(
                 adapter=UntargetWorkflowAdapter(
                     capture_inputs=capture_inputs,
                     completed_grouping=grouping_result,
-                    mode_track=ModeTrackWorkflowArguments(
-                        sample_assessments=assessments,
-                        alignment_config=alignment_config,
-                        trajectory_policy=None,
-                        retain_observation_only_candidates=True,
-                    ),
+                    sample_assessments=assessments,
                     closed_cell_coverage=coverage,
                     predecessor_cell_observations=predecessor_cells,
                     backfill_cell_observations=backfill_cells,

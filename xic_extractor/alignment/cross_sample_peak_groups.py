@@ -12,7 +12,7 @@ decisions within the pipeline.
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Literal, TypeAlias, cast
 
@@ -25,34 +25,17 @@ from xic_extractor.alignment.cross_sample_identity_models import (
     CrossSampleGroupMemberSubject,
     CrossSampleIdentityBasisRegistry,
     CrossSampleInitialEdgeContext,
-    CrossSampleNeighborhoodBudget,
     CrossSampleNeighborhoodStatus,
-    CrossSampleRepairedObservation,
-    _mint_cross_sample_repaired_observation,
-    group_member_subject_from_discovery_physical_selection,
     group_member_subject_from_peak_hypothesis,
-    group_member_subject_from_peak_observation,
     mint_cross_sample_group_identity,
     validate_cross_sample_group_population,
 )
 from xic_extractor.alignment.cross_sample_neighborhood_graph import (
-    _CROSS_SAMPLE_REPAIR_APPLICATION_MINT_TOKEN,
-    CrossSampleClassifiedEdge,
-    CrossSampleConnectedNeighborhood,
-    CrossSampleCoupledProposalContext,
-    CrossSampleEdgeOwner,
     CrossSampleLineageEdge,
     CrossSampleNeighborhoodEdge,
     CrossSamplePartitionTransition,
-    CrossSampleRepairAdmissionApplication,
-    CrossSampleRepairAdmissionEdge,
-    _apply_repaired_nonmember_admission,
     _expected_cross_sample_lineage,
-    apply_coupled_successor_proposal,
-    build_bounded_connected_neighborhood,
     classify_cross_sample_initial_edge,
-    classify_cross_sample_initial_neighborhood_edge,
-    classify_cross_sample_repair_admission_edge,
 )
 from xic_extractor.alignment.edge_scoring import (
     DriftLookupProtocol,
@@ -75,7 +58,7 @@ from xic_extractor.alignment.ownership_models import (
 )
 
 if TYPE_CHECKING:
-    from xic_extractor.alignment.owner_clustering import OwnerAlignedFeature
+    pass
 
 CrossSamplePeakGroupEdgeRole: TypeAlias = Literal[
     "membership_support",
@@ -418,126 +401,6 @@ def review_only_peak_group_hypotheses_from_ambiguous_records(
     return tuple(hypotheses)
 
 
-def cross_sample_peak_group_edge_fact_from_owner_edge(
-    edge: OwnerEdgeEvidence,
-) -> CrossSamplePeakGroupEdgeFact:
-    owner_pair_ids = (
-        min(edge.left_owner_id, edge.right_owner_id),
-        max(edge.left_owner_id, edge.right_owner_id),
-    )
-    return CrossSamplePeakGroupEdgeFact(
-        left_owner_id=edge.left_owner_id,
-        right_owner_id=edge.right_owner_id,
-        owner_pair_ids=owner_pair_ids,
-        decision=edge.decision,
-        role=(
-            "membership_support"
-            if edge.decision == "strong_edge"
-            else "membership_challenge"
-        ),
-        failure_reason=edge.failure_reason,
-        rt_raw_delta_sec=edge.rt_raw_delta_sec,
-        rt_drift_corrected_delta_sec=edge.rt_drift_corrected_delta_sec,
-        drift_prior_source=edge.drift_prior_source,
-        rt_basis=edge.rt_basis,
-        injection_order_gap=edge.injection_order_gap,
-        score=edge.score,
-        reason=edge.reason,
-        construction_policy=(
-            "construction_time_hard_gate_observed"
-            if edge.decision == "blocked_edge"
-            else "none"
-        ),
-    )
-
-
-def cross_sample_peak_group_review_fact_from_owner_feature(
-    feature: OwnerAlignedFeature,
-) -> CrossSamplePeakGroupReviewFact | None:
-    if not feature.review_only:
-        return None
-
-    reason: CrossSamplePeakGroupReviewReason
-    if feature.identity_conflict:
-        reason = "identity_conflict"
-    elif feature.ambiguous_sample_stem is not None or feature.ambiguous_candidate_ids:
-        reason = "ambiguous_owner"
-    else:
-        reason = "review_only"
-
-    return CrossSamplePeakGroupReviewFact(
-        feature_family_id=feature.feature_family_id,
-        public_family_id=feature.feature_family_id,
-        review_only=feature.review_only,
-        identity_conflict=feature.identity_conflict,
-        ambiguous_sample_stem=feature.ambiguous_sample_stem,
-        ambiguous_candidate_ids=feature.ambiguous_candidate_ids,
-        evidence=feature.evidence,
-        reason=reason,
-    )
-
-
-def cross_sample_peak_group_hard_gate_challenge_fact_from_owner_edge(
-    edge: OwnerEdgeEvidence,
-) -> CrossSamplePeakGroupHardGateChallengeFact | None:
-    if edge.decision != "blocked_edge":
-        return None
-
-    owner_pair_ids = (
-        min(edge.left_owner_id, edge.right_owner_id),
-        max(edge.left_owner_id, edge.right_owner_id),
-    )
-    return CrossSamplePeakGroupHardGateChallengeFact(
-        left_owner_id=edge.left_owner_id,
-        right_owner_id=edge.right_owner_id,
-        owner_pair_ids=owner_pair_ids,
-        decision=edge.decision,
-        role="split_gate_challenge",
-        failure_reason=edge.failure_reason,
-        reason=edge.reason,
-    )
-
-
-def cross_sample_peak_group_edge_facts_from_owner_edges(
-    edges: Sequence[OwnerEdgeEvidence],
-    *,
-    owner_ids: Iterable[str] | None = None,
-) -> tuple[CrossSamplePeakGroupEdgeFact, ...]:
-    owner_id_set = frozenset(owner_ids) if owner_ids is not None else None
-    return tuple(
-        cross_sample_peak_group_edge_fact_from_owner_edge(edge)
-        for edge in edges
-        if _edge_matches_owner_ids(edge, owner_id_set)
-    )
-
-
-def cross_sample_peak_group_hard_gate_challenge_facts_from_owner_edges(
-    edges: Sequence[OwnerEdgeEvidence],
-    *,
-    owner_ids: Iterable[str] | None = None,
-) -> tuple[CrossSamplePeakGroupHardGateChallengeFact, ...]:
-    owner_id_set = frozenset(owner_ids) if owner_ids is not None else None
-    facts: list[CrossSamplePeakGroupHardGateChallengeFact] = []
-    for edge in edges:
-        if not _edge_matches_owner_ids(edge, owner_id_set):
-            continue
-        fact = cross_sample_peak_group_hard_gate_challenge_fact_from_owner_edge(
-            edge,
-        )
-        if fact is not None:
-            facts.append(fact)
-    return tuple(facts)
-
-
-def _edge_matches_owner_ids(
-    edge: OwnerEdgeEvidence,
-    owner_id_set: frozenset[str] | None,
-) -> bool:
-    return owner_id_set is None or (
-        edge.left_owner_id in owner_id_set and edge.right_owner_id in owner_id_set
-    )
-
-
 def _hypothesis_from_owner_group(
     group: tuple[SampleLocalMS1Owner, ...],
     *,
@@ -617,25 +480,17 @@ def _identity_from_owners(
 
 
 __all__ = (
-    "CrossSampleClassifiedEdge",
-    "CrossSampleConnectedNeighborhood",
     "CrossSampleContractError",
-    "CrossSampleCoupledProposalContext",
     "CrossSampleEdgeDisposition",
-    "CrossSampleEdgeOwner",
     "CrossSampleGroupDisposition",
     "CrossSampleGroupIdentity",
     "CrossSampleGroupMemberSubject",
     "CrossSampleIdentityBasisRegistry",
     "CrossSampleInitialEdgeContext",
     "CrossSampleLineageEdge",
-    "CrossSampleNeighborhoodBudget",
     "CrossSampleNeighborhoodEdge",
     "CrossSampleNeighborhoodStatus",
-    "_CROSS_SAMPLE_REPAIR_APPLICATION_MINT_TOKEN",
-    "_apply_repaired_nonmember_admission",
     "_expected_cross_sample_lineage",
-    "_mint_cross_sample_repaired_observation",
     "CrossSamplePeakGroupConstructionPolicy",
     "CrossSamplePeakGroupConstructionRole",
     "CrossSamplePeakGroupEdgeFact",
@@ -646,24 +501,10 @@ __all__ = (
     "CrossSamplePeakGroupReviewFact",
     "CrossSamplePeakGroupReviewReason",
     "CrossSamplePeakGroupReviewRole",
-    "CrossSampleRepairAdmissionApplication",
-    "CrossSampleRepairAdmissionEdge",
-    "CrossSampleRepairedObservation",
     "CrossSamplePartitionTransition",
-    "apply_coupled_successor_proposal",
-    "build_bounded_connected_neighborhood",
     "classify_cross_sample_initial_edge",
-    "classify_cross_sample_initial_neighborhood_edge",
-    "classify_cross_sample_repair_admission_edge",
     "construct_cross_sample_peak_group_hypotheses",
-    "cross_sample_peak_group_edge_fact_from_owner_edge",
-    "cross_sample_peak_group_edge_facts_from_owner_edges",
-    "cross_sample_peak_group_hard_gate_challenge_fact_from_owner_edge",
-    "cross_sample_peak_group_hard_gate_challenge_facts_from_owner_edges",
-    "cross_sample_peak_group_review_fact_from_owner_feature",
-    "group_member_subject_from_discovery_physical_selection",
     "group_member_subject_from_peak_hypothesis",
-    "group_member_subject_from_peak_observation",
     "mint_cross_sample_group_identity",
     "review_only_peak_group_hypotheses_from_ambiguous_records",
     "validate_cross_sample_group_population",

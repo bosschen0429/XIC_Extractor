@@ -304,9 +304,6 @@ def _assert_unsupported_exclusion_closes_exact_coverage(completed):
 
 
 def _assert_composite_labels_cannot_grant_membership(batch, runtime):
-    from xic_extractor.alignment.cross_sample_neighborhood_graph import (
-        iter_cross_sample_initial_owner_pairs,
-    )
     from xic_extractor.alignment.edge_scoring import evaluate_owner_edge
     from xic_extractor.alignment.feature_membership_inference import (
         infer_feature_memberships,
@@ -330,12 +327,6 @@ def _assert_composite_labels_cannot_grant_membership(batch, runtime):
             )
         )
     assert evaluate_owner_edge(*owners, config=AlignmentConfig()).failure_reason == ""
-    assert tuple(
-        iter_cross_sample_initial_owner_pairs(
-            owners,
-            config=AlignmentConfig(),
-        )
-    ) == (tuple(owners),)
     unbound = tuple(
         replace(owner, cid_nl_composite_assessment=None) for owner in owners
     )
@@ -344,30 +335,12 @@ def _assert_composite_labels_cannot_grant_membership(batch, runtime):
         evaluate_owner_edge(*unbound, config=AlignmentConfig()).failure_reason
         == "product_mz_out_of_tolerance"
     )
-    assert (
-        tuple(
-            iter_cross_sample_initial_owner_pairs(
-                unbound,
-                config=AlignmentConfig(),
-            )
-        )
-        == ()
-    )
     crossed = replace(
         owners[1], cid_nl_composite_assessment=owners[0].cid_nl_composite_assessment
     )
     assert (
         evaluate_owner_edge(owners[0], crossed, config=AlignmentConfig()).failure_reason
         == "product_mz_out_of_tolerance"
-    )
-    assert (
-        tuple(
-            iter_cross_sample_initial_owner_pairs(
-                (owners[0], crossed),
-                config=AlignmentConfig(),
-            )
-        )
-        == ()
     )
 
     # Composition membership retains its typed provenance gate. With both
