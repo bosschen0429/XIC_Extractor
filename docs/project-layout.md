@@ -197,7 +197,11 @@ build workflow，並驗證 dev/frozen 兩種模式。
 5. Maintained diagnostic → `tools/diagnostics/`，並更新 `tools/diagnostics/INDEX.md`。
 6. Tests → `tests/test_<module>_<behavior>.py`；shared fixture → `tests/fixtures/`。
 7. Stable product/user/agent/architecture rule → 對應 canonical owner。
-8. JSON schema → `docs/superpowers/schemas/<contract>.vN.json`。
+8. 格式契約依 consumer 放置：內部資料留在 capability owner 的 typed model；
+   執行時確實需要的 schema/data 隨 consuming package 安裝；checker 消費的
+   schema 描述留在 `docs/superpowers/schemas/`。可變 authority instance 依
+   [Current authority routes](#current-authority-routes) 歸 productization state。
+   不因資料是 JSON 就另建 schema，也不為搬檔新增 loader。
 9. Current small validation contract/fixture → `docs/superpowers/validation/` 或
    `docs/superpowers/fixtures/`，必須有現存 checker/test consumer。
 10. Construction spec/plan → GitHub Issue；branch closeout → PR body。
@@ -222,7 +226,7 @@ rule，不能只因單次施工方便而建立。
 
 | 類別 | 慣例 |
 | --- | --- |
-| Schema | `docs/superpowers/schemas/<contract>.vN.json` |
+| Schema | 依 § 5 的 consumer 選 owner；名稱描述格式契約，只有相容性需要時加入語義版本 |
 | Test | `tests/test_<module>_<behavior>.py` |
 | Public CLI | `scripts/run_<purpose>.py` |
 | Diagnostic | `tools/diagnostics/<purpose>.py` |
