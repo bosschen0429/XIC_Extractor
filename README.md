@@ -57,8 +57,9 @@ You select a built-in method preset (resolver, alignment, and post-alignment
 settings bundled as a TOML file). The pipeline discovers candidate features
 per sample using seed evidence (MS2 neutral loss, MS1 traces) and aligns them
 across samples into a cross-sample matrix. The default Alignment run writes
-only `alignment_matrix.tsv`; review, gallery, and other diagnostic artifacts
-remain available through explicit output options.
+`alignment_matrix.tsv` as its default quantitative output. Retained CID-NL also
+saves completed evidence for manual XIC Inspector export; additional review,
+gallery, and workbook artifacts require explicit output options.
 
 | Output | Content |
 | --- | --- |

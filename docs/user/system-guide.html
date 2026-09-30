@@ -140,7 +140,7 @@
             <li><strong>Output</strong><span>把 owner 的結果呈現為檔案，不重算證據。</span></li>
             <li><strong>完成證據<br>→ Inspector</strong><span>只讀檢視已留下的記錄。</span></li>
           </ol>
-          <p class="diagram-caption">Configuration 提供型別化設定；執行 engine 與 runtime 處理排程、資源和收尾，沒有科學或 writer 決定權。</p>
+          <p class="diagram-caption">Configuration 提供型別化設定；applications/ 組合 Targeted 或 Untargeted 流程並管理交付。execution/ 處理排程、資源和收尾，沒有科學或 writer 決定權。</p>
         </div>
         <div class="grid three" aria-label="模組責任摘要">
           <div class="card"><h3>候選與單樣本證據</h3><p>Discovery 產生一般候選；Extraction 協調 Targeted 工作和保留的 CID-NL 執行 adapter。Peak Detection 負責物理觀察與峰證據。</p><code>discovery/ · extraction/ · peak_detection/</code></div>
@@ -158,7 +158,7 @@
       <section id="runtime" aria-labelledby="runtime-heading">
         <p class="eyebrow">02 · 一次執行</p>
         <h2 id="runtime-heading">一次 attempt，要有開始也要有收尾</h2>
-        <p class="section-intro">Runtime 處理的是「這批工作有沒有完整執行、資源有沒有清理」，不解讀 RAW 訊號或決定哪個峰、哪個 Matrix 值應被採用。正式契約以 lineage owner 提供的 ProcessingAttempt 身分為界。</p>
+        <p class="section-intro">Runtime 已接入 Targeted、Untargeted 與 GUI pipeline worker，管理一次 ProcessingAttempt 的工作與收尾。它不解讀 RAW 訊號，也不決定哪個峰或 Matrix 值應被採用。正式契約另包含尚未實作的設計，不能把整份契約當成可用功能清單。</p>
         <div class="panel">
           <p class="tiny-label">最小狀態</p>
           <ul class="state-line" aria-label="執行階段"><li>queued · 排隊</li><li>running · 執行</li><li>terminal · 結束</li></ul>
@@ -175,8 +175,8 @@
           </ul>
         </div>
         <div class="grid">
-          <div class="card"><h3>重試不是改寫舊紀錄</h3><p>Retry / resume 都需要 lineage owner 給新的 attempt 身分。舊檔能否重用，先由它驗證相容性；runtime 只記錄已授權的依賴使用，不自行批准科學重用。</p></div>
-          <div class="card"><h3>量的是執行成本</h3><p>事件與 metrics 可對照 RAW 開啟、XIC 請求、trace 點數、時間、記憶體和暫存 I/O。未觀察到的數值標成 unavailable；這些數字不評分證據品質。</p></div>
+          <div class="card"><h3>重跑與續跑不同</h3><p>目前未提供沿用先前工作結果的 retry / resume；ValidatedDependencyToken 尚未實作。重新執行不等於接續失敗工作。Untargeted 可重用通過來源與查詢驗證的 acquisition cache，但會重新做科學決策。</p></div>
+          <div class="card"><h3>量的是執行成本</h3><p>現有 receipts 與 metrics 記錄已觀察到的 RAW 開啟、查詢及執行成本；未觀察到的數值維持 unavailable。統一的 RuntimeEvent 事件日誌尚未實作。這些記錄不評分證據品質。</p></div>
         </div>
         <div class="panel caution"><p><strong>目前的證據邊界：</strong>正式執行契約記載，整合證據尚未超過 <code>diagnostic_only</code>。這裡解釋契約規定的生命週期，不宣稱 Targeted、Alignment 或所有入口已通過產品整合驗證。</p></div>
       </section>
@@ -184,16 +184,16 @@
       <section id="inspector" aria-labelledby="inspector-heading">
         <p class="eyebrow">03 · 完成後檢視</p>
         <h2 id="inspector-heading">把留下的證據打開看，不重做決策</h2>
-        <p class="section-intro">XIC Inspector 是已安裝的只讀 CLI / API，也可在 Untargeted GUI 完成 Alignment 並取得證據 locator 後手動匯出。目前來源 adapter 讀的是已完成的 pure Untargeted CID-NL 證據；它從報告挑一小批項目，產生單一 HTML 閱讀工作台。</p>
+        <p class="section-intro">XIC Inspector 是已安裝的只讀 CLI / API，接受 pure Untargeted CID-NL 的已完成 SQLite 證據，也接受診斷工具保存的 curve-bundle JSON。Untargeted GUI 可在 Alignment 完成並取得證據 locator 後手動匯出。兩種來源都經過選擇，再產生單一 HTML 閱讀工作台。</p>
         <div class="panel">
           <div class="inspector-path" aria-label="Inspector 檢視路徑">
-            <div><strong>完成證據與 Matrix 身分</strong><p>來源 adapter 讀取正式 scientific owner 留下的記錄；產生報告前檢查綁定的 Matrix 身分。</p></div>
+            <div><strong>來源與綁定</strong><p>SQLite adapter 檢查完成證據綁定的 Matrix 身分；curve-bundle JSON 以檔案 SHA-256 綁定，不要求 Matrix。JSON 保存 producer 提供的曲線與結果，不讓 viewer 補算。</p></div>
             <span class="path-arrow" aria-hidden="true">→</span>
             <div><strong>自包含的離線 HTML</strong><p>選中的曲線、樣本關係、整合與決策記錄連同 CSS、圖表和互動一起放入檔案；開啟時不依賴資料庫或網路。</p></div>
           </div>
         </div>
         <div class="grid three" aria-label="選擇檢視項目的方式">
-          <div class="card"><h3>sample · 看代表性群組</h3><p>在真實跨樣本群組中兼顧樣本覆蓋與留下的支援、狀態；群組不足時才補入未分群候選。</p></div>
+          <div class="card"><h3>sample · 看代表性群組</h3><p>SQLite 來源優先挑選真實跨樣本群組，兼顧覆蓋與已記錄狀態；不足時才補入未分群候選。Curve bundle 以 transition 為可選項目。</p></div>
           <div class="card"><h3>attention · 看待注意項</h3><p>挑出 owner 已記錄的檢視條件，協助先讀可能需要審閱的項目；標記本身不改最終格值。</p></div>
           <div class="card"><h3>query · 找指定證據</h3><p>依樣本、候選、群組、m/z 或 RT apex 查真正存在的 witness 鏈，並用 offset / limit 分頁。</p></div>
         </div>

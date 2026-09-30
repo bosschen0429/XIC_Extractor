@@ -127,13 +127,14 @@
         <div class="note"><p><strong>要換內標清單：</strong>複製隨附範例，於 Excel 或系統關聯程式編輯後在 GUI 重載；保留 CSV headers 與 <code>is_istd</code> 標記。沒有第二份 Untargeted 專用清單。</p><p>若提供的檔案沒有內標，GUI 會報錯；清空該欄位可不使用內標清單執行。</p></div>
       </section>
       <section id="outputs" aria-labelledby="outputs-heading">
-        <p class="eyebrow">04 · 輸出與檢視</p><h2 id="outputs-heading">依你要回答的問題開檔</h2><p class="intro">預設 Alignment 執行只寫 <code>alignment_matrix.tsv</code>；其他 Alignment TSV、HTML、XLSX 需由明確的 machine、debug、validation 或 artifact 選項產生。GUI 預設呈現 matrix。</p>
+        <p class="eyebrow">04 · 輸出與檢視</p><h2 id="outputs-heading">依你要回答的問題開檔</h2><p class="intro">預設跨樣本量化輸出是 <code>alignment_matrix.tsv</code>；retained CID-NL 成功後另保存 <code>cid_nl_explanation.sqlite</code> 與 runtime marker。GUI 預設呈現 matrix；其他 review TSV、HTML、XLSX 需明確啟用。</p>
         <div class="output-lead"><div><h3>跨樣本量化先看 matrix</h3><p>feature 是列、sample 是欄，格內放 area；這是預設 Alignment 產物。</p></div><code>alignment_matrix.tsv</code></div>
         <div class="table-wrap"><table><thead><tr><th scope="col">輸出</th><th scope="col">內容</th><th scope="col">適合的檢視問題</th></tr></thead><tbody>
           <tr><td><code>discovery_candidates.csv</code></td><td>各樣本候選特徵的 m/z、RT、area 與 seed evidence。</td><td>逐樣本檢查候選細節。</td></tr>
           <tr><td><code>discovery_review.csv</code></td><td>較精簡的候選欄位與 confidence。</td><td>快速分流檢視。</td></tr>
           <tr><td><code>discovery_batch_index.csv</code></td><td>連結每個樣本的 candidate / review CSV。</td><td>Alignment 輸入；探索後自動產生。</td></tr>
           <tr><td><code>alignment_matrix.tsv</code></td><td>跨樣本對齊特徵與各格 area。</td><td>預設跨樣本量化結果。</td></tr>
+          <tr><td><code>cid_nl_explanation.sqlite</code></td><td>已完成的 CID-NL 決策與曲線證據。</td><td>完成後手動 Export XIC Inspector，產生離線 HTML；不是自動產生的 gallery。</td></tr>
           <tr><td><code>alignment_review.tsv</code></td><td>對齊品質、owner 身分與每格 backfill 狀態。</td><td>明確啟用的 review / diagnostic 檢視。</td></tr>
           <tr><td>Review / gallery HTML</td><td>候選峰與 backfill 脈絡的視覺圖。</td><td>明確啟用的人類檢視輸出。</td></tr>
         </tbody></table></div>

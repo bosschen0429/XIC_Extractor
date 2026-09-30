@@ -131,8 +131,8 @@
       </section>
       <section id="review" aria-labelledby="review-heading">
         <p class="eyebrow">04 · 判讀順序</p><h2 id="review-heading">從總覽找到要看的列</h2><p class="intro">完成後先看 <code>Overview</code> 的偵測率，再看 <code>Review Queue</code>。如果偵測率或 RT delta 異常，先查 <code>Diagnostics</code> 再考慮重跑。</p>
-        <div class="review-grid"><article class="review-card"><h3>Detection %</h3><p>分析納入率：有可用 RT 與 area，且 NL status 可接受，才算 detected。<code>NL_FAIL</code> 列不進 detected 的 median、ratio 與 RT delta。</p></article><article class="review-card"><h3>Flagged %</h3><p>人工檢視工作量：已 detected 的列仍可能因 confidence 低或 RT shift 特別而被標記。</p></article></div>
-        <div class="note"><p><strong><code>NO_MS2</code> 怎麼計算？</strong>取決於設定檔中的 <code>count_no_ms2_as_detected</code>：<code>true</code> 計入 detected；<code>false</code> 排除。</p></div>
+        <div class="review-grid"><article class="review-card"><h3>Detection %</h3><p>正式 Targeted projection 判定的計數比例。計數與數值可用性分開：有 RT／area 的列仍可能不計數。以進階欄位 <code>Counted Detection</code>、<code>Product State</code> 與理由判讀，不單靠 NL token。</p></article><article class="review-card"><h3>Flagged %</h3><p>人工檢視工作量：已 detected 的列仍可能因 confidence 低或 RT shift 特別而被標記。</p></article></div>
+        <div class="note"><p><strong><code>NO_MS2</code> 怎麼計算？</strong>正式結果依 ISTD／analyte 角色與支持政策決定計數。<code>count_no_ms2_as_detected</code> 只控制缺少正式 projection 的 legacy fallback，不會覆寫正式結果。詳見 <a href="../product/decision-policy.md">Decision Policy</a>。</p></div>
       </section>
       <section id="cli" aria-labelledby="cli-heading">
         <p class="eyebrow">05 · 命令列選擇</p><h2 id="cli-heading">CLI 走同一條 Targeted pipeline</h2><p class="intro">如果在開發 checkout 或使用已安裝的 entry point，可從命令列執行。</p>

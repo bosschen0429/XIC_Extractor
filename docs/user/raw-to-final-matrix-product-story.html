@@ -31,6 +31,7 @@
     }
 
     * { box-sizing: border-box; }
+    main > div { min-width: 0; overflow-wrap: anywhere; }
     html { scroll-behavior: smooth; }
 
     body {
@@ -378,7 +379,7 @@
         <div class="eyebrow">XIC Extractor product story</div>
         <h1>從 RAW 到 Final Matrix：一個 DNA adduct 如何被偵測、定量、寫入矩陣</h1>
         <p class="lead">
-          這份文件用白話講完 XIC Extractor 的完整產品流程：
+          這份文件以 Untargeted CID-NL 為例，說明 XIC Extractor 如何從候選走到定量矩陣：
           Discovery 可從 MS2 neutral-loss 或 MS1 delta-pattern evidence 開始；候選證據必須先進入
           <code>EvidenceVector</code> / <code>PeakHypothesis</code> 與 model selection，之後才可能經過
           integration、跨樣本 alignment 與授權 projection 寫入 <code>alignment_matrix.tsv</code>。
@@ -387,8 +388,7 @@
       <aside class="status-card">
           <strong>適用情境</strong>
           <p>
-            本工具設計用於 DNA adductomics 分析。特徵通常為低豐度、
-            sparse detection（單一樣本檢出是常態而非例外），
+            DNA adductomics 是本頁的應用情境；稀有特徵可能只出現在少數樣本。
             release 路徑目前仍以 CID neutral-loss 為主要辨識策略；Pt MS1 pattern
             仍是 <code>diagnostic_only</code> 方法開發，不是 Final Matrix intake。
         </p>
@@ -415,7 +415,7 @@
           <p class="section-intro">
             產品流程分成兩層：<strong>單樣本層</strong>負責從 RAW 中找出候選特徵、抽取色譜圖、選峰、
             積分面積；<strong>跨樣本層</strong>負責把多支樣本的觀察對齊成同一個 matrix row，
-            補缺值、處理重複宣告，最後決定哪些定量值可以進 primary matrix。
+            在既有群組下補證據，最後決定哪些定量值可以進 primary matrix。
           </p>
 
           <div class="flow" aria-label="Raw to final matrix flow">
@@ -433,26 +433,26 @@
                 <span>把候選 assignment 與相關證據組成可稽核的 alternatives；候選不等於已選峰。</span>
               </div>
               <div class="flow-node">
-                <strong>4. Model selection + IntegrationResult</strong>
-                <span>選擇可支持的 hypothesis；只有 selected peak 才產生邊界與面積結果。</span>
+                <strong>4. 物理峰與選擇結果</strong>
+                <span>保留 owner 已判定的峰邊界、可用面積及不確定性，不把候選直接當定量值。</span>
               </div>
               <div class="flow-node">
-                <strong>5. Workflow projection</strong>
-                <span>工作流把已選結果投影成 sample-local owner 或 review；未授權 evidence 停在這裡。</span>
+                <strong>5. 跨樣本比較準備</strong>
+                <span>保留樣本與量測來源，使用已準備的 RT 漂移脈絡比較峰觀察。</span>
               </div>
             </div>
             <div class="flow-row wide">
               <div class="flow-node accent">
                 <strong>6. Cross-sample 分群</strong>
-                <span>跨樣本比對 owner，以 m/z + RT + tag 閘門將相同特徵歸入同一 family。</span>
+                <span>在相容質量與 RT 脈絡下建立群組；保留衝突，不把相近就當成同一化合物。</span>
               </div>
               <div class="flow-node">
                 <strong>7. Backfill</strong>
-<span>對 family 中沒檢出的樣本回 RAW 搜尋，嘗試 Backfill。</span>
+<span>群組的直接支援達門檻後，對缺格進行有限度的觀察重訪。</span>
               </div>
               <div class="flow-node">
-                <strong>8. Claim + 合併</strong>
-                <span>處理重複宣告（同一峰被多個 row 搶）、合併跨 tag 的同族 family。</span>
+                <strong>8. 明確的群組與樣本格</strong>
+                <span>把已完成的科學結果綁到 row/sample；Backfill 本身不重建群組或選值。</span>
               </div>
               <div class="flow-node">
                 <strong>9. Production 決策</strong>
@@ -469,7 +469,7 @@
             <strong>白話版：</strong>
             不是「找到 pattern 或峰就填入矩陣」。每個候選要先成為帶 provenance 的
             evidence / hypothesis，再於樣本內通過 model selection 與 integration，
-            再在跨樣本層通過 grouping、backfill、claim 與 identity 檢查，最後才由 production decision 放行。
+            再完成跨樣本 grouping 與必要的 Backfill；projection 建立明確的樣本格，cell decision 選值或不寫，writer 才呈現完成結果。
           </div>
 
           <div class="callout warning">
@@ -545,31 +545,7 @@
             → Pt candidate CSV + evidence CSV。
           </div>
 
-          <details>
-            <summary>工程模組</summary>
-            <div class="details-body">
-              <h4>CID Neutral-Loss</h4>
-              <ul>
-                <li><code>xic_extractor/discovery/pipeline.py</code> — 單檔/批次 discovery 入口</li>
-                <li><code>xic_extractor/discovery/ms2_seeds.py</code> — strict neutral-loss seed 採集</li>
-                <li><code>xic_extractor/discovery/grouping.py</code> — seed → group 分群</li>
-                <li><code>xic_extractor/discovery/ms1_backfill.py</code> — MS1 同位素查詢與 m/z 精確化</li>
-                <li><code>xic_extractor/discovery/peak_anchor.py</code> — 鎖定 canonical m/z</li>
-              </ul>
-              <h4>Delta Mass (Pt pattern)</h4>
-              <ul>
-                <li><code>xic_extractor/discovery/delta_mass_pipeline.py</code> — Pt pattern discovery 入口</li>
-                <li><code>xic_extractor/discovery/delta_mass_patterns.py</code> — pattern 定義與 matcher</li>
-                <li><code>xic_extractor/discovery/detected_features.py</code> — sample-local MS1 feature 模型</li>
-                <li><code>xic_extractor/discovery/delta_mass_csv.py</code> — 候選結果 CSV/JSON IO</li>
-                <li><code>xic_extractor/discovery/pt_pattern_discovery_evidence.py</code> — evidence 建構</li>
-              </ul>
-              <h4>Preset 系統</h4>
-              <ul>
-                <li><code>xic_extractor/presets/</code> — TOML preset 載入、策略組合驗證、參數套用</li>
-              </ul>
-            </div>
-          </details>
+          <p>候選產生與方法邊界見 <a href="../product/discovery.md">Discovery 正式文件</a>；設定綁定見 <a href="../product/presets.md">Presets</a>。</p>
         </section>
 
         <!-- ─── XIC 抽取 ─── -->
@@ -592,9 +568,7 @@
             <article class="panel">
               <h3>Alignment 中的抽取</h3>
               <p>
-                Alignment pipeline 內建 XIC 抽取（owner build 與 backfill 各一次），
-                不需要另外跑 extraction script。每個 sample-local owner 的 trace
-                就是在這一步產生的。
+                Untargeted application 安排 acquisition 與科學處理，不需要額外手動跑 extraction script。初始搜尋與必要的 Backfill 依各自請求取得 trace；相符的來源與查詢可重用 acquisition cache，不能假定每個候選固定開 RAW 兩次。
               </p>
             </article>
           </div>
@@ -603,373 +577,78 @@
         <!-- ─── Peak Selection ─── -->
         <section id="peak">
           <h2><span class="step-number">3</span>Peak 選擇與積分：從 trace 到面積</h2>
-          <p class="section-intro">
-            這一步解決的問題是：在一段 XIC trace 裡可能有多個局部峰，
-            到底哪一個是我們的目標峰？選出後如何正確計算面積？
-          </p>
-
+          <p class="section-intro">Trace 可能包含多個峰。物理峰 owner 先判定可支持的峰區間、訊號品質與面積；方法與工作流再使用這些證據選擇假設。候選、已選峰和可寫入的格值是不同結果。</p>
           <div class="grid">
-            <article class="panel">
-              <h3>候選峰偵測</h3>
-              <p>
-                從 XIC trace 中用 local-minimum 方法找出所有可能的候選峰邊界，
-                每個候選峰由 (left, apex, right) RT 三元組定義。
-              </p>
-            </article>
-            <article class="panel">
-              <h3>評分與選擇</h3>
-              <p>
-                對候選峰評分（S/N、峰形、對稱性），
-                結合 RT prior（來自 discovery 或 library）選出最佳 selected peak。
-              </p>
-            </article>
-            <article class="panel">
-              <h3>AsLS 積分</h3>
-              <p>
-                用 Asymmetric Least Squares (AsLS) 基線校正後積分，
-                產生 baseline-corrected area。Morphology area 則是對 AsLS 殘差做
-                Gaussian smoothing（15 點窗）後只取正值積分，
-                是 primary matrix 的面積來源。
-              </p>
-            </article>
+            <article class="panel"><h3>訊號準備</h3><p>Gaussian 平滑與 AsLS baseline 各自從 raw trace 計算。正式訊號為平滑值減去非負 baseline，再將負值截為零；不是先扣 baseline 再平滑殘差。</p></article>
+            <article class="panel"><h3>峰與區間</h3><p>物理峰 owner 依支持的 apex、谷底與 baseline-return 決定區間。缺少完整觀察脈絡或仍有歧義時保留不可用／不確定結果，不由 writer 補選。</p></article>
+            <article class="panel"><h3>面積與選擇</h3><p>正式面積來自同一套 profile-bound physical signal 與 owner 接受的區間。已保存的 raw 或其他診斷面積可供比較，不能自動替代缺少的正式數值。</p></article>
           </div>
-
-          <div class="callout">
-            <strong>輸出：</strong>
-            每個 candidate 得到一個 <code>IntegrationResult</code>，
-            包含 RT 邊界、高度、raw area、AsLS-corrected area、morphology area。
-            這裡描述的是已授權的一般 peak-selection 路徑；目前 Pt diagnostic artifacts
-            尚未投影為產品 <code>IntegrationResult</code>。
-          </div>
-
-          <details>
-            <summary>工程模組</summary>
-            <div class="details-body">
-              <ul>
-                <li><code>xic_extractor/peak_detection/facade.py</code> — <code>find_peak_and_area()</code> 公開入口</li>
-                <li><code>xic_extractor/peak_detection/engine_candidates.py</code> — 候選峰偵測</li>
-                <li><code>xic_extractor/peak_detection/candidate_scoring.py</code> — 候選峰評分</li>
-                <li><code>xic_extractor/peak_detection/candidate_selection.py</code> — 選擇最佳 candidate</li>
-                <li><code>xic_extractor/peak_detection/baseline.py</code> — AsLS 基線校正與積分</li>
-                <li><code>xic_extractor/peak_detection/hypotheses.py</code> — <code>IntegrationResult</code> 定義</li>
-              </ul>
-            </div>
-          </details>
+          <div class="callout"><strong>方法邊界：</strong>Pt 的 trace 與 review artifacts 仍是診斷證據，沒有因此取得 selected-area 或 Matrix 寫入權。能顯示曲線不等於已完成產品選峰。</div>
+          <p>精確公式、峰區間與可用性由 <a href="../lc-msms-evidence-rules.md#ms1-morphology-and-area-owner">MS1 Morphology And Area Owner</a> 維護；選擇規則見 <a href="../product/peak-model-selection.md">Peak Model Selection</a>。</p>
         </section>
 
         <!-- ─── Alignment ─── -->
         <section id="alignment">
-          <h2><span class="step-number">4</span>跨樣本 Alignment：Owner → Family → Matrix Row</h2>
-          <p class="section-intro">
-            Alignment 的核心問題是：不同樣本中看到的 peak observations，
-            哪些其實是同一個化合物？這一層用漏斗式規則逐步收斂。
-          </p>
-
+          <h2><span class="step-number">4</span>跨樣本 Alignment：觀察 → 群組 → 樣本格</h2>
+          <p class="section-intro">Alignment 比較不同樣本的峰觀察，建立有來源與不確定性記錄的群組。群組支持一個 feature row 的推論，並不單獨證明化合物身分。</p>
           <table class="decision-table">
-            <thead>
-              <tr>
-                <th>步驟</th>
-                <th>做什麼</th>
-                <th>為什麼要這步</th>
-              </tr>
-            </thead>
+            <thead><tr><th>步驟</th><th>做什麼</th><th>責任邊界</th></tr></thead>
             <tbody>
-              <tr>
-                <td><span class="step-number">a</span>Owner 建構</td>
-                <td>
-                  同一樣本中，屬於同一個 MS1 chromatographic peak 但被多次 MS2 觸發的
-                  candidates 合併為一個 owner。
-                </td>
-                <td>
-                  解決「重複觸發」問題：同一個前驅離子在不同 scan 被碎裂多次，
-                  本質上只算一個觀察事件。
-                </td>
-              </tr>
-              <tr>
-                <td><span class="step-number">b</span>Cross-sample 分群</td>
-                <td>
-                  預設用 complete-link clustering 比對不同樣本的 owners；若 explicit batch
-                  每個樣本皆有一個 clean detected owner，才允許以局部 RT/mass continuity
-                  收回被 complete-link 切開的完整 family。Pair hard gates、同樣本唯一性與
-                  RT discontinuity 仍會阻擋合併；後來出現的 bridge owner 不會把兩個既有
-                  群串成 single-link 巨群。
-                </td>
-                <td>
-                  把跨樣本的「同一個化合物」歸入同一個 feature family，作為 matrix 的一行。
-                  Tag 閘門保證每個 NL transition 獨立處理。
-                </td>
-              </tr>
-              <tr>
-                <td><span class="step-number">c</span>Backfill</td>
-                <td>
-                  對 family 中沒有 detected 的樣本，用 family 的 seed（m/z, RT）
-                  回 RAW 重新抽取 XIC、嘗試找峰。
-                </td>
-                <td>
-                  Discovery 不一定抓到所有樣本中的弱訊號。Backfill 讓 matrix 能填補
-「有可能存在但 MS2 沒觸發」的觀察。成功找到的 cell 標記為 backfilled。
-                </td>
-              </tr>
-              <tr>
-                <td><span class="step-number">d</span>Claim Registry</td>
-                <td>
-                  檢查同一樣本中是否有多個 family row 搶同一個 MS1 peak（5 ppm fuzzy match）。
-                  若有，指定 winner 並把 loser 標記為 duplicate。
-                </td>
-                <td>
-                  Backfill 後可能出現「兩個 family 其實共用同一個 MS1 峰」的情況。
-                  不處理會導致同一個峰的面積被重複計算。
-                </td>
-              </tr>
-              <tr>
-                <td><span class="step-number">e</span>Primary 合併</td>
-                <td>
-                  跨 neutral-loss tag 的 family，若 precursor m/z 與 RT 高度接近，
-                  合併為同一個 primary family（一個化合物掉多種碎片）。
-                </td>
-                <td>
-                  Step b 的 tag 閘門會把同一化合物的不同 NL transition 分成不同 cluster。
-                  Backfill 完成後才能安全合併，因為每個 NL 需要獨立 backfill（tag-specific product m/z）。
-                </td>
-              </tr>
-              <tr>
-                <td><span class="step-number">f</span>Matrix Identity</td>
-                <td>
-                  評估每個 family 的 identity evidence 強度，決定是否進 primary matrix。
-                  產出 <code>identity_decision</code>（production / provisional / audit）
-                  與 <code>identity_confidence</code>（high / medium / review）。
-                </td>
-                <td>
-                  不是所有 family 都有足夠證據進入最終矩陣。
-                  <strong>單一樣本檢出</strong>可以保留為 provisional discovery
-                  供 review，但本身不是 primary matrix authority。
-                </td>
-              </tr>
-              <tr>
-                <td><span class="step-number">g</span>Production 決策</td>
-                <td>
-                  對 matrix 中每個 cell 做最終判定：寫入面積、留空（blank）、
-                  或標記為 duplicate/ambiguous/absent。
-                </td>
-                <td>
-                  Cell-level 的品質控制。即使 row 被納入 primary matrix，
-                  個別 cell 仍可能因為品質問題被留空。
-                </td>
-              </tr>
+              <tr><td>樣本內觀察</td><td>整理同一樣本的物理峰與候選來源，保留精確的 acquisition 和方法 subject。</td><td>重複包裝同一個峰不增加支援票數。</td></tr>
+              <tr><td>RT 比較脈絡</td><td>Untargeted ordinary grouping 先用可信的 bootstrap 群與已知身分群估計批次 RT warp。</td><td>Bootstrap 的 ordinary membership 不直接成為最終分群。</td></tr>
+              <tr><td>Window-band 分群</td><td>重新比較相連質量鄰域內的 owners，依 RT 與量測質量建立 bands；每個 band 中同一樣本最多一個 owner。</td><td>近似同分的競爭保留 undecided；singleton 留作 review。</td></tr>
+              <tr><td>有限度的 Backfill</td><td>直接 SUPPORT 達群體門檻後，對缺格做有界搜尋，交出新觀察或 typed no-result。</td><td>消費已關閉的群組結果；不重開 grouping，也不自己選 Matrix 值。</td></tr>
+              <tr><td>樣本格決策</td><td>Projection 建立明確的 Target/Group cell subject，再由 ProductionCellDecision 選定數值或 no-write。</td><td>Row 納入、格值與輸出格式各有 owner；writer 消費完成結果。</td></tr>
             </tbody>
           </table>
-
-          <div class="callout">
-            <strong>漏斗規則的關鍵設計：</strong>
-            tag 閘門在 Step b 刻意分開不同 NL transition → 各自獨立 backfill →
-            Step d 發現共享 MS1 peak → Step e 合併回同一個 family。
-            這個順序反映 LC-MS/MS 的物理事實：一個化合物可以碎出多種 fragments，
-            每種 fragment 的 product m/z 不同，必須分別回 RAW 搜尋。
-          </div>
-
-          <details>
-            <summary>工程模組</summary>
-            <div class="details-body">
-              <ul>
-                <li><code>xic_extractor/applications/untargeted/application.py</code> — alignment 完整 pipeline 入口</li>
-                <li><code>xic_extractor/alignment/ownership.py</code> — sample-local owner 建構</li>
-                <li><code>xic_extractor/alignment/owner_clustering.py</code> — bounded complete-link / full-batch continuity adapter</li>
-                <li><code>xic_extractor/alignment/cross_sample_peak_groups.py</code> — group hypothesis 模型</li>
-                <li><code>xic_extractor/alignment/edge_scoring.py</code> — 跨樣本 RT/m/z 評分</li>
-<li><code>xic_extractor/alignment/backfill_peak_fact.py</code> — 缺值 Backfill 抽取</li>
-                <li><code>xic_extractor/alignment/matrix_identity.py</code> — row identity decision</li>
-                <li><code>xic_extractor/alignment/production_decisions.py</code> — cell production decision</li>
-              </ul>
-            </div>
-          </details>
+          <div class="callout"><strong>為什麼保留方法來源：</strong>相容的 CID-NL subjects 可以共享比較 workset，但每個 subject 保留自己的量測與 assessment。搜尋範圍、neutral-loss 名稱或相近 RT 都不能自行成為 feature 身分。</div>
+          <p>目前分群方法見 <a href="../product/alignment.md">Alignment</a>；共用交接順序見 <a href="../product/shared-processing-kernel.md">Shared Processing Kernel</a>。程式入口與模組責任由 <a href="../architecture-contract.md#finding-the-right-owner">架構責任表</a> 維護。</p>
         </section>
 
         <!-- ─── Final Matrix ─── -->
         <section id="matrix">
           <h2><span class="step-number">5</span>Final Matrix：誰能寫入、誰被留空</h2>
-          <p class="section-intro">
-            最終產出的 <code>alignment_matrix.tsv</code> 是一個 feature × sample 矩陣，
-            每個 cell 放的是 production-accepted area（或空值）。
-            這不是 raw detection dump，而是經過完整品質控制後的定量結果。
-          </p>
-
+          <p class="section-intro"><code>alignment_matrix.tsv</code> 是完成決策後的 feature × sample 數值矩陣。Review、identity 與 evidence 詳情放在對應 sidecar；候選表或圖表不授予寫入權。</p>
           <div class="grid two">
-            <article class="panel">
-              <h3>面積值來源</h3>
-              <p>
-                Primary matrix 面積使用 morphology area：
-                對 AsLS baseline residual 做 Gaussian smoothing（15 點窗）後，
-                只取正值部分積分。如果 morphology area 不可用，該 cell 留空——
-                不回退到 AsLS corrected area 或 raw area。
-                每個 cell 記錄面積來源（<code>primary_matrix_area_source</code>）。
-              </p>
-            </article>
-            <article class="panel">
-              <h3>留空原因</h3>
-              <p>
-                Cell 可能因為 absent（backfill 找不到）、
-                duplicate（另一個 family 已宣告該峰）、
-                ambiguous（多個候選峰無法區分）等原因被留空。
-                每個留空 cell 都帶有 <code>blank_reason</code>。
-              </p>
-            </article>
+            <article class="panel"><h3>面積值來源</h3><p>Cell decision 使用正式 owner 的可用數值與資格判定。有限且正值的 observed censored physical area 可在契約允許時使用，但必須保留截斷／偵測極限證據，不補造缺失訊號，也不因此變成 counted detection。</p></article>
+            <article class="panel"><h3>沒有數值也有意義</h3><p>無可用觀察、尚未解決的競爭或不符合寫入條件，會留下 no-write。這與數值零不同；Backfill 找到訊號也不保證那個格一定可寫。</p></article>
           </div>
-
-          <h3 style="margin-top: 20px;">Identity Decision 分級</h3>
-          <table class="decision-table">
-            <thead>
-              <tr>
-                <th>Decision</th>
-                <th>意義</th>
-                <th>進入 primary matrix？</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td>production_family</td>
-                <td>有足夠 identity evidence 支持，是正式的 matrix row。</td>
-                <td>是</td>
-              </tr>
-              <tr>
-                <td>provisional_discovery</td>
-                <td>Evidence 不足以納入 primary matrix（如零檢出、extreme backfill dependency）。</td>
-                <td>否（進 review surface）</td>
-              </tr>
-              <tr>
-                <td>audit_family</td>
-                <td>有特殊旗標需要人工審查。</td>
-                <td>否（進 audit surface）</td>
-              </tr>
-            </tbody>
-          </table>
-
-          <div class="callout">
-            <strong>Single-sample detection 政策：</strong>
-            在 DNA adductomics 情境下，僅在單一樣本中檢出的特徵
-            （<code>single_sample_local_owner</code>）仍值得保留與人工 review，
-            但只標記為 <code>provisional_discovery</code>，不寫入 primary matrix。
-            後續必須取得額外 identity evidence，才能升為
-            <code>production_family</code>。
-          </div>
-
-          <h3 style="margin-top: 20px;">輸出檔案</h3>
+          <div class="callout"><strong>稀有特徵：</strong>Discovery 可以保留單樣本候選供 review。現行 ordinary grouping 的 singleton 為 review-only；候選存在或使用者看過曲線，都不是額外的 Matrix authority。</div>
+          <h3 style="margin-top: 20px;">預設與明確選用的輸出</h3>
           <table>
-            <thead>
-              <tr>
-                <th>檔案</th>
-                <th>用途</th>
-              </tr>
-            </thead>
+            <thead><tr><th>檔案／介面</th><th>何時取得、用來做什麼</th></tr></thead>
             <tbody>
-              <tr>
-                <td><code>alignment_matrix.tsv</code></td>
-                <td>Primary 定量矩陣，供下游校正/統計。只含 production-accepted 面積值。</td>
-              </tr>
-              <tr>
-                <td><code>alignment_review.tsv</code></td>
-                <td>每個 family 的 identity decision、confidence、flags、evidence 摘要。</td>
-              </tr>
-              <tr>
-                <td><code>alignment_matrix_identity.tsv</code></td>
-                <td>Matrix 每一行的 identity sidecar：peak hypothesis ID、source families、split 狀態。</td>
-              </tr>
-              <tr>
-                <td><code>alignment_results.xlsx</code></td>
-                <td>多 sheet 工作簿：Matrix / Review / Audit / Cells。</td>
-              </tr>
-              <tr>
-                <td><code>run_metadata.json</code></td>
-                <td>Pipeline 參數、timing、版本資訊。</td>
-              </tr>
+              <tr><td><code>alignment_matrix.tsv</code></td><td>預設 production Matrix。</td></tr>
+              <tr><td><code>cid_nl_explanation.sqlite</code></td><td>Retained CID-NL 在 Matrix 發布成功後保存的完成證據，可供 Inspector 只讀檢視。</td></tr>
+              <tr><td><code>alignment_review.tsv</code>、<code>alignment_matrix_identity.tsv</code></td><td>依明確 output profile／選項產生的 review 與身分追溯 sidecars。</td></tr>
+              <tr><td>Workbook、gallery、Backfill evidence</td><td>明確選用的產品、驗證或診斷輸出；不是每次預設執行都產生。</td></tr>
+              <tr><td><code>alignment_run_metadata.json</code></td><td>條件式的執行設定與 provenance sidecar。</td></tr>
             </tbody>
           </table>
-
-          <details>
-            <summary>工程模組</summary>
-            <div class="details-body">
-              <ul>
-<li><code>xic_extractor/alignment/untargeted_finalized_matrix.py</code> — 建立 detected/backfilled/absent/ambiguous cells</li>
-                <li><code>xic_extractor/alignment/production_decisions.py</code> — row/cell production decision</li>
-                <li><code>xic_extractor/alignment/tsv_writer.py</code> — TSV 輸出</li>
-                <li><code>xic_extractor/alignment/xlsx_writer.py</code> — XLSX 多 sheet 輸出</li>
-              </ul>
-            </div>
-          </details>
+          <p>精確欄位與選項見 <a href="untargeted-output-reference.md">Untargeted 輸出參考</a>；值、sidecar 與 activation 邊界見 <a href="../product/quant-matrix.md">Quant Matrix</a>。不要把科學分群、產品納入或診斷 readiness 混成同一種通過。</p>
         </section>
 
         <!-- ─── 設計決策 ─── -->
         <section id="design">
-          <h2>關鍵設計決策</h2>
-          <p class="section-intro">
-            這些決策不是偶然——它們反映了 LC-MS/MS adductomics 的物理事實與分析需求。
-          </p>
-
+          <h2>為什麼分開這些責任？</h2>
           <div class="grid two">
-            <article class="panel">
-              <h3>為什麼 discovery 不直接寫 matrix？</h3>
-              <p>
-                Discovery 提供的是 per-sample candidate 與 evidence，不是自動成立的 counted detection。
-                候選必須先通過 PeakHypothesis model selection / integration；是否值得成為 matrix 的一行，還需要跨樣本 evidence
-                （grouping coherence、backfill 結果、duplicate 檢查）才能決定。
-                兩者是不同層級的判斷。
-              </p>
-            </article>
-            <article class="panel">
-              <h3>為什麼 backfill 要在 clustering 之後？</h3>
-              <p>
-                必須先知道「跨樣本的同一個 family 長什麼樣」（m/z, RT seed），
-                才能用正確的參數去缺失樣本的 RAW 搜尋。
-                先 backfill 再 cluster 會用錯 seed。
-              </p>
-            </article>
-            <article class="panel">
-              <h3>為什麼 NL tag 是硬閘門？</h3>
-              <p>
-                不同 neutral-loss 代表不同碎裂途徑，product m/z 不同，
-                backfill 需要 tag-specific 的 product m/z 做搜尋。
-                clustering 時不能混在一起，否則 backfill 結果語意不對。
-                合併在 backfill 之後（Step e）才安全。
-              </p>
-            </article>
-            <article class="panel">
-              <h3>為什麼保留單一樣本檢出？</h3>
-              <p>
-                DNA adductomics 的分析對象是低豐度加合物。
-                文獻建議 minFraction 低至 0.05–0.10（XCMS adductomics 參數推薦）。
-                在 discovery 階段直接丟棄會系統性失去真實但稀有的 adducts。
-                因此單樣本檢出會保留到 review surface，但不因此取得 Matrix 寫入權。
-              </p>
-            </article>
+            <article class="panel"><h3>Discovery 提出候選</h3><p>候選保留可能值得檢查的訊號；跨樣本群組、選定數值與產品寫入都需要後續 owner 的判斷。</p></article>
+            <article class="panel"><h3>Backfill 需要既有脈絡</h3><p>先有 Target 或群組以及足夠的直接支援，才知道該到缺失樣本的哪個範圍尋找。重訪結果不能反過來創造自己的搜尋依據。</p></article>
+            <article class="panel"><h3>共享計算仍保留來源</h3><p>不同方法 subject 可以共享相容的工作範圍，但每個 subject 的量測與證據判定仍須分清；排程或快取不能替代科學身分。</p></article>
+            <article class="panel"><h3>Writer 呈現完成結果</h3><p>輸出 owner 負責欄位與檔案交付，不在最後一步重新讀 RAW、改選峰、補數值或推導新的群組。</p></article>
           </div>
         </section>
 
         <!-- ─── Sources ─── -->
         <section id="sources">
-          <h2>本文件對準的模組</h2>
-          <p class="section-intro">
-            這份文件根據目前程式碼整理，不是外部產品假設。
-          </p>
-          <ul class="source-list">
-            <li><code>xic_extractor/discovery/pipeline.py</code></li>
-            <li><code>xic_extractor/discovery/ms2_seeds.py</code></li>
-            <li><code>xic_extractor/discovery/grouping.py</code></li>
-            <li><code>xic_extractor/discovery/ms1_backfill.py</code></li>
-            <li><code>xic_extractor/discovery/delta_mass_pipeline.py</code></li>
-            <li><code>xic_extractor/discovery/delta_mass_patterns.py</code></li>
-            <li><code>xic_extractor/discovery/detected_features.py</code></li>
-            <li><code>xic_extractor/presets/</code></li>
-            <li><code>xic_extractor/peak_detection/facade.py</code></li>
-            <li><code>xic_extractor/peak_detection/baseline.py</code></li>
-            <li><code>xic_extractor/peak_detection/hypotheses.py</code></li>
-            <li><code>xic_extractor/applications/untargeted/application.py</code></li>
-            <li><code>xic_extractor/alignment/ownership.py</code></li>
-            <li><code>xic_extractor/alignment/owner_clustering.py</code></li>
-            <li><code>xic_extractor/alignment/cross_sample_peak_groups.py</code></li>
-<li><code>xic_extractor/alignment/backfill_peak_fact.py</code></li>
-            <li><code>xic_extractor/alignment/matrix_identity.py</code></li>
-            <li><code>xic_extractor/alignment/production_decisions.py</code></li>
-            <li><code>xic_extractor/alignment/tsv_writer.py</code></li>
-            <li><code>xic_extractor/alignment/xlsx_writer.py</code></li>
+          <h2>正式規則與程式入口</h2>
+          <p class="section-intro">本頁提供閱讀順序；精確方法、權限與程式位置由以下現行文件維護。</p>
+          <ul>
+            <li><a href="../product/discovery.md">Discovery</a>：候選、CID-NL 與 Pt 診斷邊界。</li>
+            <li><a href="../lc-msms-evidence-rules.md">LC-MS/MS evidence rules</a>：物理訊號、面積與證據規則。</li>
+            <li><a href="../product/alignment.md">Alignment</a>、<a href="../product/shared-processing-kernel.md">Shared Processing Kernel</a>：分群、Backfill 與決策交接。</li>
+            <li><a href="../product/quant-matrix.md">Quant Matrix</a>：數值、sidecar 與 writer authority。</li>
+            <li><a href="../architecture-contract.md#entry-points-and-handoffs">程式入口與交接</a>：要修改行為時先找到正式 owner。</li>
           </ul>
         </section>
 
@@ -980,8 +659,9 @@
           another surface, use the owner for that claim: <a href="../product/README.md"><code>docs/product/</code></a>
           for product behavior, the status index for maturity and lane state, and
           the authority manifest plus
-          <code>docs/agent/product-validation-contract.md</code> for write/validation
+          <a href="../agent/product-validation-contract.md">product validation contract</a> for write/validation
           authority. Executable code may itself be the behavior that needs correction.
+          <p><a href="readers-index.html">回閱讀索引</a></p>
         </footer>
       </div>
     </main>
