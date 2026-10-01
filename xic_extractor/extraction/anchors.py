@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from dataclasses import replace
 
-from xic_extractor.config import Target
+from xic_extractor.configuration.models import Target
 from xic_extractor.output.messages import DiagnosticRecord
-from xic_extractor.signal_processing import PeakDetectionResult
+from xic_extractor.peak_detection.models import PeakDetectionResult
 
 PAIRED_TARGET_ANCHOR_PEAK_DELTA_MAX_MIN: float = 0.25
 PAIRED_TARGET_NL_ANCHOR_REFERENCE_DELTA_MAX_MIN: float = 0.5

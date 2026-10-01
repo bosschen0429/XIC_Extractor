@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from xic_extractor.config import ExtractionConfig, Target
+from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.output.messages import DiagnosticRecord
 from xic_extractor.peak_detection.model_selection import ExpectedDiffApprovalRecord
 

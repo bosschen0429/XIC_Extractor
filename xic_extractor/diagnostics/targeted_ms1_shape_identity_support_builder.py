@@ -7,7 +7,7 @@ from statistics import median
 
 import numpy as np
 
-from xic_extractor.config import Target
+from xic_extractor.configuration.models import Target
 from xic_extractor.diagnostics.targeted_ms1_shape_identity import (
     TargetedMs1ShapeCandidate,
 )

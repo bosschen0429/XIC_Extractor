@@ -9,7 +9,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import TypedDict
 
-from xic_extractor.config import ExtractionConfig
+from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.configuration.signal_processing_profile import (
     DEFAULT_SIGNAL_PROCESSING_PROFILE,
     SignalProcessingProfile,

@@ -147,7 +147,7 @@ import json
 import sys
 from pathlib import Path
 
-from xic_extractor.config import load_config
+from xic_extractor.configuration.loader import load_config
 from xic_extractor.extractor import run
 from xic_extractor.injection_rolling import read_injection_order
 

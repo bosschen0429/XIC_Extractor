@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 
 from xic_extractor.artifact_lineage import EvidenceArtifactClosureError
-from xic_extractor.config import Target
+from xic_extractor.configuration.models import Target
 from xic_extractor.configuration.target_identity import (
     mint_target_list_snapshot,
     resolve_target_definition,

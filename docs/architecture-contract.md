@@ -42,7 +42,7 @@ feature-by-sample Matrix。兩者共用科學判斷，但保留不同搜尋政�
 
 | 想改什麼 | 先找哪裡 | 交接時要分清的責任 |
 | --- | --- | --- |
-| 峰選擇、邊界、面積 | `peak_detection/`、`signal_processing.py` | 單峰／單次觀察的答案；跨樣本群組在 Alignment |
+| 峰選擇、邊界、面積 | `peak_detection/`（`signal_processing.py` 只保留公開的 `find_peak_and_area` 入口） | 單峰／單次觀察的答案；跨樣本群組在 Alignment |
 | Targeted 正式選峰與 successor approval | `extraction/targeted_peak_selection.py` | 組合 hypotheses 與 Targeted 選峰政策，交出選定的峰、trace 和 decision；單峰演算法仍在 `peak_detection/` |
 | Targeted 輸入轉成共用峰假設 | `extraction/targeted_peak_hypotheses.py` | 選峰、candidate table 與 boundary callers 共用同一 translation；audit callers 不依賴正式選峰政策 |
 | Targeted 計數、角色例外與 review 原因 | `applications/targeted/product_projection.py` | 消費已完成的科學結果，決定產品狀態；純結果模型在同目錄 `product_model.py`，writer 只呈現它 |

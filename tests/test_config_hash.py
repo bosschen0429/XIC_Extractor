@@ -1,7 +1,10 @@
 from pathlib import Path
 
-from xic_extractor.config import compute_config_hash, load_config
-from xic_extractor.configuration.hashing import _settings_csv_bytes_with_overrides
+from xic_extractor.configuration.hashing import (
+    _settings_csv_bytes_with_overrides,
+    compute_config_hash,
+)
+from xic_extractor.configuration.loader import load_config
 
 
 def test_same_bytes_same_hash(tmp_path: Path) -> None:

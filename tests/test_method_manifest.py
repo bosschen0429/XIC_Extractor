@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from xic_extractor.config import ExtractionConfig, Target
+from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.extraction.output_dispatch import write_outputs
 from xic_extractor.extractor import RunOutput
 from xic_extractor.output.method_manifest import (

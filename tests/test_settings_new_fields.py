@@ -1,11 +1,11 @@
 import csv
 from pathlib import Path
 
-from xic_extractor.config import (
+from xic_extractor.configuration.hashing import (
     compute_config_hash,
     compute_target_config_hash,
-    load_config,
 )
+from xic_extractor.configuration.loader import load_config
 from xic_extractor.settings_schema import (
     CANONICAL_SETTINGS_DEFAULTS,
     CANONICAL_SETTINGS_DESCRIPTIONS,

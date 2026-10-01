@@ -11,7 +11,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 from xic_extractor.acquisition.raw_paths import existing_raw_paths
-from xic_extractor.config import ExtractionConfig
+from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.diagnostics.quant_matrix.acceptance import REQUIRED_COLUMNS
 from xic_extractor.diagnostics.quant_matrix.golden_path import (
     build_untargeted_cid_nl_golden_path,

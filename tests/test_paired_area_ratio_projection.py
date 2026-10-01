@@ -6,7 +6,7 @@ import pytest
 from xic_extractor.applications.targeted.product_model import (
     OWN_MAX_SAME_PEAK_SUPPORT_REASON,
 )
-from xic_extractor.config import Target
+from xic_extractor.configuration.models import Target
 from xic_extractor.evidence.neutral_loss import CandidateMS2Evidence, NLResult
 from xic_extractor.evidence_semantics import EvidenceDecisionSemantics
 from xic_extractor.extraction.paired_area_ratio_projection import (

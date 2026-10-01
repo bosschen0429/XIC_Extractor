@@ -11,10 +11,10 @@ from typing import Any
 
 import numpy as np
 
-from xic_extractor.config import ExtractionConfig
+from xic_extractor.configuration.models import ExtractionConfig
+from xic_extractor.peak_detection.facade import find_peak_and_area
 from xic_extractor.raw_reader import open_raw
 from xic_extractor.settings_schema import CANONICAL_SETTINGS_DEFAULTS
-from xic_extractor.signal_processing import find_peak_and_area
 from xic_extractor.xic_models import XICRequest, XICTrace
 
 

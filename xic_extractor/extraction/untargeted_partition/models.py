@@ -35,7 +35,7 @@ from xic_extractor.alignment.grouping_bootstrap import (
     RetainedGroupingCandidate,
 )
 from xic_extractor.alignment.grouping_result import CrossSampleGroupingResult
-from xic_extractor.config import ExtractionConfig
+from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )

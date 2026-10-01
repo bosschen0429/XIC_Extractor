@@ -8,7 +8,7 @@ from xic_extractor import extractor as extractor_module
 from xic_extractor.applications.targeted.product_model import (
     TargetedProductProjection,
 )
-from xic_extractor.config import ExtractionConfig, Target
+from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.extractor import (
     ExtractionResult,
     FileResult,
@@ -19,7 +19,7 @@ from xic_extractor.output.csv_writers import (
     _output_row,
     write_all,
 )
-from xic_extractor.signal_processing import (
+from xic_extractor.peak_detection.models import (
     PeakCandidate,
     PeakDetectionResult,
     PeakResult,

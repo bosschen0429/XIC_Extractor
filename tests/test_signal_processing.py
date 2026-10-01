@@ -5,16 +5,16 @@ import numpy as np
 import pytest
 from scipy.signal import savgol_filter
 
-from xic_extractor.config import ExtractionConfig
+from xic_extractor.configuration.models import ExtractionConfig
+from xic_extractor.peak_detection.facade import find_peak_candidates
 from xic_extractor.peak_detection.integration import peak_bounds
 from xic_extractor.peak_detection.local_minimum import _local_minimum_regions
-from xic_extractor.signal_processing import (
+from xic_extractor.peak_detection.models import (
     PeakCandidate,
     PeakCandidatesResult,
     PeakResult,
-    find_peak_and_area,
-    find_peak_candidates,
 )
+from xic_extractor.signal_processing import find_peak_and_area
 
 
 def _config(

@@ -4,7 +4,7 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from xic_extractor.config import ConfigError, ExtractionConfig, Target
+from xic_extractor.configuration.models import ConfigError, ExtractionConfig, Target
 from xic_extractor.output.messages import DiagnosticRecord
 from xic_extractor.peak_detection.model_selection import ExpectedDiffApprovalRecords
 from xic_extractor.processing_identity import AcquisitionSourceExpectation

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from xic_extractor.config import Target
+from xic_extractor.configuration.models import Target
 
 TARGET_SAMPLE_APPLICABILITY_RNA_CONTAINING = "rna_containing"
 

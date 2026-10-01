@@ -7,7 +7,7 @@ from pathlib import Path, PurePosixPath, PureWindowsPath
 
 from scripts.benchmark_parallel import _run_extraction_once
 from scripts.compare_workbooks import WorkbookCompareResult, compare_workbooks
-from xic_extractor.config import ConfigError
+from xic_extractor.configuration.models import ConfigError
 from xic_extractor.raw_reader import RawReaderError
 from xic_extractor.tabular_io import write_delimited_rows
 

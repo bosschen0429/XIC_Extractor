@@ -4,7 +4,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from xic_extractor.config import ExtractionConfig, Target
+from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )
@@ -17,6 +17,11 @@ from xic_extractor.extraction.scoring_factory import (
 )
 from xic_extractor.peak_detection.baseline import asls_baseline, asls_baseline_on_rt
 from xic_extractor.peak_detection.evidence_facts import build_candidate_evidence_facts
+from xic_extractor.peak_detection.models import (
+    PeakCandidate,
+    PeakDetectionResult,
+    PeakResult,
+)
 from xic_extractor.peak_detection.ms1_morphology import (
     compute_shape_metrics,
     gaussian15_positive_asls_residual_trace,
@@ -26,11 +31,6 @@ from xic_extractor.peak_detection.physical_peak_evaluation import (
 )
 from xic_extractor.peak_detection.scoring_metrics import local_sn_severity
 from xic_extractor.rt_prior_library import LibraryEntry
-from xic_extractor.signal_processing import (
-    PeakCandidate,
-    PeakDetectionResult,
-    PeakResult,
-)
 
 
 def test_factory_uses_delta_rt_library_and_exposes_prior_metadata() -> None:

@@ -29,7 +29,7 @@ from xic_extractor.alignment.cid_nl_inputs import (
     UntargetedCidNlAssessmentInput,
     UntargetedCidNlBackfillInput,
 )
-from xic_extractor.config import ExtractionConfig
+from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )
@@ -86,6 +86,7 @@ from xic_extractor.peak_detection.cid_nl_peak_support import (
     DdaCidNlPeakSupportRef,
     resolve_dda_cid_nl_peak_support_ref,
 )
+from xic_extractor.peak_detection.facade import find_peak_and_area
 from xic_extractor.peak_detection.hypotheses import build_peak_hypotheses
 from xic_extractor.peak_detection.ms1_trace_detection import detect_ms1_trace_peak
 from xic_extractor.peak_detection.observations import (
@@ -115,7 +116,6 @@ from xic_extractor.raw_reader import (
     RawReaderError,
 )
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
-from xic_extractor.signal_processing import find_peak_and_area
 from xic_extractor.xic_models import XICRequest
 
 VALIDATION_STATUS = "diagnostic_only"

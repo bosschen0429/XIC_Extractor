@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Sequence
 
 from xic_extractor import extractor
-from xic_extractor.config import load_config
+from xic_extractor.configuration.loader import load_config
 from xic_extractor.extractor import RunOutput
 from xic_extractor.tabular_io import write_delimited_rows
 

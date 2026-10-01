@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from xic_extractor.config import Target
+from xic_extractor.configuration.models import Target
 from xic_extractor.extraction.result_assembly import build_extraction_result
 from xic_extractor.extractor import ExtractionResult
 from xic_extractor.peak_detection.cid_nl_chromatographic_support import (

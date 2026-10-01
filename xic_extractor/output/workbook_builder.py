@@ -6,7 +6,7 @@ from pathlib import Path
 
 from openpyxl import Workbook
 
-from xic_extractor.config import ExtractionConfig, Target
+from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.injection_rolling import read_injection_order
 from xic_extractor.output.detection import MissingTargetedProductProjectionError
 from xic_extractor.output.review_queue_model import _review_queue_rows

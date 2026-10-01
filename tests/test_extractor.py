@@ -5,20 +5,20 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from xic_extractor.config import ExtractionConfig, Target
+from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.evidence.neutral_loss import CandidateMS2Evidence, NLResult
 from xic_extractor.extractor import ExtractionResult
 from xic_extractor.peak_detection.evidence_facts import (
     build_candidate_evidence_facts,
 )
-from xic_extractor.peak_detection.scoring_models import ScoringContext
-from xic_extractor.raw_reader import RawReaderError
-from xic_extractor.signal_processing import (
+from xic_extractor.peak_detection.models import (
     PeakCandidate,
     PeakCandidateScore,
     PeakDetectionResult,
     PeakResult,
 )
+from xic_extractor.peak_detection.scoring_models import ScoringContext
+from xic_extractor.raw_reader import RawReaderError
 
 _active_nl_fixture_result: NLResult | None = None
 

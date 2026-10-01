@@ -1,9 +1,9 @@
 from dataclasses import dataclass
 from typing import Literal, Protocol, cast
 
-from xic_extractor.config import ExtractionConfig, Target
+from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.evidence.neutral_loss import CandidateMS2Evidence, NLResult
-from xic_extractor.signal_processing import PeakDetectionResult, PeakResult
+from xic_extractor.peak_detection.models import PeakDetectionResult, PeakResult
 
 DiagnosticIssue = Literal[
     "PEAK_NOT_FOUND",

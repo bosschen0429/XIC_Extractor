@@ -22,13 +22,13 @@ from enum import Enum
 from pathlib import Path
 
 from xic_extractor.discovery.delta_mass_patterns import PT_PATTERN, DeltaMassPattern
-from xic_extractor.numeric_validation import require_finite_real
 from xic_extractor.tabular_io import (
     read_delimited_rows,
     read_tsv_with_header,
     validate_delimited_header,
     write_delimited_rows,
 )
+from xic_extractor.validation_primitives import require_finite_real
 
 DETECTED_FEATURES_COLUMNS = (
     "sample_stem",

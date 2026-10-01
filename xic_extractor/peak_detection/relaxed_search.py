@@ -3,7 +3,7 @@ from dataclasses import replace
 
 import numpy as np
 
-from xic_extractor.config import ExtractionConfig
+from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.peak_detection.models import PeakCandidate, PeakCandidatesResult
 from xic_extractor.settings_schema import CANONICAL_RESOLVER_MODE
 

@@ -4,7 +4,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import replace
 from typing import cast
 
-from xic_extractor.config import ExtractionConfig, Target
+from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.evidence.neutral_loss import CandidateMS2Evidence
 from xic_extractor.extraction.targeted_peak_hypotheses import (
     build_targeted_peak_hypotheses as build_peak_hypotheses,

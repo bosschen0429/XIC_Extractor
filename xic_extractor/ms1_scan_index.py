@@ -7,7 +7,7 @@ from typing import Any, Literal, Sequence
 import numpy as np
 from numpy.typing import NDArray
 
-from xic_extractor.numeric_validation import require_finite_real, require_integer
+from xic_extractor.validation_primitives import require_finite_real, require_integer
 from xic_extractor.xic_models import XICRequest, XICTrace
 
 MS1IndexIntensityMode = Literal["max", "sum"]

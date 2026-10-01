@@ -25,12 +25,11 @@ from xic_extractor.applications.untargeted.application import (
     run_untargeted_application,
     validate_untargeted_application_options,
 )
-from xic_extractor.config import ExtractionConfig
 from xic_extractor.configuration.execution_profile import (
     DEFAULT_ALIGNMENT_WORKER_BACKEND,
     load_execution_profile,
 )
-from xic_extractor.configuration.models import ConfigError
+from xic_extractor.configuration.models import ConfigError, ExtractionConfig
 from xic_extractor.configuration.signal_processing_profile import (
     DEFAULT_SIGNAL_PROCESSING_PROFILE,
     SignalProcessingProfile,

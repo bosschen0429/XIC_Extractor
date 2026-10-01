@@ -17,7 +17,7 @@ from xic_extractor.applications.targeted.product_model import (
 from xic_extractor.applications.targeted.product_projection import (
     build_targeted_product_projection,
 )
-from xic_extractor.config import ExtractionConfig, Target
+from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.configuration.signal_processing_profile import (
     resolve_signal_processing_profile,
 )
@@ -38,6 +38,7 @@ from xic_extractor.extraction.targeted_production_workflow import (
 )
 from xic_extractor.extractor import ExtractionResult, FileResult, RunOutput
 from xic_extractor.peak_detection import capture as capture_owner
+from xic_extractor.peak_detection.facade import find_peak_and_area
 from xic_extractor.peak_detection.hypotheses import build_peak_hypotheses
 from xic_extractor.peak_detection.observations import (
     physical_peak_observation_integration,
@@ -51,7 +52,6 @@ from xic_extractor.processing_identity import (
     AcquisitionSourceExpectation,
     build_acquisition_source_identity,
 )
-from xic_extractor.signal_processing import find_peak_and_area
 
 
 def test_retained_trace_reaches_one_finalized_target_result(tmp_path: Path) -> None:

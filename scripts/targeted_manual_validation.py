@@ -20,7 +20,8 @@ from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
 
 from xic_extractor import extractor
-from xic_extractor.config import ConfigError, Target, load_config
+from xic_extractor.configuration.loader import load_config
+from xic_extractor.configuration.models import ConfigError, Target
 from xic_extractor.raw_reader import RawReaderError
 from xic_extractor.settings_schema import (
     CANONICAL_SETTINGS_DEFAULTS,

@@ -4,7 +4,7 @@ from concurrent.futures import Future
 from dataclasses import replace
 from pathlib import Path
 
-from xic_extractor.config import ExtractionConfig, Target
+from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.extractor import FileResult, RawFileExtractionResult
 
 

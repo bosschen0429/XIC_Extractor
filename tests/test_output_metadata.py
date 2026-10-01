@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 from openpyxl import Workbook
 
-from xic_extractor.config import ExtractionConfig
+from xic_extractor.configuration.models import ExtractionConfig
 
 
 def test_app_version_reads_installed_distribution_version(

@@ -40,7 +40,7 @@ from xic_extractor.alignment.untargeted_finalized_matrix import (
     iter_completed_untarget_batch_writer_inputs,
     project_completed_untarget_batch_writer_inputs,
 )
-from xic_extractor.config import ExtractionConfig
+from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.configuration.signal_processing_profile import (
     DEFAULT_SIGNAL_PROCESSING_PROFILE,
     SignalProcessingProfile,

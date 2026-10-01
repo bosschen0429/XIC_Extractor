@@ -15,7 +15,7 @@ from xic_extractor.acquisition_contract import (
     acquired_trace_content_id,
     mint_trace_acquisition_capability,
 )
-from xic_extractor.config import ExtractionConfig
+from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )
@@ -42,6 +42,8 @@ from xic_extractor.discovery.priority import (
 )
 from xic_extractor.mass_accuracy import neutral_loss_match, weighted_ion_mz, within_ppm
 from xic_extractor.peak_detection.background_shape import is_provisional_peak_shape
+from xic_extractor.peak_detection.facade import find_peak_and_area
+from xic_extractor.peak_detection.models import PeakResult
 from xic_extractor.peak_detection.ms1_morphology import DEFAULT_GAUSSIAN15_WINDOW_POINTS
 from xic_extractor.peak_detection.ms1_trace_detection import detect_ms1_trace_peak
 from xic_extractor.peak_detection.physical_peak_evaluation import (
@@ -59,7 +61,6 @@ from xic_extractor.peak_detection.physical_peak_models import (
 )
 from xic_extractor.processing_identity import AcquisitionSourceIdentity
 from xic_extractor.raw_superwindow_source import RawSuperWindowSource
-from xic_extractor.signal_processing import PeakResult, find_peak_and_area
 from xic_extractor.xic_models import XICRequest
 
 _TagIntersectionStatus = Literal["not_required", "complete", "incomplete"]

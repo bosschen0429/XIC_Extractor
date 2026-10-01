@@ -10,7 +10,7 @@ from uuid import UUID
 import pytest
 
 import xic_extractor.processing_identity as processing_identity_module
-from xic_extractor.config import ExtractionConfig, Target
+from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.configuration.target_identity import mint_target_list_snapshot
 from xic_extractor.discovery.models import DiscoverySettings, NeutralLossProfile
 from xic_extractor.extraction.targeted_inputs import (

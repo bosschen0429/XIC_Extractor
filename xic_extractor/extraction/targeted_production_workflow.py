@@ -28,7 +28,7 @@ from xic_extractor.applications.targeted.application import (
     FinalizedTargetProductionResult,
     TargetedApplicationRequest,
 )
-from xic_extractor.config import ConfigError, ExtractionConfig, Target
+from xic_extractor.configuration.models import ConfigError, ExtractionConfig, Target
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
     resolve_signal_processing_profile,

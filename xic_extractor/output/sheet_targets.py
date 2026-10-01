@@ -3,7 +3,7 @@ from __future__ import annotations
 from openpyxl.comments import Comment
 from openpyxl.utils import get_column_letter
 
-from xic_extractor.config import Target
+from xic_extractor.configuration.models import Target
 from xic_extractor.output.workbook_styles import (
     _SAMPLE_HEADER,
     _TARGETS_HEADERS,

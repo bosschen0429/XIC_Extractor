@@ -5,7 +5,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
-from xic_extractor.config import Target
+from xic_extractor.configuration.models import Target
 from xic_extractor.extraction.result_assembly import reproject_extraction_result
 from xic_extractor.peak_detection.selection_decision import (
     PeakHypothesisSelectionDecision,

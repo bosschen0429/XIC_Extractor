@@ -12,7 +12,8 @@ from xic_extractor.applications.targeted.application import (
     build_canonical_targeted_application_service,
     build_targeted_application_request,
 )
-from xic_extractor.config import ConfigError, ExtractionConfig, load_config
+from xic_extractor.configuration.loader import load_config
+from xic_extractor.configuration.models import ConfigError, ExtractionConfig
 from xic_extractor.diagnostics.targeted_ms1_shape_identity_auto_diff import (
     write_targeted_ms1_shape_identity_auto_diff_artifacts,
 )

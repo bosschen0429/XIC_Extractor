@@ -5,11 +5,11 @@ from types import SimpleNamespace
 import pytest
 
 from gui.workers.pipeline_worker import PipelineWorker
-from xic_extractor.config import ConfigError, ExtractionConfig, Target
+from xic_extractor.configuration.models import ConfigError, ExtractionConfig, Target
 from xic_extractor.evidence.neutral_loss import NLResult
 from xic_extractor.extractor import ExtractionResult, FileResult, RunOutput
+from xic_extractor.peak_detection.models import PeakDetectionResult, PeakResult
 from xic_extractor.raw_reader import RawReaderError
-from xic_extractor.signal_processing import PeakDetectionResult, PeakResult
 
 
 @pytest.fixture(autouse=True)
@@ -133,7 +133,7 @@ def test_worker_runs_shared_pipeline_and_emits_structured_summary(
         calls["excel_output_path"] = output_path
         return output_path
 
-    monkeypatch.setattr(module.config_module, "load_config", _load_config)
+    monkeypatch.setattr(module.config_loader, "load_config", _load_config)
     monkeypatch.setattr(module.extractor, "run", _extract)
     monkeypatch.setattr(module, "write_excel_from_run_output", _excel)
     worker = PipelineWorker(config_dir)
@@ -178,7 +178,7 @@ def test_worker_should_stop_reflects_interruption(tmp_path: Path, monkeypatch) -
     calls: dict[str, object] = {}
 
     monkeypatch.setattr(
-        module.config_module,
+        module.config_loader,
         "load_config",
         lambda _path: (config, [target]),
     )
@@ -218,7 +218,7 @@ def test_worker_does_not_write_excel_or_emit_summary_after_cancellation(
     cancelled: list[bool] = []
 
     monkeypatch.setattr(
-        module.config_module,
+        module.config_loader,
         "load_config",
         lambda _path: (config, [target]),
     )
@@ -258,7 +258,7 @@ def test_worker_emits_finished_when_interruption_follows_successful_publication(
     cancelled: list[bool] = []
 
     monkeypatch.setattr(
-        module.config_module,
+        module.config_loader,
         "load_config",
         lambda _path: (config, [target]),
     )
@@ -306,7 +306,7 @@ def test_worker_emits_user_friendly_errors(
 ) -> None:
     module = _module()
     monkeypatch.setattr(
-        module.config_module,
+        module.config_loader,
         "load_config",
         lambda _path: (_ for _ in ()).throw(exception),
     )
@@ -350,7 +350,7 @@ def test_real_targeted_view_restores_controls_and_preserves_run_problem(
         output_dir.mkdir()
         stale_excel.write_bytes(b"previous attempt")
     monkeypatch.setattr(
-        module.config_module, "load_config", lambda path: (config, [_target("Analyte")])
+        module.config_loader, "load_config", lambda path: (config, [_target("Analyte")])
     )
     output_errors = []
 
@@ -440,7 +440,7 @@ def test_targeted_stop_preserves_queued_worker_terminal_outcome(
     started, release = Event(), Event()
     config = _config(tmp_path)
     monkeypatch.setattr(
-        module.config_module, "load_config", lambda path: (config, [_target("Analyte")])
+        module.config_loader, "load_config", lambda path: (config, [_target("Analyte")])
     )
 
     class Service:

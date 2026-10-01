@@ -25,7 +25,7 @@ from xic_extractor.applications.targeted.application import (
     TargetedRuntimeLifecycleRunner,
     build_targeted_application_request,
 )
-from xic_extractor.config import ExtractionConfig, Target
+from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.execution._finalization import (
     RuntimeArtifactDisposition,
     RuntimeResourceCleanupOutcome,

@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 import xic_extractor.peak_detection.evidence_facts as evidence_facts_module
-from xic_extractor.config import ExtractionConfig
+from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )
@@ -24,6 +24,7 @@ from xic_extractor.peak_detection.evidence_facts import (
     projected_confidence_from_candidate_facts,
     projected_reason_from_candidate_facts,
 )
+from xic_extractor.peak_detection.facade import find_peak_and_area
 from xic_extractor.peak_detection.integration_result import IntegrationResult
 from xic_extractor.peak_detection.models import PeakCandidate, PeakResult
 from xic_extractor.peak_detection.ms1_morphology import (
@@ -49,7 +50,6 @@ from xic_extractor.peak_detection.physical_peak_identity import (
 )
 from xic_extractor.peak_detection.physical_peak_models import PhysicalPeakQuestion
 from xic_extractor.peak_detection.scoring_models import ScoringContext
-from xic_extractor.signal_processing import find_peak_and_area
 
 
 def test_trace_window_evidence_uses_shared_gaussian15_own_max_trace() -> None:

@@ -5,7 +5,7 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from xic_extractor.config import ConfigError, ExtractionConfig, Target
+from xic_extractor.configuration.models import ConfigError, ExtractionConfig, Target
 from xic_extractor.extraction.istd_prepass import extract_istd_anchors_only
 from xic_extractor.extraction.scoring_factory import build_scoring_context_factory
 from xic_extractor.extraction.target_extraction import extract_raw_file_result

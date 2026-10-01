@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 import numpy as np
 
-from xic_extractor.config import ExtractionConfig
+from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.discovery.grouping import group_discovery_seeds
 from xic_extractor.discovery.models import DiscoverySettings, NeutralLossProfile
 from xic_extractor.discovery.ms1_backfill import backfill_ms1_candidates

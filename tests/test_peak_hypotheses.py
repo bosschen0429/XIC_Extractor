@@ -7,13 +7,13 @@ from xic_extractor.extraction.targeted_peak_hypotheses import (
 )
 from xic_extractor.ms2_trace_evidence import MS2TraceEvidence
 from xic_extractor.peak_detection.hypotheses import hypothesis_audit_id
-from xic_extractor.peak_detection.traces import Trace, targeted_trace_group
-from xic_extractor.signal_processing import (
+from xic_extractor.peak_detection.models import (
     PeakCandidate,
     PeakCandidateScore,
     PeakDetectionResult,
     PeakResult,
 )
+from xic_extractor.peak_detection.traces import Trace, targeted_trace_group
 
 
 def test_hypothesis_id_is_deterministic() -> None:

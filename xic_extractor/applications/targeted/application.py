@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Literal, Protocol, TypeAlias
 from xic_extractor.alignment.result.application_result import (
     FinalizedTargetApplicationResult,
 )
-from xic_extractor.config import ConfigError, ExtractionConfig, Target
+from xic_extractor.configuration.models import ConfigError, ExtractionConfig, Target
 from xic_extractor.execution._finalization import RuntimeResourceReservation
 from xic_extractor.execution._lifecycle import AttemptRuntime
 from xic_extractor.execution.attempt import (

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from xic_extractor.config import ExtractionConfig
+from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.instrument_qc.models import InstrumentQCStatus, SDOLEKTrendRow
 from xic_extractor.instrument_qc.pipeline_contracts import XICSource
 from xic_extractor.instrument_qc.targets import InstrumentQCTarget

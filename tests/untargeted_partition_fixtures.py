@@ -15,7 +15,7 @@ from xic_extractor.alignment.result.application_result import (
     UntargetBatchApplicationResultRequest,
     finalize_alignment_result,
 )
-from xic_extractor.config import ExtractionConfig
+from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )

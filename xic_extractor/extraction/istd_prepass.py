@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from xic_extractor.config import ExtractionConfig, Target
+from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.extraction import target_extraction
 from xic_extractor.output.messages import DiagnosticRecord
 from xic_extractor.processing_identity import AcquisitionSourceExpectation

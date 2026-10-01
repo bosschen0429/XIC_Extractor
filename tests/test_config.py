@@ -3,13 +3,10 @@ from pathlib import Path
 
 import pytest
 
-from xic_extractor.config import (
-    ConfigError,
-    ExtractionConfig,
-    compute_target_config_hash,
-    load_config,
-    migrate_settings_dict,
-)
+from xic_extractor.configuration.hashing import compute_target_config_hash
+from xic_extractor.configuration.loader import load_config
+from xic_extractor.configuration.models import ConfigError, ExtractionConfig
+from xic_extractor.configuration.settings import migrate_settings_dict
 from xic_extractor.settings_schema import (
     CANONICAL_RESOLVER_MODE,
     CANONICAL_SETTINGS_DEFAULTS,

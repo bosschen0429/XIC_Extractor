@@ -1,5 +1,5 @@
 from xic_extractor.extraction.anchors import apply_anchor_mismatch_penalty
-from xic_extractor.signal_processing import PeakDetectionResult, PeakResult
+from xic_extractor.peak_detection.models import PeakDetectionResult, PeakResult
 
 
 def test_anchor_mismatch_penalty_syncs_score_breakdown_confidence_and_caps() -> None:

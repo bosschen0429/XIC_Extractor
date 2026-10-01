@@ -1,5 +1,5 @@
 from gui.sections.settings_section import SettingsSection
-from xic_extractor.config import migrate_settings_dict
+from xic_extractor.configuration.settings import migrate_settings_dict
 
 
 def _canonical_settings() -> dict[str, str]:

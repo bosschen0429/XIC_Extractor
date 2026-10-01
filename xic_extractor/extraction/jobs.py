@@ -10,7 +10,7 @@ from pathlib import Path
 from types import ModuleType
 from typing import TYPE_CHECKING, Any
 
-from xic_extractor.config import ExtractionConfig, Target
+from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.extraction.scoring_factory import build_scoring_context_factory
 from xic_extractor.extractor import RawFileExtractionResult
 from xic_extractor.peak_detection.model_selection import ExpectedDiffApprovalRecord

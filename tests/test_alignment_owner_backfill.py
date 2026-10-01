@@ -23,7 +23,7 @@ from xic_extractor.alignment.backfill_request_plan import (
 )
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.owner_clustering import OwnerAlignedFeature
-from xic_extractor.config import ExtractionConfig
+from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )

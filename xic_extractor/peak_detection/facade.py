@@ -4,7 +4,7 @@ from collections.abc import Callable
 
 import numpy as np
 
-from xic_extractor.config import ExtractionConfig
+from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.peak_detection import engine_candidates as candidate_flow
 from xic_extractor.peak_detection.candidate_scoring import score_candidate
 from xic_extractor.peak_detection.candidate_selection import (

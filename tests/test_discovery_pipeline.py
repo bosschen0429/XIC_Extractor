@@ -16,7 +16,7 @@ from xic_extractor.acquisition_contract import (
     _mint_raw_acquisition_session_receipt,
     mint_raw_acquisition_session_capability,
 )
-from xic_extractor.config import ExtractionConfig
+from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.diagnostics.timing import TimingRecord, TimingRecorder
 from xic_extractor.discovery.csv_reader import (
     read_discovery_batch_index,
@@ -48,6 +48,7 @@ from xic_extractor.discovery.pipeline import (
     run_discovery,
     run_discovery_batch,
 )
+from xic_extractor.peak_detection.models import PeakDetectionResult, PeakResult
 from xic_extractor.processing_identity import (
     AcquisitionSourceIdentity,
     build_acquisition_source_identity,
@@ -58,7 +59,6 @@ from xic_extractor.raw_reader import (
     Ms2Scan,
     Ms2ScanEvent,
 )
-from xic_extractor.signal_processing import PeakDetectionResult, PeakResult
 from xic_extractor.xic_models import XICRequest, XICTrace
 
 NEUTRAL_LOSS_DA = 116.0474

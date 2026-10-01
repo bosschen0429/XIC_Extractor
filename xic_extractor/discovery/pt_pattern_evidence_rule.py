@@ -13,8 +13,8 @@ from dataclasses import dataclass
 from typing import Literal
 from urllib.parse import quote
 
-from xic_extractor.numeric_validation import require_finite_real, require_integer
 from xic_extractor.tabular_io import optional_float
+from xic_extractor.validation_primitives import require_finite_real, require_integer
 
 REQUIRED_COMBINED_STATUS = "pt_pattern_detected_diagnostic"
 VALID_COMBINED_PT_PATTERN_STATUSES = frozenset(

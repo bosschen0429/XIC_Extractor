@@ -31,7 +31,6 @@ from xic_extractor.ms1_scan_index import (
     MS1ScanIndexProvenance,
     validate_ms1_scan_index,
 )
-from xic_extractor.numeric_validation import require_finite_real
 from xic_extractor.tabular_io import (
     file_sha256,
     optional_float,
@@ -39,6 +38,7 @@ from xic_extractor.tabular_io import (
     text_value,
     write_delimited_rows,
 )
+from xic_extractor.validation_primitives import require_finite_real
 
 SCHEMA_VERSION = "pt_pattern_same_scan_replay"
 READINESS_TIER = "diagnostic_only"

@@ -5,13 +5,13 @@ from typing import Any, TypedDict
 
 from PyQt6.QtCore import QThread, pyqtSignal
 
-from xic_extractor import config as config_module
 from xic_extractor import extractor
 from xic_extractor.applications.targeted.application import (
     build_canonical_targeted_application_service,
     build_targeted_application_request,
 )
-from xic_extractor.config import ConfigError, ExtractionConfig, Target
+from xic_extractor.configuration import loader as config_loader
+from xic_extractor.configuration.models import ConfigError, ExtractionConfig, Target
 from xic_extractor.extractor import ExtractionResult, RunOutput
 from xic_extractor.output.method_manifest import MethodManifestContext
 from xic_extractor.raw_reader import RawReaderError
@@ -47,7 +47,7 @@ class PipelineWorker(QThread):
 
     def run(self) -> None:
         try:
-            config, targets = config_module.load_config(self._config_dir)
+            config, targets = config_loader.load_config(self._config_dir)
             self.output_dir = config.output_csv.parent
             excel_path = _excel_output_path(config)
             self.stage = "Targeted 分析與結果發布"

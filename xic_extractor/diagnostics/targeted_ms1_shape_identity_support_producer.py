@@ -5,7 +5,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from xic_extractor.config import load_config
+from xic_extractor.configuration.loader import load_config
 from xic_extractor.diagnostics.targeted_ms1_shape_identity import (
     build_targeted_ms1_shape_identity_rows,
     write_targeted_ms1_shape_identity_tsv,

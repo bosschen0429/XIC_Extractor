@@ -7,7 +7,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, replace
 from typing import cast
 
-from xic_extractor.config import ExtractionConfig, Target
+from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.evidence.neutral_loss import CandidateMS2Evidence
 from xic_extractor.extraction.ms2_selection import selected_candidate_ms2_evidence
 from xic_extractor.extraction.scoring_factory import selected_candidate
@@ -24,7 +24,7 @@ from xic_extractor.peak_detection.model_selection import (
     expected_diff_approval_for_result,
     model_select_peak_hypothesis,
 )
-from xic_extractor.peak_detection.models import PeakDetectionResult
+from xic_extractor.peak_detection.models import PeakCandidate, PeakDetectionResult
 from xic_extractor.peak_detection.ms1_morphology import (
     configured_morphology_window_points,
 )
@@ -33,7 +33,6 @@ from xic_extractor.peak_detection.selection_decision import (
     selection_decision_from_hypothesis,
 )
 from xic_extractor.peak_detection.traces import TraceGroup
-from xic_extractor.signal_processing import PeakCandidate
 from xic_extractor.target_sample_applicability import (
     TARGET_SAMPLE_APPLICABILITY_RNA_CONTAINING,
     target_sample_is_applicable,

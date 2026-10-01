@@ -4,11 +4,11 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-from xic_extractor import raw_reader, signal_processing
+from xic_extractor import raw_reader
 from xic_extractor.applications.targeted.product_model import (
     TargetedProductProjection,
 )
-from xic_extractor.config import ExtractionConfig, Target
+from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.evidence.neutral_loss import CandidateMS2Evidence, NLResult
 from xic_extractor.extraction.scoring_factory import selected_candidate
 from xic_extractor.output.messages import (
@@ -24,6 +24,7 @@ from xic_extractor.peak_detection.model_selection import (
     ExpectedDiffApprovalRecords,
     PeakModelSelectionResult,
 )
+from xic_extractor.peak_detection.models import PeakDetectionResult, PeakResult
 from xic_extractor.peak_detection.physical_peak_models import PhysicalPeakEvaluation
 from xic_extractor.peak_detection.selection_decision import (
     PeakHypothesisSelectionDecision,
@@ -32,9 +33,6 @@ from xic_extractor.peak_detection.traces import Trace
 from xic_extractor.rt_prior_library import LibraryEntry
 
 open_raw = raw_reader.open_raw
-PeakDetectionResult = signal_processing.PeakDetectionResult
-PeakResult = signal_processing.PeakResult
-find_peak_and_area = signal_processing.find_peak_and_area
 
 __all__ = [
     "DiagnosticIssue",

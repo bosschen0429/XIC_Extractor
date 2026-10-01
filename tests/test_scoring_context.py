@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from xic_extractor.config import ExtractionConfig, Target
+from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )
@@ -18,6 +18,7 @@ from xic_extractor.peak_detection.candidate_scoring import score_candidate
 from xic_extractor.peak_detection.candidate_selection import (
     select_candidate_by_evidence,
 )
+from xic_extractor.peak_detection.facade import find_peak_and_area
 from xic_extractor.peak_detection.ms1_morphology import (
     DEFAULT_GAUSSIAN15_WINDOW_POINTS,
     MS1_MORPHOLOGY_AREA_SOURCE,
@@ -27,7 +28,6 @@ from xic_extractor.peak_detection.physical_peak_evaluation import (
     prepare_physical_signal,
 )
 from xic_extractor.rt_prior_library import LibraryEntry
-from xic_extractor.signal_processing import find_peak_and_area
 
 
 def test_istd_context_uses_rolling_median_prior() -> None:

@@ -4,7 +4,8 @@ from typing import Any
 
 import pytest
 
-from xic_extractor.config import ConfigError, Target, compute_target_config_hash
+from xic_extractor.configuration.hashing import compute_target_config_hash
+from xic_extractor.configuration.models import ConfigError, Target
 from xic_extractor.rt_prior_library import LibraryEntry
 from xic_extractor.target_pair_rt_calibration import (
     TARGET_PAIR_RT_CALIBRATION_FIELDS,

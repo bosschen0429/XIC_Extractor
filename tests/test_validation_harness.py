@@ -13,7 +13,7 @@ from scripts.validation_harness import (
     main,
     run_validation_specs,
 )
-from xic_extractor.config import ConfigError
+from xic_extractor.configuration.models import ConfigError
 from xic_extractor.raw_reader import RawReaderError
 
 
