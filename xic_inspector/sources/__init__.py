@@ -22,13 +22,13 @@ def __getattr__(name):
     raise AttributeError(name)
 
 
-def open_source(path):
+def open_source(path, *, query_only=False):
     """Select a source adapter without interpreting its schema here."""
     if path.suffix.lower() == ".json":
         return CurveBundleSource(path)
     from xic_inspector.sources.cid_nl import CidNlSource
 
-    return CidNlSource(path)
+    return CidNlSource(path, query_only=query_only)
 
 __all__ = [
     "EvidenceLocator",

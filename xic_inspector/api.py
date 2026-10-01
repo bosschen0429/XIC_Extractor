@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import math
+from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -19,7 +20,7 @@ from xic_inspector.selection.canonical import (
 from xic_inspector.selection.query import filter_by_attention, filter_by_query
 from xic_inspector.selection.sampler import (
     SAMPLING_ALGORITHM,
-    review_case_key,
+    review_case,
     sample_cross_sample_sha256,
 )
 from xic_inspector.sources import (
@@ -239,7 +240,7 @@ def generate_report(
         raise InspectorError(3, f"Source unavailable: {report_path}")
 
     try:
-        source = open_source(report_path)
+        source = open_source(report_path, query_only=selection.strategy == "query")
         summary = source.summary
     except ExplanationUnavailableError as exc:
         raise InspectorError(3, str(exc), cause=exc) from exc
@@ -411,6 +412,18 @@ def generate_report(
     _check_cancel()
 
     # Stage: Render
+    case_counts = Counter(
+        "/".join(
+            review_case(
+                item["kind"],
+                item["stratum"],
+                item["review_summary"]["observed_sample_count"],
+                item["review_summary"]["scope_sample_count"],
+                item["review_summary"]["origin_kinds"],
+            )
+        )
+        for item in rendered_items
+    )
     payload_dict = {
         "summary": summary,
         "selection": {
@@ -419,12 +432,7 @@ def generate_report(
             "seed": selection.seed,
             "limit": selection.limit,
             "offset": selection.offset,
-            "case_counts": {
-                "/".join(case): sum(
-                    review_case_key(item) == case for item in selected_items
-                )
-                for case in sorted({review_case_key(item) for item in selected_items})
-            },
+            "case_counts": dict(sorted(case_counts.items())),
             "sample_ids": selection.sample_ids,
             "candidate_ids": selection.candidate_ids,
             "group_ids": selection.group_ids,

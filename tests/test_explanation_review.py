@@ -56,9 +56,9 @@ def test_default_review_keeps_values_and_query_without_curves(
     )
     actual = sorted(
         (row["canonical_sample_identity_id"], row["variant"], row["value"])
-        for row in read_explanation_metadata(report).records.get(
-            "cell_decisions", {}
-        ).values()
+        for row in read_explanation_metadata(report)
+        .records.get("cell_decisions", {})
+        .values()
     )
     assert actual == expected
     assert read_cid_nl_curves(report) == []
@@ -91,6 +91,33 @@ def test_default_review_keeps_values_and_query_without_curves(
         (item.serialized_ref, item.stratum, item.details["review_summary"])
         for item in expected_items
     ]
+
+    # Query coordinates and eligibility must not construct presentation or
+    # decode every row's values before filtering. This guards the measured
+    # all-population work that made one selected item expensive.
+    def forbidden(*args, **kwargs):
+        raise AssertionError("query population loaded presentation/value payloads")
+
+    with monkeypatch.context() as query_patch:
+        query_patch.setattr(CidNlSource, "_presentation_item", forbidden)
+        query_patch.setattr(
+            "xic_extractor.diagnostics.alignment_explanation.unpack_cells", forbidden
+        )
+        query_source = CidNlSource(report, query_only=True)
+        query_items = query_source.load_items(scope)
+        assert "method_assessments" not in query_source.records
+        assert [
+            (item.serialized_ref, item.sample_ids, item.witnesses)
+            for item in query_items
+        ] == [
+            (item.serialized_ref, item.sample_ids, item.witnesses)
+            for item in expected_items
+        ]
+    # The prior compact schema is already used by retained reports.
+    with sqlite3.connect(report) as db:
+        db.execute("ALTER TABLE row_cells DROP COLUMN sample_mask")
+    old_schema_items = CidNlSource(report, query_only=True).load_items(scope)
+    assert old_schema_items == query_items
 
 
 def test_selected_curves_are_explicit_and_other_ranges_stay_small(
@@ -143,6 +170,7 @@ def test_existing_full_report_conversion_preserves_sample_values(tmp_path, monke
     for candidate in (candidates["S1"][0], candidates["S2"][0]):
         old = read_cid_nl_explanation(full, candidate_id=candidate.candidate_id)
         new = read_cid_nl_explanation(review, candidate_id=candidate.candidate_id)
+
         def values(detail):
             return sorted(
                 (
@@ -153,6 +181,7 @@ def test_existing_full_report_conversion_preserves_sample_values(tmp_path, monke
                 )
                 for row in detail["records"].get("cell_decisions", [])
             )
+
         assert values(old) == values(new)
         assert (
             old["records"]["final_groups"][0]["member_subjects"]

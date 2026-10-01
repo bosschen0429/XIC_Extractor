@@ -22,6 +22,7 @@ from xic_extractor.diagnostics.alignment_explanation import (
     read_cid_nl_explanation,
     read_explanation_metadata,
     read_explanation_selection,
+    read_review_row_samples,
 )
 from xic_extractor.diagnostics.explanation_review import REVIEW_SCHEMA_VERSION
 from xic_inspector.selection.canonical import (
@@ -38,19 +39,49 @@ def read_summary(path: str | Path) -> dict[str, Any]:
     return read_cid_nl_explanation(path)
 
 
+def _attention_reason(kind: str, fact: dict[str, Any]) -> str | None:
+    """One recorded-fact predicate for selection and its displayed explanation."""
+    if kind == "cell_decisions":
+        if (
+            fact.get("variant") == "unresolved"
+            and fact.get("value", fact.get("quantitative_value")) is None
+        ):
+            return "unresolved"
+    elif kind == "method_assessments" and fact.get("method_result") == "HOLD":
+        return "HOLD"
+    elif kind == "initial_edges":
+        evidence = fact.get("initial_evidence", {})
+        failure = evidence.get("failure", evidence.get("reason"))
+        if failure in ("ambiguous_owner", "identity_conflict"):
+            return failure
+        if fact.get("disposition") == "review_only":
+            return "review_only"
+    return None
+
+
 class CidNlSource:
     """One report's metadata projection and selected evidence retrieval."""
 
     def __init__(
-        self, path: Path, *, metadata: ExplanationMetadata | None = None
+        self,
+        path: Path,
+        *,
+        metadata: ExplanationMetadata | None = None,
+        query_only: bool = False,
     ) -> None:
         self.path = path
         from_selection = metadata is not None
-        metadata = metadata or read_explanation_metadata(path, selection_only=True)
+        metadata = metadata or read_explanation_metadata(
+            path, selection_only=True, query_only=query_only
+        )
         self.summary = metadata.summary
         self._compact_selection = (
             not from_selection
             and self.summary["schema_version"] == REVIEW_SCHEMA_VERSION
+        )
+        self._query_only = self._compact_selection and query_only
+        self._row_samples = (
+            read_review_row_samples(path, self.summary) if self._query_only else {}
         )
         self._selection_cells: Callable[[str], dict[str, dict[str, Any]]] | None = None
         self.request_id = self.summary.get("processing_request_id", "")
@@ -96,7 +127,7 @@ class CidNlSource:
             self.record_links.setdefault(record, set()).add(key)
 
     def load_items(self, sample_ids: set[str]) -> list[CanonicalItem]:
-        if self._compact_selection:
+        if self._compact_selection and not self._query_only:
             with open_review_cells(self.path, self.summary) as read_cells:
                 self._selection_cells = read_cells
                 try:
@@ -107,6 +138,9 @@ class CidNlSource:
 
     def _load_items(self, sample_ids: set[str]) -> list[CanonicalItem]:
         items = []
+        build_item = (
+            self._selection_item if self._compact_selection else self._presentation_item
+        )
         item_keys: dict[str, set[tuple[str, str]]] = {}
         row_groups = set()
         grouped = set()
@@ -116,19 +150,19 @@ class CidNlSource:
             row_groups.add(gid)
             keys = self._linked("rows", rid)
             grouped.update(keys)
-            item = self._item("row", rid, gid, keys, sample_ids, payload)
+            item = build_item("row", rid, gid, keys, sample_ids, payload)
             items.append(item)
             item_keys[item.serialized_ref] = keys
         for gid, payload in self.records.get("final_groups", {}).items():
             keys = self._linked("final_groups", gid)
             grouped.update(keys)
             if gid not in row_groups:
-                item = self._item("group", gid, gid, keys, sample_ids, payload)
+                item = build_item("group", gid, gid, keys, sample_ids, payload)
                 items.append(item)
                 item_keys[item.serialized_ref] = keys
         for key, payload in self.candidates.items():
             if key not in grouped:
-                item = self._item("candidate", key[0], None, {key}, sample_ids, payload)
+                item = build_item("candidate", key[0], None, {key}, sample_ids, payload)
                 items.append(item)
                 item_keys[item.serialized_ref] = {key}
         item_by_ref = {item.serialized_ref: item for item in items}
@@ -265,19 +299,175 @@ class CidNlSource:
     def _linked(self, kind: str, rid: str) -> set[tuple[str, str]]:
         return set(self.record_links.get((kind, rid), ()))
 
-    def _item(self, kind, identifier, gid, keys, scope, payload) -> CanonicalItem:
-        if self._compact_selection and kind == "row":
+    def _witnesses(self, kind, identifier, gid, scoped) -> list[Witness]:
+        """Candidate/observation coordinates shared by selection and presentation."""
+        group = self.records.get("final_groups", {}).get(gid, {})
+        members_by_sample: dict[str, set[str]] = {}
+        for member in group.get("member_subjects", []):
+            members_by_sample.setdefault(
+                member.get("canonical_sample_identity_id"), set()
+            ).update(member.get("physical_observation_ids", []))
+        witnesses: list[Witness] = []
+        for cid, sid in scoped:
+            candidate = self.candidates[cid, sid]
+            observations = [
+                observation
+                for k, r in self.links.get((cid, sid), ())
+                if k == "terminal_subjects"
+                for observation in self.records[k][r].get("observations", [])
+            ]
+            member_observations = members_by_sample.get(sid)
+            if member_observations:
+                observations = [
+                    observation
+                    for observation in observations
+                    if observation.get("peak_observation_content_id")
+                    in member_observations
+                ]
+            if not observations:
+                observations = [{"rt_apex_min": candidate.get("rt_apex_min")}]
+            witnesses.extend(
+                Witness(
+                    canonical_sample_identity_id=sid,
+                    candidate_id=cid,
+                    group_hypothesis_id=gid,
+                    row_key_id=identifier if kind == "row" else None,
+                    precursor_mz=candidate.get("precursor_mz"),
+                    rt_apex_min=observation.get("rt_apex_min"),
+                    observation_id=observation.get("peak_observation_content_id"),
+                    sample_stem=candidate.get("sample_stem"),
+                )
+                for observation in observations
+            )
+        return witnesses
+
+    def _selection_item(
+        self, kind, identifier, gid, keys, scope, payload
+    ) -> CanonicalItem:
+        """Reduce scoped facts once; never construct per-sample presentation."""
+        scoped = sorted(key for key in keys if key[1] in scope)
+        sample_ids = {sid for _, sid in scoped}
+        witnesses = self._witnesses(kind, identifier, gid, scoped)
+        if self._query_only:
+            sample_ids.update(self._row_samples.get(identifier, set()) & scope)
+            _, ref = build_canonical_ref(
+                kind,
+                self.request_id,
+                self.attempt_id,
+                identifier,
+                sample_id=next(iter(keys))[1] if kind == "candidate" else None,
+            )
+            return CanonicalItem(
+                kind=kind,
+                request_id=self.request_id,
+                attempt_id=self.attempt_id,
+                identifier=identifier,
+                serialized_ref=ref,
+                sample_ids=tuple(sorted(sample_ids)),
+                witnesses=tuple(witnesses),
+                stratum="unclassified",
+                details={"review_summary": {}},
+            )
+        observed = {
+            witness.canonical_sample_identity_id
+            for witness in witnesses
+            if witness.observation_id
+        }
+        group = self.records.get("final_groups", {}).get(gid, {})
+        members = group.get("member_subjects", [])
+        observed.update(
+            member["canonical_sample_identity_id"]
+            for member in members
+            if member.get("canonical_sample_identity_id") in scope
+            and member.get("physical_observation_ids")
+        )
+        attention = group.get("disposition") in ("provisional", "unresolved")
+        excluded = False
+        for key in scoped:
+            excluded |= (
+                self.candidates[key].get("discovery_candidate_state") == "excluded"
+            )
+            for record_kind, rid in self.links.get(key, ()):
+                if record_kind not in (
+                    "method_assessments",
+                    "initial_edges",
+                    "exclusions",
+                ):
+                    continue
+                fact = self.records.get(record_kind, {}).get(rid, {})
+                if fact.get(
+                    "canonical_sample_identity_id", fact.get("sample_id")
+                ) not in (None, key[1]):
+                    continue
+                if fact.get("group_hypothesis_id") not in (None, gid):
+                    continue
+                if kind == "row" and fact.get("row_key_id") not in (None, identifier):
+                    continue
+                attention |= _attention_reason(record_kind, fact) is not None
+                excluded |= record_kind == "exclusions"
+        has_null = has_zero = False
+        origins = {}
+        if kind == "row":
             assert self._selection_cells is not None
-            self.row_cell_decisions = {
-                (gid, identifier): self._selection_cells(identifier)
-            }
+            for cell in self._selection_cells(identifier).values():
+                sid = cell["canonical_sample_identity_id"]
+                if sid not in scope:
+                    continue
+                sample_ids.add(sid)
+                value = cell.get("value")
+                has_null |= value is None
+                has_zero |= value == 0
+                attention |= _attention_reason("cell_decisions", cell) is not None
+                if cell.get("observation_ids"):
+                    observed.add(sid)
+                origins[sid] = cell.get("support_origin", "unavailable")
+        _, ref = build_canonical_ref(
+            kind,
+            self.request_id,
+            self.attempt_id,
+            identifier,
+            sample_id=next(iter(keys))[1] if kind == "candidate" else None,
+        )
+        return CanonicalItem(
+            kind=kind,
+            request_id=self.request_id,
+            attempt_id=self.attempt_id,
+            identifier=identifier,
+            serialized_ref=ref,
+            sample_ids=tuple(sorted(sample_ids)),
+            witnesses=tuple(witnesses),
+            stratum=classify_scoped_stratum(
+                is_attention=attention,
+                is_excluded=excluded,
+                has_null_cell=has_null,
+                has_zero_cell=has_zero,
+            ),
+            is_attention=attention,
+            details={
+                "review_summary": {
+                    "observed_sample_count": len(observed & sample_ids),
+                    "scope_sample_count": len(sample_ids),
+                    "origin_kinds": sorted(
+                        {origins.get(sid, "unavailable") for sid in sample_ids}
+                    ),
+                    "initial_member_count": len(keys),
+                    "final_member_count": len(members)
+                    if "member_subjects" in group
+                    else len(keys),
+                    "related_group_count": 0,
+                }
+            },
+        )
+
+    def _presentation_item(
+        self, kind, identifier, gid, keys, scope, payload
+    ) -> CanonicalItem:
         scoped = sorted(key for key in keys if key[1] in scope)
         facts: dict[tuple[str, str], dict[str, Any]] = {}
         fact_samples: dict[tuple[str, str], set[str]] = {}
         cell_bound_samples: set[str] = set()
-        witnesses = []
+        witnesses = self._witnesses(kind, identifier, gid, scoped)
         for cid, sid in scoped:
-            candidate = self.candidates[cid, sid]
             linked = self.links.get((cid, sid), set())
             for record_kind, rid in linked:
                 fact = self.records.get(record_kind, {}).get(rid, {})
@@ -292,40 +482,6 @@ class CidNlSource:
                     continue
                 facts[record_kind, rid] = fact
                 fact_samples.setdefault((record_kind, rid), set()).add(sid)
-            terminals = [
-                self.records[k][r] for k, r in linked if k == "terminal_subjects"
-            ]
-            observations = [
-                o for terminal in terminals for o in terminal.get("observations", [])
-            ]
-            group = self.records.get("final_groups", {}).get(gid, {})
-            member_observations = {
-                oid
-                for member in group.get("member_subjects", [])
-                if member.get("canonical_sample_identity_id") == sid
-                for oid in member.get("physical_observation_ids", [])
-            }
-            if member_observations:
-                observations = [
-                    o
-                    for o in observations
-                    if o.get("peak_observation_content_id") in member_observations
-                ]
-            if not observations:
-                observations = [{"rt_apex_min": candidate.get("rt_apex_min")}]
-            for observation in observations:
-                witnesses.append(
-                    Witness(
-                        canonical_sample_identity_id=sid,
-                        candidate_id=cid,
-                        group_hypothesis_id=gid,
-                        row_key_id=identifier if kind == "row" else None,
-                        precursor_mz=candidate.get("precursor_mz"),
-                        rt_apex_min=observation.get("rt_apex_min"),
-                        observation_id=observation.get("peak_observation_content_id"),
-                        sample_stem=candidate.get("sample_stem"),
-                    )
-                )
         if kind == "row" and isinstance(gid, str):
             indexed_cells = self.row_cell_decisions.get((gid, identifier), {})
             for rid, fact in sorted(indexed_cells.items()):
@@ -368,24 +524,10 @@ class CidNlSource:
             for key in scoped
         )
         for (record_kind, rid), fact in sorted(facts.items()):
-            reason = None
+            reason = _attention_reason(record_kind, fact)
             if record_kind == "cell_decisions":
                 value = fact.get("value", fact.get("quantitative_value"))
                 cells.append({**fact, "quantitative_value": value})
-                if fact.get("variant") == "unresolved" and value is None:
-                    reason = "unresolved"
-            elif (
-                record_kind == "method_assessments"
-                and fact.get("method_result") == "HOLD"
-            ):
-                reason = "HOLD"
-            elif record_kind == "initial_edges":
-                evidence = fact.get("initial_evidence", {})
-                failure = evidence.get("failure", evidence.get("reason"))
-                if failure in ("ambiguous_owner", "identity_conflict"):
-                    reason = failure
-                elif fact.get("disposition") == "review_only":
-                    reason = "review_only"
             elif record_kind == "exclusions":
                 excluded = True
             if reason:
@@ -409,7 +551,7 @@ class CidNlSource:
         )
         sample_status = {}
         item_sample_ids = {sid for _, sid in scoped} | cell_bound_samples
-        for sid in sorted(item_sample_ids) if not self._compact_selection else ():
+        for sid in sorted(item_sample_ids):
             local_cells = [
                 c
                 for c in cells
@@ -447,24 +589,12 @@ class CidNlSource:
             identifier,
             sample_id=next(iter(keys))[1] if kind == "candidate" else None,
         )
-        support_facts: dict[str, dict[tuple[str, str], dict[str, Any]]] = {}
-        if self._compact_selection:
-            for record, fact in facts.items():
-                sid = fact.get("canonical_sample_identity_id", fact.get("sample_id"))
-                if sid is not None:
-                    support_facts.setdefault(sid, {})[record] = fact
         support_observations = {
-            sid: self._support_observation_refs(
-                sid, gid, group, witnesses,
-                support_facts.get(sid, {}) if self._compact_selection else facts,
-            )
+            sid: self._support_observation_refs(sid, gid, group, witnesses, facts)
             for sid in sorted(item_sample_ids)
         }
         origins = {
-            sid: self._support_origin(
-                sid, support_observations[sid],
-                support_facts.get(sid, {}) if self._compact_selection else facts,
-            )
+            sid: self._support_origin(sid, support_observations[sid], facts)
             for sid in sorted(item_sample_ids)
         }
         initial_member_ids = {
@@ -503,9 +633,7 @@ class CidNlSource:
             witnesses=tuple(witnesses),
             stratum=stratum,
             is_attention=bool(triggers),
-            details={"review_summary": review_summary}
-            if self._compact_selection
-            else {
+            details={
                 "source": payload,
                 "cells": cells,
                 "attention_triggers": triggers,

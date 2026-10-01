@@ -81,6 +81,13 @@ attention and RT selection use the saved observation coordinates and decisions,
 so a report without curves remains selectable. Inspector builds detailed cell
 and grouping records for selected items after population selection.
 
+Query selection reads candidate coordinates, membership and sample scope;
+it does not classify or build per-sample presentation for the whole run.
+New reports store row sample membership separately from the packed cell values,
+so checking scope does not require decoding all values. Sample and attention
+selection reduce the needed decision facts once. Detailed reasons, sample
+statuses and presentation are built only for selected items and displayed peers.
+
 Use `scripts.run_alignment --explanation-curve-mz-range LOWER:UPPER` to retain
 curves only for requested regions (repeatable), or `--explanation-full-audit`
 to explicitly pay for the full audit and all curves. These options imply

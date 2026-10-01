@@ -259,7 +259,8 @@ class ExplanationReportWriter:
             if self.review_only:
                 self.connection.execute(
                     "CREATE TABLE row_cells (row_key_id TEXT PRIMARY KEY, "
-                    "group_id TEXT NOT NULL, payload BLOB NOT NULL)"
+                    "group_id TEXT NOT NULL, payload BLOB NOT NULL, "
+                    "sample_mask BLOB NOT NULL)"
                 )
         except BaseException:
             self.abort()
@@ -332,8 +333,18 @@ class ExplanationReportWriter:
         samples: Mapping[str, int],
     ) -> None:
         self._connection().execute(
-            "INSERT INTO row_cells VALUES (?, ?, ?)",
-            (row_id, group_id, pack_cells(cells, samples)),
+            "INSERT INTO row_cells VALUES (?, ?, ?, ?)",
+            (
+                row_id,
+                group_id,
+                pack_cells(cells, samples),
+                sum(
+                    1 << ordinal
+                    for ordinal in {
+                        samples[cell["canonical_sample_identity_id"]] for cell in cells
+                    }
+                ).to_bytes((len(samples) + 7) // 8, "little"),
+            ),
         )
         self.record_counts["cell_decisions"] = self.record_counts.get(
             "cell_decisions", 0
@@ -596,7 +607,10 @@ def _read_completed_summary(connection: sqlite3.Connection) -> dict[str, Any]:
         columns = tuple(
             row[1] for row in connection.execute("PRAGMA table_info(row_cells)")
         )
-        if columns != ("row_key_id", "group_id", "payload"):
+        if columns not in (
+            ("row_key_id", "group_id", "payload"),
+            ("row_key_id", "group_id", "payload", "sample_mask"),
+        ):
             raise ExplanationError("malformed explanation schema: row_cells")
     return summary
 
@@ -654,10 +668,47 @@ def open_review_cells(
         yield lambda row_id: _read_review_cells(connection, summary, (row_id,))
 
 
+def read_review_row_samples(
+    path: Path, summary: Mapping[str, Any]
+) -> dict[str, frozenset[str]]:
+    """Read row membership without unpacking scalar values or evidence reasons."""
+    sample_ids = [s["canonical_sample_identity_id"] for s in summary["samples"]]
+    with closing(sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True)) as db:
+        columns = {row[1] for row in db.execute("PRAGMA table_info(row_cells)")}
+        if "sample_mask" in columns:
+            cohorts: dict[bytes, frozenset[str]] = {}
+            rows = {}
+            for row_id, mask in db.execute(
+                "SELECT row_key_id, sample_mask FROM row_cells"
+            ):
+                if mask not in cohorts:
+                    bits = int.from_bytes(mask, "little")
+                    cohorts[mask] = frozenset(
+                        sid
+                        for ordinal, sid in enumerate(sample_ids)
+                        if bits & (1 << ordinal)
+                    )
+                rows[row_id] = cohorts[mask]
+            return rows
+        # Existing compact reports remain queryable without rewriting them.
+        return {
+            row_id: frozenset(
+                cell["canonical_sample_identity_id"]
+                for cell in unpack_cells(
+                    payload, row_id=row_id, group_id=group_id, sample_ids=sample_ids
+                ).values()
+            )
+            for row_id, group_id, payload in db.execute(
+                "SELECT row_key_id, group_id, payload FROM row_cells"
+            )
+        }
+
+
 def read_explanation_metadata(
     path: str | Path,
     *,
     selection_only: bool = False,
+    query_only: bool = False,
 ) -> ExplanationMetadata:
     """Read the review population through the storage owner, without curves."""
     path = Path(path)
@@ -671,6 +722,14 @@ def read_explanation_metadata(
         compact_selection = (
             selection_only and summary["schema_version"] == REVIEW_SCHEMA_VERSION
         )
+        record_filter = (
+            " WHERE kind IN ('rows', 'final_groups', 'terminal_subjects', "
+            "'initial_edges')"
+            if compact_selection and query_only
+            else " WHERE kind NOT IN ('initial_groups', 'capture_evidence')"
+            if compact_selection
+            else ""
+        )
         candidates = {
             (cid, sid): _object(payload)
             for cid, sid, payload in connection.execute(
@@ -679,22 +738,13 @@ def read_explanation_metadata(
         }
         records: dict[str, dict[str, dict[str, Any]]] = {}
         for kind, rid, payload in connection.execute(
-            "SELECT kind, record_id, payload FROM records"
-            + (
-                " WHERE kind NOT IN ('initial_groups', 'capture_evidence')"
-                if compact_selection
-                else ""
-            )
+            "SELECT kind, record_id, payload FROM records" + record_filter
         ):
             records.setdefault(kind, {})[rid] = _object(payload)
         links = tuple(
             connection.execute(
                 "SELECT candidate_id, sample_id, kind, record_id FROM links"
-                + (
-                    " WHERE kind NOT IN ('initial_groups', 'capture_evidence')"
-                    if compact_selection
-                    else ""
-                )
+                + record_filter
             )
         )
         if summary["schema_version"] == REVIEW_SCHEMA_VERSION and not compact_selection:
