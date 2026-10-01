@@ -961,18 +961,72 @@ or write Matrix/workbook artifacts.
 
 ---
 
-### `pt_pattern_candidate_assembly_replay.py`
+### `pt_pattern_replay.py`
+
+Run `python -m tools.diagnostics.pt_pattern_replay --help` to choose a
+saved-CSV question. All three subcommands write diagnostics without RAW
+acquisition or product activation. Scientific rules stay in the package owners.
+
+| Question | Subcommand |
+| --- | --- |
+| Why did an inclusion-list row fail candidate assembly? | `assembly` |
+| Which saved candidates make incompatible shared-feature claims? | `conflicts` |
+| Does DDMS2 contain MS1 feature support near a Fullscan seed? | `ddms2-support` |
+
+#### `assembly`
 
 **Purpose**: Replay inclusion-list rows whose four list-relative m/z pools exist
 against the canonical local MS1 feature table, then identify the first failed
 mass, quality, RT, or matcher-emission condition.
-**Topic group**: `pt_pattern_candidate_assembly_replay.py` +
+**Entry**: `pt_pattern_replay assembly`; package owner:
 `xic_extractor.discovery.pt_pattern_candidate_assembly_replay`
 **Product owner**: `docs/product/discovery.md`
 **Status note**: Diagnostic-only no-RAW replay. It reuses the current Pt
 candidate matcher and shared mass-accuracy helpers, writes row-level CSV, summary JSON,
 and chart-first HTML, and does not change detector rules, counted detection,
 export, Alignment/Backfill, or Matrix authority.
+
+---
+
+#### `conflicts`
+
+**Purpose**: Build a provenance-bound pairwise shared-claim graph over frozen Pt
+candidate rows, then compare connected-component-wide `at_most_one` semantics
+with the pairwise incompatibility structure represented by those rows.
+**Entry**: `pt_pattern_replay conflicts`; package owners:
+`xic_extractor.discovery.pt_pattern_conflict_graph` +
+`xic_extractor.discovery.pt_pattern_conflict_graph_replay`
+**Product owner**: `docs/product/discovery.md`
+**Status note**: Diagnostic-only no-RAW replay. It verifies candidate and
+detected-feature provenance, rejects unknown source schema versions, validates
+legacy resolution/preferred-candidate consistency, and writes versioned vertex,
+edge, component, legacy comparison, and summary sidecars. The semantic summary
+contains hashes and graph identity but no path or report label; those
+presentation details live in a separate run-metadata JSON. It marks where
+component-wide `at_most_one` would overconstrain pairwise-compatible
+hypotheses. Current vertices are serialized greedy matcher representatives, not
+complete enumeration of all compatible base/+1/+2/+4 assignments; the replay
+cannot recover alternatives pruned before candidate emission. It does not select a
+hypothesis, instantiate or count an event, change current machine calls, read
+Alignment/Backfill state, or write Matrix/workbook/export artifacts.
+
+---
+
+#### `ddms2-support`
+
+**Purpose**: Replay Fullscan-primary Pt pattern seeds against a DDMS2 local MS1
+feature table to inspect whether the DDMS2 run contains matching base/+1/+2/+4
+support near the Fullscan seed.
+**Entry**: `pt_pattern_replay ddms2-support`; package owner:
+`xic_extractor.discovery.pt_pattern_ddms2_support_replay`
+**Product owner**: `docs/product/discovery.md`
+**Status note**: Diagnostic-only support replay. It does not open RAW, create
+Fullscan seeds, recompute trace evidence, decide DDMS2 targeting opportunity,
+mutate Discovery outputs, read Alignment/Backfill state, or write
+Matrix/workbook artifacts. Its m/z tolerance and RT window must be positive
+finite values. Without the historical target/inclusion list,
+missing DDMS2 support is context only, not negative evidence against a Fullscan
+Discovery seed.
 
 ---
 
@@ -999,48 +1053,6 @@ change feature detection, candidate assembly, ratios, counted detections,
 Alignment/Backfill, export, or Matrix authority. A populated theoretical m/z
 window does not identify which chemical species contributed its intensity and
 does not prove an exact centroid-to-envelope assignment.
-
----
-
-### `pt_pattern_conflict_graph_replay.py`
-
-**Purpose**: Build a provenance-bound pairwise shared-claim graph over frozen Pt
-candidate rows, then compare connected-component-wide `at_most_one` semantics
-with the pairwise incompatibility structure represented by those rows.
-**Topic group**: `pt_pattern_conflict_graph_replay.py` +
-`xic_extractor.discovery.pt_pattern_conflict_graph` +
-`xic_extractor.discovery.pt_pattern_conflict_graph_replay`
-**Product owner**: `docs/product/discovery.md`
-**Status note**: Diagnostic-only no-RAW replay. It verifies candidate and
-detected-feature provenance, rejects unknown source schema versions, validates
-legacy resolution/preferred-candidate consistency, and writes versioned vertex,
-edge, component, legacy comparison, and summary sidecars. The semantic summary
-contains hashes and graph identity but no path or report label; those
-presentation details live in a separate run-metadata JSON. It marks where
-component-wide `at_most_one` would overconstrain pairwise-compatible
-hypotheses. Current vertices are serialized greedy matcher representatives, not
-complete enumeration of all compatible base/+1/+2/+4 assignments; the replay
-cannot recover alternatives pruned before candidate emission. It does not select a
-hypothesis, instantiate or count an event, change current machine calls, read
-Alignment/Backfill state, or write Matrix/workbook/export artifacts.
-
----
-
-### `pt_pattern_ddms2_support_replay.py`
-
-**Purpose**: Replay Fullscan-primary Pt pattern seeds against a DDMS2 local MS1
-feature table to inspect whether the DDMS2 run contains matching base/+1/+2/+4
-support near the Fullscan seed.
-**Topic group**: `pt_pattern_ddms2_support_replay.py` +
-`xic_extractor.discovery.pt_pattern_ddms2_support_replay`
-**Product owner**: `docs/product/discovery.md`
-**Status note**: Diagnostic-only support replay. It does not open RAW, create
-Fullscan seeds, recompute trace evidence, decide DDMS2 targeting opportunity,
-mutate Discovery outputs, read Alignment/Backfill state, or write
-Matrix/workbook artifacts. Its m/z tolerance and RT window must be positive
-finite values. Without the historical target/inclusion list,
-missing DDMS2 support is context only, not negative evidence against a Fullscan
-Discovery seed.
 
 ---
 

@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from tests.pt_pattern_evidence_fixtures import pt_evidence_row
-from tools.diagnostics import pt_pattern_ddms2_support_replay as replay_cli
+from tools.diagnostics import pt_pattern_replay as replay_cli
 from xic_extractor.discovery.pt_pattern_artifact_contract import (
     PT_PATTERN_EVIDENCE_CONTRACT_COLUMNS,
 )
@@ -377,6 +377,7 @@ def test_ddms2_support_cli_rejects_nonfinite_gate_values(
     with pytest.raises(SystemExit) as exc_info:
         replay_cli.main(
             [
+                "ddms2-support",
                 "--fullscan-candidates-csv",
                 str(candidates_csv),
                 "--fullscan-evidence-csv",

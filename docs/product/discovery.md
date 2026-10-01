@@ -656,7 +656,7 @@ compatibility for existing diagnostic artifacts, not a weaker detection rule.
 | `scripts/run_discovery.py` | Discovery CLI entry point |
 | `scripts/prepare_delta_mass_detected_features.py` | Converts a normalized external detected-feature TSV or MZmine wide feature table CSV into standard `detected_features.csv`; no RAW access and no Matrix/Backfill authority |
 | `scripts/build_local_ms1_feature_table.py` | Builds single-sample local MS1 `detected_features.csv`, summary JSON, and diagnostics CSV from one RAW file; diagnostic-only feature-source evidence |
-| `tools/diagnostics/pt_pattern_ddms2_support_replay.py` | Writes the Fullscan-seeded DDMS2 support CSV/summary from existing feature/evidence CSVs; no RAW access |
+| `tools/diagnostics/pt_pattern_replay.py` | Saved-CSV diagnostics: `assembly` explains candidate assembly failures, `conflicts` compares shared-feature claims, and `ddms2-support` checks support near Fullscan seeds; no RAW access or activation |
 | `discovery_candidates.csv` | Detailed candidate table for archival or downstream handoff |
 | `discovery_review.csv` | Compact review table |
 | `discovery_batch_index.csv` | Batch handoff index for downstream alignment |
