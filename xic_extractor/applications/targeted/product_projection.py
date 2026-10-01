@@ -3,15 +3,15 @@ from __future__ import annotations
 import math
 from typing import TYPE_CHECKING
 
-from xic_extractor.applications.targeted.product_model import (
+from xic_extractor.configuration.models import Target
+from xic_extractor.evidence_semantics import EvidenceDecisionSemantics
+from xic_extractor.output.targeted_product_model import (
     OWN_MAX_SAME_PEAK_SUPPORT_REASON,
     ProductState,
     ReviewState,
     TargetedProductContext,
     TargetedProductProjection,
 )
-from xic_extractor.configuration.models import Target
-from xic_extractor.evidence_semantics import EvidenceDecisionSemantics
 from xic_extractor.peak_detection.scoring_quality import hard_quality_flags
 from xic_extractor.peak_detection.selection_decision import (
     PeakHypothesisSelectionDecision,

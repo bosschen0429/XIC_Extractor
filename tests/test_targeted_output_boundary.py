@@ -15,25 +15,27 @@ import pytest
 from openpyxl import load_workbook
 
 from tests.test_targeted_production_workflow import production_case
+from xic_extractor.applications.targeted import (
+    output_boundary as targeted_output_boundary,
+)
 from xic_extractor.applications.targeted.application import (
     TargetedApplicationService,
     build_targeted_application_request,
 )
+from xic_extractor.applications.targeted.output_boundary import (
+    TargetedOutputBoundaryError,
+    publish_targeted_outputs,
+)
+from xic_extractor.applications.targeted.production_workflow import (
+    execute_targeted_production_workflow,
+)
 from xic_extractor.configuration.signal_processing_profile import (
     resolve_signal_processing_profile,
 )
-from xic_extractor.extraction import targeted_output_boundary
 from xic_extractor.extraction.result_assembly import reproject_extraction_result
 from xic_extractor.extraction.targeted_inputs import (
     THERMO_RAW_ACQUISITION_FORMAT,
     THERMO_RAW_OBSERVATION_NAMESPACE,
-)
-from xic_extractor.extraction.targeted_output_boundary import (
-    TargetedOutputBoundaryError,
-    publish_targeted_outputs,
-)
-from xic_extractor.extraction.targeted_production_workflow import (
-    execute_targeted_production_workflow,
 )
 from xic_extractor.output.messages import DiagnosticRecord
 from xic_extractor.output.method_manifest import artifact_sha256, method_manifest_path
@@ -925,7 +927,7 @@ def test_render_failure_publishes_no_final_output(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import xic_extractor.extraction.targeted_output_boundary as boundary
+    import xic_extractor.applications.targeted.output_boundary as boundary
 
     config, target, output = production_case(tmp_path)
     excel_path = config.output_csv.with_name("xic_results.xlsx")
@@ -1503,7 +1505,7 @@ def test_cancellation_during_input_fingerprint_skips_acquisition_and_finalizatio
         should_stop=lambda: True,
     )
     monkeypatch.setattr(
-        "xic_extractor.extraction.targeted_production_workflow."
+        "xic_extractor.applications.targeted.production_workflow."
         "complete_prepared_targeted_production_workflow",
         lambda *_args: pytest.fail("cancelled run invoked finalization"),
     )

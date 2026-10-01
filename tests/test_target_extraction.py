@@ -4,9 +4,6 @@ import numpy as np
 import pytest
 
 import xic_extractor.extraction.target_extraction as target_extraction
-from xic_extractor.applications.targeted.product_model import (
-    TargetedProductProjection,
-)
 from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.configuration.signal_processing_profile import (
     DEFAULT_SIGNAL_PROCESSING_PROFILE,
@@ -18,6 +15,9 @@ from xic_extractor.extraction.rt_windows import get_rt_window
 from xic_extractor.extraction.scoring_factory import build_scoring_context_factory
 from xic_extractor.extractor import ExtractionResult
 from xic_extractor.ms2_scan_models import Ms2Scan, Ms2ScanEvent
+from xic_extractor.output.targeted_product_model import (
+    TargetedProductProjection,
+)
 from xic_extractor.peak_detection.baseline import asls_baseline, asls_baseline_on_rt
 from xic_extractor.peak_detection.evidence_facts import build_candidate_evidence_facts
 from xic_extractor.peak_detection.hypotheses import PeakHypothesis

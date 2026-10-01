@@ -393,7 +393,7 @@ def test_no_selected_apex_does_not_capture_a_broad_tail(
     from xic_extractor.applications.targeted.application import (
         build_targeted_application_request,
     )
-    from xic_extractor.extraction.targeted_production_workflow import (
+    from xic_extractor.applications.targeted.production_workflow import (
         execute_targeted_production_workflow,
     )
 

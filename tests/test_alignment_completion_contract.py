@@ -10,7 +10,7 @@ import numpy as np
 import pytest
 
 import xic_extractor.alignment.completion as workflow_owner
-import xic_extractor.extraction.targeted_production_workflow as production_workflow
+import xic_extractor.applications.targeted.production_workflow as production_workflow
 from tests.processing_identity_no_raw_fixture import (
     build_processing_identity_no_raw_fixture,
 )

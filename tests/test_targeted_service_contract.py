@@ -256,12 +256,12 @@ def test_typed_workflow_failure_never_reaches_publication(
         calls.append("publish")
 
     monkeypatch.setattr(
-        "xic_extractor.extraction.targeted_production_workflow."
+        "xic_extractor.applications.targeted.production_workflow."
         "complete_prepared_targeted_production_workflow",
         fail_workflow,
     )
     monkeypatch.setattr(
-        "xic_extractor.extraction.targeted_output_boundary.publish_targeted_outputs",
+        "xic_extractor.applications.targeted.output_boundary.publish_targeted_outputs",
         publish,
     )
 
@@ -302,11 +302,11 @@ def test_failed_raw_acquisition_preserves_reason_and_never_publishes(
         raise AssertionError("failed acquisition reached publication")
 
     monkeypatch.setattr(
-        "xic_extractor.extraction.targeted_production_workflow.start_runtime_attempt",
+        "xic_extractor.applications.targeted.production_workflow.start_runtime_attempt",
         forbid_runtime,
     )
     monkeypatch.setattr(
-        "xic_extractor.extraction.targeted_output_boundary.publish_targeted_outputs",
+        "xic_extractor.applications.targeted.output_boundary.publish_targeted_outputs",
         forbid_publication,
     )
 
@@ -348,12 +348,12 @@ def test_cancellation_after_partial_acquisition_skips_handoff_and_publication(
         raise AssertionError("cancelled acquisition reached publication")
 
     monkeypatch.setattr(
-        "xic_extractor.extraction.targeted_production_workflow."
+        "xic_extractor.applications.targeted.production_workflow."
         "prepare_targeted_production_workflow",
         forbid_handoff,
     )
     monkeypatch.setattr(
-        "xic_extractor.extraction.targeted_output_boundary.publish_targeted_outputs",
+        "xic_extractor.applications.targeted.output_boundary.publish_targeted_outputs",
         forbid_publication,
     )
 

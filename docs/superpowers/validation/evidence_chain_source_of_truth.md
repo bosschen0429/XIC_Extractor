@@ -189,7 +189,7 @@ review, but RT agreement alone should not create matrix write authority.
 Owners:
 
 - `xic_extractor/applications/targeted/product_projection.py`: product policy
-- `xic_extractor/applications/targeted/product_model.py`: pure product result
+- `xic_extractor/output/targeted_product_model.py`: pure product result
 - `xic_extractor/extraction/result_assembly.py`: result creation and delegation
 - `xic_extractor/output/schema.py`
 - `xic_extractor/output/csv_writers.py`

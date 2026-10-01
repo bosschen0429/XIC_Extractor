@@ -1,8 +1,8 @@
-from xic_extractor.applications.targeted.product_model import (
-    TargetedProductContext,
-)
 from xic_extractor.applications.targeted.product_projection import (
     build_targeted_product_projection,
+)
+from xic_extractor.output.targeted_product_model import (
+    TargetedProductContext,
 )
 
 

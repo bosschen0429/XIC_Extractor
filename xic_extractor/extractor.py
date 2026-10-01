@@ -5,15 +5,15 @@ from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from xic_extractor import raw_reader
-from xic_extractor.applications.targeted.product_model import (
-    TargetedProductProjection,
-)
 from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.evidence.neutral_loss import CandidateMS2Evidence, NLResult
 from xic_extractor.extraction.scoring_factory import selected_candidate
 from xic_extractor.output.messages import (
     DiagnosticIssue,
     DiagnosticRecord,
+)
+from xic_extractor.output.targeted_product_model import (
+    TargetedProductProjection,
 )
 from xic_extractor.peak_detection.hypotheses import (
     IntegrationResult,
