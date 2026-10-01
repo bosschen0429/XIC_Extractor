@@ -24,6 +24,7 @@ from xic_extractor.diagnostics.alignment_explanation import (
     read_explanation_selection,
     read_review_row_samples,
 )
+from xic_extractor.diagnostics.explanation_query import recorded_observations
 from xic_extractor.diagnostics.explanation_review import REVIEW_SCHEMA_VERSION
 from xic_inspector.selection.canonical import (
     CanonicalItem,
@@ -310,22 +311,12 @@ class CidNlSource:
         witnesses: list[Witness] = []
         for cid, sid in scoped:
             candidate = self.candidates[cid, sid]
-            observations = [
-                observation
-                for k, r in self.links.get((cid, sid), ())
-                if k == "terminal_subjects"
-                for observation in self.records[k][r].get("observations", [])
-            ]
-            member_observations = members_by_sample.get(sid)
-            if member_observations:
-                observations = [
-                    observation
-                    for observation in observations
-                    if observation.get("peak_observation_content_id")
-                    in member_observations
-                ]
-            if not observations:
-                observations = [{"rt_apex_min": candidate.get("rt_apex_min")}]
+            observations = recorded_observations(
+                candidate,
+                self.links.get((cid, sid), ()),
+                self.records,
+                members_by_sample.get(sid),
+            )
             witnesses.extend(
                 Witness(
                     canonical_sample_identity_id=sid,

@@ -505,6 +505,12 @@ class ExplanationReportWriter:
                 ),
             ),
         )
+        if self.review_only:
+            from xic_extractor.diagnostics.explanation_query import build_query_index
+
+            build_query_index(
+                self._connection(), _read_completed_summary(self._connection())
+            )
         self._connection().commit()
         self._connection().close()
         self.connection = None
@@ -595,6 +601,8 @@ def _read_completed_summary(connection: sqlite3.Connection) -> dict[str, Any]:
     if row is None:
         raise ExplanationError("malformed explanation: missing completion summary")
     summary = _object(row[0])
+    if summary.get("query_index_version") not in (None, 1):
+        raise ExplanationError("unsupported explanation query index version")
     if (
         summary.get("schema_version") not in (SCHEMA_VERSION, REVIEW_SCHEMA_VERSION)
         or summary.get("diagnostic_only") is not True

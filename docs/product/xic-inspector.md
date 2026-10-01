@@ -81,8 +81,9 @@ attention and RT selection use the saved observation coordinates and decisions,
 so a report without curves remains selectable. Inspector builds detailed cell
 and grouping records for selected items after population selection.
 
-Query selection reads candidate coordinates, membership and sample scope;
-it does not classify or build per-sample presentation for the whole run.
+New review reports index candidate coordinates, membership and sample scope
+at publication. SQLite applies query predicates, counts and offset/limit before
+Inspector loads the selected page's witnesses and details.
 New reports store row sample membership separately from the packed cell values,
 so checking scope does not require decoding all values. Sample and attention
 selection reduce the needed decision facts once. Detailed reasons, sample
@@ -104,6 +105,15 @@ The source is preserved. Conversion retains values, membership and review
 reasons, omitting curve payloads and duplicated artifact chains. Compact review
 cell references are display positions, not scientific decision IDs; full audit
 retains the latter. The bound Matrix file must remain available.
+
+An older compact review can gain the query index without losing retained facts
+or curves. This writes a new file and requires no RAW access:
+
+```powershell
+.venv/Scripts/python.exe -m tools.diagnostics.explain_cid_nl_run --report <review.sqlite> --index-query-to <indexed-review.sqlite>
+```
+
+Older reports without the index remain readable through population selection.
 
 For a curve not retained in the report, acquire only the requested candidate's
 or group's observed windows into a portable bundle:

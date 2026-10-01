@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import sqlite3
+import uuid
 from collections.abc import Callable
+from contextlib import closing
 from pathlib import Path
 from time import perf_counter
 from typing import Any
@@ -19,6 +22,41 @@ from xic_extractor.diagnostics.explanation_review import (
     REVIEW_SCHEMA_VERSION,
     review_record,
 )
+
+
+def index_review_query(source: Path, destination: Path) -> dict[str, Any]:
+    """Copy an existing review and publish its query index without changing facts."""
+    from xic_extractor.diagnostics.explanation_query import build_query_index
+
+    if destination.exists():
+        raise FileExistsError(f"explanation artifact already exists: {destination}")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    temporary = destination.with_name(destination.name + f".{uuid.uuid4().hex}.tmp")
+    try:
+        with closing(
+            sqlite3.connect(source.resolve().as_uri() + "?mode=ro", uri=True)
+        ) as original:
+            summary = _read_completed_summary(original)
+            if summary["schema_version"] != REVIEW_SCHEMA_VERSION:
+                raise ExplanationError(
+                    "Query indexing requires a compact review; use --compact-to first"
+                )
+            if summary.get("query_index_version") is not None:
+                raise ExplanationError("Review already has a query index")
+            copied = sqlite3.connect(temporary)
+            try:
+                original.backup(copied)
+                matrix = Path(summary["matrix_path"])
+                if not matrix.is_absolute():
+                    summary["matrix_path"] = str((source.parent / matrix).resolve())
+                build_query_index(copied, summary)
+                copied.commit()
+            finally:
+                copied.close()
+        os.rename(temporary, destination)
+        return {"report": str(destination), "query_index_version": 1}
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 def compact_explanation(

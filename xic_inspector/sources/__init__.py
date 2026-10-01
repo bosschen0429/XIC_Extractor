@@ -28,7 +28,15 @@ def open_source(path, *, query_only=False):
         return CurveBundleSource(path)
     from xic_inspector.sources.cid_nl import CidNlSource
 
+    if query_only:
+        from xic_inspector.sources.cid_nl import read_summary
+        from xic_inspector.sources.cid_nl_query import IndexedCidNlSource
+
+        summary = read_summary(path)
+        if summary.get("query_index_version") == 1:
+            return IndexedCidNlSource(path, summary)
     return CidNlSource(path, query_only=query_only)
+
 
 __all__ = [
     "EvidenceLocator",

@@ -1,5 +1,7 @@
 """Compact review preserves decisions while omitting unrequested audit and curves."""
 
+import hashlib
+import json
 import sqlite3
 from contextlib import contextmanager
 
@@ -9,6 +11,7 @@ import pytest
 from tests.test_cid_nl_explanation import _owner_run
 from tools.diagnostics.explanation_curves import export_explanation_curves
 from xic_extractor.diagnostics.alignment_explanation import (
+    ExplanationReportWriter,
     read_cid_nl_curves,
     read_cid_nl_explanation,
     read_explanation_metadata,
@@ -20,6 +23,195 @@ from xic_extractor.diagnostics.explanation_conversion import compact_explanation
 from xic_inspector.api import SelectionRequest, generate_report
 from xic_inspector.sources.cid_nl import CidNlSource
 from xic_inspector.sources.curve_bundle import read_curve_bundle
+
+
+def test_index_existing_review_preserves_source_and_rejects_broken_index(
+    tmp_path, monkeypatch
+):
+    from tools.diagnostics.explain_cid_nl_run import main
+    from xic_inspector.api import InspectorError
+
+    completed, writer, candidates, matrix, config = _owner_run(
+        tmp_path, monkeypatch, "positive"
+    )
+    source = write_cid_nl_explanation(
+        tmp_path / "old.sqlite",
+        completed=completed,
+        writer_inputs=writer,
+        candidates_by_sample=candidates,
+        matrix_path=matrix,
+        alignment_config=config,
+    )
+    with sqlite3.connect(source) as db:
+        tables = [
+            row[0]
+            for row in db.execute(
+                "SELECT name FROM sqlite_master "
+                "WHERE type='table' AND name LIKE 'query_%'"
+            )
+        ]
+        for table in tables:
+            db.execute(f'DROP TABLE "{table}"')
+        summary = json.loads(
+            db.execute("SELECT payload FROM metadata WHERE key='summary'").fetchone()[0]
+        )
+        summary.pop("query_index_version")
+        db.execute(
+            "UPDATE metadata SET payload=? WHERE key='summary'", (json.dumps(summary),)
+        )
+    before = source.read_bytes()
+    target = tmp_path / "indexed.sqlite"
+    assert main(["--report", str(source), "--index-query-to", str(target)]) == 0
+    assert source.read_bytes() == before
+    assert (
+        read_explanation_metadata(source).candidates
+        == read_explanation_metadata(target).candidates
+    )
+    assert (
+        read_explanation_metadata(source).records
+        == read_explanation_metadata(target).records
+    )
+    assert (
+        read_explanation_metadata(source).links
+        == read_explanation_metadata(target).links
+    )
+    assert main(["--report", str(source), "--index-query-to", str(target)]) == 2
+    with sqlite3.connect(target) as db:
+        db.execute("DROP TABLE query_witnesses")
+    with pytest.raises(InspectorError, match="Invalid query index"):
+        generate_report(
+            target,
+            SelectionRequest(strategy="query", mz_min=400),
+            tmp_path / "broken.html",
+        )
+
+
+@pytest.mark.parametrize(
+    "criteria,expected",
+    [
+        ({"mz_min": 500, "mz_max": 500, "rt_min": 2, "rt_max": 2}, (5, 5, 0, 1)),
+        ({"mz_min": 500, "mz_max": 500}, (5, 5, 4, 0)),
+        ({"sample_ids": ("S1",), "mz_min": 500, "mz_max": 500}, (5, 3, 3, 0)),
+        ({"sample_ids": ("absent",), "mz_min": 500}, (5, 0, 0, 0)),
+        ({"candidate_ids": ("C1",)}, (5, 5, 1, 0)),
+        ({"group_ids": ("G1",), "sample_ids": ("S2",)}, (5, 3, 1, 0)),
+        ({"mz_min": 500, "offset": 1, "limit": 2}, (5, 5, 4, 0)),
+        ({"rt_min": 99}, (5, 5, 0, 1)),
+    ],
+)
+def test_indexed_query_keeps_witness_scope_counts_and_bounded_loading(
+    tmp_path, monkeypatch, criteria, expected
+):
+    from tests.test_xic_inspector_api import _report_data
+
+    matrix = tmp_path / "matrix.tsv"
+    matrix.write_text("matrix fixture", encoding="utf-8")
+    report = tmp_path / "review.sqlite"
+    with ExplanationReportWriter(report, review_only=True) as writer:
+        for cid, sid, mz, rt in (
+            ("C1", "S1", 500, 1),
+            ("C2", "S2", 600, 2),
+            ("C3", "S1", 500, None),
+            ("C4", "S2", 500, 3),
+            ("C5", "S1", 500, 4),
+        ):
+            writer.add_candidate(
+                cid,
+                sid,
+                {
+                    "candidate_id": cid,
+                    "precursor_mz": mz,
+                    "canonical_sample_identity_id": sid,
+                    "rt_apex_min": rt,
+                },
+            )
+            observations = [
+                {"peak_observation_content_id": cid + "-obs", "rt_apex_min": rt}
+            ]
+            if cid == "C5":
+                observations.append(
+                    {"peak_observation_content_id": "unrelated", "rt_apex_min": 99}
+                )
+            writer.add_record(
+                "terminal_subjects", cid, {"observations": observations}, [(cid, sid)]
+            )
+        for gid, rid, keys in (
+            ("G1", "row-α", [("C1", "S1"), ("C2", "S2")]),
+            ("G2", None, [("C3", "S1")]),
+            ("G3", 'row-"z', [("C5", "S1")]),
+            ("G4", "empty", []),
+        ):
+            group = {"group_hypothesis_id": gid}
+            if gid == "G3":
+                group["member_subjects"] = [
+                    {
+                        "canonical_sample_identity_id": "S1",
+                        "physical_observation_ids": ["C5-obs"],
+                    }
+                ]
+            writer.add_record("final_groups", gid, group, keys)
+            if rid is not None:
+                writer.add_record(
+                    "rows", rid, {"row_key_id": rid, "group_hypothesis_id": gid}, keys
+                )
+                writer.add_row_cells(
+                    rid,
+                    gid,
+                    [
+                        {
+                            "canonical_sample_identity_id": sid,
+                            "variant": "unresolved",
+                            "value": None,
+                        }
+                        for sid in ({s for _, s in keys} or {"S2"})
+                    ],
+                    {"S1": 0, "S2": 1},
+                )
+        writer.add_record(
+            "initial_edges",
+            "edge-1",
+            {"initial_evidence": {"decision": "blocked_edge"}},
+            [("C1", "S1"), ("C4", "S2")],
+        )
+        writer.finalize(
+            {
+                "matrix_path": str(matrix),
+                "matrix_sha256": hashlib.sha256(matrix.read_bytes()).hexdigest(),
+                "samples": [
+                    {"canonical_sample_identity_id": sid} for sid in ("S1", "S2")
+                ],
+                "selection_evidence_capability": "recorded_decisions",
+            }
+        )
+    request = SelectionRequest(strategy="query", **criteria)
+    baseline = tmp_path / "baseline.html"
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            "xic_inspector.api.open_source", lambda path, **kw: CidNlSource(path, **kw)
+        )
+        old = generate_report(report, request, baseline)
+    assert (
+        old.run_total,
+        old.eligible_count,
+        old.matched_count,
+        old.missing_rt_count,
+    ) == expected
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("indexed query read the entire review population")
+
+    monkeypatch.setattr(
+        "xic_inspector.sources.cid_nl.read_explanation_metadata", forbidden
+    )
+    output = tmp_path / "indexed.html"
+    result = generate_report(report, request, output)
+    assert (
+        result.run_total,
+        result.eligible_count,
+        result.matched_count,
+        result.missing_rt_count,
+    ) == expected
+    assert _report_data(output) == _report_data(baseline)
 
 
 @pytest.mark.parametrize("scenario", ("positive", "all_hold", "review_only"))

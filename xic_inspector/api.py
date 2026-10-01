@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import math
+import sqlite3
 from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -13,9 +14,6 @@ from typing import Literal
 from xic_inspector.rendering.html_builder import (
     build_report_html,
     write_report_atomically,
-)
-from xic_inspector.selection.canonical import (
-    CanonicalItem,
 )
 from xic_inspector.selection.query import filter_by_attention, filter_by_query
 from xic_inspector.selection.sampler import (
@@ -338,47 +336,61 @@ def generate_report(
 
     # Stage: Selection
     normalized_set = set(normalized_sample_ids)
-    try:
-        all_items = source.load_items(normalized_set)
-    except ExplanationError as exc:
-        raise InspectorError(4, str(exc), cause=exc) from exc
-    run_total = len(all_items)
-
-    # Eligible population
-    if not normalized_set:
-        eligible_items = []
+    if selection.strategy == "query" and hasattr(source, "select_query"):
+        try:
+            (
+                selected_items,
+                run_total,
+                eligible_count,
+                matched_count,
+                missing_rt_count,
+            ) = source.select_query(normalized_set, selection)
+        except sqlite3.Error as exc:
+            raise InspectorError(4, f"Invalid query index: {exc}", cause=exc) from exc
     else:
-        eligible_items = [
-            it for it in all_items if any(s in normalized_set for s in it.sample_ids)
-        ]
+        try:
+            all_items = source.load_items(normalized_set)
+        except ExplanationError as exc:
+            raise InspectorError(4, str(exc), cause=exc) from exc
+        run_total = len(all_items)
 
-    eligible_count = len(eligible_items)
-    selected_items: list[CanonicalItem] = []
-    matched_count = 0
-    missing_rt_count = 0
+        # Eligible population
+        if not normalized_set:
+            eligible_items = []
+        else:
+            eligible_items = [
+                it
+                for it in all_items
+                if any(s in normalized_set for s in it.sample_ids)
+            ]
 
-    if selection.strategy == "sample":
-        selected_items = sample_cross_sample_sha256(
-            eligible_items, limit=selection.limit, seed=selection.seed
-        )
-        matched_count = eligible_count
-    elif selection.strategy == "attention":
-        selected_items, matched_count = filter_by_attention(
-            eligible_items, limit=selection.limit
-        )
-    elif selection.strategy == "query":
-        selected_items, matched_count, missing_rt_count = filter_by_query(
-            eligible_items,
-            sample_ids=selection.sample_ids,
-            candidate_ids=selection.candidate_ids,
-            group_ids=selection.group_ids,
-            mz_min=selection.mz_min,
-            mz_max=selection.mz_max,
-            rt_min=selection.rt_min,
-            rt_max=selection.rt_max,
-            offset=selection.offset,
-            limit=selection.limit,
-        )
+        eligible_count = len(eligible_items)
+        selected_items = []
+        matched_count = 0
+        missing_rt_count = 0
+
+        if selection.strategy == "sample":
+            selected_items = sample_cross_sample_sha256(
+                eligible_items, limit=selection.limit, seed=selection.seed
+            )
+            matched_count = eligible_count
+        elif selection.strategy == "attention":
+            selected_items, matched_count = filter_by_attention(
+                eligible_items, limit=selection.limit
+            )
+        elif selection.strategy == "query":
+            selected_items, matched_count, missing_rt_count = filter_by_query(
+                eligible_items,
+                sample_ids=selection.sample_ids,
+                candidate_ids=selection.candidate_ids,
+                group_ids=selection.group_ids,
+                mz_min=selection.mz_min,
+                mz_max=selection.mz_max,
+                rt_min=selection.rt_min,
+                rt_max=selection.rt_max,
+                offset=selection.offset,
+                limit=selection.limit,
+            )
 
     selected_count = len(selected_items)
     if on_progress:
