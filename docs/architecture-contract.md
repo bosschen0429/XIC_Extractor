@@ -83,6 +83,11 @@ Package 名稱不是可強制的分層證明：`alignment/` 包含科學與外�
   a hypothetical future value does not justify a new setting.
 - Preserve public contracts unless an approved change names the consumer,
   observable delta, and rollback.
+- When changing a public entry point, use existing tests or a minimal example
+  to show required inputs, expected outputs, and the meaning of key failures,
+  so consumers can use it correctly without tracing its implementation. Reuse
+  the current contract's tests or documentation; the
+  [testing contract](agent/testing.md) governs new regression coverage.
 
 ## Change Locality
 
