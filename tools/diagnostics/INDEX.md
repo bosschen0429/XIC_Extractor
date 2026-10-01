@@ -34,7 +34,8 @@ workflow owner rather than chaining similarly named commands.
 | Inspect chromatograms | GUI **開啟 Inspector** or `xic-inspector`; [Inspector](../../docs/product/xic-inspector.md) owns offline review |
 | Select Matrix features for downstream analysis | GUI **篩選匯出…** or `xic-feature-quality`; [Feature Quality](../../docs/product/feature-quality.md) owns the rule and output |
 | Review instrument/ISTD drift | `scripts.run_instrument_qc` and `scripts.add_istd_rt_trend`; [Instrument QC](../../docs/product/instrument-qc-calibration.md) owns their distinct inputs and claims |
-| Build a solvent-blank background library | `tools.extract_blank_library`; `xic_extractor.discovery.blank_qualification` owns extraction and serialization |
+| Build a solvent-blank background library | `scripts.extract_blank_library`; `xic_extractor.discovery.blank_qualification` owns extraction and serialization |
+| Prepare targeted review actions | [Review Roundtrip commands](../../docs/product/review-roundtrip.md#operator-commands) distinguish candidate verification, copy-state edits, and peak-editing authority |
 | Run tissue validation | `scripts.run_tissue_validation`; [execution settings](../../docs/agent/parameter-settings.md#validation-scale) own prerequisites |
 | Rebuild activation or expected-diff evidence | Use the current [productization lane](../../docs/product/productization.md) and its named producer/checker; `build_*` and `check_*` commands do not independently activate a feature |
 | Maintain CI or command safety | `tools.testing.test_shards` and `tools.command_policy` serve CI/hooks; they have no GUI workflow |

@@ -16,6 +16,7 @@ from xic_extractor.review_actions import (
     plan_review_action_apply_readiness,
     summarize_review_action_apply_changeset_plan,
     write_review_action_apply_changeset_plan,
+    write_review_action_apply_readiness_plan,
 )
 
 
@@ -63,6 +64,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         action="store_true",
         help="Print the changeset summary as JSON.",
     )
+    parser.add_argument(
+        "--output-apply-readiness-tsv",
+        type=Path,
+        help="Also write the intermediate readiness audit TSV.",
+    )
     args = parser.parse_args(argv)
 
     try:
@@ -70,9 +76,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         target_states = load_review_action_target_states(args.targeted_long_csv)
         applications = plan_review_action_applications(actions, target_states)
         approvals = (
-            load_review_action_expected_diff_approvals(
-                args.expected_diff_approvals
-            )
+            load_review_action_expected_diff_approvals(args.expected_diff_approvals)
             if args.expected_diff_approvals is not None
             else {}
         )
@@ -88,10 +92,12 @@ def main(argv: Sequence[str] | None = None) -> int:
                 approval.stable_row_id
                 for approval in readiness_plan.unused_expected_diff_approvals
             )
-            raise ReviewActionError(
-                "unused expected-diff approval row(s): " + unused
-            )
+            raise ReviewActionError("unused expected-diff approval row(s): " + unused)
         changeset_plan = plan_review_action_apply_changesets(readiness_plan)
+        if args.output_apply_readiness_tsv is not None:
+            write_review_action_apply_readiness_plan(
+                args.output_apply_readiness_tsv, readiness_plan
+            )
         write_review_action_apply_changeset_plan(
             args.output_changeset_tsv,
             changeset_plan,

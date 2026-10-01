@@ -69,6 +69,15 @@ the error relative to the configured loss mass; it is not the acceptance gate.
 
 ### Blank qualification
 
+Build a reusable background library with
+`python -m scripts.extract_blank_library --blank <RAW-or-directory> --output <library.json>`.
+The acquisition and serialization owner is
+`xic_extractor.discovery.blank_qualification`. This adapter accepts explicit
+intensity, scan-recurrence, and sampling parameters. Use Discovery's
+`--blank-dir` to rebuild a library during each cohort run with default
+extraction parameters, or `--blank-library` to consume a prebuilt library.
+Producing a library alone does not enable qualification.
+
 - Blank qualification is disabled by default for newly configured ordinary
   mainline Discovery runs. Library resolution prefers an explicitly selected
   library, then a sample-local `blank_library.json.gz` or `blank_library.json`,

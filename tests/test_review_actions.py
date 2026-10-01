@@ -7,9 +7,7 @@ from scripts import (
     apply_review_action_changesets,
     plan_review_action_applications,
     plan_review_action_apply_changesets,
-    plan_review_action_apply_readiness,
     plan_review_action_candidate_sidecars,
-    validate_review_action_expected_diffs,
     validate_review_actions,
 )
 from xic_extractor.review_actions import (
@@ -466,8 +464,8 @@ def test_validate_review_action_expected_diffs_cli_prints_summary_json(
     _write_expected_diff_tsv(approval_path, [row])
 
     assert (
-        validate_review_action_expected_diffs.main(
-            [str(approval_path), "--summary-json"]
+        validate_review_actions.main(
+            [str(approval_path), "--expected-diff", "--summary-json"]
         )
         == 0
     )
@@ -505,7 +503,7 @@ def test_validate_review_action_expected_diffs_cli_rejects_template(
     template_path = tmp_path / "review_action_expected_diff_template.tsv"
     _write_expected_diff_tsv(template_path, [template_row])
 
-    assert validate_review_action_expected_diffs.main([str(template_path)]) == 2
+    assert validate_review_actions.main([str(template_path), "--expected-diff"]) == 2
     assert "evidence_sources is required" in capsys.readouterr().err
 
 
@@ -760,7 +758,7 @@ def test_plan_review_action_apply_readiness_cli_writes_ready_plan(
     )
 
     assert (
-        plan_review_action_apply_readiness.main(
+        plan_review_action_apply_changesets.main(
             [
                 "--review-actions",
                 str(actions_path),
@@ -768,6 +766,8 @@ def test_plan_review_action_apply_readiness_cli_writes_ready_plan(
                 str(target_path),
                 "--expected-diff-approvals",
                 str(approval_path),
+                "--output-changeset-tsv",
+                str(tmp_path / "changeset.tsv"),
                 "--output-apply-readiness-tsv",
                 str(out_path),
                 "--summary-json",
@@ -823,7 +823,7 @@ def test_plan_review_action_apply_readiness_cli_rejects_unused_approval(
     )
 
     assert (
-        plan_review_action_apply_readiness.main(
+        plan_review_action_apply_changesets.main(
             [
                 "--review-actions",
                 str(actions_path),
@@ -831,6 +831,8 @@ def test_plan_review_action_apply_readiness_cli_rejects_unused_approval(
                 str(target_path),
                 "--expected-diff-approvals",
                 str(approval_path),
+                "--output-changeset-tsv",
+                str(tmp_path / "changeset.tsv"),
                 "--output-apply-readiness-tsv",
                 str(out_path),
             ]
@@ -1322,8 +1324,7 @@ def test_apply_review_action_changesets_writes_audited_output_copy(
     )
     changeset_plan = build_review_action_apply_changesets(readiness_plan)
     changeset_rows = [
-        review_action_apply_changeset_to_row(row)
-        for row in changeset_plan.rows
+        review_action_apply_changeset_to_row(row) for row in changeset_plan.rows
     ]
     targeted_rows = [
         {
@@ -1646,9 +1647,8 @@ def test_plan_review_action_applications_cli_writes_plan(
     assert summary["application_count"] == 2
     assert summary["expected_diff_template_count"] == 1
     assert "planned_no_output_change" in out_path.read_text(encoding="utf-8")
-    assert (
-        REVIEW_ACTION_EXPECTED_DIFF_SCHEMA_VERSION
-        in expected_diff_path.read_text(encoding="utf-8")
+    assert REVIEW_ACTION_EXPECTED_DIFF_SCHEMA_VERSION in expected_diff_path.read_text(
+        encoding="utf-8"
     )
 
 
