@@ -100,39 +100,6 @@ models because their output schemas are intentionally different; see
 
 ---
 
-### `shared_peak_identity_explanation.py`
-
-**Purpose**: Explain shared-peak identity from a manual oracle and existing
-alignment/candidate-gate artifacts. Optional blast-radius analysis summarizes
-existing cohort artifacts; shadow-label analysis compares human labels with
-machine evidence and reports diagnostic readiness.
-**Topic group**: `shared_peak_identity_explanation.py` + `xic_extractor/diagnostics/shared_peak_identity_explanation/*`
-**Status note**: The default command writes an oracle copy, evidence vectors,
-explanations, run facts, and a Markdown report. Optional modes add blast-radius,
-shadow-label, machine-evidence, and readiness artifacts. Evidence inputs cover
-CWT shape, trace support, candidate MS2, MS1 coherence, QC reference, sample
-negative evidence, RT drift, RT modes, and PeakHypothesis selection. The command
-can generate the supported evidence sidecars; `--help` owns the exact options.
-Candidate evidence must retain sample/family provenance; missing or proxy-only
-evidence does not become a positive identity claim. RAW-backed evidence remains
-opt-in. Hypothesis consistency and mode assignments are diagnostic outputs and
-cannot authorize values, rewrite matrices, or apply product activation.
-
----
-
-### `diagnose_shared_peak_wrong_peak.py`
-
-**Purpose**: Explain machine-observed wrong-peak conflicts and propose alternate
-local peaks for review.
-**Topic group**: `diagnose_shared_peak_wrong_peak.py` + `xic_extractor/diagnostics/shared_peak_identity_explanation/wrong_peak_root_cause.py`
-**Status note**: Consumes machine-evidence support, alignment cells, and optional
-overlay trace-data JSON. The root-cause sidecar records diagnostic conflict
-classes, selected-cell evidence, and alternate local maxima without activation
-status or writer decisions. Alternate peaks are review candidates only; the
-command does not retarget peaks or rewrite matrices.
-
----
-
 ### `explain_cid_nl_run.py`
 
 **Purpose**: Read the normal CID-NL execution explanation artifact and return a
