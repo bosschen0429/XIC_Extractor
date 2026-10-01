@@ -25,7 +25,19 @@ from xic_extractor.diagnostics.alignment_explanation import (
     read_review_row_samples,
 )
 from xic_extractor.diagnostics.explanation_query import recorded_observations
-from xic_extractor.diagnostics.explanation_review import REVIEW_SCHEMA_VERSION
+from xic_extractor.diagnostics.explanation_review import (
+    ATTENTION,
+    EXCLUDED,
+    NULL_CELL,
+    OBSERVED,
+    ORIGIN_FLAGS,
+    REVIEW_SCHEMA_VERSION,
+    ZERO_CELL,
+    selection_sample_facts,
+)
+from xic_extractor.diagnostics.explanation_review import (
+    attention_reason as _attention_reason,
+)
 from xic_inspector.selection.canonical import (
     CanonicalItem,
     Witness,
@@ -38,26 +50,6 @@ from xic_inspector.sources import cid_nl_presentation as presentation
 def read_summary(path: str | Path) -> dict[str, Any]:
     """Read compact metadata without retrieving curve payloads."""
     return read_cid_nl_explanation(path)
-
-
-def _attention_reason(kind: str, fact: dict[str, Any]) -> str | None:
-    """One recorded-fact predicate for selection and its displayed explanation."""
-    if kind == "cell_decisions":
-        if (
-            fact.get("variant") == "unresolved"
-            and fact.get("value", fact.get("quantitative_value")) is None
-        ):
-            return "unresolved"
-    elif kind == "method_assessments" and fact.get("method_result") == "HOLD":
-        return "HOLD"
-    elif kind == "initial_edges":
-        evidence = fact.get("initial_evidence", {})
-        failure = evidence.get("failure", evidence.get("reason"))
-        if failure in ("ambiguous_owner", "identity_conflict"):
-            return failure
-        if fact.get("disposition") == "review_only":
-            return "review_only"
-    return None
 
 
 class CidNlSource:
@@ -359,59 +351,42 @@ class CidNlSource:
                 stratum="unclassified",
                 details={"review_summary": {}},
             )
-        observed = {
-            witness.canonical_sample_identity_id
-            for witness in witnesses
-            if witness.observation_id
-        }
-        group = self.records.get("final_groups", {}).get(gid, {})
-        members = group.get("member_subjects", [])
-        observed.update(
-            member["canonical_sample_identity_id"]
-            for member in members
-            if member.get("canonical_sample_identity_id") in scope
-            and member.get("physical_observation_ids")
-        )
-        attention = group.get("disposition") in ("provisional", "unresolved")
-        excluded = False
-        for key in scoped:
-            excluded |= (
-                self.candidates[key].get("discovery_candidate_state") == "excluded"
-            )
-            for record_kind, rid in self.links.get(key, ()):
-                if record_kind not in (
-                    "method_assessments",
-                    "initial_edges",
-                    "exclusions",
-                ):
-                    continue
-                fact = self.records.get(record_kind, {}).get(rid, {})
-                if fact.get(
-                    "canonical_sample_identity_id", fact.get("sample_id")
-                ) not in (None, key[1]):
-                    continue
-                if fact.get("group_hypothesis_id") not in (None, gid):
-                    continue
-                if kind == "row" and fact.get("row_key_id") not in (None, identifier):
-                    continue
-                attention |= _attention_reason(record_kind, fact) is not None
-                excluded |= record_kind == "exclusions"
-        has_null = has_zero = False
-        origins = {}
+        cells: tuple[dict[str, Any], ...] = ()
         if kind == "row":
             assert self._selection_cells is not None
-            for cell in self._selection_cells(identifier).values():
-                sid = cell["canonical_sample_identity_id"]
-                if sid not in scope:
-                    continue
-                sample_ids.add(sid)
-                value = cell.get("value")
-                has_null |= value is None
-                has_zero |= value == 0
-                attention |= _attention_reason("cell_decisions", cell) is not None
-                if cell.get("observation_ids"):
-                    observed.add(sid)
-                origins[sid] = cell.get("support_origin", "unavailable")
+            cells = tuple(
+                cell
+                for cell in self._selection_cells(identifier).values()
+                if cell["canonical_sample_identity_id"] in scope
+            )
+        flags = selection_sample_facts(
+            kind,
+            identifier,
+            gid,
+            scoped,
+            self.candidates,
+            self.records,
+            self.links,
+            cells,
+            {w.canonical_sample_identity_id for w in witnesses if w.observation_id},
+        )
+        sample_ids = set(flags)
+        observed = {sid for sid, flag in flags.items() if flag & OBSERVED}
+        group = self.records.get("final_groups", {}).get(gid, {})
+        attention = group.get("disposition") in ("provisional", "unresolved") or any(
+            flag & ATTENTION for flag in flags.values()
+        )
+        excluded = any(flag & EXCLUDED for flag in flags.values())
+        has_null = any(flag & NULL_CELL for flag in flags.values())
+        has_zero = any(flag & ZERO_CELL for flag in flags.values())
+        origins = {
+            sid: next(
+                (origin for origin, bit in ORIGIN_FLAGS.items() if flag & bit),
+                "unavailable",
+            )
+            for sid, flag in flags.items()
+        }
+        members = group.get("member_subjects", [])
         _, ref = build_canonical_ref(
             kind,
             self.request_id,

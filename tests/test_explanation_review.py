@@ -25,8 +25,9 @@ from xic_inspector.sources.cid_nl import CidNlSource
 from xic_inspector.sources.curve_bundle import read_curve_bundle
 
 
+@pytest.mark.parametrize("old_revision", (None, 1))
 def test_index_existing_review_preserves_source_and_rejects_broken_index(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, old_revision
 ):
     from tools.diagnostics.explain_cid_nl_run import main
     from xic_inspector.api import InspectorError
@@ -51,11 +52,14 @@ def test_index_existing_review_preserves_source_and_rejects_broken_index(
             )
         ]
         for table in tables:
-            db.execute(f'DROP TABLE "{table}"')
+            if old_revision is None or table == "query_review":
+                db.execute(f'DROP TABLE "{table}"')
         summary = json.loads(
             db.execute("SELECT payload FROM metadata WHERE key='summary'").fetchone()[0]
         )
         summary.pop("query_index_version")
+        if old_revision is not None:
+            summary["query_index_version"] = old_revision
         db.execute(
             "UPDATE metadata SET payload=? WHERE key='summary'", (json.dumps(summary),)
         )
@@ -97,9 +101,17 @@ def test_index_existing_review_preserves_source_and_rejects_broken_index(
         ({"group_ids": ("G1",), "sample_ids": ("S2",)}, (5, 3, 1, 0)),
         ({"mz_min": 500, "offset": 1, "limit": 2}, (5, 5, 4, 0)),
         ({"rt_min": 99}, (5, 5, 0, 1)),
+        ({"strategy": "sample", "seed": 0, "limit": 2}, (5, 5, 5, 0)),
+        ({"strategy": "sample", "seed": 19, "limit": 4}, (5, 5, 5, 0)),
+        ({"strategy": "sample", "seed": 19, "sample_ids": ("S1",)}, (5, 3, 3, 0)),
+        ({"strategy": "sample", "sample_ids": ("S2",), "limit": 1}, (5, 3, 3, 0)),
+        ({"strategy": "sample", "sample_ids": ("absent",)}, (5, 0, 0, 0)),
+        ({"strategy": "attention", "limit": 2}, (5, 5, 3, 0)),
+        ({"strategy": "attention", "sample_ids": ("S1",)}, (5, 3, 2, 0)),
+        ({"strategy": "attention", "sample_ids": ("S2",)}, (5, 3, 2, 0)),
     ],
 )
-def test_indexed_query_keeps_witness_scope_counts_and_bounded_loading(
+def test_indexed_selection_keeps_witness_scope_counts_and_bounded_loading(
     tmp_path, monkeypatch, criteria, expected
 ):
     from tests.test_xic_inspector_api import _report_data
@@ -183,7 +195,7 @@ def test_indexed_query_keeps_witness_scope_counts_and_bounded_loading(
                 "selection_evidence_capability": "recorded_decisions",
             }
         )
-    request = SelectionRequest(strategy="query", **criteria)
+    request = SelectionRequest(**{"strategy": "query", **criteria})
     baseline = tmp_path / "baseline.html"
     with monkeypatch.context() as patch:
         patch.setattr(

@@ -9,6 +9,96 @@ from typing import Any
 
 REVIEW_SCHEMA_VERSION = "alignment_explanation_review"
 
+# Per-sample retained review facts. These bits summarize recorded decisions;
+# they do not choose peaks, assign groups, or authorize Matrix values.
+OBSERVED, ATTENTION, EXCLUDED, NULL_CELL, ZERO_CELL = 1, 2, 4, 8, 16
+ORIGIN_FLAGS = {
+    "backfill_support": 32,
+    "reacquired_support": 64,
+    "discovery_support": 128,
+}
+SELECTION_FLAGS = (
+    OBSERVED,
+    ATTENTION,
+    EXCLUDED,
+    NULL_CELL,
+    ZERO_CELL,
+    *ORIGIN_FLAGS.values(),
+)
+
+
+def attention_reason(kind: str, fact: dict[str, Any]) -> str | None:
+    """One recorded-fact predicate for selection and its displayed explanation."""
+    if kind == "cell_decisions":
+        if (
+            fact.get("variant") == "unresolved"
+            and fact.get("value", fact.get("quantitative_value")) is None
+        ):
+            return "unresolved"
+    elif kind == "method_assessments" and fact.get("method_result") == "HOLD":
+        return "HOLD"
+    elif kind == "initial_edges":
+        evidence = fact.get("initial_evidence", {})
+        failure = evidence.get("failure", evidence.get("reason"))
+        if failure in ("ambiguous_owner", "identity_conflict"):
+            return failure
+        if fact.get("disposition") == "review_only":
+            return "review_only"
+    return None
+
+
+def selection_sample_facts(
+    kind, identifier, gid, keys, candidates, records, links, cells, observed
+):
+    """Reduce recorded facts once, preserving sample attribution for later scopes."""
+    group = records.get("final_groups", {}).get(gid, {})
+    initial = (
+        ATTENTION if group.get("disposition") in ("provisional", "unresolved") else 0
+    )
+    flags = {sid: initial for _, sid in keys}
+    for cid, sid in keys:
+        if candidates[cid, sid].get("discovery_candidate_state") == "excluded":
+            flags[sid] |= EXCLUDED
+        for record_kind, rid in links.get((cid, sid), ()):
+            if record_kind not in ("method_assessments", "initial_edges", "exclusions"):
+                continue
+            fact = records.get(record_kind, {}).get(rid, {})
+            if fact.get("canonical_sample_identity_id", fact.get("sample_id")) not in (
+                None,
+                sid,
+            ):
+                continue
+            if fact.get("group_hypothesis_id") not in (None, gid):
+                continue
+            if kind == "row" and fact.get("row_key_id") not in (None, identifier):
+                continue
+            if attention_reason(record_kind, fact) is not None:
+                flags[sid] |= ATTENTION
+            if record_kind == "exclusions":
+                flags[sid] |= EXCLUDED
+    for cell in cells:
+        sid = cell["canonical_sample_identity_id"]
+        flag = flags.setdefault(sid, initial)
+        value = cell.get("value")
+        flag |= NULL_CELL if value is None else ZERO_CELL if value == 0 else 0
+        if attention_reason("cell_decisions", cell) is not None:
+            flag |= ATTENTION
+        if cell.get("observation_ids"):
+            flag |= OBSERVED
+        flag = (flag & ~sum(ORIGIN_FLAGS.values())) | ORIGIN_FLAGS.get(
+            cell.get("support_origin"), 0
+        )
+        flags[sid] = flag
+    observed = set(observed)
+    observed.update(
+        member["canonical_sample_identity_id"]
+        for member in group.get("member_subjects", [])
+        if member.get("physical_observation_ids")
+    )
+    for sid in observed & flags.keys():
+        flags[sid] |= OBSERVED
+    return flags
+
 
 def pack_cells(cells: Sequence[Mapping[str, Any]], samples: Mapping[str, int]) -> bytes:
     """Store a row's values once, with sample ordinals and shared field names."""

@@ -336,7 +336,7 @@ def generate_report(
 
     # Stage: Selection
     normalized_set = set(normalized_sample_ids)
-    if selection.strategy == "query" and hasattr(source, "select_query"):
+    if hasattr(source, "select_items"):
         try:
             (
                 selected_items,
@@ -344,7 +344,7 @@ def generate_report(
                 eligible_count,
                 matched_count,
                 missing_rt_count,
-            ) = source.select_query(normalized_set, selection)
+            ) = source.select_items(normalized_set, selection)
         except sqlite3.Error as exc:
             raise InspectorError(4, f"Invalid query index: {exc}", cause=exc) from exc
     else:

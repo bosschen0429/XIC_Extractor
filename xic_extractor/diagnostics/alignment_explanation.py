@@ -601,7 +601,7 @@ def _read_completed_summary(connection: sqlite3.Connection) -> dict[str, Any]:
     if row is None:
         raise ExplanationError("malformed explanation: missing completion summary")
     summary = _object(row[0])
-    if summary.get("query_index_version") not in (None, 1):
+    if summary.get("query_index_version") not in (None, 1, 2):
         raise ExplanationError("unsupported explanation query index version")
     if (
         summary.get("schema_version") not in (SCHEMA_VERSION, REVIEW_SCHEMA_VERSION)
@@ -793,13 +793,27 @@ def read_explanation_selection(
                 )
             )
         records: dict[str, dict[str, dict[str, Any]]] = {}
-        for kind, rid in sorted({(kind, rid) for _, _, kind, rid in links}):
+        requested = {(kind, rid) for _, _, kind, rid in links}
+        # Scalar-only rows have no candidate witness links. They are still
+        # eligible for sample/attention review and must hydrate by row identity.
+        requested.update(("rows", row_id) for row_id in row_ids)
+        for kind, rid in sorted(requested):
             row = connection.execute(
                 "SELECT payload FROM records WHERE kind=? AND record_id=?", (kind, rid)
             ).fetchone()
             if row is None:
                 raise ExplanationError("Selected review links to a missing record")
             records.setdefault(kind, {})[rid] = _object(row[0])
+        for payload in records.get("rows", {}).values():
+            gid = payload.get("group_hypothesis_id")
+            if gid is None or gid in records.get("final_groups", {}):
+                continue
+            row = connection.execute(
+                "SELECT payload FROM records WHERE kind='final_groups' AND record_id=?",
+                (gid,),
+            ).fetchone()
+            if row is not None:
+                records.setdefault("final_groups", {})[gid] = _object(row[0])
         records["cell_decisions"] = _read_review_cells(connection, summary, row_ids)
         return ExplanationMetadata(summary, candidates, records, tuple(sorted(links)))
 

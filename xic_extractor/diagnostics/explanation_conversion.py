@@ -41,11 +41,22 @@ def index_review_query(source: Path, destination: Path) -> dict[str, Any]:
                 raise ExplanationError(
                     "Query indexing requires a compact review; use --compact-to first"
                 )
-            if summary.get("query_index_version") is not None:
-                raise ExplanationError("Review already has a query index")
+            if summary.get("query_index_version") == 2:
+                raise ExplanationError("Review already has the current selection index")
             copied = sqlite3.connect(temporary)
             try:
                 original.backup(copied)
+                if summary.get("query_index_version") == 1:
+                    for table in (
+                        "query_samples",
+                        "query_candidates",
+                        "query_items",
+                        "query_members",
+                        "query_scope",
+                        "query_witnesses",
+                        "query_peers",
+                    ):
+                        copied.execute(f"DROP TABLE {table}")
                 matrix = Path(summary["matrix_path"])
                 if not matrix.is_absolute():
                     summary["matrix_path"] = str((source.parent / matrix).resolve())
@@ -54,7 +65,7 @@ def index_review_query(source: Path, destination: Path) -> dict[str, Any]:
             finally:
                 copied.close()
         os.rename(temporary, destination)
-        return {"report": str(destination), "query_index_version": 1}
+        return {"report": str(destination), "query_index_version": 2}
     finally:
         temporary.unlink(missing_ok=True)
 

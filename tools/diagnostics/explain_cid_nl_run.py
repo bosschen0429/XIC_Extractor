@@ -32,7 +32,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--index-query-to",
         type=Path,
-        help="Copy an existing compact review with indexed query coordinates",
+        help="Copy a compact review with the current query, sample and attention index",
     )
     parser.add_argument(
         "--curve-bundle",

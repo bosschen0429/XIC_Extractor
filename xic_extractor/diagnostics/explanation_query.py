@@ -11,6 +11,11 @@ import sqlite3
 from collections import defaultdict
 from typing import Any
 
+from xic_extractor.diagnostics.explanation_review import (
+    SELECTION_FLAGS,
+    selection_sample_facts,
+)
+
 
 def recorded_observations(candidate, linked_records, records, member_ids):
     """Resolve the recorded observations used by both selection and display."""
@@ -60,6 +65,7 @@ def build_query_index(db: sqlite3.Connection, summary: dict[str, Any]) -> None:
             item INTEGER, peer INTEGER, priority INTEGER, edge_ref TEXT,
             PRIMARY KEY(item,peer,edge_ref)
         ) WITHOUT ROWID;
+        CREATE TABLE query_review (item INTEGER PRIMARY KEY, sample_facts BLOB);
     """)
     samples = {
         sample["canonical_sample_identity_id"]: i
@@ -87,7 +93,10 @@ def build_query_index(db: sqlite3.Connection, summary: dict[str, Any]) -> None:
         ),
     )
     records: dict[str, dict[str, Any]] = {}
-    kinds = "('rows','final_groups','terminal_subjects','initial_edges')"
+    kinds = (
+        "('rows','final_groups','terminal_subjects','initial_edges',"
+        "'method_assessments','exclusions')"
+    )
     for kind, rid, payload in db.execute(
         "SELECT * FROM records WHERE kind IN " + kinds
     ):
@@ -114,18 +123,7 @@ def build_query_index(db: sqlite3.Connection, summary: dict[str, Any]) -> None:
     definitions.extend(
         ("candidate", key[0], None, {key}) for key in candidates if key not in grouped
     )
-    row_samples = {}
-    if "sample_mask" in {row[1] for row in db.execute("PRAGMA table_info(row_cells)")}:
-        for rid, mask in db.execute("SELECT row_key_id,sample_mask FROM row_cells"):
-            bits = int.from_bytes(mask, "little")
-            row_samples[rid] = {
-                sid for sid, index in samples.items() if bits & (1 << index)
-            }
-    else:
-        for cell in _read_review_cells(db, summary).values():
-            row_samples.setdefault(cell["row_key_id"], set()).add(
-                cell["canonical_sample_identity_id"]
-            )
+    mask_width = max(1, (len(samples) + 7) // 8)
     items_by_key = defaultdict(set)
     item_keys = {}
     for item_id, (kind, identifier, gid, keys) in enumerate(definitions):
@@ -148,13 +146,6 @@ def build_query_index(db: sqlite3.Connection, summary: dict[str, Any]) -> None:
             "INSERT INTO query_members VALUES (?,?)",
             ((item_id, candidate_ids[key]) for key in keys),
         )
-        scope = {sid for _, sid in keys} | (
-            row_samples.get(identifier, set()) if kind == "row" else set()
-        )
-        db.executemany(
-            "INSERT INTO query_scope VALUES (?,?)",
-            ((samples[sid], item_id) for sid in scope),
-        )
         members = defaultdict(set)
         for member in (
             records.get("final_groups", {}).get(gid, {}).get("member_subjects", [])
@@ -163,11 +154,14 @@ def build_query_index(db: sqlite3.Connection, summary: dict[str, Any]) -> None:
                 member.get("physical_observation_ids", [])
             )
         ordinal = 0
+        observed = set()
         for key in sorted(keys):
             items_by_key[key].add(item_id)
             for observation in recorded_observations(
                 candidates[key], links[key], records, members[key[1]]
             ):
+                if observation.get("peak_observation_content_id"):
+                    observed.add(key[1])
                 db.execute(
                     "INSERT INTO query_witnesses VALUES (?,?,?,?,?)",
                     (
@@ -179,6 +173,40 @@ def build_query_index(db: sqlite3.Connection, summary: dict[str, Any]) -> None:
                     ),
                 )
                 ordinal += 1
+        cells = (
+            _read_review_cells(db, summary, (identifier,)).values()
+            if kind == "row"
+            else ()
+        )
+        flags = selection_sample_facts(
+            kind,
+            identifier,
+            gid,
+            keys,
+            candidates,
+            records,
+            links,
+            cells,
+            observed,
+        )
+        db.executemany(
+            "INSERT INTO query_scope VALUES (?,?)",
+            ((samples[sid], item_id) for sid in flags),
+        )
+        # One bit per sample for presence and each scalar fact; no cell payload
+        # needs decoding again when a caller changes its selected sample scope.
+        masks = [sum(1 << samples[sid] for sid in flags)]
+        masks.extend(
+            sum(1 << samples[sid] for sid, value in flags.items() if value & bit)
+            for bit in SELECTION_FLAGS
+        )
+        db.execute(
+            "INSERT INTO query_review VALUES (?,?)",
+            (
+                item_id,
+                b"".join(mask.to_bytes(mask_width, "little") for mask in masks),
+            ),
+        )
     for edge_ref, edge in records.get("initial_edges", {}).items():
         keys = record_keys["initial_edges", edge_ref]
         participants = {item for key in keys for item in items_by_key[key]}
@@ -199,7 +227,7 @@ def build_query_index(db: sqlite3.Connection, summary: dict[str, Any]) -> None:
                 "INSERT INTO query_peers VALUES (?,?,?,?)",
                 ((item, peer, priority, edge_ref) for peer in peers),
             )
-    summary["query_index_version"] = 1
+    summary["query_index_version"] = 2
     db.execute(
         "UPDATE metadata SET payload=? WHERE key='summary'",
         (json.dumps(summary, allow_nan=False),),

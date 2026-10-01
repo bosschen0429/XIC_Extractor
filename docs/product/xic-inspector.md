@@ -86,7 +86,11 @@ at publication. SQLite applies query predicates, counts and offset/limit before
 Inspector loads the selected page's witnesses and details.
 New reports store row sample membership separately from the packed cell values,
 so checking scope does not require decoding all values. Sample and attention
-selection reduce the needed decision facts once. Detailed reasons, sample
+selection use persisted per-sample fact masks, including observed coverage,
+attention, exclusion, null/zero values and support origins. Changing sample
+scope intersects these masks rather than decoding the retained records/cells.
+Seeded balanced sampling still ranks the compact eligible identities to preserve
+its exact deterministic algorithm. Detailed reasons, sample
 statuses and presentation are built only for selected items and displayed peers.
 
 Use `scripts.run_alignment --explanation-curve-mz-range LOWER:UPPER` to retain
@@ -106,14 +110,15 @@ reasons, omitting curve payloads and duplicated artifact chains. Compact review
 cell references are display positions, not scientific decision IDs; full audit
 retains the latter. The bound Matrix file must remain available.
 
-An older compact review can gain the query index without losing retained facts
+An older compact review can gain or upgrade the selection index without losing retained facts
 or curves. This writes a new file and requires no RAW access:
 
 ```powershell
 .venv/Scripts/python.exe -m tools.diagnostics.explain_cid_nl_run --report <review.sqlite> --index-query-to <indexed-review.sqlite>
 ```
 
-Older reports without the index remain readable through population selection.
+Older reports without the current index remain readable through population
+selection. Query-only indexes remain usable for query selection until upgraded.
 
 For a curve not retained in the report, acquire only the requested candidate's
 or group's observed windows into a portable bundle:

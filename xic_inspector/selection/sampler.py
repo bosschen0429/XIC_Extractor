@@ -20,6 +20,25 @@ _ORIGIN_ORDER = (
 )
 
 
+def review_case_order(key: tuple[str, str, str]) -> tuple[int, int, int]:
+    """The stable round-robin order shared by in-memory and indexed selection."""
+    return (
+        _COVERAGE_ORDER.index(key[0]),
+        _ORIGIN_ORDER.index(key[1]),
+        STRATA_ORDER.index(key[2]),
+    )
+
+
+def sampling_rank(serialized_ref: str, seed: int) -> str:
+    """Stable seeded rank, independent of evidence storage or presentation."""
+    payload = json.dumps(
+        [2, str(seed), "pick", serialized_ref],
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
 def review_case_key(item: CanonicalItem) -> tuple[str, str, str]:
     """Use scoped observation facts, never cell presence as coverage."""
     summary = item.details.get("review_summary", {})
@@ -70,20 +89,11 @@ def sample_cross_sample_sha256(
         buckets[review_case_key(item)].append(item)
 
     def rank(item: CanonicalItem) -> tuple[str, bytes]:
-        payload = json.dumps(
-            [2, str(seed), "pick", item.serialized_ref],
-            ensure_ascii=False,
-            separators=(",", ":"),
-        )
-        return hashlib.sha256(payload.encode("utf-8")).hexdigest(), item.sort_key
+        return sampling_rank(item.serialized_ref, seed), item.sort_key
 
     keys = sorted(
         buckets,
-        key=lambda key: (
-            _COVERAGE_ORDER.index(key[0]),
-            _ORIGIN_ORDER.index(key[1]),
-            STRATA_ORDER.index(key[2]),
-        ),
+        key=review_case_order,
     )
     queues = {key: deque(sorted(buckets[key], key=rank)) for key in keys}
     selected: list[CanonicalItem] = []
