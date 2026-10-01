@@ -34,12 +34,12 @@ from xic_extractor.alignment.promotion_policy import (
     evidence_from_alignment,
     is_backfill_cell_only_block_reason,
 )
-from xic_extractor.decision_policy import (
+from xic_extractor.peak_detection.decision_policy import (
     DECISION_CLASS_RANK,
     DecisionRecord,
     DecisionTerm,
 )
-from xic_extractor.evidence_semantics import DecisionClass
+from xic_extractor.peak_detection.evidence_semantics import DecisionClass
 
 IdentityDecision = Literal[
     "production_family",

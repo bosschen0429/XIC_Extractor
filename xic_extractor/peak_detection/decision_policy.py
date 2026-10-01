@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from xic_extractor.evidence_semantics import (
+from xic_extractor.peak_detection.evidence_semantics import (
     DecisionClass,
     EvidenceDecisionSemantics,
 )

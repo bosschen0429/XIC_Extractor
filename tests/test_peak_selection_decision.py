@@ -1,4 +1,4 @@
-from xic_extractor.evidence_semantics import EvidenceDecisionSemantics
+from xic_extractor.peak_detection.evidence_semantics import EvidenceDecisionSemantics
 from xic_extractor.peak_detection.hypotheses import (
     AuditTrail,
     EvidenceVector,

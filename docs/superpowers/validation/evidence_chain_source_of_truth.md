@@ -82,7 +82,7 @@ boundaries.
 
 Owner:
 
-- `xic_extractor/evidence_semantics.py`
+- `xic_extractor/peak_detection/evidence_semantics.py`
 - `xic_extractor/peak_detection/evidence_facts.py`
 - `tests/test_evidence_semantics.py`
 - `tests/test_evidence_spine_consistency.py`

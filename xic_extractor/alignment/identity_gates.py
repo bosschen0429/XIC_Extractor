@@ -5,7 +5,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal
 
-from xic_extractor.evidence_semantics import CommonEvidence
+from xic_extractor.peak_detection.evidence_semantics import CommonEvidence
 
 EXTREME_BACKFILL_REASON = "extreme_backfill_dependency"
 WEAK_SEED_BACKFILL_REASON = "weak_seed_backfill_dependency"

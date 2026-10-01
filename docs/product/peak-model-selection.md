@@ -48,7 +48,7 @@ through parity or explicit expected-diff approval.
 | Surface | Role |
 | --- | --- |
 | `xic_extractor.peak_detection.model_selection` | Model selection module |
-| `xic_extractor.evidence_semantics` | Evidence semantics module |
+| `xic_extractor.peak_detection.evidence_semantics` | Evidence semantics module |
 | Candidate-table / workbook projections | Selected marker, confidence, reason, score breakdown, matrix value |
 | Parity / blocked-diff / expected-diff tests | Behavioral locks on public output |
 

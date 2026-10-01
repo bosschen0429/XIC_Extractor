@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from xic_extractor.evidence_semantics import (
+from xic_extractor.peak_detection.evidence_semantics import (
     EvidenceSignalSet,
     classify_evidence_consistency,
     decision_semantics_from_signal_set,

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 
-from xic_extractor.decision_policy import (
+from xic_extractor.peak_detection.decision_policy import (
     DecisionRecord,
     DecisionTerm,
     decision_blockers,
