@@ -57,12 +57,6 @@ class PeakCandidate:
     proposal_sources: tuple[str, ...] = ()
     source_apex_rank: int | None = None
     merge_note: str = ""
-    safe_merge_rejection_reason: str = ""
-    safe_merge_promotion_source: str = ""
-    safe_merge_promotion_shadow_boundary_id: str = ""
-    safe_merge_promotion_area_ratio: float | None = None
-    safe_merge_promotion_selected_interval_count: int | None = None
-    safe_merge_promotion_selected_interval_gap_max_min: float | None = None
     ms2_evidence_peak_start: float | None = None
     ms2_evidence_peak_end: float | None = None
 

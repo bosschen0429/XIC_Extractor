@@ -166,8 +166,9 @@ processing, see [`product/signal-processing-rationale.md`](product/signal-proces
   quantitative expected differences; parity must not be manufactured by a
   second calculation. The default 15-point smoothing is scan-rate sensitive, and non-default
   windows must be treated as method parameters. Production-ready claims across
-  batches must include a `gaussian15_area_pressure_audit.py` review of
-  raw-vs-Gaussian area ratios and estimated smoothing duration. This audit is
+  batches must include a method-appropriate review of raw-vs-Gaussian area
+  ratios and estimated smoothing duration, using retained numerical evidence.
+  No particular retired candidate-table tool is required. This review is
   observational only; it must not mutate selected boundaries, selected area,
   confidence, presence, workbook output, or matrix values.
 - Formula-driven apex, boundary, height, scan-support, and relative-shape
@@ -417,11 +418,8 @@ policy, and machine-readable GO/NO-GO blockers.
   the shared evidence rule, diagnostic wording, or reviewed row is wrong.
 - Fix the shared rule and add regression tests when diagnostic logic is wrong;
   do not encode one-off sample or target exceptions as the primary solution.
-- Region-selection verdicts other than the existing adjacent-WIS
-  `safe_merge_eligible` class are not product authority. `wider_boundary_preferred`,
-  `neighbor_apex_preferred`, and `split_supported` remain
-  `behavior_change_required` until a future oracle and public behavior addendum
-  promote or retire them.
+- Canonical region audit projects the selected physical segment. It does not
+  propose merges or grant selected-peak, selected-area, or writer authority.
 
 ## Targeted And Untargeted Boundary
 

@@ -60,7 +60,6 @@ class _ParsedSettings:
     targeted_ms1_shape_identity_activation_policy: str
     emit_score_breakdown: bool
     emit_review_report: bool
-    emit_peak_candidates: bool
     keep_intermediate_csv: bool
     baseline_audit_method: str
     parallel_mode: str
@@ -234,12 +233,6 @@ def _parse_settings_values(
             "emit_review_report",
             _setting_value(settings, settings_path, "emit_review_report"),
         ),
-        emit_peak_candidates=_parse_bool(
-            settings_path,
-            None,
-            "emit_peak_candidates",
-            _setting_value(settings, settings_path, "emit_peak_candidates"),
-        ),
         keep_intermediate_csv=_parse_bool(
             settings_path,
             None,
@@ -385,7 +378,6 @@ def _build_config(
         ),
         emit_score_breakdown=parsed.emit_score_breakdown,
         emit_review_report=parsed.emit_review_report,
-        emit_peak_candidates=parsed.emit_peak_candidates,
         keep_intermediate_csv=parsed.keep_intermediate_csv,
         baseline_audit_method=parsed.baseline_audit_method,
         baseline_integration_method="asls",

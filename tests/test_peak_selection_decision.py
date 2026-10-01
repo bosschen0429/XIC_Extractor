@@ -171,14 +171,14 @@ def test_selection_decision_falls_back_when_typed_semantics_are_missing() -> Non
     assert decision.compatibility_labels == (
         "strict_nl_ok",
         "trace_quality_cap",
-        "region_first_safe_merge",
+        "local_minimum",
     )
 
 
 def _hypothesis(
     *,
     evidence: EvidenceVector,
-    proposal_sources: tuple[str, ...] = ("region_first_safe_merge",),
+    proposal_sources: tuple[str, ...] = ("local_minimum",),
 ) -> PeakHypothesis:
     return PeakHypothesis(
         hypothesis_id="SampleA|Analyte|selected",
@@ -187,7 +187,7 @@ def _hypothesis(
         role="Analyte",
         istd_pair="ISTD",
         analysis_mode="targeted",
-        resolver_mode="region_first_safe_merge",
+        resolver_mode="local_minimum",
         integration=IntegrationResult(
             rt_left_min=8.4,
             rt_apex_min=8.5,

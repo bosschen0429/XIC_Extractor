@@ -127,7 +127,6 @@ def test_extractor_delegates_target_extraction() -> None:
 def test_target_extraction_delegates_diagnostic_evidence_helpers() -> None:
     assert importlib.util.find_spec("xic_extractor.extraction.diagnostics")
     assert importlib.util.find_spec("xic_extractor.extraction.targeted_peak_selection")
-    assert importlib.util.find_spec("xic_extractor.extraction.peak_candidate_audit")
     assert importlib.util.find_spec("xic_extractor.extraction.result_assembly")
 
     target_path = ROOT / "xic_extractor" / "extraction" / "target_extraction.py"
@@ -137,7 +136,6 @@ def test_target_extraction_delegates_diagnostic_evidence_helpers() -> None:
     assert "_check_target_nl" not in function_names
     assert "_candidate_ms2_evidence_builder" not in function_names
     assert "select_targeted_peak(" in source
-    assert "append_peak_audit_rows(" in source
     assert "build_extraction_result(" in source
 
 

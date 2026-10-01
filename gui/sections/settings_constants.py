@@ -2,7 +2,6 @@ _ADVANCED_SETTING_KEYS = (
     "keep_intermediate_csv",
     "emit_score_breakdown",
     "emit_review_report",
-    "emit_peak_candidates",
     "dirty_matrix_mode",
     "count_no_ms2_as_detected",
     "rolling_window_size",

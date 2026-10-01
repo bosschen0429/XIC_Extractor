@@ -36,7 +36,7 @@ def test_build_production_peak_hypotheses_maps_selected_ms2_only(tmp_path) -> No
             source="unit_test",
         ),
         target_label=target.label,
-        resolver_mode="region_first_safe_merge",
+        resolver_mode="local_minimum",
         role="Analyte",
         istd_pair=target.istd_pair,
     )
@@ -197,7 +197,7 @@ def test_select_targeted_peak_uses_model_selection_gate_for_selected_hypothesis(
     )
 
     handoff = targeted_peak_selection.select_targeted_peak(
-        config=replace(_config(tmp_path), emit_peak_candidates=True),
+        config=_config(tmp_path),
         sample_name="SampleA",
         target=_target(),
         peak_result=peak_result,
@@ -243,7 +243,7 @@ def test_select_targeted_peak_keeps_trace_group_without_candidate_table_output(
     )
     rt = np.asarray([8.3, 8.5, 8.7, 9.2])
     handoff = targeted_peak_selection.select_targeted_peak(
-        config=replace(_config(tmp_path), emit_peak_candidates=False),
+        config=_config(tmp_path),
         sample_name="SampleA",
         target=_target(),
         peak_result=peak_result,
@@ -286,7 +286,7 @@ def test_select_targeted_peak_falls_back_on_unapproved_successor_diff(
     )
 
     handoff = targeted_peak_selection.select_targeted_peak(
-        config=replace(_config(tmp_path), emit_peak_candidates=True),
+        config=_config(tmp_path),
         sample_name="SampleA",
         target=_target(),
         peak_result=peak_result,
@@ -358,7 +358,7 @@ def test_select_targeted_peak_promotes_rna_containing_strict_nl_successor(
     )
 
     handoff = targeted_peak_selection.select_targeted_peak(
-        config=replace(_config(tmp_path), emit_peak_candidates=True),
+        config=_config(tmp_path),
         sample_name="TumorBC2304_DNAandRNA",
         target=_target(sample_applicability="rna_containing"),
         peak_result=peak_result,
@@ -417,19 +417,19 @@ def test_select_targeted_peak_switches_on_approved_expected_diff(
     approval = ExpectedDiffApprovalRecord(
         stable_row_id=expected_diff_stable_row_id(
             legacy_selected_candidate_id=(
-                "SampleA|Analyte|region_first_safe_merge||8.50000|8.40000|8.60000"
+                "SampleA|Analyte|local_minimum||8.50000|8.40000|8.60000"
             ),
             successor_selected_candidate_id=(
-                "SampleA|Analyte|region_first_safe_merge||8.55000|8.45000|8.65000"
+                "SampleA|Analyte|local_minimum||8.55000|8.45000|8.65000"
             ),
         ),
         sample_name="SampleA",
         target_label="Analyte",
         legacy_selected_candidate_id=(
-            "SampleA|Analyte|region_first_safe_merge||8.50000|8.40000|8.60000"
+            "SampleA|Analyte|local_minimum||8.50000|8.40000|8.60000"
         ),
         successor_selected_candidate_id=(
-            "SampleA|Analyte|region_first_safe_merge||8.55000|8.45000|8.65000"
+            "SampleA|Analyte|local_minimum||8.55000|8.45000|8.65000"
         ),
         public_outputs_touched=(
             "candidate table selected marker",
@@ -450,7 +450,7 @@ def test_select_targeted_peak_switches_on_approved_expected_diff(
     )
 
     handoff = targeted_peak_selection.select_targeted_peak(
-        config=replace(_config(tmp_path), emit_peak_candidates=True),
+        config=_config(tmp_path),
         sample_name="SampleA",
         target=_target(),
         peak_result=peak_result,
@@ -525,22 +525,22 @@ def test_select_targeted_peak_can_switch_to_paired_ratio_supported_nl_dropout(
     approval = ExpectedDiffApprovalRecord(
         stable_row_id=expected_diff_stable_row_id(
             legacy_selected_candidate_id=(
-                "BenignfatBC1055_DNA|Analyte|region_first_safe_merge||"
+                "BenignfatBC1055_DNA|Analyte|local_minimum||"
                 "16.43000|16.33000|16.53000"
             ),
             successor_selected_candidate_id=(
-                "BenignfatBC1055_DNA|Analyte|region_first_safe_merge||"
+                "BenignfatBC1055_DNA|Analyte|local_minimum||"
                 "17.18000|17.08000|17.28000"
             ),
         ),
         sample_name="BenignfatBC1055_DNA",
         target_label="Analyte",
         legacy_selected_candidate_id=(
-            "BenignfatBC1055_DNA|Analyte|region_first_safe_merge||"
+            "BenignfatBC1055_DNA|Analyte|local_minimum||"
             "16.43000|16.33000|16.53000"
         ),
         successor_selected_candidate_id=(
-            "BenignfatBC1055_DNA|Analyte|region_first_safe_merge||"
+            "BenignfatBC1055_DNA|Analyte|local_minimum||"
             "17.18000|17.08000|17.28000"
         ),
         public_outputs_touched=(
@@ -565,7 +565,7 @@ def test_select_targeted_peak_can_switch_to_paired_ratio_supported_nl_dropout(
     )
 
     handoff = targeted_peak_selection.select_targeted_peak(
-        config=replace(_config(tmp_path), emit_peak_candidates=True),
+        config=_config(tmp_path),
         sample_name="BenignfatBC1055_DNA",
         target=_target(),
         peak_result=peak_result,
@@ -623,19 +623,19 @@ def test_select_targeted_peak_blocks_approved_expected_diff_for_unpaired_target(
     approval = ExpectedDiffApprovalRecord(
         stable_row_id=expected_diff_stable_row_id(
             legacy_selected_candidate_id=(
-                "SampleA|Analyte|region_first_safe_merge||8.50000|8.40000|8.60000"
+                "SampleA|Analyte|local_minimum||8.50000|8.40000|8.60000"
             ),
             successor_selected_candidate_id=(
-                "SampleA|Analyte|region_first_safe_merge||8.55000|8.45000|8.65000"
+                "SampleA|Analyte|local_minimum||8.55000|8.45000|8.65000"
             ),
         ),
         sample_name="SampleA",
         target_label="Analyte",
         legacy_selected_candidate_id=(
-            "SampleA|Analyte|region_first_safe_merge||8.50000|8.40000|8.60000"
+            "SampleA|Analyte|local_minimum||8.50000|8.40000|8.60000"
         ),
         successor_selected_candidate_id=(
-            "SampleA|Analyte|region_first_safe_merge||8.55000|8.45000|8.65000"
+            "SampleA|Analyte|local_minimum||8.55000|8.45000|8.65000"
         ),
         public_outputs_touched=(
             "candidate table selected marker",
@@ -656,7 +656,7 @@ def test_select_targeted_peak_blocks_approved_expected_diff_for_unpaired_target(
     )
 
     handoff = targeted_peak_selection.select_targeted_peak(
-        config=replace(_config(tmp_path), emit_peak_candidates=True),
+        config=_config(tmp_path),
         sample_name="SampleA",
         target=replace(_target(), istd_pair=""),
         peak_result=peak_result,
@@ -709,19 +709,19 @@ def test_select_targeted_peak_blocks_pair_switch_without_same_sample_istd_anchor
     approval = ExpectedDiffApprovalRecord(
         stable_row_id=expected_diff_stable_row_id(
             legacy_selected_candidate_id=(
-                "SampleA|Analyte|region_first_safe_merge||8.50000|8.40000|8.60000"
+                "SampleA|Analyte|local_minimum||8.50000|8.40000|8.60000"
             ),
             successor_selected_candidate_id=(
-                "SampleA|Analyte|region_first_safe_merge||8.55000|8.45000|8.65000"
+                "SampleA|Analyte|local_minimum||8.55000|8.45000|8.65000"
             ),
         ),
         sample_name="SampleA",
         target_label="Analyte",
         legacy_selected_candidate_id=(
-            "SampleA|Analyte|region_first_safe_merge||8.50000|8.40000|8.60000"
+            "SampleA|Analyte|local_minimum||8.50000|8.40000|8.60000"
         ),
         successor_selected_candidate_id=(
-            "SampleA|Analyte|region_first_safe_merge||8.55000|8.45000|8.65000"
+            "SampleA|Analyte|local_minimum||8.55000|8.45000|8.65000"
         ),
         public_outputs_touched=(
             "candidate table selected marker",
@@ -742,7 +742,7 @@ def test_select_targeted_peak_blocks_pair_switch_without_same_sample_istd_anchor
     )
 
     handoff = targeted_peak_selection.select_targeted_peak(
-        config=replace(_config(tmp_path), emit_peak_candidates=True),
+        config=_config(tmp_path),
         sample_name="SampleA",
         target=_target(),
         peak_result=peak_result,
@@ -795,19 +795,19 @@ def test_select_targeted_peak_ignores_wrong_expected_diff_approval(
     approval = ExpectedDiffApprovalRecord(
         stable_row_id=expected_diff_stable_row_id(
             legacy_selected_candidate_id=(
-                "SampleA|Analyte|region_first_safe_merge||8.50000|8.40000|8.60000"
+                "SampleA|Analyte|local_minimum||8.50000|8.40000|8.60000"
             ),
             successor_selected_candidate_id=(
-                "SampleA|Analyte|region_first_safe_merge||8.55000|8.45000|8.65000"
+                "SampleA|Analyte|local_minimum||8.55000|8.45000|8.65000"
             ),
         ),
         sample_name="OtherSample",
         target_label="Analyte",
         legacy_selected_candidate_id=(
-            "SampleA|Analyte|region_first_safe_merge||8.50000|8.40000|8.60000"
+            "SampleA|Analyte|local_minimum||8.50000|8.40000|8.60000"
         ),
         successor_selected_candidate_id=(
-            "SampleA|Analyte|region_first_safe_merge||8.55000|8.45000|8.65000"
+            "SampleA|Analyte|local_minimum||8.55000|8.45000|8.65000"
         ),
         public_outputs_touched=(
             "candidate table selected marker",
@@ -828,7 +828,7 @@ def test_select_targeted_peak_ignores_wrong_expected_diff_approval(
     )
 
     handoff = targeted_peak_selection.select_targeted_peak(
-        config=replace(_config(tmp_path), emit_peak_candidates=True),
+        config=_config(tmp_path),
         sample_name="SampleA",
         target=_target(),
         peak_result=peak_result,
@@ -874,10 +874,10 @@ def test_select_targeted_peak_blocks_audit_overlay_expected_diff_approval(
         ),
     )
     legacy_id = (
-        "SampleA|Analyte|region_first_safe_merge||8.50000|8.40000|8.60000"
+        "SampleA|Analyte|local_minimum||8.50000|8.40000|8.60000"
     )
     audit_overlay_successor_id = (
-        "SampleA|Analyte|region_first_safe_merge|"
+        "SampleA|Analyte|local_minimum|"
         "chrom_peak_segment;centwave_cwt|8.55000|8.45000|8.65000"
     )
     approval = ExpectedDiffApprovalRecord(
@@ -908,7 +908,7 @@ def test_select_targeted_peak_blocks_audit_overlay_expected_diff_approval(
     )
 
     handoff = targeted_peak_selection.select_targeted_peak(
-        config=replace(_config(tmp_path), emit_peak_candidates=True),
+        config=_config(tmp_path),
         sample_name="SampleA",
         target=_target(),
         peak_result=peak_result,
@@ -986,7 +986,7 @@ def _config(tmp_path) -> ExtractionConfig:
         peak_min_prominence_ratio=0.1,
         ms2_precursor_tol_da=0.5,
         nl_min_intensity_ratio=0.01,
-        resolver_mode="region_first_safe_merge",
+        resolver_mode="local_minimum",
     )
 
 

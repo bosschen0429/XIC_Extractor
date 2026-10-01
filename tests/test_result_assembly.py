@@ -539,7 +539,7 @@ def test_istd_rt_conflict_inside_target_window_stays_counted() -> None:
         role="ISTD",
         istd_pair="ISTD",
         analysis_mode="targeted",
-        resolver_mode="region_first_safe_merge",
+        resolver_mode="local_minimum",
         integration=IntegrationResult(
             rt_left_min=8.4,
             rt_apex_min=8.5,
@@ -1096,7 +1096,7 @@ def test_rna_containing_target_stays_eligible_in_rna_sample() -> None:
 
 
 class _Config:
-    resolver_mode = "region_first_safe_merge"
+    resolver_mode = "local_minimum"
 
 
 def _target(
@@ -1226,7 +1226,7 @@ def _result_with_targeted_projection_semantics(
         role="ISTD" if target.is_istd else "Analyte",
         istd_pair=target.istd_pair,
         analysis_mode="targeted",
-        resolver_mode="region_first_safe_merge",
+        resolver_mode="local_minimum",
         integration=(
             physical_evaluation.integration
             if physical_evaluation is not None

@@ -24,7 +24,6 @@ from xic_extractor.extraction.diagnostics import (
     istd_anchor_missing_diagnostic,
 )
 from xic_extractor.extraction.drift import estimate_sample_drift
-from xic_extractor.extraction.peak_candidate_audit import append_peak_audit_rows
 from xic_extractor.extraction.result_assembly import build_extraction_result
 from xic_extractor.extraction.rt_prior_library import LibraryEntry
 from xic_extractor.extraction.rt_windows import get_rt_window
@@ -153,9 +152,6 @@ def process_file(
         )
         with raw_context as raw:
             results = dict(precomputed_istd_results or {})
-            peak_candidate_rows: list[dict[str, str]] = []
-            peak_candidate_boundary_rows: list[dict[str, str]] = []
-            selected_envelope_diagnostic_rows: list[dict[str, str]] = []
             diagnostics: list[DiagnosticRecord] = list(
                 precomputed_istd_diagnostics or []
             )
@@ -182,11 +178,6 @@ def process_file(
                         strict_preferred_rt=False,
                         results=results,
                         diagnostics=diagnostics,
-                        peak_candidate_rows=peak_candidate_rows,
-                        peak_candidate_boundary_rows=peak_candidate_boundary_rows,
-                        selected_envelope_diagnostic_rows=(
-                            selected_envelope_diagnostic_rows
-                        ),
                         scoring_context_factory=scoring_context_factory,
                         model_selection_expected_diff_approvals=approval_records,
                         shape_metrics_by_label=istd_shape_metrics_by_label,
@@ -227,11 +218,6 @@ def process_file(
                     strict_preferred_rt=reference_rt is not None,
                     results=results,
                     diagnostics=diagnostics,
-                    peak_candidate_rows=peak_candidate_rows,
-                    peak_candidate_boundary_rows=peak_candidate_boundary_rows,
-                    selected_envelope_diagnostic_rows=(
-                        selected_envelope_diagnostic_rows
-                    ),
                     scoring_context_factory=scoring_context_factory,
                     model_selection_expected_diff_approvals=approval_records,
                     istd_confidence_note=istd_confidence_note(
@@ -246,9 +232,6 @@ def process_file(
             return result_models.FileResult(
                 sample_name=sample_name,
                 results=results,
-                peak_candidate_rows=peak_candidate_rows,
-                peak_candidate_boundary_rows=peak_candidate_boundary_rows,
-                selected_envelope_diagnostic_rows=selected_envelope_diagnostic_rows,
             ), diagnostics
     except Exception as exc:
         reason = f"Failed to open .raw: {type(exc).__name__}: {exc}"
@@ -271,9 +254,6 @@ def extract_one_target(
     strict_preferred_rt: bool = False,
     results: dict[str, ExtractionResult],
     diagnostics: list[DiagnosticRecord],
-    peak_candidate_rows: list[dict[str, str]] | None = None,
-    peak_candidate_boundary_rows: list[dict[str, str]] | None = None,
-    selected_envelope_diagnostic_rows: list[dict[str, str]] | None = None,
     scoring_context_factory: Callable[..., Any] | None = None,
     istd_confidence_note: str | None = None,
     istd_rt_in_this_sample: float | None = None,
@@ -486,9 +466,7 @@ def extract_one_target(
         istd_pair=target.istd_pair,
         paired_istd_anchor_rt=istd_rt_in_this_sample,
     )
-    audit_rt = rt
-    audit_intensity = intensity
-    prepared, universe, _ = _physical_trace_owners(audit_rt, audit_intensity)
+    prepared, universe, _ = _physical_trace_owners(rt, intensity)
     paired_rejection = paired_anchor_mismatch_diagnostic(
         sample_name,
         target,
@@ -517,8 +495,8 @@ def extract_one_target(
         candidate=candidate,
         candidate_ms2_cache=candidate_ms2_cache,
         candidate_ms2_builder=_cached_candidate_ms2_builder,
-        rt=audit_rt,
-        intensity=audit_intensity,
+        rt=rt,
+        intensity=intensity,
         rt_min=context_rt_min,
         rt_max=context_rt_max,
         expected_rt_min=anchor_rt,
@@ -640,25 +618,6 @@ def extract_one_target(
         rt_max=selection_rt_max,
         nl_result=result.nl,
         paired_rejection=paired_rejection,
-    )
-    append_peak_audit_rows(
-        peak_candidate_rows=peak_candidate_rows,
-        peak_candidate_boundary_rows=peak_candidate_boundary_rows,
-        selected_envelope_diagnostic_rows=selected_envelope_diagnostic_rows,
-        config=config,
-        sample_name=sample_name,
-        target=target,
-        peak_result=peak_result,
-        candidate_ms2_builder=_cached_candidate_ms2_builder,
-        rt=audit_rt,
-        intensity=audit_intensity,
-        trace_group=handoff_peak.trace_group,
-        product_selected_candidate_id=getattr(
-            handoff_peak.selected_hypothesis, "hypothesis_id", None
-        ),
-        product_selected_hypothesis=handoff_peak.selected_hypothesis,
-        scoring_context_builder=scoring_context_builder,
-        istd_confidence_note=istd_confidence_note,
     )
     return anchor_rt
 

@@ -326,15 +326,6 @@ until an explicit product-transfer decision and consolidation policy exist.
 
 ---
 
-### `selected_envelope_review_queue.py`
-
-**Purpose**: Build `diagnostic_only` selected-envelope changed-row and boundary-oracle review queue artifacts from `selected_envelope_diagnostics.tsv`.
-**Topic group**: `selected_envelope_review_queue.py` + `xic_extractor/peak_detection/selected_envelope_*`
-**Originating owner/plan**: `docs/product/quantitation-context.md`; retired selected full-envelope boundary spec provenance `retired-provenance:13e9499ab37d`
-**Status note**: Writes `selected_envelope_changed_rows.tsv`, `selected_envelope_oracle_review_queue.tsv`, `selected_envelope_diagnostic_manifest.tsv`, and `selected_envelope_review_queue.json` under an explicit output directory. This tool only packages the audit sidecar for manual/expert boundary review; it does not run RAW files, mutate selected `IntegrationResult`, change targeted workbook/CSV `Area`, or authorize FE4/8RAW by itself.
-
----
-
 ## Targeted Benchmarks & Reviews
 
 ### `targeted_istd_benchmark.py`
@@ -406,28 +397,6 @@ mutation is an allowed `5-hmdC` or `5-medC` measurement moving from `ND` to a
 populated value, and accepted support TSV sample/target keys exactly match the
 long-row diff keys. It does not open RAW, build
 support evidence, run extraction, or mutate product outputs.
-
----
-
-### `build_target_pair_expected_diff_approval_registry.py`
-
-**Purpose**: Convert explicitly user-approved `target_pair_rt_auto_reselection.tsv`
-rows into a durable `model_selection_expected_diff_approval_registry` TSV for
-guarded targeted product mutation.
-**Topic group**: `build_target_pair_expected_diff_approval_registry.py`
-(single-file)
-**Originating spec**:
-`docs/product/targeted-selection.md`; retired target-pair RT auto-reselection
-spec provenance
-**Status note**: Requires repeated `--approved-row SAMPLE::TARGET` inputs and
-fails closed unless each row is a `row_approval_candidate` shadow switch with
-matching runtime `expected_diff_stable_row_id`, selected-candidate RT, and
-paired area ratio `within_robust_range`. The active paired-area ratio basis is
-the counted leave-one-out median +/- 3 scaled-MAD target/ISTD reference owned by
-`xic_extractor.extraction.paired_area_ratio_projection`; the diagnostic writer
-renders that product evidence and must not reintroduce min/max or
-all-reported-area authority. It does not auto-approve all watch rows and does
-not recompute candidate evidence.
 
 ---
 
@@ -510,29 +479,6 @@ row-label compatibility, not product identity authority. Peak-group overlays are
 context; mode-aware outputs should use
 `peak_hypothesis_id` / selected-apex mode evidence when a row may contain
 multiple MS1 peak modes.
-
-## Area / Region Audits
-
-### `gaussian15_area_pressure_audit.py`
-
-**Purpose**: Build a diagnostic-only pressure surface for Gaussian15 morphology
-area versus raw area and configured/default-15 smoothing duration from
-`peak_candidates.tsv`.
-**Topic group**: `gaussian15_area_pressure_audit.py` (single-file)
-**Originating context**: 2026-06-05 Product Authority Reconciliation
-follow-up for raw-vs-Gaussian area comparability and scan-rate sensitivity.
-**Status note**: Reads candidate-table provenance fields
-(`area_raw_counts_seconds`, `area_ms1_morphology`,
-`ms1_morphology_trace_*`, `region_scan_count`, and `region_duration_min`),
-writes `gaussian15_area_pressure_summary.tsv/json` plus
-`gaussian15_area_pressure_rows.tsv`, and reports
-`readiness_label=diagnostic_pressure_test_surface`. The CLI derives summary
-counts from the already computed row audit so it reads `peak_candidates.tsv`
-once while preserving the path-based summary/detail helper functions. It does
-not mutate selected boundaries, selected area, confidence, presence, workbook
-output, matrix values, or candidate selection.
-
----
 
 ## Delta Mass / Pt Pattern Discovery
 

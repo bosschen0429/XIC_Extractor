@@ -82,7 +82,6 @@ class SettingsSection(QWidget):
         self._keep_intermediate_csv_checkbox = QCheckBox("保留中間 CSV 檔")
         self._emit_score_breakdown_checkbox = QCheckBox("輸出 Score Breakdown sheet")
         self._emit_review_report_checkbox = QCheckBox("輸出 Review Report HTML")
-        self._emit_peak_candidates_checkbox = QCheckBox("輸出 Peak Candidate TSV")
         self._dirty_matrix_mode_checkbox = QCheckBox("啟用 dirty matrix mode")
         self._rolling_window_size_spin = QSpinBox()
         self._rt_prior_library_path_edit = QLineEdit()
@@ -101,7 +100,6 @@ class SettingsSection(QWidget):
             keep_intermediate_csv_checkbox=self._keep_intermediate_csv_checkbox,
             emit_score_breakdown_checkbox=self._emit_score_breakdown_checkbox,
             emit_review_report_checkbox=self._emit_review_report_checkbox,
-            emit_peak_candidates_checkbox=self._emit_peak_candidates_checkbox,
             dirty_matrix_mode_checkbox=self._dirty_matrix_mode_checkbox,
             count_no_ms2_checkbox=self._count_no_ms2_checkbox,
             rolling_window_size_spin=self._rolling_window_size_spin,
@@ -204,7 +202,6 @@ class SettingsSection(QWidget):
             QSignalBlocker(self._keep_intermediate_csv_checkbox),
             QSignalBlocker(self._emit_score_breakdown_checkbox),
             QSignalBlocker(self._emit_review_report_checkbox),
-            QSignalBlocker(self._emit_peak_candidates_checkbox),
             QSignalBlocker(self._dirty_matrix_mode_checkbox),
             QSignalBlocker(self._rolling_window_size_spin),
             QSignalBlocker(self._rt_prior_library_path_edit),
@@ -289,11 +286,6 @@ class SettingsSection(QWidget):
                 ),
                 "emit_review_report": (
                     "true" if self._emit_review_report_checkbox.isChecked() else "false"
-                ),
-                "emit_peak_candidates": (
-                    "true"
-                    if self._emit_peak_candidates_checkbox.isChecked()
-                    else "false"
                 ),
                 "dirty_matrix_mode": (
                     "true" if self._dirty_matrix_mode_checkbox.isChecked() else "false"
@@ -395,7 +387,6 @@ class SettingsSection(QWidget):
             self._keep_intermediate_csv_checkbox,
             self._emit_score_breakdown_checkbox,
             self._emit_review_report_checkbox,
-            self._emit_peak_candidates_checkbox,
             self._dirty_matrix_mode_checkbox,
         ):
             checkbox.stateChanged.connect(lambda _: self._set_dirty(True))

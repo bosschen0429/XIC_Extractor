@@ -10,6 +10,7 @@ from xic_extractor.configuration.settings import migrate_settings_dict
 from xic_extractor.settings_schema import (
     CANONICAL_RESOLVER_MODE,
     CANONICAL_SETTINGS_DEFAULTS,
+    CANONICAL_SETTINGS_DESCRIPTIONS,
     default_parallel_workers,
 )
 from xic_extractor.target_pair_rt_calibration import (
@@ -130,7 +131,6 @@ def test_load_config_derives_output_paths_and_creates_output_dir(
     assert config.parallel_mode == "process"
     assert config.parallel_workers == default_parallel_workers()
     assert config.baseline_audit_method == ""
-    assert config.emit_peak_candidates is False
     assert config.target_pair_rt_calibration_path is None
     assert config.target_config_hash == compute_target_config_hash(
         config_dir / "targets.csv"
@@ -406,16 +406,6 @@ def test_load_config_accepts_process_parallel_settings(tmp_path: Path) -> None:
     assert config.parallel_workers == 4
 
 
-def test_load_config_accepts_emit_peak_candidates_setting(tmp_path: Path) -> None:
-    config_dir = tmp_path / "config"
-    _write_settings(config_dir, {"emit_peak_candidates": "true"})
-    _write_targets(config_dir)
-
-    config, _ = load_config(config_dir)
-
-    assert config.emit_peak_candidates is True
-
-
 def test_load_config_accepts_target_pair_rt_calibration_path(
     tmp_path: Path,
 ) -> None:
@@ -442,7 +432,6 @@ def test_load_config_validates_pair_rt_calibration_when_shadow_output_off(
         config_dir,
         {
             "target_pair_rt_calibration_path": str(calibration),
-            "emit_peak_candidates": "false",
         },
     )
     _write_targets(config_dir)
@@ -762,13 +751,15 @@ def test_settings_example_includes_review_report_setting() -> None:
     assert rows["emit_review_report"] == "false"
 
 
-def test_settings_example_includes_peak_candidates_setting() -> None:
+def test_retired_peak_candidate_setting_is_not_exposed() -> None:
     example_path = Path("config/settings.example.csv")
 
     with example_path.open(newline="", encoding="utf-8-sig") as handle:
         rows = {row["key"]: row["value"] for row in csv.DictReader(handle)}
 
-    assert rows["emit_peak_candidates"] == "false"
+    assert "emit_peak_candidates" not in rows
+    assert "emit_peak_candidates" not in CANONICAL_SETTINGS_DEFAULTS
+    assert "emit_peak_candidates" not in CANONICAL_SETTINGS_DESCRIPTIONS
 
 
 def test_settings_example_includes_target_pair_rt_calibration_setting() -> None:

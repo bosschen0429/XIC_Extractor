@@ -21,7 +21,6 @@ def _canonical_settings() -> dict[str, str]:
         "targeted_ms1_shape_identity_activation_policy": "limited_5hmdc_5medc",
         "emit_score_breakdown": "false",
         "emit_review_report": "false",
-        "emit_peak_candidates": "false",
         "baseline_audit_method": "",
         "keep_intermediate_csv": "false",
         "nl_rt_anchor_search_margin_min": "2.0",
@@ -49,7 +48,6 @@ def test_settings_section_saves_canonical_keys_after_canonical_load(qtbot) -> No
     assert values["parallel_mode"] == "serial"
     assert values["parallel_workers"] == "1"
     assert values["emit_review_report"] == "false"
-    assert values["emit_peak_candidates"] == "false"
     assert "smooth_points" not in values
     assert "smooth_sigma" not in values
 

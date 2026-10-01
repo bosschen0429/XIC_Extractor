@@ -14,7 +14,6 @@ from xic_extractor.review_actions.models import (
     ReviewActionApplyOutput,
     ReviewActionApplyReadiness,
     ReviewActionApplyReadinessPlan,
-    ReviewActionCandidateSidecarCheck,
     ReviewActionError,
     ReviewActionExpectedDiffApproval,
     ReviewActionExpectedDiffTemplate,
@@ -24,13 +23,11 @@ from xic_extractor.review_actions.rows import (
     review_action_application_to_row,
     review_action_apply_changeset_to_row,
     review_action_apply_readiness_to_row,
-    review_action_candidate_sidecar_to_row,
     review_action_expected_diff_template_to_row,
 )
 from xic_extractor.review_actions.schema import (
     _EXPECTED_DIFF_MATRIX_IMPACT_BY_ACTION,
     _EXPECTED_DIFF_OUTPUTS_BY_ACTION,
-    PEAK_CANDIDATE_SIDECAR_REQUIRED_COLUMNS,
     PRODUCT_MUTATING_REVIEW_ACTIONS,
     REVIEW_ACTION_APPLICATION_PLAN_COLUMNS,
     REVIEW_ACTION_APPLY_AUDIT_COLUMNS,
@@ -38,7 +35,6 @@ from xic_extractor.review_actions.schema import (
     REVIEW_ACTION_APPLY_CHANGESET_COLUMNS,
     REVIEW_ACTION_APPLY_CHANGESET_SCHEMA_VERSION,
     REVIEW_ACTION_APPLY_READINESS_COLUMNS,
-    REVIEW_ACTION_CANDIDATE_SIDECAR_COLUMNS,
     REVIEW_ACTION_COLUMNS,
     REVIEW_ACTION_EXPECTED_DIFF_COLUMNS,
     REVIEW_ACTION_EXPECTED_DIFF_FINAL_LABELS,
@@ -82,24 +78,6 @@ def load_review_action_target_states(path: Path) -> tuple[ReviewActionTargetStat
     return tuple(_target_state_from_row(row) for row in rows)
 
 
-def load_review_action_peak_candidate_rows(
-    path: Path,
-) -> tuple[Mapping[str, str], ...]:
-    if not path.is_file():
-        raise ReviewActionError(f"{path}: peak candidates TSV file not found")
-    delimiter = "\t" if path.suffix.lower() in {".tsv", ".txt"} else ","
-    try:
-        rows = read_delimited_rows(
-            path,
-            required_columns=PEAK_CANDIDATE_SIDECAR_REQUIRED_COLUMNS,
-            delimiter=delimiter,
-            encoding="utf-8-sig",
-        )
-    except ValueError as exc:
-        raise ReviewActionError(str(exc)) from exc
-    return tuple(rows)
-
-
 def plan_review_action_applications(
     actions: Sequence[ReviewAction],
     target_states: Sequence[ReviewActionTargetState],
@@ -138,102 +116,6 @@ def plan_review_action_applications(
             continue
         applications.append(_plan_single_application(action, target_state))
     return tuple(applications)
-
-
-def plan_review_action_candidate_sidecars(
-    actions: Sequence[ReviewAction],
-    peak_candidate_rows: Sequence[Mapping[str, object]],
-) -> tuple[ReviewActionCandidateSidecarCheck, ...]:
-    candidate_index = _index_peak_candidate_rows(peak_candidate_rows)
-    select_candidate_counts_by_key: dict[tuple[str, str], int] = {}
-    for action in actions:
-        if action.action_type != "select_candidate":
-            continue
-        key = _action_key(action)
-        select_candidate_counts_by_key[key] = (
-            select_candidate_counts_by_key.get(key, 0) + 1
-        )
-    checks: list[ReviewActionCandidateSidecarCheck] = []
-    for action in actions:
-        if action.action_type != "select_candidate":
-            continue
-        key = _action_key(action)
-        if select_candidate_counts_by_key[key] > 1:
-            checks.append(
-                ReviewActionCandidateSidecarCheck(
-                    action=action,
-                    candidate_sidecar_status="action_duplicate",
-                    candidate_sidecar_reason=(
-                        "multiple_select_candidate_actions_for_target"
-                    ),
-                )
-            )
-            continue
-        target_rows = candidate_index.get(key, {})
-        if not target_rows:
-            checks.append(
-                ReviewActionCandidateSidecarCheck(
-                    action=action,
-                    candidate_sidecar_status="target_candidate_rows_missing",
-                    candidate_sidecar_reason="no_candidate_rows_for_action_target",
-                )
-            )
-            continue
-        matches = target_rows.get(action.candidate_id, ())
-        if not matches:
-            checks.append(
-                ReviewActionCandidateSidecarCheck(
-                    action=action,
-                    candidate_sidecar_status="candidate_missing",
-                    candidate_sidecar_reason="candidate_id_not_found_in_sidecar",
-                )
-            )
-            continue
-        if len(matches) > 1:
-            checks.append(
-                ReviewActionCandidateSidecarCheck(
-                    action=action,
-                    candidate_sidecar_status="candidate_duplicate",
-                    candidate_sidecar_reason="candidate_id_not_unique_in_sidecar",
-                )
-            )
-            continue
-        row = matches[0]
-        selected = _clean_text(row.get("selected", "")).upper()
-        status = "candidate_verified"
-        reason = "candidate_id_matched_sidecar"
-        if selected == "TRUE":
-            status = "candidate_current_selection"
-            reason = "candidate_id_already_current_selected"
-        checks.append(
-            ReviewActionCandidateSidecarCheck(
-                action=action,
-                candidate_sidecar_status=status,
-                candidate_sidecar_reason=reason,
-                candidate_row_sha256=_row_sha256(row),
-                candidate_selected=selected,
-                candidate_confidence=_clean_text(row.get("confidence", "")),
-                candidate_rt_left_min=_clean_text(row.get("rt_left_min", "")),
-                candidate_rt_apex_min=_clean_text(row.get("rt_apex_min", "")),
-                candidate_rt_right_min=_clean_text(row.get("rt_right_min", "")),
-                candidate_area_baseline_corrected=_clean_text(
-                    row.get("area_baseline_corrected", "")
-                ),
-            )
-        )
-    return tuple(checks)
-
-
-def write_review_action_candidate_sidecar_plan(
-    path: Path,
-    checks: Sequence[ReviewActionCandidateSidecarCheck],
-) -> None:
-    write_tsv(
-        path,
-        [review_action_candidate_sidecar_to_row(check) for check in checks],
-        REVIEW_ACTION_CANDIDATE_SIDECAR_COLUMNS,
-        lineterminator="\n",
-    )
 
 
 def write_review_action_application_plan(
@@ -631,44 +513,6 @@ def _index_targeted_rows(
             )
         indexed[key] = row
     return indexed
-
-
-def _index_peak_candidate_rows(
-    rows: Sequence[Mapping[str, object]],
-) -> dict[tuple[str, str], dict[str, tuple[Mapping[str, str], ...]]]:
-    by_target: dict[tuple[str, str], dict[str, list[Mapping[str, str]]]] = {}
-    for row_number, raw_row in enumerate(rows, start=2):
-        row = _string_row(raw_row)
-        sample_name = _clean_text(row.get("sample_name", ""))
-        target_label = _clean_text(row.get("target_label", ""))
-        candidate_id = _clean_text(row.get("candidate_id", ""))
-        if not sample_name or not target_label or not candidate_id:
-            raise ReviewActionError(
-                "<peak_candidates>:"
-                f"{row_number}: sample_name, target_label, and candidate_id "
-                "are required"
-            )
-        selected = _clean_text(row.get("selected", "")).upper()
-        if selected not in {"TRUE", "FALSE", ""}:
-            raise ReviewActionError(
-                f"<peak_candidates>:{row_number}: selected must be TRUE or FALSE"
-            )
-        target_bucket = by_target.setdefault((sample_name, target_label), {})
-        target_bucket.setdefault(candidate_id, []).append(row)
-    return {
-        target_key: {
-            candidate_id: tuple(candidate_rows)
-            for candidate_id, candidate_rows in candidates.items()
-        }
-        for target_key, candidates in by_target.items()
-    }
-
-
-def _row_sha256(row: Mapping[str, object]) -> str:
-    payload = "\n".join(
-        f"{key}={_clean_text(value)}" for key, value in sorted(row.items())
-    )
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 def _normalize_changeset_row(row: Mapping[str, object]) -> dict[str, str]:

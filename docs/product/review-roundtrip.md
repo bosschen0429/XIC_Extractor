@@ -74,7 +74,8 @@ approved product changes.
 - Apply steps require stable identifiers, recompute rules, sidecar contracts,
   and approved expected-diff evidence.
 - The implemented review-action contract is limited to identity verification
-  and candidate-sidecar planning.
+  and dry-run application planning. Candidate-sidecar verification is unavailable;
+  selected-candidate switching remains parked pending a new evidence/apply contract.
 - Selected-candidate switching and manual-boundary area recomputation have no
   product apply authority. That authority requires stable IDs, recompute rules,
   and expected-diff apply contracts first.
@@ -107,7 +108,6 @@ Use `python -m scripts.<name>`. The implementation owner is
 | --- | --- | --- |
 | Validate actions or approved expected-diff rows | `validate_review_actions`; add `--expected-diff` for approvals | Validation without mutation |
 | Compare actions with current targeted rows | `plan_review_action_applications` | Application plan and optional approval template |
-| Verify a candidate in its sidecar | `plan_review_action_candidate_sidecars` | Identity verification without peak switching |
 | Prepare ready/blocked copy edits | `plan_review_action_apply_changesets` | Changeset; optional `--output-apply-readiness-tsv` emits the intermediate audit |
 | Produce an audited targeted-long copy | `apply_review_action_changesets` | Review/product-state fields and audit in a separate copy; no peak/area recomputation, workbook update, or Matrix publication |
 

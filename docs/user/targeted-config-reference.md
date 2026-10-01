@@ -58,7 +58,6 @@ reference and ISTD evidence select a component without recomputing its area.
 | `keep_intermediate_csv` | bool | `false` | Retain intermediate CSV files |
 | `emit_score_breakdown` | bool | `false` | Add Score Breakdown sheet to workbook |
 | `emit_review_report` | bool | `false` | Generate Review Report HTML |
-| `emit_peak_candidates` | bool | `false` | Output Peak Candidate TSV for audit |
 | `baseline_audit_method` | enum | *(empty)* | Shadow baseline method: empty or `asls` |
 
 ### Parallelization
@@ -75,7 +74,7 @@ These are rarely needed and not exposed in the GUI by default.
 | Field | Type | Description |
 | --- | --- | --- |
 | `rt_prior_library_path` | path | Debug RT prior library CSV |
-| `target_pair_rt_calibration_path` | path | Target-pair RT calibration TSV for shadow diagnostics |
+| `target_pair_rt_calibration_path` | path | Target-pair RT calibration TSV for RT priors |
 | `model_selection_expected_diff_approval_registry` | path | Expected-diff approval registry TSV |
 | `targeted_ms1_shape_identity_support_tsv` | path | Reviewed MS1 shape-identity support TSV |
 | `targeted_ms1_shape_identity_activation_policy` | enum | `limited_5hmdc_5medc` or `explicit_support_tsv` |
@@ -122,3 +121,14 @@ identifier in workbook output and downstream CSV files.
   must have `is_istd=true`.
 - `paired_rt_relation=istd_not_later_than_pair` requires the paired ISTD to
   have `isotope_label_type=deuterated`.
+
+## Retired candidate audit outputs
+
+`emit_peak_candidates` and its candidate, boundary, region shadow, selected-envelope,
+and target-pair RT auto-reselection TSV outputs are removed. Remove this key from
+existing settings CSVs; there is no compatibility alias. Candidate-sidecar
+verification and the dedicated shadow/pressure review commands are unavailable.
+Use [XIC Inspector](../product/xic-inspector.md) for visual review of its supported retained
+evidence sources. Inspector does not apply candidate switches or generate RT
+reselection comparison tables. `target_pair_rt_calibration_path` remains an
+RT-prior input; formal peak selection and numerical output remain owner-controlled.

@@ -8,43 +8,9 @@ from xic_extractor.peak_detection.hypotheses import (
     PeakHypothesis,
 )
 from xic_extractor.peak_detection.selected_envelope_projection import (
-    selected_envelope_diagnostic_row_from_hypothesis,
     selected_envelope_evaluation_from_hypothesis,
     selected_envelope_promoted_hypothesis_from_hypothesis,
 )
-
-
-def test_selected_envelope_projection_builds_diagnostic_row_from_hypothesis() -> None:
-    residual = np.asarray([0, 0, 2, 10, 30, 50, 30, 10, 2, 0, 0], dtype=float)
-    rt = np.arange(float(len(residual)), dtype=float)
-    intensity = residual + 10.0
-    hypothesis = _hypothesis(
-        rt_left_min=4.0,
-        rt_apex_min=5.0,
-        rt_right_min=6.0,
-    )
-
-    row = selected_envelope_diagnostic_row_from_hypothesis(
-        sample_name="sample-a",
-        hypothesis=hypothesis,
-        rt_values=rt,
-        intensity_values=intensity,
-        quantitation_context_rt_start=0.0,
-        quantitation_context_rt_end=10.0,
-        plot_path="plots/sample-a.png",
-    )
-
-    assert row["selected_candidate_id"] == "hypothesis-001"
-    assert row["selected_boundary_mode"] == "selected_full_envelope"
-    assert row["row_boundary_decision"] == "accept_candidate"
-    assert row["legacy_resolver_provenance"] == "local_minimum"
-    assert row["resolver_rt_start"] == "4.00000"
-    assert row["resolver_rt_end"] == "6.00000"
-    assert row["envelope_rt_start"] == "2.00000"
-    assert row["envelope_rt_end"] == "8.00000"
-    assert row["quantitation_context_rt_start"] == "0.00000"
-    assert row["quantitation_context_rt_end"] == "10.00000"
-    assert row["plot_path"] == "plots/sample-a.png"
 
 
 def test_selected_envelope_projection_requires_selected_hypothesis() -> None:
