@@ -47,4 +47,3 @@ def find_peak_candidates(
         )
     allowed = ", ".join(RESOLVER_MODES[:-1]) + f", or {RESOLVER_MODES[-1]}"
     raise ValueError(f"unsupported resolver mode {resolver_mode!r}; must be {allowed}")
-
