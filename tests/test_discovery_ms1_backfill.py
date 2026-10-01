@@ -8,6 +8,9 @@ import pytest
 
 from xic_extractor.acquisition_contract import AcquisitionContractError
 from xic_extractor.configuration.models import ExtractionConfig
+from xic_extractor.discovery.candidate_merge import (
+    merge_candidates_by_ms1_peak,
+)
 from xic_extractor.discovery.grouping import group_discovery_seeds
 from xic_extractor.discovery.models import (
     DiscoveryCandidate,
@@ -18,7 +21,6 @@ from xic_extractor.discovery.models import (
 from xic_extractor.discovery.ms1_backfill import (
     _backfill_ms1_candidates_with_acquisition,
     backfill_ms1_candidates,
-    merge_candidates_by_ms1_peak,
 )
 from xic_extractor.execution.attempt import derive_runtime_acquisition_metrics
 from xic_extractor.peak_detection.models import PeakDetectionResult, PeakResult
@@ -368,7 +370,7 @@ def test_cross_tag_candidates_merge_only_when_ms1_peak_overlaps() -> None:
 
 
 def test_merge_with_lineage_preserves_candidate_policy_and_source_ordinals() -> None:
-    from xic_extractor.discovery.ms1_backfill import (
+    from xic_extractor.discovery.candidate_merge import (
         merge_candidates_by_ms1_peak_with_lineage,
     )
 

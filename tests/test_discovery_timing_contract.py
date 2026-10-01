@@ -22,10 +22,12 @@ from xic_extractor.discovery.models import DiscoverySettings
 from xic_extractor.discovery.ms1_backfill import (
     _backfill_ms1_candidates_with_acquisition,
 )
+from xic_extractor.discovery.output_publication import (
+    _write_dual_csvs,
+)
 from xic_extractor.discovery.physical_fact_persistence import (
     read_discovery_physical_fact_records,
 )
-from xic_extractor.discovery.pipeline import _write_dual_csvs
 from xic_extractor.discovery.processing_run_spec_adapter import (
     compile_discovery_processing_run_spec,
 )
@@ -134,7 +136,7 @@ def test_discovery_output_timing_records_failure_boundary(
     output_dir = tmp_path / "out"
     if failure == "sidecar":
         monkeypatch.setattr(
-            "xic_extractor.discovery.pipeline."
+            "xic_extractor.discovery.output_publication."
             "write_discovery_physical_fact_sidecar",
             lambda *_args, **_kwargs: (_ for _ in ()).throw(
                 OSError("timed sidecar failure")

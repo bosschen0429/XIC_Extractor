@@ -10,7 +10,9 @@ from xic_extractor.discovery.models import (
     DISCOVERY_BRIEF_COLUMNS,
     DISCOVERY_CANDIDATE_COLUMNS,
 )
-from xic_extractor.discovery.pipeline import _write_dual_csvs
+from xic_extractor.discovery.output_publication import (
+    _write_dual_csvs,
+)
 from xic_extractor.discovery.processing_run_spec_adapter import (
     compile_discovery_processing_run_spec,
 )
@@ -147,11 +149,11 @@ def test_legacy_publication_removes_stale_spec_bound_sidecar(
     expected_review = (",".join(DISCOVERY_BRIEF_COLUMNS) + "\n").encode()
 
     monkeypatch.setattr(
-        "xic_extractor.discovery.pipeline.write_discovery_candidates_csv",
+        "xic_extractor.discovery.output_publication.write_discovery_candidates_csv",
         lambda path, _candidates: path.write_bytes(expected_candidates),
     )
     monkeypatch.setattr(
-        "xic_extractor.discovery.pipeline.write_discovery_review_csv",
+        "xic_extractor.discovery.output_publication.write_discovery_review_csv",
         lambda path, _candidates: path.write_bytes(expected_review),
     )
 
@@ -256,7 +258,7 @@ def test_discovery_output_publication_rolls_back_sidecar_staging_failure(
         for path, payload in prior.items():
             path.write_bytes(payload)
     monkeypatch.setattr(
-        "xic_extractor.discovery.pipeline.write_discovery_physical_fact_sidecar",
+        "xic_extractor.discovery.output_publication.write_discovery_physical_fact_sidecar",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(
             OSError("sidecar staging failed")
         ),

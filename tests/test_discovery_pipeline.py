@@ -32,8 +32,11 @@ from xic_extractor.discovery.models import (
     NeutralLossProfile,
 )
 from xic_extractor.discovery.ms1_backfill import _DiscoveryMs1Measurements
-from xic_extractor.discovery.pipeline import (
+from xic_extractor.discovery.output_publication import (
     _BATCH_INDEX_COLUMNS,
+    _write_batch_index,
+)
+from xic_extractor.discovery.pipeline import (
     _DISCOVERY_MS1_MEASUREMENT_NAMES,
     DiscoveryProcessExecutionError,
     DiscoverySampleProcessError,
@@ -43,7 +46,6 @@ from xic_extractor.discovery.pipeline import (
     _reject_caller_authored_discovery_ms1_measurement,
     _run_discovery_sample_process_job,
     _validate_discovery_ms1_observations,
-    _write_batch_index,
     run_discovery,
     run_discovery_batch,
 )
@@ -1272,7 +1274,7 @@ def test_run_discovery_keeps_stale_pair_when_review_write_fails(
         raise OSError("simulated review writer failure")
 
     monkeypatch.setattr(
-        "xic_extractor.discovery.pipeline.write_discovery_review_csv",
+        "xic_extractor.discovery.output_publication.write_discovery_review_csv",
         _fail_review,
     )
 
