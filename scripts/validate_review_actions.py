@@ -8,7 +8,9 @@ from pathlib import Path
 
 from xic_extractor.review_actions import (
     ReviewActionError,
+    load_review_action_expected_diff_approvals,
     load_review_actions,
+    summarize_review_action_expected_diff_approvals,
     summarize_review_actions,
 )
 
@@ -23,17 +25,31 @@ def main(argv: Sequence[str] | None = None) -> int:
         action="store_true",
         help="Print the validation summary as JSON.",
     )
+    parser.add_argument(
+        "--expected-diff",
+        action="store_true",
+        help="Validate approved expected-diff rows instead of action rows.",
+    )
     args = parser.parse_args(argv)
 
     try:
-        actions = load_review_actions(args.path)
+        if args.expected_diff:
+            summary = summarize_review_action_expected_diff_approvals(
+                load_review_action_expected_diff_approvals(args.path)
+            )
+        else:
+            summary = summarize_review_actions(load_review_actions(args.path))
     except ReviewActionError as exc:
         print(str(exc), file=sys.stderr)
         return 2
 
-    summary = summarize_review_actions(actions)
     if args.summary_json:
         print(json.dumps(summary, indent=2, sort_keys=True))
+    elif args.expected_diff:
+        print(
+            f"Expected-diff approvals valid: {summary['approval_count']} "
+            "approved row(s)."
+        )
     else:
         print(
             "Review actions valid: "

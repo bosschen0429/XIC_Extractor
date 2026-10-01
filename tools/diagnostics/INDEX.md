@@ -22,20 +22,40 @@ in the entry status text, `docs/product/`, `docs/architecture-contract.md`,
 > renames a diagnostic entry-point. The file is grouped by **purpose**, not
 > alphabetically — open the table of contents below to navigate.
 
+## Choose The Workflow
+
+`scripts/` and `tools/` contain different kinds of adapters; their directory
+does not determine whether an operation is a user feature. Start with the
+workflow owner rather than chaining similarly named commands.
+
+| Task | Entry and owner |
+| --- | --- |
+| Extract, discover, or align samples | [GUI and CLI user guides](../../docs/user/README.md) |
+| Inspect chromatograms | GUI **開啟 Inspector** or `xic-inspector`; [Inspector](../../docs/product/xic-inspector.md) owns offline review |
+| Select Matrix features for downstream analysis | GUI **篩選匯出…** or `xic-feature-quality`; [Feature Quality](../../docs/product/feature-quality.md) owns the rule and output |
+| Review instrument/ISTD drift | `scripts.run_instrument_qc` and `scripts.add_istd_rt_trend`; [Instrument QC](../../docs/product/instrument-qc-calibration.md) owns their distinct inputs and claims |
+| Build a solvent-blank background library | `scripts.extract_blank_library`; `xic_extractor.discovery.blank_qualification` owns extraction and serialization |
+| Prepare targeted review actions | [Review Roundtrip commands](../../docs/product/review-roundtrip.md#operator-commands) distinguish candidate verification, copy-state edits, and peak-editing authority |
+| Run tissue validation | `scripts.run_tissue_validation`; [execution settings](../../docs/agent/parameter-settings.md#validation-scale) own prerequisites |
+| Maintain CI or command safety | `tools.testing.test_shards` and `tools.command_policy` serve CI/hooks; they have no GUI workflow |
+
+The sections below index maintained diagnostics. Retired tools are recovered
+from Git history; retained historical evidence does not make them current
+commands.
+
 ## Table of Contents
 
 1. [Validation Gates](#validation-gates)
 2. [Evidence Consistency](#evidence-consistency)
-3. [Alignment Diagnostics](#alignment-diagnostics)
-4. [Backfill Reviews](#backfill-reviews)
-5. [Peak / Candidate Audits](#peak--candidate-audits)
-6. [Targeted Benchmarks & Reviews](#targeted-benchmarks--reviews)
-7. [Instrument QC](#instrument-qc)
-8. [Peak-Group / Overlay Visualization](#peak-group--overlay-visualization)
-9. [Area / Region Audits](#area--region-audits)
-10. [Delta Mass / Pt Pattern Discovery](#delta-mass--pt-pattern-discovery)
-11. [Agent / Docs Workflow Guards](#agent--docs-workflow-guards)
-12. [Surface Population And Reachability](#surface-population-and-reachability)
+3. [Backfill Reviews](#backfill-reviews)
+4. [Peak / Candidate Audits](#peak--candidate-audits)
+5. [Targeted Benchmarks & Reviews](#targeted-benchmarks--reviews)
+6. [Instrument QC](#instrument-qc)
+7. [Peak-Group / Overlay Visualization](#peak-group--overlay-visualization)
+8. [Area / Region Audits](#area--region-audits)
+9. [Delta Mass / Pt Pattern Discovery](#delta-mass--pt-pattern-discovery)
+10. [Agent / Docs Workflow Guards](#agent--docs-workflow-guards)
+11. [Surface Population And Reachability](#surface-population-and-reachability)
 
 ---
 
@@ -70,117 +90,6 @@ AsLS/boundary/product contracts instead.
 
 ---
 
-### `cid_nl_feature_inclusion_gate.py`
-
-**Purpose**: Build the diagnostic CID-NL feature-inclusion / identity-authority
-gate from existing differential review, paired overlay summary, AI
-identity-triage artifacts, and optional versioned manual review verdicts.
-**Topic group**: CID-NL default activation Gallery and differential overlay
-review; consumes
-`cid_nl_discovery_identity_differential_review.tsv`,
-`cid_nl_differential_overlay_review_summary.tsv`, and
-`cid_nl_differential_ai_adjudication.tsv`; optional
-`cid_nl_manual_feature_inclusion_review.tsv`.
-**Originating spec/goal/plan**:
-`docs/superpowers/validation/cid_nl_default_activation_gallery_review/README.md`;
-stable external-method takeaways now live in `docs/product/untargeted-method.md`.
-**Status note**: Diagnostic-only gate adapter. It does not read RAW, render
-PNGs, create a second Discovery system, mutate ProductWriter/default
-matrix/workbook/GUI outputs, or treat candidates as matrix rows. It writes
-`cid_nl_feature_inclusion_gate_summary.tsv/json`,
-`cid_nl_feature_inclusion_gate_transitions.tsv`,
-`cid_nl_identity_expected_diff_queue.tsv`,
-`cid_nl_supported_candidate_expected_diff_contract.tsv`,
-`cid_nl_feature_inclusion_review_queue.tsv`, and
-`cid_nl_manual_resolved_expected_diff_contract.tsv`,
-`cid_nl_manual_resolved_hold_queue.tsv`,
-`cid_nl_user_review_queue.tsv`, and
-`cid_nl_feature_inclusion_blocked_queue.tsv` under ignored
-`output/validation/cid_nl_default_activation_gallery_review/feature_inclusion_gate/`.
-The gate separates supported feature-inclusion candidates from review-required
-and current-bundle-blocked candidates. Supported candidates only advance to
-expected-diff design; identity authority and ProductWriter activation remain a
-separate public-surface contract.
-
----
-
-### `cid_nl_activation_copy_candidate.py`
-
-**Purpose**: Build a CID-NL activated-copy matrix candidate and value-delta
-checker from approved expected-diff design rows.
-**Topic group**: CID-NL feature-inclusion gate and expected-diff contract.
-Consumes `cid_nl_supported_candidate_expected_diff_contract.tsv` plus
-`cid_nl_agent_resolved_expected_diff_contract.tsv` and
-`cid_nl_manual_resolved_expected_diff_contract.tsv` by default, and fails
-closed if any contract transition overlaps the user-review, agent-hold,
-manual-hold, or blocked queues.
-**Originating spec/goal/plan**:
-`docs/superpowers/validation/cid_nl_default_activation_gallery_review/README.md`;
-`docs/superpowers/plans/2026-06-15-productization-control-plane.md`.
-**Status note**: Diagnostic-only activated-copy surface. It reads the current
-public `alignment_matrix.tsv` and `alignment_matrix_identity.tsv`, writes
-`alignment_matrix_activated_copy.tsv`,
-`alignment_matrix_identity_activated_copy.tsv`,
-`cid_nl_activation_copy_value_delta.tsv`, and
-`cid_nl_activation_copy_candidate_summary.tsv/json` under ignored
-`output/validation/cid_nl_default_activation_gallery_review/activation_copy_candidate/`.
-It refuses to overwrite existing matrix values, requires every written cell to
-come from the expected-diff contract, and reports explicit false flags for
-ProductWriter, default matrix, workbook/GUI, and candidate-row authority. This
-is not a default activation path.
-
----
-
-### `cid_nl_activation_copy_acceptance.py`
-
-**Purpose**: Accept or reject the CID-NL activated-copy matrix candidate
-against its expected-diff contract, forbidden transition queues, and exact
-matrix diff.
-**Topic group**: CID-NL activated-copy validation. Consumes the expected-diff
-contracts, user-review/agent-hold/manual-hold/blocked queues, input public
-matrix, activated copy matrix, matrix identity sidecar, and activated-copy
-value delta.
-**Originating spec/goal/plan**:
-`docs/superpowers/validation/cid_nl_default_activation_gallery_review/README.md`;
-`docs/superpowers/plans/2026-06-15-productization-control-plane.md`.
-**Status note**: Diagnostic-only acceptance gate. It writes
-`cid_nl_activation_copy_acceptance_summary.tsv/json` and
-`cid_nl_activation_copy_matrix_diff.tsv` under ignored
-`output/validation/cid_nl_default_activation_gallery_review/activation_copy_candidate/acceptance/`.
-It passes only when value-delta keys match the contract, no forbidden
-review/hold/blocked transitions overlap the contract, and the input/output
-matrix diff is exactly the contracted cell set. It reports
-`production_ready=FALSE`; an explicit adopt gate is still required before any
-default matrix or ProductWriter change.
-
----
-
-### `cid_nl_activation_adopt_gate.py`
-
-**Purpose**: Close the CID-NL activated-copy adopt/hold decision from accepted
-copy evidence, without mutating ProductWriter or the default matrix.
-**Topic group**: CID-NL activated-copy validation adoption. Consumes the
-expected-diff contracts, forbidden user-review/hold/blocked queues,
-feature-inclusion summary, activated-copy summary, activated-copy acceptance
-summary, and value-delta TSV.
-**Originating spec/goal/plan**:
-`docs/superpowers/validation/cid_nl_default_activation_gallery_review/README.md`;
-`docs/superpowers/plans/2026-06-15-productization-control-plane.md`.
-**Status note**: Production-candidate adopt gate for the narrowed 95-cell
-validation-copy bundle. It writes
-`cid_nl_activation_adopt_gate_summary.tsv/json` and the compact 20-transition
-`cid_nl_activation_adopt_manifest.tsv` under ignored
-`output/validation/cid_nl_default_activation_gallery_review/activation_adopt_gate/`.
-It returns `adopt_ready` only when the feature gate, copy gate, and acceptance
-gate all pass; user review is zero; no forbidden transitions overlap; the
-value-delta keys exactly match the expected-diff contract; ProductWriter,
-default matrix, workbook/GUI, and candidate-row authority flags remain false;
-and acceptance still reports `production_ready=FALSE`. `adopt_ready` means the
-95-cell bundle can feed a later explicit public activation change; it is not
-itself default output or ProductWriter authority.
-
----
-
 ## Evidence Consistency
 
 Compare evidence rows produced by parallel pipelines (targeted vs untargeted,
@@ -188,8 +97,6 @@ spine vs cell) and shared-identity sidecars. The tools below share low-level
 diagnostic IO helpers where their schemas permit it, but keep separate row
 models because their output schemas are intentionally different; see
 `retired-provenance:9ac1510742f0` Cluster 1.
-
----
 
 ---
 
@@ -210,8 +117,6 @@ Candidate evidence must retain sample/family provenance; missing or proxy-only
 evidence does not become a positive identity claim. RAW-backed evidence remains
 opt-in. Hypothesis consistency and mode assignments are diagnostic outputs and
 cannot authorize values, rewrite matrices, or apply product activation.
-
----
 
 ---
 
@@ -259,10 +164,6 @@ design provenance `retired-provenance:6f1e25e036cf`
 outputs from existing alignment health and matrix artifacts. Does not open RAW,
 recompute evidence, run mature tools, alter matrix authority, or change
 selected values/counting.
-
----
-
----
 
 ---
 
@@ -382,220 +283,12 @@ remains unavailable.
 
 ---
 
----
-
----
-
----
-
 ### `retained_backfill_evidence_gate.py`
 
 **Purpose**: Emit a `diagnostic_only` machine sidecar for product-retained backfill family/seed groups, linking actual primary-matrix backfill behavior to seed provenance, MS1 overlay support/blockers, missing evidence, and source artifact hashes.
 **Topic group**: `retained_backfill_evidence_gate.py` + `xic_extractor/diagnostics/retained_backfill_evidence_gate.py`
 **Originating spec/goal/plan**: `retired-provenance:0a1c58083825`; `retired-provenance:69bd6d102e9c`; `retired-provenance:0ceba9b23ba9`
 **Status note**: Writes `alignment_retained_backfill_evidence_gate.tsv`, `alignment_retained_backfill_evidence_gate.json`, `alignment_retained_backfill_missing_overlay_queue.tsv`, and `alignment_retained_backfill_overlay_review_queue.tsv`. It consumes existing alignment review/cell/matrix, optional owner backfill seed audit, and optional overlay summary TSVs only. `detected=0` families are excluded from main rows and counted separately. Exact `seed_group_id` overlay rows are required for seed-specific MS1 support/blocker decisions; legacy overlay rows without `seed_group_id` are retained only as family context and are re-queued as `missing_seed_specific_overlay`. Missing-overlay rows with seed provenance are emitted as review queues; the full missing-overlay queue and family-deduplicated review queue share one ordered candidate list during output writing. It does not accept RAW/DLL paths, does not generate overlays, does not mutate `alignment_review.tsv`, `alignment_cells.tsv`, `alignment_matrix.tsv`, workbook schemas, or product decisions, and does not declare production readiness.
-
----
-
----
-
----
-
-## T5D Standard Peak contraction
-
-T5D deleted the live modules and wrappers documented in the historical entries
-below: MS1 authority bundle, heldout/productization gates, activation-scope and
-reintegration product audits, shadow activation inputs, productization,
-machine/preset orchestration, chunk consolidation/formal sidecar, source
-republisher, stage replay, and publication checker. The descriptions remain as
-historical provenance for retained artifacts; none names a runnable current
-entry or current authority.
-
-T5D adds no replacement Standard Peak package entry. Retained low-level overlay,
-shift-aware, calibration, and gallery tools remain explicit offline
-falsifiers/renderers. The current Backfill owners do not mint a
-`diagnostic_eligible` HOLD subject or bind an independently supplied Matrix to a
-ProcessingRunSpec attempt, so incomplete evidence remains unavailable and
-cannot promote or write.
-
-The clean-target replay is a retained historical diagnostic/oracle packet. Its
-checker proves current-file self-consistency only; it does not authenticate the
-packet's historical origin or immutability. T5D retired its ownerless writer and
-registered authority scope, and the retained counts and hashes cannot mint
-current authority. The final SP-001–SP-055 map is
-`docs/superpowers/validation/standard_peak_t5d_contraction/capability_disposition.tsv`.
-
----
-
-### Historical record — `standard_peak_ms1_authority_bundle.py` (retired/deleted)
-
-**Purpose**: Convert standard-peak gate rows plus overlay trace provenance into a product-authorized MS1 same-peak sidecar consumable by shadow projection.
-**Topic group**: `standard_peak_ms1_authority_bundle.py` + `xic_extractor/diagnostics/standard_peak_ms1_authority_bundle.py`
-**Originating spec/goal/plan**: `goals/standard-peak-backfill-productization`
-**Status note**: Writes `standard_peak_ms1_pattern_coherence_evidence.tsv`, `standard_peak_ms1_product_authority_allowlist.tsv`, `shared_peak_identity_ms1_pattern_coherence_product_authorized.tsv`, an audit TSV, and summary JSON. `--authority-mode manual-oracle` keeps the historical manual calibration requirement; `--authority-mode machine-gate` authorizes rows from `standard_peak_gate_supported` without requiring a manual status label and records `machine_standard_peak_gate_authorized` / `machine_shift_aware_standard_peak_gate` provenance. Trace JSON read/decode/SHA work is cached per path within one run, but family/sample/vector validation and audit reasons remain per row. Trace JSON path/SHA validation, Gaussian-smoothed standard-peak family verdicts, and `same_peak_reason:shift_aware_standard_peak_gate_supported` are preserved before any projection can write matrix values.
-
----
-
-### Historical record — `standard_peak_heldout_oracle_results.py` (retired/deleted)
-
-**Purpose**: Evaluate deterministic standard-peak held-out oracle manifest rows against observed boundary/area results and write `heldout_oracle_results.tsv`.
-**Topic group**: `standard_peak_shadow_activation_inputs.py` + `xic_extractor/diagnostics/standard_peak_shadow_activation_inputs.py`
-**Originating owner/goal/plan**: `docs/product/backfill.md`; `docs/product/quant-matrix.md`; retired backfill integration policy spec provenance.
-**Status note**: Thin CLI wrapper around the package-level held-out oracle evaluator. It reads `heldout_oracle_manifest.tsv`, observed result rows with `oracle_case_id`, observed boundary/area fields, and observed-result provenance fields, records the source artifact SHA, and writes the existing `standard_peak_seed_guard_heldout_oracle_results` schema. Manifest rows must declare `heldout_original_cell_status` proving the masked source cell was originally detected; `backfilled`, blank, or unknown statuses fail before result evaluation. Observed rows must identify an independent product-writer, masked-rerun, or boundary-reintegration source; oracle/manual-review/review-queue source copies fail closed after punctuation/whitespace canonicalization, and neutral observed source labels also fail when they canonicalize to the same value as the matching manifest `oracle_source`. The result source artifact must exist so its SHA can be recorded. It does not run RAW, generate oracle rows, mutate matrices, authorize non-standard peaks, or upgrade the standard-path seed guard beyond `production_candidate`; real/reviewed held-out oracle rows plus FULL COHORT expected-diff evidence are still required for `production_ready`.
-
----
-
-### Historical record — `standard_peak_heldout_trace_oracle.py` (retired/deleted)
-
-**Purpose**: Build deterministic held-out trace reintegration oracle packets from existing standard-peak trace JSON and detected cell evidence.
-**Topic group**: `standard_peak_heldout_trace_oracle.py` + `xic_extractor/diagnostics/standard_peak_heldout_trace_oracle.py`
-**Originating owner/goal/plan**: `docs/product/backfill.md`; `docs/product/quant-matrix.md`; retired backfill integration policy spec provenance.
-**Status note**: Reads `alignment_backfill_cell_evidence.tsv` plus existing `*_trace_data.json` artifacts and writes a full eligible pool, selected candidate TSV, `heldout_oracle_manifest.tsv`, `heldout_observed_results.tsv`, `heldout_oracle_results.tsv`, and summary JSON. It supports the existing `standard_high_signal_clean_trace` scope and the additive `standard_low_scan_clean_trace` scope, where scan count is 7-9 while trace status, shape, local/global ratio, height, width, and apex-delta remain clean. It also supports additional probe scopes: `standard_low_height_clean_trace`, where the clean envelope is retained but height is below 2e6; `standard_low_height_low_scan_clean_trace`, where height is below 2e6 and scan count is 7-9 while shape/local-global/width/apex remain clean; `standard_apex_delta_clean_trace`, where the clean envelope is retained but apex delta from family center exceeds 0.15 min; `standard_width_clean_trace`, where the clean envelope is retained but boundary width is outside 0.30-0.65 min; `standard_shape_margin_clean_trace`, where the clean envelope is retained but shape similarity is only the near-threshold band `0.93 <= shape < 0.95`; `standard_low_height_reintegration_stable_candidate_family_trace`, where candidate families are derived from a reintegration-stability audit plus activation scope audit and then filtered to low-height written rows; `standard_shape_clean_reintegration_stable_candidate_family_trace`, where the same family-level oracle is filtered to activation-scope shape similarity `>=0.95`; and `standard_reintegration_stable_candidate_family_trace`, where the family-level oracle is run over all reintegration-stability eligible written rows without the low-height or shape-clean filter. The first FULL COHORT no-RAW low-height probe found 230 eligible candidates across 54 families, selected 20 family cases, and failed closed at 19/20 selected cases because `FAM008651/TumorBC2312_DNA` exceeded the accepted boundary tolerance. The later bounded-window low-height diagnostic replay kept the default full-trace mode unchanged, added explicit `expected_window_bounded` observed reintegration with `expected_window_padding_min`, and passed selected 20/20 at `padding=0.5 min` with max boundary error 0.0857986 min and max area relative error 0.0564106; the matching explicit 57-row low-height scoped writer now has writer expected-diff approval and `readiness_tier=production_ready`. The formal low-height-low-scan bounded replay found 210 eligible rows across 51 families, selected 20 family cases, and passed 20/20 with max boundary error 4.80376e-05 min and max area relative error 0.00881912; the matching explicit 69-row low-height-low-scan scoped writer now has writer expected-diff approval and `readiness_tier=production_ready`. The formal low-height reintegration-stable replay is a family-level oracle, not a 220-row identity oracle: it records 220 audit-intersection rows across 66 families, `candidate_family_scope_match_level=family_id`, 1520 available detected trace candidates from those families, selected 20 family cases, and passed 20/20 with max boundary error 0.0830019 min and max area relative error 0.0725986; the matching explicit 220-row writer now has writer expected-diff approval and `readiness_tier=production_ready`. Shape-clean reintegration-stable is candidate/explanation evidence only: `heldout_trace_reintegration_oracle_shape_clean_reintegration_stable_family/` records 104 audit-intersection rows across 33 families, 334 available detected trace candidates across 31 families, selected 20/20 pass, max boundary error 0.0830019 min, and max area relative error 0.0725986, but a temporary writer probe found 0 new matrix writes and 104 unchanged/pre-existing matrix values, so no public writer flag was retained. Apex-delta, width-only, shape-margin, and all-stability remain blocked/candidate-only probe scopes: the first FULL COHORT no-RAW apex-delta probe found 78 eligible candidates across 27 families, selected 20 family cases, and failed closed at 17/20 selected cases with max boundary error 2.19621 min and max area relative error 0.424518; the first FULL COHORT no-RAW width-only probe found 4 eligible candidates across 3 families, selected 3 family cases, and failed closed at 1/3 selected cases with max boundary error 1.86561 min and max area relative error 0.599229; the first FULL COHORT no-RAW shape-margin probe found 18 eligible candidates across 8 families, selected 8 family cases, and failed closed at 6/8 selected cases with max boundary error 0.0625542 min and summary max area relative error 0.198393; the formal all-stability family replay under `heldout_trace_reintegration_oracle_all_stability_family/` records 299 audit-intersection rows across 77 families, expands to 1694 available detected trace candidates from those families, selects 20 family cases, and fails closed at 19/20 because `FAM000949/NormalBC2261_DNA` has area relative error 0.19621, above the accepted 10% ceiling. Observed rows are produced by local-minimum reintegration over stored trace arrays plus `integration_from_peak_trace` with gaussian15 positive AsLS morphology area, then evaluated by the shared held-out oracle evaluator under the existing `0.1 min / 10% area` ceiling. It does not open RAW, mutate matrices, authorize non-standard peaks, or broaden the Backfill writer by itself.
-
----
-
-### Historical record — `standard_peak_activation_scope_audit.py` (retired/deleted)
-
-**Purpose**: Audit whether actual standard-peak `activation_value_delta.tsv` writes fall inside named trace evidence envelopes used by held-out oracles.
-**Topic group**: `standard_peak_activation_scope_audit.py` + `xic_extractor/diagnostics/standard_peak_activation_scope_audit.py`
-**Originating owner/goal/plan**: `docs/product/backfill.md`; `docs/product/quant-matrix.md`; retired backfill integration policy spec provenance.
-**Status note**: Reads an existing matrix-only `activation_value_delta.tsv`, the matching `shadow_production_projection_cells.tsv`, and sibling `*_trace_data.json` artifacts derived from `overlay_png_path`. It writes `activation_high_signal_clean_scope_audit.tsv`, `activation_high_signal_clean_scope_summary.tsv/json`, `eligible_activation_value_delta.tsv`, `narrow_activation_expected_diff_acceptance.tsv/json`, plus additive `low_scan_clean_activation_value_delta.tsv`, `low_scan_clean_activation_expected_diff_acceptance.tsv/json`, `low_height_clean_activation_value_delta.tsv`, `low_height_clean_activation_expected_diff_acceptance.tsv/json`, `low_height_low_scan_clean_activation_value_delta.tsv`, and `low_height_low_scan_clean_activation_expected_diff_acceptance.tsv/json`. The audit joins actual writes to projection rows by `matrix_value_source_row_sha256`, classifies missing projection/trace evidence separately from trace-matched ineligible rows, and applies four named envelopes: high-signal clean requires supported trace status, shape >=0.95, local/global >=0.95, height >=2e6, width 0.30-0.65 min, apex within 0.15 min of family center, and at least 10 boundary scans; low-scan clean uses the same clean envelope but requires height >=2e6 and 7-9 boundary scans; low-height clean keeps the clean trace/width/apex/scan envelope but requires height <2e6 and at least 10 boundary scans; low-height-low-scan clean requires height <2e6 and 7-9 boundary scans while shape/local-global/width/apex remain clean. The current FULL COHORT no-RAW combined audit covers 4613 broad candidate writes and classifies 72 high-signal clean, 42 low-scan clean, 57 low-height clean, and 69 low-height-low-scan clean rows; all four classes now have explicit scoped product writers with writer expected-diff approval. Each expected-diff acceptance verifies that the filtered eligible delta rows are exactly the eligible audit rows and contain no duplicate, missing, unexpected, non-eligible, non-written, unchanged, or blank-value rows. It does not open RAW, generate evidence, mutate matrices, or authorize product activation. Filtered delta TSVs are convenience artifacts only; product output must come from a separate productization run such as `standard_peak_backfill_productization.py --high-signal-clean-activation-scope-audit-tsv`, `--low-scan-clean-activation-scope-audit-tsv`, `--low-height-clean-activation-scope-audit-tsv`, or `--low-height-low-scan-clean-activation-scope-audit-tsv`, whose writer acceptance must pass before claiming a scoped product behavior.
-
----
-
-### Historical record — `standard_peak_reintegration_stability_audit.py` (retired/deleted)
-
-**Purpose**: Audit whether standard-peak activation writes have boundary-stable stored traces under two no-RAW reintegration views.
-**Topic group**: `standard_peak_reintegration_stability_audit.py` + `xic_extractor/diagnostics/standard_peak_reintegration_stability_audit.py`
-**Originating spec/goal/plan**: `docs/superpowers/plans/2026-06-15-productization-control-plane.md`
-**Status note**: Reads `activation_high_signal_clean_scope_audit.tsv` from `standard_peak_activation_scope_audit.py`, reloads the referenced `*_trace_data.json` rows, and reintegrates each written trace twice: full stored trace and an expected-window-bounded trace around the stored reference boundary. It writes `reintegration_stability_audit.tsv` plus `reintegration_stability_summary.tsv/json`. The input scope audit must carry `standard_peak_activation_scope_audit` schema rows with nonblank source run ids; the summary records the upstream TSV SHA/source provenance. `--expected-window-padding-min` must be finite and <=0.5 min so the bounded reintegration remains an independent local check instead of collapsing into full-trace reintegration. A row is `eligible` only when full-trace and bounded-window boundary error are each <=0.1 min, full-trace and bounded-window area relative error are each <=10%, and the two reintegration methods agree within the same boundary/area tolerances. The first real no-RAW FULL COHORT run over the consolidated 4613-row activation scope found 299 eligible written rows, 3227 ineligible rows, and 1087 missing-evidence rows; 271 eligible rows were outside the four then-current production-ready scoped writer envelopes. This audit remains a `production_candidate` evidence class by itself, and the summary intentionally reports `status=candidate_pool_blocked`, `writer_authority_status=blocked`, and `production_ready=FALSE`: it proves a broader boundary-stability candidate pool exists, but it does not mutate matrices, create broad writer authority, replace masked/product-writer oracle evidence, or authorize broad 4613-row activation. A separate follow-up promoted only the low-height subset of this candidate pool: 220 low-height reintegration-stable rows have per-row stability evidence, a passing family-level heldout oracle over detected traces from the same families, plus explicit writer expected-diff and are now the fifth scoped `production_ready` Backfill writer.
-
----
-
-### Historical record — `standard_peak_shadow_activation_inputs.py` (retired/deleted)
-
-**Purpose**: Convert product-authorized standard-peak `shadow_production_projection_cells.tsv` accepts into `product_activation --matrix-only` input TSVs.
-**Topic group**: `standard_peak_shadow_activation_inputs.py` + `xic_extractor/diagnostics/standard_peak_shadow_activation_inputs.py`
-**Originating spec/goal/plan**: `goals/standard-peak-backfill-productization`
-**Load-bearing note**: This is part of the built-in `dna_dr` standard-peak
-publication path. Treat it as product-adjacent activation infrastructure, not a
-disposable research diagnostic.
-**Status note**: Writes `standard_peak_activation_decisions.tsv`, `standard_peak_activation_values.tsv`, `standard_peak_activation_acceptance.tsv`, `standard_peak_activation_inputs.tsv`, `standard_peak_activation_inputs_summary.json`, and additive `seed_guard_decisions.tsv`. It selects only rows with `shadow_decision=accept`, `current_matrix_written=FALSE`, `projected_matrix_written=TRUE`, a nonblank projected value, and `same_peak_reason:shift_aware_standard_peak_gate_supported` in the product-authority chain. Current-matrix rows are counted as already written and are not reactivated; nonstandard, context, blocked, or unprovenanced rows fail closed. When a seed-guard context is supplied by the productization bridge, standard-path candidates are evaluated against the N-banded cohort seed-support rule before activation decisions are written; low-seed and inconclusive rows do not write activation decisions. Before writing acceptance, the converter runs a standard-peak row-level gate that checks PeakHypothesis scope, auto-activate decision shape, matching activation values, source schema, source row SHA, and the standard-peak same-peak reason. Passing rows generate an existing-contract `activation_acceptance.tsv` with `must_not_regress_status=pass`, a max product-affecting row allowance equal to the gated selected row count, and an activation scope derived from authority provenance: manual-oracle rows stay `manual_oracle_seed_rows`, while machine-gate rows are labeled `machine_gate_standard_peak_rows` with `must_not_regress_basis=machine_shift_aware_standard_peak_gate`. With `--apply-matrix-only`, the CLI immediately calls the existing matrix-only product activation writer and emits an activated matrix under `<output-dir>/activated_matrix` unless `--activated-output-dir` is supplied. If the standard-peak gate fails, acceptance stays fail and product application must stop for review. This converter does not generate upstream evidence, change source alignment artifacts, or bypass product activation. Its files are diagnostic proposals, not a matrix-writing interface.
-
----
-
-### Historical record — `standard_peak_policy_observed_oracle.py` (retired/deleted)
-
-**Purpose**: Build row-specific observed-oracle packets for generated Backfill
-policy rows that are still `detected_flagged`.
-**Topic group**: `standard_peak_backfill_productization.py` +
-`xic_extractor/diagnostics/standard_peak_policy_observed_oracle.py`
-**Originating spec/goal/plan**: `goals/standard-peak-backfill-productization`
-**Load-bearing note**: This is a machine evidence producer for the generated
-Backfill policy engine, not a manual approval TSV and not a standalone writer
-scope.
-**Status note**: Consumes generated `standard_peak_backfill_policy.tsv` plus
-the matching activation-scope audit. It selects policy rows with
-`backfill_policy_decision=detected_flagged`, joins source rows by
-`matrix_value_source_row_sha256`, reloads the stored trace JSON, recomputes
-boundaries/area from the full stored trace, and writes
-`standard_peak_policy_observed_oracle.tsv` plus `summary.tsv/json`. Results use
-schema `standard_peak_policy_observed_oracle`; only rows with
-`oracle_case_status=pass`, `included_in_product_acceptance=TRUE`, and
-`observed_result_source=policy_observed_full_trace_reintegration` may be
-consumed by `standard_peak_backfill_productization.py
---policy-observed-oracle-tsv --policy-observed-oracle-summary-json`. The current no-RAW FULL COHORT packet under
-`output/productization_realdata_seed_guard_full_cohort_20260617/policy_observed_oracle_detected_flagged_full_trace/`
-evaluated the prior 72 `detected_flagged` rows, passed 72/72, and recorded max
-boundary error `8.91875e-05 min` plus max area relative error `0.098218`.
-This producer does not open RAW, mutate matrices, loosen nonstandard-peak
-policy, or authorize broad Backfill by itself; product behavior changes only
-after generated policy replay and writer expected-diff pass.
-
----
-
-### Historical record — `standard_peak_backfill_productization.py` (retired/deleted)
-
-**Purpose**: Run the reviewed standard-peak backfill path end to end: convert shadow projection accepts into activation inputs, apply matrix-only product activation, and optionally render an activation-synced reconciliation gallery.
-**Topic group**: `standard_peak_backfill_productization.py` + `xic_extractor/diagnostics/standard_peak_backfill_productization.py`
-**Originating spec/goal/plan**: `goals/standard-peak-backfill-productization`
-**Load-bearing note**: Normal presets and `scripts/run_alignment.py` cannot
-reach this path. It is an explicit offline historical/productization referrer
-pending the T5D contraction census and cannot publish into source Alignment
-Matrix outputs.
-**Status note**: This retained offline tool reads historical shadow projection
-and Alignment sidecars and writes activation projections only beneath its
-explicit output directory; it cannot mutate or republish the source Alignment
-Matrix. Retained FULL COHORT packets record scoped `production_ready` labels for the
-old high-signal, low-scan, low-height, low-height/low-scan, and reintegration-
-stable writer experiments. Those labels are historical artifact evidence, not
-current normal-route or ProductWriter authority, and must not be consumed as
-preset readiness. T5D owns deletion or diagnostic-only contraction of this
-productization surface and its detailed evidence/oracle options.
-
----
-
-### Historical record — `standard_peak_backfill_machine_pipeline.py` (retired/deleted)
-
-**Purpose**: Run the standard-peak machine-gate chain from either an existing overlay summary or a retained-backfill review queue to activated matrix and optional gallery.
-**Topic group**: retired offline orchestration chain.
-**Originating spec/goal/plan**: `goals/standard-peak-backfill-productization`
-**Status note**: This explicit offline orchestrator can start from an existing
-an existing overlay batch summary or from a retained-backfill review queue
-plus RAW/DLL paths. Normal presets and `scripts/run_alignment.py` have no
-referrer to it. Historical `publication_mode` values control offline evidence
-and rendering only; they are not normal-route choices or source-Matrix
-authority. Its `status=pass` describes only the requested offline scope.
-It can pass an opt-in `--evidence-cache-dir` to the overlay batch producer for
-`evidence-only` runs; this reuses exact cached trace TSV/JSON evidence and does
-not authorize stale overlay summaries or bypass matrix/publication checks.
-
----
-
-### Historical record — `standard_peak_backfill_chunk_consolidation.py` (retired/deleted)
-
-**Purpose**: Retained offline consolidation diagnostic for historical standard-peak machine-pipeline outputs.
-**Topic group**: `standard_peak_backfill_machine_pipeline.py` + `standard_peak_backfill_productization.py` + `xic_extractor/diagnostics/standard_peak_backfill_chunk_consolidation.py`
-**Originating spec/goal/plan**: `goals/standard-peak-backfill-productization`
-**Status note**: This module is not reachable from normal GUI, CLI, presets, or
-workflows. Source-Matrix/identity targets and the old publication switch fail
-closed before any I/O; source backup and republication are retired. The
-remaining explicit formal-sidecar mode is a historical diagnostic referrer
-awaiting T5D contraction/deletion and is not current product-output or Matrix
-authority. Do not feed its `status=pass` or manifest to downstream as readiness
-proof.
-
----
-
-#### `standard_peak_backfill_preset.py` (retired/deleted)
-
-**Purpose**: Retained explicit offline Standard Peak diagnostic wrapper.
-**Topic group**: `standard_peak_backfill_machine_pipeline.py` +
-`standard_peak_backfill_chunk_consolidation.py` +
-`standard_peak_backfill_productization.py`
-**Originating spec/goal/plan**: `goals/standard-peak-backfill-productization`
-**Status note**: Before T5D, normal `scripts/run_alignment.py`, GUI, workflows,
-and built-in presets no longer called this wrapper, while an explicit offline
-caller could still run the retained evidence chain and request its historical
-formal sidecar. T5D deleted this wrapper; no current entry point can run that
-chain or publish its sidecar. The historical sidecar never became current
-product authority.
-
----
-
-### Historical record — `dna_dr_product_ready_stage_replay.py` (retired/deleted)
-
-**Purpose**: Replay a single expensive `dna_dr_product_ready` post-alignment
-stage from an existing alignment output directory for timing/parity validation.
-**Topic group**: `standard_peak_backfill_preset.py` +
-`scripts.check_product_ready_preset_publication`
-**Status note**: Before T5D, this supported `--stage standard_peak`. It copied
-the required source alignment artifacts into a fresh output directory, recorded
-input artifact SHA/size/row-counts in
-`dna_dr_product_ready_stage_replay_manifest.json`, reran the standard-peak
-publication preset, and then ran the product-ready publication checker. T5D
-deleted the replay and publication checker; no current `standard_peak` stage
-entry point remains.
 
 ---
 
@@ -614,20 +307,6 @@ explicitly supplied and the packet supports that decision; otherwise results
 remain `diagnostic_only_do_not_wire_to_default`. This tool never mutates exact
 outputs and cannot promote an approximate backend into the default preset by
 itself.
-
----
-
----
-
----
-
----
-
----
-
----
-
----
 
 ---
 
@@ -665,36 +344,7 @@ until an explicit product-transfer decision and consolidation policy exist.
 
 ---
 
-### Historical record — `backfill_evidence_reconciliation_gallery.py` (retired/deleted)
-
-**Purpose**: Formerly assembled a Backfill reconciliation index and standalone HTML gallery from existing diagnostic artifacts.
-**Replacement**: Interactive review is owned by the installed `xic-inspector` command and the method-neutral `xic_inspector` API, selection, and renderer. Scientific artifact production remains with its existing diagnostic owners; no Gallery input, CLI, or HTML compatibility surface remains.
-
----
-
 ### CID-NL differential evidence producer helpers
-
-#### `cid_nl_default_activation_gallery_review.py`
-
-**Purpose**: Write the no-RAW source/successor transition evidence consumed by CID-NL differential diagnostics.
-**Topic group**: `cid_nl_default_activation_gallery_review.py`, `cid_nl_differential_overlay_review.py`, and `cid_nl_feature_inclusion_gate.py`.
-**Originating spec/goal/plan**: `docs/superpowers/validation/cid_nl_default_activation_successor_authority_contract/README.md`; `docs/superpowers/validation/cid_nl_default_activation_gallery_review/README.md`.
-**Status note**: `write_transition_review_evidence(...)` consumes successor decisions and alignment review TSVs, then writes the deterministic `cid_nl_discovery_identity_differential_review.tsv` shape at the caller-supplied path. It preserves source/successor counts, coordinates, feature-inclusion and identity-authority gates, relationship state, and paired-overlay readiness. It has no CLI or HTML output and does not read RAW, mutate product outputs, or grant writer authority.
-
----
-
-#### `cid_nl_differential_overlay_review.py`
-
-**#441 disposition**: Migrated by #445 (#441 C3) to a curve bundle for offline XIC Inspector review. The summary's non-empty `review_path` points to that bundle; downstream gate and classification consumers use the locator.
-
-**Purpose**: Generate paired source vs successor RAW-backed MS1 overlay review artifacts for CID-NL feature-inclusion and identity-relationship review.
-**Topic group**: `cid_nl_default_activation_gallery_review.py`, `cid_nl_feature_inclusion_gate.py`, and the RAW `open_raw(...).extract_xic_many(...)` batch extraction path.
-**Originating spec/goal/plan**: `docs/superpowers/validation/cid_nl_default_activation_gallery_review/README.md`.
-**Status note**: `write_differential_evidence(...)` consumes the transition and successor-decision TSVs, filters ready source/successor transitions, and extracts both XICs in one RAW open per sample. It writes the paired queue, per-transition `xic_curve_bundle` JSON with the exact precomputed Gaussian15 series and transition review metadata, lossless trace JSON, and `cid_nl_differential_overlay_review_summary.tsv/json` beneath the requested output directory. XIC Inspector reads the bundle offline for paired source/successor curves, shared absolute scale, centre-RT markers, decision colours, max scatter, and gate/identity notes. The artifacts remain `diagnostic_only`: they can support feature-inclusion review, while replacement, merge, deduplication, Matrix writes, and product adoption retain their separate owners and gates.
-
----
-
----
 
 ### `tier2_raw_trace_reread_producer.py`
 
@@ -709,18 +359,12 @@ until an explicit product-transfer decision and consolidation policy exist.
 
 ---
 
----
-
 ### `selected_envelope_review_queue.py`
 
 **Purpose**: Build `diagnostic_only` selected-envelope changed-row and boundary-oracle review queue artifacts from `selected_envelope_diagnostics.tsv`.
 **Topic group**: `selected_envelope_review_queue.py` + `xic_extractor/peak_detection/selected_envelope_*`
 **Originating owner/plan**: `docs/product/quantitation-context.md`; retired selected full-envelope boundary spec provenance `retired-provenance:13e9499ab37d`
 **Status note**: Writes `selected_envelope_changed_rows.tsv`, `selected_envelope_oracle_review_queue.tsv`, `selected_envelope_diagnostic_manifest.tsv`, and `selected_envelope_review_queue.json` under an explicit output directory. This tool only packages the audit sidecar for manual/expert boundary review; it does not run RAW files, mutate selected `IntegrationResult`, change targeted workbook/CSV `Area`, or authorize FE4/8RAW by itself.
-
----
-
----
 
 ---
 
@@ -733,18 +377,6 @@ until an explicit product-transfer decision and consolidation policy exist.
 **Originating spec**: `retired-provenance:53a763b9ec7a`
 **Recent doc**: `retired-provenance:5162156a9766`
 **Status note**: Reads targeted workbook inputs plus existing alignment review/cell/public-matrix artifacts and writes benchmark summary, match, JSON, and Markdown outputs. Public `alignment_matrix.tsv` loading supports both legacy `feature_family_id` matrices and clean `Mz` / `RT` / sample-column matrices with `alignment_matrix_identity.tsv` provenance; matrix sample-column normalization is computed once per matrix read and reused across row expansion. This benchmark remains validation-only context and does not mutate alignment artifacts, workbook schemas, matrix identity, or production decisions.
-
----
-
----
-
----
-
----
-
----
-
----
 
 ---
 
@@ -1197,18 +829,72 @@ or write Matrix/workbook artifacts.
 
 ---
 
-### `pt_pattern_candidate_assembly_replay.py`
+### `pt_pattern_replay.py`
+
+Run `python -m tools.diagnostics.pt_pattern_replay --help` to choose a
+saved-CSV question. All three subcommands write diagnostics without RAW
+acquisition or product activation. Scientific rules stay in the package owners.
+
+| Question | Subcommand |
+| --- | --- |
+| Why did an inclusion-list row fail candidate assembly? | `assembly` |
+| Which saved candidates make incompatible shared-feature claims? | `conflicts` |
+| Does DDMS2 contain MS1 feature support near a Fullscan seed? | `ddms2-support` |
+
+#### `assembly`
 
 **Purpose**: Replay inclusion-list rows whose four list-relative m/z pools exist
 against the canonical local MS1 feature table, then identify the first failed
 mass, quality, RT, or matcher-emission condition.
-**Topic group**: `pt_pattern_candidate_assembly_replay.py` +
+**Entry**: `pt_pattern_replay assembly`; package owner:
 `xic_extractor.discovery.pt_pattern_candidate_assembly_replay`
 **Product owner**: `docs/product/discovery.md`
 **Status note**: Diagnostic-only no-RAW replay. It reuses the current Pt
 candidate matcher and shared mass-accuracy helpers, writes row-level CSV, summary JSON,
 and chart-first HTML, and does not change detector rules, counted detection,
 export, Alignment/Backfill, or Matrix authority.
+
+---
+
+#### `conflicts`
+
+**Purpose**: Build a provenance-bound pairwise shared-claim graph over frozen Pt
+candidate rows, then compare connected-component-wide `at_most_one` semantics
+with the pairwise incompatibility structure represented by those rows.
+**Entry**: `pt_pattern_replay conflicts`; package owners:
+`xic_extractor.discovery.pt_pattern_conflict_graph` +
+`xic_extractor.discovery.pt_pattern_conflict_graph_replay`
+**Product owner**: `docs/product/discovery.md`
+**Status note**: Diagnostic-only no-RAW replay. It verifies candidate and
+detected-feature provenance, rejects unknown source schema versions, validates
+legacy resolution/preferred-candidate consistency, and writes versioned vertex,
+edge, component, legacy comparison, and summary sidecars. The semantic summary
+contains hashes and graph identity but no path or report label; those
+presentation details live in a separate run-metadata JSON. It marks where
+component-wide `at_most_one` would overconstrain pairwise-compatible
+hypotheses. Current vertices are serialized greedy matcher representatives, not
+complete enumeration of all compatible base/+1/+2/+4 assignments; the replay
+cannot recover alternatives pruned before candidate emission. It does not select a
+hypothesis, instantiate or count an event, change current machine calls, read
+Alignment/Backfill state, or write Matrix/workbook/export artifacts.
+
+---
+
+#### `ddms2-support`
+
+**Purpose**: Replay Fullscan-primary Pt pattern seeds against a DDMS2 local MS1
+feature table to inspect whether the DDMS2 run contains matching base/+1/+2/+4
+support near the Fullscan seed.
+**Entry**: `pt_pattern_replay ddms2-support`; package owner:
+`xic_extractor.discovery.pt_pattern_ddms2_support_replay`
+**Product owner**: `docs/product/discovery.md`
+**Status note**: Diagnostic-only support replay. It does not open RAW, create
+Fullscan seeds, recompute trace evidence, decide DDMS2 targeting opportunity,
+mutate Discovery outputs, read Alignment/Backfill state, or write
+Matrix/workbook artifacts. Its m/z tolerance and RT window must be positive
+finite values. Without the historical target/inclusion list,
+missing DDMS2 support is context only, not negative evidence against a Fullscan
+Discovery seed.
 
 ---
 
@@ -1235,48 +921,6 @@ change feature detection, candidate assembly, ratios, counted detections,
 Alignment/Backfill, export, or Matrix authority. A populated theoretical m/z
 window does not identify which chemical species contributed its intensity and
 does not prove an exact centroid-to-envelope assignment.
-
----
-
-### `pt_pattern_conflict_graph_replay.py`
-
-**Purpose**: Build a provenance-bound pairwise shared-claim graph over frozen Pt
-candidate rows, then compare connected-component-wide `at_most_one` semantics
-with the pairwise incompatibility structure represented by those rows.
-**Topic group**: `pt_pattern_conflict_graph_replay.py` +
-`xic_extractor.discovery.pt_pattern_conflict_graph` +
-`xic_extractor.discovery.pt_pattern_conflict_graph_replay`
-**Product owner**: `docs/product/discovery.md`
-**Status note**: Diagnostic-only no-RAW replay. It verifies candidate and
-detected-feature provenance, rejects unknown source schema versions, validates
-legacy resolution/preferred-candidate consistency, and writes versioned vertex,
-edge, component, legacy comparison, and summary sidecars. The semantic summary
-contains hashes and graph identity but no path or report label; those
-presentation details live in a separate run-metadata JSON. It marks where
-component-wide `at_most_one` would overconstrain pairwise-compatible
-hypotheses. Current vertices are serialized greedy matcher representatives, not
-complete enumeration of all compatible base/+1/+2/+4 assignments; the replay
-cannot recover alternatives pruned before candidate emission. It does not select a
-hypothesis, instantiate or count an event, change current machine calls, read
-Alignment/Backfill state, or write Matrix/workbook/export artifacts.
-
----
-
-### `pt_pattern_ddms2_support_replay.py`
-
-**Purpose**: Replay Fullscan-primary Pt pattern seeds against a DDMS2 local MS1
-feature table to inspect whether the DDMS2 run contains matching base/+1/+2/+4
-support near the Fullscan seed.
-**Topic group**: `pt_pattern_ddms2_support_replay.py` +
-`xic_extractor.discovery.pt_pattern_ddms2_support_replay`
-**Product owner**: `docs/product/discovery.md`
-**Status note**: Diagnostic-only support replay. It does not open RAW, create
-Fullscan seeds, recompute trace evidence, decide DDMS2 targeting opportunity,
-mutate Discovery outputs, read Alignment/Backfill state, or write
-Matrix/workbook artifacts. Its m/z tolerance and RT window must be positive
-finite values. Without the historical target/inclusion list,
-missing DDMS2 support is context only, not negative evidence against a Fullscan
-Discovery seed.
 
 ---
 
@@ -1356,8 +1000,6 @@ docs cleanup and before PR closeout when the repo/vault split changed.
 
 ---
 
----
-
 ## Surface Population And Reachability
 
 Report-only census of product surfaces that exist but never carry anything: a
@@ -1400,7 +1042,7 @@ evidence sidecar.
 
 Not entry-points, but referenced by multiple topic groups:
 
-- `xic_extractor/tabular_io.py` — package-neutral shared delimited/TSV read-write, file SHA256 hashing, scalar parsing, numeric equality, header validation, label splitting, text grouping, and value formatting. `xic_extractor/diagnostics/diagnostic_io.py` and `tools/diagnostics/diagnostic_io.py` re-export it as compatibility shims for existing diagnostic imports. Cluster 1, the listed Cluster 3 loaders, alignment backfill authority/projection modules, and backfill/standard-peak diagnostics now reuse this helper; use it before adding local `_read_required_tsv`, `_bool_value`, `_optional_float`, `_text`, `_required_indexes`, `_write_tsv`, `_sha256_file`, `_numeric_equal`, or `_group_by_family` copies.
+- `xic_extractor/tabular_io.py` — package-neutral shared delimited/TSV read-write, file SHA256 hashing, scalar parsing, numeric equality, header validation, label splitting, text grouping, and value formatting. Cluster 1, the listed Cluster 3 loaders, alignment backfill authority/projection modules, and backfill/standard-peak diagnostics now reuse this helper; use it before adding local `_read_required_tsv`, `_bool_value`, `_optional_float`, `_text`, `_required_indexes`, `_write_tsv`, `_sha256_file`, `_numeric_equal`, or `_group_by_family` copies.
 - `xic_extractor/diagnostics/backfill_overlay.py` — package-owned shared selector for seed-specific backfill overlay rows. It keeps retained backfill gates, shadow policy, and shadow projection on one fail-closed selection rule: exact seed rows beat legacy family rows when allowed, and conflict/review verdicts outrank support verdicts when duplicate rows exist for the same seed. Use it before adding local `_selected_overlay_row` or `_overlay_sort_key` copies.
 - `tools/diagnostics/docs_scan.py` — shared text-file discovery/read helpers for docs diagnostics. Reuse it before adding another `git ls-files` fallback, repo-relative path helper, or text-file scan predicate.
 - `tools/diagnostics/docs_routing_review.py` — docs/superpowers routing domain logic: route classification, lifecycle metadata, topic hints, topic-owner clustering, exact-referrer status, and TSV field contracts. Keep docs-route/product-authority rules here instead of rebuilding them inside CLI wrappers.

@@ -41,15 +41,12 @@ these authority instances are not schemas.
 - `productization_control_plane_schema.json`: current control-plane schema
   for productization lane state, maturity, authority rules, the stable
   compatibility-anchor registry, and dependent-effect lane authority.
+
 The [CID-NL oracle formats](../../product/discovery.md#cid-nl-oracle-formats)
 describe proposal, sampling, lineage, review, reference, narrow-scope, and
 statistical-design inputs and link to their executable validators.
-The [Quant Matrix activation formats](../../product/quant-matrix.md#activation-formats)
-describe explicit versioned and default activation outputs and link to their
-executable field, writer, and validation owners.
-The [Quant Matrix review and evidence formats](../../product/quant-matrix.md#review-and-evidence-formats)
-describe reports, evidence/readiness packets, candidate bundles, downstream
-smoke, and activation replay/closeout gates, with their executable owners.
+The [Matrix publication contract](../../product/quant-matrix.md#matrix-publication)
+describes current numeric publication and its retained acceptance owners.
 
 ## Rule
 

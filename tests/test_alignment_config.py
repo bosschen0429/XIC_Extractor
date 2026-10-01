@@ -81,7 +81,6 @@ def test_alignment_modules_do_not_import_pipeline_or_io_boundaries():
         "scripts",
         "xic_extractor.discovery.pipeline",
         "xic_extractor.discovery.csv_writer",
-        "xic_extractor.diagnostics.diagnostic_io",
         "xic_extractor.extraction",
         "xic_extractor.extractor",
         "xic_extractor.output",

@@ -8,7 +8,6 @@ from collections.abc import Mapping, Sequence
 from dataclasses import asdict
 from pathlib import Path
 
-from tools.diagnostics.diagnostic_io import write_tsv
 from tools.diagnostics.rt_normalization_anchor_models import (
     FamilyRtSummary,
     LeaveOneAnchorOutSummary,
@@ -16,6 +15,7 @@ from tools.diagnostics.rt_normalization_anchor_models import (
     RtNormalizationResult,
 )
 from xic_extractor.alignment.rt_normalization import AnchorResidual, SampleRtModel
+from xic_extractor.tabular_io import write_tsv
 
 SUMMARY_COLUMNS = ("metric", "value")
 SAMPLE_COLUMNS = (

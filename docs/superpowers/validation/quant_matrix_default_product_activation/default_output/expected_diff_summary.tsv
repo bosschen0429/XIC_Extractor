@@ -1,2 +1,0 @@
-schema_version	acceptance_status	expected_diff_count	written_backfill_count	unused_expected_diff_count	blocking_reasons
-quant_matrix_version_expected_diff_summary	pass	511	511	0	

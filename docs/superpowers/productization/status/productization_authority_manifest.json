@@ -1,12 +1,10 @@
 {
   "schema_version": "productization_authority_manifest",
   "status": "active",
-  "updated": "2026-08-21",
+  "updated": "2026-10-01",
   "authority_policy": {
     "unregistered_scope_policy": "fail_closed",
-    "product_writer_allowed_scopes": [
-      "backfill_policy_write_ready_rows"
-    ],
+    "product_writer_allowed_scopes": [],
     "matrix_write_requires": [
       "registered_product_authority_scope",
       "expected_diff_acceptance",
@@ -20,18 +18,7 @@
       "broad_backfill_candidate_universe"
     ]
   },
-  "current_authority": {
-    "backfill": {
-      "authority_scope": "backfill_policy_write_ready_rows",
-      "authority_source": "generated_policy_write_ready_rows",
-      "artifact": "docs/superpowers/validation/backfill_generated_policy_externalized_artifacts/backfill_generated_policy_externalized_artifacts_summary.json",
-      "artifact_sha256": "E36A03AC29041C8584BDB26D2C5A3B8FC160C03908F2F30DED6ACD9C146CD79B",
-      "externalized_source_artifact": "output/productization_realdata_seed_guard_85raw_20260617/generated_policy_quality_explained_no_raw_productization/standard_peak_backfill_policy.tsv",
-      "externalized_source_artifact_sha256": "1585F9EBF6C216677406A03C57868EEA38A25B663F00566A9C84C37898D11659",
-      "acceptance_artifact": "output/productization_realdata_seed_guard_85raw_20260617/generated_policy_quality_explained_no_raw_productization/narrow_product_writer_expected_diff_acceptance.json",
-      "acceptance_artifact_sha256": "093E4F4894D0D7FB05A54FDFDA8454618FEBA0A4AC93EFEC7B77CA64AE97458D"
-    }
-  },
+  "current_authority": {},
   "parked_lanes": {
     "broad_backfill": {
       "status": "parked",

@@ -13,7 +13,7 @@ from typing import Literal
 from xic_extractor.diagnostics.backfill_overlay import (
     selected_overlay_row as select_backfill_overlay_row,
 )
-from xic_extractor.diagnostics.diagnostic_io import (
+from xic_extractor.tabular_io import (
     bool_value,
     file_sha256,
     optional_int,

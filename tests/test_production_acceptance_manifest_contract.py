@@ -5,18 +5,25 @@ from pathlib import Path
 
 import pytest
 
-from scripts.check_production_acceptance_manifest import (
+from xic_extractor.diagnostics.quant_matrix.acceptance import (
     ACCEPTANCE_DECISIONS,
-    PRODUCTION_ACCEPTANCE_MANIFEST_SCHEMA,
     REQUIRED_COLUMNS,
     check_production_acceptance_manifest,
     check_production_acceptance_manifest_schema,
+)
+from xic_extractor.diagnostics.quant_matrix.version import (
     production_acceptance_manifest_sha256,
 )
 
+PRODUCTION_ACCEPTANCE_MANIFEST_SCHEMA = (
+    Path(__file__).resolve().parents[1]
+    / "docs/superpowers/schemas/production_acceptance_manifest_schema.json"
+)
 
 def test_current_production_acceptance_manifest_schema_validates() -> None:
-    assert check_production_acceptance_manifest_schema() == []
+    assert check_production_acceptance_manifest_schema(
+        schema_path=PRODUCTION_ACCEPTANCE_MANIFEST_SCHEMA
+    ) == []
 
     schema = json.loads(
         PRODUCTION_ACCEPTANCE_MANIFEST_SCHEMA.read_text(encoding="utf-8"),
@@ -413,6 +420,7 @@ def _valid_accept_row() -> dict[str, str]:
 def _check_manifest(path: Path) -> list[str]:
     return check_production_acceptance_manifest(
         manifest_path=path,
+        schema_path=PRODUCTION_ACCEPTANCE_MANIFEST_SCHEMA,
         repo_root=path.parent,
     )
 

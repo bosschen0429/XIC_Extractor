@@ -276,6 +276,7 @@ class UntargetedView(QWidget):
         self._run.set_running(False)
         self._restore_controls()
         self._results.update_results(summary)
+        self._results.generate_default_report()
         self._workspace.reveal(self._results)
         self.status_message.emit("Untargeted 執行完成", 5000)
 

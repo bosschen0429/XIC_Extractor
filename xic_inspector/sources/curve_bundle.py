@@ -586,10 +586,10 @@ class CurveBundleSource:
                 }
                 for key, value in sorted(transition.quality_flags.items())
             ]
-            records = [
+            records: list[dict[str, Any]] = [
                 {
                     "ref": flag_ref,
-                    "title": "Transition quality flags",
+                    "title": "轉換品質旗標",
                     "summary": transition.key,
                     "fields": fields,
                 }
@@ -598,7 +598,7 @@ class CurveBundleSource:
                 records.append(
                     {
                         "ref": trace.trace_id,
-                        "title": f"{trace.role} curve provenance",
+                        "title": f"{trace.role} 曲線來源",
                         "summary": trace.unavailable_reason or trace.sample_label,
                         "fields": [
                             {"label": "RAW identity", "value": trace.raw_identity},
@@ -650,7 +650,7 @@ class CurveBundleSource:
                     records.append(
                         {
                             "ref": f"quantity:{transition.key}:{sid}",
-                            "title": "Saved formal result",
+                            "title": "已保存正式結果",
                             "summary": next(
                                 t.sample_label for t in traces if t.sample_id == sid
                             ),
@@ -699,9 +699,10 @@ class CurveBundleSource:
                     "title": transition.key,
                     "badge_label": "診斷曲線",
                     "method_label": "curve bundle",
-                    "reason_label": "; ".join(
-                        f"{key}: {value}"
-                        for key, value in sorted(transition.quality_flags.items())
+                    "reason_label": (
+                        f"{len(item.sample_ids)} 個樣本的已保存診斷曲線；"
+                        f"{len(transition.quality_flags)} 項轉換品質旗標"
+                        "保存在來源紀錄。"
                     ),
                     "precursor_mz": item.witnesses[0].precursor_mz,
                     "rt_apex_min": item.witnesses[0].rt_apex_min,

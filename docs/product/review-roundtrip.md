@@ -98,6 +98,23 @@ approved product changes.
 | Expected-diff approval rows | Gate before product-impacting changes |
 | Inter-reviewer agreement summary | Evidence quality and disagreement surface |
 
+## Operator commands
+
+Use `python -m scripts.<name>`. The implementation owner is
+`xic_extractor.review_actions`.
+
+| Need | Command | Result and limit |
+| --- | --- | --- |
+| Validate actions or approved expected-diff rows | `validate_review_actions`; add `--expected-diff` for approvals | Validation without mutation |
+| Compare actions with current targeted rows | `plan_review_action_applications` | Application plan and optional approval template |
+| Verify a candidate in its sidecar | `plan_review_action_candidate_sidecars` | Identity verification without peak switching |
+| Prepare ready/blocked copy edits | `plan_review_action_apply_changesets` | Changeset; optional `--output-apply-readiness-tsv` emits the intermediate audit |
+| Produce an audited targeted-long copy | `apply_review_action_changesets` | Review/product-state fields and audit in a separate copy; no peak/area recomputation, workbook update, or Matrix publication |
+
+The changeset planner validates approvals and calculates readiness itself;
+separate preliminary commands are unnecessary. A ready copy edit does not
+grant the parked peak-switch or area-writer lanes product authority.
+
 ## Boundaries
 
 - Owns: review queue generation, typed action import/validation, and dry-run

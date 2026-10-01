@@ -36,8 +36,6 @@
     "out_of_scope"
   ],
   "required_control_plane_anchors": {
-    "backfill_current_write_ready_scope": "QuantMatrix Default Product Activation",
-    "cid_nl_default_product_activation": "CID-NL Default Product Activation",
     "broad_backfill_autowrite": "park_broad_backfill",
     "productization_authority_firewall": "productization_authority_manifest",
     "quality_explanation_sidecar": "quality_explanations and quality_blockers are explanation and triage inputs only",
@@ -54,9 +52,7 @@
   },
   "authority_rules": {
     "unregistered_scope_policy": "fail_closed",
-    "allowed_product_writer_scopes": [
-      "backfill_policy_write_ready_rows"
-    ],
+    "allowed_product_writer_scopes": [],
     "matrix_write_requires": [
       "registered_product_authority_scope",
       "expected_diff_acceptance",
@@ -75,8 +71,6 @@
     "handoff_and_control_plane_anchor_required": true
   },
   "required_lane_ids": [
-    "backfill_current_write_ready_scope",
-    "cid_nl_default_product_activation",
     "broad_backfill_autowrite",
     "productization_authority_firewall",
     "quality_explanation_sidecar",

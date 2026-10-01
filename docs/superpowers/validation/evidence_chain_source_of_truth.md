@@ -144,8 +144,6 @@ Owners:
 - `xic_extractor/discovery/*`
 - `xic_extractor/instrument_qc/hcd_evidence.py`
 - `xic_extractor/instrument_qc/calibration_product_evidence.py`
-- `scripts/build_cid_nl_default_product_activation.py`
-- `tools/diagnostics/cid_nl_feature_inclusion_gate.py`
 
 Purpose: answer whether MS2/product-ion/neutral-loss evidence supports an
 identity, discovery candidate, or calibration context.
@@ -225,9 +223,6 @@ Owners:
 - `xic_extractor/discovery/models.py`
 - `xic_extractor/discovery/evidence_config.py`
 - `xic_extractor/discovery/evidence_score.py`
-- `scripts/build_cid_nl_default_activation_successor_authority_contract.py`
-- `scripts/build_cid_nl_default_product_activation.py`
-- `tools/diagnostics/cid_nl_feature_inclusion_gate.py`
 
 Purpose: discover non-targeted / untargeted candidate identities and decide whether a
 successor row is better explained than a source/current row.
@@ -307,9 +302,8 @@ authority.
 Owners:
 
 - `xic_extractor/diagnostics/quant_matrix/version.py`
-- `xic_extractor/alignment/quant_matrix_promotion.py`
-- `scripts/build_quant_matrix_default_product_activation.py`
-- `scripts/build_cid_nl_default_product_activation.py`
+- `xic_extractor/output/alignment/product_matrix.py`
+- `xic_extractor/alignment/production_decisions.py`
 
 Purpose: make matrix-writing changes explicit, replayable, and auditable.
 
@@ -320,22 +314,17 @@ Evidence states:
 - Cell provenance: source family ids, matrix value, cell status, value source,
   write authority, acceptance decision/basis, truth status, quant value,
   matrix area source, source artifact relpath/hash/row hash/manifest hash.
-- Promotion readiness: separates contract correctness from scientific
-  confidence and requires large-cohort/oracle/downstream evidence before broad
-  scientific claims.
-
-Authority state: this is the last gate before default matrix writing. It refuses
-unused expected diffs and existing-value overwrites. Passing a focused expected
-diff proves contract correctness for a bounded scope, not global scientific
-confidence.
+Authority state: live cell decisions and their finalized projections own
+Matrix values. The diagnostic golden path uses the accepted-value builder; it refuses
+unused expected diffs and existing-value overwrites. A passing expected diff
+proves its bounded contract, not global scientific confidence or a separate
+file-activation permission.
 
 ### Overlay And Human-Guide Evidence
 
 Owners:
 
 - `tools/diagnostics/family_ms1_overlay_*`
-- `tools/diagnostics/cid_nl_default_activation_gallery_review.py`
-- `tools/diagnostics/cid_nl_differential_overlay_review.py`
 - `xic_inspector`
 - `docs/superpowers/validation/evidence_chain_status_guide.html`
 
@@ -359,13 +348,12 @@ The authoritative machine-readable registry state is
 `docs/superpowers/productization/status/productization_authority_manifest.json`. This table
 describes stable lane roles, not current counts. Counts, hashes, pass/fail
 numbers, and active scope sizes belong in the machine-readable artifacts.
-The exact Backfill writer membership remains in the retained production-
-acceptance manifest and activation values; `scripts/check_productization_authority.py`
-recomputes the manifest identity and binds every authorized cell across both.
+The registry grants no standalone file-activation writer scope. Live Matrix
+values are decided by the Alignment cell-decision and projection owners.
 
 | Lane / surface | Evidence chain | Authority boundary |
 | --- | --- | --- |
-| Backfill current | Backfill policy, same-peak support, sample-local evidence, value provenance, and expected diff. | Writer authority is limited to the registered scope in the authority manifest and status index. |
+| Live Backfill projection | Backfill policy, same-peak support, sample-local evidence, and value provenance. | The Alignment cell-decision owner selects the value before projection. |
 | CID-NL Discovery | Successor self evidence, CID-NL tag evidence, MS1/RT/family context, identity reconstruction, expected diff, and quant matrix replay. | CID-NL/MS2 evidence is not direct writer authority; it must be consumed by a bounded activation contract. |
 | Broad Backfill candidate universe | Candidate, review, overlay, recovery, economics, and locality evidence. | No write authority unless a new activation/export contract and manifest scope are added. |
 | Targeted review actions | Expected-diff gate over product state, counted detection, review state, candidate sidecar, or manual-boundary state. | Mutating actions require approved expected diff and fail closed on stale/missing baseline. |

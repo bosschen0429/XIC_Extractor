@@ -7,7 +7,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import asdict
 from typing import Any
 
-from tools.diagnostics.diagnostic_io import format_diagnostic_value, write_tsv
+from xic_extractor.tabular_io import format_diagnostic_value, write_tsv
 
 SUMMARY_COLUMNS = (
     "target_label",

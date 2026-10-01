@@ -5,7 +5,6 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from xic_extractor.diagnostics.diagnostic_io import read_tsv_required
 from xic_extractor.diagnostics.targeted_ms1_shape_identity import (
     TARGETED_MS1_SHAPE_IDENTITY_COLUMNS,
 )
@@ -13,7 +12,7 @@ from xic_extractor.extraction.targeted_ms1_shape_identity_projection import (
     TargetedMs1ShapeIdentitySupport,
     targeted_ms1_shape_identity_supports_from_rows,
 )
-from xic_extractor.tabular_io import write_tsv
+from xic_extractor.tabular_io import read_tsv_required, write_tsv
 from xic_extractor.targeted_ms1_shape_identity_policy import (
     LIMITED_HMDC_MEDC_POLICY,
     LIMITED_HMDC_MEDC_TARGETS,

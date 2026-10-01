@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from tools.diagnostics import pt_pattern_conflict_graph_replay as replay_cli
+from tools.diagnostics import pt_pattern_replay as replay_cli
 from xic_extractor.discovery.detected_features import DETECTED_FEATURES_COLUMNS
 from xic_extractor.discovery.pt_pattern_conflict_graph_replay import (
     run_conflict_graph_replay,
@@ -164,6 +164,7 @@ def test_conflict_graph_replay_cli_writes_summary(tmp_path: Path) -> None:
 
     exit_code = replay_cli.main(
         (
+            "conflicts",
             "--candidates-csv",
             str(candidates_csv),
             "--detected-features-csv",

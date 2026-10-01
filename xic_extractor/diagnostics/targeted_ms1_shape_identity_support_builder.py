@@ -8,17 +8,17 @@ from statistics import median
 import numpy as np
 
 from xic_extractor.config import Target
-from xic_extractor.diagnostics.diagnostic_io import (
-    bool_value,
-    optional_float,
-    text_value,
-)
 from xic_extractor.diagnostics.targeted_ms1_shape_identity import (
     TargetedMs1ShapeCandidate,
 )
 from xic_extractor.peak_detection.ms1_shape_identity import (
     DEFAULT_OWN_MAX_SMOOTH_POINTS,
     gaussian_smooth_values,
+)
+from xic_extractor.tabular_io import (
+    bool_value,
+    optional_float,
+    text_value,
 )
 from xic_extractor.xic_models import XICTrace
 

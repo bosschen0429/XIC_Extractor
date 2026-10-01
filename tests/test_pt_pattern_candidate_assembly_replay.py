@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from tools.diagnostics import pt_pattern_candidate_assembly_replay as replay_cli
+from tools.diagnostics import pt_pattern_replay as replay_cli
 from xic_extractor.discovery.detected_features import (
     DetectedFeature,
     write_detected_features_csv,
@@ -87,6 +87,7 @@ def test_candidate_assembly_replay_cli_writes_outputs(tmp_path: Path) -> None:
 
     result = replay_cli.main(
         [
+            "assembly",
             "--detected-features-csv",
             str(inputs["features"]),
             "--top102-diagnosis-csv",

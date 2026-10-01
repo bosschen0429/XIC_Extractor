@@ -45,6 +45,11 @@ be corrected.
 
 ## Boundaries
 
+The registry currently grants no standalone file-activation writer scope.
+Normal Alignment output remains owned by its live cell-decision and projection
+owners. The dependent quantitative projection remains HOLD; its package scope
+allowlist does not register a writer or authorize any cell.
+
 - **Owns:** stable capability descriptions, topic-owner routing, and the
   field-level authority partition above.
 - **Does not own:** current lane state or counts, ProductWriter scopes, active

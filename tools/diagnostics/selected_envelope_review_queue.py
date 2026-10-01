@@ -13,7 +13,6 @@ from pathlib import Path
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from tools.diagnostics.diagnostic_io import write_tsv
 from xic_extractor.peak_detection.selected_envelope_diagnostics import (
     SELECTED_ENVELOPE_DIAGNOSTIC_HEADERS,
     SELECTED_ENVELOPE_GATE_MANIFEST_FIELDS,
@@ -23,6 +22,7 @@ from xic_extractor.peak_detection.selected_envelope_oracle_artifacts import (
     SELECTED_ENVELOPE_ORACLE_REVIEW_QUEUE_HEADERS,
     build_selected_envelope_oracle_review_queue,
 )
+from xic_extractor.tabular_io import write_tsv
 
 
 @dataclass(frozen=True)

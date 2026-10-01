@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from xic_extractor.diagnostics import backfill_peakhypothesis_promotion
-from xic_extractor.diagnostics.diagnostic_io import (
+from xic_extractor.tabular_io import (
     format_diagnostic_value,
     optional_float,
     text_value,

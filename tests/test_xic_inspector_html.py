@@ -408,6 +408,30 @@ def test_missing_relationships_do_not_become_zero_support(
     assert rendered["plot"].count("data-curve-ref=") == 3
 
 
+def test_unrecorded_origins_and_missing_alignment_keep_curves_readable(
+    origin_curve_payload,
+):
+    for row in origin_curve_payload["items"][0]["samples"]:
+        row["support_origin"] = {"kind": "unavailable"}
+    rendered = _relationship_render(
+        origin_curve_payload,
+        "return JSON.stringify({plot:plot(items[0],'raw'),"
+        "aligned:plotCard(items[0],'aligned','平滑訊號'),"
+        "field:fieldValue('{\"gate\":\"accepted\",\"ratio\":0.5}')});",
+    )
+    chart = ET.fromstring(rendered["plot"])
+    dashes = [
+        line.attrib["stroke-dasharray"]
+        for line in chart.findall("{http://www.w3.org/2000/svg}polyline")
+    ]
+    assert dashes == ["", "", ""]
+    assert 'id="plot-aligned"' in rendered["aligned"]
+    assert "對齊時間圖不可用" in rendered["aligned"]
+    assert "<svg" not in rendered["aligned"]
+    assert "<dt>gate</dt><dd>accepted</dd>" in rendered["field"]
+    assert "{" not in rendered["field"]
+
+
 def test_recorded_relationships_keep_pair_and_exact_capture_scope(origin_curve_payload):
     item = origin_curve_payload["items"][0]
     item["relationship_availability"] = "recorded"

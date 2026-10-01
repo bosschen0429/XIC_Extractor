@@ -20,6 +20,7 @@ from PyQt6.QtWidgets import (
 )
 
 from gui import styles
+from gui.feature_quality_dialog import FeatureQualityDialog
 from gui.inspector_export_dialog import InspectorExportDialog
 from gui.ui import section_card
 from gui.workers.inspector_report_worker import (
@@ -27,13 +28,10 @@ from gui.workers.inspector_report_worker import (
     InspectorReportWorker,
     InspectorSummaryWorker,
 )
-from xic_inspector.api import EvidenceLocator, ReportResult
+from xic_inspector.api import EvidenceLocator, ReportResult, SelectionRequest
 
 _PER_SAMPLE_HEADERS = ("樣本", "候選", "高", "中", "低")
-
-_GALLERY_TOOLTIP = (
-    "開啟 backfill + MS1 overlay 審閱 gallery（解釋 why-backfill 並比對 MS1 峰形）。"
-)
+_INSPECTOR_FILENAME = "xic_inspector.html"
 
 # Confidence tiers resolve to live palette tokens (success / warning / neutral)
 # at render time, so the dashboard's segments and legend follow the active
@@ -52,7 +50,6 @@ class DiscoveryResultsSection(QWidget):
     def __init__(self) -> None:
         super().__init__()
         self._output_dir = ""
-        self._gallery = ""
         self._matrix = ""
         self._alignment_outputs: dict[str, str] = {}
         self._summary_text = "尚未執行"
@@ -122,40 +119,42 @@ class DiscoveryResultsSection(QWidget):
         button_row.setSpacing(8)
         self._open_output = QPushButton("開啟輸出資料夾")
         self._open_output.clicked.connect(lambda: _open_path(self._output_dir))
-        self._open_gallery = QPushButton("開啟審閱圖集")
-        self._open_gallery.setToolTip(_GALLERY_TOOLTIP)
-        self._open_gallery.clicked.connect(lambda: _open_path(self._gallery))
         self._open_matrix = QPushButton("開啟定量矩陣")
         self._open_matrix.clicked.connect(lambda: _open_path(self._matrix))
-        self._buttons = (self._open_output, self._open_gallery, self._open_matrix)
+        self._feature_quality = QPushButton("篩選匯出…")
+        self._feature_quality.setObjectName("export_feature_quality")
+        self._feature_quality.clicked.connect(self._export_feature_quality)
+        self._buttons = (self._open_output, self._open_matrix, self._feature_quality)
         for button in self._buttons:
             button.setEnabled(False)
             button_row.addWidget(button)
+        self._open_inspector = QPushButton("開啟 Inspector")
+        self._open_inspector.setObjectName("open_inspector")
+        self._open_inspector.setToolTip("在瀏覽器開啟本次結果的曲線檢閱頁")
+        self._open_inspector.clicked.connect(
+            lambda: _open_path(str(self._report_target or ""))
+        )
+        button_row.addWidget(self._open_inspector)
         button_row.addStretch()
         layout.addLayout(button_row)
 
         inspector_row = QHBoxLayout()
-        self._export_inspector = QPushButton("Export XIC Inspector")
-        self._export_inspector.setObjectName("export_inspector")
-        self._export_inspector.clicked.connect(self._export)
-        self._open_inspector = QPushButton("Open XIC Inspector")
-        self._open_inspector.setObjectName("open_inspector")
-        self._open_inspector.clicked.connect(
-            lambda: _open_path(str(self._report_target or ""))
-        )
-        self._cancel_inspector = QPushButton("取消匯出")
-        self._cancel_inspector.setObjectName("cancel_inspector")
-        self._cancel_inspector.clicked.connect(self.cancel_report)
-        for button in (
-            self._export_inspector, self._open_inspector, self._cancel_inspector
-        ):
-            inspector_row.addWidget(button)
-        inspector_row.addStretch()
-        layout.addLayout(inspector_row)
         self._inspector_status = QLabel("尚無 Inspector 來源")
         self._inspector_status.setObjectName("inspector_status")
         self._inspector_status.setWordWrap(True)
-        layout.addWidget(self._inspector_status)
+        inspector_row.addWidget(self._inspector_status, 1)
+        self._cancel_inspector = QPushButton("取消")
+        self._cancel_inspector.setObjectName("cancel_inspector")
+        self._cancel_inspector.clicked.connect(self.cancel_report)
+        self._export_inspector = QPushButton("自訂匯出…")
+        self._export_inspector.setObjectName("export_inspector")
+        self._export_inspector.setToolTip(
+            "選擇抽樣方式、數量或指定樣本後另存 Inspector"
+        )
+        self._export_inspector.clicked.connect(self._export)
+        inspector_row.addWidget(self._cancel_inspector)
+        inspector_row.addWidget(self._export_inspector)
+        layout.addLayout(inspector_row)
         self._refresh_inspector_buttons()
 
         self._error = QLabel("")
@@ -171,8 +170,9 @@ class DiscoveryResultsSection(QWidget):
         self._report_target = None
         self._evidence, reason = _locator_from_summary(summary.get("evidence"))
         self._inspector_status.setText(
-            "可手動匯出 XIC Inspector" if self._evidence else reason
+            "Inspector 尚未產生" if self._evidence else reason
         )
+        self._inspector_status.setToolTip("")
         self._refresh_inspector_buttons()
         self.show()
         self._title.setText("本次分析結果")
@@ -182,18 +182,9 @@ class DiscoveryResultsSection(QWidget):
             for key, path in (summary.get("alignment_outputs") or {}).items()
             if path
         }
-        # Only open a real review gallery; do NOT fall back to review_report.html
-        # (the bare stats page) — it is not the backfill+MS1-overlay gallery the
-        # user reviews with, and surfacing it as "gallery" is misleading.
-        self._gallery = str(
-            summary.get("gallery_html")
-            or self._alignment_outputs.get("gallery_html")
-            or ""
-        )
         self._matrix = str(
             summary.get("matrix_tsv") or self._alignment_outputs.get("matrix_tsv") or ""
         )
-        gallery_error = str(summary.get("gallery_error") or "")
 
         self._empty.setVisible(False)
         self._dashboard.setVisible(True)
@@ -208,22 +199,33 @@ class DiscoveryResultsSection(QWidget):
         self._populate_sample_table(summary.get("discovery_batch_index"))
 
         self._open_output.setEnabled(bool(self._output_dir))
-        self._open_gallery.setEnabled(bool(self._gallery))
-        if self._gallery:
-            self._open_gallery.setToolTip(_GALLERY_TOOLTIP)
-        elif gallery_error:
-            self._open_gallery.setToolTip(f"gallery 未產出：{gallery_error}")
-        else:
-            self._open_gallery.setToolTip(_GALLERY_TOOLTIP)
         self._open_matrix.setEnabled(bool(self._matrix))
+        can_filter = bool(
+            self._matrix and self._alignment_outputs.get("matrix_identity_tsv")
+        )
+        self._feature_quality.setEnabled(can_filter)
+        self._feature_quality.setToolTip(
+            "依研究樣本的有效數值比例篩選，另存分析矩陣"
+            if can_filter else "需要特徵識別資料；請重新執行 Alignment"
+        )
         self._summary_text = self._build_text(summary)
+
+    def _export_feature_quality(self) -> None:
+        identity = self._alignment_outputs.get("matrix_identity_tsv")
+        if not self._matrix or not identity:
+            return
+        dialog = FeatureQualityDialog(Path(self._matrix), Path(identity), self)
+        if dialog.exec() and dialog.manifest_path is not None:
+            directory = dialog.manifest_path.parent
+            self.status_message.emit(f"已匯出分析矩陣：{directory}", 10000)
+            _open_path(str(directory))
+        dialog.deleteLater()
 
     def show_error(self, message: str, *, cancelled: bool = False) -> None:
         self._invalidate_inspector("執行未完成，無 Inspector 來源")
         self.show()
         self._title.setText("本次執行已停止" if cancelled else "本次執行未完成")
         self._output_dir = ""
-        self._gallery = ""
         self._matrix = ""
         self._alignment_outputs = {}
         self._empty.setVisible(False)
@@ -249,7 +251,6 @@ class DiscoveryResultsSection(QWidget):
     def clear_results(self) -> None:
         self._invalidate_inspector("新執行尚未完成，無 Inspector 來源")
         self._output_dir = ""
-        self._gallery = ""
         self._matrix = ""
         self._alignment_outputs = {}
         self._summary_text = "尚未執行"
@@ -273,6 +274,20 @@ class DiscoveryResultsSection(QWidget):
     def is_report_busy(self) -> bool:
         return self._report_worker is not None or self._summary_worker is not None
 
+    def generate_default_report(self) -> None:
+        """Write the default review page beside the evidence of the current result."""
+        source = self._evidence
+        if source is None or self.is_report_busy():
+            return
+        self._start_report(
+            InspectorJob(
+                source,
+                SelectionRequest(),
+                source.report_path.parent / _INSPECTOR_FILENAME,
+                False,
+            )
+        )
+
     def cancel_report(self) -> None:
         if self._report_worker is not None:
             self._report_worker.stop()
@@ -293,14 +308,14 @@ class DiscoveryResultsSection(QWidget):
             self._evidence is not None and not self.is_report_busy()
         )
         self._open_inspector.setEnabled(self._report_target is not None)
-        self._cancel_inspector.setEnabled(self._report_worker is not None)
+        self._cancel_inspector.setVisible(self._report_worker is not None)
 
     def _export(self) -> None:
         source = self._evidence
         if source is None or self.is_report_busy():
             return
         dialog = InspectorExportDialog(
-            source.report_path.parent / "xic_inspector.html", self
+            source.report_path.parent / _INSPECTOR_FILENAME, self
         )
         worker = InspectorSummaryWorker(source)
         self._summary_worker = worker
@@ -358,7 +373,8 @@ class DiscoveryResultsSection(QWidget):
         worker = InspectorReportWorker(job)
         self._report_worker = worker
         label = _run_label(job.source)
-        self._inspector_status.setText(f"{label}：正在匯出…")
+        self._inspector_status.setText("正在產生 Inspector…")
+        self._inspector_status.setToolTip(label)
         worker.progress.connect(
             lambda progress: self._on_report_progress(worker, label, progress)
         )
@@ -370,7 +386,7 @@ class DiscoveryResultsSection(QWidget):
         )
         worker.failed.connect(
             lambda code, reason: self._on_report_terminal(
-                worker, label, f"失敗 (code {code})：{reason}"
+                worker, label, f"Inspector 產生失敗 (code {code})：{reason}"
             )
         )
         worker.finished.connect(lambda: self._on_report_finished(worker))
@@ -380,7 +396,7 @@ class DiscoveryResultsSection(QWidget):
     def _on_report_progress(self, worker, label: str, progress) -> None:
         if self._report_worker is worker:
             self._inspector_status.setText(
-                f"{label}：{progress.stage} {progress.completed}"
+                f"正在產生 Inspector：{progress.stage} {progress.completed}"
                 + (f"/{progress.total}" if progress.total is not None else "")
             )
 
@@ -397,15 +413,26 @@ class DiscoveryResultsSection(QWidget):
             "limited / metadata only" if result.evidence_capability == "metadata_only"
             else result.evidence_capability
         )
-        message = (
+        detail = (
             f"{label}：已匯出 {result.output_path}；{capability}；"
             f"run {result.run_total} / eligible {result.eligible_count} / "
             f"matched {result.matched_count} / selected {result.selected_count} / "
             f"missing RT {result.missing_rt_count}"
         )
-        if generation == self._generation and self._evidence == worker.job.source:
+        current = generation == self._generation and self._evidence == worker.job.source
+        if current:
             self._report_target = result.output_path
+        # A report finishing after a newer result keeps its run identity visible.
+        limited = result.evidence_capability == "metadata_only"
+        message = (
+            f"Inspector 已就緒：抽出 {result.selected_count} / {result.run_total} 項"
+            + ("；僅有結果紀錄、沒有曲線" if limited else "")
+            if current
+            else detail
+        )
         self._on_report_terminal(worker, label, message)
+        if self._report_worker is worker:
+            self._inspector_status.setToolTip(detail)
         if worker.job.open_after_export:
             _open_path(str(result.output_path))
 

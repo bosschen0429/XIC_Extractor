@@ -19,7 +19,7 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from tools.diagnostics.diagnostic_io import write_tsv
+from xic_extractor.tabular_io import write_tsv
 
 ROOT = Path(__file__).resolve().parents[2]
 DEFINITION_ROOT = "xic_extractor"

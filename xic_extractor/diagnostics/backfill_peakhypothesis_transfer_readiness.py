@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from xic_extractor.diagnostics.diagnostic_io import (
+from xic_extractor.tabular_io import (
     bool_value,
     format_diagnostic_value,
     optional_int,

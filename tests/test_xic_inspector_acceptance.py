@@ -183,6 +183,7 @@ def test_cli_callable_emits_embedded_html(tmp_path, monkeypatch) -> None:
             "10",
             "--seed",
             "0",
+            "--no-open",
         ]
     )
     assert exit_code == 0

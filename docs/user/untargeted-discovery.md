@@ -54,10 +54,13 @@ error; clearing the field runs without an internal-standard list.
 
 ## Outputs
 
-The default quantitative output is `alignment_matrix.tsv`. After successful
-Matrix publication, retained CID-NL also saves `cid_nl_explanation.sqlite`
-alongside its runtime marker. Additional review TSV, HTML, and XLSX artifacts
-require explicit machine, debug, validation, or artifact options.
+GUI Alignment writes `alignment_matrix.tsv` with its bound identity and the
+review/provenance tables from the `machine` output level. The identity supports
+the results panel's **篩選匯出…** action. The CLI still defaults to the Matrix-only
+`production` output level.
+
+Successful retained CID-NL publication also saves `cid_nl_explanation.sqlite`
+alongside its runtime marker for Inspector evidence.
 
 Start with the file that matches your review question:
 
@@ -67,15 +70,18 @@ Start with the file that matches your review question:
 | `discovery_review.csv` | Compact subset of candidate fields with confidence | Quick review triage |
 | `discovery_batch_index.csv` | Links each sample's candidate/review CSVs | Input for alignment (generated automatically) |
 | `alignment_matrix.tsv` | Samples as columns, aligned features as rows, area values in cells | Default cross-sample quantitative output |
-| `cid_nl_explanation.sqlite` | Completed CID-NL decisions and retained curve evidence | Manual XIC Inspector export after successful alignment |
-| `alignment_review.tsv` | Alignment quality, owner identity, backfill status per cell | Explicit review/diagnostic output |
-| Review / gallery HTML | Visual plots of candidate peaks and backfill context | Explicit human inspection output |
+| `alignment_matrix_identity.tsv` | Bound feature identities and source-row checks | Input for traceable Matrix selection |
+| `cid_nl_explanation.sqlite` | Completed CID-NL decisions and retained curve evidence | Source for XIC Inspector export |
+| `alignment_review.tsv` | Alignment quality, owner identity, backfill status per cell | Review output |
+| `xic_inspector.html` | Offline chromatogram review | Open with **開啟 Inspector** once ready |
 
-The GUI surfaces the matrix by default. After successful alignment supplies an
-evidence locator, **Export XIC Inspector** creates an offline HTML report on
-request. **Open XIC Inspector** reopens the last successful report for the
-current run. This is separate from an automatically generated gallery; see the
-[Inspector contract](../product/xic-inspector.md).
+To export an analysis set, use **匯出樣品資料** in the sample table and save TSV.
+Choose **篩選匯出…** in the completed results, select that TSV, specify a minimum
+valid-value fraction (0–1), and select a new output folder. Zero counts as a
+valid value; blanks do not. QC, blank and excluded samples are outside the
+denominator. This is availability filtering, not detection-rate filtering.
+The export opens its new folder and preserves the source Matrix. See
+[Feature Quality](../product/feature-quality.md) for the output contract.
 
 ## Further Reading
 
@@ -92,6 +98,7 @@ For maintainer-facing product contracts behind this workflow, see:
 | --- | --- |
 | Run button says settings are incomplete | Fill every visible path field and verify the files/folders exist |
 | DLL load failure | Point the DLL directory to the Thermo RawFileReader install folder |
-| No gallery opens | Check primary discovery/alignment outputs first; gallery generation is best-effort |
+| Inspector is unavailable | Check the Inspector status below the output buttons; a completed run needs a published evidence source |
+| Matrix selection is disabled | The result needs its bound identity; rerun Alignment for older Matrix-only outputs |
 | Need only alignment | Use `align_only` with an existing `discovery_batch_index.csv` |
 | Results look unexpected | Verify RAW files are valid and DLL version matches your Xcalibur install |

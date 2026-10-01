@@ -6,11 +6,6 @@ from pathlib import Path
 
 import pytest
 
-from scripts.check_production_acceptance_manifest import (
-    REQUIRED_COLUMNS,
-    check_production_acceptance_manifest,
-    production_acceptance_manifest_sha256,
-)
 from tests.cid_nl_peak_support_no_raw_fixture import (
     cid_nl_evidence,
     cid_nl_peak,
@@ -29,9 +24,16 @@ from xic_extractor.alignment.cid_nl_inputs import (
     UntargetedCidNlBackfillInput,
     UntargetedCidNlGoldenPathError,
 )
+from xic_extractor.diagnostics.quant_matrix.acceptance import (
+    REQUIRED_COLUMNS,
+    check_production_acceptance_manifest_authority,
+)
 from xic_extractor.diagnostics.quant_matrix.golden_path import (
     build_untargeted_cid_nl_golden_path,
     build_untargeted_cid_nl_quant_matrix_version,
+)
+from xic_extractor.diagnostics.quant_matrix.version import (
+    production_acceptance_manifest_sha256,
 )
 from xic_extractor.discovery.cid_nl_evidence_projection import (
     UntargetedCidNlProjectionRef,
@@ -342,7 +344,7 @@ def test_terminal_applies_complete_canonical_manifest_authority_rules(
 
     assert any(
         "direct shadow/report/gallery/candidate source" in problem
-        for problem in check_production_acceptance_manifest(
+        for problem in check_production_acceptance_manifest_authority(
             manifest_path=manifest_path,
             repo_root=tmp_path,
         )
@@ -839,7 +841,7 @@ def _check_acceptance_manifest(
     manifest_path = tmp_path / "production_acceptance_manifest.tsv"
     _write_acceptance_manifest(manifest_path, checked_rows)
     assert (
-        check_production_acceptance_manifest(
+        check_production_acceptance_manifest_authority(
             manifest_path=manifest_path,
             repo_root=tmp_path,
         )

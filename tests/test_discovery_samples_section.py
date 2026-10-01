@@ -221,8 +221,9 @@ def test_discovery_samples_section_batch_role_and_filter(qtbot, tmp_path: Path) 
 
 
 @pytest.mark.parametrize("with_raw", [False, True])
+@pytest.mark.parametrize("extension", ["csv", "tsv"])
 def test_discovery_samples_section_file_dropped_imports_csv(
-    qtbot, tmp_path: Path, monkeypatch, with_raw: bool
+    qtbot, tmp_path: Path, monkeypatch, with_raw: bool, extension: str
 ) -> None:
     csv_file = tmp_path / "sample_metadata.csv"
     csv_file.write_text(
@@ -275,7 +276,7 @@ def test_discovery_samples_section_file_dropped_imports_csv(
     assert section._table.isRowHidden(1)
     assert section.get_sample_metadata() == expected
 
-    exported = tmp_path / "exported.csv"
+    exported = tmp_path / f"exported.{extension}"
     monkeypatch.setattr(
         QFileDialog, "getSaveFileName", lambda *_a, **_kw: (str(exported), "")
     )

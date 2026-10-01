@@ -9,16 +9,24 @@ scientific decisions, or write Matrix values.
 ## Public entry points
 
 The package installs the `xic-inspector` command and provides the equivalent
-module entry point:
+module entry point. Neither requires the Extractor GUI:
 
 ```console
-xic-inspector --report cid_nl_explanation.sqlite --output review.html --strategy sample
-python -m xic_inspector --report cid_nl_explanation.sqlite --output review.html --strategy attention
-python -m xic_inspector --report diagnostic_curves.json --output review.html --strategy sample
+xic-inspector D:\data\run-output
+xic-inspector cid_nl_explanation.sqlite --strategy attention
+python -m xic_inspector diagnostic_curves.json --output review.html --no-open
 ```
 
-Both entries accept a completed feature-evidence SQLite report or a versioned
-curve-bundle JSON file, an output path, and one selection strategy:
+- The source is a completed feature-evidence SQLite report, a versioned
+  curve-bundle JSON file, or an alignment output folder. A folder resolves to
+  its `cid_nl_explanation.sqlite`, or to the one in its `alignment` subfolder.
+  `--report` is an equivalent named form.
+- Without `--output`, the report is written as `xic_inspector.html` beside the
+  resolved source, the same default as the GUI export.
+- A successful report opens in the default browser; `--no-open` only writes it.
+- A folder without the evidence file exits with the source-unavailable code 3.
+
+Each run uses one selection strategy:
 
 | Strategy | Purpose |
 | --- | --- |
@@ -26,15 +34,17 @@ curve-bundle JSON file, an output path, and one selection strategy:
 | `attention` | Select items carrying owner-provided review conditions. |
 | `query` | Filter one actual evidence-witness chain by sample, candidate, group, precursor m/z, or RT apex, with offset/limit pagination. |
 
-The Untargeted GUI also offers manual **Export XIC Inspector** after a completed
-alignment publishes an evidence locator. The export settings dialog uses the
-same `SelectionRequest` defaults and limits. The dialog shows source sample
-stems beside their canonical IDs.
+End users open the Inspector without commands. When an Untargeted GUI run
+publishes an evidence locator, the GUI writes the default `sample` report as
+`xic_inspector.html` beside the evidence file, so the HTML can also be opened
+from the output folder.
 
-- **Export and Open** opens the successful HTML in the default browser.
-- **Open XIC Inspector** reopens the last successful report for the current
-  result, even after the source files of that report are removed.
-- A new run clears that Open target.
+- **開啟 Inspector** sits with the other result openers and opens the report
+  of the current result, even after its source files are removed.
+- **自訂匯出…** opens the settings dialog. The dialog uses the same
+  `SelectionRequest` defaults and limits, shows source sample stems beside
+  their canonical IDs, and its **Export and Open** opens the HTML.
+- A new run clears the open target.
 - Report progress, cancellation, and errors do not change science completion
   or Matrix publication.
 
@@ -82,7 +92,8 @@ transition is the group query ID. Each trace ID is a candidate query ID.
 - Each transition carries a fixed `review_rt_window` and a `quality_flags`
   JSON object. `quality_flags` preserves transition-level gate labels,
   identity decisions, counts, Δm/z, ΔRT, ratios, and other diagnostic text or
-  numeric facts.
+  numeric facts. The item list and summary state the sample and flag counts;
+  the flags themselves open through the transition's quality-flag record.
 - Each trace carries the sample ID and label, role, RAW identity, extraction
   m/z, ppm and RT window, producer and version, and its own quality flags.
 - An available trace carries paired `ChromatogramCurve(rt, intensity)` raw and
@@ -167,7 +178,9 @@ Inspector.
   solid for initial Discovery, long-dashed for reacquired, and dotted for
   Backfill.
 - The sample legend names each origin. An unavailable origin uses a separate
-  dash.
+  dash when another sample of the item records an origin. An item with no
+  recorded origin draws solid lines, because line style has nothing to
+  distinguish.
 - A physical direct-observation cell is not by itself evidence of initial
   Discovery support.
 
@@ -209,6 +222,8 @@ Inspector.
   records.
 - Full fields and exact identifiers remain available together on demand. A
   missing summary does not become generic filler.
+- A field value that is a serialized object or list is displayed as key-value
+  lines or a list, not as raw JSON text.
 - Curve provenance, quantitative decisions, and candidate exclusions have
   distinct entry labels.
 - An excluded candidate can open its recorded exclusion evidence even when no
@@ -237,7 +252,9 @@ Inspector.
 
 - Capture stage, signal type, and time axis are distinct.
 - Raw-time and aligned-time plots are shown together for comparison, with
-  separate zoom controls.
+  separate zoom controls. When the selected curves have no aligned
+  coordinates, the raw-time plot uses the full width and one line states that
+  the aligned plot is unavailable.
 - Aligned curves and peak marks use the formal calibration saved by the
   producer that built the groups.
 - The source adapter applies the stored sample knots to curve and peak times.

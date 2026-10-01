@@ -8,7 +8,6 @@ from typing import Any
 from xic_extractor.applications.targeted.product_model import (
     OWN_MAX_SAME_PEAK_SUPPORT_REASON,
 )
-from xic_extractor.diagnostics.diagnostic_io import format_diagnostic_value, write_tsv
 from xic_extractor.evidence_artifacts import (
     EvidenceArtifactRef,
     _mint_artifact_semantic_contract_ref,
@@ -23,7 +22,11 @@ from xic_extractor.peak_detection.ms1_shape_identity import (
     competing_peak_summary,
     local_own_max_shape_similarity,
 )
-from xic_extractor.tabular_io import render_delimited_rows
+from xic_extractor.tabular_io import (
+    format_diagnostic_value,
+    render_delimited_rows,
+    write_tsv,
+)
 
 SCHEMA_VERSION = "targeted_ms1_shape_identity"
 VALIDATION_LABEL = "diagnostic_only"
