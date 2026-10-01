@@ -4,7 +4,7 @@ from collections.abc import Callable
 from typing import Any
 
 from xic_extractor.acquisition.ms2_windows import acquire_ms2_window
-from xic_extractor.config import ExtractionConfig, Target
+from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.evidence.neutral_loss import (
     CandidateMS2Evidence,
     NLResult,
@@ -18,7 +18,7 @@ from xic_extractor.evidence.neutral_loss import (
 )
 from xic_extractor.extraction.anchors import ANCHOR_PEAK_DELTA_WARN_MIN
 from xic_extractor.output.messages import DiagnosticRecord
-from xic_extractor.signal_processing import PeakCandidate, PeakDetectionResult
+from xic_extractor.peak_detection.models import PeakCandidate, PeakDetectionResult
 
 
 def check_nl(

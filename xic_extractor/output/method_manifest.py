@@ -11,7 +11,7 @@ from importlib import metadata
 from pathlib import Path
 from typing import Any
 
-from xic_extractor.config import ExtractionConfig, Target
+from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.output.schema import (
     DIAGNOSTIC_HEADERS,
     LONG_HEADERS,

@@ -12,7 +12,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from xic_extractor.config import ExtractionConfig
+from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.discovery.delta_mass_patterns import match_delta_mass_pattern
 from xic_extractor.discovery.detected_features import DetectedFeature
 from xic_extractor.discovery.grouping import group_discovery_seeds
@@ -29,15 +29,15 @@ from xic_extractor.peak_detection.hypotheses import (
     PeakHypothesis,
     build_peak_hypotheses,
 )
+from xic_extractor.peak_detection.models import (
+    PeakCandidate,
+    PeakDetectionResult,
+    PeakResult,
+)
 from xic_extractor.peak_detection.traces import (
     Trace,
     targeted_trace_group,
     untargeted_trace_group,
-)
-from xic_extractor.signal_processing import (
-    PeakCandidate,
-    PeakDetectionResult,
-    PeakResult,
 )
 
 _RAW_FILE = Path("synthetic/SampleA.raw")

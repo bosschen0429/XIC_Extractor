@@ -4,7 +4,7 @@ from pathlib import Path
 from xic_extractor.alignment.edge_scoring import OwnerEdgeEvidence
 from xic_extractor.alignment.matrix import AlignedCell, AlignmentMatrix
 from xic_extractor.alignment.models import AlignmentCluster
-from xic_extractor.config import ExtractionConfig
+from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.discovery.batch_contract import (
     DISCOVERY_BATCH_INDEX_SCHEMA_VERSION,
     DISCOVERY_BATCH_RECEIPT_COLUMNS,

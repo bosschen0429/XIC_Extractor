@@ -2,7 +2,7 @@ from dataclasses import replace
 
 import pytest
 
-from xic_extractor.config import Target
+from xic_extractor.configuration.models import Target
 from xic_extractor.configuration.target_identity import (
     TargetIdentityError,
     mint_target_list_snapshot,

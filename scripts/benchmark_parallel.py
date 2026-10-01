@@ -10,7 +10,8 @@ if __package__ in {None, ""}:
 
 from scripts.compare_workbooks import WorkbookCompareResult, compare_workbooks
 from xic_extractor import extractor
-from xic_extractor.config import ConfigError, load_config
+from xic_extractor.configuration.loader import load_config
+from xic_extractor.configuration.models import ConfigError
 from xic_extractor.output.excel_pipeline import write_excel_from_run_output
 from xic_extractor.peak_detection.model_selection_approval_registry import (
     load_expected_diff_approval_registry,

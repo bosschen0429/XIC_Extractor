@@ -12,8 +12,7 @@ from xic_extractor.alignment.drift_evidence import (
     KnownIstdReference,
     mint_known_istd_reference_from_measurements,
 )
-from xic_extractor.config import ExtractionConfig
-from xic_extractor.configuration.models import Target
+from xic_extractor.configuration.models import ExtractionConfig, Target
 
 
 def extract_batch_known_istd_reference(
@@ -26,8 +25,8 @@ def extract_batch_known_istd_reference(
     source_sha256: str = "",
 ) -> KnownIstdReference:
     """Extract ISTD peaks across raw files and construct in-memory reference."""
+    from xic_extractor.peak_detection.facade import find_peak_and_area
     from xic_extractor.raw_reader import open_raw
-    from xic_extractor.signal_processing import find_peak_and_area
     from xic_extractor.xic_models import XICRequest
 
     istd_targets = tuple(t for t in targets if t.is_istd)

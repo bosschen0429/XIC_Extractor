@@ -6,13 +6,14 @@ from typing import TYPE_CHECKING, Any
 from xic_extractor.applications.targeted.product_projection import (
     project_targeted_result,
 )
-from xic_extractor.config import Target
+from xic_extractor.configuration.models import Target
 from xic_extractor.evidence.neutral_loss import CandidateMS2Evidence, NLResult
 from xic_extractor.peak_detection.hypotheses import (
     PeakHypothesis,
     validate_peak_hypothesis_selection_authority,
 )
 from xic_extractor.peak_detection.model_selection import PeakModelSelectionResult
+from xic_extractor.peak_detection.models import PeakCandidate, PeakDetectionResult
 from xic_extractor.peak_detection.physical_peak_models import PhysicalPeakEvaluation
 from xic_extractor.peak_detection.scoring_quality import (
     candidate_quality_penalty,
@@ -22,7 +23,6 @@ from xic_extractor.peak_detection.selection_decision import (
     selection_decision_from_hypothesis,
 )
 from xic_extractor.peak_detection.traces import Trace
-from xic_extractor.signal_processing import PeakCandidate, PeakDetectionResult
 
 if TYPE_CHECKING:
     from xic_extractor.extractor import ExtractionResult

@@ -7,7 +7,7 @@ from typing import Literal
 import numpy as np
 from numpy.typing import NDArray
 
-from xic_extractor.config import ExtractionConfig
+from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.peak_detection.models import PeakDetectionResult, PeakResult
 
 Ms1TracePeakStatus = Literal[

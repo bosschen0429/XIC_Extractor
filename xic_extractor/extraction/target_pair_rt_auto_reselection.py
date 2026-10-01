@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
-from xic_extractor.config import Target
+from xic_extractor.configuration.models import Target
 from xic_extractor.extraction.paired_area_ratio_projection import (
     MIN_PAIRED_AREA_RATIO_REFERENCE_POINTS,
     PAIRED_AREA_RATIO_BASIS,

@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from importlib import metadata
 
-from xic_extractor.config import ExtractionConfig
+from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.output.method_manifest import (
     METHOD_MANIFEST_SCHEMA_VERSION,
     artifact_sha256,

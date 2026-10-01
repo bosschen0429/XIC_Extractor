@@ -6,9 +6,8 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
-from xic_extractor.config import ExtractionConfig
 from xic_extractor.configuration.execution_profile import load_execution_profile
-from xic_extractor.configuration.models import ConfigError
+from xic_extractor.configuration.models import ConfigError, ExtractionConfig
 from xic_extractor.diagnostics.timing import TimingRecorder
 from xic_extractor.discovery.blank_qualification import (
     extract_blank_background_library,

@@ -26,11 +26,11 @@ from xic_extractor.alignment.owner_build_route_receipt import (
     _validate_owner_build_xic_backend,
 )
 from xic_extractor.applications.untargeted.publication import publish_untargeted_outputs
-from xic_extractor.config import ExtractionConfig
 from xic_extractor.configuration.execution_profile import (
     DEFAULT_ALIGNMENT_WORKER_BACKEND,
     DEFAULT_ALIGNMENT_WORKERS,
 )
+from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.configuration.signal_processing_profile import (
     DEFAULT_SIGNAL_PROCESSING_PROFILE,
     DEFAULT_SIGNAL_PROCESSING_PROFILE_ID,

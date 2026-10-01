@@ -17,7 +17,7 @@ from scripts.run_discovery import (
 )
 from tests.test_discovery_worker import _alignment_outputs
 from tests.test_processing_run_spec import _peak_config, _raws, _settings
-from xic_extractor.config import ExtractionConfig
+from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.discovery.models import DiscoverySettings
 from xic_extractor.discovery.processing_run_spec_adapter import (
     compile_discovery_processing_run_spec,

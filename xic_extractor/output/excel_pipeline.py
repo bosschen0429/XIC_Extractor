@@ -4,7 +4,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Protocol
 
-from xic_extractor.config import ExtractionConfig, Target
+from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.output import csv_writers
 from xic_extractor.output.messages import DiagnosticRecord
 from xic_extractor.output.review_report import write_review_report

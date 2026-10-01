@@ -17,7 +17,7 @@ from scripts.csv_to_excel import (
     _wide_to_long_rows,
     run,
 )
-from xic_extractor.config import ExtractionConfig, Target
+from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.evidence.neutral_loss import NLResult
 from xic_extractor.extractor import ExtractionResult
 from xic_extractor.output.detection import MissingTargetedProductProjectionError
@@ -26,7 +26,7 @@ from xic_extractor.output.schema import (
     LONG_HEADERS,
     TARGETED_PRODUCT_PROJECTION_HEADERS,
 )
-from xic_extractor.signal_processing import PeakDetectionResult, PeakResult
+from xic_extractor.peak_detection.models import PeakDetectionResult, PeakResult
 
 
 def test_build_data_sheet_uses_row_based_compact_view_with_hidden_advanced_columns(

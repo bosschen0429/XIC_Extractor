@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from xic_extractor.acquisition.ms2_windows import acquire_ms2_window
-from xic_extractor.config import ExtractionConfig, Target
+from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.evidence.neutral_loss import (
     anchor_window_bounds,
 )

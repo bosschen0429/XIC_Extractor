@@ -7,7 +7,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from xic_extractor.config import ConfigError, ExtractionConfig, Target
+from xic_extractor.configuration.models import ConfigError, ExtractionConfig, Target
 from xic_extractor.extraction.targeted_output_boundary import (
     TargetedOutputBoundaryError,
 )

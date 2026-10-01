@@ -51,6 +51,7 @@ from xic_extractor.extraction.untargeted_partition.request import (
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     mint_untargeted_cid_nl_method_subject,
 )
+from xic_extractor.peak_detection.facade import find_peak_and_area
 from xic_extractor.peak_detection.hypotheses import build_peak_hypotheses
 from xic_extractor.peak_detection.ms1_trace_detection import detect_ms1_trace_peak
 from xic_extractor.processing_identity import build_acquisition_source_identity
@@ -59,7 +60,6 @@ from xic_extractor.raw_reader import (
     THERMO_RAW_OBSERVATION_NAMESPACE,
 )
 from xic_extractor.sample_metadata import SampleMetadata
-from xic_extractor.signal_processing import find_peak_and_area
 from xic_extractor.xic_models import XICRequest
 
 

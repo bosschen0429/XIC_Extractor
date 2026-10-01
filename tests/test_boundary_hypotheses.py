@@ -7,7 +7,7 @@ from xic_extractor.peak_detection.boundaries import (
     boundary_audit_id,
     enumerate_boundary_hypotheses,
 )
-from xic_extractor.signal_processing import PeakCandidate, PeakResult
+from xic_extractor.peak_detection.models import PeakCandidate, PeakResult
 
 
 def test_candidate_interval_boundary_reproduces_current_candidate_interval() -> None:

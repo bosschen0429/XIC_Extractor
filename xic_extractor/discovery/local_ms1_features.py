@@ -19,13 +19,13 @@ from xic_extractor.discovery.detected_features import (
     write_detected_features_csv,
 )
 from xic_extractor.ms1_scan_index import MS1Scan, validate_ms1_scan_index
-from xic_extractor.numeric_validation import require_finite_real, require_integer
 from xic_extractor.peak_detection.ms1_morphology import (
     DEFAULT_GAUSSIAN15_WINDOW_POINTS,
     gaussian15_morphology_trace,
     morphology_trace_effective_points,
 )
 from xic_extractor.tabular_io import write_delimited_rows
+from xic_extractor.validation_primitives import require_finite_real, require_integer
 
 SUMMARY_SCHEMA_VERSION = "local_ms1_feature_summary"
 DIAGNOSTICS_COLUMNS = (

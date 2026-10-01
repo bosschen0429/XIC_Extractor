@@ -3,7 +3,7 @@ from dataclasses import replace
 import numpy as np
 import pytest
 
-from xic_extractor.config import ExtractionConfig, Target
+from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.extraction import peak_candidate_table
 from xic_extractor.extraction.peak_candidate_audit import (
     append_peak_audit_rows,
@@ -12,12 +12,12 @@ from xic_extractor.extraction.peak_candidate_audit import (
 from xic_extractor.extraction.targeted_peak_hypotheses import (
     build_targeted_peak_hypotheses as build_peak_hypotheses,
 )
-from xic_extractor.peak_detection.traces import Trace, targeted_trace_group
-from xic_extractor.signal_processing import (
+from xic_extractor.peak_detection.models import (
     PeakCandidate,
     PeakDetectionResult,
     PeakResult,
 )
+from xic_extractor.peak_detection.traces import Trace, targeted_trace_group
 
 
 def test_peak_audit_appender_reuses_one_cwt_audit_result(

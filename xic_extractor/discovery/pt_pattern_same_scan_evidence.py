@@ -12,7 +12,7 @@ import numpy as np
 from xic_extractor.discovery.delta_mass_patterns import PT_PATTERN
 from xic_extractor.mass_accuracy import mz_window, signed_ppm_error
 from xic_extractor.ms1_scan_index import MS1Scan, validate_ms1_scan_index
-from xic_extractor.numeric_validation import require_finite_real, require_integer
+from xic_extractor.validation_primitives import require_finite_real, require_integer
 
 Plus4SupportStatus = Literal[
     "not_evaluable",

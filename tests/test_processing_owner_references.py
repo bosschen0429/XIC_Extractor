@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 
 from xic_extractor import review_records
-from xic_extractor.config import Target
+from xic_extractor.configuration.models import Target
 from xic_extractor.configuration.target_identity import (
     ResolvedTargetDefinition,
     TargetListSnapshot,

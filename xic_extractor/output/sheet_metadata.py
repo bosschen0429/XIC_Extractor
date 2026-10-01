@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from xic_extractor.config import ExtractionConfig
+from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.output import metadata
 from xic_extractor.output.workbook_styles import (
     _SAMPLE_HEADER,

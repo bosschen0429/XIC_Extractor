@@ -58,9 +58,9 @@ from xic_extractor.ms1_scan_index import (
     MS1ScanReadError,
     build_ms1_scan_index_for_rt_window,
 )
-from xic_extractor.numeric_validation import require_finite_real, require_integer
 from xic_extractor.raw_reader import RawReaderError, open_raw
 from xic_extractor.tabular_io import write_delimited_rows
+from xic_extractor.validation_primitives import require_finite_real, require_integer
 
 PROXY_SOURCE_LABEL = "raw_scan_proxy"
 PROVENANCE_SCHEMA_VERSION = "pt_pattern_scan_proxy_provenance"

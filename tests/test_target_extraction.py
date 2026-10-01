@@ -7,7 +7,7 @@ import xic_extractor.extraction.target_extraction as target_extraction
 from xic_extractor.applications.targeted.product_model import (
     TargetedProductProjection,
 )
-from xic_extractor.config import ExtractionConfig, Target
+from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.configuration.signal_processing_profile import (
     DEFAULT_SIGNAL_PROCESSING_PROFILE,
 )
@@ -212,7 +212,7 @@ def test_extract_one_target_uses_shared_physical_candidate_and_owner_apex(
             return acquired_rt, acquired_intensity
 
     monkeypatch.setattr(
-        "xic_extractor.extractor.find_peak_and_area",
+        "xic_extractor.peak_detection.facade.find_peak_and_area",
         lambda *_args, **_kwargs: pytest.fail(
             "formal Targeted must not invoke a legacy resolver finder"
         ),

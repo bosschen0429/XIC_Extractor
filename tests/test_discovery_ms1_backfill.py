@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 
 from xic_extractor.acquisition_contract import AcquisitionContractError
-from xic_extractor.config import ExtractionConfig
+from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.discovery.grouping import group_discovery_seeds
 from xic_extractor.discovery.models import (
     DiscoveryCandidate,
@@ -21,6 +21,7 @@ from xic_extractor.discovery.ms1_backfill import (
     merge_candidates_by_ms1_peak,
 )
 from xic_extractor.execution.attempt import derive_runtime_acquisition_metrics
+from xic_extractor.peak_detection.models import PeakDetectionResult, PeakResult
 from xic_extractor.processing_identity import (
     AcquisitionSourceIdentity,
     build_acquisition_source_identity,
@@ -29,7 +30,6 @@ from xic_extractor.raw_reader import (
     THERMO_RAW_ACQUISITION_FORMAT,
     THERMO_RAW_OBSERVATION_NAMESPACE,
 )
-from xic_extractor.signal_processing import PeakDetectionResult, PeakResult
 from xic_extractor.xic_models import XICRequest, XICTrace
 
 NEUTRAL_LOSS_DA = 116.0474

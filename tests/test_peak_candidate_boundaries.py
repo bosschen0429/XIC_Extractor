@@ -25,12 +25,12 @@ from xic_extractor.peak_detection.hypotheses import (
     IntegrationResult,
     PeakHypothesis,
 )
-from xic_extractor.peak_detection.traces import Trace, targeted_trace_group
-from xic_extractor.signal_processing import (
+from xic_extractor.peak_detection.models import (
     PeakCandidate,
     PeakDetectionResult,
     PeakResult,
 )
+from xic_extractor.peak_detection.traces import Trace, targeted_trace_group
 
 
 def test_build_boundary_rows_emits_alternatives_for_each_candidate() -> None:

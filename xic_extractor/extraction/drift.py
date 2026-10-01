@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from statistics import median
 
-from xic_extractor.config import Target
+from xic_extractor.configuration.models import Target
 
 
 def estimate_sample_drift(

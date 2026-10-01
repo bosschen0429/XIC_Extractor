@@ -4,7 +4,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import replace
 from typing import TYPE_CHECKING
 
-from xic_extractor.config import ConfigError, ExtractionConfig, Target
+from xic_extractor.configuration.models import ConfigError, ExtractionConfig, Target
 from xic_extractor.extraction.output_dispatch import write_outputs
 from xic_extractor.extraction.paired_area_ratio_projection import (
     apply_paired_area_ratio_projection,

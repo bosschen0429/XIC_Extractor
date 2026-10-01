@@ -10,7 +10,7 @@ import pytest
 from tests.runtime_telemetry_fixtures import (
     build_runtime_telemetry_samples_from_coordinator,
 )
-from xic_extractor.config import ExtractionConfig, Target
+from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.execution._finalization import (
     RuntimeArtifactDisposition,
     RuntimeFinalizationContractError,

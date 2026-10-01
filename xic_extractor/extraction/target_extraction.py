@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-from xic_extractor.config import ExtractionConfig, Target
+from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.configuration.signal_processing_profile import (
     resolve_signal_processing_profile,
 )
@@ -52,6 +52,7 @@ from xic_extractor.peak_detection.evidence_facts import (
 )
 from xic_extractor.peak_detection.model_selection import ExpectedDiffApprovalRecords
 from xic_extractor.peak_detection.models import (
+    PeakCandidate,
     PeakCandidatesResult,
     PeakDetectionResult,
 )
@@ -81,7 +82,6 @@ from xic_extractor.peak_detection.selection_decision import (
 )
 from xic_extractor.processing_identity import AcquisitionSourceExpectation
 from xic_extractor.rt_prior_library import LibraryEntry
-from xic_extractor.signal_processing import PeakCandidate
 
 if TYPE_CHECKING:
     from xic_extractor.extractor import (

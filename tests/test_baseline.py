@@ -1,17 +1,10 @@
 import numpy as np
 import pytest
 
-from xic_extractor.baseline import asls_baseline
 from xic_extractor.peak_detection.baseline import (
-    asls_baseline as canonical_asls_baseline,
-)
-from xic_extractor.peak_detection.baseline import (
+    asls_baseline,
     asls_baseline_on_rt,
 )
-
-
-def test_top_level_baseline_reexports_canonical_asls_baseline() -> None:
-    assert asls_baseline is canonical_asls_baseline
 
 
 def test_baseline_on_flat_trace_returns_constant() -> None:

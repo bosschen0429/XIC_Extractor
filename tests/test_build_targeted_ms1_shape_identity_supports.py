@@ -6,7 +6,7 @@ from pathlib import Path
 import numpy as np
 
 from tools.diagnostics import build_targeted_ms1_shape_identity_supports as tool
-from xic_extractor.config import Target
+from xic_extractor.configuration.models import Target
 from xic_extractor.diagnostics import (
     targeted_ms1_shape_identity_support_producer as support_producer,
 )

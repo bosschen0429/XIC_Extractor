@@ -4,7 +4,7 @@ from pathlib import Path
 
 import numpy as np
 
-from xic_extractor.config import ExtractionConfig, Target
+from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.evidence.neutral_loss import CandidateMS2Evidence
 from xic_extractor.extraction.peak_candidate_table import (
     append_peak_candidate_rows,
@@ -27,14 +27,14 @@ from xic_extractor.peak_detection.hypotheses import (
     IntegrationResult,
     PeakHypothesis,
 )
-from xic_extractor.peak_detection.scoring_models import ScoringContext
-from xic_extractor.peak_detection.traces import Trace, targeted_trace_group
-from xic_extractor.signal_processing import (
+from xic_extractor.peak_detection.models import (
     PeakCandidate,
     PeakCandidateScore,
     PeakDetectionResult,
     PeakResult,
 )
+from xic_extractor.peak_detection.scoring_models import ScoringContext
+from xic_extractor.peak_detection.traces import Trace, targeted_trace_group
 
 _PRE_NL_DIAGNOSTIC_HEADERS = (
     "sample_name",

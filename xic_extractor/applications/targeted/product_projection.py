@@ -10,7 +10,7 @@ from xic_extractor.applications.targeted.product_model import (
     TargetedProductContext,
     TargetedProductProjection,
 )
-from xic_extractor.config import Target
+from xic_extractor.configuration.models import Target
 from xic_extractor.evidence_semantics import EvidenceDecisionSemantics
 from xic_extractor.peak_detection.scoring_quality import hard_quality_flags
 from xic_extractor.peak_detection.selection_decision import (

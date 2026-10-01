@@ -5,7 +5,7 @@ from dataclasses import dataclass, replace
 
 import numpy as np
 
-from xic_extractor.config import ExtractionConfig
+from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.peak_detection.baseline import (
     BaselineMethod,
     integrate_with_baseline,

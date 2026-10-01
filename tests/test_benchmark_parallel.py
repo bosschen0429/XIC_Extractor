@@ -11,7 +11,7 @@ from scripts.benchmark_parallel import (
     run_benchmark,
 )
 from scripts.compare_workbooks import WorkbookCompareResult
-from xic_extractor.config import ExtractionConfig
+from xic_extractor.configuration.models import ExtractionConfig
 
 
 def test_build_run_specs_uses_expected_mode_worker_matrix_and_output_dirs(

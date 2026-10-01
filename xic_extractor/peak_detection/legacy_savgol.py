@@ -3,7 +3,7 @@ from typing import Literal
 import numpy as np
 from scipy.signal import find_peaks, savgol_filter
 
-from xic_extractor.config import ExtractionConfig
+from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.peak_detection.integration import (
     integrate_area_counts_seconds,
     peak_bounds,

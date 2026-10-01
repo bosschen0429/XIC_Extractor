@@ -53,9 +53,9 @@ from xic_extractor.discovery.pt_pattern_trace_evidence import (
 from xic_extractor.discovery.pt_pattern_trace_manifest import (
     trace_bundle_manifest_fields,
 )
-from xic_extractor.numeric_validation import require_finite_real, require_integer
 from xic_extractor.raw_reader import RawReaderError, open_raw
 from xic_extractor.tabular_io import file_sha256, write_delimited_rows
+from xic_extractor.validation_primitives import require_finite_real, require_integer
 from xic_extractor.xic_models import XICTrace
 
 __all__ = (

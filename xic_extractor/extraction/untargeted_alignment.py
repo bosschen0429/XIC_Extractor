@@ -16,8 +16,8 @@ from typing import Any
 from xic_extractor.acquisition.raw_paths import existing_raw_paths
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.drift_evidence import KnownIstdReference
-from xic_extractor.config import ExtractionConfig
 from xic_extractor.configuration.execution_profile import DEFAULT_ALIGNMENT_WORKERS
+from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )

@@ -14,7 +14,7 @@ from xic_extractor.alignment.drift_evidence import KnownIstdReference
 from xic_extractor.alignment.result.application_result import (
     UntargetedCandidateExclusion,
 )
-from xic_extractor.config import ExtractionConfig
+from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
     canonical_signal_processing_profile_bytes,

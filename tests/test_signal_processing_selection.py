@@ -4,10 +4,10 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from xic_extractor.config import ExtractionConfig
+from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.peak_detection.candidate_scoring import score_candidate
+from xic_extractor.peak_detection.facade import find_peak_and_area
 from xic_extractor.peak_detection.scoring_models import ScoringContext
-from xic_extractor.signal_processing import find_peak_and_area
 
 
 def _cfg() -> ExtractionConfig:

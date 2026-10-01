@@ -5,7 +5,7 @@ from typing import Any
 
 import numpy as np
 
-from xic_extractor.config import ExtractionConfig, Target
+from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.evidence.neutral_loss import CandidateMS2Evidence
 from xic_extractor.extraction.peak_candidate_boundaries import (
     PeakCandidateBoundaryRow,

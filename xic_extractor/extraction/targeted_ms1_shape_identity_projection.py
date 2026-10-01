@@ -28,7 +28,7 @@ from xic_extractor.targeted_ms1_shape_identity_policy import (
 )
 
 if TYPE_CHECKING:
-    from xic_extractor.config import Target
+    from xic_extractor.configuration.models import Target
     from xic_extractor.extractor import ExtractionResult, RunOutput
     from xic_extractor.peak_detection.selection_decision import (
         PeakHypothesisSelectionDecision,

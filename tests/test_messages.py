@@ -4,7 +4,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from xic_extractor.config import ExtractionConfig, Target
+from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.evidence.neutral_loss import CandidateMS2Evidence, NLResult
 from xic_extractor.extraction.target_extraction import extract_one_target
 from xic_extractor.extractor import ExtractionResult
@@ -13,11 +13,11 @@ from xic_extractor.output.messages import (
     build_diagnostic_records,
     istd_confidence_note,
 )
+from xic_extractor.peak_detection.models import PeakDetectionResult, PeakResult
 from xic_extractor.peak_detection.physical_peak_evaluation import (
     evaluate_physical_peak,
     prepare_physical_signal,
 )
-from xic_extractor.signal_processing import PeakDetectionResult, PeakResult
 
 
 @pytest.mark.parametrize("point_count, expected_reason", [

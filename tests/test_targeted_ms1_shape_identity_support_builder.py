@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from xic_extractor.config import Target
+from xic_extractor.configuration.models import Target
 from xic_extractor.diagnostics.targeted_ms1_shape_identity import (
     build_targeted_ms1_shape_identity_rows,
 )

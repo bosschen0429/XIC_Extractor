@@ -9,7 +9,7 @@ from xic_extractor.applications.targeted.application import (
     TargetedApplicationService,
     build_targeted_application_request,
 )
-from xic_extractor.config import ConfigError, ExtractionConfig, Target
+from xic_extractor.configuration.models import ConfigError, ExtractionConfig, Target
 from xic_extractor.extraction.targeted_inputs import resolve_targeted_inputs
 from xic_extractor.extractor import FileResult, RunOutput
 

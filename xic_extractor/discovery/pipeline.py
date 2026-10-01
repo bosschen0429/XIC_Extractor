@@ -15,7 +15,7 @@ from xic_extractor.acquisition_contract import (
     RawAcquisitionSessionReceipt,
     mint_raw_acquisition_session_capability,
 )
-from xic_extractor.config import ExtractionConfig
+from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
     resolve_signal_processing_profile,

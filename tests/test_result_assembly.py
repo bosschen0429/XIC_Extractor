@@ -6,7 +6,7 @@ import pytest
 from xic_extractor.applications.targeted.product_model import (
     OWN_MAX_SAME_PEAK_SUPPORT_REASON,
 )
-from xic_extractor.config import Target
+from xic_extractor.configuration.models import Target
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )

@@ -34,7 +34,7 @@ from gui.sections.settings_value_helpers import (
 )
 from gui.sections.settings_widgets import CollapsibleSection, _LabeledSpin
 from gui.ui import SPACE_LG, SPACE_MD, SPACE_SM, titled_card
-from xic_extractor.config import migrate_settings_dict
+from xic_extractor.configuration.settings import migrate_settings_dict
 from xic_extractor.settings_schema import CANONICAL_SETTINGS_DEFAULTS
 
 

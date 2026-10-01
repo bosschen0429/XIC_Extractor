@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from xic_extractor.config import ExtractionConfig, Target
+from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.peak_detection.traces import Trace, TraceGroup, targeted_trace_group
 
 

@@ -4,9 +4,9 @@ from scripts.compare_resolvers import (
     compare_rows,
     main,
 )
-from xic_extractor.config import ExtractionConfig, Target
+from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.extractor import ExtractionResult, FileResult, RunOutput
-from xic_extractor.signal_processing import PeakDetectionResult, PeakResult
+from xic_extractor.peak_detection.models import PeakDetectionResult, PeakResult
 
 
 def test_compare_rows_reports_flips_rt_area_istd_and_confidence_changes() -> None:
