@@ -38,10 +38,10 @@ from xic_extractor.discovery.priority import (
 )
 from xic_extractor.mass_accuracy import weighted_ion_mz
 from xic_extractor.peak_detection.background_shape import is_provisional_peak_shape
-from xic_extractor.peak_detection.facade import find_peak_and_area
 from xic_extractor.peak_detection.models import PeakResult
 from xic_extractor.peak_detection.ms1_morphology import DEFAULT_GAUSSIAN15_WINDOW_POINTS
 from xic_extractor.peak_detection.ms1_trace_detection import detect_ms1_trace_peak
+from xic_extractor.peak_detection.peak_integration import find_peak_and_area
 from xic_extractor.peak_detection.physical_peak_evaluation import (
     evaluate_physical_peak,
     prepare_physical_signal,

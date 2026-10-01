@@ -8,10 +8,15 @@ from xic_extractor.targeted_ms1_shape_identity_policy import (
 )
 
 RESOLVER_MODES: tuple[str, ...] = (
-    "legacy_savgol",
+    "savgol",
     "local_minimum",
 )
 CANONICAL_RESOLVER_MODE = "local_minimum"
+
+
+def normalize_resolver_mode(value: str) -> str:
+    """Accept the saved-settings alias; new effective settings use savgol."""
+    return "savgol" if value == "legacy_savgol" else value
 
 ARBITRATED_RESOLVER_RETIRED_MESSAGE = (
     "arbitrated resolver mode is retired; legacy diagnostics use local_minimum. "

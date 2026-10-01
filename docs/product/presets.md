@@ -11,9 +11,9 @@ surfaces. Presets are not product authority by themselves.
   relevant evidence.
 - Targeted and profile-bound Untargeted processing use the shared physical
   signal owner.
-- Direct legacy diagnostic callers retain their explicit `local_minimum` or
-  `legacy_savgol` configuration. Those settings do not choose the formal
-  Targeted physical algorithm.
+- Direct resolver-based diagnostic callers retain their explicit `local_minimum` or
+  `savgol` configuration (including saved `legacy_savgol` input). Those settings
+  do not choose the formal Targeted physical algorithm.
 - GUI local profiles can expose explicit preset buttons. GUI local profiles
   must not silently overwrite user intent.
 - A preset run must be reproducible from documented CLI/config surfaces and
@@ -125,8 +125,16 @@ binders reject those composite presets.
 
 | Preset | Role |
 | --- | --- |
-| `legacy_savgol` | Historical resolver behavior and compatibility baseline |
-| `local_minimum` | Local-minimum resolver path used by newer validation slices |
+| `savgol` | Savitzky-Golay smoothing and prominence-based candidate resolver |
+| `local_minimum` | Canonical local-minimum candidate resolver |
+
+New resolver settings use `savgol`. Saved `legacy_savgol` input is accepted and
+normalized to `savgol` before candidate search and preset export. This read alias
+serves existing user settings/presets; remove it only after those consumers have
+migrated and an announced compatibility window has ended. Formal Targeted still
+uses physical candidates rather than selecting a resolver from settings.
+The emitted `legacy_savgol` proposal-source label stays stable because it is
+part of retained peak identities; it describes the savgol resolver source.
 
 ### Alignment Presets
 

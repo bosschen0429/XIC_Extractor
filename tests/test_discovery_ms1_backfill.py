@@ -1177,7 +1177,7 @@ def _candidate(
     )
 
 
-def _peak_config(*, resolver_mode: str = "legacy_savgol") -> ExtractionConfig:
+def _peak_config(*, resolver_mode: str = "savgol") -> ExtractionConfig:
     return ExtractionConfig(
         data_dir=Path("raw"),
         dll_dir=Path("dll"),

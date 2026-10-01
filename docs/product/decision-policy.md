@@ -110,7 +110,7 @@ the values. The following layers feed the displayed result:
 
 | Layer | Produces | Resolution point |
 | --- | --- | --- |
-| Candidate scoring | `peak_result.confidence` / `peak_result.reason` | `peak_detection/candidate_scoring.py` through `peak_detection/facade.py:find_peak_and_area` |
+| Candidate scoring | `peak_result.confidence` / `peak_result.reason` | `peak_detection/candidate_scoring.py` through `peak_detection/peak_selection.py:select_peak_and_area` |
 | Hypothesis selection | `selection_decision.projected_confidence` / `projected_reason` | `extraction/result_assembly.py:_result_confidence` and `_result_reason`, when a selection decision exists |
 | Stored result | resolved `result.confidence` / `result.reason` | `extraction/result_assembly.py:build_extraction_result` |
 | Targeted product projection | `product_state`, `counted_detection`, `projection_reason` | `extraction/result_assembly.py:_targeted_product_projection` |

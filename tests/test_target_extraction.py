@@ -139,7 +139,7 @@ def test_credible_istd_anchor_rt_rejects_not_counted_projection() -> None:
     assert target_extraction.credible_istd_anchor_rt(result) is None
 
 
-@pytest.mark.parametrize("resolver_mode", ["legacy_savgol", "local_minimum"])
+@pytest.mark.parametrize("resolver_mode", ["savgol", "local_minimum"])
 @pytest.mark.parametrize("is_istd", [False, True])
 @pytest.mark.parametrize("with_scoring", [False, True])
 def test_extract_one_target_uses_shared_physical_candidate_and_owner_apex(
@@ -213,7 +213,7 @@ def test_extract_one_target_uses_shared_physical_candidate_and_owner_apex(
             return acquired_rt, acquired_intensity
 
     monkeypatch.setattr(
-        "xic_extractor.peak_detection.facade.find_peak_and_area",
+        "xic_extractor.peak_detection.candidate_search.find_peak_candidates",
         lambda *_args, **_kwargs: pytest.fail(
             "formal Targeted must not invoke a legacy resolver finder"
         ),

@@ -330,7 +330,7 @@ def test_gui_alignment_modes_apply_product_ready_preset_alignment_runtime(
         tuning_overrides={
             "nl_tolerance_ppm": 15.0,
             "nl_min_intensity_ratio": 0.02,
-            "resolver_mode": "legacy_savgol",
+            "resolver_mode": "savgol",
         },
         raw_dir=raw_dir,
         raw_file=None,
@@ -360,7 +360,7 @@ def test_gui_alignment_modes_apply_product_ready_preset_alignment_runtime(
     peak_config = captured_alignment["peak_config"]
     assert isinstance(peak_config, ExtractionConfig)
     assert peak_config.nl_min_intensity_ratio == 0.02
-    assert peak_config.resolver_mode == "legacy_savgol"
+    assert peak_config.resolver_mode == "savgol"
     assert captured_alignment["alignment_config"] == AlignmentConfig()
     assert captured_alignment["raw_workers"] == DEFAULT_ALIGNMENT_WORKERS
     assert captured_alignment["raw_worker_backend"] == "process"

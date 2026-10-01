@@ -6,7 +6,7 @@ from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.instrument_qc.models import InstrumentQCStatus, SDOLEKTrendRow
 from xic_extractor.instrument_qc.pipeline_contracts import XICSource
 from xic_extractor.instrument_qc.targets import InstrumentQCTarget
-from xic_extractor.peak_detection.facade import find_peak_and_area
+from xic_extractor.peak_detection.peak_integration import find_peak_and_area
 
 
 def extract_target_row(

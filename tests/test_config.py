@@ -1029,3 +1029,26 @@ def test_untargeted_list_with_no_istd_is_actionable(tmp_path):
     )
     with pytest.raises(ValueError, match="is_istd=TRUE"):
         read_istd_targets(source)
+
+
+@pytest.mark.parametrize("resolver_mode", ["savgol", "legacy_savgol"])
+def test_resolver_setting_input_normalizes_to_savgol(
+    tmp_path: Path, resolver_mode: str
+) -> None:
+    """Remove the alias case only after existing user settings have migrated."""
+    migrated, _ = migrate_settings_dict({"resolver_mode": resolver_mode})
+    assert migrated["resolver_mode"] == "savgol"
+    config = ExtractionConfig(
+        data_dir=tmp_path,
+        dll_dir=tmp_path,
+        output_csv=tmp_path / "out.csv",
+        diagnostics_csv=tmp_path / "diag.csv",
+        smooth_window=11,
+        smooth_polyorder=3,
+        peak_rel_height=0.95,
+        peak_min_prominence_ratio=0.1,
+        ms2_precursor_tol_da=1.1,
+        nl_min_intensity_ratio=0.01,
+        resolver_mode=resolver_mode,
+    )
+    assert config.resolver_mode == "savgol"

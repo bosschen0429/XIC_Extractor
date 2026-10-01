@@ -30,15 +30,15 @@ class ResolverDiffRow:
     target: str
     role: str
     issue: str
-    legacy_detected: bool
+    savgol_detected: bool
     local_detected: bool
-    legacy_rt: float | None
+    savgol_rt: float | None
     local_rt: float | None
     rt_delta: float | None
-    legacy_area: float | None
+    savgol_area: float | None
     local_area: float | None
     area_ratio_delta: float | None
-    legacy_confidence: str
+    savgol_confidence: str
     local_confidence: str
 
 
@@ -60,36 +60,36 @@ class ResolverComparisonReport:
 
 
 def compare_rows(
-    legacy_output: RunOutput,
+    savgol_output: RunOutput,
     local_output: RunOutput,
     *,
     focus_targets: set[str],
     rt_delta_threshold: float,
     area_ratio_threshold: float,
 ) -> ResolverComparisonReport:
-    legacy_rows = collect_rows(legacy_output)
+    savgol_rows = collect_rows(savgol_output)
     local_rows = collect_rows(local_output)
 
     summary = ResolverDiffSummary()
     rows: list[ResolverDiffRow] = []
     focus_rows: list[ResolverDiffRow] = []
 
-    for key in sorted(legacy_rows.keys() | local_rows.keys()):
-        legacy = legacy_rows.get(key)
+    for key in sorted(savgol_rows.keys() | local_rows.keys()):
+        savgol = savgol_rows.get(key)
         local = local_rows.get(key)
-        if legacy is None or local is None:
+        if savgol is None or local is None:
             continue
 
-        detected_to_nd = legacy.detected and not local.detected
-        nd_to_detected = (not legacy.detected) and local.detected
-        rt_delta = _rt_delta(legacy, local)
-        area_ratio_delta = _area_ratio_delta(legacy, local)
+        detected_to_nd = savgol.detected and not local.detected
+        nd_to_detected = (not savgol.detected) and local.detected
+        rt_delta = _rt_delta(savgol, local)
+        area_ratio_delta = _area_ratio_delta(savgol, local)
         rt_changed = rt_delta is not None and rt_delta > rt_delta_threshold
         area_changed = (
             area_ratio_delta is not None and area_ratio_delta > area_ratio_threshold
         )
-        confidence_changed = legacy.confidence != local.confidence
-        istd_detected_loss = legacy.role == "ISTD" and detected_to_nd
+        confidence_changed = savgol.confidence != local.confidence
+        istd_detected_loss = savgol.role == "ISTD" and detected_to_nd
 
         summary = ResolverDiffSummary(
             detected_to_nd=summary.detected_to_nd + int(detected_to_nd),
@@ -111,19 +111,19 @@ def compare_rows(
             continue
 
         diff = ResolverDiffRow(
-            sample_name=legacy.sample_name,
-            target=legacy.target,
-            role=legacy.role,
+            sample_name=savgol.sample_name,
+            target=savgol.target,
+            role=savgol.role,
             issue=issue,
-            legacy_detected=legacy.detected,
+            savgol_detected=savgol.detected,
             local_detected=local.detected,
-            legacy_rt=legacy.rt,
+            savgol_rt=savgol.rt,
             local_rt=local.rt,
             rt_delta=rt_delta,
-            legacy_area=legacy.area,
+            savgol_area=savgol.area,
             local_area=local.area,
             area_ratio_delta=area_ratio_delta,
-            legacy_confidence=legacy.confidence,
+            savgol_confidence=savgol.confidence,
             local_confidence=local.confidence,
         )
         rows.append(diff)
@@ -179,15 +179,15 @@ def write_report_csv(output_path: Path, report: ResolverComparisonReport) -> Pat
             "Target": row.target,
             "Role": row.role,
             "Issue": row.issue,
-            "LegacyDetected": str(row.legacy_detected),
+            "LegacyDetected": str(row.savgol_detected),
             "LocalDetected": str(row.local_detected),
-            "LegacyRT": _format_optional(row.legacy_rt),
+            "LegacyRT": _format_optional(row.savgol_rt),
             "LocalRT": _format_optional(row.local_rt),
             "RTDelta": _format_optional(row.rt_delta),
-            "LegacyArea": _format_optional(row.legacy_area),
+            "LegacyArea": _format_optional(row.savgol_area),
             "LocalArea": _format_optional(row.local_area),
             "AreaRatioDelta": _format_optional(row.area_ratio_delta),
-            "LegacyConfidence": row.legacy_confidence,
+            "LegacyConfidence": row.savgol_confidence,
             "LocalConfidence": row.local_confidence,
         }
         for row in report.rows
@@ -206,14 +206,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = _parse_args(argv)
     base_dir = args.base_dir.resolve()
     config, targets = load_config(base_dir / "config")
-    legacy_config = replace(config, resolver_mode="legacy_savgol")
+    savgol_config = replace(config, resolver_mode="savgol")
     local_config = replace(config, resolver_mode="local_minimum")
 
-    legacy_output = extractor.acquire(legacy_config, targets)
+    savgol_output = extractor.acquire(savgol_config, targets)
     local_output = extractor.acquire(local_config, targets)
 
     report = compare_rows(
-        legacy_output,
+        savgol_output,
         local_output,
         focus_targets=set(args.focus_target),
         rt_delta_threshold=args.rt_delta_threshold,
@@ -226,7 +226,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Compare legacy_savgol and local_minimum resolver outputs."
+        description="Compare savgol and local_minimum resolver outputs."
     )
     parser.add_argument(
         "--base-dir",
@@ -284,20 +284,20 @@ def _primary_issue(
     return None
 
 
-def _rt_delta(legacy: ResolverRow, local: ResolverRow) -> float | None:
-    if legacy.rt is None or local.rt is None:
+def _rt_delta(savgol: ResolverRow, local: ResolverRow) -> float | None:
+    if savgol.rt is None or local.rt is None:
         return None
-    return abs(local.rt - legacy.rt)
+    return abs(local.rt - savgol.rt)
 
 
-def _area_ratio_delta(legacy: ResolverRow, local: ResolverRow) -> float | None:
+def _area_ratio_delta(savgol: ResolverRow, local: ResolverRow) -> float | None:
     if (
-        legacy.area is None
+        savgol.area is None
         or local.area is None
-        or legacy.area <= 0
+        or savgol.area <= 0
     ):
         return None
-    return abs(local.area - legacy.area) / legacy.area
+    return abs(local.area - savgol.area) / savgol.area
 
 
 def _format_optional(value: float | None) -> str:
@@ -307,7 +307,7 @@ def _format_optional(value: float | None) -> str:
 
 
 def _print_report(output_path: Path, report: ResolverComparisonReport) -> None:
-    print("legacy_savgol vs local_minimum")
+    print("savgol vs local_minimum")
     print(f"CSV report: {output_path}")
     print(f"Detected->ND: {report.summary.detected_to_nd}")
     print(f"ND->Detected: {report.summary.nd_to_detected}")

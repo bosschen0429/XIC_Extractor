@@ -11,10 +11,6 @@ from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )
 from xic_extractor.peak_detection.baseline import asls_baseline, asls_baseline_on_rt
-from xic_extractor.peak_detection.engine_scoring import (
-    candidate_score_summary,
-    score_with_context,
-)
 from xic_extractor.peak_detection.evidence_facts import (
     build_candidate_evidence_facts,
     decision_semantics_from_candidate_facts,
@@ -24,7 +20,6 @@ from xic_extractor.peak_detection.evidence_facts import (
     projected_confidence_from_candidate_facts,
     projected_reason_from_candidate_facts,
 )
-from xic_extractor.peak_detection.facade import find_peak_and_area
 from xic_extractor.peak_detection.integration_result import IntegrationResult
 from xic_extractor.peak_detection.models import PeakCandidate, PeakResult
 from xic_extractor.peak_detection.ms1_morphology import (
@@ -32,6 +27,7 @@ from xic_extractor.peak_detection.ms1_morphology import (
     gaussian15_positive_asls_residual_metrics,
     gaussian15_positive_asls_residual_trace,
 )
+from xic_extractor.peak_detection.peak_integration import find_peak_and_area
 from xic_extractor.peak_detection.physical_peak_codec import (
     rehydrate_physical_peak_evaluation,
 )
@@ -50,6 +46,10 @@ from xic_extractor.peak_detection.physical_peak_identity import (
 )
 from xic_extractor.peak_detection.physical_peak_models import PhysicalPeakQuestion
 from xic_extractor.peak_detection.scoring_models import ScoringContext
+from xic_extractor.peak_detection.scoring_summary import (
+    candidate_score_summary,
+    score_with_context,
+)
 
 
 def test_trace_window_evidence_uses_shared_gaussian15_own_max_trace() -> None:

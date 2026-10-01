@@ -16,7 +16,10 @@ from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
     resolve_signal_processing_profile,
 )
-from xic_extractor.settings_schema import CANONICAL_SETTINGS_DEFAULTS
+from xic_extractor.settings_schema import (
+    CANONICAL_SETTINGS_DEFAULTS,
+    normalize_resolver_mode,
+)
 from xic_extractor.targeted_ms1_shape_identity_policy import (
     TARGETED_MS1_SHAPE_IDENTITY_ACTIVATION_POLICIES,
 )
@@ -69,6 +72,8 @@ class _ParsedSettings:
 def migrate_settings_dict(raw: dict[str, str]) -> tuple[dict[str, str], list[str]]:
     migrated = dict(raw)
     warnings: list[str] = []
+    if "resolver_mode" in migrated:
+        migrated["resolver_mode"] = normalize_resolver_mode(migrated["resolver_mode"])
 
     canonical_window = migrated.get(_CANONICAL_SIGNAL_WINDOW_KEY, "").strip()
     legacy_window = migrated.get(_LEGACY_SIGNAL_WINDOW_KEY, "").strip()

@@ -7,6 +7,7 @@ from xic_extractor.discovery.evidence_config import (
     DEFAULT_EVIDENCE_PROFILE,
     DiscoveryEvidenceProfile,
 )
+from xic_extractor.settings_schema import normalize_resolver_mode
 
 if TYPE_CHECKING:
     from xic_extractor.discovery.physical_fact_record import (
@@ -161,6 +162,9 @@ class DiscoverySettings:
     blank_fold_change_threshold: float = 3.0
 
     def __post_init__(self) -> None:
+        object.__setattr__(
+            self, "resolver_mode", normalize_resolver_mode(self.resolver_mode)
+        )
         profiles = self.neutral_loss_profiles
         # The singular field also aliases profiles[0] after normalization.
         # dataclasses.replace carries both fields; do not append that alias again.
