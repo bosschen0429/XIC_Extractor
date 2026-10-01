@@ -26,10 +26,8 @@ from xic_extractor.mass_accuracy import (
 )
 
 if TYPE_CHECKING:
-    from xic_extractor.discovery.detected_features import (
-        DeltaMassPatternSettings,
-        DetectedFeature,
-    )
+    from xic_extractor.discovery.delta_mass_strategy import DeltaMassPatternSettings
+    from xic_extractor.discovery.detected_features import DetectedFeature
 
 _LOCAL_SIGNAL_SUPPORT_QUALITIES = {"GOOD", "OK", "PASS"}
 _LOCAL_SIGNAL_SUPPORT_SHAPE_SCORE_MIN = 0.80
@@ -212,12 +210,10 @@ def match_delta_mass_pattern(
     before emitting a candidate. No partial/base-only rows are ever emitted.
     """
 
-    # Local imports avoid a hard circular import at module load time: this
-    # module (delta_mass_patterns) is imported by detected_features for the
-    # DeltaMassPattern/PT_PATTERN default, so importing DetectedFeature /
-    # DeltaMassPatternSettings back at module scope would form a cycle.
+    # The strategy owner imports the pattern defaults from this module, so
+    # resolve its settings after module initialization to avoid a cycle.
+    from xic_extractor.discovery.delta_mass_strategy import DeltaMassPatternSettings
     from xic_extractor.discovery.detected_features import (
-        DeltaMassPatternSettings,
         detected_feature_identity,
         validate_detected_features,
     )

@@ -668,7 +668,8 @@ compatibility for existing diagnostic artifacts, not a weaker detection rule.
 | Surface | Role |
 | --- | --- |
 | `xic_extractor/discovery/` | Discovery domain package |
-| `xic_extractor/discovery/detected_features.py` | DetectedFeature contract plus external feature-table adapter for Delta Mass / Pt matcher inputs |
+| `xic_extractor/discovery/detected_features.py` | Shared sample-local feature contract, identity rules, validation, and feature-table adapters |
+| `xic_extractor/discovery/delta_mass_strategy.py` | Delta Mass / Pt pattern settings and resolved strategy |
 | `xic_extractor/discovery/local_ms1_features.py` | Local MS1 feature-source generator; screening evidence only, not trace/co-elution or quantitation authority |
 | `xic_extractor/discovery/delta_mass_pipeline.py` | Pt pattern Discovery pipeline; writes feature-level candidate/review output plus Discovery evidence rows |
 | `xic_extractor/discovery/pt_pattern_discovery_evidence.py` | Bridges feature-level Pt candidates with optional trace-summary rows; emits `pt_pattern_evidence.csv` rows and never grants Matrix/export authority |

@@ -18,8 +18,10 @@ from xic_extractor.discovery.delta_mass_patterns import (
     is_within_ppm,
     match_delta_mass_pattern,
 )
-from xic_extractor.discovery.detected_features import (
+from xic_extractor.discovery.delta_mass_strategy import (
     DeltaMassPatternSettings,
+)
+from xic_extractor.discovery.detected_features import (
     DetectedFeature,
 )
 
