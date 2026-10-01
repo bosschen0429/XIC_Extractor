@@ -20,8 +20,6 @@ Promotion requirements belong to
 
 ## Stable lane keys
 
-- `backfill_current_write_ready_scope`
-- `cid_nl_default_product_activation`
 - `broad_backfill_autowrite`
 - `productization_authority_firewall`
 - `quality_explanation_sidecar`

@@ -95,18 +95,8 @@ SNAPSHOT_TESTS: dict[str, tuple[str, ...]] = {
     "tests/test_check_productization_authority.py": (
         "test_productization_authority_checker_accepts_repo_artifacts",
     ),
-    "tests/test_cid_nl_default_activation_universe_closure.py": (
-        "test_current_cid_nl_full_cohort_universe_closure_is_stable",
-    ),
-    "tests/test_cid_nl_discovery_full_scope_classification.py": (
-        "test_current_cid_nl_discovery_full_scope_classification_is_stable",
-    ),
-    "tests/test_cid_nl_discovery_release_slice.py": (
-        "test_current_cid_nl_discovery_release_slice_is_stable",
-    ),
     "tests/test_productization_state_index.py": (
         "test_dependent_effect_lane_is_exact_hold_package_binding",
-        "test_only_revalidated_default_scope_has_writer_authority",
         "test_productization_state_index_accepts_current_artifacts",
     ),
     "tests/test_validation_artifact_cid_nl_public_claim_catalog.py": (

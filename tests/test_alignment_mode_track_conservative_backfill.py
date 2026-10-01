@@ -8,11 +8,6 @@ from pathlib import Path
 
 import pytest
 
-from scripts.check_production_acceptance_manifest import (
-    REQUIRED_COLUMNS,
-    check_production_acceptance_manifest,
-    production_acceptance_manifest_sha256,
-)
 from tests import mode_track_raw_validation_fixture as closed_writer_fixture
 from tests.cid_nl_peak_support_no_raw_fixture import (
     cid_nl_evidence,
@@ -32,6 +27,13 @@ from xic_extractor.alignment.mode_track.assignment import (
 )
 from xic_extractor.alignment.mode_track.producer import (
     bootstrap_mode_tracks_from_cid_nl_support,
+)
+from xic_extractor.alignment.production_acceptance import (
+    REQUIRED_COLUMNS,
+    check_production_acceptance_manifest_authority,
+)
+from xic_extractor.alignment.quant_matrix_version import (
+    production_acceptance_manifest_sha256,
 )
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlEvaluationReceipt,
@@ -1570,7 +1572,7 @@ def _checked_manifest(tmp_path: Path, projection) -> Path:
         encoding="utf-8",
     )
     assert (
-        check_production_acceptance_manifest(
+        check_production_acceptance_manifest_authority(
             manifest_path=manifest_path,
             repo_root=tmp_path,
         )

@@ -37,7 +37,6 @@ workflow owner rather than chaining similarly named commands.
 | Build a solvent-blank background library | `scripts.extract_blank_library`; `xic_extractor.discovery.blank_qualification` owns extraction and serialization |
 | Prepare targeted review actions | [Review Roundtrip commands](../../docs/product/review-roundtrip.md#operator-commands) distinguish candidate verification, copy-state edits, and peak-editing authority |
 | Run tissue validation | `scripts.run_tissue_validation`; [execution settings](../../docs/agent/parameter-settings.md#validation-scale) own prerequisites |
-| Rebuild activation or expected-diff evidence | Use the current [productization lane](../../docs/product/productization.md) and its named producer/checker; `build_*` and `check_*` commands do not independently activate a feature |
 | Maintain CI or command safety | `tools.testing.test_shards` and `tools.command_policy` serve CI/hooks; they have no GUI workflow |
 
 The sections below index maintained diagnostics. Retired tools are recovered
@@ -88,117 +87,6 @@ AsLS/boundary/product contracts instead.
 **Purpose**: Summarize backfill evidence cost and correctness outcomes.
 **Topic group**: `backfill_evidence_cost_summary.py`
 **Originating spec/plan**: `retired-provenance:ad226e2eb39a`, `retired-provenance:10eb03817ff8`
-
----
-
-### `cid_nl_feature_inclusion_gate.py`
-
-**Purpose**: Build the diagnostic CID-NL feature-inclusion / identity-authority
-gate from existing differential review, paired overlay summary, AI
-identity-triage artifacts, and optional versioned manual review verdicts.
-**Topic group**: CID-NL default activation Gallery and differential overlay
-review; consumes
-`cid_nl_discovery_identity_differential_review.tsv`,
-`cid_nl_differential_overlay_review_summary.tsv`, and
-`cid_nl_differential_ai_adjudication.tsv`; optional
-`cid_nl_manual_feature_inclusion_review.tsv`.
-**Originating spec/goal/plan**:
-`docs/superpowers/validation/cid_nl_default_activation_gallery_review/README.md`;
-stable external-method takeaways now live in `docs/product/untargeted-method.md`.
-**Status note**: Diagnostic-only gate adapter. It does not read RAW, render
-PNGs, create a second Discovery system, mutate ProductWriter/default
-matrix/workbook/GUI outputs, or treat candidates as matrix rows. It writes
-`cid_nl_feature_inclusion_gate_summary.tsv/json`,
-`cid_nl_feature_inclusion_gate_transitions.tsv`,
-`cid_nl_identity_expected_diff_queue.tsv`,
-`cid_nl_supported_candidate_expected_diff_contract.tsv`,
-`cid_nl_feature_inclusion_review_queue.tsv`, and
-`cid_nl_manual_resolved_expected_diff_contract.tsv`,
-`cid_nl_manual_resolved_hold_queue.tsv`,
-`cid_nl_user_review_queue.tsv`, and
-`cid_nl_feature_inclusion_blocked_queue.tsv` under ignored
-`output/validation/cid_nl_default_activation_gallery_review/feature_inclusion_gate/`.
-The gate separates supported feature-inclusion candidates from review-required
-and current-bundle-blocked candidates. Supported candidates only advance to
-expected-diff design; identity authority and ProductWriter activation remain a
-separate public-surface contract.
-
----
-
-### `cid_nl_activation_copy_candidate.py`
-
-**Purpose**: Build a CID-NL activated-copy matrix candidate and value-delta
-checker from approved expected-diff design rows.
-**Topic group**: CID-NL feature-inclusion gate and expected-diff contract.
-Consumes `cid_nl_supported_candidate_expected_diff_contract.tsv` plus
-`cid_nl_agent_resolved_expected_diff_contract.tsv` and
-`cid_nl_manual_resolved_expected_diff_contract.tsv` by default, and fails
-closed if any contract transition overlaps the user-review, agent-hold,
-manual-hold, or blocked queues.
-**Originating spec/goal/plan**:
-`docs/superpowers/validation/cid_nl_default_activation_gallery_review/README.md`;
-`docs/superpowers/plans/2026-06-15-productization-control-plane.md`.
-**Status note**: Diagnostic-only activated-copy surface. It reads the current
-public `alignment_matrix.tsv` and `alignment_matrix_identity.tsv`, writes
-`alignment_matrix_activated_copy.tsv`,
-`alignment_matrix_identity_activated_copy.tsv`,
-`cid_nl_activation_copy_value_delta.tsv`, and
-`cid_nl_activation_copy_candidate_summary.tsv/json` under ignored
-`output/validation/cid_nl_default_activation_gallery_review/activation_copy_candidate/`.
-It refuses to overwrite existing matrix values, requires every written cell to
-come from the expected-diff contract, and reports explicit false flags for
-ProductWriter, default matrix, workbook/GUI, and candidate-row authority. This
-is not a default activation path.
-
----
-
-### `cid_nl_activation_copy_acceptance.py`
-
-**Purpose**: Accept or reject the CID-NL activated-copy matrix candidate
-against its expected-diff contract, forbidden transition queues, and exact
-matrix diff.
-**Topic group**: CID-NL activated-copy validation. Consumes the expected-diff
-contracts, user-review/agent-hold/manual-hold/blocked queues, input public
-matrix, activated copy matrix, matrix identity sidecar, and activated-copy
-value delta.
-**Originating spec/goal/plan**:
-`docs/superpowers/validation/cid_nl_default_activation_gallery_review/README.md`;
-`docs/superpowers/plans/2026-06-15-productization-control-plane.md`.
-**Status note**: Diagnostic-only acceptance gate. It writes
-`cid_nl_activation_copy_acceptance_summary.tsv/json` and
-`cid_nl_activation_copy_matrix_diff.tsv` under ignored
-`output/validation/cid_nl_default_activation_gallery_review/activation_copy_candidate/acceptance/`.
-It passes only when value-delta keys match the contract, no forbidden
-review/hold/blocked transitions overlap the contract, and the input/output
-matrix diff is exactly the contracted cell set. It reports
-`production_ready=FALSE`; an explicit adopt gate is still required before any
-default matrix or ProductWriter change.
-
----
-
-### `cid_nl_activation_adopt_gate.py`
-
-**Purpose**: Close the CID-NL activated-copy adopt/hold decision from accepted
-copy evidence, without mutating ProductWriter or the default matrix.
-**Topic group**: CID-NL activated-copy validation adoption. Consumes the
-expected-diff contracts, forbidden user-review/hold/blocked queues,
-feature-inclusion summary, activated-copy summary, activated-copy acceptance
-summary, and value-delta TSV.
-**Originating spec/goal/plan**:
-`docs/superpowers/validation/cid_nl_default_activation_gallery_review/README.md`;
-`docs/superpowers/plans/2026-06-15-productization-control-plane.md`.
-**Status note**: Production-candidate adopt gate for the narrowed 95-cell
-validation-copy bundle. It writes
-`cid_nl_activation_adopt_gate_summary.tsv/json` and the compact 20-transition
-`cid_nl_activation_adopt_manifest.tsv` under ignored
-`output/validation/cid_nl_default_activation_gallery_review/activation_adopt_gate/`.
-It returns `adopt_ready` only when the feature gate, copy gate, and acceptance
-gate all pass; user review is zero; no forbidden transitions overlap; the
-value-delta keys exactly match the expected-diff contract; ProductWriter,
-default matrix, workbook/GUI, and candidate-row authority flags remain false;
-and acceptance still reports `production_ready=FALSE`. `adopt_ready` means the
-95-cell bundle can feed a later explicit public activation change; it is not
-itself default output or ProductWriter authority.
 
 ---
 
@@ -457,26 +345,6 @@ until an explicit product-transfer decision and consolidation policy exist.
 ---
 
 ### CID-NL differential evidence producer helpers
-
-#### `cid_nl_default_activation_gallery_review.py`
-
-**Purpose**: Write the no-RAW source/successor transition evidence consumed by CID-NL differential diagnostics.
-**Topic group**: `cid_nl_default_activation_gallery_review.py`, `cid_nl_differential_overlay_review.py`, and `cid_nl_feature_inclusion_gate.py`.
-**Originating spec/goal/plan**: `docs/superpowers/validation/cid_nl_default_activation_successor_authority_contract/README.md`; `docs/superpowers/validation/cid_nl_default_activation_gallery_review/README.md`.
-**Status note**: `write_transition_review_evidence(...)` consumes successor decisions and alignment review TSVs, then writes the deterministic `cid_nl_discovery_identity_differential_review.tsv` shape at the caller-supplied path. It preserves source/successor counts, coordinates, feature-inclusion and identity-authority gates, relationship state, and paired-overlay readiness. It has no CLI or HTML output and does not read RAW, mutate product outputs, or grant writer authority.
-
----
-
-#### `cid_nl_differential_overlay_review.py`
-
-**#441 disposition**: Migrated by #445 (#441 C3) to a curve bundle for offline XIC Inspector review. The summary's non-empty `review_path` points to that bundle; downstream gate and classification consumers use the locator.
-
-**Purpose**: Generate paired source vs successor RAW-backed MS1 overlay review artifacts for CID-NL feature-inclusion and identity-relationship review.
-**Topic group**: `cid_nl_default_activation_gallery_review.py`, `cid_nl_feature_inclusion_gate.py`, and the RAW `open_raw(...).extract_xic_many(...)` batch extraction path.
-**Originating spec/goal/plan**: `docs/superpowers/validation/cid_nl_default_activation_gallery_review/README.md`.
-**Status note**: `write_differential_evidence(...)` consumes the transition and successor-decision TSVs, filters ready source/successor transitions, and extracts both XICs in one RAW open per sample. It writes the paired queue, per-transition `xic_curve_bundle` JSON with the exact precomputed Gaussian15 series and transition review metadata, lossless trace JSON, and `cid_nl_differential_overlay_review_summary.tsv/json` beneath the requested output directory. XIC Inspector reads the bundle offline for paired source/successor curves, shared absolute scale, centre-RT markers, decision colours, max scatter, and gate/identity notes. The artifacts remain `diagnostic_only`: they can support feature-inclusion review, while replacement, merge, deduplication, Matrix writes, and product adoption retain their separate owners and gates.
-
----
 
 ### `tier2_raw_trace_reread_producer.py`
 

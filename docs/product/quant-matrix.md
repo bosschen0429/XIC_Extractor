@@ -53,42 +53,35 @@ delivery seam as if they were already final.
   bind the same byte snapshots that were parsed and consumed. These digests are
   not hashes of a later reread of the input paths.
 
-### Activation
+### Matrix publication
 
-- `QuantMatrixVersion` and default activation artifacts are activation
-  surfaces. These artifacts are not proof that broad Backfill is
-  production-ready.
-- An approved activation packet can write a versioned matrix bundle without
-  re-reading the full `alignment_cells.tsv` ledger. This shortcut requires the
-  productization status index and authority manifest to define the exact
-  accepted scope.
-- Matrix-only activation still requires these explicit provenance and replay
-  artifacts:
-  - the acceptance manifest or expected-diff packet;
-  - `QuantMatrixVersion`;
-  - cell provenance;
-  - the row/source summary;
-  - the value-delta record;
-  - the application summary.
-- Row-completion confidence and downstream-impact benchmarks are readiness
-  evidence. These benchmarks do not change default matrix authority without a
-  separate activation decision.
+- Normal Matrix publication consumes the live Alignment cell decisions and
+  projection owners. It does not run a separate promotion, activation dry-run,
+  or product-ready closeout chain.
+- `QuantMatrixVersion` remains an internal result used by ModeTrack table
+  finalization and the no-RAW golden path. Its presence does not grant a
+  standalone file-based matrix-writing capability.
+- The productization registry grants no standalone file-activation writer
+  scope. Historical validation packets cannot authorize current values.
+- Changes to selected values still require the owning product contract and
+  method-appropriate evidence; deleting a historical validation workflow does
+  not change the scientific selection policy.
 
 ### Renderer input
 
 - Shared-peak explanation and PeakHypothesis selection sidecars are
   diagnostic evidence only. These sidecars do not expose an independent
   activation writer or a matrix reconstruction command.
-- Finalized production owners and the accepted `QuantMatrixVersion` path own
-  matrix output.
+- Finalized production owners own Matrix output; ModeTrack table finalization
+  uses the accepted `QuantMatrixVersion` result internally.
 - Within one activated Alignment run, the owner-minted
   `ProductionDecisionSet` is the single live semantic input for TSV, XLSX, and
   HTML projections.
 - Renderers can format the `ProductionDecisionSet`. Renderers cannot rebuild
   competing values, statuses, counts, or row inclusion from raw cells.
 - This in-process handoff does not define a durable decision carrier by
-  itself. This handoff does not replace the separate file-backed activation
-  contracts in Acceptance authority and Activation.
+  itself. File-backed acceptance used by the golden path remains governed by
+  the Acceptance authority contract.
 - The live cell-decision owner is `ProductionCellDecision` in
   `alignment/cell_decision/owner.py`. Target and Untarget post-cell
   projections consume its decisions.
@@ -143,7 +136,7 @@ validation notes are not matrix authority by themselves.
 | `ProductionAcceptanceManifest` | Accepted Backfill authority record |
 | `ProductionDecisionSet` | One live Alignment-owned decision set consumed by all activated renderers |
 | `ProductionCellDecision` | Successor sole owner of selected value or typed no-write for a Target/Group cell subject |
-| `QuantMatrixVersion` | Versioned activation bundle |
+| `QuantMatrixVersion` | Internal accepted-value result for ModeTrack and the golden path |
 | Productization status index / authority manifest | Current state and writer scope |
 
 ## Boundaries

@@ -46,7 +46,7 @@ def test_status_schema_matches_index_header() -> None:
     assert tuple(schema) == CONTROL_PLANE_SCHEMA_FIELDS
     assert tuple(header) == STATUS_INDEX_FIELDS
     assert tuple(schema["required_lane_ids"]) == REQUIRED_LANE_IDS
-    assert len(rows) == len(REQUIRED_LANE_IDS) == 15
+    assert len(rows) == len(REQUIRED_LANE_IDS) == 13
     assert schema["required_control_plane_anchors"] == {
         row["lane_id"]: row["control_plane_anchor"] for row in rows
     }
@@ -71,67 +71,6 @@ def test_dependent_effect_lane_is_exact_hold_package_binding() -> None:
     assert row["product_authority_scope"] == ""
     assert row["row_count"] == "0"
 
-
-@pytest.mark.ledger_snapshot
-def test_only_revalidated_default_scope_has_writer_authority() -> None:
-    _, rows = _read_tsv(DEFAULT_STATUS_INDEX)
-    authority_rows = [row for row in rows if row["write_authority"] == "TRUE"]
-
-    assert {row["lane_id"] for row in authority_rows} == {
-        "backfill_current_write_ready_scope",
-    }
-    authority_by_lane = {row["lane_id"]: row for row in authority_rows}
-
-    backfill = authority_by_lane["backfill_current_write_ready_scope"]
-    assert backfill["current_artifact"] == (
-        "docs/superpowers/validation/quant_matrix_default_product_activation/"
-        "quant_matrix_default_product_activation_summary.json"
-    )
-    assert backfill["product_authority_scope"] == "backfill_policy_write_ready_rows"
-    assert int(backfill["row_count"]) > 0
-    assert backfill["may_touch_matrix"] == "TRUE"
-    assert backfill["may_change_quant_output"] == "TRUE"
-    assert backfill["may_change_workbook"] == "FALSE"
-    assert backfill["may_change_selected_peak"] == "FALSE"
-    assert backfill["may_change_selected_area"] == "FALSE"
-    assert backfill["may_change_counted_detection"] == "FALSE"
-    assert backfill["product_effect"] == "default_quant_matrix_product_output"
-    assert backfill["public_surface"] == "quant_matrix_default_product_activation"
-
-    cid_nl = next(
-        row for row in rows if row["lane_id"] == "cid_nl_default_product_activation"
-    )
-    assert cid_nl["current_artifact"] == (
-        "docs/superpowers/validation/cid_nl_default_product_activation/"
-        "cid_nl_default_product_activation_summary.json"
-    )
-    assert cid_nl["readiness_status"] == "blocked"
-    assert cid_nl["write_authority"] == "FALSE"
-    assert cid_nl["product_authority_scope"] == ""
-    assert cid_nl["row_count"] == "95"
-    assert cid_nl["may_touch_matrix"] == "FALSE"
-    assert cid_nl["may_change_quant_output"] == "FALSE"
-    assert cid_nl["may_change_workbook"] == "FALSE"
-    assert cid_nl["may_change_selected_peak"] == "FALSE"
-    assert cid_nl["may_change_selected_area"] == "FALSE"
-    assert cid_nl["may_change_counted_detection"] == "FALSE"
-    assert cid_nl["product_effect"] == "none"
-    assert cid_nl["public_surface"] == "cid_nl_default_product_activation"
-
-
-def test_checker_rejects_stale_backfill_writer_row_count(tmp_path: Path) -> None:
-    mutated = _mutated_index(
-        tmp_path,
-        "backfill_current_write_ready_scope",
-        {"row_count": "510"},
-    )
-
-    problems = _check_with_index(mutated)
-
-    assert (
-        "Backfill writer row_count does not match owner-checked membership"
-        in problems
-    )
 
 def test_compatibility_index_preserves_exact_unique_status_anchors() -> None:
     text = DEFAULT_CONTROL_PLANE.read_text(encoding="utf-8")
@@ -409,7 +348,7 @@ def test_checker_rejects_non_exact_anchor_registry(
 
     problems = check_productization_state(schema_path=mutated)
 
-    assert any("ordered 15-anchor" in problem for problem in problems)
+    assert any("ordered 13-anchor" in problem for problem in problems)
 
 
 def test_checker_rejects_crossed_or_active_dependent_status_row(
@@ -459,7 +398,7 @@ def test_checker_rejects_schema_authority_rule_drift(
     elif mutation == "open":
         rules["unregistered_scope_policy"] = "allow"
     elif mutation == "scope":
-        rules["allowed_product_writer_scopes"].pop()
+        rules["allowed_product_writer_scopes"].append("unregistered_writer")
     elif mutation == "matrix_requirements":
         rules["matrix_write_requires"].pop()
     elif mutation == "forbidden_sources":
@@ -542,25 +481,6 @@ def test_checker_rejects_state_bearing_compatibility_prose(tmp_path: Path) -> No
     assert any("closed metadata" in problem for problem in problems)
 
 
-def test_checker_rejects_product_topic_mutable_authority_scope(
-    tmp_path: Path,
-) -> None:
-    product_topics = tmp_path / "docs/product"
-    product_topics.mkdir(parents=True)
-    (product_topics / "backfill.md").write_text(
-        "# Backfill\n\nCurrent scope: backfill_policy_write_ready_rows.\n",
-        encoding="utf-8",
-    )
-
-    problems = check_productization_state(product_topic_dir=product_topics)
-
-    assert any(
-        "docs/product/backfill.md: product topic owner duplicates mutable "
-        "authority scope: backfill_policy_write_ready_rows" in problem
-        for problem in problems
-    )
-
-
 @pytest.mark.parametrize(
     "readiness_text",
     (
@@ -631,89 +551,6 @@ def test_schemas_readme_lists_quant_matrix_version_schema() -> None:
     assert "cell_provenance" in text
     assert "row_summary" in text
     assert "expected-diff" in text
-
-
-def test_schemas_readme_lists_quant_matrix_review_report_schema() -> None:
-    text = (Path(__file__).parents[1] / "docs/superpowers/schemas/README.md").read_text(
-        encoding="utf-8",
-    )
-
-    assert "quant_matrix_review_report_schema.json" in text
-    assert "review rows" in text
-    assert "summary JSON" in text
-    assert "HTML report" in text
-    assert "does not grant ProductWriter or matrix authority" in text
-
-
-def test_schemas_readme_lists_quant_matrix_promotion_readiness_schema() -> None:
-    text = (Path(__file__).parents[1] / "docs/superpowers/schemas/README.md").read_text(
-        encoding="utf-8",
-    )
-
-    assert "quant_matrix_promotion_readiness_schema.json" in text
-    assert "readiness summary JSON" in text
-    assert "checks" in text
-    assert "contract correctness from scientific confidence" in text
-    assert "focused tests and 8RAW smoke evidence cannot claim" in text
-    assert "artifact-bound large-cohort" in text
-
-
-def test_schemas_readme_lists_quant_matrix_validation_evidence_schema() -> None:
-    text = (Path(__file__).parents[1] / "docs/superpowers/schemas/README.md").read_text(
-        encoding="utf-8",
-    )
-
-    assert "quant_matrix_validation_evidence_schema.json" in text
-    assert "artifact-bound" in text
-    assert "source artifact paths/hashes" in text
-    assert "`write_authority=false`" in text
-
-
-def test_schemas_readme_lists_quant_matrix_promotion_packet_schema() -> None:
-    text = (Path(__file__).parents[1] / "docs/superpowers/schemas/README.md").read_text(
-        encoding="utf-8",
-    )
-
-    assert "quant_matrix_promotion_packet_schema.json" in text
-    assert "`production_ready_candidate_packet`" in text
-    assert "large-cohort" in text
-    assert "heldout-oracle" in text
-    assert "real downstream-impact smoke" in text
-    assert "default matrix authority unchanged" in text
-
-
-def test_schemas_readme_lists_quant_matrix_default_activation_dry_run_schema() -> None:
-    text = (Path(__file__).parents[1] / "docs/superpowers/schemas/README.md").read_text(
-        encoding="utf-8",
-    )
-
-    assert "quant_matrix_default_activation_dry_run_schema.json" in text
-    assert "temporary directory" in text
-    assert "expected-diff summary hashes" in text
-    assert "comparison/summary artifacts" in text
-    assert "ProductWriter defaults and default matrix outputs remain unchanged" in text
-
-
-def test_schemas_readme_lists_quant_matrix_product_ready_closeout_schema() -> None:
-    text = (Path(__file__).parents[1] / "docs/superpowers/schemas/README.md").read_text(
-        encoding="utf-8",
-    )
-
-    assert "quant_matrix_product_ready_closeout_schema.json" in text
-    assert "`product_ready_default_matrix_candidate`" in text
-    assert "separate explicit ProductWriter activation commit" in text
-    assert "default outputs or matrix authority" in text
-
-
-def test_schemas_readme_lists_quant_matrix_default_product_activation_schema() -> None:
-    text = (Path(__file__).parents[1] / "docs/superpowers/schemas/README.md").read_text(
-        encoding="utf-8",
-    )
-
-    assert "quant_matrix_default_product_activation_schema.json" in text
-    assert "`default_output/quant_matrix.tsv`" in text
-    assert "current\n  rule-selected Backfill membership" in text
-    assert "quantification values, not detections or truth claims" in text
 
 
 def test_checker_rejects_parked_broad_backfill_authority(tmp_path: Path) -> None:

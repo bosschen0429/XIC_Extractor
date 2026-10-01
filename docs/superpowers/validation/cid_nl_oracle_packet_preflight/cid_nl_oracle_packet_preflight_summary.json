@@ -75,7 +75,7 @@
     "sample_presence_authority_granted": false
   },
   "legacy_authority_translation_context": {
-    "status": "available_machine_conditioned",
+    "status": "retired_machine_conditioned_context",
     "authority_decision_cell_count": 511,
     "transition_count": 87,
     "sample_count": 85,
@@ -83,7 +83,7 @@
     "detected_baseline_context_cell_count": 337,
     "omitted_no_target_cell_count": 27,
     "matrix_identity_row_count": 2595,
-    "tracked_closure_owner": "docs/superpowers/validation/cid_nl_85raw_universe_closure/README.md",
+    "historical_closure_source": "git:61e60fca:docs/superpowers/validation/cid_nl_85raw_universe_closure/README.md",
     "boundary": "This establishes internal closure of an old authority universe only. It is neither the tested tracer proposal denominator nor oracle truth."
   },
   "tested_tracer_proposal_manifest": {

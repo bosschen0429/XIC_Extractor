@@ -37,18 +37,6 @@ byte-for-byte identical to the retired body.
 
 ## Lane anchor index
 
-### QuantMatrix Default Product Activation
-
-Lane key: `backfill_current_write_ready_scope`
-
-Routes: [state](../validation/productization_status_index.tsv), [writer authority](../schemas/productization_authority_manifest.json), [stable capability](../../product/productization.md).
-
-### CID-NL Default Product Activation
-
-Lane key: `cid_nl_default_product_activation`
-
-Routes: [state](../validation/productization_status_index.tsv), [writer authority](../schemas/productization_authority_manifest.json), [stable capability](../../product/productization.md).
-
 ### park_broad_backfill
 
 Lane key: `broad_backfill_autowrite`

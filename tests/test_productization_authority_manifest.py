@@ -28,27 +28,18 @@ NEGATIVE_SCOPE_IDS = {
 }
 
 
-def test_manifest_freezes_current_backfill_authority() -> None:
+def test_manifest_has_no_registered_file_activation_writer() -> None:
     manifest = _read_json(MANIFEST_PATH)
     policy = manifest["authority_policy"]
-    backfill = manifest["current_authority"]["backfill"]
 
     assert policy["unregistered_scope_policy"] == "fail_closed"
-    assert policy["product_writer_allowed_scopes"] == [APPROVED_SCOPE]
+    assert policy["product_writer_allowed_scopes"] == []
     assert "quality_blockers" in policy["forbidden_authority_sources"]
     assert "broad_backfill_candidate_universe" in (
         policy["forbidden_authority_sources"]
     )
 
-    assert {
-        "candidate_audit_universe_rows",
-        "current_product_authority_rows",
-        "detected_flagged_rows",
-        "blocked_rows",
-    }.isdisjoint(backfill)
-    assert backfill["authority_scope"] == APPROVED_SCOPE
-
-    assert tuple(manifest["current_authority"]) == ("backfill",)
+    assert manifest["current_authority"] == {}
 
     broad_backfill = manifest["parked_lanes"][PARKED_SCOPE]
     assert broad_backfill["status"] == "parked"
@@ -84,8 +75,8 @@ def test_dependent_hold_does_not_change_writer_authority() -> None:
 
     assert tuple(
         writer_manifest["authority_policy"]["product_writer_allowed_scopes"]
-    ) == approved_scope_order
-    assert tuple(writer_manifest["current_authority"]) == ("backfill",)
+    ) == ()
+    assert writer_manifest["current_authority"] == {}
     assert dependent_manifest["status"] == "HOLD_PENDING_VALIDATION"
     assert tuple(dependent_manifest["allowed_registered_writer_scope_ids"]) == (
         approved_scope_order
@@ -98,7 +89,6 @@ def test_dependent_hold_does_not_change_writer_authority() -> None:
 def test_manifest_compact_artifact_hashes_match() -> None:
     manifest = _read_json(MANIFEST_PATH)
     compact_artifacts = (
-        manifest["current_authority"]["backfill"],
         manifest["explanation_only_sources"][0],
     )
     for source in compact_artifacts:

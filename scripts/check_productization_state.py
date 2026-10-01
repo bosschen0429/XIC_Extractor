@@ -36,13 +36,6 @@ from tools.diagnostics.docs_policy import (  # noqa: E402
     PRODUCTIZATION_STATUS_INDEX_REL,
     QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_REL,
 )
-from xic_extractor.alignment.production_acceptance import (  # noqa: E402
-    ProductionAcceptanceManifestError,
-    load_checked_production_acceptance_manifest,
-)
-from xic_extractor.alignment.quant_matrix_version import (  # noqa: E402
-    accepted_production_acceptance_rows_by_key,
-)
 
 DEFAULT_SCHEMA = ROOT / PRODUCTIZATION_SCHEMA_REL
 DEFAULT_STATUS_INDEX = ROOT / PRODUCTIZATION_STATUS_INDEX_REL
@@ -140,8 +133,6 @@ EXPECTED_DEPENDENT_EFFECT_LANE_AUTHORITY = {
     "unregistered_or_cross_cell_policy": "fail_closed",
 }
 REQUIRED_CONTROL_PLANE_ANCHORS = {
-    "backfill_current_write_ready_scope": "QuantMatrix Default Product Activation",
-    "cid_nl_default_product_activation": "CID-NL Default Product Activation",
     "broad_backfill_autowrite": "park_broad_backfill",
     "productization_authority_firewall": "productization_authority_manifest",
     "quality_explanation_sidecar": (
@@ -171,16 +162,7 @@ REQUIRED_CONTROL_PLANE_ANCHORS = {
 }
 REQUIRED_LANE_IDS = tuple(REQUIRED_CONTROL_PLANE_ANCHORS)
 
-WRITER_LANE_AUTHORITY = {
-    "backfill_current_write_ready_scope": {
-        "authority_key": "backfill",
-        "scope": "backfill_policy_write_ready_rows",
-    },
-}
-CURRENT_BACKFILL_ACCEPTANCE_REL = (
-    "docs/superpowers/validation/quant_matrix_real_bundle/inputs/"
-    "production_acceptance_manifest.tsv"
-)
+WRITER_LANE_AUTHORITY: dict[str, dict[str, str]] = {}
 WRITE_FORBIDDEN_STATUSES = {
     "parked",
     "blocked",
@@ -374,13 +356,12 @@ def _check_schema_authority_rules(
     expected_scopes = tuple(item["scope"] for item in WRITER_LANE_AUTHORITY.values())
     if (
         not isinstance(raw_scopes, list)
-        or not raw_scopes
         or not all(isinstance(scope, str) and scope for scope in raw_scopes)
         or len(raw_scopes) != len(set(raw_scopes))
     ):
         problems.append(
             "schema authority_rules allowed_product_writer_scopes must be a "
-            "non-empty unique string list"
+            "unique string list"
         )
     elif tuple(raw_scopes) != expected_scopes:
         problems.append(
@@ -614,14 +595,16 @@ def _check_authority_boundaries(
     problems: list[str],
 ) -> None:
     policy = authority.get("authority_policy")
-    current = _mapping_path(authority, "current_authority", "backfill")
+    current = authority.get("current_authority")
     if not isinstance(policy, Mapping) or not isinstance(current, Mapping):
-        problems.append("authority manifest missing policy/current backfill")
+        problems.append("authority manifest missing policy/current authority")
         return
     if policy.get("unregistered_scope_policy") != authority_rules.get(
         "unregistered_scope_policy"
     ):
         problems.append("authority manifest unregistered scope policy drifted")
+    if current:
+        problems.append("authority manifest has unregistered current authority")
     raw_schema_scopes = authority_rules.get("allowed_product_writer_scopes", [])
     schema_scopes = {
         scope for scope in raw_schema_scopes if isinstance(scope, str) and scope
@@ -659,32 +642,6 @@ def _check_authority_boundaries(
             f"expected {sorted(expected_writer_lane_ids)!r}, "
             f"found {sorted(writer_lane_ids)!r}",
         )
-    for row in authority_rows:
-        lane_id = row.get("lane_id", "")
-        expected = WRITER_LANE_AUTHORITY.get(lane_id)
-        if expected is None:
-            problems.append(f"unregistered writer lane: {lane_id}")
-            continue
-        if row.get("product_authority_scope") != expected["scope"]:
-            problems.append("writer row has unexpected product_authority_scope")
-        current_scope = _mapping_path(
-            authority,
-            "current_authority",
-            expected["authority_key"],
-        )
-        if not isinstance(current_scope, Mapping):
-            problems.append(f"authority manifest missing {expected['authority_key']}")
-            continue
-        if expected["authority_key"] == "backfill":
-            owner_count = _checked_backfill_authority_count(repo_root, problems)
-            if owner_count is not None and row.get("row_count") != str(owner_count):
-                problems.append(
-                    "Backfill writer row_count does not match owner-checked membership"
-                )
-        if row.get("may_touch_matrix") != "TRUE":
-            problems.append("writer row must explicitly mark matrix touch")
-
-
     for index, row in enumerate(rows, start=2):
         status = row.get("readiness_status", "")
         lane_group = row.get("lane_group", "")
@@ -737,24 +694,6 @@ def _check_authority_boundaries(
                 problems.append(
                     "quality_explanation_sidecar must be diagnostic only"
                 )
-
-
-def _checked_backfill_authority_count(
-    repo_root: Path,
-    problems: list[str],
-) -> int | None:
-    try:
-        checked = load_checked_production_acceptance_manifest(
-            manifest_path=repo_root / CURRENT_BACKFILL_ACCEPTANCE_REL,
-            repo_root=repo_root,
-        )
-    except ProductionAcceptanceManifestError as exc:
-        problems.extend(
-            "current Backfill production acceptance: " + problem
-            for problem in exc.problems
-        )
-        return None
-    return len(accepted_production_acceptance_rows_by_key(checked.rows))
 
 
 def _check_artifacts(
