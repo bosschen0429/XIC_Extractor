@@ -7,15 +7,15 @@ from typing import Any, Literal
 
 import numpy as np
 
-from xic_extractor.evidence_semantics import (
-    EvidenceDecisionSemantics,
-    EvidenceSignalSet,
-    decision_semantics_from_signal_set,
-)
 from xic_extractor.peak_detection.baseline import (
     asls_baseline,
     bounded_trace_interval,
     integrate_with_baseline,
+)
+from xic_extractor.peak_detection.evidence_semantics import (
+    EvidenceDecisionSemantics,
+    EvidenceSignalSet,
+    decision_semantics_from_signal_set,
 )
 from xic_extractor.peak_detection.integration_result import IntegrationResult
 from xic_extractor.peak_detection.ms1_morphology import (

@@ -8,7 +8,6 @@ from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )
 from xic_extractor.evidence.neutral_loss import CandidateMS2Evidence, NLResult
-from xic_extractor.evidence_semantics import EvidenceDecisionSemantics
 from xic_extractor.extraction.result_assembly import build_extraction_result
 from xic_extractor.extraction.result_models import ExtractionResult
 from xic_extractor.extraction.targeted_peak_selection import (
@@ -22,6 +21,7 @@ from xic_extractor.peak_detection.evidence_facts import (
     CandidateEvidenceFacts,
     build_candidate_evidence_facts,
 )
+from xic_extractor.peak_detection.evidence_semantics import EvidenceDecisionSemantics
 from xic_extractor.peak_detection.hypotheses import (
     AuditTrail,
     EvidenceVector,

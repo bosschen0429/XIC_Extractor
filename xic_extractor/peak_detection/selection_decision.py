@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
-from xic_extractor.evidence_semantics import DecisionClass
+from xic_extractor.peak_detection.evidence_semantics import DecisionClass
 from xic_extractor.peak_detection.hypotheses import (
     PeakHypothesis,
     validate_peak_hypothesis_id_selection_authority,

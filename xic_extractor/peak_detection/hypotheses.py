@@ -8,12 +8,6 @@ import numpy as np
 
 from xic_extractor.evidence.neutral_loss import CandidateMS2Evidence
 from xic_extractor.evidence_artifacts import EvidenceArtifactRef
-from xic_extractor.evidence_semantics import (
-    CommonEvidence,
-    EvidenceDecisionSemantics,
-    EvidenceSignalSet,
-    decision_semantics_from_signal_set,
-)
 from xic_extractor.peak_detection.baseline import (
     BaselineMethod,
     asls_baseline,
@@ -28,6 +22,12 @@ from xic_extractor.peak_detection.evidence_facts import (
     decision_semantics_from_candidate_facts,
     projected_confidence_from_candidate_facts,
     projected_reason_from_candidate_facts,
+)
+from xic_extractor.peak_detection.evidence_semantics import (
+    CommonEvidence,
+    EvidenceDecisionSemantics,
+    EvidenceSignalSet,
+    decision_semantics_from_signal_set,
 )
 from xic_extractor.peak_detection.integration_result import IntegrationResult
 from xic_extractor.peak_detection.models import (

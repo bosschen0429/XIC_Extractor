@@ -301,7 +301,7 @@ architecture boundaries.
 - Direct matrix writes require an activation/export contract, expected diff,
   and focused output oracle.
 
-`xic_extractor.evidence_semantics` is role-neutral and serves both candidate
+`xic_extractor.peak_detection.evidence_semantics` is role-neutral and serves both candidate
 selection and product projection. Targeted role policy belongs in
 `extraction.targeted_product_projection`. `extraction.result_assembly` creates
 the extraction result and delegates to `project_targeted_result`; writers consume

@@ -34,15 +34,6 @@ forbidden_modules =
     xic_extractor.output
     xic_extractor.raw_reader
 allow_indirect_imports = False
-ignore_imports =
-    # Migration debt owner: #117 R6 / #122; exact current boundary edges that reach RAW-coupled semantics.
-    xic_extractor.peak_detection.candidate_selection -> xic_extractor.decision_policy
-    xic_extractor.peak_detection.evidence_facts -> xic_extractor.evidence_semantics
-    xic_extractor.peak_detection.hypotheses -> xic_extractor.evidence_semantics
-    xic_extractor.peak_detection.model_selection -> xic_extractor.decision_policy
-    xic_extractor.peak_detection.model_selection -> xic_extractor.evidence_semantics
-    xic_extractor.peak_detection.selection_decision -> xic_extractor.evidence_semantics
-unmatched_ignore_imports_alerting = error
 
 [importlinter:contract:configuration-stays-inner]
 name = Configuration stays inner

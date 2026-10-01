@@ -1,10 +1,10 @@
 import numpy as np
 
-from xic_extractor.evidence_semantics import EvidenceDecisionSemantics
 from xic_extractor.peak_detection.chrom_peak_segment_projection import (
     chrom_peak_segment_promoted_hypothesis_from_hypothesis,
 )
 from xic_extractor.peak_detection.chrom_peak_segments import ChromPeakSegmentPolicy
+from xic_extractor.peak_detection.evidence_semantics import EvidenceDecisionSemantics
 from xic_extractor.peak_detection.hypotheses import (
     AuditTrail,
     EvidenceVector,

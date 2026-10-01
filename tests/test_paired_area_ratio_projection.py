@@ -5,7 +5,6 @@ import pytest
 
 from xic_extractor.configuration.models import Target
 from xic_extractor.evidence.neutral_loss import CandidateMS2Evidence, NLResult
-from xic_extractor.evidence_semantics import EvidenceDecisionSemantics
 from xic_extractor.extraction.paired_area_ratio_projection import (
     PAIRED_AREA_RATIO_BASIS,
     PAIRED_AREA_RATIO_REFERENCE_BASIS,
@@ -24,6 +23,7 @@ from xic_extractor.extraction.targeted_ms1_shape_identity_projection import (
 from xic_extractor.output.targeted_product_model import (
     OWN_MAX_SAME_PEAK_SUPPORT_REASON,
 )
+from xic_extractor.peak_detection.evidence_semantics import EvidenceDecisionSemantics
 from xic_extractor.peak_detection.hypotheses import (
     AuditTrail,
     EvidenceVector,

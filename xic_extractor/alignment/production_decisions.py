@@ -29,12 +29,12 @@ from xic_extractor.alignment.promotion_policy import (
     NEIGHBOR_INTERFERENCE_BLOCKED_REASON,
     cell_evidence_from_aligned,
 )
-from xic_extractor.decision_policy import (
+from xic_extractor.peak_detection.decision_policy import (
     DECISION_CLASS_RANK,
     DecisionRecord,
     DecisionTerm,
 )
-from xic_extractor.evidence_semantics import DecisionClass
+from xic_extractor.peak_detection.evidence_semantics import DecisionClass
 
 ProductionStatus = Literal[
     "detected",
