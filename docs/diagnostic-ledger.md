@@ -1347,3 +1347,38 @@ extraction and 15.78 in 2,517 fsync calls. These are nested, instrumentation-
 affected worker sums, not whole-run wall savings. All six public TSVs matched.
 No cache durability or runtime default was changed. Profile receipts live in
 `output/alignment-worker-memory/backfill-profile-v1/`.
+
+### 2026-10-02 Recomputable Alignment Cache Avoids Per-Entry Disk Synchronization
+
+Issue #699; accepted cumulative baseline `332f19f4`. The candidate removes only
+`_FactCache.write`'s per-entry `os.fsync`, retaining flush/close before atomic
+replacement, identity/checksum validation and concurrent-writer handling. This
+cache can be reacquired after power loss; durable terminal acknowledgements
+and public artifact writers are unchanged.
+
+Same current 8RAW Discovery, `dna_dr`, four process workers, compact explanation,
+full Alignment CLI with acquisition and publication, and initially empty,
+separate application caches: B1/C1/C2/B2 wall times were
+94.158/80.630/79.673/114.089 s. Median improved 104.123 -> 80.151 s (23.02%),
+a 23.972 s gain versus a 19.931 s baseline range. Both paired candidates were
+faster. Baseline variation is substantial; these two pairs establish a bounded
+local gain, not a universal percentage. OS cache was uncontrolled; no profiler
+was active. Discovery preparation was excluded.
+
+Warm replays using B1/C1 caches took 70.336/69.181 s; this single warm pair
+validates reuse, not warm-cache acceleration. All six public TSV artifacts
+match byte-for-byte in all six runs. Cold runtime counters agree: 128 RAW opens,
+1,091 adapter calls, 6,492 logical requests, 350,647 points. Both warm runs report
+zero native RAW opens and adapter calls with unchanged requests/points.
+
+Evidence: `diagnostic_only`, oracle `exact_safe`. The production writer AST
+matches the tested candidate exactly; its source SHA-256 is
+`9cd9ce593aee9d3cdc13000f06b4b8dd300f62c893f31379cd664486cbea1a13`.
+All 21 owner/runtime tests passed, including cache corruption recovery and
+Windows publication races. Sudden power loss itself was not simulated; recent
+cache entries may require reacquisition. No scientific-readiness or memory
+improvement claim is made.
+
+Receipts: `output/alignment-worker-memory/cache-trial-v1/receipt.json` and
+`adoption-check.json`. Rerun for changed cache persistence/recovery semantics,
+worker/storage configuration, or a broader performance claim.

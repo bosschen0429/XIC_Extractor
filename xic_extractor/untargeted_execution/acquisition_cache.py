@@ -331,7 +331,9 @@ class _FactCache:
             with os.fdopen(descriptor, "wb") as stream:
                 stream.write(content)
                 stream.flush()
-                os.fsync(stream.fileno())
+            # Cache facts can be reacquired after power loss. Closing before
+            # atomic replacement prevents readers seeing a partial write;
+            # per-entry disk durability is not a runtime acknowledgement.
             try:
                 os.replace(temporary, path)
             except (FileExistsError, PermissionError):
