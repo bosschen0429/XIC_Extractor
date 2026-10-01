@@ -34,7 +34,7 @@ from xic_extractor.discovery.models import (
 from xic_extractor.discovery.ms1_backfill import _DiscoveryMs1Measurements
 from xic_extractor.discovery.output_publication import (
     _BATCH_INDEX_COLUMNS,
-    _write_batch_index,
+    write_batch_index,
 )
 from xic_extractor.discovery.pipeline import (
     _DISCOVERY_MS1_MEASUREMENT_NAMES,
@@ -1230,7 +1230,7 @@ def test_batch_index_writer_preserves_csv_and_timing_contract(tmp_path: Path) ->
         }
     )
 
-    returned = _write_batch_index(output_path, [row], timing_recorder=timing)
+    returned = write_batch_index(output_path, [row], timing_recorder=timing)
 
     assert returned == output_path
     raw = output_path.read_bytes()
@@ -1252,7 +1252,7 @@ def test_batch_index_writer_rejects_unexpected_columns(tmp_path: Path) -> None:
     row["unexpected"] = "value"
 
     with pytest.raises(ValueError, match="dict contains fields not in fieldnames"):
-        _write_batch_index(
+        write_batch_index(
             tmp_path / "discovery_batch_index.csv",
             [row],
             timing_recorder=TimingRecorder.disabled("discovery"),

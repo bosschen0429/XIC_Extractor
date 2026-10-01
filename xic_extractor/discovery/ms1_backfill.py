@@ -933,7 +933,7 @@ def _with_tag_fields(
     group: DiscoverySeedGroup,
     settings: DiscoverySettings,
 ) -> DiscoveryCandidate:
-    matched_tag_names = candidate_merge._ordered_tag_names(
+    matched_tag_names = candidate_merge.ordered_tag_names(
         group.matched_tag_names, settings=settings
     )
     return replace(
@@ -943,7 +943,7 @@ def _with_tag_fields(
         matched_tag_names=matched_tag_names,
         primary_tag_name=group.neutral_loss_tag,
         tag_combine_mode=settings.tag_combine_mode,
-        tag_intersection_status=candidate_merge._tag_intersection_status(
+        tag_intersection_status=candidate_merge.tag_intersection_status(
             matched_tag_names,
             settings=settings,
         ),

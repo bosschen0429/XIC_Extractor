@@ -314,7 +314,7 @@ def run_discovery(
         acquisition_input=acquisition_input,
     )
     _raise_if_discovery_cancelled(should_cancel)
-    return output_publication._write_dual_csvs(
+    return output_publication.write_dual_csvs(
         output_dir,
         candidates,
         timing_recorder=recorder,
@@ -433,7 +433,7 @@ def run_discovery_batch(
             acquisition_input=acquisition_input,
         )
         sample_output_dir = output_dir / sample_stem
-        outputs = output_publication._write_dual_csvs(
+        outputs = output_publication.write_dual_csvs(
             sample_output_dir,
             candidates,
             timing_recorder=recorder,
@@ -449,7 +449,7 @@ def run_discovery_batch(
             ),
         )
         per_sample.append(outputs)
-        candidates = output_publication._persisted_discovery_candidates(candidates)
+        candidates = output_publication.persisted_discovery_candidates(candidates)
         receipt = mint_discovery_candidate_universe_receipt(
             sample_stem=sample_stem,
             acquisition_source=acquisition_source,
@@ -457,7 +457,7 @@ def run_discovery_batch(
             candidates=candidates,
         )
         index_rows.append(
-            output_publication._batch_index_row(
+            output_publication.batch_index_row(
                 raw_path=raw_path,
                 outputs=outputs,
                 candidates=candidates,
@@ -470,7 +470,7 @@ def run_discovery_batch(
 
     _raise_if_discovery_cancelled(should_cancel)
     return DiscoveryBatchOutputs(
-        batch_index_csv=output_publication._write_batch_index(
+        batch_index_csv=output_publication.write_batch_index(
             output_dir / "discovery_batch_index.csv",
             index_rows,
             timing_recorder=recorder,
@@ -664,7 +664,7 @@ def _run_discovery_batch_process(
         )
 
     return DiscoveryBatchOutputs(
-        batch_index_csv=output_publication._write_batch_index(
+        batch_index_csv=output_publication.write_batch_index(
             output_dir / "discovery_batch_index.csv",
             [result.index_row for result in results],
             timing_recorder=timing_recorder,
@@ -770,7 +770,7 @@ def _run_discovery_sample_process_job(
             sample_stem=sample_stem,
             acquisition_input=job.acquisition_input,
         )
-        outputs = output_publication._write_dual_csvs(
+        outputs = output_publication.write_dual_csvs(
             job.output_dir / sample_stem,
             candidates,
             timing_recorder=recorder,
@@ -785,7 +785,7 @@ def _run_discovery_sample_process_job(
                 candidates=candidates,
             ),
         )
-        candidates = output_publication._persisted_discovery_candidates(candidates)
+        candidates = output_publication.persisted_discovery_candidates(candidates)
         receipt = mint_discovery_candidate_universe_receipt(
             sample_stem=sample_stem,
             acquisition_source=job.acquisition_source,
@@ -797,7 +797,7 @@ def _run_discovery_sample_process_job(
             sample_stem=sample_stem,
             outputs=outputs,
             receipt=receipt,
-            index_row=output_publication._batch_index_row(
+            index_row=output_publication.batch_index_row(
                 raw_path=job.raw_path,
                 outputs=outputs,
                 candidates=candidates,

@@ -62,7 +62,7 @@ def _is_feature_backed_candidate(candidate: DiscoveryCandidate) -> bool:
     )
 
 
-def _persisted_discovery_candidates(
+def persisted_discovery_candidates(
     candidates: tuple[DiscoveryCandidate, ...],
 ) -> tuple[DiscoveryCandidate, ...]:
     return tuple(
@@ -116,7 +116,7 @@ def _persisted_physical_records(
     )
 
 
-def _write_dual_csvs(
+def write_dual_csvs(
     output_dir: Path,
     candidates: tuple[DiscoveryCandidate, ...],
     *,
@@ -128,7 +128,7 @@ def _write_dual_csvs(
     physical_evaluations: tuple[DiscoveryPhysicalFactRecord, ...] = (),
     physical_bindings: tuple[DiscoveryCandidatePhysicalBinding, ...] = (),
 ) -> DiscoveryRunOutputs:
-    candidates = _persisted_discovery_candidates(candidates)
+    candidates = persisted_discovery_candidates(candidates)
     persisted_ids = {candidate.candidate_id for candidate in candidates}
     physical_bindings = order_physical_bindings_for_candidate_csv(
         tuple(
@@ -280,7 +280,7 @@ def _discovery_output_backup_path(path: Path) -> Path:
     return path.with_name(f"{path.name}.bak")
 
 
-def _batch_index_row(
+def batch_index_row(
     *,
     raw_path: Path,
     outputs: DiscoveryRunOutputs,
@@ -326,7 +326,7 @@ def _priority_counts(
     return counts
 
 
-def _write_batch_index(
+def write_batch_index(
     output_path: Path,
     rows: list[dict[str, str]],
     *,

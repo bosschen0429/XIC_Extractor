@@ -225,7 +225,7 @@ def _merge_candidate_pair(
         settings=settings,
     )
     reason = "MS2 NL seeds merged by shared MS1 peak; MS1 peak found near seed RT"
-    matched_tag_names = _ordered_tag_names(
+    matched_tag_names = ordered_tag_names(
         first.matched_tag_names + second.matched_tag_names,
         settings=settings,
     )
@@ -270,7 +270,7 @@ def _merge_candidate_pair(
         matched_tag_names=matched_tag_names,
         primary_tag_name=representative.neutral_loss_tag,
         tag_combine_mode=settings.tag_combine_mode,
-        tag_intersection_status=_tag_intersection_status(
+        tag_intersection_status=tag_intersection_status(
             matched_tag_names,
             settings=settings,
         ),
@@ -496,7 +496,7 @@ def _seed_range_touches_peak(
     )
 
 
-def _ordered_tag_names(
+def ordered_tag_names(
     values: Iterable[str],
     *,
     settings: DiscoverySettings,
@@ -514,7 +514,7 @@ def _tag_rank(tag: str, *, settings: DiscoverySettings) -> int:
         return len(settings.selected_tag_names)
 
 
-def _tag_intersection_status(
+def tag_intersection_status(
     matched_tag_names: tuple[str, ...],
     *,
     settings: DiscoverySettings,

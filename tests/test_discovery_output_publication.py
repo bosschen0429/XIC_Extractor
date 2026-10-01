@@ -11,7 +11,7 @@ from xic_extractor.discovery.models import (
     DISCOVERY_CANDIDATE_COLUMNS,
 )
 from xic_extractor.discovery.output_publication import (
-    _write_dual_csvs,
+    write_dual_csvs,
 )
 from xic_extractor.discovery.processing_run_spec_adapter import (
     compile_discovery_processing_run_spec,
@@ -39,7 +39,7 @@ def test_discovery_publication_retains_only_used_candidate_states(
         _candidate(), precursor_mz_basis=basis,
         discovery_candidate_state=state, ms1_peak_found=feature_backed,
     )
-    outputs = _write_dual_csvs(
+    outputs = write_dual_csvs(
         tmp_path, (candidate,), sample_stem=candidate.sample_stem,
         timing_recorder=TimingRecorder.disabled("discovery"),
     )
@@ -106,7 +106,7 @@ def test_discovery_output_publication_rolls_back_every_replace_failure(
     monkeypatch.setattr(Path, "replace", fail_selected_publication)
 
     with pytest.raises(OSError, match=f"publication failure {replacement_position}"):
-        _write_dual_csvs(
+        write_dual_csvs(
             output_dir,
             (),
             timing_recorder=TimingRecorder.disabled("discovery"),
@@ -135,7 +135,7 @@ def test_legacy_publication_removes_stale_spec_bound_sidecar(
     spec = compile_discovery_processing_run_spec(
         (raw_path,), discovery_settings=_settings()
     )
-    spec_outputs = _write_dual_csvs(
+    spec_outputs = write_dual_csvs(
         output_dir,
         (),
         timing_recorder=TimingRecorder.disabled("discovery"),
@@ -157,7 +157,7 @@ def test_legacy_publication_removes_stale_spec_bound_sidecar(
         lambda path, _candidates: path.write_bytes(expected_review),
     )
 
-    outputs = _write_dual_csvs(
+    outputs = write_dual_csvs(
         output_dir,
         (),
         timing_recorder=TimingRecorder.disabled("discovery"),
@@ -185,7 +185,7 @@ def test_spec_to_legacy_failure_restores_complete_prior_member_set(
     spec = compile_discovery_processing_run_spec(
         (raw_path,), discovery_settings=_settings()
     )
-    spec_outputs = _write_dual_csvs(
+    spec_outputs = write_dual_csvs(
         output_dir,
         (),
         timing_recorder=TimingRecorder.disabled("discovery"),
@@ -222,7 +222,7 @@ def test_spec_to_legacy_failure_restores_complete_prior_member_set(
     monkeypatch.setattr(Path, "replace", fail_transition)
 
     with pytest.raises(OSError, match="legacy transition"):
-        _write_dual_csvs(
+        write_dual_csvs(
             output_dir,
             (),
             timing_recorder=TimingRecorder.disabled("discovery"),
@@ -265,7 +265,7 @@ def test_discovery_output_publication_rolls_back_sidecar_staging_failure(
     )
 
     with pytest.raises(OSError, match="sidecar staging failed"):
-        _write_dual_csvs(
+        write_dual_csvs(
             output_dir,
             (),
             timing_recorder=TimingRecorder.disabled("discovery"),

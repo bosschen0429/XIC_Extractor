@@ -89,13 +89,13 @@ def test_discovery_persists_feature_facts_and_measured_review_support(
         for index, path in enumerate(paths)
     }
     captured = {}
-    write_outputs = output_publication._write_dual_csvs
+    write_outputs = output_publication.write_dual_csvs
 
     def capture_outputs(output_dir, candidates, **kwargs):
         captured[kwargs["sample_stem"]] = (candidates, kwargs)
         return write_outputs(output_dir, candidates, **kwargs)
 
-    monkeypatch.setattr(output_publication, "_write_dual_csvs", capture_outputs)
+    monkeypatch.setattr(output_publication, "write_dual_csvs", capture_outputs)
     monkeypatch.setattr(
         pipeline, "_owner_bound_raw_opener",
         lambda *_args: lambda path, _dll: handles[path],
