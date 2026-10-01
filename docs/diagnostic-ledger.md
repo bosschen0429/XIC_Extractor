@@ -1382,3 +1382,39 @@ improvement claim is made.
 Receipts: `output/alignment-worker-memory/cache-trial-v1/receipt.json` and
 `adoption-check.json`. Rerun for changed cache persistence/recovery semantics,
 worker/storage configuration, or a broader performance claim.
+
+### 2026-10-02 Remaining Runtime Candidates And Local Worker Choice
+
+Issue #699, accepted cumulative code `f30d42ac`. A one-entry immutable
+prepared-signal memo avoided 1,481 repeated preparations per run, but the
+unprofiled 8RAW B1/C1/C2/B2 wall times were
+81.401/80.443/80.859/86.756 s. Median gain 3.427 s was below the 5.355 s
+baseline range. All six public TSVs matched. The candidate and its dedicated
+test were removed: local avoided computation alone did not justify retaining
+another mechanism. Evidence: `diagnostic_only`; disposition `rejected` for
+adoption. Do not repeat without a larger removed cost or a changed workload.
+Receipt: `output/alignment-worker-memory/prepare-trial-v1/receipt.json`.
+
+After per-entry cache fsync removal, four versus eight process workers was
+reopened because the previous comparison included that I/O bottleneck.
+Same 8RAW Discovery, compact explanation, full Alignment CLI, separate empty
+acquisition caches, uncontrolled OS cache, and B1/C1/C2/B2 order gave
+84.272/80.765/79.877/83.950 s. Four-worker median 84.111 s versus eight-worker
+80.321 s is a 4.51% gain, above the four-worker 0.321 s range; both paired
+candidates were faster. All six public TSVs are byte-identical in all runs.
+
+This host had 12 logical CPUs and 34.09 GB RAM, with 16.69 GB available before
+the experiment. Maximum sampled process-tree RSS across each pair increased
+2.452 -> 3.942 GB; maximum private bytes increased 6.261 -> 10.622 GB.
+RSS and private bytes describe different quantities and must not be added.
+Eight workers is the local runtime-first choice for this measured cohort;
+keep the shared default at four because larger-cohort and other-host memory
+bounds were not established. Use the existing `--raw-workers 8` override (or
+`--alignment-workers 8` in tissue validation), not a new setting mechanism.
+
+Evidence: `diagnostic_only`, oracle `exact_safe`, local worker choice
+`optimized`. Receipt:
+`output/alignment-worker-memory/workers-trial-v1/receipt.json`.
+Rerun for changed host resources, workload or runtime locality, not merely to
+search a wider worker-count grid. These independent trials do not establish a
+combined Discovery-plus-Alignment percentage.
