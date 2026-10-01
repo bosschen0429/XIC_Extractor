@@ -187,4 +187,3 @@ def _delta_direction(delta: float) -> str:
     if abs(delta) < 1e-9:
         return "near_zero"
     return "target_later" if delta > 0 else "target_earlier"
-
