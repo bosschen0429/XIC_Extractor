@@ -339,9 +339,9 @@ completed domain results rather than selecting CID-NL scientific rules.
 
 - CLIs parse, validate, and orchestrate only.
 - Reusable loading, classification, models, summaries, plotting, and writers
-  belong in focused `xic_extractor/diagnostics/` packages. Shared-peak identity
-  explanation, Backfill evidence file binding/serialization, and quantitative
-  report/promotion artifacts each keep their related implementation together.
+  belong in focused `xic_extractor/diagnostics/` packages. Backfill evidence
+  file binding/serialization and quantitative report/promotion artifacts each
+  keep their related implementation together.
 - Pure Alignment record, claim and quantitative authority models remain with
   their scientific owners; they do not import diagnostic file readers or writers.
 - Diagnostic writers render; they do not recompute evidence or rescan RAW.

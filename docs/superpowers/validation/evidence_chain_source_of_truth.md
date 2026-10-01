@@ -292,10 +292,7 @@ DDA-missing-NL facts carried on the cell, plus RT evidence.
 
 Authority state: the reviewed-sidecar product-authority mechanism (MS1 pattern,
 Candidate MS2, QC reference, and RT drift projections) was retired in #447; it
-was reachable only from diagnostics. The `shared_peak_identity_explanation`
-producers of MS1 pattern, Candidate MS2, QC reference, and RT drift sidecars
-remain review evidence for mode-hypothesis assignment and grant no cell
-authority.
+was reachable only from diagnostics.
 
 ### Quant Matrix Expected-Diff And Provenance
 
