@@ -28,11 +28,6 @@ location, and `stable_copy_verified=true`.
 [`comparator_contract.json`](comparator_contract.json) preregisters the
 successor/strangler comparison dimensions and GO/NARROW/KILL rules.
 
-[`candidate_summary_20260722.json`](candidate_summary_20260722.json) describes
-the earlier pair whose post-run-only inventory could not prove the execution
-boundary. It remains historical `candidate_unsealed` evidence and is not a
-future comparison target.
-
 ## Replay and audit trail
 
 The retained root named by `baseline_summary.json` contains:

@@ -57,30 +57,9 @@ LAYOUT_OWNER = "docs/project-layout.md"
 
 # Historical immutable provenance may be exempted only with a path, value, and
 # reason. Current contracts have no exemptions.
-STANDARD_PEAK_T0_README = (
-    "docs/superpowers/validation/standard_peak_shared_evidence_t0/README.md"
-)
 HISTORICAL_IDENTIFIER_ALLOWLIST: Mapping[tuple[str, str], str] = {
     ("docs/diagnostic-ledger.md", "discovery_batch_index_v2"): (
         "Names a rejected historical input in the diagnostic ledger."
-    ),
-    (STANDARD_PEAK_T0_README, "call_cost_baseline_v1"): (
-        "Names an immutable Standard Peak validation artifact."
-    ),
-    (STANDARD_PEAK_T0_README, "quant_matrix_promotion_validation_packet_v2"): (
-        "Names an immutable Standard Peak validation artifact."
-    ),
-    (STANDARD_PEAK_T0_README, "quant_matrix_default_product_activation_v1"): (
-        "Names an immutable Standard Peak validation artifact."
-    ),
-    (STANDARD_PEAK_T0_README, "productization_status_index_v1"): (
-        "Names an immutable Standard Peak validation artifact."
-    ),
-    (STANDARD_PEAK_T0_README, "rule_disposition_v1"): (
-        "Names an immutable Standard Peak validation artifact."
-    ),
-    (STANDARD_PEAK_T0_README, "historical_failure_matrix_v1"): (
-        "Names an immutable Standard Peak validation artifact."
     ),
 }
 VERSIONED_IDENTIFIER = re.compile(

@@ -108,10 +108,7 @@ Other routes and retained artifacts:
 - The source-Matrix republisher and its authority/productization chain are
   deleted.
 - Retained Standard Peak helpers are explicit offline falsifiers/renderers
-  only. The
-  [Standard Peak T5D contraction](../superpowers/validation/standard_peak_t5d_contraction/README.md)
-  does not invent a new selector for CID-NL `HOLD` results or new product
-  authority.
+  only. They do not select CID-NL `HOLD` results or grant product authority.
 - The historical clean-target packet retains diagnostic context and
   current-file self-consistency checks only. The packet has no independent
   historical seal. The ownerless writer and registered scope of the packet are
