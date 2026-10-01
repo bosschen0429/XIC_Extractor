@@ -57,7 +57,6 @@ feature-by-sample Matrix。兩者共用科學判斷，但保留不同搜尋政�
 | 樣本 RAW 檔案定位 | `acquisition/raw_paths.py` | 依宣告的 sample/raw 路徑與既有 fallback 規則定位檔案；不做科學判定 |
 | Targeted／Alignment RT-window MS2 擷取與 NL 解讀 | `acquisition/ms2_windows.py` 擷取單一樣本的有界視窗；`evidence/neutral_loss.py` 解讀已擷取事件 | 前者持有 reader 呼叫，後者只處理 `Ms2Window` 與候選幾何；Discovery 宣告 scan 的 strict receipt 保留原 owner |
 | Untargeted ISTD 參考資料取得 | `acquisition/istd_reference.py` | 讀取 workbook 或依既有 target 邊界擷取 RAW trace；兩種來源都交由 Alignment 的 drift evidence owner 建立同一 reference，科學 owner 不開檔 |
-| 排程、取消、清理 | `execution/` | partitions 排程；workers 執行；attempt 決定一次執行是否完成 |
 | 欄位、workbook 或 Matrix 格式 | `output/`；Alignment Matrix 的 schema、格式及 atomic publishing 在 `output/alignment/` | 呈現 owner 的答案；不要從格式變更反向改變選峰或計數 |
 
 Package 名稱不是可強制的分層證明：`alignment/` 包含科學與外層 adapter，
@@ -163,35 +162,23 @@ delivery lineage are owned by
 cancellation, cleanup, recovery, and observability are owned by
 [`execution-runtime.md`](product/execution-runtime.md).
 
-Targeted and Untargeted now close through the shared scientific-owner
-interfaces while retaining their application-specific search scope,
-projection, and writer contracts. Discovery providers may interpret different
-inputs and publish different typed evidence, but they enter one shared
-observation, Alignment, bounded Backfill, and cell-decision
-lifecycle. Provider-specific evidence handling must not create a parallel
-downstream decision core.
+Shared scientific interfaces and application-specific search, projection, and
+writer contracts are defined in the [Shared Processing Kernel](product/shared-processing-kernel.md#current-contract).
+Provider-specific evidence handling must not create a parallel downstream
+decision core.
 
-Alignment's grouping lifecycle is linear: candidate and exact-owner evidence
-enters constrained grouping. Untarget uses the directional bootstrap only to
-estimate a batch RT warp, then `grouping_workflow` closes its ordinary window
-bands; bootstrap membership has no downstream authority. Target workflows group
-their selected hypotheses directly through CrossSample. The final
-immutable `CrossSampleGroupingResult(processing_owners,
-partition_transition, drift_lookup)` reaches bounded Backfill,
-ObservationRevisit, cell decisions, and finalization. A revisit does not reopen
-grouping, replace the partition, or mint a second grouping
-owner. `CrossSamplePartitionTransition` owns only the mathematical before/after
+Grouping, RT bootstrap, and immutable-result handoffs are defined in the
+[Alignment grouping contract](product/alignment.md#cross-sample-grouping-and-batch-finalization).
+A revisit does not reopen grouping, replace the partition, or mint a second
+grouping owner. `CrossSamplePartitionTransition` owns only the mathematical before/after
 complete-partition transition; `InitialGroupingScope` is a plain immutable
 m/z/RT-bounds-plus-groups handoff with no separate domain identity or persisted
 contract.
 
-CID-NL acquisition/assessment subjects remain exact provenance while compatible
-subjects may share an alignment workset. The method-subject owner validates
-workset compatibility, execution keeps that workset atomic, and the existing
-CrossSample/cell owners retain exact support bindings and select the bounded
-recovery subject. A scheduling partition or subject center cannot become a
-feature boundary. The [Alignment contract](product/alignment.md) owns this
-policy; result writers consume the completed groups and cells.
+CID-NL provenance, workset compatibility, and bounded recovery subjects are
+owned by the [Alignment method-subject contract](product/alignment.md#method-subjects).
+A scheduling partition or subject center cannot become a feature boundary;
+result writers consume the completed groups and cells.
 
 ## Dependency Direction
 
@@ -208,8 +195,8 @@ policy; result writers consume the completed groups and cells.
   inputs, rejects output collisions before acquisition, and invokes retained
   CID-NL execution in `extraction/`. Its publication boundary consumes the
   completed typed batch, delegates Matrix publishing to `output/alignment/`,
-  and closes its private stores on every exit. The output owner selects
-  streaming or materialization using Alignment's pure finalized projection.
+  and closes its private stores on every exit;
+  [Alignment outputs](product/alignment.md#surfaces) owns streaming/materialization policy.
   CLI and GUI receive only
   published output paths and durable evidence locators. Alignment owns neither
   this application lifecycle nor a duplicate runtime or writer transaction.
@@ -223,8 +210,8 @@ policy; result writers consume the completed groups and cells.
   validated immutable decisions without graph serialization. The runtime owner
   compacts acquisition facts after scientific results have been stored.
 - `alignment.completion` completes pure owner-bound inputs and returns the
-  existing finalized application results. Targeted retained execution validates
-  its population before acknowledging acquisition through the runtime owner.
+  existing finalized application results; the
+  [Targeted acquisition handoff](product/execution-runtime.md#current-implementation-gaps) owns pre-acknowledgement population validation.
   Untargeted execution combines the same completion with partition persistence;
   its `untargeted_execution_result` carrier binds runtime success to the
   finalized batch and owns the close action. Application publication consumes
@@ -261,7 +248,7 @@ Use this map to choose the reason a package changes. File placement is owned by
 | `applications/targeted/` | Formal Targeted application composition and request/result interface, its production workflow and output boundary | scientific peak selection, numeric cell decisions, RAW acquisition or rendering |
 | `applications/untargeted/` | Untargeted input preparation, Discovery-to-provisional-Matrix composition, execution-to-publication orchestration, cancellation, completed-store and explanation lifetime; delegates Matrix publishing to `output/alignment/` | scientific grouping, cell decisions, a second runtime owner or writer algorithm |
 | `discovery/` | general candidate discovery, seed generation, workflow-neutral discovery facts, receipt-bound CSV reading and bounded candidate loading | matrix decisions or target-list policy |
-| `execution/` | generic attempt execution/finalization, partition scheduling, reusable worker admission pools, one-shot process jobs, streamed result storage, recovery, and runtime timing/process-memory measurement | method-specific science, subject splitting, or writer authority |
+| `execution/` | generic attempt execution/finalization, partition scheduling, worker execution, cancellation, cleanup, reusable worker admission pools, one-shot process jobs, streamed result storage, recovery, and runtime timing/process-memory measurement | method-specific science, subject splitting, or writer authority |
 | `extraction/` | Targeted acquisition adapters, result models and product projection (product state, role/applicability policy, counted detection and reason overlays), jobs, windowing, drift, backend coordination, output dispatch, and retained Untargeted batch execution (`untargeted_input_planning`, `untargeted_execution`, `untargeted_partition_composition`, `untargeted_alignment`) | application composition, GUI, or Alignment decisions |
 | `peak_detection/` | physical observations, hypotheses, resolvers, boundaries, integration, evidence composition | cross-sample grouping, workflow policy, or writers |
 | `alignment/` | cross-sample grouping, refinement/repair composition, Alignment adapters and renderers | a second runtime owner, mutable transport authority, or Targeted-only science |
