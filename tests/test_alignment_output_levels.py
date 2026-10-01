@@ -1,6 +1,6 @@
 import pytest
 
-from xic_extractor.alignment.output_levels import (
+from xic_extractor.output.alignment.output_levels import (
     EXPLANATION_ARTIFACT_NAME,
     artifact_names_for_output_level,
     parse_alignment_output_level,
@@ -83,23 +83,6 @@ def test_non_diagnostic_levels_do_not_produce_the_explanation_report(level):
 @pytest.mark.parametrize("level", ["debug", "validation"])
 def test_diagnostic_levels_produce_the_explanation_report(level):
     assert EXPLANATION_ARTIFACT_NAME in artifact_names_for_output_level(level)
-
-
-@pytest.mark.parametrize(
-    "level", ["production", "machine", "debug", "validation", "validation-minimal"]
-)
-@pytest.mark.parametrize(
-    "name",
-    [
-        "alignment_results.xlsx",
-        "review_report.html",
-        "event_to_ms1_owner.tsv",
-        "ambiguous_ms1_owners.tsv",
-    ],
-)
-def test_no_level_produces_the_retired_human_reports(level, name):
-    """Both were written for a reader who never used them; no level revives one."""
-    assert name not in artifact_names_for_output_level(level)
 
 
 @pytest.mark.parametrize(

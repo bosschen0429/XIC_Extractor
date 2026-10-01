@@ -11,7 +11,10 @@ from xic_extractor.extractor import FileResult, RawFileExtractionResult
 def test_raw_job_runner_reports_progress_and_cancels_pending_futures(
     tmp_path: Path,
 ) -> None:
-    from xic_extractor.execution import RawFileJob, run_raw_file_jobs
+    from xic_extractor.extraction.jobs import (
+        RawFileJob,
+        run_raw_file_jobs,
+    )
 
     config = _config(tmp_path)
     jobs = [
@@ -62,7 +65,7 @@ def test_raw_job_runner_reports_progress_and_cancels_pending_futures(
 def test_raw_process_collector_does_not_schedule_when_already_cancelled(
     tmp_path: Path,
 ) -> None:
-    from xic_extractor.execution import ScoringInputs
+    from xic_extractor.extraction.jobs import ScoringInputs
     from xic_extractor.extraction.process_backend import (
         collect_raw_file_results_process,
     )

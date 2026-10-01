@@ -72,12 +72,16 @@ def _owner(
         "xic.peak-observation-content:",
         canonical_identity_basis_bytes({"sample_stem": sample_stem, "suffix": suffix}),
     )
+    hypothesis_id = typed_identity_digest(
+        "xic.peak-hypothesis:",
+        canonical_identity_basis_bytes({"sample_stem": sample_stem, "suffix": suffix}),
+    )
     member_basis = canonical_identity_basis_bytes(
         {
             "schema_version": "group_member_subject",
             "processing_request_id": _TEST_PROCESSING_REQUEST_ID,
             "canonical_sample_identity_id": f"test-sample:{sample_stem}",
-            "subject": {"kind": "physical_observation", "id": physical_id},
+            "subject": {"kind": "peak_hypothesis", "id": hypothesis_id},
             "physical_observation_ids": [physical_id],
         }
     )
@@ -102,8 +106,8 @@ def _owner(
             ),
             processing_request_id=_TEST_PROCESSING_REQUEST_ID,
             canonical_sample_identity_id=f"test-sample:{sample_stem}",
-            subject_kind="physical_observation",
-            subject_id=physical_id,
+            subject_kind="peak_hypothesis",
+            subject_id=hypothesis_id,
             physical_observation_ids=(physical_id,),
             basis_bytes=member_basis,
         ),

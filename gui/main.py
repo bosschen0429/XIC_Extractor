@@ -1,6 +1,9 @@
+import json
 import multiprocessing
 import sys
+from pathlib import Path
 
+from PyQt6.QtCore import QCoreApplication, QEvent, QTimer
 from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import QApplication
 
@@ -39,12 +42,41 @@ def install_wheel_guard(app: QApplication) -> WheelGuard:
 
 def main() -> None:
     multiprocessing.freeze_support()
+    smoke_report = None
+    if len(sys.argv) > 1 and sys.argv[1] == "--smoke-test":
+        if len(sys.argv) != 3:
+            raise SystemExit("usage: XIC_Extractor --smoke-test REPORT.json")
+        smoke_report = Path(sys.argv[2]).resolve()
+        smoke_report.parent.mkdir(parents=True, exist_ok=True)
+        smoke_report.write_text(
+            json.dumps({"status": "failed", "stage": "qt_startup"}), encoding="utf-8"
+        )
     app = QApplication(sys.argv)
     configure_application(app)
     install_wheel_guard(app)
     window = MainWindow()
     window.show()
-    sys.exit(app.exec())
+    if smoke_report is not None:
+        from gui.desktop_smoke import run_desktop_smoke
+
+        QTimer.singleShot(
+            0, lambda: app.exit(run_desktop_smoke(app, window, smoke_report))
+        )
+    exit_code = app.exec()
+    if smoke_report is not None:
+        report = json.loads(smoke_report.read_text(encoding="utf-8"))
+        report["stage"] = "teardown"
+        smoke_report.write_text(json.dumps(report, indent=2), encoding="utf-8")
+        # Dispose smoke widgets while QApplication still owns their Qt lifetime.
+        window.close()
+        window.deleteLater()
+        guard = getattr(app, "_xic_wheel_guard", None)
+        if guard is not None:
+            app.removeEventFilter(guard)
+            guard.deleteLater()
+            delattr(app, "_xic_wheel_guard")
+        QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete.value)
+    sys.exit(exit_code)
 
 
 if __name__ == "__main__":

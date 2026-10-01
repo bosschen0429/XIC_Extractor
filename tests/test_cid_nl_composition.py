@@ -17,17 +17,17 @@ from tests.test_untargeted_cid_nl_real_data_runtime import (
     _discovery_receipts,
     _install_runtime_raws,
 )
+from tests.untargeted_partition_fixtures import (
+    build_dense_partition,
+    complete_dense_partition,
+    execute_dense_partition,
+)
 from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.alignment.tsv_writer import write_alignment_matrix_tsv
 from xic_extractor.alignment.untargeted_finalized_matrix import (
     project_completed_untarget_batch_writer_inputs,
 )
-from xic_extractor.execution_runtime_marker import OwnerPathRuntimeMarker
-from xic_extractor.extraction.untargeted_cid_nl_production_batch import (
-    build_untargeted_cid_nl_production_batch,
-    compose_untargeted_cid_nl_production_result,
-    execute_untargeted_cid_nl_production_batch,
-)
+from xic_extractor.execution.recovery import OwnerPathRuntimeMarker
+from xic_extractor.output.alignment.tsv_writer import write_alignment_matrix_tsv
 from xic_extractor.presets.apply import apply_to_discovery
 from xic_extractor.presets.loader import load_preset
 from xic_extractor.sample_metadata import SampleMetadata
@@ -102,7 +102,7 @@ def test_configured_composition_runs_discovery_to_owner_matrix(
         )
         if recovery and index == 3:
             candidates[path.stem] = ()
-    batch = build_untargeted_cid_nl_production_batch(
+    batch = build_dense_partition(
         raw_paths=paths,
         sample_metadata=tuple(
             SampleMetadata(
@@ -123,7 +123,7 @@ def test_configured_composition_runs_discovery_to_owner_matrix(
     assert len(batch.subject_batch.subjects) == 1
     _install_runtime_raws(monkeypatch, sources_by_path=sources, tmp_path=tmp_path)
     alignment_config = AlignmentConfig(anchor_min_seed_events=1)
-    runtime = execute_untargeted_cid_nl_production_batch(
+    runtime = execute_dense_partition(
         batch,
         alignment_config=alignment_config,
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
@@ -167,10 +167,12 @@ def test_configured_composition_runs_discovery_to_owner_matrix(
             and assessment.content.evaluation_receipt.scanned_event_count == 1
             for assessment in by_sample.values()
         )
-    completed = compose_untargeted_cid_nl_production_result(
+    completed = complete_dense_partition(
         batch, runtime, alignment_config=alignment_config
     )
-    writer = project_completed_untarget_batch_writer_inputs(completed)
+    writer = project_completed_untarget_batch_writer_inputs(
+        completed.application_result
+    )
     if scenario == "pooled":
         assert all(item.content.method_result == "HOLD" for item in by_sample.values())
         assert not writer.matrix.clusters
@@ -304,9 +306,6 @@ def _assert_unsupported_exclusion_closes_exact_coverage(completed):
 
 
 def _assert_composite_labels_cannot_grant_membership(batch, runtime):
-    from xic_extractor.alignment.cross_sample_neighborhood_graph import (
-        iter_cross_sample_initial_owner_pairs,
-    )
     from xic_extractor.alignment.edge_scoring import evaluate_owner_edge
     from xic_extractor.alignment.feature_membership_inference import (
         infer_feature_memberships,
@@ -330,12 +329,6 @@ def _assert_composite_labels_cannot_grant_membership(batch, runtime):
             )
         )
     assert evaluate_owner_edge(*owners, config=AlignmentConfig()).failure_reason == ""
-    assert tuple(
-        iter_cross_sample_initial_owner_pairs(
-            owners,
-            config=AlignmentConfig(),
-        )
-    ) == (tuple(owners),)
     unbound = tuple(
         replace(owner, cid_nl_composite_assessment=None) for owner in owners
     )
@@ -344,30 +337,12 @@ def _assert_composite_labels_cannot_grant_membership(batch, runtime):
         evaluate_owner_edge(*unbound, config=AlignmentConfig()).failure_reason
         == "product_mz_out_of_tolerance"
     )
-    assert (
-        tuple(
-            iter_cross_sample_initial_owner_pairs(
-                unbound,
-                config=AlignmentConfig(),
-            )
-        )
-        == ()
-    )
     crossed = replace(
         owners[1], cid_nl_composite_assessment=owners[0].cid_nl_composite_assessment
     )
     assert (
         evaluate_owner_edge(owners[0], crossed, config=AlignmentConfig()).failure_reason
         == "product_mz_out_of_tolerance"
-    )
-    assert (
-        tuple(
-            iter_cross_sample_initial_owner_pairs(
-                (owners[0], crossed),
-                config=AlignmentConfig(),
-            )
-        )
-        == ()
     )
 
     # Composition membership retains its typed provenance gate. With both

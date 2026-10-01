@@ -48,6 +48,9 @@ from xic_extractor.alignment.cell_observations import (
 from xic_extractor.alignment.cid_nl_evidence_spine import (
     build_cid_nl_reference_spine,
 )
+from xic_extractor.alignment.cid_nl_inputs import (
+    CID_NL_ALIGNMENT_CONFIG,
+)
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.cross_sample import (
     build_cross_sample_association_lineage_handoff,
@@ -60,9 +63,6 @@ from xic_extractor.alignment.cross_sample_peak_groups import (
 from xic_extractor.alignment.hypothesis_owner_adapter import (
     compose_cid_nl_peak_hypotheses_from_assessment,
     owner_from_cid_nl_assessment_support,
-)
-from xic_extractor.alignment.untargeted_cid_nl_golden_path import (
-    CID_NL_ALIGNMENT_CONFIG,
 )
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     mint_cid_nl_method_assessment_ref,

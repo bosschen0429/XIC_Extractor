@@ -24,7 +24,7 @@ request.
 - "What is a profiler?"
 - "Speed up this unit test helper with no XIC timing or validation surface."
 - "Review a matrix activation plan that has no runtime or call-cost question."
-- "Launch 85RAW now." Use `xic-raw-validation` for launch/acceptance preflight;
+- "Launch 85RAW now." Use the runner documented in `parameter-settings.md`;
   this skill can only define the performance decision the run should close.
 - "Can this diagnostic evidence advance product tier?" Read or update the
   productization status index and promotion contract after performance evidence
@@ -36,8 +36,7 @@ request.
   use the available global `diagnose` workflow when a disciplined diagnosis is
   actually needed.
 - If the request is implementation after a performance diagnosis already exists,
-  use this skill only to restate the artifact-backed gate, then use
-  the owning Issue before edits.
+  reuse the applicable diagnosis and continue within the owning Issue.
 - If timing artifacts are missing but the task is XIC preset/runtime work, this
   skill should still trigger and usually return `baseline_needed`.
 - If the user only wants to run a generic command benchmark with no XIC

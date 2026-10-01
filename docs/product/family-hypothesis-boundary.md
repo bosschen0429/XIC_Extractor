@@ -1,23 +1,22 @@
 # Peak Anchor, Cross-Sample Group, and Hypothesis Boundary
 
-This page defines the durable boundary between per-sample peak anchors, wide
-Assignment scopes, cross-sample group hypotheses, peak hypotheses, ModeTrack
-proposals, ObservationRevisit, cell decisions, and product projections. Read
-this page when a change touches Discovery peak-anchor grouping, alignment
-owner construction, diagnostic ModeTrack review, Backfill activation, or any
-matrix identity sidecar.
+This page defines the durable boundary between per-sample peak anchors, initial
+grouping scopes, cross-sample group hypotheses, peak hypotheses,
+ObservationRevisit, cell decisions, and product projections. Read this page
+when a change touches Discovery peak-anchor grouping, alignment owner
+construction, Backfill activation, or any matrix identity sidecar.
 
 ## Contract
 
-`ModeTrackAssignmentScope` and `ModeTrackAssignment` are internal values for an
-optional initial trajectory decision.
+`InitialGroupingScope` is an internal handoff value from the grouping bootstrap
+to regrouping and Backfill planning.
 
-- The scope contains only actual m/z and RT admissibility bounds plus the
-  exact existing groups.
+- The scope contains only the m/z and RT bounds of the initial evidence plus
+  the exact initial groups.
 - The scope has no standalone identity, serialization contract, product
   authority, or public Family meaning.
-- The algorithms and structures of both values can be replaced when the
-  scientific decision and its consumers change.
+- Its structure can be replaced when the grouping decision and its consumers
+  change.
 - A change must preserve physical observations, sample/acquisition
   provenance, explicit uncertainty, and confirmed identity constraints.
 - No particular clustering strategy or complete pair graph is an invariant.
@@ -42,23 +41,10 @@ optional initial trajectory decision.
 - The same `CrossSampleGroupingResult` is used before bounded Backfill and
   through finalization. A revisit does not reopen grouping.
 - `CrossSamplePartitionTransition` records the complete group partition before
-  and after an accepted initial refinement.
-- ModeTrack can propose that initial change where a workflow uses ModeTrack.
-  ModeTrack cannot apply the change and cannot mint a second group owner.
+  and after an accepted membership change.
 - `PeakHypothesis` owns candidate chromatographic identity: the physical peak
   candidate, selected integration, typed evidence, and selected-hypothesis
   decision semantics.
-- For debug or batch review, `ModeTrackAssignment` records one state for one
-  sample-local `PeakHypothesis`:
-  - uniquely assigned to one existing ModeTrack;
-  - ambiguous across tracks;
-  - outside the model;
-  - absent;
-  - technically unassessable.
-- The identity-settlement/identity-trajectory boundary mints the
-  `ModeTrackAssignment` state as an internal, immutable diagnostic fact.
-- The ModeTrack result remains proposal-only. The ModeTrack result does not
-  mint a second group owner, refit after Backfill, or select a product value.
 - Backfill can return one independently traceable observation from a revisit.
   That observation cannot imply group membership or writer authority.
 
@@ -82,11 +68,10 @@ standalone product truth.
 | --- | --- | --- |
 | Discovery `peak_anchor_id` / output `feature_family_id` | Per-sample MS1 peak identity and review grouping | Cross-sample identity, Backfill promotion, selected-peak truth |
 | Alignment `public_family_id` (display label) | Stable public row label for output compatibility | Canonical identity proof - use `group_hypothesis_id` instead |
-| Internal `ModeTrackAssignmentScope` | Actual m/z/RT admissibility bounds and exact existing groups for producer-to-fit handoff | Standalone identity, persistence, chemical identity, public row identity, same-peak truth, or writer authority |
+| Internal `InitialGroupingScope` | m/z/RT evidence bounds and exact initial groups for the bootstrap-to-regroup handoff | Standalone identity, persistence, chemical identity, public row identity, same-peak truth, or writer authority |
 | `CrossSampleGroupingResult` | One immutable processing-owner-bound grouping result, accepted complete-partition transition, and prepared drift lookup | Regrouping after Backfill, selected values, or writer authority |
-| `CrossSamplePeakGroupHypothesis` | Cross-sample owner/group identity, membership, disposition, and lineage via `group_hypothesis_id` | Per-peak integration truth, ModeTrack fitting, Backfill, or ProductWriter authority |
+| `CrossSamplePeakGroupHypothesis` | Cross-sample owner/group identity, membership, disposition, and lineage via `group_hypothesis_id` | Per-peak integration truth, Backfill, or ProductWriter authority |
 | `PeakHypothesis` | Candidate peak identity, evidence context, selected hypothesis semantics | Cross-sample grouping policy or final matrix writing |
-| Initial ModeTrack result | Typed sample/acquisition × existing ModeTrack correspondence, exclusions, assessability, and proposal lineage | Applying membership, refitting after Backfill, minting groups, evidence/area transfer, Backfill/Matrix values, or chemical identity |
 | ObservationRevisit | Retained typed receipt for a bounded local revisit result or no-result | Membership, selected value, group origin, or recursive support |
 | ProductionCellDecision | Selected value or typed no-write for an explicit Target/Group subject | Row identity, RAW access, grouping, or rendering |
 | Product projection / ProductWriter | Pre-cell row binding/subject construction; post-cell inclusion, counted detection, product state, routing, delivery shape, and authorized rendering | Low-level evidence extraction, grouping, Backfill, or value recomputation |
@@ -101,7 +86,7 @@ display labels. These legacy labels form an adapter state with these rules:
 1. A legacy ID that is a public output contract must be preserved.
    The persisted matrix identity field `source_feature_family_ids` keeps its
    current name and source-lineage meaning. `source_feature_family_ids` is not
-   an assignment-scope identity.
+   a grouping-scope identity.
 2. A successor ID must be added alongside the legacy ID when identity semantics
    become product-relevant.
 3. Successor alignment identity decisions use `group_hypothesis_id` after a
@@ -128,28 +113,9 @@ display labels. These legacy labels form an adapter state with these rules:
   `group_hypothesis_id`.
 - Do not use cross-sample group membership as same-peak proof. Same-peak support
   needs a typed anchor, selected mode, or PeakHypothesis-level reason.
-- A `PeakHypothesis` can already be an exact owner of one ModeTrack in the
-  current `ModeTrackAssignmentScope`. In that case, preserve that exact owner
-  identity as observed occupancy. Do not reclassify the same owner from
-  aggregate group-center geometry.
-- Preserved occupancy grants no SUPPORT vote, trajectory reinforcement, or
-  product authority.
 - Do not treat a Family as a same-peak or chemical-identity claim. Two
-  resolved peaks in one sample can occupy different ModeTracks in the same
-  Family. Either track can be absent in another sample.
-- Do not train a ModeTrack from MS1-only, Backfill, inferred, deconvolved,
-  manual, shared-set, or other non-training observations.
-- Only an existing owner-proven direct-SUPPORT `PeakHypothesis` can seed or
-  reinforce one track. Reinforcement follows unique assignment only.
-- ModeTrack must retain and revalidate the exact processing request/attempt,
-  physical peak observation, candidate, and direct-SUPPORT assessment
-  identities.
-- ModeTrack must not retain or depend on `CellObservationRef`. A match on the
-  `PeakHypothesis` alone is insufficient provenance.
-- Do not let a consumer or ObservationRevisit refit ModeTracks. Do not let a
-  consumer or ObservationRevisit reinterpret an ambiguous, out-of-model,
-  absent, or technically unassessable state as unique.
-- Shadow assignments carry no value or writer authority.
+  resolved peaks in one sample can belong to different cross-sample groups in
+  the same Family. Either group can be absent in another sample.
 - Do not treat an accepted ObservationRevisit as implicit membership or
   selected value. CrossSample owns membership. ProductionCellDecision owns the
   selected value.

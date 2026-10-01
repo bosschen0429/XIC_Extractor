@@ -24,7 +24,7 @@ from xic_extractor.alignment.backfill_scope import (
     backfill_scope_exclusion_reasons,
     select_backfill_features,
 )
-from xic_extractor.alignment.config import AlignmentConfig
+from xic_extractor.alignment.config import AlignmentConfig, BackfillXicBackend
 from xic_extractor.alignment.cross_sample_peak_groups import (
     CrossSampleGroupDisposition,
     CrossSampleGroupIdentity,
@@ -32,7 +32,6 @@ from xic_extractor.alignment.cross_sample_peak_groups import (
     validate_cross_sample_group_population,
     validate_cross_sample_peak_group_identity,
 )
-from xic_extractor.alignment.ms1_index_source import BackfillXicBackend
 from xic_extractor.alignment.owner_group_delivery import OwnerGroupDeliveryFeatures
 from xic_extractor.evidence_artifacts import (
     EvidenceArtifactRef,

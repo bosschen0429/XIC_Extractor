@@ -23,7 +23,7 @@ from xic_extractor.alignment.quantitative_projection_authority import (
     render_quantitative_projection_authority_manifest_bytes,
     require_product_quantitative_projection_authority,
 )
-from xic_extractor.peak_detection.signal_processing_profile import (
+from xic_extractor.configuration.signal_processing_profile import (
     DEFAULT_SIGNAL_PROCESSING_PROFILE_ID,
 )
 
@@ -43,7 +43,7 @@ _ACTIVATION_SUMMARY_ARTIFACT = (
     "activation_summary.json"
 )
 _MANIFEST_PATH = Path(
-    "docs/superpowers/schemas/quantitative_projection_authority_manifest.json"
+    "docs/superpowers/productization/status/quantitative_projection_authority_manifest.json"
 )
 
 

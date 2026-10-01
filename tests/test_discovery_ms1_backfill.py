@@ -20,9 +20,7 @@ from xic_extractor.discovery.ms1_backfill import (
     backfill_ms1_candidates,
     merge_candidates_by_ms1_peak,
 )
-from xic_extractor.execution_runtime_owner import (
-    derive_runtime_acquisition_metrics,
-)
+from xic_extractor.execution.attempt import derive_runtime_acquisition_metrics
 from xic_extractor.processing_identity import (
     AcquisitionSourceIdentity,
     build_acquisition_source_identity,

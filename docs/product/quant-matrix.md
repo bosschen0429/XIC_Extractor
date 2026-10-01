@@ -41,7 +41,7 @@ delivery seam as if they were already final.
 - Candidate sidecars, review packets, galleries, lockbox labels, and
   diagnostics do not grant authority by themselves.
 - File-backed activation reads each manifest byte snapshot once.
-- The `production_acceptance` owner validates that snapshot and mints an
+- The [`production_acceptance` owner](../../xic_extractor/diagnostics/quant_matrix/acceptance.py) validates that snapshot and mints an
   immutable `CheckedProductionAcceptanceManifest`. Activation writers consume
   those exact checked rows. Activation writers do not reopen the path.
 - The lower-level `QuantMatrixVersion` row builder is a pure renderer. The row
@@ -58,8 +58,7 @@ delivery seam as if they were already final.
 - Normal Matrix publication consumes the live Alignment cell decisions and
   projection owners. It does not run a separate promotion, activation dry-run,
   or product-ready closeout chain.
-- `QuantMatrixVersion` remains an internal result used by ModeTrack table
-  finalization and the no-RAW golden path. Its presence does not grant a
+- `QuantMatrixVersion` remains an internal diagnostic result used by the no-RAW golden path. Its presence does not grant a
   standalone file-based matrix-writing capability.
 - The productization registry grants no standalone file-activation writer
   scope. Historical validation packets cannot authorize current values.
@@ -72,8 +71,8 @@ delivery seam as if they were already final.
 - Shared-peak explanation and PeakHypothesis selection sidecars are
   diagnostic evidence only. These sidecars do not expose an independent
   activation writer or a matrix reconstruction command.
-- Finalized production owners own Matrix output; ModeTrack table finalization
-  uses the accepted `QuantMatrixVersion` result internally.
+- Finalized production owners own Matrix output through
+  `output/alignment/product_matrix.py`.
 - Within one activated Alignment run, the owner-minted
   `ProductionDecisionSet` is the single live semantic input for TSV, XLSX, and
   HTML projections.
@@ -90,7 +89,7 @@ delivery seam as if they were already final.
   XLSX, and HTML writers. `ProductionDecisionSet` holds a separate
   compatibility cell type that is also named `ProductionCellDecision`.
 - The legacy matrix-based `build_production_decisions` still builds a
-  `ProductionDecisionSet` as the fallback in `alignment/product_matrix.py` and
+  `ProductionDecisionSet` as the fallback in `output/alignment/product_matrix.py` and
   for diagnostics and provenance replay.
 - The structural migration must preserve current values, states, counts, row
   inclusion, and renderer bytes before any behavior promotion.
@@ -136,7 +135,7 @@ validation notes are not matrix authority by themselves.
 | `ProductionAcceptanceManifest` | Accepted Backfill authority record |
 | `ProductionDecisionSet` | One live Alignment-owned decision set consumed by all activated renderers |
 | `ProductionCellDecision` | Successor sole owner of selected value or typed no-write for a Target/Group cell subject |
-| `QuantMatrixVersion` | Internal accepted-value result for ModeTrack and the golden path |
+| `QuantMatrixVersion` | Internal accepted-value result for the diagnostic golden path |
 | Productization status index / authority manifest | Current state and writer scope |
 
 ## Boundaries
@@ -177,6 +176,6 @@ validation notes are not matrix authority by themselves.
 
 - [Backfill](backfill.md) | [Alignment](alignment.md) | [Productization](productization.md)
 - [Historical compatibility index](../superpowers/plans/2026-06-15-productization-control-plane.md)
-- [Status index](../superpowers/validation/productization_status_index.tsv) | [Authority manifest](../superpowers/schemas/productization_authority_manifest.json)
+- [Status index](../superpowers/validation/productization_status_index.tsv) | [Authority manifest](../superpowers/productization/status/productization_authority_manifest.json)
 - [Peak model selection](peak-model-selection.md)
 - [Run provenance](run-provenance.md)

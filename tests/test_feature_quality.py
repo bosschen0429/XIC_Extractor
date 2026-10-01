@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from tests.matrix_identity_fixtures import current_matrix_identity_row
-from xic_extractor.alignment.matrix_output_contract import (
+from xic_extractor.output.alignment.matrix_output_contract import (
     ALIGNMENT_MATRIX_IDENTITY_COLUMNS,
 )
 from xic_extractor.sample_metadata import SAMPLE_METADATA_COLUMNS

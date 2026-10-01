@@ -61,20 +61,9 @@ scope authority.
 
 ## Issue-To-PR Scope And Template Ownership
 
-An implementation Issue is ready when its outcome, bounded scope, and observable
-completion check are clear. For the expanded cases in [Task Shaping](#task-shaping),
-its canonical body or Current Packet also records the applicable boundaries:
-
-- the producing/execution source ref when evidence or a frozen decision depends
-  on it, or a provisional blocker binding reconciled at claim;
-- parent, native blockers, consumed/produced handoffs, and carrier when a delivery
-  edge exists;
-- semantic owners, reachable production entries, and current consumers affected
-  by the boundary; a census and exclusions when migration, retirement, or a
-  completeness claim depends on them;
-- asset disposition when replacing or migrating an owner;
-- observable loss, intended outcome, non-goals, and owner cutoff;
-- independently decidable acceptance, preserved invariants, and stop rule.
+Use the compact or expanded Issue described in [Task Shaping](#task-shaping).
+Record delivery dependencies and handoffs only when a real edge exists, using
+the parent graph above. The PR does not require another copy of that intake.
 
 The PR links the canonical scope and records the accepted delta, actual
 checks/evidence for the proposed head, material risk, and rollback. Repeat owner,

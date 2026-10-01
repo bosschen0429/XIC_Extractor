@@ -1,6 +1,6 @@
 # Bound XIC Docs Compression Heuristics
 
-Use this reference after the main skill has produced mechanical audit facts.
+Use this reference for the current consumers and claims of the affected family.
 `docs/project-layout.md` and `docs/agent/obsidian-handoff-contract.md` remain the
 owners of placement, public/private boundaries, and document maintenance.
 

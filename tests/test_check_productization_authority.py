@@ -109,7 +109,7 @@ def test_productization_authority_checker_rejects_crossed_resealed_or_active(
     payload = json.loads(DEFAULT_DEPENDENT_MANIFEST.read_text(encoding="utf-8"))
     if mutation == "crossed":
         payload["package_authority_artifact"] = (
-            "docs/superpowers/schemas/productization_authority_manifest.json"
+            "docs/superpowers/productization/status/productization_authority_manifest.json"
         )
         payload["package_authority_sha256"] = _raw_sha256(DEFAULT_MANIFEST)
     elif mutation == "resealed_hash":

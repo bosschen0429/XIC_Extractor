@@ -7,28 +7,33 @@ import pytest
 from gui.workers import discovery_worker as module
 from gui.workers.discovery_worker import DiscoveryRequest, DiscoveryWorker
 from tests.alignment_pipeline_helpers import write_batch
-from xic_extractor.alignment import pipeline as alignment_pipeline
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.owner_build_route_receipt import (
     _mint_retained_untargeted_cid_nl_route_receipt,
 )
-from xic_extractor.alignment.pipeline_outputs import (
-    AlignmentRunOutputs as _AlignmentRunOutputs,
-)
+from xic_extractor.applications.untargeted import application as untargeted_application
 from xic_extractor.config import ExtractionConfig
+from xic_extractor.configuration.execution_profile import DEFAULT_ALIGNMENT_WORKERS
 from xic_extractor.discovery.pipeline import (
     DiscoveryProcessExecutionError,
     DiscoverySampleProcessError,
 )
-from xic_extractor.execution_settings import DEFAULT_ALIGNMENT_WORKERS
+from xic_extractor.output.alignment.pipeline_outputs import (
+    AlignmentRunOutputs as _AlignmentRunOutputs,
+)
 from xic_extractor.sample_metadata import SampleMetadata
 
 
 def test_discovery_worker_emits_error_for_failed_batch(tmp_path, monkeypatch):
     request = DiscoveryRequest(
-        mode="discovery_only", preset="dna_dr_product_ready", tuning_overrides={},
-        raw_dir=tmp_path, raw_file=None, dll_dir=tmp_path,
-        output_dir=tmp_path / "out", discovery_batch_index=None,
+        mode="discovery_only",
+        preset="dna_dr_product_ready",
+        tuning_overrides={},
+        raw_dir=tmp_path,
+        raw_file=None,
+        dll_dir=tmp_path,
+        output_dir=tmp_path / "out",
+        discovery_batch_index=None,
     )
     worker = DiscoveryWorker(request)
     errors, finished, cancelled = [], [], []
@@ -37,8 +42,11 @@ def test_discovery_worker_emits_error_for_failed_batch(tmp_path, monkeypatch):
     worker.cancelled.connect(lambda: cancelled.append(True))
     failure = DiscoveryProcessExecutionError(
         DiscoverySampleProcessError(0, "sample", "sample.raw", "read failed"),
-        completed_sample_stems=(), failed_sample_stems=("sample",),
-        cancelled_job_count=0, in_flight_job_count=0, unsubmitted_job_count=1,
+        completed_sample_stems=(),
+        failed_sample_stems=("sample",),
+        cancelled_job_count=0,
+        in_flight_job_count=0,
+        unsubmitted_job_count=1,
     )
 
     def fail(_request):
@@ -110,8 +118,10 @@ def test_align_only_summary_uses_existing_batch_index_counts(
 
     monkeypatch.setattr(
         module,
-        "run_alignment",
-        create_autospec(module.run_alignment, side_effect=fake_run_alignment),
+        "run_untargeted_application",
+        create_autospec(
+            module.run_untargeted_application, side_effect=fake_run_alignment
+        ),
     )
     request = DiscoveryRequest(
         mode="align_only",
@@ -238,7 +248,7 @@ def test_gui_batch_discovery_uses_bounded_parallel_workers(
         return SimpleNamespace(batch_index_csv=index_path, per_sample=())
 
     monkeypatch.setattr(module, "run_discovery_batch", fake_run_discovery_batch)
-    from xic_extractor.execution_settings import ExecutionProfile
+    from xic_extractor.configuration.execution_profile import ExecutionProfile
 
     request = DiscoveryRequest(
         mode="discovery_only",
@@ -307,8 +317,10 @@ def test_gui_alignment_modes_apply_product_ready_preset_alignment_runtime(
 
     monkeypatch.setattr(
         module,
-        "run_alignment",
-        create_autospec(module.run_alignment, side_effect=fake_run_alignment),
+        "run_untargeted_application",
+        create_autospec(
+            module.run_untargeted_application, side_effect=fake_run_alignment
+        ),
     )
     monkeypatch.setattr(module, "run_discovery_batch", fake_run_discovery_batch)
     monkeypatch.setattr(module, "bind_cid_nl_recipe", bind_once)
@@ -409,8 +421,8 @@ def test_discovery_worker_reports_alignment_interruption_as_cancelled(
     worker.cancelled.connect(lambda: cancelled.append(True))
     worker.error.connect(errors.append)
     monkeypatch.setattr(
-        alignment_pipeline,
-        "complete_untargeted_cid_nl_alignment",
+        untargeted_application,
+        "complete_untargeted_alignment",
         lambda **_kwargs: (_ for _ in ()).throw(
             InterruptedError("Alignment cancelled before output publication")
         ),
@@ -559,8 +571,10 @@ def test_discovery_worker_forwards_sample_metadata_and_targets_csv(
 
     monkeypatch.setattr(
         module,
-        "run_alignment",
-        create_autospec(module.run_alignment, side_effect=fake_run_alignment),
+        "run_untargeted_application",
+        create_autospec(
+            module.run_untargeted_application, side_effect=fake_run_alignment
+        ),
     )
 
     request = DiscoveryRequest(

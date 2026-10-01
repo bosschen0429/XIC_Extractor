@@ -22,8 +22,7 @@ from xic_extractor.alignment.backfill_scope import (
     backfill_request_sample_stems,
     backfill_seed_centers,
 )
-from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.alignment.ms1_index_source import BackfillXicBackend
+from xic_extractor.alignment.config import AlignmentConfig, BackfillXicBackend
 from xic_extractor.alignment.owner_group_delivery import (
     OwnerGroupDeliveryFeatures,
 )

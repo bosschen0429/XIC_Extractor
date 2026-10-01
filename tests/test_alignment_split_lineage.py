@@ -475,11 +475,10 @@ def test_identity_settlement_module_has_no_writer_or_public_projection_import() 
     forbidden = (
         "xic_extractor.alignment.matrix",
         "xic_extractor.alignment.matrix_identity",
-        "xic_extractor.alignment.pipeline_outputs",
-        "xic_extractor.alignment.product_matrix",
+        "xic_extractor.output.alignment.pipeline_outputs",
+        "xic_extractor.output.alignment.product_matrix",
         "xic_extractor.alignment.production_decisions",
-        "xic_extractor.alignment.tsv_writer",
-        "xic_extractor.alignment.xlsx_writer",
+        "xic_extractor.output.alignment.tsv_writer",
         "xic_extractor.output",
     )
     assert not any(

@@ -221,10 +221,10 @@ class DiscoveryResultsSection(QWidget):
             _open_path(str(directory))
         dialog.deleteLater()
 
-    def show_error(self, message: str) -> None:
+    def show_error(self, message: str, *, cancelled: bool = False) -> None:
         self._invalidate_inspector("執行未完成，無 Inspector 來源")
         self.show()
-        self._title.setText("本次執行未完成")
+        self._title.setText("本次執行已停止" if cancelled else "本次執行未完成")
         self._output_dir = ""
         self._matrix = ""
         self._alignment_outputs = {}
@@ -238,10 +238,11 @@ class DiscoveryResultsSection(QWidget):
         self._distribution.set_counts({})
         self._sample_heading.setVisible(False)
         self._sample_table.setVisible(False)
-        self._error.setText(f"執行失敗：{message}")
+        status = "已停止" if cancelled else "執行失敗"
+        self._error.setText(f"{status}：{message}")
         self._error.setStyleSheet(f"color: {styles.ACTIVE['error']};")
         self._error.setVisible(True)
-        self._summary_text = f"執行失敗：{message}"
+        self._summary_text = f"{status}：{message}"
 
     def mark_previous(self) -> None:
         if self._summary_text != "尚未執行":

@@ -586,7 +586,7 @@ class CurveBundleSource:
                 }
                 for key, value in sorted(transition.quality_flags.items())
             ]
-            records = [
+            records: list[dict[str, Any]] = [
                 {
                     "ref": flag_ref,
                     "title": "轉換品質旗標",

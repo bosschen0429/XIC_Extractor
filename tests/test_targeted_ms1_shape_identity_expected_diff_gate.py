@@ -6,11 +6,11 @@ from pathlib import Path
 import pytest
 
 from tools.diagnostics import targeted_ms1_shape_identity_expected_diff_gate as tool
+from xic_extractor.applications.targeted.product_model import (
+    OWN_MAX_SAME_PEAK_SUPPORT_REASON,
+)
 from xic_extractor.diagnostics.targeted_ms1_shape_identity_expected_diff import (
     evaluate_limited_targeted_ms1_shape_identity_expected_diff,
-)
-from xic_extractor.extraction.targeted_projection_reasons import (
-    OWN_MAX_SAME_PEAK_SUPPORT_REASON,
 )
 
 

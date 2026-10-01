@@ -16,6 +16,9 @@ from xic_extractor.acquisition_contract import (
     mint_trace_acquisition_capability,
 )
 from xic_extractor.config import ExtractionConfig
+from xic_extractor.configuration.signal_processing_profile import (
+    SignalProcessingProfile,
+)
 from xic_extractor.discovery.models import (
     DiscoveryCandidate,
     DiscoveryPhysicalWorkItem,
@@ -53,9 +56,6 @@ from xic_extractor.peak_detection.physical_peak_models import (
     PHYSICAL_PEAK_POINT_POLICY,
     PhysicalPeakEvaluation,
     PreparedSignalResult,
-)
-from xic_extractor.peak_detection.signal_processing_profile import (
-    SignalProcessingProfile,
 )
 from xic_extractor.processing_identity import AcquisitionSourceIdentity
 from xic_extractor.raw_superwindow_source import RawSuperWindowSource

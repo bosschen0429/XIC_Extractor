@@ -7,24 +7,21 @@ from typing import Any, Literal
 
 from PyQt6.QtCore import QThread, pyqtSignal
 
-from xic_extractor.alignment.owner_build_route_receipt import OwnerBuildRouteReceipt
-from xic_extractor.alignment.pipeline import run_alignment
-from xic_extractor.alignment.pipeline_outputs import AlignmentRunOutputs
-from xic_extractor.alignment.process_backend import AlignmentProcessExecutionError
+from xic_extractor.applications.untargeted.application import run_untargeted_application
 from xic_extractor.config import ExtractionConfig
+from xic_extractor.configuration.execution_profile import (
+    DEFAULT_ALIGNMENT_WORKER_BACKEND,
+    ExecutionProfile,
+)
 from xic_extractor.discovery.models import DiscoverySettings
 from xic_extractor.discovery.pipeline import (
-    DiscoveryProcessExecutionError,
     run_discovery,
     run_discovery_batch,
 )
 from xic_extractor.discovery.processing_run_spec_adapter import (
     compile_discovery_processing_run_spec_from_config as _compile_processing_run_spec,
 )
-from xic_extractor.execution_settings import (
-    DEFAULT_ALIGNMENT_WORKER_BACKEND,
-    ExecutionProfile,
-)
+from xic_extractor.output.alignment.pipeline_outputs import AlignmentRunOutputs
 from xic_extractor.presets import (
     BoundCidNlRecipe,
     Preset,
@@ -83,6 +80,10 @@ class DiscoveryWorker(QThread):
         super().__init__()
         self._request = request
         self._recipe_binding: tuple[BoundCidNlRecipe, str] | None = None
+        self.stage = "準備 Untargeted 執行"
+        self.output_dir = request.output_dir
+        self.available_outputs: tuple[tuple[str, Path], ...] = ()
+        self.cancellation_reason = "使用者要求停止，本次 Untargeted 執行已停止。"
 
     def stop(self) -> None:
         self.requestInterruption()
@@ -102,22 +103,18 @@ class DiscoveryWorker(QThread):
                 self.cancelled.emit()
                 return
             self.finished.emit(summary)
-        except InterruptedError:
+        except InterruptedError as exc:
+            self.cancellation_reason = str(exc) or self.cancellation_reason
             self.cancelled.emit()
         except PresetError as exc:
             self.error.emit(f"Preset 錯誤：{exc}")
         except RawReaderError as exc:
             self.error.emit(f"Raw file 讀取失敗：{exc}")
-        except (
-            AlignmentProcessExecutionError,
-            DiscoveryProcessExecutionError,
-            ValueError,
-            OSError,
-            KeyError,
-        ) as exc:
-            self.error.emit(str(exc))
+        except Exception as exc:
+            self.error.emit(str(exc) or type(exc).__name__)
 
     def _run_full(self, request: DiscoveryRequest) -> dict[str, Any] | None:
+        self.stage = "讀取 RAW 資料來源"
         raw_dir = request.raw_dir
         if raw_dir is None:
             raise ValueError(f"RAW 資料夾中找不到 .raw 檔案：{request.raw_dir}")
@@ -129,9 +126,11 @@ class DiscoveryWorker(QThread):
 
         total_steps = len(raw_paths) + 1
         self.progress.emit(0, total_steps, "Discovery...")
+        self.stage = "Discovery 設定"
         settings = self._build_settings(request)
         peak_config = self._discovery_peak_config(request, settings)
         run_spec = _compile_processing_run_spec(raw_paths, settings, peak_config)
+        self.stage = "Discovery 擷取與結果發布"
         batch_outputs = run_discovery_batch(
             raw_paths,
             output_dir=request.output_dir,
@@ -145,11 +144,12 @@ class DiscoveryWorker(QThread):
             ),
         )
         index_path = _batch_index_path(batch_outputs, request.output_dir)
+        self._retain_discovery_index(batch_outputs)
         if self.isInterruptionRequested():
             return None
 
         self.progress.emit(len(raw_paths), total_steps, "Alignment...")
-        outputs, owner_build_route = self._run_alignment(
+        outputs = self._run_alignment(
             request,
             index_path=index_path,
             raw_dir=raw_dir,
@@ -158,17 +158,19 @@ class DiscoveryWorker(QThread):
         self.progress.emit(total_steps, total_steps, "完成")
 
         summary = self._discovery_summary(request, index_path=index_path)
-        summary.update(_alignment_summary(outputs, owner_build_route))
+        summary.update(_alignment_summary(outputs))
         return summary
 
     def _run_discovery_only(self, request: DiscoveryRequest) -> dict[str, Any] | None:
         if request.raw_file is not None:
             self.progress.emit(0, 1, "Discovery...")
+            self.stage = "Discovery 設定"
             settings = self._build_settings(request)
             peak_config = self._discovery_peak_config(request, settings)
             run_spec = _compile_processing_run_spec(
                 (request.raw_file,), settings, peak_config
             )
+            self.stage = "Discovery 擷取與結果發布"
             outputs = run_discovery(
                 request.raw_file,
                 output_dir=request.output_dir,
@@ -177,6 +179,15 @@ class DiscoveryWorker(QThread):
                 run_spec=run_spec,
                 should_cancel=self.isInterruptionRequested,
             )
+            self.available_outputs = tuple(
+                (label, Path(path))
+                for label, path in (
+                    ("Discovery 候選（中間產物）", outputs.candidates_csv),
+                    ("Discovery review（中間產物）", outputs.review_csv),
+                )
+                if Path(path).is_file()
+            )
+            self.stage = "Discovery 結果摘要"
             self.progress.emit(1, 1, "完成")
             return {
                 "mode": "discovery_only",
@@ -190,15 +201,18 @@ class DiscoveryWorker(QThread):
                 "matrix_tsv": None,
             }
 
+        self.stage = "讀取 RAW 資料來源"
         raw_paths = _raw_paths_from_dir(
             request.raw_dir, request.dll_dir, request.sample_metadata
         )
         if not raw_paths:
             raise ValueError(f"RAW 資料夾中找不到 .raw 檔案：{request.raw_dir}")
         self.progress.emit(0, len(raw_paths), "Discovery...")
+        self.stage = "Discovery 設定"
         settings = self._build_settings(request)
         peak_config = self._discovery_peak_config(request, settings)
         run_spec = _compile_processing_run_spec(raw_paths, settings, peak_config)
+        self.stage = "Discovery 擷取與結果發布"
         batch_outputs = run_discovery_batch(
             raw_paths,
             output_dir=request.output_dir,
@@ -209,6 +223,8 @@ class DiscoveryWorker(QThread):
             should_cancel=self.isInterruptionRequested,
             progress_callback=self.progress.emit,
         )
+        self._retain_discovery_index(batch_outputs)
+        self.stage = "Discovery 結果摘要"
         self.progress.emit(len(raw_paths), len(raw_paths), "完成")
         return self._discovery_summary(
             request,
@@ -216,6 +232,7 @@ class DiscoveryWorker(QThread):
         )
 
     def _run_align_only(self, request: DiscoveryRequest) -> dict[str, Any] | None:
+        self.stage = "讀取 Discovery batch index"
         index_path = request.discovery_batch_index
         if index_path is None:
             raise ValueError("align-only 需要既有的 discovery_batch_index.csv")
@@ -224,7 +241,7 @@ class DiscoveryWorker(QThread):
         candidate_counts, sample_count = _read_batch_counts(index_path)
 
         self.progress.emit(0, 1, "Alignment...")
-        outputs, owner_build_route = self._run_alignment(
+        outputs = self._run_alignment(
             request,
             index_path=index_path,
             raw_dir=request.raw_dir,
@@ -243,7 +260,7 @@ class DiscoveryWorker(QThread):
             "alignment_outputs": {},
             "matrix_tsv": None,
         }
-        summary.update(_alignment_summary(outputs, owner_build_route))
+        summary.update(_alignment_summary(outputs))
         return summary
 
     def _run_alignment(
@@ -252,9 +269,11 @@ class DiscoveryWorker(QThread):
         *,
         index_path: Path,
         raw_dir: Path,
-    ) -> tuple[AlignmentRunOutputs, OwnerBuildRouteReceipt]:
+    ) -> AlignmentRunOutputs:
+        self.stage = "Alignment 設定"
         recipe = self._alignment_runtime(request)
-        outputs = run_alignment(
+        self.stage = "Alignment 分析與 Matrix 發布"
+        outputs = run_untargeted_application(
             discovery_batch_index=index_path,
             raw_dir=raw_dir,
             dll_dir=request.dll_dir,
@@ -273,10 +292,21 @@ class DiscoveryWorker(QThread):
             should_cancel=self.isInterruptionRequested,
             **_GUI_ALIGNMENT_KWARGS,
         )
-        owner_build_route = outputs.owner_build_route_receipt
-        if not isinstance(owner_build_route, OwnerBuildRouteReceipt):
-            raise TypeError("Alignment owner did not return its route receipt")
-        return outputs, owner_build_route
+        self.available_outputs += tuple(
+            (f"Alignment {attr}", Path(path))
+            for attr in _ALIGNMENT_OUTPUT_ATTRS
+            if (path := getattr(outputs, attr, None)) is not None
+            and Path(path).is_file()
+        )
+        self.stage = "Alignment 結果摘要"
+        return outputs
+
+    def _retain_discovery_index(self, outputs: Any) -> None:
+        index_path = getattr(outputs, "batch_index_csv", None)
+        if index_path is not None and Path(index_path).is_file():
+            self.available_outputs = (
+                ("Discovery batch index（中間產物）", Path(index_path)),
+            )
 
     def _alignment_runtime(
         self,
@@ -392,7 +422,6 @@ def _batch_index_path(batch_outputs: Any, output_dir: Path) -> Path:
 
 def _alignment_summary(
     outputs: Any,
-    owner_build_route: OwnerBuildRouteReceipt,
 ) -> dict[str, Any]:
     alignment_outputs: dict[str, str] = {}
     for attr in _ALIGNMENT_OUTPUT_ATTRS:
@@ -407,7 +436,11 @@ def _alignment_summary(
         "matrix_tsv": str(matrix) if matrix is not None else None,
         "run_metadata_json": str(run_metadata) if run_metadata is not None else None,
         "evidence": evidence,
-        "owner_build_route": owner_build_route.as_dict(),
+        "owner_build_route": (
+            outputs.owner_build_route_receipt.as_dict()
+            if outputs.owner_build_route_receipt is not None
+            else None
+        ),
     }
 
 

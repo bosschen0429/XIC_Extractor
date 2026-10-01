@@ -25,35 +25,20 @@ from xic_extractor.evidence_artifacts import (
     _mint_artifact_semantic_contract_ref,
     _mint_evidence_artifact_ref,
 )
-from xic_extractor.execution_engine import (
-    PartitionAcquisitionOutput,
-    PartitionCompositionOutput,
-    PartitionPipelineScheduler,
-    PartitionResultStore,
-    ProcessingOwners,
-    StreamedResultStore,
-    WorkerAdmissionPool,
-    WorkPartition,
+from xic_extractor.execution._finalization import (
+    RuntimeResourceCleanupOutcome,
+    RuntimeResourceKind,
+    RuntimeResourceOpenOutcome,
+    RuntimeResourceReservation,
 )
-from xic_extractor.execution_engine.streamed_result_store import _OwnerUnpickler
-from xic_extractor.execution_runtime import (
+from xic_extractor.execution._lifecycle import (
     AttemptTerminalOutcome,
     WorkUnitFailureCategory,
     WorkUnitFailureDetail,
     WorkUnitSettlement,
     WorkUnitTerminalOutcome,
 )
-from xic_extractor.execution_runtime_finalization import (
-    RuntimeResourceCleanupOutcome,
-    RuntimeResourceKind,
-    RuntimeResourceOpenOutcome,
-    RuntimeResourceReservation,
-)
-from xic_extractor.execution_runtime_marker import (
-    OwnerPathRuntimeMarker,
-    RuntimeMarkerState,
-)
-from xic_extractor.execution_runtime_owner import (
+from xic_extractor.execution.attempt import (
     RuntimeArtifactRegistrationReceipt,
     RuntimeCancellationIngress,
     RuntimeCancellationRequest,
@@ -64,6 +49,16 @@ from xic_extractor.execution_runtime_owner import (
     mint_work_unit_settlement,
     start_runtime_attempt,
 )
+from xic_extractor.execution.partitions import (
+    PartitionAcquisitionOutput,
+    PartitionCompositionOutput,
+    PartitionPipelineScheduler,
+    ProcessingOwners,
+    WorkPartition,
+)
+from xic_extractor.execution.recovery import OwnerPathRuntimeMarker, RuntimeMarkerState
+from xic_extractor.execution.result_store import StreamedResultStore, _OwnerUnpickler
+from xic_extractor.execution.workers import WorkerAdmissionPool
 
 _TEST_CONTRACT = _mint_artifact_semantic_contract_ref(
     owner_namespace="xic_extractor.test_execution_engine",
@@ -208,9 +203,7 @@ def test_streamed_result_store_shared_objects_identity(
         shared += (shared_config,)
     store = StreamedResultStore(tmp_path / "spool", shared)
 
-    payload = RefPayload(
-        children=((shared_config, shared_ref),), ref=shared_config
-    )
+    payload = RefPayload(children=((shared_config, shared_ref),), ref=shared_config)
     store.append("p-0", payload)
     restored = store.read(0)
 
@@ -276,10 +269,6 @@ def test_streamed_result_store_cleanup_idempotent(tmp_path: Path) -> None:
     # Idempotent cleanup must not raise
     store.cleanup()
     assert not spool_dir.exists()
-
-
-def test_streamed_result_store_alias() -> None:
-    assert PartitionResultStore is StreamedResultStore
 
 
 # ---------------------------------------------------------------------------
@@ -562,9 +551,7 @@ def test_scheduler_execute_success(tmp_path: Path) -> None:
 
     # Verify progress event sequence
     stages = [
-        ev["stage"]
-        for ev in progress_events
-        if ev.get("event") == "partition_progress"
+        ev["stage"] for ev in progress_events if ev.get("event") == "partition_progress"
     ]
     assert stages == [
         "partition_start",
@@ -729,9 +716,7 @@ def test_scheduler_execute_acquisition_failure_cleans_up(tmp_path: Path) -> None
     fixture = build_processing_identity_no_raw_fixture(
         tmp_path, sample_stems=("sample-1", "sample-2")
     )
-    adapter = MockAdapter(
-        fixture.owners, num_partitions=2, fail_acquisition_index=0
-    )
+    adapter = MockAdapter(fixture.owners, num_partitions=2, fail_acquisition_index=0)
     output_dir = tmp_path / "output"
     marker = OwnerPathRuntimeMarker(tmp_path / "marker.json", "test-acq-fail")
     cleanup_calls = 0
@@ -764,9 +749,7 @@ def test_scheduler_composition_failure_retains_completed_results(
     fixture = build_processing_identity_no_raw_fixture(
         tmp_path, sample_stems=("sample-1", "sample-2")
     )
-    adapter = MockAdapter(
-        fixture.owners, num_partitions=2, fail_composition_index=1
-    )
+    adapter = MockAdapter(fixture.owners, num_partitions=2, fail_composition_index=1)
     output_dir = tmp_path / "output"
     marker = OwnerPathRuntimeMarker(tmp_path / "marker.json", "test-comp-fail")
 
@@ -796,9 +779,7 @@ def test_scheduler_finalize_failure_retains_completed_results(tmp_path: Path) ->
     fixture = build_processing_identity_no_raw_fixture(
         tmp_path, sample_stems=("sample-1", "sample-2")
     )
-    adapter = MockAdapter(
-        fixture.owners, num_partitions=2, fail_finalize=True
-    )
+    adapter = MockAdapter(fixture.owners, num_partitions=2, fail_finalize=True)
     output_dir = tmp_path / "output"
     marker = OwnerPathRuntimeMarker(tmp_path / "marker.json", "test-final-fail")
 
@@ -848,9 +829,7 @@ def test_pipeline_overlap_temporal_intersection(tmp_path: Path) -> None:
     assert result["application_result"]["total_children"] == 2
 
     timelines = [
-        ev["timeline"]
-        for ev in events
-        if ev.get("event") == "partition_timeline"
+        ev["timeline"] for ev in events if ev.get("event") == "partition_timeline"
     ]
     assert len(timelines) == 1
     timeline = timelines[0]
@@ -887,9 +866,7 @@ def test_pipeline_overlap_single_partition_serial(tmp_path: Path) -> None:
     )
     assert result["application_result"]["total_children"] == 1
     timelines = [
-        ev["timeline"]
-        for ev in events
-        if ev.get("event") == "partition_timeline"
+        ev["timeline"] for ev in events if ev.get("event") == "partition_timeline"
     ]
     assert len(timelines) == 1
     assert len(timelines[0]) == 1
@@ -1194,9 +1171,7 @@ def test_r386_01_global_closure_failure_retains_prior_success(
         s for s in settlements if s["work_unit_key"] == "wu:partition-00001"
     )
     closure_settlement = next(
-        s
-        for s in settlements
-        if s["work_unit_key"].startswith("global-closure:")
+        s for s in settlements if s["work_unit_key"].startswith("global-closure:")
     )
 
     assert p0_settlement["outcome"] == "succeeded"
@@ -1204,8 +1179,7 @@ def test_r386_01_global_closure_failure_retains_prior_success(
     assert closure_settlement["outcome"] == "failed"
     assert closure_settlement["failure_detail"] is not None
     assert (
-        closure_settlement["failure_detail"]["stage"]
-        == "partition-pipeline-completion"
+        closure_settlement["failure_detail"]["stage"] == "partition-pipeline-completion"
     )
 
 
@@ -1290,9 +1264,7 @@ def test_r386_01_consumer_composition_failure_settled_failed(
         on_composition=compose,
     )
     output_dir = tmp_path / "output"
-    marker = OwnerPathRuntimeMarker(
-        tmp_path / "marker.json", "test-comp-fail-settled"
-    )
+    marker = OwnerPathRuntimeMarker(tmp_path / "marker.json", "test-comp-fail-settled")
     events: list[dict[str, Any]] = []
 
     with pytest.raises(
@@ -1325,9 +1297,7 @@ def test_r386_01_consumer_composition_failure_settled_failed(
     assert "simulated consumer composition failure" in p0["failure_detail"]["message"]
     assert p1["outcome"] == "cancelled"
     assert closure["outcome"] == "cancelled"
-    timeline_events = [
-        e for e in events if e.get("event") == "partition_timeline"
-    ]
+    timeline_events = [e for e in events if e.get("event") == "partition_timeline"]
     assert len(timeline_events) == 1
 
 
@@ -1358,8 +1328,7 @@ def test_scheduler_settles_all_declared_work_units_for_opaque_partition_keys(
     assert snapshot.coordinator_record_bytes is not None
     record = json.loads(snapshot.coordinator_record_bytes)
     outcomes = {
-        item["work_unit_key"]: item["outcome"]
-        for item in record["work_settlements"]
+        item["work_unit_key"]: item["outcome"] for item in record["work_settlements"]
     }
     assert outcomes == {
         "task-0-initial": "succeeded",
@@ -1406,10 +1375,8 @@ def test_scheduler_marks_declared_inflight_resource_unknown_after_acquisition_lo
         resources["raw-handle-1"]["open_outcome"]
         == "open_state_unknown_after_worker_loss"
     )
-    assert (
-        resources["raw-handle-1"]["cleanup_outcome"]
-        == "unknown_after_worker_loss"
-    )
+    assert resources["raw-handle-1"]["cleanup_outcome"] == "unknown_after_worker_loss"
+
 
 def test_r386_01_closure_boundary_cancellation_settled_cancelled(
     tmp_path: Path,
@@ -1424,9 +1391,7 @@ def test_r386_01_closure_boundary_cancellation_settled_cancelled(
         declare_global_closure=True,
     )
     output_dir = tmp_path / "output"
-    marker = OwnerPathRuntimeMarker(
-        tmp_path / "marker.json", "test-closure-cancel"
-    )
+    marker = OwnerPathRuntimeMarker(tmp_path / "marker.json", "test-closure-cancel")
     events: list[dict[str, Any]] = []
     cancel = False
 
@@ -1465,14 +1430,9 @@ def test_r386_01_closure_boundary_cancellation_settled_cancelled(
     assert p0["outcome"] == "succeeded"
     assert p1["outcome"] == "succeeded"
     assert closure["outcome"] == "cancelled"
-    assert (
-        closure["failure_detail"]["stage"]
-        == "partition-pipeline-cancellation"
-    )
+    assert closure["failure_detail"]["stage"] == "partition-pipeline-cancellation"
 
-    timeline_events = [
-        e for e in events if e.get("event") == "partition_timeline"
-    ]
+    timeline_events = [e for e in events if e.get("event") == "partition_timeline"]
     assert len(timeline_events) == 1
 
 
@@ -1506,8 +1466,9 @@ def test_worker_admission_pool_thread_single_worker_inline() -> None:
     assert pool.transport_metrics is None
 
 
-def test_worker_admission_pool_process_shares_owner_once_and_restores_identity(
-) -> None:
+def test_worker_admission_pool_process_shares_owner_once_and_restores_identity() -> (
+    None
+):
     owner = {"global_request": "x" * 1_000_000}
     first_results: list[SharedProcessResult] = []
     second_results: list[SharedProcessResult] = []
@@ -1597,7 +1558,7 @@ def test_worker_admission_pool_thread_multi_worker_bounded() -> None:
 def test_worker_admission_pool_concurrent_batches_share_one_executor_and_budget(
     monkeypatch,
 ) -> None:
-    import xic_extractor.execution_engine.worker_pool as owner
+    import xic_extractor.execution.workers as owner
 
     active_count = 0
     max_active = 0
@@ -1839,7 +1800,7 @@ def test_reserved_partition_written_elsewhere_reads_back_identically(
     store = StreamedResultStore(tmp_path / "spool", ())
     reservation = store.reserve_partition("partition-remote")
     assert reservation.path == tmp_path.resolve() / "spool" / "00000000.pickle"
-    module = "xic_extractor.execution_engine.streamed_result_store"
+    module = "xic_extractor.execution.result_store"
     script = "; ".join(
         (
             "import json",

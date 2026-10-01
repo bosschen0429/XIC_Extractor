@@ -30,8 +30,10 @@ if TYPE_CHECKING:
     from xic_extractor.alignment.untargeted_finalized_matrix import (
         CompletedUntargetBatchWriterInputs,
     )
-    from xic_extractor.alignment.workflow import CompletedUntargetBatchWorkflowResult
     from xic_extractor.discovery.models import DiscoveryCandidate
+    from xic_extractor.extraction.untargeted_execution_result import (
+        CompletedUntargetBatchWorkflowResult,
+    )
     from xic_extractor.peak_detection.cid_nl_method_assessment import (
         CidNlMethodAssessmentRef,
     )

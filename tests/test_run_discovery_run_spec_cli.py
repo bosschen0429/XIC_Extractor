@@ -8,11 +8,11 @@ from types import SimpleNamespace
 import pytest
 
 from scripts import run_discovery
+from xic_extractor.configuration.execution_profile import ExecutionProfile
 from xic_extractor.discovery.pipeline import (
     DiscoveryProcessExecutionError,
     DiscoverySampleProcessError,
 )
-from xic_extractor.execution_settings import ExecutionProfile
 from xic_extractor.presets import (
     PresetTag,
     bind_cid_nl_recipe,

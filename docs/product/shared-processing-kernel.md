@@ -36,7 +36,7 @@ provider-supplied strategy.
 
 XIC has one shared scientific processing lifecycle:
 
-`SearchScope -> provider-specific Discovery/capture -> shared observation/evidence contract -> PeakHypothesis -> CrossSample grouping and initial ModeTrack refinement -> CrossSampleGroupingResult -> optional bounded Backfill -> FinalizedScientificAlignment -> projection binding/subjects -> ProductionCellDecision -> projection completion -> result finalizer`
+`SearchScope -> provider-specific Discovery/capture -> shared observation/evidence contract -> PeakHypothesis -> CrossSample grouping -> CrossSampleGroupingResult -> optional bounded Backfill -> FinalizedScientificAlignment -> projection binding/subjects -> ProductionCellDecision -> projection completion -> result finalizer`
 
 A configured Target constrains search and fixes a projection row. A
 configured Target does not prove a sample-local observation, group
@@ -55,7 +55,6 @@ but callers cannot bypass the semantic owner.
 | Search scope | Target-list or Discovery/provider owner -> closed provider/capture request | Constrains what may be searched; does not claim what was observed |
 | Discovery provider | exact SearchScope + canonical sample + provider inputs -> owner-backed observations and `PeakHypothesis` values | Owns provider-specific evidence interpretation behind the shared contract; never rows, groups, values, or artifacts |
 | CrossSample | owner-backed hypotheses/observations -> canonical groups, dispositions, membership, lineage | Sole group/membership authority; does not integrate traces or select values |
-| ModeTrack | immutable trajectory snapshot -> typed refinement proposals | Proposal-only; cannot mutate groups, revisit cells, or write values |
 | ObservationRevisit receipt | one bounded revisit decision -> typed result or no-result receipt | Retained receipt contract; no group identity, implicit membership, selected-value, or writer authority |
 | Backfill | one missing cell plus established Target/group context -> bounded revisit result | May produce the first usable observation for that cell; cannot originate the Target/group, mint membership, or select a value |
 | Scientific alignment closure | closed request/group/membership/refinement/revisit receipts -> `FinalizedScientificAlignment` | Validates shared scientific closure; does not construct workflow rows or render outputs |
@@ -78,8 +77,8 @@ Missing NL, a false detection-count flag, or a review reason cannot independentl
 replace an accepted value with ND.
 
 An identity-bearing CrossSample member combines canonical sample identity with
-a discriminated owner-backed `PeakHypothesis` or physical-observation identity.
-The canonical variant tag is part of identity. Canonical serialization and
+an owner-backed `PeakHypothesis` identity. The member kind tag is part of
+identity. Canonical serialization and
 digest mechanics come from `xic_extractor.processing_identity`; CrossSample and
 the Untargeted projection still own their domain payloads and minting decisions.
 
@@ -133,11 +132,9 @@ grouping, membership, canonical group identity, disposition, and split/merge
 lineage. A configured Target identity may constrain search or binding, but a
 fixed Target row is not group identity.
 
-ModeTrack consumes an immutable evidence snapshot and proposes refinements.
-CrossSample alone may apply a proposal and mint a successor group. Direct local
-evidence wins over a trajectory prior; no universal monotonic trend is assumed.
-An oversized or invalid refinement neighborhood fails closed rather than being
-silently truncated or processed in a result-changing order.
+CrossSample alone may change membership and mint a successor group. Direct
+local evidence wins over a trajectory prior; no universal monotonic trend is
+assumed.
 
 ### ObservationRevisit
 
@@ -166,7 +163,7 @@ cannot bootstrap a Target/group that has no prior owner-backed context.
 An accepted Backfill result enters the cell-observation contract as cell
 evidence. The existing `CrossSampleGroupingResult` keeps membership fixed;
 `ProductionCellDecision` decides value/no-write. Backfill does not rebuild
-the grouping result or trigger another ModeTrack pass.
+the grouping result or trigger another grouping pass.
 
 ### Cell Decision And Projection
 
@@ -186,7 +183,6 @@ policy. One projection is never the other projection's oracle.
 | Discovery inputs | Provider contract and typed evidence | Target/mz/RT/role/pairing constraints | Configured provider evidence space |
 | Physical observations and hypotheses | `peak_detection` owners | Supplies constrained requests | Supplies general requests |
 | Cross-sample identity | CrossSample group/membership/disposition/lineage | Target identity constrains search/binding only | Group identity is inferred from evidence |
-| Trajectory refinement | ModeTrack proposes; CrossSample applies | Same interface | Same interface |
 | Missing-cell Backfill | Backfill owns the bounded revisit | Supplies Target Backfill context | Supplies Group Backfill context |
 | Selected value | `ProductionCellDecision` | Uses `TargetCellSubject` | Uses `GroupCellSubject` |
 | Row/count/output policy | Does not own | Targeted projection/writer | Untargeted projection/writer |
@@ -197,8 +193,8 @@ policy. One projection is never the other projection's oracle.
   shared observation/evidence contract.
 - `peak_detection` owns sample-local traces, observations, hypotheses,
   integration, evidence composition, and selection.
-- Alignment CrossSample, ModeTrack, ObservationRevisit, Backfill, cell-decision,
-  and result modules remain distinct semantic owners.
+- Alignment CrossSample, ObservationRevisit, Backfill, cell-decision, and
+  result modules remain distinct semantic owners.
 - `extraction` owns Targeted orchestration/policy and the retained execution
   adapter used by the finalized pure-CID-NL route; it does not own Alignment
   decisions or output rendering.
@@ -228,7 +224,7 @@ oracle is unchanged unless an expected difference is separately approved.
 ## Related Contracts
 
 - [`discovery.md`](discovery.md) owns Discovery provider behavior.
-- [`alignment.md`](alignment.md) owns CrossSample, ModeTrack, repair, and
+- [`alignment.md`](alignment.md) owns CrossSample, repair, and
   finalized-alignment behavior.
 - [`backfill.md`](backfill.md) owns missing-cell Backfill details.
 - [`decision-policy.md`](decision-policy.md) owns selected-value resolution.

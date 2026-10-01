@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from dataclasses import replace
-from typing import TYPE_CHECKING, cast
+from typing import cast
 
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.cross_sample_peak_groups import (
@@ -28,6 +28,8 @@ from xic_extractor.alignment.feature_membership_inference import (
     supports_existing_feature,
 )
 from xic_extractor.alignment.grouping_bootstrap import (
+    InitialGroupingScope,
+    RetainedGroupingCandidate,
     bootstrap_cid_nl_initial_population,
 )
 from xic_extractor.alignment.grouping_result import (
@@ -36,15 +38,9 @@ from xic_extractor.alignment.grouping_result import (
 )
 from xic_extractor.alignment.hypothesis_owner_adapter import (
     compose_peak_hypotheses_from_assessment_universe,
+    owner_from_cid_nl_assessment_observation,
     owner_from_cid_nl_assessment_support,
-)
-from xic_extractor.alignment.mode_track.assignment import (
-    ModeTrackCandidateObservation,
-)
-from xic_extractor.alignment.mode_track.assignment_scope import ModeTrackAssignmentScope
-from xic_extractor.alignment.mode_track.contracts import (
-    AcceptedModeTrackRefinement,
-    apply_accepted_mode_track_refinement,
+    owner_from_ms1_observation_hypothesis,
 )
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
 from xic_extractor.mass_accuracy import within_ppm
@@ -53,6 +49,10 @@ from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessmentRef,
 )
 from xic_extractor.peak_detection.hypotheses import PeakHypothesis
+from xic_extractor.peak_detection.peak_hypothesis_identity import (
+    HYPOTHESIS_METHOD_DDA_CID_NL,
+    HYPOTHESIS_METHOD_MS1_OBSERVATION,
+)
 from xic_extractor.peak_detection.search_scope import (
     TargetSearchScope,
     UntargetedSearchScope,
@@ -60,56 +60,115 @@ from xic_extractor.peak_detection.search_scope import (
 from xic_extractor.processing_identity import ProcessingOwnerReferences
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 
-if TYPE_CHECKING:
-    from xic_extractor.alignment.mode_track.refinement import ModeTrackRefinementRun
 
-
-def apply_mode_track_refinement_run_for_workflow(
+def build_targeted_cross_sample_groups(
     *,
     processing_owners: ProcessingOwnerReferences,
     captures: Sequence[SampleLocalCapture],
-    run: ModeTrackRefinementRun,
+    sample_assessments: tuple[
+        tuple[ResolvedCanonicalSampleIdentity, CidNlMethodAssessmentRef], ...
+    ],
+    alignment_config: AlignmentConfig,
+    drift_lookup: DriftLookupProtocol | None = None,
 ) -> CrossSampleGroupingResult:
-    """Apply the owner's complete initial refinement once, then fix membership."""
-    from xic_extractor.alignment.mode_track.refinement import ModeTrackRefinementRun
+    """Close Targeted membership from the exact selected capture in each cell."""
 
-    if (
-        type(run) is not ModeTrackRefinementRun
-        or run.fit_once_source.processing_owners is not processing_owners
+    sample_by_id = {
+        sample.identity.sample_identity_id: sample
+        for sample in processing_owners.sample_resolutions
+    }
+    assessment_by_id = {
+        sample.identity.sample_identity_id: assessment
+        for sample, assessment in sample_assessments
+    }
+    owners: list[SampleLocalMS1Owner] = []
+    selected_by_id: dict[str, PeakHypothesis] = {}
+    for capture in captures:
+        selected = capture.selected_hypothesis
+        if selected is None:
+            continue
+        observation = selected.peak_observation_refs[0]
+        sample_id = observation.content.canonical_sample_identity_id
+        sample = sample_by_id.get(sample_id)
+        if sample is None or sample_id in selected_by_id:
+            raise CrossSampleGroupingContractError(
+                "Targeted selection crossed or duplicated its canonical sample"
+            )
+        assessment = assessment_by_id.get(sample_id)
+        if selected.hypothesis_method == HYPOTHESIS_METHOD_DDA_CID_NL:
+            if assessment is None:
+                raise CrossSampleGroupingContractError(
+                    "Targeted CID-NL selection lacks its method assessment"
+                )
+            owner = owner_from_cid_nl_assessment_support(
+                sample=sample, assessment=assessment, hypothesis=selected
+            )
+        elif selected.hypothesis_method == HYPOTHESIS_METHOD_MS1_OBSERVATION:
+            owner = (
+                owner_from_cid_nl_assessment_observation(
+                    processing_owners=processing_owners,
+                    sample=sample,
+                    assessment=assessment,
+                    hypothesis=selected,
+                )
+                if assessment is not None
+                else owner_from_ms1_observation_hypothesis(
+                    processing_owners=processing_owners,
+                    sample=sample,
+                    hypothesis=selected,
+                )
+            )
+        else:
+            raise CrossSampleGroupingContractError(
+                "Targeted selection has an unsupported hypothesis method"
+            )
+        owners.append(owner)
+        selected_by_id[sample_id] = selected
+
+    if captures:
+        _validate_capture_owner_hypotheses(
+            captures=captures,
+            owners=owners,
+            source_by_id={
+                selected.hypothesis_id: selected for selected in selected_by_id.values()
+            },
+        )
+    groups = construct_cross_sample_peak_group_hypotheses(
+        tuple(owners),
+        config=alignment_config,
+        sample_universe=frozenset(
+            sample.metadata.raw_stem for sample in processing_owners.sample_resolutions
+        ),
+        injection_order={
+            sample.metadata.raw_stem: sample.metadata.injection_order
+            for sample in processing_owners.sample_resolutions
+            if sample.metadata.injection_order is not None
+        },
+        drift_lookup=drift_lookup,
+    )
+    identities = tuple(
+        validate_cross_sample_peak_group_identity(group, require_canonical=True)
+        for group in groups
+    )
+    population = tuple(
+        sorted(
+            (identity for identity in identities if identity is not None),
+            key=lambda group: group.group_hypothesis_id,
+        )
+    )
+    if tuple(sorted(owner.owner_id for owner in owners)) != tuple(
+        sorted(owner_id for group in groups for owner_id in group.owner_ids)
     ):
         raise CrossSampleGroupingContractError(
-            "refinement crossed its processing owners"
+            "Targeted grouping lost or invented selected hypothesis identity"
         )
-    _validate_capture_owner_hypotheses(
-        captures=captures,
-        owners=run.owners,
-        source_by_id={
-            candidate.peak_hypothesis_id: candidate.peak_hypothesis
-            for sample in run.fit_once_source.sample_sources
-            for candidate in sample.candidates
-        },
-    )
-    # Transactions are disjoint components closed by the refinement producer.
-    # Accumulate their answers once instead of rebuilding the whole population
-    # after every component.
-    successors: list[CrossSampleGroupIdentity] = []
-    for transaction in run.transactions:
-        if type(transaction.proposal) is AcceptedModeTrackRefinement:
-            application = apply_accepted_mode_track_refinement(
-                trajectory_input=transaction.trajectory_input,
-                proposal=transaction.proposal,
-                application_context=transaction.application_context,
-                population=run.predecessors,
-            )
-            successors.extend(application.successors)
-        else:
-            successors.extend(transaction.application_context.predecessors)
-    population = tuple(sorted(successors, key=lambda group: group.group_hypothesis_id))
-    partition = _partition_transition(
-        predecessors=run.predecessors, successors=population
-    )
     return CrossSampleGroupingResult(
-        processing_owners=processing_owners, partition_transition=partition
+        processing_owners=processing_owners,
+        partition_transition=_partition_transition(
+            predecessors=population,
+            successors=population,
+        ),
+        drift_lookup=drift_lookup,
     )
 
 
@@ -129,13 +188,13 @@ def build_initial_cid_nl_cross_sample_groups(
     ]
     | None = None,
 ) -> tuple[
-    ModeTrackAssignmentScope,
+    InitialGroupingScope,
     CrossSampleGroupingResult,
-    tuple[ModeTrackCandidateObservation, ...],
+    tuple[RetainedGroupingCandidate, ...],
 ]:
     """Infer stable CID-NL groups without producing unused RT trajectories."""
     batch_samples = processing_owners.sample_resolutions
-    assignment_scope, _anchors, sample_candidates, drift_lookup = (
+    grouping_scope, retained_candidates, drift_lookup = (
         bootstrap_cid_nl_initial_population(
             processing_owners=processing_owners,
             sample_assessments=sample_assessments,
@@ -155,14 +214,13 @@ def build_initial_cid_nl_cross_sample_groups(
             retained_hypotheses_by_assessment=retained_hypotheses_by_assessment,
         )
     )
-    groups = assignment_scope.groups
+    groups = grouping_scope.groups
     _validate_capture_owner_hypotheses(
         captures=captures,
         owners=tuple(owner for group in groups for owner in group.owners),
         source_by_id={
             candidate.peak_hypothesis_id: candidate.peak_hypothesis
-            for _, candidates in sample_candidates
-            for candidate in candidates
+            for candidate in retained_candidates
         },
     )
     identities = tuple(
@@ -186,32 +244,22 @@ def build_initial_cid_nl_cross_sample_groups(
         ),
         drift_lookup=drift_lookup,
     )
-    retained_candidates = tuple(
-        sorted(
-            (
-                candidate
-                for _, candidates in sample_candidates
-                for candidate in candidates
-            ),
-            key=lambda candidate: candidate.candidate_observation_id,
-        )
-    )
-    return assignment_scope, result, retained_candidates
+    return grouping_scope, result, retained_candidates
 
 
 def regroup_cid_nl_cross_sample_groups(
     *,
     processing_owners: ProcessingOwnerReferences,
-    assignment_scope: ModeTrackAssignmentScope,
+    grouping_scope: InitialGroupingScope,
     grouping_result: CrossSampleGroupingResult,
     alignment_config: AlignmentConfig,
     injection_order: Mapping[str, int],
     rt_warp: BatchRtWarp,
     backfill_half_window_min: float,
     operation_counts_sink: list[FeatureInferenceOperationCounts] | None = None,
-) -> tuple[ModeTrackAssignmentScope, CrossSampleGroupingResult]:
+) -> tuple[InitialGroupingScope, CrossSampleGroupingResult]:
     """Reconsider every ordinary owner after the batch anchor warp is known."""
-    owners = tuple(owner for group in assignment_scope.groups for owner in group.owners)
+    owners = tuple(owner for group in grouping_scope.groups for owner in group.owners)
     groups = construct_cross_sample_peak_group_hypotheses(
         owners,
         config=alignment_config,
@@ -245,7 +293,7 @@ def regroup_cid_nl_cross_sample_groups(
             key=lambda group: group.group_hypothesis_id,
         )
     )
-    scope = replace(assignment_scope, groups=groups)
+    scope = replace(grouping_scope, groups=groups)
     result = CrossSampleGroupingResult(
         processing_owners=processing_owners,
         partition_transition=_partition_transition(

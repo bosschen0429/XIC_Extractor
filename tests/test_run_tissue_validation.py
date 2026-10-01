@@ -6,8 +6,8 @@ from pathlib import Path
 import pytest
 
 from scripts import run_tissue_validation
+from xic_extractor.configuration.execution_profile import default_parallel_workers
 from xic_extractor.discovery.blank_qualification import BlankBackgroundLibrary
-from xic_extractor.execution_settings import default_parallel_workers
 from xic_extractor.raw_reader import EXPECTED_THERMO_DLLS
 
 

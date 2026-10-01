@@ -19,7 +19,7 @@ from xic_extractor.processing_identity import (
 def test_attempt_history_is_owner_bound_ordered_and_append_only(
     tmp_path: Path,
 ) -> None:
-    from xic_extractor.execution_runtime import (
+    from xic_extractor.execution._lifecycle import (
         AttemptLifecycleEventKind,
         AttemptLifecycleHistory,
         append_attempt_lifecycle_event,
@@ -51,7 +51,7 @@ def test_attempt_history_is_owner_bound_ordered_and_append_only(
 
 
 def test_queued_cancellation_prevents_attempt_start(tmp_path: Path) -> None:
-    from xic_extractor.execution_runtime import (
+    from xic_extractor.execution._lifecycle import (
         AttemptLifecycleContractError,
         AttemptLifecycleEventKind,
         AttemptLifecycleHistory,
@@ -80,7 +80,7 @@ def test_queued_cancellation_prevents_attempt_start(tmp_path: Path) -> None:
 def test_queued_cancellation_and_manifest_preflight_failure_are_exclusive(
     tmp_path: Path,
 ) -> None:
-    from xic_extractor.execution_runtime import (
+    from xic_extractor.execution._lifecycle import (
         AttemptLifecycleContractError,
         AttemptLifecycleEventKind,
         AttemptLifecycleHistory,
@@ -119,7 +119,7 @@ def test_queued_cancellation_and_manifest_preflight_failure_are_exclusive(
 def test_manifest_preflight_failure_proposes_failed_terminal_without_start(
     tmp_path: Path,
 ) -> None:
-    from xic_extractor.execution_runtime import (
+    from xic_extractor.execution._lifecycle import (
         AttemptLifecycleEventKind,
         AttemptLifecycleHistory,
         AttemptTerminalOutcome,
@@ -147,7 +147,7 @@ def test_manifest_preflight_failure_proposes_failed_terminal_without_start(
 def test_required_work_manifest_preflight_accepts_owner_attested_closed_work(
     tmp_path: Path,
 ) -> None:
-    from xic_extractor.execution_runtime import (
+    from xic_extractor.execution._lifecycle import (
         AttemptLifecycleEventKind,
         AttemptLifecycleHistory,
         append_attempt_lifecycle_event,
@@ -184,7 +184,7 @@ def test_required_work_manifest_preflight_accepts_owner_attested_closed_work(
 def test_required_work_manifest_preflight_rejects_empty_running_manifest(
     tmp_path: Path,
 ) -> None:
-    from xic_extractor.execution_runtime import (
+    from xic_extractor.execution._lifecycle import (
         AttemptLifecycleEventKind,
         AttemptLifecycleHistory,
         append_attempt_lifecycle_event,
@@ -226,7 +226,7 @@ def test_invalid_required_work_manifest_drives_existing_failed_proposal(
     work_unit_keys: tuple[str, ...],
     owner_completeness_attestation: str | None,
 ) -> None:
-    from xic_extractor.execution_runtime import (
+    from xic_extractor.execution._lifecycle import (
         AttemptLifecycleContractError,
         AttemptLifecycleEventKind,
         AttemptLifecycleHistory,
@@ -268,7 +268,7 @@ def test_invalid_required_work_manifest_drives_existing_failed_proposal(
 
 
 def test_required_work_manifest_attempt_mismatch_fails_closed(tmp_path: Path) -> None:
-    from xic_extractor.execution_runtime import (
+    from xic_extractor.execution._lifecycle import (
         AttemptLifecycleEventKind,
         AttemptLifecycleHistory,
         append_attempt_lifecycle_event,
@@ -299,7 +299,7 @@ def test_required_work_manifest_attempt_mismatch_fails_closed(tmp_path: Path) ->
 
 
 def test_attempt_runtime_settles_manifest_work_exactly_once(tmp_path: Path) -> None:
-    from xic_extractor.execution_runtime import (
+    from xic_extractor.execution._lifecycle import (
         AttemptLifecycleEventKind,
         AttemptLifecycleHistory,
         WorkUnitTerminalOutcome,
@@ -363,7 +363,7 @@ def test_attempt_runtime_settles_manifest_work_exactly_once(tmp_path: Path) -> N
 def test_conflicting_work_settlement_is_recorded_and_fails_attempt(
     tmp_path: Path,
 ) -> None:
-    from xic_extractor.execution_runtime import (
+    from xic_extractor.execution._lifecycle import (
         AttemptLifecycleEventKind,
         AttemptLifecycleHistory,
         WorkUnitSettlementIntegrityFailureKind,
@@ -431,7 +431,7 @@ def test_conflicting_work_settlement_is_recorded_and_fails_attempt(
 def test_undeclared_work_settlement_fails_attempt_without_accepting_result(
     tmp_path: Path,
 ) -> None:
-    from xic_extractor.execution_runtime import (
+    from xic_extractor.execution._lifecycle import (
         AttemptLifecycleEventKind,
         AttemptLifecycleHistory,
         WorkUnitSettlementIntegrityFailureKind,
@@ -477,7 +477,7 @@ def test_undeclared_work_settlement_fails_attempt_without_accepting_result(
 
 
 def test_work_settlement_outcome_and_result_ref_fail_closed(tmp_path: Path) -> None:
-    from xic_extractor.execution_runtime import (
+    from xic_extractor.execution._lifecycle import (
         AttemptLifecycleContractError,
         AttemptLifecycleEventKind,
         AttemptLifecycleHistory,
@@ -611,7 +611,7 @@ def test_work_settlement_outcome_and_result_ref_fail_closed(tmp_path: Path) -> N
 def test_manifest_preflight_failure_path_fails_closed(
     tmp_path: Path,
 ) -> None:
-    from xic_extractor.execution_runtime import (
+    from xic_extractor.execution._lifecycle import (
         AttemptLifecycleContractError,
         AttemptLifecycleEvent,
         AttemptLifecycleEventKind,
@@ -691,7 +691,7 @@ def test_manifest_preflight_failure_path_fails_closed(
 def test_history_rejects_forged_attempt_sequence_and_transition(
     tmp_path: Path,
 ) -> None:
-    from xic_extractor.execution_runtime import (
+    from xic_extractor.execution._lifecycle import (
         AttemptLifecycleContractError,
         AttemptLifecycleEvent,
         AttemptLifecycleEventKind,
@@ -745,7 +745,7 @@ def test_history_rejects_forged_attempt_sequence_and_transition(
 
 
 def test_lifecycle_values_fail_closed_on_adversarial_types(tmp_path: Path) -> None:
-    from xic_extractor.execution_runtime import (
+    from xic_extractor.execution._lifecycle import (
         AttemptLifecycleContractError,
         AttemptLifecycleEvent,
         AttemptLifecycleEventKind,
@@ -781,7 +781,7 @@ def test_lifecycle_values_fail_closed_on_adversarial_types(tmp_path: Path) -> No
 
 
 def test_history_rejects_duplicate_lifecycle_facts(tmp_path: Path) -> None:
-    from xic_extractor.execution_runtime import (
+    from xic_extractor.execution._lifecycle import (
         AttemptLifecycleContractError,
         AttemptLifecycleEventKind,
         AttemptLifecycleHistory,
@@ -820,7 +820,7 @@ def test_history_rejects_duplicate_lifecycle_facts(tmp_path: Path) -> None:
 
 
 def test_execution_runtime_contract_stays_inside_identity_boundary() -> None:
-    path = Path("xic_extractor/execution_runtime.py")
+    path = Path("xic_extractor/execution/_lifecycle.py")
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     imports = tuple(
         imported for imported in _imports(tree) if imported.startswith("xic_extractor")

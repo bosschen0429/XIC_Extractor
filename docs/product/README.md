@@ -1,8 +1,12 @@
 # Product Topic Index
 
-Reference pages for XIC product behavior and ownership. Audience: maintainers
-and code reviewers. For user-facing workflow guides, see
-[`docs/user/`](../user/README.md).
+Reference pages for XIC product behavior and ownership. Audience: maintainers,
+code reviewers, and agents changing product behavior. For operation and
+conceptual HTML guides, use the [user guide index](../user/README.md).
+
+For implementation entry points and module responsibilities, use the
+[architecture reading guide](../architecture-contract.md#reading-the-code).
+For task-specific execution and verification rules, use [AGENTS.md](../../AGENTS.md).
 
 Use this index when a GUI workflow, preset, review surface, matrix, or
 validation claim needs a durable rule instead of a dated plan or private note.
@@ -15,9 +19,9 @@ owner for product documentation.
 | Topic | Start here | Scope |
 | --- | --- | --- |
 | Discovery | [`discovery.md`](discovery.md) | Shared candidate-discovery stage; broad Untargeted search and constrained Targeted search, candidate/review outputs, seed evidence handoff |
-| Shared Processing Kernel | [`shared-processing-kernel.md`](shared-processing-kernel.md) | Frozen workflow-neutral capture, CrossSample, ModeTrack, ObservationRevisit, cell-decision, final-result, and Targeted/Untargeted projection seams |
+| Shared Processing Kernel | [`shared-processing-kernel.md`](shared-processing-kernel.md) | Frozen workflow-neutral capture, CrossSample, ObservationRevisit, cell-decision, final-result, and Targeted/Untargeted projection seams |
 | Untargeted Method | [`untargeted-method.md`](untargeted-method.md) | Durable method boundary for Untargeted LC-MS recovery, hygiene, and historical report absorption |
-| Alignment | [`alignment.md`](alignment.md) | Current coupling problem and frozen CrossSample/ModeTrack/ObservationRevisit/final-result owner contract |
+| Alignment | [`alignment.md`](alignment.md) | Current coupling problem and frozen CrossSample/ObservationRevisit/final-result owner contract |
 | Targeted Selection | [`targeted-selection.md`](targeted-selection.md) | Targeted behavior, selected hypotheses, region/boundary gates, reasons |
 | Decision Policy | [`decision-policy.md`](decision-policy.md) | Typed evidence, workflow gates, score boundaries, and projection authority |
 | Peak Model Selection | [`peak-model-selection.md`](peak-model-selection.md) | Model-selection invariants, parity requirements, expected-diff gates |
@@ -54,11 +58,6 @@ owner for product documentation.
 | Presets | [`presets.md`](presets.md) | Resolver and alignment preset behavior, reproducibility rules |
 | Productization | [`productization.md`](productization.md) | Capability map, promotion boundaries, authority routing |
 | Untargeted GUI | [`untargeted-gui.md`](untargeted-gui.md) | Discovery workspace, run modes, local config, bundle resources |
-| Readers Index | [`readers-index.html`](readers-index.html) | Human-facing HTML route to the topics linked from the core modules guide |
-| Core Modules Explainer | [`core-modules-explainer.html`](core-modules-explainer.html) | User-readable map of the shared core, Targeted/Untargeted entry and delivery, supporting modules, and read-only review |
-| Processing Guide | [`processing-guide.html`](processing-guide.html) | Human-readable explanation of Discovery, shared peak/alignment/Backfill, and matrix decisions |
-| System Guide | [`system-guide.html`](system-guide.html) | Human-readable architecture, execution lifecycle, and completed-evidence review |
-| RAW-To-Final Matrix Story | [`raw-to-final-matrix-product-story.html`](raw-to-final-matrix-product-story.html) | Human-readable product explainer for RAW/discovery/alignment/matrix handoff |
 
 ## Authority Boundary
 
@@ -68,7 +67,7 @@ If a topic file conflicts with an owner listed below, the owner wins.
 - [LC-MS/MS evidence rules](../lc-msms-evidence-rules.md)
 - [Architecture contract](../architecture-contract.md)
 - [Productization status index](../superpowers/validation/productization_status_index.tsv)
-- [Productization authority manifest](../superpowers/schemas/productization_authority_manifest.json)
+- [Productization authority manifest](../superpowers/productization/status/productization_authority_manifest.json)
 - [Product validation contract](../agent/product-validation-contract.md)
 
 ## Contributor Rules
@@ -82,9 +81,8 @@ If a topic file conflicts with an owner listed below, the owner wins.
   command transcripts into this directory.
 - Topic pages do not change maturity tier, active lane, writer authority,
   matrix behavior, schema, or validation verdicts.
-- Human-readable HTML can stay here only as an explainer. If it conflicts with
-  topic pages, status index, authority manifest, or product validation
-  contract, those owners win.
+- Explanatory HTML belongs with the [user guides](../user/README.md).
+  Update the formal topic owner before synchronizing its explanation.
 
 ### Shared Conventions
 

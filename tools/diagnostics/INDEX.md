@@ -106,7 +106,7 @@ models because their output schemas are intentionally different; see
 alignment/candidate-gate artifacts. Optional blast-radius analysis summarizes
 existing cohort artifacts; shadow-label analysis compares human labels with
 machine evidence and reports diagnostic readiness.
-**Topic group**: `shared_peak_identity_explanation.py` + `xic_extractor/alignment/shared_peak_identity_explanation/*`
+**Topic group**: `shared_peak_identity_explanation.py` + `xic_extractor/diagnostics/shared_peak_identity_explanation/*`
 **Status note**: The default command writes an oracle copy, evidence vectors,
 explanations, run facts, and a Markdown report. Optional modes add blast-radius,
 shadow-label, machine-evidence, and readiness artifacts. Evidence inputs cover
@@ -124,7 +124,7 @@ cannot authorize values, rewrite matrices, or apply product activation.
 
 **Purpose**: Explain machine-observed wrong-peak conflicts and propose alternate
 local peaks for review.
-**Topic group**: `diagnose_shared_peak_wrong_peak.py` + `xic_extractor/alignment/shared_peak_identity_explanation/wrong_peak_root_cause.py`
+**Topic group**: `diagnose_shared_peak_wrong_peak.py` + `xic_extractor/diagnostics/shared_peak_identity_explanation/wrong_peak_root_cause.py`
 **Status note**: Consumes machine-evidence support, alignment cells, and optional
 overlay trace-data JSON. The root-cause sidecar records diagnostic conflict
 classes, selected-cell evidence, and alternate local maxima without activation

@@ -22,7 +22,7 @@ active lane, current writer counts, promotion-packet status, and Backfill
 authority scopes are owned by the productization status index
 `docs/superpowers/validation/productization_status_index.tsv`, the authority
 manifest
-`docs/superpowers/schemas/productization_authority_manifest.json`, and the
+`docs/superpowers/productization/status/productization_authority_manifest.json`, and the
 promotion contract `docs/agent/product-validation-contract.md`. When this ledger
 cites a historical validation note, treat it as diagnostic/rerun memory unless
 a current structured authority artifact still promotes the same claim. The
@@ -1814,7 +1814,7 @@ the cost, not moving it, and the graph exists to feed one report nobody reads.
   `fingerprint/candidate-timing.json` and `writer-paired-probe/receipt.json`
   below that same root. Durable oracles are the source-reuse tests in
   `tests/test_untargeted_cid_nl_production_batch.py` and the partition-streaming
-  test in `tests/test_alignment_pipeline.py`.
+  test in `tests/test_untargeted_application.py`.
 - Do not infer full-cohort wall time or a memory-pressure fix from these probes.
   Rerun a bounded comparison if source ownership or the child-consumption path
   changes. A real-data speed claim needs its own approved comparable run.

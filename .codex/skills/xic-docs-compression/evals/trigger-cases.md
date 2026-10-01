@@ -17,7 +17,7 @@
 
 - "幫我開 PR" -> use global `pr-closeout`; read XIC readiness/artifact owners
   only when they are relevant.
-- "跑 8RAW 驗證" -> use `xic-raw-validation`.
+- "跑 8RAW 驗證" -> use the runner documented in `parameter-settings.md`.
 - "調查 performance bottleneck" -> use `xic-performance-diagnosis`.
 - "新增 product doc 的使用者說明" -> ordinary docs edit unless retention/compression is the issue.
 - "修一個 validation checker bug" -> use architecture/preflight and implementation flow.

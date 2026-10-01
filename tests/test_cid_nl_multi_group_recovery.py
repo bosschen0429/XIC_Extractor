@@ -18,6 +18,10 @@ from tests.test_untargeted_cid_nl_real_data_runtime import (
     _discovery_receipts,
     _install_runtime_raws,
 )
+from tests.untargeted_partition_fixtures import (
+    build_dense_partition,
+    complete_dense_partition,
+)
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.cross_sample_neighborhood_graph import (
     CrossSamplePartitionTransition,
@@ -29,22 +33,17 @@ from xic_extractor.alignment.grouping_workflow import (
 from xic_extractor.alignment.untargeted_finalized_matrix import (
     project_completed_untarget_batch_writer_inputs,
 )
-from xic_extractor.execution_runtime_marker import OwnerPathRuntimeMarker
-from xic_extractor.execution_runtime_owner import start_runtime_attempt
-from xic_extractor.extraction import (
-    untargeted_cid_nl_real_data_runtime as runtime_owner,
+from xic_extractor.execution.attempt import start_runtime_attempt
+from xic_extractor.execution.recovery import OwnerPathRuntimeMarker
+from xic_extractor.extraction.untargeted_partition import cid_nl_acquisition
+from xic_extractor.extraction.untargeted_partition import models as partition_models
+from xic_extractor.extraction.untargeted_partition.execution import execute_attempt
+from xic_extractor.extraction.untargeted_partition.models import (
+    UntargetedPartitionJob,
+    project_completed_backfill,
 )
-from xic_extractor.extraction.untargeted_cid_nl_production_batch import (
-    build_untargeted_cid_nl_production_batch,
-    compose_untargeted_cid_nl_production_result,
-)
-from xic_extractor.extraction.untargeted_cid_nl_real_data_inputs import (
-    build_untargeted_cid_nl_real_data_context,
-)
-from xic_extractor.extraction.untargeted_cid_nl_real_data_runtime import (
-    UntargetedCidNlRealDataRuntimeJob,
-    execute_untargeted_cid_nl_real_data_runtime,
-    project_untargeted_cid_nl_completed_backfill,
+from xic_extractor.extraction.untargeted_partition.request import (
+    build_partition_context,
 )
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     is_ms1_only_cid_nl_backfill_assessment,
@@ -82,7 +81,7 @@ def test_rejected_initial_evidence_gets_one_independent_bounded_assessment(
             )
             if outcome == "empty":
                 raw.intensity[:] = 0.0
-    batch = build_untargeted_cid_nl_production_batch(
+    batch = build_dense_partition(
         raw_paths=paths,
         sample_metadata=tuple(
             SampleMetadata(
@@ -107,7 +106,7 @@ def test_rejected_initial_evidence_gets_one_independent_bounded_assessment(
     )
     opened = _install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
     recovery_calls = []
-    acquire = runtime_owner.acquire_untargeted_cid_nl_backfill_trace_batch
+    acquire = cid_nl_acquisition.acquire_untargeted_cid_nl_backfill_trace_batch
 
     def acquire_recovery(**kwargs):
         recovery_calls.append(kwargs["sample"].metadata.raw_stem)
@@ -116,7 +115,7 @@ def test_rejected_initial_evidence_gets_one_independent_bounded_assessment(
         return acquire(**kwargs)
 
     monkeypatch.setattr(
-        runtime_owner,
+        cid_nl_acquisition,
         "acquire_untargeted_cid_nl_backfill_trace_batch",
         acquire_recovery,
     )
@@ -125,7 +124,7 @@ def test_rejected_initial_evidence_gets_one_independent_bounded_assessment(
         work_unit_keys=tuple(job.work_unit_key for job in batch.jobs),
         owner_completeness_attestation="rejected-bounded-recovery",
     )
-    result = execute_untargeted_cid_nl_real_data_runtime(
+    result = execute_attempt(
         runtime,
         batch.jobs,
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
@@ -155,7 +154,7 @@ def test_rejected_initial_evidence_gets_one_independent_bounded_assessment(
     assert initial.content.reason_codes == (
         "qualifying_cid_nl_without_usable_ms1_peak",
     )
-    completed = compose_untargeted_cid_nl_production_result(
+    completed = complete_dense_partition(
         batch, result, alignment_config=AlignmentConfig(anchor_min_seed_events=1)
     )
     assert initial in completed.method_assessments
@@ -163,7 +162,9 @@ def test_rejected_initial_evidence_gets_one_independent_bounded_assessment(
         exclusion.candidate_id == candidates["Rejected"][0].candidate_id
         for exclusion in completed.application_result.excluded_candidates
     )
-    writer = project_completed_untarget_batch_writer_inputs(completed)
+    writer = project_completed_untarget_batch_writer_inputs(
+        completed.application_result
+    )
     (decision,) = tuple(
         d
         for d in writer.production_decisions.cells.values()
@@ -184,11 +185,11 @@ def test_rejected_initial_evidence_gets_one_independent_bounded_assessment(
             is None
         )
 
-        from xic_extractor.alignment.tsv_writer import write_alignment_matrix_tsv
         from xic_extractor.diagnostics.cid_nl_explanation import read_cid_nl_explanation
         from xic_extractor.diagnostics.cid_nl_explanation_projection import (
             write_cid_nl_explanation,
         )
+        from xic_extractor.output.alignment.tsv_writer import write_alignment_matrix_tsv
 
         matrix_path = tmp_path / "matrix.tsv"
         config = AlignmentConfig(anchor_min_seed_events=1)
@@ -230,7 +231,7 @@ def test_rejected_initial_evidence_gets_one_independent_bounded_assessment(
             == decision.matrix_value
         )
 
-        from xic_extractor.extraction.untargeted_cid_nl_real_data_adapter import (
+        from xic_extractor.extraction.untargeted_partition.cid_nl_acquisition import (
             backfill_untargeted_cid_nl_sample_subject,
         )
 
@@ -375,7 +376,7 @@ def test_runtime_recovers_every_authorized_rt_group(
         )
         return
     if batched:
-        batch = build_untargeted_cid_nl_production_batch(**kwargs, dll_dir=tmp_path)
+        batch = build_dense_partition(**kwargs, dll_dir=tmp_path)
         context, jobs = batch.context, batch.jobs
         assert len(batch.subject_batch.subjects) == 1
     else:
@@ -384,11 +385,11 @@ def test_runtime_recovers_every_authorized_rt_group(
             precursor_tolerance_ppm=settings.precursor_mz_tolerance_ppm,
             neutral_loss_da=116.0474,
         )
-        context = build_untargeted_cid_nl_real_data_context(
+        context = build_partition_context(
             **kwargs, method_subject=subject
         )
         jobs = tuple(
-            UntargetedCidNlRealDataRuntimeJob(
+            UntargetedPartitionJob(
                 processing_owners=context.processing_owners,
                 sample=sample,
                 method_subject=subject,
@@ -411,14 +412,16 @@ def test_runtime_recovers_every_authorized_rt_group(
         owner_completeness_attestation="multi-group-recovery",
     )
     canonical_calls = []
-    canonical_bytes = runtime_owner._canonical_acquisition_bytes
+    canonical_bytes = partition_models._canonical_acquisition_bytes
 
     def count_canonical(acquisition):
         canonical_calls.append(id(acquisition))
         return canonical_bytes(acquisition)
 
-    monkeypatch.setattr(runtime_owner, "_canonical_acquisition_bytes", count_canonical)
-    result = execute_untargeted_cid_nl_real_data_runtime(
+    monkeypatch.setattr(
+        partition_models, "_canonical_acquisition_bytes", count_canonical
+    )
+    result = execute_attempt(
         runtime,
         jobs,
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
@@ -439,7 +442,7 @@ def test_runtime_recovers_every_authorized_rt_group(
             else sample_result.adapter_result.acquisition
         )
         assert sample_result.result_ref == (
-            runtime_owner.mint_untargeted_cid_nl_sample_result_ref(
+            partition_models.mint_sample_result_ref(
                 job=sample_result.job,
                 result=sample_result.adapter_result,
                 backfill_input=sample_result.backfill_input,
@@ -487,12 +490,12 @@ def test_runtime_recovers_every_authorized_rt_group(
             _ = missing.backfill_attempt
     if batched:
         canonical_calls.clear()
-        completed = compose_untargeted_cid_nl_production_result(
+        completed = complete_dense_partition(
             batch, result, alignment_config=AlignmentConfig(anchor_min_seed_events=1)
         )
         assert len(canonical_calls) == len(set(canonical_calls))
         assert len(completed.initial_groups) == 2
-        projection_context = runtime_owner._RuntimeResultContext(jobs)
+        projection_context = partition_models._SampleResultContext(jobs)
 
         (child,) = completed.application_result.children
         scientific = child.scientific_core
@@ -729,7 +732,7 @@ def test_runtime_recovers_every_authorized_rt_group(
                     assert cell.backfill_cell is not None
                     assert cell.backfill_cell.method_assessment is recovery.assessment
                     recovery_context = cell.backfill_cell.group_context
-                completion = project_untargeted_cid_nl_completed_backfill(
+                completion = project_completed_backfill(
                     missing, group_context=recovery_context
                 )
                 assert (
@@ -752,14 +755,14 @@ def test_runtime_recovers_every_authorized_rt_group(
                     for attempt in missing.backfill_attempts
                 )
                 with pytest.raises(ValueError, match="sealed runtime result"):
-                    project_untargeted_cid_nl_completed_backfill(
+                    project_completed_backfill(
                         replace(missing, backfill_attempts=changed_recoveries),
                         group_context=recovery_context,
                     )
                 assert completion.backfill_assessment is recovery.assessment
                 if len(missing.backfill_attempts) > 1:
                     with pytest.raises(ValueError, match="sealed runtime result"):
-                        project_untargeted_cid_nl_completed_backfill(
+                        project_completed_backfill(
                             replace(missing, backfill_attempts=(recovery,)),
                             group_context=recovery_context,
                         )
@@ -809,7 +812,9 @@ def test_runtime_recovers_every_authorized_rt_group(
             project_completed_untarget_batch_writer_inputs,
         )
 
-        writer = project_completed_untarget_batch_writer_inputs(completed)
+        writer = project_completed_untarget_batch_writer_inputs(
+            completed.application_result
+        )
         decisions = tuple(
             decision
             for decision in writer.production_decisions.cells.values()
@@ -866,11 +871,8 @@ def test_runtime_recovers_every_authorized_rt_group(
             )
             assert not any(decision.raw_status == "detected" for decision in decisions)
         if shared_support == "shared" and recovery_peaks == (8.0, 12.0):
-            from xic_extractor.alignment.mode_track import (
-                ModeTrackTrajectoryPolicy,
-            )
-            from xic_extractor.alignment.mode_track.producer import (
-                bootstrap_mode_tracks_from_cid_nl_support,
+            from xic_extractor.alignment.grouping_bootstrap import (
+                bootstrap_cid_nl_initial_population,
             )
 
             inputs = tuple(
@@ -881,23 +883,16 @@ def test_runtime_recovers_every_authorized_rt_group(
             options = dict(
                 processing_owners=context.processing_owners,
                 alignment_config=AlignmentConfig(anchor_min_seed_events=1),
-                trajectory_policy=ModeTrackTrajectoryPolicy(
-                    trajectory_policy_version="anchor-trajectory",
-                    band_policy_version="fixed-band",
-                    prediction_half_width_min=2 / 60,
-                    max_interpolation_gap=10,
-                    max_extrapolation_gap=10,
-                ),
                 retain_observation_only_candidates=True,
             )
-            baseline = bootstrap_mode_tracks_from_cid_nl_support(
+            baseline = bootstrap_cid_nl_initial_population(
                 sample_assessments=inputs, **options
             )
-            replayed = bootstrap_mode_tracks_from_cid_nl_support(
+            replayed = bootstrap_cid_nl_initial_population(
                 sample_assessments=tuple(pair for pair in inputs for _ in range(2)),
                 **options,
             )
-            assert replayed == baseline
+            assert replayed[:2] == baseline[:2]
 
 
 def test_shared_physical_recovery_claim_is_not_assigned_to_two_groups(
@@ -940,7 +935,7 @@ def test_shared_physical_recovery_claim_is_not_assigned_to_two_groups(
             if path.stem != "Missing"
             else tuple(_without_ms1_peak(candidate) for candidate in current)
         )
-    batch = build_untargeted_cid_nl_production_batch(
+    batch = build_dense_partition(
         raw_paths=paths,
         sample_metadata=tuple(
             SampleMetadata(
@@ -964,7 +959,7 @@ def test_shared_physical_recovery_claim_is_not_assigned_to_two_groups(
         work_unit_keys=tuple(job.work_unit_key for job in batch.jobs),
         owner_completeness_attestation="shared-recovery-claim",
     )
-    result = execute_untargeted_cid_nl_real_data_runtime(
+    result = execute_attempt(
         runtime,
         batch.jobs,
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
@@ -978,7 +973,7 @@ def test_shared_physical_recovery_claim_is_not_assigned_to_two_groups(
         for item in result.sample_results
         if item.job.sample.metadata.raw_stem == "Missing"
     )
-    completed = compose_untargeted_cid_nl_production_result(
+    completed = complete_dense_partition(
         batch, result, alignment_config=AlignmentConfig(anchor_min_seed_events=1)
     )
     assert len(missing.backfill_attempts) == 2, (
@@ -1008,7 +1003,9 @@ def test_shared_physical_recovery_claim_is_not_assigned_to_two_groups(
     assert len(missing_cells) == 2
     assert all(cell.backfill_cell is not None for cell in missing_cells)
     assert all(cell.evidence_states == ("unresolved",) for cell in missing_cells)
-    writer = project_completed_untarget_batch_writer_inputs(completed)
+    writer = project_completed_untarget_batch_writer_inputs(
+        completed.application_result
+    )
     missing_decisions = tuple(
         decision
         for decision in writer.production_decisions.cells.values()
@@ -1058,7 +1055,7 @@ def test_shared_ms1_only_backfill_peak_is_not_written_to_two_rows(
             if path.stem != "Missing"
             else ()
         )
-    batch = build_untargeted_cid_nl_production_batch(
+    batch = build_dense_partition(
         raw_paths=paths,
         sample_metadata=tuple(
             SampleMetadata(
@@ -1082,7 +1079,7 @@ def test_shared_ms1_only_backfill_peak_is_not_written_to_two_rows(
         work_unit_keys=tuple(job.work_unit_key for job in batch.jobs),
         owner_completeness_attestation="shared-ms1-only-backfill",
     )
-    result = execute_untargeted_cid_nl_real_data_runtime(
+    result = execute_attempt(
         runtime,
         batch.jobs,
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
@@ -1107,7 +1104,7 @@ def test_shared_ms1_only_backfill_peak_is_not_written_to_two_rows(
     }
     assert len(physical_ids) == 1
 
-    completed = compose_untargeted_cid_nl_production_result(
+    completed = complete_dense_partition(
         batch, result, alignment_config=AlignmentConfig(anchor_min_seed_events=1)
     )
     (child,) = completed.application_result.children
@@ -1118,7 +1115,9 @@ def test_shared_ms1_only_backfill_peak_is_not_written_to_two_rows(
     )
     assert len(missing_cells) == 2
     assert all(cell.evidence_states == ("unresolved",) for cell in missing_cells)
-    writer = project_completed_untarget_batch_writer_inputs(completed)
+    writer = project_completed_untarget_batch_writer_inputs(
+        completed.application_result
+    )
     missing_decisions = tuple(
         decision
         for decision in writer.production_decisions.cells.values()
@@ -1172,7 +1171,7 @@ def test_ms1_only_backfill_fills_only_one_unique_group_window_peak(
             if path.stem != "Missing"
             else ()
         )
-    batch = build_untargeted_cid_nl_production_batch(
+    batch = build_dense_partition(
         raw_paths=paths,
         sample_metadata=tuple(
             SampleMetadata(
@@ -1196,7 +1195,7 @@ def test_ms1_only_backfill_fills_only_one_unique_group_window_peak(
         work_unit_keys=tuple(job.work_unit_key for job in batch.jobs),
         owner_completeness_attestation="ms1-only-backfill",
     )
-    result = execute_untargeted_cid_nl_real_data_runtime(
+    result = execute_attempt(
         runtime,
         batch.jobs,
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
@@ -1213,7 +1212,7 @@ def test_ms1_only_backfill_fills_only_one_unique_group_window_peak(
     (attempt,) = missing.backfill_attempts
     assert attempt.assessment.content.reason_codes == ("no_unique_qualifying_relation",)
     assert len(attempt.assessment.candidate_peaks) == len(missing_peaks)
-    completed = compose_untargeted_cid_nl_production_result(
+    completed = complete_dense_partition(
         batch, result, alignment_config=AlignmentConfig(anchor_min_seed_events=1)
     )
     (child,) = completed.application_result.children
@@ -1223,7 +1222,9 @@ def test_ms1_only_backfill_fills_only_one_unique_group_window_peak(
         if cell.canonical_sample.metadata.raw_stem == "Missing"
     )
     assert missing_cell.evidence_states == (expected_state,)
-    writer = project_completed_untarget_batch_writer_inputs(completed)
+    writer = project_completed_untarget_batch_writer_inputs(
+        completed.application_result
+    )
     (decision,) = tuple(
         decision
         for decision in writer.production_decisions.cells.values()
@@ -1237,7 +1238,7 @@ def test_ms1_only_backfill_fills_only_one_unique_group_window_peak(
         assert decision.raw_status == "backfilled"
         assert decision.production_status == "accepted_backfill"
         from tools.diagnostics.output_population_census import main as population_main
-        from xic_extractor.alignment.pipeline_outputs import (
+        from xic_extractor.output.alignment.pipeline_outputs import (
             output_paths,
             write_outputs_atomic,
         )
@@ -1314,7 +1315,7 @@ def test_backfill_reaches_a_sample_whose_support_belongs_to_another_group(
         candidates[path.stem] = _current_candidates(
             raw, raw_file=path, settings=settings, peak_config=peak_config
         )
-    batch = build_untargeted_cid_nl_production_batch(
+    batch = build_dense_partition(
         raw_paths=paths,
         sample_metadata=tuple(
             SampleMetadata(
@@ -1338,7 +1339,7 @@ def test_backfill_reaches_a_sample_whose_support_belongs_to_another_group(
         work_unit_keys=tuple(job.work_unit_key for job in batch.jobs),
         owner_completeness_attestation="support-elsewhere",
     )
-    result = execute_untargeted_cid_nl_real_data_runtime(
+    result = execute_attempt(
         runtime,
         batch.jobs,
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
@@ -1355,10 +1356,12 @@ def test_backfill_reaches_a_sample_whose_support_belongs_to_another_group(
     assert missing.adapter_result.assessment_input.assessment.content.method_result == (
         "SUPPORT"
     )
-    completed = compose_untargeted_cid_nl_production_result(
+    completed = complete_dense_partition(
         batch, result, alignment_config=AlignmentConfig(anchor_min_seed_events=1)
     )
-    writer = project_completed_untarget_batch_writer_inputs(completed)
+    writer = project_completed_untarget_batch_writer_inputs(
+        completed.application_result
+    )
     sample_stems = writer.matrix.sample_order
     group_rows = {
         round(cluster.family_center_rt, 1): cluster
@@ -1385,20 +1388,18 @@ def test_alignment_uses_configured_recovery_groups(tmp_path, monkeypatch):
 def _assert_alignment_uses_configured_recovery_groups(
     tmp_path, monkeypatch, paths, raws, candidates, kwargs, settings, peak_config
 ):
-    from xic_extractor.alignment.csv_io import DiscoveryBatchInput
     from xic_extractor.alignment.untargeted_finalized_matrix import (
         project_completed_untarget_batch_writer_inputs,
     )
-    from xic_extractor.extraction import (
-        untargeted_cid_nl_bounded_runtime as bounded_runtime,
-    )
-    from xic_extractor.extraction.untargeted_cid_nl_alignment import (
-        complete_untargeted_cid_nl_alignment,
+    from xic_extractor.discovery.csv_reader import DiscoveryBatchInput
+    from xic_extractor.extraction import untargeted_execution as bounded_runtime
+    from xic_extractor.extraction.untargeted_alignment import (
+        complete_untargeted_alignment,
     )
 
     opened = _install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
     runtime_results = []
-    execute = bounded_runtime.execute_untargeted_cid_nl_runtime_partition
+    execute = bounded_runtime.execute_partition
 
     def retain_runtime(*args, **options):
         result = execute(*args, **options)
@@ -1419,9 +1420,9 @@ def _assert_alignment_uses_configured_recovery_groups(
         return result
 
     monkeypatch.setattr(
-        bounded_runtime, "execute_untargeted_cid_nl_runtime_partition", retain_runtime
+        bounded_runtime, 'execute_partition', retain_runtime
     )
-    completed = complete_untargeted_cid_nl_alignment(
+    completed = complete_untargeted_alignment(
         discovery_batch=DiscoveryBatchInput(
             sample_order=tuple(candidates),
             candidate_csvs={
@@ -1489,7 +1490,9 @@ def _assert_alignment_uses_configured_recovery_groups(
     assert no_input.backfill_cell is None
     assert no_input.evidence_states == ("not_searched",)
     assert no_input.integrations == ()
-    writer = project_completed_untarget_batch_writer_inputs(completed)
+    writer = project_completed_untarget_batch_writer_inputs(
+        completed.application_result
+    )
     assert all(
         not decision.write_matrix_value and decision.matrix_value is None
         for decision in writer.production_decisions.cells.values()

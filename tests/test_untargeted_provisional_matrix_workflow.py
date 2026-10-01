@@ -6,14 +6,14 @@ from types import SimpleNamespace
 import pytest
 
 from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.alignment.pipeline_outputs import AlignmentRunOutputs
-from xic_extractor.diagnostics.timing import TimingRecorder
-from xic_extractor.discovery.models import DiscoverySettings, NeutralLossProfile
-from xic_extractor.extraction import untargeted_provisional_matrix_workflow as workflow
-from xic_extractor.peak_detection.signal_processing_profile import (
+from xic_extractor.configuration.signal_processing_profile import (
     DEFAULT_SIGNAL_PROCESSING_PROFILE,
     resolve_signal_processing_profile,
 )
+from xic_extractor.diagnostics.timing import TimingRecorder
+from xic_extractor.discovery.models import DiscoverySettings, NeutralLossProfile
+from xic_extractor.extraction import untargeted_provisional_matrix_workflow as workflow
+from xic_extractor.output.alignment.pipeline_outputs import AlignmentRunOutputs
 
 
 @pytest.mark.parametrize("raw_workers", [1, 3])
@@ -60,7 +60,7 @@ def test_workflow_routes_complete_discovery_universe_to_full_alignment(
         )
 
     monkeypatch.setattr(workflow, "run_discovery_batch", fake_discovery)
-    monkeypatch.setattr(workflow, "run_alignment", fake_alignment)
+    monkeypatch.setattr(workflow, "run_untargeted_application", fake_alignment)
 
     timing_recorder = TimingRecorder.disabled("test")
 

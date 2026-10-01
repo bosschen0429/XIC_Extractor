@@ -1,10 +1,8 @@
 from __future__ import annotations
 
-from xic_extractor.execution_runtime_finalization_models import (
-    CoordinatorTerminalRecord,
-)
-from xic_extractor.execution_runtime_observability import RuntimeMetricAvailability
-from xic_extractor.execution_runtime_owner import (
+from xic_extractor.execution._finalization import CoordinatorTerminalRecord
+from xic_extractor.execution._observability import RuntimeMetricAvailability
+from xic_extractor.execution.attempt import (
     RuntimeArtifactIoSample,
     RuntimeProcessTreePeakRssSample,
     RuntimeTelemetrySamples,

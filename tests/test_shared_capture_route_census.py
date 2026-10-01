@@ -1,13 +1,13 @@
 import ast
 from pathlib import Path
 
-from xic_extractor.extraction import untargeted_cid_nl_real_data_adapter
+from xic_extractor.extraction.untargeted_partition import cid_nl_acquisition
 from xic_extractor.peak_detection import capture as capture_owner
 
 
 def test_current_adapter_cannot_bypass_shared_capture_implementation() -> None:
     untargeted_source = _function_source(
-        Path(untargeted_cid_nl_real_data_adapter.__file__),
+        Path(cid_nl_acquisition.__file__),
         "_reacquire_peak_observations",
     )
     capture_source = _function_source(
@@ -32,7 +32,7 @@ def test_current_adapter_cannot_bypass_shared_capture_implementation() -> None:
 
 
 def test_targeted_boundary_promotion_has_no_scientific_implementation() -> None:
-    package_root = Path(untargeted_cid_nl_real_data_adapter.__file__).parents[1]
+    package_root = Path(cid_nl_acquisition.__file__).parents[2]
     implementers = {
         path.relative_to(package_root).as_posix()
         for path in package_root.rglob("*.py")
@@ -43,7 +43,7 @@ def test_targeted_boundary_promotion_has_no_scientific_implementation() -> None:
 
 
 def test_direct_hypothesis_owner_consumers_match_the_finite_census() -> None:
-    package_root = Path(untargeted_cid_nl_real_data_adapter.__file__).parents[1]
+    package_root = Path(cid_nl_acquisition.__file__).parents[2]
     direct_importers = {
         path.relative_to(package_root).as_posix()
         for path in package_root.rglob("*.py")
@@ -51,8 +51,8 @@ def test_direct_hypothesis_owner_consumers_match_the_finite_census() -> None:
     }
 
     assert direct_importers == {
-        "extraction/peak_hypothesis_adapter.py",
-        "extraction/untargeted_cid_nl_real_data_adapter.py",
+        "extraction/targeted_peak_hypotheses.py",
+        "extraction/untargeted_partition/cid_nl_acquisition.py",
         "peak_detection/capture.py",
     }
 

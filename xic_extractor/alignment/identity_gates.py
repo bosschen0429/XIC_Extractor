@@ -5,10 +5,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal
 
-from xic_extractor.evidence_semantics import (
-    CommonEvidence,
-    common_evidence_from_discovery_candidate,
-)
+from xic_extractor.evidence_semantics import CommonEvidence
 
 EXTREME_BACKFILL_REASON = "extreme_backfill_dependency"
 WEAK_SEED_BACKFILL_REASON = "weak_seed_backfill_dependency"
@@ -166,7 +163,7 @@ def summarize_detected_seed_quality(
         if candidate is None:
             missing_count += 1
             continue
-        evidence_vectors.append(common_evidence_from_discovery_candidate(candidate))
+        evidence_vectors.append(_seed_quality_evidence_from_candidate(candidate))
 
     return SeedQualitySummary(
         available=True,
@@ -186,6 +183,48 @@ def summarize_detected_seed_quality(
         looked_up_candidate_count=len(evidence_vectors),
         missing_detected_candidate_count=missing_count,
     )
+
+
+def _seed_quality_evidence_from_candidate(candidate: Any) -> CommonEvidence:
+    """Read only the seed facts used by this Alignment gate."""
+
+    return CommonEvidence(
+        source="discovery_candidate",
+        evidence_score=_optional_int(_candidate_field(candidate, "evidence_score")),
+        seed_event_count=_optional_int(_candidate_field(candidate, "seed_event_count")),
+        neutral_loss_error_ppm=_optional_float(
+            _candidate_field(candidate, "neutral_loss_mass_error_ppm")
+        ),
+        scan_support_score=_optional_float(
+            _candidate_field(candidate, "ms1_scan_support_score")
+        ),
+    )
+
+
+def _candidate_field(candidate: Any, key: str) -> Any:
+    if isinstance(candidate, Mapping):
+        return candidate.get(key)
+    return getattr(candidate, key, None)
+
+
+def _optional_int(value: Any) -> int | None:
+    if isinstance(value, bool) or value is None:
+        return None
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        return None
+    return number
+
+
+def _optional_float(value: Any) -> float | None:
+    if isinstance(value, bool) or value is None:
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if math.isfinite(number) else None
 
 
 def lookup_seed_candidate(

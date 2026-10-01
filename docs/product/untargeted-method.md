@@ -14,7 +14,7 @@ linked owner pages.
   filtering, or batch-correction system.
 - Untargeted is the general application of the shared scientific lifecycle, not
   a separate core that Targeted must call into wholesale. Targeted and
-  Untargeted share capture, CrossSample, ModeTrack, ObservationRevisit, and
+  Untargeted share capture, CrossSample, ObservationRevisit, and
   ProductionCellDecision implementations. The two applications differ in search
   scope and output projection.
 - A broad candidate-discovery policy is available to both applications.
@@ -96,8 +96,8 @@ Any future expansion from method evidence to product output must name:
 
 Structural adoption of the shared owners is parity work and does not itself
 promote provisional groups, change Matrix row identity, fill a cell, or activate
-downstream preprocessing. Public `UntargetRowKey` cutover, ModeTrack sensitivity
-changes, and analytical-handoff activation each require their own packet.
+downstream preprocessing. Public `UntargetRowKey` cutover and analytical-handoff activation each require
+their own packet.
 
 ## See Also
 

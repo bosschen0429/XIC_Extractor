@@ -11,9 +11,9 @@ Kind: `productization_compatibility_lane_registry`
 This file is a checker lookup registry, not a current-state board or branch
 handoff. Mutable lane state and writer scope belong only to
 `docs/superpowers/validation/productization_status_index.tsv` and
-`docs/superpowers/schemas/productization_authority_manifest.json`.
+`docs/superpowers/productization/status/productization_authority_manifest.json`.
 Dependent quantitative-effect package/activation binding belongs to
-`docs/superpowers/schemas/quantitative_projection_authority_manifest.json`;
+`docs/superpowers/productization/status/quantitative_projection_authority_manifest.json`;
 it does not extend writer scope.
 Promotion requirements belong to
 `docs/agent/product-validation-contract.md`.

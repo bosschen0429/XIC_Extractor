@@ -1,3 +1,5 @@
+import json
+
 import gui.main as module
 from gui.main import configure_application, install_wheel_guard
 from gui.styles import APPLICATION_FONT_FAMILY, APPLICATION_FONT_POINT_SIZE
@@ -95,3 +97,46 @@ def test_install_wheel_guard_keeps_single_application_reference(qapp) -> None:
     finally:
         qapp.removeEventFilter(guard)
         delattr(qapp, "_xic_wheel_guard")
+
+
+def test_desktop_smoke_runs_real_gui_method_roundtrip(qapp, qtbot, tmp_path) -> None:
+    from gui.desktop_smoke import run_desktop_smoke
+    from gui.main_window import MainWindow
+    from xic_extractor.presets import bind_cid_nl_recipe, load_preset
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.show()
+    report_path = tmp_path / "smoke.json"
+
+    assert run_desktop_smoke(qapp, window, report_path) == 0
+
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    assert report["status"] == "passed"
+    assert report["qt_started"] and report["preset_roundtrip"]
+    assert report["resources"]["background_ions"] > 0
+    restored = load_preset(report["preset_path"])
+    settings = bind_cid_nl_recipe(restored, "full").discovery_settings
+    assert settings.selected_tag_names == ("DNA_dR",)
+    assert settings.neutral_loss_profiles[0].neutral_loss_da == 116.0474
+
+
+def test_desktop_smoke_missing_resource_fails_before_method_save(
+    qapp, qtbot, tmp_path, monkeypatch
+) -> None:
+    import gui.desktop_smoke as smoke
+    from gui.main_window import MainWindow
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.show()
+    monkeypatch.setattr(smoke, "get_default_background_library", lambda: None)
+    report_path = tmp_path / "smoke.json"
+
+    assert smoke.run_desktop_smoke(qapp, window, report_path) == 1
+
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    assert report["status"] == "failed"
+    assert report["stage"] == "bundled_resources"
+    assert "background library" in report["reason"]
+    assert not (tmp_path / "smoke-method.toml").exists()

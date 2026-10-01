@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from xic_extractor.alignment.shared_peak_identity_explanation.schema import (
+from xic_extractor.diagnostics.shared_peak_identity_explanation.schema import (
     ALLOWED_BY_FIELD,
     BLAST_RADIUS_MANIFEST_COLUMNS,
     BLAST_RADIUS_MANIFEST_SCHEMA_VERSION,

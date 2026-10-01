@@ -806,11 +806,11 @@ def _render_compatibility_index(rows: Sequence[Mapping[str, str]]) -> str:
         "- [Lane-state index](../validation/productization_status_index.tsv)",
         (
             "- [Writer-authority manifest]"
-            "(../schemas/productization_authority_manifest.json)"
+            "(../productization/status/productization_authority_manifest.json)"
         ),
         (
             "- [Dependent quantitative-effect authority manifest]"
-            f"(../schemas/{Path(QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_REL).name})"
+            f"(../productization/status/{Path(QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_REL).name})"
         ),
         (
             "- [Structured control schema]"
@@ -839,7 +839,8 @@ def _render_compatibility_index(rows: Sequence[Mapping[str, str]]) -> str:
     ]
     writer_routes = (
         "Routes: [state](../validation/productization_status_index.tsv), "
-        "[writer authority](../schemas/productization_authority_manifest.json), "
+        "[writer authority](../productization/status/"
+        "productization_authority_manifest.json), "
         "[stable capability](../../product/productization.md)."
     )
     for row in rows:
@@ -847,7 +848,7 @@ def _render_compatibility_index(rows: Sequence[Mapping[str, str]]) -> str:
         if row.get("lane_id") == DEPENDENT_EFFECT_LANE_ID:
             routes = (
                 "Routes: [state](../validation/productization_status_index.tsv), "
-                "[dependent-effect authority](../schemas/"
+                "[dependent-effect authority](../productization/status/"
                 f"{Path(QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_REL).name}), "
                 "[stable capability](../../product/productization.md)."
             )

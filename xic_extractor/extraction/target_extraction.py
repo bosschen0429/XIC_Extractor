@@ -9,6 +9,10 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 
 from xic_extractor.config import ExtractionConfig, Target
+from xic_extractor.configuration.signal_processing_profile import (
+    resolve_signal_processing_profile,
+)
+from xic_extractor.evidence.neutral_loss import CandidateMS2Evidence
 from xic_extractor.extraction.anchors import (
     apply_anchor_mismatch_penalty,
     paired_anchor_mismatch_diagnostic,
@@ -20,9 +24,6 @@ from xic_extractor.extraction.diagnostics import (
     istd_anchor_missing_diagnostic,
 )
 from xic_extractor.extraction.drift import estimate_sample_drift
-from xic_extractor.extraction.handoff_spine_runtime import (
-    selected_handoff_peak,
-)
 from xic_extractor.extraction.peak_candidate_audit import append_peak_audit_rows
 from xic_extractor.extraction.result_assembly import build_extraction_result
 from xic_extractor.extraction.rt_windows import get_rt_window
@@ -32,7 +33,9 @@ from xic_extractor.extraction.scoring_factory import (
     selected_candidate,
     selected_shape_metrics,
 )
-from xic_extractor.neutral_loss import CandidateMS2Evidence
+from xic_extractor.extraction.targeted_peak_selection import (
+    select_targeted_peak,
+)
 from xic_extractor.output.messages import (
     DiagnosticRecord,
     build_diagnostic_records,
@@ -75,9 +78,6 @@ from xic_extractor.peak_detection.physical_peak_models import (
 from xic_extractor.peak_detection.scoring_models import ScoredCandidate, ScoringContext
 from xic_extractor.peak_detection.selection_decision import (
     selection_decision_from_hypothesis,
-)
-from xic_extractor.peak_detection.signal_processing_profile import (
-    resolve_signal_processing_profile,
 )
 from xic_extractor.processing_identity import AcquisitionSourceExpectation
 from xic_extractor.rt_prior_library import LibraryEntry
@@ -295,6 +295,7 @@ def extract_one_target(
         raw,
         target,
         config,
+        sample_key=sample_name,
         reference_rt=reference_rt,
         target_reference_rt=target_reference_rt,
         sample_drift=sample_drift,
@@ -313,7 +314,7 @@ def extract_one_target(
         context_rt_max,
         target.ppm_tol,
     )
-    nl_result = check_target_nl(raw, target, config)
+    nl_result = check_target_nl(raw, target, config, sample_key=sample_name)
     profile = resolve_signal_processing_profile(
         signal_processing_method=config.signal_processing_method,
         signal_processing_window_points=config.signal_processing_window_points,
@@ -445,7 +446,9 @@ def extract_one_target(
         )
 
     scoring_context_builder = None
-    candidate_ms2_builder = candidate_ms2_evidence_builder(raw, target, config)
+    candidate_ms2_builder = candidate_ms2_evidence_builder(
+        raw, target, config, sample_key=sample_name
+    )
     candidate_ms2_cache: dict[PeakCandidate, CandidateMS2Evidence] = {}
 
     def _cached_candidate_ms2_builder(
@@ -505,7 +508,7 @@ def extract_one_target(
             paired_istd_anchor_rt=istd_rt_in_this_sample,
         )
     candidate = selected_candidate(peak_result)
-    handoff_peak = selected_handoff_peak(
+    handoff_peak = select_targeted_peak(
         config=selection_config,
         sample_name=sample_name,
         target=target,

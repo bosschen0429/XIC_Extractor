@@ -1,11 +1,11 @@
 [build-system]
-requires = ["setuptools>=69", "wheel", "Cython>=3.1,<4"]
+requires = ["setuptools>=69", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "xic-extractor"
 version = "1.0.0"
-requires-python = ">=3.11,<3.14"
+requires-python = ">=3.12,<3.13"
 dependencies = [
     "PyQt6>=6.6",
     "ijson>=3.4,<4",
@@ -36,7 +36,6 @@ xic-extractor = "gui.main:main"
 xic-extractor-cli = "scripts.run_extraction:main"
 xic-discovery-cli = "scripts.run_discovery:main"
 xic-untargeted-cid-nl-real-data-cli = "scripts.run_untargeted_cid_nl_real_data:main"
-xic-untargeted-cid-nl-mode-track-cli = "scripts.run_untargeted_cid_nl_mode_track:main"
 xic-untargeted-provisional-matrix-cli = "scripts.run_untargeted_provisional_matrix:main"
 xic-pt-pattern-discovery-cli = "scripts.run_pt_pattern_discovery:main"
 xic-align-cli = "scripts.run_alignment:main"
@@ -48,22 +47,15 @@ include = ["gui*", "scripts*", "tools*", "xic_extractor*", "xic_inspector*"]
 exclude = ["tests*"]
 
 [tool.setuptools.package-data]
-"xic_extractor.alignment" = ["data/quantitative_projection_authority.json", "*.pyx"]
+"xic_extractor.alignment" = ["data/quantitative_projection_authority.json"]
 "xic_extractor.presets.data" = ["*.toml"]
 "xic_extractor.discovery" = ["data/*"]
 
-[tool.uv]
-cache-keys = [
-    { file = "pyproject.toml" },
-    { file = "setup.py" },
-    { file = "xic_extractor/alignment/_completion_receipt_native.pyx" },
-]
-
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-p no:cacheprovider -p no:tmpdir"
+addopts = "-p no:cacheprovider"
+tmp_path_retention_policy = "failed"
 markers = [
-    "agent_hooks: validates the repository Codex hook configuration and policy scripts under .codex/. Run for changes to .codex/ hook files or this test and on the primary main-branch test job.",
     "ledger_snapshot: pins a recorded value from docs/superpowers/validation/, so a legitimate re-analysis turns it red. Excluded from CI shards; run with `python -m tools.testing.test_shards --snapshots`. Only direct decorators on top-level synchronous test functions are supported; the inventory rejects class, method, async, and module-level placement. A test whose subject is checker behaviour must stay unmarked and run in CI: rejection paths, monkeypatched dependencies, and invariants that survive a consistent re-run are not snapshots even when they read a register.",
     "current_repository_census: validates the current checkout's complete architecture census. CI runs this once in the lint job; the main pytest sessions exclude it to avoid rebuilding the same repository-wide graph.",
     "packaging_build: builds installable wheel or PyInstaller outputs. Run for packaging-authority changes and on the primary main-branch test job; ordinary PRs and compatibility runs keep the cheaper packaging contract tests.",

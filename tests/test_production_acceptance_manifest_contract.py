@@ -5,13 +5,13 @@ from pathlib import Path
 
 import pytest
 
-from xic_extractor.alignment.production_acceptance import (
+from xic_extractor.diagnostics.quant_matrix.acceptance import (
     ACCEPTANCE_DECISIONS,
     REQUIRED_COLUMNS,
     check_production_acceptance_manifest,
     check_production_acceptance_manifest_schema,
 )
-from xic_extractor.alignment.quant_matrix_version import (
+from xic_extractor.diagnostics.quant_matrix.version import (
     production_acceptance_manifest_sha256,
 )
 

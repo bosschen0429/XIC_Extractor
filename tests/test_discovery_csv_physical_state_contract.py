@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from tests.test_discovery_csv import _candidate, _read_csv
-from xic_extractor.alignment.csv_io import read_discovery_candidates_csv
+from xic_extractor.discovery.csv_reader import read_discovery_candidates_csv
 from xic_extractor.discovery.csv_writer import (
     build_discovery_review_note,
     write_discovery_candidates_csv,

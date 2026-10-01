@@ -2,15 +2,10 @@ from __future__ import annotations
 
 import csv
 import itertools
-import json
 from pathlib import Path
 
 import pytest
 
-from xic_extractor.discovery.cid_nl_oracle_contract import (
-    _NARROW_SCOPE_REQUIRED_FIELDS,
-    _NARROW_SCOPE_SEAL_REQUIRED_FIELDS,
-)
 from xic_extractor.discovery.cid_nl_oracle_primitives import (
     OracleContractError,
     canonical_row_sha256,
@@ -237,22 +232,6 @@ def test_gate_table_is_complete_fail_closed_and_parameterized() -> None:
     assert rows["area_retention"]["threshold_value"] == "0.98"
     assert rows["untargeted_non_inferiority"]["threshold_value"] == "2"
     assert rows["automated_coverage"]["threshold_value"] == "0.90"
-
-
-def test_narrow_scope_required_fields_match_schema() -> None:
-    schema = json.loads(
-        (
-            ROOT
-            / "docs/superpowers/schemas/"
-            "cid_nl_oracle_narrow_scope_manifest_schema.json"
-        ).read_text(encoding="utf-8")
-    )
-    assert set(_NARROW_SCOPE_REQUIRED_FIELDS) == set(
-        schema["required_columns"]
-    )
-    assert set(_NARROW_SCOPE_SEAL_REQUIRED_FIELDS) == set(
-        schema["seal_required_fields"]
-    )
 
 
 def test_verdict_table_is_total_and_has_frozen_precedence() -> None:

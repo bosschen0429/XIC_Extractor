@@ -7,24 +7,24 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from xic_extractor.alignment.backfill_peak_fact import BackfillWindowStrategy
-from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.alignment.ms1_index_source import (
+from xic_extractor.alignment.config import (
+    AlignmentConfig,
     BackfillXicBackend,
     OwnerBuildXicBackend,
 )
-from xic_extractor.alignment.pipeline import (
-    _validate_untargeted_cid_nl_alignment_options,
-    run_alignment,
+from xic_extractor.applications.untargeted.application import (
+    run_untargeted_application,
+    validate_untargeted_application_options,
 )
-from xic_extractor.alignment.pipeline_outputs import AlignmentRunOutputs
 from xic_extractor.config import ExtractionConfig
+from xic_extractor.configuration.execution_profile import DEFAULT_ALIGNMENT_WORKERS
 from xic_extractor.diagnostics.timing import TimingRecorder
 from xic_extractor.discovery.models import DiscoverySettings
 from xic_extractor.discovery.pipeline import run_discovery_batch
-from xic_extractor.execution_settings import DEFAULT_ALIGNMENT_WORKERS
-from xic_extractor.extraction.untargeted_cid_nl_production_batch import (
+from xic_extractor.extraction.untargeted_input_planning import (
     is_pure_single_provider_cid_nl,
 )
+from xic_extractor.output.alignment.pipeline_outputs import AlignmentRunOutputs
 from xic_extractor.sample_metadata import SampleMetadata
 from xic_extractor.settings_schema import CANONICAL_SETTINGS_DEFAULTS
 
@@ -61,7 +61,7 @@ def run_untargeted_provisional_matrix_workflow(
             "provisional review supports only pure single-provider CID-NL; "
             "use the dna_dr preset"
         )
-    _validate_untargeted_cid_nl_alignment_options(
+    validate_untargeted_application_options(
         raw_workers=raw_workers,
         raw_xic_batch_size=raw_xic_batch_size,
         owner_backfill_xic_backend=owner_backfill_xic_backend,
@@ -110,7 +110,7 @@ def run_untargeted_provisional_matrix_workflow(
     )
     _progress(progress_callback, "discovery_complete")
 
-    outputs = run_alignment(
+    outputs = run_untargeted_application(
         discovery_batch_index=discovery.batch_index_csv,
         raw_dir=raw_dir,
         dll_dir=dll_dir,

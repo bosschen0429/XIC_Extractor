@@ -1,6 +1,6 @@
 """End-to-end Pt pattern Discovery pipeline.
 
-Wires the Pt-pattern matcher, CSV/JSON IO, and preset stack into a single
+Wires the Pt-pattern matcher and CSV/JSON IO into a single
 ``run_pt_pattern_discovery()`` entry point: Detected Features CSV (+ optional
 CID-NL(dR) candidates CSV for the composite strategy) in, Pt Candidate CSV,
 Pt Review CSV, Pt Discovery Evidence CSV, and Pt Sidecar JSON out.
@@ -32,6 +32,7 @@ from xic_extractor.discovery.delta_mass_patterns import (
 )
 from xic_extractor.discovery.detected_features import (
     ComparableDetectedFeatureIdentity,
+    PtPatternDiscoveryStrategy,
     comparable_cid_nl_identity,
     detected_feature_identity,
     load_external_feature_table_tsv,
@@ -42,7 +43,6 @@ from xic_extractor.discovery.pt_pattern_discovery_evidence import (
     build_pt_pattern_evidence_rows,
     load_pt_discovery_trace_bundle,
 )
-from xic_extractor.presets import apply_to_delta_mass_discovery, load_preset
 from xic_extractor.tabular_io import file_sha256, read_delimited_rows
 
 if TYPE_CHECKING:
@@ -111,7 +111,7 @@ def run_pt_pattern_discovery(
     external_feature_table_tsv: Path | None = None,
     mzmine_feature_table_csv: Path | None = None,
     output_dir: Path,
-    preset_name: str = "pt_pattern",
+    strategy: PtPatternDiscoveryStrategy,
     cid_nl_candidates_csv: Path | None = None,
     trace_summary_csv: Path | None = None,
     trace_metrics_csv: Path | None = None,
@@ -120,29 +120,21 @@ def run_pt_pattern_discovery(
 ) -> DeltaMassDiscoveryOutputs:
     """Run the Pt pattern Discovery pipeline end-to-end.
 
-    Loads ``preset_name``, rejects it unless it carries a ``delta_mass`` tag,
-    loads and matches the Detected Features CSV, optionally joins CID-NL(dR)
+    Loads and matches the Detected Features CSV, optionally joins CID-NL(dR)
     base evidence for the composite (``pt_pattern_cid_nl_dr``) strategy, and
     writes ``pt_pattern_candidates.csv``, ``pt_pattern_review.csv``,
     ``pt_pattern_evidence.csv``, and ``pt_pattern_sidecar.json`` into
     ``output_dir``.
     """
 
-    preset = load_preset(preset_name)
-    if not any(tag.strategy == "delta_mass" for tag in preset.tags):
-        raise ValueError(
-            f"preset {preset_name!r} is not a 'pt_pattern' preset (no "
-            "'delta_mass' tag); use a Pt pattern preset such as 'pt_pattern' "
-            "or 'pt_pattern_cid_nl_dr'"
-        )
-    is_composite = any(tag.strategy == "neutral_loss" for tag in preset.tags)
+    is_composite = strategy.cid_nl_composite
     if is_composite and cid_nl_candidates_csv is None:
         raise ValueError(
-            f"preset {preset_name!r} requires cid_nl_candidates_csv (composite "
+            f"preset {strategy.label!r} requires cid_nl_candidates_csv (composite "
             "Pt pattern + CID-NL(dR) strategy); pass --cid-nl-candidates-csv"
         )
 
-    settings = apply_to_delta_mass_discovery(preset)
+    settings = strategy.settings
 
     features, detected_features_source_csv = _load_feature_source(
         detected_features_csv=detected_features_csv,

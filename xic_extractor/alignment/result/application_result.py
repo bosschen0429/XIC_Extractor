@@ -14,15 +14,15 @@ from xic_extractor.alignment.result.scientific_alignment import (
     FinalizedScientificAlignmentContractError,
     _validate_finalized_scientific_alignment_completion_receipt,
 )
+from xic_extractor.discovery.batch_contract import (
+    ALIGNMENT_FEATURE_INPUT_KEY,
+    CANDIDATE_UNIVERSE_INPUT_KEY,
+    validate_candidate_universe_payload,
+)
 from xic_extractor.discovery.models import (
     DISCOVERY_CANDIDATE_STATE_VALUES,
     MS1_FEATURE_BACKED_STATES,
     DiscoveryCandidateState,
-)
-from xic_extractor.extraction.untargeted_cid_nl_real_data_inputs import (
-    ALIGNMENT_FEATURE_INPUT_KEY,
-    CANDIDATE_UNIVERSE_INPUT_KEY,
-    validate_candidate_universe_payload,
 )
 from xic_extractor.immutable_sequence import ImmutableSequence
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
@@ -545,10 +545,6 @@ def _validate_common_result(
 def _validate_target_result(result: FinalizedTargetApplicationResult) -> None:
     from xic_extractor.alignment.projection.target.post_cell import (
         TargetPostCellProjection,
-        validate_target_post_cell_completion_receipt,
-    )
-    from xic_extractor.alignment.projection.target.pre_cell import (
-        TargetProjectionContractError,
     )
 
     _validate_common_result(
@@ -562,10 +558,6 @@ def _validate_target_result(result: FinalizedTargetApplicationResult) -> None:
         raise ApplicationResultContractError(
             "Target application result requires an exact completed Target projection"
         )
-    try:
-        validate_target_post_cell_completion_receipt(result.completed_projection)
-    except TargetProjectionContractError as exc:
-        raise ApplicationResultContractError(str(exc)) from exc
     projection = result.completed_projection
     pre_cell = projection.pre_cell_projection
     core = result.scientific_core

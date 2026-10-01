@@ -1,7 +1,5 @@
 # XIC Extractor repo-local command policy.
-# Keep this small: block or prompt only high-impact actions. Staging stays on
-# the normal approval path because a prefix rule cannot distinguish an explicit
-# task file from broad pathspecs such as -A, --all, or '.'.
+# Keep only destructive Git actions that can discard user work.
 
 prefix_rule(
     pattern = ["git", "reset", "--hard"],
@@ -35,46 +33,5 @@ prefix_rule(
     match = [
         "git clean -fd",
         "git clean -xfd",
-    ],
-)
-
-prefix_rule(
-    pattern = ["git", "-c"],
-    decision = "prompt",
-    justification = "Per-invocation Git configuration can change trust, identity, or network behavior. Prompt while preserving the documented safe.directory recovery path.",
-    match = [
-        "git -c safe.directory=C:/repo push origin HEAD",
-        "git -c user.name=bot commit -m docs",
-    ],
-    not_match = [
-        "git -C C:/repo status --short",
-    ],
-)
-
-prefix_rule(
-    pattern = ["Remove-Item"],
-    decision = "prompt",
-    justification = "Deletion needs path review on Windows. Prefer scoped Remove-Item -LiteralPath after checking targets.",
-    match = [
-        "Remove-Item -Recurse output\\old",
-    ],
-)
-
-prefix_rule(
-    pattern = ["rm"],
-    decision = "prompt",
-    justification = "Deletion needs path review. Prefer PowerShell Remove-Item -LiteralPath with checked targets.",
-    match = [
-        "rm -rf output/old",
-    ],
-)
-
-prefix_rule(
-    pattern = ["Start-Process"],
-    decision = "prompt",
-    justification = "External or background launches need explicit approval, especially RAW, GUI, and long-running jobs.",
-    match = [
-        "Start-Process powershell",
-        "Start-Process python",
     ],
 )

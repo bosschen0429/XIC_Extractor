@@ -48,21 +48,19 @@ _ALIGNMENT_CORE_EXCLUDED_PATHS = frozenset(
 #   3. the register's owning milestone is retired.
 SNAPSHOT_MARKER = "ledger_snapshot"
 
-# Markers whose tests are expensive and guard a narrow set of files. A change
+# Markers whose tests are expensive and guard a known set of inputs. A change
 # that touches none of a marker's paths skips that marker's tests. CI
 # (.github/workflows/ci.yml) and local shard runs both read this table, so the
 # two select the same tests for the same change.
 RELEVANCE_RULES: dict[str, re.Pattern[str]] = {
+    # Include whole shipped package roots: an installed/frozen import can depend
+    # on any of their code or data. A shortlist of entry points misses package
+    # inputs and resources, while ordinary documentation can still skip.
     "packaging_build": re.compile(
-        r"^(pyproject\.toml|uv\.lock|xic_extractor\.spec|tests/test_pyinstaller_spec\.py"
-        r"|assets/|config/(settings|targets)\.example\.csv|gui/main\.py"
-        r"|scripts/(csv_to_excel|xlsx_to_targets)\.py|xic_extractor/presets/data/"
-        r"|xic_extractor/alignment/(__init__\.py|quantitative_projection_authority\.py"
-        r"|data/quantitative_projection_authority\.json))"
-    ),
-    "agent_hooks": re.compile(
-        r"^(\.codex/(hooks/|hooks\.json$|rules/)|tests/test_config_codex_hooks\.py$"
-        r"|pyproject\.toml$)"
+        r"^((pyproject\.toml|uv\.lock|xic_extractor\.spec)$"
+        r"|\.github/workflows/(build|ci)\.yml$"
+        r"|tests/test_(pyinstaller_spec|test_shards)\.py$"
+        r"|(xic_extractor|xic_inspector|gui|scripts|tools|assets|config)/)"
     ),
     "product_governance": re.compile(
         r"^(scripts/check_productization_state\.py|tests/test_productization_state_index\.py"
@@ -168,7 +166,7 @@ SHARD_PATTERNS: ShardPatterns = OrderedDict(
             "tests/test_execution_runtime_receipts.py",
             "tests/test_extractor*.py",
             "tests/test_gaussian15_area_pressure_audit.py",
-            "tests/test_handoff_spine_runtime.py",
+            "tests/test_targeted_peak_selection.py",
             "tests/test_injection_rolling.py",
             "tests/test_interval_selection.py",
             "tests/test_istd_*.py",
@@ -209,11 +207,11 @@ SHARD_PATTERNS: ShardPatterns = OrderedDict(
             "tests/test_discovery_*.py",
             "tests/test_finalized_application_result.py",
             "tests/test_finalized_scientific_alignment.py",
+            "tests/test_initial_grouping_scope.py",
             "tests/test_local_ms1_features.py",
             "tests/test_method_composition_extensibility.py",
-            "tests/test_mode_track_closed_writer_validation_runner.py",
             "tests/test_matrix_identity_*.py",
-            "tests/test_mode_track_*.py",
+            "tests/test_ms1_index_backfill_audit.py",
             "tests/test_ms1_scan_index.py",
             "tests/test_overlay_trace_data.py",
             "tests/test_owner_build_route_receipt.py",
@@ -236,7 +234,6 @@ SHARD_PATTERNS: ShardPatterns = OrderedDict(
             "tests/test_run_discovery_run_spec_cli.py",
             "tests/test_run_pt_pattern_discovery.py",
             "tests/test_run_tissue_validation.py",
-            "tests/test_run_untargeted_cid_nl_mode_track.py",
             "tests/test_run_untargeted_cid_nl_real_data.py",
             "tests/test_run_untargeted_provisional_matrix.py",
             "tests/test_scan_retention_times.py",

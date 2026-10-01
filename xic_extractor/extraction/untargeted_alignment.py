@@ -13,19 +13,22 @@ from tempfile import mkdtemp
 from threading import Lock
 from typing import Any
 
+from xic_extractor.acquisition.raw_paths import existing_raw_paths
 from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.alignment.csv_io import DiscoveryBatchInput
-from xic_extractor.alignment.discovery_input_source import DiscoveryInputSource
 from xic_extractor.alignment.drift_evidence import KnownIstdReference
-from xic_extractor.alignment.raw_sources import existing_raw_paths
-from xic_extractor.alignment.workflow import CompletedUntargetBatchWorkflowResult
 from xic_extractor.config import ExtractionConfig
+from xic_extractor.configuration.execution_profile import DEFAULT_ALIGNMENT_WORKERS
+from xic_extractor.configuration.signal_processing_profile import (
+    SignalProcessingProfile,
+)
 from xic_extractor.diagnostics.process_memory import ProcessMemoryPeak
 from xic_extractor.diagnostics.timing import TimingRecorder
 from xic_extractor.discovery.batch_contract import (
     DiscoveryCandidateUniverseReceipt,
 )
+from xic_extractor.discovery.csv_reader import DiscoveryBatchInput
 from xic_extractor.discovery.csv_writer import format_discovery_csv_value
+from xic_extractor.discovery.input_source import DiscoveryInputSource
 from xic_extractor.discovery.models import DiscoveryCandidate, DiscoverySettings
 from xic_extractor.discovery.physical_fact_persistence import (
     DetachedIndexedDiscoveryPhysicalFacts,
@@ -36,30 +39,27 @@ from xic_extractor.discovery.physical_fact_record import DiscoveryPhysicalFactRe
 from xic_extractor.discovery.processing_run_spec_adapter import (
     compile_discovery_processing_run_spec_with_expectations,
 )
-from xic_extractor.execution_engine.streamed_result_store import StreamedResultStore
-from xic_extractor.execution_engine.worker_pool import WorkerAdmissionPool
-from xic_extractor.execution_runtime_marker import OwnerPathRuntimeMarker
-from xic_extractor.execution_runtime_observability import RuntimeMetricAvailability
-from xic_extractor.execution_runtime_owner import (
+from xic_extractor.execution._observability import RuntimeMetricAvailability
+from xic_extractor.execution.attempt import (
     RuntimeProcessTreePeakRssSample,
     RuntimeTelemetrySamples,
     RuntimeWorkerPeakRssSample,
     runtime_started_worker_keys,
 )
-from xic_extractor.execution_settings import DEFAULT_ALIGNMENT_WORKERS
-from xic_extractor.extraction.untargeted_cid_nl_bounded_runtime import (
-    execute_bounded_untargeted_cid_nl,
+from xic_extractor.execution.recovery import OwnerPathRuntimeMarker
+from xic_extractor.execution.result_store import StreamedResultStore
+from xic_extractor.execution.workers import WorkerAdmissionPool
+from xic_extractor.extraction.untargeted_execution import (
+    execute_untargeted_plan,
+)
+from xic_extractor.extraction.untargeted_execution_result import (
+    CompletedUntargetBatchWorkflowResult,
 )
 from xic_extractor.extraction.untargeted_input_planning import (
+    prepare_eager_untargeted_plan,
     prepare_indexed_untargeted_plan,
 )
-from xic_extractor.extraction.untargeted_production_batch import (
-    prepare_untargeted_production_plan,
-)
 from xic_extractor.immutable_sequence import ImmutableSequence
-from xic_extractor.peak_detection.signal_processing_profile import (
-    SignalProcessingProfile,
-)
 from xic_extractor.processing_identity import AcquisitionSourceExpectation
 from xic_extractor.processing_run_spec import (
     ProcessingAcquisitionInput,
@@ -69,8 +69,6 @@ from xic_extractor.sample_metadata import SampleMetadata
 
 _SAMPLE_IDENTITY_NAMESPACE = "alignment-untargeted-cid-nl"
 _RUNTIME_ARTIFACT_NAMESPACE = "untargeted-cid-nl-alignment"
-_real_prepare_untargeted_production_plan = prepare_untargeted_production_plan
-prepare_untargeted_cid_nl_production_plan = prepare_untargeted_production_plan
 
 
 @dataclass(frozen=True, slots=True)
@@ -188,7 +186,7 @@ def _index_discovery_physical_sources(
         raise
 
 
-def complete_untargeted_cid_nl_alignment(
+def complete_untargeted_alignment(
     *,
     discovery_batch: DiscoveryBatchInput,
     candidates_by_sample: Mapping[str, tuple[DiscoveryCandidate, ...]],
@@ -369,14 +367,8 @@ def complete_untargeted_cid_nl_alignment(
                     raw_workers=raw_workers,
                     retained_records_sink=retain_records,
                 )
-        _prepare_plan = prepare_untargeted_production_plan
-        if (
-            prepare_untargeted_cid_nl_production_plan
-            is not _real_prepare_untargeted_production_plan
-        ):
-            _prepare_plan = prepare_untargeted_cid_nl_production_plan
         if not isinstance(candidates_by_sample, DiscoveryInputSource):
-            plan = _prepare_plan(
+            plan = prepare_eager_untargeted_plan(
                 raw_paths=ordered_raw_paths,
                 sample_metadata=retained_sample_metadata,
                 settings=settings,
@@ -417,7 +409,7 @@ def complete_untargeted_cid_nl_alignment(
             recorder.stage("alignment.untargeted_cid_nl_runtime") as runtime_stage,
             recorder.process_memory_scope("retained_runtime") as runtime_peak,
         ):
-            completed = execute_bounded_untargeted_cid_nl(
+            completed = execute_untargeted_plan(
                 plan,
                 output_dir=output_dir,
                 telemetry_provider=lambda coordinator: _coarse_runtime_telemetry(
@@ -666,15 +658,6 @@ def _coarse_runtime_telemetry(
         ),
         unavailable_reason=unavailable_reason,
     )
-
-
-complete_untargeted_alignment = complete_untargeted_cid_nl_alignment
-prepare_untargeted_cid_nl_production_plan = prepare_untargeted_production_plan
-
-
 __all__ = [
     "complete_untargeted_alignment",
-    "complete_untargeted_cid_nl_alignment",
-    "prepare_untargeted_cid_nl_production_plan",
-    "prepare_untargeted_production_plan",
 ]

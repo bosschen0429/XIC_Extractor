@@ -1,16 +1,16 @@
 import ast
-from dataclasses import fields, replace
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
 from xic_extractor import extractor
-from xic_extractor.config import ConfigError, ExtractionConfig, Target
-from xic_extractor.extraction.targeted_inputs import resolve_targeted_inputs
-from xic_extractor.extraction.targeted_service import (
+from xic_extractor.applications.targeted.application import (
     TargetedApplicationService,
     build_targeted_application_request,
 )
+from xic_extractor.config import ConfigError, ExtractionConfig, Target
+from xic_extractor.extraction.targeted_inputs import resolve_targeted_inputs
 from xic_extractor.extractor import FileResult, RunOutput
 
 
@@ -32,23 +32,6 @@ def test_cli_and_gui_use_same_targeted_application_service() -> None:
         assert calls == [], f"{path} bypasses TargetedApplicationService"
 
 
-def test_retired_diagnostic_successor_is_absent_from_production_entries() -> None:
-    import xic_extractor.extraction.targeted_diagnostic_application as application
-
-    for name in (
-        "capture_targeted_diagnostic_request_provider",
-        "capture_targeted_diagnostic_telemetry_provider",
-        "targeted_diagnostic_request_provider",
-    ):
-        assert not hasattr(application, name)
-    gui_source = Path("gui/workers/pipeline_worker.py").read_text(encoding="utf-8")
-    assert "diagnostic_request_provider" not in gui_source
-    assert "diagnostic_telemetry_provider" not in gui_source
-    service_fields = {item.name for item in fields(TargetedApplicationService)}
-    assert "finalized_workflow_runner" not in service_fields
-    assert "output_publisher" not in service_fields
-
-
 def test_public_python_run_uses_canonical_targeted_application_service(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -67,7 +50,7 @@ def test_public_python_run_uses_canonical_targeted_application_service(
         return _Service()
 
     monkeypatch.setattr(
-        "xic_extractor.extraction.targeted_diagnostic_application."
+        "xic_extractor.applications.targeted.application."
         "build_canonical_targeted_application_service",
         build_service,
     )
@@ -231,7 +214,7 @@ def test_service_resolves_approval_registry_at_adapter_boundary(
     (data_dir / "SampleA.raw").write_bytes(b"sample")
     config = replace(_config(), data_dir=data_dir)
     monkeypatch.setattr(
-        "xic_extractor.extraction.targeted_service."
+        "xic_extractor.applications.targeted.application."
         "resolve_model_selection_expected_diff_approvals",
         resolve_approvals,
     )
@@ -443,8 +426,8 @@ def test_contract_modules_do_not_import_gui_writer_or_raw_adapter() -> None:
     for path in (
         Path("xic_extractor/acquisition_contract.py"),
         Path("xic_extractor/delivery_lineage.py"),
-        Path("xic_extractor/execution_runtime_observability.py"),
-        Path("xic_extractor/extraction/targeted_service.py"),
+        Path("xic_extractor/execution/_observability.py"),
+        Path("xic_extractor/applications/targeted/application.py"),
     ):
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         imports = _imports(tree)

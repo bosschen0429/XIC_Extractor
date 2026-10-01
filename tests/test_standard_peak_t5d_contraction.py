@@ -24,7 +24,8 @@ def test_retired_84_cell_scope_cannot_regain_writer_authority() -> None:
     authority_manifest = json.loads(
         (
             root
-            / "docs/superpowers/schemas/productization_authority_manifest.json"
+            / "docs/superpowers/productization/status/"
+            "productization_authority_manifest.json"
         ).read_text(encoding="utf-8")
     )
     retired_scope = "backfill_expansion_clean_target_selective_activation_84_cells"

@@ -16,10 +16,12 @@ needed only when packaging, installation, CI, or tracked generation changes.
 
 ## RAW And Long Runs
 
-Use the documented runner and `xic-raw-validation` before launching or accepting
-RAW-backed evidence. Name the decision, input set, timeout/heartbeat, output
-location, and stop condition. A failed environment check is uncertainty, not a
-scientific result.
+Use the runner in [Local Execution](parameter-settings.md). Normal execution
+performs its input checks and records its plan; a separate preflight invocation
+or validation packet is not a routine prerequisite. Use `--preflight-only` when
+inspecting settings without running. For a long job, keep its logs and timing
+under the task's output directory and use the existing background/wakeup workflow
+when appropriate. Report results against the task's actual acceptance check.
 
 ## PR Verification
 

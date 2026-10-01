@@ -51,7 +51,7 @@ different questions:
 | `docs/lc-msms-evidence-rules.md` | Domain interpretation of MS1/MS2/RT/Backfill evidence and promotion constraints. | Current product lane state. |
 | `docs/superpowers/plans/2026-06-15-productization-control-plane.md` | Compatibility lookup for retired control-plane lane keys and historical anchors. | Current tier, lane, writer scope, or promotion state. |
 | `docs/superpowers/validation/productization_status_index.tsv` | Machine-checkable current lane status and public-surface flags. | Domain meaning of each evidence field. |
-| `docs/superpowers/schemas/productization_authority_manifest.json` | Allowed and forbidden writer scopes. Unknown scopes fail closed. | Scientific sufficiency of evidence providers. |
+| `docs/superpowers/productization/status/productization_authority_manifest.json` | Allowed and forbidden writer scopes. Unknown scopes fail closed. | Scientific sufficiency of evidence providers. |
 | This file | Human-maintained evidence-chain map across code, diagnostics, and promotion boundaries. | Machine enforcement, counts, tier changes, or writer authority. |
 
 Rule: if a durable evidence provider, evidence state, gate, or authority
@@ -138,7 +138,8 @@ not enough to write a new matrix cell.
 
 Owners:
 
-- `xic_extractor/neutral_loss.py`
+- `xic_extractor/evidence/neutral_loss.py` for data-only interpretation;
+  `xic_extractor/acquisition/ms2_windows.py` for bounded RT-window reads
 - `xic_extractor/ms2_trace_evidence.py`
 - `xic_extractor/discovery/*`
 - `xic_extractor/instrument_qc/hcd_evidence.py`
@@ -187,8 +188,9 @@ review, but RT agreement alone should not create matrix write authority.
 
 Owners:
 
-- `xic_extractor/peak_detection/targeted_product_projection.py`
-- `xic_extractor/extraction/result_assembly.py`
+- `xic_extractor/applications/targeted/product_projection.py`: product policy
+- `xic_extractor/applications/targeted/product_model.py`: pure product result
+- `xic_extractor/extraction/result_assembly.py`: result creation and delegation
 - `xic_extractor/output/schema.py`
 - `xic_extractor/output/csv_writers.py`
 - `xic_extractor/output/detection.py`
@@ -299,8 +301,8 @@ authority.
 
 Owners:
 
-- `xic_extractor/alignment/quant_matrix_version.py`
-- `xic_extractor/alignment/mode_track_table_finalization.py`
+- `xic_extractor/diagnostics/quant_matrix/version.py`
+- `xic_extractor/output/alignment/product_matrix.py`
 - `xic_extractor/alignment/production_decisions.py`
 
 Purpose: make matrix-writing changes explicit, replayable, and auditable.
@@ -313,7 +315,7 @@ Evidence states:
   write authority, acceptance decision/basis, truth status, quant value,
   matrix area source, source artifact relpath/hash/row hash/manifest hash.
 Authority state: live cell decisions and their finalized projections own
-Matrix values. ModeTrack uses the accepted-value builder internally; it refuses
+Matrix values. The diagnostic golden path uses the accepted-value builder; it refuses
 unused expected diffs and existing-value overwrites. A passing expected diff
 proves its bounded contract, not global scientific confidence or a separate
 file-activation permission.
@@ -343,7 +345,7 @@ a separate activation contract consumes it.
 
 The authoritative machine-readable registry state is
 `docs/superpowers/validation/productization_status_index.tsv` plus
-`docs/superpowers/schemas/productization_authority_manifest.json`. This table
+`docs/superpowers/productization/status/productization_authority_manifest.json`. This table
 describes stable lane roles, not current counts. Counts, hashes, pass/fail
 numbers, and active scope sizes belong in the machine-readable artifacts.
 The registry grants no standalone file-activation writer scope. Live Matrix

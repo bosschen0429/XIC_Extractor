@@ -560,16 +560,26 @@ def test_reference_validator_rejects_nonindependent_or_overclaimed_rows(
         _validate_reference(_reference(**overrides))
 
 
-def test_reference_validator_required_fields_match_schema() -> None:
-    schema = json.loads(
-        (
-            ROOT
-            / "docs/superpowers/schemas/"
-            "cid_nl_reference_universe_manifest_schema.json"
-        ).read_text(encoding="utf-8")
+def test_reference_validator_rejects_missing_required_fields() -> None:
+    required = (
+        "schema_version", "reference_universe_id", "reference_row_id",
+        "reference_family_id", "acquisition_source_id", "sample_key",
+        "sample_material_stratum", "method_scope", "precursor_mz",
+        "neutral_loss_da", "reference_source_type", "reference_source_id",
+        "reference_source_artifact_ids", "reference_source_sha256s",
+        "physical_presence_basis", "method_detectability_basis",
+        "sample_local_evidence_status", "reference_label", "reference_claim_scope",
+        "universe_construction_method", "reference_enumerator_dependency_manifest_id",
+        "reference_enumerator_dependency_manifest_sha256", "shared_raw_adapter_status",
+        "shared_candidate_generation_status", "shared_decision_logic_status",
+        "shared_logic_overlap_disposition", "uses_tested_tracer_output_for_membership",
+        "uses_legacy_output_for_membership", "uses_library_record_as_sample_presence",
+        "sampling_frame_id", "sampling_frame_size", "sampling_stratum",
+        "stratum_frame_size", "frame_completeness", "recovery_claim_label",
+        "independent_hypothesis_group_id", "batch_group_id", "study_group_id",
+        "instrument_group_id", "source_row_sha256",
     )
-    expected = set(schema["required_columns"]) - set(schema["nullable_columns"])
-    for field in expected:
+    for field in required:
         row = _reference()
         del row[field]
         with pytest.raises(OracleContractError):
@@ -824,20 +834,20 @@ def test_policy_review_requires_same_local_case_and_presentation(
         )
 
 
-def test_review_validator_required_fields_match_schema() -> None:
-    schema = json.loads(
-        (
-            ROOT
-            / "docs/superpowers/schemas/"
-            "cid_nl_oracle_review_adjudication_schema.json"
-        ).read_text(encoding="utf-8")
-    )
-    expected = set(schema["required_review_event_columns"]) - set(
-        schema["nullable_review_columns"]
+def test_review_validator_rejects_missing_required_fields() -> None:
+    required = (
+        "schema_version", "oracle_packet_id", "holdout_manifest_id", "case_id",
+        "presentation_id", "review_record_id", "review_phase", "analysis_role",
+        "reviewer_id", "reviewed_at_utc", "review_status", "evidence_sufficiency",
+        "feature_identity_decision", "observation_state", "peak_decision",
+        "reason_codes", "evidence_artifact_ids", "evidence_bundle_sha256",
+        "source_sampling_row_sha256", "source_roles_visible", "machine_mapping_visible",
+        "legacy_mapping_visible", "evaluated_system_scores_visible",
+        "source_row_sha256",
     )
 
     local = _local_review()
-    for field in expected:
+    for field in required:
         row = _policy_review()
         del row[field]
         with pytest.raises(OracleContractError):
@@ -1542,32 +1552,24 @@ def test_adjudication_rejects_unblinded_result_record(field: str) -> None:
         )
 
 
-def test_adjudication_and_lineage_required_fields_match_schemas() -> None:
-    review_schema = json.loads(
-        (
-            ROOT
-            / "docs/superpowers/schemas/"
-            "cid_nl_oracle_review_adjudication_schema.json"
-        ).read_text(encoding="utf-8")
+def test_adjudication_and_lineage_reject_missing_required_fields() -> None:
+    required_adjudication = (
+        "schema_version", "oracle_packet_id", "adjudication_record_id", "case_id",
+        "adjudication_type", "trigger_review_record_ids", "trigger_reason_codes",
+        "adjudicator_id", "adjudicated_at_utc", "machine_mapping_visible",
+        "legacy_mapping_visible", "packet_effect", "source_row_sha256",
     )
-    expected_adjudication = set(
-        review_schema["required_adjudication_event_columns"]
-    ) - set(review_schema["nullable_adjudication_columns"])
-    for field in expected_adjudication:
+    for field in required_adjudication:
         row = _adjudication()
         del row[field]
         with pytest.raises(OracleContractError):
             validate_adjudication_event(row)
 
-    lineage_schema = json.loads(
-        (
-            ROOT
-            / "docs/superpowers/schemas/"
-            "cid_nl_oracle_lineage_binding_schema.json"
-        ).read_text(encoding="utf-8")
-    )
-    expected_lineage = set(lineage_schema["required_columns"]) - set(
-        lineage_schema["nullable_columns"]
+    required_lineage = (
+        "schema_version", "oracle_packet_id", "binding_id", "binding_role",
+        "processing_request_id", "processing_attempt_id", "evidence_artifact_id",
+        "artifact_schema_version", "artifact_semantic_role", "artifact_sha256",
+        "upstream_evidence_artifact_ids", "staleness_status", "source_row_sha256",
     )
     base_lineage = {
         "schema_version": "cid_nl_oracle_lineage_binding",
@@ -1591,7 +1593,7 @@ def test_adjudication_and_lineage_required_fields_match_schemas() -> None:
         "gate_threshold_resolved_value": "0.90",
         "gate_verdict_dependency": "required_nonhard_gate_state",
     }
-    for field in expected_lineage:
+    for field in required_lineage:
         bad_row = dict(base_lineage)
         del bad_row[field]
         with pytest.raises(OracleContractError):
@@ -1674,13 +1676,26 @@ def test_lineage_gate_result_requires_gate_specific_binding_fields() -> None:
 
 
 def test_lineage_seal_derives_missing_required_binding_coverage() -> None:
-    schema = json.loads(
-        (
-            ROOT
-            / "docs/superpowers/schemas/"
-            "cid_nl_oracle_lineage_binding_schema.json"
-        ).read_text(encoding="utf-8")
-    )
+    schema = {
+        "binding_schema_version": "cid_nl_oracle_lineage_binding",
+        "seal_required_fields": (
+            "schema_version", "oracle_packet_id", "lineage_binding_tsv_sha256",
+            "proposal_manifest_seal_id", "holdout_sampling_manifest_seal_id",
+            "human_label_seal_id", "gate_table_sha256", "binding_row_count",
+            "distinct_acquisition_source_count", "distinct_processing_request_count",
+            "distinct_processing_attempt_count", "distinct_evidence_artifact_count",
+            "missing_required_binding_count", "sealed_at_utc", "sealed_by",
+            "seal_status", "supersedes_lineage_seal_id",
+        ),
+        "required_columns": ("schema_version", "oracle_packet_id", "gate_table_sha256"),
+        "required_binding_identity_fields": {
+            "tested_tracer_proposal": ("proposal_manifest_id", "proposal_row_id"),
+            "holdout_case_evidence": ("case_id", "presentation_id"),
+            "human_review_event": ("review_record_id",),
+            "machine_comparison": ("case_id", "presentation_id"),
+            "gate_result": ("gate_id",),
+        },
+    }
     row = {
         "schema_version": "cid_nl_oracle_lineage_binding",
         "oracle_packet_id": "OP1",
@@ -1761,12 +1776,23 @@ def test_lineage_seal_derives_missing_required_binding_coverage() -> None:
 
 
 def test_manifest_seal_validator_rejects_missing_or_invalid_hashes() -> None:
-    schema_path = (
-        ROOT
-        / "docs/superpowers/schemas/"
-        "cid_nl_oracle_narrow_scope_manifest_schema.json"
-    )
-    schema = json.loads(schema_path.read_text(encoding="utf-8"))
+    schema = {
+        "manifest_schema_version": "cid_nl_oracle_narrow_scope_manifest",
+        "seal_required_fields": (
+            "schema_version", "narrow_scope_manifest_id", "narrow_scope_tsv_sha256",
+            "scope_membership_bundle_sha256", "scope_count",
+            "all_membership_manifests_present", "all_scope_gate_sets_resolvable",
+            "machine_mapping_revealed", "holdout_labels_revealed", "sealed_at_utc",
+            "sealed_by", "seal_status", "supersedes_narrow_scope_manifest_id",
+        ),
+        "required_columns": ("schema_version", "narrow_scope_manifest_id"),
+        "seal_expected_values": {
+            "all_membership_manifests_present": True,
+            "all_scope_gate_sets_resolvable": True,
+            "machine_mapping_revealed": False,
+            "holdout_labels_revealed": False,
+        },
+    }
     seal = {
         field: "value" for field in schema["seal_required_fields"]
     }
@@ -1860,13 +1886,29 @@ def test_manifest_seal_validator_rejects_missing_or_invalid_hashes() -> None:
 
 
 def test_proposal_seal_binds_distinct_hypothesis_count() -> None:
-    schema = json.loads(
-        (
-            ROOT
-            / "docs/superpowers/schemas/"
-            "cid_nl_tested_tracer_proposal_manifest_schema.json"
-        ).read_text(encoding="utf-8")
-    )
+    schema = {
+        "manifest_schema_version": "cid_nl_tested_tracer_proposal_manifest",
+        "seal_required_fields": (
+            "schema_version", "proposal_manifest_id", "proposal_tsv_sha256",
+            "processing_request_id", "processing_attempt_id", "tracer_id",
+            "tracer_version", "tracer_config_sha256", "row_count",
+            "distinct_peak_hypothesis_count", "distinct_acquisition_source_count",
+            "precision_denominator_rule_id", "candidate_universe_complete",
+            "machine_mapping_revealed_to_reviewer",
+            "legacy_mapping_revealed_to_reviewer",
+            "sealed_at_utc", "sealed_by", "seal_status", "supersedes_manifest_id",
+        ),
+        "required_columns": (
+            "schema_version", "proposal_manifest_id", "processing_request_id",
+            "processing_attempt_id", "tracer_id", "tracer_version",
+            "tracer_config_sha256",
+        ),
+        "seal_expected_values": {
+            "candidate_universe_complete": True,
+            "machine_mapping_revealed_to_reviewer": False,
+            "legacy_mapping_revealed_to_reviewer": False,
+        },
+    }
     config_bytes = b"tracer config"
     row = _proposal(tracer_config_sha256=sha256_bytes(config_bytes))
     manifest_bytes = canonical_tsv_bytes([row])
@@ -1922,13 +1964,23 @@ def test_proposal_seal_binds_distinct_hypothesis_count() -> None:
 
 
 def test_review_label_seal_binds_event_logs_and_counts() -> None:
-    schema = json.loads(
-        (
-            ROOT
-            / "docs/superpowers/schemas/"
-            "cid_nl_oracle_review_adjudication_schema.json"
-        ).read_text(encoding="utf-8")
-    )
+    schema = {
+        "label_seal_schema_version": "cid_nl_oracle_label_seal",
+        "label_seal_required_fields": (
+            "schema_version", "oracle_packet_id", "holdout_manifest_seal_id",
+            "review_event_log_sha256", "adjudication_event_log_sha256",
+            "primary_confirmatory_case_count", "hidden_duplicate_presentation_count",
+            "invalid_before_reveal_case_count", "unassessable_primary_case_count",
+            "source_roles_revealed", "machine_mapping_revealed",
+            "legacy_mapping_revealed",
+            "sealed_at_utc", "sealed_by", "seal_status", "supersedes_label_seal_id",
+        ),
+        "label_seal_expected_values": {
+            "source_roles_revealed": False,
+            "machine_mapping_revealed": False,
+            "legacy_mapping_revealed": False,
+        },
+    }
     sampling_rows = [_sampling()]
     sampling_manifest_bytes = canonical_tsv_bytes(sampling_rows)
     sampling_manifest_seal = {

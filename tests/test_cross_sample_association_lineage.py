@@ -45,7 +45,7 @@ from xic_extractor.alignment.grouping_result import (
     CrossSampleGroupingContractError,
     CrossSampleGroupingResult,
 )
-from xic_extractor.alignment.pipeline_outputs import AlignmentRunOutputs
+from xic_extractor.output.alignment.pipeline_outputs import AlignmentRunOutputs
 from xic_extractor.processing_identity import (
     canonical_identity_basis_bytes,
     typed_identity_digest,

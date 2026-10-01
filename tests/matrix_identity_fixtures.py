@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
-from xic_extractor.alignment.matrix_output_contract import (
+from xic_extractor.output.alignment.matrix_output_contract import (
     ALIGNMENT_MATRIX_IDENTITY_COLUMNS,
     MATRIX_IDENTITY_SCHEMA_VERSION,
     MATRIX_ROW_BINDING_COLUMN,

@@ -3,7 +3,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import re
 import subprocess
 import sys
 import tempfile
@@ -13,42 +12,15 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from scripts import bootstrap_worktree
-from tools.command_policy import analyze_command
 
-_NETWORK_COMMAND_PATTERNS = (
-    r"\bnpx\b",
-    r"\bnpm\s+install\b",
-    r"\bpip\s+install\b",
-    r"\buv\s+add\b",
-    r"\buv\s+(?:lock|sync)\b",
-    r"\buv\s+pip\s+install\b",
-    r"\buv\s+run\b[^\r\n]*?--with(?:=|\s)",
-    r"\bplaywright\s+install\b",
-    r"\bgh\s+(?:auth\s+status|pr|api|repo|release)\b",
-)
-_REWRITE_COMMAND_CODES = frozenset(
-    {
-        "background_long_raw_run",
-        "ambiguous_git_command",
-        "git_network_prompt_prefix_mismatch",
-        "output_outside_writable_roots",
-        "powershell_bash_heredoc",
-        "powershell_chain_operator",
-        "powershell_export",
-        "raw_runner_not_venv",
-        "unsupported_shell_wrapper",
-    }
-)
 _APPROVAL_REQUIRED_CODES = frozenset(
     {
         "git_global_config_unreadable",
         "github_network_approval_required",
-        "network_or_github_approval_needed",
     }
 )
 _HUMAN_DECISION_REQUIRED_CODES = frozenset(
     {
-        "dangerous_runtime_config",
         "github_auth_or_access_failed",
     }
 )
@@ -63,8 +35,6 @@ class Finding:
 
     @property
     def disposition(self) -> str:
-        if self.code in _REWRITE_COMMAND_CODES:
-            return "REWRITE_COMMAND"
         if self.code in _APPROVAL_REQUIRED_CODES:
             return "APPROVAL_REQUIRED"
         if self.code in _HUMAN_DECISION_REQUIRED_CODES:
@@ -79,7 +49,6 @@ class DoctorReport:
     status: str
     workspace_root: str
     allowed_write_roots: tuple[str, ...]
-    command: str
     findings: tuple[Finding, ...]
 
     def to_dict(self) -> dict[str, object]:
@@ -91,177 +60,10 @@ class DoctorReport:
         return payload
 
 
-def classify_command(
-    command: str,
-    *,
-    workspace_root: Path,
-    allowed_write_roots: Sequence[Path],
-) -> tuple[Finding, ...]:
-    normalized = _normalize_command(command)
-    lower = normalized.lower()
-    findings: list[Finding] = []
-
-    if re.search(r"<<\s*['\"]?[a-z_][a-z0-9_]*['\"]?", normalized, re.I):
-        findings.append(
-            Finding(
-                severity="blocker",
-                code="powershell_bash_heredoc",
-                message="Command appears to use Bash heredoc syntax.",
-                next_action=(
-                    "Use PowerShell here-string piping, python -c, or a checked-in "
-                    "script instead."
-                ),
-            )
-        )
-    if re.search(r"(^|\s)export\s+[A-Za-z_][A-Za-z0-9_]*=", normalized):
-        findings.append(
-            Finding(
-                severity="blocker",
-                code="powershell_export",
-                message="Command uses Bash export syntax in a PowerShell repo.",
-                next_action=(
-                    "Use PowerShell environment syntax such as $env:NAME='value'."
-                ),
-            )
-        )
-    if "&&" in normalized:
-        findings.append(
-            Finding(
-                severity="review",
-                code="powershell_chain_operator",
-                message="Command uses &&, which has caused shell drift in this repo.",
-                next_action="Use semicolons or separate PowerShell lines.",
-            )
-        )
-
-    if "start-process" in lower and _looks_like_long_raw_run(lower):
-        findings.append(
-            Finding(
-                severity="blocker",
-                code="background_long_raw_run",
-                message=(
-                    "Command launches a long RAW/alignment run through Start-Process."
-                ),
-                next_action=(
-                    "Use the documented foreground command with timing heartbeat, "
-                    "or get explicit approval for an external terminal/automation."
-                ),
-            )
-        )
-
-    if _looks_like_raw_alignment_command(lower) and not _uses_project_venv(lower):
-        findings.append(
-            Finding(
-                severity="blocker",
-                code="raw_runner_not_venv",
-                message=(
-                    "RAW/DLL alignment command is not using .venv\\Scripts\\python.exe."
-                ),
-                next_action=(
-                    "Run RAW/Thermo commands with .venv\\Scripts\\python.exe so "
-                    "pythonnet and the DLL runtime match the documented contract."
-                ),
-            )
-        )
-
-    output_dir = _extract_option_path(normalized, "--output-dir")
-    if output_dir is not None:
-        resolved_output = _resolve_cli_path(output_dir, workspace_root)
-        if not _is_under_any_root(resolved_output, allowed_write_roots):
-            findings.append(
-                Finding(
-                    severity="review",
-                    code="output_outside_writable_roots",
-                    message=(
-                        "Output path is outside documented writable roots: "
-                        f"{output_dir}"
-                    ),
-                    next_action=(
-                        "Prefer a task-specific output\\... path in the active "
-                        "worktree. Add another root explicitly only when the "
-                        "current session advertises it as writable."
-                    ),
-                )
-            )
-
-    command_analysis = analyze_command(command)
-    if command_analysis.requires_rewrite:
-        findings.append(
-            Finding(
-                severity="blocker",
-                code=command_analysis.rewrite_code,
-                message=command_analysis.rewrite_reason,
-                next_action=(
-                    "Remove the wrapper or compound shape and run one direct command "
-                    "so execpolicy can apply the documented forbid or prompt prefix."
-                ),
-            )
-        )
-
-    git_invocation = command_analysis.git_invocation
-    git_needs_network = bool(
-        git_invocation is not None and git_invocation.needs_network
-    )
-    git_prompt_prefix_mismatch = bool(
-        git_invocation is not None and git_invocation.network_prompt_prefix_mismatch
-    )
-    if git_prompt_prefix_mismatch:
-        findings.append(
-            Finding(
-                severity="blocker",
-                code="git_network_prompt_prefix_mismatch",
-                message=(
-                    "This direct Git network command uses global options that do "
-                    "not reach a bounded execpolicy prompt prefix."
-                ),
-                next_action=(
-                    "Rewrite it as direct `git <network-subcommand> ...`; use direct "
-                    "`git -c safe.directory=<repo> <network-subcommand> ...` only "
-                    "for invocation-scoped ownership recovery."
-                ),
-            )
-        )
-
-    needs_network = not command_analysis.requires_rewrite and (
-        any(re.search(pattern, lower) for pattern in _NETWORK_COMMAND_PATTERNS)
-        or (git_needs_network and not git_prompt_prefix_mismatch)
-    )
-    if needs_network:
-        findings.append(
-            Finding(
-                severity="review",
-                code="network_or_github_approval_needed",
-                message="Command likely needs network or GitHub access.",
-                next_action=(
-                    "Confirm the network step is necessary, then request a narrow "
-                    "approval/prefix instead of broad sandbox changes."
-                ),
-            )
-        )
-
-    if "danger-full-access" in lower or 'approval_policy = "never"' in lower:
-        findings.append(
-            Finding(
-                severity="blocker",
-                code="dangerous_runtime_config",
-                message=(
-                    "Command or config references a broad unsafe Codex runtime mode."
-                ),
-                next_action=(
-                    "Use one workspace permission profile with on-request approval; "
-                    "document a bounded exception and rollback before changing it."
-                ),
-            )
-        )
-
-    return tuple(findings)
-
-
 def build_environment_report(
     *,
     workspace_root: Path,
     allowed_write_roots: Sequence[Path],
-    command: str = "",
     probe_write: bool = False,
     runtime_check: bool = False,
     probe_git_write: bool = False,
@@ -269,13 +71,7 @@ def build_environment_report(
 ) -> DoctorReport:
     resolved_workspace = workspace_root.resolve()
     resolved_roots = tuple(root.resolve() for root in allowed_write_roots)
-    findings = list(
-        classify_command(
-            command,
-            workspace_root=resolved_workspace,
-            allowed_write_roots=resolved_roots,
-        )
-    )
+    findings: list[Finding] = []
     if probe_write:
         findings.extend(_probe_write_roots(resolved_roots))
     if runtime_check:
@@ -293,7 +89,6 @@ def build_environment_report(
         status=status,
         workspace_root=str(resolved_workspace),
         allowed_write_roots=tuple(str(root) for root in resolved_roots),
-        command=command,
         findings=tuple(findings),
     )
 
@@ -309,9 +104,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     report = build_environment_report(
         workspace_root=workspace_root,
         allowed_write_roots=allowed_write_roots,
-        command=args.command or "",
         probe_write=args.probe_write,
-        runtime_check=not args.command_only,
+        runtime_check=True,
         probe_git_write=args.probe_git_write,
         probe_github=args.probe_github,
     )
@@ -335,14 +129,9 @@ def main(argv: Sequence[str] | None = None) -> int:
 def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Preflight common Codex sandbox, PowerShell, and RAW-run command "
-            "friction before launching expensive workflows."
+            "Check the active worktree environment, Python runner, and "
+            "filesystem access before project execution."
         )
-    )
-    parser.add_argument(
-        "--command",
-        default="",
-        help="Command string to classify. No command is executed.",
     )
     parser.add_argument("--workspace-root", type=Path, default=Path.cwd())
     parser.add_argument(
@@ -351,8 +140,7 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         type=Path,
         default=None,
         help=(
-            "Allowed write root. Repeatable. Defaults to workspace root and "
-            "C:\\tmp when that is an absolute path on the current platform."
+            "Allowed write root. Repeatable. Defaults to the active workspace."
         ),
     )
     parser.add_argument(
@@ -384,11 +172,6 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
-        "--command-only",
-        action="store_true",
-        help="Classify the command without running local runtime canaries.",
-    )
-    parser.add_argument(
         "--strict",
         action="store_true",
         help="Return non-zero for blocker/review findings.",
@@ -402,8 +185,6 @@ def _print_report(report: DoctorReport) -> None:
     print("Allowed write roots:")
     for root in report.allowed_write_roots:
         print(f"  - {root}")
-    if report.command:
-        print(f"Command: {report.command}")
     if not report.findings:
         print("Findings: none")
         return
@@ -421,7 +202,6 @@ def _report_status(findings: Sequence[Finding]) -> str:
     for status in (
         "HUMAN_DECISION_REQUIRED",
         "ENVIRONMENT_REPAIR_REQUIRED",
-        "REWRITE_COMMAND",
         "APPROVAL_REQUIRED",
         "INCONCLUSIVE",
     ):
@@ -430,75 +210,11 @@ def _report_status(findings: Sequence[Finding]) -> str:
     return "READY"
 
 
-def _normalize_command(command: str) -> str:
-    return " ".join(command.replace("`", " ").split())
-
-
 def _default_allowed_write_roots(workspace_root: Path) -> tuple[Path, ...]:
     # External temp roots vary across the desktop app, CLI, elevated Windows
     # sandbox users, and WSL. Treat only the active worktree as portable; callers
     # can opt into an additional root when their current session advertises one.
     return (workspace_root.resolve(),)
-
-
-def _looks_like_long_raw_run(lower_command: str) -> bool:
-    return any(
-        marker in lower_command
-        for marker in (
-            "scripts.run_alignment",
-            "run_alignment.py",
-            "--expected-sample-count 85",
-            "--timing-live-output",
-            "full_cohort",
-        )
-    )
-
-
-def _looks_like_raw_alignment_command(lower_command: str) -> bool:
-    return (
-        "scripts.run_alignment" in lower_command or "run_alignment.py" in lower_command
-    ) and ("--raw-dir" in lower_command or "--dll-dir" in lower_command)
-
-
-def _uses_project_venv(lower_command: str) -> bool:
-    normalized = lower_command.replace("/", "\\")
-    return ".venv\\scripts\\python.exe" in normalized
-
-
-def _extract_option_path(command: str, option: str) -> str | None:
-    pattern = re.compile(
-        rf"(?:^|\s){re.escape(option)}(?:=|\s+)(?:\"([^\"]+)\"|'([^']+)'|(\S+))"
-    )
-    match = pattern.search(command)
-    if match is None:
-        return None
-    return next(group for group in match.groups() if group is not None)
-
-
-def _resolve_cli_path(path_text: str, workspace_root: Path) -> Path:
-    path = Path(path_text)
-    if not path.is_absolute():
-        path = workspace_root / path
-    return path.resolve()
-
-
-def _is_under_any_root(path: Path, roots: Sequence[Path]) -> bool:
-    resolved_path = path.resolve()
-    for root in roots:
-        resolved_root = root.resolve()
-        if resolved_path == resolved_root or _is_relative_to(
-            resolved_path, resolved_root
-        ):
-            return True
-    return False
-
-
-def _is_relative_to(path: Path, root: Path) -> bool:
-    try:
-        path.relative_to(root)
-    except ValueError:
-        return False
-    return True
 
 
 def _probe_write_roots(roots: Sequence[Path]) -> tuple[Finding, ...]:

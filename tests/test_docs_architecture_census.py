@@ -108,9 +108,7 @@ def test_historical_identifier_exemption_is_exact_and_requires_a_reason(
     assert census.validate_semantic_identifiers(tmp_path, (source_path,)) == []
 
     source.write_text("Current semantic name only.\n", encoding="utf-8")
-    monkeypatch.setattr(
-        census, "repository_tracked_paths", lambda root: (source_path,)
-    )
+    monkeypatch.setattr(census, "repository_tracked_paths", lambda root: (source_path,))
     assert any(
         "unused historical identifier exemption" in problem
         for problem in census.validate_semantic_identifiers(tmp_path)
@@ -122,11 +120,11 @@ def test_runtime_low_level_exports_evaluate_to_exact_immutable_tuples() -> None:
 
 
 def test_runtime_phase_exception_public_types_are_allowlisted() -> None:
-    from xic_extractor import execution_runtime_owner
+    from xic_extractor.execution import attempt as execution_runtime_owner
 
     owner_exports = set(execution_runtime_owner.__all__)
     owner_allowlist = census.RUNTIME_EXTERNAL_CALLS_BY_MODULE[
-        "xic_extractor.execution_runtime_owner"
+        "xic_extractor.execution.attempt"
     ]
 
     assert {"RuntimeExecutionPhase", "RuntimeExecutionPhaseError"} <= owner_exports
@@ -144,14 +142,14 @@ def test_runtime_compaction_is_a_public_fact_projection_not_a_private_entry(
     source = tmp_path / adapter
     source.parent.mkdir(parents=True)
     source.write_text(
-        "from xic_extractor.execution_runtime_owner import "
+        "from xic_extractor.execution.attempt import "
         "compact_runtime_acquisition_receipt as compact\n"
         "def summarize(receipt):\n    return compact(receipt)\n",
         encoding="utf-8",
     )
     assert census.validate_runtime_boundary_authority(tmp_path, (adapter,)) == []
     source.write_text(
-        "from xic_extractor.execution_runtime_owner import "
+        "from xic_extractor.execution.attempt import "
         "_runtime_acquisition_digest as digest\n"
         "def summarize(receipt):\n    return digest(receipt)\n",
         encoding="utf-8",
@@ -170,10 +168,10 @@ def test_runtime_boundary_authority_rejects_projection_and_reducer_bypasses(
     source.parent.mkdir(parents=True)
     source.write_text(
         """
-from xic_extractor.execution_runtime_finalization import (
+from xic_extractor.execution._finalization import (
     propose_attempt_terminal as propose,
 )
-from xic_extractor.execution_runtime_owner import (
+from xic_extractor.execution.attempt import (
     RuntimeFinalizationReceipt as Receipt,
     apply_runtime_worker_batch as apply_batch,
 )
@@ -217,7 +215,7 @@ def test_runtime_boundary_authority_is_origin_aware_for_same_name_methods(
     source.parent.mkdir(parents=True)
     source.write_text(
         """
-from xic_extractor.execution_runtime_owner import RuntimeTelemetrySamples
+from xic_extractor.execution.attempt import RuntimeTelemetrySamples
 
 class LocalHelper:
     def settle_work_unit(self):
@@ -240,7 +238,7 @@ def test_runtime_boundary_allows_owner_bound_cancellation_start_fact(
     source.parent.mkdir(parents=True)
     source.write_text(
         """
-from xic_extractor.execution_runtime_owner import (
+from xic_extractor.execution.attempt import (
     RuntimeCancellationRequest,
     start_runtime_attempt,
 )
@@ -262,12 +260,12 @@ def start_cancelled(attempt):
 def test_runtime_boundary_authority_rejects_nested_and_branched_partial_paths(
     tmp_path: Path,
 ) -> None:
-    adapter = Path("xic_extractor/alignment/runtime_adapter.py")
+    adapter = Path("xic_extractor/extraction/targeted_runtime_adapter.py")
     source = tmp_path / adapter
     source.parent.mkdir(parents=True)
     source.write_text(
         """
-from xic_extractor.execution_runtime_owner import (
+from xic_extractor.execution.attempt import (
     _apply_runtime_worker_batch as apply_batch,
     _prepare_runtime_attempt as prepare,
     execute_runtime_attempt,
@@ -311,7 +309,7 @@ def test_runtime_boundary_authority_scans_scripts_for_low_level_calls(
     source.parent.mkdir(parents=True)
     source.write_text(
         """
-from xic_extractor.execution_runtime_finalization import mark_worker_lost
+from xic_extractor.execution._finalization import mark_worker_lost
 
 def bypass(state):
     return mark_worker_lost(state, worker_key="worker:a")
@@ -332,7 +330,7 @@ def test_runtime_receipt_internal_allowlist_is_path_scoped(
     source.parent.mkdir(parents=True)
     source.write_text(
         """
-from xic_extractor.execution_runtime import WorkUnitSettlement
+from xic_extractor.execution._lifecycle import WorkUnitSettlement
 
 def inspect_settlement(value):
     return (WorkUnitSettlement,)
@@ -342,15 +340,13 @@ def inspect_settlement(value):
 
     problems = census.validate_runtime_boundary_authority(tmp_path, (adapter,))
 
-    assert any(
-        "WorkUnitSettlement is owner-internal" in item for item in problems
-    )
+    assert any("WorkUnitSettlement is owner-internal" in item for item in problems)
 
 
 def test_runtime_boundary_authority_rejects_low_level_public_exports(
     tmp_path: Path,
 ) -> None:
-    runtime = Path("xic_extractor/execution_runtime_finalization.py")
+    runtime = Path("xic_extractor/execution/_finalization.py")
     source = tmp_path / runtime
     source.parent.mkdir(parents=True)
     source.write_text(
@@ -366,7 +362,7 @@ def test_runtime_boundary_authority_rejects_low_level_public_exports(
 def test_runtime_boundary_authority_rejects_finalization_model_record_exports(
     tmp_path: Path,
 ) -> None:
-    models = Path("xic_extractor/execution_runtime_finalization_models.py")
+    models = Path("xic_extractor/execution/_finalization.py")
     source = tmp_path / models
     source.parent.mkdir(parents=True)
     source.write_text(
@@ -423,7 +419,7 @@ def test_runtime_boundary_authority_requires_literal_immutable_all(
     tmp_path: Path,
     source_text: str,
 ) -> None:
-    models = Path("xic_extractor/execution_runtime_finalization_models.py")
+    models = Path("xic_extractor/execution/_finalization.py")
     source = tmp_path / models
     source.parent.mkdir(parents=True)
     source.write_text(source_text, encoding="utf-8")
@@ -442,7 +438,7 @@ def test_runtime_boundary_authority_resolves_relative_higher_order_bypasses(
     source.write_text(
         """
 from functools import partial
-from ..execution_runtime_owner import _apply_runtime_worker_batch as apply_batch
+from ..execution.attempt import _apply_runtime_worker_batch as apply_batch
 
 def callback_bypass(aggregate, batch, register):
     deferred = partial(apply_batch, aggregate, batch)
@@ -490,7 +486,7 @@ def test_runtime_boundary_authority_rejects_indirect_callback_aliases(
     source.parent.mkdir(parents=True)
     source.write_text(
         (
-            "from ..execution_runtime_owner import "
+            "from ..execution.attempt import "
             "_apply_runtime_worker_batch\n\n"
             f"{bypass_source}"
         ),
@@ -514,7 +510,7 @@ def test_runtime_boundary_alias_resolution_is_lexically_scoped(
     source.parent.mkdir(parents=True)
     source.write_text(
         """
-from ..execution_runtime_owner import _apply_runtime_worker_batch as callback
+from ..execution.attempt import _apply_runtime_worker_batch as callback
 
 def leak(register):
     register(callback)
@@ -547,7 +543,7 @@ def test_runtime_boundary_rejects_owner_internal_bridge_imports(
     adapter_source = tmp_path / adapter
     bridge_source.parent.mkdir(parents=True)
     bridge_source.write_text(
-        "from ..execution_runtime_owner import _apply_runtime_worker_batch\n",
+        "from ..execution.attempt import _apply_runtime_worker_batch\n",
         encoding="utf-8",
     )
     adapter_source.write_text(
@@ -581,7 +577,7 @@ def test_runtime_boundary_rejects_function_local_authority_imports(
     source.write_text(
         """
 def bypass(state):
-    from ..execution_runtime_owner import RuntimeAttemptAggregate
+    from ..execution.attempt import RuntimeAttemptAggregate
     return RuntimeAttemptAggregate(state=state)
 """.lstrip(),
         encoding="utf-8",
@@ -604,8 +600,8 @@ def test_runtime_boundary_rejects_typed_projection_inputs_by_position(
     source.write_text(
         """
 from dataclasses import dataclass
-from ..execution_runtime_observability import RuntimeObservabilityLedger as Projection
-from ..execution_runtime_owner import execute_runtime_attempt
+from ..execution._observability import RuntimeObservabilityLedger as Projection
+from ..execution.attempt import execute_runtime_attempt
 
 def bypass(runtime, reservations, projection: Projection):
     return execute_runtime_attempt(runtime, reservations), projection
@@ -640,8 +636,8 @@ def test_runtime_boundary_rejects_quoted_projection_and_aliased_dataclass(
     source.write_text(
         """
 from dataclasses import dataclass as record
-from ..execution_runtime_observability import RuntimeObservabilityLedger as Projection
-from ..execution_runtime_owner import execute_runtime_attempt
+from ..execution._observability import RuntimeObservabilityLedger as Projection
+from ..execution.attempt import execute_runtime_attempt
 
 def bypass(runtime, projection: "Projection | None"):
     return execute_runtime_attempt(runtime), projection
@@ -675,8 +671,8 @@ def test_runtime_boundary_distinguishes_metric_vocabulary_from_authority(
     source.parent.mkdir(parents=True)
     source.write_text(
         """
-from ..execution_runtime_observability import REQUIRED_RUNTIME_METRIC_NAMES
-from ..execution_runtime_owner import execute_runtime_attempt
+from ..execution._observability import REQUIRED_RUNTIME_METRIC_NAMES
+from ..execution.attempt import execute_runtime_attempt
 
 def untrusted_copy(runtime):
     receipt = execute_runtime_attempt(runtime)
@@ -709,7 +705,7 @@ def test_runtime_boundary_authority_detects_relative_import_future_consumers(
     source.parent.mkdir(parents=True)
     source.write_text(
         """
-from ..execution_runtime_owner import execute_runtime_attempt
+from ..execution.attempt import execute_runtime_attempt
 
 def bypass(observability_ledger):
     return execute_runtime_attempt(observability_ledger)
@@ -728,13 +724,13 @@ def bypass(observability_ledger):
 def test_runtime_boundary_authority_allows_owner_facade_construction(
     tmp_path: Path,
 ) -> None:
-    owner = Path("xic_extractor/execution_runtime_owner.py")
+    owner = Path("xic_extractor/execution/attempt.py")
     source = tmp_path / owner
     source.parent.mkdir(parents=True)
     source.write_text(
         """
-from xic_extractor.execution_runtime_finalization import propose_attempt_terminal
-from xic_extractor.execution_runtime_owner import RuntimeFinalizationReceipt
+from xic_extractor.execution._finalization import propose_attempt_terminal
+from xic_extractor.execution.attempt import RuntimeFinalizationReceipt
 
 def finalize(state, supervisor):
     return RuntimeFinalizationReceipt(
@@ -757,11 +753,11 @@ def test_runtime_boundary_authority_rejects_shared_ledger_test_oracles(
     source.write_text(
         """
 from tests.runtime_observability_fixtures import make_ledger
-from xic_extractor.execution_runtime_finalization import propose_attempt_terminal
-from xic_extractor.execution_runtime_observability import (
+from xic_extractor.execution._finalization import propose_attempt_terminal
+from xic_extractor.execution._observability import (
     RuntimeObservabilityLedger as Ledger,
 )
-from xic_extractor.execution_runtime_owner import RuntimeFinalizationReceipt
+from xic_extractor.execution.attempt import RuntimeFinalizationReceipt
 
 def build(attempt):
     return make_ledger(attempt)
@@ -827,29 +823,46 @@ def test_alignment_to_extraction_imports_are_exact_owner_edges(
         and reference.imported_module.startswith("xic_extractor.extraction")
     }
 
-    assert observed == {
-        (
-            "xic_extractor.alignment.pipeline",
-            "xic_extractor.extraction.untargeted_alignment",
-        ),
-        (
-            "xic_extractor.alignment.pipeline",
-            "xic_extractor.extraction.untargeted_production_batch",
-        ),
-        (
-            "xic_extractor.alignment.result.application_result",
-            "xic_extractor.extraction.untargeted_cid_nl_real_data_inputs",
-        ),
+    assert observed == set()
+
+
+@pytest.mark.current_repository_census
+def test_discovery_to_extraction_imports_are_exact_owner_edges(
+    current_architecture_census: census.ArchitectureCensus,
+) -> None:
+    observed = {
+        (reference.source_module, reference.imported_module)
+        for reference in current_architecture_census.internal_static_imports
+        if reference.source_module.startswith("xic_extractor.discovery")
+        and reference.imported_module.startswith("xic_extractor.extraction")
     }
+
+    assert observed == set()
+
+
+@pytest.mark.current_repository_census
+def test_discovery_does_not_import_alignment_or_presets(
+    current_architecture_census: census.ArchitectureCensus,
+) -> None:
+    observed = {
+        (reference.source_module, reference.imported_module)
+        for reference in current_architecture_census.internal_static_imports
+        if reference.source_module.startswith("xic_extractor.discovery")
+        and reference.imported_module.startswith(
+            ("xic_extractor.alignment", "xic_extractor.presets")
+        )
+    }
+
+    assert observed == set()
 
 
 @pytest.mark.current_repository_census
 def test_default_production_activation_loci_are_exact() -> None:
     production_calls: dict[str, set[Path]] = {
-        "run_alignment": set(),
+        "run_untargeted_application": set(),
         "complete_untargeted_alignment": set(),
-        "execute_bounded_untargeted_cid_nl": set(),
-        "execute_untargeted_cid_nl_runtime_partition": set(),
+        "execute_untargeted_plan": set(),
+        'execute_partition': set(),
     }
     for path in census.repository_python_paths(ROOT):
         if not path.parts or path.parts[0] == "tests":
@@ -868,27 +881,26 @@ def test_default_production_activation_loci_are_exact() -> None:
             if called in production_calls:
                 production_calls[called].add(path)
 
-    outer_callers = production_calls["run_alignment"]
+    outer_callers = production_calls["run_untargeted_application"]
     assert outer_callers == {
         Path("scripts/run_alignment.py"),
         Path("gui/workers/discovery_worker.py"),
         Path("xic_extractor/extraction/untargeted_provisional_matrix_workflow.py"),
     }
-    activation_loci = outer_callers | {Path("xic_extractor/alignment/pipeline.py")}
+    application_path = Path("xic_extractor/applications/untargeted/application.py")
+    activation_loci = outer_callers | {application_path}
     assert activation_loci == {
-        Path("xic_extractor/alignment/pipeline.py"),
+        application_path,
         Path("scripts/run_alignment.py"),
         Path("gui/workers/discovery_worker.py"),
         Path("xic_extractor/extraction/untargeted_provisional_matrix_workflow.py"),
     }
-    assert production_calls["complete_untargeted_alignment"] == {
-        Path("xic_extractor/alignment/pipeline.py")
-    }
-    assert production_calls["execute_bounded_untargeted_cid_nl"] == {
+    assert production_calls["complete_untargeted_alignment"] == {application_path}
+    assert production_calls["execute_untargeted_plan"] == {
         Path("xic_extractor/extraction/untargeted_alignment.py")
     }
-    assert production_calls["execute_untargeted_cid_nl_runtime_partition"] == {
-        Path("xic_extractor/extraction/untargeted_cid_nl_bounded_runtime.py")
+    assert production_calls['execute_partition'] == {
+        Path("xic_extractor/extraction/untargeted_execution.py")
     }
 
 

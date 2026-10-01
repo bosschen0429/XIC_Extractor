@@ -88,7 +88,6 @@ The current routes remain the existing entry-point modes:
 | `discovery_only` | RAW to the existing Discovery terminal |
 | `full` | RAW -> Discovery -> retained finalized CID-NL batch -> canonical Matrix writer |
 | `align_only` | Existing Discovery index -> retained finalized CID-NL batch -> canonical Matrix writer |
-| diagnostic ModeTrack review runner | Opt-in single-subject debug/batch review; no product authority |
 
 The retained finalized CID-NL batch closes the Matrix loop for neutral-loss
 presets, including multi-tag `union` (OR) and `intersection` (AND).
@@ -119,9 +118,6 @@ Other routes and retained artifacts:
   retired.
 - The provisional full-universe runner continues to stop after its existing
   provisional diagnostic projection.
-- Diagnostic ModeTrack review retains its precursor, metadata,
-  injection-order, namespace, and reviewed-input owners. Diagnostic ModeTrack
-  review is not a product route and cannot replace canonical Alignment output.
 
 These route names are existing in-memory selectors. The route names are not
 new preset TOML fields or a user-authored workflow graph. The delta-mass
@@ -209,5 +205,5 @@ Before changing preset behavior, require the relevant subset of:
 - [Preset TOML data](../../xic_extractor/presets/data/)
 - [Historical compatibility index](../superpowers/plans/2026-06-15-productization-control-plane.md)
 - [Status index](../superpowers/validation/productization_status_index.tsv)
-- [Authority manifest](../superpowers/schemas/productization_authority_manifest.json)
+- [Authority manifest](../superpowers/productization/status/productization_authority_manifest.json)
 - [Diagnostic ledger](../diagnostic-ledger.md)
