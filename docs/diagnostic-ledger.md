@@ -675,24 +675,62 @@ the cost, not moving it, and the graph exists to feed one report nobody reads.
   not accepted as the optimization goal. Output-only changes can be checked
   against these retained artifacts without another RAW run.
 
-### 2026-08-26 Issue #303 ModeTrack Neighborhood Budget
+### 2026-09-21 Four-Partition RAW-Major Replay Does Not Establish A Scheduler Win
 
-Verdict: `diagnosis_ready / diagnostic_only`. The retained Gate B receipt
-`docs/superpowers/fixtures/mode_track_assignment_85raw_gate_b.json` contains
-85 samples, 86 physical hypotheses, 11 ModeTracks, a maximum track ownership of
-15, and no ModeTrack-added RAW opens or XIC calls. A no-RAW exact API replay of
-the CrossSample bounded-neighborhood operation at the full 86-member complete
-graph bound (3,655 eligible edges) ran 15 repetitions with median 0.103 s
-(range 0.095-0.127 s).
+- Evidence: `diagnostic_only`, product source `dfc22127`, fixed canonical
+  partitions 00000–00003 and all 85 samples. Reused Discovery and cache; no
+  additional full85 or Discovery run. Task-local drivers freeze actual initial
+  and recovery requests before comparing the physical execution axes.
+- Three paired four-process replays (A→B, B→A, A→B) have partition-major A
+  wall median/range 9.069/9.023–9.758 seconds and sample-major B
+  8.799/8.238–9.239 seconds. Diagnostic artifact persistence medians are
+  1.261 and 0.225 seconds. Timing overlaps and this measurement overhead is
+  larger than the median wall difference; a production broker benefit is not
+  established. OS cache is warm, and both arms make zero native opens/calls.
+- Sessions fall from 680 to 85, but logical XIC requests remain 6,934 and
+  cache bytes only fall from 952,428,976 to 920,637,788. All 5,166 query results
+  in every arm exactly match the harvested serialized facts, with per-partition
+  coverage. B facts actually reproduce all 150 captured scientific children.
+  Additional read-only extraction from sealed stores confirms 391 initial
+  groups' ambiguity/inference decisions and final disposition/route reasons;
+  no rerun was needed to recover those omitted scalar fields.
+- With compact frozen facts, scientific replay still takes 106.141 seconds:
+  adapter acquisition phase 50.723 seconds and composition 51.209 seconds.
+  That acquisition phase includes scientific computation and object transport;
+  do not equate it with the isolated physical replay. The original 140.984-second
+  harvest had 118.470 summed worker seconds of cache file reads versus roughly
+  2–3 in warm replay; cache/OS state prevents a simple causal subtraction.
+- Architecture-adoption verdict: `inconclusive`; no production scheduler
+  change. Reuse retained facts to separate scientific computation/transport
+  from physical I/O before another rewrite. This does not test cold native
+  batching or establish full85/ISTD acceptance. Prior process8 failed after
+  1,985.016 seconds, with 40/46 partitions and no formal Matrix.
+- Artifacts: `output/issue422-bounded-worksets-20260921/fusion-ab/`:
+  `decision-report.md`, `physical-parity-123.json`, `scientific-parity-1.json`,
+  `ambiguity-parity-1.json`, frozen `prepared/`, requests/facts under `harvest/`,
+  and per-arm receipts. These are task-local diagnostic evidence, not a new
+  reusable public cache or store format. Do not repeat preparation, harvesting,
+  or completed arms merely to repair reporting.
 
-Issue #303 therefore freezes `max_members=86` and
-`max_eligible_edges=3655` as the finite proposal boundary. Larger connected
-neighborhoods fail closed as `unassessable`; they must not be chunked into
-partial proposals. Reuse this conclusion unless the CrossSample neighborhood
-algorithm, the retained Gate B population bound, or the proposal boundary
-changes materially. This receipt grants no product activation, scientific
-readiness, Matrix, Backfill, or writer authority, and does not justify another
-RAW run.
+### 2026-09-09 Remaining Context/Formatting Work Deferred
+
+**Evidence:** `diagnostic_only`; no product change. At `b4c3c669`, a fresh context
+rebuilt from the bound eight-sample checkpoint in 13.398067 seconds, with the
+same request identity and canonical samples. Profiling identified repeated
+candidate-universe and physical-evaluation validation, but the entire context
+is only about 2.5% of the prior full CLI. Keep the current-acquisition/receipt
+binding and defer new validation-cache or proof mechanisms for this small
+remaining surface.
+
+A process-local physical-float formatting simplification failed its performance
+gate: three interleaved reader pairs had medians 6.792880 versus 6.821382 seconds,
+with overlapping ranges (6.764442–6.908842 versus 6.732014–7.056653). All 4,375
+records matched and input hashes were unchanged; two pairs regressed. The
+experiment was not applied to product source. Reuse this rejection before
+retrying the same scalar-format change. No RAW extraction or full CLI rerun was
+performed. Receipts: `output/cid-nl-context-optimization/` (`report.md`,
+`context-profile.json`, `context.pstats`, `paired-final.json`,
+`profile_context.py`, `format_trial.py`).
 
 ### 2026-08-20 Urine MeIQx Discovery-window versus group-centered Backfill
 
@@ -1274,31 +1312,3 @@ Recommended next check:
 5. Do not rerun 85RAW just to re-prove this fix. Rerun 85RAW only after a new
    production behavior change or if a current artifact contradicts the 85RAW
    summary fixture.
-
-### 2026-05-26 P8b 85RAW Super-Window Acceptance
-
-Verdict: `production_candidate` for explicit opt-in
-`validation-minimal + production-equivalent + validation-fast + super-window`
-85RAW alignment validation. This is a validated runner/performance mode, not a
-new default behavior and not `production_ready` by itself.
-
-Durable closeout:
-retired private-history runtime note; the current durable facts are the
-validated command profile and rerun rule in this ledger section.
-
-Key facts:
-
-- The 85RAW super-window run completed and emitted the expected machine
-  artifacts.
-- Matrix, cells, and review surfaces were byte-identical to the accepted
-  P8b exact-window reference for the checked contract.
-- No new RT, identity, or coverage failure was introduced by super-window.
-- The CLI default remained exact-window batching; super-window stayed explicit
-  opt-in.
-- Known targeted-benchmark warnings from the prior accepted surface remained
-  warning-class follow-up, not super-window regressions.
-
-Do not rerun 85RAW just to re-prove super-window acceptance. Rerun only after
-current code changes RAW locality, owner-backfill request grouping,
-super-window batching/cropping, validation-fast settings, output surfaces used
-by the gate, or the cited artifacts become stale or contradictory.
