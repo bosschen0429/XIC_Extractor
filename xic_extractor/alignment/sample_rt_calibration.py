@@ -1,8 +1,8 @@
 """Batch-level sample RT calibration onto a common anchor coordinate.
 
 Anchors are features directly detected in nearly every sample, not only ISTDs.
-Diagnostic authority only: produces calibrated coordinates and perturbation
-confirmation; it does not change grouping, peak selection, or values.
+Produces calibrated coordinates and perturbation confirmation. Diagnostic
+grouping replay can use these coordinates; measured RTs and areas are preserved.
 """
 
 from __future__ import annotations
@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from statistics import median
 
 from xic_extractor.alignment.drift_evidence import interpolate_calibrated_rt_min
+from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
 
 
 @dataclass(frozen=True)
@@ -87,6 +88,12 @@ class BatchRtCalibration:
     front_shift_center_min: float | None
     front_shift_mad_min: float | None
     perturbation_tolerance_min: float | None
+
+    def corrected_rt_min(self, owner: SampleLocalMS1Owner) -> float:
+        """Use a bounded sample calibration, retaining raw RT outside its span."""
+        sample = self.samples.get(owner.sample_stem)
+        calibrated = sample.calibrated_rt(owner.owner_apex_rt) if sample else None
+        return owner.owner_apex_rt if calibrated is None else calibrated
 
 
 def build_batch_rt_calibration(

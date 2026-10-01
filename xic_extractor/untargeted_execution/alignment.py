@@ -63,6 +63,7 @@ from xic_extractor.untargeted_execution.execution_result import (
     CompletedUntargetBatchWorkflowResult,
 )
 from xic_extractor.untargeted_execution.input_planning import (
+    UntargetedInputPlan,
     prepare_eager_untargeted_plan,
     prepare_indexed_untargeted_plan,
 )
@@ -186,7 +187,25 @@ def _index_discovery_physical_sources(
         raise
 
 
-def complete_untargeted_alignment(
+@dataclass(slots=True)
+class PreparedUntargetedAlignmentInputs:
+    """Prepared formal inputs; the caller owns the physical-index lifetime."""
+
+    plan: UntargetedInputPlan
+    physical_sources: dict[str, IndexedDiscoveryPhysicalFacts]
+    physical_spool_dir: Path | None
+    evidence_store: StreamedResultStore | None
+
+    def close(self) -> None:
+        for source in self.physical_sources.values():
+            source.close()
+        if self.physical_spool_dir is not None:
+            shutil.rmtree(self.physical_spool_dir, ignore_errors=True)
+        if self.evidence_store is not None:
+            self.evidence_store.cleanup()
+
+
+def prepare_untargeted_alignment_inputs(
     *,
     discovery_batch: DiscoveryBatchInput,
     candidates_by_sample: Mapping[str, tuple[DiscoveryCandidate, ...]],
@@ -195,21 +214,14 @@ def complete_untargeted_alignment(
     output_dir: Path,
     settings: DiscoverySettings,
     peak_config: ExtractionConfig,
-    alignment_config: AlignmentConfig,
     sample_metadata: tuple[SampleMetadata, ...] | None = None,
-    known_istd_reference: KnownIstdReference | None = None,
     timing_recorder: TimingRecorder | None = None,
     signal_processing_profile: SignalProcessingProfile | None = None,
     raw_workers: int = DEFAULT_ALIGNMENT_WORKERS,
     raw_worker_backend: str = "thread",
     should_cancel: Callable[[], bool] | None = None,
-    retain_partition_memory: bool = False,
-    retain_acquisition_cache: bool = False,
-    acquisition_cache_dir: Path | None = None,
-    max_partition_jobs: int = 100_000,
-) -> CompletedUntargetBatchWorkflowResult:
-    """Execute and compose one owner-closed CID-NL batch exactly once."""
-
+) -> PreparedUntargetedAlignmentInputs:
+    """Prepare Discovery-backed inputs without scheduling Backfill or outputs."""
     raw_paths = existing_raw_paths(
         sample_order=discovery_batch.sample_order,
         raw_files=discovery_batch.raw_files,
@@ -382,6 +394,64 @@ def complete_untargeted_alignment(
                 acquisition_source_expectations=acquisition_source_expectations,
             )
 
+        return PreparedUntargetedAlignmentInputs(
+            plan, physical_sources, physical_spool_dir, evidence_store
+        )
+    except BaseException:
+        for source in physical_sources.values():
+            source.close()
+        if physical_spool_dir is not None:
+            shutil.rmtree(physical_spool_dir, ignore_errors=True)
+        if evidence_store is not None:
+            evidence_store.cleanup()
+        raise
+
+
+def complete_untargeted_alignment(
+    *,
+    discovery_batch: DiscoveryBatchInput,
+    candidates_by_sample: Mapping[str, tuple[DiscoveryCandidate, ...]],
+    raw_dir: Path,
+    dll_dir: Path,
+    output_dir: Path,
+    settings: DiscoverySettings,
+    peak_config: ExtractionConfig,
+    alignment_config: AlignmentConfig,
+    sample_metadata: tuple[SampleMetadata, ...] | None = None,
+    known_istd_reference: KnownIstdReference | None = None,
+    timing_recorder: TimingRecorder | None = None,
+    signal_processing_profile: SignalProcessingProfile | None = None,
+    raw_workers: int = DEFAULT_ALIGNMENT_WORKERS,
+    raw_worker_backend: str = "thread",
+    should_cancel: Callable[[], bool] | None = None,
+    retain_partition_memory: bool = False,
+    retain_acquisition_cache: bool = False,
+    acquisition_cache_dir: Path | None = None,
+    max_partition_jobs: int = 100_000,
+) -> CompletedUntargetBatchWorkflowResult:
+    """Execute and compose one owner-closed CID-NL batch exactly once."""
+
+    prepared = prepare_untargeted_alignment_inputs(
+        discovery_batch=discovery_batch,
+        candidates_by_sample=candidates_by_sample,
+        raw_dir=raw_dir,
+        dll_dir=dll_dir,
+        output_dir=output_dir,
+        settings=settings,
+        peak_config=peak_config,
+        sample_metadata=sample_metadata,
+        timing_recorder=timing_recorder,
+        signal_processing_profile=signal_processing_profile,
+        raw_workers=raw_workers,
+        raw_worker_backend=raw_worker_backend,
+        should_cancel=should_cancel,
+    )
+    plan = prepared.plan
+    physical_sources = prepared.physical_sources
+    physical_spool_dir = prepared.physical_spool_dir
+    evidence_store = prepared.evidence_store
+    recorder = timing_recorder or TimingRecorder.disabled("alignment")
+    try:
         output_dir.mkdir(parents=True, exist_ok=True)
         inference_counts: Counter[str] = Counter()
         inference_counts_lock = Lock()
