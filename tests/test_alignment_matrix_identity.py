@@ -654,7 +654,7 @@ def test_neighboring_ms1_interference_blocks_backfill_promotion() -> None:
                     "FAM001",
                     "backfilled",
                     80.0 + i,
-                    region_review_reason="neighboring_ms1_interference",
+                    reason="neighboring_ms1_interference",
                 )
                 for i in range(1, 84)
             ),
@@ -869,7 +869,7 @@ def _cell(
     trace_quality: str | None = None,
     scan_support_score: float | None | object = _DEFAULT_SCAN_SUPPORT,
     rt_delta_sec: float = 0.0,
-    region_review_reason: str = "",
+    reason: str | None = None,
     selected_integration: IntegrationResult | None = None,
 ) -> AlignedCell:
     has_area = area is not None
@@ -905,8 +905,7 @@ def _cell(
             if source_candidate_id is not None
             else f"{sample_stem}#{cluster_id}"
         ),
-        reason=status,
-        region_review_reason=region_review_reason,
+        reason=status if reason is None else reason,
         selected_integration=selected_integration,
     )
 

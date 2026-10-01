@@ -203,7 +203,6 @@ def main(argv: Sequence[str] | None = None) -> int:
                 dll_dir,
                 output_dir,
                 peak_config_resolver_mode,
-                baseline_audit_method=_baseline_audit_method(args),
                 baseline_integration_method=_baseline_integration_method(args),
                 signal_processing_profile=signal_processing_profile,
                 nl_min_intensity_ratio=peak_config_nl_min_intensity_ratio,
@@ -541,15 +540,8 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
-        "--emit-baseline-audit-asls",
-        action="store_true",
-        help=(
-            "Set baseline_audit_method=asls in the run configuration and metadata."
-        ),
-    )
-    parser.add_argument(
         "--baseline-integration-method",
-        help="Alignment integration-audit baseline method. Only asls is supported.",
+        help="Baseline integration method. Only asls is supported.",
     )
     parser.add_argument(
         "--emit-alignment-backfill-seed-audit",
@@ -824,15 +816,6 @@ def _write_cprofile_outputs(profiler: cProfile.Profile, output_dir: Path) -> Non
     print(f"cProfile top functions: {top_path}")
 
 
-def _baseline_audit_method(args: argparse.Namespace) -> str:
-    if args.emit_baseline_audit_asls:
-        return "asls"
-    env_method = os.environ.get("BASELINE_AUDIT_METHOD", "").strip().lower()
-    if env_method in {"", "asls"}:
-        return env_method
-    raise ValueError("BASELINE_AUDIT_METHOD must be empty or asls")
-
-
 def _baseline_integration_method(args: argparse.Namespace) -> str:
     if args.baseline_integration_method:
         method = args.baseline_integration_method.strip().lower()
@@ -854,7 +837,6 @@ def _peak_config(
     dll_dir: Path,
     output_dir: Path,
     resolver_mode: str,
-    baseline_audit_method: str = "",
     baseline_integration_method: str = "asls",
     signal_processing_profile: SignalProcessingProfile | None = None,
     nl_min_intensity_ratio: float | None = None,
@@ -880,7 +862,6 @@ def _peak_config(
             else nl_min_intensity_ratio
         ),
         resolver_mode=resolver_mode,
-        baseline_audit_method=baseline_audit_method,
         baseline_integration_method=baseline_integration_method,
     )
 

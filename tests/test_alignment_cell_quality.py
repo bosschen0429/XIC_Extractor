@@ -1,9 +1,6 @@
 from __future__ import annotations
 
 import math
-from typing import Callable
-
-import pytest
 
 from xic_extractor.alignment.cell_quality import (
     build_cell_quality_decisions,
@@ -13,7 +10,6 @@ from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.matrix import AlignedCell
 from xic_extractor.alignment.promotion_policy import (
     LOW_MS1_COVERAGE_BLOCKED_REASON,
-    NEIGHBOR_INTERFERENCE_BLOCKED_REASON,
 )
 from xic_extractor.peak_detection.hypotheses import IntegrationResult
 
@@ -103,127 +99,21 @@ def test_backfill_requires_complete_peak_and_rt_inside_alignment_window() -> Non
     assert outside.quality_reason == "rt_outside_max"
 
 
-@pytest.mark.parametrize(
-    ("cell_factory", "expected_reason"),
-    (
-        (
-            lambda: _cell(
-                "hard_negative",
-                "FAM001",
-                "backfilled",
-                100.0,
-                region_local_mixture_diagnostic="ambiguous_adjacent_split",
-            ),
-            NEIGHBOR_INTERFERENCE_BLOCKED_REASON,
-        ),
-        (
-            lambda: _cell(
-                "hard_negative",
-                "FAM001",
-                "backfilled",
-                100.0,
-                region_local_mixture_diagnostic="insufficient_evidence",
-            ),
-            LOW_MS1_COVERAGE_BLOCKED_REASON,
-        ),
-        (
-            lambda: _cell(
-                "hard_negative",
-                "FAM001",
-                "backfilled",
-                100.0,
-                region_local_mixture_diagnostic="two_peak_supported",
-            ),
-            NEIGHBOR_INTERFERENCE_BLOCKED_REASON,
-        ),
-        (
-            lambda: _cell(
-                "hard_negative",
-                "FAM001",
-                "backfilled",
-                100.0,
-                region_local_mixture_diagnostic="competing_boundary_model",
-            ),
-            NEIGHBOR_INTERFERENCE_BLOCKED_REASON,
-        ),
-        (
-            lambda: _cell(
-                "hard_negative",
-                "FAM001",
-                "backfilled",
-                100.0,
-                scan_support_score=0.2,
-            ),
-            LOW_MS1_COVERAGE_BLOCKED_REASON,
-        ),
-    ),
-    ids=(
-        "ambiguous-adjacent-split",
-        "insufficient-local-mixture-evidence",
-        "two-peaks-supported",
-        "competing-boundary-model",
-        "low-ms1-coverage",
-    ),
-)
-def test_owner_hard_negative_backfill_facts_hold_backfill_out_of_matrix(
-    cell_factory: Callable[[], AlignedCell],
-    expected_reason: str,
-) -> None:
+def test_low_scan_support_holds_backfill_out_of_matrix() -> None:
     config = AlignmentConfig(preferred_rt_sec=10.0, max_rt_sec=30.0)
-    decision = decide_cell_quality(cell_factory(), config)
+    cell = _cell("hard_negative", "FAM001", "backfilled", 100.0, scan_support_score=0.2)
+
+    decision = decide_cell_quality(cell, config)
 
     assert decision.quality_status == "review_backfill"
-    assert decision.quality_reason == expected_reason
+    assert decision.quality_reason == LOW_MS1_COVERAGE_BLOCKED_REASON
     assert decision.matrix_area is None
 
 
-@pytest.mark.parametrize(
-    "cell_factory",
-    (
-        lambda: _cell(
-            "nonblocking",
-            "FAM001",
-            "backfilled",
-            100.0,
-            scan_support_score=0.3,
-        ),
-        lambda: _cell(
-            "nonblocking",
-            "FAM001",
-            "backfilled",
-            100.0,
-            region_local_mixture_diagnostic=(
-                "neighbor_interference_not_assessed;raw_trace_reread_1"
-            ),
-        ),
-        lambda: _cell(
-            "nonblocking",
-            "FAM001",
-            "backfilled",
-            100.0,
-            region_local_mixture_diagnostic="current_single_envelope",
-        ),
-        lambda: _cell(
-            "nonblocking",
-            "FAM001",
-            "backfilled",
-            100.0,
-            region_local_mixture_diagnostic="one_envelope_supported",
-        ),
-    ),
-    ids=(
-        "moderate-scan-support",
-        "neighbor-interference-not-assessed",
-        "current-single-envelope",
-        "one-envelope-supported",
-    ),
-)
-def test_nonblocking_owner_facts_keep_backfill_quantifiable(
-    cell_factory: Callable[[], AlignedCell],
-) -> None:
+def test_moderate_scan_support_keeps_backfill_quantifiable() -> None:
+    cell = _cell("nonblocking", "FAM001", "backfilled", 100.0, scan_support_score=0.3)
     decision = decide_cell_quality(
-        cell_factory(),
-        AlignmentConfig(preferred_rt_sec=10.0, max_rt_sec=30.0),
+        cell, AlignmentConfig(preferred_rt_sec=10.0, max_rt_sec=30.0)
     )
 
     assert decision.quality_status == "rescue_quantifiable"
@@ -269,7 +159,6 @@ def _cell(
     rt_delta_sec: float | None = 0.0,
     selected_integration: IntegrationResult | None = None,
     scan_support_score: float | None = 0.8,
-    region_local_mixture_diagnostic: str = "",
     group_hypothesis_id: str = "",
 ) -> AlignedCell:
     if (
@@ -296,7 +185,6 @@ def _cell(
         scan_support_score=scan_support_score,
         source_candidate_id=f"{sample_stem}#{cluster_id}",
         reason=status,
-        region_local_mixture_diagnostic=region_local_mixture_diagnostic,
         group_hypothesis_id=group_hypothesis_id,
         selected_integration=selected_integration,
     )
