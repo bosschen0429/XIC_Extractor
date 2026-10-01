@@ -346,4 +346,3 @@ def _write_batch_index(
             extrasaction="raise",
         )
     return output_path
-

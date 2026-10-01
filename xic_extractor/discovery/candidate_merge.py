@@ -702,4 +702,3 @@ def _optional_float(value: Any) -> float | None:
 
 
 _within_ppm = within_ppm
-
