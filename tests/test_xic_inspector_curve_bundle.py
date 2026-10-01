@@ -120,7 +120,8 @@ def test_bundle_cli_does_not_import_raw_reader(tmp_path: Path) -> None:
     write_curve_bundle(_fixture_bundle(), source)
     code = (
         "import sys; from xic_inspector.cli import main; "
-        f"status = main(['--report', {str(source)!r}, '--output', {str(output)!r}]); "
+        f"status = main(['--report', {str(source)!r}, '--output', {str(output)!r}, "
+        "'--no-open']); "
         "raise SystemExit(88 if 'xic_extractor.raw_reader' in sys.modules "
         "else status)"
     )
